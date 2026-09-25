@@ -1,0 +1,37 @@
+{
+  "name": "jobloop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "app/main.mjs",
+  "packageManager": "pnpm@10.14.0",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "engine:build": "cargo build --manifest-path engine/Cargo.toml --target-dir engine/target",
+    "start": "pnpm build && pnpm engine:build && electron .",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node scripts/check.mjs",
+    "bootstrap": "node scripts/bootstrap.mjs",
+    "test:ui": "node scripts/smoke-ui.mjs",
+    "test:agent": "node scripts/smoke-agent.mjs"
+  },
+  "dependencies": {
+    "@termloop/terminal-surface": "file:../termloop/clients/terminal-surface",
+    "@termloop/terminal-wire": "file:../termloop/clients/terminal-wire",
+    "@modelcontextprotocol/sdk": "1.30.1",
+    "@playwright/mcp": "0.0.82"
+  },
+  "devDependencies": {
+    "electron": "43.3.0",
+    "esbuild": "0.28.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ],
+    "overrides": {
+      "@termloop/terminal-wire": "file:../termloop/clients/terminal-wire"
+    }
+  }
+}

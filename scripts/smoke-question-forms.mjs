@@ -1,0 +1,17 @@
+import {createRequire} from 'node:module';
+import {mkdtemp} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import {Store} from '../app/store.mjs';
+const require=createRequire(import.meta.url),{_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
+const data=await mkdtemp(path.join(tmpdir(),'jobloop-form-')),s=new Store(path.join(data,'jobloop.sqlite'));
+const p=s.saveProfile({name:'Form Candidate',preferences:'Berlin'}),other=s.saveProfile({name:'Other',preferences:'Remote'});
+const q=s.ask(p.id,{question:'Başvuru bilgileri',fields:[{id:'consent',label:'İzin veriyor musun?',type:'boolean'},{id:'amount',label:'Maaş beklentisi',type:'number'},{id:'days',label:'Günler',type:'multiselect',options:['Pazartesi','Salı']},{id:'date',label:'Başlangıç',type:'date'},{id:'mode',label:'Çalışma şekli',type:'select',options:['Remote','Hibrit']},{id:'note',label:'Not',type:'text',required:false}]});s.close();
+const app=await electron.launch({executablePath:process.env.JOBLOOP_ELECTRON_BINARY||require('electron'),args:[process.cwd()],env:{...process.env,JOBLOOP_DATA_DIR:data}});
+try{const page=await app.firstWindow();const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.locator('#candidates').selectOption(p.id);
+ const consent=page.getByLabel('İzin veriyor musun?');assert.equal(await consent.inputValue(),'');await consent.selectOption('false');await page.getByLabel('Maaş beklentisi',{exact:true}).fill('70000');await page.getByLabel('Salı',{exact:true}).check();await page.getByLabel('Başlangıç',{exact:true}).fill('2026-11-25');await page.getByLabel('Çalışma şekli').selectOption('Hibrit');await page.getByLabel('Not',{exact:true}).fill('Taslak');
+ await page.locator('#candidates').selectOption(other.id);await page.locator('.candidate-question-form').waitFor({state:'detached'});await page.locator('#candidates').selectOption(p.id);await page.getByLabel('Not',{exact:true}).waitFor();assert.equal(await page.getByLabel('Not',{exact:true}).inputValue(),'Taslak');await page.reload();assert.equal(await page.getByLabel('Maaş beklentisi',{exact:true}).inputValue(),'70000');
+ await page.screenshot({path:path.join(data,'form.png')});await page.getByRole('button',{name:'Yanıtları gönder',exact:true}).click();await page.locator('.candidate-question-form').waitFor({state:'detached'});
+ const saved=await page.evaluate(async({id,q})=>(await window.jobloop.snapshot(id)).questions.find(item=>item.id===q),{id:p.id,q:q.id});assert.equal(saved.answerValues.consent,false);assert.equal(saved.answerValues.amount,70000);assert.deepEqual(saved.answerValues.days,['Salı']);assert.equal(errors.length,0);console.log('QUESTION_FORM_UI_PASS',data);
+}finally{await app.close();}

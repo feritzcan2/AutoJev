@@ -1,0 +1,49 @@
+/* Profile: one settings document. Each section explains itself on the left and edits on the right. */
+.profile-head { margin: 24px 0 18px; }
+.profile-head h2 { font-size: 20px; letter-spacing: -.3px; }
+.profile-head p { max-width: 560px; margin: 6px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
+
+.profile-form { display: block; max-width: 1040px; padding: 0; overflow: hidden; }
+.profile-section { display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr); gap: 16px 48px; min-inline-size: 0; margin: 0; padding: 24px 26px; border: 0; border-top: 1px solid var(--border); border-radius: 0; }
+.profile-section:first-child { border-top: 0; }
+.profile-section-copy h3 { margin: 0; color: var(--text); font-size: 14px; font-weight: 600; }
+.profile-section-copy p { margin: 6px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
+
+.profile-fields { display: grid; gap: 16px; min-width: 0; }
+.profile-fields label { gap: 7px; }
+.profile-fields input, .profile-fields select, .profile-fields textarea { width: 100%; }
+.profile-fields textarea { min-height: 96px; line-height: 1.5; }
+.profile-fields label small { color: var(--text-muted); font-size: 12px; line-height: 1.45; }
+
+/* CV: a document slot, dashed until something is in it. */
+.cv-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: 8px; }
+.cv-row:has([data-empty="true"]) { border-style: dashed; }
+.cv-copy { display: grid; gap: 2px; min-width: 0; }
+.cv-copy span { color: var(--text-secondary); font-size: 12px; }
+#cv-name { display: block; overflow: hidden; color: var(--text); font-size: 13px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
+#cv-name[data-empty="true"] { color: var(--text-muted); font-weight: 400; }
+.cv-row button { flex-shrink: 0; padding: 8px 12px; font-size: 12px; }
+
+/* Authorization: the one decision on this page, so it gets room. */
+.authorization { gap: 8px; }
+.choice { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: 8px; color: var(--text); font-size: 13px; cursor: pointer; transition: border-color .15s, background .15s; }
+.choice:hover { background: var(--bg-hover); }
+.choice:has(:checked) { border-color: var(--accent); background: var(--accent-wash); }
+.choice:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.choice input { width: 14px; height: 14px; margin: 2px 0 0; accent-color: var(--accent); }
+.choice input:focus-visible { outline: none; }
+.choice span { display: grid; gap: 3px; min-width: 0; }
+.choice b { font-weight: 550; }
+.choice small { color: var(--text-secondary); font-size: 12px; line-height: 1.45; }
+
+#profile .settings-grid { grid-template-columns: 1fr 1fr; gap: 14px 16px; }
+
+.profile-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 26px; border-top: 1px solid var(--border); }
+.profile-foot small { color: var(--text-muted); font-size: 12px; line-height: 1.45; }
+.profile-foot button { flex-shrink: 0; }
+
+@media (prefers-reduced-motion: reduce) { .choice { transition: none; } }
+@media (max-width: 1000px) {
+  .profile-section { grid-template-columns: 1fr; gap: 12px; }
+  #profile .settings-grid { grid-template-columns: 1fr; }
+}

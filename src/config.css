@@ -1,0 +1,70 @@
+/* Yapılandırma: every text the agent receives, as a browsable document. */
+.config-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin: 24px 0 22px; }
+.config-head h2 { font-size: 20px; letter-spacing: -.3px; }
+.config-head p { max-width: 600px; margin: 6px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
+.config-search { flex-shrink: 0; width: 280px; }
+.config-search input { width: 100%; padding: 9px 12px; }
+.config-search input::-webkit-search-cancel-button { cursor: pointer; }
+.config-search small { display: block; margin-top: 6px; color: var(--text-muted); font-size: 12px; text-align: right; min-height: 1.4em; }
+
+.config-body { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 36px; align-items: start; }
+.config-nav { position: sticky; top: 24px; display: grid; gap: 2px; }
+.config-nav a { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 8px; color: var(--text-secondary); font-size: 13px; text-decoration: none; }
+.config-nav a:hover { background: var(--bg-hover); color: var(--text); }
+.config-nav a.active { background: var(--accent-wash); color: var(--accent-strong); }
+.config-nav b { color: var(--text-muted); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.config-nav a.active b { color: var(--accent-strong); }
+
+.config-section { margin-bottom: 44px; scroll-margin-top: 20px; }
+.config-section h3 { margin: 0; font-size: 16px; font-weight: 550; }
+.config-section > p { margin: 6px 0 16px; max-width: 640px; color: var(--text-muted); font-size: 13px; line-height: 1.55; }
+.config-empty { padding: 28px 24px; border: 1px dashed var(--border-strong); border-radius: 12px; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+.config-empty strong { display: block; margin-bottom: 4px; color: var(--text); font-weight: 550; }
+
+/* Prompt card */
+.prompt-card { margin: 0 0 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); overflow: hidden; }
+.prompt-card[open] { border-color: var(--border-strong); }
+.prompt-card summary { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 12px; align-items: center; padding: 14px 18px 14px 16px; cursor: pointer; list-style: none; }
+.prompt-card summary::-webkit-details-marker { display: none; }
+.prompt-card summary::before { content: ''; width: 6px; height: 6px; margin-left: 2px; border-right: 1.5px solid var(--text-muted); border-bottom: 1.5px solid var(--text-muted); transform: rotate(-45deg); transition: transform .15s; }
+.prompt-card[open] summary::before { transform: rotate(45deg); }
+.prompt-card summary:hover { background: var(--bg-hover); }
+.prompt-title { display: block; min-width: 0; color: var(--text); font-size: 14px; font-weight: 550; }
+.prompt-when { display: block; margin-top: 3px; overflow: hidden; color: var(--text-muted); font-size: 12px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+.prompt-card[open] .prompt-when { white-space: normal; }
+.prompt-size { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.prompt-body { position: relative; border-top: 1px solid var(--border); background: var(--bg-app); }
+.prompt-body pre { max-height: 560px; margin: 0; padding: 6px 20px 18px; overflow: auto; color: var(--text); font: 12px/1.65 ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.prompt-body-head { display: flex; justify-content: flex-end; padding: 8px 12px 0; }
+.prompt-body .copy { padding: 5px 9px; font-size: 11px; background: var(--bg-raised); }
+.prompt-body .copy[data-done] { border-color: var(--success); color: var(--success); }
+.prompt-body mark { padding: 0 4px; border-radius: 4px; background: var(--accent-wash); color: var(--accent-strong); font-weight: 500; }
+.prompt-path { display: inline-block; margin-top: 3px; color: var(--text-muted); font: 11px ui-monospace, Menlo, monospace; }
+
+/* Sent log */
+.prompt-card.sent summary { grid-template-columns: 14px 78px auto minmax(0, 1fr); }
+.prompt-card.sent time { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.prompt-kind { padding: 4px 8px; border-radius: 6px; background: var(--bg-hover); color: var(--text-secondary); font-size: 11px; font-weight: 550; white-space: nowrap; }
+.prompt-kind[data-kind="start"] { background: var(--accent-wash); color: var(--accent-strong); }
+.prompt-kind[data-kind="input"] { background: rgba(217, 170, 95, .14); color: var(--warning); }
+.prompt-preview { min-width: 0; overflow: hidden; color: var(--text-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.prompt-card.sent[open] .prompt-preview { display: none; }
+
+/* Tools */
+.tool-list { display: grid; gap: 8px; }
+.tool-card { display: grid; grid-template-columns: minmax(180px, 220px) minmax(0, 1fr); gap: 6px 20px; padding: 14px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); }
+.tool-card code { color: var(--accent-strong); font: 13px ui-monospace, "SF Mono", Menlo, monospace; word-break: break-all; }
+.tool-card p { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
+.tool-params { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.tool-params span { padding: 3px 7px; border: 1px solid var(--border-strong); border-radius: 6px; color: var(--text-secondary); font: 11px ui-monospace, Menlo, monospace; }
+.tool-params span[data-required="true"] { border-color: rgba(102, 179, 255, .45); color: var(--text); }
+.tool-params span i { font-style: normal; color: var(--text-muted); }
+
+@media (max-width: 1000px) {
+  .config-head { flex-direction: column; }
+  .config-search { width: 100%; }
+  .config-body { grid-template-columns: 1fr; gap: 20px; }
+  .config-nav { position: static; grid-auto-flow: column; overflow: auto; }
+  .tool-card { grid-template-columns: 1fr; }
+  .tool-params { grid-column: 1; }
+}

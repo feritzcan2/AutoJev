@@ -1,0 +1,38 @@
+/* Agent page: what the agent is doing now, then the terminal as one framed object. */
+.now-panel { margin: 0 0 20px; padding: 18px 22px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); }
+.now-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
+.now-copy { min-width: 0; }
+.now-label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--text-secondary); font-size: 12px; font-weight: 550; }
+.now-label::before { content: ''; width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: var(--text-muted); }
+.now-panel[data-tone="active"] .now-label { color: var(--accent-strong); }
+.now-panel[data-tone="active"] .now-label::before { background: var(--accent); box-shadow: 0 0 0 0 rgba(102, 179, 255, .55); animation: source-pulse 1.6s ease-out infinite; }
+.now-panel[data-tone="waiting"] .now-label { color: var(--warning); }
+.now-panel[data-tone="waiting"] .now-label::before { background: var(--warning); }
+.now-panel h2 { font-size: 19px; line-height: 1.35; letter-spacing: -.2px; }
+.now-panel p { max-width: 720px; max-height: 4.5em; margin: 6px 0 0; overflow: auto; color: var(--text); font-size: 13px; line-height: 1.55; }
+.now-panel small { display: block; margin-top: 8px; color: var(--text-muted); font-size: 12px; }
+.now-actions { display: flex; flex-shrink: 0; gap: 8px; }
+.now-actions button { padding: 8px 12px; font-size: 12px; }
+
+.now-panel details { margin: 14px 0 0; font-size: 12px; }
+.now-panel summary { display: inline; cursor: pointer; color: var(--text-muted); list-style: none; }
+.now-panel summary::-webkit-details-marker { display: none; }
+.now-panel summary:hover, .now-panel details[open] summary { color: var(--accent-strong); }
+.now-panel ol { max-height: 220px; margin: 10px 0 0; padding: 0; overflow: auto; list-style: none; }
+.now-panel li { display: flex; gap: 16px; padding: 8px 0; border-top: 1px solid var(--border); line-height: 1.5; color: var(--text-secondary); }
+.now-panel li:first-child { border-top: 0; }
+.now-panel li:only-child { color: var(--text-muted); }
+.now-panel time { flex-shrink: 0; width: 60px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* Terminal frame */
+.terminal-section { margin-top: 0; border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden; background: var(--bg-terminal); }
+.terminal-section .section-title { margin: 0; padding: 10px 16px; border-bottom: 1px solid var(--border-strong); background: var(--bg-raised); }
+.terminal-section h2 { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 550; }
+.terminal-section .dot { margin: 0; }
+.terminal-section .section-title > span { font-size: 11px; }
+#terminal { height: clamp(320px, calc(100vh - 380px), 720px); border: 0; border-radius: 0; }
+#terminal .xterm { padding: 12px 14px; }
+#terminal .xterm-viewport { background-color: var(--bg-terminal) !important; }
+
+@media (prefers-reduced-motion: reduce) { .now-panel[data-tone="active"] .now-label::before { animation: none; } }
+@media (max-width: 900px) { .now-top { flex-direction: column; } .now-actions { flex-wrap: wrap; } }

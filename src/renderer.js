@@ -1,0 +1,190 @@
+import {questionForm} from './question-form.js';
+import {XtermSurface} from '@termloop/terminal-surface/xterm';
+import './style.css';
+import './termloop-theme.css';
+import './activity.css';
+import './sources.css';
+import './board.css';
+import './profile.css';
+import {backgroundPage} from './background.js';
+import {onboarding} from './onboarding.js';
+import {configPage} from './config.js';
+import {activityView,ageLabel,sourceResultView} from './activity.js';
+const api=window.jobloop,$=id=>document.getElementById(id);
+const JOBS_PER_PAGE=10;
+const observedStates=new Map();
+let catalog=[],jobPage=1,jobSort={key:null,direction:'asc'};
+let candidate=localStorage.getItem('selected-candidate'),snapshot=null,running=false,busy=false,newCandidate=false;
+const names={found:'Bulundu',working:'Üzerinde çalışıyor',prepared:'Gönderime hazır',submitting:'Gönderiliyor',submitted:'Gönderildi',blocked:'Bilgi / işlem bekliyor',uncertain:'Sonuç doğrulanmalı',skipped:'Elendi'};
+const setupUI=onboarding(api,{select:async id=>{candidate=id;newCandidate=false;await refresh();fillProfile();},refresh:()=>refresh(),cancel:async()=>{candidate=null;newCandidate=false;await refresh();fillProfile();}});
+const notice=message=>{$('notice').textContent=message;$('notice').hidden=!message;};
+const backgroundUI=backgroundPage(api,{notice,getCatalog:()=>catalog});
+const configUI=configPage(api,{notice,relativeTime});
+const attempt=fn=>async(...args)=>{try{return await fn(...args);}catch(e){notice(e.message);}};
+await document.fonts.ready;
+const surface=new XtermSurface(text=>{api.input(candidate,text).catch(e=>notice(e.message));},(rows,cols)=>{api.resize(candidate,rows,cols).catch(e=>notice(e.message));},()=>notice('Belge eklemek için aday profilindeki CV seç düğmesini kullan.'));
+await surface.mount($('terminal'),false);surface.writeln('JobLoop hazır. Profilini kaydet, CV’ni seç ve agent’ı başlat.');
+function element(tag,cls,value){const el=document.createElement(tag);if(cls)el.className=cls;if(value!==undefined)el.textContent=value;return el;}
+const jobSearch=element('input','job-search');jobSearch.id='job-search';jobSearch.type='search';jobSearch.placeholder='İlanlarda ara…';jobSearch.setAttribute('aria-label','İlanlarda ara');$('filter').before(jobSearch);
+const sourcesNav=element('button','', '⌕ Sources');sourcesNav.dataset.view='sources';document.querySelector('nav button[data-view="agent"]').before(sourcesNav);
+const sourcesView=element('section');sourcesView.id='sources';sourcesView.hidden=true;sourcesView.innerHTML=`<div class="sources-head"><div><h2>Sources</h2><p id="sources-summary">Agent yalnızca etkin kaynakları, belirlediğin aralıklarla tarar.</p></div><button id="source-add-toggle" class="primary" type="button" aria-expanded="false" aria-controls="source-add">＋ Kaynak ekle</button></div><form id="source-add" class="source-add" hidden><label>Kaynak adı<input name="name" required maxlength="120" placeholder="Örn. Berlin AI şirketleri"></label><label>Başlangıç adresi<input name="url" type="url" required placeholder="https://…"></label><label class="source-query">Arama kapsamı<textarea name="query" required maxlength="2000" placeholder="Hangi roller, hangi şehirler, nelere dikkat edilmeli"></textarea></label><div class="source-add-foot"><label>Tarama aralığı<input name="intervalMinutes" type="number" min="1" max="10080" value="30" required aria-describedby="source-add-unit"></label><label>Başvuru modu<select name="applyMode"><option value="find_only">Sadece bul</option><option value="prepare">Hazırla</option><option value="auto" selected>Otomatik gönder</option></select></label><button id="source-add-cancel" class="quiet" type="button">Vazgeç</button><button class="primary" type="submit">Kaynağı ekle</button></div></form><ul id="source-rows" class="source-list"></ul><form id="application-policy" class="policy"><div class="policy-head"><h2>Otomatik cevap kuralları</h2><p>Başvuru formlarında agent yalnızca kayıtlı gerçekleri kullanır. Deneyim, kimlik, yetkinlik ve hukuki beyanlar asla uydurulmaz; emin olmadığı yerde aşağıdaki kurallara göre davranır.</p></div><label class="policy-row"><span><b>Kayıtlı profil cevaplarını otomatik kullan</b><small>Ad, iletişim, çalışma izni gibi bilinen alanlar sorulmadan doldurulur.</small></span><input class="switch" name="autoFillKnown" type="checkbox"></label><label class="policy-row"><span><b>Zorunlu gizlilik ve veri işleme bildirimlerini kabul et</b><small>Başvurunun gönderilmesi için şart koşulan onay kutuları işaretlenir.</small></span><input class="switch" name="acceptPrivacy" type="checkbox"></label><label class="policy-row"><span><b>Şirket grubu ve diğer roller için işe alım veri onayı</b><small>Başvuru bilgilerinin şirket ve aynı şirket grubundaki diğer pozisyonlar için saklanması, işlenmesi ve paylaşılmasını sormadan onayla. Pazarlama iznini kapsamaz.</small></span><input class="switch" name="groupRecruitmentConsent" type="checkbox"></label><label class="policy-row"><span><b>Opsiyonel demografik sorular</b><small>Cinsiyet, etnik köken, engellilik gibi isteğe bağlı alanlar.</small></span><select name="demographic"><option value="prefer_not_to_say">Belirtmek istemiyorum</option><option value="profile_only">Yalnızca profilde varsa cevapla</option></select></label><label class="policy-row"><span><b>Pazarlama onayları</b><small>Reklam, ürün tanıtımı ve işe alım dışındaki iletişim izinleri.</small></span><select name="marketing"><option value="decline">Reddet</option><option value="profile_only">Yalnızca profilde varsa cevapla</option></select></label><label class="policy-row"><span><b>Bilinmeyen önemli bilgi</b><small>Maaş beklentisi, başlama tarihi gibi profilde olmayan zorunlu alanlar.</small></span><select name="unknownImportant"><option value="ask">Bana sor</option><option value="skip">İlanı atla</option></select></label><label class="policy-row"><span><b>Yeni sözleşme veya release agreement</b><small>Başvuru sırasında imza isteyen hukuki metinler.</small></span><select name="legalAgreements"><option value="ask">Bana sor</option><option value="skip">İlanı atla</option></select></label><div class="policy-foot"><button class="primary" type="submit">Kuralları kaydet</button></div></form>`;document.querySelector('main').insertBefore(sourcesView,$('files'));
+$('campaign-interval').closest('label').hidden=true;
+function switchView(name){$('config').hidden=name!=='config';if(name==='config')configUI.show();$('background').hidden=name!=='background';$('profile').hidden=name!=='profile';$('board').hidden=name!=='board';$('agent').hidden=name!=='agent';$('files').hidden=name!=='files';$('sources').hidden=name!=='sources';document.querySelectorAll('aside nav button').forEach(b=>b.classList.toggle('selected',b.dataset.view===name));}
+function settingsOptions(saved){const current=catalog.find(a=>a.id===$('provider').value);if(!current)return;$('profile-form').elements.network.disabled=current.id!=='codex';for(const [key,list]of [['model',current.models],['permission',current.permissions],['reasoning',current.reasoning]]){$(key).replaceChildren(...list.map(value=>new Option(value,value)));$(key).value=list.includes(saved?.[key])?saved[key]:'default';}}
+function fillProfile(){if(snapshot?.campaign){$('campaign-target').value=snapshot.campaign.target;$('campaign-interval').value=snapshot.campaign.intervalMinutes;}const p=snapshot?.profile??{};for(const key of ['name','preferences','facts','authorization'])$('profile-form').elements[key].value=p[key]??(key==='authorization'?'prepare':'');$('profile-form').elements.browserMode.value=p.browserMode??'existing';$('provider').value=p.agentSettings?.provider??'codex';settingsOptions(p.agentSettings);$('profile-form').elements.network.value=p.agentSettings?.network==null?'inherit':String(p.agentSettings.network);$('cv-name').textContent=p.cvPath?p.cvPath.split(/[\\/]/).pop():'CV eklenmedi';$('cv-name').dataset.empty=String(!p.cvPath);$('cv').textContent=p.cvPath?'CV değiştir':'CV seç';}
+function controls(){renderQuestionBadge();renderActivity();$('start').disabled=busy||running||!snapshot?.profile.cvPath;$('stop').disabled=busy||(!running&&snapshot?.campaign?.status!=='running'&&snapshot?.campaign?.status!=='paused');$('pause').disabled=busy||snapshot?.campaign?.status!=='running';$('start').disabled=busy||snapshot?.campaign?.status==='running'||!snapshot?.profile.cvPath;$('campaign-target').disabled=snapshot?.campaign?.status==='running';$('campaign-interval').disabled=snapshot?.campaign?.status==='running';$('candidates').disabled=busy;$('new').disabled=busy;}
+let terminalCandidate=null,terminalLoading=false,terminalPending=[],terminalVersion=0,refreshVersion=0;
+async function selectTerminal(id){if(terminalCandidate===id)return;terminalCandidate=id;const version=++terminalVersion;terminalLoading=true;terminalPending=[];surface.write(new TextEncoder().encode('\x1b[2J\x1b[3J\x1b[H'),()=>{});const replay=id?await api.terminalOutput(id):{bytes:[],sequence:0};if(candidate!==id||version!==terminalVersion)return;surface.write(new Uint8Array(replay.bytes),()=>{});terminalLoading=false;for(const chunk of terminalPending)if(chunk.sequence>replay.sequence)surface.write(new Uint8Array(chunk.bytes),()=>{});terminalPending=[];}
+async function refresh(){const version=++refreshVersion;const candidates=await api.candidates();if(version!==refreshVersion)return;$('candidates').replaceChildren(new Option('Yeni aday',''),...candidates.map(p=>new Option(p.name,p.id)));if(candidate&&!candidates.some(p=>p.id===candidate))candidate=null;if(!candidate&&!newCandidate&&candidates.length)candidate=candidates[0].id;$('candidates').value=candidate??'';if(candidate)localStorage.setItem('selected-candidate',candidate);const nextSnapshot=candidate?await api.snapshot(candidate):null;if(version!==refreshVersion)return;snapshot=nextSnapshot;$('agent-state').textContent=snapshot?.active?.state??'Agent kapalı';if(snapshot?.active&&!snapshot.active.state)snapshot.active.state=observedStates.get(snapshot.active.sessionId);running=Boolean(snapshot?.active);$('heading').textContent=snapshot?`${snapshot.profile.name.split(' ')[0]}, sıradaki fırsatın.`:'Bir sonraki adımın.';backgroundUI.select(candidate);configUI.select(candidate);await selectTerminal(candidate);controls();renderBoard();renderSources();renderDocuments();renderActivity(true);setupUI.update(snapshot,catalog);}
+function documentActions(doc){
+ const actions=element('div','actions'),id=candidate,open=element('button','quiet','Aç ↗');open.onclick=attempt(()=>api.openDocument(id,doc.path));actions.append(open);
+ if(doc.preview){const preview=element('button','quiet','Önizle');preview.onclick=attempt(async()=>{const content=await api.readDocument(id,doc.path);if(id!==candidate)return;$('preview-name').textContent=doc.name;$('preview-content').textContent=content;$('document-preview').showModal();});actions.prepend(preview);}return actions;
+}
+function renderDocuments(){
+ $('document-list').replaceChildren();
+ for(const doc of snapshot?.documents??[]){const row=element('div','document-row'),info=element('div');info.append(element('strong','',doc.name),element('small','',`${doc.path} · ${new Date(doc.updatedAt).toLocaleString('tr-TR')} · ${Math.ceil(doc.size/1024)} KB`));row.append(info,documentActions(doc));$('document-list').append(row);}
+ if(!snapshot?.documents?.length)$('document-list').append(element('p','empty','Agent belge oluşturduğunda burada görünecek.'));
+ renderJobDocuments();
+}
+const modeLabels={find_only:'Sadece bul',prepare:'Hazırla',auto:'Otomatik gönder'};
+function sourceTime(value,empty='Sırada'){if(!value)return empty;return new Date(value).toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}
+function relativeTime(value,{past=false,now=Date.now()}={}){const at=new Date(value).getTime();if(!Number.isFinite(at))return null;const minutes=Math.round(Math.abs(now-at)/60000);const span=minutes<1?'az önce':minutes<60?`${minutes} dk`:minutes<1440?`${Math.round(minutes/60)} sa`:`${Math.round(minutes/1440)} gün`;if(minutes<1)return past?'az önce':'şimdi';return past?`${span} önce`:`${span} sonra`;}
+function sourceTone(source,result){if(result.scanning)return'scanning';if(!source.enabled)return'off';if(!source.lastRunAt)return'waiting';return source.lastFound?'found':'none';}
+let openSourceId=null;
+function sourceEditor(source){
+  const form=element('form','source-editor');form.dataset.sourceId=source.id;
+  form.innerHTML=`<label>Kaynak adı<input name="name" required maxlength="120"></label><label>Başlangıç adresi<input name="url" type="url" disabled></label><label class="source-query">Arama kapsamı<textarea name="query" required maxlength="2000"></textarea></label><div class="source-editor-foot"><label>Tarama aralığı<input name="intervalMinutes" type="number" min="1" max="10080" required></label><label>Başvuru modu<select name="applyMode"></select></label><button class="quiet source-remove" type="button">Kaynağı kaldır</button><button class="quiet" type="button" data-cancel>Vazgeç</button><button class="primary" type="submit">Kaydet</button></div>`;
+  const f=form.elements;for(const [value,label] of Object.entries(modeLabels))f.applyMode.append(new Option(label,value));
+  f.name.value=source.name;f.url.value=source.url;f.query.value=source.query;f.intervalMinutes.value=String(source.intervalMinutes);f.applyMode.value=source.applyMode;
+  form.querySelector('[data-cancel]').onclick=()=>{openSourceId=null;renderSources();};
+  form.querySelector('.source-remove').onclick=attempt(async()=>{if(!confirm(`${source.name} kaynağı kaldırılsın mı?`))return;await api.deleteSource(candidate,source.id);openSourceId=null;notice(`${source.name} kaldırıldı.`);await refresh();});
+  form.onsubmit=attempt(async event=>{event.preventDefault();const submit=form.querySelector('[type=submit]');submit.disabled=true;try{await api.saveSource(candidate,{...source,name:f.name.value,query:f.query.value,intervalMinutes:Number(f.intervalMinutes.value),applyMode:f.applyMode.value});openSourceId=null;notice(`${f.name.value} kaydedildi.`);await refresh();}finally{submit.disabled=false;}});
+  return form;
+}
+function renderSources(){
+  const body=$('source-rows');const draft=body.querySelector('.source-editor');const kept=draft&&draft.dataset.sourceId===openSourceId?Object.fromEntries(new FormData(draft)):null;body.replaceChildren();
+  const sources=snapshot?.sources??[],now=Date.now();
+  for(const source of sources){
+    const result=sourceResultView(source,snapshot?.campaign),tone=sourceTone(source,result),open=openSourceId===source.id;
+    const row=element('li','source-row');row.dataset.sourceId=source.id;row.dataset.tone=tone;row.dataset.open=String(open);
+    const enabled=element('input','switch');enabled.type='checkbox';enabled.checked=source.enabled;enabled.setAttribute('aria-label',`${source.name} aktif`);enabled.onchange=attempt(async()=>{enabled.disabled=true;try{await api.saveSource(candidate,{...source,enabled:enabled.checked});await refresh();}finally{enabled.disabled=false;}});
+    const main=element('div','source-main'),name=element('div','source-name',source.name),url=element('button','source-url',source.url.replace(/^https?:\/\/(www\.)?/,'').replace(/\/$/,''));url.type='button';url.title=source.url;url.onclick=attempt(()=>api.openLink(source.url));name.append(url);const scope=element('p','source-scope',source.query);scope.title=source.query;main.append(name,scope);
+    const plan=element('div','source-plan');plan.append(element('b','',`Her ${source.intervalMinutes} dk`),document.createTextNode(modeLabels[source.applyMode]??source.applyMode));
+    const status=element('div','source-status');status.append(element('b','',result.title));if(source.lastRunAt||result.scanning)status.append(element('small','',result.detail));
+    const timing=element('div','source-timing');const last=source.lastRunAt?`Son tarama ${relativeTime(source.lastRunAt,{past:true,now})}`:'Henüz taranmadı';const next=!source.enabled?'Kapalı':result.scanning?'Şu anda taranıyor':source.nextRunAt&&new Date(source.nextRunAt).getTime()>now?`Sonraki tarama ${relativeTime(source.nextRunAt,{now})}`:'Sıradaki tarama';timing.append(element('b','',next),document.createTextNode(last));if(source.lastRunAt)timing.title=`Son tarama ${sourceTime(source.lastRunAt)}`;
+    const edit=element('button','quiet source-edit',open?'Kapat':'Düzenle');edit.type='button';edit.setAttribute('aria-expanded',String(open));edit.setAttribute('aria-label',`${source.name} kaynağını ${open?'kapat':'düzenle'}`);edit.onclick=()=>{openSourceId=open?null:source.id;renderSources();if(!open)body.querySelector(`.source-editor[data-source-id="${source.id}"] input[name=name]`)?.focus();};
+    row.append(enabled,main,plan,status,timing,edit);
+    if(open){const editor=sourceEditor(source);if(kept){for(const [key,value] of Object.entries(kept))if(editor.elements[key]&&!editor.elements[key].disabled)editor.elements[key].value=value;}row.append(editor);}
+    body.append(row);
+  }
+  if(!sources.length){const empty=element('li','source-empty');empty.append(element('strong','','Henüz kaynak yok'),document.createTextNode('Agent’ın hangi sitelerde, ne sıklıkla ilan arayacağını burada belirlersin.'));const add=element('button','primary','Kaynak ekle');add.type='button';add.onclick=()=>openSourceAdd(true);empty.append(element('br'),add);body.append(empty);}
+  const on=sources.filter(s=>s.enabled),off=sources.length-on.length,running=snapshot?.campaign?.status==='running';const upcoming=running?on.map(s=>({s,at:new Date(s.nextRunAt||0).getTime()})).sort((a,b)=>a.at-b.at)[0]:null;
+  const summary=$('sources-summary');summary.replaceChildren();
+  if(!sources.length)summary.textContent='Agent yalnızca etkin kaynakları, belirlediğin aralıklarla tarar.';
+  else{summary.append(element('b','',`${on.length} etkin kaynak`),document.createTextNode(off?`, ${off} kapalı. `:'. '));if(upcoming){const scanningNow=sources.find(s=>sourceResultView(s,snapshot?.campaign).scanning);summary.append(document.createTextNode(scanningNow?`Şu anda taranıyor: ${scanningNow.name}.`:upcoming.at>now?`Sıradaki tarama ${relativeTime(upcoming.at,{now})}: ${upcoming.s.name}.`:`Sırada: ${upcoming.s.name}.`));}else summary.append(document.createTextNode(on.length?'Agent başlayınca etkin kaynaklar sırayla taranır.':'Taramanın başlaması için en az bir kaynağı aç.'));}
+  const policy=snapshot?.profile?.applicationPolicy??{};const form=$('application-policy');form.elements.autoFillKnown.checked=policy.autoFillKnown!==false;form.elements.acceptPrivacy.checked=Boolean(policy.acceptPrivacy);form.elements.groupRecruitmentConsent.checked=Boolean(policy.groupRecruitmentConsent);form.elements.demographic.value=policy.demographic??'prefer_not_to_say';form.elements.marketing.value=policy.marketing??'decline';form.elements.unknownImportant.value=policy.unknownImportant??'ask';form.elements.legalAgreements.value=policy.legalAgreements??'ask';
+}
+function openSourceAdd(show){const form=$('source-add');form.hidden=!show;$('source-add-toggle').setAttribute('aria-expanded',String(show));$('source-add-toggle').hidden=show;if(show)form.elements.name.focus();}
+$('source-add-toggle').onclick=()=>openSourceAdd($('source-add').hidden);
+$('source-add-cancel').onclick=()=>{$('source-add').reset();openSourceAdd(false);};
+$('source-add').onsubmit=attempt(async event=>{event.preventDefault();const form=event.currentTarget,fields=Object.fromEntries(new FormData(form)),submit=form.querySelector('[type=submit]');submit.disabled=true;try{await api.saveSource(candidate,{...fields,kind:'custom',enabled:true,intervalMinutes:Number(fields.intervalMinutes)});}finally{submit.disabled=false;}form.reset();form.elements.intervalMinutes.value='30';form.elements.applyMode.value='auto';openSourceAdd(false);await refresh();notice('Kaynak eklendi.');});
+$('application-policy').onsubmit=attempt(async event=>{event.preventDefault();const form=event.currentTarget;await api.saveApplicationPolicy(candidate,{autoFillKnown:form.elements.autoFillKnown.checked,acceptPrivacy:form.elements.acceptPrivacy.checked,groupRecruitmentConsent:form.elements.groupRecruitmentConsent.checked,demographic:form.elements.demographic.value,marketing:form.elements.marketing.value,unknownImportant:form.elements.unknownImportant.value,legalAgreements:form.elements.legalAgreements.value});await refresh();notice('Otomatik cevap kuralları kaydedildi.');});
+function renderJobDocuments(){
+ backgroundUI.renderJobSignals();
+ for(const host of $('jobs').querySelectorAll('[data-job-documents]')){
+  const docs=(snapshot?.documents??[]).filter(doc=>doc.path.split(/[\\/]/).slice(0,-1).some(part=>part===host.dataset.jobDocuments||part.endsWith('-'+host.dataset.jobDocuments)));
+  const opened=host.querySelector('details')?.open;host.replaceChildren();if(!docs.length)continue;
+  const detail=element('details','job-documents');detail.open=opened??false;detail.append(element('summary','',`Dosyalar (${docs.length})`));
+  for(const doc of docs){const row=element('div','job-document');row.append(element('span','',doc.name),documentActions(doc));detail.append(row);}host.append(detail);
+ }
+}
+$('close-preview').onclick=()=>{$('document-preview').close();};
+setInterval(async()=>{const id=candidate;if(!id)return;try{const docs=await api.documents(id);if(candidate===id&&snapshot&&JSON.stringify(snapshot.documents)!==JSON.stringify(docs)){snapshot.documents=docs;renderDocuments();}}catch(e){notice(e.message);}},5000);
+let currentActivity=null;
+function renderAgentStatus(){
+ const active=snapshot?.active?.candidateId===candidate?snapshot.active:null,state=active?.state;
+ let label='Kapalı',tone='neutral';
+ if(active){label=({Working:'Çalışıyor',Compacting:'Özetliyor',AwaitingInput:'Onay bekliyor',Idle:'Hazır',Failed:'Hata',Interrupted:'Kesildi'})[state]??'Bağlanıyor';tone=['Working','Compacting'].includes(state)?'active':['AwaitingInput','Failed','Interrupted'].includes(state)?'waiting':'neutral';if(state==='Idle'&&(snapshot?.questions??[]).some(q=>q.answer===null)){label='Yanıt bekliyor';tone='waiting';}}
+ else if(snapshot?.campaign?.status==='paused')label='Duraklatıldı';
+ const badge=$('agent-nav-status');badge.textContent=label;badge.dataset.tone=tone;badge.parentElement.setAttribute('aria-label',`Agent, ${label}`);badge.parentElement.title=`Agent: ${label}`;
+}
+function renderActivity(history=false){
+  renderAgentStatus();
+  currentActivity=activityView(snapshot);
+  const view=currentActivity;$('now-title').textContent=view.title;$('now-detail').textContent=view.detail;$('now-state').textContent=view.state;$('now-panel').dataset.tone=view.tone;
+  $('now-age').textContent=ageLabel(view.at);$('now-age').title=view.at?new Date(view.at).toLocaleString('tr-TR'):'';
+  $('now-link').hidden=!view.url;$('now-write').disabled=!view.canWrite;$('now-pause').disabled=busy||!view.canPause;
+  if(history){$('now-events').replaceChildren(...view.history.map(e=>{const row=element('li');const time=element('time','',new Date(e.at).toLocaleTimeString('tr-TR'));const label=e.kind==='agent_activity'?e.data.message:e.kind==='question_asked'?e.data.question:e.kind==='question_answered'?'Kullanıcı yanıtı kaydedildi':e.kind==='submission_recorded'?`${e.data.company}: gönderim onayı kaydedildi`:e.kind==='job_found'?`${e.data.company} · ${e.data.role}: ilan bulundu`:`${e.data.company}: ${e.data.note??names[e.data.status]}`;row.append(time,element('span','',label));return row;}));if(!view.history.length)$('now-events').append(element('li','','Henüz kaydedilmiş işlem yok.'));}
+}
+$('now-link').onclick=attempt(()=>currentActivity?.url&&api.openLink(currentActivity.url));
+$('now-write').onclick=()=>{$('terminal').scrollIntoView({behavior:'smooth',block:'center'});surface.focus();};
+$('now-pause').onclick=()=>{$('pause').click();};
+setInterval(()=>{renderActivity();},1000);
+let questionRenderKey='';
+function renderQuestionBadge(){const count=(snapshot?.questions??[]).filter(q=>q.answer===null).length,badge=$('question-badge'),button=badge.parentElement;badge.hidden=count===0;badge.textContent=String(count);button.setAttribute('aria-label',count?`Başvurular, ${count} yanıt bekleyen soru`:'Başvurular');button.title=count?`${count} soru yanıtını bekliyor`:'Başvurular';}
+function renderPipeline(campaign,jobs){
+  const status=$('campaign-status');status.replaceChildren();$('pipeline').dataset.status=campaign?.status??'off';
+  if(!campaign)status.append(element('b','','Kampanya kapalı'),document.createTextNode(snapshot?' Agent’ı başlatınca kaynaklar taranır ve başvurular buraya düşer.':''));
+  else{const title={running:'Çalışıyor',paused:'Duraklatıldı',stopped:'Durduruldu',complete:'Hedef tamamlandı'}[campaign.status]??campaign.status;const next=campaign.status==='running'&&!campaign.task&&campaign.nextSearchAt>Date.now()?` Sonraki tarama ${relativeTime(campaign.nextSearchAt)}.`:'';status.append(element('b','',title),document.createTextNode(` ${campaign.note}${/[.!?]$/.test(campaign.note)?'':'.'}${next}`));}
+  const count=keys=>jobs.filter(j=>keys.includes(j.status)).length,groups=[['submitted',count(['submitted']),'gönderildi'],['working',count(['working','prepared','submitting']),'devam ediyor'],['waiting',count(['blocked','uncertain']),'bekliyor'],['found',count(['found']),'sırada']],skipped=count(['skipped']);
+  const target=campaign?.target??(Number($('campaign-target').value)||0),scale=Math.max(target,jobs.length-skipped,1);
+  const bar=element('div','pipeline-bar');bar.setAttribute('role','img');bar.setAttribute('aria-label',`${groups[0][1]} gönderildi, hedef ${target}`);for(const [key,value] of groups){if(!value)continue;const seg=element('span');seg.dataset.key=key;seg.style.flex=`0 0 ${(value/scale*100).toFixed(2)}%`;bar.append(seg);}
+  const legend=element('div','pipeline-legend');for(const [key,value,label] of groups){const item=element('span');item.dataset.key=key;item.append(element('b','',String(value)),document.createTextNode(` ${label}`));legend.append(item);}if(skipped){const item=element('span');item.dataset.key='skipped';item.append(element('b','',String(skipped)),document.createTextNode(' elendi'));legend.append(item);}
+  const goal=element('span','pipeline-target',target?`${jobs.length} ilan, hedef ${target} başvuru`:`${jobs.length} ilan`);legend.append(goal);
+  $('metrics').replaceChildren(bar,legend);
+}
+function renderBoard(){const campaign=snapshot?.campaign,jobs=snapshot?.jobs??[];renderPipeline(campaign,jobs);
+  const questionKey=JSON.stringify([candidate,snapshot?.questions]);if(questionKey!==questionRenderKey){questionRenderKey=questionKey;$('questions').replaceChildren();for(const q of snapshot?.questions??[]){if(q.answer!==null)continue;const owner=candidate,card=element('div','question');card.append(element('strong','','Agent’ın bir sorusu var'));if(q.fields)card.append(element('p','',q.question));const job=snapshot.jobs.find(j=>j.id===q.jobId);if(job)card.append(element('small','',`${job.company} · ${job.role}${job.resumeContext?' · '+job.resumeContext.step:''}`));card.append(questionForm(owner,q,async values=>{await api.answer(owner,q.id,values);notice('Yanıtlar kaydedildi. Agent bu başvuruya döndüğünde kullanacak.');await refresh();}));$('questions').append(card);}}
+
+  const filter=$('filter').value;const filtered=jobs.filter(j=>(filter==='all'||filter===j.status||filter==='blocked'&&j.status==='uncertain'||filter==='working'&&['prepared','submitting'].includes(j.status))&&matchesJobSearch(j)),visible=sortJobs(filtered);$('jobs').replaceChildren();
+  if(!visible.length){const searching=Boolean(jobSearch.value.trim()),empty=element('div','empty');empty.append(element('strong','',searching?'Aramana uygun ilan bulunamadı.':'Yeni fırsatlara yer aç.'),element('span','',searching?'Farklı bir kelime dene veya aramayı temizle.':snapshot?'Agent ilan buldukça burada görünecek. Başvuruların her adımını buradan takip edebilirsin.':'Önce aday profilini oluştur. CV, tercihler ve başvuru yetkisiyle başlayalım.'));$('jobs').append(empty);}
+  if(visible.length){const wrap=element('div','jobs-table-wrap'),table=element('table','jobs-table'),head=element('thead'),header=element('tr');for(const label of ['Şirket','Pozisyon','Konum','Durum','Son aktivite','İşlemler'])header.append(element('th','',label));head.append(header);table.append(head);const body=element('tbody');for(const j of visible){const row=element('tr'),company=element('td','company-cell',j.company),role=element('td','role-cell'),location=element('td','location-cell',j.location),status=element('td'),actionsCell=element('td','actions-cell'),actions=element('div','table-actions');actionsCell.append(actions);role.append(element('strong','',j.role));if(j.note){const note=element('p','job-note',j.note);note.title=j.note;role.append(note);}const detail=element('details','job-details');detail.append(element('summary','','Neden uygun'),element('p','',j.fit));if(j.resumeContext&&!['submitted','skipped'].includes(j.status))detail.append(element('p','note',`Kaldığı adım: ${j.resumeContext.step} · Sekme: ${j.resumeContext.tabId}`));if(j.proof)detail.append(element('pre','proof',`${j.proof.text}\n\nBelgeler: ${j.proof.documents}\n${j.proof.url}`));role.append(detail);const mails=element('div');mails.dataset.jobMails=j.id;role.append(mails);const documents=element('div');documents.dataset.jobDocuments=j.id;role.append(documents);status.append(element('span',`badge ${j.status}`,names[j.status]));const link=element('button','quiet','Aç ↗');link.title='İlanı tarayıcıda aç';link.setAttribute('aria-label',`${j.company} ilanını aç`);link.onclick=attempt(()=>api.openLink(j.url));actions.append(link);if(['blocked','uncertain'].includes(j.status)&&snapshot.active?.candidateId===candidate&&j.sessionId!==snapshot.active.sessionId){const take=element('button','quiet','Devral');take.onclick=attempt(async()=>{await api.reclaim(candidate,j.id);await refresh();});actions.append(take);}const updated=element('td','activity-cell',j.updatedAt?relativeTime(j.updatedAt,{past:true}):'—');updated.title=j.updatedAt?`Son güncelleme ${new Date(j.updatedAt).toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}`:'Başvuru kaydının son güncellenme zamanı';row.append(company,role,location,status,updated,actionsCell);body.append(row);}table.append(body);wrap.append(table);$('jobs').append(wrap);}
+  updateJobHeaders();updateJobPagination();renderJobDocuments();
+}
+function sortJobs(jobs){
+  if(!jobSort.key)return jobs;
+  const collator=new Intl.Collator('tr',{numeric:true,sensitivity:'base'}),value=job=>jobSort.key==='status'?(names[job.status]??job.status):(job[jobSort.key]??'');
+  return jobs.map((job,index)=>({job,index})).sort((a,b)=>{const result=jobSort.key==='updatedAt'?(Date.parse(a.job.updatedAt)||0)-(Date.parse(b.job.updatedAt)||0):collator.compare(value(a.job),value(b.job));return result?result*(jobSort.direction==='asc'?1:-1):a.index-b.index;}).map(item=>item.job);
+}
+function matchesJobSearch(job){const query=jobSearch.value.trim().toLocaleLowerCase('tr-TR');if(!query)return true;return [job.company,job.role,job.location,names[job.status]??job.status].some(value=>String(value??'').toLocaleLowerCase('tr-TR').includes(query));}
+function updateJobHeaders(){
+  const headers=[...$('jobs').querySelectorAll('.jobs-table th')],keys=['company','role','location','status','updatedAt'];
+  headers.forEach((header,index)=>{const key=keys[index];if(!key)return;const label=header.textContent,active=jobSort.key===key;header.setAttribute('aria-sort',active?(jobSort.direction==='asc'?'ascending':'descending'):'none');const button=element('button','sort-button',`${label}${active?(jobSort.direction==='asc'?' ↑':' ↓'):''}`);button.onclick=()=>{jobSort=active?{key,direction:jobSort.direction==='asc'?'desc':'asc'}:{key,direction:key==='updatedAt'?'desc':'asc'};jobPage=1;renderBoard();};header.replaceChildren(button);});
+}
+function updateJobPagination(){
+  const wrap=$('jobs').querySelector('.jobs-table-wrap');if(!wrap)return;
+  const rows=[...wrap.querySelectorAll('tbody tr')],pages=Math.max(1,Math.ceil(rows.length/JOBS_PER_PAGE));jobPage=Math.min(Math.max(jobPage,1),pages);
+  rows.forEach((row,index)=>{row.hidden=index<(jobPage-1)*JOBS_PER_PAGE||index>=jobPage*JOBS_PER_PAGE;});
+  $('jobs').querySelector('.jobs-pagination')?.remove();
+  const pagination=element('nav','jobs-pagination');pagination.setAttribute('aria-label','İlan sayfaları');
+  const count=element('span','pagination-count',`${rows.length} ilan · ${jobPage}/${pages}. sayfa`),previous=element('button','quiet','← Önceki'),next=element('button','quiet','Sonraki →');
+  previous.disabled=jobPage===1;previous.onclick=()=>{jobPage--;updateJobPagination();};
+  const pageButtons=element('div','pagination-pages');
+  for(let page=1;page<=pages;page++){const button=element('button',page===jobPage?'current':'',String(page));button.setAttribute('aria-label',`${page}. sayfa`);if(page===jobPage)button.setAttribute('aria-current','page');button.onclick=()=>{jobPage=page;updateJobPagination();};pageButtons.append(button);}
+  next.disabled=jobPage===pages;next.onclick=()=>{jobPage++;updateJobPagination();};
+  pagination.append(count,previous,pageButtons,next);$('jobs').append(pagination);
+}
+$('profile-form').onsubmit=attempt(async e=>{e.preventDefault();const fields=Object.fromEntries(new FormData(e.target));fields.agentSettings={provider:fields.provider,model:fields.model,permission:fields.permission,reasoning:fields.reasoning,network:fields.provider!=='codex'||fields.network==='inherit'?null:fields.network==='true'};for(const key of ['provider','model','permission','reasoning','network'])delete fields[key];if(candidate)fields.id=candidate;const p=await api.saveProfile(fields);candidate=p.id;await refresh();fillProfile();notice('Profil kaydedildi.');});
+$('cv').onclick=attempt(async()=>{if(!candidate)throw Error('Önce profili kaydet');await api.pickCv(candidate);await refresh();fillProfile();});
+$('new').onclick=attempt(async()=>{busy=true;controls();try{newCandidate=true;candidate=null;snapshot=null;running=false;await selectTerminal(null);setupUI.reset();renderDocuments();$('document-preview').close();jobPage=1;$('candidates').value='';fillProfile();renderActivity(true);switchView('profile');}finally{busy=false;controls();}});
+$('candidates').onchange=attempt(async()=>{
+ const next=$('candidates').value||null;if(next===candidate)return;
+ if(!next){$('new').click();return;}
+ busy=true;controls();
+ try{
+  
+  candidate=next;newCandidate=false;$('document-preview').close();jobPage=1;
+  surface.write(new TextEncoder().encode('\x1b[2J\x1b[3J\x1b[H'),()=>{});
+  $('agent-state').textContent='Agent kapalı';
+ }finally{busy=false;await refresh();fillProfile();}
+});
+$('start').onclick=attempt(async()=>{busy=true;controls();notice('');try{await api.start(candidate,{target:Number($('campaign-target').value),intervalMinutes:Number($('campaign-interval').value)});$('agent-state').textContent='Agent başlatıldı';switchView('agent');}finally{busy=false;await refresh();}});
+$('pause').onclick=attempt(async()=>{busy=true;controls();try{await api.pause(candidate);$('agent-state').textContent='Duraklatıldı';}finally{busy=false;await refresh();}});
+$('stop').onclick=attempt(async()=>{busy=true;controls();try{await api.stop(candidate);$('agent-state').textContent='Agent durduruldu';}finally{busy=false;await refresh();}});
+$('filter').onchange=()=>{jobPage=1;renderBoard();};
+jobSearch.oninput=()=>{jobPage=1;renderBoard();};
+for(const b of document.querySelectorAll('aside nav button[data-view]'))b.onclick=()=>{switchView(b.dataset.view);if(b.dataset.view==='profile')fillProfile();};
+api.onChange(event=>{if(event.candidateId&&event.candidateId!==candidate)return;refresh().catch(e=>notice(e.message));});
+api.onAgentEvent(event=>{if(event.candidateId&&event.candidateId!==candidate)return;if(event.event==='output'){if(terminalLoading)terminalPending.push(event);else surface.write(new Uint8Array(event.bytes),()=>{});}else if(event.event==='state'){const state=event.state.replace(/^Some\((.*)\)$/,'$1');$('agent-state').textContent=state;if(event.sessionId)observedStates.set(event.sessionId,state);if(snapshot?.active&&(!event.sessionId||snapshot.active.sessionId===event.sessionId))snapshot.active.state=state;renderActivity();}else if(['engine_exit','eof'].includes(event.event)){$('agent-state').textContent='Agent kapalı';if(snapshot?.active&&(!event.sessionId||event.sessionId===snapshot.active.sessionId))snapshot.active=null;running=false;controls();}else if(event.event==='error')notice(event.error);else if(event.event==='gap')surface.writeln('\r\n[Terminal çıktısının bir kısmı atlandı]');});
+catalog=await api.catalog();$('provider').replaceChildren(...catalog.map(a=>{const o=new Option(a.label+(a.supported?'':' — MCP henüz yok'),a.id);o.disabled=!a.supported;return o;}));$('provider').onchange=()=>settingsOptions();
+await refresh();fillProfile();if(!candidate)switchView('profile');setupUI.update(snapshot,catalog);
