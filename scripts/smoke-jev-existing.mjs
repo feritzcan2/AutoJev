@@ -1,0 +1,44 @@
+// Existing Chrome contract: shared login, separate windows, scoped tabs, safe disconnect.
+import assert from 'node:assert/strict';
+import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {createRequire} from 'node:module';
+import os from 'node:os';
+import path from 'node:path';
+import {JevBrowser} from '../app/jev-browser.mjs';
+import {startJevFixture} from './jev-demo.mjs';
+const require=createRequire(import.meta.url),{chromium}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
+const directory=await mkdtemp(path.join(os.tmpdir(),'jev-existing-test-')),fixture=await startJevFixture();
+const context=await chromium.launchPersistentContext(directory,{channel:'chrome',headless:true,args:['--remote-debugging-port=0']});
+const browser=context.browser(),root=await browser.newBrowserCDPSession(),personal=context.pages()[0];
+await personal.goto(fixture.url);await context.addCookies([{name:'test_login',value:'existing-session',url:fixture.url}]);
+const session=await context.newCDPSession(personal),{targetInfo}=await session.send('Target.getTargetInfo');
+const [port,route]=(await readFile(path.join(directory,'DevToolsActivePort'),'utf8')).trim().split('\n');
+const endpoint=async()=>`ws://127.0.0.1:${port}${route}`;
+let windowRequests=0,failFirst=true;
+const openWindow=async url=>{windowRequests++;await root.send('Target.createTarget',{url,newWindow:true,browserContextId:targetInfo.browserContextId});};
+const a=new JevBrowser(directory,{endpoint:async()=>{if(failFirst){failFirst=false;return 'ws://127.0.0.1:1/devtools/browser/unavailable';}return endpoint();},openWindow}),b=new JevBrowser(directory,{endpoint,openWindow});
+const call=async(client,name,args={})=>JSON.parse((await client.callTool({name,arguments:args})).content[0].text);
+try{
+ assert.deepEqual((await call(a,'browser_jev_tabs')).tabs,[]);assert.equal(windowRequests,0);
+ await assert.rejects(()=>call(a,'browser_jev_open',{url:fixture.url}),/hedef siteye henüz gidilmedi/);
+ assert.deepEqual((await call(a,'browser_jev_tabs')).tabs,[]);assert.equal(windowRequests,1);
+ const first=await call(a,'browser_jev_open',{url:fixture.url});
+ assert.equal(windowRequests,1);
+ assert.equal(await a.tab(first.tabId).page.evaluate(()=>document.cookie),'test_login=existing-session');
+ const screenshot=await a.callTool({name:'browser_jev_screenshot',arguments:{tabId:first.tabId}});
+ assert.equal(screenshot.content[1].mimeType,'image/png');
+ assert.equal(Buffer.from(screenshot.content[1].data,'base64').subarray(0,8).toString('hex'),'89504e470d0a1a0a');
+ const second=await call(a,'browser_jev_open',{url:fixture.url});
+ const third=await call(b,'browser_jev_open',{url:fixture.url});
+ const windows=await Promise.all([targetInfo.targetId,first.tabId,second.tabId,third.tabId].map(targetId=>root.send('Browser.getWindowForTarget',{targetId})));
+ assert.equal(new Set(windows.map(w=>w.windowId)).size,4);
+ assert.deepEqual((await call(a,'browser_jev_tabs')).tabs.map(t=>t.tabId).sort(),[first.tabId,second.tabId].sort());
+ assert.deepEqual((await call(b,'browser_jev_tabs')).tabs.map(t=>t.tabId),[third.tabId]);
+ await assert.rejects(()=>call(a,'browser_jev_observe',{tabId:targetInfo.targetId}),/bulunamadı/);
+ await assert.rejects(()=>call(b,'browser_jev_observe',{tabId:first.tabId}),/bulunamadı/);
+ await assert.rejects(()=>b.callTool({name:'browser_jev_screenshot',arguments:{tabId:first.tabId}}),/bulunamadı/);
+ await a.close();await b.close();
+ assert.equal(personal.isClosed(),false);assert.equal(personal.url(),fixture.url);
+ assert.equal((await root.send('Target.getTargets')).targetInfos.filter(t=>[first.tabId,second.tabId,third.tabId].includes(t.targetId)).length,3);
+ console.log('JEV_EXISTING_LOGIN_NEW_WINDOWS_SCOPE_DISCONNECT_PASS');
+}finally{await a.close().catch(()=>{});await b.close().catch(()=>{});await context.close();await fixture.close();await rm(directory,{recursive:true,force:true});}

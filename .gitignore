@@ -5,3 +5,4 @@ engine/target/
 *.sqlite*
 
 **/node_modules/
+.env.jev

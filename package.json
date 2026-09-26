@@ -14,7 +14,11 @@
     "bootstrap": "node scripts/bootstrap.mjs",
     "test:ui": "node scripts/smoke-ui.mjs",
     "test:agent": "node scripts/smoke-agent.mjs",
-    "sources:install": "node scripts/install-source-tools.mjs"
+    "demo:jev": "pnpm build && pnpm engine:build && node scripts/jev-demo.mjs",
+    "test:jev": "node scripts/smoke-jev.mjs",
+    "test:jev:live": "node scripts/smoke-jev.mjs --live",
+    "sources:install": "node scripts/install-source-tools.mjs",
+    "test:jev:existing": "node scripts/smoke-jev-existing.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.1",

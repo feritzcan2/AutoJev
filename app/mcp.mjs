@@ -66,7 +66,7 @@ export async function startMcp(store,onChange=()=>{},onHook=async()=>({accepted:
     try{
       const name=rpc.params?.name;
       if(custom){const definition=custom.tools.find(t=>t.name===name);if(!definition)throw Error('Unknown tool');const args=rpc.params.arguments??{};validate(definition.inputSchema,args);const value=await custom.call(candidateId,sessionId,name,args);return result({content:[{type:'text',text:JSON.stringify(value)}]});}
-      const definition=tools.find(t=>t.name===name);if(!definition){if(browser&&rpc.params.name.startsWith('browser_'))return result(await browser.call(candidateId,rpc.params.name,rpc.params.arguments??{}));throw Error('Unknown tool');}
+      const definition=tools.find(t=>t.name===name);if(!definition){if(browser&&name?.startsWith('browser_'))return result(await browser.call(candidateId,name,rpc.params.arguments??{},sessionId));throw Error('Unknown tool');}
       if(store.setup(candidateId)&&store.setup(candidateId).status!=='complete'&&['add_job','update_application','record_submission','report_campaign_work'].includes(name))throw Error('Complete setup before job search or applications');
       const a=rpc.params.arguments??{};validate(definition.inputSchema,a);let value;
       switch(name){

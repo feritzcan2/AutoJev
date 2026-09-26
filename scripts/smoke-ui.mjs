@@ -26,6 +26,13 @@ try{
  await page.reload();
  await page.locator('button[data-view=agent]').click();
  await page.waitForFunction(()=>document.querySelector('#model').value==='gpt-5.6-sol'&&document.querySelector('#permission').value==='plan'&&document.querySelector('#reasoning').value==='high');
+ await page.locator('[name=browserMode]').selectOption('jev');
+ await page.locator('#chrome-profile-field').waitFor({state:'visible'});
+ await page.waitForFunction(()=>document.querySelector('#agent-settings-status').textContent.startsWith('Kaydedildi'));
+ await page.reload();await page.locator('button[data-view=agent]').click();
+ if(await page.locator('[name=browserMode]').inputValue()!=='jev')throw Error('Jev selection was not persisted');
+ const jevProfile=await page.evaluate(async()=>{const c=(await window.jobloop.candidates())[0];return window.jobloop.snapshot(c.id);});
+ if(jevProfile.profile.authorization!=='research'||jevProfile.profile.preferences!=='Berlin hybrid, legal operations')throw Error('Browser selection changed candidate scope');
  await page.locator('#provider').selectOption('claude');
  await page.locator('#model').selectOption('sonnet');
  await page.locator('#permission').selectOption('acceptEdits');

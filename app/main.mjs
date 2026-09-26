@@ -29,7 +29,7 @@ await app.whenReady();
 const data=app.getPath('userData');await mkdir(data,{recursive:true,mode:0o700});
 const store=new Store(path.join(data,'jobloop.sqlite'));
 for(const candidate of store.candidates())for(const sessionId of new Set(store.jobs(candidate.id).map(j=>j.sessionId).filter(Boolean)))store.recoverSession(candidate.id,sessionId);
-const browser=new BrowserTools(data,id=>store.profile(id).browserMode);
+const browser=new BrowserTools(data,id=>store.profile(id).browserMode,id=>({profile:store.profile(id).chromeProfile}));
 let window,quitting=false;
 const engines=new Map(),sessions=new Map(),starting=new Set(),terminalOutputs=new Map(),terminalSequences=new Map();
 let terminalGrid={rows:24,cols:80};
@@ -131,10 +131,11 @@ handle('prompts',id=>{store.profile(id);return store.prompts(id);});
 handle('terminal-resize',async(id,rows,cols)=>{if(!Number.isInteger(rows)||!Number.isInteger(cols)||rows<4||rows>1024||cols<20||cols>4096)return;terminalGrid={rows,cols};if(sessions.has(id)&&!starting.has(id))await engines.get(id).request('resize',terminalGrid);});
 handle('answer',async(candidateId,id,answer)=>{const result=store.answer(candidateId,id,answer);campaigns.answered(candidateId,id);setups.answered(candidateId);emit('changed',{});await campaigns.tick();await setups.tick();return{...result,delivery:'saved'};});
 handle('reclaim',(candidateId,id)=>{const active=sessions.get(candidateId);if(!active)throw Error('Bu adayın agent oturumunu başlat');const result=store.reclaim(candidateId,id,active.sessionId);emit('changed',{});return result;});
-handle('open-source-tab',(candidateId,sourceId)=>focusApplicationTab(store.source(candidateId,sourceId).resumeContext));
-handle('open-application-tab',(candidateId,jobId)=>focusApplicationTab(store.job(candidateId,jobId).resumeContext));
+const focusTab=(id,context)=>context?.browser==='Jev Chrome'?browser.focus(id,context):focusApplicationTab(context);
+handle('open-source-tab',(candidateId,sourceId)=>focusTab(candidateId,store.source(candidateId,sourceId).resumeContext));
+handle('open-application-tab',(candidateId,jobId)=>focusTab(candidateId,store.job(candidateId,jobId).resumeContext));
 handle('recover-question',(candidateId,questionId)=>campaigns.recoverQuestion(candidateId,questionId));
-handle('open-question-tab',async(candidateId,questionId)=>{const q=store.questions(candidateId).find(q=>q.id===questionId);if(!q?.jobId)throw Error('Soruya bağlı ilan bulunamadı');try{return await focusApplicationTab(store.job(candidateId,q.jobId).resumeContext);}catch(error){if(error.code!=='TAB_MISSING')throw error;return campaigns.recoverQuestion(candidateId,questionId);}});
+handle('open-question-tab',async(candidateId,questionId)=>{const q=store.questions(candidateId).find(q=>q.id===questionId);if(!q?.jobId)throw Error('Soruya bağlı ilan bulunamadı');try{return await focusTab(candidateId,store.job(candidateId,q.jobId).resumeContext);}catch(error){if(error.code!=='TAB_MISSING')throw error;return campaigns.recoverQuestion(candidateId,questionId);}});
 handle('open-link',async url=>{const u=new URL(url);if(!['https:','http:'].includes(u.protocol))throw Error('Geçersiz bağlantı');await shell.openExternal(u.toString());});
 mobile=new MobileAccess({data,dist:path.join(root,'dist'),handlers,log:error=>console.error('[mobile]',error),
   documentFile:(id,file)=>{store.profile(id);return documentPath(path.join(data,'candidates',id),file);},

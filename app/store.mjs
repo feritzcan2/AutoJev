@@ -68,7 +68,7 @@ export class Store {
     const scope=input.authorization??previous.authorization??'prepare';
     if(!['research','prepare','submit'].includes(scope))throw Error('Geçersiz başvuru yetkisi');
     const settings=input.agentSettings??previous.agentSettings??{provider:'codex',model:'default',permission:'default',reasoning:'default',network:null};
-    if(!['existing','separate'].includes(input.browserMode??previous.browserMode??'existing'))throw Error('Geçersiz tarayıcı seçimi');
+    if(!['existing','separate','jev'].includes(input.browserMode??previous.browserMode??'existing'))throw Error('Geçersiz tarayıcı seçimi');
     let chromeProfile=input.chromeProfile===undefined?previous.chromeProfile??null:input.chromeProfile;
     if(chromeProfile!==null){
       if(typeof chromeProfile!=='object'||!/^[-\w ]{1,100}$/.test(chromeProfile.directory??''))throw Error('Geçersiz Chrome profili');
