@@ -3,7 +3,7 @@ import {Store} from '../app/store.mjs';import {startMcp} from '../app/mcp.mjs';
 test('application questions require real blockers and cannot request already-granted submission consent',async()=>{
  const store=new Store(':memory:'),p=store.saveProfile({name:'Test',preferences:'Berlin',authorization:'submit'}),job=store.addJob(p.id,{company:'Example',role:'Developer',location:'Berlin',fit:'Test',url:'https://example.test/job'}).job;
  const mcp=await startMcp(store,()=>{},async()=>({}),null,{get:()=>({task:{jobId:job.id}})}),token=mcp.grant(p.id,'session');
- const call=async args=>{const response=await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'ask_candidate',arguments:args}})});return(await response.json()).result;};
+ const call=async args=>{await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'list_applications',arguments:{}}})});if(args.applicationBlocker)args={...args,applicationBlocker:{...args.applicationBlocker,review:{cvChecked:'No CV present',missingFacts:[{key:'application_specific',gap:'Observed required field unanswered'}]}}};const response=await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'ask_candidate',arguments:args}})});return(await response.json()).result;};
  try{
   assert.equal((await call({question:'Strong Java expertise?'})).isError,true);
   const approval={question:'May I submit?',applicationBlocker:{kind:'uncovered_consent',consentScope:'submission',evidence:'Submit application',reasonUnknown:'Approval'}};
@@ -13,4 +13,47 @@ test('application questions require real blockers and cannot request already-gra
   store.saveApplicationPolicy(p.id,{...store.profile(p.id).applicationPolicy,groupRecruitmentConsent:true});assert.equal((await call({...approval,applicationBlocker:{...approval.applicationBlocker,consentScope:'group_recruitment'}})).isError,true);
   store.saveProfile({...store.profile(p.id),authorization:'prepare'});assert.notEqual((await call(approval)).isError,true);assert.equal(store.profile(p.id).authorization,'prepare');
  }finally{await mcp.close();store.close();}
+});
+
+import {questionKnowledge,validateQuestionReview} from '../app/question-gate.mjs';
+test('question review rejects stale reads, known facts and untried manual-entry requests',()=>{
+ const store=new Store(':memory:');
+ try{
+  const p=store.saveProfile({name:'Test',preferences:'Berlin',facts:'Email: test@example.test'});
+  store.rememberFact(p.id,{key:'contact',value:'test@example.test',source:'profile',sourceId:p.id,evidence:'test@example.test'});
+  const review={cvChecked:'No CV present',missingFacts:[{key:'contact',gap:'Email required'}]};
+  const input={applicationBlocker:{kind:'required_form_field',review}};
+  assert.throws(()=>validateQuestionReview(store,p.id,input,null),/list_applications/);
+  const read=questionKnowledge(store,p.id);
+  assert.throws(()=>validateQuestionReview(store,p.id,input,read),/kayıtlı bilgi/);
+  review.missingFacts[0].knownValueGap='Saved email present; mandatory LinkedIn URL absent';
+  assert.doesNotThrow(()=>validateQuestionReview(store,p.id,input,read));
+  input.applicationBlocker.kind='access';
+  assert.throws(()=>validateQuestionReview(store,p.id,input,read),/userActionReason/);
+  input.applicationBlocker.recovery={kind:'form_entry',userActionReason:'Field clears both tool inputs; user can type in saved tab',attempts:[{method:'fill and blur',result:'empty'}]};
+  assert.throws(()=>validateQuestionReview(store,p.id,input,read),/screenshot/);
+  input.applicationBlocker.recovery.visualCheck={method:'screenshot',result:'empty',evidence:'Email visibly empty after blur'};
+  assert.throws(()=>validateQuestionReview(store,p.id,input,read),/iki farklı/);
+  input.applicationBlocker.recovery.attempts.push({method:'keyboard type and blur',result:'empty'});
+  assert.doesNotThrow(()=>validateQuestionReview(store,p.id,input,read));
+  input.applicationBlocker.recovery={kind:'user_only',userActionReason:'Observed MFA requires user code'};
+  assert.doesNotThrow(()=>validateQuestionReview(store,p.id,input,read));
+  const q=store.ask(p.id,{question:'New correction'});store.answer(p.id,q.id,'New email');
+  assert.throws(()=>validateQuestionReview(store,p.id,input,read),/list_applications/);
+  const other=store.saveProfile({name:'Other',preferences:'Remote'});
+  assert.throws(()=>validateQuestionReview(store,other.id,input,read),/list_applications/);
+ }finally{store.close();}
+});
+
+test('technical resolution is candidate scoped and never fabricates an answer or consent',()=>{
+ const store=new Store(':memory:');try{
+  const p=store.saveProfile({name:'Test',preferences:'Remote'}),other=store.saveProfile({name:'Other',preferences:'Remote'});
+  const q=store.ask(p.id,{question:'Type email',applicationBlocker:{kind:'access',recovery:{kind:'form_entry'}}});
+  assert.throws(()=>store.resolveTechnicalQuestion(other.id,q.id,'Visible value'));
+  store.resolveTechnicalQuestion(p.id,q.id,'Screenshot confirms email visibly filled despite masked DOM');
+  assert.equal(store.questions(p.id).length,0);
+  assert.equal(store.db.prepare('SELECT answer FROM questions WHERE id=?').get(q.id).answer,null);
+  const consent=store.ask(p.id,{question:'Consent?',applicationBlocker:{kind:'uncovered_consent'}});
+  assert.throws(()=>store.resolveTechnicalQuestion(p.id,consent.id,'Assumed'));
+ }finally{store.close();}
 });

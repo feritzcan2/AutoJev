@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#1e2325"/>
+  <rect x="56" y="56" width="400" height="400" rx="104" fill="#23303c"/>
+  <rect x="57.5" y="57.5" width="397" height="397" rx="102.5" fill="none" stroke="#66b3ff" stroke-opacity=".35" stroke-width="3"/>
+  <text x="262" y="356" text-anchor="middle" font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="300" font-weight="700" letter-spacing="-12" fill="#8ec8ff">j.</text>
+</svg>

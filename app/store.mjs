@@ -44,7 +44,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT, candidate_id TEXT NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL, at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS prompts(seq INTEGER PRIMARY KEY AUTOINCREMENT, candidate_id TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, job_id TEXT, session_id TEXT, at TEXT NOT NULL);`);
     const columns=this.db.prepare('PRAGMA table_info(questions)').all().map(c=>c.name);
-    for(const column of ['fields','answer_values','application_blocker'])if(!columns.includes(column))this.db.exec(`ALTER TABLE questions ADD COLUMN ${column} TEXT`);
+    for(const column of ['fields','answer_values','application_blocker','resolution'])if(!columns.includes(column))this.db.exec(`ALTER TABLE questions ADD COLUMN ${column} TEXT`);
   }
   logPrompt(candidate,{kind,text,jobId=null,sessionId=null}){if(!['start','message','input'].includes(kind))throw Error('Geçersiz prompt türü');this.db.prepare('INSERT INTO prompts(candidate_id,kind,text,job_id,session_id,at) VALUES(?,?,?,?,?,?)').run(candidate,kind,String(text),jobId,sessionId,new Date().toISOString());}
   prompts(candidate,limit=200){return this.db.prepare('SELECT seq,kind,text,job_id AS jobId,session_id AS sessionId,at FROM prompts WHERE candidate_id=? ORDER BY seq DESC LIMIT ?').all(candidate,limit);}
@@ -58,6 +58,7 @@ export class Store {
     this.event(candidate,'agent_activity',value);return value;
   }
   conversation(id,provider){this.profile(id);return this.db.prepare('SELECT native_id FROM agent_conversations WHERE candidate_id=? AND provider=?').get(id,provider)?.native_id??null;}
+  forgetConversation(id,provider,nativeId){this.profile(id);this.db.prepare('DELETE FROM agent_conversations WHERE candidate_id=? AND provider=? AND native_id=?').run(id,provider,nativeId);}
   saveConversation(id,provider,nativeId){this.profile(id);if(!['codex','claude'].includes(provider))throw Error('Geçersiz sağlayıcı');const value=text(nativeId,'Oturum kimliği',256);this.db.prepare('INSERT INTO agent_conversations VALUES(?,?,?) ON CONFLICT(candidate_id,provider) DO UPDATE SET native_id=excluded.native_id').run(id,provider,value);}
   candidates(){return this.db.prepare('SELECT data FROM candidates').all().map(r=>JSON.parse(r.data));}
   profile(id){const row=this.db.prepare('SELECT data FROM candidates WHERE id=?').get(id);if(!row)throw Error('Aday bulunamadı');const profile=JSON.parse(row.data);return{...profile,applicationPolicy:{...defaultPolicy,...profile.applicationPolicy}};}
@@ -182,7 +183,14 @@ export class Store {
     return this.saveJob(job,'application_checkpoint_saved');
   }
   ask(candidate,input,sessionId){const fields=normalizeFields(input.fields);this.profile(candidate);if(input.jobId)this.job(candidate,input.jobId);if(input.resumeContext){if(!input.jobId)throw Error('Devam noktası için ilan gerekli');this.saveApplicationCheckpoint(candidate,input.jobId,input.resumeContext,sessionId);}const q={id:randomUUID(),candidateId:candidate,jobId:input.jobId||null,question:text(input.question,'Soru',3000),answer:null,fields,applicationBlocker:input.applicationBlocker??null,createdAt:new Date().toISOString()};this.db.prepare('INSERT INTO questions(id,candidate_id,job_id,question,answer,created_at,fields,application_blocker) VALUES(?,?,?,?,?,?,?,?)').run(q.id,candidate,q.jobId,q.question,null,q.createdAt,fields?JSON.stringify(fields):null,q.applicationBlocker?JSON.stringify(q.applicationBlocker):null);this.event(candidate,'question_asked',q);return q;}
-  questions(candidate){return this.db.prepare('SELECT id, question, answer, job_id AS jobId, fields, answer_values AS answerValues, application_blocker AS applicationBlocker FROM questions WHERE candidate_id=? ORDER BY rowid DESC').all(candidate).map(q=>({...q,fields:JSON.parse(q.fields??'null'),answerValues:JSON.parse(q.answerValues??'null'),applicationBlocker:JSON.parse(q.applicationBlocker??'null')}));}
+  questions(candidate){return this.db.prepare('SELECT id, question, answer, job_id AS jobId, fields, answer_values AS answerValues, application_blocker AS applicationBlocker FROM questions WHERE candidate_id=? AND resolution IS NULL ORDER BY rowid DESC').all(candidate).map(q=>({...q,fields:JSON.parse(q.fields??'null'),answerValues:JSON.parse(q.answerValues??'null'),applicationBlocker:JSON.parse(q.applicationBlocker??'null')}));}
+  resolveTechnicalQuestion(candidate,id,evidence){
+    const q=this.questions(candidate).find(q=>q.id===id);
+    if(!q||q.answer!==null||q.applicationBlocker?.recovery?.kind!=='form_entry')throw Error('Yalnızca yanıtlanmamış teknik form giriş sorusu kapatılabilir');
+    const resolution={kind:'technical_resolved',evidence:text(evidence,'Çözüm kanıtı',3000),at:new Date().toISOString()};
+    this.db.prepare('UPDATE questions SET resolution=? WHERE id=? AND candidate_id=? AND answer IS NULL').run(JSON.stringify(resolution),id,candidate);
+    this.event(candidate,'technical_question_resolved',{id,...resolution});return resolution;
+  }
   answer(candidate,id,answer){const q=this.questions(candidate).find(q=>q.id===id);if(!q||q.answer!==null)throw Error('Soru bulunamadı veya zaten yanıtlandı');const result=q.fields&&typeof answer!=='string'?validateAnswers(q.fields,answer):{summary:text(answer,'Yanıt',10000),values:null};const r=this.db.prepare('UPDATE questions SET answer=?, answer_values=? WHERE id=? AND candidate_id=? AND answer IS NULL').run(result.summary,result.values?JSON.stringify(result.values):null,id,candidate);if(!r.changes)throw Error('Soru zaten yanıtlandı');this.event(candidate,'question_answered',{id,answer:result.summary,answerValues:result.values});return{id,answer:result.summary,answerValues:result.values};}
   setup(id){const row=this.db.prepare('SELECT data FROM setups WHERE candidate_id=?').get(id);return row?JSON.parse(row.data):null;}
   saveSetup(id,value){this.profile(id);this.db.prepare('INSERT INTO setups VALUES(?,?) ON CONFLICT(candidate_id) DO UPDATE SET data=excluded.data').run(id,JSON.stringify(value));return value;}
@@ -199,6 +207,10 @@ export class Store {
     return updated;}
   campaign(id){const row=this.db.prepare("SELECT data FROM campaigns WHERE candidate_id=?").get(id);return row?JSON.parse(row.data):null;}
   saveCampaign(id,value){this.profile(id);this.db.prepare("INSERT INTO campaigns VALUES(?,?) ON CONFLICT(candidate_id) DO UPDATE SET data=excluded.data").run(id,JSON.stringify(value));return value;}
+  taskContext(candidate){
+    const campaign=this.campaign(candidate),task=campaign?.task;
+    return {setup:this.setup(candidate),campaign:campaign?{status:campaign.status,task}:null,profile:this.profile(candidate),job:task?.jobId?this.job(candidate,task.jobId):null,source:task?.sourceId?this.source(candidate,task.sourceId):null,questions:this.questions(candidate).filter(q=>!q.jobId||q.jobId===task?.jobId),unfinishedTabs:this.jobs(candidate).filter(j=>j.resumeContext&&!['submitted','skipped'].includes(j.status)).map(j=>({jobId:j.id,status:j.status,resumeContext:j.resumeContext}))};
+  }
   snapshot(candidate){return{setup:this.setup(candidate),campaign:this.campaign(candidate),profile:this.profile(candidate),sources:this.sources(candidate),jobs:this.jobs(candidate),questions:this.questions(candidate),events:this.db.prepare('SELECT seq,kind,data,at FROM events WHERE candidate_id=? ORDER BY seq DESC LIMIT 60').all(candidate).map(r=>({...r,data:JSON.parse(r.data)}))};}
   close(){this.db.close();}
 }

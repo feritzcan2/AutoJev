@@ -41,14 +41,6 @@
 .prompt-body mark { padding: 0 4px; border-radius: 4px; background: var(--accent-wash); color: var(--accent-strong); font-weight: 500; }
 .prompt-path { display: inline-block; margin-top: 3px; color: var(--text-muted); font: 11px ui-monospace, Menlo, monospace; }
 
-/* Sent log */
-.prompt-card.sent summary { grid-template-columns: 14px 78px auto minmax(0, 1fr); }
-.prompt-card.sent time { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.prompt-kind { padding: 4px 8px; border-radius: 6px; background: var(--bg-hover); color: var(--text-secondary); font-size: 11px; font-weight: 550; white-space: nowrap; }
-.prompt-kind[data-kind="start"] { background: var(--accent-wash); color: var(--accent-strong); }
-.prompt-kind[data-kind="input"] { background: rgba(217, 170, 95, .14); color: var(--warning); }
-.prompt-preview { min-width: 0; overflow: hidden; color: var(--text-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.prompt-card.sent[open] .prompt-preview { display: none; }
 
 /* Tools */
 .tool-list { display: grid; gap: 8px; }
@@ -68,3 +60,31 @@
   .tool-card { grid-template-columns: 1fr; }
   .tool-params { grid-column: 1; }
 }
+
+/* Telefon */
+.phone-card { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); overflow: hidden; }
+.phone-card[data-state="on"] { border-color: rgba(102, 179, 255, .32); }
+.phone-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; }
+.phone-state { display: grid; gap: 3px; }
+.phone-state b { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; font-weight: 550; }
+.phone-state b::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
+.phone-card[data-state="on"] .phone-state b::before { background: var(--success); box-shadow: 0 0 0 3px rgba(92, 201, 149, .18); }
+.phone-state span { color: var(--text-muted); font-size: 12px; }
+.phone-error { margin: 0; padding: 0 20px 16px; color: var(--danger); font-size: 13px; }
+.phone-body { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 28px; align-items: center; padding: 20px; border-top: 1px solid var(--border); }
+.phone-qr { width: 200px; height: 200px; padding: 10px; border-radius: 12px; background: #fff; }
+.phone-qr svg { display: block; width: 100%; height: 100%; }
+.phone-side { display: grid; gap: 16px; min-width: 0; }
+.phone-steps { margin: 0; padding: 0; list-style: none; counter-reset: phone-step; display: grid; gap: 10px; }
+.phone-steps li { display: flex; gap: 12px; color: var(--text); font-size: 13px; line-height: 1.5; }
+.phone-steps li::before { content: counter(phone-step); counter-increment: phone-step; display: grid; place-items: center; flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-wash); color: var(--accent-strong); font-size: 12px; font-weight: 600; }
+.phone-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.phone-choices button { padding: 6px 10px; border: 1px solid var(--border-strong); background: transparent; color: var(--text-secondary); font-size: 12px; }
+.phone-choices button.selected { border-color: var(--accent); background: var(--accent-wash); color: var(--accent-strong); }
+.phone-address { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.phone-address code { padding: 7px 10px; border-radius: 8px; background: var(--bg-app); color: var(--text-secondary); font: 12px ui-monospace, "SF Mono", Menlo, monospace; }
+.phone-address button { padding: 6px 10px; font-size: 12px; }
+.phone-foot { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 20px; border-top: 1px solid var(--border); }
+.phone-foot p { max-width: 620px; margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
+.phone-rotate { flex-shrink: 0; padding: 7px 11px; font-size: 12px; color: var(--danger); border-color: transparent; }
+@media (max-width: 1000px) { .phone-body { grid-template-columns: 1fr; justify-items: start; } .phone-foot { flex-direction: column; align-items: flex-start; } }

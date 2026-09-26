@@ -20,5 +20,5 @@ export async function focusApplicationTab(context,{platform=process.platform,exe
  const url=new URL(context.url);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw Error('Geçersiz sekme bağlantısı');
  if(platform!=='darwin'||!/(chrome|chromium)/i.test(context.browser??''))throw Error('Bu tarayıcı için sekmeyi öne getirme desteklenmiyor. İlan bağlantısını kullanabilirsin.');
  let output;try{output=await exec('/usr/bin/osascript',['-l','JavaScript','-e',script,String(context.tabId??''),url.toString()],{timeout:15000,maxBuffer:4000});}catch{throw Error('Chrome sekmesine erişilemedi. macOS otomasyon iznini kontrol et.');}
- const status=output.stdout.trim();if(status==='missing')throw Error('Kayıtlı sekme bulunamadı; kapanmış veya adresi değişmiş olabilir. Yeni form açılmadı.');if(status==='ambiguous')throw Error('Aynı adresle birden fazla sekme var; yanlış sekmeyi açmamak için seçim yapılmadı.');if(status!=='focused')throw Error('Sekme öne getirilemedi');return{focused:true};
+ const status=output.stdout.trim();if(status==='missing'){const error=new Error('Kayıtlı sekme artık açık değil.');error.code='TAB_MISSING';throw error;}if(status==='ambiguous')throw Error('Aynı adresle birden fazla sekme var; yanlış sekmeyi açmamak için seçim yapılmadı.');if(status!=='focused')throw Error('Sekme öne getirilemedi');return{focused:true};
 }
