@@ -1,3 +1,5 @@
+import {sourceInstructions,runSourceTool,sourceIntegrations} from './source-integrations.mjs';
+import {focusApplicationTab} from './focus-tab.mjs';
 import {inspectGmailAccess} from './connector-access.mjs';
 import {app,BrowserWindow,ipcMain,dialog,shell} from 'electron';
 import {mkdir,cp,writeFile,readFile,copyFile,chmod,rm} from 'node:fs/promises';
@@ -10,7 +12,8 @@ import {launchSkillWorker} from './background-worker.mjs';
 import {Store} from './store.mjs';
 import {startMcp} from './mcp.mjs';
 import {startWithResumeRepair} from './resume.mjs';
-import {AGENTS_MD,promptCatalog} from './prompts.mjs';
+import {AGENTS_MD,promptCatalog,browserProfileInstruction} from './prompts.mjs';
+import {listChromeProfiles} from './chrome-profiles.mjs';
 import {Engine} from './engine.mjs';
 import {Setups} from './setup.mjs';
 import {Campaigns} from './campaign.mjs';
@@ -38,6 +41,7 @@ function ensureEngine(id='catalog'){if(!engines.has(id)){const instance=new Engi
   if(event.sessionId&&event.sessionId!==active?.sessionId)return;
   if(event.event==='identity'&&active){store.saveConversation(id,active.provider,event.nativeId);return;}
   if(event.event==='output'){event.sequence=(terminalSequences.get(id)??0)+1;terminalSequences.set(id,event.sequence);terminalOutputs.set(id,Buffer.concat([terminalOutputs.get(id)??Buffer.alloc(0),Buffer.from(event.bytes)]).subarray(-1000000));}
+  if(event.event==='delivery'&&active)campaigns.delivery(id,event.state.replace(/^Some\((.*)\)$/,'$1'));
   if(event.event==='state'&&active){active.state=event.state.replace(/^Some\((.*)\)$/,'$1');campaigns.signal(id,active.state);emit('changed',{candidateId:id});}
   if(['engine_exit','eof'].includes(event.event)){engines.delete(id);retire(id);if(event.event==='eof')instance.close().catch(()=>{});if(active){campaigns.exited(id);setups.exited(id);}}
   emit('agent-event',{...event,candidateId:id});
@@ -71,11 +75,15 @@ handle('dismiss-mail-signal',(id,signalId)=>{backgroundDb.dismiss(id,signalId);e
 const backgroundTimer=setInterval(()=>{background.tick().catch(error=>emit('agent-event',{event:'error',error:error.message}));},5000);
 handle('catalog',()=>ensureEngine().request('catalog'));
 handle('candidates',()=>store.candidates());
+handle('chrome-profiles',()=>listChromeProfiles());
 handle('snapshot',async id=>({...store.snapshot(id),documents:await listDocuments(path.join(data,'candidates',id)),active:sessions.has(id)?{candidateId:id,sessionId:sessions.get(id).sessionId,state:sessions.get(id).state??'Unknown'}:null}));
 handle('documents',id=>{store.profile(id);return listDocuments(path.join(data,'candidates',id));});
 handle('read-document',(id,file)=>{store.profile(id);return readDocument(path.join(data,'candidates',id),file);});
 handle('open-document',async(id,file)=>{store.profile(id);const error=await shell.openPath(await documentPath(path.join(data,'candidates',id),file));if(error)throw Error(error);});
 handle('save-profile',async p=>{if(p.agentSettings){await ensureEngine().request('validate',p.agentSettings);if(p.agentSettings.provider==='gemini')throw Error('Gemini MCP entegrasyonu henüz desteklenmiyor');if(![true,false,null].includes(p.agentSettings.network))throw Error('Geçersiz ağ tercihi');}const profile=store.saveProfile(p);emit('changed',{});return profile;});
+handle('source-integrations',()=>sourceIntegrations);
+handle('source-instructions',(id,sourceId)=>sourceInstructions(root,store.source(id,sourceId)));
+handle('source-test',async(id,sourceId)=>{const result=await runSourceTool(root,store.source(id,sourceId),['search','--help'],{test:true});store.event(id,'source_tool_tested',{sourceId,ok:result.ok});return result;});
 handle('save-source',async(candidateId,source)=>{const result=store.saveSource(candidateId,source);emit('changed',{candidateId});await campaigns.tick();return result;});
 handle('delete-source',(candidateId,id)=>{const result=store.deleteSource(candidateId,id);emit('changed',{candidateId});return result;});
 handle('save-application-policy',(candidateId,policy)=>{const result=store.saveApplicationPolicy(candidateId,policy);emit('changed',{candidateId});return result;});
@@ -83,6 +91,7 @@ handle('pick-cv',async id=>{store.profile(id);const result=await dialog.showOpen
 async function startAgent(candidateId,prompt,jobId){
   if(sessions.has(candidateId)||starting.has(candidateId))throw Error('Bu adayın agent oturumu zaten açık');
   const profile=store.profile(candidateId);if(!profile.cvPath&&store.setup(candidateId)?.status!=='running')throw Error('Önce CV seç');starting.add(candidateId);
+  prompt=[browserProfileInstruction(profile),prompt].filter(Boolean).join('\n\n');
   const sessionId=randomUUID(),token=mcp.grant(candidateId,sessionId);store.logPrompt(candidateId,{kind:'start',text:prompt,jobId:jobId??null,sessionId});
   try{
     const cwd=path.join(data,'candidates',candidateId);await mkdir(cwd,{recursive:true,mode:0o700});await cp(path.join(root,'skills'),path.join(cwd,'.agents/skills'),{recursive:true});
@@ -111,12 +120,15 @@ handle('start',(id,options)=>campaigns.start(id,options));
 handle('pause',id=>campaigns.pause(id));
 handle('stop',async id=>{store.profile(id);if(store.campaign(id))await campaigns.pause(id,'stopped');else await stopAgent(id);});
 handle('terminal-output',id=>{store.profile(id);return {bytes:[...(terminalOutputs.get(id)??Buffer.alloc(0))],sequence:terminalSequences.get(id)??0};});
-handle('terminal-input',async(id,text)=>{if(!sessions.has(id)||typeof text!=='string'||text.length>64000)return;if(text.trim())store.logPrompt(id,{kind:'input',text,sessionId:sessions.get(id).sessionId});await engines.get(id).request('input',{text});});
+handle('terminal-input',async(id,text)=>{if(!sessions.has(id)||typeof text!=='string'||text.length>64000)return;campaigns.input(id);if(text.trim())store.logPrompt(id,{kind:'input',text,sessionId:sessions.get(id).sessionId});await engines.get(id).request('input',{text});});
 handle('prompt-catalog',()=>promptCatalog(root));
 handle('prompts',id=>{store.profile(id);return store.prompts(id);});
 handle('terminal-resize',async(id,rows,cols)=>{if(!Number.isInteger(rows)||!Number.isInteger(cols)||rows<4||rows>1024||cols<20||cols>4096)return;terminalGrid={rows,cols};if(sessions.has(id)&&!starting.has(id))await engines.get(id).request('resize',terminalGrid);});
 handle('answer',async(candidateId,id,answer)=>{const result=store.answer(candidateId,id,answer);campaigns.answered(candidateId,id);setups.answered(candidateId);emit('changed',{});await campaigns.tick();await setups.tick();return{...result,delivery:'saved'};});
 handle('reclaim',(candidateId,id)=>{const active=sessions.get(candidateId);if(!active)throw Error('Bu adayın agent oturumunu başlat');const result=store.reclaim(candidateId,id,active.sessionId);emit('changed',{});return result;});
+handle('open-source-tab',(candidateId,sourceId)=>focusApplicationTab(store.source(candidateId,sourceId).resumeContext));
+handle('open-application-tab',(candidateId,jobId)=>focusApplicationTab(store.job(candidateId,jobId).resumeContext));
+handle('open-question-tab',async(candidateId,questionId)=>{const q=store.questions(candidateId).find(q=>q.id===questionId);if(!q?.jobId)throw Error('Soruya bağlı ilan bulunamadı');return focusApplicationTab(store.job(candidateId,q.jobId).resumeContext);});
 handle('open-link',async url=>{const u=new URL(url);if(!['https:','http:'].includes(u.protocol))throw Error('Geçersiz bağlantı');await shell.openExternal(u.toString());});
 window=new BrowserWindow({width:1440,height:950,minWidth:1040,minHeight:720,title:'JobLoop',backgroundColor:'#11151b',webPreferences:{preload:path.join(root,'app/preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
 window.webContents.setWindowOpenHandler(()=>({action:'deny'}));window.webContents.on('will-navigate',event=>event.preventDefault());

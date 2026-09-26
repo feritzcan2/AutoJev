@@ -78,3 +78,14 @@
   .jobs-table th:nth-child(6), .jobs-table td:nth-child(6) { width: 10%; }
   .jobs-table td { padding: 12px 10px; }
 }
+
+.jobs-table tbody tr.agent-current-row { background: color-mix(in srgb, var(--accent-strong, #45baff) 10%, var(--bg-raised, #181f27)); }
+.jobs-table tbody tr.agent-current-row td:first-child { box-shadow: inset 3px 0 var(--accent-strong, #45baff); }
+.application-agent-badge { display: inline-flex; align-items: center; gap: 7px; margin-top: 7px; color: var(--accent-strong, #45baff); font-size: 11px; font-weight: 600; }
+.application-agent-badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.application-agent-badge.waiting { color: #dfb964; }
+.jobs-table tbody tr.agent-current-row[data-agent-tone="waiting"] td:first-child { box-shadow: inset 3px 0 #dfb964; }
+
+/* Let the pinned row stick to the page viewport rather than an unscrolled wrapper. */
+.jobs-table-wrap:has(.agent-current-row) { overflow: visible; }
+.jobs-table .agent-current-row > td { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--accent-strong, #45baff) 10%, var(--bg-raised, #181f27)); border-bottom: 2px solid var(--accent-strong, #45baff); }

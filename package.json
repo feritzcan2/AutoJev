@@ -13,7 +13,8 @@
     "check": "node scripts/check.mjs",
     "bootstrap": "node scripts/bootstrap.mjs",
     "test:ui": "node scripts/smoke-ui.mjs",
-    "test:agent": "node scripts/smoke-agent.mjs"
+    "test:agent": "node scripts/smoke-agent.mjs",
+    "sources:install": "node scripts/install-source-tools.mjs"
   },
   "dependencies": {
     "@termloop/terminal-surface": "file:../termloop/clients/terminal-surface",

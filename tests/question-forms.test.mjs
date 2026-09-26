@@ -16,8 +16,10 @@ test('structured answers remain candidate-scoped, preserve readable evidence and
  try{
   const response=await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'ask_candidate',arguments:{question:'İki bilgi',fields:fields.slice(0,2)}}})});
   const result=(await response.json()).result;assert.notEqual(result.isError,true);const q=s.questions(p.id)[0];assert.equal(q.fields.length,2);
-  assert.throws(()=>s.answer(other.id,q.id,{permit:true,salary:70000}));assert.throws(()=>s.answer(p.id,q.id,'1 evet 2 70000'));
+  assert.throws(()=>s.answer(other.id,q.id,{permit:true,salary:70000}));assert.throws(()=>s.answer(p.id,q.id,'   '));
   s.answer(p.id,q.id,{permit:false,salary:70000});assert.match(s.questions(p.id)[0].answer,/Hayır/);assert.equal(s.questions(p.id)[0].answerValues.salary,70000);assert.throws(()=>s.answer(p.id,q.id,{permit:true,salary:1}));
   const legacy=s.ask(p.id,{question:'Legacy?'});s.answer(p.id,legacy.id,'Normal text');assert.equal(s.questions(p.id)[0].answer,'Normal text');
  }finally{await mcp.close();s.close();}
 });
+
+test('a form accepts a free-text reply without fabricating structured answers',()=>{const s=new Store(':memory:');try{const p=s.saveProfile({name:'Test',preferences:'Berlin'}),q=s.ask(p.id,{question:'Details',fields});const result=s.answer(p.id,q.id,'İznim var, maaş beklentimi henüz belirlemedim.');assert.equal(result.answerValues,null);assert.equal(s.questions(p.id)[0].fields.length,3);assert.match(s.questions(p.id)[0].answer,/henüz belirlemedim/);assert.throws(()=>s.answer(p.id,q.id,'Again'));}finally{s.close();}});

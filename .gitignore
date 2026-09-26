@@ -3,3 +3,5 @@ dist/
 engine/target/
 .DS_Store
 *.sqlite*
+
+**/node_modules/

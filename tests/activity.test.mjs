@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {activityView,ageLabel,sourceResultView} from '../src/activity.js';
+import {activityView,ageLabel,sourceResultView,applicationActivity} from '../src/activity.js';
 import {Store} from '../app/store.mjs';
 const base={profile:{id:'a'},active:{candidateId:'a',sessionId:'s',state:'Working'},campaign:{status:'running',task:{id:'t',kind:'application',jobId:'j',seenWorking:true}},jobs:[{id:'j',company:'Example',role:'Counsel',url:'https://example.test'}],questions:[],events:[]};
 test('live action follows session and task; timestamps are not fabricated',()=>{
@@ -21,7 +21,7 @@ test('source-specific search names the source being scanned',()=>{
 });
 test('source row shows scanning until that source task finishes',()=>{
  const source={id:'linkedin',lastRunAt:null,lastFound:0,lastResult:'Henüz taranmadı'};
- assert.deepEqual(sourceResultView(source,{status:'running',task:{kind:'search',sourceId:'linkedin'}}),{title:'Taranıyor',detail:'Agent şu anda bu kaynağı tarıyor.',scanning:true});
+ assert.deepEqual(sourceResultView(source,{status:'running',task:{kind:'search',sourceId:'linkedin',seenWorking:true}}),{title:'Taranıyor',detail:'Agent şu anda bu kaynağı tarıyor.',scanning:true});
  assert.equal(sourceResultView(source,{status:'running',task:{kind:'search',sourceId:'indeed'}}).title,'Taranmayı bekliyor');
 });
 test('activity reports cannot access another candidate or claim an unrelated campaign job',()=>{
@@ -29,3 +29,14 @@ test('activity reports cannot access another candidate or claim an unrelated cam
 });
 
 test('empty profile renders without crashing',()=>{assert.equal(activityView(null).title,'Agent kapalı');assert.equal(activityView({}).canWrite,false);});
+
+test('queued search is not presented as scanning while agent is idle',()=>{const snapshot={...base,active:{...base.active,state:'Idle'},campaign:{status:'running',task:{kind:'search',sourceId:'join',seenWorking:false}}};assert.equal(activityView(snapshot).title,'Görevin başlaması bekleniyor');assert.equal(sourceResultView({id:'join'},snapshot.campaign).scanning,false);});
+
+test('application row indicator follows current candidate task and actual runtime state',()=>{
+ assert.equal(applicationActivity(base,'j').tone,'active');
+ assert.equal(applicationActivity(base,'other'),null);
+ assert.equal(applicationActivity({...base,active:{...base.active,candidateId:'other'}},'j'),null);
+ assert.equal(applicationActivity({...base,campaign:{...base.campaign,status:'paused'}},'j'),null);
+ assert.equal(applicationActivity({...base,active:{...base.active,state:'Idle'}},'j').label,'Tur sonucu bekleniyor');
+ assert.equal(applicationActivity({...base,active:{...base.active,state:'AwaitingInput'}},'j').tone,'waiting');
+});

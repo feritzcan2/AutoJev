@@ -1,1 +1,5 @@
 .candidate-question-form{display:grid;gap:16px;margin-top:16px;max-width:850px}.candidate-question-form fieldset{border:0;padding:0;margin:0;min-width:0;display:grid;gap:8px}.candidate-question-form legend{font-weight:600;margin-bottom:8px;white-space:normal}.candidate-question-form fieldset p{margin:0;color:var(--muted,#adb5bd);font-size:13px}.candidate-question-form fieldset label{display:flex;align-items:center;gap:10px}.candidate-question-form input[type=checkbox]{width:auto}.candidate-question-form textarea{min-height:75px;resize:vertical;width:100%;box-sizing:border-box}.candidate-question-form button{justify-self:start}.question-form-error:empty{display:none}.question-form-error{color:#f2b666;margin:0}
+
+.question-fields{display:grid;gap:16px}.question-fields[hidden]{display:none}.question-answer-modes{display:flex;gap:8px}.question-answer-modes button[aria-pressed=true]{border-color:var(--accent,#49b9ed);color:var(--accent,#49b9ed)}
+
+.question-link-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}

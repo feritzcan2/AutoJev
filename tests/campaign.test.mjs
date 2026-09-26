@@ -23,7 +23,7 @@ test('answered application re-enters queue while unanswered jobs do not block in
  await f.c.start(f.p.id,{target:2,intervalMinutes:1});assert.equal(f.store.campaign(f.p.id).task.kind,'search');finish(f);f.store.answer(f.p.id,q.id,'Now');f.c.answered(f.p.id,q.id);await f.c.tick();assert.equal(f.store.campaign(f.p.id).task.jobId,j.id);
 }finally{f.store.close();}});
 test('an unanswered global question does not stop independent source work',async()=>{const f=fixture();try{
- f.store.ask(f.p.id,{question:'Reusable preference?'});await f.c.start(f.p.id,{target:2,intervalMinutes:1});assert.equal(f.store.campaign(f.p.id).task.kind,'search');assert.match(f.calls[0],/LinkedIn/);assert.equal(f.store.campaign(f.p.id).note,'LinkedIn taranıyor');
+ f.store.ask(f.p.id,{question:'Reusable preference?'});await f.c.start(f.p.id,{target:2,intervalMinutes:1});assert.equal(f.store.campaign(f.p.id).task.kind,'search');assert.match(f.calls[0],/LinkedIn/);assert.match(f.store.campaign(f.p.id).note,/Görev kuyrukta/);
 }finally{f.store.close();}});
 test('crash uses backoff and uncertain submission becomes verification, never retry-submit',async()=>{const f=fixture();try{
  const j=f.store.addJob(f.p.id,listing).job;f.store.updateJob(f.p.id,j.id,'working','Form','session');f.store.updateJob(f.p.id,j.id,'prepared','Ready','session');f.store.updateJob(f.p.id,j.id,'submitting','Click','session');
@@ -98,3 +98,60 @@ test('two candidates keep independent running sessions; pausing one leaves the o
 test('automatic source cannot manufacture submission authority for a prepare-only candidate',async()=>{
  const f=fixture();try{f.store.saveProfile({...f.p,authorization:'prepare'});const source=f.store.sources(f.p.id)[0];f.store.saveSource(f.p.id,{...source,applyMode:'auto'});f.store.addJob(f.p.id,{...listing,sourceId:source.id});await f.c.start(f.p.id);assert.match(f.calls[0],/prepare the form but do not submit/);assert.doesNotMatch(f.calls[0],/already authorized automatic submission/);}finally{f.store.close();}
 });
+
+test('campaign waits for a direct user conversation turn to finish before dispatching',async()=>{
+ const f=fixture();try{
+  await f.c.start(f.p.id);finish(f,'no_results');f.setTime(f.getTime()+61000);
+  for(const state of ['Working','Compacting','Interrupted']){
+   f.setActive({candidateId:f.p.id,sessionId:'session',state});await f.c.tick();
+   assert.equal(f.calls.length,1);assert.equal(f.store.campaign(f.p.id).task,null);
+  }
+  f.setActive({candidateId:f.p.id,sessionId:'session',state:'Idle'});await f.c.tick();
+  assert.equal(f.calls.length,2);assert.ok(f.store.campaign(f.p.id).task);
+ }finally{f.store.close();}
+});
+
+test('approved setup hands off to a verifiable campaign task without restarting onboarding',async()=>{
+ const store=new Store(':memory:');let prompt;
+ try{
+  const p=store.createSetup({provider:'claude',model:'default',permission:'default',reasoning:'default',network:null});
+  store.saveSetup(p.id,{...store.setup(p.id),status:'running'});
+  store.updateSetupProfile(p.id,{stage:'review',message:'Ready',name:'Candidate',facts:'Backend',preferences:'100% remote outside Europe; exclude Germany'});
+  const c=new Campaigns(store,{active:()=>null,changed:()=>{},launch:async(id,text)=>{prompt=text;}});
+  await assert.rejects(()=>c.start(p.id),/setup/);assert.equal(prompt,undefined);
+  store.completeSetup(p.id,{...store.profile(p.id),authorization:'submit'});
+  await c.start(p.id);
+  assert.match(prompt,/PHASE HANDOFF/);assert.match(prompt,/Earlier setup-only restrictions applied only during onboarding/);
+  assert.ok(prompt.includes(store.campaign(p.id).task.id));assert.match(prompt,/100% remote outside Europe; exclude Germany/);
+  assert.match(prompt,/override geographic examples/);assert.match(prompt,/report_campaign_work/);
+ }finally{store.close();}
+});
+
+ test('unstarted delivery times out without dispatching a duplicate',async()=>{const f=fixture();try{await f.c.start(f.p.id);f.setTime(f.getTime()+90001);await f.c.tick();assert.equal(f.store.campaign(f.p.id).status,'paused');assert.equal(f.calls.length,1);}finally{f.store.close();}});
+ test('failed delivery pauses immediately while genuine long work does not time out',async()=>{const f=fixture();try{await f.c.start(f.p.id);f.c.signal(f.p.id,'Working');f.setTime(f.getTime()+120000);await f.c.tick();assert.equal(f.store.campaign(f.p.id).status,'running');finish(f);f.setTime(f.getTime()+61000);await f.c.tick();f.c.delivery(f.p.id,'Stalled');assert.equal(f.store.campaign(f.p.id).status,'paused');}finally{f.store.close();}});
+
+test('terminal interruption preserves task and resumes once after user finishes typing',async()=>{
+ const f=fixture();try{
+ await f.c.start(f.p.id);const id=f.store.campaign(f.p.id).task.id;
+ f.c.signal(f.p.id,'Working');f.c.signal(f.p.id,'Interrupted');
+ assert.equal(f.store.campaign(f.p.id).status,'running');assert.equal(f.store.campaign(f.p.id).task.id,id);
+ f.setActive({candidateId:f.p.id,sessionId:'session',state:'Idle'});
+ f.setTime(f.getTime()+4000);f.c.input(f.p.id);f.setTime(f.getTime()+2000);await f.c.tick();assert.equal(f.calls.length,1);
+ f.setTime(f.getTime()+4000);f.setActive({candidateId:f.p.id,sessionId:'session',state:'Working'});await f.c.tick();assert.equal(f.calls.length,1);
+ f.setActive({candidateId:f.p.id,sessionId:'session',state:'Idle'});await f.c.tick();await f.c.tick();assert.equal(f.calls.length,2);assert.equal(f.store.campaign(f.p.id).task.id,id);assert.match(f.calls[1],/SAME interrupted/);
+ finish(f);assert.equal(f.store.campaign(f.p.id).task,null);
+ }finally{f.store.close();}
+});
+test('explicit app pause cancels automatic recovery',async()=>{const f=fixture();try{
+ await f.c.start(f.p.id);f.c.signal(f.p.id,'Interrupted');await f.c.pause(f.p.id);f.setTime(f.getTime()+10000);await f.c.tick();assert.equal(f.calls.length,1);assert.equal(f.store.campaign(f.p.id).status,'paused');
+}finally{f.store.close();}});
+test('missing report resumes same source rather than marking it scanned; recovery is bounded',async()=>{const f=fixture();try{
+ await f.c.start(f.p.id);const task=f.store.campaign(f.p.id).task;
+ for(let i=0;i<3;i++){f.c.signal(f.p.id,'Working');f.c.signal(f.p.id,'Idle');assert.equal(f.store.campaign(f.p.id).task.id,task.id);assert.equal(f.store.source(f.p.id,task.sourceId).lastRunAt,null);f.setActive({candidateId:f.p.id,sessionId:'session',state:'Idle'});f.setTime(f.getTime()+6000);await f.c.tick();}
+ f.c.signal(f.p.id,'Working');f.c.signal(f.p.id,'Idle');assert.equal(f.store.campaign(f.p.id).status,'paused');assert.equal(f.calls.length,4);
+}finally{f.store.close();}});
+test('interrupted submit recovers as verification without resubmission',async()=>{const f=fixture();try{
+ const j=f.store.addJob(f.p.id,listing).job;await f.c.start(f.p.id);
+ for(const state of ['working','prepared','submitting'])f.store.updateJob(f.p.id,j.id,state,'Form','session');
+ f.c.signal(f.p.id,'Interrupted');f.setActive({candidateId:f.p.id,sessionId:'session',state:'Idle'});f.setTime(f.getTime()+6000);await f.c.tick();assert.equal(f.store.campaign(f.p.id).task.kind,'verify');assert.match(f.calls.at(-1),/WITHOUT resubmitting/);
+}finally{f.store.close();}});

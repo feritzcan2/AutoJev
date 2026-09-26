@@ -6,4 +6,5 @@ function run(cmd,args,cwd=root){const p=spawnSync(cmd,args,{cwd,stdio:'inherit'}
 for(const name of ['terminal-wire','terminal-surface'])run('pnpm',['--filter',`@termloop/${name}`,'build'],path.join(root,'../termloop'));
 run('pnpm',['install','--force']);
 run(process.execPath,['node_modules/electron/install.js']);
+run('pnpm',['sources:install']);
 run('pnpm',['build']);run('pnpm',['engine:build']);

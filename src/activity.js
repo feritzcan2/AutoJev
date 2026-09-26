@@ -1,6 +1,6 @@
 const runtimeNames={Working:'Çalışıyor',AwaitingInput:'Giriş / onay bekliyor',Idle:'Tur tamamlandı',Compacting:'Konuşma özetleniyor',Failed:'Agent hatası',Interrupted:'Kesildi',Unknown:'Durum bekleniyor'};
 export function sourceResultView(source,campaign){
-  const scanning=campaign?.status==='running'&&campaign.task?.kind==='search'&&campaign.task.sourceId===source.id;
+  const scanning=campaign?.status==='running'&&campaign.task?.kind==='search'&&campaign.task.sourceId===source.id&&campaign.task.seenWorking===true;
   if(scanning)return{title:'Taranıyor',detail:'Agent şu anda bu kaynağı tarıyor.',scanning:true};
   return{title:source.lastRunAt?(source.lastFound?`${source.lastFound} yeni ilan`:'Yeni ilan yok'):'Taranmayı bekliyor',detail:source.lastResult,scanning:false};
 }
@@ -19,6 +19,7 @@ export function activityView(snapshot,now=Date.now()){
   else if(active&&task){
     title=job?`${job.company} · ${job.role}`:task.kind==='search'?(source?`${source.name} taranıyor`:'Uygun ilanlar araştırılıyor'):'Başvuru üzerinde çalışılıyor';
     detail=report?.data.message??(task.kind==='verify'?'Önceki gönderimin sonucu doğrulanacak.':task.seenWorking?'Agent henüz ayrıntılı işlem bildirmedi.':'İş agent’a iletiliyor.');tone='active';
+    if(!task.seenWorking||active.state==='Idle'){title=task.seenWorking?'Tur sonucu bekleniyor':'Görevin başlaması bekleniyor';detail=task.seenWorking?'Agent hazır; görev sonucu henüz kapanmadı.':'Görev kuyruğa alındı; agentın çalışmaya başladığı henüz doğrulanmadı.';tone='waiting';}
     if(active.state==='AwaitingInput'){detail='Agent terminalde giriş veya onay bekliyor.';tone='waiting';}
     else if(active.state==='Compacting')detail='Agent konuşmasını özetliyor; yeni işlem bildirimi bekleniyor.';
     else if(active.state==='Failed'||active.state==='Interrupted'){detail=runtimeNames[active.state];tone='waiting';}
@@ -34,4 +35,14 @@ export function ageLabel(at,now=Date.now()){
   const seconds=Math.max(0,Math.floor((now-Date.parse(at))/1000));
   if(!Number.isFinite(seconds))return 'Güncelleme zamanı bilinmiyor';
   return `Son bildirim: ${seconds<60?seconds+' saniye':seconds<3600?Math.floor(seconds/60)+' dakika':Math.floor(seconds/3600)+' saat'} önce`;
+}
+
+export function applicationActivity(snapshot,jobId){
+ const {campaign,active,profile}=snapshot??{};
+ if(campaign?.status!=='running'||campaign.task?.jobId!==jobId||!active||active.candidateId!==profile?.id)return null;
+ if(active.state==='Working')return{tone:'active',label:'Agent bu başvuruda çalışıyor'};
+ if(active.state==='Compacting')return{tone:'waiting',label:'Agent konuşmasını özetliyor'};
+ if(active.state==='AwaitingInput')return{tone:'waiting',label:'Agent giriş / onay bekliyor'};
+ if(active.state==='Idle')return{tone:'waiting',label:campaign.task.seenWorking?'Tur sonucu bekleniyor':'Agentın başlaması bekleniyor'};
+ return null;
 }
