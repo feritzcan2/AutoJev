@@ -9,13 +9,16 @@ export class JevCdpTransport {
   static async connect(endpoint){
     const socket=new WebSocket(endpoint);
     await new Promise((resolve,reject)=>{
-      const timer=setTimeout(()=>{socket.close();reject(Error('Chrome bağlantı izni beklenirken zaman aşımı.'));},30000);
-      socket.onopen=()=>{clearTimeout(timer);resolve();};
-      socket.onerror=()=>{clearTimeout(timer);reject(Error('Chrome bağlantısı kurulamadı.'));};
+      const fail=message=>{clearTimeout(timer);socket.onerror=()=>{};socket.onclose=null;reject(Error(message));socket.close();};
+      const timer=setTimeout(()=>fail('Chrome bağlantı izni beklenirken zaman aşımı.'),30000);
+      socket.onopen=()=>{clearTimeout(timer);socket.onerror=()=>{};socket.onclose=null;resolve();};
+      socket.onerror=()=>fail('Chrome bağlantısı kurulamadı.');
+      socket.onclose=()=>fail('Chrome bağlantısı kurulmadan kapandı.');
     });
     return new JevCdpTransport(socket);
   }
   call(method,params={}){
+    if(this.socket.readyState!==WebSocket.OPEN)return Promise.reject(Error('Chrome bağlantısı kapandı.'));
     return new Promise((resolve,reject)=>{
       const id=++this.sequence,timer=setTimeout(()=>{this.pending.delete(id);reject(Error(`Chrome ${method} zaman aşımı.`));},15000);
       this.pending.set(id,{resolve,reject,timer});this.socket.send(JSON.stringify({id,method,params}));

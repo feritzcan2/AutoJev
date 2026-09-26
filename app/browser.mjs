@@ -15,7 +15,7 @@ export class BrowserTools {
   constructor(directory,modeForCandidate=()=> 'existing',jevOptionsForCandidate=()=>({})){this.directory=directory;this.modeForCandidate=modeForCandidate;this.jevOptionsForCandidate=jevOptionsForCandidate;this.clients=new Map();}
   async connect(candidateId){
     const mode=this.modeForCandidate(candidateId)??'existing';
-    const options=this.jevOptionsForCandidate(candidateId),key=JSON.stringify({mode,profile:options.profile});
+    const options=this.jevOptionsForCandidate(candidateId),key=JSON.stringify({mode,profile:options.profile?.directory,connection:options.connection});
     const previous=this.clients.get(candidateId);
     if(previous?.key===key)return previous.pending;
     if(previous)await(await previous.pending).client.close();
@@ -56,9 +56,8 @@ export class BrowserTools {
     return result;
   }
   async focus(candidateId,context){
-    const connection=this.clients.get(candidateId);
-    if(connection?.mode!=='jev')throw Error('Bu adayın Jev tarayıcısı açık değil. Mevcut form otomatik yeniden açılmadı.');
-    return (await connection.pending).client.focus(context.tabId);
+    if(this.modeForCandidate(candidateId)!=='jev')throw Object.assign(Error('Bu aday için Jev tarayıcı modu seçili değil.'),{code:'BROWSER_MODE_CHANGED'});
+    return (await this.connect(candidateId)).client.focus(context.tabId);
   }
   async close(){for(const {pending} of this.clients.values()){try{await(await pending).client.close();}catch{}}this.clients.clear();}
 }

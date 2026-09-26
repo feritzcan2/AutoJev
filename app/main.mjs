@@ -29,7 +29,7 @@ await app.whenReady();
 const data=app.getPath('userData');await mkdir(data,{recursive:true,mode:0o700});
 const store=new Store(path.join(data,'jobloop.sqlite'));
 for(const candidate of store.candidates())for(const sessionId of new Set(store.jobs(candidate.id).map(j=>j.sessionId).filter(Boolean)))store.recoverSession(candidate.id,sessionId);
-const browser=new BrowserTools(data,id=>store.profile(id).browserMode,id=>({profile:store.profile(id).chromeProfile}));
+const browser=new BrowserTools(data,id=>store.profile(id).browserMode,id=>({profile:store.profile(id).chromeProfile,checkpoints:[...store.jobs(id),...store.sources(id)].map(item=>item.resumeContext).filter(Boolean)}));
 let window,quitting=false;
 const engines=new Map(),sessions=new Map(),starting=new Set(),terminalOutputs=new Map(),terminalSequences=new Map();
 let terminalGrid={rows:24,cols:80};

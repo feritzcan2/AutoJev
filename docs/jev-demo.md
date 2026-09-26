@@ -24,8 +24,12 @@ accept Chrome's connection prompt when shown. The app does not change this
 security setting automatically or fall back to an empty profile. Only windows
 created for this candidate and their popups are exposed to the agent. Existing
 personal tabs are not exposed. Disconnecting Jobloop leaves Chrome open.
-Source checkpoints focus the exact tab while the connection is alive; restarting
-the whole app does not restore ownership of previous task tabs automatically.
+Candidate/profile-scoped tab IDs are saved locally. After a disconnect or app
+restart, tools and checkpoint buttons reconnect to the exact surviving tabs without
+reloading their forms. Pending action decisions are discarded on reconnect. Older
+saved checkpoints migrate by exact ID after checking the selected Chrome profile.
+Closed tabs and tabs from a different Chrome process cannot be restored by matching
+a URL; the agent must check saved submission evidence before recovering a task.
 
 Decisions are tied to the current candidate, agent session, observed page and a
 single-use decision ID. Stale or covered targets are rejected. Execution failures
@@ -92,7 +96,7 @@ Checks:
 ```sh
 pnpm test
 pnpm check
-pnpm test:jev:existing # shared login, new windows, candidate scope and safe disconnect
+pnpm test:jev:existing # shared login, scoped windows, reconnect and draft recovery
 pnpm test:jev        # real Chrome + mocked TypeSafe decisions; no paid calls
 pnpm test:jev:live   # real TypeSafe, same MCP tools, synthetic text supplied by test harness
 ```

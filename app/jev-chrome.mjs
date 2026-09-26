@@ -29,6 +29,12 @@ export async function existingChromeEndpoint(){
   return `ws://127.0.0.1:${port}${route}`;
 }
 
+export async function resolveChromeProfile(selected){
+  if(selected?.directory){if(!/^[\w -]{1,100}$/.test(selected.directory))throw Error('Geçersiz Chrome profili.');return selected.directory;}
+  const state=JSON.parse(await readFile(path.join(chromeUserDataDirectory(),'Local State'),'utf8'));
+  return state.profile?.last_used??'Default';
+}
+
 export async function openChromeWindow(url,selected){
   const state=JSON.parse(await readFile(path.join(chromeUserDataDirectory(),'Local State'),'utf8'));
   const profile=selected?.directory??state.profile?.last_used??'Default';
