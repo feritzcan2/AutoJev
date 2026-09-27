@@ -52,7 +52,11 @@ try{
  await page.getByRole('button',{name:'Kapat',exact:true}).click();
  const store=new Store(path.join(data,'jobloop.sqlite'));
  const job=store.addJob(candidate,{url:'https://example.com/jobs/test',company:'Test company',role:'Test role',location:'Berlin',fit:'Synthetic test'}).job;
- const other=store.addJob(candidate,{url:'https://example.com/jobs/other',company:'Test company',role:'Other role',location:'Berlin',fit:'Synthetic test'}).job;store.close();
+ const other=store.addJob(candidate,{url:'https://example.com/jobs/other',company:'Test company',role:'Other role',location:'Berlin',fit:'Synthetic test'}).job;
+ store.saveProfile({...store.profile(candidate),authorization:'prepare'});
+ const waiting=store.addJob(candidate,{url:'https://example.com/jobs/waiting',company:'Waiting company',role:'Waiting role',location:'Berlin',fit:'Synthetic test'}).job;
+ store.updateJob(candidate,waiting.id,'working','Form','test');store.updateJob(candidate,waiting.id,'blocked','Needs date','test');
+ const question=store.ask(candidate,{jobId:waiting.id,question:'Start date?'});store.close();
  await mkdir(path.join(docs,`test-${job.id}`));await writeFile(path.join(docs,`test-${job.id}`,'cover-letter.md'),'Letter for this exact job');
  await page.reload();
  const jobFiles=page.locator(`[data-job-documents="${job.id}"]`);await jobFiles.getByText('Dosyalar (1)',{exact:true}).click();
@@ -61,6 +65,12 @@ try{
  await page.locator('#document-preview').waitFor({state:'visible'});
  if(await page.locator('#preview-content').textContent()!=='Letter for this exact job')throw Error('Wrong application document');
  await page.getByRole('button',{name:'Kapat',exact:true}).click();
+ const queue=page.getByRole('button',{name:'Waiting company başvurusunu sıraya al',exact:true});
+ await queue.click();await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='Sıraya alındı'&&b.disabled));
+ const queued=await page.evaluate(id=>window.jobloop.snapshot(id),candidate);
+ if(!queued.campaign.pendingRetries[waiting.id]||queued.campaign.status!=='paused')throw Error('Queue did not persist without starting agent');
+ if(queued.questions.find(q=>q.id===question.id).answer!==null)throw Error('Queue answered candidate question');
+ await page.reload();await queue.waitFor();if(!await queue.isDisabled()||await queue.textContent()!=='Sıraya alındı')throw Error('Queue state did not survive reload');
  await page.locator('button[data-view=agent]').click();
  await page.locator('#now-panel').waitFor({state:'visible'});
  await page.locator('#terminal').waitFor({state:'visible'});

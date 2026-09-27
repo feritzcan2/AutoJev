@@ -133,6 +133,7 @@ handle('prompt-catalog',()=>promptCatalog(root));
 handle('prompts',id=>{store.profile(id);return store.prompts(id);});
 handle('terminal-resize',async(id,rows,cols)=>{if(!Number.isInteger(rows)||!Number.isInteger(cols)||rows<4||rows>1024||cols<20||cols>4096)return;terminalGrid={rows,cols};if(sessions.has(id)&&!starting.has(id))await engines.get(id).request('resize',terminalGrid);});
 handle('answer',async(candidateId,id,answer)=>{const result=store.answer(candidateId,id,answer);campaigns.answered(candidateId,id);setups.answered(candidateId);emit('changed',{});await campaigns.tick();await setups.tick();return{...result,delivery:'saved'};});
+handle('queue-application',async(candidateId,jobId)=>{const result=campaigns.queueApplication(candidateId,jobId);await campaigns.tick();return result;});
 handle('reclaim',(candidateId,id)=>{const active=sessions.get(candidateId);if(!active)throw Error('Bu adayın agent oturumunu başlat');const result=store.reclaim(candidateId,id,active.sessionId);emit('changed',{});return result;});
 const focusTab=(id,context)=>context?.browser==='Jev Chrome'?browser.focus(id,context):focusApplicationTab(context);
 handle('open-source-tab',(candidateId,sourceId)=>focusTab(candidateId,store.source(candidateId,sourceId).resumeContext));

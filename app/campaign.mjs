@@ -6,7 +6,7 @@ export function campaignPrompt({task,source,profile:p}){
  const skill=task.kind==='search'?'find-jobs':'apply-to-jobs';
  const completion=task.kind==='search'?'Report this task with report_campaign_work before ending.':'record_submission also reports this task done when completion.taskReported=true; then end the turn without more status/report calls. Otherwise use report_campaign_work.';
  const action=task.kind==='search'?`Search only source ${task.sourceId??'any'}${source?.name?` (${source.name})`:''}; no applications this turn.`:task.kind==='verify'?`Verify job ${task.jobId} WITHOUT resubmitting.`:`Process job ${task.jobId}; ${task.applyMode==='auto'&&p.authorization==='submit'?'automatic submission already authorized':task.applyMode==='find_only'||p.authorization==='research'?'do not apply':'prepare the form but do not submit'}.`;
- return `JobLoop task ${task.id} (${task.kind}). Read get_task_context and verify this task is current. Follow AGENTS.md and .agents/skills/${skill}/SKILL.md; read the skill only if not already in context. ${action}${task.recoveryQuestionId?` Recover technical question ${task.recoveryQuestionId}; no new candidate answer is implied.`:''} Use the current MCP profile, source settings, answers and checkpoint. ${completion} Resolve unmet requirements on this same task.`;
+ return `JobLoop task ${task.id} (${task.kind}). Read get_task_context and verify this task is current. Follow AGENTS.md and .agents/skills/${skill}/SKILL.md; read the skill only if not already in context. ${action}${task.recoveryQuestionId?` Recover technical question ${task.recoveryQuestionId}; no new candidate answer is implied.`:''}${task.retryRequestId?' User explicitly requeued this blocked application. Recheck its saved form and existing questions; this is not an answer or new consent. Resolve technical blockers when possible; reuse unanswered questions instead of duplicating them.':''} Use the current MCP profile, source settings, answers and checkpoint. ${completion} Resolve unmet requirements on this same task.`;
 }
 
 export function recoveryPrompt(options,reason){
@@ -64,6 +64,7 @@ export class Campaigns {
         delete c.task.completionError;delete c.task.recovery;
         if(c.pendingResumes)delete c.pendingResumes[job.id];
         if(c.pendingRecoveries)delete c.pendingRecoveries[job.id];
+        if(c.pendingRetries)delete c.pendingRetries[job.id];
         this.store.saveCampaign(id,c);
       }
       this.store.db.exec('COMMIT');
@@ -113,6 +114,7 @@ export class Campaigns {
       if(!task.report){this.recoverTurn(id,c,task.completionError??'Turn ended without report_campaign_work');return;}
       try{validateTaskCompletion(this.store,id,c,task.report);}catch(error){task.report=null;this.recoverTurn(id,c,error.message);return;}
       if(task.jobId){
+        if(task.retryRequestId&&c.pendingRetries?.[task.jobId]?.requestId===task.retryRequestId)delete c.pendingRetries[task.jobId];
         if(task.report&&task.recoveryQuestionId&&c.pendingRecoveries?.[task.jobId]===task.recoveryQuestionId)delete c.pendingRecoveries[task.jobId];
         if(task.report&&task.resumeQuestionId&&c.pendingResumes?.[task.jobId]===task.resumeQuestionId)delete c.pendingResumes[task.jobId];
         if(c.pendingResumes?.[task.jobId])delete c.attempts[task.jobId];else c.attempts[task.jobId]=this.now();
@@ -144,16 +146,30 @@ export class Campaigns {
     delete c.attempts[q.jobId];c.wakeAt=0;this.save(id,c);
     return{queued:true,message:c.status==='running'?'Sekme ve form kontrolü sıraya alındı. Agent mevcut işini bitirince bu başvuruya dönecek.':'Sekme ve form kontrolü sıraya alındı. Agent’ı başlatınca devam edecek.'};
   }
+  queueApplication(id,jobId){
+    const job=this.store.job(id,jobId),profile=this.store.profile(id);
+    if(job.status!=='blocked')throw Error('Yalnızca bilgi / işlem bekleyen başvurular sıraya alınabilir.');
+    const source=job.sourceId?this.store.source(id,job.sourceId):null;
+    if(profile.authorization==='research'||source?.applyMode==='find_only')throw Error('Bu ilan için başvuru hazırlama izni gerekli; profil veya kaynak yalnızca araştırmaya izin veriyor.');
+    const c=this.store.campaign(id)??{status:'paused',target:100,intervalMinutes:30,task:null,attempts:{},failures:0};
+    if(c.status==='running'&&c.task?.jobId===jobId)return {queued:false,active:true,message:'Agent bu ilanı zaten işliyor.'};
+    c.pendingRetries??={};
+    const existing=c.pendingRetries[jobId];
+    c.pendingRetries[jobId]??={requestId:randomUUID(),queuedAt:this.now()};
+    c.attempts??={};delete c.attempts[jobId];c.wakeAt=0;
+    this.save(id,c);
+    return {queued:true,alreadyQueued:Boolean(existing),requestId:c.pendingRetries[jobId].requestId,message:c.status==='running'?'İlan sıraya alındı. Agent mevcut işinden sonra yeniden kontrol edecek.':'İlan sıraya alındı. Agent’ı başlatınca yeniden kontrol edecek.'};
+  }
   choose(id,c){
     const p=this.store.profile(id),jobs=this.store.jobs(id),questions=this.store.questions(id);
     if(p.authorization!=='research'){
-      for(const j of jobs.slice().reverse().sort((a,b)=>Number(Boolean(c.pendingResumes?.[b.id]))-Number(Boolean(c.pendingResumes?.[a.id])))){
+      for(const j of jobs.slice().reverse().sort((a,b)=>Number(Boolean(c.pendingRetries?.[b.id]||c.pendingResumes?.[b.id]))-Number(Boolean(c.pendingRetries?.[a.id]||c.pendingResumes?.[a.id])))){
         const source=j.sourceId?this.store.source(id,j.sourceId):null;if(source?.applyMode==='find_only')continue;
-        const unanswered=questions.some(q=>q.jobId===j.id&&q.answer===null);if(unanswered&&!c.pendingRecoveries?.[j.id])continue;
+        const unanswered=questions.some(q=>q.jobId===j.id&&q.answer===null);if(unanswered&&!c.pendingRecoveries?.[j.id]&&!c.pendingRetries?.[j.id])continue;
         const answered=questions.some(q=>q.jobId===j.id&&q.answer!==null);
         const maySubmit=p.authorization==='submit'&&(!source||source.applyMode==='auto');
-        const eligible=['found','working','uncertain'].includes(j.status)||(j.status==='prepared'&&maySubmit)||(j.status==='blocked'&&(answered||c.pendingRecoveries?.[j.id]||j.note.startsWith('Oturum kapandı.')));
-        if(eligible&&(c.pendingResumes?.[j.id]||(j.status==='prepared'&&maySubmit)||!c.attempts[j.id]||Date.parse(j.updatedAt)>c.attempts[j.id]))return{recoveryQuestionId:c.pendingRecoveries?.[j.id]??null,resumeQuestionId:c.pendingResumes?.[j.id]??null,kind:j.status==='uncertain'?'verify':'application',jobId:j.id,sourceId:j.sourceId??null,applyMode:source?.applyMode??(maySubmit?'auto':'prepare')};
+        const eligible=['found','working','uncertain'].includes(j.status)||(j.status==='prepared'&&maySubmit)||(j.status==='blocked'&&(c.pendingRetries?.[j.id]||answered||c.pendingRecoveries?.[j.id]||j.note.startsWith('Oturum kapandı.')));
+        if(eligible&&(c.pendingRetries?.[j.id]||c.pendingResumes?.[j.id]||(j.status==='prepared'&&maySubmit)||!c.attempts[j.id]||Date.parse(j.updatedAt)>c.attempts[j.id]))return{retryRequestId:c.pendingRetries?.[j.id]?.requestId??null,recoveryQuestionId:c.pendingRecoveries?.[j.id]??null,resumeQuestionId:c.pendingResumes?.[j.id]??null,kind:j.status==='uncertain'?'verify':'application',jobId:j.id,sourceId:j.sourceId??null,applyMode:source?.applyMode??(maySubmit?'auto':'prepare')};
       }
     }
     const due=this.store.sources(id).filter(source=>source.enabled&&(source.nextRunAt??0)<=this.now()).sort((a,b)=>(a.nextRunAt??0)-(b.nextRunAt??0))[0];
