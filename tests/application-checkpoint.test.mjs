@@ -1,3 +1,4 @@
+import {addRankedJob} from './rank-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -10,7 +11,7 @@ const listing={company:'Example',role:'Developer',location:'Berlin',fit:'Test',u
 test('application checkpoint survives questions, answers and restart, scoped to owner and candidate',()=>{
  const dir=mkdtempSync(join(tmpdir(),'jobloop-checkpoint-'));let store=new Store(join(dir,'db'));
  try{
-  const p=store.saveProfile({name:'Candidate',preferences:'Berlin'}),other=store.saveProfile({name:'Other',preferences:'Remote'}),job=store.addJob(p.id,listing).job;
+  const p=store.saveProfile({name:'Candidate',preferences:'Berlin'}),other=store.saveProfile({name:'Other',preferences:'Remote'}),job=addRankedJob(store,p.id,listing).job;
   store.updateJob(p.id,job.id,'working','Filling form','session');
   assert.throws(()=>store.saveApplicationCheckpoint(other.id,job.id,resumeContext,'session'),/bulunamadı/);
   assert.throws(()=>store.saveApplicationCheckpoint(p.id,job.id,resumeContext,'wrong'),/oturuma/);
@@ -23,7 +24,7 @@ test('application checkpoint survives questions, answers and restart, scoped to 
  }finally{store.close();rmSync(dir,{recursive:true,force:true});}
 });
 test('MCP accepts observed checkpoint data and infers the question job from the active task',async()=>{
- const store=new Store(':memory:'),p=store.saveProfile({name:'Candidate',preferences:'Berlin'}),job=store.addJob(p.id,listing).job;
+ const store=new Store(':memory:'),p=store.saveProfile({name:'Candidate',preferences:'Berlin'}),job=addRankedJob(store,p.id,listing).job;
  store.updateJob(p.id,job.id,'working','Form','session');
  const schema=tools.find(t=>t.name==='ask_candidate').inputSchema;
  validate(schema,{question:'Salary?',resumeContext});assert.throws(()=>validate(schema,{question:'Salary?',resumeContext:{tabId:'made-up'}}));

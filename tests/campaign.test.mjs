@@ -1,3 +1,4 @@
+import {addRankedJob} from './rank-fixture.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Store} from '../app/store.mjs';
@@ -7,7 +8,7 @@ function finish(f,outcome='done'){const task=f.store.campaign(f.p.id).task;f.c.s
 const listing={company:'Example',role:'Counsel',location:'Berlin',fit:'Law background',url:'https://example.test/jobs/1'};
 test('idle and silence do not duplicate initial work; confirmed completion advances queue',async()=>{const f=fixture();try{
  await f.c.start(f.p.id,{target:2,intervalMinutes:1});assert.equal(f.calls.length,1);f.c.signal(f.p.id,'Idle');await f.c.tick();assert.equal(f.calls.length,1);
- const j=f.store.addJob(f.p.id,listing).job;finish(f);await f.c.tick();assert.equal(f.calls.length,2);assert.equal(f.store.campaign(f.p.id).task.jobId,j.id);
+ const j=addRankedJob(f.store,f.p.id,listing).job;finish(f);await f.c.tick();assert.equal(f.calls.length,2);assert.equal(f.store.campaign(f.p.id).task.jobId,j.id);
  f.c.signal(f.p.id,'Compacting');await f.c.tick();assert.equal(f.calls.length,2);
 }finally{f.store.close();}});
 test('no results waits for scheduled rescan, pause blocks dispatch and resume continues',async()=>{const f=fixture();try{
@@ -19,19 +20,19 @@ test('due sources run in order without waiting for another source interval',asyn
  finish(f,'no_results');await f.c.tick();assert.equal(f.calls.length,2);
 }finally{f.store.close();}});
 test('answered application re-enters queue while unanswered jobs do not block independent jobs',async()=>{const f=fixture();try{
- const j=f.store.addJob(f.p.id,listing).job;f.store.updateJob(f.p.id,j.id,'working','Form','session');f.store.updateJob(f.p.id,j.id,'blocked','Needs date','session');const q=f.store.ask(f.p.id,{jobId:j.id,question:'Start date?'});
+ const j=addRankedJob(f.store,f.p.id,listing).job;f.store.updateJob(f.p.id,j.id,'working','Form','session');f.store.updateJob(f.p.id,j.id,'blocked','Needs date','session');const q=f.store.ask(f.p.id,{jobId:j.id,question:'Start date?'});
  await f.c.start(f.p.id,{target:2,intervalMinutes:1});assert.equal(f.store.campaign(f.p.id).task.kind,'search');finish(f);f.store.answer(f.p.id,q.id,'Now');f.c.answered(f.p.id,q.id);await f.c.tick();assert.equal(f.store.campaign(f.p.id).task.jobId,j.id);
 }finally{f.store.close();}});
 test('an unanswered global question does not stop independent source work',async()=>{const f=fixture();try{
  f.store.ask(f.p.id,{question:'Reusable preference?'});await f.c.start(f.p.id,{target:2,intervalMinutes:1});assert.equal(f.store.campaign(f.p.id).task.kind,'search');assert.match(f.calls[0],/LinkedIn/);assert.match(f.store.campaign(f.p.id).note,/Görev kuyrukta/);
 }finally{f.store.close();}});
 test('crash uses backoff and uncertain submission becomes verification, never retry-submit',async()=>{const f=fixture();try{
- const j=f.store.addJob(f.p.id,listing).job;f.store.updateJob(f.p.id,j.id,'working','Form','session');f.store.updateJob(f.p.id,j.id,'prepared','Ready','session');f.store.updateJob(f.p.id,j.id,'submitting','Click','session');
+ const j=addRankedJob(f.store,f.p.id,listing).job;f.store.updateJob(f.p.id,j.id,'working','Form','session');f.store.updateJob(f.p.id,j.id,'prepared','Ready','session');f.store.updateJob(f.p.id,j.id,'submitting','Click','session');
  await f.c.start(f.p.id,{target:2,intervalMinutes:1});f.store.recoverSession(f.p.id,'session');f.setActive(null);f.c.exited(f.p.id);await f.c.tick();assert.equal(f.calls.length,1);f.setTime(f.getTime()+40000);await f.c.tick();assert.equal(f.store.campaign(f.p.id).task.kind,'search');finish(f);await f.c.tick();assert.equal(f.store.campaign(f.p.id).task.kind,'verify');assert.match(f.calls.at(-1),/WITHOUT resubmitting/);
 }finally{f.store.close();}});
 test('target stops scheduler; stale and wrong-session reports rejected',async()=>{const f=fixture();try{
  await f.c.start(f.p.id,{target:1,intervalMinutes:1});const task=f.store.campaign(f.p.id).task;assert.throws(()=>f.c.report(f.p.id,'other',{taskId:task.id,outcome:'done',note:'x'}));
- const j=f.store.addJob(f.p.id,listing).job;for(const status of ['working','prepared','submitting'])f.store.updateJob(f.p.id,j.id,status,'x','session');f.store.recordSubmission(f.p.id,j.id,{kind:'success_page',text:'Received',url:'https://example.test/ok',documents:'CV'},'session');finish(f);await f.c.tick();assert.equal(f.store.campaign(f.p.id).status,'complete');assert.equal(f.calls.length,1);
+ const j=addRankedJob(f.store,f.p.id,listing).job;for(const status of ['working','prepared','submitting'])f.store.updateJob(f.p.id,j.id,status,'x','session');f.store.recordSubmission(f.p.id,j.id,{kind:'success_page',text:'Received',url:'https://example.test/ok',documents:'CV'},'session');finish(f);await f.c.tick();assert.equal(f.store.campaign(f.p.id).status,'complete');assert.equal(f.calls.length,1);
 }finally{f.store.close();}});
 test('in-flight launch followed by pause stops the newly created process',async()=>{
  const f=fixture();let resolveLaunch,stops=0;
@@ -52,8 +53,8 @@ test('campaign state and pending task survive database reopening',async()=>{
 
 test('an answer arriving before the blocked turn ends is not lost and resumes the saved tab first',async()=>{
  const f=fixture();try{
-  const older=f.store.addJob(f.p.id,listing).job;
-  const job=f.store.addJob(f.p.id,{...listing,url:'https://example.test/jobs/2',role:'Engineer'}).job;
+  const older=addRankedJob(f.store,f.p.id,listing).job;
+  const job=addRankedJob(f.store,f.p.id,{...listing,url:'https://example.test/jobs/2',role:'Engineer'}).job;
   f.store.updateJob(f.p.id,older.id,'working','Form','session');f.store.updateJob(f.p.id,older.id,'blocked','Other blocker','session');
   f.store.updateJob(f.p.id,job.id,'working','Form','session');
   await f.c.start(f.p.id,{target:10,intervalMinutes:1});assert.equal(f.store.campaign(f.p.id).task.jobId,job.id);
@@ -69,8 +70,8 @@ test('an answer arriving before the blocked turn ends is not lost and resumes th
 });
 test('answered job takes priority after current independent work, while all outstanding questions must be answered',async()=>{
  const f=fixture();try{
-  const other=f.store.addJob(f.p.id,listing).job;
-  const waiting=f.store.addJob(f.p.id,{...listing,url:'https://example.test/jobs/2',role:'Engineer'}).job;
+  const other=addRankedJob(f.store,f.p.id,listing).job;
+  const waiting=addRankedJob(f.store,f.p.id,{...listing,url:'https://example.test/jobs/2',role:'Engineer'}).job;
   f.store.updateJob(f.p.id,waiting.id,'working','Form','session');f.store.updateJob(f.p.id,waiting.id,'blocked','Questions','session');
   const q1=f.store.ask(f.p.id,{jobId:waiting.id,question:'Date?'}),q2=f.store.ask(f.p.id,{jobId:waiting.id,question:'Salary?'});
   await f.c.start(f.p.id,{target:10,intervalMinutes:1});assert.equal(f.store.campaign(f.p.id).task.jobId,other.id);
@@ -96,7 +97,7 @@ test('two candidates keep independent running sessions; pausing one leaves the o
 });
 
 test('automatic source cannot manufacture submission authority for a prepare-only candidate',async()=>{
- const f=fixture();try{f.store.saveProfile({...f.p,authorization:'prepare'});const source=f.store.sources(f.p.id)[0];f.store.saveSource(f.p.id,{...source,applyMode:'auto'});f.store.addJob(f.p.id,{...listing,sourceId:source.id});await f.c.start(f.p.id);assert.match(f.calls[0],/prepare the form but do not submit/);assert.doesNotMatch(f.calls[0],/already authorized automatic submission/);}finally{f.store.close();}
+ const f=fixture();try{f.store.saveProfile({...f.p,authorization:'prepare'});const source=f.store.sources(f.p.id)[0];f.store.saveSource(f.p.id,{...source,applyMode:'auto'});addRankedJob(f.store,f.p.id,{...listing,sourceId:source.id});await f.c.start(f.p.id);assert.match(f.calls[0],/prepare the form but do not submit/);assert.doesNotMatch(f.calls[0],/already authorized automatic submission/);}finally{f.store.close();}
 });
 
 test('campaign waits for a direct user conversation turn to finish before dispatching',async()=>{
@@ -151,13 +152,13 @@ test('missing report resumes same source rather than marking it scanned; recover
  f.c.signal(f.p.id,'Working');f.c.signal(f.p.id,'Idle');assert.equal(f.store.campaign(f.p.id).status,'paused');assert.equal(f.calls.length,4);
 }finally{f.store.close();}});
 test('interrupted submit recovers as verification without resubmission',async()=>{const f=fixture();try{
- const j=f.store.addJob(f.p.id,listing).job;await f.c.start(f.p.id);
+ const j=addRankedJob(f.store,f.p.id,listing).job;await f.c.start(f.p.id);
  for(const state of ['working','prepared','submitting'])f.store.updateJob(f.p.id,j.id,state,'Form','session');
  f.c.signal(f.p.id,'Interrupted');f.setActive({candidateId:f.p.id,sessionId:'session',state:'Idle'});f.setTime(f.getTime()+6000);await f.c.tick();assert.equal(f.store.campaign(f.p.id).task.kind,'verify');assert.match(f.calls.at(-1),/WITHOUT resubmitting/);
 }finally{f.store.close();}});
 
 test('incomplete auto application cannot close or advance; same task recovers then releases for a saved question',async()=>{const f=fixture();try{
- const job=f.store.addJob(f.p.id,listing).job;await f.c.start(f.p.id);const taskId=f.store.campaign(f.p.id).task.id;
+ const job=addRankedJob(f.store,f.p.id,listing).job;await f.c.start(f.p.id);const taskId=f.store.campaign(f.p.id).task.id;
  for(const state of ['working','prepared'])f.store.updateJob(f.p.id,job.id,state,'Form ready','session');
  assert.throws(()=>f.c.report(f.p.id,'session',{taskId,outcome:'done',note:'Ready'}),/prepared/);
  assert.throws(()=>f.c.report(f.p.id,'session',{taskId,outcome:'blocked',note:'Need approval'}),/blocked/);
@@ -170,26 +171,26 @@ test('incomplete auto application cannot close or advance; same task recovers th
  f.store.answer(f.p.id,q.id,'Confirmed');f.c.answered(f.p.id,q.id);finish(f);await f.c.tick();assert.equal(f.store.campaign(f.p.id).task.jobId,job.id);
  }finally{f.store.close();}});
 test('technical blockers require evidence and no user dependency',async()=>{const f=fixture();try{
- const job=f.store.addJob(f.p.id,listing).job;await f.c.start(f.p.id);const taskId=f.store.campaign(f.p.id).task.id;
+ const job=addRankedJob(f.store,f.p.id,listing).job;await f.c.start(f.p.id);const taskId=f.store.campaign(f.p.id).task.id;
  for(const state of ['working','blocked'])f.store.updateJob(f.p.id,job.id,state,'Site outage','session');
  assert.throws(()=>f.c.report(f.p.id,'session',{taskId,outcome:'blocked',note:'Outage',blocker:{kind:'technical',requiresUserInput:true,evidence:'503',reason:'Site down'}}));
  f.c.report(f.p.id,'session',{taskId,outcome:'blocked',note:'Outage',blocker:{kind:'technical',requiresUserInput:false,evidence:'HTTP 503 on employer form',reason:'Site unavailable'}});
  assert.equal(f.store.campaign(f.p.id).task.report.blocker.evidence,'HTTP 503 on employer form');
  }finally{f.store.close();}});
 test('prepare-only task can finish prepared but auto task cannot use no_results',async()=>{const f=fixture();try{
- f.store.saveProfile({...f.store.profile(f.p.id),authorization:'prepare'});const job=f.store.addJob(f.p.id,listing).job;await f.c.start(f.p.id);
+ f.store.saveProfile({...f.store.profile(f.p.id),authorization:'prepare'});const job=addRankedJob(f.store,f.p.id,listing).job;await f.c.start(f.p.id);
  for(const state of ['working','prepared'])f.store.updateJob(f.p.id,job.id,state,'Ready','session');
  const taskId=f.store.campaign(f.p.id).task.id;assert.throws(()=>f.c.report(f.p.id,'session',{taskId,outcome:'no_results',note:'No results'}));finish(f);assert.equal(f.store.campaign(f.p.id).task,null);
  }finally{f.store.close();}});
 
 test('legacy prepared auto application is eligible despite an earlier incomplete attempt',async()=>{const f=fixture();try{
- const job=f.store.addJob(f.p.id,listing).job;for(const status of ['working','prepared'])f.store.updateJob(f.p.id,job.id,status,'Ready','session');
+ const job=addRankedJob(f.store,f.p.id,listing).job;for(const status of ['working','prepared'])f.store.updateJob(f.p.id,job.id,status,'Ready','session');
  f.store.saveCampaign(f.p.id,{status:'paused',attempts:{[job.id]:f.getTime()+100000}});await f.c.start(f.p.id);assert.equal(f.store.campaign(f.p.id).task.jobId,job.id);
  }finally{f.store.close();}});
 
 test('missing-tab recovery queues the same job without inventing a reply or interrupting current work',async()=>{
  const f=fixture();try{
-  const job=f.store.addJob(f.p.id,listing).job;f.store.updateJob(f.p.id,job.id,'working','Form','session');f.store.updateJob(f.p.id,job.id,'blocked','Manual field check needed','session');
+  const job=addRankedJob(f.store,f.p.id,listing).job;f.store.updateJob(f.p.id,job.id,'working','Form','session');f.store.updateJob(f.p.id,job.id,'blocked','Manual field check needed','session');
   const q=f.store.ask(f.p.id,{jobId:job.id,question:'Email missing?',applicationBlocker:{kind:'access',recovery:{kind:'form_entry'}}});
   await f.c.start(f.p.id,{target:2});const taskId=f.store.campaign(f.p.id).task.id;
   f.c.recheckLegacyFormQuestions(f.p.id);assert.equal(f.store.campaign(f.p.id).formVerificationMigration,1);assert.equal(f.c.recoverQuestion(f.p.id,q.id).queued,true);
@@ -197,5 +198,16 @@ test('missing-tab recovery queues the same job without inventing a reply or inte
   assert.equal(f.store.campaign(f.p.id).task.id,taskId);
   const next=f.c.choose(f.p.id,f.store.campaign(f.p.id));assert.equal(next.jobId,job.id);assert.equal(next.recoveryQuestionId,q.id);
   await f.c.pause(f.p.id);f.c.recoverQuestion(f.p.id,q.id);assert.equal(f.store.campaign(f.p.id).status,'paused');
+ }finally{f.store.close();}
+});
+
+test('start explains disabled sources and automatically dispatches after enabling one',async()=>{
+ const f=fixture();try{
+  for(const source of f.store.sources(f.p.id))f.store.saveSource(f.p.id,{...source,enabled:false});
+  await f.c.start(f.p.id);assert.equal(f.calls.length,0);
+  assert.equal(f.store.campaign(f.p.id).waitingReason,'no_enabled_sources');
+  assert.match(f.store.campaign(f.p.id).note,/Sources/);
+  const source=f.store.sources(f.p.id)[0];f.store.saveSource(f.p.id,{...source,enabled:true});
+  await f.c.start(f.p.id);assert.equal(f.calls.length,1);assert.equal(f.store.campaign(f.p.id).waitingReason,undefined);
  }finally{f.store.close();}
 });

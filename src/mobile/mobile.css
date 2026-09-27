@@ -52,8 +52,9 @@
   .jobs-table td:nth-child(4) { grid-column: 2; grid-row: 1; justify-self: end; }
   .jobs-table td:nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
   .jobs-table td:nth-child(3) { grid-column: 1; grid-row: 3; font-size: 12px; }
-  .jobs-table td:nth-child(5) { grid-column: 2; grid-row: 3; justify-self: end; font-size: 12px; }
-  .jobs-table td:nth-child(6) { grid-column: 1 / -1; grid-row: 4; margin-top: 6px; }
+  .jobs-table td:nth-child(6) { grid-column: 2; grid-row: 3; justify-self: end; font-size: 12px; }
+  .jobs-table td:nth-child(5) { grid-column: 1 / -1; grid-row: 4; }
+  .jobs-table td:nth-child(7) { grid-column: 1 / -1; grid-row: 5; margin-top: 6px; }
   .role-cell strong { font-size: 15px; }
   .job-note { white-space: normal; }
   .table-actions { justify-content: flex-start; flex-wrap: wrap; }

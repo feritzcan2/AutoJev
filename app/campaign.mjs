@@ -1,11 +1,13 @@
+import {rankDecision} from './ranking.mjs';
 import {validateTaskCompletion} from './task-completion.mjs';
 import {randomUUID} from 'node:crypto';
 
 // Builds the bounded task prompt. Exported so the app can show exactly what the agent receives.
 export function campaignPrompt({task,source,profile:p}){
- const skill=task.kind==='search'?'find-jobs':'apply-to-jobs';
- const action=task.kind==='search'?`Search only source ${task.sourceId??'any'}${source?.name?` (${source.name})`:''}; no applications this turn.`:task.kind==='verify'?`Verify job ${task.jobId} WITHOUT resubmitting.`:`Process job ${task.jobId}; ${task.applyMode==='auto'&&p.authorization==='submit'?'automatic submission already authorized':task.applyMode==='find_only'||p.authorization==='research'?'do not apply':'prepare the form but do not submit'}.`;
- return `JobLoop task ${task.id} (${task.kind}). Read get_task_context and verify this task is current. Follow AGENTS.md and .agents/skills/${skill}/SKILL.md; read the skill only if not already in context. ${action}${task.recoveryQuestionId?` Recover technical question ${task.recoveryQuestionId}; no new candidate answer is implied.`:''} Use the current MCP profile, source settings, answers and checkpoint. Report this task with report_campaign_work before ending; complete any rejected reporting requirements on this same task.`;
+ const skill=task.kind==='search'?'find-jobs':task.kind==='rank'?'rank-jobs':'apply-to-jobs';
+ const completion=['search','rank'].includes(task.kind)?'Report this task with report_campaign_work before ending.':'record_submission also reports this task done when completion.taskReported=true; then end the turn without more status/report calls. Otherwise use report_campaign_work.';
+ const action=task.kind==='rank'?`Score saved job ${task.jobId} using rank-jobs and record_job_rank only if it has no saved rank. If already ranked, reuse it and report this task without scoring again; do not fill or submit an application during this task.`:task.kind==='search'?`Search only source ${task.sourceId??'any'}${source?.name?` (${source.name})`:''}; no applications this turn. Close owned finished research tabs before reporting; Jev does this automatically. Preserve unfinished forms and access steps.`:task.kind==='verify'?`Verify job ${task.jobId} WITHOUT resubmitting.`:`Process job ${task.jobId}; ${task.applyMode==='auto'&&p.authorization==='submit'?'automatic submission already authorized':task.applyMode==='find_only'||p.authorization==='research'?'do not apply':'prepare the form but do not submit'}.`;
+ return `JobLoop task ${task.id} (${task.kind}). Call get_task_context once at task start to verify the task. Reuse it throughout this same task, including resumed turns, questions and submission. Follow AGENTS.md and .agents/skills/${skill}/SKILL.md; read the skill only if not already in context. ${action}${task.recoveryQuestionId?` Recover technical question ${task.recoveryQuestionId}; no new candidate answer is implied.`:''}${task.retryRequestId?' User explicitly requeued this blocked application. Recheck its saved form and existing questions; this is not an answer or new consent. Resolve technical blockers when possible; reuse unanswered questions instead of duplicating them.':''} Use the current MCP profile, source settings, answers and checkpoint. ${completion} Resolve unmet requirements on this same task.`;
 }
 
 export function recoveryPrompt(options,reason){
@@ -23,7 +25,7 @@ export class Campaigns {
     if(this.store.setup(id)&&this.store.setup(id).status!=='complete')throw Error('Önce aday setup tamamlanmalı');
     if(!Number.isInteger(target)||target<1||target>10000||!Number.isInteger(intervalMinutes)||intervalMinutes<1||intervalMinutes>1440)throw Error('Hedef 1–10000, tarama aralığı 1–1440 dakika olmalı');
     const previous=this.store.campaign(id);
-    if(previous?.status==='running')return previous;
+    if(previous?.status==='running'){await this.tick();return this.store.campaign(id);}
     if(this.launching.has(id))throw Error('Önce devam eden başlatma işleminin bitmesini bekle');
     if(this.active(id)?.candidateId===id)await this.stop(id);
     this.store.resetSourceSchedule(id);
@@ -39,10 +41,37 @@ export class Campaigns {
     const c=this.store.campaign(id);
     if(c?.status!=='running'||c.task?.id!==taskId||this.active(id)?.sessionId!==sessionId)throw Error('Etkin kampanya işi bulunamadı');
     if(!['done','no_results','blocked'].includes(outcome)||typeof note!=='string'||!note.trim())throw Error('Geçersiz iş sonucu');
-    if(c.task.report)throw Error('Bu işin sonucu zaten kaydedildi');
     const report={outcome,note:note.slice(0,3000),...(blocker?{blocker}:{})};
     try{validateTaskCompletion(this.store,id,c,report);}catch(error){c.task.completionError=error.message;this.save(id,c);throw error;}
+    if(c.task.report){
+      if(c.task.report.outcome===outcome)return c;
+      if(c.task.report.outcome!=='blocked'||outcome!=='done')throw Error('Bu işin sonucu zaten kaydedildi; farklı bir sonuçla değiştirilemez.');
+    }
     delete c.task.completionError;c.task.report=report;return this.save(id,c);
+  }
+  recordSubmission(id,sessionId,input){
+    const c=this.store.campaign(id);
+    const matches=c?.status==='running'&&['application','verify'].includes(c.task?.kind)&&c.task.jobId===input.jobId&&this.active(id)?.sessionId===sessionId;
+    let job;
+    // Persist proof and its matching task report together. The next task still
+    // waits for provider Idle; saving proof must never launch overlapping work.
+    this.store.db.exec('BEGIN IMMEDIATE');
+    try{
+      job=this.store.recordSubmission(id,input.jobId,input,sessionId);
+      if(matches){
+        const report={outcome:'done',note:`${job.company} · ${job.role}: gönderim onayı kaydedildi.`};
+        validateTaskCompletion(this.store,id,c,report);
+        c.task.report=report;c.task.seenWorking=true;
+        delete c.task.completionError;delete c.task.recovery;
+        if(c.pendingResumes)delete c.pendingResumes[job.id];
+        if(c.pendingRecoveries)delete c.pendingRecoveries[job.id];
+        if(c.pendingRetries)delete c.pendingRetries[job.id];
+        this.store.saveCampaign(id,c);
+      }
+      this.store.db.exec('COMMIT');
+    }catch(error){this.store.db.exec('ROLLBACK');throw error;}
+    if(matches)this.changed(id);
+    return {...job,completion:{taskId:matches?c.task.id:null,taskReported:Boolean(matches),nextAction:matches?'end_turn':'return_to_current_task',message:matches?'Submission and task completion saved. End this turn; do not call update_application or report_campaign_work again.':'Submission saved. Do not change this completed application; no matching active campaign task was completed.'}};
   }
   delivery(id,state){
     const c=this.store.campaign(id);if(this.closed||c?.status!=='running'||!c.task||c.task.seenWorking)return;
@@ -71,21 +100,22 @@ export class Campaigns {
     if(job&&['submitting','uncertain'].includes(job.status))task.kind='verify';
     this.save(id,{...c,task,note:'Kesilen görev kaldığı yerden sürdürülüyor'});
     this.launching.add(id);
-    try{const prompt=recoveryPrompt({task,source,profile:this.store.profile(id)},reason);if(session)await this.send(prompt,id);else await this.launch(id,prompt,task.jobId);}
+    try{const prompt=recoveryPrompt({task,source,profile:this.store.profile(id)},reason);if(session)await this.send(prompt,id);else await this.launch(id,prompt,task.kind==='rank'?null:task.jobId);}
     catch(error){const current=this.store.campaign(id);if(current?.status==='running'&&current.task?.id===task.id)this.save(id,{...current,status:'paused',note:'Devam mesajının teslimi doğrulanamadı: '+error.message});}
     finally{this.launching.delete(id);}
   }
   signal(id,state){
     if(this.closed)return;
     const c=this.store.campaign(id);if(c?.status!=='running'||!c.task)return;
-    if(state==='Working'||state==='Compacting'){c.task.seenWorking=true;c.note=c.task.kind==='search'?`${this.store.source(id,c.task.sourceId)?.name??'Kaynak'} taranıyor`:'Agent başvuruyu işliyor';this.save(id,c);}
+    if(state==='Working'||state==='Compacting'){c.task.seenWorking=true;c.note=c.task.kind==='search'?`${this.store.source(id,c.task.sourceId)?.name??'Kaynak'} taranıyor`:c.task.kind==='rank'?'Agent ilanı puanlıyor':'Agent başvuruyu işliyor';this.save(id,c);}
     else if(state==='Failed'){c.note='Agent hata bildirdi; oturum yeniden hazırlanıyor';this.save(id,c);this.stop(id).then(()=>this.exited(id)).catch(error=>this.save(id,{...this.store.campaign(id),status:'paused',note:error.message}));}
     else if(state==='Interrupted'){this.recoverTurn(id,c,'Terminal turn interrupted');}
     else if(state==='Idle'&&c.task.seenWorking){
       const task=c.task;
       if(!task.report){this.recoverTurn(id,c,task.completionError??'Turn ended without report_campaign_work');return;}
       try{validateTaskCompletion(this.store,id,c,task.report);}catch(error){task.report=null;this.recoverTurn(id,c,error.message);return;}
-      if(task.jobId){
+      if(task.jobId&&task.kind!=='rank'){
+        if(task.retryRequestId&&c.pendingRetries?.[task.jobId]?.requestId===task.retryRequestId)delete c.pendingRetries[task.jobId];
         if(task.report&&task.recoveryQuestionId&&c.pendingRecoveries?.[task.jobId]===task.recoveryQuestionId)delete c.pendingRecoveries[task.jobId];
         if(task.report&&task.resumeQuestionId&&c.pendingResumes?.[task.jobId]===task.resumeQuestionId)delete c.pendingResumes[task.jobId];
         if(c.pendingResumes?.[task.jobId])delete c.attempts[task.jobId];else c.attempts[task.jobId]=this.now();
@@ -117,18 +147,43 @@ export class Campaigns {
     delete c.attempts[q.jobId];c.wakeAt=0;this.save(id,c);
     return{queued:true,message:c.status==='running'?'Sekme ve form kontrolü sıraya alındı. Agent mevcut işini bitirince bu başvuruya dönecek.':'Sekme ve form kontrolü sıraya alındı. Agent’ı başlatınca devam edecek.'};
   }
+  queueApplication(id,jobId){
+    const job=this.store.job(id,jobId),profile=this.store.profile(id);
+    if(job.status!=='blocked')throw Error('Yalnızca bilgi / işlem bekleyen başvurular sıraya alınabilir.');
+    const source=job.sourceId?this.store.source(id,job.sourceId):null;
+    if(profile.authorization==='research'||source?.applyMode==='find_only')throw Error('Bu ilan için başvuru hazırlama izni gerekli; profil veya kaynak yalnızca araştırmaya izin veriyor.');
+    const c=this.store.campaign(id)??{status:'paused',target:100,intervalMinutes:30,task:null,attempts:{},failures:0};
+    if(c.status==='running'&&c.task?.jobId===jobId)return {queued:false,active:true,message:'Agent bu ilanı zaten işliyor.'};
+    c.pendingRetries??={};
+    const existing=c.pendingRetries[jobId];
+    c.pendingRetries[jobId]??={requestId:randomUUID(),queuedAt:this.now()};
+    c.attempts??={};delete c.attempts[jobId];c.wakeAt=0;
+    this.save(id,c);
+    return {queued:true,alreadyQueued:Boolean(existing),requestId:c.pendingRetries[jobId].requestId,message:c.status==='running'?'İlan sıraya alındı. Agent mevcut işinden sonra yeniden kontrol edecek.':'İlan sıraya alındı. Agent’ı başlatınca yeniden kontrol edecek.'};
+  }
   choose(id,c){
     const p=this.store.profile(id),jobs=this.store.jobs(id),questions=this.store.questions(id);
-    if(p.authorization!=='research'){
-      for(const j of jobs.slice().reverse().sort((a,b)=>Number(Boolean(c.pendingResumes?.[b.id]))-Number(Boolean(c.pendingResumes?.[a.id])))){
-        const source=j.sourceId?this.store.source(id,j.sourceId):null;if(source?.applyMode==='find_only')continue;
-        const unanswered=questions.some(q=>q.jobId===j.id&&q.answer===null);if(unanswered&&!c.pendingRecoveries?.[j.id])continue;
-        const answered=questions.some(q=>q.jobId===j.id&&q.answer!==null);
-        const maySubmit=p.authorization==='submit'&&(!source||source.applyMode==='auto');
-        const eligible=['found','working','uncertain'].includes(j.status)||(j.status==='prepared'&&maySubmit)||(j.status==='blocked'&&(answered||c.pendingRecoveries?.[j.id]||j.note.startsWith('Oturum kapandı.')));
-        if(eligible&&(c.pendingResumes?.[j.id]||(j.status==='prepared'&&maySubmit)||!c.attempts[j.id]||Date.parse(j.updatedAt)>c.attempts[j.id]))return{recoveryQuestionId:c.pendingRecoveries?.[j.id]??null,resumeQuestionId:c.pendingResumes?.[j.id]??null,kind:j.status==='uncertain'?'verify':'application',jobId:j.id,sourceId:j.sourceId??null,applyMode:source?.applyMode??(maySubmit?'auto':'prepare')};
-      }
+    const ordered=jobs.slice().reverse().sort((a,b)=>{
+      const priority=j=>j.status==='uncertain'?3:(c.pendingRetries?.[j.id]||c.pendingResumes?.[j.id])?2:['working','prepared'].includes(j.status)?1:0;
+      return priority(b)-priority(a)||(b.rank?.score??-1)-(a.rank?.score??-1);
+    });
+    for(const j of ordered){
+      const source=j.sourceId?this.store.source(id,j.sourceId):null;
+      // Permission changes stop new applications, not verification of an earlier submission.
+      if(j.status!=='uncertain'&&(p.authorization==='research'||source?.applyMode==='find_only'))continue;
+      const unanswered=questions.some(q=>q.jobId===j.id&&q.answer===null);if(unanswered&&!c.pendingRecoveries?.[j.id]&&!c.pendingRetries?.[j.id])continue;
+      const answered=questions.some(q=>q.jobId===j.id&&q.answer!==null);
+      const maySubmit=p.authorization==='submit'&&(!source||source.applyMode==='auto');
+      const eligible=['found','working','uncertain'].includes(j.status)||(j.status==='prepared'&&maySubmit)||(j.status==='blocked'&&(c.pendingRetries?.[j.id]||answered||c.pendingRecoveries?.[j.id]||j.note.startsWith('Oturum kapandı.')));
+      const ranking=rankDecision(p,j);
+      if(eligible&&j.status!=='uncertain'&&ranking.state==='pending'&&(c.pendingRetries?.[j.id]||c.pendingResumes?.[j.id]||['working','prepared'].includes(j.status)))return{kind:'rank',jobId:j.id,sourceId:j.sourceId??null};
+      if(j.status!=='uncertain'&&!ranking.eligible)continue;
+      if(eligible&&(c.pendingRetries?.[j.id]||c.pendingResumes?.[j.id]||(j.status==='prepared'&&maySubmit)||!c.attempts[j.id]||Date.parse(j.updatedAt)>c.attempts[j.id]))return{retryRequestId:c.pendingRetries?.[j.id]?.requestId??null,recoveryQuestionId:c.pendingRecoveries?.[j.id]??null,resumeQuestionId:c.pendingResumes?.[j.id]??null,kind:j.status==='uncertain'?'verify':'application',jobId:j.id,sourceId:j.sourceId??null,applyMode:source?.applyMode??(maySubmit?'auto':'prepare')};
     }
+    // Score only listings without a saved assessment; profile changes do not invalidate scores.
+    // Ranking never owns the form and never changes application status or its checkpoint.
+    const unranked=ordered.find(j=>!['submitted','skipped','uncertain','submitting'].includes(j.status)&&rankDecision(p,j).state==='pending');
+    if(unranked)return{kind:'rank',jobId:unranked.id,sourceId:unranked.sourceId??null};
     const due=this.store.sources(id).filter(source=>source.enabled&&(source.nextRunAt??0)<=this.now()).sort((a,b)=>(a.nextRunAt??0)-(b.nextRunAt??0))[0];
     if(due)return{kind:'search',sourceId:due.id,jobsBefore:jobs.length};
     c.nextSearchAt=this.nextSourceAt(id);
@@ -147,17 +202,25 @@ export class Campaigns {
       if(this.now()<c.wakeAt)continue;
       const session=this.active(p.id);if(session?.state&&session.state!=='Idle')continue;
       if(this.store.jobs(p.id).filter(j=>j.status==='submitted').length>=c.target){this.save(p.id,{...c,status:'complete',note:'Başvuru hedefine ulaşıldı'});continue;}
-      const chosen=this.choose(p.id,c);if(!chosen)continue;
+      const previousNext=c.nextSearchAt,chosen=this.choose(p.id,c);if(!chosen){
+        const sources=this.store.sources(p.id),findOnly=new Set(sources.filter(s=>s.applyMode==='find_only').map(s=>s.id));
+        const held=this.store.jobs(p.id).filter(j=>j.status==='found'&&findOnly.has(j.sourceId)).length;
+        const waitingReason=held?'source_apply_mode':sources.some(source=>source.enabled)?'source_schedule':'no_enabled_sources';
+        const note=held?`${held} ilan kaynakların “Sadece bul” ayarı nedeniyle başvuruya alınmıyor. Sources → Başvuru modu ayarını değiştir.`:waitingReason==='no_enabled_sources'?'Şu anda puan, yetki ve bekleyen yanıt koşullarını karşılayan başvuru yok; yeni ilan taramaları da kapalı. Başvurular tablosundaki durumları veya Sources ayarlarını kontrol et.':'Şu anda işlenebilir başvuru yok; sonraki kaynak taraması bekleniyor.';
+        if(c.waitingReason!==waitingReason||c.note!==note||previousNext!==c.nextSearchAt)this.save(p.id,{...c,waitingReason,note});
+        continue;
+      }
+      delete c.waitingReason;
       const task={...chosen,id:randomUUID(),seenWorking:false,report:null,createdAt:this.now()};c.task=task;this.save(p.id,c);
       const source=task.sourceId?this.store.source(p.id,task.sourceId):null;
       const prompt=campaignPrompt({task,source,profile:p});
       this.launching.add(p.id);
       try{
-        if(!this.active(p.id))await this.launch(p.id,prompt,task.jobId);
-        else{if(task.jobId){const j=this.store.job(p.id,task.jobId);if(['blocked','uncertain'].includes(j.status)&&j.sessionId!==this.active(p.id).sessionId)this.store.reclaim(p.id,j.id,this.active(p.id).sessionId);}await this.send(prompt,p.id);}
+        if(!this.active(p.id))await this.launch(p.id,prompt,task.kind==='rank'?null:task.jobId);
+        else{if(task.jobId&&task.kind!=='rank'){const j=this.store.job(p.id,task.jobId);if(['blocked','uncertain'].includes(j.status)&&j.sessionId!==this.active(p.id).sessionId)this.store.reclaim(p.id,j.id,this.active(p.id).sessionId);}await this.send(prompt,p.id);}
         // A stop/pause may arrive while launch was in flight.
         if(this.store.campaign(p.id)?.status!=='running'){if(this.active(p.id)?.candidateId===p.id)await this.stop(p.id);continue;}
-        if(task.jobId){const job=this.store.job(p.id,task.jobId);if(['blocked','uncertain'].includes(job.status)&&job.sessionId!==this.active(p.id)?.sessionId)this.store.reclaim(p.id,job.id,this.active(p.id).sessionId);}
+        if(task.jobId&&task.kind!=='rank'){const job=this.store.job(p.id,task.jobId);if(['blocked','uncertain'].includes(job.status)&&job.sessionId!==this.active(p.id)?.sessionId)this.store.reclaim(p.id,job.id,this.active(p.id).sessionId);}
         const delivered=this.store.campaign(p.id);
         if(delivered?.status==='running'&&delivered.task?.id===task.id){
           const job=task.jobId?this.store.job(p.id,task.jobId):null;

@@ -16,14 +16,35 @@ test('application questions require real blockers and cannot request already-gra
 });
 
 import {questionKnowledge,validateQuestionReview} from '../app/question-gate.mjs';
-test('question review rejects stale reads, known facts and untried manual-entry requests',()=>{
+test('task review survives MCP restart without another context read and never crosses tasks',async()=>{
+ const store=new Store(':memory:'),p=store.saveProfile({name:'Test',preferences:'Remote'});
+ const job=store.addJob(p.id,{company:'Example',role:'Dev',location:'Remote',fit:'Test',url:'https://example.test/restart'}).job;
+ store.saveCampaign(p.id,{status:'running',task:{id:'first',kind:'application',jobId:job.id}});
+ let server=await startMcp(store),token=server.grant(p.id,'before');
+ const call=async(name,args={})=>(await(await fetch(server.endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}})})).json()).result;
+ const question={jobId:job.id,question:'Required start date?',applicationBlocker:{kind:'required_form_field',evidence:'Start date *',reasonUnknown:'No supported date',review:{cvChecked:'No CV',missingFacts:[{key:'notice_period',gap:'Exact date unknown'}]}}};
+ try{
+  assert.equal((await call('ask_candidate',question)).isError,true);
+  await call('get_task_context');
+  await server.close();server=await startMcp(store);token=server.grant(p.id,'after');
+  store.saveProfile({...store.profile(p.id),facts:'Additional information received'});
+  assert.notEqual((await call('ask_candidate',question)).isError,true);
+  store.saveCampaign(p.id,{status:'running',task:{id:'second',kind:'application',jobId:job.id}});
+  assert.equal((await call('ask_candidate',question)).isError,true);
+  const access={jobId:job.id,question:'Restore the original browser tool',applicationBlocker:{kind:'access',evidence:'Original Chrome tool unavailable',reasonUnknown:'Cannot inspect saved draft',recovery:{kind:'user_only',userActionReason:'Enable the original browser tool'}}};
+  assert.notEqual((await call('ask_candidate',access)).isError,true);
+  access.applicationBlocker.recovery.userActionReason=' ';
+  assert.equal((await call('ask_candidate',access)).isError,true);
+ }finally{await server.close();store.close();}
+});
+test('question review reuses task-start reads but checks current known facts and manual-entry evidence',()=>{
  const store=new Store(':memory:');
  try{
   const p=store.saveProfile({name:'Test',preferences:'Berlin',facts:'Email: test@example.test'});
   store.rememberFact(p.id,{key:'contact',value:'test@example.test',source:'profile',sourceId:p.id,evidence:'test@example.test'});
   const review={cvChecked:'No CV present',missingFacts:[{key:'contact',gap:'Email required'}]};
   const input={applicationBlocker:{kind:'required_form_field',review}};
-  assert.throws(()=>validateQuestionReview(store,p.id,input,null),/list_applications/);
+  assert.throws(()=>validateQuestionReview(store,p.id,input,null),/get_task_context/);
   const read=questionKnowledge(store,p.id);
   assert.throws(()=>validateQuestionReview(store,p.id,input,read),/kayıtlı bilgi/);
   review.missingFacts[0].knownValueGap='Saved email present; mandatory LinkedIn URL absent';
@@ -39,9 +60,10 @@ test('question review rejects stale reads, known facts and untried manual-entry 
   input.applicationBlocker.recovery={kind:'user_only',userActionReason:'Observed MFA requires user code'};
   assert.doesNotThrow(()=>validateQuestionReview(store,p.id,input,read));
   const q=store.ask(p.id,{question:'New correction'});store.answer(p.id,q.id,'New email');
-  assert.throws(()=>validateQuestionReview(store,p.id,input,read),/list_applications/);
+  assert.doesNotThrow(()=>validateQuestionReview(store,p.id,input,read));
   const other=store.saveProfile({name:'Other',preferences:'Remote'});
-  assert.throws(()=>validateQuestionReview(store,other.id,input,read),/list_applications/);
+  input.applicationBlocker.kind='required_form_field';
+  assert.throws(()=>validateQuestionReview(store,other.id,input,read),/get_task_context/);
  }finally{store.close();}
 });
 
@@ -56,4 +78,32 @@ test('technical resolution is candidate scoped and never fabricates an answer or
   const consent=store.ask(p.id,{question:'Consent?',applicationBlocker:{kind:'uncovered_consent'}});
   assert.throws(()=>store.resolveTechnicalQuestion(p.id,consent.id,'Assumed'));
  }finally{store.close();}
+});
+
+test('CAPTCHA escalation requires a remaining challenge and attempts or a concrete tool limitation',async()=>{
+ const store=new Store(':memory:'),p=store.saveProfile({name:'Test',preferences:'Remote'});
+ const job=store.addJob(p.id,{company:'Example',role:'Dev',location:'Remote',fit:'Test',url:'https://example.test/captcha'}).job;
+ store.saveCampaign(p.id,{status:'running',task:{id:'task',kind:'application',jobId:job.id}});
+ const server=await startMcp(store),token=server.grant(p.id,'session');
+ const call=async(name,args={})=>(await(await fetch(server.endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}})})).json()).result;
+ try{
+  await call('get_task_context');
+  const recovery={kind:'captcha',userActionReason:'Complete the remaining challenge in the retained tab',captchaCheck:{state:'required',capability:'supported',evidence:'Fresh screenshot still shows the challenge'}};
+  const input={jobId:job.id,question:'Complete this remaining challenge',applicationBlocker:{kind:'access',evidence:'Visible CAPTCHA challenge',reasonUnknown:'The challenge did not clear automatically',recovery}};
+  assert.equal((await call('ask_candidate',input)).isError,true);
+  recovery.attempts=[{method:'Normal visible challenge controls',result:'Challenge remained after verification'}];
+  for(const state of ['checking','cleared']){
+   recovery.captchaCheck.state=state;assert.equal((await call('ask_candidate',input)).isError,true);
+  }
+  recovery.captchaCheck.state='required';
+  assert.notEqual((await call('ask_candidate',input)).isError,true); // No irrelevant CV review.
+  delete recovery.attempts;
+  for(const capability of ['tool_disallowed','not_exposed']){
+   recovery.captchaCheck.capability=capability;delete recovery.captchaCheck.limitation;
+   assert.equal((await call('ask_candidate',input)).isError,true);
+   recovery.captchaCheck.limitation=capability==='tool_disallowed'?'Active browser tool explicitly requires human handling':'Challenge is inside an iframe the active tool cannot expose';
+   assert.notEqual((await call('ask_candidate',input)).isError,true);
+  }
+  assert.equal(store.questions(p.id).length,3);
+ }finally{await server.close();store.close();}
 });

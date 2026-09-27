@@ -1,3 +1,4 @@
+import {browserResume} from './browser-resume.mjs';
 import {sourceInstructions,runSourceTool,sourceIntegrations} from './source-integrations.mjs';
 import {focusApplicationTab} from './focus-tab.mjs';
 import {inspectGmailAccess} from './connector-access.mjs';
@@ -11,7 +12,7 @@ import {BackgroundJobs} from './background.mjs';
 import {launchSkillWorker} from './background-worker.mjs';
 import {Store} from './store.mjs';
 import {startMcp} from './mcp.mjs';
-import {startWithResumeRepair,rejectedResumeOnExit} from './resume.mjs';
+import {startWithResumeRepair,rejectedResumeOnExit,selectResume} from './resume.mjs';
 import {AGENTS_MD,promptCatalog,browserProfileInstruction} from './prompts.mjs';
 import {listChromeProfiles} from './chrome-profiles.mjs';
 import {Engine} from './engine.mjs';
@@ -29,22 +30,25 @@ await app.whenReady();
 const data=app.getPath('userData');await mkdir(data,{recursive:true,mode:0o700});
 const store=new Store(path.join(data,'jobloop.sqlite'));
 for(const candidate of store.candidates())for(const sessionId of new Set(store.jobs(candidate.id).map(j=>j.sessionId).filter(Boolean)))store.recoverSession(candidate.id,sessionId);
-const browser=new BrowserTools(data,id=>store.profile(id).browserMode,id=>({profile:store.profile(id).chromeProfile,checkpoints:[...store.jobs(id),...store.sources(id)].map(item=>item.resumeContext).filter(Boolean)}));
+const browser=new BrowserTools(data,id=>store.profile(id).browserMode,id=>{
+ const jobs=store.jobs(id),sources=store.sources(id),task=store.campaign(id)?.task;
+ return {profile:store.profile(id).chromeProfile,checkpoints:[...jobs,...sources].map(item=>item.resumeContext).filter(Boolean),lifecycle:{jobs,activeSearchTaskId:task?.kind==='search'?task.id:null,sourceTabIds:sources.filter(s=>s.resumeContext?.browser==='Jev Chrome').map(s=>s.resumeContext.tabId),activeJobId:['application','verify'].includes(task?.kind)?task.jobId:null}};
+});
 let window,quitting=false;
 const engines=new Map(),sessions=new Map(),starting=new Set(),terminalOutputs=new Map(),terminalSequences=new Map();
 let terminalGrid={rows:24,cols:80};
 let mobile=null;
 const emit=(channel,value)=>{if(window&&!window.isDestroyed())window.webContents.send(channel,value);mobile?.broadcast(channel,value);};
-const mcp=await startMcp(store,candidateId=>emit('changed',{candidateId}),hook=>{const active=[...sessions.values()].find(a=>a.sessionId===hook.observation?.sessionId);if(!active)throw Error('No agent');return engines.get(active.candidateId).request('hook',{token:hook.token,observation:hook.observation});},browser,{get:id=>store.campaign(id),report:(id,sessionId,args)=>campaigns.report(id,sessionId,args)});
+const mcp=await startMcp(store,candidateId=>emit('changed',{candidateId}),hook=>{const active=[...sessions.values()].find(a=>a.sessionId===hook.observation?.sessionId);if(!active)throw Error('No agent');return engines.get(active.candidateId).request('hook',{token:hook.token,observation:hook.observation});},browser,{get:id=>store.campaign(id),report:(id,sessionId,args)=>campaigns.report(id,sessionId,args),recordSubmission:(id,sessionId,args)=>campaigns.recordSubmission(id,sessionId,args)});
 const retire=id=>{const active=sessions.get(id);if(active){store.recoverSession(id,active.sessionId);mcp.revoke(active.token);sessions.delete(id);emit('changed',{candidateId:id});}};
 function ensureEngine(id='catalog'){if(!engines.has(id)){const instance=new Engine(path.join(root,'engine/target/debug',process.platform==='win32'?'jobloop-engine.exe':'jobloop-engine'),path.join(data,'processes',id),event=>{
   if(engines.get(id)!==instance)return;
   const active=sessions.get(id);
   if(event.sessionId&&event.sessionId!==active?.sessionId)return;
-  if(event.event==='identity'&&active){store.saveConversation(id,active.provider,event.nativeId);return;}
-  if(event.event==='output'){if(active?.resumeId&&!active.resumeReady)active.resumeDiagnostic=((active.resumeDiagnostic??'')+Buffer.from(event.bytes).toString()).slice(-8000);event.sequence=(terminalSequences.get(id)??0)+1;terminalSequences.set(id,event.sequence);terminalOutputs.set(id,Buffer.concat([terminalOutputs.get(id)??Buffer.alloc(0),Buffer.from(event.bytes)]).subarray(-1000000));}
+  if(event.event==='identity'&&active){store.saveConversation(id,active.provider,event.nativeId,active.launchSettings);return;}
+  if(event.event==='output'){if(active?.resumeId)active.resumeDiagnostic=((active.resumeDiagnostic??'')+Buffer.from(event.bytes).toString()).slice(-8000);event.sequence=(terminalSequences.get(id)??0)+1;terminalSequences.set(id,event.sequence);terminalOutputs.set(id,Buffer.concat([terminalOutputs.get(id)??Buffer.alloc(0),Buffer.from(event.bytes)]).subarray(-1000000));}
   if(event.event==='delivery'&&active)campaigns.delivery(id,event.state.replace(/^Some\((.*)\)$/,'$1'));
-  if(event.event==='state'&&active){active.state=event.state.replace(/^Some\((.*)\)$/,'$1');if(active.state==='Working'){active.resumeReady=true;active.resumeDiagnostic='';}campaigns.signal(id,active.state);emit('changed',{candidateId:id});}
+  if(event.event==='state'&&active){active.state=event.state.replace(/^Some\((.*)\)$/,'$1');campaigns.signal(id,active.state);emit('changed',{candidateId:id});}
   if(['engine_exit','eof'].includes(event.event)){if(rejectedResumeOnExit(active)){store.forgetConversation(id,active.provider,active.resumeId);store.event(id,'resume_fallback',{fresh:true,replacedResumeId:active.resumeId,reason:'Resume rejected; next launch starts fresh with saved task context'});}engines.delete(id);retire(id);if(event.event==='eof')instance.close().catch(()=>{});if(active){campaigns.exited(id);setups.exited(id);}}
   emit('agent-event',{...event,candidateId:id});
 });engines.set(id,instance);}return engines.get(id);}
@@ -90,21 +94,26 @@ handle('source-instructions',(id,sourceId)=>sourceInstructions(root,store.source
 handle('source-test',async(id,sourceId)=>{const result=await runSourceTool(root,store.source(id,sourceId),['search','--help'],{test:true});store.event(id,'source_tool_tested',{sourceId,ok:result.ok});return result;});
 handle('save-source',async(candidateId,source)=>{const result=store.saveSource(candidateId,source);emit('changed',{candidateId});await campaigns.tick();return result;});
 handle('delete-source',(candidateId,id)=>{const result=store.deleteSource(candidateId,id);emit('changed',{candidateId});return result;});
+handle('save-rank-threshold',async(id,value)=>{const result=store.saveRankThreshold(id,value);emit('changed',{candidateId:id});await campaigns.tick();return result;});
+handle('set-manual-job-status',(id,jobId,outcome)=>{const job=store.job(id,jobId),active=sessions.get(id);if(active&&(store.campaign(id)?.task?.jobId===jobId||job.sessionId===active.sessionId))throw Error('Bu başvurunun durumunu değiştirmeden önce agent’ı durdur');const result=store.setManualJobStatus(id,jobId,outcome);emit('changed',{candidateId:id});return result;});
+handle('queue-ranked-job',async(id,jobId)=>{const result=store.queueRankedJob(id,jobId);emit('changed',{candidateId:id});await campaigns.tick();return result;});
 handle('save-application-policy',(candidateId,policy)=>{const result=store.saveApplicationPolicy(candidateId,policy);emit('changed',{candidateId});return result;});
 handle('pick-cv',async id=>{store.profile(id);const result=await dialog.showOpenDialog(window,{properties:['openFile'],filters:[{name:'CV',extensions:['pdf','docx','txt']}]});if(result.canceled)return null;const dir=path.join(data,'candidates',id);await mkdir(dir,{recursive:true,mode:0o700});const target=path.join(dir,'CV'+path.extname(result.filePaths[0]).toLowerCase());await copyFile(result.filePaths[0],target);await chmod(target,0o600);store.setCv(id,target);emit('changed',{});return target;});
 async function startAgent(candidateId,prompt,jobId){
   if(sessions.has(candidateId)||starting.has(candidateId))throw Error('Bu adayın agent oturumu zaten açık');
-  const profile=store.profile(candidateId);if(!profile.cvPath&&store.setup(candidateId)?.status!=='running')throw Error('Önce CV seç');starting.add(candidateId);
-  prompt=['Session startup: read the current AGENTS.md and run-job-search skill once; their task-routing rules replace earlier blanket instructions to reread every skill. Then execute the assigned task below.',browserProfileInstruction(profile),prompt].filter(Boolean).join('\n\n');
+  const profile=store.profile(candidateId),resumeId=selectResume(store,candidateId,store.profile(candidateId).agentSettings);if(!profile.cvPath&&store.setup(candidateId)?.status!=='running')throw Error('Önce CV seç');starting.add(candidateId);
+  const activeJobId=jobId??store.campaign(candidateId)?.task?.jobId;
+  const resumeBrowser=browserResume(profile,activeJobId?store.job(candidateId,activeJobId):null);
+  prompt=['Session startup: read the current AGENTS.md and run-job-search skill once; their task-routing rules replace earlier blanket instructions to reread every skill. Then execute the assigned task below.',browserProfileInstruction(profile),resumeBrowser?.instruction,prompt].filter(Boolean).join('\n\n');
   const sessionId=randomUUID(),token=mcp.grant(candidateId,sessionId);store.logPrompt(candidateId,{kind:'start',text:prompt,jobId:jobId??null,sessionId});
   try{
     const cwd=path.join(data,'candidates',candidateId);await mkdir(cwd,{recursive:true,mode:0o700});await cp(path.join(root,'skills'),path.join(cwd,'.agents/skills'),{recursive:true});
     await writeFile(path.join(cwd,'AGENTS.md'),AGENTS_MD);
     await mkdir(path.join(cwd,'runtime'),{recursive:true});await mkdir(path.join(cwd,'documents'),{recursive:true});
-    sessions.set(candidateId,{candidateId,sessionId,token,provider:profile.agentSettings.provider,resumeId:store.conversation(candidateId,profile.agentSettings.provider)});terminalOutputs.delete(candidateId);
+    sessions.set(candidateId,{candidateId,sessionId,token,provider:profile.agentSettings.provider,resumeId,launchSettings:{...profile.agentSettings}});terminalOutputs.delete(candidateId);
     const engine=ensureEngine(candidateId);
     if(jobId){const job=store.job(candidateId,jobId);if(['blocked','uncertain'].includes(job.status)&&job.sessionId!==sessionId)store.reclaim(candidateId,jobId,sessionId);}
-    await startWithResumeRepair(engine,{sessionId,cwd,runtimeDirectory:path.join(cwd,'runtime'),endpoint:mcp.endpoint,token,...profile.agentSettings,resumeId:store.conversation(candidateId,profile.agentSettings.provider),prompt,...terminalGrid},result=>{if(result.fresh){store.forgetConversation(candidateId,profile.agentSettings.provider,result.replacedResumeId);const active=sessions.get(candidateId);if(active){active.resumeId=null;active.resumeDiagnostic='';}}store.event(candidateId,'history_repaired',result);emit('changed',{candidateId});});
+    await startWithResumeRepair(engine,{sessionId,cwd,runtimeDirectory:path.join(cwd,'runtime'),endpoint:mcp.endpoint,token,...profile.agentSettings,resumeId,prompt,...terminalGrid},result=>{if(result.fresh){store.forgetConversation(candidateId,profile.agentSettings.provider,result.replacedResumeId);const active=sessions.get(candidateId);if(active){active.resumeId=null;active.resumeDiagnostic='';}}store.event(candidateId,'history_repaired',result);emit('changed',{candidateId});});
     await engine.request('resize',terminalGrid);
     emit('changed',{});return{sessionId};
   }catch(error){mcp.revoke(token);sessions.delete(candidateId);const failed=engines.get(candidateId);engines.delete(candidateId);await failed?.close().catch(()=>{});throw error;}finally{starting.delete(candidateId);}
@@ -130,6 +139,7 @@ handle('prompt-catalog',()=>promptCatalog(root));
 handle('prompts',id=>{store.profile(id);return store.prompts(id);});
 handle('terminal-resize',async(id,rows,cols)=>{if(!Number.isInteger(rows)||!Number.isInteger(cols)||rows<4||rows>1024||cols<20||cols>4096)return;terminalGrid={rows,cols};if(sessions.has(id)&&!starting.has(id))await engines.get(id).request('resize',terminalGrid);});
 handle('answer',async(candidateId,id,answer)=>{const result=store.answer(candidateId,id,answer);campaigns.answered(candidateId,id);setups.answered(candidateId);emit('changed',{});await campaigns.tick();await setups.tick();return{...result,delivery:'saved'};});
+handle('queue-application',async(candidateId,jobId)=>{const result=campaigns.queueApplication(candidateId,jobId);await campaigns.tick();return result;});
 handle('reclaim',(candidateId,id)=>{const active=sessions.get(candidateId);if(!active)throw Error('Bu adayın agent oturumunu başlat');const result=store.reclaim(candidateId,id,active.sessionId);emit('changed',{});return result;});
 const focusTab=(id,context)=>context?.browser==='Jev Chrome'?browser.focus(id,context):focusApplicationTab(context);
 handle('open-source-tab',(candidateId,sourceId)=>focusTab(candidateId,store.source(candidateId,sourceId).resumeContext));

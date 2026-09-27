@@ -89,3 +89,25 @@
 /* Let the pinned row stick to the page viewport rather than an unscrolled wrapper. */
 .jobs-table-wrap:has(.agent-current-row) { overflow: visible; }
 .jobs-table .agent-current-row > td { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--accent-strong, #45baff) 10%, var(--bg-raised, #181f27)); border-bottom: 2px solid var(--accent-strong, #45baff); }
+
+/* Rank explains priority without hiding weak or uncertain listings. */
+.rank-settings { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin:-8px 0 22px; }
+.rank-settings label { display:flex; align-items:center; gap:10px; }
+.rank-settings input { width:76px; }
+.rank-settings small, .rank-label, .rank-pending { color:var(--text-secondary); font-size:11px; }
+.rank-label { display:block; margin-top:6px; }
+.rank-score { color:var(--accent); font-weight:650; font-variant-numeric:tabular-nums; white-space:nowrap; cursor:pointer; }
+.rank-details[open] { min-width:230px; max-width:340px; }
+.rank-details p { margin:10px 0; font-size:12px; white-space:pre-line; }
+.rank-details ul { padding-left:16px; font-size:12px; }
+.rank-details small { display:block; color:var(--text-muted); }
+.rank-cell[data-state="below_threshold"] .rank-score, .rank-cell[data-state="blocked"] .rank-score { color:var(--warning); }
+.jobs-table th:nth-child(1), .jobs-table td:nth-child(1) { width:12%; }
+.jobs-table th:nth-child(2), .jobs-table td:nth-child(2) { width:29%; }
+.jobs-table th:nth-child(3), .jobs-table td:nth-child(3) { width:13%; }
+.jobs-table th:nth-child(4), .jobs-table td:nth-child(4) { width:14%; }
+.jobs-table th:nth-child(5), .jobs-table td:nth-child(5) { width:12%; }
+.jobs-table th:nth-child(6), .jobs-table td:nth-child(6) { width:10%; }
+.jobs-table th:nth-child(7), .jobs-table td:nth-child(7) { width:10%; }
+
+.table-actions .manual-job-status{max-width:165px;font-size:12px;padding:6px 8px;}

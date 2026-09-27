@@ -8,7 +8,7 @@ Set `TYPESAFE_API_KEY` in the repository's ignored `.env.jev` file (or the app's
 environment). `TYPESAFE_MODEL` defaults to `jev-latest`. The application reads
 only those settings; it never passes the key to the agent or renderer.
 
-In Jobloop select **Agent → Tarayıcı → Jev · mevcut Chrome’da yeni pencere**, then restart the
+In Jobloop select **Agent → Tarayıcı → Jev · mevcut Chrome’da tek pencere**, then restart the
 candidate's agent. It receives these MCP tools:
 
 - `browser_jev_open` / `browser_jev_tabs` / `browser_jev_observe`
@@ -18,14 +18,22 @@ candidate's agent. It receives these MCP tools:
 - `browser_jev_act`: execute the reviewed decision once; the agent supplies `text`
 - `browser_jev_upload`: upload an observed file input from this candidate's workspace
 
-Jev opens a new window in the selected existing Chrome profile and reuses its
-signed-in session. Choose the profile in Agent settings. Chrome must already be
+Jev keeps one dedicated window per candidate and selected existing Chrome profile,
+reusing its signed-in session. A small Jobloop home tab anchors new application
+tabs to that exact window even when a personal Chrome window is focused. Ordinary
+window.open popups become tabs while preserving opener/privacy flags. Existing
+drafts in older windows are preserved; new work uses the retained Jobloop window. Choose the profile in Agent settings. Chrome must already be
 running with remote debugging enabled in `chrome://inspect/#remote-debugging`;
 accept Chrome's connection prompt when shown. The app does not change this
 security setting automatically or fall back to an empty profile. Only windows
 created for this candidate and their popups are exposed to the agent. Existing
 personal tabs are not exposed. Disconnecting Jobloop leaves Chrome open.
-Candidate/profile-scoped tab IDs are saved locally. After a disconnect or app
+Candidate/profile-scoped tab IDs, home/window identity, job bindings and hashes
+of last observed URLs are saved locally. Once submission proof is saved or a job
+is skipped, owned tabs for that job close automatically. Prepared/blocked/uncertain
+forms, source tabs, ambiguously shared tabs and manually navigated tabs stay open.
+Cleanup never searches for tabs by URL and never opens Chrome just to close tabs;
+disconnected cleanup is retried on the next browser tool call. After a disconnect or app
 restart, tools and checkpoint buttons reconnect to the exact surviving tabs without
 reloading their forms. Pending action decisions are discarded on reconnect. Older
 saved checkpoints migrate by exact ID after checking the selected Chrome profile.
@@ -49,8 +57,11 @@ outside this tool. It does not generate answers or establish candidate authoriza
 Decisions are tied to the current candidate, agent session, observed page and a
 single-use decision ID. Stale or covered targets are rejected. Execution failures
 after input are marked uncertain and must be observed before retrying. Jev's
-DONE is not proof of submission; Jobloop's existing record_submission workflow
-and candidate/source permissions still apply. The Jobloop agent reviews every
+DONE is not proof of submission; Jobloop's record_submission workflow
+and candidate/source permissions still apply. A successful record_submission
+atomically saves proof and completes the matching active application task. Its
+completion.taskReported receipt tells the agent to end the turn without redundant
+status/report calls; the scheduler waits for provider Idle before the next task. The Jobloop agent reviews every
 proposed action; this integration does not autonomously loop over clicks.
 
 The decision engine and DOM reader are based on the pinned upstream revision in
@@ -63,7 +74,7 @@ and complex keyboard widgets still need another browser integration.
 ## Normal Jobloop use
 
 Run `pnpm start` from the normal Jobloop checkout, using its existing data directory.
-Choose the existing candidate, then **Agent → Tarayıcı → Jev · mevcut Chrome’da yeni pencere**
+Choose the existing candidate, then **Agent → Tarayıcı → Jev · mevcut Chrome’da tek pencere**
 and select the candidate's signed-in Chrome profile. The saved setting applies to the
 next agent launch. Existing running agents retain their current tools until restarted.
 Do not use `pnpm demo:jev` for a normal campaign: that command deliberately creates a
@@ -113,8 +124,45 @@ pnpm test
 pnpm check
 pnpm test:jev:existing # shared login, scoped windows, reconnect and draft recovery
 pnpm test:jev        # real Chrome + mocked TypeSafe decisions; no paid calls
+pnpm test:jev:performance # nested modal, compact output, exact select and retry guards
 pnpm test:jev:live   # real TypeSafe, same MCP tools, synthetic text supplied by test harness
 ```
 
 The live MCP smoke test is distinct from running the real Jobloop agent in the
 demo. It checks the provider, observed actions and resulting DOM directly.
+
+Form navigation uses session-bound `controls` and `scrollTargets` IDs returned
+by observations. `browser_jev_reveal` reveals an observed field without clicking
+it; `browser_jev_scroll` scrolls the selected container and verifies progress.
+An open dialog excludes the background document from scroll targets. Native
+dropdowns with more than 20 options use `browser_jev_select_option` with a unique
+exact label/value from the agent's verified answer plan. It reveals the control,
+checks visibility and current option identity, selects once, and verifies the
+result. Custom dropdowns still use the reviewed next/act flow.
+
+Open/observe return full bounded observations. Mutation results return deltas
+with `baseObservationId`, changed `elements`, `removedElements`, and changed text
+or links. Controls and field-ID maps remain complete. Next returns only a compact
+decision and target context; never truncate tool JSON or field IDs. Unchanged
+scrolls return `no_progress`. Mutations without an observed effect are uncertain;
+identical retries on unchanged state are blocked, including reworded Jev goals.
+This does not authorize consent or submission; candidate/source checks remain
+with the Jobloop agent. Task startup uses one authoritative `get_task_context`.
+
+### Autocomplete without model round trips
+
+`browser_jev_autocomplete({tabId, controlId, text?, option})` uses the latest
+`controls` entry marked `autocomplete: true`. It optionally types a verified
+query, waits up to 2.5 seconds for associated suggestions, selects a unique exact
+label, and verifies the visible value and closed dropdown. It supports ARIA
+listboxes and field-scoped plain div dropdowns; unrelated matching page text is
+never used. It does not write hidden selection fields or submit forms.
+
+`needs_selection` returns the observed suggestions. Duplicate matches, covered
+controls, replaced inputs, or rejected selections cannot report verified success.
+Failed selection retries remain blocked even if the query argument is omitted.
+Stale control/field IDs return fresh maps without writing, so an additional
+`observe` is unnecessary. Reuse IDs only within their current agent session.
+
+Run `pnpm test:jev:autocomplete` for an isolated real-Chrome test of the observed
+Lever markup and ARIA variants. It never changes the live Midas application.

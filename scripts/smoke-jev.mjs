@@ -80,17 +80,20 @@ try{
   let formPage=await reset(),fields=mapping(formPage);
   assert.deepEqual(formPage.fillFields.map(f=>f.label),['First name','Email','Notes']);
   // No wrong-session, guessed, duplicated or cross-candidate mapping may mutate.
-  for(const [args,bearer] of [[{tabId:page.tabId,fields},resumed],[{tabId:page.tabId,fields:[fields[0],fields[0]]},token],[{tabId:page.tabId,fields:[fields[0],{fieldId:'guessed',text:'x'}]},token],[{tabId:page.tabId,fields},otherToken]]){
+  for(const [args,bearer] of [[{tabId:page.tabId,fields},resumed],[{tabId:page.tabId,fields:[fields[0],fields[0]]},token],[{tabId:page.tabId,fields},otherToken]]){
     assert.equal((await call('browser_jev_fill_fields',args,bearer,true)).isError,true);
     assert.equal(await slot.page.locator('#first').inputValue(),'');
   }
+  result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields:[fields[0],{fieldId:'guessed',text:'x'}]});
+  assert.equal(result.status,'stale');assert.equal(await slot.page.locator('#first').inputValue(),'');
+  assert.ok(result.fillFields.length);fields=mapping(result);
   const batchStarted=Date.now();
   result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});
   console.log(`JEV_BATCH_THREE_FIELDS_MS ${Date.now()-batchStarted}`);
   assert.equal(result.status,'ready');assert.deepEqual(result.results.map(f=>f.status),['filled','filled','filled']);
   assert.equal(await slot.page.locator('#email').inputValue(),'test@example.com');
   assert.equal(await slot.page.locator('#agree').isChecked(),false);assert.equal(await slot.page.evaluate(()=>window.submits),0);
-  assert.equal((await call('browser_jev_fill_fields',{tabId:page.tabId,fields},token,true)).isError,true);
+  result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});assert.equal(result.status,'stale');assert.ok(result.results.every(f=>f.status==='not_attempted'));
   result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields:mapping(result)});
   assert.deepEqual(result.results.map(f=>f.status),['unchanged','unchanged','unchanged']);
   // User edit and covering overlays invalidate the original mapping.
@@ -129,4 +132,59 @@ try{
   result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});
   assert.equal(result.status,'invalid');assert.equal(result.results[0].status,'invalid');
   console.log('JEV_BATCH_FILL_SESSION_SCOPE_STALE_PARTIAL_VERIFICATION_PASS');
+  // Styled native controls remain real controls: use associated labels and CDP
+  // pointer input, never force checked properties or click arbitrary nearby text.
+  const checks=`<style>label{display:inline-block;padding:8px}.transparent{opacity:0;position:absolute}.hidden{display:none}.tiny{width:0;height:0;position:absolute}</style>
+    <form onsubmit="event.preventDefault();window.submits++">
+      <input id="consent" type="checkbox" class="transparent"><label for="consent">Recruitment updates <a href="#policy" onclick="event.preventDefault();window.links++">Policy</a></label><br>
+      <label>Wrapped option<input id="wrapped" type="checkbox" class="hidden"></label><br>
+      <input id="tiny" type="checkbox" class="tiny"><label for="tiny">Zero size option</label><br>
+      <input id="radio" type="radio" name="choice" class="hidden"><label for="radio">Remote</label><br>
+      <input id="disabled" type="checkbox" class="hidden" disabled><label for="disabled">Disabled option</label>
+      <input id="orphan" type="checkbox" class="hidden"><span>Unassociated text</span>
+      <input id="private" type="checkbox" class="hidden" aria-hidden="true"><label for="private">Private option</label>
+      <input id="inert" type="checkbox" class="hidden" inert><label for="inert">Inert option</label>
+      <button type="submit">Submit</button></form>`;
+  const resetChecks=async()=>{await slot.page.setContent(checks);await slot.page.evaluate(()=>{window.submits=0;window.links=0;});return call('browser_jev_observe',{tabId:page.tabId});};
+  client.choose=(observed,goal)=>{
+    const action=observed.actions.find(a=>a.kind==='click'&&a.label.replace(/\s+/g,' ').trim()===goal&&a.checked==='false');
+    return {operation:action?'CLICK':'DONE',action:action??null,confidence:1};
+  };
+  let controls=await resetChecks();
+  assert.deepEqual(controls.elements.filter(e=>['checkbox','radio'].includes(e.role)).map(e=>e.label.replace(/\s+/g,' ').trim()),['Recruitment updates Policy','Wrapped option','Zero size option','Remote']);
+  for(const [label,id] of [['Recruitment updates Policy','consent'],['Wrapped option','wrapped'],['Zero size option','tiny'],['Remote','radio']]){
+    next=await call('browser_jev_next',{tabId:page.tabId,goal:label});assert.equal(next.operation,'CLICK');
+    result=await call('browser_jev_act',{tabId:page.tabId,decisionId:next.decisionId});
+    assert.equal(result.status,'ready');assert.deepEqual(result.controlState,{expected:true,actual:true,verified:true});
+    assert.equal(await slot.page.locator('#'+id).isChecked(),true);
+    assert.equal(result.elements.find(e=>e.label.replace(/\s+/g,' ').trim()===label).checked,'true');
+    // Current checked state prevents another proposed toggle.
+    assert.equal((await call('browser_jev_next',{tabId:page.tabId,goal:label})).operation,'DONE');
+  }
+  assert.deepEqual(await slot.page.evaluate(()=>[window.submits,window.links]),[0,0]);
+  // Label replacement/association changes, manual checks and occlusion invalidate input.
+  for(const mutation of [
+    ()=>{const l=document.querySelector('label');l.replaceWith(l.cloneNode(true));},
+    ()=>{document.querySelector('label').htmlFor='orphan';},
+    ()=>{document.querySelector('#consent').checked=true;},
+    ()=>{document.querySelector('#consent').disabled=true;},
+    ()=>{const cover=document.createElement('div');cover.style='position:fixed;inset:0;z-index:999';document.body.append(cover);}
+  ]){
+    await resetChecks();next=await call('browser_jev_next',{tabId:page.tabId,goal:'Recruitment updates Policy'});
+    await slot.page.evaluate(mutation);
+    result=await call('browser_jev_act',{tabId:page.tabId,decisionId:next.decisionId});
+    assert.equal(result.status,'stale');assert.equal(result.executed,false);
+  }
+  // A dispatched click is not proof of a state change; report uncertainty, don't retry.
+  await resetChecks();await slot.page.locator('#consent').evaluate(e=>e.addEventListener('click',event=>event.preventDefault()));
+  next=await call('browser_jev_next',{tabId:page.tabId,goal:'Recruitment updates Policy'});
+  result=await call('browser_jev_act',{tabId:page.tabId,decisionId:next.decisionId});
+  assert.equal(result.status,'uncertain');assert.deepEqual(result.controlState,{expected:true,actual:false,verified:false});
+  assert.equal(await slot.page.locator('#consent').isChecked(),false);
+  // An associated label consisting only of a link is not a safe checkbox target.
+  await resetChecks();await slot.page.locator('label[for=consent]').evaluate(e=>{e.style.padding='0';e.innerHTML='<a href="#policy" onclick="event.preventDefault();window.links++">Link only</a>';});
+  next=await call('browser_jev_next',{tabId:page.tabId,goal:'Link only'});
+  assert.equal(next.action,null); // Non-actionable targets are filtered before proposal.
+  assert.deepEqual(await slot.page.evaluate(()=>[window.submits,window.links,document.querySelector('#consent').checked]),[0,0,false]);
+  console.log('JEV_STYLED_CHECKBOX_RADIO_LABEL_GUARD_AND_VERIFICATION_PASS');
 }finally{await browsers.close();await server.close();store.close();await fixture.close();await rm(directory,{recursive:true,force:true});}

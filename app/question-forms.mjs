@@ -1,5 +1,6 @@
+import {reusableFactKeys,consentScopes} from './candidate-answers.mjs';
 const string={type:'string',minLength:1,maxLength:2000};
-export const questionFieldsSchema={type:'array',minItems:1,maxItems:10,items:{type:'object',additionalProperties:false,required:['id','label','type'],properties:{id:{...string,maxLength:64},label:string,type:{type:'string',enum:['text','boolean','select','multiselect','date','number']},required:{type:'boolean'},help:string,options:{type:'array',minItems:2,maxItems:20,items:{...string,maxLength:200}}}}};
+export const questionFieldsSchema={type:'array',minItems:1,maxItems:10,items:{type:'object',additionalProperties:false,required:['id','label','type'],properties:{id:{...string,maxLength:64},label:string,type:{type:'string',enum:['text','boolean','select','multiselect','date','number']},required:{type:'boolean'},help:string,factKey:{type:'string',enum:reusableFactKeys},consentScope:{type:'string',enum:consentScopes},options:{type:'array',minItems:2,maxItems:20,items:{...string,maxLength:200}}}}};
 export function normalizeFields(fields){
  if(fields===undefined||fields===null)return null;
  if(!Array.isArray(fields)||!fields.length||fields.length>10)throw Error('Form 1–10 alan içermeli');
@@ -9,6 +10,8 @@ export function normalizeFields(fields){
   if(f.required!==undefined&&typeof f.required!=='boolean')throw Error('Geçersiz zorunluluk');
   if(f.help!==undefined&&(typeof f.help!=='string'||f.help.length>2000))throw Error('Geçersiz alan açıklaması');
   const field={id:f.id,label:f.label.trim(),type:f.type,required:f.required!==false,...(f.help?{help:f.help}:{})};
+  if(f.factKey!==undefined){if(!reusableFactKeys.includes(f.factKey)||f.consentScope)throw Error('Genel aday bilgisi ile başvuru onayı ayrı alanlar olmalı');field.factKey=f.factKey;}
+  if(f.consentScope!==undefined){if(!consentScopes.includes(f.consentScope))throw Error('Geçersiz onay kapsamı');field.consentScope=f.consentScope;}
   if(['select','multiselect'].includes(f.type)){if(!Array.isArray(f.options)||f.options.length<2||f.options.length>20||f.options.some(v=>typeof v!=='string'||!v.trim()||v.length>200)||new Set(f.options).size!==f.options.length)throw Error('Benzersiz cevap seçenekleri gerekli');field.options=f.options;}
   return field;
  });

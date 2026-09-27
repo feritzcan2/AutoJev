@@ -1,9 +1,17 @@
+import {rankDecision} from './ranking.mjs';
 // A completed provider turn is not proof that an application task is complete.
 export function validateTaskCompletion(store,id,c,report){
  const task=c.task;if(!task?.jobId)return;
  const job=store.job(id,task.jobId),profile=store.profile(id),source=job.sourceId?store.source(id,job.sourceId):null;
+ if(task.kind==='rank'){
+  const state=rankDecision(profile,job).state;
+  if(report.outcome==='done'&&!['pending','unavailable'].includes(state))return;
+  if(report.outcome==='blocked'&&state==='unavailable')return;
+  throw Error('Puanlama işi tamamlanmadı: record_job_rank ile güncel değerlendirmeyi kaydet; erişilemeyen ilanı unavailable kaydedip blocked bildir.');
+ }
  const maySubmit=profile.authorization==='submit'&&(!source||source.applyMode==='auto');
  if(report.outcome==='done'){
+  if(!rankDecision(profile,job).eligible&&rankDecision(profile,job).state!=='pending'&&!['uncertain','submitting'].includes(job.status))return;
   if(job.status==='submitted'&&job.proof)return;
   if(job.status==='skipped'&&job.note?.trim())return;
   if(job.status==='prepared'&&!maySubmit&&profile.authorization!=='research'&&source?.applyMode!=='find_only'&&task.kind!=='verify')return;

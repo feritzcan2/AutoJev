@@ -33,5 +33,20 @@ test('persistent history damage falls back fresh after one repair',async()=>{
 import {rejectedResumeOnExit} from '../app/resume.mjs';
 test('late CLI rejection is eligible for fresh recovery only on a resumed Codex process',()=>{
  const active={provider:'codex',resumeId:'original',resumeDiagnostic:'Error: Permission overrides are not supported when resuming a remote task.'};
- assert.equal(rejectedResumeOnExit(active),true);assert.equal(rejectedResumeOnExit({...active,resumeReady:true}),false);assert.equal(rejectedResumeOnExit({...active,resumeId:null}),false);assert.equal(rejectedResumeOnExit({...active,resumeDiagnostic:'normal output'}),false);
+ assert.equal(rejectedResumeOnExit(active),true);assert.equal(rejectedResumeOnExit({...active,resumeReady:true}),true);assert.equal(rejectedResumeOnExit({...active,resumeId:null}),false);assert.equal(rejectedResumeOnExit({...active,resumeDiagnostic:'normal output'}),false);
+});
+
+import {selectResume} from '../app/resume.mjs';
+import {Store} from '../app/store.mjs';
+test('permission or network changes start fresh; identical permissions preserve resume',()=>{
+ const store=new Store(':memory:');try{
+  const p=store.saveProfile({name:'Test',preferences:'Remote'}),settings={provider:'codex',permission:'plan',network:false};
+  store.saveConversation(p.id,'codex','old');assert.equal(selectResume(store,p.id,settings),undefined);
+  store.saveConversation(p.id,'codex','old',settings);assert.equal(selectResume(store,p.id,settings),'old');
+  assert.equal(selectResume(store,p.id,{...settings,model:'another-model'}),'old');
+  assert.equal(selectResume(store,p.id,{...settings,permission:'bypassPermissions'}),undefined);
+  assert.equal(selectResume(store,p.id,{...settings,network:true}),undefined);
+  store.saveConversation(p.id,'codex','new',{...settings,permission:'bypassPermissions'});
+  assert.equal(selectResume(store,p.id,{...settings,permission:'bypassPermissions'}),'new');
+ }finally{store.close();}
 });

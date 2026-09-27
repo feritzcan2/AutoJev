@@ -26,7 +26,7 @@ export function activityView(snapshot,now=Date.now()){
   }else if(question&&campaign?.status==='running'){title='Yanıtın bekleniyor';detail=question.question;tone='waiting';}
   else if(campaign?.status==='running'){
     const next=Math.max(campaign.wakeAt??0,campaign.nextSearchAt??0);
-    title=next>now?`Sonraki kontrol ${new Date(next).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}`:'Sıradaki iş hazırlanıyor';detail=campaign.note;tone='waiting';
+    title=campaign.waitingReason==='source_apply_mode'?'Kaynaklar sadece bul modunda':campaign.waitingReason==='no_enabled_sources'?'Arama kaynakları kapalı':next>now?`Sonraki kontrol ${new Date(next).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}`:'Sıradaki iş hazırlanıyor';detail=campaign.note;tone='waiting';
   }else if(active){title=runtimeNames[active.state]??'Agent bağlı';detail=report?.data.message??'Ayrıntıları terminalden takip edebilirsin.';}
   return{title,detail,tone,url:job?.url??null,state:active?(runtimeNames[active.state]??'Bağlı'):'Agent kapalı',at:report?.at??null,lastReport:report?.data.message??null,canWrite:Boolean(active),canPause:campaign?.status==='running',history:events.filter(e=>['agent_activity','job_found','job_updated','submission_recorded','question_asked','question_answered'].includes(e.kind)).slice(0,8)};
 }
@@ -40,7 +40,7 @@ export function ageLabel(at,now=Date.now()){
 export function applicationActivity(snapshot,jobId){
  const {campaign,active,profile}=snapshot??{};
  if(campaign?.status!=='running'||campaign.task?.jobId!==jobId||!active||active.candidateId!==profile?.id)return null;
- if(active.state==='Working')return{tone:'active',label:'Agent bu başvuruda çalışıyor'};
+ if(active.state==='Working')return{tone:'active',label:campaign.task.kind==='rank'?'Agent ilanı puanlıyor':'Agent bu başvuruda çalışıyor'};
  if(active.state==='Compacting')return{tone:'waiting',label:'Agent konuşmasını özetliyor'};
  if(active.state==='AwaitingInput')return{tone:'waiting',label:'Agent giriş / onay bekliyor'};
  if(active.state==='Idle')return{tone:'waiting',label:campaign.task.seenWorking?'Tur sonucu bekleniyor':'Agentın başlaması bekleniyor'};

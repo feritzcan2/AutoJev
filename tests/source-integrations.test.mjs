@@ -43,3 +43,19 @@ test('built-in sources expose the exact upstream skill as the primary editable i
   assert.equal((await sourceInstructions(root,{...source,skillText:'My custom instructions'})).skillText,'My custom instructions');
  }
 });
+
+test('all new sources default to auto independently of profile authorization and preserve later opt-outs',()=>{
+ const s=new Store(':memory:');try{
+  for(const authorization of ['research','prepare','submit']){
+   const p=s.saveProfile({name:'Test',preferences:'Remote',authorization});
+   assert.ok(s.sources(p.id).every(source=>source.applyMode==='auto'));
+   assert.equal(s.profile(p.id).authorization,authorization);
+   const source=s.saveSource(p.id,{name:'Custom',url:'https://example.test/'+authorization,query:'Backend',intervalMinutes:30,enabled:true});
+   assert.equal(source.applyMode,'auto');
+   s.saveSource(p.id,{...source,applyMode:'find_only'});
+   const {applyMode,...update}=s.source(p.id,source.id);
+   assert.equal(s.saveSource(p.id,{...update,enabled:false}).applyMode,'find_only');
+   assert.equal(s.sources(p.id).find(item=>item.id===source.id).applyMode,'find_only');
+  }
+ }finally{s.close();}
+});

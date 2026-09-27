@@ -98,3 +98,33 @@ test('background model override is independent, survives profile edits, and can 
   db.save(p.id,{enabled:false,intervalMinutes:45,agentOverride:null});assert.equal(db.task(p.id).agentSettings.model,'another-model');
  }finally{store.close();}
 });
+
+test('mail context exposes application evidence and retries pending matches without duplicates',async()=>{
+ const {store,p,other,db}=fixture();
+ try{
+  const job=store.addJob(p.id,{url:'https://jobs.ashbyhq.com/example/role',company:'Example',role:'Engineer',location:'Berlin',fit:'Test'}).job;
+  job.status='submitted';job.proof={kind:'success_page',url:job.url,text:'Application received',observedAt:'2026-09-25T10:00:00Z'};store.saveJob(job,'submission_recorded');
+  const run=db.begin(p.id),flow=mailWorkflow(db,run,()=>({saved:true}),new AbortController().signal),call=(name,args={})=>flow.call(p.id,run.id,name,args);
+  const evidence={messageId:'retry',threadId:'thread',subject:"We've Received Your Application",date:'2026-09-25T10:01:00Z',url:'https://mail.google.com/mail/u/0/#all/thread',evidence:'Thank you for applying',outcome:'unmatched',summary:'No company in email'};
+  await call('report_mail_connection',{status:'ready',account:'test@example.com',connector:'gmail',message:'Verified'});
+  const initial=await call('record_mail_outcome',evidence);
+  db.record(p.id,'old@example.com',{id:'old-account',threadId:'other',date:evidence.date,subject:'Other'},{outcome:'unmatched',summary:'Other account'});
+  db.record(other.id,'test@example.com',{id:'other-candidate',threadId:'other',date:evidence.date,subject:'Other'},{outcome:'unmatched',summary:'Other candidate'});
+  const context=await call('get_mail_task');
+  assert.deepEqual(context.applications[0].proof,job.proof);assert.equal(context.applications[0].createdAt,job.createdAt);
+  assert.deepEqual(context.pendingSignals.map(s=>s.messageId),['retry']);assert.equal(context.pendingSignals[0].evidence,evidence.evidence);
+  assert.equal(context.previousSignals[0].review,'pending');
+  assert.equal((await call('is_mail_processed',{messageId:'retry'})).processed,false);
+  const repeated=await call('record_mail_outcome',evidence);assert.equal(repeated.id,initial.id);
+  const resolved=await call('record_mail_outcome',{...evidence,jobId:job.id,outcome:'confirmation',summary:'Gönderimden bir dakika sonraki Ashby onayı; zaman ve ATS üzerinden eşleştirildi.'});
+  assert.equal(resolved.id,initial.id);assert.equal(resolved.createdAt,initial.createdAt);assert.equal(resolved.review,'accepted');assert.equal(resolved.jobId,job.id);
+  assert.equal((await call('get_mail_task')).pendingSignals.length,0);
+  assert.equal((await call('is_mail_processed',{messageId:'retry'})).processed,true);
+  assert.equal((await call('record_mail_outcome',evidence)).duplicate,true);
+  assert.equal(db.signals(p.id).filter(s=>s.messageId==='retry').length,1);
+  const dismissed=await call('record_mail_outcome',{...evidence,messageId:'dismissed'});db.dismiss(p.id,dismissed.id);
+  assert.equal((await call('is_mail_processed',{messageId:'dismissed'})).processed,true);
+  assert.equal((await call('record_mail_outcome',{...evidence,messageId:'dismissed',jobId:job.id,outcome:'confirmation'})).duplicate,true);
+  assert.equal((await call('get_mail_task')).pendingSignals.length,0);
+ }finally{store.close();}
+});
