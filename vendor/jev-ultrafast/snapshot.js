@@ -9,6 +9,37 @@
   const safe = e => !['password','file','hidden'].includes(e.type);
   const visible = e => !e.closest('[aria-hidden="true"],[inert]') &&
     e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+  const inView = e => {
+    const r=e.getBoundingClientRect();
+    return visible(e) && r.width>1 && r.height>1 && r.bottom>0 && r.right>0 && r.top<innerHeight && r.left<innerWidth;
+  };
+  // Custom checkboxes/radios often hide the native input. Only its associated
+  // HTML label may stand in for it; nearby text is never guessed as a target.
+  cache.target=e=>{
+    if (!e?.isConnected || e.closest('[aria-hidden="true"],[inert]')) return null;
+    if (e.tagName==='INPUT' && ['checkbox','radio'].includes(e.type)) {
+      if (inView(e)) return e;
+      return [...e.labels].find(l=>l.control===e && inView(l) && !l.closest('[aria-disabled="true"]')) || null;
+    }
+    return visible(e) ? e : null;
+  };
+  cache.clickPoint=e=>{
+    const target=cache.target(e);if (!target) return null;
+    const proxy=target!==e;
+    for (const r of target.getClientRects()) {
+      const left=Math.max(0,r.left),right=Math.min(innerWidth,r.right),top=Math.max(0,r.top),bottom=Math.min(innerHeight,r.bottom);
+      if (right<=left || bottom<=top) continue;
+      for (const [fx,fy] of proxy ? [[.5,.5],[.1,.5],[.9,.5],[.1,.1],[.9,.9]] : [[.5,.5]]) {
+        const x=left+(right-left)*fx,y=top+(bottom-top)*fy,hit=document.elementFromPoint(x,y);
+        if (!hit || !target.contains(hit)) continue;
+        // Clicking a link/button inside a label must not activate that control.
+        const interactive=hit.closest('a[href],button,input,select,textarea,[role="link"],[role="button"]');
+        if (proxy && interactive && interactive!==e && target.contains(interactive)) continue;
+        return {x,y};
+      }
+    }
+    return null;
+  };
   const name = (e,seen=new Set()) => {
     if (!e || seen.has(e)) return '';
     seen.add(e);
@@ -45,17 +76,18 @@
     [...document.querySelectorAll('input,textarea,select')].filter(safe)
       .map(e=>[identity(e),e.value,e.checked,e.selectedIndex,e.disabled,e.readOnly])];
   cache.guard=e=>{
-    if (!e?.isConnected || !visible(e)) return null;
+    const target=cache.target(e);if (!target) return null;
     const scope=e.closest('form,dialog,[role="dialog"],article,li,tr,[role="row"]') || e.parentElement;
     return [identity(e),role(e),name(e),e.value??null,e.checked??null,e.selectedIndex??null,
       e.readOnly??null,e.matches(':disabled'),e.getAttribute('aria-disabled'),
       e.getAttribute('aria-expanded'),e.getAttribute('aria-checked'),e.getAttribute('aria-selected'),
-      e.getAttribute('href'),scope?.innerText?.slice(0,6000)||''];
+      e.getAttribute('href'),scope?.innerText?.slice(0,6000)||'',identity(target),name(target)];
   };
   const actions=[];
   for (const e of document.querySelectorAll(selector)) {
-    if (!safe(e) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
-    const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2, rname=role(e);
+    if (!safe(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
+    const target=cache.target(e);if (!target) continue;
+    const r=target.getBoundingClientRect(), x=Math.max(0,r.x)+(Math.min(innerWidth,r.right)-Math.max(0,r.x))/2, y=Math.max(0,r.y)+(Math.min(innerHeight,r.bottom)-Math.max(0,r.y))/2, rname=role(e);
     if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
     const base={node:identity(e),role:rname,label:name(e)||rname,

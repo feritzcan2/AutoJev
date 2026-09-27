@@ -247,11 +247,9 @@ export class JevBrowser {
         // Resolve only a node observed by Jev; model output never becomes code or selectors.
         const target=await slot.page.evaluate(a=>{
           const e=window.__jevFast?.nodes.get(a.node);
-          if(!e?.isConnected||e.matches(':disabled')||e.closest('[aria-disabled="true"],[inert]')||!e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}))return null;
+          if(!e?.isConnected||e.matches(':disabled')||e.closest('[aria-disabled="true"],[inert]'))return null;
           if(a.kind==='fill'&&(e.readOnly||e.getAttribute('aria-readonly')==='true'))return null;
-          const r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;
-          if(!r.width||!r.height||x<0||y<0||x>=innerWidth||y>=innerHeight||!e.contains(document.elementFromPoint(x,y)))return null;
-          return {x,y};
+          return window.__jevFast.clickPoint(e);
         },action);
         if(!target)return {...await this.observe(slot),status:'stale',executed:false,message:'Hedef değişti veya üzeri kapandı. Yeni bir karar al.'};
         began=true;
@@ -273,7 +271,16 @@ export class JevBrowser {
       if(slot.history.length>60)slot.history.shift();
       // Allow rendering/navigation to settle. Record execution first; never retry a mutation.
       await new Promise(resolve=>setTimeout(resolve,100));
-      return {...await this.observe(slot),status:'ready',executed:true};
+      let controlState;
+      if(action.kind==='click'&&['checkbox','radio','switch'].includes(action.role)&&action.checked!==undefined){
+        const expected=action.role==='radio'?true:action.checked!=='true';
+        const actual=await slot.page.evaluate(node=>{
+          const e=window.__jevFast?.nodes.get(node);if(!e?.isConnected)return null;
+          return e.tagName==='INPUT'&&['checkbox','radio'].includes(e.type)?e.checked:e.getAttribute('aria-checked');
+        },action.node);
+        controlState={expected,actual,verified:actual===expected||actual===String(expected)};
+      }
+      return {...await this.observe(slot),status:controlState&&!controlState.verified?'uncertain':'ready',executed:true,...(controlState?{controlState}:{})};
     }catch{
       return {browser:'Jev Chrome',tabId:slot.id,url:slot.page.url(),status:began?'uncertain':'error',executed:began?'unknown':false,message:'İşlem sonrası durum doğrulanamadı. Önce browser_jev_observe çağır; özellikle gönderim işlemini tekrar etme.'};
     }
