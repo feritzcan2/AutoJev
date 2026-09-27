@@ -4,7 +4,7 @@ export function questionKnowledge(store,id){
  return JSON.stringify({facts:p.facts,preferences:p.preferences,learnedFacts:p.learnedFacts,cvPath:p.cvPath,answers:store.questions(id).filter(q=>q.answer!==null).map(q=>({id:q.id,answer:q.answer}))});
 }
 export function validateQuestionReview(store,id,input,readKnowledge){
- if(readKnowledge!==questionKnowledge(store,id))throw Error('Soru sormadan önce güncel profil ve yanıtları list_applications ile oku. Kayıtlar değiştiyse yeniden oku.');
+ if(readKnowledge!==questionKnowledge(store,id))throw Error('Soru sormadan önce güncel profil ve yanıtları get_task_context ile oku (yalnızca tam geçmiş gerekiyorsa list_applications). Kayıtlar değiştiyse yeniden oku.');
  const review=input.applicationBlocker?.review;
  if(!review?.cvChecked||!review?.missingFacts?.length)throw Error('applicationBlocker.review içinde cvChecked ve missingFacts belirt. CV yoksa bunu cvChecked içinde açıkla; varsa önce oku. Her eksik için key ve gap yaz.');
  const profile=store.profile(id);

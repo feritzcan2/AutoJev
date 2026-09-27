@@ -18,7 +18,8 @@
     "test:jev": "node scripts/smoke-jev.mjs",
     "test:jev:live": "node scripts/smoke-jev.mjs --live",
     "sources:install": "node scripts/install-source-tools.mjs",
-    "test:jev:existing": "node scripts/smoke-jev-existing.mjs"
+    "test:jev:existing": "node scripts/smoke-jev-existing.mjs",
+    "test:jev:performance": "node scripts/smoke-jev-performance.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.1",

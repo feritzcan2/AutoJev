@@ -124,8 +124,27 @@ pnpm test
 pnpm check
 pnpm test:jev:existing # shared login, scoped windows, reconnect and draft recovery
 pnpm test:jev        # real Chrome + mocked TypeSafe decisions; no paid calls
+pnpm test:jev:performance # nested modal, compact output, exact select and retry guards
 pnpm test:jev:live   # real TypeSafe, same MCP tools, synthetic text supplied by test harness
 ```
 
 The live MCP smoke test is distinct from running the real Jobloop agent in the
 demo. It checks the provider, observed actions and resulting DOM directly.
+
+Form navigation uses session-bound `controls` and `scrollTargets` IDs returned
+by observations. `browser_jev_reveal` reveals an observed field without clicking
+it; `browser_jev_scroll` scrolls the selected container and verifies progress.
+An open dialog excludes the background document from scroll targets. Native
+dropdowns with more than 20 options use `browser_jev_select_option` with a unique
+exact label/value from the agent's verified answer plan. It reveals the control,
+checks visibility and current option identity, selects once, and verifies the
+result. Custom dropdowns still use the reviewed next/act flow.
+
+Open/observe return full bounded observations. Mutation results return deltas
+with `baseObservationId`, changed `elements`, `removedElements`, and changed text
+or links. Controls and field-ID maps remain complete. Next returns only a compact
+decision and target context; never truncate tool JSON or field IDs. Unchanged
+scrolls return `no_progress`. Mutations without an observed effect are uncertain;
+identical retries on unchanged state are blocked, including reworded Jev goals.
+This does not authorize consent or submission; candidate/source checks remain
+with the Jobloop agent. Task startup uses one authoritative `get_task_context`.

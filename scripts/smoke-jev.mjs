@@ -181,8 +181,7 @@ try{
   // An associated label consisting only of a link is not a safe checkbox target.
   await resetChecks();await slot.page.locator('label[for=consent]').evaluate(e=>{e.style.padding='0';e.innerHTML='<a href="#policy" onclick="event.preventDefault();window.links++">Link only</a>';});
   next=await call('browser_jev_next',{tabId:page.tabId,goal:'Link only'});
-  result=await call('browser_jev_act',{tabId:page.tabId,decisionId:next.decisionId});
-  assert.equal(result.status,'stale');assert.equal(result.executed,false);
+  assert.equal(next.action,null); // Non-actionable targets are filtered before proposal.
   assert.deepEqual(await slot.page.evaluate(()=>[window.submits,window.links,document.querySelector('#consent').checked]),[0,0,false]);
   console.log('JEV_STYLED_CHECKBOX_RADIO_LABEL_GUARD_AND_VERIFICATION_PASS');
 }finally{await browsers.close();await server.close();store.close();await fixture.close();await rm(directory,{recursive:true,force:true});}

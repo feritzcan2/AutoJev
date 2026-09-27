@@ -2,6 +2,8 @@
   "repository": "https://github.com/browser-use/jev-ultrafast",
   "commit": "1231850a0bf1a0c0341fe408ef1668dbbfdfac46",
   "license": "MIT",
-  "files": ["snapshot.js"],
-  "adaptations": "app/jev-policy.mjs ports the indexed action space and TypeSafe decision request; app/jev-browser.mjs adapts guarded CDP execution. snapshot.js also resolves styled native checkbox/radio inputs through their associated visible HTML labels, with identity guards and hit testing. Jobloop's existing agent supplies text and authorizes each action."
+  "files": [
+    "snapshot.js"
+  ],
+  "adaptations": "app/jev-policy.mjs ports the indexed action space and TypeSafe decision request; app/jev-browser.mjs adapts guarded CDP execution. snapshot.js also resolves styled native checkbox/radio inputs through their associated visible HTML labels, with identity guards and hit testing. Jobloop's existing agent supplies text and authorizes each action. Jobloop adds modal-scoped hit-tested controls, exact native-select support, nested scroll targets and compact observations through app/jev-navigation.mjs."
 }

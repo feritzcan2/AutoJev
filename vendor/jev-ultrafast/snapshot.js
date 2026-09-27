@@ -72,6 +72,37 @@
     }
     return null;
   };
+  const modal=[...document.querySelectorAll('dialog[open],[role="dialog"],[aria-modal="true"]')].filter(visible).at(-1);
+  const root=modal||document.body;
+  const candidates=[...root.querySelectorAll(selector)];
+  cache.controlGuard=e=>{
+    if (!e?.isConnected || !safe(e) || (!visible(e)&&!cache.target(e))) return null;
+    return [performance.timeOrigin,location.href,identity(e),e.tagName,e.type,role(e),name(e),
+      e.value??null,e.checked??null,e.matches(':disabled'),!!e.closest('[aria-disabled="true"],[inert]'),e.readOnly??null,
+      e.required??null,e.form?identity(e.form):null,e.form?.action??null,
+      e.tagName==='SELECT'?[...e.options].map(o=>[o.value,o.label,o.disabled,!!o.closest('optgroup[disabled]')]):null];
+  };
+  const controls=[],control_guards={};
+  for(const e of candidates){
+    if(!safe(e)||e.matches(':disabled')||e.closest('[aria-disabled="true"],[inert]'))continue;
+    const guard=cache.controlGuard(e),rname=role(e);if(!guard||!rname)continue;
+    if(!['INPUT','TEXTAREA','SELECT'].includes(e.tagName)&&!['textbox','combobox','checkbox','radio','switch'].includes(rname))continue;
+    const node=identity(e);control_guards[node]=guard;
+    controls.push({node,label:name(e)||rname,role:rname,value:e.value??'',required:!!e.required,
+      visible:!!cache.clickPoint(e),nativeSelect:e.tagName==='SELECT',optionCount:e.options?.length});
+    if(controls.length>=80)break;
+  }
+  // Discover nested scrolling from actual controls, including forms in dialogs.
+  // With a modal open, never choose the background document as a fallback.
+  const scrollNodes=new Set();
+  for(const e of candidates)for(let p=e.parentElement;p&&root.contains(p);p=p.parentElement){
+    if(p.clientHeight>60&&p.scrollHeight>p.clientHeight+2&&/auto|scroll|overlay/.test(getComputedStyle(p).overflowY)&&inView(p))scrollNodes.add(p);
+  }
+  if(!modal&&document.scrollingElement.scrollHeight>innerHeight+2)scrollNodes.add(document.scrollingElement);
+  cache.scrollState=e=>e===document.scrollingElement?{top:scrollY,height:e.scrollHeight,viewport:innerHeight}:{top:e.scrollTop,height:e.scrollHeight,viewport:e.clientHeight};
+  const scrollTargets=[...scrollNodes].slice(0,8).map(e=>({node:identity(e),label:e===document.scrollingElement?'Page':e.getAttribute('aria-label')||'Form content',...cache.scrollState(e)}));
+  cache.scrollGuard=e=>e?.isConnected&&scrollNodes.has(e)?[performance.timeOrigin,location.href,identity(e),modal?identity(modal):null,...Object.values(cache.scrollState(e))]:null;
+  const scroll_guards=Object.fromEntries(scrollTargets.map(s=>[s.node,cache.scrollGuard(cache.nodes.get(s.node))]));
   cache.pageKey=()=>[performance.timeOrigin,location.href,scrollX,scrollY,innerWidth,innerHeight,
     [...document.querySelectorAll('input,textarea,select')].filter(safe)
       .map(e=>[identity(e),e.value,e.checked,e.selectedIndex,e.disabled,e.readOnly])];
@@ -84,9 +115,10 @@
       e.getAttribute('href'),scope?.innerText?.slice(0,6000)||'',identity(target),name(target)];
   };
   const actions=[];
-  for (const e of document.querySelectorAll(selector)) {
+  for (const e of candidates) {
     if (!safe(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
     const target=cache.target(e);if (!target) continue;
+    if(!cache.clickPoint(e))continue;
     const r=target.getBoundingClientRect(), x=Math.max(0,r.x)+(Math.min(innerWidth,r.right)-Math.max(0,r.x))/2, y=Math.max(0,r.y)+(Math.min(innerHeight,r.bottom)-Math.max(0,r.y))/2, rname=role(e);
     if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
@@ -98,7 +130,8 @@
     }
     if (['checkbox','radio'].includes(e.type)) base.checked=String(e.checked);
     if (e.tagName==='SELECT') {
-      for (const o of e.options) if (!o.selected && !o.disabled && !o.closest('optgroup[disabled]'))
+      // Large native selects use the exact-option tool, not hundreds of actions.
+      for (const o of e.options.length<=20?e.options:[]) if (!o.selected && !o.disabled && !o.closest('optgroup[disabled]'))
         actions.push({...base,kind:'select',value:o.value,
           current_value:[...e.selectedOptions].map(o=>o.label).join(', '),label:base.label+' → '+o.label});
     } else {
@@ -111,7 +144,7 @@
       if (editable) actions.push({...base,kind:'click',value,label:'Open '+base.label});
     }
   }
-  const words=[], walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
+  const words=[], walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
   const range=document.createRange(); let node,length=0;
   while ((node=walker.nextNode()) && length<6000) {
     const value=node.textContent.trim(), parent=node.parentElement;
@@ -131,9 +164,10 @@
   const omitted_actions=Math.max(0,actions.length-250);
   actions.splice(250);
   actions.forEach((a,i)=>a.id='e'+(i+1));
-  if (scrollY+innerHeight<height-2) actions.push({id:'scroll_down',kind:'scroll',label:'Scroll down',delta:560});
-  if (scrollY>0) actions.push({id:'scroll_up',kind:'scroll',label:'Scroll up',delta:-560});
+  const scroll=scrollTargets[0];
+  if (scroll&&scroll.top+scroll.viewport<scroll.height-2) actions.push({id:'scroll_down',kind:'scroll',node:scroll.node,label:'Scroll down inside '+scroll.label,delta:560});
+  if (scroll&&scroll.top>0) actions.push({id:'scroll_up',kind:'scroll',node:scroll.node,label:'Scroll up inside '+scroll.label,delta:-560});
   actions.push({id:'wait',kind:'wait',label:'Wait for the page to update'});
   return {url:location.href,title:document.title,w:innerWidth,h:innerHeight,text,
-    scroll:{y:scrollY,height},actions,marker,page_key,guards,omitted_actions};
+    focus:document.activeElement?identity(document.activeElement):null,scroll:{y:scrollY,height},scrollTargets,scroll_guards,controls,control_guards,actions,marker,page_key,guards,omitted_actions};
 })()
