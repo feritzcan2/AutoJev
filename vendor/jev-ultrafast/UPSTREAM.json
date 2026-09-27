@@ -5,5 +5,5 @@
   "files": [
     "snapshot.js"
   ],
-  "adaptations": "app/jev-policy.mjs ports the indexed action space and TypeSafe decision request; app/jev-browser.mjs adapts guarded CDP execution. snapshot.js also resolves styled native checkbox/radio inputs through their associated visible HTML labels, with identity guards and hit testing. Jobloop's existing agent supplies text and authorizes each action. Jobloop adds modal-scoped hit-tested controls, exact native-select support, nested scroll targets and compact observations through app/jev-navigation.mjs."
+  "adaptations": "app/jev-policy.mjs ports the indexed action space and TypeSafe decision request; app/jev-browser.mjs adapts guarded CDP execution. snapshot.js also resolves styled native checkbox/radio inputs through their associated visible HTML labels, with identity guards and hit testing. Jobloop's existing agent supplies text and authorizes each action. Jobloop adds modal-scoped hit-tested controls, exact native-select support, nested scroll targets and compact observations through app/jev-navigation.mjs. Associated autocomplete suggestions include field-scoped role-less dropdown items and ARIA options; exact query/select/verify uses app/jev-autocomplete.mjs. Hidden dropdown errors and options are excluded from input names."
 }

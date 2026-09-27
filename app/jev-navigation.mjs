@@ -27,7 +27,8 @@ export const stalled={status:'no_progress',executed:false,message:'Aynı işlem 
 
 export async function navigateObserved(slot,name,args,owner,reader){
   const saved=slot.controls?.get(args.controlId);
-  if(!saved||saved.owner!==owner)throw Error('Bu oturuma ait güncel controlId gerekli; son controls/scrollTargets listesini kullan.');
+  if(!saved)return {status:'stale',executed:false,message:'Kontrol kimliği eski; dönen güncel controls/scrollTargets listesini kullan. Ek observe gerekmez.'};
+  if(saved.owner!==owner)throw Error('Bu oturuma ait güncel controlId gerekli; son controls/scrollTargets listesini kullan.');
   if((name==='browser_jev_scroll')!==(saved.kind==='scroll'))throw Error('Yanlış kontrol türü.');
   const current=await slot.page.evaluate(reader),guards=saved.kind==='scroll'?current?.scroll_guards:current?.control_guards;
   if(!same(guards?.[saved.node],saved.guard))return {status:'stale',executed:false,message:'Hedef değişti; dönen güncel kontrolü kullan.'};

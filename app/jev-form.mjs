@@ -5,7 +5,7 @@ import {randomUUID} from 'node:crypto';
 function inspectField(e){
   const type=e.tagName==='TEXTAREA'?'textarea':e.type;
   if(!(e.tagName==='TEXTAREA'||e.tagName==='INPUT'&&['text','email','tel','url'].includes(type))||
-    e.getAttribute('role')==='combobox'||e.hasAttribute('list')||e.hasAttribute('aria-autocomplete')||
+    window.__jevFast?.autocomplete(e)||e.getAttribute('role')==='combobox'||e.hasAttribute('list')||e.hasAttribute('aria-autocomplete')||
     !e.isConnected||e.readOnly||e.matches(':disabled')||e.closest('[aria-disabled="true"],[aria-readonly="true"],[inert],[aria-hidden="true"]')||
     !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}))return null;
   const r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;
@@ -31,6 +31,8 @@ export async function captureFillFields(slot,owner){
   return fields;
 }
 export async function fillKnownFields(slot,fields,owner,reader){
+  // Old IDs from a restart/observation cannot write; the caller returns fresh IDs.
+  if(fields.some(field=>!slot.fillFields?.has(field.fieldId)))return {status:'stale',results:fields.map(({fieldId})=>({fieldId,status:'not_attempted'})),message:'Alan kimlikleri eski; dönen güncel fillFields listesini kullan. Ek observe gerekmez.'};
   // Validate the complete mapping before touching any field, then consume it.
   const entries=fields.map(field=>{
     const saved=slot.fillFields?.get(field.fieldId);

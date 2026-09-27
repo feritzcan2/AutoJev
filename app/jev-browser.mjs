@@ -6,6 +6,7 @@ import {actionSpace,chooseJev,jevConfig} from './jev-policy.mjs';
 import {existingChromeEndpoint,openChromeWindow,chromeWindowMarker,resolveChromeProfile} from './jev-chrome.mjs';
 import {JevCdpTransport} from './jev-cdp.mjs';
 import {JevTabs} from './jev-tabs.mjs';
+import {selectAutocomplete} from './jev-autocomplete.mjs';
 import {captureFillFields,clearFillFields,fillKnownFields} from './jev-form.mjs';
 import {captureControls,navigateObserved,compactElements,presentObservation,progressKey,blockedRepeat,rememberProgress,stalled} from './jev-navigation.mjs';
 const require=createRequire(import.meta.url);
@@ -19,9 +20,10 @@ export const jevTools=[
   {name:'browser_jev_reveal',description:'Bring a known control from the latest controls list into view, including inside a scrolling modal. Uses session-bound controlId; does not click, type, grant consent or submit. Returns visibility and fresh field IDs. No model call.',inputSchema:schema({tabId:string,controlId:string})},
   {name:'browser_jev_scroll',description:'Scroll the exact container from the latest scrollTargets list, not a fixed screen coordinate. No model call. Returns verified progress and fresh controls. On no_progress do not repeat; reveal a known control or choose another observed container.',inputSchema:schema({tabId:string,controlId:string,direction:{type:'string',enum:['up','down']}})},
   {name:'browser_jev_select_option',description:'Select one unique exact label or value (for example Germany) in a native dropdown identified by the latest controls controlId. Supply an answer supported by the current task, verified candidate facts and consent policy. Checks options and verifies selection, no model call. Never guess an answer; no checkbox, custom dropdown, file upload or submit. Automatically reveals the control first.',inputSchema:schema({tabId:string,controlId:string,option:string})},
+  {name:'browser_jev_autocomplete',description:'Select a unique exact suggestion associated with an observed autocomplete controlId. Optionally supply verified query text; waits briefly for suggestions, clicks the exact option and verifies acceptance in ONE call, with no model. Use option from observed suggestions or a verified exact answer; never guess. Returns suggestions if no match; do not repeat an unchanged failed query. Does not submit, write hidden fields or grant consent. Returns fresh controls; ready with selection.verified=true needs no extra observe/screenshot.',inputSchema:schema({tabId:string,controlId:string,text:string,option:string},['tabId','controlId','option'])},
   {name:'browser_jev_next',description:'Ask Jev for ONE proposed action toward a bounded goal on an existing tab. Does not execute. Review the proposed action against the candidate’s authorization and current task. DONE is a model claim, not proof. Returns decisionId and selected field context when text is needed.',inputSchema:schema({tabId:string,goal:string})},
   {name:'browser_jev_act',description:'Execute a previously reviewed Jev decision once. For TYPE_TEXT you, the Jobloop agent, MUST supply exact text from the goal/profile/saved facts; no separate text model is used. Check candidate and source authorization before clicking submit or granting consent; do not ask again for existing authorization. Stale decisions cannot execute. If execution is uncertain, observe before continuing and never blindly retry a submission.',inputSchema:schema({tabId:string,decisionId:string,text:{type:'string',maxLength:12000}},['tabId','decisionId'])},
-  {name:'browser_jev_fill_fields',description:'Fill up to 20 observed ordinary text fields in one call using exact verified answers prepared by the Jobloop agent. Use session-bound fieldId values from the latest fillFields observation. No model call, dropdown selection, checkbox, consent, file upload or submission. Checks targets before each write and verifies values; stops on changes or uncertain input and returns per-field results plus a fresh observation. Never blindly retry uncertain fields. Dynamic autocomplete controls require the normal next/act flow.',inputSchema:schema({tabId:string,fields:{type:'array',minItems:1,maxItems:20,items:schema({fieldId:string,text:{type:'string',maxLength:12000}})}})},
+  {name:'browser_jev_fill_fields',description:'Fill up to 20 observed ordinary text fields in one call using exact verified answers prepared by the Jobloop agent. Use session-bound fieldId values from the latest fillFields observation. No model call, dropdown selection, checkbox, consent, file upload or submission. Checks targets before each write and verifies values; stops on changes or uncertain input and returns per-field results plus a fresh observation. Never blindly retry uncertain fields. Use browser_jev_autocomplete for dynamic suggestions instead.',inputSchema:schema({tabId:string,fields:{type:'array',minItems:1,maxItems:20,items:schema({fieldId:string,text:{type:'string',maxLength:12000}})}})},
   {name:'browser_jev_upload',description:'Upload a known candidate document into an observed file input. Use observe first to obtain uploadId. Supply its absolute local path. No model call; Jev does not choose or generate files.',inputSchema:schema({tabId:string,uploadId:string,filePath:string})}
 ];
 export function validateJevArgs(name,args){
@@ -323,6 +325,10 @@ export class JevBrowser {
         if(name==='browser_jev_observe')value=await this.observe(slot);
         if(['browser_jev_reveal','browser_jev_scroll','browser_jev_select_option'].includes(name)){
           const result=await navigateObserved(slot,name,args,owner,this.reader);
+          value={...await this.observe(slot),...result};
+        }
+        if(name==='browser_jev_autocomplete'){
+          const result=await selectAutocomplete(slot,args,owner,this.reader);
           value={...await this.observe(slot),...result};
         }
         if(name==='browser_jev_fill_fields'){

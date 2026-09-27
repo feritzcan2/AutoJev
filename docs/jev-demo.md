@@ -148,3 +148,21 @@ scrolls return `no_progress`. Mutations without an observed effect are uncertain
 identical retries on unchanged state are blocked, including reworded Jev goals.
 This does not authorize consent or submission; candidate/source checks remain
 with the Jobloop agent. Task startup uses one authoritative `get_task_context`.
+
+### Autocomplete without model round trips
+
+`browser_jev_autocomplete({tabId, controlId, text?, option})` uses the latest
+`controls` entry marked `autocomplete: true`. It optionally types a verified
+query, waits up to 2.5 seconds for associated suggestions, selects a unique exact
+label, and verifies the visible value and closed dropdown. It supports ARIA
+listboxes and field-scoped plain div dropdowns; unrelated matching page text is
+never used. It does not write hidden selection fields or submit forms.
+
+`needs_selection` returns the observed suggestions. Duplicate matches, covered
+controls, replaced inputs, or rejected selections cannot report verified success.
+Failed selection retries remain blocked even if the query argument is omitted.
+Stale control/field IDs return fresh maps without writing, so an additional
+`observe` is unnecessary. Reuse IDs only within their current agent session.
+
+Run `pnpm test:jev:autocomplete` for an isolated real-Chrome test of the observed
+Lever markup and ARIA variants. It never changes the live Midas application.

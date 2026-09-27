@@ -49,7 +49,7 @@
       [...(e.labels||[])].map(l=>name(l,seen)).filter(Boolean).join(' ') ||
       (['button','submit','reset'].includes(e.type) ? e.value : '') || e.getAttribute('alt') ||
       (e.tagName==='INPUT' ? '' : [...e.childNodes].map(n=>n.nodeType===3 ? n.textContent :
-        n.nodeType===1 && n.getAttribute('aria-hidden')!=='true' ? name(n,seen) : '').join(' ').trim()) ||
+        n.nodeType===1 && visible(n) && !n.matches('[role="listbox"],[role="option"],.dropdown-container') ? name(n,seen) : '').join(' ').trim()) ||
       e.getAttribute('title') || e.getAttribute('placeholder') || '';
   };
   const roles=['button','link','checkbox','radio','switch','tab','menuitem','menuitemradio',
@@ -75,6 +75,45 @@
   const modal=[...document.querySelectorAll('dialog[open],[role="dialog"],[aria-modal="true"]')].filter(visible).at(-1);
   const root=modal||document.body;
   const candidates=[...root.querySelectorAll(selector)];
+  // Associate suggestions with their input, never with matching text elsewhere
+  // in the page. Some widgets expose plain divs rather than ARIA options.
+  cache.autocomplete=e=>{
+    if(!e?.isConnected||e.tagName!=='INPUT'||!['text','search'].includes(e.type)||e.readOnly||e.matches(':disabled')||e.closest('[aria-disabled="true"],[inert]'))return null;
+    const ids=(e.getAttribute('aria-controls')||e.getAttribute('aria-owns')||'').split(/\s+/).filter(Boolean);
+    let lists=ids.map(id=>document.getElementById(id)).filter(Boolean),association=ids.length?'aria':null;
+    if(!ids.length){
+      for(let p=e.parentElement,depth=0;p&&root.contains(p)&&depth<3;p=p.parentElement,depth++){
+        if(p.matches('form,body,dialog,[role="dialog"]'))break;
+        if(p.querySelectorAll('input:not([type="hidden"]),textarea,select').length!==1)break;
+        const found=[...p.querySelectorAll('[role="listbox"],.dropdown-container,.autocomplete-results,.suggestions')];
+        if(found.length){lists=found;association='field';break;}
+      }
+    }
+    if(!lists.length&&e.getAttribute('role')!=='combobox'&&!e.hasAttribute('aria-autocomplete'))return null;
+    const options=[];
+    for(const list of lists.filter(visible)){
+      let items=[...list.querySelectorAll('[role="option"]')];
+      if(!items.length){
+        const group=list.querySelector('.dropdown-results')||list;
+        items=[...group.children].filter(n=>n.matches('div,li')&&!n.querySelector('input,button,a,select,textarea')&&getComputedStyle(n).cursor==='pointer');
+      }
+      for(const item of items){
+        if(item.matches('a[href],input,select,textarea,button:not([type="button"])')||item.querySelector('a[href],button,input,select,textarea'))continue;
+        const label=(item.innerText||'').replace(/\s+/g,' ').trim();
+        if(!label||label.length>500||!visible(item)||item.closest('[aria-disabled="true"],[inert]')||item.matches(':disabled'))continue;
+        options.push({node:identity(item),label});
+      }
+    }
+    return {association,options,expanded:lists.some(visible)};
+  };
+  const suggestionOwners=new Map();
+  for(const e of candidates){
+    const autocomplete=cache.autocomplete(e);if(!autocomplete)continue;
+    for(const option of autocomplete.options){
+      suggestionOwners.set(option.node,identity(e));
+      const node=cache.nodes.get(option.node);if(!candidates.includes(node))candidates.push(node);
+    }
+  }
   cache.controlGuard=e=>{
     if (!e?.isConnected || !safe(e) || (!visible(e)&&!cache.target(e))) return null;
     return [performance.timeOrigin,location.href,identity(e),e.tagName,e.type,role(e),name(e),
@@ -89,7 +128,8 @@
     if(!['INPUT','TEXTAREA','SELECT'].includes(e.tagName)&&!['textbox','combobox','checkbox','radio','switch'].includes(rname))continue;
     const node=identity(e);control_guards[node]=guard;
     controls.push({node,label:name(e)||rname,role:rname,value:e.value??'',required:!!e.required,
-      visible:!!cache.clickPoint(e),nativeSelect:e.tagName==='SELECT',optionCount:e.options?.length});
+      visible:!!cache.clickPoint(e),nativeSelect:e.tagName==='SELECT',optionCount:e.options?.length,
+      ...(cache.autocomplete(e)?{autocomplete:true,suggestions:cache.autocomplete(e).options.map(o=>o.label).slice(0,20)}:{})});
     if(controls.length>=80)break;
   }
   // Discover nested scrolling from actual controls, including forms in dialogs.
@@ -119,7 +159,7 @@
     if (!safe(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
     const target=cache.target(e);if (!target) continue;
     if(!cache.clickPoint(e))continue;
-    const r=target.getBoundingClientRect(), x=Math.max(0,r.x)+(Math.min(innerWidth,r.right)-Math.max(0,r.x))/2, y=Math.max(0,r.y)+(Math.min(innerHeight,r.bottom)-Math.max(0,r.y))/2, rname=role(e);
+    const r=target.getBoundingClientRect(), x=Math.max(0,r.x)+(Math.min(innerWidth,r.right)-Math.max(0,r.x))/2, y=Math.max(0,r.y)+(Math.min(innerHeight,r.bottom)-Math.max(0,r.y))/2, rname=suggestionOwners.has(identity(e))?'option':role(e);
     if (!rname || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
     const base={node:identity(e),role:rname,label:name(e)||rname,

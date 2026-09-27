@@ -80,17 +80,20 @@ try{
   let formPage=await reset(),fields=mapping(formPage);
   assert.deepEqual(formPage.fillFields.map(f=>f.label),['First name','Email','Notes']);
   // No wrong-session, guessed, duplicated or cross-candidate mapping may mutate.
-  for(const [args,bearer] of [[{tabId:page.tabId,fields},resumed],[{tabId:page.tabId,fields:[fields[0],fields[0]]},token],[{tabId:page.tabId,fields:[fields[0],{fieldId:'guessed',text:'x'}]},token],[{tabId:page.tabId,fields},otherToken]]){
+  for(const [args,bearer] of [[{tabId:page.tabId,fields},resumed],[{tabId:page.tabId,fields:[fields[0],fields[0]]},token],[{tabId:page.tabId,fields},otherToken]]){
     assert.equal((await call('browser_jev_fill_fields',args,bearer,true)).isError,true);
     assert.equal(await slot.page.locator('#first').inputValue(),'');
   }
+  result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields:[fields[0],{fieldId:'guessed',text:'x'}]});
+  assert.equal(result.status,'stale');assert.equal(await slot.page.locator('#first').inputValue(),'');
+  assert.ok(result.fillFields.length);fields=mapping(result);
   const batchStarted=Date.now();
   result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});
   console.log(`JEV_BATCH_THREE_FIELDS_MS ${Date.now()-batchStarted}`);
   assert.equal(result.status,'ready');assert.deepEqual(result.results.map(f=>f.status),['filled','filled','filled']);
   assert.equal(await slot.page.locator('#email').inputValue(),'test@example.com');
   assert.equal(await slot.page.locator('#agree').isChecked(),false);assert.equal(await slot.page.evaluate(()=>window.submits),0);
-  assert.equal((await call('browser_jev_fill_fields',{tabId:page.tabId,fields},token,true)).isError,true);
+  result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});assert.equal(result.status,'stale');assert.ok(result.results.every(f=>f.status==='not_attempted'));
   result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields:mapping(result)});
   assert.deepEqual(result.results.map(f=>f.status),['unchanged','unchanged','unchanged']);
   // User edit and covering overlays invalidate the original mapping.

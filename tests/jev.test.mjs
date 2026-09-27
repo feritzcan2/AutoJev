@@ -95,3 +95,10 @@ test('task instructions require one authoritative context check and direct navig
   const prompt=browserProfileInstruction({browserMode:'jev'});
   for(const name of ['browser_jev_reveal','browser_jev_scroll','browser_jev_select_option','no_progress','observationMode=delta'])assert.ok(prompt.includes(name));
 });
+
+test('autocomplete requires observed control and exact answer, never accepts selectors or code',()=>{
+ const args={tabId:'tab',controlId:'observed',text:'Berlin',option:'Berlin, DEU'};
+ validateJevArgs('browser_jev_autocomplete',args);
+ validateJevArgs('browser_jev_autocomplete',{tabId:'tab',controlId:'observed',option:'Berlin, DEU'});
+ for(const bad of [{...args,selector:'#submit'},{...args,option:''},{...args,text:42},{...args,timeout:60000},{tabId:'tab',text:'Berlin',option:'Berlin'}])assert.throws(()=>validateJevArgs('browser_jev_autocomplete',bad));
+});

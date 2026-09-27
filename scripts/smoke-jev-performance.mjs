@@ -60,7 +60,8 @@ try{
   // IDs are session scoped, and semantic target/option changes reject stale work.
   observed=await reset();let country=observed.controls.find(c=>c.label==='Country').controlId;
   await assert.rejects(()=>call('browser_jev_select_option',{tabId,controlId:country,option:'Germany'},'other'),/oturuma/);
-  await assert.rejects(()=>call('browser_jev_select_option',{tabId,controlId:'guessed',option:'Germany'}),/controlId/);
+  result=await call('browser_jev_select_option',{tabId,controlId:'guessed',option:'Germany'});assert.equal(result.status,'stale');assert.equal(result.executed,false);assert.ok(result.controls.length);
+  country=result.controls.find(c=>c.label==='Country').controlId;
   await page.locator('#country').evaluate(e=>e.replaceWith(e.cloneNode(true)));
   result=await call('browser_jev_select_option',{tabId,controlId:country,option:'Germany'});assert.equal(result.status,'stale');assert.equal(await page.locator('#country').inputValue(),'');
   observed=await call('browser_jev_observe',{tabId});country=observed.controls.find(c=>c.label==='Country').controlId;
