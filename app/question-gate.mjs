@@ -5,6 +5,16 @@ export function questionKnowledge(store,id){
 }
 export function validateQuestionReview(store,id,input,readKnowledge){
  if(readKnowledge!==questionKnowledge(store,id))throw Error('Soru sormadan önce güncel profil ve yanıtları get_task_context ile oku (yalnızca tam geçmiş gerekiyorsa list_applications). Kayıtlar değiştiyse yeniden oku.');
+ const recovery=input.applicationBlocker?.recovery;
+ if(input.applicationBlocker?.kind==='access'&&recovery?.kind==='captcha'){
+  const check=recovery.captchaCheck;
+  if(check?.state!=='required'||!check.evidence?.trim())throw Error('CAPTCHA sorusu için güncel gözlemde hâlâ gerekli olduğunu captchaCheck.state=required ve evidence ile belirt. Kontrol sürüyorsa veya çözüldüyse kullanıcıya sorma.');
+  if(!recovery.userActionReason?.trim())throw Error('CAPTCHA için kalan kullanıcı eylemini userActionReason ile belirt.');
+  if(check.capability==='supported'){
+   if(!recovery.attempts?.length||recovery.attempts.length>2||recovery.attempts.some(a=>!a.method?.trim()||!a.result?.trim()))throw Error('Araç destekliyorsa kullanıcıya sormadan önce normal CAPTCHA arayüzünü sınırlı biçimde dene; attempts içinde 1–2 deneme ve gözlenen sonuçlarını belirt.');
+  }else if(!['tool_disallowed','not_exposed'].includes(check.capability)||!check.limitation?.trim())throw Error('Deneme yapılamıyorsa gerçek araç kısıtını veya erişilemeyen denetimi captchaCheck.limitation içinde belirt; deneme uydurma.');
+  return; // Technical challenge; a CV review cannot resolve it.
+ }
  const review=input.applicationBlocker?.review;
  if(!review?.cvChecked||!review?.missingFacts?.length)throw Error('applicationBlocker.review içinde cvChecked ve missingFacts belirt. CV yoksa bunu cvChecked içinde açıkla; varsa önce oku. Her eksik için key ve gap yaz.');
  const profile=store.profile(id);

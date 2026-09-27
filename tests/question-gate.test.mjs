@@ -57,3 +57,31 @@ test('technical resolution is candidate scoped and never fabricates an answer or
   assert.throws(()=>store.resolveTechnicalQuestion(p.id,consent.id,'Assumed'));
  }finally{store.close();}
 });
+
+test('CAPTCHA escalation requires a remaining challenge and attempts or a concrete tool limitation',async()=>{
+ const store=new Store(':memory:'),p=store.saveProfile({name:'Test',preferences:'Remote'});
+ const job=store.addJob(p.id,{company:'Example',role:'Dev',location:'Remote',fit:'Test',url:'https://example.test/captcha'}).job;
+ store.saveCampaign(p.id,{status:'running',task:{id:'task',kind:'application',jobId:job.id}});
+ const server=await startMcp(store),token=server.grant(p.id,'session');
+ const call=async(name,args={})=>(await(await fetch(server.endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}})})).json()).result;
+ try{
+  await call('get_task_context');
+  const recovery={kind:'captcha',userActionReason:'Complete the remaining challenge in the retained tab',captchaCheck:{state:'required',capability:'supported',evidence:'Fresh screenshot still shows the challenge'}};
+  const input={jobId:job.id,question:'Complete this remaining challenge',applicationBlocker:{kind:'access',evidence:'Visible CAPTCHA challenge',reasonUnknown:'The challenge did not clear automatically',recovery}};
+  assert.equal((await call('ask_candidate',input)).isError,true);
+  recovery.attempts=[{method:'Normal visible challenge controls',result:'Challenge remained after verification'}];
+  for(const state of ['checking','cleared']){
+   recovery.captchaCheck.state=state;assert.equal((await call('ask_candidate',input)).isError,true);
+  }
+  recovery.captchaCheck.state='required';
+  assert.notEqual((await call('ask_candidate',input)).isError,true); // No irrelevant CV review.
+  delete recovery.attempts;
+  for(const capability of ['tool_disallowed','not_exposed']){
+   recovery.captchaCheck.capability=capability;delete recovery.captchaCheck.limitation;
+   assert.equal((await call('ask_candidate',input)).isError,true);
+   recovery.captchaCheck.limitation=capability==='tool_disallowed'?'Active browser tool explicitly requires human handling':'Challenge is inside an iframe the active tool cannot expose';
+   assert.notEqual((await call('ask_candidate',input)).isError,true);
+  }
+  assert.equal(store.questions(p.id).length,3);
+ }finally{await server.close();store.close();}
+});
