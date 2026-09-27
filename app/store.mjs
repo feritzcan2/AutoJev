@@ -153,7 +153,7 @@ export class Store {
     const j=this.job(candidate,id),p=this.profile(candidate);
     const transitions={found:['working','skipped'],working:['prepared','blocked','skipped'],prepared:['working','submitting','blocked','skipped'],blocked:['working','skipped'],submitting:['uncertain'],uncertain:['submitted'],submitted:[],skipped:[]};
     if(status===j.status)return j;
-    if(!transitions[j.status]?.includes(status))throw Error(`Geçersiz geçiş: ${j.status} → ${status}`);
+    if(!transitions[j.status]?.includes(status))throw Error(`Geçersiz geçiş: ${j.status} → ${status}${j.status==='submitted'?'. Gönderim zaten kanıtıyla kaydedildi; bu başvurunun durumunu tekrar değiştirme.':''}`);
     if(status==='submitted')throw Error('Gönderim kanıtı için record_submission kullan');
     if(status==='working'&&p.authorization==='research')throw Error('Profil yalnızca araştırmaya izin veriyor');
     if(status==='submitting'&&p.authorization!=='submit')throw Error('Gönderim yetkisi yok; kullanıcı profilden değiştirmeli');

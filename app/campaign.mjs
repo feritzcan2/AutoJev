@@ -4,8 +4,9 @@ import {randomUUID} from 'node:crypto';
 // Builds the bounded task prompt. Exported so the app can show exactly what the agent receives.
 export function campaignPrompt({task,source,profile:p}){
  const skill=task.kind==='search'?'find-jobs':'apply-to-jobs';
+ const completion=task.kind==='search'?'Report this task with report_campaign_work before ending.':'record_submission also reports this task done when completion.taskReported=true; then end the turn without more status/report calls. Otherwise use report_campaign_work.';
  const action=task.kind==='search'?`Search only source ${task.sourceId??'any'}${source?.name?` (${source.name})`:''}; no applications this turn.`:task.kind==='verify'?`Verify job ${task.jobId} WITHOUT resubmitting.`:`Process job ${task.jobId}; ${task.applyMode==='auto'&&p.authorization==='submit'?'automatic submission already authorized':task.applyMode==='find_only'||p.authorization==='research'?'do not apply':'prepare the form but do not submit'}.`;
- return `JobLoop task ${task.id} (${task.kind}). Read get_task_context and verify this task is current. Follow AGENTS.md and .agents/skills/${skill}/SKILL.md; read the skill only if not already in context. ${action}${task.recoveryQuestionId?` Recover technical question ${task.recoveryQuestionId}; no new candidate answer is implied.`:''} Use the current MCP profile, source settings, answers and checkpoint. Report this task with report_campaign_work before ending; complete any rejected reporting requirements on this same task.`;
+ return `JobLoop task ${task.id} (${task.kind}). Read get_task_context and verify this task is current. Follow AGENTS.md and .agents/skills/${skill}/SKILL.md; read the skill only if not already in context. ${action}${task.recoveryQuestionId?` Recover technical question ${task.recoveryQuestionId}; no new candidate answer is implied.`:''} Use the current MCP profile, source settings, answers and checkpoint. ${completion} Resolve unmet requirements on this same task.`;
 }
 
 export function recoveryPrompt(options,reason){
@@ -39,10 +40,36 @@ export class Campaigns {
     const c=this.store.campaign(id);
     if(c?.status!=='running'||c.task?.id!==taskId||this.active(id)?.sessionId!==sessionId)throw Error('Etkin kampanya işi bulunamadı');
     if(!['done','no_results','blocked'].includes(outcome)||typeof note!=='string'||!note.trim())throw Error('Geçersiz iş sonucu');
-    if(c.task.report)throw Error('Bu işin sonucu zaten kaydedildi');
     const report={outcome,note:note.slice(0,3000),...(blocker?{blocker}:{})};
     try{validateTaskCompletion(this.store,id,c,report);}catch(error){c.task.completionError=error.message;this.save(id,c);throw error;}
+    if(c.task.report){
+      if(c.task.report.outcome===outcome)return c;
+      if(c.task.report.outcome!=='blocked'||outcome!=='done')throw Error('Bu işin sonucu zaten kaydedildi; farklı bir sonuçla değiştirilemez.');
+    }
     delete c.task.completionError;c.task.report=report;return this.save(id,c);
+  }
+  recordSubmission(id,sessionId,input){
+    const c=this.store.campaign(id);
+    const matches=c?.status==='running'&&['application','verify'].includes(c.task?.kind)&&c.task.jobId===input.jobId&&this.active(id)?.sessionId===sessionId;
+    let job;
+    // Persist proof and its matching task report together. The next task still
+    // waits for provider Idle; saving proof must never launch overlapping work.
+    this.store.db.exec('BEGIN IMMEDIATE');
+    try{
+      job=this.store.recordSubmission(id,input.jobId,input,sessionId);
+      if(matches){
+        const report={outcome:'done',note:`${job.company} · ${job.role}: gönderim onayı kaydedildi.`};
+        validateTaskCompletion(this.store,id,c,report);
+        c.task.report=report;c.task.seenWorking=true;
+        delete c.task.completionError;delete c.task.recovery;
+        if(c.pendingResumes)delete c.pendingResumes[job.id];
+        if(c.pendingRecoveries)delete c.pendingRecoveries[job.id];
+        this.store.saveCampaign(id,c);
+      }
+      this.store.db.exec('COMMIT');
+    }catch(error){this.store.db.exec('ROLLBACK');throw error;}
+    if(matches)this.changed(id);
+    return {...job,completion:{taskId:matches?c.task.id:null,taskReported:Boolean(matches),nextAction:matches?'end_turn':'return_to_current_task',message:matches?'Submission and task completion saved. End this turn; do not call update_application or report_campaign_work again.':'Submission saved. Do not change this completed application; no matching active campaign task was completed.'}};
   }
   delivery(id,state){
     const c=this.store.campaign(id);if(this.closed||c?.status!=='running'||!c.task||c.task.seenWorking)return;

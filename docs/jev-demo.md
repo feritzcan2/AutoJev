@@ -49,8 +49,11 @@ outside this tool. It does not generate answers or establish candidate authoriza
 Decisions are tied to the current candidate, agent session, observed page and a
 single-use decision ID. Stale or covered targets are rejected. Execution failures
 after input are marked uncertain and must be observed before retrying. Jev's
-DONE is not proof of submission; Jobloop's existing record_submission workflow
-and candidate/source permissions still apply. The Jobloop agent reviews every
+DONE is not proof of submission; Jobloop's record_submission workflow
+and candidate/source permissions still apply. A successful record_submission
+atomically saves proof and completes the matching active application task. Its
+completion.taskReported receipt tells the agent to end the turn without redundant
+status/report calls; the scheduler waits for provider Idle before the next task. The Jobloop agent reviews every
 proposed action; this integration does not autonomously loop over clicks.
 
 The decision engine and DOM reader are based on the pinned upstream revision in

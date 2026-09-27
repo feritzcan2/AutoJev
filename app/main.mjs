@@ -35,7 +35,7 @@ const engines=new Map(),sessions=new Map(),starting=new Set(),terminalOutputs=ne
 let terminalGrid={rows:24,cols:80};
 let mobile=null;
 const emit=(channel,value)=>{if(window&&!window.isDestroyed())window.webContents.send(channel,value);mobile?.broadcast(channel,value);};
-const mcp=await startMcp(store,candidateId=>emit('changed',{candidateId}),hook=>{const active=[...sessions.values()].find(a=>a.sessionId===hook.observation?.sessionId);if(!active)throw Error('No agent');return engines.get(active.candidateId).request('hook',{token:hook.token,observation:hook.observation});},browser,{get:id=>store.campaign(id),report:(id,sessionId,args)=>campaigns.report(id,sessionId,args)});
+const mcp=await startMcp(store,candidateId=>emit('changed',{candidateId}),hook=>{const active=[...sessions.values()].find(a=>a.sessionId===hook.observation?.sessionId);if(!active)throw Error('No agent');return engines.get(active.candidateId).request('hook',{token:hook.token,observation:hook.observation});},browser,{get:id=>store.campaign(id),report:(id,sessionId,args)=>campaigns.report(id,sessionId,args),recordSubmission:(id,sessionId,args)=>campaigns.recordSubmission(id,sessionId,args)});
 const retire=id=>{const active=sessions.get(id);if(active){store.recoverSession(id,active.sessionId);mcp.revoke(active.token);sessions.delete(id);emit('changed',{candidateId:id});}};
 function ensureEngine(id='catalog'){if(!engines.has(id)){const instance=new Engine(path.join(root,'engine/target/debug',process.platform==='win32'?'jobloop-engine.exe':'jobloop-engine'),path.join(data,'processes',id),event=>{
   if(engines.get(id)!==instance)return;
