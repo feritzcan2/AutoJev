@@ -19,6 +19,7 @@
     "test:jev:live": "node scripts/smoke-jev.mjs --live",
     "sources:install": "node scripts/install-source-tools.mjs",
     "test:jev:existing": "node scripts/smoke-jev-existing.mjs",
+    "test:jev:options": "node scripts/smoke-jev-options.mjs",
     "test:jev:autocomplete": "node scripts/smoke-jev-autocomplete.mjs",
     "test:jev:performance": "node scripts/smoke-jev-performance.mjs"
   },

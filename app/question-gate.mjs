@@ -1,4 +1,15 @@
 // Task-start review survives session replacement; current facts are still checked below.
+export function validateQuestionConsent(store,id,jobId,input){
+ const profile=store.profile(id),job=jobId?store.job(id,jobId):null,source=job?.sourceId?store.source(id,job.sourceId):null;
+ const scopes=new Set((input.fields??[]).map(f=>f.consentScope).filter(Boolean));
+ if(input.applicationBlocker?.kind==='uncovered_consent'){
+  if(!input.applicationBlocker.consentScope&&!scopes.size)throw Error('Onayın kapsamını consentScope ile belirt');
+  if(input.applicationBlocker.consentScope)scopes.add(input.applicationBlocker.consentScope);
+ }
+ for(const scope of scopes){
+  if(scope==='submission'&&profile.authorization==='submit'&&(!source||source.applyMode==='auto')||scope==='recruitment_privacy'&&profile.applicationPolicy.acceptPrivacy||scope==='group_recruitment'&&profile.applicationPolicy.groupRecruitmentConsent)throw Error('Bu işlem kayıtlı ayarlarda zaten onaylı; tekrar onay sorma ve mevcut yetki kapsamında devam et.');
+ }
+}
 export function questionKnowledge(store,id){
  const p=store.profile(id);
  return JSON.stringify({candidateId:id,facts:p.facts,preferences:p.preferences,learnedFacts:p.learnedFacts,cvPath:p.cvPath,answers:store.questions(id).filter(q=>q.answer!==null).map(q=>({id:q.id,answer:q.answer}))});
@@ -23,9 +34,13 @@ export function validateQuestionReview(store,id,input,readKnowledge){
  const review=input.applicationBlocker?.review;
  if(!review?.cvChecked||!review?.missingFacts?.length)throw Error('applicationBlocker.review içinde cvChecked ve missingFacts belirt. CV yoksa bunu cvChecked içinde açıkla; varsa önce oku. Her eksik için key ve gap yaz.');
  const profile=store.profile(id);
+ const answers=store.reusableAnswers(id);
  for(const fact of review.missingFacts){
-  const known=profile.learnedFacts?.[fact.key]?.value;
+  const known=profile.learnedFacts?.[fact.key]?.value||answers.filter(a=>a.key===fact.key).map(a=>`${a.question}: ${JSON.stringify(a.value)}`).join('; ');
   if(known&&!fact.knownValueGap?.trim())throw Error(`Bu konuda kayıtlı bilgi var: ${fact.key} = ${known}. Kullan; yalnızca karşılamadığı zorunlu ayrıntı veya gerçek çelişki varsa knownValueGap içinde açıkla.`);
+ }
+ for(const field of input.fields??[]){
+  if(field.factKey&&(!review.missingFacts.some(f=>f.key===field.factKey)||field.consentScope))throw Error('factKey yalnızca incelenen genel aday bilgisine ait olmalı; onaylara factKey ekleme.');
  }
  if(input.applicationBlocker.kind==='access'){
   const recovery=input.applicationBlocker.recovery;

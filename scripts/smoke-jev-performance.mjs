@@ -65,10 +65,11 @@ try{
   await page.locator('#country').evaluate(e=>e.replaceWith(e.cloneNode(true)));
   result=await call('browser_jev_select_option',{tabId,controlId:country,option:'Germany'});assert.equal(result.status,'stale');assert.equal(await page.locator('#country').inputValue(),'');
   observed=await call('browser_jev_observe',{tabId});country=observed.controls.find(c=>c.label==='Country').controlId;
-  await assert.rejects(()=>call('browser_jev_select_option',{tabId,controlId:country,option:'Germ'}),/eşleşmeli/);
+  result=await call('browser_jev_select_option',{tabId,controlId:country,option:'Germ'});assert.equal(result.status,'needs_selection');assert.equal(result.executed,false);assert.equal(result.reason,'no_match');assert.match(result.message,/browser_jev_list_options/);
+  country=result.controls.find(c=>c.label==='Country').controlId;
   await page.locator('#country').evaluate(e=>e.insertAdjacentHTML('beforeend','<option value="other">Germany</option>'));
   observed=await call('browser_jev_observe',{tabId});country=observed.controls.find(c=>c.label==='Country').controlId;
-  await assert.rejects(()=>call('browser_jev_select_option',{tabId,controlId:country,option:'Germany'}),/eşleşmeli/);
+  result=await call('browser_jev_select_option',{tabId,controlId:country,option:'Germany'});assert.equal(result.status,'needs_selection');assert.equal(result.reason,'ambiguous');assert.equal(result.executed,false);
   // An overlay cannot be bypassed by the direct selection tool.
   observed=await reset();country=observed.controls.find(c=>c.label==='Country').controlId;
   await page.evaluate(()=>{const cover=document.createElement('div');cover.style='position:fixed;inset:0;z-index:999';document.body.append(cover);});
