@@ -64,4 +64,69 @@ try{
   result=await call('browser_jev_upload',{tabId:page.tabId,uploadId:observed.uploads[0].uploadId,filePath:file});assert.equal(result.executed,true);
   assert.equal(await slot.page.locator('input[type=file]').evaluate(e=>e.files[0].name),'CV.txt');
   console.log('JEV_STALE_OCCLUSION_UNCERTAIN_UPLOAD_SCOPE_PASS');
+  // Batch filling uses real browser inputs and MCP/session boundaries, no model.
+  client.choose=()=>{throw Error('Batch must not call a model');};
+  const form=`<form onsubmit="event.preventDefault();window.submits++">
+    <label>First name<input id="first" name="first" required></label>
+    <label>Email<input id="email" name="email" type="email" required></label>
+    <label>Notes<textarea id="notes"></textarea></label>
+    <label>Agree<input type="checkbox" id="agree"></label>
+    <label>Password<input type="password"></label>
+    <label>Country<input role="combobox" aria-autocomplete="list"></label>
+    <label>Locked<input readonly></label><input type="hidden"><input type="file">
+    <button type="submit">Submit</button></form>`;
+  const reset=async()=>{await slot.page.setContent(form);await slot.page.evaluate(()=>{window.submits=0;});return call('browser_jev_observe',{tabId:page.tabId});};
+  const mapping=o=>['First name','Email','Notes'].map((label,i)=>({fieldId:o.fillFields.find(f=>f.label===label).fieldId,text:['Synthetic','test@example.com','Verified answer'][i]}));
+  let formPage=await reset(),fields=mapping(formPage);
+  assert.deepEqual(formPage.fillFields.map(f=>f.label),['First name','Email','Notes']);
+  // No wrong-session, guessed, duplicated or cross-candidate mapping may mutate.
+  for(const [args,bearer] of [[{tabId:page.tabId,fields},resumed],[{tabId:page.tabId,fields:[fields[0],fields[0]]},token],[{tabId:page.tabId,fields:[fields[0],{fieldId:'guessed',text:'x'}]},token],[{tabId:page.tabId,fields},otherToken]]){
+    assert.equal((await call('browser_jev_fill_fields',args,bearer,true)).isError,true);
+    assert.equal(await slot.page.locator('#first').inputValue(),'');
+  }
+  const batchStarted=Date.now();
+  result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});
+  console.log(`JEV_BATCH_THREE_FIELDS_MS ${Date.now()-batchStarted}`);
+  assert.equal(result.status,'ready');assert.deepEqual(result.results.map(f=>f.status),['filled','filled','filled']);
+  assert.equal(await slot.page.locator('#email').inputValue(),'test@example.com');
+  assert.equal(await slot.page.locator('#agree').isChecked(),false);assert.equal(await slot.page.evaluate(()=>window.submits),0);
+  assert.equal((await call('browser_jev_fill_fields',{tabId:page.tabId,fields},token,true)).isError,true);
+  result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields:mapping(result)});
+  assert.deepEqual(result.results.map(f=>f.status),['unchanged','unchanged','unchanged']);
+  // User edit and covering overlays invalidate the original mapping.
+  formPage=await reset();fields=mapping(formPage);
+  await slot.page.locator('#email').fill('user@example.com');
+  result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});
+  assert.equal(result.status,'stale');assert.equal(await slot.page.locator('#first').inputValue(),'');
+  formPage=await reset();fields=mapping(formPage);
+  await slot.page.evaluate(()=>{const cover=document.createElement('div');cover.style='position:fixed;inset:0;z-index:999';document.body.append(cover);});
+  result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});assert.equal(result.status,'stale');
+  assert.equal(await slot.page.locator('#first').inputValue(),'');
+  // Dynamic replacement after the first write leaves the remaining fields alone.
+  formPage=await reset();fields=mapping(formPage);
+  await slot.page.evaluate(()=>document.querySelector('#first').addEventListener('blur',()=>{const e=document.querySelector('#email');e.replaceWith(e.cloneNode());},{once:true}));
+  result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});
+  assert.equal(result.status,'stale');assert.deepEqual(result.results.map(f=>f.status),['filled','stale','not_attempted']);
+  assert.equal(await slot.page.locator('#first').inputValue(),'Synthetic');assert.equal(await slot.page.locator('#email').inputValue(),'');
+  // Formatting rejection is explicit; no later fields are filled.
+  formPage=await reset();fields=mapping(formPage);fields[1].text='invalid-email';
+  result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});
+  assert.equal(result.status,'invalid');assert.deepEqual(result.results.map(f=>f.status),['filled','invalid','not_attempted']);
+  // An interrupted write is never retried and cannot progress to later fields.
+  formPage=await reset();fields=mapping(formPage);
+  const input=slot.fillFields.get(fields[0].fieldId).input,fill=input.fill.bind(input);let attempts=0;
+  input.fill=async(...args)=>{attempts++;await fill(...args);throw Error('Synthetic lost acknowledgement');};
+  result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});
+  assert.equal(result.status,'uncertain');assert.equal(attempts,1);assert.deepEqual(result.results.map(f=>f.status),['uncertain','not_attempted','not_attempted']);
+  // A final blur that clears an earlier field cannot be reported as success.
+  formPage=await reset();fields=mapping(formPage);
+  await slot.page.evaluate(()=>document.querySelector('#notes').addEventListener('blur',()=>{document.querySelector('#first').value='';},{once:true}));
+  result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});
+  assert.equal(result.status,'uncertain');assert.equal(result.results[0].status,'uncertain');
+  assert.equal(await slot.page.evaluate(()=>window.submits),0);
+  formPage=await reset();fields=mapping(formPage);
+  await slot.page.evaluate(()=>document.querySelector('#notes').addEventListener('blur',()=>{document.querySelector('#first').pattern='different';},{once:true}));
+  result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});
+  assert.equal(result.status,'invalid');assert.equal(result.results[0].status,'invalid');
+  console.log('JEV_BATCH_FILL_SESSION_SCOPE_STALE_PARTIAL_VERIFICATION_PASS');
 }finally{await browsers.close();await server.close();store.close();await fixture.close();await rm(directory,{recursive:true,force:true});}

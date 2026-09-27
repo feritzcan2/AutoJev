@@ -12,6 +12,7 @@ In Jobloop select **Agent → Tarayıcı → Jev · mevcut Chrome’da yeni penc
 candidate's agent. It receives these MCP tools:
 
 - `browser_jev_open` / `browser_jev_tabs` / `browser_jev_observe`
+- `browser_jev_fill_fields`: fill up to 20 observed ordinary text fields with verified agent-supplied answers in one call; no TypeSafe call or submission
 - `browser_jev_screenshot`: inspect the visible form before escalating input failures
 - `browser_jev_next`: propose one action, without executing it
 - `browser_jev_act`: execute the reviewed decision once; the agent supplies `text`
@@ -30,6 +31,20 @@ reloading their forms. Pending action decisions are discarded on reconnect. Olde
 saved checkpoints migrate by exact ID after checking the selected Chrome profile.
 Closed tabs and tabs from a different Chrome process cannot be restored by matching
 a URL; the agent must check saved submission evidence before recovering a task.
+
+Before filling an application the agent prepares a compact, source-backed answer plan
+from the current task/profile, saved replies and CV. It reuses known answers across
+fields, refreshing changed evidence and checking current policy before questions or
+submission. Browser results already contain fresh observations; redundant observe
+calls are unnecessary.
+
+Observations expose `fillFields` with single-use, session-bound `fieldId` values.
+`browser_jev_fill_fields({tabId, fields: [{fieldId, text}, ...]})` writes those exact
+ordinary text fields sequentially, checks each target/value, and returns per-field
+results plus one fresh observation. It stops when state changes or a write cannot
+be verified; earlier writes are retained, with no rollback or automatic retry.
+Autocomplete, dropdowns, password fields, checkboxes, uploads and submission stay
+outside this tool. It does not generate answers or establish candidate authorization.
 
 Decisions are tied to the current candidate, agent session, observed page and a
 single-use decision ID. Stale or covered targets are rejected. Execution failures

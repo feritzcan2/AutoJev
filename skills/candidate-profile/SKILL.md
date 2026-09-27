@@ -2,7 +2,7 @@
 name: candidate-profile
 description: Read a JobLoop candidate's CV and verified profile, and ask only for facts missing from a real job application.
 ---
-Use get_candidate_profile and list_applications first. The MCP connection identifies the candidate; never use another person's files, browser account, contact details or history.
+Use the current get_task_context profile and answers when working on an assigned application; otherwise read get_candidate_profile. Request list_applications only when cross-job history is needed. The MCP connection identifies the candidate; never use another person's files, browser account, contact details or history.
 Read the CV at the returned path before asking questions. Profile corrections override stale CV facts, but do not alter the CV unless the candidate authorizes tailoring.
 Ask at most two questions at once through ask_candidate. Ask only missing details needed for search or applications: roles, location, work arrangement, compensation, availability and work authorization. Do not conduct a career interview.
 Unknown citizenship, permit type, demographic answers, legal declarations and qualifications stay unknown. Do not choose a desired answer to improve acceptance. Use an available optional non-disclosure answer where appropriate.

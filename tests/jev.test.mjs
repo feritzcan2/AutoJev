@@ -62,3 +62,11 @@ test('demo seeds the real app with only a local synthetic source',async()=>{
     assert.equal((await fetch(fixture.url)).status,200);assert.equal((await fetch(fixture.url.replace('/jobs','/.env.jev'))).status,404);
   }finally{await fixture.close();await rm(dir,{recursive:true,force:true});}
 });
+
+test('batch field mappings are bounded and cannot inject selectors or actions',()=>{
+  const field={fieldId:'observed-id',text:'verified answer'};
+  validateJevArgs('browser_jev_fill_fields',{tabId:'tab',fields:[field]});
+  for(const fields of [[],Array(21).fill(field),[field,field],[{...field,selector:'#submit'}],[{fieldId:'x',text:123}],[{fieldId:'x',text:'x'.repeat(12001)}]]){
+    assert.throws(()=>validateJevArgs('browser_jev_fill_fields',{tabId:'tab',fields}));
+  }
+});

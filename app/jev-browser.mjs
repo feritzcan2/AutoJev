@@ -6,6 +6,7 @@ import {actionSpace,chooseJev,jevConfig} from './jev-policy.mjs';
 import {existingChromeEndpoint,openChromeWindow,chromeWindowMarker,resolveChromeProfile} from './jev-chrome.mjs';
 import {JevCdpTransport} from './jev-cdp.mjs';
 import {JevTabs} from './jev-tabs.mjs';
+import {captureFillFields,clearFillFields,fillKnownFields} from './jev-form.mjs';
 const require=createRequire(import.meta.url);
 const string={type:'string',minLength:1,maxLength:12000};
 const schema=(properties,required=Object.keys(properties))=>({type:'object',properties,required,additionalProperties:false});
@@ -16,15 +17,23 @@ export const jevTools=[
   {name:'browser_jev_screenshot',description:'Capture the visible viewport of this candidate’s existing Jev tab. Use for visual verification when DOM values are absent or redacted, especially before escalating a form-entry failure. Does not call Jev or act on the page.',inputSchema:schema({tabId:string})},
   {name:'browser_jev_next',description:'Ask Jev for ONE proposed action toward a bounded goal on an existing tab. Does not execute. Review the proposed action against the candidate’s authorization and current task. DONE is a model claim, not proof. Returns decisionId and selected field context when text is needed.',inputSchema:schema({tabId:string,goal:string})},
   {name:'browser_jev_act',description:'Execute a previously reviewed Jev decision once. For TYPE_TEXT you, the Jobloop agent, MUST supply exact text from the goal/profile/saved facts; no separate text model is used. Check candidate and source authorization before clicking submit or granting consent; do not ask again for existing authorization. Stale decisions cannot execute. If execution is uncertain, observe before continuing and never blindly retry a submission.',inputSchema:schema({tabId:string,decisionId:string,text:{type:'string',maxLength:12000}},['tabId','decisionId'])},
+  {name:'browser_jev_fill_fields',description:'Fill up to 20 observed ordinary text fields in one call using exact verified answers prepared by the Jobloop agent. Use session-bound fieldId values from the latest fillFields observation. No model call, dropdown selection, checkbox, consent, file upload or submission. Checks targets before each write and verifies values; stops on changes or uncertain input and returns per-field results plus a fresh observation. Never blindly retry uncertain fields. Dynamic autocomplete controls require the normal next/act flow.',inputSchema:schema({tabId:string,fields:{type:'array',minItems:1,maxItems:20,items:schema({fieldId:string,text:{type:'string',maxLength:12000}})}})},
   {name:'browser_jev_upload',description:'Upload a known candidate document into an observed file input. Use observe first to obtain uploadId. Supply its absolute local path. No model call; Jev does not choose or generate files.',inputSchema:schema({tabId:string,uploadId:string,filePath:string})}
 ];
 export function validateJevArgs(name,args){
   const tool=jevTools.find(t=>t.name===name);if(!tool)throw Error('Unknown Jev tool');
-  if(!args||typeof args!=='object'||Array.isArray(args))throw Error('Invalid arguments');
-  for(const key of tool.inputSchema.required)if(!(key in args))throw Error(`Missing ${key}`);
-  for(const [key,value] of Object.entries(args)){
-    const spec=tool.inputSchema.properties[key];if(!spec||typeof value!=='string'||value.length>spec.maxLength||(spec.minLength&&!value.trim()))throw Error(`Invalid ${key}`);
-  }
+  const validate=(spec,value,key)=>{
+    if(spec.type==='object'){
+      if(!value||typeof value!=='object'||Array.isArray(value))throw Error(`Invalid ${key}`);
+      for(const required of spec.required??[])if(!(required in value))throw Error(`Missing ${required}`);
+      for(const [name,item] of Object.entries(value)){const child=spec.properties[name];if(!child)throw Error(`Invalid ${name}`);validate(child,item,name);}
+    }else if(spec.type==='array'){
+      if(!Array.isArray(value)||value.length<spec.minItems||value.length>spec.maxItems)throw Error(`Invalid ${key}`);
+      for(const item of value)validate(spec.items,item,key);
+    }else if(typeof value!=='string'||value.length>spec.maxLength||(spec.minLength&&!value.trim()))throw Error(`Invalid ${key}`);
+  };
+  validate(tool.inputSchema,args,'arguments');
+  if(name==='browser_jev_fill_fields'&&new Set(args.fields.map(f=>f.fieldId)).size!==args.fields.length)throw Error('Duplicate fieldId');
 }
 const checkedUrl=value=>{const url=new URL(value);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw Error('Only HTTP(S) URLs without credentials are supported');return url.toString();};
 
@@ -124,13 +133,15 @@ export class JevBrowser {
   }
   tab(id){const slot=this.tabs.get(id);if(!slot||slot.page.isClosed())throw Object.assign(Error('Jev sekmesi bulunamadı: kayıtlı sekme kapatılmış veya seçili Chrome oturumunda artık mevcut değil. browser_jev_tabs ile kurtarılan sekmeleri kontrol et. Başvuruyu yeniden açmadan önce kayıtlı gönderim/sonuç durumunu doğrula; gönderildiği belirsiz bir başvuruyu tekrar gönderme.'),{code:'TAB_MISSING'});return slot;}
   async observe(slot){
+    await clearFillFields(slot);
     slot.pending=null;for(const {input} of slot.uploads.values())await input.dispose().catch(()=>{});slot.uploads.clear();
     const observed=await slot.page.evaluate(this.reader);if(!observed)throw Error('Sayfa yükleniyor; tekrar gözlemle.');
     slot.observed=observed;
+    const fillFields=await captureFillFields(slot,slot.owner);
     const inputs=await slot.page.locator('input[type=file]').all();const uploads=[];
     for(const locator of inputs){const input=await locator.elementHandle();if(!input)continue;const uploadId=randomUUID();const details=await input.evaluate(e=>({label:e.getAttribute('aria-label')||[...(e.labels??[])].map(l=>l.innerText).join(' ')||e.name||'File upload',accept:e.accept,multiple:e.multiple}));slot.uploads.set(uploadId,{input,url:slot.page.url(),details});uploads.push({uploadId,...details});}
     const links=await slot.page.locator('a[href]').evaluateAll(nodes=>nodes.filter(e=>{const r=e.getBoundingClientRect();return /^https?:/.test(e.href)&&e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})&&r.width>0&&r.height>0&&r.bottom>0&&r.top<innerHeight;}).slice(0,100).map(e=>({text:(e.getAttribute('aria-label')||e.innerText||'').trim().slice(0,500),url:e.href})));
-    return {browser:'Jev Chrome',tabId:slot.id,url:observed.url,title:observed.title,text:observed.text,links,elements:actionSpace(observed.actions).elements,uploads,history:slot.history.slice(-10),omittedActions:observed.omitted_actions};
+    return {browser:'Jev Chrome',tabId:slot.id,url:observed.url,title:observed.title,text:observed.text,links,elements:actionSpace(observed.actions).elements,fillFields,uploads,history:slot.history.slice(-10),omittedActions:observed.omitted_actions};
   }
   async fresh(slot,page,action){
     if(action&&['click','select'].includes(action.kind)){
@@ -198,16 +209,21 @@ export class JevBrowser {
             const id=await this.transport.ownWindow(marker.url);page=await this.findOwnedPage(id);
           }finally{marker.close();}
         }else page=await context.newPage();
-        const slot=await this.track(page.context(),page);
+        const slot=await this.track(page.context(),page);slot.owner=owner;
         try{await page.goto(checkedUrl(args.url),{waitUntil:'domcontentloaded',timeout:20000});value=await this.observe(slot);}catch{value={browser:'Jev Chrome',tabId:slot.id,url:page.url(),status:'loading',message:'Gezinme tamamlanmadı; aynı sekmeyi gözlemle.'};}
       }else{
-        const slot=this.tab(args.tabId);
+        const slot=this.tab(args.tabId);slot.owner=owner;
         if(name==='browser_jev_screenshot'){
-          slot.pending=null;
+          slot.pending=null;await clearFillFields(slot);
           const screenshot=await slot.page.screenshot({type:'png',fullPage:false,timeout:10000});
           return {content:[{type:'text',text:JSON.stringify({browser:'Jev Chrome',tabId:slot.id,url:slot.page.url()})},{type:'image',mimeType:'image/png',data:screenshot.toString('base64')}]};
         }
         if(name==='browser_jev_observe')value=await this.observe(slot);
+        if(name==='browser_jev_fill_fields'){
+          const result=await fillKnownFields(slot,args.fields,owner,this.reader);
+          const observed=await this.observe(slot).catch(()=>({browser:'Jev Chrome',tabId:slot.id,observationUnavailable:true}));
+          value={...observed,...result};
+        }
         if(name==='browser_jev_next'){
           const page=await this.observe(slot),decision=await this.choose(slot.observed,args.goal,slot.history,{...await this.config(),signal:this.abort.signal});
           const decisionId=randomUUID();slot.pending={...decision,decisionId,observed:slot.observed,owner};
