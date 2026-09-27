@@ -32,6 +32,19 @@ export async function navigateObserved(slot,name,args,owner,reader){
   if((name==='browser_jev_scroll')!==(saved.kind==='scroll'))throw Error('Yanlış kontrol türü.');
   const current=await slot.page.evaluate(reader),guards=saved.kind==='scroll'?current?.scroll_guards:current?.control_guards;
   if(!same(guards?.[saved.node],saved.guard))return {status:'stale',executed:false,message:'Hedef değişti; dönen güncel kontrolü kullan.'};
+  if(name==='browser_jev_list_options'){
+    slot.pending=null;
+    const result=await slot.page.evaluate(({node,query,offset,limit})=>{
+      const e=window.__jevFast.nodes.get(node);
+      if(e?.tagName!=='SELECT')return {status:'unsupported',executed:false,message:'Native SELECT gerekli; autocomplete için browser_jev_autocomplete kullan.'};
+      const normalize=value=>value.normalize('NFKD').replace(/\p{M}/gu,'').toLowerCase().replace(/ı/g,'i').replace(/\s+/g,' ').trim();
+      const terms=normalize(query).split(' ').filter(Boolean);
+      const matches=[...e.options].map(o=>({index:o.index,label:o.label,value:o.value,selected:o.selected,disabled:o.disabled||!!o.closest('optgroup[disabled]'),group:o.closest('optgroup')?.label??null})).filter(o=>terms.every(term=>normalize([o.label,o.value,o.group??''].join(' ')).includes(term)));
+      const options=matches.slice(offset,limit===null?undefined:offset+limit),nextOffset=offset+options.length<matches.length?offset+options.length:null;
+      return {status:'ready',executed:false,query,offset,optionCount:e.options.length,matchCount:matches.length,options,nextOffset};
+    },{node:saved.node,query:args.query??'',offset:args.offset??0,limit:args.limit??null});
+    return {...result,controlId:args.controlId};
+  }
   const key=JSON.stringify([name,saved.node,args.direction,args.option]),before=progressKey(current);
   if(blockedRepeat(slot,key,before))return stalled;
   slot.pending=null;let began=false;
@@ -43,10 +56,11 @@ export async function navigateObserved(slot,name,args,owner,reader){
         const e=window.__jevFast.nodes.get(node);
         if(e?.tagName!=='SELECT'||e.multiple||e.matches(':disabled')||e.closest('[aria-disabled="true"],[inert]'))return {error:'Etkin tek seçimli native SELECT gerekli.'};
         const matches=[...e.options].filter(o=>(o.value===option||o.label.trim()===option.trim()));
-        if(matches.length!==1||matches[0].disabled||matches[0].closest('optgroup[disabled]'))return {error:'Tek ve etkin bir seçenek tam olarak eşleşmeli; başka yanıt tahmin edilmedi.'};
+        if(matches.length!==1||matches[0].disabled||matches[0].closest('optgroup[disabled]'))return {needsSelection:true,optionCount:e.options.length,reason:matches.length>1?'ambiguous':matches.length===0?'no_match':'disabled'};
         const o=matches[0];return {value:o.value,label:o.label,index:o.index,unchanged:o.selected};
       },{node:saved.node,option:args.option});
       if(match.error)throw Error(match.error);
+      if(match.needsSelection)return {status:'needs_selection',executed:false,optionCount:match.optionCount,reason:match.reason,message:'Tam ve etkin seçenek eşleşmedi. browser_jev_list_options ile tüm seçenekleri oku; gerçek etiket/değeri kullan. Başka yazım tahmin etme; observe veya screenshot gerekmez.'};
       if(match.unchanged)return {status:'ready',executed:false,selection:{...match,verified:true}};
       const handle=await slot.page.evaluateHandle(node=>window.__jevFast.nodes.get(node),saved.node);
       try{

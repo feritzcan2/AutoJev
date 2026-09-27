@@ -102,3 +102,11 @@ test('autocomplete requires observed control and exact answer, never accepts sel
  validateJevArgs('browser_jev_autocomplete',{tabId:'tab',controlId:'observed',option:'Berlin, DEU'});
  for(const bad of [{...args,selector:'#submit'},{...args,option:''},{...args,text:42},{...args,timeout:60000},{tabId:'tab',text:'Berlin',option:'Berlin'}])assert.throws(()=>validateJevArgs('browser_jev_autocomplete',bad));
 });
+
+test('native option search is bounded and read-only arguments cannot inject targets',()=>{
+ const args={tabId:'tab',controlId:'observed'};
+ validateJevArgs('browser_jev_list_options',args);
+ validateJevArgs('browser_jev_list_options',{...args,query:'',offset:0});
+ validateJevArgs('browser_jev_list_options',{...args,query:'Bilkent',offset:20,limit:20});
+ for(const extra of [{limit:0},{limit:1001},{limit:1.5},{offset:-1},{offset:1.5},{offset:'20'},{offset:10001},{offset:NaN},{query:'x'.repeat(201)},{query:2},{selector:'select'},{option:'auto select'}])assert.throws(()=>validateJevArgs('browser_jev_list_options',{...args,...extra}));
+});

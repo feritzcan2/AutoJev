@@ -166,3 +166,16 @@ Stale control/field IDs return fresh maps without writing, so an additional
 
 Run `pnpm test:jev:autocomplete` for an isolated real-Chrome test of the observed
 Lever markup and ARIA variants. It never changes the live Midas application.
+
+### Complete native dropdown options
+
+`browser_jev_list_options({tabId, controlId})` reads all options of the observed
+native select in one call, including exact labels/values, selected/disabled state
+and groups. It does not open, scroll or change the form. Reuse this complete list
+with `browser_jev_select_option` rather than guessing a translated name.
+Optional `query` ignores case and accents; `limit` and `offset` enable pagination
+only when requested. A failed exact selection returns `needs_selection` with
+fresh controls and points to the list tool.
+
+`pnpm test:jev:options` covers a 237-option fixture with the actual Midas Bilkent
+label, full-list defaults, optional filtering/paging and selection guards.
