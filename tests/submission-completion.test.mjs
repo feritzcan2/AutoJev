@@ -21,17 +21,19 @@ test('MCP proof receipt replaces an earlier blocked report, is retryable and rel
   c.report(p.id,'owner',{taskId,outcome:'blocked',note:'Waiting for answer'});
   store.answer(p.id,q.id,'Confirmed');c.answered(p.id,q.id);
   for(const state of ['working','prepared','submitting'])f.update(state);
-  mcp=await startMcp(store,()=>{},undefined,null,{get:id=>store.campaign(id),report:(...args)=>c.report(...args),recordSubmission:(...args)=>c.recordSubmission(...args)});
+  let cleanupCalls=0;
+  const browser={cleanup:async id=>{cleanupCalls++;assert.equal(store.job(id,job.id).status,'submitted');assert.equal(store.campaign(id).task?.report?.outcome??'done','done');if(cleanupCalls===2)throw Error('Browser disconnected');return {closed:['owned-tab']};}};
+  mcp=await startMcp(store,()=>{},undefined,browser,{get:id=>store.campaign(id),report:(...args)=>c.report(...args),recordSubmission:(...args)=>c.recordSubmission(...args)});
   const token=mcp.grant(p.id,'owner');
   const call=async(name,args)=>{
    const res=await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}})});
    return (await res.json()).result;
   };
   let result=await call('record_submission',{jobId:job.id,...proof});assert.notEqual(result.isError,true);
-  const receipt=JSON.parse(result.content[0].text);assert.equal(receipt.status,'submitted');assert.equal(receipt.completion.taskReported,true);assert.equal(receipt.completion.taskId,taskId);assert.equal(receipt.completion.nextAction,'end_turn');
+  const receipt=JSON.parse(result.content[0].text);assert.equal(receipt.status,'submitted');assert.equal(receipt.completion.taskReported,true);assert.equal(receipt.completion.taskId,taskId);assert.equal(receipt.completion.nextAction,'end_turn');assert.deepEqual(receipt.tabCleanup.closed,['owned-tab']);
   assert.equal(store.campaign(p.id).task.report.outcome,'done');assert.equal(store.campaign(p.id).pendingResumes[job.id],undefined);
   await c.tick();assert.equal(f.launches(),1);assert.equal(store.campaign(p.id).task.id,taskId);
-  result=await call('record_submission',{jobId:job.id,...proof});assert.notEqual(result.isError,true);
+  result=await call('record_submission',{jobId:job.id,...proof});assert.notEqual(result.isError,true);assert.equal(JSON.parse(result.content[0].text).tabCleanup.deferred,true);
   assert.equal(store.db.prepare("SELECT COUNT(*) AS n FROM events WHERE kind='submission_recorded'").get().n,1);
   result=await call('report_campaign_work',{taskId,outcome:'done',note:'Late redundant report'});assert.notEqual(result.isError,true);
   result=await call('update_application',{jobId:job.id,status:'working',note:'Incorrect completion update'});assert.equal(result.isError,true);assert.equal(store.job(p.id,job.id).status,'submitted');

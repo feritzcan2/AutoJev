@@ -38,7 +38,7 @@ export class BrowserTools {
   async call(candidateId,name,args,sessionId){
     const {client,tools,directory,workspace}=await this.connect(candidateId);
     if(!tools.some(t=>t.name===name))throw Error('Unknown browser tool');
-    const result=await (client instanceof JevBrowser?client.callTool({name,arguments:args},sessionId):client.callTool({name,arguments:args}));
+    const result=await (client instanceof JevBrowser?client.callTool({name,arguments:args},sessionId,this.jevOptionsForCandidate(candidateId).lifecycle??{}):client.callTool({name,arguments:args}));
     // Newer Playwright versions return snapshot files. Inline only this candidate's
     // bounded browser artifacts, so the agent can act without filesystem access.
     for(const part of [...(result.content??[])]){
@@ -54,6 +54,13 @@ export class BrowserTools {
       }
     }
     return result;
+  }
+  async cleanup(candidateId){
+    const connection=this.clients.get(candidateId),options=this.jevOptionsForCandidate(candidateId);
+    if(connection?.mode!=='jev'||this.modeForCandidate(candidateId)!=='jev')return {deferred:true};
+    const {client}=await connection.pending;
+    if(client.profile?.directory!==options.profile?.directory)return {deferred:true};
+    return client.cleanupCompleted(options.lifecycle??{});
   }
   async focus(candidateId,context){
     if(this.modeForCandidate(candidateId)!=='jev')throw Object.assign(Error('Bu aday için Jev tarayıcı modu seçili değil.'),{code:'BROWSER_MODE_CHANGED'});

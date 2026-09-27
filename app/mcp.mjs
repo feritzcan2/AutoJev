@@ -88,6 +88,9 @@ export async function startMcp(store,onChange=()=>{},onHook=async()=>({accepted:
         case 'ask_candidate':{const jobId=a.jobId??campaigns?.get(candidateId)?.task?.jobId;if(jobId&&!a.applicationBlocker)throw Error('İlan şartlarını doğrulatmak için soru sorma. Önce CV, profil ve kayıtlı yanıtları kullan. Yalnızca gerçekten zorunlu form alanı, erişim engeli veya mevcut izinlerin kapsamadığı onay için applicationBlocker içinde gözlenen alanı/engeli ve eksik bilgiyi belirt. Opsiyonel bilinmeyen alanı boş bırak.');if(jobId)validateQuestionReview(store,candidateId,a,entry[1].questionKnowledge);if(a.applicationBlocker?.kind==='uncovered_consent'){const scope=a.applicationBlocker.consentScope;if(!scope)throw Error('Onayın kapsamını consentScope ile belirt');const profile=store.profile(candidateId),job=jobId?store.job(candidateId,jobId):null,source=job?.sourceId?store.source(candidateId,job.sourceId):null;if(scope==='submission'&&profile.authorization==='submit'&&(!source||source.applyMode==='auto')||scope==='recruitment_privacy'&&profile.applicationPolicy.acceptPrivacy||scope==='group_recruitment'&&profile.applicationPolicy.groupRecruitmentConsent)throw Error('Bu işlem kayıtlı ayarlarda zaten onaylı; tekrar onay sorma ve mevcut yetki kapsamında devam et.');}value=store.ask(candidateId,{...a,jobId},sessionId);break;}
         case 'record_submission':value=campaigns?.recordSubmission?campaigns.recordSubmission(candidateId,sessionId,a):store.recordSubmission(candidateId,a.jobId,a,sessionId);break;
       }
+      if(browser?.cleanup&&(name==='record_submission'||name==='update_application'&&a.status==='skipped')){
+        const tabCleanup=await browser.cleanup(candidateId).catch(()=>({deferred:true}));value={...value,tabCleanup};
+      }
       onChange(candidateId);result({content:[{type:'text',text:JSON.stringify(value)}]});
     }catch(error){result({isError:true,content:[{type:'text',text:error.message}]});}
   });

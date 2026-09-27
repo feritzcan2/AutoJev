@@ -15,8 +15,8 @@ export class JevTabs {
     if(saved.version!==1||saved.profile!==this.profile||typeof saved.endpoint!=='string'||typeof saved.contextId!=='string'||!Array.isArray(saved.targets)||!saved.targets.every(id=>/^[A-Fa-f0-9]{32}$/.test(id)))throw Error('Jev sekme kaydı geçersiz; mevcut formlar korunuyor.');
     return saved;
   }
-  save(endpoint,contextId,targets){
-    const data=JSON.stringify({version:1,profile:this.profile,endpoint,contextId,targets:[...new Set(targets)]});
+  save(endpoint,contextId,targets,metadata={}){
+    const data=JSON.stringify({version:1,profile:this.profile,endpoint,contextId,targets:[...new Set(targets)],...metadata});
     const write=async()=>{
       await mkdir(path.dirname(this.file),{recursive:true,mode:0o700});
       const temporary=`${this.file}.${randomUUID()}.tmp`;
