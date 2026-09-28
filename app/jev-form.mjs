@@ -4,7 +4,7 @@ import {installFormSemantics} from './form-semantics.mjs';
 // Read-only preflight, including rendered fields below the fold. Never invokes
 // checkValidity/reportValidity (which dispatch events), changes focus or submits.
 export async function inspectApplicationForm(page,slot=null){
- const fields=[],unavailableFrames=[];let truncated=false;
+ const fields=[],unavailableFrames=[],submitControls=[];let truncated=false;
  for(const frame of page.frames()){
   try{
    if(frame.parentFrame()){
@@ -23,7 +23,9 @@ export async function inspectApplicationForm(page,slot=null){
     });
     const modal=queryAll(document,'dialog[open],[role="dialog"],[aria-modal="true"]').filter(modalSurface).at(-1),root=modal??document;
     const nodes=queryAll(root,'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),textarea,select,[role="combobox"],[role="checkbox"],[role="radio"]').filter(e=>visible(e)&&!e.matches(':disabled')&&e.getAttribute('aria-disabled')!=='true');
-    return {documentOrigin:performance.timeOrigin,truncated:nodes.length>100,fields:nodes.slice(0,100).map(e=>{
+    return {documentOrigin:performance.timeOrigin,truncated:nodes.length>100,
+     submitControls:queryAll(root,'button,input[type="submit"],[role="button"]').filter(visible).filter(e=>/submit|send application|bewerb|apply|başvur|gönder/i.test(clean(e.getAttribute('aria-label')||e.innerText||e.value||''))).slice(0,10).map(e=>({label:clean(e.getAttribute('aria-label')||e.innerText||e.value),disabled:e.disabled||e.getAttribute('aria-disabled')==='true'})),
+     fields:nodes.slice(0,100).map(e=>{
      const semantic=window.__jobloopFieldContext(e),label=semantic.label;
      const type=e.getAttribute('role')||e.type||e.tagName.toLowerCase();
      const required=semantic.required;
@@ -38,14 +40,14 @@ export async function inspectApplicationForm(page,slot=null){
     })};
    });
    const current=slot&&frame===page.mainFrame()&&slot.observed?.page_key[0]===result.documentOrigin;
-   truncated||=result.truncated;fields.push(...result.fields.map(({node,...f})=>{
+   truncated||=result.truncated;submitControls.push(...result.submitControls.map(control=>({...control,frameUrl:frame.url()})));fields.push(...result.fields.map(({node,...f})=>{
     const controlId=current?[...(slot.controls??[])].find(([,saved])=>saved.kind==='control'&&saved.node===node&&saved.owner===slot.owner)?.[0]:undefined;
     const fieldId=current?[...(slot.fillFields??[])].find(([,saved])=>saved.action.node===node&&saved.owner===slot.owner)?.[0]:undefined;
     return {...f,...(controlId?{controlId}:{}),...(fieldId?{fieldId}:{}),frameUrl:frame.url()};
    }));
   }catch{unavailableFrames.push(frame.url());}
  }
- return {fields,unavailableFrames,truncated,readOnly:true,notice:'Rendered fields on the current step only; required=null means unknown, not optional. Later steps may add fields. This inspection is not submission-outcome evidence.'};
+ return {fields,missingRequired:fields.filter(f=>f.required===true&&f.filled===false).map(({label,question,type,frameUrl})=>({label,question,type,frameUrl})),submitControls,unavailableFrames,truncated,readOnly:true,notice:'Rendered fields on the current step only; required=null means unknown, not optional. Later steps may add fields. This inspection is not submission-outcome evidence.'};
 }
 
 // Only ordinary, observed text fields. Dropdowns, consent, credentials, files and

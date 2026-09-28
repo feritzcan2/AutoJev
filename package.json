@@ -37,7 +37,8 @@
     "package:dir": "node scripts/package.mjs --ci --dir",
     "test:packaged": "node scripts/smoke-packaged.mjs",
     "release:assets": "node scripts/release-assets.mjs",
-    "test:readiness:ui": "node scripts/smoke-readiness.mjs"
+    "test:readiness:ui": "node scripts/smoke-readiness.mjs",
+    "test:data:ui": "node scripts/smoke-data.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.1",

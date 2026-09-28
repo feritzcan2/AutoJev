@@ -17,7 +17,7 @@ function describe(e){
  if(['password','hidden','file','reset'].includes(type))return null;
  const kind=e.tagName==='SELECT'?'select':['checkbox','radio'].includes(type)?'choice':e.tagName==='TEXTAREA'||e.tagName==='INPUT'&&['text','email','tel','url','date'].includes(type)?'fill':e.matches('button,[role=button],input[type=submit],input[type=button],[role=combobox],[role=option]')?'click':null;
  if(!kind)return null;
- return {label,kind,type,required:!!e.required||e.getAttribute('aria-required')==='true',expanded:e.getAttribute('aria-expanded')??undefined,selected:e.getAttribute('aria-selected')??undefined,value:kind==='fill'||kind==='select'?e.value:undefined,checked:kind==='choice'?e.checked:undefined,
+ return {label,kind,type,required:!!e.required||e.getAttribute('aria-required')==='true',expanded:e.getAttribute('aria-expanded')??undefined,autocomplete:e.getAttribute('aria-autocomplete')??undefined,selected:e.getAttribute('aria-selected')??undefined,value:kind==='fill'||kind==='select'?e.value:undefined,checked:kind==='choice'?e.checked:undefined,
   options:kind==='select'?[...e.options].filter(o=>!o.disabled&&!o.closest('optgroup[disabled]')).map(o=>({label:o.label,value:o.value})):undefined,
   min:e.min||undefined,max:e.max||undefined,
   signature:[performance.timeOrigin,location.href,e.tagName,type,e.id,e.name,label,e.form?.action,e.required,e.getAttribute('role')]};
@@ -50,7 +50,13 @@ export async function actFormFrame(slot,args,owner,{beforeClick=async()=>{}}={})
  slot.frameActionTargets.delete(args.targetId);
  try{
   if(meta.kind==='fill'){
-   await t.handle.fill(args.text,{timeout:2500});await t.handle.evaluate(e=>e.blur());
+   await t.handle.fill(args.text,{timeout:2500});
+   if(meta.autocomplete==='list'||meta.autocomplete==='both'){
+    await t.frame.locator('[role="option"]').first().waitFor({state:'visible',timeout:2500}).catch(()=>{});
+    const verified=await t.handle.evaluate((e,text)=>e.isConnected&&e.value===text,args.text);
+    return {status:'needs_selection',executed:true,verified,message:'Bu alan öneri seçimi istiyor. Dönen gömülü form kontrollerindeki görünür role=option hedeflerinden doğrulanmış şehri seç; yalnızca metin yazmak formu tamamlamaz.'};
+   }
+   await t.handle.evaluate(e=>e.blur());
    const verified=await t.handle.evaluate((e,text)=>e.isConnected&&e.value===text&&e.validity.valid,args.text);
    return {status:verified?'ready':'uncertain',executed:true,verified};
   }

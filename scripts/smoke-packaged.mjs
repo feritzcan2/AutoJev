@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {mkdtemp,rm,readFile} from 'node:fs/promises';
-import {execFileSync} from 'node:child_process';
+import {execFileSync,spawnSync} from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 const require=createRequire(import.meta.url),{_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
@@ -33,6 +33,10 @@ try{
  const packageBytes=await readFile(path.join(resources,'app.asar'));assert.ok(packageBytes.length>10000);
  const mcp=path.join(resources,'app.asar.unpacked/node_modules/@playwright/mcp/cli.js');
  const mcpVersion=execFileSync(executable,[mcp,'--version'],{cwd:working,env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},encoding:'utf8',timeout:20000});assert.match(mcpVersion,/0\.0\.82/);
+ for(const name of ['linkedin','freehire','jobindex','jobnet','jobdanmark','jobbank']){
+  const result=spawnSync(process.env.JOBLOOP_BUN||'bun',[path.join(resources,'app.asar.unpacked/dist/source-tools',name+'.mjs'),'--help'],{cwd:working,encoding:'utf8',timeout:20000});
+  assert.ok([0,1].includes(result.status)&&!result.error&&!result.stderr.trim()&&/usage|commands|options/i.test(result.stdout),`Packaged source tool failed: ${name}: ${result.error??result.stderr}`);
+ }
  if(platform==='darwin')execFileSync('lipo',[engine,'-verify_arch','arm64','x86_64']);
  console.log('PACKAGED_SMOKE_PASS: independent working directory, bundled engine/skills, database restart');
 }finally{await application?.close();await rm(data,{recursive:true,force:true});await rm(working,{recursive:true,force:true});}

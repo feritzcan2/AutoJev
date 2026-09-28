@@ -68,6 +68,10 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = Linux ]; then xvfb-run -a pnpm test:readiness:ui; else pnpm test:readiness:ui; fi
+      - name: Backup, restore and legacy data upgrade UI
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then xvfb-run -a pnpm test:data:ui; else pnpm test:data:ui; fi
       - name: Smoke packaged application on native host
         shell: bash
         run: |
