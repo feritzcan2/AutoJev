@@ -1,7 +1,7 @@
 # Public yayın kontrol listesi
 
 Hedef: GitHub deposunu ve indirilebilir JobLoop uygulamasını birlikte yayımlamak.
-Durum: 28 Eylül 2026, [v0.1.0 public yayında](https://github.com/feritzcan2/jobmaster/releases/tag/v0.1.0).
+Durum: 28 Eylül 2026, [v0.1.1 public yayında](https://github.com/feritzcan2/jobmaster/releases/tag/v0.1.1).
 
 ## Tamamlanan uygulama işleri
 
@@ -29,17 +29,23 @@ Durum: 28 Eylül 2026, [v0.1.0 public yayında](https://github.com/feritzcan2/jo
 - [x] Zorunlu macOS Developer ID imzası/notarization ve tam artifact kümesi kontrolü.
 - [x] GitHub Releases manifestleri ve kullanıcı tarafından başlatılan güncelleme akışı.
 - [x] Public PR işleri hosted runner’da; özel runner ve release sırlarına erişmiyor.
-- [x] Windows/Linux/macOS native CI geçti: [b4e9fb6 koşusu](https://github.com/feritzcan2/jobmaster/actions/runs/36443400316).
+- [x] Windows/Linux/macOS native CI geçti: [e7ff251 koşusu](https://github.com/feritzcan2/jobmaster/actions/runs/36478240960).
   Her yeni yayın adayının kendi SHA kontrolü release workflow’unda ayrıca zorunlu.
 - [x] JobLoop repository secret’larına macOS sertifika ve notarization bilgileri tanımlandı.
 - [x] Developer ID imzalı/notarize macOS, Windows EXE ve Linux paketleri aynı release altında yayımlandı.
-  [Release workflow’u](https://github.com/feritzcan2/jobmaster/actions/runs/36446383950) üç platformda geçti.
+  [Release workflow’u](https://github.com/feritzcan2/jobmaster/actions/runs/36479226571) üç platformda geçti.
 - [x] Repo public açıldı; 13 release dosyasının anonim indirme bağlantısı doğrulandı.
   Paket/source/manifest checksum’ları GitHub asset digest’leriyle eşleşiyor; üç update feed’i yayımlanmış paketlere işaret ediyor.
 - [x] Public macOS ZIP indirilip checksum, codesign, stapler ve Gatekeeper kontrollerinden geçirildi.
+  İndirilen 0.1.1 paketinde profil hazırlamayı da kapsayan paket testi tekrar geçti.
 
 ## Son doğrulamalar
 
+- [x] 0.1.0 paketindeki `ENOENT, skills not found ... app.asar` hatası yeniden üretildi.
+  0.1.1 skill dosyalarını fiziksel klasörden kopyalıyor. Üç platformun paket testi
+  gerçek CV yükleme ve profil hazırlama IPC akışını çalıştırıyor; aday klasöründeki
+  tüm skill/referans dosyalarını checksum ile karşılaştırıyor. Yalnız ücretli
+  sağlayıcı başlatma çağrısı testte taklit ediliyor.
 - [x] Yerelde 498 Node testi ve kaynak araçlarının 312 offline testi geçti.
 - [x] Ana uygulama üretim bağımlılıkları, altı Bun lockfile’ı ve Rust engine lockfile’ı
   tarandı; bilinen açık bulunmadı. OpenTUI güncellemesi gömülü eski diff kodunu ve
