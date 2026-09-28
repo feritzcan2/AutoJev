@@ -2,7 +2,7 @@ import {Maintenance} from './maintenance.mjs';
 import {registerSettingsServices} from './settings-services.mjs';
 import {JevSettings} from './jev-settings.mjs';
 import {applyPendingRestore,prepareDataUpgrade,completeDataUpgrade} from './data-management.mjs';
-import {engineBinaryPath} from './runtime-paths.mjs';
+import {engineBinaryPath,runtimeResourceRoot} from './runtime-paths.mjs';
 import {AccountVault} from './account-vault.mjs';
 import {editPreparation} from './preparation.mjs';
 import {exportPreparation} from './preparation-export.mjs';
@@ -176,7 +176,7 @@ async function startAgent(candidateId,prompt,jobId,workerId=MAIN_WORKER){
   prompt=[STARTUP_INSTRUCTIONS,browserProfileInstruction(profile),'This is one JobLoop worker. Other workers may use the same candidate and Chrome account concurrently. Work only on your assigned task. Keep your own browser tab handles, never operate on or close another task’s tabs, and never reuse an unrelated application form. For preparation packages use get_task_context.documentRoot/documents/<job-id>; otherwise save generated documents under this worker workspace with job-specific filenames.',resumeBrowser?.instruction,prompt].filter(Boolean).join('\n\n');
   const sessionId=randomUUID(),token=mcp.grant(candidateId,sessionId,workerId);store.logPrompt(candidateId,{kind:'start',text:prompt,jobId:jobId??null,sessionId});
   try{
-    const cwd=agentDirectory(candidateId,workerId);await mkdir(cwd,{recursive:true,mode:0o700});await cp(path.join(root,'skills'),path.join(cwd,'.agents/skills'),{recursive:true});
+    const cwd=agentDirectory(candidateId,workerId);await mkdir(cwd,{recursive:true,mode:0o700});await cp(path.join(runtimeResourceRoot({root}),'skills'),path.join(cwd,'.agents/skills'),{recursive:true});
     await writeWorkspaceInstructions(cwd,AGENTS_MD);
     await mkdir(path.join(cwd,'runtime'),{recursive:true});await mkdir(path.join(cwd,'documents'),{recursive:true});
     requireBrowserReady(candidateId);
