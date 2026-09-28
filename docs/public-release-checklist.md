@@ -29,7 +29,7 @@ Durum: 28 Eylül 2026, ilk public sürüm hazırlığı.
 - [x] Zorunlu macOS Developer ID imzası/notarization ve tam artifact kümesi kontrolü.
 - [x] GitHub Releases manifestleri ve kullanıcı tarafından başlatılan güncelleme akışı.
 - [x] Public PR işleri hosted runner’da; özel runner ve release sırlarına erişmiyor.
-- [x] Windows/Linux/macOS native CI geçti: [580d4f0 koşusu](https://github.com/feritzcan2/jobmaster/actions/runs/36439739138).
+- [x] Windows/Linux/macOS native CI geçti: [b33c69a koşusu](https://github.com/feritzcan2/jobmaster/actions/runs/36441510947).
   Her yeni yayın adayının kendi SHA kontrolü release workflow’unda ayrıca zorunlu.
 - [ ] JobLoop repo/environment’ına macOS sertifika ve notarization secret’larını tanımla.
 - [ ] İmzalı macOS, Windows ve Linux build’lerini aynı release altında yayımla.
@@ -37,7 +37,10 @@ Durum: 28 Eylül 2026, ilk public sürüm hazırlığı.
 
 ## Son doğrulamalar
 
-- [x] Yerelde 498 Node testi geçti; üretim bağımlılık audit’inde bilinen açık yok.
+- [x] Yerelde 498 Node testi ve kaynak araçlarının 312 offline testi geçti.
+- [x] Ana uygulama üretim bağımlılıkları, altı Bun lockfile’ı ve Rust engine lockfile’ı
+  tarandı; bilinen açık bulunmadı. OpenTUI güncellemesi gömülü eski diff kodunu ve
+  Jimp/file-type zincirini kaldırdı. CI ve paketleme akışı bu taramaları tekrarlıyor.
 - [x] Git geçmişinde Gitleaks v8.30.1 ile gerçek secret eşleşmesi bulunmadı.
 - [x] Kaynak snapshot’ı, Git geçmişi ve çıkarılmış macOS paketinde Gitleaks taraması temiz.
   Dar istisnalar yalnız vendor checksum’ları ve sır içermeyen bir boolean ifadesidir.

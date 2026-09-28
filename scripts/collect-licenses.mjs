@@ -1,12 +1,13 @@
 import {execFileSync} from 'node:child_process';
-import {readFile,readdir,realpath,mkdir,copyFile,writeFile} from 'node:fs/promises';
+import {readFile,readdir,realpath,mkdir,copyFile,writeFile,rm} from 'node:fs/promises';
 import path from 'node:path';
 const root=process.cwd(),output=path.join(root,'dist/licenses'),seen=new Set(),inventory=[];
+await rm(output,{recursive:true,force:true});
 await mkdir(output,{recursive:true});
 async function record(directory,{name,version,license,repository,licenseFile}){
  const id=`${name.replace(/[^A-Za-z0-9_.-]/g,'_')}-${version}`,destination=path.join(output,id),files=[];
  await mkdir(destination,{recursive:true});
- for(const entry of await readdir(directory,{withFileTypes:true}))if(entry.isFile()&&/^(licen[sc]e|copying|notice|ofl)(?:$|[._-])/i.test(entry.name)){await copyFile(path.join(directory,entry.name),path.join(destination,entry.name));files.push(entry.name);}
+ for(const entry of await readdir(directory,{withFileTypes:true}))if(entry.isFile()&&/^(licen[sc]e|copying|notice|ofl|patents|authors)(?:$|[._-])/i.test(entry.name)){await copyFile(path.join(directory,entry.name),path.join(destination,entry.name));files.push(entry.name);}
  for(const candidate of [licenseFile,'dist/LICENSE'].filter(Boolean))try{if(path.isAbsolute(candidate)||candidate.includes('..'))continue;await copyFile(path.join(directory,candidate),path.join(destination,path.basename(candidate)));files.push(path.basename(candidate));}catch(error){if(error.code!=='ENOENT')throw error;}
  inventory.push({name,version,license:license??'See upstream notices',repository:repository&&typeof repository==='object'?repository.url:repository,files:[...new Set(files)].map(file=>`${id}/${file}`)});
 }

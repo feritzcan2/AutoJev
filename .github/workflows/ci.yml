@@ -36,7 +36,17 @@ jobs:
         with:
           node-version: 22.22.3
           cache: pnpm
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
       - run: pnpm install --frozen-lockfile
+      - name: Audit production and source-tool dependencies
+        run: node scripts/audit-dependencies.mjs
+      - name: Audit Rust engine dependencies
+        run: |
+          rustup toolchain install 1.90.0 --profile minimal
+          cargo install cargo-audit --version 0.22.2 --locked --root "$RUNNER_TEMP/cargo-audit"
+          "$RUNNER_TEMP/cargo-audit/bin/cargo-audit" audit --file engine/Cargo.lock
       - run: pnpm vendor:verify
       - run: pnpm check
       - run: pnpm test

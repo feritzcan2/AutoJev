@@ -7,7 +7,9 @@ JobLoop, TermLoop’un exact commit doğrulaması ve üç yerel işletim sistemi
 ## İş akışları
 
 1. `ci.yml`, `main` ve `release/**` push’larında veya elle çalışır. Kaynak/vendor
-   kontrolü, secret taraması, JavaScript testleri ve build’i doğrular. Üç platform
+   kontrolü, secret taraması, JavaScript testleri ve build’i doğrular. Ana uygulama
+   üretim bağımlılıkları, altı kaynak aracının Bun lockfile’ları ve Rust engine
+   bağımlılıkları ayrıca güvenlik taramasından geçer. Üç platform
    işi Rust testlerini, native paketlemeyi ve paketli uygulamanın açılışını test eder.
    Hatalı bir platform diğerlerinin sonucunu saklamaz (`fail-fast: false`).
 2. Fork PR kontrolü GitHub’ın geçici runner’larında, salt okunur yetkiyle çalışır.
@@ -83,12 +85,15 @@ Windows sertifikası sağlanmazsa EXE imzasızdır; release notunda bunu belirt.
 pnpm bootstrap
 pnpm check
 pnpm test
+node scripts/audit-dependencies.mjs
 pnpm package:ci
 pnpm test:packaged
 ```
 
 Linux’ta son komutu `xvfb-run -a pnpm test:packaged` ile çalıştır. Yerel imzasız
 paketleme Apple hesabı gerektirmez. Release paketleri imzalı workflow’dan üretilir.
+Kaynak araçları paketlenirken güvenlik taraması, altı CLI’ın yardım/hata sözleşmeleri
+ve ağ kullanmayan arama/ilan detayı fixture’ları yeniden çalışır.
 Native smoke; ayrı çalışma dizininden açılışı, paketli Rust engine/skills/MCP
 yardımcısını ve yeniden açılışta verinin korunmasını kontrol eder. Gerçek sağlayıcı
 hesabı veya iş başvurusu kullanmaz.
