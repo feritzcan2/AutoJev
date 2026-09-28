@@ -71,6 +71,13 @@ try{
  assert.deepEqual((await call(otherProcess,'browser_jev_tabs')).tabs,[]);
  assert.equal(windowRequests,before);
  await otherProcess.close();
+ // A registry that missed a live checkpoint must not make the saved draft vanish.
+ await new JevTabs(oldDirectory,profile.directory).save(await endpoint(),targetInfo.browserContextId,[]);
+ otherProcess=new JevBrowser(oldDirectory,{profile,endpoint,openWindow,checkpoints:[{browser:'Jev Chrome',tabId:first.tabId}]});
+ assert.ok((await call(otherProcess,'browser_jev_tabs')).tabs.some(t=>t.tabId===first.tabId));
+ assert.equal(await otherProcess.tab(first.tabId).page.locator('#query').inputValue(),'unsent draft');
+ assert.equal(windowRequests,before);
+ await otherProcess.close();
  // Old saved checkpoints migrate by exact ID, only in the selected profile.
  const otherContext=await browser.newContext();
  const wrongOpen=async url=>{const p=await otherContext.newPage();await p.goto(url);};
@@ -78,7 +85,7 @@ try{
  assert.deepEqual((await call(wrongProfile,'browser_jev_tabs')).tabs,[]);
  await wrongProfile.close();await otherContext.close();
  // One persistent window, per-job reuse, and terminal-only cleanup including popups.
- const jobs=[{id:'done',status:'working'},{id:'waiting',status:'blocked'},{id:'unknown',status:'uncertain'},{id:'skipped',status:'working'},{id:'manual',status:'working'}];
+ const jobs=[{id:'done',status:'working'},{id:'waiting',status:'blocked'},{id:'unknown',status:'working'},{id:'skipped',status:'working'},{id:'manual',status:'working'}].map(job=>({...job,url:fixture.url}));
  const state=activeJobId=>({jobs,activeJobId,sourceTabIds:[]});
  const done=await call(restarted,'browser_jev_open',{url:fixture.url},state('done'));
  const beforeJobWindowRequests=windowRequests;
@@ -86,6 +93,7 @@ try{
  const waiting=await call(restarted,'browser_jev_open',{url:fixture.url},state('waiting'));
  await restarted.tab(waiting.tabId).page.locator('#query').fill('unsent waiting draft');
  const uncertain=await call(restarted,'browser_jev_open',{url:fixture.url},state('unknown'));
+ jobs[2].status='uncertain';
  assert.equal((await root.send('Browser.getWindowForTarget',{targetId:done.tabId})).windowId,(await root.send('Browser.getWindowForTarget',{targetId:waiting.tabId})).windowId);
  const popupPromise=restarted.tab(done.tabId).page.waitForEvent('popup');
  await restarted.tab(done.tabId).page.evaluate(url=>{window.open(url,'_blank','width=350,height=250');},fixture.url+'#popup');
@@ -116,6 +124,25 @@ try{
  assert.equal((await root.send('Browser.getWindowForTarget',{targetId:next.tabId})).windowId,windows[1].windowId);
  assert.equal(windowRequests,beforeJobWindowRequests);
  console.log('JEV_SINGLE_WINDOW_POPUP_REUSE_TERMINAL_CLEANUP_RESTART_PASS');
+ // Source-search tabs retain task ownership and the current page/filter after
+ // the Jobloop client closes. Recovery discovers them without a new tab/window.
+ const searchState={...state(null),taskKind:'search',activeSearchTaskId:'saved-source-search'};
+ const search=await call(restarted,'browser_jev_open',{url:fixture.url+'#search-page-3'},searchState);
+ const listing=await call(restarted,'browser_jev_open',{url:fixture.url+'#search-listing'},searchState);
+ await restarted.tab(search.tabId).page.locator('#query').fill('Senior backend');
+ const savedSearch=await new JevTabs(aDirectory,profile.directory).read();
+ assert.equal(savedSearch.searches[search.tabId],searchState.activeSearchTaskId);
+ assert.equal(savedSearch.searches[listing.tabId],searchState.activeSearchTaskId);
+ const targetsBefore=(await root.send('Target.getTargets')).targetInfos.map(t=>t.targetId).sort();
+ await restarted.close();restarted=new JevBrowser(aDirectory,{profile,endpoint,openWindow});
+ const recoveredSearch=await call(restarted,'browser_jev_tabs',{},searchState);
+ assert.deepEqual(recoveredSearch.tabs.filter(t=>t.searchTaskId===searchState.activeSearchTaskId&&!t.jobId).map(t=>t.tabId).sort(),[search.tabId,listing.tabId].sort());
+ const current=await call(restarted,'browser_jev_observe',{tabId:search.tabId},searchState);
+ assert.equal(current.url,fixture.url+'#search-page-3');
+ assert.equal(await restarted.tab(search.tabId).page.locator('#query').inputValue(),'Senior backend');
+ assert.deepEqual((await root.send('Target.getTargets')).targetInfos.map(t=>t.targetId).sort(),targetsBefore);
+ assert.equal(windowRequests,beforeJobWindowRequests);
+ console.log('JEV_SOURCE_SEARCH_RESTART_SAME_TABS_FILTERS_TASK_PASS');
  await restarted.close();await b.close();await coldTools.close();
  assert.equal(personal.isClosed(),false);assert.equal(personal.url(),fixture.url);
  assert.equal((await root.send('Target.getTargets')).targetInfos.filter(t=>[first.tabId,second.tabId,third.tabId].includes(t.targetId)).length,2);

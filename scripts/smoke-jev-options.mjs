@@ -5,9 +5,11 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev-browser.mjs';
+import {controlState} from './jev-control-state.mjs';
+const remember=controlState();
 const dir=await mkdtemp(path.join(os.tmpdir(),'jev-options-'));
 const client=new JevBrowser(dir,{connection:'separate',headless:true,config:async()=>({}),choose:async()=>{throw Error('No model call expected');}});
-const call=async(name,args,owner='test')=>JSON.parse((await client.callTool({name,arguments:args},owner)).content[0].text);
+const call=async(name,args,owner='test')=>remember(JSON.parse((await client.callTool({name,arguments:args},owner)).content[0].text));
 try{
  const context=await client.context(),page=await context.newPage(),slot=await client.track(context,page),tabId=slot.id;
  const label='İHSAN DOĞRAMACI BİLKENT ÜNİVERSİTESİ';
@@ -23,6 +25,7 @@ try{
  const started=Date.now();
  result=await call('browser_jev_list_options',{tabId,controlId});
  assert.equal(result.options.length,237);assert.equal(result.nextOffset,null);
+ assert.equal(result.controls.find(c=>c.controlId===controlId).optionsRead.complete,true);assert.equal(result.cached,false);
  const bilkent=result.options.find(o=>o.label===label);assert.ok(bilkent);
  assert.equal(result.status,'ready');assert.equal(result.executed,false);assert.equal(result.optionCount,237);assert.equal(result.matchCount,237);
  assert.equal(bilkent.value,label);assert.equal(bilkent.index,94);assert.equal(bilkent.disabled,false);
@@ -41,6 +44,7 @@ try{
   result=await call('browser_jev_list_options',{tabId,controlId,offset,limit:20});assert.ok(result.options.length<=20);assert.equal(result.matchCount,237);
   indices.push(...result.options.map(o=>o.index));offset=result.nextOffset;
  }while(offset!==null);
+ assert.equal(result.cached,true);
  assert.equal(new Set(indices).size,237);assert.equal(indices.length,237);
  // A failed exact guess returns a useful next action and fresh IDs, no error loop.
  result=await call('browser_jev_select_option',{tabId,controlId,option:'Bilkent University'});
@@ -50,7 +54,7 @@ try{
  await page.locator('#school').evaluate(e=>e.insertAdjacentHTML('beforeend','<option value="duplicate">İHSAN DOĞRAMACI BİLKENT ÜNİVERSİTESİ</option><optgroup label="Unavailable" disabled><option value="closed">Closed School</option></optgroup>'));
  result=await call('browser_jev_list_options',{tabId,controlId,query:'Bilkent'});assert.equal(result.status,'stale');
  controlId=result.controls.find(c=>c.label==='University').controlId;
- result=await call('browser_jev_list_options',{tabId,controlId,query:'bilkent'});assert.equal(result.matchCount,2);
+ result=await call('browser_jev_list_options',{tabId,controlId,query:'bilkent'});assert.equal(result.matchCount,2);assert.equal(result.cached,false);
  result=await call('browser_jev_select_option',{tabId,controlId,option:label});assert.equal(result.reason,'ambiguous');assert.equal(result.executed,false);
  result=await call('browser_jev_list_options',{tabId,controlId,query:'Closed'});assert.equal(result.options[0].disabled,true);assert.equal(result.options[0].group,'Unavailable');
  result=await call('browser_jev_select_option',{tabId,controlId,option:'closed'});assert.equal(result.reason,'disabled');assert.equal(result.executed,false);

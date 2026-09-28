@@ -1,8 +1,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {fileURLToPath} from 'node:url';
 import {Store} from '../app/store.mjs';
 import {sourceInstructions,runSourceTool,validateSourceSearch} from '../app/source-integrations.mjs';
-const root=new URL('../',import.meta.url).pathname;
+const root=fileURLToPath(new URL('../',import.meta.url));
 test('catalog installs six integrations once, preserving permissions and removals',()=>{
  const s=new Store(':memory:');try{
  const p=s.saveProfile({name:'Test',preferences:'Berlin',authorization:'submit'});
@@ -37,7 +38,7 @@ test('built-in sources expose the exact upstream skill as the primary editable i
  for(const id of ['linkedin','freehire','jobindex','jobnet','jobdanmark','jobbank']){
   const source={id:'test',integrationId:id,kind:id,name:id,url:'https://example.test'};
   const original=await readFile(new URL(`../vendor/ai-job-search/.agents/skills/${id}-search/SKILL.md`,import.meta.url),'utf8');
-  const result=await sourceInstructions(root,source);assert.equal(result.skillText,original);assert.equal(result.skillOrigin,'upstream');
+  const result=await sourceInstructions(root,source);assert.equal(result.skillText,original);assert.equal(result.skillOrigin,'upstream');assert.equal(result.toolReference,undefined);
   const legacy=`---\nname: jobloop-source-${id}\ndescription: Search this JobLoop source using the configured method and candidate preferences.\n---\nSearch ${id} (https://example.test) within the candidate's actual role, country, remote and salary preferences. Verify listing URLs and record current jobs through JobLoop MCP. Do not invent listings.\n`;
   assert.equal((await sourceInstructions(root,{...source,skillText:legacy})).skillText,original);
   assert.equal((await sourceInstructions(root,{...source,skillText:'My custom instructions'})).skillText,'My custom instructions');

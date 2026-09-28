@@ -1,0 +1,8 @@
+self-hosted-runner:
+  labels:
+    - jobloop-macos
+    - jobloop-windows
+    - jobloop-linux
+    - termloop-macos
+    - termloop-windows
+    - netcup

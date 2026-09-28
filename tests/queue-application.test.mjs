@@ -16,19 +16,19 @@ test('legacy blocker notes need no override and do not change application author
   assert.equal(rankDecision(f.p,ranked).eligible,true);
   f.store.saveProfile({...f.p,authorization:'prepare'});
   await f.c.start(f.p.id);
-  const task=f.store.campaign(f.p.id).task;assert.equal(task.kind,'application');assert.equal(task.jobId,job.id);
+  const task=f.store.campaign(f.p.id).task;assert.equal(task.kind,'preparation');assert.equal(task.jobId,job.id);
   const saved=f.store.job(f.p.id,job.id);assert.deepEqual(saved.rank,ranked.rank);assert.equal(saved.rankOverride,undefined);
   f.store.updateJob(f.p.id,job.id,'working','Review','session');
   f.store.updateJob(f.p.id,job.id,'prepared','Ready','session');
-  assert.throws(()=>f.store.updateJob(f.p.id,job.id,'submitting','Send','session'),/yetkisi/);
+  assert.throws(()=>f.store.updateJob(f.p.id,job.id,'submitting','Send','session'),/Hazırlık/);
  }finally{f.store.close();}
 });
 test('closed and unavailable listings cannot use score override',()=>{
  const f=fixture();try{
-  for(const [name,input] of [['closed',rankInput(f.store,f.p.id,90,{availability:'closed'})],['unavailable',{profileKey:f.store.profile(f.p.id).rankingProfileKey,status:'unavailable',summary:'Unreachable'}]]){
+  for(const [name,input] of [['closed',rankInput(f.store,f.p.id,90,{availability:'closed'})],['unavailable',{profileKey:f.store.profile(f.p.id).rankingProfileKey,status:'unavailable',browserCheck:{backend:'existing',url:'https://example.test/job',evidence:'Browser rendered access denied'},summary:'Unreachable'}]]){
    const job=f.store.addJob(f.p.id,{...listing,role:name,url:listing.url+'/'+name}).job;
    f.store.rankJob(f.p.id,job.id,input);
-   assert.throws(()=>f.c.queueApplication(f.p.id,job.id));
+   assert.equal(f.c.queueApplication(f.p.id,job.id).queued,true);
    assert.throws(()=>f.store.queueRankedJob(f.p.id,job.id));
   }
  }finally{f.store.close();}
@@ -76,15 +76,15 @@ test('paused queue survives reopening and dispatches only when started',async()=
   await f.c.start(f.p.id);assert.equal(f.store.campaign(f.p.id).task.jobId,job.id);
  }finally{f.store.close();rmSync(dir,{recursive:true,force:true});}
 });
-test('queue respects candidate ownership, job status and existing application authorization',()=>{
+test('manual queue is job scoped and retains ownership and terminal status guards',()=>{
  const f=fixture();try{
   const {job}=blocked(f),other=f.store.saveProfile({name:'Other',preferences:'Remote',authorization:'submit'});
   assert.throws(()=>f.c.queueApplication(other.id,job.id));
-  f.store.saveProfile({...f.p,authorization:'research'});assert.throws(()=>f.c.queueApplication(f.p.id,job.id),/izni/);
+  f.store.saveProfile({...f.p,authorization:'research'});assert.equal(f.c.queueApplication(f.p.id,job.id).queued,true);
   f.store.saveProfile({...f.p,authorization:'submit'});
   const source=f.store.sources(f.p.id)[0];f.store.saveSource(f.p.id,{...source,applyMode:'find_only'});
   const sourced=blocked(f,{role:'Sourced role',url:'https://example.test/jobs/source',sourceId:source.id}).job;
-  assert.throws(()=>f.c.queueApplication(f.p.id,sourced.id),/izni/);
+  assert.equal(f.c.queueApplication(f.p.id,sourced.id).queued,true);
   f.store.updateJob(f.p.id,job.id,'skipped','Closed','session');assert.throws(()=>f.c.queueApplication(f.p.id,job.id),/bekleyen/);
  }finally{f.store.close();}
 });

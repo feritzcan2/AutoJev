@@ -6,3 +6,8 @@ engine/target/
 
 **/node_modules/
 .env.jev
+/release/
+/build-stage/
+/release-assets/
+vendor/termloop/clients/*/dist/
+vendor/termloop/target/

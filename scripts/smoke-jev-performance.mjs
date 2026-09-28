@@ -4,13 +4,19 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev-browser.mjs';
+import {controlState} from './jev-control-state.mjs';
+const remember=controlState();
 const directory=await mkdtemp(path.join(os.tmpdir(),'jev-performance-'));
 let modelCalls=0;
 const client=new JevBrowser(directory,{connection:'separate',headless:true,config:async()=>({}),choose:async(page,goal)=>{
   modelCalls++;const action=page.actions.find(a=>goal==='scroll'?a.kind==='scroll'&&a.delta>0:a.kind==='click'&&a.label===goal);
   assert.ok(action,goal);return {operation:action.kind==='scroll'?'SCROLL_DOWN':'CLICK',action,confidence:1};
 }});
-const call=async(name,args,owner='test')=>JSON.parse((await client.callTool({name,arguments:args},owner)).content[0].text);
+let wireBytes=0;
+const call=async(name,args,owner='test')=>{
+  const text=(await client.callTool({name,arguments:args},owner)).content[0].text;
+  wireBytes=Buffer.byteLength(text);return remember(JSON.parse(text));
+};
 try{
   const context=await client.context(),page=await context.newPage(),slot=await client.track(context,page),tabId=slot.id;
   const options=Array.from({length:230},(_,i)=>`<option value="c${i}">Country ${i}</option>`).join('');
@@ -36,8 +42,8 @@ try{
   assert.equal(await page.locator('#email').inputValue(),'test@example.com');assert.equal(modelCalls,0);
   assert.equal(await page.evaluate(()=>window.submits),0);assert.equal(await page.evaluate(()=>scrollY),0);
   assert.equal(observed.observationMode,'delta');assert.equal(observed.text,undefined);
-  assert.ok(!JSON.stringify(observed).includes('Country 229'));assert.ok(Buffer.byteLength(JSON.stringify(observed))<7000);
-  console.log('JEV_MODAL_THREE_CALLS_NO_MODEL_PASS',JSON.stringify({operationCalls:3,modelCalls,elapsedMs:Date.now()-start,initialBytes,resultBytes:Buffer.byteLength(JSON.stringify(observed))}));
+  assert.ok(!JSON.stringify(observed).includes('Country 229'));assert.ok(wireBytes<7000);
+  console.log('JEV_MODAL_THREE_CALLS_NO_MODEL_PASS',JSON.stringify({operationCalls:3,modelCalls,elapsedMs:Date.now()-start,initialBytes,resultBytes:wireBytes}));
   // Correct container is also used by the compatibility next/act flow.
   observed=await reset();let decision=await call('browser_jev_next',{tabId,goal:'scroll'});
   assert.equal(decision.elements,undefined);

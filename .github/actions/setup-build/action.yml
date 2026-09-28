@@ -1,0 +1,27 @@
+name: Setup native build
+description: Pinned build tools and locked dependencies for trusted native jobs
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      with:
+        version: 10.14.0
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      with:
+        node-version: 22.22.3
+        cache: pnpm
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      with:
+        bun-version: 1.4.2
+    - name: Install pinned Rust
+      shell: bash
+      run: rustup toolchain install 1.90.0 --profile minimal --component clippy,rustfmt
+    - name: Install locked dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile
+    - name: Linux packaging and GUI dependencies
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends libgtk-3-0t64 libnss3 libasound2t64 libxss1 libgbm1 libsecret-1-dev libfuse2t64 rpm xvfb

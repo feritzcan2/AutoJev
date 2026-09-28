@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {mkdtemp,writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {pathToFileURL} from 'node:url';
+import {Store} from '../app/store.mjs';
+const require=createRequire(import.meta.url),{_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
+const data=await mkdtemp(path.join(tmpdir(),'jobloop-manual-ui-')),store=new Store(path.join(data,'jobloop.sqlite'));
+const p=store.saveProfile({name:'Priority Demo',preferences:'Remote',authorization:'research'}),cv=path.join(data,'cv.txt');await writeFile(cv,'Synthetic candidate.');store.setCv(p.id,cv);
+for(const source of store.sources(p.id))store.saveSource(p.id,{...source,enabled:false,applyMode:'find_only'});
+const source=store.sources(p.id)[0],add=company=>store.addJob(p.id,{company,role:'Engineer',location:'Remote',fit:'Fixture',url:'https://example.test/'+company,sourceId:source.id}).job;
+const submitted=add('Completed');store.saveJob({...submitted,status:'submitted',proof:{text:'Saved confirmation'}},'submission_recorded');
+const requested=add('Priority'),other=add('Other'),verification=add('Verify');store.saveJob({...verification,status:'uncertain',sessionId:'previous'},'job_updated');store.saveCampaign(p.id,{status:'complete',target:1,intervalMinutes:30,task:null,attempts:{}});store.close();
+const app=await electron.launch({executablePath:require('electron'),args:[process.cwd()],env:{...process.env,JOBLOOP_DATA_DIR:data}});
+try{
+ const page=await app.firstWindow(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await app.evaluate(async(_,url)=>{
+  const vm=process.getBuiltinModule('node:vm'),load=vm.runInThisContext('(url)=>import(url)',{importModuleDynamically:vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER}),{Engine}=await load(url),original=Engine.prototype.request;
+  globalThis.testPrompts=[];
+  Engine.prototype.request=function(op,args={}){if(op==='start')globalThis.testPrompts.push(args);if(['start','message','resize'].includes(op))return Promise.resolve({});return original.call(this,op,args);};
+ },pathToFileURL(path.join(process.cwd(),'app/engine.mjs')).href);
+ await page.locator('#candidates').selectOption(p.id);
+ const row=page.locator('tr',{has:page.getByText('Priority',{exact:true})}),button=row.getByRole('button',{name:'Priority başvurusunu sıraya al'});
+ await button.waitFor();assert.match(await button.getAttribute('title'),/profil yetkisi/);await button.click();
+ await page.waitForFunction(id=>window.jobloop.snapshot(id).then(s=>Boolean(s.campaign?.task?.manualRequestId)),p.id);
+ await page.getByText(/^İlan sıraya alındı\./).waitFor();
+ await page.waitForFunction(id=>window.jobloop.snapshot(id).then(s=>Boolean(s.active)),p.id);
+ const snap=await page.evaluate(id=>window.jobloop.snapshot(id),p.id);
+ assert.equal(snap.campaign.task.jobId,requested.id);assert.equal(snap.campaign.task.kind,'application');assert.equal(snap.campaign.target,1);assert.equal(snap.profile.authorization,'research');
+ assert.equal(snap.jobs.find(j=>j.id===other.id).manualApplication,undefined);assert.equal(snap.sources.find(s=>s.id===source.id).applyMode,'find_only');
+ assert.equal(await button.isDisabled(),true);assert.equal((await app.evaluate(()=>globalThis.testPrompts)).length,1);
+ const verifyRow=page.locator('tr',{has:page.getByText('Verify',{exact:true})}),verifyButton=verifyRow.getByRole('button',{name:'Verify başvurusunun sonucunu öncelikli doğrula'});
+ await verifyButton.waitFor();assert.equal(await verifyButton.textContent(),'Öncelikli doğrula');assert.match(await verifyButton.getAttribute('title'),/yeniden başvuru gönderilmez/);
+ await verifyButton.click();await page.getByText(/^Başvuru öncelikli doğrulama sırasına alındı/).waitFor();assert.equal(await verifyButton.isDisabled(),true);
+ const extra=await page.evaluate(id=>window.jobloop.addWorker(id),p.id);
+ await page.waitForFunction(({id,worker})=>window.jobloop.snapshot(id).then(s=>s.workers.find(w=>w.id===worker)?.campaign?.task?.verificationOnly),{id:p.id,worker:extra.id});
+ const verified=await page.evaluate(id=>window.jobloop.snapshot(id),p.id),task=verified.workers.find(w=>w.id===extra.id).campaign.task;
+ assert.equal(task.kind,'verify');assert.equal(task.jobId,verification.id);assert.equal(verified.workers[0].campaign.task.jobId,requested.id);assert.equal(verified.jobs.find(j=>j.id===verification.id).status,'uncertain');
+ await page.screenshot({path:path.join(data,'priority.png'),fullPage:true});assert.deepEqual(errors,[]);
+ console.log('MANUAL_PRIORITY_UI_PASS',data);
+}finally{await app.close();}

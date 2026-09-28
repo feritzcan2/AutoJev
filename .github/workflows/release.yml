@@ -1,0 +1,140 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing stable version tag with successful native CI
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: jobloop-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+env:
+  JOBLOOP_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+jobs:
+  confirm-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.candidate.outputs.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.22.3
+      - name: Require immutable candidate and all native CI jobs
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-candidate.mjs
+  build:
+    needs: confirm-candidate
+    environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: ${{ vars.JOBLOOP_MACOS_RUNNER || '["macos-15"]' }}
+          - platform: linux
+            runner: ${{ vars.JOBLOOP_LINUX_RUNNER || '["ubuntu-24.04"]' }}
+          - platform: windows
+            runner: ${{ vars.JOBLOOP_WINDOWS_RUNNER || '["windows-2025"]' }}
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    timeout-minutes: 120
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.confirm-candidate.outputs.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-build
+      - name: Package signed and notarized macOS universal app
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          MACOS_API_KEY_BASE64: ${{ secrets.MACOS_API_KEY_BASE64 }}
+          MACOS_API_KEY_ID: ${{ secrets.MACOS_API_KEY_ID }}
+          MACOS_API_ISSUER: ${{ secrets.MACOS_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash scripts/sign-macos-release.sh
+      - name: Package Linux
+        if: runner.os == 'Linux'
+        run: pnpm package
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: pnpm package
+      - name: Smoke final application
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then xvfb-run -a pnpm test:packaged; else pnpm test:packaged; fi
+      - run: node scripts/release-assets.mjs release-assets --collect
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: release-assets/*
+          retention-days: 1
+          if-no-files-found: error
+  publish:
+    needs: [confirm-candidate, build]
+    environment: production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.confirm-candidate.outputs.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.22.3
+      - name: Revalidate tag and exact native CI evidence before publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOBLOOP_CANDIDATE_SHA: ${{ needs.confirm-candidate.outputs.sha }}
+        run: node scripts/release-candidate.mjs
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Package complete source including pinned TermLoop sources
+        shell: bash
+        run: |
+          version="${JOBLOOP_RELEASE_TAG#v}"
+          git archive --format=tar.gz --prefix="jobloop-$version/" HEAD -o "release-assets/jobloop-source-$version.tar.gz"
+      - name: Verify full artifact set and checksums
+        run: node scripts/release-assets.mjs release-assets
+      - name: Publish complete GitHub Release and update manifests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$JOBLOOP_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            test "$(gh release view "$JOBLOOP_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true || { echo 'A published release is immutable; bump the version.' >&2; exit 1; }
+          else
+            gh release create "$JOBLOOP_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "$JOBLOOP_RELEASE_TAG" --generate-notes
+          fi
+          gh release upload "$JOBLOOP_RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$JOBLOOP_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest

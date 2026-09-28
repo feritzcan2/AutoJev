@@ -1,0 +1,153 @@
+/* Sidebar: a quiet rail. The workspace is the one thing you switch; pages are a plain list under it. */
+:root {
+  --sidebar-width: 236px;
+  --bg-sidebar: #181c1e;
+  --sidebar-text: #aeb4b6;
+}
+
+body { grid-template-columns: var(--sidebar-width) 1fr; }
+
+body > aside {
+  position: fixed;
+  inset: 0 auto 0 0;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  width: var(--sidebar-width);
+  padding: 20px 14px 18px;
+  gap: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg-sidebar);
+}
+
+/* Brand */
+.brand { gap: 9px; padding: 2px 6px 0; font-size: 17px; font-weight: 600; letter-spacing: -.3px; color: var(--text); }
+.brand b { width: 28px; height: 28px; border-radius: 8px; font-size: 19px; font-weight: 700; line-height: 1; padding-bottom: 3px; }
+.brand small { display: none; }
+
+/* Workspace switcher: a single control that reads as "you are here". */
+.workspace { margin-top: 22px; }
+.workspace select, aside > #candidates {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 10px 34px 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--bg-raised) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa0a1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m8 10 4 4 4-4'/%3E%3C/svg%3E") no-repeat right 10px center / 16px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+.workspace select:hover { border-color: var(--text-muted); }
+
+/* New workspace + rename/delete: small, secondary, one row. */
+#new {
+  width: 100%;
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: left;
+}
+#new::before { content: '+'; margin-right: 8px; font-weight: 600; color: var(--text-muted); }
+#new:hover { filter: none; color: var(--text); border-color: var(--text-muted); }
+
+.workspace-actions { display: flex; gap: 2px; margin: 6px 0 0; padding: 0 4px; }
+.workspace-actions button {
+  flex: 0 0 auto;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+.workspace-actions button:hover { filter: none; color: var(--text-secondary); background: var(--bg-hover); }
+.workspace-actions .danger { color: var(--text-secondary); border: 0; }
+.workspace-actions .danger:hover { color: var(--danger); background: rgba(225, 117, 126, .1); }
+.workspace-actions button:disabled { opacity: .35; }
+
+/* Pages */
+aside nav { display: grid; gap: 2px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
+aside nav button, aside nav button[data-view="board"], aside nav button[data-view="agent"] {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sidebar-text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: left;
+}
+aside nav button:hover { filter: none; background: var(--bg-hover); color: var(--text); }
+aside nav .selected, aside nav .selected:hover { color: var(--text); background: var(--accent-wash); }
+aside nav .selected .nav-icon { color: var(--accent-strong); }
+aside nav button > span:first-of-type { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.nav-icon { flex: 0 0 16px; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; color: var(--text-muted); }
+aside nav button:hover .nav-icon { color: var(--text-secondary); }
+
+.question-badge { margin-left: 0; min-width: 18px; height: 18px; font-size: 10.5px; }
+.agent-nav-status { margin-left: 0; padding: 2px 6px; font-size: 10px; font-weight: 550; letter-spacing: .2px; background: transparent; border: 1px solid var(--border-strong); color: var(--text-muted); }
+.agent-nav-status[data-tone="active"] { border-color: transparent; background: rgba(92, 201, 149, .14); color: var(--success); }
+.agent-nav-status[data-tone="waiting"] { border-color: transparent; background: rgba(217, 170, 95, .14); color: var(--warning); }
+
+/* Chrome status, when shown, sits just above the footer. */
+.chrome-status { margin: auto 0 12px; font-size: 12px; background: var(--bg-raised); }
+.chrome-status:not([hidden]) + .sidebar-bottom { margin-top: 0; }
+
+/* Footer */
+.sidebar-bottom {
+  position: static;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding: 0 6px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.sidebar-bottom .dot { width: 6px; height: 6px; margin: 0; box-shadow: none; background: var(--success); }
+.sidebar-bottom p { display: none; }
+
+/* Page header: greeting on the left, agent controls on the right, nothing above it. */
+main { padding: 26px 36px 40px; }
+header { align-items: center; margin-bottom: 22px; }
+header .eyebrow { display: none; }
+h1 { font-size: 24px; font-weight: 600; letter-spacing: -.5px; }
+.actions { gap: 8px; }
+#agent-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 260px;
+  margin-right: 6px;
+  padding: 6px 10px 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.3;
+}
+#agent-state::before { content: ''; flex: 0 0 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); }
+#agent-state[data-active="true"] { border-color: rgba(92, 201, 149, .35); color: var(--text); }
+#agent-state[data-active="true"]::before { background: var(--success); box-shadow: 0 0 6px rgba(92, 201, 149, .7); }
+header .actions .primary { font-weight: 600; }
+
+/* Agent settings: hints readable, not fine print. */
+#agent-settings-form label small { color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+#agent-settings-form label small + small { color: var(--text-secondary); }

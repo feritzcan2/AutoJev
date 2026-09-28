@@ -1,0 +1,5 @@
+# Saved blockers and tabs
+
+Compare a new reply with the saved blocker before filling or uploading. An unrelated answer does not resolve an unavailable required option. If unchanged, retain the draft, update the concrete blocked note and report blocker={kind:technical,requiresUserInput:false,evidence,reason}; do not repeat the question or choose a false option. An explicit retry permits one fresh blocker check.
+
+Reacquire the saved browser and stable tabId, verify account/company/role, and reuse verified values. If the tab ID is missing, enumerate tabs and inspect the matching draft before reopening anything. If the site expired or closed it, inspect saved submission evidence through the verified listing; do not claim unsaved fields survived or resend an uncertain application. Never migrate a draft merely because the browser preference changed. Update its checkpoint. Resolve an obsolete/misleading technical question only with fresh evidence through resolve_technical_question; that is not a candidate answer or consent.

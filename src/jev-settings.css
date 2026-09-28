@@ -1,0 +1,14 @@
+.jev-settings { padding: 22px 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); }
+.jev-settings-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.jev-settings h4, .data-disclosure h4 { margin: 0; font-size: 14px; }
+.jev-settings-heading > span { color: var(--text-secondary); font-size: 12px; }
+.jev-settings > p, .data-disclosure { color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+.jev-settings form { display: grid; gap: 14px; margin: 18px 0; padding: 0; border: 0; background: transparent; }
+.jev-settings form label { display: grid; gap: 7px; color: var(--text-secondary); font-size: 12px; }
+.jev-settings input { width: 100%; }
+.jev-settings-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.jev-settings .jev-settings-hint { color: var(--text-muted); font-size: 12px; }
+.jev-settings-message:empty { display: none; }
+.data-disclosure { margin-top: 22px; padding: 20px 24px; border: 1px solid var(--border); border-radius: 12px; }
+.data-disclosure ul { display: grid; gap: 12px; padding-left: 18px; }
+.data-disclosure p { margin-bottom: 0; }

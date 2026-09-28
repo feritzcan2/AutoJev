@@ -28,6 +28,44 @@ accept Chrome's connection prompt when shown. The app does not change this
 security setting automatically or fall back to an empty profile. Only windows
 created for this candidate and their popups are exposed to the agent. Existing
 personal tabs are not exposed. Disconnecting Jobloop leaves Chrome open.
+
+An unanswered connection prompt keeps the same WebSocket handshake pending,
+including when approval is delayed for 15 minutes or longer. Background retries
+and the reconnect button reuse that pending attempt. No approval deadline is set:
+replacing a timed-out handshake creates another Chrome permission prompt. Closing
+Jobloop or resetting the candidate/profile cancels the pending handshake. Actual
+connection failures still use the existing retry backoff. This behavior is covered
+by `tests/jev-connection.test.mjs` with a local server that delays approval and a
+simulated 15-minute wait; `scripts/smoke-jev-existing.mjs` checks real Chrome CDP
+connections and draft recovery in an isolated profile.
+
+The agent's **Yeniden başlat** button starts a fresh conversation while retaining
+the existing Chrome connection. While a new agent is waiting for Chrome approval,
+the button is disabled; the queued start keeps its unanswered connection request.
+Closing and reopening the whole Jobloop app creates a new connection and can
+require Chrome approval again.
+
+New foreground agents wait for the app's Jev Chrome connection to become ready
+before any provider session starts. This includes ranking, source searches,
+applications, resumed tasks and profile improvement. While permission is pending,
+the app shows a centered “Chrome izni bekleniyor” dialog over a dimmed background,
+with two steps and an illustrative Chrome Allow prompt. Approval closes the dialog
+and resumes the queued start automatically. Escape or “Arka planda bekle” minimizes
+the dialog to a reminder without cancelling the wait; the reminder reopens it.
+The dialog also offers cancellation and reconnect controls. Stopping the
+campaign cancels the queued start. An unanswered approval consumes no agent turns
+or task retries. Connection failures show the reason and a reconnect action.
+Covered by `tests/browser-start-gate.test.mjs` and `scripts/smoke-browser-start.mjs`.
+
+Source-search tab IDs and their task bindings are saved in the same registry.
+`browser_jev_tabs` exposes `searchTaskId` and `jobId`, so a fresh agent can find
+the interrupted search's tabs while excluding application drafts. Search recovery
+instructions require observing these tabs (or the source's saved checkpoint)
+before opening replacements, preserving the current page and filters while Chrome
+stays open. Completed search tasks still close their finished research tabs. The
+existing-Chrome smoke test verifies task bindings, the same tab IDs, URL and filter
+value after closing and recreating the client, with no new tabs or windows.
+
 Candidate/profile-scoped tab IDs, home/window identity, job bindings and hashes
 of last observed URLs are saved locally. Once submission proof is saved or a job
 is skipped, owned tabs for that job close automatically. Prepared/blocked/uncertain
@@ -140,9 +178,18 @@ exact label/value from the agent's verified answer plan. It reveals the control,
 checks visibility and current option identity, selects once, and verifies the
 result. Custom dropdowns still use the reviewed next/act flow.
 
-Open/observe return full bounded observations. Mutation results return deltas
-with `baseObservationId`, changed `elements`, `removedElements`, and changed text
-or links. Controls and field-ID maps remain complete. Next returns only a compact
+Open, the first observation, and URL/session-owner changes return full observations.
+Subsequent observe and mutation results return deltas with `baseObservationId`,
+changed `elements`/`controls`, `removedElements`/`removedControls`, and changed text
+or links. Merge controls/scrollTargets by controlId, clickTargets by targetId,
+and fillFields by fieldId when mapDeltas=true; delete IDs in removedControls/removedScrollTargets/
+removedClickTargets/removedFillFields. Omitted entries are unchanged. Used click
+and fill IDs are consumed; unaffected IDs can survive a fresh observation only
+when their session, document, node and semantic guards match. Upload maps remain
+complete replacements. Without mapDeltas=true, legacy click/scroll/fill maps
+also replace their previous maps completely. Observe still reads
+the live page; use `full:true` to rebuild state after losing the baseline.
+Reuse fresh action results instead of automatically observing again. Next returns only a compact
 decision and target context; never truncate tool JSON or field IDs. Unchanged
 scrolls return `no_progress`. Mutations without an observed effect are uncertain;
 identical retries on unchanged state are blocked, including reworded Jev goals.

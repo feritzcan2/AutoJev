@@ -100,6 +100,7 @@
 #onboarding .choice { display: grid; grid-template-columns: auto 1fr; gap: 12px; margin: 0; color: var(--text); font-size: 13px; }
 #onboarding .choice input { width: 14px; height: 14px; margin: 2px 0 0; padding: 0; }
 #setup-review .primary { justify-self: start; }
+.setup-review-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .setup-after { position: sticky; top: 0; padding: 22px 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); }
 .setup-after h2 { margin: 0 0 6px; font-size: 15px; font-weight: 550; }
 .setup-after > p { margin: 0 0 14px; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }

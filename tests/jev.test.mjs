@@ -21,6 +21,19 @@ test('operation-specific heads use shared observed node indices',()=>{
   const space=actionSpace(page.actions);assert.equal(space.elements.length,2);
   assert.equal(space.targets.TYPE_TEXT['1'].id,'e1');assert.equal(space.targets.CLICK['1'].id,'e2');assert.equal(space.targets.SELECT['2:1'].value,'remote');
 });
+test('repeated answer buttons keep their question, option and pressed state in model requests',async()=>{
+  const actions=['Work permission?','Live here?'].map((question,i)=>({id:'e'+i,node:i+1,kind:'click',role:'button',label:question+' → No',pressed:'false',choice:{question,option:'No',selected:false,attribute:'aria-pressed'}}));
+  const snapshot={...page,actions};
+  assert.deepEqual(actionSpace(actions).elements.map(e=>e.label),['Work permission? → No','Live here? → No']);
+  const result=await chooseJev(snapshot,'Answer No for Live here?',[],{apiKey:'synthetic-test-key',fetchImpl:async(_url,options)=>{
+    const body=JSON.parse(options.body),criteria=body.questions.click_target.criteria;
+    assert.equal(criteria['2'].choice.question,'Live here?');assert.equal(criteria['2'].pressed,'false');assert.equal(body.state.elements[1].choice.selected,false);
+    return {ok:true,json:async()=>({answers:{operation:{choice:'CLICK',confidence:1,probabilities:{CLICK:1,DONE:0,BLOCKED:0}},click_target:{choice:'2',confidence:1,probabilities:{'1':0,'2':1}}}})};
+  }});
+  assert.equal(result.action.choice.question,'Live here?');
+  assert.doesNotThrow(()=>validateJevArgs('browser_jev_select_choice',{tabId:'tab',controlId:'observed'}));
+  assert.throws(()=>validateJevArgs('browser_jev_select_choice',{tabId:'tab',controlId:'observed',selector:'button'}));
+});
 test('invalid model choices and probabilities cannot reach the executor',()=>{
   for(const bad of [answer('evil'),{choice:'CLICK',confidence:1,probabilities:{CLICK:.3}},{choice:'CLICK',confidence:NaN,probabilities:{CLICK:1}},{choice:'CLICK',confidence:1,probabilities:{CLICK:1,EXTRA:0}}])assert.throws(()=>validateChoice(bad,{CLICK:'click'}));
 });
@@ -43,6 +56,10 @@ test('agent arguments cannot replace observed actions or execute code',()=>{
   assert.throws(()=>validateJevArgs('browser_jev_next',{tabId:'tab'}));
   assert.throws(()=>validateJevArgs('browser_jev_run_code',{code:'anything'}));
   validateJevArgs('browser_jev_act',{tabId:'tab',decisionId:'id',text:''});
+});
+test('observation rebuild is optional and requires an actual boolean',()=>{
+  for(const args of [{tabId:'tab'},{tabId:'tab',full:true},{tabId:'tab',full:false}])validateJevArgs('browser_jev_observe',args);
+  for(const full of ['true',1,null,{}])assert.throws(()=>validateJevArgs('browser_jev_observe',{tabId:'tab',full}));
 });
 test('settings load only Jev config and do not mutate the process environment',async()=>{
   const dir=await mkdtemp(path.join(os.tmpdir(),'jev-config-'));try{
@@ -86,14 +103,15 @@ test('compact observations preserve complete IDs while omitting repeated content
   const slot={},first=presentObservation(slot,value,{full:true});
   const second=presentObservation(slot,{...value,fillFields:[{fieldId:'new-complete-field-id',label:'Email'}]});
   assert.equal(second.baseObservationId,first.observationId);assert.equal(second.text,undefined);assert.deepEqual(second.elements,[]);
-  assert.equal(second.fillFields[0].fieldId,'new-complete-field-id');assert.deepEqual(second.controls,value.controls);
+  assert.equal(second.fillFields[0].fieldId,'new-complete-field-id');assert.deepEqual(second.controls,[]);assert.deepEqual(second.removedControls,[]);
   const third=presentObservation(slot,{...value,elements:[]});assert.deepEqual(third.removedElements,['1']);
   assert.equal(presentObservation(slot,{...value,url:'https://other.example'}).observationMode,'full');
 });
 test('task instructions require one authoritative context check and direct navigation',()=>{
   assert.match(AGENTS_MD,/one get_task_context|single get_task_context/);assert.doesNotMatch(AGENTS_MD,/status using get_campaign|completion using list_applications/);
   const prompt=browserProfileInstruction({browserMode:'jev'});
-  for(const name of ['browser_jev_reveal','browser_jev_scroll','browser_jev_select_option','no_progress','observationMode=delta'])assert.ok(prompt.includes(name));
+  for(const name of ['browser_jev_reveal','browser_jev_scroll','browser_jev_select_option','no_progress','observationMode=delta','removedControls','baseObservationId'])assert.ok(prompt.includes(name));
+  assert.doesNotMatch(prompt,/controls, scrollTargets and fillFields are always complete/);
 });
 
 test('autocomplete requires observed control and exact answer, never accepts selectors or code',()=>{

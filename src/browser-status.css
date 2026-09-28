@@ -1,0 +1,54 @@
+/* The approval stays in the top layer, including during profile setup. */
+html:has(dialog.chrome-approval[open]){overflow:hidden}
+.chrome-approval{width:min(650px,calc(100vw - 40px));max-height:calc(100dvh - 48px);margin:auto;padding:0;overflow:auto;overscroll-behavior:contain;border:1px solid #535047;border-radius:24px;background:radial-gradient(ellipse at 50% 0%,#d9aa5f13,transparent 55%),#23282a;color:#ece9e2;box-shadow:0 32px 100px #0009,0 0 0 1px #ffffff06;font-family:inherit}
+.chrome-approval:not([open]){display:none}
+.chrome-approval::backdrop{background:#080d10b8;backdrop-filter:blur(7px)}
+.chrome-approval[open]{animation:chrome-approval-enter .22s ease-out}
+.chrome-approval-close{position:absolute;right:18px;top:16px;display:grid;place-items:center;width:34px;height:34px;padding:0;border:1px solid #ffffff12;border-radius:50%;background:#ffffff05;color:#a5aaa9;font-size:24px;line-height:1}
+.chrome-approval-close:hover{background:#ffffff10;color:#fff}
+.chrome-approval-body{padding:34px 42px 22px;text-align:center}
+.chrome-approval-connection{display:flex;align-items:center;justify-content:center;gap:22px;margin:0 0 23px}
+.chrome-approval-jobloop{display:grid;place-items:center;width:56px;height:56px;padding-bottom:4px;border:1px solid #66b3ff40;border-radius:17px;background:#66b3ff16;color:#8ec8ff;font-size:39px;font-weight:700;letter-spacing:-3px}
+.chrome-approval-chrome{position:relative;width:54px;height:54px;border-radius:50%;background:conic-gradient(from -30deg,#ef6b61 0deg 120deg,#edc75a 120deg 240deg,#65b887 240deg 360deg);box-shadow:0 3px 15px #0003}
+.chrome-approval-chrome:after{content:'';position:absolute;inset:15px;border:3px solid #f0f2f0;border-radius:50%;background:#6eaaec}
+.chrome-approval-dots{display:flex;gap:7px}
+.chrome-approval-dots i{width:5px;height:5px;border-radius:50%;background:#d9aa5f;opacity:.45}
+.chrome-approval-dots i:nth-child(2){opacity:.7}.chrome-approval-dots i:nth-child(3){opacity:1}
+.chrome-approval .chrome-approval-eyebrow{margin:0 0 10px;color:#d9b679;font-size:10px;font-weight:650;letter-spacing:2.1px}
+.chrome-approval h2{margin:0;color:#f4f0e8;font-size:34px;font-weight:600;letter-spacing:-1.1px;line-height:1.18;outline:none}
+.chrome-approval #chrome-approval-instruction{max-width:435px;margin:15px auto 24px;color:#a8afae;font-size:15px;line-height:1.7;text-wrap:pretty}
+.chrome-approval #chrome-approval-instruction strong{color:#ead3aa;font-weight:600;white-space:nowrap}
+.chrome-approval-steps{display:flex;justify-content:center;gap:26px;margin-bottom:22px}
+.chrome-approval-steps>div{display:flex;align-items:center;gap:9px;color:#ccd0ce;font-size:12px}
+.chrome-approval-steps b{font-weight:500}.chrome-step-number{display:grid;place-items:center;width:22px;height:22px;border:1px solid #d9aa5f45;border-radius:50%;background:#d9aa5f0d;color:#e4bd80;font-size:11px;font-weight:600}
+.chrome-switch-shortcut{border:1px solid #ffffff18;border-radius:4px;padding:3px 5px;color:#9aa3a5;font-family:inherit;font-size:10px;line-height:1.2}
+.chrome-prompt-example{margin:0;padding:16px 22px 12px;border:1px solid #ffffff0d;border-radius:16px;background:#13191b6b;text-align:left}
+.chrome-prompt-example figcaption{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;color:#8e9799;font-size:9px;font-weight:600;letter-spacing:1.3px}
+.chrome-prompt-example figcaption span{border:1px solid #ffffff14;border-radius:4px;padding:3px 6px;font-size:9px;letter-spacing:0;font-weight:400}
+.chrome-prompt-window{padding:21px 22px 18px;border:1px solid #fff;border-radius:16px;background:#f7f8fa;color:#282c32;box-shadow:0 8px 20px #0002}
+.chrome-prompt-window>b{font-size:16px;font-weight:600;letter-spacing:-.25px}
+.chrome-prompt-window>p{max-width:340px;margin:10px 0 16px;color:#525861;font-size:12px;line-height:1.55}
+.chrome-prompt-actions{display:flex;justify-content:flex-end;align-items:center;gap:9px}
+.chrome-prompt-actions>span{display:flex;align-items:center;justify-content:center;gap:8px;min-width:77px;padding:9px 15px;border-radius:22px;font-size:12px;font-weight:600}
+.chrome-prompt-cancel{background:#e8eaee;color:#666c75}
+.chrome-prompt-allow{background:#386dc4;color:white;outline:3px solid #d9aa5f;outline-offset:3px;box-shadow:0 0 0 8px #d9aa5f1a}
+.chrome-prompt-allow svg{width:15px;height:15px}
+.chrome-prompt-example>p{margin:12px 0 0;text-align:center;color:#9ba4a4;font-size:11px;line-height:1.4}
+.chrome-approval-progress{display:flex;align-items:center;justify-content:center;gap:9px;margin-top:22px;font-size:12px;color:#e2bd84}
+.chrome-wait-dot{display:block;flex-shrink:0;width:7px;height:7px;border-radius:50%;background:#e4b975;box-shadow:0 0 0 4px #d9aa5f14;animation:chrome-wait-pulse 2.4s ease-in-out infinite}
+.chrome-approval-progress small{border-left:1px solid #ffffff1f;padding-left:10px;font-size:11px;color:#939d9c}
+.chrome-approval .chrome-approval-detail{margin:10px 0 0;color:#a6aeac;font-size:11px;line-height:1.6}
+.chrome-approval .chrome-approval-error{margin:16px 0 0;padding:12px;border:1px solid #e7b15f45;border-radius:8px;background:#e7b15f0a;color:#e6c591;overflow-wrap:anywhere;font-size:12px;line-height:1.5;text-align:left}
+.chrome-approval-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 26px;border-top:1px solid #ffffff0c;background:#0000000c}
+.chrome-approval-footer>div{display:flex;gap:8px}.chrome-approval-footer button{padding:11px 14px;font-size:12px}
+.chrome-approval-cancel{padding-left:0!important;background:transparent;color:#a6adac}
+.chrome-approval-dismiss{border-color:#d9aa5f40;background:#d9aa5f19;color:#efd6ad;font-weight:550}
+.chrome-approval-dismiss span{margin-left:8px}.chrome-approval-retry{border-color:#d9aa5f60;color:#e9c88f}
+.chrome-approval-reminder{position:fixed;z-index:110;bottom:24px;right:24px;display:flex;align-items:center;gap:14px;max-width:calc(100vw - 40px);padding:16px 20px;border:1px solid #d9aa5f5c;border-radius:14px;background:#2c2b26;box-shadow:0 12px 45px #0005}
+.chrome-approval-reminder b{display:block;margin-bottom:4px;font-size:13px;font-weight:550;color:#e6c793}
+.chrome-approval-reminder small{display:block;color:#a8aeaa;font-size:11px;line-height:1.5}
+.chrome-approval-reminder button{margin-left:12px;border-color:#d9aa5f40;color:#e8cfaa;font-size:12px}
+@keyframes chrome-approval-enter{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes chrome-wait-pulse{50%{box-shadow:0 0 0 7px #d9aa5f08}}
+@media(max-width:600px){.chrome-approval{width:calc(100vw - 24px);max-height:calc(100dvh - 24px);border-radius:20px}.chrome-approval-body{padding:30px 22px 20px}.chrome-approval h2{font-size:29px}.chrome-approval #chrome-approval-instruction{font-size:14px}.chrome-approval-steps{gap:14px}.chrome-approval-steps>div{font-size:11px;gap:6px}.chrome-switch-shortcut{display:none}.chrome-prompt-example{padding:12px}.chrome-prompt-example figcaption{font-size:8px;letter-spacing:.9px}.chrome-prompt-window{padding:18px}.chrome-approval-footer{flex-wrap:wrap;padding:16px 22px;gap:12px}.chrome-approval-footer>div{margin-left:auto}.chrome-approval-footer button{padding:10px 11px}.chrome-approval-progress{flex-wrap:wrap}.chrome-approval-reminder{left:12px;right:12px;bottom:calc(78px + env(safe-area-inset-bottom,0px));max-width:none;padding:14px;gap:10px}.chrome-approval-reminder button{margin-left:auto;max-width:116px}}
+@media(prefers-reduced-motion:reduce){.chrome-approval[open],.chrome-wait-dot{animation:none}.chrome-approval::backdrop{backdrop-filter:none}}

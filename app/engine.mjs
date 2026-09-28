@@ -18,7 +18,22 @@ export class Engine {
     this.pending.set(id,{resolve,reject,timer});this.child.stdin.write(JSON.stringify({id,op,...args})+'\n',error=>{if(error){clearTimeout(timer);this.pending.delete(id);reject(error);}});
   });}
   async close(){
-    let timer;try{await Promise.race([this.request('stop'),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Motor kapanma zaman aşımı')),8000);})]);}
-    finally{clearTimeout(timer);this.child.stdin.end();if(this.child.exitCode===null){const child=this.child;const kill=setTimeout(()=>child.kill('SIGKILL'),3000);kill.unref();child.once('exit',()=>clearTimeout(kill));}}
+    const child=this.child;
+    if(child.exitCode!==null||child.signalCode!=null)return;
+    // A PTY stop may fail after its shell has already exited. What matters is
+    // that the engine process is gone before a replacement is allowed to start.
+    let timer,kill,deadline;
+    const exited=new Promise((resolve,reject)=>{
+      child.once('exit',resolve);
+      deadline=setTimeout(()=>reject(Error('Motor kapanışı doğrulanamadı; yeni oturum açılmadı.')),12000);
+    });
+    // Attach rejection handling immediately while the stop request is pending.
+    const termination=exited.then(()=>null,error=>error);
+    try{
+      await Promise.race([this.request('stop'),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Motor kapanma zaman aşımı')),8000);})]).catch(()=>{});
+      child.stdin.end();
+      if(child.exitCode===null&&child.signalCode==null)kill=setTimeout(()=>child.kill('SIGKILL'),3000);
+      const error=await termination;if(error)throw error;
+    }finally{clearTimeout(timer);clearTimeout(kill);clearTimeout(deadline);}
   }
 }

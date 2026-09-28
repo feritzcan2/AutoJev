@@ -3,7 +3,7 @@ import {Store} from '../app/store.mjs';import {startMcp} from '../app/mcp.mjs';
 test('application questions require real blockers and cannot request already-granted submission consent',async()=>{
  const store=new Store(':memory:'),p=store.saveProfile({name:'Test',preferences:'Berlin',authorization:'submit'}),job=store.addJob(p.id,{company:'Example',role:'Developer',location:'Berlin',fit:'Test',url:'https://example.test/job'}).job;
  const mcp=await startMcp(store,()=>{},async()=>({}),null,{get:()=>({task:{jobId:job.id}})}),token=mcp.grant(p.id,'session');
- const call=async args=>{await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'list_applications',arguments:{}}})});if(args.applicationBlocker)args={...args,applicationBlocker:{...args.applicationBlocker,review:{cvChecked:'No CV present',missingFacts:[{key:'application_specific',gap:'Observed required field unanswered'}]}}};const response=await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'ask_candidate',arguments:args}})});return(await response.json()).result;};
+ const call=async args=>{await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'get_task_context',arguments:{}}})});if(args.applicationBlocker)args={...args,applicationBlocker:{...args.applicationBlocker,review:{cvChecked:'No CV present',missingFacts:[{key:'application_specific',gap:'Observed required field unanswered'}]}}};const response=await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'ask_candidate',arguments:args}})});return(await response.json()).result;};
  try{
   assert.equal((await call({question:'Strong Java expertise?'})).isError,true);
   const approval={question:'May I submit?',applicationBlocker:{kind:'uncovered_consent',consentScope:'submission',evidence:'Submit application',reasonUnknown:'Approval'}};
@@ -104,6 +104,18 @@ test('CAPTCHA escalation requires a remaining challenge and attempts or a concre
    recovery.captchaCheck.limitation=capability==='tool_disallowed'?'Active browser tool explicitly requires human handling':'Challenge is inside an iframe the active tool cannot expose';
    assert.notEqual((await call('ask_candidate',input)).isError,true);
   }
-  assert.equal(store.questions(p.id).length,3);
+  assert.equal(store.questions(p.id).length,1); // Repeated escalation reuses the open question.
  }finally{await server.close();store.close();}
+});
+
+test('login handoff needs an observed obstacle or a supported attempt, not just a login screen',()=>{
+ const input={question:'Kayıtlı bilgilerle giriş yapıp tamamlandı yaz',applicationBlocker:{kind:'access',evidence:'Login form with autofilled credentials',recovery:{kind:'user_only',userActionReason:'Click login'}}};
+ assert.throws(()=>validateQuestionReview(null,'candidate',input,null),/Giriş ekranı/);
+ input.applicationBlocker.recovery.loginCheck={state:'failed',evidence:'Login rejected'};
+ assert.throws(()=>validateQuestionReview(null,'candidate',input,null),/denenen yöntemi/);
+ input.applicationBlocker.recovery.attempts=[{method:'Submit saved credentials',result:'Site rejected credentials'}];
+ assert.doesNotThrow(()=>validateQuestionReview(null,'candidate',input,null));
+ input.applicationBlocker.recovery.loginCheck={state:'user_required',evidence:'Google offers two accounts; candidate identity cannot be established'};
+ delete input.applicationBlocker.recovery.attempts;
+ assert.doesNotThrow(()=>validateQuestionReview(null,'candidate',input,null));
 });

@@ -32,7 +32,8 @@ test('manual changes preserve a verified submission',()=>{
   const profile=store.saveProfile({name:'Candidate',preferences:'Remote',facts:'',authorization:'prepare'});
   const job=store.addJob(profile.id,{url:'https://example.com/jobs/2',company:'Company',role:'Engineer',location:'Remote',fit:'Relevant'}).job;
   job.status='submitted';job.proof={text:'Received'};store.saveJob(job,'submission_recorded');
-  assert.throws(()=>store.setManualJobStatus(profile.id,job.id,'withdrawn'),/değiştirilemez/);
+  assert.equal(store.setManualJobStatus(profile.id,job.id,'withdrawn').status,'skipped');
+  assert.equal(store.setManualJobStatus(profile.id,job.id,'already_submitted').status,'already_submitted');
   assert.deepEqual(store.job(profile.id,job.id).proof,{text:'Received'});
  }finally{store.close();}
 });

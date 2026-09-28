@@ -5,6 +5,7 @@ import path from 'node:path';
 import {createServer} from 'node:http';
 import {randomUUID} from 'node:crypto';
 import {chromeUserDataDirectory} from './chrome-profiles.mjs';
+import {findChrome} from './chrome-installation.mjs';
 const exec=promisify(execFile);
 
 // Chrome's command-line forwarding discards about:/chrome: URLs. A short-lived
@@ -20,9 +21,9 @@ export async function chromeWindowMarker(){
   return {url:`http://127.0.0.1:${server.address().port}${route}`,close(){server.closeAllConnections();server.close();}};
 }
 
-export async function existingChromeEndpoint(){
+export async function existingChromeEndpoint({directory=chromeUserDataDirectory()}={}){
   let lines;
-  try{lines=(await readFile(path.join(chromeUserDataDirectory(),'DevToolsActivePort'),'utf8')).trim().split(/\r?\n/);}
+  try{lines=(await readFile(path.join(directory,'DevToolsActivePort'),'utf8')).trim().split(/\r?\n/);}
   catch{throw Error('Mevcut Chrome bağlantısı kapalı. Chrome’da chrome://inspect/#remote-debugging sayfasından uzaktan hata ayıklamayı aç ve bağlantı isteğine izin ver. Jev ayrı profil açmaz.');}
   const [port,route]=lines;
   if(!/^\d+$/.test(port)||Number(port)<1||Number(port)>65535||!/^\/devtools\/browser\/[\w-]+$/.test(route))throw Error('Chrome bağlantı bilgisi geçersiz.');
@@ -35,12 +36,11 @@ export async function resolveChromeProfile(selected){
   return state.profile?.last_used??'Default';
 }
 
-export async function openChromeWindow(url,selected){
-  const state=JSON.parse(await readFile(path.join(chromeUserDataDirectory(),'Local State'),'utf8'));
+export async function openChromeWindow(url,selected,{directory=chromeUserDataDirectory(),findChromeImpl=findChrome,execImpl=exec}={}){
+  const state=JSON.parse(await readFile(path.join(directory,'Local State'),'utf8'));
   const profile=selected?.directory??state.profile?.last_used??'Default';
   if(!/^[\w -]{1,100}$/.test(profile)||!state.profile?.info_cache?.[profile])throw Error('Seçili mevcut Chrome profili bulunamadı.');
   const args=[`--profile-directory=${profile}`,'--new-window',url];
-  if(process.platform==='darwin')await exec('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',args,{timeout:10000});
-  else if(process.platform==='win32')await exec(path.join(process.env.PROGRAMFILES??'C:\\Program Files','Google/Chrome/Application/chrome.exe'),args,{timeout:10000});
-  else await exec('google-chrome',args,{timeout:10000});
+  const executable=await findChromeImpl();if(!executable)throw Error('Google Chrome bulunamadı. Chrome’u kur ve en az bir kez aç.');
+  await execImpl(executable,args,{timeout:10000,windowsHide:true});
 }

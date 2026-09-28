@@ -1,5 +1,21 @@
-.candidate-question-form{display:grid;gap:16px;margin-top:16px;max-width:850px}.candidate-question-form fieldset{border:0;padding:0;margin:0;min-width:0;display:grid;gap:8px}.candidate-question-form legend{font-weight:600;margin-bottom:8px;white-space:normal}.candidate-question-form fieldset p{margin:0;color:var(--muted,#adb5bd);font-size:13px}.candidate-question-form fieldset label{display:flex;align-items:center;gap:10px}.candidate-question-form input[type=checkbox]{width:auto}.candidate-question-form textarea{min-height:75px;resize:vertical;width:100%;box-sizing:border-box}.candidate-question-form button{justify-self:start}.question-form-error:empty{display:none}.question-form-error{color:#f2b666;margin:0}
+/* Answer form inside the agent question card: no card-in-card, one hairline above, segmented mode switch. */
+.candidate-question-form { display: grid; gap: 16px; max-width: 640px; margin-top: 16px; }
+.question .candidate-question-form { margin-top: 18px; padding: 18px 0 0; border: 0; border-top: 1px solid rgba(217, 170, 95, .2); border-radius: 0; background: transparent; }
+.candidate-question-form fieldset { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.candidate-question-form legend { padding: 0; margin-bottom: 6px; color: var(--text); font-size: 13.5px; font-weight: 600; line-height: 1.45; white-space: normal; }
+.candidate-question-form fieldset p { margin: -2px 0 4px; color: var(--text-secondary); font-size: 12.5px; line-height: 1.5; }
+.candidate-question-form fieldset label { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text); }
+.candidate-question-form input[type=checkbox] { width: auto; }
+.candidate-question-form input, .candidate-question-form select, .candidate-question-form textarea, .question .candidate-question-form input { width: 100%; margin: 0; box-sizing: border-box; }
+.candidate-question-form textarea { min-height: 88px; resize: vertical; }
+.candidate-question-form > label { display: grid; gap: 8px; color: var(--text-secondary); font-size: 12px; }
+.candidate-question-form button.primary { justify-self: start; padding: 10px 18px; }
+.question-form-error { margin: 0; color: var(--warning); font-size: 13px; }
+.question-form-error:empty { display: none; }
 
-.question-fields{display:grid;gap:16px}.question-fields[hidden]{display:none}.question-answer-modes{display:flex;gap:8px}.question-answer-modes button[aria-pressed=true]{border-color:var(--accent,#49b9ed);color:var(--accent,#49b9ed)}
-
-.question-link-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.question-fields { display: grid; gap: 16px; }
+.question-fields[hidden] { display: none; }
+.question-answer-modes { display: inline-flex; justify-self: start; gap: 2px; padding: 3px; border: 1px solid var(--border-strong); border-radius: 9px; background: var(--bg-app); }
+.question-answer-modes button { padding: 6px 13px; border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); font-size: 12.5px; }
+.question-answer-modes button:hover { filter: none; color: var(--text); }
+.question-answer-modes button[aria-pressed=true] { background: var(--bg-raised); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, .35), inset 0 0 0 1px var(--border-strong); }

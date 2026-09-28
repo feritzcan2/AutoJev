@@ -13,7 +13,7 @@ test('dedupe, scope enforcement, proof requirement and recovery survive restart'
  const dir=mkdtempSync(path.join(os.tmpdir(),'jobloop-test-'));let s=new Store(path.join(dir,'db'));
  try{const p=profile(s),j=addRankedJob(s,p.id,listing).job;
  assert.equal(addRankedJob(s,p.id,{...listing,url:'https://employer.example/jobs/42?utm_source=other'}).duplicate,true);
- assert.equal(addRankedJob(s,p.id,{...listing,url:'https://linkedin.example/jobs/99'}).duplicate,true);
+ assert.equal(addRankedJob(s,p.id,{...listing,url:'https://linkedin.example/jobs/99'}).duplicate,false,'metadata alone cannot establish vacancy identity');
  s.updateJob(p.id,j.id,'working','Opening form','session');s.updateJob(p.id,j.id,'prepared','CV ready','session');
  assert.throws(()=>s.updateJob(p.id,j.id,'submitting','Sending','session'),/yetkisi/);
  s.saveProfile({...p,authorization:'submit'});s.updateJob(p.id,j.id,'submitting','Sending','session');

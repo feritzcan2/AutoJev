@@ -2,6 +2,16 @@ import {mkdir,readFile,writeFile,rename} from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 
+export function sameBrowserInstance(a,b){
+  try{const x=new URL(a),y=new URL(b);return /^wss?:$/.test(x.protocol)&&/^wss?:$/.test(y.protocol)&&/^\/devtools\/browser\/[^/]+$/.test(x.pathname)&&x.pathname===y.pathname;}catch{return false;}
+}
+
+export function restoredTargets(saved,checkpoints,live,contextId){
+  if(!contextId)return [];
+  const ids=new Set([...(saved?.targets??[]),...checkpoints.filter(c=>c?.browser==='Jev Chrome').map(c=>c.tabId)]);
+  return [...ids].filter(id=>/^[A-Fa-f0-9]{32}$/.test(id)&&live.get(id)?.browserContextId===contextId);
+}
+
 // Candidate-owned metadata only: never discover a draft by matching its URL.
 export class JevTabs {
   constructor(directory,profile){

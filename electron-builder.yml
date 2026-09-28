@@ -1,0 +1,73 @@
+appId: dev.jobloop.desktop
+productName: JobLoop
+directories:
+  output: release
+  buildResources: build
+files:
+  - app/**
+  - dist/**
+  - skills/**
+  - vendor/jev-ultrafast/**
+  - vendor/ai-job-search/.agents/skills/**
+  - vendor/ai-job-search/UPSTREAM.json
+  - vendor/ai-job-search/LICENSE
+  - package.json
+  - LICENSE
+  - THIRD_PARTY_NOTICES.md
+  - '!vendor/**/node_modules/**'
+  - '!vendor/**/tests/**'
+  - '!**/.env*'
+asar: true
+asarUnpack:
+  - node_modules/**
+  - vendor/ai-job-search/**
+  - dist/source-tools/**
+extraResources:
+  - from: engine/target/release
+    to: engine
+    filter:
+      - jobloop-engine
+      - jobloop-engine.exe
+  - from: vendor/termloop/LICENSE
+    to: licenses/TermLoop-LICENSE
+  - from: vendor/termloop/clients/terminal-surface/src/assets/fonts/OFL.txt
+    to: licenses/JetBrains-Mono-OFL.txt
+npmRebuild: false
+publish:
+  provider: github
+  owner: feritzcan2
+  repo: jobmaster
+  releaseType: release
+mac:
+  mergeASARs: false
+  # Each architecture has a separate Bun FFI library, selected at runtime.
+  # Both copies intentionally appear in both halves of the universal app.
+  x64ArchFiles: '**/dist/source-tools/node_modules/@opentui/core-darwin-*/libopentui.dylib'
+  artifactName: jobloop-macos-${arch}-${version}.${ext}
+  category: public.app-category.productivity
+  target: [dmg, zip]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: true
+win:
+  artifactName: jobloop-windows-${arch}-${version}.${ext}
+  target: [nsis]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+linux:
+  artifactName: jobloop-linux-${arch}-${version}.${ext}
+  target: [AppImage, deb]
+  executableName: jobloop
+  category: Office
+  maintainer: Ferit Özcan <feritzcan93@gmail.com>
+  desktop:
+    entry:
+      StartupWMClass: jobloop
+deb:
+  packageName: jobloop
+  artifactName: jobloop-linux-${arch}-${version}.${ext}

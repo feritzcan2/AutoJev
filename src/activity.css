@@ -13,6 +13,11 @@
 .now-panel small { display: block; margin-top: 8px; color: var(--text-muted); font-size: 12px; }
 .now-actions { display: flex; flex-shrink: 0; gap: 8px; }
 .now-actions button { padding: 8px 12px; font-size: 12px; }
+.worker-activity { display: flex; gap: 10px; overflow-x: auto; margin-bottom: 20px; padding-bottom: 2px; }
+.worker-activity > .now-panel { flex: 1 0 380px; min-width: 320px; margin: 0; padding: 16px 18px; }
+.worker-activity .now-top { gap: 12px; }
+.worker-activity h2 { font-size: 16px; overflow-wrap: anywhere; }
+.now-worker { color: var(--text); font-weight: 600; }
 
 .now-panel details { margin: 14px 0 0; font-size: 12px; }
 .now-panel summary { display: inline; cursor: pointer; color: var(--text-muted); list-style: none; }

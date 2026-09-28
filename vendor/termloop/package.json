@@ -1,0 +1,5 @@
+{
+  "name": "jobloop-termloop-source",
+  "private": true,
+  "packageManager": "pnpm@10.14.0"
+}

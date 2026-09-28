@@ -2,14 +2,13 @@ import {readFile} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import path from 'node:path';
 
-export function chromeUserDataDirectory(){
- const home=homedir();
- return process.platform==='darwin'?path.join(home,'Library/Application Support/Google/Chrome')
-  :process.platform==='win32'?path.join(process.env.LOCALAPPDATA||path.join(home,'AppData/Local'),'Google/Chrome/User Data')
-  :path.join(process.env.XDG_CONFIG_HOME||path.join(home,'.config'),'google-chrome');
+export function chromeUserDataDirectory({platform=process.platform,home=homedir(),env=process.env}={}){
+ const paths=platform==='win32'?path.win32:path.posix;
+ return platform==='darwin'?paths.join(home,'Library/Application Support/Google/Chrome')
+  :platform==='win32'?paths.join(env.LOCALAPPDATA||paths.join(home,'AppData/Local'),'Google/Chrome/User Data')
+  :paths.join(env.XDG_CONFIG_HOME||paths.join(home,'.config'),'google-chrome');
 }
-export async function listChromeProfiles(){
- const directory=chromeUserDataDirectory();
+export async function listChromeProfiles({directory=chromeUserDataDirectory()}={}){
  let state;
  try{state=JSON.parse(await readFile(path.join(directory,'Local State'),'utf8'));}
  catch(error){if(error.code==='ENOENT')return [];throw Error('Chrome profilleri okunamadı.');}

@@ -1,7 +1,7 @@
 import {readdir,realpath,stat,readFile} from 'node:fs/promises';
 import path from 'node:path';
 const extensions=new Set(['.pdf','.docx','.txt','.md','.png','.jpg','.jpeg']);
-const excluded=new Set(['runtime','node_modules','AGENTS.md']);
+const excluded=new Set(['runtime','node_modules','AGENTS.md','CLAUDE.md']);
 export async function documentPath(root,relative){
  if(typeof relative!=='string'||path.isAbsolute(relative))throw Error('Geçersiz dosya');
  const base=await realpath(root),file=await realpath(path.resolve(base,relative));

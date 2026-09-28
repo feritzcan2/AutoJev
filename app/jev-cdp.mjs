@@ -1,3 +1,5 @@
+import WebSocket from 'ws';
+
 // Playwright normally auto-attaches every personal tab and waits for all of them
 // to initialize. Expose only task-owned windows to its CDP connection instead.
 export class JevCdpTransport {
@@ -6,14 +8,23 @@ export class JevCdpTransport {
     socket.onmessage=event=>this.receive(JSON.parse(event.data));
     socket.onclose=()=>{for(const {reject,timer} of this.pending.values()){clearTimeout(timer);reject(Error('Chrome bağlantısı kapandı.'));}this.pending.clear();this.onclose?.();};
   }
-  static async connect(endpoint){
-    const socket=new WebSocket(endpoint);
+  static async connect(endpoint,{signal}={}){
+    signal?.throwIfAborted();
+    // Chrome holds the WebSocket upgrade until the user approves. Keep that
+    // request alive; a timeout/retry creates another permission dialog. The
+    // native Node WebSocket also has an implicit HTTP headers timeout, so use
+    // ws with no handshake deadline. Lifecycle cancellation still closes it.
+    const socket=new WebSocket(endpoint,{handshakeTimeout:0});
     await new Promise((resolve,reject)=>{
-      const fail=message=>{clearTimeout(timer);socket.onerror=()=>{};socket.onclose=null;reject(Error(message));socket.close();};
-      const timer=setTimeout(()=>fail('Chrome bağlantı izni beklenirken zaman aşımı.'),30000);
-      socket.onopen=()=>{clearTimeout(timer);socket.onerror=()=>{};socket.onclose=null;resolve();};
-      socket.onerror=()=>fail('Chrome bağlantısı kurulamadı.');
-      socket.onclose=()=>fail('Chrome bağlantısı kurulmadan kapandı.');
+      let settled=false;
+      const cleanup=()=>{signal?.removeEventListener('abort',abort);socket.onopen=null;socket.onclose=null;socket.onerror=()=>{};};
+      const fail=error=>{if(settled)return;settled=true;cleanup();socket.close();reject(error);};
+      const abort=()=>fail(signal.reason);
+      socket.onopen=()=>{if(settled)return;settled=true;cleanup();resolve();};
+      socket.onerror=()=>fail(Error('Chrome bağlantısı kurulamadı.'));
+      socket.onclose=()=>fail(Error('Chrome bağlantısı kurulmadan kapandı.'));
+      signal?.addEventListener('abort',abort,{once:true});
+      if(signal?.aborted)abort();
     });
     return new JevCdpTransport(socket);
   }

@@ -1,3 +1,5 @@
+import {engineBinaryPath} from './runtime-paths.mjs';
+import {writeWorkspaceInstructions} from './workspace-instructions.mjs';
 import {mkdir,readFile,writeFile,rm,realpath} from 'node:fs/promises';
 import path from 'node:path';
 import {Engine} from './engine.mjs';
@@ -20,13 +22,13 @@ export async function launchSkillWorker({root,data,db,run,task,onEvent,signal,co
  const skillSource=task.skillPath||path.join(root,'skills/gmail-sync/SKILL.md');
  const skill=await readFile(skillSource,'utf8');if(!skill.trim())throw Error('Skill dosyası boş');
  await writeFile(path.join(cwd,'TASK.md'),skill);
- await writeFile(path.join(cwd,'AGENTS.md'),BACKGROUND_AGENTS_MD);
+ await writeWorkspaceInstructions(cwd,BACKGROUND_AGENTS_MD);
  let engine,mcp,closing=false,output=Buffer.alloc(0);
  const close=async()=>{if(closing)return;closing=true;try{await engine?.close();}finally{await mcp?.close();await writeFile(path.join(directory,'terminal.log'),output,{mode:0o600});await rm(path.join(runtime,'mcp.json'),{force:true});}};
  try{
   mcp=await startMcp(db.store,()=>{},hook=>engine.request('hook',{token:hook.token,observation:hook.observation}),null,null,skillWorkflow(db,run,complete,signal));
   const token=mcp.grant(run.candidateId,run.id);
-  engine=new Engine(path.join(root,'engine/target/debug',process.platform==='win32'?'jobloop-engine.exe':'jobloop-engine'),path.join(directory,'processes'),event=>{if(event.event==='output'){output=Buffer.concat([output,Buffer.from(event.bytes)]).subarray(-150000);onOutput(event.bytes);}if(!closing)onEvent(event);});
+  engine=new Engine(engineBinaryPath({root}),path.join(directory,'processes'),event=>{if(event.event==='output'){output=Buffer.concat([output,Buffer.from(event.bytes)]).subarray(-150000);onOutput(event.bytes);}if(!closing)onEvent(event);});
   if(signal.aborted)throw Error('Görev iptal edildi');
   const {provider,model,permission,reasoning,network}=task.agentSettings;
   await engine.request('start',{sessionId:run.id,cwd,runtimeDirectory:runtime,endpoint:mcp.endpoint,token,provider,model,permission,reasoning,network,taskType:'background',prompt:(run.interactive?BACKGROUND_PROMPTS.interactive+run.message:BACKGROUND_PROMPTS.once)+(!task.skillPath&&task.connectorAccess?.provider===provider&&task.connectorAccess?.appId?' Use the connected Gmail app: [$gmail](app://'+task.connectorAccess.appId+'). Discover its tools before claiming access is missing.':''),rows:28,cols:100});

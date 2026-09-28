@@ -32,7 +32,7 @@ test('all listings remain saved; old blocker notes and uncertain facts never vet
  const input=rankInput(f.store,f.p.id,99,{blockers:[{requirement:'US residence only',listingEvidence:'Must reside in the United States',candidateEvidence:'Candidate resides only in Berlin and excludes relocation'}]});
  const blocked=f.store.rankJob(f.p.id,f.add('blocked').id,input);assert.equal(rankDecision(f.p,blocked).state,'eligible');assert.equal(f.c.choose(f.p.id,f.state).jobId,blocked.id);assert.throws(()=>f.store.queueRankedJob(f.p.id,j.id));
  input.blockers[0].candidateEvidence='';assert.throws(()=>f.store.rankJob(f.p.id,j.id,input));
- const unavailable=f.store.rankJob(f.p.id,f.add('unavailable').id,{profileKey:f.store.profile(f.p.id).rankingProfileKey,status:'unavailable',summary:'Employer returned 403 after browser retry'});
+ const unavailable=f.store.rankJob(f.p.id,f.add('unavailable').id,{profileKey:f.store.profile(f.p.id).rankingProfileKey,status:'unavailable',browserCheck:{backend:'existing',url:'https://example.test/job',evidence:'Browser rendered access denied'},summary:'Employer returned 403 after browser retry'});
  assert.equal(unavailable.rank.score,null);assert.equal(unavailable.status,'found');assert.equal(rankDecision(f.p,unavailable).state,'unavailable');
 }finally{f.store.close();}});
 test('rank threshold and explicit user exception never raise candidate or source authorization',()=>{const f=fixture();try{
@@ -65,7 +65,7 @@ test('legacy unranked listing gets a rank task, durable rank required before rel
 }finally{f.store.close();}});
 test('unavailable rank is reported blocked, leaves the record and allows other work',async()=>{const f=fixture();try{
  const j=f.add('unavailable');await f.c.start(f.p.id);const task=f.store.campaign(f.p.id).task;
- f.store.rankJob(f.p.id,j.id,{profileKey:f.store.profile(f.p.id).rankingProfileKey,status:'unavailable',summary:'Listing retrieval failed'});
+ f.store.rankJob(f.p.id,j.id,{profileKey:f.store.profile(f.p.id).rankingProfileKey,status:'unavailable',browserCheck:{backend:'existing',url:'https://example.test/job',evidence:'Browser rendered access denied'},summary:'Listing retrieval failed'});
  assert.throws(()=>f.c.report(f.p.id,'s',{taskId:task.id,outcome:'done',note:'done'}));
  f.c.signal(f.p.id,'Working');f.c.report(f.p.id,'s',{taskId:task.id,outcome:'blocked',note:'Cannot retrieve'});f.c.signal(f.p.id,'Idle');
  assert.equal(f.store.job(f.p.id,j.id).status,'found');assert.equal(f.c.choose(f.p.id,f.store.campaign(f.p.id)),null);

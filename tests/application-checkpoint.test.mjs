@@ -30,7 +30,7 @@ test('MCP accepts observed checkpoint data and infers the question job from the 
  validate(schema,{question:'Salary?',resumeContext});assert.throws(()=>validate(schema,{question:'Salary?',resumeContext:{tabId:'made-up'}}));
  const mcp=await startMcp(store,()=>{},async()=>({}),null,{get:()=>({task:{jobId:job.id}})}),token=mcp.grant(p.id,'session');
  try{
-  await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'list_applications',arguments:{}}})});
+  await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'get_task_context',arguments:{}}})});
   const res=await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'ask_candidate',arguments:{question:'Salary?',resumeContext,applicationBlocker:{kind:'required_form_field',review:{cvChecked:'No CV supplied',missingFacts:[{key:'salary_expectation',gap:'Expected salary is unknown'}]},evidence:'Expected salary *',reasonUnknown:'Salary is absent from CV, profile and saved answers'}}}})});
   const result=(await res.json()).result;assert.notEqual(result.isError,true);assert.equal(store.questions(p.id)[0].jobId,job.id);assert.equal(store.job(p.id,job.id).resumeContext.tabId,resumeContext.tabId);
  }finally{await mcp.close();store.close();}

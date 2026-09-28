@@ -1,0 +1,794 @@
+use std::collections::{HashMap, VecDeque};
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use serde_json::Value;
+use termloop_domain::{ResumeProvider, ResumeRef};
+use termloop_platform::{
+    BoundedHistoryFile, BoundedHistoryFileSlices, discover_bounded_history_files_cancellable,
+    read_bounded_history_file_slices, user_home_directory,
+};
+
+#[cfg(test)]
+use termloop_platform::discover_bounded_history_files;
+
+const MAX_CANDIDATES_PER_PROVIDER: usize = 200;
+const MAX_HEAD_BYTES: usize = 256 * 1024;
+const MAX_TAIL_BYTES: usize = 256 * 1024;
+const MAX_PREVIEW_MESSAGES: usize = 3;
+const MAX_PREVIEW_CHARS: usize = 480;
+const MAX_TAIL_MESSAGES: usize = 12;
+const MAX_TAIL_MESSAGE_CHARS: usize = 1024;
+const MAX_TITLE_CHARS: usize = 120;
+const MAX_CWD_BYTES: usize = 4096;
+const MAX_BRANCH_BYTES: usize = 255;
+const MAX_MODEL_BYTES: usize = 80;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentHistoryPreviewRole {
+    User,
+    Assistant,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentHistoryPreviewMessage {
+    pub role: AgentHistoryPreviewRole,
+    pub text: String,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct DiscoveredAgentConversation {
+    pub resume_ref: ResumeRef,
+    pub agent_id: String,
+    pub account_id: String,
+    pub title: String,
+    pub cwd: String,
+    pub branch: Option<String>,
+    pub model: Option<String>,
+    pub updated_at_epoch_ms: u64,
+    pub preview_messages: Vec<AgentHistoryPreviewMessage>,
+    /// Bounded normalized user/assistant tail for an explicitly authorized
+    /// same-Project Task evidence read. Provider payloads and identities stay
+    /// private to the daemon.
+    pub tail_messages: Vec<AgentHistoryPreviewMessage>,
+    pub source: BoundedHistoryFile,
+    pub source_modified_at_epoch_ms: u64,
+    pub source_size_bytes: u64,
+    pub source_window_sha256: [u8; 32],
+}
+
+impl std::fmt::Debug for DiscoveredAgentConversation {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("DiscoveredAgentConversation")
+            .field("resume_ref", &self.resume_ref)
+            .field("agent_id", &self.agent_id)
+            .field("title", &"<private preview>")
+            .field("cwd", &"<private>")
+            .field("branch", &self.branch)
+            .field("model", &self.model)
+            .field("updated_at_epoch_ms", &self.updated_at_epoch_ms)
+            .field("preview_count", &self.preview_messages.len())
+            .field("tail_count", &self.tail_messages.len())
+            .field("source", &self.source)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentHistoryScanIssue {
+    HomeUnavailable,
+    ClaudeDiscoveryUnavailable,
+    CodexDiscoveryUnavailable,
+    SourceUnreadable,
+    SourceUnrecognized,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AgentHistoryScan {
+    pub conversations: Vec<DiscoveredAgentConversation>,
+    pub issues: Vec<AgentHistoryScanIssue>,
+    pub candidate_limit_reached: bool,
+}
+
+/// Scans only the default user-local Claude and Codex stores. Provider roots
+/// and native conversation identities remain daemon-private; Core later scopes
+/// these host facts to one Project and replaces them with opaque handles.
+pub fn scan_local_agent_history() -> AgentHistoryScan {
+    scan_local_agent_history_cancellable(&AtomicBool::new(false))
+}
+
+pub fn scan_local_agent_history_cancellable(cancellation: &AtomicBool) -> AgentHistoryScan {
+    scan_local_agent_history_cancellable_with_limit(cancellation, MAX_CANDIDATES_PER_PROVIDER)
+}
+
+pub fn scan_local_agent_history_cancellable_with_limit(
+    cancellation: &AtomicBool,
+    max_candidates_per_provider: usize,
+) -> AgentHistoryScan {
+    let accounts = ["claude", "codex"].map(|agent_id| crate::AgentAccountContext {
+        agent_id: agent_id.into(),
+        account_id: "default".into(),
+        name: "Default account".into(),
+        config_directory: None,
+    });
+    scan_account_agent_history_cancellable_with_limit(
+        &accounts,
+        cancellation,
+        max_candidates_per_provider,
+    )
+}
+
+/// Scans bounded provider-owned stores and retains the exact account identity.
+pub fn scan_account_agent_history_cancellable_with_limit(
+    accounts: &[crate::AgentAccountContext],
+    cancellation: &AtomicBool,
+    max_candidates_per_provider: usize,
+) -> AgentHistoryScan {
+    let mut scan = AgentHistoryScan::default();
+    for (position, account) in accounts.iter().enumerate() {
+        if cancellation.load(Ordering::Acquire) {
+            break;
+        }
+        let provider = match account.agent_id.as_str() {
+            "claude" => ResumeProvider::Claude,
+            "codex" => ResumeProvider::Codex,
+            _ => continue,
+        };
+        let root = account.config_directory.clone().or_else(|| {
+            user_home_directory().map(|home| home.join(format!(".{}", account.agent_id)))
+        });
+        let Some(root) = root else {
+            scan.issues.push(AgentHistoryScanIssue::HomeUnavailable);
+            continue;
+        };
+        let count = accounts
+            .iter()
+            .filter(|other| other.agent_id == account.agent_id)
+            .count();
+        let limit = max_candidates_per_provider.clamp(1, MAX_CANDIDATES_PER_PROVIDER);
+        let index = accounts[..position]
+            .iter()
+            .filter(|other| other.agent_id == account.agent_id)
+            .count();
+        let budget = limit / count + usize::from(index < limit % count);
+        if budget == 0 {
+            scan.candidate_limit_reached = true;
+            continue;
+        }
+        let start = scan.conversations.len();
+        let (subdir, depth) = if provider == ResumeProvider::Claude {
+            ("projects", 3)
+        } else {
+            ("sessions", 5)
+        };
+        scan_provider(
+            &root.join(subdir),
+            provider,
+            depth,
+            budget,
+            cancellation,
+            &mut scan,
+        );
+        for conversation in &mut scan.conversations[start..] {
+            conversation.account_id = account.account_id.clone();
+        }
+    }
+    let mut unique = HashMap::<(String, String, String), DiscoveredAgentConversation>::new();
+    for conversation in scan.conversations.drain(..) {
+        let key = (
+            conversation.agent_id.clone(),
+            conversation.account_id.clone(),
+            conversation.resume_ref.native_session_id.clone(),
+        );
+        if unique
+            .get(&key)
+            .is_none_or(|current| conversation.updated_at_epoch_ms > current.updated_at_epoch_ms)
+        {
+            unique.insert(key, conversation);
+        }
+    }
+    scan.conversations = unique.into_values().collect();
+    scan.conversations.sort_by(|left, right| {
+        right
+            .updated_at_epoch_ms
+            .cmp(&left.updated_at_epoch_ms)
+            .then_with(|| left.agent_id.cmp(&right.agent_id))
+            .then_with(|| left.account_id.cmp(&right.account_id))
+    });
+    scan
+}
+
+fn scan_provider(
+    root: &Path,
+    provider: ResumeProvider,
+    max_depth: usize,
+    max_candidates: usize,
+    cancellation: &AtomicBool,
+    scan: &mut AgentHistoryScan,
+) {
+    let discovery_limit = max_candidates.saturating_add(1);
+    let candidates = match discover_bounded_history_files_cancellable(
+        root,
+        "jsonl",
+        max_depth,
+        discovery_limit,
+        cancellation,
+    ) {
+        Ok(candidates) => candidates,
+        Err(_) => {
+            scan.issues.push(match provider {
+                ResumeProvider::Claude => AgentHistoryScanIssue::ClaudeDiscoveryUnavailable,
+                ResumeProvider::Codex => AgentHistoryScanIssue::CodexDiscoveryUnavailable,
+                _ => AgentHistoryScanIssue::SourceUnrecognized,
+            });
+            return;
+        }
+    };
+    if candidates.len() > max_candidates {
+        scan.candidate_limit_reached = true;
+    }
+    for candidate in candidates.into_iter().take(max_candidates) {
+        if cancellation.load(Ordering::Acquire) {
+            break;
+        }
+        let slices =
+            match read_bounded_history_file_slices(&candidate, MAX_HEAD_BYTES, MAX_TAIL_BYTES) {
+                Ok(slices) => slices,
+                Err(_) => {
+                    scan.issues.push(AgentHistoryScanIssue::SourceUnreadable);
+                    continue;
+                }
+            };
+        let parsed = match provider {
+            ResumeProvider::Claude => parse_claude(&candidate, &slices),
+            ResumeProvider::Codex => parse_codex(&candidate, &slices),
+            _ => None,
+        };
+        if let Some(parsed) = parsed {
+            scan.conversations.push(parsed);
+        } else {
+            scan.issues.push(AgentHistoryScanIssue::SourceUnrecognized);
+        }
+    }
+}
+
+#[derive(Default)]
+struct ConversationAccumulator {
+    native_session_id: Option<String>,
+    cwd: Option<String>,
+    branch: Option<String>,
+    model: Option<String>,
+    explicit_title: Option<String>,
+    first_user_title: Option<String>,
+    preview_messages: VecDeque<AgentHistoryPreviewMessage>,
+    tail_messages: VecDeque<AgentHistoryPreviewMessage>,
+    rejected: bool,
+}
+
+fn parse_claude(
+    source: &BoundedHistoryFile,
+    slices: &BoundedHistoryFileSlices,
+) -> Option<DiscoveredAgentConversation> {
+    let mut accumulator = ConversationAccumulator::default();
+    for record in records(slices) {
+        if record.get("isSidechain").and_then(Value::as_bool) == Some(true) {
+            continue;
+        }
+        if let Some(session_id) = bounded_string(record.get("sessionId"), 256) {
+            accumulator.native_session_id = Some(session_id);
+        }
+        if let Some(cwd) = valid_cwd(record.get("cwd")) {
+            accumulator.cwd = Some(cwd);
+        }
+        if let Some(branch) = bounded_string(record.get("gitBranch"), MAX_BRANCH_BYTES) {
+            accumulator.branch = Some(branch);
+        }
+        match record.get("type").and_then(Value::as_str) {
+            Some("custom-title") => {
+                accumulator.explicit_title =
+                    bounded_text(record.get("customTitle"), MAX_TITLE_CHARS)
+            }
+            Some("ai-title") if accumulator.explicit_title.is_none() => {
+                accumulator.explicit_title = bounded_text(record.get("aiTitle"), MAX_TITLE_CHARS)
+            }
+            Some("user") if record.get("isMeta").and_then(Value::as_bool) != Some(true) => {
+                if let Some(text) = message_text(record.pointer("/message/content")) {
+                    accumulator
+                        .first_user_title
+                        .get_or_insert_with(|| truncate_chars(&text, MAX_TITLE_CHARS));
+                    push_preview(&mut accumulator, AgentHistoryPreviewRole::User, text);
+                }
+            }
+            Some("assistant") => {
+                if let Some(model) =
+                    bounded_string(record.pointer("/message/model"), MAX_MODEL_BYTES)
+                    && !model.starts_with('<')
+                {
+                    accumulator.model = Some(model);
+                }
+                if let Some(text) = message_text(record.pointer("/message/content")) {
+                    push_preview(&mut accumulator, AgentHistoryPreviewRole::Assistant, text);
+                }
+            }
+            _ => {}
+        }
+    }
+    finish(
+        source,
+        slices,
+        ResumeProvider::Claude,
+        "claude",
+        accumulator,
+    )
+}
+
+fn parse_codex(
+    source: &BoundedHistoryFile,
+    slices: &BoundedHistoryFileSlices,
+) -> Option<DiscoveredAgentConversation> {
+    let mut accumulator = ConversationAccumulator::default();
+    for record in records(slices) {
+        let payload = record.get("payload");
+        match record.get("type").and_then(Value::as_str) {
+            Some("session_meta") => {
+                let thread_source =
+                    bounded_string(payload.and_then(|value| value.get("thread_source")), 64);
+                if thread_source
+                    .as_deref()
+                    .is_some_and(|source| source != "user")
+                    || payload
+                        .and_then(|value| value.get("source"))
+                        .and_then(|value| value.get("subagent"))
+                        .is_some()
+                {
+                    accumulator.rejected = true;
+                    break;
+                }
+                accumulator.native_session_id =
+                    bounded_string(payload.and_then(|value| value.get("id")), 256);
+                if let Some(cwd) = valid_cwd(payload.and_then(|value| value.get("cwd"))) {
+                    accumulator.cwd = Some(cwd);
+                }
+                accumulator.branch = bounded_string(
+                    payload.and_then(|value| value.pointer("/git/branch")),
+                    MAX_BRANCH_BYTES,
+                );
+            }
+            Some("turn_context") => {
+                if let Some(cwd) = valid_cwd(payload.and_then(|value| value.get("cwd"))) {
+                    accumulator.cwd = Some(cwd);
+                }
+                if let Some(model) = bounded_string(
+                    payload.and_then(|value| value.get("model")),
+                    MAX_MODEL_BYTES,
+                ) {
+                    accumulator.model = Some(model);
+                }
+            }
+            Some("response_item")
+                if payload
+                    .and_then(|value| value.get("type"))
+                    .and_then(Value::as_str)
+                    == Some("message") =>
+            {
+                let role = payload
+                    .and_then(|value| value.get("role"))
+                    .and_then(Value::as_str);
+                if let Some(text) = message_text(payload.and_then(|value| value.get("content"))) {
+                    consume_codex_message(&mut accumulator, role, text);
+                }
+            }
+            Some("event_msg") => {
+                let event_type = payload
+                    .and_then(|value| value.get("type"))
+                    .and_then(Value::as_str);
+                let role = match event_type {
+                    Some("user_message") => Some("user"),
+                    Some("agent_message") => Some("assistant"),
+                    _ => None,
+                };
+                if let Some(text) = message_text(payload.and_then(|value| value.get("message"))) {
+                    consume_codex_message(&mut accumulator, role, text);
+                }
+            }
+            _ => {}
+        }
+    }
+    finish(source, slices, ResumeProvider::Codex, "codex", accumulator)
+}
+
+fn consume_codex_message(
+    accumulator: &mut ConversationAccumulator,
+    role: Option<&str>,
+    text: String,
+) {
+    match role {
+        Some("user") => {
+            accumulator
+                .first_user_title
+                .get_or_insert_with(|| truncate_chars(&text, MAX_TITLE_CHARS));
+            push_preview(accumulator, AgentHistoryPreviewRole::User, text);
+        }
+        Some("assistant") => push_preview(accumulator, AgentHistoryPreviewRole::Assistant, text),
+        _ => {}
+    }
+}
+
+fn finish(
+    source: &BoundedHistoryFile,
+    slices: &BoundedHistoryFileSlices,
+    provider: ResumeProvider,
+    agent_id: &str,
+    accumulator: ConversationAccumulator,
+) -> Option<DiscoveredAgentConversation> {
+    if accumulator.rejected {
+        return None;
+    }
+    let resume_ref = ResumeRef::for_provider(provider, accumulator.native_session_id?)?;
+    let cwd = accumulator.cwd?;
+    let title = accumulator
+        .explicit_title
+        .or(accumulator.first_user_title)
+        .unwrap_or_else(|| format!("{} conversation", title_case(agent_id)));
+    Some(DiscoveredAgentConversation {
+        resume_ref,
+        agent_id: agent_id.to_owned(),
+        account_id: "default".into(),
+        title,
+        cwd,
+        branch: accumulator.branch,
+        model: accumulator.model,
+        updated_at_epoch_ms: slices.modified_at_epoch_ms,
+        preview_messages: accumulator.preview_messages.into_iter().collect(),
+        tail_messages: accumulator.tail_messages.into_iter().collect(),
+        source: source.clone(),
+        source_modified_at_epoch_ms: slices.modified_at_epoch_ms,
+        source_size_bytes: slices.size_bytes,
+        source_window_sha256: slices.window_sha256,
+    })
+}
+
+fn records(slices: &BoundedHistoryFileSlices) -> Vec<Value> {
+    let mut records = Vec::new();
+    let observed_bytes = slices.head.len() as u64 + slices.tail.len() as u64;
+    if observed_bytes == slices.size_bytes {
+        let mut complete = Vec::with_capacity(slices.head.len() + slices.tail.len());
+        complete.extend_from_slice(&slices.head);
+        complete.extend_from_slice(&slices.tail);
+        parse_lines(&complete, false, false, &mut records);
+    } else {
+        parse_lines(&slices.head, false, true, &mut records);
+        parse_lines(&slices.tail, true, false, &mut records);
+    }
+    records
+}
+
+fn parse_lines(bytes: &[u8], skip_first: bool, skip_last: bool, records: &mut Vec<Value>) {
+    let text = String::from_utf8_lossy(bytes);
+    let line_count = text.lines().count();
+    for (index, line) in text.lines().enumerate() {
+        if (skip_first && index == 0) || (skip_last && index + 1 == line_count) {
+            continue;
+        }
+        if let Ok(record) = serde_json::from_str::<Value>(line)
+            && record.is_object()
+        {
+            records.push(record);
+        }
+    }
+}
+
+fn push_preview(
+    accumulator: &mut ConversationAccumulator,
+    role: AgentHistoryPreviewRole,
+    text: String,
+) {
+    let normalized = normalize_text(&text);
+    if normalized.is_empty() {
+        return;
+    }
+    let text = truncate_chars(&normalized, MAX_PREVIEW_CHARS);
+    if accumulator.preview_messages.len() == MAX_PREVIEW_MESSAGES {
+        accumulator.preview_messages.pop_front();
+    }
+    accumulator
+        .preview_messages
+        .push_back(AgentHistoryPreviewMessage { role, text });
+
+    let tail_text = truncate_chars(&normalized, MAX_TAIL_MESSAGE_CHARS);
+    if accumulator
+        .tail_messages
+        .back()
+        .is_some_and(|message| message.role == role && message.text == tail_text)
+    {
+        return;
+    }
+    if accumulator.tail_messages.len() == MAX_TAIL_MESSAGES {
+        accumulator.tail_messages.pop_front();
+    }
+    accumulator
+        .tail_messages
+        .push_back(AgentHistoryPreviewMessage {
+            role,
+            text: tail_text,
+        });
+}
+
+fn message_text(value: Option<&Value>) -> Option<String> {
+    match value? {
+        Value::String(text) => non_empty_normalized(text),
+        Value::Array(parts) => {
+            let combined = parts
+                .iter()
+                .filter_map(|part| {
+                    part.as_object()
+                        .and_then(|part| part.get("text"))
+                        .and_then(Value::as_str)
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            non_empty_normalized(&combined)
+        }
+        Value::Object(object) => object
+            .get("text")
+            .and_then(Value::as_str)
+            .and_then(non_empty_normalized),
+        _ => None,
+    }
+}
+
+fn bounded_text(value: Option<&Value>, max_chars: usize) -> Option<String> {
+    value
+        .and_then(Value::as_str)
+        .and_then(non_empty_normalized)
+        .map(|value| truncate_chars(&value, max_chars))
+}
+
+fn bounded_string(value: Option<&Value>, max_bytes: usize) -> Option<String> {
+    let value = value?.as_str()?.trim();
+    (!value.is_empty() && value.len() <= max_bytes && !value.chars().any(char::is_control))
+        .then(|| value.to_owned())
+}
+
+fn valid_cwd(value: Option<&Value>) -> Option<String> {
+    let cwd = bounded_string(value, MAX_CWD_BYTES)?;
+    Path::new(&cwd).is_absolute().then_some(cwd)
+}
+
+fn non_empty_normalized(value: &str) -> Option<String> {
+    let value = normalize_text(value);
+    (!value.is_empty()).then_some(value)
+}
+
+fn normalize_text(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn truncate_chars(value: &str, max_chars: usize) -> String {
+    let mut chars = value.chars();
+    let truncated = chars.by_ref().take(max_chars).collect::<String>();
+    if chars.next().is_some() {
+        format!("{truncated}…")
+    } else {
+        truncated
+    }
+}
+
+fn title_case(value: &str) -> String {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn separate_accounts_keep_identical_native_history_ids_separate_and_bounded() {
+        let root =
+            std::env::temp_dir().join(format!("termloop-account-history-{}", uuid::Uuid::new_v4()));
+        let accounts = ["work", "personal"].map(|name| crate::AgentAccountContext {
+            agent_id: "claude".into(),
+            account_id: uuid::Uuid::new_v4().to_string(),
+            name: name.into(),
+            config_directory: Some(root.join(name)),
+        });
+        let body = serde_json::json!({"type":"user","sessionId":"019f1dae-3bf3-73d1-b3c7-08ddbbd1f035","cwd":std::env::temp_dir(),"message":{"content":"Keep the correct account"}}).to_string();
+        for account in &accounts {
+            let directory = account.config_directory.as_ref().unwrap().join("projects");
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::write(directory.join("conversation.jsonl"), &body).unwrap();
+        }
+        let scan = scan_account_agent_history_cancellable_with_limit(
+            &accounts,
+            &AtomicBool::new(false),
+            20,
+        );
+        assert_eq!(scan.conversations.len(), 2);
+        assert_eq!(
+            scan.conversations[0].resume_ref,
+            scan.conversations[1].resume_ref
+        );
+        assert_ne!(
+            scan.conversations[0].account_id,
+            scan.conversations[1].account_id
+        );
+        let bounded = scan_account_agent_history_cancellable_with_limit(
+            &accounts,
+            &AtomicBool::new(false),
+            1,
+        );
+        assert_eq!(bounded.conversations.len(), 1);
+        assert!(bounded.candidate_limit_reached);
+        assert!(
+            scan_account_agent_history_cancellable_with_limit(
+                &accounts,
+                &AtomicBool::new(true),
+                20
+            )
+            .conversations
+            .is_empty()
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    fn source(
+        provider: &str,
+        body: &str,
+    ) -> (
+        BoundedHistoryFile,
+        BoundedHistoryFileSlices,
+        std::path::PathBuf,
+    ) {
+        let root =
+            std::env::temp_dir().join(format!("termloop-history-parser-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join(format!("{provider}.jsonl")), body).unwrap();
+        let candidate = discover_bounded_history_files(&root, "jsonl", 0, 1)
+            .unwrap()
+            .pop()
+            .unwrap();
+        let slices =
+            read_bounded_history_file_slices(&candidate, MAX_HEAD_BYTES, MAX_TAIL_BYTES).unwrap();
+        (candidate, slices, root)
+    }
+
+    #[test]
+    fn claude_parser_keeps_private_resume_identity_and_bounded_preview() {
+        let cwd = std::env::temp_dir()
+            .join("project")
+            .to_string_lossy()
+            .into_owned();
+        let body = [
+            serde_json::json!({
+                "type": "user",
+                "sessionId": "019f1dae-3bf3-73d1-b3c7-08ddbbd1f035",
+                "cwd": cwd,
+                "gitBranch": "main",
+                "message": { "content": "Build the history panel" }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "assistant",
+                "sessionId": "019f1dae-3bf3-73d1-b3c7-08ddbbd1f035",
+                "cwd": cwd,
+                "message": {
+                    "model": "claude-sonnet-5",
+                    "content": [{ "type": "text", "text": "Working on it" }]
+                }
+            })
+            .to_string(),
+        ]
+        .join("\n");
+        let (candidate, slices, root) = source("claude", &body);
+        let parsed = parse_claude(&candidate, &slices).unwrap();
+        assert_eq!(parsed.title, "Build the history panel");
+        assert_eq!(parsed.branch.as_deref(), Some("main"));
+        assert_eq!(parsed.model.as_deref(), Some("claude-sonnet-5"));
+        assert_eq!(parsed.preview_messages.len(), 2);
+        assert_eq!(parsed.tail_messages.len(), 2);
+        assert!(!format!("{parsed:?}").contains("019f1dae"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn transcript_tail_is_bounded_and_deduplicates_adjacent_provider_projections() {
+        let cwd = std::env::temp_dir()
+            .join("project")
+            .to_string_lossy()
+            .into_owned();
+        let mut lines = vec![
+            serde_json::json!({
+                "type": "session_meta",
+                "payload": {"id": "thread-1", "cwd": cwd, "thread_source": "user"}
+            })
+            .to_string(),
+        ];
+        for index in 0..14 {
+            let message = format!("Agent result {index}");
+            lines.push(
+                serde_json::json!({
+                    "type": "event_msg",
+                    "payload": {"type": "agent_message", "message": message}
+                })
+                .to_string(),
+            );
+            lines.push(
+                serde_json::json!({
+                    "type": "response_item",
+                    "payload": {"type": "message", "role": "assistant", "content": message}
+                })
+                .to_string(),
+            );
+        }
+        let (candidate, slices, root) = source("codex", &lines.join("\n"));
+        let parsed = parse_codex(&candidate, &slices).unwrap();
+        assert_eq!(parsed.tail_messages.len(), MAX_TAIL_MESSAGES);
+        assert_eq!(parsed.tail_messages[0].text, "Agent result 2");
+        assert_eq!(parsed.tail_messages[11].text, "Agent result 13");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn transcript_text_drops_control_characters_before_projection() {
+        assert_eq!(normalize_text("done\0with\nchecks"), "done with checks");
+    }
+
+    #[test]
+    fn codex_parser_rejects_worker_threads() {
+        let body = r#"{"type":"session_meta","payload":{"id":"thread-1","cwd":"/tmp/project","thread_source":"subagent"}}"#;
+        let (candidate, slices, root) = source("codex", body);
+        assert!(parse_codex(&candidate, &slices).is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn provider_scan_reads_only_its_recent_candidate_budget() {
+        let root =
+            std::env::temp_dir().join(format!("termloop-history-budget-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let cwd = root.join("project").to_string_lossy().into_owned();
+        for index in 0..2 {
+            let session_id = uuid::Uuid::new_v4();
+            std::fs::write(
+                root.join(format!("{index}.jsonl")),
+                serde_json::json!({
+                    "type": "user",
+                    "sessionId": session_id,
+                    "cwd": cwd,
+                    "message": { "content": format!("Conversation {index}") }
+                })
+                .to_string(),
+            )
+            .unwrap();
+        }
+        let mut scan = AgentHistoryScan::default();
+        scan_provider(
+            &root,
+            ResumeProvider::Claude,
+            0,
+            1,
+            &AtomicBool::new(false),
+            &mut scan,
+        );
+        assert_eq!(scan.conversations.len(), 1);
+        assert!(scan.candidate_limit_reached);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

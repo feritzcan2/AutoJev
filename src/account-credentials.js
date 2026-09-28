@@ -1,0 +1,19 @@
+export function accountCredentials(api,{profile,board,queue,showProfile}){
+ const card=document.createElement('section');card.className='profile-card account-card';
+ card.innerHTML='<div class="profile-section"><div class="profile-section-copy"><h3>Yeni portal üyelikleri</h3><p>Agent, başvuru sitesi hesap istediğinde bu aday adına yeni üyelik oluşturmak için aşağıdaki e-posta ve şifreyi kullanır. Şifre şifrelenerek saklanır ve agent’a gösterilmeden forma aktarılır.</p></div><form class="profile-fields" autocomplete="off"><p class="account-state"></p><div class="account-grid"><label>Bu adayın üyelik e-postası<input name="email" type="email" required autocomplete="off"></label><label>Bu adayın yeni üyelik şifresi<input name="password" type="password" required minlength="8" maxlength="1024" autocomplete="new-password"></label></div><small class="account-note">Bu şifre yalnızca bu aday için kaydedilir; diğer adaylarla paylaşılmaz. Aynı şifre bu adayın yeni portal üyeliklerinde kullanılır. Üyelikler için yeni bir şifre belirle.</small><label class="check"><input name="gmailCodes" type="checkbox"><span>Doğrulama kodlarını ve bağlantılarını bu adayın açık Gmail oturumundan kontrol et</span></label><div class="account-actions"><button type="submit">Şifreyi güvenli kaydet</button><button type="button" class="remove quiet">Kayıtlı şifreyi kaldır</button><p role="status"></p></div></form></div>';
+ profile.after(card);
+ const banner=document.createElement('div');banner.className='policy';banner.hidden=true;board.prepend(banner);
+ let candidate=null,state=null;const form=card.querySelector('form'),message=card.querySelector('[role=status]');
+ banner.onclick=()=>{showProfile();card.scrollIntoView({block:'center'});form.elements.password.focus();};
+ form.onsubmit=async e=>{e.preventDefault();if(!candidate||!form.reportValidity())return;const id=candidate,pending=state?.pending;const button=form.querySelector('[type=submit]');button.disabled=true;message.textContent='';
+  try{const input={email:form.elements.email.value,password:form.elements.password.value,gmailCodes:form.elements.gmailCodes.checked};await api.saveAccountCredentials(id,input);if(candidate===id){form.elements.password.value='';message.textContent='Bu adayın üyelik şifresi kaydedildi.';}if(pending?.jobId){await queue(id,pending.jobId);if(candidate===id)message.textContent='Şifre kaydedildi; başvuru yeniden sıraya alındı.';}}
+  catch(error){if(candidate===id)message.textContent=error.message;}finally{button.disabled=false;}
+ };
+ card.querySelector('.remove').onclick=async()=>{if(!candidate)return;try{await api.removeAccountCredentials(candidate);form.elements.password.value='';message.textContent='Kayıtlı şifre kaldırıldı.';}catch(e){message.textContent=e.message;}};
+ return {update(id,next){if(candidate!==id){form.reset();message.textContent='';}candidate=id;state=next;card.hidden=!id;banner.hidden=!next?.pending||(next?.configured&&next.pending.reason!=='password_validation_failed');
+  card.querySelector('.remove').hidden=!next?.configured;card.querySelector('.account-state').dataset.configured=String(!!next?.configured);card.querySelector('.account-state').textContent=next?.configured?'Bu adayın yeni portal üyelikleri için şifre kayıtlı.':'Bu aday için henüz üyelik şifresi kaydedilmedi.';
+  if(document.activeElement!==form.elements.email)form.elements.email.value=next?.email??'';
+  if(document.activeElement!==form.elements.gmailCodes)form.elements.gmailCodes.checked=next?.configured?!!next.gmailCodes:true;
+  banner.textContent=next?.pending?.reason==='password_validation_failed'?`${next.pending.origin} kayıtlı şifreyi kabul etmedi. Site koşullarına uygun şifreyi aday profilinden güvenli kaydetmek için tıkla.`:next?.pending?`${next.pending.origin} için üyelik şifresi gerekiyor. Aday profilindeki “Yeni portal üyelikleri” bölümünden güvenli kaydetmek için tıkla.`:'';
+ }};
+}

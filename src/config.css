@@ -8,14 +8,20 @@
 .config-search small { display: block; margin-top: 6px; color: var(--text-muted); font-size: 12px; text-align: right; min-height: 1.4em; }
 
 .config-body { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 36px; align-items: start; }
-.config-nav { position: sticky; top: 24px; display: grid; gap: 2px; }
-.config-nav a { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 8px; color: var(--text-secondary); font-size: 13px; text-decoration: none; }
+.config-nav { position: sticky; top: 24px; display: grid; gap: 2px; padding-right: 16px; border-right: 1px solid var(--border); }
+.config-nav a { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 8px; color: var(--text-secondary); font-size: 13px; text-decoration: none; }
 .config-nav a:hover { background: var(--bg-hover); color: var(--text); }
 .config-nav a.active { background: var(--accent-wash); color: var(--accent-strong); }
+.config-nav a.active::before { content: ''; position: absolute; top: 8px; bottom: 8px; right: -17px; width: 2px; border-radius: 1px; background: var(--accent); }
 .config-nav b { color: var(--text-muted); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .config-nav a.active b { color: var(--accent-strong); }
+.config-nav a.hit { color: var(--text); }
+.config-nav a.hit b { padding: 1px 6px; border-radius: 9px; background: var(--accent-wash); color: var(--accent-strong); }
+#config[data-searching="true"] .config-nav a:not(.hit) { opacity: .55; }
 
 .config-section { margin-bottom: 44px; scroll-margin-top: 20px; }
+.config-section:last-child { margin-bottom: 0; }
+#config[data-searching="true"] .config-section > p { display: none; }
 .config-section h3 { margin: 0; font-size: 16px; font-weight: 550; }
 .config-section > p { margin: 6px 0 16px; max-width: 640px; color: var(--text-muted); font-size: 13px; line-height: 1.55; }
 .config-empty { padding: 28px 24px; border: 1px dashed var(--border-strong); border-radius: 12px; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
@@ -42,12 +48,24 @@
 .prompt-path { display: inline-block; margin-top: 3px; color: var(--text-muted); font: 11px ui-monospace, Menlo, monospace; }
 
 
-/* Tools */
-.tool-list { display: grid; gap: 8px; }
-.tool-card { display: grid; grid-template-columns: minmax(180px, 220px) minmax(0, 1fr); gap: 6px 20px; padding: 14px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); }
-.tool-card code { color: var(--accent-strong); font: 13px ui-monospace, "SF Mono", Menlo, monospace; word-break: break-all; }
-.tool-card p { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
-.tool-params { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+/* Tools: one collapsed row per tool, open for the full description and parameters. */
+.tool-list { display: grid; gap: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); overflow: hidden; }
+.tool-card { border-top: 1px solid var(--border); }
+.tool-card:first-child { border-top: 0; }
+.tool-card summary { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 12px; align-items: center; padding: 11px 18px 11px 16px; cursor: pointer; list-style: none; }
+.tool-card summary::-webkit-details-marker { display: none; }
+.tool-card summary::before { content: ''; width: 6px; height: 6px; margin-left: 2px; border-right: 1.5px solid var(--text-muted); border-bottom: 1.5px solid var(--text-muted); transform: rotate(-45deg); transition: transform .15s; }
+.tool-card[open] summary::before { transform: rotate(45deg); }
+.tool-card summary:hover { background: var(--bg-hover); }
+.tool-card[open] summary { background: var(--bg-hover); }
+.tool-card summary > span:first-of-type { display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr); column-gap: 18px; align-items: baseline; min-width: 0; }
+.tool-card code { color: var(--accent-strong); font: 12.5px ui-monospace, "SF Mono", Menlo, monospace; word-break: break-all; }
+.tool-brief { overflow: hidden; color: var(--text-secondary); font-size: 12.5px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+.tool-card[open] .tool-brief { visibility: hidden; }
+.tool-count { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tool-body { display: grid; gap: 12px; padding: 4px 18px 16px 42px; background: var(--bg-app); border-top: 1px solid var(--border); }
+.tool-body p { max-width: 80ch; margin: 12px 0 0; color: var(--text); font-size: 13px; line-height: 1.6; }
+.tool-params { display: flex; flex-wrap: wrap; gap: 6px; }
 .tool-params span { padding: 3px 7px; border: 1px solid var(--border-strong); border-radius: 6px; color: var(--text-secondary); font: 11px ui-monospace, Menlo, monospace; }
 .tool-params span[data-required="true"] { border-color: rgba(102, 179, 255, .45); color: var(--text); }
 .tool-params span i { font-style: normal; color: var(--text-muted); }
@@ -56,35 +74,8 @@
   .config-head { flex-direction: column; }
   .config-search { width: 100%; }
   .config-body { grid-template-columns: 1fr; gap: 20px; }
-  .config-nav { position: static; grid-auto-flow: column; overflow: auto; }
-  .tool-card { grid-template-columns: 1fr; }
-  .tool-params { grid-column: 1; }
+  .config-nav { position: static; grid-auto-flow: column; overflow: auto; padding: 0 0 8px; border-right: 0; border-bottom: 1px solid var(--border); }
+  .config-nav a.active::before { display: none; }
+  .tool-card summary > span:first-of-type { grid-template-columns: 1fr; row-gap: 2px; }
+  .tool-body { padding-left: 18px; }
 }
-
-/* Telefon */
-.phone-card { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); overflow: hidden; }
-.phone-card[data-state="on"] { border-color: rgba(102, 179, 255, .32); }
-.phone-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; }
-.phone-state { display: grid; gap: 3px; }
-.phone-state b { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; font-weight: 550; }
-.phone-state b::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
-.phone-card[data-state="on"] .phone-state b::before { background: var(--success); box-shadow: 0 0 0 3px rgba(92, 201, 149, .18); }
-.phone-state span { color: var(--text-muted); font-size: 12px; }
-.phone-error { margin: 0; padding: 0 20px 16px; color: var(--danger); font-size: 13px; }
-.phone-body { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 28px; align-items: center; padding: 20px; border-top: 1px solid var(--border); }
-.phone-qr { width: 200px; height: 200px; padding: 10px; border-radius: 12px; background: #fff; }
-.phone-qr svg { display: block; width: 100%; height: 100%; }
-.phone-side { display: grid; gap: 16px; min-width: 0; }
-.phone-steps { margin: 0; padding: 0; list-style: none; counter-reset: phone-step; display: grid; gap: 10px; }
-.phone-steps li { display: flex; gap: 12px; color: var(--text); font-size: 13px; line-height: 1.5; }
-.phone-steps li::before { content: counter(phone-step); counter-increment: phone-step; display: grid; place-items: center; flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-wash); color: var(--accent-strong); font-size: 12px; font-weight: 600; }
-.phone-choices { display: flex; flex-wrap: wrap; gap: 6px; }
-.phone-choices button { padding: 6px 10px; border: 1px solid var(--border-strong); background: transparent; color: var(--text-secondary); font-size: 12px; }
-.phone-choices button.selected { border-color: var(--accent); background: var(--accent-wash); color: var(--accent-strong); }
-.phone-address { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.phone-address code { padding: 7px 10px; border-radius: 8px; background: var(--bg-app); color: var(--text-secondary); font: 12px ui-monospace, "SF Mono", Menlo, monospace; }
-.phone-address button { padding: 6px 10px; font-size: 12px; }
-.phone-foot { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 20px; border-top: 1px solid var(--border); }
-.phone-foot p { max-width: 620px; margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
-.phone-rotate { flex-shrink: 0; padding: 7px 11px; font-size: 12px; color: var(--danger); border-color: transparent; }
-@media (max-width: 1000px) { .phone-body { grid-template-columns: 1fr; justify-items: start; } .phone-foot { flex-direction: column; align-items: flex-start; } }

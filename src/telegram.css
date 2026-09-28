@@ -1,0 +1,25 @@
+.telegram-card { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); overflow: hidden; }
+.telegram-heading { display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 0; gap: 16px; }
+.telegram-card h4 { margin: 0; font-size: 14px; font-weight: 550; }
+.telegram-heading p, .telegram-candidate > p { margin: 6px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.telegram-badge { padding: 4px 9px; border-radius: 20px; background: var(--bg-app); color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+.telegram-badge[data-on="true"] { color: var(--success); background: rgba(92,201,149,.1); }
+.telegram-token { display: flex; align-items: flex-end; gap: 10px; padding: 18px 20px 0; border: 0; border-radius: 0; max-width: none; background: transparent; }
+.telegram-token label { flex: 1; min-width: 0; font-size: 12px; }
+.telegram-token input { width: 100%; }
+.telegram-token button { flex-shrink: 0; }
+.telegram-card .telegram-hint { margin: 12px 20px 18px; color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+.telegram-link { padding: 0; border: 0; background: none; color: var(--accent-strong); font: inherit; }
+.telegram-error { margin: 0 20px 16px; color: var(--danger); font-size: 13px; }
+.telegram-candidate { padding: 20px; border-top: 1px solid var(--border); }
+.telegram-candidate [data-candidate-actions] { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.telegram-candidate .telegram-hint { margin: 12px 0 0; }
+.telegram-candidate [data-pair] { padding: 14px; border: 1px solid var(--border); border-radius: 8px; margin-top: 14px; background: var(--bg-app); }
+.telegram-candidate [data-pair] p { margin: 0 0 10px; }
+.telegram-candidate [data-pair] input { display: block; width: 100%; font: 12px ui-monospace, monospace; margin-bottom: 10px; }
+.telegram-candidate [data-pair] button { margin: 0 8px 4px 0; }
+.telegram-preferences { display: grid; gap: 10px; margin-top: 20px; }
+.telegram-preferences label { display: flex; gap: 9px; align-items: center; font-size: 13px; }
+.telegram-preferences input { width: auto; margin: 0; }
+.telegram-foot { padding: 14px 20px; margin: 0; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+@media(max-width:1000px) { .telegram-token { flex-wrap: wrap; }.telegram-token label { flex-basis: 100%; } }

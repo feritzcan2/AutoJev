@@ -1,0 +1,12 @@
+.readiness-card { margin: 18px 0; padding: 18px 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); }
+.readiness-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.readiness-heading h4 { margin: 0; font-size: 14px; }
+.readiness-heading button { flex-shrink: 0; }
+.readiness-card > p { color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+.readiness-card ul { display: grid; gap: 12px; padding: 0; margin: 14px 0 0; list-style: none; }
+.readiness-card li { display: grid; gap: 4px; font-size: 12px; line-height: 1.5; }
+.readiness-card li > span { color: var(--text-secondary); overflow-wrap: anywhere; }
+.readiness-card li[data-state=ready] b > span { color: var(--success); }
+.readiness-card li[data-state=error] b > span { color: var(--danger); }
+.readiness-card li[data-state=warning] b > span { color: var(--warning); }
+@media (max-width: 540px) { .readiness-heading { align-items: flex-start; flex-direction: column; } }

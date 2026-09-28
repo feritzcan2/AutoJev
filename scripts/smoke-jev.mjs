@@ -7,6 +7,8 @@ import {Store} from '../app/store.mjs';
 import {BrowserTools} from '../app/browser.mjs';
 import {startMcp} from '../app/mcp.mjs';
 import {startJevFixture,JEV_DEMO_GOAL} from './jev-demo.mjs';
+import {controlState} from './jev-control-state.mjs';
+const remember=controlState();
 const live=process.argv.includes('--live'),directory=await mkdtemp(path.join(os.tmpdir(),'jev-mcp-'));
 const fixture=await startJevFixture(),store=new Store(':memory:');
 const candidate=store.saveProfile({name:'Synthetic test',preferences:'Remote Python',browserMode:'jev'});
@@ -17,7 +19,7 @@ const call=async(name,args={},bearer=token,allowError=false)=>{
   const response=await fetch(server.endpoint,{method:'POST',headers:{Authorization:`Bearer ${bearer}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}})});
   const rpc=await response.json();assert.equal(response.status,200);const result=rpc.result;assert.ok(result,JSON.stringify(rpc));
   if(allowError)return result;
-  assert.notEqual(result.isError,true,JSON.stringify(result));return JSON.parse(result.content[0].text);
+  assert.notEqual(result.isError,true,JSON.stringify(result));return remember(JSON.parse(result.content[0].text));
 };
 function mockDecision(page){
   let action=page.actions.find(a=>a.kind==='fill'&&a.label==='Keywords'&&a.value!=='Python');
@@ -29,6 +31,7 @@ function mockDecision(page){
 try{
   const {client}=await browsers.connect(candidate.id);client.headless=true;if(!live)client.choose=mockDecision;
   (await browsers.connect(other.id)).client.headless=true;
+  for(const id of [candidate.id,other.id]){browsers.prepare(id);await browsers.connections.pending.get(id);assert.equal(browsers.status(id).ready,true);}
   let page=await call('browser_jev_open',{url:fixture.url});assert.ok(page.tabId);
   assert.equal((await call('browser_jev_observe',{tabId:page.tabId},otherToken,true)).isError,true);
   for(let i=0;i<12;i++){
@@ -63,6 +66,9 @@ try{
   assert.equal((await call('browser_jev_upload',{tabId:page.tabId,uploadId:observed.uploads[0].uploadId,filePath:outside},token,true)).isError,true);
   result=await call('browser_jev_upload',{tabId:page.tabId,uploadId:observed.uploads[0].uploadId,filePath:file});assert.equal(result.executed,true);
   assert.equal(await slot.page.locator('input[type=file]').evaluate(e=>e.files[0].name),'CV.txt');
+  const selectedUpload=await call('browser_jev_observe',{tabId:page.tabId});
+  result=await call('browser_jev_upload',{tabId:page.tabId,uploadId:selectedUpload.uploads[0].uploadId,filePath:file});assert.equal(result.executed,false);
+  assert.equal(await slot.page.locator('input[type=file]').evaluate(e=>e.files.length),1);
   console.log('JEV_STALE_OCCLUSION_UNCERTAIN_UPLOAD_SCOPE_PASS');
   // Batch filling uses real browser inputs and MCP/session boundaries, no model.
   client.choose=()=>{throw Error('Batch must not call a model');};
@@ -105,12 +111,12 @@ try{
   await slot.page.evaluate(()=>{const cover=document.createElement('div');cover.style='position:fixed;inset:0;z-index:999';document.body.append(cover);});
   result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});assert.equal(result.status,'stale');
   assert.equal(await slot.page.locator('#first').inputValue(),'');
-  // Dynamic replacement after the first write leaves the remaining fields alone.
+  // Equivalent replacement with stable identity may continue the batch.
   formPage=await reset();fields=mapping(formPage);
   await slot.page.evaluate(()=>document.querySelector('#first').addEventListener('blur',()=>{const e=document.querySelector('#email');e.replaceWith(e.cloneNode());},{once:true}));
   result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});
-  assert.equal(result.status,'stale');assert.deepEqual(result.results.map(f=>f.status),['filled','stale','not_attempted']);
-  assert.equal(await slot.page.locator('#first').inputValue(),'Synthetic');assert.equal(await slot.page.locator('#email').inputValue(),'');
+  assert.equal(result.status,'ready');assert.deepEqual(result.results.map(f=>f.status),['filled','filled','filled']);
+  assert.equal(await slot.page.locator('#first').inputValue(),'Synthetic');assert.equal(await slot.page.locator('#email').inputValue(),'test@example.com');
   // Formatting rejection is explicit; no later fields are filled.
   formPage=await reset();fields=mapping(formPage);fields[1].text='invalid-email';
   result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});
@@ -127,6 +133,21 @@ try{
   result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});
   assert.equal(result.status,'uncertain');assert.equal(result.results[0].status,'uncertain');
   assert.equal(await slot.page.evaluate(()=>window.submits),0);
+  // Focus/blur can scroll or add a validation helper after a successful fill.
+  // Verified fields stay successful; unrelated changes still stop later writes.
+  formPage=await reset();fields=mapping(formPage);
+  await slot.page.evaluate(()=>{document.body.style.height='3000px';document.querySelector('#notes').addEventListener('blur',()=>{scrollTo(0,200);const helper=document.createElement('input');helper.setAttribute('aria-hidden','true');document.body.append(helper);},{once:true});});
+  result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});
+  assert.equal(result.status,'ready');assert.equal(result.verifiedCount,3);assert.equal(result.formChanged,true);assert.ok(result.results.every(f=>f.status==='filled'));
+  // Only presentation punctuation may differ for telephone numbers. Country
+  // codes, extensions and changed digits must never be silently accepted.
+  for(const [actual,expectedStatus] of [['+1 (555) 010-2030','ready'],['+44 555 0102030','uncertain'],['0555 0102030','uncertain']]){
+    await slot.page.setContent('<label>Phone<input type="tel" id="phone"></label>');
+    await slot.page.locator('#phone').evaluate((e,actual)=>e.addEventListener('blur',()=>e.value=actual),actual);
+    const phonePage=await call('browser_jev_observe',{tabId:page.tabId});
+    result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields:[{fieldId:phonePage.fillFields[0].fieldId,text:'+15550102030'}]});
+    assert.equal(result.status,expectedStatus);
+  }
   formPage=await reset();fields=mapping(formPage);
   await slot.page.evaluate(()=>document.querySelector('#notes').addEventListener('blur',()=>{document.querySelector('#first').pattern='different';},{once:true}));
   result=await call('browser_jev_fill_fields',{tabId:page.tabId,fields});
@@ -147,17 +168,17 @@ try{
       <button type="submit">Submit</button></form>`;
   const resetChecks=async()=>{await slot.page.setContent(checks);await slot.page.evaluate(()=>{window.submits=0;window.links=0;});return call('browser_jev_observe',{tabId:page.tabId});};
   client.choose=(observed,goal)=>{
-    const action=observed.actions.find(a=>a.kind==='click'&&a.label.replace(/\s+/g,' ').trim()===goal&&a.checked==='false');
+    const action=observed.actions.find(a=>a.kind==='click'&&(a.choice?.option??a.label).replace(/\s+/g,' ').trim()===goal&&a.checked==='false');
     return {operation:action?'CLICK':'DONE',action:action??null,confidence:1};
   };
   let controls=await resetChecks();
-  assert.deepEqual(controls.elements.filter(e=>['checkbox','radio'].includes(e.role)).map(e=>e.label.replace(/\s+/g,' ').trim()),['Recruitment updates Policy','Wrapped option','Zero size option','Remote']);
+  assert.deepEqual(controls.clickTargets.filter(e=>['checkbox','radio'].includes(e.role)).map(e=>(e.choice?.option??e.label).replace(/\s+/g,' ').trim()),['Recruitment updates Policy','Wrapped option','Zero size option','Remote']);
   for(const [label,id] of [['Recruitment updates Policy','consent'],['Wrapped option','wrapped'],['Zero size option','tiny'],['Remote','radio']]){
     next=await call('browser_jev_next',{tabId:page.tabId,goal:label});assert.equal(next.operation,'CLICK');
     result=await call('browser_jev_act',{tabId:page.tabId,decisionId:next.decisionId});
-    assert.equal(result.status,'ready');assert.deepEqual(result.controlState,{expected:true,actual:true,verified:true});
+    assert.equal(result.status,'ready');assert.equal(result.controlState.expected,true);assert.equal(result.controlState.actual,true);assert.equal(result.controlState.verified,true);
     assert.equal(await slot.page.locator('#'+id).isChecked(),true);
-    assert.equal(result.elements.find(e=>e.label.replace(/\s+/g,' ').trim()===label).checked,'true');
+    assert.equal(result.clickTargets.find(e=>(e.choice?.option??e.label).replace(/\s+/g,' ').trim()===label).checked,'true');
     // Current checked state prevents another proposed toggle.
     assert.equal((await call('browser_jev_next',{tabId:page.tabId,goal:label})).operation,'DONE');
   }
@@ -179,7 +200,7 @@ try{
   await resetChecks();await slot.page.locator('#consent').evaluate(e=>e.addEventListener('click',event=>event.preventDefault()));
   next=await call('browser_jev_next',{tabId:page.tabId,goal:'Recruitment updates Policy'});
   result=await call('browser_jev_act',{tabId:page.tabId,decisionId:next.decisionId});
-  assert.equal(result.status,'uncertain');assert.deepEqual(result.controlState,{expected:true,actual:false,verified:false});
+  assert.equal(result.status,'uncertain');assert.deepEqual(Object.fromEntries(['expected','actual','verified'].map(k=>[k,result.controlState[k]])),{expected:true,actual:false,verified:false});
   assert.equal(await slot.page.locator('#consent').isChecked(),false);
   // An associated label consisting only of a link is not a safe checkbox target.
   await resetChecks();await slot.page.locator('label[for=consent]').evaluate(e=>{e.style.padding='0';e.innerHTML='<a href="#policy" onclick="event.preventDefault();window.links++">Link only</a>';});

@@ -1,0 +1,85 @@
+name: ci
+on:
+  push:
+    branches: [main, 'release/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jobloop-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_ENABLE_COMMENTS: 'false'
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
+          GITLEAKS_ENABLE_SUMMARY: 'false'
+      - name: Scan checked-out files without exposing findings
+        run: |
+          gitleaks git --log-opts=--all --redact --no-banner --exit-code 1 .
+          gitleaks dir --redact --no-banner --exit-code 1 .
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.22.3
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm vendor:verify
+      - run: pnpm check
+      - run: pnpm test
+      - run: pnpm build
+  verify:
+    name: verify (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: ${{ vars.JOBLOOP_MACOS_RUNNER || '["macos-15"]' }}
+          - platform: linux
+            runner: ${{ vars.JOBLOOP_LINUX_RUNNER || '["ubuntu-24.04"]' }}
+          - platform: windows
+            runner: ${{ vars.JOBLOOP_WINDOWS_RUNNER || '["windows-2025"]' }}
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-build
+      - run: pnpm test
+      - run: cargo test --locked --manifest-path engine/Cargo.toml --target-dir engine/target
+      - run: pnpm package:ci
+      - name: First-run readiness and onboarding UI
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then xvfb-run -a pnpm test:readiness:ui; else pnpm test:readiness:ui; fi
+      - name: Smoke packaged application on native host
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then xvfb-run -a pnpm test:packaged; else pnpm test:packaged; fi
+      - name: Check universal bundle signature
+        if: runner.os == 'macOS'
+        run: codesign --verify --deep --strict 'release/mac-universal/JobLoop.app'
+      - name: Collect unsigned packaging evidence
+        run: node scripts/release-assets.mjs release-assets --collect
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unsigned-${{ matrix.platform }}-${{ github.sha }}
+          path: release-assets/*
+          retention-days: 1
+          if-no-files-found: error

@@ -1,0 +1,525 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import {Store} from '../app/store.mjs';
+import {TelegramBot as Telegram,TelegramApi} from '../app/telegram.mjs';
+import {rankInput} from './rank-fixture.mjs';
+
+const TOKEN='123456789:abcdefghijklmnopqrstuvwxyz_123456789';
+const message=(text,chat=11,reply=null)=>({message:{message_id:500,chat:{id:chat,type:'private'},from:{id:chat,first_name:'Ada'},text,...(reply?{reply_to_message:{message_id:reply}}:{})}});
+const callback=(data,chat=11)=>({callback_query:{id:'callback',from:{id:chat},message:{chat:{id:chat,type:'private'}},data}});
+async function fixture(t){
+ const data=await mkdtemp(path.join(os.tmpdir(),'jobloop-telegram-')),file=path.join(data,'test.sqlite');
+ let now=1000000;const store=new Store(file),p=store.saveProfile({name:'Ada',preferences:'Remote'}),other=store.saveProfile({name:'Grace',preferences:'Hybrid'}),calls=[],answers=[];
+ const api={async call(method,body){calls.push({method,body});if(method==='getMe')return {id:123456789,username:'jobloop_test_bot',is_bot:true};if(method==='getWebhookInfo')return {url:''};if(method==='sendMessage')return {message_id:calls.length};if(['deleteMessage','editMessageText','answerCallbackQuery'].includes(method))return true;throw Error('Unexpected '+method);}};
+ const options={store,data,botId:123456789,now:()=>now,encrypt:value=>Buffer.from('encrypted:'+value).toString('base64'),decrypt:value=>Buffer.from(value,'base64').toString().slice(10),apiFactory:()=>api,withdrawApplication:(id,jobId)=>store.setManualJobStatus(id,jobId,'withdrawn'),answer:async(id,q,values)=>{answers.push({id,q,values});return store.answer(id,q,values);}};
+ const bot=new Telegram(options);bot.api=api;bot.token=TOKEN;bot.config={enabled:true,bot:{id:123456789,username:'jobloop_test_bot'}};for(const candidate of [p,other])bot.db.saveConfig(candidate.id,{enabled:true,bot:bot.config.bot,secret:options.encrypt(TOKEN)});
+ const pair=(id=p.id,chat=11)=>{const token=new URL(bot.pairing(id).url).searchParams.get('start');return bot.db.bind(token,chat,chat,'Ada Telegram');};
+ const flush=async()=>{now+=2000;await bot.flush();};
+ const drain=async()=>{for(let i=0;i<40&&bot.db.pending().length;i++)await flush();};
+ const action=(value,chat=11)=>{const link=bot.db.sender(chat,chat);return bot.conversation.handle(callback(`a:${link.data.dialog.promptId}:${value}`,chat));};
+ const reply=async(text,chat=11)=>{await drain();const prompt=bot.db.sender(chat,chat).data.dialog.promptId;const rows=store.db.prepare('SELECT message_id,data FROM telegram_outbox WHERE candidate_id=?').all(bot.db.sender(chat,chat).candidate_id);const row=rows.find(row=>JSON.parse(row.data).promptId===prompt);assert.ok(row?.message_id);return bot.conversation.handle(message(text,chat,row.message_id));};
+ t.after(async()=>{await bot.stop();store.close();await rm(data,{recursive:true,force:true});});
+ return {store,p,other,bot,api,options,data,file,calls,answers,pair,flush,drain,action,reply,advance:ms=>{now+=ms;}};
+}
+
+test('pairing is private, expires, is one-use and cannot replace a linked candidate',async t=>{
+ const {bot,p,other,advance}=await fixture(t);
+ const first=bot.db.pair(p.id);assert.ok(first.token.length<=64);
+ assert.equal(bot.db.bind('bad',11,11,'Bad'),null);
+ const group=message('/start '+first.token);group.message.chat.type='group';await bot.conversation.handle(group);assert.equal(bot.db.link(p.id),null);
+ await bot.conversation.handle(message('/start '+first.token));assert.equal(bot.db.link(p.id).user_id,'11');
+ assert.equal(bot.db.bind(first.token,12,12,'Other'),null);assert.throws(()=>bot.db.pair(p.id),/zaten bağlı/);
+ const second=bot.db.pair(other.id);assert.equal(bot.db.bind(second.token,11,11,'Same'),null);
+ advance(10*60*1000);assert.equal(bot.db.bind(second.token,12,12,'Late'),null);
+ assert.equal(bot.db.sender(11,12),null);
+});
+
+test('submission and question events enqueue once; prior submissions are not backfilled',async t=>{
+ const {bot,store,p,pair,flush,calls}=await fixture(t);
+ const job=store.addJob(p.id,{url:'https://example.com/job',company:'Acme',role:'Engineer',fit:'Match',location:'Remote'}).job;
+ store.saveJob({...job,status:'submitted'},'submission_recorded');pair();await flush();assert.equal(calls.length,0);
+ const q=store.ask(p.id,{question:'Başlangıç tarihi?'});await flush();assert.match(calls.at(-1).body.text,/Başlangıç/);
+ bot.db.collect();assert.equal(store.db.prepare("SELECT count(*) AS n FROM telegram_outbox WHERE event_key=?").get('question:'+q.id).n,1);
+ store.saveJob({...job,status:'submitted'},'candidate_submission_recorded');await flush();assert.match(calls.at(-1).body.text,/bildirimin üzerine/);
+ store.saveJob({...job,status:'submitted'},'submission_recorded');await flush();assert.equal(calls.filter(c=>c.method==='sendMessage').length,2);
+});
+
+test('pending questions are sent at pairing; no foreign candidate or group can answer them',async t=>{
+ const {bot,store,p,other}=await fixture(t),q=store.ask(p.id,{question:'Secret candidate question'}),foreign=store.ask(other.id,{question:'Other question'});
+ const token=bot.db.pair(p.id).token;await bot.conversation.handle(message('/start '+token));
+ assert.ok(store.db.prepare('SELECT 1 FROM telegram_outbox WHERE event_key=?').get('question:'+q.id));
+ await bot.conversation.handle(callback('q:'+foreign.id));assert.equal(bot.db.link(p.id).data.dialog,null);
+ await bot.conversation.handle(callback('q:'+q.id,99));assert.equal(bot.db.link(p.id).data.dialog,null);
+ const group=callback('q:'+q.id);group.callback_query.message.chat.type='group';await bot.conversation.handle(group);assert.equal(bot.db.link(p.id).data.dialog,null);
+});
+
+test('typed forms preserve false, zero, exact options and only submit after review',async t=>{
+ const {bot,store,p,pair,action,reply,answers}=await fixture(t);pair();
+ const fields=[{id:'permit',label:'İzin?',type:'boolean'},{id:'salary',label:'Maaş',type:'number'},{id:'mode',label:'Çalışma',type:'select',options:['Remote','Hybrid']},{id:'days',label:'Günler',type:'multiselect',options:['Pzt','Sal']},{id:'date',label:'Tarih',type:'date'},{id:'note',label:'Not',type:'text',required:false}];
+ const q=store.ask(p.id,{question:'Başvuru bilgileri',fields});await bot.conversation.handle(callback('q:'+q.id));
+ const stale=bot.db.link(p.id).data.dialog.promptId;
+ await action('false');await bot.conversation.handle(callback(`a:${stale}:true`));assert.equal(bot.db.link(p.id).data.dialog.values.permit,false);
+ await reply('not a number');assert.equal(bot.db.link(p.id).data.dialog.index,1);
+ await reply('0');await action('1');await action('0');await action('1');await action('0');await action('done');
+ await reply('2026-02-30');assert.equal(bot.db.link(p.id).data.dialog.index,4);await reply('2026-10-01');await action('skip');
+ assert.equal(answers.length,0);const confirmation=bot.db.link(p.id).data.dialog.promptId;await action('save');
+ assert.deepEqual(answers[0].values,{permit:false,salary:0,mode:'Hybrid',days:['Sal'],date:'2026-10-01'});
+ await bot.conversation.handle(callback(`a:${confirmation}:save`));assert.equal(answers.length,1);assert.equal(bot.db.link(p.id).data.dialog,null);
+});
+
+test('free text must reply to the current prompt; drafts survive reopening the service',async t=>{
+ const {bot,store,p,pair,options,reply,answers}=await fixture(t);pair();const q=store.ask(p.id,{question:'Ne zaman başlayabilirsin?'});
+ await bot.conversation.handle(callback('q:'+q.id));await bot.conversation.handle(message('Unrelated'));assert.deepEqual(bot.db.link(p.id).data.dialog.values,{});
+ await reply('Ekim ayında');const prompt=bot.db.link(p.id).data.dialog.promptId;
+ const restarted=new Telegram(options);await restarted.conversation.handle(callback(`a:${prompt}:save`));assert.equal(answers[0].values,'Ekim ayında');
+});
+
+test('desktop answers and changed questions invalidate Telegram drafts',async t=>{
+ const {bot,store,p,pair,action,answers}=await fixture(t);pair();const q=store.ask(p.id,{question:'İzin?',fields:[{id:'permit',label:'İzin?',type:'boolean'}]});
+ await bot.conversation.handle(callback('q:'+q.id));await action('true');store.answer(p.id,q.id,{permit:false});await action('save');assert.equal(answers.length,0);assert.equal(bot.db.link(p.id).data.dialog,null);
+ const q2=store.ask(p.id,{question:'Old'});await bot.conversation.handle(callback('q:'+q2.id));store.db.prepare('UPDATE questions SET question=? WHERE id=?').run('New',q2.id);
+ await bot.conversation.handle(message('Answer'));assert.equal(bot.db.link(p.id).data.dialog,null);
+});
+
+test('desktop answers edit the original question card with the saved answer and remove answer buttons',async t=>{
+ const {bot,store,p,pair,flush,calls}=await fixture(t);pair();
+ const q=store.ask(p.id,{question:'İzin & tercih?',fields:[{id:'permit',label:'Çalışma izni',type:'boolean'},{id:'note',label:'Not',type:'text'}]});await flush();
+ const card=calls[0].body,row=bot.db.delivery(card.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2));
+ store.answer(p.id,q.id,{permit:false,note:'Remote <Berlin> & hybrid'});await flush();
+ const edit=calls.at(-1);assert.equal(edit.method,'editMessageText');assert.equal(edit.body.message_id,row.message_id);assert.equal(edit.body.chat_id,'11');
+ assert.equal(edit.body.parse_mode,'HTML');assert.match(edit.body.text,/✅ Yanıtlandı/);assert.match(edit.body.text,/Çalışma izni: Hayır/);assert.match(edit.body.text,/Remote &lt;Berlin&gt; &amp; hybrid/);
+ assert.ok(edit.body.reply_markup.inline_keyboard.flat().every(button=>!button.callback_data?.startsWith('q:')&&!button.callback_data?.startsWith('a:')));
+ assert.equal(calls.filter(call=>call.method==='sendMessage').length,1);const count=calls.length;await flush();assert.equal(calls.length,count);
+});
+
+test('desktop answers update repeated question cards and sent form prompts, clear drafts and suppress unsent prompts',async t=>{
+ const {bot,store,p,pair,flush,drain,calls,answers}=await fixture(t);pair();const q=store.ask(p.id,{question:'Çalışma iznin var mı?',fields:[{id:'permit',label:'Çalışma izni',type:'boolean'}]});await flush();
+ await bot.conversation.handle(message('/sorular'));await flush();await bot.conversation.handle(callback('q:'+q.id));await flush();
+ const originalMessages=calls.filter(call=>call.method==='sendMessage'),dialog=bot.db.link(p.id).data.dialog;
+ const originalIds=store.db.prepare("SELECT message_id FROM telegram_outbox WHERE candidate_id=? AND status='sent' AND json_extract(data,'$.questionId')=?").all(p.id,q.id).map(row=>row.message_id);
+ // A second unsent prompt must not be delivered after the desktop answer.
+ bot.db.message(p.id,'Old pending prompt',{questionId:q.id,promptId:dialog.promptId,reply_markup:{force_reply:true}});
+ store.answer(p.id,q.id,{permit:false});await flush();await drain();await flush();await flush();
+ assert.equal(bot.db.link(p.id).data.dialog,null);assert.equal(calls.filter(call=>call.method==='sendMessage').length,originalMessages.length);
+ const edits=calls.filter(call=>call.method==='editMessageText');assert.equal(edits.length,3);
+ for(const edit of edits){assert.match(edit.body.text,/✅ Yanıtlandı/);assert.match(edit.body.text,/Çalışma izni: Hayır/);assert.ok(edit.body.reply_markup.inline_keyboard.flat().every(button=>!button.callback_data?.match(/^[qa]:/)));}
+ assert.deepEqual(new Set(edits.map(edit=>edit.body.message_id)),new Set(originalIds));
+ await bot.conversation.handle(callback(`a:${dialog.promptId}:save`));assert.equal(answers.length,0);assert.equal(store.questions(p.id).find(item=>item.id===q.id).answerValues.permit,false);
+});
+
+test('free text answers update the question card without trying to edit Telegram ForceReply prompts',async t=>{
+ const {bot,store,p,pair,flush,calls,options}=await fixture(t);pair();const q=store.ask(p.id,{question:'Konum tercihin?'});await flush();
+ const row=bot.db.delivery(calls[0].body.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2));
+ await bot.conversation.handle(callback('q:'+q.id));await flush();assert.equal(calls.at(-1).body.reply_markup.force_reply,true);
+ store.answer(p.id,q.id,'Berlin');await flush();assert.equal(bot.db.link(p.id).data.dialog,null);
+ const restarted=new Telegram(options);restarted.api=bot.api;restarted.config={...bot.config};await restarted.flush();
+ const edits=calls.filter(call=>call.method==='editMessageText');assert.equal(edits.length,1);assert.equal(edits[0].body.message_id,row.message_id);assert.match(edits[0].body.text,/Berlin/);
+ assert.equal(bot.status(p.id).candidate.failed,0);assert.equal(calls.filter(call=>call.method==='sendMessage').length,2);
+});
+
+test('answered questions are never initially delivered; closed application questions update existing cards',async t=>{
+ const {bot,store,p,pair,flush,calls}=await fixture(t);pair();
+ const unsent=store.ask(p.id,{question:'Already answered'});store.answer(p.id,unsent.id,'Done');await flush();assert.equal(calls.length,0);
+ const job=store.addJob(p.id,{url:'https://example.com/closed-question',company:'Closed',role:'Engineer',location:'Remote',fit:'Match'}).job;
+ const q=store.ask(p.id,{jobId:job.id,question:'Application detail'});await flush();await flush();
+ const card=calls.find(call=>call.body.reply_markup?.inline_keyboard.flat().some(button=>button.callback_data==='q:'+q.id));
+ const row=bot.db.delivery(card.body.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2));
+ store.setManualJobStatus(p.id,job.id,'withdrawn');await flush();
+ assert.equal(calls.at(-1).method,'editMessageText');assert.equal(calls.at(-1).body.message_id,row.message_id);assert.match(calls.at(-1).body.text,/Soru kapandı/);
+ assert.ok(!calls.at(-1).body.reply_markup.inline_keyboard.flat().some(button=>button.callback_data?.startsWith('q:')));
+});
+
+test('upgrade updates already answered question cards even after their events were collected and preserves deletion',async t=>{
+ const {bot,store,p,pair,flush,calls,options}=await fixture(t);pair();
+ const q=store.ask(p.id,{question:'Saved before upgrade'}),removed=store.ask(p.id,{question:'Deleted before upgrade'});await flush();await flush();
+ const rows=calls.filter(call=>call.method==='sendMessage').map(call=>bot.db.delivery(call.body.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2)));
+ const kept=rows.find(row=>row.data.questionId===q.id),deleted=rows.find(row=>row.data.questionId===removed.id);await bot.deleteNotification(deleteCallback(deleted));
+ store.answer(p.id,q.id,'Previously answered');bot.db.collect();const cursor=bot.db.link(p.id).cursor;
+ store.db.exec('DELETE FROM telegram_job_messages; DROP INDEX telegram_question_message_updates; ALTER TABLE telegram_job_messages DROP COLUMN question_id');
+ const restarted=new Telegram(options);restarted.api=bot.api;restarted.config={...bot.config};await restarted.flush();
+ const edits=calls.filter(call=>call.method==='editMessageText');assert.equal(edits.length,1);assert.equal(edits[0].body.message_id,kept.message_id);assert.match(edits[0].body.text,/Previously answered/);
+ assert.equal(restarted.db.link(p.id).cursor,cursor);assert.equal(restarted.db.delivery(deleted.id).status,'deleted');assert.equal(calls.filter(call=>call.method==='sendMessage').length,2);
+});
+
+test('answer edits take priority over a backlog of job updates and retain retry state across restart',async t=>{
+ const {bot,store,p,pair,flush,calls,api,options,advance}=await fixture(t);pair();
+ const jobs=Array.from({length:21},(_,i)=>store.addJob(p.id,{url:'https://example.com/answer-priority/'+i,company:'Priority '+i,role:'Engineer',location:'Remote',fit:'Match'}).job);
+ const q=store.ask(p.id,{question:'Answer first'});for(let i=0;i<22;i++)await flush();
+ const card=calls.find(call=>call.body.reply_markup?.inline_keyboard.flat().some(button=>button.callback_data==='q:'+q.id)),row=bot.db.delivery(card.body.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2));
+ for(const job of jobs)store.saveJob({...job,status:'working'},'job_updated');store.answer(p.id,q.id,'Saved answer');
+ const original=api.call;let attempts=0;api.call=async(method,body)=>{if(method==='editMessageText'){attempts++;assert.equal(body.message_id,row.message_id);throw Object.assign(Error('Limited'),{code:429,retryAfter:30});}return original(method,body);};
+ await flush();assert.equal(attempts,1);const restarted=new Telegram(options);restarted.api=api;restarted.config={...bot.config};
+ advance(29000);await restarted.flush();assert.equal(attempts,1);api.call=original;advance(1001);await restarted.flush();
+ const edit=calls.at(-1);assert.equal(edit.method,'editMessageText');assert.equal(edit.body.message_id,row.message_id);assert.match(edit.body.text,/Saved answer/);assert.equal(calls.filter(call=>call.method==='sendMessage').length,22);
+});
+
+test('preferences suppress queued notifications, unlink invalidates callbacks and deletion cascades',async t=>{
+ const {bot,store,p,pair,flush,calls}=await fixture(t);pair();const q=store.ask(p.id,{question:'Private'});bot.db.collect();
+ bot.preferences(p.id,{notifications:false,questions:false});await flush();assert.equal(calls.length,0);
+ await bot.conversation.handle(callback('q:'+q.id));assert.equal(bot.db.link(p.id).data.dialog,null);
+ bot.unlink(p.id);await bot.conversation.handle(callback('q:'+q.id));assert.equal(bot.db.link(p.id),null);
+ pair();store.deleteWorkspace(p.id);for(const table of ['telegram_links','telegram_pairs','telegram_outbox'])assert.equal(store.db.prepare(`SELECT count(*) AS n FROM ${table}`).get().n,0);
+ assert.deepEqual(store.db.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+
+test('delivery retry survives restart, respects Telegram retry_after and isolates blocked chats',async t=>{
+ const {bot,store,p,other,pair,api,options,advance}=await fixture(t);pair();pair(other.id,22);
+ const row=bot.db.message(p.id,'One');bot.db.message(other.id,'Two');let attempts=0;
+ api.call=async()=>{attempts++;throw Object.assign(Error('Rate limit'),{code:429,retryAfter:30});};
+ await bot.flush();assert.equal(attempts,1);assert.equal(bot.db.delivery(row.id).status,'pending');
+ const restarted=new Telegram(options);restarted.api=api;await restarted.flush();assert.equal(attempts,1);
+ advance(30001);api.call=async(method,body)=>{attempts++;if(body.chat_id==='11')throw Object.assign(Error('Blocked'),{code:403});return {message_id:101};};
+ await restarted.flush();assert.equal(bot.db.delivery(row.id).status,'failed');assert.equal(bot.status(p.id).candidate.failed,1);
+ assert.equal(store.db.prepare('SELECT status FROM telegram_outbox WHERE candidate_id=?').get(other.id).status,'sent');
+ bot.retry(p.id);assert.equal(bot.db.delivery(row.id).status,'pending');
+});
+
+test('transport errors never disclose token-bearing URLs or remote descriptions',async()=>{
+ const api=new TelegramApi(TOKEN,{fetcher:async url=>{throw Error(url);}});await assert.rejects(api.call('getMe'),error=>!error.message.includes(TOKEN));
+ const response=new TelegramApi(TOKEN,{fetcher:async()=>({ok:false,status:401,json:async()=>({ok:false,error_code:401,description:TOKEN})})});
+ await assert.rejects(response.call('getMe'),error=>error.code===401&&!error.message.includes(TOKEN));
+});
+
+test('polling acknowledges duplicate updates once and resumes from durable offset',async t=>{
+ const {bot,api,p,pair,store}=await fixture(t);pair();const controller=new AbortController();let polls=0;
+ api.call=async(method,body)=>{if(method==='getUpdates'){polls++;if(polls===1)return [{update_id:50,...message('/durum')},{update_id:50,...message('/durum')}];assert.equal(body.offset,51);controller.abort();return [];}return {};};
+ await bot.poll(controller.signal);assert.equal(bot.db.meta('offset'),'51');assert.equal(store.db.prepare('SELECT count(*) AS n FROM telegram_outbox WHERE candidate_id=?').get(p.id).n,1);
+});
+
+test('empty optional-only forms remain editable instead of crashing',async t=>{
+ const {bot,store,p,pair,action}=await fixture(t);pair();const q=store.ask(p.id,{question:'Optional',fields:[{id:'note',label:'Not',type:'text',required:false}]});
+ await bot.conversation.handle(callback('q:'+q.id));await action('skip');assert.equal(bot.db.link(p.id).data.dialog.index,0);
+});
+
+test('turning questions back on restores a suppressed unanswered notification',async t=>{
+ const {bot,store,p,pair,flush,calls}=await fixture(t);pair();store.ask(p.id,{question:'Pending question'});bot.db.collect();
+ bot.preferences(p.id,{notifications:true,questions:false});await flush();assert.equal(calls.length,0);
+ bot.preferences(p.id,{notifications:true,questions:true});await flush();assert.equal(calls.length,1);assert.match(calls[0].body.text,/Pending question/);
+});
+
+test('an unlinked chat that blocks the bot does not stop updates for linked candidates',async t=>{
+ const {bot,store,p,pair,api}=await fixture(t);pair();const controller=new AbortController();let polls=0;
+ api.call=async(method,body)=>{
+  if(method==='getUpdates'){if(++polls===1)return [{update_id:10,...message('/help',99)},{update_id:11,...message('/durum')}];assert.equal(body.offset,12);controller.abort();return [];}
+  if(method==='sendMessage')throw Object.assign(Error('Blocked'),{code:403});
+ };
+ await bot.poll(controller.signal);assert.equal(bot.db.meta('offset'),'12');assert.equal(store.db.prepare('SELECT count(*) AS n FROM telegram_outbox WHERE candidate_id=?').get(p.id).n,1);
+});
+
+test('full consent help and long options are preserved across bounded messages',async t=>{
+ const {bot,store,p,pair}=await fixture(t);pair();
+ const help='H'.repeat(1900)+' CONSENT-END',options=['A'.repeat(185)+' OPTION-A-END','B'.repeat(185)+' OPTION-B-END'];
+ const q=store.ask(p.id,{question:'Consent',fields:[{id:'consent',label:'L'.repeat(1700),type:'select',options,help,consentScope:'other'}]});
+ await bot.conversation.handle(callback('q:'+q.id));
+ const messages=bot.db.pending().filter(row=>row.data.promptId).map(row=>row.data.text);const joined=messages.join('');
+ for(const marker of ['CONSENT-END','OPTION-A-END','OPTION-B-END'])assert.ok(joined.includes(marker));assert.ok(messages.every(text=>text.length<=3500));
+});
+
+test('all new jobs notify their own candidate, including unranked and low scores on existing connections',async t=>{
+ const {bot,store,p,other,pair,drain,calls}=await fixture(t);
+ const input={url:'https://example.com/prior',company:'Prior',role:'Engineer',location:'Remote',fit:'Match'};
+ store.addJob(p.id,input);pair();pair(other.id,22);
+ // Connections made before the new preference existed inherit the enabled default.
+ const legacy=bot.db.link(p.id);delete legacy.data.newJobs;bot.db.saveLink(legacy);
+ bot.preferences(p.id,{notifications:false,questions:false});assert.equal(bot.status(p.id).candidate.newJobs,true);
+ const unranked=store.addJob(p.id,{...input,url:'https://example.com/new',company:'New Company'}).job;
+ const low=store.addJob(p.id,{...input,url:'https://example.com/low',company:'Low Company'}).job;store.rankJob(p.id,low.id,rankInput(store,p.id,5));
+ const foreign=store.addJob(other.id,{...input,url:'https://example.com/other',company:'Other Company'}).job;
+ assert.equal(store.addJob(p.id,{...input,url:unranked.url,company:unranked.company}).duplicate,true);
+ await drain();await bot.flush(); // Collect the new events, then drain every paced delivery.
+ await drain();
+ const sent=calls.filter(call=>call.method==='sendMessage');assert.equal(sent.length,3);
+ const own=sent.filter(call=>call.body.chat_id==='11');assert.equal(own.length,2);
+ assert.ok(own.every(call=>call.body.text.startsWith('<b>🔵 İlan bulundu</b>')));
+ assert.ok(own.some(call=>call.body.text.includes('New Company')&&!call.body.text.includes('Uygunluk puanı')));
+ assert.ok(own.some(call=>call.body.text.includes('Uygunluk puanı: 5/100')));
+ assert.deepEqual(own.map(call=>call.body.reply_markup.inline_keyboard[0][0].url).sort(),[unranked.url,low.url].sort());
+ assert.equal(sent.find(call=>call.body.chat_id==='22').body.reply_markup.inline_keyboard[0][0].url,foreign.url);
+ store.rankJob(p.id,unranked.id,rankInput(store,p.id,80));await bot.flush();assert.equal(calls.filter(call=>call.method==='sendMessage').length,3);
+});
+
+test('new job preference suppresses queued cards independently and persists across restart',async t=>{
+ const {bot,store,p,pair,flush,calls,options}=await fixture(t);pair();
+ const input={url:'https://example.com/muted',company:'Muted',role:'Engineer',location:'Remote',fit:'Match'};
+ store.addJob(p.id,input);bot.db.collect();
+ bot.preferences(p.id,{newJobs:false,notifications:true,questions:true});await flush();assert.equal(calls.length,0);
+ const restarted=new Telegram(options);assert.equal(restarted.status(p.id).candidate.newJobs,false);
+ store.addJob(p.id,{...input,url:'https://example.com/still-muted',company:'Still Muted'});await flush();assert.equal(calls.length,0);
+ assert.throws(()=>bot.preferences(p.id,{newJobs:'true',notifications:true,questions:true}),/Geçersiz/);
+ bot.preferences(p.id,{newJobs:true,notifications:true,questions:true});
+ store.addJob(p.id,{...input,url:'https://example.com/enabled',company:'Enabled'});await flush();assert.equal(calls.length,1);assert.match(calls[0].body.text,/Enabled/);
+});
+
+test('more than one event batch queues every new job and reopening does not enqueue duplicates',async t=>{
+ const {bot,store,p,pair,options}=await fixture(t);pair();
+ for(let index=0;index<205;index++)store.addJob(p.id,{url:`https://example.com/jobs/${index}`,company:`Company ${index}`,role:'Engineer',location:'Remote',fit:'Match'});
+ bot.db.collect();const restarted=new Telegram(options);restarted.db.collect();restarted.db.collect();
+ const rows=store.db.prepare("SELECT data,status FROM telegram_outbox WHERE candidate_id=? AND event_key LIKE 'new-job:%'").all(p.id);
+ assert.equal(rows.length,205);assert.equal(new Set(rows.map(row=>JSON.parse(row.data).jobId)).size,205);assert.ok(rows.every(row=>row.status==='pending'));
+});
+
+const deleteCallback=(row,chat=11)=>({...callback('d:'+row.id,chat).callback_query,message:{chat:{id:chat,type:'private'},message_id:row.message_id}});
+
+test('delete button withdraws the application, resolves its questions and prevents repeat deliveries',async t=>{
+ const {bot,store,p,pair,flush,calls,options}=await fixture(t);pair();
+ const job=store.addJob(p.id,{url:'https://example.com/delete',company:'Keep company',role:'Engineer',location:'Remote',fit:'Match'}).job;
+ await flush();const sent=calls.at(-1),button=sent.body.reply_markup.inline_keyboard.at(-1)[0];assert.equal(button.text,'🗑 Sil · Vazgeç');assert.equal(button.style,'danger');
+ const row=bot.db.delivery(button.callback_data.slice(2));assert.equal(row.status,'sent');
+ const q=store.ask(p.id,{jobId:job.id,question:'Application question'});
+ assert.equal((await bot.deleteNotification(deleteCallback(row))).text,'Mesaj silindi; başvurudan vazgeçildi.');
+ assert.deepEqual(calls.at(-1),{method:'deleteMessage',body:{chat_id:'11',message_id:row.message_id}});
+ assert.equal(bot.db.delivery(row.id).status,'deleted');const withdrawn=store.job(p.id,job.id);assert.equal(withdrawn.manualOutcome,'withdrawn');assert.equal(withdrawn.status,'skipped');
+ assert.ok(!store.questions(p.id).some(item=>item.id===q.id));
+ const restarted=new Telegram(options);restarted.api=bot.api;
+ assert.equal((await restarted.deleteNotification(deleteCallback(row))).text,'Mesaj zaten silindi.');
+ assert.deepEqual(store.job(p.id,job.id),withdrawn);
+ bot.retry(p.id);store.event(p.id,'job_found',job);await flush();
+ assert.equal(calls.filter(call=>call.method==='sendMessage').length,1);assert.equal(calls.filter(call=>call.method==='deleteMessage').length,1);
+});
+
+test('delete checks candidate, sender, private chat and exact message; form prompts cannot be deleted',async t=>{
+ const {bot,store,p,other,pair,flush,calls}=await fixture(t);pair();pair(other.id,22);
+ const job=store.addJob(p.id,{url:'https://example.com/guard-delete',company:'Keep',role:'Engineer',location:'Remote',fit:'Match'}).job;await flush();const row=bot.db.delivery(calls[0].body.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2));
+ const cases=[deleteCallback(row,22),{...deleteCallback(row),from:{id:99}},{...deleteCallback(row),message:{chat:{id:11,type:'group'},message_id:row.message_id}},
+  {...deleteCallback(row),message:{chat:{id:11,type:'private'},message_id:row.message_id+1}},{...deleteCallback(row),data:'d:bad'}];
+ for(const attempt of cases)assert.equal((await bot.deleteNotification(attempt)).show_alert,true);
+ const prompt=bot.db.message(p.id,'Current form',{questionId:'q',promptId:'active',reply_markup:{inline_keyboard:[]}});bot.db.sent(prompt.id,500);
+ assert.equal((await bot.deleteNotification(deleteCallback(bot.db.delivery(prompt.id)))).show_alert,true);
+ assert.equal(calls.filter(call=>call.method==='deleteMessage').length,0);
+ assert.equal(store.job(p.id,job.id).manualOutcome,undefined);
+ bot.unlink(p.id);assert.equal((await bot.deleteNotification(deleteCallback(row))).show_alert,true);
+});
+
+test('deleting a question card preserves the unanswered question and current answer draft',async t=>{
+ const {bot,store,p,pair,flush,calls}=await fixture(t);pair();const q=store.ask(p.id,{question:'Still needed',fields:[{id:'permit',label:'İzin',type:'boolean'}]});await flush();
+ const card=bot.db.delivery(calls[0].body.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2));
+ await bot.conversation.handle(callback('q:'+q.id));await flush();
+ const prompt=calls.filter(call=>call.method==='sendMessage').at(-1);assert.ok(prompt.body.reply_markup.inline_keyboard.flat().every(button=>!button.callback_data.startsWith('d:')));
+ const draft=bot.db.link(p.id).data.dialog;await bot.deleteNotification(deleteCallback(card));
+ assert.deepEqual(bot.db.link(p.id).data.dialog,draft);assert.equal(store.questions(p.id).find(item=>item.id===q.id).answer,null);
+ await bot.conversation.handle(message('/sorular'));await flush();
+ assert.equal(calls.filter(call=>call.method==='sendMessage').at(-1).body.reply_markup.inline_keyboard[0][0].callback_data,'q:'+q.id);
+});
+
+test('expired and failed deletions show feedback and never mark a message as deleted',async t=>{
+ const {bot,store,p,pair,flush,calls,api,advance}=await fixture(t);pair();store.ask(p.id,{question:'Old card'});await flush();
+ const row=bot.db.delivery(calls[0].body.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2)),expired=deleteCallback(row);expired.message.date=1000;
+ advance(48*60*60*1000);assert.match((await bot.deleteNotification(expired)).text,/48 saat/);assert.equal(calls.filter(call=>call.method==='deleteMessage').length,0);
+ for(const code of [400,403,0,429]){
+  api.call=async()=>{throw Object.assign(Error('Failure'),{code});};
+  assert.equal((await bot.deleteNotification(deleteCallback(row))).show_alert,true);assert.equal(bot.db.delivery(row.id).status,'sent');
+ }
+});
+
+test('a failed Telegram deletion keeps the withdrawal and updates the surviving card; retry is idempotent',async t=>{
+ const {bot,store,p,pair,flush,calls,api,options}=await fixture(t);pair();
+ const job=store.addJob(p.id,{url:'https://example.com/delete-retry',company:'Retry',role:'Engineer',location:'Remote',fit:'Match'}).job;await flush();
+ const row=bot.db.delivery(calls[0].body.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2)),original=api.call;let withdrawals=0;
+ bot.withdrawApplication=(...args)=>{withdrawals++;return options.withdrawApplication(...args);};
+ api.call=async(method,body)=>{if(method==='deleteMessage')throw Object.assign(Error('Network unavailable'),{code:0});return original(method,body);};
+ const result=await bot.deleteNotification(deleteCallback(row));assert.equal(result.show_alert,true);assert.match(result.text,/Vazgeçildi olarak kaydedildi.*Mesaj silinemedi/);
+ assert.equal(store.job(p.id,job.id).manualOutcome,'withdrawn');assert.equal(bot.db.delivery(row.id).status,'sent');await flush();
+ assert.equal(calls.at(-1).method,'editMessageText');assert.equal(calls.at(-1).body.message_id,row.message_id);assert.match(calls.at(-1).body.text,/🔴 Başvurudan vazgeçildi/);
+ api.call=original;await bot.deleteNotification(deleteCallback(row));assert.equal(withdrawals,1);assert.equal(bot.db.delivery(row.id).status,'deleted');
+});
+
+test('old job cards still withdraw the application when Telegram cannot delete them',async t=>{
+ const {bot,store,p,pair,flush,calls,advance}=await fixture(t);pair();
+ const job=store.addJob(p.id,{url:'https://example.com/delete-old',company:'Old',role:'Engineer',location:'Remote',fit:'Match'}).job;await flush();
+ const row=bot.db.delivery(calls[0].body.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2)),action=deleteCallback(row);action.message.date=1000;advance(48*60*60*1000);
+ const result=await bot.deleteNotification(action);assert.match(result.text,/Vazgeçildi olarak kaydedildi.*48 saat/);assert.equal(result.show_alert,true);
+ assert.equal(store.job(p.id,job.id).manualOutcome,'withdrawn');assert.equal(calls.filter(call=>call.method==='deleteMessage').length,0);
+ await flush();assert.match(calls.at(-1).body.text,/🔴 Başvurudan vazgeçildi/);assert.equal(calls.at(-1).body.message_id,row.message_id);
+});
+
+test('a failed desktop withdrawal leaves both the job and Telegram message available for retry',async t=>{
+ const {bot,store,p,pair,flush,calls}=await fixture(t);pair();
+ const job=store.addJob(p.id,{url:'https://example.com/delete-stop-failure',company:'Stop failure',role:'Engineer',location:'Remote',fit:'Match'}).job;await flush();
+ const row=bot.db.delivery(calls[0].body.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2));bot.withdrawApplication=async()=>{throw Error('Cannot stop active task');};
+ const result=await bot.deleteNotification(deleteCallback(row));assert.equal(result.show_alert,true);assert.match(result.text,/kaydedilemedi; mesaj silinmedi/);
+ assert.equal(store.job(p.id,job.id).status,'found');assert.equal(bot.db.delivery(row.id).status,'sent');assert.equal(calls.filter(call=>call.method==='deleteMessage').length,0);
+});
+
+test('formatted cards escape listing text, emphasize titles and refresh the original message after scoring',async t=>{
+ const {bot,store,p,pair,flush,calls}=await fixture(t);pair();
+ const job=store.addJob(p.id,{url:'https://example.com/formatted',company:'R&D <Labs>',role:'Engineer <a href="https://fake.test">click</a>',location:'Berlin > Remote',fit:'Match'}).job;await flush();
+ const sent=calls[0].body,row=bot.db.delivery(sent.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2));
+ assert.equal(sent.parse_mode,'HTML');assert.match(sent.text,/<b>Engineer &lt;a href="https:\/\/fake.test"&gt;click&lt;\/a&gt;<\/b>/);
+ assert.ok(sent.text.includes('🏢 <b>R&amp;D &lt;Labs&gt;</b>\n📍 Berlin &gt; Remote'));assert.match(sent.text,/Henüz puanlanmadı/);
+ assert.equal(sent.reply_markup.inline_keyboard[0][0].style,'primary');assert.equal(sent.reply_markup.inline_keyboard.at(-1)[0].style,'danger');
+ store.rankJob(p.id,job.id,rankInput(store,p.id,62));await flush();
+ const edit=calls.at(-1);assert.equal(edit.method,'editMessageText');assert.equal(edit.body.message_id,row.message_id);assert.equal(edit.body.parse_mode,'HTML');
+ assert.match(edit.body.text,/<b>Uygunluk puanı: 62\/100<\/b>/);assert.ok(!edit.body.text.includes('Henüz puanlanmadı'));assert.ok(!edit.body.text.includes('<a '));
+ assert.equal(calls.filter(call=>call.method==='sendMessage').length,1);
+ const link=bot.db.link(p.id);link.data.queueSignature='legacy-card-layout';bot.db.saveLink(link);
+ store.db.prepare('UPDATE telegram_job_messages SET body=? WHERE delivery_id=?').run(JSON.stringify({...sent,text:'Legacy plain text',parse_mode:undefined}),row.id);await flush();
+ assert.equal(calls.filter(call=>call.method==='editMessageText').length,2);assert.equal(calls.at(-1).body.message_id,row.message_id);assert.equal(calls.at(-1).body.parse_mode,'HTML');
+});
+
+test('polling routes deletion callbacks and reports the outcome without sending another message',async t=>{
+ const {bot,store,p,pair,flush,calls,api}=await fixture(t);pair();store.ask(p.id,{question:'Card'});await flush();
+ const row=bot.db.delivery(calls[0].body.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2)),original=api.call,controller=new AbortController();let polls=0;
+ api.call=async(method,body)=>{if(method==='getUpdates'){if(++polls===1)return [{update_id:80,callback_query:deleteCallback(row)}];assert.equal(body.offset,81);controller.abort();return [];}return original(method,body);};
+ await bot.poll(controller.signal);
+ assert.equal(bot.db.delivery(row.id).status,'deleted');assert.equal(bot.db.meta('offset'),'81');
+ assert.deepEqual(calls.at(-1),{method:'answerCallbackQuery',body:{callback_query_id:'callback',text:'Mesaj silindi.'}});assert.equal(calls.filter(call=>call.method==='sendMessage').length,1);
+});
+
+test('manual batch includes every incomplete job, skips completed and delivered cards, and is repeatable without duplicates',async t=>{
+ const {bot,store,p,other,pair,drain,calls}=await fixture(t);
+ const add=(company,status='found',candidate=p.id)=>{const job=store.addJob(candidate,{url:`https://example.com/${company}`,company,role:'Engineer',location:'Remote',fit:'Match'}).job;return store.saveJob({...job,status},'job_updated');};
+ const incomplete=['found','working','prepared','submitting','blocked','uncertain','skipped'].map(status=>add(status,status));
+ for(const status of ['submitted','already_submitted'])add(status,status);
+ const manual=add('Manual');store.setManualJobStatus(p.id,manual.id,'manual_submitted');
+ const delivered=add('Delivered'),deleted=add('Deleted'),pending=add('Pending'),failed=add('Failed'),suppressed=add('Suppressed');add('OtherCandidate','found',other.id);
+ pair();bot.preferences(p.id,{newJobs:false,notifications:false,questions:false});
+ for(const job of [delivered,deleted,pending,failed,suppressed]){
+  const row=bot.db.enqueue(p.id,'new-job:'+job.id,{kind:'new_job',jobId:job.id});
+  if(job===delivered||job===deleted){bot.db.sent(row.id,123);if(job===deleted)bot.db.deleted(row.id);}
+  if(job===failed)bot.db.fail(row,Object.assign(Error('Blocked'),{code:403}));
+  if(job===suppressed)bot.db.skipped(row.id);
+ }
+ const before=store.jobs(p.id);
+ assert.deepEqual(bot.sendUnsentJobs(p.id),{queued:9,alreadyQueued:1,alreadySent:2,completed:3});
+ assert.deepEqual(bot.sendUnsentJobs(p.id),{queued:0,alreadyQueued:10,alreadySent:2,completed:3});
+ assert.equal(bot.status(p.id).candidate.newJobs,false);await drain();
+ const sent=calls.filter(call=>call.method==='sendMessage');assert.equal(sent.length,10);
+ assert.ok(sent.every(call=>call.body.chat_id==='11'&&call.body.parse_mode==='HTML'));
+ assert.deepEqual(new Set(sent.map(call=>call.body.reply_markup.inline_keyboard[0][0].url)),new Set([...incomplete,pending,failed,suppressed].map(job=>job.url)));
+ assert.deepEqual(store.jobs(p.id),before);assert.equal(bot.sendUnsentJobs(p.id).queued,0);
+});
+
+test('backfill respects bot availability and skips applications completed before delivery',async t=>{
+ const {bot,store,p,other,pair,flush,calls}=await fixture(t);
+ assert.throws(()=>bot.sendUnsentJobs(p.id),/adayı Telegram/);pair();
+ const job=store.addJob(p.id,{url:'https://example.com/finish-first',company:'Finish',role:'Engineer',location:'Remote',fit:'Match'}).job;
+ bot.config.enabled=false;assert.throws(()=>bot.sendUnsentJobs(p.id),/botunu kaydedip aç/);bot.config.enabled=true;
+ assert.throws(()=>bot.sendUnsentJobs(other.id),/adayı Telegram/);
+ assert.equal(bot.sendUnsentJobs(p.id).queued,1);store.setManualJobStatus(p.id,job.id,'manual_submitted');await flush();
+ assert.equal(calls.length,0);assert.equal(bot.db.jobSent(p.id,bot.config.bot.id,job.id),false);
+});
+
+test('delivery history migrates old sent/deleted receipts and survives relinking',async t=>{
+ const {bot,store,p,pair,options}=await fixture(t);pair();
+ const jobs=['Sent','Deleted'].map(company=>store.addJob(p.id,{url:'https://example.com/history/'+company,company,role:'Engineer',location:'Remote',fit:'Match'}).job);
+ jobs.forEach((job,index)=>{const row=bot.db.enqueue(p.id,'new-job:'+job.id,{kind:'new_job',jobId:job.id});store.db.prepare('UPDATE telegram_outbox SET status=?,message_id=? WHERE id=?').run(index?'deleted':'sent',index+1,row.id);});
+ const restarted=new Telegram(options);restarted.api=bot.api;restarted.config={...bot.config};
+ assert.equal(restarted.sendUnsentJobs(p.id).alreadySent,2);
+ restarted.unlink(p.id);pair();assert.equal(bot.sendUnsentJobs(p.id).queued,0);
+ store.deleteWorkspace(p.id);assert.equal(store.db.prepare('SELECT count(*) AS n FROM telegram_job_deliveries').get().n,0);assert.deepEqual(store.db.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+
+test('a batch of 500 jobs survives restart and sends each job in its own message',async t=>{
+ const {bot,store,p,pair,options,calls,advance}=await fixture(t);
+ for(let index=0;index<500;index++)store.addJob(p.id,{url:`https://example.com/bulk/${index}`,company:`Bulk ${index}`,role:'Engineer',location:'Remote',fit:'Match'});
+ pair();assert.equal(bot.sendUnsentJobs(p.id).queued,500);
+ for(let i=0;i<30;i++){advance(2000);await bot.flush();}
+ const restarted=new Telegram(options);restarted.api=bot.api;restarted.config={...bot.config};assert.equal(restarted.sendUnsentJobs(p.id).queued,0);
+ for(let i=0;i<500&&restarted.db.pending().length;i++){advance(2000);await restarted.flush();}
+ const messages=calls.filter(call=>call.method==='sendMessage');assert.equal(messages.length,500);
+ assert.equal(new Set(messages.map(call=>call.body.reply_markup.inline_keyboard[0][0].url)).size,500);
+ assert.equal(restarted.status(p.id).candidate.pending,0);assert.equal(restarted.sendUnsentJobs(p.id).alreadySent,500);
+});
+
+test('job cards show each application state in the same message and preserve both buttons',async t=>{
+ const {bot,store,p,other,pair,flush,calls}=await fixture(t);pair();pair(other.id,22);
+ const job=store.addJob(p.id,{url:'https://example.com/status',company:'Status',role:'Engineer',location:'Remote',fit:'Match'}).job;
+ store.addJob(other.id,{url:'https://example.com/foreign-status',company:'Foreign',role:'Engineer',location:'Remote',fit:'Match'});
+ await flush();const original=calls.find(call=>call.body.chat_id==='11').body;
+ const row=bot.db.delivery(original.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2));
+ assert.match(original.text,/^<b>🔵 İlan bulundu<\/b>/);
+ const cases=[
+  [{status:'working'},'Başvuru hazırlanıyor'],[{status:'prepared'},'Gönderime hazır'],[{status:'submitting'},'Başvuru gönderiliyor'],
+  [{status:'blocked'},'Bilgi / işlem bekliyor'],[{status:'blocked',missingDocuments:{at:'today'}},'Eksik belge bekliyor'],
+  [{status:'uncertain'},'Gönderim sonucu doğrulanmalı'],[{status:'submitted',proof:{observedAt:'today'}},'✅ Başvuru gönderildi'],
+  [{status:'submitted',manualOutcome:'manual_submitted'},'Başvuru gönderildi (kullanıcı beyanı)'],
+  [{status:'already_submitted'},'✅ Başvuru gönderildi'],[{status:'skipped'},'Elendi'],
+  [{status:'skipped',followupStopped:{at:'today'}},'Başvuru takibi bırakıldı'],
+  [{status:'uncertain',followupStopped:{at:'today'}},'Gönderim sonucu doğrulanmalı · Takip bırakıldı'],
+  [{status:'skipped',manualOutcome:'withdrawn'},'Başvurudan vazgeçildi']
+ ];
+ for(const [changes,label] of cases){
+  store.saveJob({...job,...changes},'job_updated');await flush();const edit=calls.at(-1);
+  assert.equal(edit.method,'editMessageText');assert.equal(edit.body.chat_id,'11');assert.equal(edit.body.message_id,row.message_id);
+  assert.ok(edit.body.text.includes(label),edit.body.text);assert.deepEqual(edit.body.reply_markup,original.reply_markup);
+ }
+ const count=calls.length;store.saveJob({...store.job(p.id,job.id),note:'Only an internal note changed'},'application_checkpoint_saved');await flush();await flush();assert.equal(calls.length,count);
+ assert.equal(calls.filter(call=>call.method==='sendMessage').length,2);assert.equal(bot.db.delivery(row.id).status,'sent');
+});
+
+test('updates coalesce, include ranking and catch changes made during the original send',async t=>{
+ const {bot,store,p,pair,flush,calls,api}=await fixture(t);pair();
+ const job=store.addJob(p.id,{url:'https://example.com/in-flight',company:'In flight',role:'Engineer',location:'Remote',fit:'Match'}).job;
+ const original=api.call;api.call=async(method,body)=>{
+  const result=await original(method,body);
+  if(method==='sendMessage')store.saveJob({...store.job(p.id,job.id),status:'working'},'job_updated');
+  return result;
+ };
+ await flush();store.saveJob({...store.job(p.id,job.id),status:'prepared'},'job_updated');store.rankJob(p.id,job.id,rankInput(store,p.id,80));await flush();
+ assert.equal(calls.filter(call=>call.method==='sendMessage').length,1);assert.equal(calls.filter(call=>call.method==='editMessageText').length,1);
+ assert.match(calls.at(-1).body.text,/Gönderime hazır/);assert.match(calls.at(-1).body.text,/Uygunluk puanı: 80\/100/);
+});
+
+test('manually sent backlog cards stay current after completion even with new notifications disabled',async t=>{
+ const {bot,store,p,pair,flush,calls}=await fixture(t);
+ const job=store.addJob(p.id,{url:'https://example.com/backlog-status',company:'Backlog',role:'Engineer',location:'Remote',fit:'Match'}).job;pair();
+ bot.preferences(p.id,{newJobs:false,notifications:false,questions:false});bot.sendUnsentJobs(p.id);await flush();
+ store.setManualJobStatus(p.id,job.id,'manual_submitted');await flush();
+ assert.equal(calls.length,2);assert.equal(calls[1].method,'editMessageText');assert.match(calls[1].body.text,/Başvuru gönderildi \(kullanıcı beyanı\)/);
+ assert.ok(!calls[1].body.text.includes('tamamlanmamış'));assert.equal(bot.sendUnsentJobs(p.id).queued,0);
+});
+
+test('status edit retry survives restart, respects global rate limits and renders the latest state',async t=>{
+ const {bot,store,p,pair,flush,calls,api,options,advance}=await fixture(t);pair();
+ const job=store.addJob(p.id,{url:'https://example.com/edit-retry',company:'Retry',role:'Engineer',location:'Remote',fit:'Match'}).job;await flush();
+ const original=api.call;let attempts=0;
+ api.call=async(method,body)=>{if(method==='editMessageText'){attempts++;throw Object.assign(Error('Rate limit'),{code:429,retryAfter:30});}return original(method,body);};
+ store.saveJob({...job,status:'working'},'job_updated');await flush();assert.equal(attempts,1);assert.equal(bot.status(p.id).candidate.pending,1);
+ const restarted=new Telegram(options);restarted.api=api;restarted.config={...bot.config};
+ store.saveJob({...job,status:'prepared'},'job_updated');restarted.db.message(p.id,'Queued during rate limit');
+ advance(29000);await restarted.flush();assert.equal(attempts,1);assert.equal(calls.length,1);
+ api.call=original;advance(1001);await restarted.flush();
+ const edit=calls.at(-1);assert.equal(edit.method,'editMessageText');assert.match(edit.body.text,/Gönderime hazır/);assert.equal(restarted.status(p.id).candidate.pending,1);
+ advance(2000);await restarted.flush();assert.equal(calls.at(-1).body.text,'Queued during rate limit');assert.equal(restarted.status(p.id).candidate.pending,0);
+ assert.equal(calls.filter(call=>call.method==='sendMessage'&&call.body.reply_markup).length,1);
+});
+
+test('old sent cards gain status on restart while deleted cards and unlinked candidates never reappear',async t=>{
+ const {bot,store,p,pair,flush,calls,options}=await fixture(t);pair();
+ const jobs=['Legacy','Deleted'].map(company=>store.addJob(p.id,{url:'https://example.com/legacy/'+company,company,role:'Engineer',location:'Remote',fit:'Match'}).job);
+ await flush();await flush();const rows=store.db.prepare("SELECT id FROM telegram_outbox WHERE candidate_id=? AND status='sent'").all(p.id).map(row=>bot.db.delivery(row.id));
+ await bot.deleteNotification(deleteCallback(rows[1]));store.db.exec('DELETE FROM telegram_job_messages');
+ const restarted=new Telegram(options);restarted.api=bot.api;restarted.config={...bot.config};await restarted.flush();
+ assert.equal(calls.filter(call=>call.method==='editMessageText').length,1);assert.equal(calls.at(-1).body.message_id,rows[0].message_id);
+ for(const job of jobs)store.saveJob({...job,status:'working'},'job_updated');restarted.db.collect();
+ restarted.unlink(p.id);pair(p.id,33);await flush();assert.equal(calls.filter(call=>call.method==='editMessageText').length,1);
+ assert.equal(bot.sendUnsentJobs(p.id).queued,0);assert.equal(store.db.prepare('SELECT count(*) AS n FROM telegram_job_messages').get().n,0);
+ assert.deepEqual(store.db.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+
+test('unchanged edits succeed, missing messages stay deleted and failed edits never resend the card',async t=>{
+ const {bot,store,p,pair,flush,calls,api,advance}=await fixture(t);pair();
+ const job=store.addJob(p.id,{url:'https://example.com/edit-errors',company:'Errors',role:'Engineer',location:'Remote',fit:'Match'}).job;await flush();
+ const row=bot.db.delivery(calls[0].body.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2)),original=api.call;let attempts=0;
+ api.call=async()=>{attempts++;throw Object.assign(Error('Already updated'),{code:400,editResult:'unchanged'});};
+ store.saveJob({...job,status:'working'},'job_updated');await flush();await flush();assert.equal(attempts,1);assert.equal(bot.status(p.id).candidate.failed,0);
+ api.call=async()=>{attempts++;throw Object.assign(Error('Blocked'),{code:403});};
+ store.saveJob({...job,status:'prepared'},'job_updated');await flush();assert.equal(bot.status(p.id).candidate.failed,1);assert.equal(bot.db.delivery(row.id).status,'sent');
+ store.saveJob({...job,status:'blocked'},'job_updated');advance(60000);await flush();assert.equal(attempts,2);
+ bot.retry(p.id);api.call=original;await flush();assert.equal(calls.at(-1).method,'editMessageText');assert.equal(bot.status(p.id).candidate.failed,0);
+ api.call=async()=>{attempts++;throw Object.assign(Error('Missing'),{code:400,editResult:'missing'});};
+ store.saveJob({...job,status:'working'},'job_updated');await flush();assert.equal(bot.db.delivery(row.id).status,'deleted');
+ bot.retry(p.id);store.saveJob({...job,status:'prepared'},'job_updated');await flush();assert.equal(attempts,3);assert.equal(bot.sendUnsentJobs(p.id).queued,0);
+ assert.equal(calls.filter(call=>call.method==='sendMessage').length,1);
+});
+
+test('Telegram edit outcome classification keeps raw descriptions private and is method-specific',async()=>{
+ for(const [description,expected] of [['Bad Request: message is not modified: '+TOKEN,'unchanged'],['Bad Request: message to edit not found','missing'],['Bad Request: message can\'t be edited',null]]){
+  const api=new TelegramApi(TOKEN,{fetcher:async()=>({ok:false,status:400,json:async()=>({ok:false,error_code:400,description})})});
+  await assert.rejects(api.call('editMessageText'),error=>error.editResult===expected&&!JSON.stringify(error).includes(TOKEN)&&!error.message.includes(description));
+  await assert.rejects(api.call('sendMessage'),error=>error.editResult===null);
+ }
+});

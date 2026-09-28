@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {activityView,ageLabel,sourceResultView,applicationActivity} from '../src/activity.js';
+import {activityView,workerActivityView,ageLabel,sourceResultView,applicationActivity} from '../src/activity.js';
 import {Store} from '../app/store.mjs';
 const base={profile:{id:'a'},active:{candidateId:'a',sessionId:'s',state:'Working'},campaign:{status:'running',task:{id:'t',kind:'application',jobId:'j',seenWorking:true}},jobs:[{id:'j',company:'Example',role:'Counsel',url:'https://example.test'}],questions:[],events:[]};
 test('live action follows session and task; timestamps are not fabricated',()=>{
@@ -39,4 +39,20 @@ test('application row indicator follows current candidate task and actual runtim
  assert.equal(applicationActivity({...base,campaign:{...base.campaign,status:'paused'}},'j'),null);
  assert.equal(applicationActivity({...base,active:{...base.active,state:'Idle'}},'j').label,'Tur sonucu bekleniyor');
  assert.equal(applicationActivity({...base,active:{...base.active,state:'AwaitingInput'}},'j').tone,'waiting');
+});
+
+test('worker cards show their own task, state and history while another worker pauses',()=>{
+ const main={id:'main',name:'Worker 1',campaign:base.campaign,active:base.active};
+ const second={id:'second',name:'Worker 2',campaign:{status:'running',task:{id:'search',kind:'search',sourceId:'linkedin',seenWorking:true}},active:{candidateId:'a',sessionId:'s2',state:'Working'}};
+ const at='2026-09-28T10:00:00Z',events=[
+  {kind:'agent_activity',at,data:{workerId:'second',sessionId:'s2',taskId:'search',message:'LinkedIn taranıyor'}},
+  {kind:'agent_activity',at,data:{workerId:'main',sessionId:'s',taskId:'t',jobId:'j',message:'CV yükleniyor'}},
+  {kind:'agent_activity',at,data:{sessionId:'s2',taskId:'previous',message:'Önceki worker işlemi'}}
+ ];
+ const snapshot={...base,workers:[main,second],sources:[{id:'linkedin',name:'LinkedIn'}],events};
+ const a=workerActivityView(snapshot,main),b=workerActivityView(snapshot,second);
+ assert.equal(a.title,'Example · Counsel');assert.equal(a.detail,'CV yükleniyor');assert.equal(a.url,'https://example.test');assert.equal(a.history.length,1);
+ assert.equal(b.title,'LinkedIn taranıyor');assert.equal(b.detail,'LinkedIn taranıyor');assert.equal(b.url,null);assert.equal(b.history.length,2);
+ second.active=null;second.campaign={status:'stopped',note:'Worker durduruldu',task:null};
+ assert.equal(workerActivityView(snapshot,second).title,'Durduruldu');assert.equal(workerActivityView(snapshot,main).state,'Çalışıyor');
 });

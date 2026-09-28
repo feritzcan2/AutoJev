@@ -1,3 +1,4 @@
+import {savePreparation,preparationProfileKey} from '../app/preparation.mjs';
 import {addRankedJob} from './rank-fixture.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -97,7 +98,7 @@ test('two candidates keep independent running sessions; pausing one leaves the o
 });
 
 test('automatic source cannot manufacture submission authority for a prepare-only candidate',async()=>{
- const f=fixture();try{f.store.saveProfile({...f.p,authorization:'prepare'});const source=f.store.sources(f.p.id)[0];f.store.saveSource(f.p.id,{...source,applyMode:'auto'});addRankedJob(f.store,f.p.id,{...listing,sourceId:source.id});await f.c.start(f.p.id);assert.match(f.calls[0],/prepare the form but do not submit/);assert.doesNotMatch(f.calls[0],/already authorized automatic submission/);}finally{f.store.close();}
+ const f=fixture();try{f.store.saveProfile({...f.p,authorization:'prepare'});const source=f.store.sources(f.p.id)[0];f.store.saveSource(f.p.id,{...source,applyMode:'auto'});addRankedJob(f.store,f.p.id,{...listing,sourceId:source.id});await f.c.start(f.p.id);assert.equal(f.store.campaign(f.p.id).task.kind,'preparation');assert.equal(f.store.taskContext(f.p.id).applicationAuthorization.mode,'prepare');assert.doesNotMatch(f.calls[0],/already authorized automatic submission/);}finally{f.store.close();}
 });
 
 test('campaign waits for a direct user conversation turn to finish before dispatching',async()=>{
@@ -177,10 +178,13 @@ test('technical blockers require evidence and no user dependency',async()=>{cons
  f.c.report(f.p.id,'session',{taskId,outcome:'blocked',note:'Outage',blocker:{kind:'technical',requiresUserInput:false,evidence:'HTTP 503 on employer form',reason:'Site unavailable'}});
  assert.equal(f.store.campaign(f.p.id).task.report.blocker.evidence,'HTTP 503 on employer form');
  }finally{f.store.close();}});
-test('prepare-only task can finish prepared but auto task cannot use no_results',async()=>{const f=fixture();try{
+test('prepare-only task requires a saved package and cannot use no_results',async()=>{const f=fixture();try{
  f.store.saveProfile({...f.store.profile(f.p.id),authorization:'prepare'});const job=addRankedJob(f.store,f.p.id,listing).job;await f.c.start(f.p.id);
  for(const state of ['working','prepared'])f.store.updateJob(f.p.id,job.id,state,'Ready','session');
- const taskId=f.store.campaign(f.p.id).task.id;assert.throws(()=>f.c.report(f.p.id,'session',{taskId,outcome:'no_results',note:'No results'}));finish(f);assert.equal(f.store.campaign(f.p.id).task,null);
+ const taskId=f.store.campaign(f.p.id).task.id;assert.throws(()=>f.c.report(f.p.id,'session',{taskId,outcome:'no_results',note:'No results'}));
+ assert.throws(()=>finish(f),/Hazırlık paketi tamamlanmadı/);
+ await savePreparation(f.store,f.p.id,{jobId:job.id,revision:f.store.job(f.p.id,job.id).preparation.revision,profileKey:preparationProfileKey(f.store.profile(f.p.id)),status:'partial',coverage:'partial',formUrl:job.url,coverageNote:'Later steps require a login',note:'Accessible form inspected',requirements:[]},'session');
+ finish(f);assert.equal(f.store.campaign(f.p.id).task,null);
  }finally{f.store.close();}});
 
 test('legacy prepared auto application is eligible despite an earlier incomplete attempt',async()=>{const f=fixture();try{
@@ -209,5 +213,19 @@ test('start explains disabled sources and automatically dispatches after enablin
   assert.match(f.store.campaign(f.p.id).note,/Sources/);
   const source=f.store.sources(f.p.id)[0];f.store.saveSource(f.p.id,{...source,enabled:true});
   await f.c.start(f.p.id);assert.equal(f.calls.length,1);assert.equal(f.store.campaign(f.p.id).waitingReason,undefined);
+ }finally{f.store.close();}
+});
+
+test('Chrome readiness gates launch and disconnect resumes the same task without consuming retries',async()=>{
+ const f=fixture();let ready=false;f.c.browserReady=()=>({ready});
+ try{
+ await f.c.start(f.p.id);assert.equal(f.calls.length,0);assert.equal(f.store.campaign(f.p.id).browserWait,true);
+ f.setTime(f.getTime()+120000);await f.c.tick();assert.equal(f.store.campaign(f.p.id).status,'running');
+ ready=true;await f.c.tick();assert.equal(f.calls.length,1);const taskId=f.store.campaign(f.p.id).task.id;
+ f.c.signal(f.p.id,'Working');f.setActive({candidateId:f.p.id,sessionId:'session',state:'Working'});
+ ready=false;await f.c.tick();f.c.signal(f.p.id,'Idle');assert.equal(f.store.campaign(f.p.id).task.id,taskId);assert.equal(f.store.campaign(f.p.id).task.recoveryAttempts,undefined);
+ ready=true;await f.c.tick();assert.equal(f.calls.length,1,'do not deliver while provider is still working');
+ f.setActive({candidateId:f.p.id,sessionId:'session',state:'Idle'});await f.c.tick();assert.equal(f.calls.length,2);assert.equal(f.store.campaign(f.p.id).task.id,taskId);assert.equal(f.store.campaign(f.p.id).browserWait,undefined);
+ await f.c.tick();assert.equal(f.calls.length,2,'only one resume delivery');
  }finally{f.store.close();}
 });

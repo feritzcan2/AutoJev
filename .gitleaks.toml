@@ -1,0 +1,13 @@
+title = "JobLoop secret scanning"
+[extend]
+useDefault = true
+
+# SHA256 values in the verified source inventory are content checksums.
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
+description = "Pinned TermLoop source inventory SHA256 entries"
+condition = "AND"
+paths = ['''(?:^|[/\\])vendor[/\\]termloop[/\\]UPSTREAM\.json$''']
+regexTarget = "line"
+regexes = ['''^\s*"(?:clients|modules)/[A-Za-z0-9_./-]+": "[a-f0-9]{64}",?$''']

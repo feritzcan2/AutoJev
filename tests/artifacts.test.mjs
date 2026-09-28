@@ -10,5 +10,5 @@ test('documents appear without registration and technical files stay hidden',asy
 });
 test('candidate document access rejects traversal and external symlinks',async()=>{
  const base=await mkdtemp(join(tmpdir(),'jobloop-files-')),root=join(base,'candidate');
- try{await mkdir(root);await writeFile(join(base,'other.txt'),'private');await symlink(join(base,'other.txt'),join(root,'link.txt'));await assert.rejects(()=>documentPath(root,'../other.txt'));await assert.rejects(()=>documentPath(root,'link.txt'));assert.deepEqual(await listDocuments(root),[]);}finally{await rm(base,{recursive:true,force:true});}
+ try{await mkdir(root);await writeFile(join(base,'other.txt'),'private');await symlink(base,join(root,'external'),process.platform==='win32'?'junction':'dir');await assert.rejects(()=>documentPath(root,'../other.txt'));await assert.rejects(()=>documentPath(root,'external/other.txt'));assert.deepEqual(await listDocuments(root),[]);}finally{await rm(base,{recursive:true,force:true});}
 });

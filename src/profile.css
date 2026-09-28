@@ -1,47 +1,87 @@
-/* Profile: one settings document. Each section explains itself on the left and edits on the right. */
-.profile-head { margin: 24px 0 18px; }
-.profile-head h2 { font-size: 20px; letter-spacing: -.3px; }
-.profile-head p { max-width: 560px; margin: 6px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
+/* Profile: one settings document. Every card uses the same two columns: what it is on the left, what you edit on the right. */
+#profile { --profile-width: 1040px; --profile-copy: 232px; }
 
-.profile-form { display: block; max-width: 1040px; padding: 0; overflow: hidden; }
-.profile-section { display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr); gap: 16px 48px; min-inline-size: 0; margin: 0; padding: 24px 26px; border: 0; border-top: 1px solid var(--border); border-radius: 0; }
+.profile-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; max-width: var(--profile-width); margin: 8px 0 18px; }
+.profile-head h2 { font-size: 20px; font-weight: 600; letter-spacing: -.3px; }
+.profile-head p { max-width: 560px; margin: 6px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.55; }
+.profile-head > button { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; padding: 8px 13px; border-color: rgba(102, 179, 255, .4); color: var(--accent-strong); font-size: 13px; font-weight: 550; }
+.profile-head > button:hover:not(:disabled) { filter: none; background: var(--accent-wash); border-color: var(--accent); }
+.btn-icon { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+
+/* Cards */
+.profile-form, .profile-card { display: block; max-width: var(--profile-width); margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); overflow: clip; }
+.profile-card { margin-top: 14px; }
+.profile-card form { display: grid; max-width: none; padding: 0; border: 0; border-radius: 0; background: transparent; }
+
+.profile-section { display: grid; grid-template-columns: var(--profile-copy) minmax(0, 1fr); gap: 14px 44px; min-inline-size: 0; margin: 0; padding: 22px 24px; border: 0; border-top: 1px solid var(--border); border-radius: 0; }
 .profile-section:first-child { border-top: 0; }
 .profile-section-copy h3 { margin: 0; color: var(--text); font-size: 14px; font-weight: 600; }
-.profile-section-copy p { margin: 6px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
+.profile-section-copy p { margin: 6px 0 0; color: var(--text-secondary); font-size: 12.5px; line-height: 1.55; }
 
 .profile-fields { display: grid; gap: 16px; min-width: 0; }
-.profile-fields label { gap: 7px; }
-.profile-fields input, .profile-fields select, .profile-fields textarea { width: 100%; }
-.profile-fields textarea { min-height: 96px; line-height: 1.5; }
-.profile-fields label small { color: var(--text-muted); font-size: 12px; line-height: 1.45; }
+.profile-fields label:not(.choice):not(.check) { gap: 7px; color: var(--text-secondary); font-size: 12px; font-weight: 500; }
+.profile-fields input:not([type=radio]):not([type=checkbox]), .profile-fields select, .profile-fields textarea { width: 100%; }
+.profile-fields textarea { min-height: 84px; max-height: 320px; field-sizing: content; line-height: 1.55; resize: vertical; }
+.profile-fields label small { color: var(--text-muted); font-size: 12px; font-weight: 400; line-height: 1.45; }
 
-/* CV: a document slot, dashed until something is in it. */
-.cv-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: 8px; }
-.cv-row:has([data-empty="true"]) { border-style: dashed; }
-.cv-copy { display: grid; gap: 2px; min-width: 0; }
-.cv-copy span { color: var(--text-secondary); font-size: 12px; }
+/* CV: a document slot. Empty means the agent can't start, so it says so. */
+.cv-row { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: 9px; background: var(--bg-app); }
+.cv-icon { flex: 0 0 22px; width: 22px; height: 22px; fill: none; stroke: var(--accent-strong); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.cv-copy { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.cv-copy span { color: var(--text-muted); font-size: 11.5px; }
 #cv-name { display: block; overflow: hidden; color: var(--text); font-size: 13px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
-#cv-name[data-empty="true"] { color: var(--text-muted); font-weight: 400; }
-.cv-row button { flex-shrink: 0; padding: 8px 12px; font-size: 12px; }
+.cv-hint { display: none; color: var(--warning); font-size: 12px; }
+.cv-row button { flex-shrink: 0; padding: 7px 12px; font-size: 12px; }
+.cv-row:has([data-empty="true"]) { border-style: dashed; border-color: rgba(217, 170, 95, .45); background: rgba(217, 170, 95, .05); }
+.cv-row:has([data-empty="true"]) .cv-icon { stroke: var(--warning); }
+.cv-row:has([data-empty="true"]) #cv-name { display: none; }
+.cv-row:has([data-empty="true"]) .cv-hint { display: block; }
+.cv-row:has([data-empty="true"]) .cv-copy span { color: var(--text); font-size: 13px; font-weight: 550; }
 
-/* Authorization: the one decision on this page, so it gets room. */
-.authorization { gap: 8px; }
-.choice { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: 8px; color: var(--text); font-size: 13px; cursor: pointer; transition: border-color .15s, background .15s; }
+/* Authorization: the one real decision here, a segmented stack. */
+.authorization { gap: 0; border: 1px solid var(--border-strong); border-radius: 10px; overflow: clip; }
+.choice { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; padding: 13px 15px; border: 0; border-top: 1px solid var(--border); border-radius: 0; color: var(--text); font-size: 13px; cursor: pointer; transition: background .15s; }
+.choice:first-child { border-top: 0; }
 .choice:hover { background: var(--bg-hover); }
-.choice:has(:checked) { border-color: var(--accent); background: var(--accent-wash); }
-.choice:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
-.choice input { width: 14px; height: 14px; margin: 2px 0 0; accent-color: var(--accent); }
+.choice:has(:checked) { background: var(--accent-wash); box-shadow: inset 3px 0 var(--accent); }
+.choice:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+.choice input { width: 15px; height: 15px; margin: 2px 0 0; accent-color: var(--accent); }
 .choice input:focus-visible { outline: none; }
 .choice span { display: grid; gap: 3px; min-width: 0; }
-.choice b { font-weight: 550; }
-.choice small { color: var(--text-secondary); font-size: 12px; line-height: 1.45; }
+.choice b { color: var(--text); font-size: 13px; font-weight: 550; }
+.profile-fields .choice small { color: var(--text-secondary); font-size: 12px; line-height: 1.45; }
+.choice:has([value="submit"]:checked) { background: rgba(217, 170, 95, .08); box-shadow: inset 3px 0 var(--warning); }
+.choice:has([value="submit"]:checked) input { accent-color: var(--warning); }
 
-
-.profile-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 26px; border-top: 1px solid var(--border); }
+/* Save bar stays in reach on a long form. */
+.profile-foot { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 24px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--bg-raised) 92%, transparent); backdrop-filter: blur(8px); }
 .profile-foot small { color: var(--text-muted); font-size: 12px; line-height: 1.45; }
 .profile-foot button { flex-shrink: 0; }
 
+/* Portal account */
+.account-state { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text-secondary); font-size: 12.5px; }
+.account-state::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+.account-state[data-configured="true"] { color: var(--text); }
+.account-state[data-configured="true"]::before { background: var(--success); }
+.account-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.account-note { margin-top: -8px; color: var(--text-muted); font-size: 12px; }
+.profile-fields label.check { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; color: var(--text); font-size: 13px; font-weight: 400; line-height: 1.45; cursor: pointer; }
+.check input { width: 15px; height: 15px; margin: 2px 0 0; flex-shrink: 0; accent-color: var(--accent); }
+.account-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.account-actions button { padding: 8px 13px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--bg-hover); color: var(--text); font-size: 12.5px; font-weight: 550; text-align: center; }
+.account-actions button:hover:not(:disabled) { filter: none; border-color: var(--text-muted); }
+.account-actions .remove { border-color: transparent; background: transparent; color: var(--text-secondary); font-weight: 500; }
+.account-actions .remove:hover { filter: none; color: var(--danger); background: rgba(225, 117, 126, .1); }
+.account-actions [role=status] { margin: 0 0 0 4px; color: var(--text-secondary); font-size: 12px; }
+
+/* Telegram */
+.telegram-row { display: flex; align-items: center; justify-content: flex-end; gap: 16px; }
+.telegram-row p { margin: 0; color: var(--text-muted); font-size: 12.5px; }
+.telegram-row button { flex-shrink: 0; padding: 8px 13px; font-size: 12.5px; }
+
 @media (prefers-reduced-motion: reduce) { .choice { transition: none; } }
 @media (max-width: 1000px) {
+  .profile-head { flex-wrap: wrap; align-items: flex-start; }
   .profile-section { grid-template-columns: 1fr; gap: 12px; }
+  .account-grid { grid-template-columns: 1fr; }
 }
