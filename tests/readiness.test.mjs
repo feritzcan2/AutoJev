@@ -42,9 +42,9 @@ test('Windows command shims are found but never passed to a shell by login check
 });
 test('Unix executable discovery matches TermLoop repaired PATH and ignores relative/cwd entries',{skip:process.platform==='win32'?'Requires Unix executable permission bits':false},async()=>{
  const directory=await mkdtemp(path.join(tmpdir(),'jobloop-readiness-'));try{
-  const bin=path.join(directory,'.local/bin');await mkdir(bin,{recursive:true});const cli=path.join(bin,'codex');await writeFile(cli,'#!/bin/sh\nexit 0\n');await chmod(cli,0o755);
-  const env=readinessEnvironment({PATH:'.:relative'},'darwin',directory);assert.equal((await findExecutable('codex',{env,platform:'darwin'})),cli);
-  await chmod(cli,0o644);assert.equal(await findExecutable('codex',{env,platform:'darwin'}),null);
+  const name='jobloop-readiness-test-cli',bin=path.join(directory,'.local/bin');await mkdir(bin,{recursive:true});const cli=path.join(bin,name);await writeFile(cli,'#!/bin/sh\nexit 0\n');await chmod(cli,0o755);
+  const env=readinessEnvironment({PATH:'.:relative'},'darwin',directory);assert.equal((await findExecutable(name,{env,platform:'darwin'})),cli);
+  await chmod(cli,0o644);assert.equal(await findExecutable(name,{env,platform:'darwin'}),null);
  }finally{await rm(directory,{recursive:true,force:true});}
 });
 test('Chrome discovery supports a per-user Windows installation',async()=>{

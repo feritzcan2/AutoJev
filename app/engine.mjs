@@ -1,9 +1,10 @@
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {randomUUID} from 'node:crypto';
+import {launchEnvironment} from './launch-environment.mjs';
 export class Engine {
   constructor(binary,directory,onEvent){
-    this.pending=new Map();this.child=spawn(binary,[directory],{stdio:['pipe','pipe','pipe']});
+    this.pending=new Map();this.child=spawn(binary,[directory],{stdio:['pipe','pipe','pipe'],env:launchEnvironment()});
     const lines=createInterface({input:this.child.stdout});
     lines.on('line',line=>{let value;try{value=JSON.parse(line);}catch{return;}
       if(value.id){const p=this.pending.get(value.id);if(!p)return;clearTimeout(p.timer);this.pending.delete(value.id);value.error?p.reject(Error(value.error)):p.resolve(value.result);}

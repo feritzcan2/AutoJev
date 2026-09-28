@@ -4,20 +4,16 @@ import {homedir} from 'node:os';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {createConnection} from 'node:net';
-import path from 'node:path';
 import {listChromeProfiles} from './chrome-profiles.mjs';
 import {existingChromeEndpoint} from './jev-chrome.mjs';
 import {findChrome,findExecutable} from './chrome-installation.mjs';
+import {launchEnvironment as readinessEnvironment} from './launch-environment.mjs';
 export {findChrome,findExecutable} from './chrome-installation.mjs';
+export {launchEnvironment as readinessEnvironment} from './launch-environment.mjs';
 const exec=promisify(execFile);
 const providers={codex:{label:'Codex',args:['login','status'],login:'codex login'},claude:{label:'Claude Code',args:['auth','status','--json'],login:'claude auth login'}};
 const item=(id,label,state,detail)=>({id,label,state,detail});
 
-export function readinessEnvironment(env=process.env,platform=process.platform,home=homedir()){
- // Match TermLoop's Unix launch-environment repair, including GUI app launches.
- if(platform==='win32')return {...env};
- return {...env,PATH:[path.posix.join(home,'.local/bin'),path.posix.join(home,'.bun/bin'),env.PATH??''].filter(Boolean).join(':')};
-}
 export async function inspectLogin(provider,executable,{execImpl=exec,env=process.env,platform=process.platform,home=homedir()}={}){
  const descriptor=providers[provider];
  // Windows package-manager shims need a shell; readiness never evaluates shell
