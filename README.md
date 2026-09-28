@@ -16,7 +16,9 @@ sistemine uygun paketi kullan:
 | Windows | NSIS kurulum EXE | x64 |
 | Linux | AppImage / DEB | x64 |
 
-İlk yayın hazırlanmaktadır. Paketlerin ve platform kontrollerinin güncel durumu
+İlk public sürüm [v0.1.0](https://github.com/feritzcan2/jobmaster/releases/tag/v0.1.0)
+yayımlandı. macOS paketi Developer ID imzalı ve notarize edilmiştir; Windows EXE
+bu sürümde kod imzası taşımaz. Platform kontrolleri ve kalan beta çalışmaları
 [yayın kontrol listesinde](docs/public-release-checklist.md) izlenir.
 
 ### Başlamadan önce

@@ -5,9 +5,8 @@ konusu `JobLoop security` olan bir e-posta gönder. Etkilenen sürümü, işleti
 sistemini, beklenen/gerçek davranışı ve sentetik verilerle tekrar adımlarını ekle.
 CV, aday profili, gerçek şifre, token, tarayıcı çerezi veya oturum kaydı gönderme.
 
-Desteklenen düzeltme hedefi son yayımlanan sürümdür. İlk public sürüm henüz
-hazırlık aşamasındadır. Düzeltme ve açıklama zamanını bildirimi yapan kişiyle
-birlikte planlarız; belirli bir yanıt süresi taahhüt edilmez.
+Desteklenen düzeltme hedefi son yayımlanan sürümdür. Düzeltme ve açıklama zamanını
+bildirimi yapan kişiyle birlikte planlarız; belirli bir yanıt süresi taahhüt edilmez.
 
 JobLoop yalnızca yerel masaüstü arayüzünü açar. Agent MCP bağlantısı loopback
 üzerinden oturuma özel bearer token ve aday/worker kapsamıyla çalışır.

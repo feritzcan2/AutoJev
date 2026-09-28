@@ -1,7 +1,7 @@
 # Public yayın kontrol listesi
 
 Hedef: GitHub deposunu ve indirilebilir JobLoop uygulamasını birlikte yayımlamak.
-Durum: 28 Eylül 2026, ilk public sürüm hazırlığı.
+Durum: 28 Eylül 2026, [v0.1.0 public yayında](https://github.com/feritzcan2/jobmaster/releases/tag/v0.1.0).
 
 ## Tamamlanan uygulama işleri
 
@@ -29,11 +29,14 @@ Durum: 28 Eylül 2026, ilk public sürüm hazırlığı.
 - [x] Zorunlu macOS Developer ID imzası/notarization ve tam artifact kümesi kontrolü.
 - [x] GitHub Releases manifestleri ve kullanıcı tarafından başlatılan güncelleme akışı.
 - [x] Public PR işleri hosted runner’da; özel runner ve release sırlarına erişmiyor.
-- [x] Windows/Linux/macOS native CI geçti: [b33c69a koşusu](https://github.com/feritzcan2/jobmaster/actions/runs/36441510947).
+- [x] Windows/Linux/macOS native CI geçti: [b4e9fb6 koşusu](https://github.com/feritzcan2/jobmaster/actions/runs/36443400316).
   Her yeni yayın adayının kendi SHA kontrolü release workflow’unda ayrıca zorunlu.
-- [ ] JobLoop repo/environment’ına macOS sertifika ve notarization secret’larını tanımla.
-- [ ] İmzalı macOS, Windows ve Linux build’lerini aynı release altında yayımla.
-- [ ] Repo görünürlüğünü public yap ve anonim indirme/kurulum bağlantılarını doğrula.
+- [x] JobLoop repository secret’larına macOS sertifika ve notarization bilgileri tanımlandı.
+- [x] Developer ID imzalı/notarize macOS, Windows EXE ve Linux paketleri aynı release altında yayımlandı.
+  [Release workflow’u](https://github.com/feritzcan2/jobmaster/actions/runs/36446383950) üç platformda geçti.
+- [x] Repo public açıldı; 13 release dosyasının anonim indirme bağlantısı doğrulandı.
+  Paket/source/manifest checksum’ları GitHub asset digest’leriyle eşleşiyor; üç update feed’i yayımlanmış paketlere işaret ediyor.
+- [x] Public macOS ZIP indirilip checksum, codesign, stapler ve Gatekeeper kontrollerinden geçirildi.
 
 ## Son doğrulamalar
 
@@ -52,6 +55,7 @@ Durum: 28 Eylül 2026, ilk public sürüm hazırlığı.
 ## Kararlar ve sınırlar
 
 JobLoop lisansı TermLoop’un GPL-3.0-or-later + ticari lisans modeliyle hazırlandı.
-Üçüncü taraf lisansları ayrıca korunur. Apple imzalama hesabı/sertifikası seçimi ve
-secret kurulumu henüz tamamlanmadı. Windows sertifikası verilmezse EXE imzasızdır.
+Üçüncü taraf lisansları ayrıca korunur. TermLoop’un mevcut Apple imzalama ve
+notarization bilgileri, JobLoop repository anahtarıyla şifrelenerek altı secret olarak
+tanımlandı; aktarım dosyası ve geçici dal temizlendi. Windows EXE bu sürümde imzasızdır.
 Gerçek aday adına bu hazırlık sırasında harici başvuru yapılmadı.
