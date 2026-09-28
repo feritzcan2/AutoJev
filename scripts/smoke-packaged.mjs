@@ -8,12 +8,12 @@ const require=createRequire(import.meta.url),{_electron:electron}=createRequire(
 const root=process.cwd(),platform=process.platform;
 const executable=process.env.JOBLOOP_PACKAGED_BINARY||path.join(root,platform==='darwin'?'release/mac-universal/JobLoop.app/Contents/MacOS/JobLoop':platform==='win32'?'release/win-unpacked/JobLoop.exe':'release/linux-unpacked/jobloop');
 const data=await mkdtemp(path.join(os.tmpdir(),'jobloop-packaged-')),working=await mkdtemp(path.join(os.tmpdir(),'jobloop-cwd-'));
-let application;
+let application,archiveName='app.asar';
 async function launch(){
  application=await electron.launch({executablePath:executable,args:platform==='linux'?['--no-sandbox']:[],cwd:working,env:{...process.env,JOBLOOP_DATA_DIR:data}});
- const page=await application.firstWindow(),errors=[];page.on('pageerror',error=>errors.push(error.message));
+ const page=await application.firstWindow({timeout:30000}),errors=[];page.on('pageerror',error=>errors.push(error.message));
  await page.waitForFunction(()=>Boolean(window.jobloop),{timeout:30000});
- const packaged=await application.evaluate(({app})=>app.isPackaged);assert.equal(packaged,true);
+ const packaged=await application.evaluate(({app})=>({packaged:app.isPackaged,path:app.getAppPath()}));assert.equal(packaged.packaged,true);archiveName=path.basename(packaged.path);
  const catalog=await page.evaluate(()=>window.jobloop.catalog());assert.ok(catalog.some(provider=>provider.id==='codex'));
  return {page,errors};
 }
@@ -30,11 +30,11 @@ try{
  const resources=platform==='darwin'?path.resolve(executable,'../../Resources'):path.join(path.dirname(executable),'resources');
  const engine=path.join(resources,'engine',platform==='win32'?'jobloop-engine.exe':'jobloop-engine');
  const reply=execFileSync(engine,[path.join(data,'engine-smoke')],{input:'{"id":"ci","op":"catalog"}\n',timeout:20000,encoding:'utf8'});assert.ok(JSON.parse(reply.trim().split('\n').find(line=>line.includes('"ci"'))).result.length>0);
- const packageBytes=await readFile(path.join(resources,'app.asar'));assert.ok(packageBytes.length>10000);
- const mcp=path.join(resources,'app.asar.unpacked/node_modules/@playwright/mcp/cli.js');
+ const packageBytes=await readFile(path.join(resources,archiveName));assert.ok(packageBytes.length>10000);
+ const mcp=path.join(resources,archiveName+'.unpacked/node_modules/@playwright/mcp/cli.js');
  const mcpVersion=execFileSync(executable,[mcp,'--version'],{cwd:working,env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},encoding:'utf8',timeout:20000});assert.match(mcpVersion,/0\.0\.82/);
  for(const name of ['linkedin','freehire','jobindex','jobnet','jobdanmark','jobbank']){
-  const result=spawnSync(process.env.JOBLOOP_BUN||'bun',[path.join(resources,'app.asar.unpacked/dist/source-tools',name+'.mjs'),'--help'],{cwd:working,encoding:'utf8',timeout:20000});
+  const result=spawnSync(process.env.JOBLOOP_BUN||'bun',[path.join(resources,archiveName+'.unpacked/dist/source-tools',name+'.mjs'),'--help'],{cwd:working,encoding:'utf8',timeout:20000});
   assert.ok([0,1].includes(result.status)&&!result.error&&!result.stderr.trim()&&/usage|commands|options/i.test(result.stdout),`Packaged source tool failed: ${name}: ${result.error??result.stderr}`);
  }
  if(platform==='darwin')execFileSync('lipo',[engine,'-verify_arch','arm64','x86_64']);

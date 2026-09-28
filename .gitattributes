@@ -1,2 +1,5 @@
-# Preserve the upstream license byte-for-byte for its checksum manifest.
+* text=auto eol=lf
+# Preserve all vendored source bytes for the cross-platform checksum manifest.
+vendor/termloop/** -text
+# Preserve the upstream license's final newline for its checksum manifest.
 vendor/termloop/LICENSE whitespace=-blank-at-eof

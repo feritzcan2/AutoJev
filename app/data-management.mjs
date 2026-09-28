@@ -60,7 +60,7 @@ function sanitizeExport(db){
  db.exec('PRAGMA secure_delete=ON');
  if(tableExists(db,'account_credentials'))db.exec('UPDATE account_credentials SET ciphertext=NULL,pending=NULL');
  for(const table of ['jev_settings','gmail_accounts','telegram_job_messages','telegram_outbox','telegram_pairs','telegram_links','telegram_configs','telegram_meta','prompts','agent_conversations','conversation_launch_settings','task_context_reviews'])if(tableExists(db,table))db.exec(`DELETE FROM ${table}`);
- if(tableExists(db,'worker_state'))db.exec("DELETE FROM worker_state WHERE kind LIKE 'conversation:%' OR kind='task_context_review'");
+ if(tableExists(db,'worker_state'))db.exec("DELETE FROM worker_state WHERE kind LIKE 'conversation:%' OR kind IN ('review','task_context_review')");
  // Remove deleted secrets from SQLite free pages in the exported copy.
  db.exec('VACUUM');
 }
@@ -105,7 +105,7 @@ export async function createBackup({dataDirectory,db=null,destination,appVersion
    manifestFiles.push({path:name,bytes:(await lstat(output)).size,sha256:await digest(output)});
   }
   const counts=sqliteCheck(path.join(temporary,'jobloop.sqlite'));
-  const manifest={format:FORMAT,version:FORMAT_VERSION,appVersion:String(appVersion),createdAt:iso(),kind,secrets:internal?'os-encrypted-same-user':'excluded',sourceDirectory:path.resolve(dataDirectory),...(internal?{ownerId:await backupOwner(base,{create:true})}:{}),...counts,files:manifestFiles};
+  const manifest={format:FORMAT,version:FORMAT_VERSION,appVersion:String(appVersion),createdAt:iso(),kind,secrets:internal?'os-encrypted-same-user':'excluded',sourceDirectory:path.resolve(dataDirectory),canonicalSourceDirectory:base,...(internal?{ownerId:await backupOwner(base,{create:true})}:{}),...counts,files:manifestFiles};
   await atomicJson(path.join(temporary,'manifest.json'),manifest);await rename(temporary,target);
   return {path:target,...summary(manifest)};
  }catch(error){await rm(temporary,{recursive:true,force:true});throw error;}
@@ -118,7 +118,7 @@ export async function inspectBackup(directory){
  const root=await realpath(requested),manifestPath=path.join(root,'manifest.json'),info=await lstat(manifestPath);
  if(!info.isFile()||info.isSymbolicLink()||info.size>8*1024*1024)throw Error('Geçersiz yedek manifesti.');
  const manifest=JSON.parse(await readFile(manifestPath,'utf8'));
- if(manifest.format!==FORMAT||manifest.version!==FORMAT_VERSION||!Array.isArray(manifest.files)||!manifest.files.length||manifest.files.length>MAX_FILES||!['manual','upgrade','before-restore'].includes(manifest.kind)||!['excluded','os-encrypted-same-user'].includes(manifest.secrets)||typeof manifest.sourceDirectory!=='string'||manifest.sourceDirectory.length>4000||!path.posix.isAbsolute(manifest.sourceDirectory)&&!path.win32.isAbsolute(manifest.sourceDirectory)||!Number.isSafeInteger(manifest.schemaVersion)||manifest.schemaVersion<0||manifest.schemaVersion>DATA_SCHEMA_VERSION||typeof manifest.appVersion!=='string'||manifest.appVersion.length>100||!Number.isFinite(Date.parse(manifest.createdAt)))throw Error('Desteklenmeyen veya geçersiz JobLoop yedeği.');
+ if(manifest.format!==FORMAT||manifest.version!==FORMAT_VERSION||!Array.isArray(manifest.files)||!manifest.files.length||manifest.files.length>MAX_FILES||!['manual','upgrade','before-restore'].includes(manifest.kind)||!['excluded','os-encrypted-same-user'].includes(manifest.secrets)||!validSourceDirectory(manifest.sourceDirectory)||manifest.canonicalSourceDirectory!==undefined&&!validSourceDirectory(manifest.canonicalSourceDirectory)||!Number.isSafeInteger(manifest.schemaVersion)||manifest.schemaVersion<0||manifest.schemaVersion>DATA_SCHEMA_VERSION||typeof manifest.appVersion!=='string'||manifest.appVersion.length>100||!Number.isFinite(Date.parse(manifest.createdAt)))throw Error('Desteklenmeyen veya geçersiz JobLoop yedeği.');
  const seen=new Set();let total=0;
  for(const entry of manifest.files){
   const name=safeRelative(entry.path),key=name.normalize('NFC').toLocaleLowerCase('en');
@@ -133,26 +133,34 @@ export async function inspectBackup(directory){
  return {path:root,...summary(manifest)};
 }
 
-function rewritePath(value,sourceDirectory,destination){
+function validSourceDirectory(value){return typeof value==='string'&&value.length<=4000&&!value.includes('\0')&&(path.posix.isAbsolute(value)||/^[A-Za-z]:[\\/]/.test(value)||/^\\\\[^\\]+\\[^\\]+/.test(value));}
+function normalizedSourcePath(value){
+ const windows=/^(?:[A-Za-z]:[\\/]|\\\\|\/\/)/.test(value);
+ const normalized=(windows?path.win32.normalize(value).replaceAll('\\','/'):path.posix.normalize(value)).replace(/\/$/,'');
+ return {value:normalized,key:windows?normalized.toLowerCase():normalized,windows};
+}
+function rewritePath(value,sourceDirectories,destination){
  if(typeof value==='string'){
-  const normalized=value.replaceAll('\\','/'),base=sourceDirectory.replaceAll('\\','/').replace(/\/$/,'');
-  if(normalized.startsWith(base+'/'))return path.join(destination,...normalized.slice(base.length+1).split('/'));
+  const normalized=normalizedSourcePath(value);
+  for(const directory of sourceDirectories){const base=normalizedSourcePath(directory);if(normalized.windows===base.windows&&normalized.key.startsWith(base.key+'/'))return path.join(destination,...normalized.value.slice(base.value.length+1).split('/'));}
   return value;
  }
- if(Array.isArray(value))return value.map(item=>rewritePath(item,sourceDirectory,destination));
- if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,rewritePath(item,sourceDirectory,destination)]));
+ if(Array.isArray(value))return value.map(item=>rewritePath(item,sourceDirectories,destination));
+ if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,rewritePath(item,sourceDirectories,destination)]));
  return value;
 }
 function prepareRestoredDatabase(file,manifest,dataDirectory){
- const db=new DatabaseSync(file);
+ const db=new DatabaseSync(file),sourceDirectories=[manifest.sourceDirectory,manifest.canonicalSourceDirectory].filter(Boolean),windowsSource=sourceDirectories.some(directory=>normalizedSourcePath(directory).windows);
+ const fileKey=value=>windowsSource?value.normalize('NFC').toLowerCase():value;
+ const files=new Map(manifest.files.map(entry=>[fileKey(entry.path),entry.path]));
  try{
   db.exec('PRAGMA trusted_schema=OFF; PRAGMA secure_delete=ON; BEGIN');
   for(const table of ['candidates','jobs','sources','setups','campaigns','worker_state','background_tasks','background_runs','mail_signals']){
    if(!tableExists(db,table))continue;
    for(const row of db.prepare(`SELECT rowid,data FROM ${table}`).all()){
-    let value=rewritePath(JSON.parse(row.data),manifest.sourceDirectory,dataDirectory);if(!value||typeof value!=='object')continue;
+    let value=rewritePath(JSON.parse(row.data),sourceDirectories,dataDirectory);if(!value||typeof value!=='object')continue;
     if(table==='campaigns'||table==='worker_state'&&value.status==='running')Object.assign(value,{status:'paused',wakeAt:0,note:'Yedekten geri yüklendi. Sonuçları kontrol edip Başlat ile devam edebilirsin.'});
-    if(table==='candidates'&&value.cvPath){const relative=path.relative(dataDirectory,value.cvPath).split(path.sep).join('/');if(!relative.startsWith('candidates/'+value.id+'/')||!manifest.files.some(entry=>entry.path===relative))value.cvPath=null;}
+    if(table==='candidates'&&value.cvPath){const relative=path.relative(dataDirectory,value.cvPath).split(path.sep).join('/'),included=files.get(fileKey(relative));value.cvPath=included&&fileKey(relative).startsWith(fileKey('candidates/'+value.id+'/'))?path.join(dataDirectory,...included.split('/')):null;}
     if(table==='background_tasks')Object.assign(value,{enabled:false,connection:null,connectorAccess:null});
     if(table==='background_runs'&&value.status==='running')Object.assign(value,{status:'interrupted',finishedAt:Date.now()});
     if(table==='setups'&&value.status==='running')Object.assign(value,{status:'cancelled',needsTurn:false});
@@ -162,7 +170,7 @@ function prepareRestoredDatabase(file,manifest,dataDirectory){
    }
   }
   for(const table of ['agent_conversations','conversation_launch_settings','task_context_reviews','telegram_pairs'])if(tableExists(db,table))db.exec(`DELETE FROM ${table}`);
-  if(tableExists(db,'worker_state'))db.exec("DELETE FROM worker_state WHERE kind LIKE 'conversation:%' OR kind='task_context_review'");
+  if(tableExists(db,'worker_state'))db.exec("DELETE FROM worker_state WHERE kind LIKE 'conversation:%' OR kind IN ('review','task_context_review')");
   // Restores never resume Telegram polling or pending deliveries automatically.
   if(tableExists(db,'telegram_configs'))for(const row of db.prepare('SELECT candidate_id,data FROM telegram_configs').all()){const value=JSON.parse(row.data);value.enabled=false;db.prepare('UPDATE telegram_configs SET data=? WHERE candidate_id=?').run(JSON.stringify(value),row.candidate_id);}
   db.exec('COMMIT; VACUUM');

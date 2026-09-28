@@ -10,7 +10,7 @@ Durum: 28 Eylül 2026, ilk public sürüm hazırlığı.
 - [x] Yerel ağdaki telefon/web istemcisi, HTTP sunucusu ve QR eşleştirmesi kaldırıldı.
   Uzaktan bildirim ve sorular Telegram üzerinden yönetiliyor.
 - [x] TermLoop kaynakları ve terminal paketleri sabit commit, checksum manifesti ve
-  lisanslarıyla vendor edildi. Komşu TermLoop deposuna build bağımlılığı kaldırıldı.
+  lisanslarıyla vendor edildi. Komşu TermLoop deposuna build bağımlılığı kaldırıldı; ayrı temiz checkout’ta bootstrap geçti.
 - [x] Paketli Rust engine, kaynak CLI araçları ve Playwright yardımcı yolları eklendi.
 - [x] Agent kurulumu/oturumu, Chrome ve isteğe bağlı Bun/Jev ön kontrolleri eklendi.
 - [x] Jev anahtarı sistem anahtarlığıyla saklanıyor; açıkça başlatılan bağlantı testi var.
@@ -36,10 +36,11 @@ Durum: 28 Eylül 2026, ilk public sürüm hazırlığı.
 
 ## Son doğrulamalar
 
-- [x] Yerelde 489 Node testi geçti; üretim bağımlılık audit’inde bilinen açık yok.
+- [x] Yerelde 495 Node testi geçti; üretim bağımlılık audit’inde bilinen açık yok.
 - [x] Git geçmişinde Gitleaks v8.30.1 ile gerçek secret eşleşmesi bulunmadı.
-- [ ] Son kaynak snapshot’ı ve paket içeriğini tekrar tara; yalnız checksum false-positive
-  istisnasını kullan. `.env.jev`, gerçek aday verileri ve runtime dosyaları yayımlanmaz.
+- [x] Kaynak snapshot’ı, Git geçmişi ve çıkarılmış macOS paketinde Gitleaks taraması temiz.
+  Dar istisnalar yalnız vendor checksum’ları ve sır içermeyen bir boolean ifadesidir.
+  Pakette `.env.jev`, gerçek aday verileri ve runtime dosyaları bulunmuyor.
 - [ ] Her işletim sisteminde temiz kullanıcı hesabıyla gerçek CLI/Chrome oturumunu doğrula.
 - [ ] Küçük harici beta grubuyla ilk profil, arama/başvuru yetkisi, durdurma/devam,
   Telegram ve sürüm yükseltme akışlarını doğrula. Otomatik testler bu adımı tamamlamaz.

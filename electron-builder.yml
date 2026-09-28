@@ -33,6 +33,7 @@ extraResources:
   - from: vendor/termloop/clients/terminal-surface/src/assets/fonts/OFL.txt
     to: licenses/JetBrains-Mono-OFL.txt
 npmRebuild: false
+afterPack: scripts/verify-universal-inputs.cjs
 publish:
   provider: github
   owner: feritzcan2

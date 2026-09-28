@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
 import path from 'node:path';
+import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
+import os from 'node:os';
+import verifyUniversalInputs from '../scripts/verify-universal-inputs.cjs';
 import {engineBinaryPath,runtimeResourceRoot} from '../app/runtime-paths.mjs';
 import {createUpdateManager} from '../app/update-manager.mjs';
 test('packaged engine resolves outside asar and development uses an existing debug binary',()=>{
@@ -36,4 +39,14 @@ test('installer errors release maintenance whether thrown or emitted asynchronou
   if(asynchronous){await manager.install();await new Promise(resolve=>setImmediate(resolve));}else await assert.rejects(manager.install(),/installer failed/);
   assert.equal(released,1);manager.dispose();
  }
+});
+test('universal packaging refuses mixed source snapshots before creating an ESM-incompatible bootstrap',async()=>{
+ const directory=await mkdtemp(path.join(os.tmpdir(),'jobloop-universal-'));
+ try{
+  for(const arch of ['x64','arm64']){const resources=path.join(directory,`mac-universal-${arch}-temp/JobLoop.app/Contents/Resources`);await mkdir(resources,{recursive:true});await writeFile(path.join(resources,'app.asar'),'immutable source');}
+  const context={appOutDir:path.join(directory,'mac-universal-arm64-temp'),packager:{appInfo:{productFilename:'JobLoop'}}};
+  await verifyUniversalInputs(context);
+  await writeFile(path.join(context.appOutDir,'JobLoop.app/Contents/Resources/app.asar'),'concurrent edit');
+  await assert.rejects(verifyUniversalInputs(context),/immutable checkout/);
+ }finally{await rm(directory,{recursive:true,force:true});}
 });

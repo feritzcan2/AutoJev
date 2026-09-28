@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile,readFile,rm,readdir,symlink,rename,utimes,stat} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,rm,readdir,symlink,rename,utimes,stat,realpath} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
@@ -131,4 +131,43 @@ test('automatic backup retention covers updater snapshots and keeps recovery bac
  for(let index=0;index<7;index++){const folder=path.join(directory,index%2?'upgrade-'+index:'before-update-'+index);await mkdir(folder);await writeFile(path.join(folder,'manifest.json'),JSON.stringify({format:'jobloop-backup',kind:'upgrade',createdAt:new Date(1700000000000+index*1000).toISOString()}));}
  await mkdir(path.join(directory,'before-restore-keep'));await completeDataUpgrade({dataDirectory:f.data,appVersion:'0.1.0'});
  const names=await readdir(directory);assert.equal(names.length,6);assert.ok(names.includes('before-restore-keep'));assert.ok(!names.includes('before-update-0'));assert.ok(!names.includes('upgrade-1'));
+});
+
+test('portable exports and same-install restores clear every worker task review',async t=>{
+ const f=await fixture(t),worker=f.store.workerState.add(f.profile.id),taskId='reviewed-task';
+ f.store.saveTaskReview(f.profile.id,taskId,'main worker review');f.store.forWorker(worker.id).saveTaskReview(f.profile.id,taskId,'secondary worker review');
+ await f.create();
+ const exported=new DatabaseSync(path.join(f.backup,'jobloop.sqlite'),{readOnly:true});
+ try{assert.equal(exported.prepare('SELECT count(*) AS n FROM task_context_reviews').get().n,0);assert.equal(exported.prepare("SELECT count(*) AS n FROM worker_state WHERE kind='review'").get().n,0);assert.equal(exported.prepare('SELECT count(*) AS n FROM agent_workers').get().n,1);}finally{exported.close();}
+ await mkdir(path.join(f.data,'backups'));const backup=await createBackup({dataDirectory:f.data,db:f.store.db,destination:path.join(f.data,'backups','upgrade-review'),appVersion:'0.1.0',kind:'upgrade'});
+ await stageRestore({dataDirectory:f.data,directory:backup.path,db:f.store.db,appVersion:'0.1.0'});f.store.close();await applyPendingRestore({dataDirectory:f.data});
+ const restored=new Store(path.join(f.data,'jobloop.sqlite'));
+ try{assert.equal(restored.taskReview(f.profile.id,taskId),undefined);assert.equal(restored.forWorker(worker.id).taskReview(f.profile.id,taskId),undefined);assert.equal(restored.workers(f.profile.id).length,2);}finally{restored.close();}
+});
+
+test('restore rebases canonical CV paths when the source data root uses a directory alias',async t=>{
+ const f=await fixture(t),alias=path.join(f.base,'source-alias');await symlink(f.data,alias,process.platform==='win32'?'junction':'dir');
+ f.store.setCv(f.profile.id,await realpath(path.join(f.candidate,'CV.pdf')));
+ await createBackup({dataDirectory:alias,db:f.store.db,destination:f.backup,appVersion:'0.1.0'});
+ const saved=JSON.parse(await readFile(path.join(f.backup,'manifest.json'),'utf8'));assert.equal(saved.sourceDirectory,alias);assert.equal(saved.canonicalSourceDirectory,await realpath(f.data));
+ const target=path.join(f.base,'restored-alias');await mkdir(target);const current=new Store(path.join(target,'jobloop.sqlite'));
+ await stageRestore({dataDirectory:target,directory:f.backup,db:current.db,appVersion:'0.1.0'});current.close();await applyPendingRestore({dataDirectory:target});
+ const restored=new Store(path.join(target,'jobloop.sqlite'));
+ try{assert.equal(restored.profile(f.profile.id).cvPath,path.join(target,'candidates',f.profile.id,'CV.pdf'));assert.equal(await readFile(restored.profile(f.profile.id).cvPath,'utf8'),'Synthetic CV');}finally{restored.close();}
+});
+
+for(const root of ['C:\\Users\\Example\\JobLoop','\\\\server\\share\\JobLoop'])test(`Windows source paths preserve CVs across case and separator changes: ${root}`,async t=>{
+ const f=await fixture(t),windowsCv=root.toLowerCase()+'\\CANDIDATES\\'+f.profile.id+'\\cv.PDF';f.store.setCv(f.profile.id,windowsCv);await f.create();
+ // A Windows-produced archive is restored on this test's native OS; no Windows filesystem is required.
+ await manifest(f.backup,value=>{value.sourceDirectory=root.replaceAll('\\','/');delete value.canonicalSourceDirectory;});assert.equal((await inspectBackup(f.backup)).candidates,1);
+ const target=path.join(f.base,'windows-import');await mkdir(target);const current=new Store(path.join(target,'jobloop.sqlite'));
+ await stageRestore({dataDirectory:target,directory:f.backup,db:current.db,appVersion:'0.1.0'});current.close();await applyPendingRestore({dataDirectory:target});
+ const restored=new Store(path.join(target,'jobloop.sqlite'));
+ try{assert.equal(restored.profile(f.profile.id).cvPath,path.join(target,'candidates',f.profile.id,'CV.pdf'));assert.equal(await readFile(restored.profile(f.profile.id).cvPath,'utf8'),'Synthetic CV');}finally{restored.close();}
+});
+
+test('optional canonical source metadata stays compatible and rejects relative or malformed roots',async t=>{
+ const f=await fixture(t);await f.create();const original=await readFile(path.join(f.backup,'manifest.json'),'utf8');
+ await manifest(f.backup,value=>delete value.canonicalSourceDirectory);assert.equal((await inspectBackup(f.backup)).candidates,1);
+ for(const canonicalSourceDirectory of ['../outside','relative','\\root-relative',42,'/bad\0root']){await writeFile(path.join(f.backup,'manifest.json'),original);await manifest(f.backup,value=>{value.canonicalSourceDirectory=canonicalSourceDirectory;});await assert.rejects(()=>inspectBackup(f.backup),/geçersiz/);}
 });

@@ -11,3 +11,10 @@ condition = "AND"
 paths = ['''(?:^|[/\\])vendor[/\\]termloop[/\\]UPSTREAM\.json$''']
 regexTarget = "line"
 regexes = ['''^\s*"(?:clients|modules)/[A-Za-z0-9_./-]+": "[a-f0-9]{64}",?$''']
+
+[[rules.allowlists]]
+description = "Bundled Jobbank CLI boolean flag expression contains no credential value"
+condition = "AND"
+paths = ['''(?:^|[/\\])dist[/\\]source-tools[/\\]jobbank\.mjs$''']
+regexTarget = "line"
+regexes = ['''^\s*const hasFilter = flags[0-9]*\.key(?: \|\| flags[0-9]*(?:\.[A-Za-z]+|\["[A-Za-z-]+"\])(?: !== undefined)?)+;$''']
