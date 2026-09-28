@@ -15,6 +15,15 @@ test('company/title/location similarity requires an observed vacancy link before
   assert.equal(vacancyMatch(listing,{...listing,role:'Senior Legal Counsel, Privacy'}),null);
  }finally{s.close();}
 });
+test('cross-source submitted vacancy recognizes m/w/d gender suffix',()=>{
+ const s=new Store(':memory:');try{
+  const p=s.saveProfile({name:'Test',preferences:'Berlin'});
+  const old=s.addJob(p.id,{company:'Axel Springer Tech GmbH',role:'(Senior) Manager Privacy & Data Governance',location:'Berlin (80% office)',fit:'Privacy',url:'https://www.stepstone.de/stellenangebote--Senior-Manager--14425447-inline.html'}).job;
+  old.status='submitted';old.proof={kind:'success_page',text:'Application sent',url:old.url};s.saveJob(old,'test');
+  const newer=s.addJob(p.id,{company:'Axel Springer Tech GmbH',role:'(Senior) Manager Privacy & Data Governance (m/w/d)',location:'Berlin, Germany',fit:'Privacy',url:'https://de.whatjobs.com/jobs/privacy/berlin?id=491014868'}).job;
+  assert.equal(s.job(p.id,newer.id).duplicateApplication.jobId,old.id);
+ }finally{s.close();}
+});
 test('an imported application with unknown location holds the cross-source match without faking a submission',async()=>{
  const s=new Store(':memory:');try{
   const p=s.saveProfile({name:'Test',preferences:'Berlin',authorization:'submit'});

@@ -1,4 +1,4 @@
-import {applicationQueueState,manualApplicationAuthorized,migrateManualApplications} from './application-queue.mjs';
+import {applicationQueueState,manualApplicationAuthorized,migrateManualApplications,uncertainRetryPeerAllowed} from './application-queue.mjs';
 import {preparationAuthorized,preparationHeld,preparationView,preparationQueueState} from './preparation.mjs';
 import {dirname,join} from 'node:path';
 import {WorkerState,MAIN_WORKER} from './worker-state.mjs';
@@ -251,14 +251,16 @@ export class Store {
       return {...linked,job:this.rankedJob(candidate,linked.jobId)};
     });
   }
-  assertSubmissionAllowed(candidate,id,url,sessionId){
-    const task=this.campaign(candidate)?.task;if(task?.jobId===id&&task.verificationOnly)throw Error('Bu görev yalnızca sonucu doğrular; yeniden başvuru gönderilemez.');
-    if(preparationHeld(this.job(candidate,id)))throw Error('Hazırlık tamamlandıktan sonra kullanıcı Başvur seçmeli. Gönderim bekletiliyor.');
+  assertSubmissionAllowed(candidate,id,url,sessionId,{verificationContinuation=false}={}){
+    const task=this.campaign(candidate)?.task,job=this.job(candidate,id);
+    const continuation=verificationContinuation&&task?.jobId===id&&['application','verify'].includes(task.kind)&&job.sessionId===sessionId&&job.status==='uncertain'&&job.verificationContinuation&&job.verificationContinuation.url===url;
+    if(task?.jobId===id&&task.verificationOnly&&!continuation)throw Error('Bu görev yalnızca sonucu doğrular; yeniden başvuru gönderilemez.');
+    if(preparationHeld(job))throw Error('Hazırlık tamamlandıktan sonra kullanıcı Başvur seçmeli. Gönderim bekletiliyor.');
     this.jobRegistry.atomic(()=>{
       this.job(candidate,id);
       if(url)this.jobRegistry.bind(candidate,id,url,'observed_application_page');
     });
-    return this.jobRegistry.atomic(()=>this.jobRegistry.assertAvailable(candidate,id,sessionId,this.workerState.tasks(candidate)));
+    return this.jobRegistry.atomic(()=>this.jobRegistry.assertAvailable(candidate,id,sessionId,this.workerState.tasks(candidate),{allowUncertainPeers:uncertainRetryPeerAllowed(this.job(candidate,id),task)}));
   }
   addJob(candidate,input){
     return this.jobRegistry.atomic(()=>this.insertJob(candidate,input));
@@ -379,7 +381,7 @@ export class Store {
     if(['working','prepared','submitting'].includes(status)){
       const current=this.job(candidate,id);
       if(current.resumeContext?.url)this.jobRegistry.bind(candidate,id,current.resumeContext.url,'application_checkpoint');
-      this.jobRegistry.assertAvailable(candidate,id,sessionId,this.workerState.tasks(candidate));
+      this.jobRegistry.assertAvailable(candidate,id,sessionId,this.workerState.tasks(candidate),{allowUncertainPeers:uncertainRetryPeerAllowed(current,this.campaign(candidate)?.task)});
     }
     const j=this.job(candidate,id),p=this.profile(candidate),c=this.campaign(candidate),manual=c?.status==='running'&&manualApplicationAuthorized(j,c.task),preparing=c?.status==='running'&&preparationAuthorized(j,c.task);
     if(status==='submitting'&&(preparationHeld(j)||c?.task?.kind==='preparation'))throw Error('Hazırlık görevi gönderemez. Kullanıcı Başvur seçmeli.');
@@ -397,7 +399,7 @@ export class Store {
     }
     if(!transitions[j.status]?.includes(status))throw Error(`Geçersiz geçiş: ${j.status} → ${status}${j.status==='submitted'?'. Gönderim zaten kanıtıyla kaydedildi; bu başvurunun durumunu tekrar değiştirme.':['submitting','uncertain'].includes(j.status)?'. working/prepared/submitting geçişlerini sırayla deneme. Aynı sekmede onay varsa doğrudan record_submission kullan. Yalnızca gönderimi engelleyen açık alan doğrulama hatası varsa record_validation_failure kullan. continue_verification için aynı ilanın yanıtlanmış erişim sorusu ve açık kalan site talimatı birlikte gereklidir. Zaman aşımı, CAPTCHA veya onay yokluğu yeniden gönderme gerekçesi değildir.':''}`);
     if(status==='submitted')throw Error('Gönderim kanıtı için record_submission kullan');
-    if(['working','prepared','submitting'].includes(status)&&j.duplicateApplication)throw Error(j.duplicateApplication.reason+' Önceki ilan: '+j.duplicateApplication.jobId);
+    if(['working','prepared','submitting'].includes(status)&&j.duplicateApplication&&!uncertainRetryPeerAllowed(j,c?.task))throw Error(j.duplicateApplication.reason+' Önceki ilan: '+j.duplicateApplication.jobId);
     if(!manual&&!preparing&&status==='working'&&p.authorization==='research')throw Error('Profil yalnızca araştırmaya izin veriyor');
     if(!manual&&status==='submitting'&&p.authorization!=='submit')throw Error('Gönderim yetkisi yok; kullanıcı profilden değiştirmeli');
     if(!manual&&status==='submitting'&&j.sourceId&&this.source(candidate,j.sourceId).applyMode!=='auto')throw Error('Bu kaynak otomatik gönderime izin vermiyor');
@@ -429,7 +431,6 @@ export class Store {
     const j=this.job(candidate,id),p=this.profile(candidate),c=this.campaign(candidate);
     if(j.followupStopped)throw Error('Başvuru takibi bırakıldı; doğrulamayı yeniden başlatma.');
     if(c?.status!=='running'||c.task?.jobId!==id||!['application','verify'].includes(c.task.kind)||j.sessionId!==sessionId||!['submitting','uncertain'].includes(j.status))throw Error('Devam adımı etkin görevin aynı gönderim denemesine ait olmalı');
-    if(c.task.verificationOnly)throw Error('Bu görev yalnızca sonucu doğrular; gönderim adımı sürdürülemez.');
     if(!manualApplicationAuthorized(j,c.task)&&(p.authorization!=='submit'||j.sourceId&&this.source(candidate,j.sourceId).applyMode!=='auto'))throw Error('Mevcut yetki doğrulama sonrası gönderime devam etmeye izin vermiyor');
     if(j.verificationContinuation)throw Error('Bu deneme için devam adımı zaten ayrıldı. Yeniden tıklama; mevcut sonucu doğrula.');
     const q=this.questions(candidate).find(q=>q.id===input.questionId&&q.jobId===id&&q.answer!==null);

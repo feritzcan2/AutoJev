@@ -1,5 +1,4 @@
 import './config.css';
-import {telegramPanel} from './telegram.js';
 import {jevSettingsPanel,dataDisclosure} from './jev-settings.js';
 import {readinessPanel} from './readiness.js';
 import {createDataManagement} from './data-management.js';
@@ -10,12 +9,12 @@ const size=text=>text.length>=1000?`${(text.length/1000).toFixed(1).replace('.0'
 function richText(text){const pre=node('pre');const parts=text.split(/(\{\{[^}]+\}\})/);for(const part of parts){if(/^\{\{[^}]+\}\}$/.test(part))pre.append(node('mark','',part.slice(2,-2)));else if(part)pre.append(document.createTextNode(part));}return pre;}
 function body(text){const wrap=node('div','prompt-body');const copy=node('button','quiet copy','Kopyala');copy.type='button';copy.onclick=async()=>{try{await navigator.clipboard.writeText(text);copy.dataset.done='';copy.textContent='Kopyalandı';setTimeout(()=>{delete copy.dataset.done;copy.textContent='Kopyala';},1500);}catch{}};const head=node('div','prompt-body-head');head.append(copy);wrap.append(head,richText(text));return wrap;}
 function card({title,when,path,text,open=false}){const details=node('details','prompt-card');details.open=open;details.dataset.search=(title+' '+(when??'')+' '+text).toLowerCase();const summary=node('summary');const main=node('span');main.append(node('span','prompt-title',title));if(when)main.append(node('span','prompt-when',when));if(path)main.append(node('code','prompt-path',path));summary.append(main,node('span','prompt-size',size(text)));details.append(summary,body(text));return details;}
-export function configPage(api,{notice,relativeTime}){
+export function configPage(api,{notice,relativeTime,openNotifications}){
  const root=document.getElementById('config');
- root.innerHTML=`<div class="config-head"><div><h2>Yapılandırma</h2><p>Kurulum, yedekler, güncellemeler, Telegram bağlantısı ve agent’a giden metinler: talimatlar, görev promptları, beceriler ve MCP araçları.</p></div><label class="config-search"><input id="config-search" type="search" placeholder="Metinlerde ara" aria-label="Metinlerde ara"><small id="config-search-note"></small></label></div>
-<div class="config-body"><nav class="config-nav" aria-label="Bölümler"><a href="#config-telegram">Telegram<b></b></a><a href="#config-readiness">Kurulum kontrolü<b></b></a><a href="#config-jev">Jev<b></b></a><a href="#config-data">Veriler ve yedekler<b></b></a><a href="#config-updates">Güncellemeler<b></b></a><a href="#config-privacy">Veri paylaşımı<b></b></a><a href="#config-instructions">Talimatlar<b></b></a><a href="#config-tasks">Görev promptları<b></b></a><a href="#config-skills">Beceriler<b></b></a><a href="#config-tools">MCP araçları<b></b></a></nav>
+ root.innerHTML=`<div class="config-head"><div><h2>Yapılandırma</h2><p>Kurulum, yedekler, güncellemeler, bildirimler ve agent’a giden metinler: talimatlar, görev promptları, beceriler ve MCP araçları.</p></div><label class="config-search"><input id="config-search" type="search" placeholder="Metinlerde ara" aria-label="Metinlerde ara"><small id="config-search-note"></small></label></div>
+<div class="config-body"><nav class="config-nav" aria-label="Bölümler"><a href="#config-telegram">Bildirimler<b></b></a><a href="#config-readiness">Kurulum kontrolü<b></b></a><a href="#config-jev">Jev<b></b></a><a href="#config-data">Veriler ve yedekler<b></b></a><a href="#config-updates">Güncellemeler<b></b></a><a href="#config-privacy">Veri paylaşımı<b></b></a><a href="#config-instructions">Talimatlar<b></b></a><a href="#config-tasks">Görev promptları<b></b></a><a href="#config-skills">Beceriler<b></b></a><a href="#config-tools">MCP araçları<b></b></a></nav>
 <div class="config-sections">
-<section id="config-telegram" class="config-section"><h3>Telegram</h3><p>Adaylara başvuru bildirimlerini ulaştır, bekleyen soruları bot üzerinden yanıtlat.</p><div id="telegram-access"></div></section>
+<section id="config-telegram" class="config-section"><h3>Bildirimler</h3><p>Telegram bot bağlantısı ve adaya özel bildirim tercihleri Bildirimler sayfasında.</p><button id="open-notifications" class="primary" type="button">Bildirim ayarlarını aç</button></section>
 <section id="config-readiness" class="config-section"><h3>Kurulum kontrolü</h3><div id="config-readiness-panel"></div></section>
 <section id="config-jev" class="config-section"><h3>Jev</h3><div id="config-jev-panel"></div></section>
 <section id="config-updates" class="config-section"><div id="config-updates-panel"></div></section>
@@ -30,7 +29,7 @@ export function configPage(api,{notice,relativeTime}){
  const lists={instructions:$('config-instructions-list'),tasks:$('config-tasks-list'),skills:$('config-skills-list'),tools:$('config-tools-list')};
  // One section at a time; a search query overrides that and shows every section with a hit.
  const tabKey='jobloop-config-tab';let active='telegram';try{active=localStorage.getItem(tabKey)||'telegram';}catch{}
- function layout(){const query=$('config-search').value.trim().toLowerCase();if(![...root.querySelectorAll('.config-nav a:not([hidden])')].some(tab=>tab.getAttribute('href')===`#config-${active}`))active=telegram?'telegram':'instructions';for(const section of root.querySelectorAll('.config-section')){const key=section.id.slice(7),tab=root.querySelector(`.config-nav a[href="#config-${key}"]`);if(tab.hidden){section.hidden=true;continue;}const hits=section.querySelectorAll('[data-search]:not([hidden])').length;section.hidden=query?!hits:key!==active;tab.classList.toggle('active',!query&&key===active);tab.classList.toggle('hit',Boolean(query&&hits));tab.setAttribute('aria-current',!query&&key===active?'page':'false');}root.dataset.searching=String(Boolean(query));}
+ function layout(){const query=$('config-search').value.trim().toLowerCase();if(![...root.querySelectorAll('.config-nav a:not([hidden])')].some(tab=>tab.getAttribute('href')===`#config-${active}`))active=openNotifications?'telegram':'instructions';for(const section of root.querySelectorAll('.config-section')){const key=section.id.slice(7),tab=root.querySelector(`.config-nav a[href="#config-${key}"]`);if(tab.hidden){section.hidden=true;continue;}const hits=section.querySelectorAll('[data-search]:not([hidden])').length;section.hidden=query?!hits:key!==active;tab.classList.toggle('active',!query&&key===active);tab.classList.toggle('hit',Boolean(query&&hits));tab.setAttribute('aria-current',!query&&key===active?'page':'false');}root.dataset.searching=String(Boolean(query));}
  function open(key){active=key;try{localStorage.setItem(tabKey,key);}catch{}if($('config-search').value){$('config-search').value='';counts();}else layout();if(window.scrollY)window.scrollTo({top:0});}
  for(const a of root.querySelectorAll('.config-nav a'))a.onclick=e=>{e.preventDefault();open(a.getAttribute('href').slice(8));};
  function counts(){const query=$('config-search').value.trim().toLowerCase();let shown=0,total=0;for(const [key,list]of Object.entries(lists)){const items=[...list.querySelectorAll('[data-search]')];let visible=0;for(const item of items){const hit=!query||item.dataset.search.includes(query);item.hidden=!hit;if(hit)visible++;}shown+=visible;total+=items.length;const badge=root.querySelector(`.config-nav a[href="#config-${key}"] b`);badge.textContent=query?`${visible}/${items.length}`:String(items.length);list.querySelector('.config-nomatch')?.remove();}$('config-search-note').textContent=query?(shown?`${shown} / ${total} eşleşme`:'Eşleşme yok'):'';layout();}
@@ -49,9 +48,9 @@ export function configPage(api,{notice,relativeTime}){
  if(!updates){$('config-updates').hidden=true;root.querySelector('a[href="#config-updates"]').hidden=true;}
  dataDisclosure($('config-privacy-panel'));
  function loadSettings(){jev.load();readiness.load();dataPanel?.load();updates?.load();}
- const telegram=api.telegramStatus?telegramPanel(api,$('telegram-access'),{notice}):null;
- if(!telegram){$('config-telegram').hidden=true;root.querySelector('a[href="#config-telegram"]').hidden=true;}
- async function load(){if(root.hidden||loading)return;loading=true;telegram?.load();loadSettings();try{if(!catalog){catalog=await api.promptCatalog();renderCatalog();}dirty=false;counts();}catch(e){notice(e.message);}finally{loading=false;}}
+ $('open-notifications').onclick=openNotifications;
+ if(!openNotifications){$('config-telegram').hidden=true;root.querySelector('a[href="#config-telegram"]').hidden=true;}
+ async function load(){if(root.hidden||loading)return;loading=true;loadSettings();try{if(!catalog){catalog=await api.promptCatalog();renderCatalog();}dirty=false;counts();}catch(e){notice(e.message);}finally{loading=false;}}
  layout();
- return {open,select(id){telegram?.select(id);if(id!==candidate){candidate=id;dirty=true;readiness.invalidate();}load();},refresh(){dirty=true;load();},show(){telegram?.load();loadSettings();layout();if(dirty||!catalog)load();}};
+ return {open,select(id){if(id!==candidate){candidate=id;dirty=true;readiness.invalidate();}load();},refresh(){dirty=true;load();},show(){loadSettings();layout();if(dirty||!catalog)load();}};
 }

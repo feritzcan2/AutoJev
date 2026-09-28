@@ -1,5 +1,5 @@
 import {canonicalJob,uniqueJobCount} from './job-identity.mjs';
-import {hasManualApplicationWork,manualApplicationAuthorized} from './application-queue.mjs';
+import {hasManualApplicationWork,manualApplicationAuthorized,uncertainRetryPeerAllowed} from './application-queue.mjs';
 import {candidateReplyActions} from './application-replies.mjs';
 import {rankDecision} from './ranking.mjs';
 import {validateTaskCompletion} from './task-completion.mjs';
@@ -10,8 +10,8 @@ import {preparationHeld,hasPreparationWork} from './preparation.mjs';
 export function campaignPrompt({task,source,profile:p}){
  const skill=task.kind==='search'?'find-jobs':task.kind==='rank'?'rank-jobs':task.kind==='preparation'?'prepare-application':'apply-to-jobs';
  const completion=['search','rank'].includes(task.kind)?'Report this task with report_campaign_work before ending.':'record_submission, ask_candidate and stop_application_followup also report this task when completion.taskReported=true; then end the turn without more status/report calls. Otherwise use report_campaign_work.';
- const action=task.kind==='preparation'?`Prepare the application package for job ${task.jobId}. Inspect the actual form and accessible steps; identify required documents, language, formats, size limits and questions. Save files and answer drafts using save_preparation. Do not submit, even if profile/source allow auto. Preserve user-edited artifacts. Complete useful work before asking about missing facts. Mark partial coverage honestly. Finish at the preparation package; the user must separately choose Başvur.`:task.kind==='rank'?`Score saved job ${task.jobId} using rank-jobs and record_job_rank when rankDecision.state=pending, including a saved failed retrieval requiring browser recheck. If already scored, reuse it and report this task without scoring again; do not fill or submit an application during this task.`:task.kind==='search'?`Search only source ${task.sourceId??'any'}${source?.name?` (${source.name})`:''}; no applications this turn. Close owned finished research tabs before reporting; Jev does this automatically. Preserve unfinished forms and access steps.`:task.kind==='verify'?`Verify job ${task.jobId} WITHOUT resubmitting. Explicit field validation that prevented submission can be recorded with record_validation_failure; follow its recovery result. For an explicit pending verification step after a candidate reply, use continue_verification and follow its single-step result. Never ask the candidate to create an application task.`:`Process job ${task.jobId}; ${task.manualRequestId?'user explicitly authorized submission for this job; applicationAuthorization in get_task_context overrides profile/source modes, scoring requirements and campaign limits for this job only':task.applyMode==='auto'&&p.authorization==='submit'?'automatic submission already authorized':task.applyMode==='find_only'||p.authorization==='research'?'do not apply':'prepare the form but do not submit'}.`;
- return `JobLoop task ${task.id} (${task.kind}). Call get_task_context once at task start to verify the task. Reuse it throughout this task. Follow AGENTS.md and .agents/skills/${skill}/SKILL.md; read the skill only if not already in context. ${action}${task.recoveryQuestionId?` Recheck unanswered question ${task.recoveryQuestionId} against the saved form and current candidate facts; no new candidate answer or consent is implied. Reuse the existing question if information is still missing. Resume the saved tab; if it is confirmed closed and no submission is pending or uncertain, reopen the exact saved listing in the same candidate browser/profile and prepare the form again using verified facts. Never resubmit an uncertain application.`:''}${task.verificationOnly?' User requested priority verification only. Inspect the existing submission status and available confirmation evidence. Do not fill or submit a new application or complete a sending step; recording fresh field validation evidence ends this verification task.':''}${task.retryRequestId?' User explicitly queued this application. Recheck its saved form and existing questions; this is not an answer or new consent. Resolve technical blockers when possible; reuse unanswered questions instead of duplicating them.':''} Use the current MCP profile, source settings, reusableAnswers, answers and checkpoint. Kullanıcıya kısa ve sade Türkçe yaz; görev kimliği, araç adı ve iç kontrol adımlarını anlatma. ${completion} Resolve unmet requirements on this same task. On browser_wait, end without reporting; the app resumes this task.`;
+ const action=task.kind==='preparation'?`Prepare the application package for job ${task.jobId}. Inspect the actual form and accessible steps; identify required documents, language, formats, size limits and questions. Save files and answer drafts using save_preparation. Do not submit, even if profile/source allow auto. Preserve user-edited artifacts. Complete useful work before asking about missing facts. Mark partial coverage honestly. Finish at the preparation package; the user must separately choose Başvur.`:task.kind==='rank'?`Score saved job ${task.jobId} using rank-jobs and record_job_rank when rankDecision.state=pending, including a saved failed retrieval requiring browser recheck. If already scored, reuse it and report this task without scoring again; do not fill or submit an application during this task.`:task.kind==='search'?`Search only source ${task.sourceId??'any'}${source?.name?` (${source.name})`:''}; no applications this turn. Close owned finished research tabs before reporting; Jev does this automatically. Preserve unfinished forms and access steps.`:task.kind==='verify'?`Verify job ${task.jobId} WITHOUT resubmitting. Explicit field validation that prevented submission can be recorded with record_validation_failure; follow its recovery result. For an explicit pending verification step after a candidate reply, use continue_verification and follow its single-step result. Never ask the candidate to create an application task.`:`Process job ${task.jobId}; ${task.manualRequestId?'user explicitly authorized submission for this job; applicationAuthorization in get_task_context overrides profile/source modes, scoring requirements and campaign limits for this job only':task.applyMode==='auto'&&p.authorization==='submit'?'automatic submission already authorized':task.applyMode==='find_only'||p.authorization==='research'?'do not apply':'prepare the form but do not submit'}.${task.repeatUncertain?' The previous attempt was uncertain and is archived in priorSubmissionAttempts. The user explicitly accepts a possible duplicate for this job and authorized one fresh submission attempt. Inspect the live form, fill from verified facts, and submit at most once; record only fresh confirmation as proof.':''}`;
+ return `JobLoop task ${task.id} (${task.kind}). Call get_task_context once at task start to verify the task. Reuse it throughout this task. Follow AGENTS.md and .agents/skills/${skill}/SKILL.md; read the skill only if not already in context. ${action}${task.recoveryQuestionId?` Recheck unanswered question ${task.recoveryQuestionId} against the saved form and current candidate facts; no new candidate answer or consent is implied. Reuse the existing question if information is still missing. Resume the saved tab; if it is confirmed closed and no submission is pending or uncertain, reopen the exact saved listing in the same candidate browser/profile and prepare the form again using verified facts.${task.repeatUncertain?' The archived uncertain attempt has explicit one-time retry authorization.':' Never resubmit an uncertain application.'}`:''}${task.verificationOnly?' User requested priority verification of the existing attempt only. Inspect the saved tab and confirmation evidence. Do not open or submit a new application. If a previously answered access question and fresh site evidence show one unfinished verification step, continue_verification may reserve that exact step once; follow its guarded result. Recording fresh field validation evidence also ends this verification task.':''}${task.retryRequestId?` User explicitly queued this application. Recheck its saved form and existing questions; ${task.repeatUncertain?'the scoped duplicate-risk authorization is recorded':'this is not an answer or new consent'}. Resolve technical blockers when possible; reuse unanswered questions instead of duplicating them.`:''} Use the current MCP profile, source settings, reusableAnswers, answers and checkpoint. Kullanıcıya kısa ve sade Türkçe yaz; görev kimliği, araç adı ve iç kontrol adımlarını anlatma. ${completion} Resolve unmet requirements on this same task. On browser_wait, end without reporting; the app resumes this task.`;
 }
 
 export function recoveryPrompt(options,reason){
@@ -173,8 +173,16 @@ export class Campaigns {
   }
   delivery(id,state){
     const c=this.store.campaign(id);if(this.closed||c?.status!=='running'||!c.task||c.task.seenWorking)return;
+    if(state==='Stalled'&&c.task.recovery?.deliveryRetry&&this.now()<c.task.recovery.readyAt)return;
     c.task.delivery=state;
-    if(['Failed','Stalled','Blocked','RequiresUserResubmit'].includes(state)){
+    if(state==='Stalled'){
+      const attempts=(c.task.deliveryRetryAttempts??0)+1;
+      c.task.deliveryRetryAttempts=attempts;
+      if(attempts<=6){
+        c.task.recovery={readyAt:this.now()+20*60000,reason:'Agent sağlayıcısının geçici teslim sınırı sona erdi. Aynı işi kayıtlı durumdan sürdür; belirsiz gönderimi tekrarlama.',deliveryRetry:true};
+        c.note='Agent sağlayıcısı geçici olarak görev alamıyor; aynı iş 20 dakika sonra otomatik yeniden denenecek.';
+      }else{c.status='paused';c.note='Agent sağlayıcısına teslim 6 yeniden denemede başarısız oldu; terminali kontrol et.';}
+    }else if(['Failed','Blocked','RequiresUserResubmit'].includes(state)){
       c.status='paused';c.note='Görev agent’a teslim edilemedi ('+state+'). Terminali kontrol edip Başlat ile devam edebilirsin.';
     }
     this.save(id,c);
@@ -209,8 +217,15 @@ export class Campaigns {
     return true;
   }
   async resumeTurn(id,c){
-    const task=c.task,session=this.active(id);
-    if(!task?.recovery||this.now()<task.recovery.readyAt||(session&&!['Idle','Interrupted'].includes(session.state)))return;
+    let task=c.task,session=this.active(id);
+    if(!task?.recovery||this.now()<task.recovery.readyAt)return;
+    if(task.recovery.deliveryRetry&&session&&!['Idle','Interrupted'].includes(session.state)){
+      await this.stop(id);
+      const current=this.store.campaign(id);if(current?.status!=='running'||current.task?.id!==task.id)return;
+      c=current;task=current.task;session=null;
+      if(!task.recovery||this.now()<task.recovery.readyAt)return;
+    }
+    if(session&&!['Idle','Interrupted'].includes(session.state))return;
     if(!this.browserGate(id,c,task))return;
     delete c.browserWait;
     const source=task.sourceId?this.store.source(id,task.sourceId):null;
@@ -258,7 +273,7 @@ export class Campaigns {
       this.save(id,c);
     }
   }
-  exited(id){const c=this.store.campaign(id);if(c?.status!=='running')return;if(c.browserWait&&c.task)return;if(c.task){this.recoverTurn(id,c,'Agent session closed before task completion; inspect saved outcome and resume the same task');return;}c.failures++;c.wakeAt=this.now()+Math.min(300000,10000*2**Math.min(c.failures,5));c.note='Agent kapandı; kayıtlı durumdan yeniden başlatılacak';if(c.failures>=5){c.status='paused';c.note='Agent beş kez açılamadı veya kapandı. Hatayı düzelttikten sonra Başlat ile devam edebilirsin.';}this.save(id,c);}
+  exited(id){const c=this.store.campaign(id);if(c?.status!=='running')return;if(c.browserWait&&c.task||c.task?.recovery?.deliveryRetry)return;if(c.task){this.recoverTurn(id,c,'Agent session closed before task completion; inspect saved outcome and resume the same task');return;}c.failures++;c.wakeAt=this.now()+Math.min(300000,10000*2**Math.min(c.failures,5));c.note='Agent kapandı; kayıtlı durumdan yeniden başlatılacak';if(c.failures>=5){c.status='paused';c.note='Agent beş kez açılamadı veya kapandı. Hatayı düzelttikten sonra Başlat ile devam edebilirsin.';}this.save(id,c);}
   answered(id,questionId){const c=this.store.campaign(id);if(!c)return;const q=this.store.questions(id).find(q=>q.id===questionId);if(!q||q.answer===null)return;c.wakeAt=0;if(q.jobId){c.pendingResumes??={};c.pendingResumes[q.jobId]=questionId;delete c.attempts[q.jobId];}this.save(id,c);}
   async continueAfterAnswer(id,questionId){
     this.answered(id,questionId);
@@ -329,18 +344,28 @@ export class Campaigns {
       this.recoverQuestion(id,q.id);queued.add(q.jobId);
     }
   }
-  queueApplication(id,jobId,{verification=false}={}){
-    const job=this.store.job(id,jobId);
-    if(job.duplicateApplication)throw Error(job.duplicateApplication.reason);
+  queueApplication(id,jobId,{verification=false,repeatUncertain=false}={}){
+    let job=this.store.job(id,jobId);
+    if(job.duplicateApplication&&!(repeatUncertain&&job.duplicateApplication.status==='uncertain'&&job.retryAuthorization?.kind==='uncertain_submission'))throw Error(job.duplicateApplication.reason);
     if(job.followupStopped)throw Error('Kullanıcı bu başvurunun takibini bıraktı.');
     const c=this.store.campaign(id)??{status:'paused',target:100,intervalMinutes:30,task:null,attempts:{},failures:0};
     if(this.store.workerTasks(id).some(w=>w.task.jobId===jobId&&!w.task.report&&w.task.kind!=='rank'))return {queued:false,active:true,message:'Agent bu ilanı zaten işliyor.'};
     if(c.status==='running'&&c.task?.jobId===jobId&&!c.task.report&&c.task.kind!=='rank')return {queued:false,active:true,message:'Agent bu başvuruyu zaten işliyor.'};
+    if(repeatUncertain){
+      if(job.status==='uncertain'){
+        const authorizedAt=new Date().toISOString();
+        job=this.store.saveJob({...job,status:'blocked',sessionId:null,
+          priorSubmissionAttempts:[...(job.priorSubmissionAttempts??[]),{at:authorizedAt,note:job.note,resumeContext:job.resumeContext??null,proof:job.proof??null}],
+          retryAuthorization:{kind:'uncertain_submission',authorizedAt,reason:'Kullanıcı olası çift başvuru riskini kabul etti.'},
+          note:'Önceki gönderim sonucu belirsiz; kullanıcı olası çift başvuru riskini kabul ederek yeniden deneme izni verdi.',
+          resumeContext:null,browserProgress:null,verificationContinuation:null},'uncertain_submission_retry_authorized');
+      }else if(job.status!=='blocked'||job.retryAuthorization?.kind!=='uncertain_submission'||!job.priorSubmissionAttempts?.length)throw Error('Yalnızca sonucu belirsiz başvuru açık tekrar izniyle yeniden gönderilebilir.');
+    }
     if(!['found','blocked','prepared','uncertain',...(verification?['submitting']:[])].includes(job.status))throw Error('Yalnızca yeni veya bilgi / işlem bekleyen başvurular sıraya alınabilir.');
     c.pendingRetries??={};
     const verificationOnly=['uncertain','submitting'].includes(job.status),previous=c.pendingRetries[jobId];
     const existing=previous&&Boolean(previous.verificationOnly)===verificationOnly?previous:null;
-    const request=c.pendingRetries[jobId]=existing??{requestId:randomUUID(),queuedAt:Math.max(this.now(),...Object.values(c.pendingRetries).map(r=>(r.queuedAt??0)+1)),...(verificationOnly?{verificationOnly:true}:{})};
+    const request=c.pendingRetries[jobId]=existing??{requestId:randomUUID(),queuedAt:Math.max(this.now(),...Object.values(c.pendingRetries).map(r=>(r.queuedAt??0)+1)),...(verificationOnly?{verificationOnly:true}:{}),...(repeatUncertain?{repeatUncertain:true}:{})};
     this.store.saveJob({...job,manualApplication:{...request},...(job.preparation?{preparation:{...job.preparation,hold:false,releasedAt:new Date().toISOString()}}:{})},'manual_application_requested');
     if(c.status!=='running'&&c.task?.jobId===jobId&&!c.task.report&&c.task.kind!=='rank')Object.assign(c.task,{retryRequestId:request.requestId,manualRequestId:request.requestId,verificationOnly,applyMode:verificationOnly?'prepare':'auto',...(verificationOnly?{kind:'verify'}:{})});
     c.attempts??={};delete c.attempts[jobId];c.wakeAt=0;
@@ -393,7 +418,7 @@ export class Campaigns {
       return priority(b)-priority(a)||(b.rank?.score??-1)-(a.rank?.score??-1);
     });
     for(const j of ordered){
-      if(j.followupStopped||j.duplicateApplication)continue;
+      if(j.followupStopped||j.duplicateApplication&&!uncertainRetryPeerAllowed(j,{...j.manualApplication,jobId:j.id,kind:'application',manualRequestId:j.manualApplication?.requestId,repeatUncertain:c.pendingRetries?.[j.id]?.repeatUncertain}))continue;
       if(preparationHeld(j)){
         if(['submitted','already_submitted','skipped','submitting','uncertain'].includes(j.status))continue;
         const pending=c.pendingResumes?.[j.id]||c.pendingRecoveries?.[j.id],queued=j.preparation.status==='queued';
@@ -425,7 +450,7 @@ export class Campaigns {
           this.store.saveJob({...j,preparation},'preparation_requested');
           return {kind:'preparation',jobId:j.id,sourceId:j.sourceId??null,applyMode:'prepare',preparationRequestId:preparation.requestId,resumeQuestionId:c.pendingResumes?.[j.id]??null,recoveryQuestionId:c.pendingRecoveries?.[j.id]??null};
         }
-        return{verificationOnly:Boolean(manual?.verificationOnly),manualRequestId:manual?.requestId,retryRequestId:c.pendingRetries?.[j.id]?.requestId??null,recoveryQuestionId:c.pendingRecoveries?.[j.id]??null,resumeQuestionId:c.pendingResumes?.[j.id]??null,kind:j.status==='uncertain'?'verify':'application',jobId:j.id,sourceId:j.sourceId??null,applyMode:manual?(manual.verificationOnly?'prepare':'auto'):source?.applyMode??(maySubmit?'auto':'prepare')};
+        return{verificationOnly:Boolean(manual?.verificationOnly),repeatUncertain:Boolean(manual?.repeatUncertain),manualRequestId:manual?.requestId,retryRequestId:c.pendingRetries?.[j.id]?.requestId??null,recoveryQuestionId:c.pendingRecoveries?.[j.id]??null,resumeQuestionId:c.pendingResumes?.[j.id]??null,kind:j.status==='uncertain'?'verify':'application',jobId:j.id,sourceId:j.sourceId??null,applyMode:manual?(manual.verificationOnly?'prepare':'auto'):source?.applyMode??(maySubmit?'auto':'prepare')};
       }
     }
     if(targetReached)return null;
@@ -453,7 +478,13 @@ export class Campaigns {
         if(!c.task.report&&!this.browserGate(p.id,c,c.task))continue;
         c=this.store.campaign(p.id);
         if(c.task.recovery){await this.resumeTurn(p.id,c);continue;}
-        if(!c.task.seenWorking&&!this.launching.has(p.id)&&this.now()-c.task.createdAt>90000){this.save(p.id,{...c,status:'paused',note:'Görev için 90 saniye içinde çalışma başlangıcı doğrulanamadı. Çift gönderimi önlemek için duraklatıldı; terminali kontrol edip Başlat ile devam edebilirsin.'});}
+        if(!c.task.seenWorking&&!this.launching.has(p.id)&&this.now()-c.task.createdAt>90000){
+          if(c.task.delivery==='Stalled'&&(c.task.deliveryRetryAttempts??0)<=6){
+            c.task.recovery={readyAt:this.now()+20*60000,reason:'Sağlayıcı önceki turu başlatamadı; aynı görevi kayıtlı durumdan sürdür.',deliveryRetry:true};
+            c.note='Agent sağlayıcısı geçici olarak görev alamıyor; aynı iş 20 dakika sonra otomatik yeniden denenecek.';
+            this.save(p.id,c);
+          }else this.save(p.id,{...c,status:'paused',note:'Görev için 90 saniye içinde çalışma başlangıcı doğrulanamadı. Çift gönderimi önlemek için duraklatıldı; terminali kontrol edip Başlat ile devam edebilirsin.'});
+        }
         continue;
       }
       const session=this.active(p.id);if(session?.state&&session.state!=='Idle')continue;

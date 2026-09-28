@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {activityView,workerActivityView,ageLabel,sourceResultView,applicationActivity} from '../src/activity.js';
+import {activityView,workerActivityView,ageLabel,sourceResultView,applicationActivity,pendingQuestions} from '../src/activity.js';
 import {Store} from '../app/store.mjs';
 const base={profile:{id:'a'},active:{candidateId:'a',sessionId:'s',state:'Working'},campaign:{status:'running',task:{id:'t',kind:'application',jobId:'j',seenWorking:true}},jobs:[{id:'j',company:'Example',role:'Counsel',url:'https://example.test'}],questions:[],events:[]};
 test('live action follows session and task; timestamps are not fabricated',()=>{
@@ -29,6 +29,12 @@ test('activity reports cannot access another candidate or claim an unrelated cam
 });
 
 test('empty profile renders without crashing',()=>{assert.equal(activityView(null).title,'Agent kapalı');assert.equal(activityView({}).canWrite,false);});
+
+test('questions for completed or skipped applications leave the pending list',()=>{
+ const questions=['submitted','already_submitted','skipped','blocked'].map((status,i)=>({id:String(i),jobId:status,answer:null}));
+ const jobs=questions.map(q=>({id:q.jobId,status:q.jobId}));
+ assert.deepEqual(pendingQuestions({questions,jobs}).map(q=>q.jobId),['blocked']);
+});
 
 test('queued search is not presented as scanning while agent is idle',()=>{const snapshot={...base,active:{...base.active,state:'Idle'},campaign:{status:'running',task:{kind:'search',sourceId:'join',seenWorking:false}}};assert.equal(activityView(snapshot).title,'Görevin başlaması bekleniyor');assert.equal(sourceResultView({id:'join'},snapshot.campaign).scanning,false);});
 

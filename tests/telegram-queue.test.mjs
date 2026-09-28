@@ -23,7 +23,7 @@ function fixture(t){
   return own.db.delivery(store.db.prepare('SELECT id FROM telegram_outbox WHERE candidate_id=? AND event_key=?').get(job.candidateId,'new-job:'+job.id).id);
  };
  t.after(async()=>{await bot.stop();await foreign.stop();store.close();});
- return {store,p,other,bot,foreign,campaigns,launches,queued,calls,add,flush,card};
+ return {store,p,other,bot,foreign,campaigns,launches,queued,calls,add,flush,card,advance:ms=>{now+=ms;}};
 }
 const callback=row=>({id:'queue-click',from:{id:11},message:{chat:{id:11,type:'private'},message_id:row.message_id},data:'queue:'+row.id});
 const hasQueue=body=>body.reply_markup.inline_keyboard.flat().some(button=>button.callback_data?.startsWith('queue:'));
@@ -111,4 +111,67 @@ test('uncertain Telegram cards offer priority verification and stale apply butto
  assert.equal(store.taskContext(p.id).applicationAuthorization.mode,'verify');assert.match(launches[0].prompt,/WITHOUT resubmitting/);
  assert.equal(store.job(p.id,job.id).status,'uncertain');await bot.queueNotification(callback(row));assert.equal(queued.length,1);
  await flush();assert.equal(hasQueue(calls.filter(x=>x.method==='editMessageText').at(-1).body),false);
+});
+
+test('a clicked card updates ahead of a large backlog while agent startup is still pending',async t=>{
+ const {store,p,bot,campaigns,calls,add,flush,card,advance}=fixture(t);
+ const backlog=Array.from({length:25},(_,i)=>add(p,'Backlog-'+i)),job=add(p,'Clicked');for(let i=0;i<26;i++)await flush();
+ for(const item of backlog)store.saveJob({...item,status:'blocked'},'job_updated');
+ let finish;const startup=new Promise(resolve=>{finish=resolve;});
+ bot.queueApplication=(id,jobId)=>{const queued=campaigns.queueApplication(id,jobId);return startup.then(()=>queued);};
+ advance(2000);const row=card(job),action=bot.queueNotification(callback(row));
+ try{
+  await new Promise(resolve=>setImmediate(resolve));
+  const edit=calls.find(call=>call.method==='editMessageText');assert.ok(edit);assert.equal(edit.body.message_id,row.message_id);assert.match(edit.body.text,/Başvuru sırasında/);assert.equal(hasQueue(edit.body),false);
+  assert.ok(store.campaign(p.id).pendingRetries[job.id]);assert.equal(calls.filter(call=>call.method==='sendMessage').length,26);
+ }finally{finish();await action;}
+});
+
+test('a click waits for an older in-flight edit and the latest application state wins',async t=>{
+ const {store,p,bot,calls,add,flush,card,advance}=fixture(t),job=add();await flush();const row=card(job);
+ const api=bot.api.call;let release,entered,held=true;
+ const started=new Promise(resolve=>{entered=resolve;}),waiting=new Promise(resolve=>{release=resolve;});
+ bot.api.call=async(method,body)=>{if(method==='editMessageText'&&held){held=false;entered();await waiting;}return api(method,body);};
+ store.saveJob({...job,status:'blocked'},'job_updated');advance(2000);const running=bot.flush();await started;
+ const clicked=bot.queueNotification(callback(row));
+ try{await new Promise(resolve=>setImmediate(resolve));assert.equal(calls.filter(call=>call.method==='editMessageText').length,0);}
+ finally{release();await running;await clicked;}
+ await flush();
+ const edits=calls.filter(call=>call.method==='editMessageText');assert.equal(edits.length,2);assert.match(edits[0].body.text,/Bilgi \/ işlem bekliyor/);
+ assert.equal(edits[1].body.message_id,row.message_id);assert.equal(hasQueue(edits[1].body),false);assert.match(edits[1].body.text,/zaten işliyor|Başvuru sırasında/);
+});
+
+test('queued and active applications stay pinned, then completion unpins exactly that card',async t=>{
+ const {store,p,bot,campaigns,calls,add,flush,card}=fixture(t),job=add();await flush();const row=card(job);
+ bot.preferences(p.id,{newJobs:false,questions:false,notifications:false});campaigns.queueApplication(p.id,job.id);
+ await flush();await flush();
+ assert.deepEqual(calls.filter(call=>call.method==='pinChatMessage'),[{botId:123456789,method:'pinChatMessage',body:{chat_id:'11',message_id:row.message_id,disable_notification:true}}]);
+ store.saveJob({...store.job(p.id,job.id),status:'working'},'job_updated');await flush();await flush();
+ assert.equal(calls.filter(call=>call.method==='pinChatMessage').length,1);assert.equal(calls.filter(call=>call.method==='unpinChatMessage').length,0);
+ store.setManualJobStatus(p.id,job.id,'manual_submitted');await flush();await flush();await flush();
+ assert.deepEqual(calls.filter(call=>call.method==='unpinChatMessage'),[{botId:123456789,method:'unpinChatMessage',body:{chat_id:'11',message_id:row.message_id}}]);
+ assert.match(calls.filter(call=>call.method==='editMessageText').at(-1).body.text,/Başvuru gönderildi/);assert.equal(calls.filter(call=>call.method==='sendMessage').length,1);
+ assert.equal(bot.status(p.id).candidate.pending,0);
+});
+
+test('pin retry survives restart, respects rate limits and stays isolated from another bot',async t=>{
+ const {store,p,other,bot,foreign,campaigns,calls,add,flush,card,advance}=fixture(t),job=add(),foreignJob=add(other,'Foreign pin');await flush();
+ campaigns.queueApplication(p.id,job.id);campaigns.queueApplication(other.id,foreignJob.id);await flush();
+ const api=bot.api.call;let attempts=0;
+ bot.api.call=async(method,body)=>{if(method==='pinChatMessage'){attempts++;throw Object.assign(Error('Rate limit'),{code:429,retryAfter:30});}return api(method,body);};
+ await flush();assert.equal(attempts,1);assert.ok(calls.some(call=>call.botId===987654321&&call.method==='pinChatMessage'));
+ const restarted=new TelegramBot({store,botId:123456789,queueApplication:bot.queueApplication,now:bot.now});restarted.api=bot.api;restarted.config={...bot.config};
+ advance(29000);await restarted.flush();assert.equal(attempts,1);bot.api.call=api;advance(1001);await restarted.flush();
+ assert.equal(calls.filter(call=>call.botId===123456789&&call.method==='pinChatMessage').length,1);assert.equal(restarted.status(p.id).candidate.pending,0);
+ bot.db.deleted(card(job).id);store.setManualJobStatus(p.id,job.id,'withdrawn');await flush();assert.equal(calls.filter(call=>call.botId===123456789&&call.method==='unpinChatMessage').length,0);
+ foreign.unlink(other.id);assert.equal(store.db.prepare('SELECT count(*) AS n FROM telegram_pins WHERE delivery_id NOT IN (SELECT id FROM telegram_outbox)').get().n,0);
+});
+
+test('pin failures do not prevent later status edits or undo a queued application',async t=>{
+ const {store,p,bot,campaigns,calls,add,flush,card}=fixture(t),job=add();await flush();const row=card(job);campaigns.queueApplication(p.id,job.id);await flush();
+ const api=bot.api.call;bot.api.call=async(method,body)=>{if(method==='pinChatMessage')throw Object.assign(Error('Pin denied'),{code:403});return api(method,body);};
+ await flush();assert.equal(bot.status(p.id).candidate.failed,1);assert.ok(store.campaign(p.id).pendingRetries[job.id]);
+ store.saveJob({...store.job(p.id,job.id),status:'working'},'job_updated');await flush();
+ const edit=calls.filter(call=>call.method==='editMessageText').at(-1);assert.equal(edit.body.message_id,row.message_id);assert.match(edit.body.text,/Başvuru hazırlanıyor/);
+ bot.api.call=api;bot.retry(p.id);await flush();assert.equal(calls.filter(call=>call.method==='pinChatMessage').length,1);assert.equal(bot.status(p.id).candidate.failed,0);
 });

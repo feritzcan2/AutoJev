@@ -92,7 +92,7 @@ test('an uncertain job can be prioritized beyond target without authorizing subm
  assert.equal(store.job(p.id,job.id).status,'uncertain');assert.deepEqual(store.job(p.id,job.id).resumeContext,checkpoint);
  await c.start(p.id);const task=store.campaign(p.id).task;
  assert.equal(task.kind,'verify');assert.equal(task.verificationOnly,true);assert.equal(task.jobId,job.id);
- assert.match(calls[0],/WITHOUT resubmitting/);assert.match(calls[0],/priority verification only/);
+ assert.match(calls[0],/WITHOUT resubmitting/);assert.match(calls[0],/priority verification(?: of the existing attempt)? only/);
  assert.equal(store.taskContext(p.id).applicationAuthorization.mode,'verify');assert.equal(store.job(p.id,other.id).manualApplication,undefined);
  assert.equal(store.questions(p.id).find(x=>x.id===q.id).answer,null);
  for(const status of ['working','prepared','submitting'])assert.throws(()=>store.updateJob(p.id,job.id,status,'Retry','main'),/yalnızca sonucu doğrular/);

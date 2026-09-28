@@ -106,12 +106,13 @@ export class JobRegistry {
     const duplicate=applicationDuplicate(result,peers);if(duplicate)result.duplicateApplication=duplicate;
     return result;
   }
-  assertAvailable(candidate,id,sessionId,tasks=[]){
+  assertAvailable(candidate,id,sessionId,tasks=[],{allowUncertainPeers=false}={}){
     const job=this.job(candidate,id),canonical=this.canonical(candidate,id);
     const reservation=tasks.find(w=>w.task?.jobId&&w.task.jobId!==id&&this.canonical(candidate,w.task.jobId)===canonical&&!w.task.report);
     if(reservation)throw Error('Aynı ilan başka bir worker tarafından işleniyor. Görevi tamamla ve ana kaydı kullan.');
-    const previous=this.members(candidate,id).find(p=>p.id!==id&&(['submitted','already_submitted','submitting','uncertain'].includes(p.status)||p.followupStopped));
-    if(job.duplicateApplication||previous||job.canonicalJobId!==id)throw Error((job.duplicateApplication?.reason??'Aynı ilan için önceki başvuru veya devam eden gönderim var; tekrar gönderilmez.')+' Önceki ilan: '+(previous?.id??canonical));
+    const previous=this.members(candidate,id).find(p=>p.id!==id&&(['submitted','already_submitted','submitting',...(allowUncertainPeers?[]:['uncertain'])].includes(p.status)||p.followupStopped));
+    const duplicate=job.duplicateApplication&&!(allowUncertainPeers&&job.duplicateApplication.status==='uncertain')?job.duplicateApplication:null;
+    if(duplicate||previous||job.canonicalJobId!==id)throw Error((duplicate?.reason??'Aynı ilan için önceki başvuru veya devam eden gönderim var; tekrar gönderilmez.')+' Önceki ilan: '+(previous?.id??canonical));
     if(job.sessionId&&job.sessionId!==sessionId&&!terminal.has(job.status))throw Error('İlan başka bir oturuma ait; kullanıcı devralmalı');
     return job;
   }

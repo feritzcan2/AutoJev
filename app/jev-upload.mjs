@@ -11,8 +11,22 @@ export function uploadDetails(e){
  let localTrigger=false;
  for(let p=e.parentElement,depth=0;p&&depth<2&&!p.matches('form,body');p=p.parentElement,depth++){
   if(p.querySelectorAll('input[type=file]').length!==1)break;
-  localTrigger||=[...p.querySelectorAll('button,[role=button]')].some(n=>rendered(n)&&/upload|attach|browse|resume|cv|hochladen|yükle/i.test(n.textContent||n.getAttribute('aria-label')||''));
+  localTrigger||=[...p.querySelectorAll('button,[role=button]')].some(n=>rendered(n)&&/upload|attach|browse|resume|cv|hochladen|anhängen|anfügen|datei auswählen|yükle|add file|datei hinzufügen|dosya ekle/i.test(n.textContent||n.getAttribute('aria-label')||''));
  }
  if(!rendered(e)&&![...labels,...refs,...linked].some(rendered)&&!localTrigger)return null;
- return {label:e.getAttribute('aria-label')||refs.map(n=>n.textContent.trim()).join(' ')||labels.map(l=>l.innerText).join(' ')||e.name||'File upload',accept:e.accept,multiple:e.multiple};
+ const explicit=e.getAttribute('aria-label')||refs.map(n=>n.textContent.trim()).join(' ')||labels.map(l=>l.innerText).join(' ')||e.name||'File upload';
+ let context='';
+ for(let p=e.parentElement,depth=0;p&&depth<4&&!p.matches('form,body');p=p.parentElement,depth++){
+  const text=(p.innerText||'').replace(/\s+/g,' ').trim();
+  if(text.length>200)continue;
+  const cv=/\b(?:resume|résumé|curriculum vitae|cv)\b/i.test(text),letter=/cover\s*letter|anschreiben|ön\s*yazı/i.test(text);
+  if(cv!==letter){context=cv?'Resume/CV':'Cover Letter';break;}
+ }
+ return {label:context&&!/\b(?:resume|résumé|curriculum vitae|cv)\b|cover\s*letter|anschreiben|ön\s*yazı/i.test(explicit)?`${context} — ${explicit}`:explicit,accept:e.accept,multiple:e.multiple};
+}
+
+export function validateUploadPurpose(label,filename){
+ const name=filename.replace(/\.[^.]+$/,'');
+ if(/cover\s*letter|anschreiben|ön\s*yazı/i.test(label)&&/^(?:cv|resume|résumé)(?:[\s._-]|$)/i.test(name))throw Error('CV dosyası ön yazı alanına yüklenemez; doğru ön yazı belgesini seç.');
+ if(/\b(?:resume|résumé|curriculum vitae|cv)\b/i.test(label)&&/^(?:cover[\s._-]*letter|anschreiben|ön[\s._-]*yazı)(?:[\s._-]|$)/i.test(name))throw Error('Ön yazı dosyası CV alanına yüklenemez; doğru CV belgesini seç.');
 }

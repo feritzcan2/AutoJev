@@ -1,6 +1,7 @@
 node_modules/
 dist/
 engine/target/
+/target/
 .DS_Store
 *.sqlite*
 

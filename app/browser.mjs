@@ -40,7 +40,7 @@ export class BrowserTools {
     if(['submitted','already_submitted','skipped'].includes(job.status))return {content:[{type:'text',text:JSON.stringify({status:'complete',jobId,message:'Kayıtlı sonuç kesin; yeni başvuru açma.'})}]};
     if(job.sessionId&&job.sessionId!==sessionId)throw Error('İlan başka bir oturuma ait.');
     if(job.resumeContext&&job.resumeContext.browser!=='Jev Chrome')throw Error('Taslağı kayıtlı orijinal tarayıcı aracıyla sürdür; Jev ile yeni başvuru açma.');
-    const result=await this.call(id,'browser_jev_open',{url:job.url},sessionId);
+    const result=await this.call(id,'browser_jev_open',{url:job.applicationUrl??job.url},sessionId);
     for(const part of result.content??[])if(part.type==='text'){
       const value=JSON.parse(part.text);if(value.tabId){value.resume={jobId,reopened:!value.reused,previousProgress:job.browserProgress??null,message:'Bu sonuç taze gözlemdir. Önceki ilerleme geçmiş kanıttır; güncel alanlarla karşılaştır, yalnızca eksikleri doldur. Eski fieldId/controlId kullanma.'};part.text=JSON.stringify(value);}
     }
@@ -60,7 +60,7 @@ export class BrowserTools {
     const workspace=path.join(this.directory,'candidates',candidateId);
     await mkdir(workspace,{recursive:true,mode:0o700});
     await mkdir(directory,{recursive:true,mode:0o700});
-    if(mode==='jev')return {client:new JevBrowser(path.join(directory,'jev-profile'),{...options,workspace,onDisconnect:()=>this.connections.disconnected(candidateId),onProgress:(jobId,progress,owner)=>this.onProgress?.(candidateId,jobId,progress,owner),beforeSubmit:(jobId,url,owner)=>this.beforeSubmit?.(candidateId,jobId,url,owner)}),tools:jevTools,directory,workspace};
+    if(mode==='jev')return {client:new JevBrowser(path.join(directory,'jev-profile'),{...options,workspace,onDisconnect:()=>this.connections.disconnected(candidateId),onProgress:(jobId,progress,owner)=>this.onProgress?.(candidateId,jobId,progress,owner),beforeSubmit:(jobId,url,owner,verificationContinuation)=>this.beforeSubmit?.(candidateId,jobId,url,owner,{verificationContinuation})}),tools:jevTools,directory,workspace};
     const cli=path.join(path.dirname(require.resolve('@playwright/mcp/package.json')),'cli.js').replace(/([/\\])(app(?:-(?:x64|arm64))?\.asar)([/\\])/,'$1$2.unpacked$3');
     const transport=new StdioClientTransport({command:process.execPath,args:[cli,...browserArguments(mode,directory),'--output-dir',path.join(directory,'artifacts')],cwd:workspace,env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},stderr:'pipe'});
     const client=new Client({name:'jobloop-browser',version:'0.1.0'});

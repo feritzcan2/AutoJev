@@ -90,3 +90,21 @@ test('an already cancelled connection never opens an approval request',{timeout:
   await assert.rejects(JevCdpTransport.connect(chrome.endpoint,{signal:abort.signal}),{name:'AbortError'});
   assert.equal(chrome.requests,0);
 });
+
+test('owned tabs attach their out-of-process form frames without attaching other tabs',{timeout:5000},async t=>{
+  const chrome=await chromeFixture(t),request=chrome.nextRequest();
+  const transportPromise=JevCdpTransport.connect(chrome.endpoint);
+  const peer=await(await request).allow(),transport=await transportPromise;
+  t.after(()=>transport.close());
+  const commands=[];
+  peer.on('message',data=>{
+    const command=JSON.parse(data);commands.push(command);
+    peer.send(JSON.stringify({id:command.id,result:command.method==='Target.attachToTarget'?{sessionId:'owned-page-session'}:{}}));
+  });
+  await transport.attach('owned-page');
+  assert.equal(commands.length,2);
+  assert.deepEqual(commands[0].params,{targetId:'owned-page',flatten:true});
+  assert.equal(commands[1].method,'Target.setAutoAttach');
+  assert.equal(commands[1].sessionId,'owned-page-session');
+  assert.deepEqual(commands[1].params.filter,[{type:'iframe',exclude:false},{exclude:true}]);
+});

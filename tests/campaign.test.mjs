@@ -31,6 +31,22 @@ test('crash uses backoff and uncertain submission becomes verification, never re
  const j=addRankedJob(f.store,f.p.id,listing).job;f.store.updateJob(f.p.id,j.id,'working','Form','session');f.store.updateJob(f.p.id,j.id,'prepared','Ready','session');f.store.updateJob(f.p.id,j.id,'submitting','Click','session');
  await f.c.start(f.p.id,{target:2,intervalMinutes:1});f.store.recoverSession(f.p.id,'session');f.setActive(null);f.c.exited(f.p.id);await f.c.tick();assert.equal(f.calls.length,1);f.setTime(f.getTime()+40000);await f.c.tick();assert.equal(f.store.campaign(f.p.id).task.kind,'search');finish(f);await f.c.tick();assert.equal(f.store.campaign(f.p.id).task.kind,'verify');assert.match(f.calls.at(-1),/WITHOUT resubmitting/);
 }finally{f.store.close();}});
+test('explicit duplicate-risk authorization archives an uncertain attempt and queues one fresh submission',async()=>{const f=fixture();try{
+ const j=addRankedJob(f.store,f.p.id,listing).job;
+ for(const status of ['working','prepared','submitting','uncertain'])f.store.updateJob(f.p.id,j.id,status,'Earlier attempt had no confirmation','session');
+ assert.equal(f.c.queueApplication(f.p.id,j.id).verificationOnly,true);
+ const result=f.c.queueApplication(f.p.id,j.id,{repeatUncertain:true});
+ assert.equal(result.verificationOnly,false);
+ const saved=f.store.job(f.p.id,j.id);
+ assert.equal(saved.status,'blocked');assert.equal(saved.priorSubmissionAttempts.length,1);
+ assert.match(saved.priorSubmissionAttempts[0].note,/Earlier attempt/);
+ await f.c.start(f.p.id,{target:2,intervalMinutes:1});
+ assert.equal(f.store.campaign(f.p.id).task.kind,'application');
+ assert.equal(f.store.campaign(f.p.id).task.repeatUncertain,true);
+ assert.match(f.calls.at(-1),/possible duplicate/);
+ assert.deepEqual(f.c.queueApplication(f.p.id,j.id,{repeatUncertain:true}).active,true);
+ assert.equal(f.store.job(f.p.id,j.id).priorSubmissionAttempts.length,1);
+}finally{f.store.close();}});
 test('target stops scheduler; stale and wrong-session reports rejected',async()=>{const f=fixture();try{
  await f.c.start(f.p.id,{target:1,intervalMinutes:1});const task=f.store.campaign(f.p.id).task;assert.throws(()=>f.c.report(f.p.id,'other',{taskId:task.id,outcome:'done',note:'x'}));
  const j=addRankedJob(f.store,f.p.id,listing).job;for(const status of ['working','prepared','submitting'])f.store.updateJob(f.p.id,j.id,status,'x','session');f.store.recordSubmission(f.p.id,j.id,{kind:'success_page',text:'Received',url:'https://example.test/ok',documents:'CV'},'session');finish(f);await f.c.tick();assert.equal(f.store.campaign(f.p.id).status,'complete');assert.equal(f.calls.length,1);
@@ -130,7 +146,23 @@ test('approved setup hands off to a verifiable campaign task without restarting 
 });
 
  test('unstarted delivery times out without dispatching a duplicate',async()=>{const f=fixture();try{await f.c.start(f.p.id);f.setTime(f.getTime()+90001);await f.c.tick();assert.equal(f.store.campaign(f.p.id).status,'paused');assert.equal(f.calls.length,1);}finally{f.store.close();}});
- test('failed delivery pauses immediately while genuine long work does not time out',async()=>{const f=fixture();try{await f.c.start(f.p.id);f.c.signal(f.p.id,'Working');f.setTime(f.getTime()+120000);await f.c.tick();assert.equal(f.store.campaign(f.p.id).status,'running');finish(f);f.setTime(f.getTime()+61000);await f.c.tick();f.c.delivery(f.p.id,'Stalled');assert.equal(f.store.campaign(f.p.id).status,'paused');}finally{f.store.close();}});
+ test('stalled delivery retries the same task after a delay while genuine long work keeps running',async()=>{const f=fixture();try{
+  await f.c.start(f.p.id);f.c.signal(f.p.id,'Working');f.setTime(f.getTime()+120000);await f.c.tick();assert.equal(f.store.campaign(f.p.id).status,'running');
+  finish(f);f.setTime(f.getTime()+61000);await f.c.tick();const taskId=f.store.campaign(f.p.id).task.id;
+  f.setActive({candidateId:f.p.id,sessionId:'stalled',state:'Stalled'});f.c.delivery(f.p.id,'Stalled');
+  let campaign=f.store.campaign(f.p.id);assert.equal(campaign.status,'running');assert.equal(campaign.task.deliveryRetryAttempts,1);
+  f.c.exited(f.p.id);assert.equal(f.store.campaign(f.p.id).task.recovery.deliveryRetry,true);
+  f.c.stop=async()=>{f.setActive(null);f.c.exited(f.p.id);};
+  const retryAt=campaign.task.recovery.readyAt;f.c.delivery(f.p.id,'Stalled');assert.equal(f.store.campaign(f.p.id).task.deliveryRetryAttempts,1);
+  f.setTime(retryAt-1);await f.c.tick();assert.equal(f.calls.length,2);
+  f.setTime(retryAt);await f.c.tick();campaign=f.store.campaign(f.p.id);
+  assert.equal(campaign.task.id,taskId);assert.equal(campaign.status,'running');assert.equal(f.calls.length,3);assert.match(f.calls.at(-1),/SAME interrupted task/);
+ }finally{f.store.close();}});
+ test('a stalled task does not become a 90-second launch timeout if recovery was lost',async()=>{const f=fixture();try{
+  await f.c.start(f.p.id);const c=f.store.campaign(f.p.id);c.task.delivery='Stalled';c.task.deliveryRetryAttempts=1;delete c.task.recovery;f.store.saveCampaign(f.p.id,c);
+  f.setTime(f.getTime()+90001);await f.c.tick();
+  const saved=f.store.campaign(f.p.id);assert.equal(saved.status,'running');assert.equal(saved.task.recovery.deliveryRetry,true);
+ }finally{f.store.close();}});
 
 test('terminal interruption preserves task and resumes once after user finishes typing',async()=>{
  const f=fixture();try{

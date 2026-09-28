@@ -101,6 +101,18 @@ test('Kayzen pending verification can continue once after a reply without reopen
   assert.throws(()=>store.continueVerification(p.id,job.id,input,'owner'),/aynı gönderim/);
  }finally{store.close();}
 });
+test('verification-only retry permits only a reserved step in the same uncertain attempt',()=>{
+ const {store,p,job}=fixture('verify');try{
+  const campaign=store.campaign(p.id);campaign.task.verificationOnly=true;store.saveCampaign(p.id,campaign);
+  const q=store.ask(p.id,{jobId:job.id,question:'Enter the emailed code',applicationBlocker:{kind:'access',recovery:{kind:'user_only'}}});store.answer(p.id,q.id,'Code entered in saved tab');
+  const input={questionId:q.id,verificationReady:true,noFieldErrors:true,siteInstruction:'Submit application after entering the emailed code',actionLabel:'Submit application',evidence:'Same form and tab show accepted code and one remaining submit control, with no confirmation or field error.',resumeContext:checkpoint};
+  assert.throws(()=>store.assertSubmissionAllowed(p.id,job.id,checkpoint.url,'owner'),/yalnızca sonucu doğrular/);
+  store.continueVerification(p.id,job.id,input,'owner');
+  assert.throws(()=>store.assertSubmissionAllowed(p.id,job.id,checkpoint.url,'owner'),/yalnızca sonucu doğrular/);
+  assert.throws(()=>store.assertSubmissionAllowed(p.id,job.id,'https://example.test/other','owner',{verificationContinuation:true}),/yalnızca sonucu doğrular/);
+  assert.equal(store.assertSubmissionAllowed(p.id,job.id,checkpoint.url,'owner',{verificationContinuation:true}).id,job.id);
+ }finally{store.close();}
+});
 test('verification continuation cannot reuse unrelated replies or revoked submission permissions',()=>{
  const {store,p,job}=fixture('verify');try{
   const q=store.ask(p.id,{jobId:job.id,question:'Human verification',applicationBlocker:{kind:'access',recovery:{kind:'captcha'}}});store.answer(p.id,q.id,'Done');

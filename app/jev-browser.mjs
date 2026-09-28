@@ -1,8 +1,9 @@
 import {captureVerificationTargets,clickVerificationCheckbox} from './jev-verification-checkbox.mjs';
+import {foreignEmployerCheckpoint} from './jev-job-identity.mjs';
 import {observeFormFrame,actFormFrame,usableFormFrame} from './jev-frame-actions.mjs';
 import {captureCookieFrameTargets,clickCookieFrameTarget} from './jev-cookie-frame.mjs';
 import {presentRankObservation} from './jev-rank-observation.mjs';
-import {uploadDetails} from './jev-upload.mjs';
+import {uploadDetails,validateUploadPurpose} from './jev-upload.mjs';
 import {capturePasswordFields,fillAccountPassword} from './jev-credentials.mjs';
 import {captureEmbeddedForms,embeddedFormTarget} from './jev-frames.mjs';
 import {takeUploadAttempt} from './upload-budget.mjs';
@@ -231,7 +232,7 @@ export class JevBrowser {
     for(const [id,job] of this.tabJobs)claim(id,job);
     for(const job of jobs){
       const checkpoint=job.resumeContext;
-      if(checkpoint?.browser==='Jev Chrome'&&this.tabs.has(checkpoint.tabId)){
+      if(checkpoint?.browser==='Jev Chrome'&&this.tabs.has(checkpoint.tabId)&&!foreignEmployerCheckpoint(job,checkpoint.url,jobs)){
         claim(checkpoint.tabId,job.id);if(!this.tabJobs.has(checkpoint.tabId))this.tabJobs.set(checkpoint.tabId,job.id);
       }
     }
@@ -380,7 +381,7 @@ export class JevBrowser {
     }
 
     if(finalSend&&(state.taskKind==='preparation'||job?.preparation?.hold))return {...await this.observe(slot),status:'submission_not_started',executed:false,retryable:false,jobId,blockerOrigin:'jobloop_preparation_hold',message:'Hazırlık görevi gönderim yapamaz. Paketi kaydet ve kullanıcının Başvur seçimini bekle.'};
-    if(finalSend&&job)await this.beforeSubmit(jobId,slot.page.url(),slot.owner);
+    if(finalSend&&job)await this.beforeSubmit(jobId,slot.page.url(),slot.owner,Boolean(continuation));
 
     if(finalSend&&job&&job.status!=='submitting'&&!(continuation&&job.status==='uncertain'))return {
       ...await this.observe(slot),status:'submission_not_started',executed:false,retryable:false,jobId,recovery:'verify_form_then_persist_submission',blockerOrigin:'jobloop_submission_guard',
@@ -470,15 +471,16 @@ export class JevBrowser {
         if(state.jobs?.some(j=>j.id===state.activeJobId&&['submitted','already_submitted','skipped'].includes(j.status)))throw Error('Bu başvuru tamamlandı; yeni sekme açma. Kayıtlı sonucu kullan.');
         const activeJob=state.jobs?.find(j=>j.id===state.activeJobId);
         if(activeJob?.followupStopped)throw Error('Başvuru takibi bırakıldı; yeni tarayıcı işlemi yapma.');
-        if(activeJob?.duplicateApplication)throw Error(activeJob.duplicateApplication.reason);
+        if(activeJob?.duplicateApplication&&!(state.repeatUncertain&&activeJob.retryAuthorization?.kind==='uncertain_submission'&&activeJob.duplicateApplication.status==='uncertain'))throw Error(activeJob.duplicateApplication.reason);
         if(activeJob?.resumeContext&&activeJob.resumeContext.browser!=='Jev Chrome')throw Object.assign(Error('Kayıtlı taslak orijinal tarayıcı aracıyla sürdürülmeli; yeni Jev formu açma.'),{code:'TAB_BACKEND_MISMATCH'});
         if(activeJob?.sessionId&&activeJob.sessionId!==owner)throw Error('İlan başka bir oturuma ait.');
         const owned=state.activeJobId?[...this.tabs.values()].filter(s=>this.tabJobs.get(s.id)===state.activeJobId&&!s.page.isClosed()):[];
-        const existing=owned.find(s=>s.id===activeJob?.resumeContext?.tabId)??owned.at(-1);
+        const alternate=activeJob&&!['submitting','uncertain'].includes(activeJob.status)&&args.url!==activeJob.url&&(args.url===activeJob.applicationUrl||activeJob.note?.includes(args.url));
+        const existing=alternate?owned.findLast(s=>s.page.url()===args.url):owned.find(s=>s.id===activeJob?.resumeContext?.tabId&&!foreignEmployerCheckpoint(activeJob,s.page.url(),state.jobs))??owned.findLast(s=>!foreignEmployerCheckpoint(activeJob,s.page.url(),state.jobs));
         if(existing){existing.owner=owner;let page=presentObservation(existing,await this.observe(existing),{full:true});if(state.taskKind==='rank')page=await presentRankObservation(existing,page,{restore:true});return {content:[{type:'text',text:JSON.stringify({...page,reused:true})}]};}
         const job=state.jobs?.find(j=>j.id===state.activeJobId);
         if(job&&['submitting','uncertain'].includes(job.status))return {content:[{type:'text',text:JSON.stringify({status:'verification_required',jobId:job.id,message:'Gönderim sonucu belirsiz ve kayıtlı sekme yok. Yeni başvuru açma veya tekrar gönderme; mevcut sonucu doğrula.'})}]};
-        if(job)args={...args,url:job.resumeContext?.browser==='Jev Chrome'&&job.resumeContext.url?job.resumeContext.url:job.url};
+        if(job)args={...args,url:alternate?args.url:job.applicationUrl??(job.resumeContext?.browser==='Jev Chrome'&&job.resumeContext.url&&!foreignEmployerCheckpoint(job,job.resumeContext.url,state.jobs)?job.resumeContext.url:job.url)};
         const page=this.connection==='existing'?await this.openTabFrom(await this.home()):await context.newPage();
         const slot=await this.track(page.context(),page);slot.owner=owner;
         if(state.activeJobId)this.tabJobs.set(slot.id,state.activeJobId);
@@ -609,6 +611,7 @@ export class JevBrowser {
           if(JSON.stringify(current)!==JSON.stringify(upload.details))throw Error('Dosya alanı değişti; tekrar gözlemle.');
           const {realpath,stat}=await import('node:fs/promises');const file=await realpath(args.filePath),workspace=await realpath(this.workspace??this.directory);
           if(!file.startsWith(workspace+path.sep)||!(await stat(file)).isFile())throw Error('Yalnızca bu adayın çalışma alanındaki dosyalar yüklenebilir.');
+          validateUploadPurpose(upload.details.label,path.basename(file));
           slot.pending=null;slot.uploads.delete(args.uploadId);
           try{
             const info=await stat(file),selected=await upload.input.evaluate(e=>[...e.files].map(f=>({name:f.name,size:f.size,lastModified:f.lastModified})));

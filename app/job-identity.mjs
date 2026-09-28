@@ -1,11 +1,12 @@
 import {conflictingIdentities} from './job-urls.mjs';
 const normalize=value=>String(value??'').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}+#]+/gu,' ').trim();
 const companyKey=value=>normalize(value).replace(/(?:\s+(?:gmbh co kg|gmbh|ggmbh|ag|se|inc|llc|ltd|limited|plc|corporation))+$/,'');
-const roleKey=value=>normalize(String(value??'').replace(/\((?:m\s*\/\s*[fw]\s*\/\s*d|w\s*\/\s*m\s*\/\s*d|all genders|f\s*\/\s*m\s*\/\s*x)\)/gi,''));
+const roleKey=value=>normalize(String(value??'').replace(/\((?:(?:[mfwxd]\s*\/\s*){2}[mfwxd]|all genders)\)/gi,''));
 export const vacancyGroupKey=job=>companyKey(job.company)+'|'+roleKey(job.role);
 function locationKey(value){
   if(!value||/konum.*belirtilmemiş|not specified|not provided|unknown|unspecified/i.test(value))return null;
-  return normalize(value).replace(/\b(?:germany|deutschland|hybrid|hibrit|on site|onsite)\b/g,'').replace(/\s+/g,' ').trim()||null;
+  return normalize(String(value).replace(/\([^)]*\b(?:office|remote|hybrid|hibrit|onsite)\b[^)]*\)/gi,''))
+    .replace(/\b(?:germany|deutschland|hybrid|hibrit|on site|onsite)\b/g,'').replace(/\s+/g,' ').trim()||null;
 }
 
 // Do not fuzzy-match companies or job titles. A missing imported location is

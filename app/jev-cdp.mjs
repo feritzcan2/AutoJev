@@ -28,11 +28,11 @@ export class JevCdpTransport {
     });
     return new JevCdpTransport(socket);
   }
-  call(method,params={}){
+  call(method,params={},sessionId){
     if(this.socket.readyState!==WebSocket.OPEN)return Promise.reject(Error('Chrome bağlantısı kapandı.'));
     return new Promise((resolve,reject)=>{
       const id=++this.sequence,timer=setTimeout(()=>{this.pending.delete(id);reject(Error(`Chrome ${method} zaman aşımı.`));},15000);
-      this.pending.set(id,{resolve,reject,timer});this.socket.send(JSON.stringify({id,method,params}));
+      this.pending.set(id,{resolve,reject,timer});this.socket.send(JSON.stringify({id,method,params,...(sessionId?{sessionId}:{})}));
     });
   }
   async ownWindow(marker){
@@ -47,7 +47,13 @@ export class JevCdpTransport {
   async attach(targetId){
     if(this.attached.has(targetId))return;
     this.attached.add(targetId);
-    try{await this.call('Target.attachToTarget',{targetId,flatten:true});}catch(error){this.attached.delete(targetId);throw error;}
+    try{
+      const {sessionId}=await this.call('Target.attachToTarget',{targetId,flatten:true});
+      // Cross-origin application forms can run as out-of-process iframes.
+      // Attach their targets from the owned page session, without attaching
+      // unrelated tabs in the user's Chrome profile.
+      await this.call('Target.setAutoAttach',{autoAttach:true,waitForDebuggerOnStart:false,flatten:true,filter:[{type:'iframe',exclude:false},{exclude:true}]},sessionId);
+    }catch(error){this.attached.delete(targetId);throw error;}
   }
   receive(message){
     const pending=this.pending.get(message.id);

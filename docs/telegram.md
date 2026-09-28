@@ -5,11 +5,11 @@ JobLoop can send every newly discovered job, application receipts and pending qu
 ## Setup
 
 1. Create a bot with [BotFather](https://t.me/BotFather) using `/newbot`.
-2. In JobLoop, select the candidate, open **Yapılandırma → Telegram**, enter that candidate's bot token and choose **Kaydet ve aç**.
+2. In JobLoop, select the candidate, open **Bildirimler → Telegram botu**, enter that candidate's bot token and choose **Kaydet ve aç**.
 3. Choose **Adayı Telegram’a bağla**. Send the generated link to that candidate. It expires after ten minutes and can be used once.
 4. The candidate opens the link and presses **Başlat**. Their name appears in the connection panel. Repeat for another candidate with their own bot token. The same Telegram account can connect to different candidates through different bots; within one bot, an account belongs to one candidate.
 
-The candidate profile also has a shortcut to these settings. Bot settings, enabled state and notification preferences belong to the selected candidate. Switching candidates clears unsaved token input and loads that candidate's bot identity. Saving another bot disconnects only the selected candidate's old pairing; pair them again with the new bot. Rotating the token for the same bot preserves its links, drafts and delivery history.
+The sidebar has a **Bildirimler** page for bot setup, candidate pairing, notification preferences and delivery status. The candidate profile and **Yapılandırma → Bildirimler** also link to this page. Bot settings, enabled state and notification preferences belong to the selected candidate. Switching candidates clears unsaved token input and loads that candidate's bot identity. Saving another bot disconnects only the selected candidate's old pairing; pair them again with the new bot. Rotating the token for the same bot preserves its links, drafts and delivery history.
 
 Notification preferences are separate for new jobs, application receipts and questions. **Her yeni ilanı gönder** is on by default, including for existing connections. Every newly recorded job is queued immediately, regardless of score or application eligibility. The card includes company, role, location, the score if already available, and an **İlanı aç** button. Ranking updates or finding the same job again do not create a second new-job notification. Existing unanswered questions are queued when linking; historical jobs and application receipts are not backfilled automatically.
 
@@ -41,11 +41,19 @@ Question edits take priority over job-card updates and use the same durable retr
 
 A new, blocked or prepared job card that has no explicit queue request and is not being processed shows **Öncelikli başvur**. The button uses the desktop application's queue handler and starts or resumes the candidate's agent when possible. It applies only to the linked candidate, the sending bot and that exact message. Repeated clicks keep the same request. The card updates to **Başvuru sırasında** or the current processing state, and the button disappears.
 
+The clicked card gets priority in the edit queue as soon as the application request is saved, while browser/agent startup continues. Updates use the same message ID and respect Telegram rate limits. A slow startup or a backlog of other cards does not put this card at the end of the queue. Periodic and click-triggered deliveries are serialized so an older edit cannot overwrite the new status.
+
 An explicit click authorizes submission for that job and puts it ahead of automatic applications, scoring and searches. Manual requests are processed in queue order by the next available suitable worker, without interrupting an active task. They bypass profile research/prepare modes, source find_only/prepare modes, scoring requirements and the shared campaign target. Other jobs keep the saved policy. A closed or inaccessible assessment can be checked again against the live listing.
 
 The request survives restart and candidate replies. Uncertain applications show **Öncelikli doğrula** in the app and Telegram. This queues the existing result for priority verification, even at the campaign target, without authorizing form work or another send. Completed, duplicate and stopped applications retain their submission safeguards. Retrying a blocked application preserves its saved form and unanswered questions; queueing supplies no missing facts or privacy/legal consent.
 
 Older saved job cards receive the button through the normal paced edit queue after updating JobLoop. If the browser or agent cannot start, the application remains queued and the callback reports the reason.
+
+### Pinned applications
+
+Queued and active application cards are automatically added to the chat's [pinned messages](https://core.telegram.org/bots/api#pinchatmessage). They remain pinned while queued or active; completion, withdrawal or leaving those states removes the pin with [unpinChatMessage](https://core.telegram.org/bots/api#unpinchatmessage) for that exact message. Other pinned messages are left alone. This works in the candidate's private bot chat and continues even when new-job notifications are off.
+
+Existing cards are checked on startup. Pin state and retries survive restarts, use each bot's rate limits and appear in the Telegram settings' pending/failed counts. Pin failures do not block status edits. Deleted cards are not recreated, and disconnecting a candidate stops further updates to that chat.
 
 ### Commands
 

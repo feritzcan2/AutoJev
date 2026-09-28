@@ -60,7 +60,7 @@ export class TelegramBot{
   if(this.controller||!this.api)return;
   this.controller=new AbortController();const {signal}=this.controller;
   this.pollPromise=this.poll(signal).catch(()=>{if(!signal.aborted)this.error='Telegram bağlantısı durdu. Ayarlardan kapatıp yeniden aç.';});
-  const tick=()=>{if(!this.flushPromise)this.flushPromise=this.flush(signal).catch(()=>{if(!signal.aborted)this.error='Telegram mesaj kuyruğu işlenemedi.';}).finally(()=>{this.flushPromise=null;});};
+  const tick=()=>{if(!this.flushPromise)this.flush(signal).catch(()=>{if(!signal.aborted)this.error='Telegram mesaj kuyruğu işlenemedi.';});};
   tick();this.timer=setInterval(tick,3000);this.timer.unref?.();
  }
  async stop(){
@@ -82,7 +82,7 @@ export class TelegramBot{
       this.db.setMeta('offset',update.update_id+1);continue;
      }
      if(update.callback_query?.data?.startsWith('queue:')){
-      const result=await this.queueNotification(update.callback_query);
+      const result=await this.queueNotification(update.callback_query,signal);
       await this.api.call('answerCallbackQuery',{callback_query_id:update.callback_query.id,...result},signal).catch(()=>{});
       this.db.setMeta('offset',update.update_id+1);continue;
      }
@@ -107,16 +107,36 @@ export class TelegramBot{
   if(!link||!row||row.candidate_id!==link.candidate_id||row.message_id!==message.message_id)return null;
   return {link,row};
  }
- async queueNotification(callback){
+ async updateNotification(row,signal){
+  try{
+   this.db.prioritizeEdit(row.id);
+   // Finish any older in-flight edit before rendering the latest persisted state.
+   // The timer and callback share one flush, so an old response cannot overwrite it.
+   if(this.flushPromise)await this.flushPromise.catch(()=>{});
+   this.db.prioritizeEdit(row.id);
+   if(!signal?.aborted)await this.flush(signal);
+  }catch{if(!signal?.aborted)this.error='Telegram mesajı güncellenemedi; yeniden denenecek.';}
+ }
+ async queueNotification(callback,signal){
   const notification=this.notification(callback,'queue');
   if(!notification||notification.row.status!=='sent'||notification.row.data.kind!=='new_job')return {text:'Bu ilan bu bağlantı üzerinden sıraya alınamıyor.',show_alert:true};
   const {row,link}=notification,candidate=link.candidate_id;
   try{
    if(!this.queueApplication)throw Error('Sıraya alma kullanılamıyor. JobLoop’u yeniden başlat.');
    const job=this.store.job(candidate,row.data.jobId),state=applicationQueueState(this.store,candidate,job);
-   if(state.state!=='available'){this.db.refreshJobMessages(candidate,job.id);return {text:state.message,show_alert:state.state==='unavailable'};}
-   const result=await this.queueApplication(candidate,job.id);
+   if(state.state!=='available'){
+    this.db.refreshJobMessages(candidate,job.id);await this.updateNotification(row,signal);
+    return {text:state.message,show_alert:state.state==='unavailable'};
+   }
+   // The desktop handler persists the queue request before awaiting agent startup.
+   // Refresh that state now; starting the browser/agent must not delay the card.
+   const application=this.queueApplication(candidate,job.id);
    this.db.refreshJobMessages(candidate,job.id);this.changed(candidate);
+   const [outcome]=await Promise.allSettled([application,this.updateNotification(row,signal)]);
+   if(outcome.status==='rejected')throw outcome.reason;
+   const result=outcome.value;
+   this.db.refreshJobMessages(candidate,job.id);this.changed(candidate);
+   await this.updateNotification(row,signal);
    return {text:clip(result?.message||'İlan başvuru sırasına alındı.',200)};
   }catch(error){return {text:clip('Sıraya alınamadı: '+error.message,200),show_alert:true};}
  }
@@ -182,9 +202,17 @@ export class TelegramBot{
   if(data.promptId&&link.data.dialog?.promptId!==data.promptId)return null;
   return {text:data.text,...(data.reply_markup?{reply_markup:data.reply_markup}:{})};
  }
- async flush(signal){
+ flush(signal){
+  if(this.flushPromise)return this.flushPromise;
+  this.flushPromise=this.flushPending(signal).finally(()=>{this.flushPromise=null;});
+  return this.flushPromise;
+ }
+ async flushPending(signal){
   this.db.collect();
+  if(this.queueApplication)this.db.collectPins();
   if(Number(this.db.meta('sendAfter',0))>this.now())return;
+  if(!await this.flushEdits(signal,{urgent:true}))return;
+  if(!await this.flushPins(signal))return;
   if(!await this.flushEdits(signal))return;
   for(const row of this.db.pending()){
    if(signal?.aborted)return;
@@ -204,8 +232,25 @@ export class TelegramBot{
    }
   }
  }
- async flushEdits(signal){
-  for(const pending of this.db.pendingEdits()){
+ async flushPins(signal){
+  for(const pending of this.db.pendingPins()){
+   if(signal?.aborted)return false;
+   const row=this.db.delivery(pending.id),link=row&&this.db.link(row.candidate_id);
+   if(!link||row.status!=='sent'||(this.nextChatSend.get(link.chat_id)??0)>this.now())continue;
+   try{
+    await this.api.call(pending.wanted?'pinChatMessage':'unpinChatMessage',{chat_id:link.chat_id,message_id:row.message_id,...(pending.wanted?{disable_notification:true}:{})},signal);
+    this.db.pinned(row.id);this.nextChatSend.set(link.chat_id,this.now()+1100);
+   }catch(error){
+    if(signal?.aborted)return false;
+    this.db.failPin(pending,error);this.nextChatSend.set(link.chat_id,this.now()+1100);
+    if(error.code===429)this.db.setMeta('sendAfter',this.now()+Math.max(1,error.retryAfter??5)*1000);
+    if([0,401,409,429].includes(error.code)){this.error=error.message;return false;}
+   }
+  }
+  return true;
+ }
+ async flushEdits(signal,options){
+  for(const pending of this.db.pendingEdits(options)){
    if(signal?.aborted)return false;
    // A deletion or unlink may happen while another API request is in flight.
    const row=this.db.delivery(pending.id),link=row&&this.db.link(row.candidate_id);

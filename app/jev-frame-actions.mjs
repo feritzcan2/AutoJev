@@ -1,11 +1,11 @@
 import {observedId} from './jev-ids.mjs';
 const excluded=/captcha|recaptcha|hcaptcha|challenge|oauth|accounts\.google|login\.microsoftonline/i;
 export async function usableFormFrame(frame,page){
- if(frame===page.mainFrame()||!/^https?:|^about:srcdoc$/.test(frame.url()))return false;
+ if(frame===page.mainFrame())return false;
  for(let current=frame;current.parentFrame();current=current.parentFrame()){
   if(excluded.test(current.url()))return false;
   const host=await current.frameElement();
-  try{if(!await host.evaluate(e=>!e.hasAttribute('sandbox')&&!/captcha|challenge|oauth/i.test(e.id+' '+e.title)&&!e.closest('[inert],[aria-hidden="true"]')&&e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})))return false;}finally{await host.dispose();}
+  try{if(!await host.evaluate((e,url)=>!e.hasAttribute('sandbox')&&!/captcha|challenge|oauth/i.test(e.id+' '+e.title+' '+e.src)&&/^https?:|^about:srcdoc$/.test(e.src||url)&&!e.closest('[inert],[aria-hidden="true"]')&&e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}),current.url()))return false;}finally{await host.dispose();}
  }
  return true;
 }
@@ -24,14 +24,14 @@ function describe(e){
 }
 export async function observeFormFrame(slot,frameId,owner){
  const saved=slot.embeddedFrames?.get(frameId);
- if(!saved||saved.owner!==owner||saved.url!==saved.frame.url()||!await usableFormFrame(saved.frame,slot.page))throw Error('Güncel ve erişilebilir frameId gerekli.');
+ if(!saved||saved.owner!==owner||saved.rawUrl!==saved.frame.url()||!await usableFormFrame(saved.frame,slot.page))throw Error('Güncel ve erişilebilir frameId gerekli.');
  const prior=slot.frameActionTargets??new Map();slot.frameActionTargets=new Map();
  await Promise.all([...prior.values()].map(t=>t.handle.dispose().catch(()=>{})));
  const controls=[];
  for(const handle of await saved.frame.locator('input,textarea,select,button,[role=button],[role=combobox],[role=option]').elementHandles()){
   const meta=await handle.evaluate(describe);
   if(!meta){await handle.dispose();continue;}
-  const targetId=observedId('embedded');slot.frameActionTargets.set(targetId,{handle,meta,owner,frame:saved.frame,frameUrl:saved.url,pageUrl:slot.page.url()});
+  const targetId=observedId('embedded');slot.frameActionTargets.set(targetId,{handle,meta,owner,frame:saved.frame,frameUrl:saved.frame.url(),pageUrl:slot.page.url()});
   const {signature,...visible}=meta;controls.push({targetId,...visible});
  }
  return {browser:'Jev Chrome',tabId:slot.id,frameId,frameUrl:saved.url,inPlace:true,text:(await saved.frame.locator('body').innerText()).slice(0,16000),controls,nextAction:'browser_jev_frame_act',message:'Bu hedefler gömülü formun kendi bağlamında çalışır. Ana sayfa kimlikleriyle karıştırma. Her işlemden sonra yalnızca dönen yeni hedefleri kullan.'};
@@ -52,9 +52,14 @@ export async function actFormFrame(slot,args,owner,{beforeClick=async()=>{}}={})
   if(meta.kind==='fill'){
    await t.handle.fill(args.text,{timeout:2500});
    if(meta.autocomplete==='list'||meta.autocomplete==='both'){
-    await t.frame.locator('[role="option"]').first().waitFor({state:'visible',timeout:2500}).catch(()=>{});
+    const suggestion=t.frame.locator('[role="option"]').first();
+    // Many ARIA comboboxes (including Greenhouse/React Select) reveal their
+    // filtered options only after ArrowDown, even though fill fires input.
+    if(!await suggestion.isVisible().catch(()=>false))await t.handle.press('ArrowDown',{timeout:2500}).catch(()=>{});
+    await suggestion.waitFor({state:'visible',timeout:2500}).catch(()=>{});
+    const suggestionsVisible=await suggestion.isVisible().catch(()=>false);
     const verified=await t.handle.evaluate((e,text)=>e.isConnected&&e.value===text,args.text);
-    return {status:'needs_selection',executed:true,verified,message:'Bu alan öneri seçimi istiyor. Dönen gömülü form kontrollerindeki görünür role=option hedeflerinden doğrulanmış şehri seç; yalnızca metin yazmak formu tamamlamaz.'};
+    return {status:'needs_selection',executed:true,verified,suggestionsVisible,message:suggestionsVisible?'Bu alan öneri seçimi istiyor. Dönen gömülü form kontrollerindeki görünür role=option hedeflerinden doğrulanmış şehri seç; yalnızca metin yazmak formu tamamlamaz.':'Henüz öneri görünmüyor. Şehir adının kısa önekini yazıp tekrar dene (ör. Berl); öneri seçilmeden bu alan geçerli sayılmaz.'};
    }
    await t.handle.evaluate(e=>e.blur());
    const verified=await t.handle.evaluate((e,text)=>e.isConnected&&e.value===text&&e.validity.valid,args.text);

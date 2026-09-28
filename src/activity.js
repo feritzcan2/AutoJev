@@ -6,7 +6,8 @@ export function isQuestionRetryPending(snapshot,jobId){
  return Boolean(jobId&&campaign?.status==='running'&&(!campaign.failures||campaign.task)&&!campaign.waitingReason&&campaign.pendingRecoveries?.[jobId]);
 }
 export function pendingQuestions(snapshot){
- return (snapshot?.questions??[]).filter(q=>q.answer===null&&!isQuestionRetryPending(snapshot,q.jobId));
+ const jobs=new Map((snapshot?.jobs??[]).map(job=>[job.id,job]));
+ return (snapshot?.questions??[]).filter(q=>q.answer===null&&(!q.jobId||!['submitted','already_submitted','skipped'].includes(jobs.get(q.jobId)?.status))&&!isQuestionRetryPending(snapshot,q.jobId));
 }
 export function sourceResultView(source,campaign){
   const scanning=campaign?.status==='running'&&(campaign.tasks??[campaign.task]).some(task=>task?.kind==='search'&&task.sourceId===source.id&&task.seenWorking===true);
@@ -39,7 +40,7 @@ export function activityView(snapshot,now=Date.now()){
     const next=Math.max(campaign.wakeAt??0,campaign.nextSearchAt??0);
     title=campaign.waitingReason==='source_apply_mode'?'Kaynaklar sadece bul modunda':campaign.waitingReason==='no_enabled_sources'?'Arama kaynakları kapalı':next>now?`Sonraki kontrol ${new Date(next).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}`:'Sıradaki iş hazırlanıyor';detail=campaign.note;tone='waiting';
   }else if(active){title=runtimeNames[active.state]??'Agent bağlı';detail=report?.data.message??'Ayrıntıları terminalden takip edebilirsin.';}
-  return{title,detail,tone,url:job?.url??null,state:browserWait?'Chrome bekleniyor':active?(runtimeNames[active.state]??'Bağlı'):'Agent kapalı',at:report?.at??null,lastReport:report?.data.message??null,canWrite:Boolean(active),canPause:campaign?.status==='running',history:events.filter(e=>['agent_activity','job_found','job_updated','submission_recorded','question_asked','question_answered','agent_context_restart'].includes(e.kind)).slice(0,8)};
+  return{title,detail,tone,url:job?.url??null,state:browserWait?'Chrome bekleniyor':active?(runtimeNames[active.state]??'Bağlı'):campaign?.status==='running'?'Bekliyor':'Agent kapalı',at:report?.at??null,lastReport:report?.data.message??null,canWrite:Boolean(active),canPause:campaign?.status==='running',history:events.filter(e=>['agent_activity','job_found','job_updated','submission_recorded','question_asked','question_answered','agent_context_restart'].includes(e.kind)).slice(0,8)};
 }
 export function ageLabel(at,now=Date.now()){
   if(!at)return 'Henüz işlem bildirimi yok';

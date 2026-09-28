@@ -3,9 +3,12 @@
 export function manualApplicationAuthorized(job,task){
  return Boolean(!task?.verificationOnly&&!job?.manualApplication?.verificationOnly&&!job?.preparation?.hold&&job?.manualApplication?.requestId&&task?.manualRequestId===job.manualApplication.requestId&&task.jobId===job.id&&['application','verify'].includes(task.kind));
 }
+export function uncertainRetryPeerAllowed(job,task){
+ return Boolean(job?.duplicateApplication?.status==='uncertain'&&job?.retryAuthorization?.kind==='uncertain_submission'&&task?.repeatUncertain&&manualApplicationAuthorized(job,task));
+}
 export function hasManualApplicationWork(store,id,c){
  c??=store.workerState.campaign(id);
- return store.jobs(id).some(j=>j.manualApplication&&!j.followupStopped&&!j.duplicateApplication&&!['submitted','already_submitted','skipped'].includes(j.status)&&
+ return store.jobs(id).some(j=>j.manualApplication&&!j.followupStopped&&(!j.duplicateApplication||j.manualApplication.repeatUncertain&&j.duplicateApplication.status==='uncertain')&&!['submitted','already_submitted','skipped'].includes(j.status)&&
   (c?.pendingRetries?.[j.id]||c?.pendingResumes?.[j.id]||c?.pendingRecoveries?.[j.id]||['working','prepared','submitting','uncertain'].includes(j.status)));
 }
 
@@ -17,7 +20,7 @@ export function migrateManualApplications(store){
   for(const [id,request] of Object.entries(c?.pendingRetries??{})){
    if(!request.requestId)continue;
    const job=store.job(p.id,id);
-   if(job.preparation?.hold||job.manualApplication||job.followupStopped||job.duplicateApplication||['submitted','already_submitted','skipped'].includes(job.status))continue;
+   if(job.preparation?.hold||job.manualApplication||job.followupStopped||job.duplicateApplication&&!(request.repeatUncertain&&job.duplicateApplication.status==='uncertain')||['submitted','already_submitted','skipped'].includes(job.status))continue;
    store.saveJob({...job,manualApplication:{...request}},'manual_application_requested');
    for(const worker of store.workers(p.id)){
     const view=store.forWorker(worker.id),state=view.campaign(p.id);

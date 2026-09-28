@@ -1,4 +1,5 @@
 import {randomBytes,createHash} from 'node:crypto';
+import {applicationQueueState} from './application-queue.mjs';
 
 const id=()=>randomBytes(12).toString('hex');
 const hash=value=>createHash('sha256').update(value).digest('hex');
@@ -25,6 +26,8 @@ export class TelegramStore{
     job_id TEXT NOT NULL,body TEXT,status TEXT NOT NULL DEFAULT 'pending',attempts INTEGER NOT NULL DEFAULT 0,
     next_at INTEGER NOT NULL DEFAULT 0,error TEXT);
    CREATE INDEX IF NOT EXISTS telegram_job_message_updates ON telegram_job_messages(job_id,status);
+   CREATE TABLE IF NOT EXISTS telegram_pins(delivery_id TEXT PRIMARY KEY REFERENCES telegram_outbox(id) ON DELETE CASCADE,
+    wanted INTEGER NOT NULL DEFAULT 0,status TEXT NOT NULL DEFAULT 'synced',attempts INTEGER NOT NULL DEFAULT 0,next_at INTEGER NOT NULL DEFAULT 0,error TEXT);
    INSERT OR IGNORE INTO telegram_job_messages(delivery_id,job_id)
     SELECT id,json_extract(data,'$.jobId') FROM telegram_outbox
     WHERE status='sent' AND message_id>0 AND json_extract(data,'$.kind')='new_job';
@@ -32,6 +35,7 @@ export class TelegramStore{
   // Keep the existing durable edit queue and its retries; it now also tracks
   // question cards and form prompts. Backfill saved messages on upgrade.
   if(!this.db.prepare('PRAGMA table_info(telegram_job_messages)').all().some(column=>column.name==='question_id'))this.db.exec('ALTER TABLE telegram_job_messages ADD COLUMN question_id TEXT');
+  if(!this.db.prepare('PRAGMA table_info(telegram_job_messages)').all().some(column=>column.name==='priority'))this.db.exec('ALTER TABLE telegram_job_messages ADD COLUMN priority INTEGER NOT NULL DEFAULT 0');
   this.db.exec(`CREATE INDEX IF NOT EXISTS telegram_question_message_updates ON telegram_job_messages(question_id,status);
    INSERT OR IGNORE INTO telegram_job_messages(delivery_id,job_id,question_id)
     SELECT o.id,coalesce(q.job_id,''),q.id FROM telegram_outbox o
@@ -130,13 +134,34 @@ export class TelegramStore{
    }
   });
  }
- deleted(deliveryId){this.transaction(()=>{this.db.prepare("UPDATE telegram_outbox SET status='deleted',error=NULL WHERE id=? AND status='sent'").run(deliveryId);this.db.prepare('DELETE FROM telegram_job_messages WHERE delivery_id=?').run(deliveryId);});}
- pendingEdits(){return this.db.prepare(`SELECT o.*,m.body AS rendered_body,m.attempts AS edit_attempts FROM telegram_job_messages m JOIN telegram_outbox o ON o.id=m.delivery_id WHERE o.status='sent' AND m.status='pending' AND m.next_at<=? AND ${this.scope('o.candidate_id',true)} ORDER BY (m.question_id IS NOT NULL) DESC,m.rowid LIMIT 20`).all(this.now(),this.botId,this.botId).map(decode);}
- edited(deliveryId,body){this.db.prepare("UPDATE telegram_job_messages SET body=?,status='synced',attempts=0,next_at=0,error=NULL WHERE delivery_id=?").run(body?JSON.stringify(body):null,deliveryId);}
+ deleted(deliveryId){this.transaction(()=>{this.db.prepare("UPDATE telegram_outbox SET status='deleted',error=NULL WHERE id=? AND status='sent'").run(deliveryId);this.db.prepare('DELETE FROM telegram_job_messages WHERE delivery_id=?').run(deliveryId);this.db.prepare('DELETE FROM telegram_pins WHERE delivery_id=?').run(deliveryId);});}
+ prioritizeEdit(deliveryId){
+  const row=this.delivery(deliveryId);if(row?.status!=='sent')return;
+  this.db.prepare("UPDATE telegram_job_messages SET priority=1,status=CASE WHEN status='synced' THEN 'pending' ELSE status END WHERE delivery_id=?").run(deliveryId);
+ }
+ pendingEdits({urgent=false}={}){return this.db.prepare(`SELECT o.*,m.body AS rendered_body,m.attempts AS edit_attempts FROM telegram_job_messages m JOIN telegram_outbox o ON o.id=m.delivery_id WHERE o.status='sent' AND m.status='pending' AND m.next_at<=? AND ${this.scope('o.candidate_id',true)} ${urgent?'AND (m.priority>0 OR m.question_id IS NOT NULL)':''} ORDER BY m.priority DESC,(m.question_id IS NOT NULL) DESC,m.rowid LIMIT 20`).all(this.now(),this.botId,this.botId).map(decode);}
+ edited(deliveryId,body){this.db.prepare("UPDATE telegram_job_messages SET body=?,status='synced',attempts=0,next_at=0,error=NULL,priority=0 WHERE delivery_id=?").run(body?JSON.stringify(body):null,deliveryId);}
  failEdit(row,error){
   const attempts=row.edit_attempts+1,permanent=[400,403].includes(error.code);
   const delay=Math.max(error.retryAfter??0,Math.min(300,2**Math.min(attempts,8)))*1000;
   this.db.prepare('UPDATE telegram_job_messages SET attempts=?,next_at=?,status=?,error=? WHERE delivery_id=?').run(attempts,this.now()+delay,permanent?'failed':'pending',error.message,row.id);
+ }
+ collectPins(){
+  for(const link of this.links())this.transaction(()=>{
+   const candidate=link.candidate_id,campaign=this.store.campaign(candidate),tasks=this.store.workerState.tasks(candidate),jobs=new Map(this.store.jobs(candidate).map(job=>[job.id,job]));
+   const rows=this.db.prepare("SELECT o.id,json_extract(o.data,'$.jobId') AS job_id,p.wanted FROM telegram_outbox o LEFT JOIN telegram_pins p ON p.delivery_id=o.id WHERE o.candidate_id=? AND o.status='sent' AND o.message_id>0 AND json_extract(o.data,'$.kind')='new_job'").all(candidate);
+   for(const row of rows){
+    const job=jobs.get(row.job_id),wanted=Number(Boolean(job&&['queued','active'].includes(applicationQueueState(this.store,candidate,job,{campaign,tasks}).state)));
+    if(row.wanted===null){this.db.prepare('INSERT INTO telegram_pins(delivery_id,wanted,status) VALUES(?,?,?)').run(row.id,wanted,wanted?'pending':'synced');if(wanted)this.prioritizeEdit(row.id);}
+    else if(row.wanted!==wanted){this.db.prepare("UPDATE telegram_pins SET wanted=?,status='pending',attempts=0,next_at=0,error=NULL WHERE delivery_id=?").run(wanted,row.id);this.prioritizeEdit(row.id);}
+   }
+  });
+ }
+ pendingPins(){return this.db.prepare(`SELECT o.*,p.wanted,p.attempts AS pin_attempts FROM telegram_pins p JOIN telegram_outbox o ON o.id=p.delivery_id WHERE o.status='sent' AND p.status='pending' AND p.next_at<=? AND ${this.scope('o.candidate_id',true)} ORDER BY p.wanted,p.rowid LIMIT 20`).all(this.now(),this.botId,this.botId).map(decode);}
+ pinned(deliveryId){this.db.prepare("UPDATE telegram_pins SET status='synced',attempts=0,next_at=0,error=NULL WHERE delivery_id=?").run(deliveryId);}
+ failPin(row,error){
+  const attempts=row.pin_attempts+1,permanent=[400,403].includes(error.code),delay=Math.max(error.retryAfter??0,Math.min(300,2**Math.min(attempts,8)))*1000;
+  this.db.prepare('UPDATE telegram_pins SET attempts=?,next_at=?,status=?,error=? WHERE delivery_id=?').run(attempts,this.now()+delay,permanent?'failed':'pending',error.message,row.id);
  }
  skipped(deliveryId){this.db.prepare("UPDATE telegram_outbox SET status='skipped',error=NULL WHERE id=?").run(deliveryId);}
  fail(row,error){
@@ -148,6 +173,7 @@ export class TelegramStore{
   this.assertCandidate(candidate);
   this.db.prepare("UPDATE telegram_outbox SET status='pending',attempts=0,next_at=0,error=NULL WHERE candidate_id=? AND status IN ('pending','failed')").run(candidate);
   this.db.prepare("UPDATE telegram_job_messages SET status='pending',attempts=0,next_at=0,error=NULL WHERE status IN ('pending','failed') AND delivery_id IN (SELECT id FROM telegram_outbox WHERE candidate_id=? AND status='sent')").run(candidate);
+  this.db.prepare("UPDATE telegram_pins SET status='pending',attempts=0,next_at=0,error=NULL WHERE status IN ('pending','failed') AND delivery_id IN (SELECT id FROM telegram_outbox WHERE candidate_id=? AND status='sent')").run(candidate);
  }
  queueUnsentJobs(candidate,botId){
   this.assertCandidate(candidate);if(!this.link(candidate))throw Error('Önce adayı Telegram’a bağla.');
@@ -185,6 +211,7 @@ export class TelegramStore{
    // upgrade, and whenever scheduling or permissions change without a job event.
    const campaign=this.store.campaign(link.candidate_id),profile=this.store.profile(link.candidate_id);
    const queueSignature=hash(JSON.stringify(['cards-v3',campaign?.status,campaign?.task?.jobId,campaign?.task?.kind,Boolean(campaign?.task?.report),
+    this.store.workerState.tasks(link.candidate_id).map(({workerId,task})=>[workerId,task.jobId,task.kind,Boolean(task.report)]),
     Object.keys(campaign?.pendingRetries??{}),Object.keys(campaign?.pendingResumes??{}),Object.keys(campaign?.pendingRecoveries??{}),
     profile.authorization,profile.rankThreshold,this.store.sources(link.candidate_id).map(source=>[source.id,source.applyMode])]));
    if(link.data.queueSignature!==queueSignature){this.refreshJobMessages(link.candidate_id);link.data.queueSignature=queueSignature;}
@@ -219,7 +246,7 @@ export class TelegramStore{
  status(candidate){
   if(!candidate)return null;this.store.profile(candidate);
   const link=this.link(candidate),pair=this.db.prepare('SELECT expires FROM telegram_pairs WHERE candidate_id=? AND expires>?').get(candidate,this.now());
-  const deliveryStates=this.db.prepare("SELECT status,error FROM telegram_outbox WHERE candidate_id=? UNION ALL SELECT m.status,m.error FROM telegram_job_messages m JOIN telegram_outbox o ON o.id=m.delivery_id WHERE o.candidate_id=? AND o.status='sent'").all(candidate,candidate);
+  const deliveryStates=this.db.prepare("SELECT status,error FROM telegram_outbox WHERE candidate_id=? UNION ALL SELECT m.status,m.error FROM telegram_job_messages m JOIN telegram_outbox o ON o.id=m.delivery_id WHERE o.candidate_id=? AND o.status='sent' UNION ALL SELECT p.status,p.error FROM telegram_pins p JOIN telegram_outbox o ON o.id=p.delivery_id WHERE o.candidate_id=? AND o.status='sent'").all(candidate,candidate,candidate);
   const lastError=deliveryStates.findLast(row=>row.error)?.error??null;
   return {candidateId:candidate,candidateName:this.store.profile(candidate).name,connected:Boolean(link),name:link?.data.name??null,
    newJobs:link?.data.newJobs??true,notifications:link?.data.notifications??true,questions:link?.data.questions??true,expires:pair?.expires??null,
