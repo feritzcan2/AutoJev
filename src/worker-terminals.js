@@ -1,11 +1,13 @@
 import {XtermSurface} from '@termloop/terminal-surface/xterm';
 import './worker-terminals.css';
+import {workerPane} from './worker-pane.js';
+import {terminalConversation} from './terminal-conversation.js';
 
 const states={Working:'Çalışıyor',Idle:'Hazır',AwaitingInput:'Giriş bekliyor',Compacting:'Özetliyor',Failed:'Hata',Interrupted:'Kesildi',Unknown:'Bağlanıyor'};
 const clear=new TextEncoder().encode('\x1b[2J\x1b[3J\x1b[H');
 const node=(tag,cls,text)=>{const el=document.createElement(tag);el.className=cls;if(text!==undefined)el.textContent=text;return el;};
 
-export function workerTerminals(api,{container,notice,refresh}){
+export function workerTerminals(api,{container,notice,refresh,beforeAction=async()=>{},sendMessage=(id,text,worker)=>api.terminalMessage(id,text,worker)}){
   let candidate=null,snapshot=null,adding=false;
   const panes=new Map();
   container.classList.add('worker-terminals');
@@ -28,44 +30,41 @@ export function workerTerminals(api,{container,notice,refresh}){
       pane.surface.write(clear,()=>{});
       if(output.bytes.length)pane.surface.write(new Uint8Array(output.bytes),()=>{});
       else pane.surface.writeln('Görev başladığında agent çıktısı burada görünecek.');
-      pane.sequence=output.sequence;
+      pane.sequence=output.sequence;pane.promptShown=false;
       for(const event of pane.pending)if(event.sequence>pane.sequence){pane.surface.write(new Uint8Array(event.bytes),()=>{});pane.sequence=event.sequence;}
     }catch(error){if(!pane.dead&&version===pane.version)notice(error.message);}
-    finally{if(version===pane.version){pane.loading=false;pane.pending=[];}}
+    finally{if(version===pane.version){pane.loading=false;pane.pending=[];showPrompt(pane);}}
   }
   async function action(pane,method){
     if(pane.busy||pane.dead)return;pane.busy=true;render(pane);
-    try{await api[method](pane.candidate,pane.id);await refresh();}catch(error){notice(error.message);}
+    try{if(await beforeAction(pane.candidate,method,pane.id)!==false)await api[method](pane.candidate,pane.id);await refresh();}catch(error){notice(error.message);}
     finally{pane.busy=false;if(!pane.dead)render(pane);}
   }
   function create(worker){
     const pane={id:worker.id,candidate,worker,version:0,sequence:0,pending:[],loading:true,dead:false,busy:false};
-    const card=node('section','worker-pane');card.dataset.workerId=worker.id;card.setAttribute('aria-label',`${worker.name} terminali`);
-    const top=node('div','worker-pane-head'),identity=node('div','worker-identity'),name=node('h3','',worker.name),status=node('span','worker-status');
-    identity.append(name,status);const controls=node('div','worker-controls');
-    const start=node('button','quiet','Başlat'),stop=node('button','quiet','Durdur'),restart=node('button','quiet','Yenile'),remove=node('button','quiet worker-remove','×');
-    for(const [button,method,label] of [[start,'startWorker','başlat'],[stop,'stopWorker','durdur'],[restart,'restartWorker','yeniden başlat'],[remove,'removeWorker','kaldır']]){button.type='button';button.setAttribute('aria-label',`${worker.name} ${label}`);button.title=`${worker.name} ${label}`;button.onclick=()=>action(pane,method);controls.append(button);}
-    remove.hidden=worker.id==='main';top.append(identity,controls);
-    const task=node('div','worker-task'),title=node('strong','worker-task-title'),detail=node('small','worker-task-detail');task.append(title,detail);
-    const host=node('div','worker-terminal');if(worker.id==='main')host.id='terminal';
-    card.append(top,task,host);splits.append(card);
-    Object.assign(pane,{card,host,status,title,detail,start,stop,restart,remove});
-    pane.surface=new XtermSurface(text=>{const active=pane.worker.active;if(!pane.dead&&active)api.input(pane.candidate,text,pane.id,active.sessionId).catch(error=>notice(error.message));},(rows,cols)=>{pane.size={rows,cols};syncSize(pane);},()=>notice('Belge eklemek için aday profilindeki CV seç düğmesini kullan.'));
+    Object.assign(pane,workerPane({id:worker.id,name:worker.name,terminalId:worker.id==='main'?'terminal':null,actions:{start:()=>action(pane,'startWorker'),stop:()=>action(pane,'stopWorker'),restart:()=>action(pane,'restartWorker'),remove:()=>action(pane,'removeWorker')}}));
+    const {host}=pane;splits.append(pane.card);
+    pane.draft=terminalConversation({write:text=>pane.surface.write(new TextEncoder().encode(text),()=>{}),columns:()=>pane.size?.cols??80,submit:async text=>{await sendMessage(pane.candidate,text,pane.id);await refresh();pane.host.querySelector('.xterm-helper-textarea')?.focus();}});
+    pane.surface=new XtermSurface(text=>{if(pane.dead)return;const active=pane.worker.active;if(active)api.input(pane.candidate,text,pane.id,active.sessionId).catch(error=>notice(error.message));else pane.draft.input(text);},(rows,cols)=>{pane.size={rows,cols};syncSize(pane);},()=>notice('Belge eklemek için Dosyalar sayfasını kullan.'));
     panes.set(worker.id,pane);pane.ready=pane.surface.mount(host,false);pane.session=worker.active?.sessionId??null;
     void replay(pane);render(pane);return pane;
   }
+  function showPrompt(pane){if(!pane.loading&&!pane.dead&&!pane.worker.active&&!pane.promptShown){pane.promptShown=true;pane.draft.prompt();}}
   function render(pane){
-    const {worker}=pane,c=worker.campaign,task=c?.task,active=worker.active;
-    const job=snapshot?.jobs?.find(j=>j.id===task?.jobId),source=snapshot?.sources?.find(s=>s.id===task?.sourceId);
-    pane.status.textContent=active?(states[active.state]??'Bağlanıyor'):c?.status==='running'?'Görev bekliyor':c?.status==='complete'?'Tamamlandı':'Kapalı';
+    const {worker}=pane,c=worker.execution,active=worker.active,paused=worker.enabled===false&&!active;
+    pane.status.textContent=paused?'Durduruldu':worker.presentation?.status??(active?(states[active.state]??'Bağlanıyor'):c?.status==='running'?'Görev bekliyor':c?.status==='complete'?'Tamamlandı':'Kapalı');
     pane.status.dataset.active=String(Boolean(active));
-    pane.title.textContent=task?.kind==='search'?`${source?.name??'Kaynak'} taranıyor`:job?`${job.company} · ${job.role}`:c?.status==='running'?'Sıradaki görev bekleniyor':'Arama, puanlama ve başvuru';
+    pane.title.textContent=paused?'Worker durduruldu':worker.presentation?.title??'Sıradaki görev bekleniyor';
     pane.title.title=pane.title.textContent;
     const usage=active?.contextUsage?.percent;
-    pane.detail.textContent=[task?({search:'İlan arama',rank:'İlan puanlama',application:'Başvuru',preparation:'Başvuru hazırlığı',verify:'Gönderim kontrolü'}[task.kind]):c?.note??'Başlatıldığında uygun işi kuyruktan alır.',usage!=null?`Context %${usage.toLocaleString('tr-TR',{maximumFractionDigits:1})}`:null].filter(Boolean).join(' · ');
+    pane.detail.textContent=paused?'Başlattığında sıradaki görevi alır.':[worker.presentation?.detail??c?.note??'Başlatıldığında uygun işi kuyruktan alır.',usage!=null?`Context %${usage.toLocaleString('tr-TR',{maximumFractionDigits:1})}`:null].filter(Boolean).join(' · ');
     pane.start.hidden=Boolean(active)||c?.status==='running';pane.stop.hidden=pane.start.hidden===false;
-    pane.start.disabled=pane.busy||!snapshot?.profile.cvPath;pane.stop.disabled=pane.busy;pane.restart.disabled=pane.busy||!snapshot?.profile.cvPath;pane.remove.disabled=pane.busy;
-    pane.card.setAttribute('aria-busy',String(pane.busy));syncSize(pane);
+    pane.start.textContent=worker.presentation?.startLabel??'Başlat';pane.start.setAttribute('aria-label',worker.presentation?.startLabel??`${worker.name} başlat`);
+    const outcome=worker.presentation?.outcome;pane.outcome.hidden=!outcome;
+    if(outcome){pane.outcomeTitle.textContent=outcome.title;pane.outcomeDetail.textContent=outcome.detail;pane.outcome.dataset.tone=outcome.tone;}
+    pane.inputHint.hidden=!snapshot?.capabilities?.terminalConversation;pane.inputHint.textContent=active?'Canlı terminal · Yazdıkların çalışan agent’a iletilir.':'Oturum kapalı · Yukarıdaki çıktı önceki oturuma ait. Yeni mesaj yazıp Enter’a basarak agent ile konuşabilirsin.';
+    pane.start.disabled=pane.busy||!(snapshot?.capabilities?.canStart??false);pane.stop.disabled=pane.busy;pane.restart.disabled=pane.busy||!(snapshot?.capabilities?.canRestart??false);pane.remove.disabled=pane.busy;
+    pane.restart.hidden=!snapshot?.capabilities?.workerRestart;pane.card.setAttribute('aria-busy',String(pane.busy));syncSize(pane);showPrompt(pane);
   }
   function separators(){
     splits.querySelectorAll('.worker-divider').forEach(el=>el.remove());
@@ -80,13 +79,14 @@ export function workerTerminals(api,{container,notice,refresh}){
   }
   function update(id,value){
     if(candidate!==id){dispose();candidate=id;}snapshot=value;
-    const workers=value?.workers??(id?[{id:'main',name:'Worker 1',campaign:value?.campaign,active:value?.active}]:[]);
+    const workers=value?.workers??(id?[{id:'main',name:'Worker 1',execution:value?.execution,active:value?.active}]:[]);
     let changed=false;
     for(const [worker,pane] of panes)if(!workers.some(w=>w.id===worker)){pane.dead=true;pane.surface.dispose();pane.host.remove();pane.card.remove();panes.delete(worker);changed=true;}
-    for(const worker of workers){let pane=panes.get(worker.id);if(!pane){pane=create(worker);changed=true;}else{pane.worker=worker;if(worker.active?.sessionId&&pane.session!==worker.active.sessionId){pane.session=worker.active.sessionId;void replay(pane);}render(pane);}}
+    for(const worker of workers){let pane=panes.get(worker.id);if(!pane){pane=create(worker);changed=true;}else{const ended=pane.worker.active&&!worker.active;pane.worker=worker;if(worker.active?.sessionId&&pane.session!==worker.active.sessionId){pane.session=worker.active.sessionId;void replay(pane);}if(ended){pane.promptShown=false;if(snapshot?.capabilities?.terminalConversation)pane.surface.writeln('\r\n── Oturum sona erdi · Sonuç ve sonraki adım aşağıda ──');}render(pane);}}
     if(changed)separators();
     const main=panes.get('main');if(main){const home=value?.setup?.status==='running'?document.getElementById('setup-terminal'):main.card;if(home&&main.host.parentElement!==home)home.append(main.host);}
-    add.disabled=adding||!id||workers.length>=8||Boolean(value?.setup&&value.setup.status!=='complete');
+    const maxWorkers=value?.capabilities?.maxWorkers??8;add.hidden=maxWorkers===1;container.querySelector('.worker-toolbar p').textContent=value?.capabilities?.workerDescription??'Worker’lar çalışma alanının görevlerini ortak kuyruktan alır.';
+    add.disabled=adding||!id||workers.length>=maxWorkers||Boolean(value?.setup&&value.setup.status!=='complete');
   }
   function event(event){
     if(event.candidateId!==candidate)return;
@@ -98,5 +98,5 @@ export function workerTerminals(api,{container,notice,refresh}){
     else if(event.event==='state'&&pane.worker.active?.sessionId===event.sessionId){pane.worker.active.state=event.state.replace(/^Some\((.*)\)$/,'$1');render(pane);}
   }
   api.onLogsCleared?.(()=>{for(const pane of panes.values()){pane.version++;pane.loading=false;pane.pending=[];pane.surface.write(clear,()=>{});}});
-  return {update,event,dispose};
+  return {update,event,dispose,focus(){panes.get('main')?.host.querySelector('.xterm-helper-textarea')?.focus();}};
 }

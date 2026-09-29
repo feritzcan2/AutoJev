@@ -1,5 +1,6 @@
 import {Campaigns} from './campaign.mjs';
-import {MAIN_WORKER} from './worker-state.mjs';
+import {prepareAgentRestart,resumeAgentRestart} from './agent-restart.mjs';
+import {MAIN_WORKER} from './worker-key.mjs';
 
 // One existing campaign state machine per worker. A synchronous task reservation
 // in WorkerState prevents controllers from selecting the same job or source.
@@ -59,14 +60,21 @@ export class WorkerCampaigns {
     try{await Promise.all(this.store.workers(id).map(w=>this.forWorker(w.id).pause(id,status)));}
     finally{this.changing.delete(id);}
   }
-  async startWorker(id,worker){
+  restartState(id,worker){
+    const controller=this.forWorker(worker);
+    if(controller.launching.has(id))throw Error('Worker başlatılıyor.');
+    return prepareAgentRestart({store:this.store.forWorker(worker),campaigns:controller},id,{target:this.store.campaign(id)?.target??100});
+  }
+  async startWorker(id,worker,restart){
     this.store.workerState.get(id,worker);
     if(this.changing.has(id))throw Error('Worker işlemi sürüyor.');
+    if(restart)return resumeAgentRestart({store:this.store.forWorker(worker),campaigns:this.forWorker(worker)},id,restart,'stopped');
     const settings=this.store.campaign(id)??{};
     return this.forWorker(worker).start(id,{target:settings.target??100,intervalMinutes:settings.intervalMinutes??30});
   }
   async add(id,input){
     if(this.changing.has(id))throw Error('Worker işlemi sürüyor.');
+    if(this.store.setup(id)&&this.store.setup(id).status!=='complete')throw Error('Önce aday kurulumu tamamlanmalı.');
     const running=this.summary(id)?.status==='running',worker=this.store.workerState.add(id,input);
     this.options.changed(id);
     if(running)await this.startWorker(id,worker.id);

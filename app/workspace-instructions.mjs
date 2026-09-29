@@ -10,4 +10,3 @@ export async function writeWorkspaceInstructions(cwd,agents){
  if(!/^@(?:\.\/)?AGENTS\.md\s*$/m.test(existing))
   await writeFile(target,'@AGENTS.md\n\n'+existing,{mode:0o600});
 }
-export const STARTUP_INSTRUCTIONS='Session startup: follow current AGENTS.md task routing (Claude imports it through CLAUDE.md). Instruction revision 2026-09-28-uncertain-retry-v1: reuse rules already in context. If this revision is new, refresh only the skill for the assigned task. Read a recovery section only for an observed blocker, not merely because a checkpoint exists. Skill paths are explicit; do not search directories to discover them. Execute the assigned task below.';

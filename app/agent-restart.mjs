@@ -12,22 +12,29 @@ export async function rotateAgentContext({store,stop},id,session,usage,threshold
 // Fresh conversation, durable application state. Stop first so a late provider
 // identity cannot re-register the conversation being replaced. The browser is
 // app-owned: keep its live connection or pending Chrome approval across restarts.
-export async function restartAgentFresh({store,campaigns,stop},id,options={}){
- const profile=store.profile(id),setup=store.setup(id),previous=store.campaign(id);
+export function prepareAgentRestart({store,campaigns},id,options={}){
+ const profile=store.profile(id),setup=store.setup(id);
  if(setup&&setup.status!=='complete')throw Error('Önce aday kurulumu tamamlanmalı.');
  if(!profile.cvPath)throw Error('Önce CV seç.');
- const settings=campaigns.startSettings(id,options);
- if(previous)await campaigns.pause(id);else await stop(id);
- const nativeId=store.conversation(id,profile.agentSettings.provider);
- if(nativeId)store.forgetConversation(id,profile.agentSettings.provider,nativeId);
- if(previous){
+ return {previous:store.campaign(id),settings:campaigns.startSettings(id,options),provider:profile.agentSettings.provider,conversation:store.conversation(id,profile.agentSettings.provider)};
+}
+
+export async function resumeAgentRestart({store,campaigns},id,state,stoppedStatus='paused'){
+ if(state.previous){
   const paused=store.campaign(id);
-  if(paused?.status!=='paused')throw Error('Yeniden başlatma sırasında kampanya değişti; otomatik başlatılmadı.');
-  // A send interrupted by stop is recovered as uncertain by stopAgent. Preserve
-  // its task so resumeTurn chooses verification rather than another application.
-  store.saveCampaign(id,{...paused,task:previous.task&&!previous.task.report?{...previous.task,seenWorking:false}:null});
+  if(paused?.status!==stoppedStatus)throw Error('Yeniden başlatma sırasında kampanya değişti; otomatik başlatılmadı.');
+  // Interrupted sends must resume as verification, not a duplicate application.
+  store.saveCampaign(id,{...paused,task:state.previous.task&&!state.previous.task.report?{...state.previous.task,seenWorking:false}:null});
  }
- store.event(id,'agent_fresh_restart',{provider:profile.agentSettings.provider,previousConversation:nativeId??null});
- await campaigns.start(id,settings);
+ store.event(id,'agent_fresh_restart',{provider:state.provider,previousConversation:state.conversation??null});
+ await campaigns.start(id,state.settings);
  return {fresh:true,campaign:store.campaign(id)};
+}
+
+export async function restartAgentFresh({store,campaigns,stop},id,options={}){
+ const state=prepareAgentRestart({store,campaigns},id,options);
+ if(state.previous)await campaigns.pause(id);else await stop(id);
+ const nativeId=store.conversation(id,state.provider);
+ if(nativeId)store.forgetConversation(id,state.provider,nativeId);
+ return resumeAgentRestart({store,campaigns},id,state);
 }

@@ -11,7 +11,7 @@ const dir=path.join(data,'candidates',candidate.id);await mkdir(dir,{recursive:t
 let app=await electron.launch({executablePath:process.env.JOBLOOP_ELECTRON_BINARY||require('electron'),args:[process.cwd()],env:{...process.env,JOBLOOP_DATA_DIR:data}});
 try{const page=await app.firstWindow();await page.evaluate(id=>window.jobloop.beginSetup(id),candidate.id);await page.locator('#setup-console summary').click();await page.waitForTimeout(2500);await page.evaluate(()=>window.jobloop.input('\r'));
  await page.locator('#setup-review').waitFor({state:'visible',timeout:120000});
- const profile=await page.evaluate(id=>window.jobloop.snapshot(id),candidate.id);
+ const profile=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),candidate.id);
  if(profile.profile.name==='Yeni aday'||profile.profile.authorization!=='research'||profile.campaign)throw Error('Invalid setup isolation');
  await app.close();app=await electron.launch({executablePath:process.env.JOBLOOP_ELECTRON_BINARY||require('electron'),args:[process.cwd()],env:{...process.env,JOBLOOP_DATA_DIR:data}});const resumed=await app.firstWindow();await resumed.locator('#setup-review').waitFor({state:'visible'});
  console.log('LIVE_SETUP_AGENT_AND_RESTART_PASS',data,profile.profile.name);

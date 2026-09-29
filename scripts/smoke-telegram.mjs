@@ -91,7 +91,7 @@ try{
  await application.evaluate((_,prompt)=>globalThis.telegramUpdates.push({update_id:3,callback_query:{id:'false',from:{id:11},message:{chat:{id:11,type:'private'}},data:`a:${prompt}:false`}}),state.promptId);
  for(let i=0;i<50;i++){state=await dialog();if(state?.index===1)break;await new Promise(resolve=>setTimeout(resolve,100));}assert.equal(state.index,1);
  await application.evaluate((_,prompt)=>globalThis.telegramUpdates.push({update_id:4,callback_query:{id:'save',from:{id:11},message:{chat:{id:11,type:'private'}},data:`a:${prompt}:save`}}),state.promptId);
- await page.waitForFunction(async({candidate,q})=>(await window.jobloop.snapshot(candidate)).questions.find(item=>item.id===q)?.answerValues?.permit===false,{candidate:candidate.id,q:q.id});
+ await page.waitForFunction(async({candidate,q})=>(await window.jobloop.workspaceSnapshot(candidate)).questions.find(item=>item.id===q)?.answerValues?.permit===false,{candidate:candidate.id,q:q.id});
  const desktopDb=new Store(path.join(data,'jobloop.sqlite'));
  const desktopQuestion=desktopDb.ask(candidate.id,{question:'Masaüstü yanıt senkronizasyonu',fields:[{id:'permit',label:'Masaüstü çalışma izni',type:'boolean'},{id:'location',label:'Masaüstü konum tercihi',type:'text'}]});desktopDb.close();
  let questionMessage;
@@ -106,7 +106,7 @@ try{
  assert.equal(await application.evaluate((_,id)=>globalThis.telegramSent.filter(message=>message.reply_markup?.inline_keyboard?.flat().some(button=>button.callback_data==='q:'+id)).length,desktopQuestion.id),1);
  await page.locator('button[data-view=board]').click();
  await page.getByLabel('Telegram Demo · Engineer başvuru durumu',{exact:true}).selectOption('manual_submitted');
- await page.waitForFunction(async({candidate,job})=>(await window.jobloop.snapshot(candidate)).jobs.find(item=>item.id===job)?.status==='submitted',{candidate:candidate.id,job:job.id});
+ await page.waitForFunction(async({candidate,job})=>(await window.jobloop.workspaceSnapshot(candidate)).jobs.find(item=>item.id===job)?.status==='submitted',{candidate:candidate.id,job:job.id});
  let edited;
  for(let i=0;i<100;i++){edited=await application.evaluate((_,id)=>globalThis.telegramEdited.find(message=>message.message_id===id&&message.text.includes('Başvuru gönderildi')),jobMessage.message_id);if(edited)break;await new Promise(resolve=>setTimeout(resolve,100));}
  assert.ok(edited);assert.equal(edited.chat_id,jobMessage.chat_id);assert.match(edited.text,/Başvuru gönderildi \(kullanıcı beyanı\)/);
@@ -117,7 +117,7 @@ try{
  await application.evaluate((_,{data,messageId})=>globalThis.telegramUpdates.push({update_id:5,callback_query:{id:'delete',from:{id:11},message:{chat:{id:11,type:'private'},message_id:messageId,date:Math.floor(Date.now()/1000)},data}}),{data:deleteButton.callback_data,messageId:jobMessage.message_id});
  let deleted;for(let i=0;i<50;i++){deleted=await application.evaluate(()=>globalThis.telegramDeleted[0]);if(deleted)break;await new Promise(resolve=>setTimeout(resolve,100));}
  assert.deepEqual(deleted,{chat_id:'11',message_id:jobMessage.message_id,botId:123456789});
- const withdrawn=await page.evaluate(async({candidate,job})=>(await window.jobloop.snapshot(candidate)).jobs.find(item=>item.id===job),{candidate:candidate.id,job:job.id});
+ const withdrawn=await page.evaluate(async({candidate,job})=>(await window.jobloop.workspaceSnapshot(candidate)).jobs.find(item=>item.id===job),{candidate:candidate.id,job:job.id});
  assert.equal(withdrawn.status,'skipped');assert.equal(withdrawn.manualOutcome,'withdrawn');
  const editsAfterDelete=await application.evaluate((_,id)=>globalThis.telegramEdited.filter(message=>message.message_id===id).length,jobMessage.message_id);
  await page.getByRole('button',{name:'Gönderilmemiş ilanları gönder',exact:true}).click();
@@ -160,14 +160,14 @@ try{
  const queueButton=secondMessage.reply_markup.inline_keyboard.flat().find(button=>button.callback_data?.startsWith('queue:'));assert.equal(queueButton?.text,'Öncelikli başvur');
  await application.evaluate((_,{data,messageId})=>globalThis.telegramUpdates.push({testBotId:987654321,update_id:2,callback_query:{id:'queue-first',from:{id:11},message:{chat:{id:11,type:'private'},message_id:messageId},data}}),{data:queueButton.callback_data,messageId:secondMessage.message_id});
  let requestId;
- for(let i=0;i<100;i++){requestId=await page.evaluate(async({candidate,job})=>(await window.jobloop.snapshot(candidate)).campaign?.pendingRetries?.[job]?.requestId,{candidate:other.id,job:secondJob.id});if(requestId)break;await new Promise(resolve=>setTimeout(resolve,100));}
+ for(let i=0;i<100;i++){requestId=await page.evaluate(async({candidate,job})=>(await window.jobloop.workspaceSnapshot(candidate)).campaign?.pendingRetries?.[job]?.requestId,{candidate:other.id,job:secondJob.id});if(requestId)break;await new Promise(resolve=>setTimeout(resolve,100));}
  assert.ok(requestId);
  await application.evaluate((_,{data,messageId})=>globalThis.telegramUpdates.push({testBotId:987654321,update_id:3,callback_query:{id:'queue-again',from:{id:11},message:{chat:{id:11,type:'private'},message_id:messageId},data}}),{data:queueButton.callback_data,messageId:secondMessage.message_id});
  let queuedMessage;
  for(let i=0;i<100;i++){queuedMessage=await application.evaluate((_,id)=>globalThis.telegramEdited.find(message=>message.message_id===id&&message.botId===987654321&&message.text.includes('Başvuru sırasında')),secondMessage.message_id);if(queuedMessage)break;await new Promise(resolve=>setTimeout(resolve,100));}
  assert.ok(queuedMessage);assert.ok(!queuedMessage.reply_markup.inline_keyboard.flat().some(button=>button.callback_data?.startsWith('queue:')));
- assert.equal(await page.evaluate(async({candidate,job})=>(await window.jobloop.snapshot(candidate)).campaign.pendingRetries[job].requestId,{candidate:other.id,job:secondJob.id}),requestId);
- assert.equal(await page.evaluate(async id=>(await window.jobloop.snapshot(id)).campaign,candidate.id),null);
+ assert.equal(await page.evaluate(async({candidate,job})=>(await window.jobloop.workspaceSnapshot(candidate)).campaign.pendingRetries[job].requestId,{candidate:other.id,job:secondJob.id}),requestId);
+ assert.equal(await page.evaluate(async id=>(await window.jobloop.workspaceSnapshot(id)).campaign,candidate.id),null);
  assert.ok(await application.evaluate(()=>globalThis.telegramCallbacks.some(call=>call.callback_query_id==='queue-again'&&call.text.includes('zaten başvuru sırasında'))));
  let pinned;
  for(let i=0;i<100;i++){pinned=await application.evaluate((_,id)=>globalThis.telegramPins.find(message=>message.method==='pinChatMessage'&&message.message_id===id&&message.botId===987654321),secondMessage.message_id);if(pinned)break;await new Promise(resolve=>setTimeout(resolve,100));}

@@ -7,6 +7,7 @@ engine/target/
 
 **/node_modules/
 .env.jev
+.playwright-mcp/
 /release/
 /build-stage/
 /release-assets/

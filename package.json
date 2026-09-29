@@ -13,6 +13,9 @@
     "check": "node scripts/check.mjs",
     "bootstrap": "node scripts/bootstrap.mjs",
     "test:ui": "node scripts/smoke-ui.mjs",
+    "test:instructions": "node scripts/smoke-instructions.mjs",
+    "test:automations": "node scripts/smoke-automations.mjs",
+    "test:automations:jev": "node scripts/smoke-automation-jev.mjs",
     "test:agent": "node scripts/smoke-agent.mjs",
     "demo:jev": "pnpm build && pnpm engine:build && node scripts/jev-demo.mjs",
     "test:jev": "node scripts/smoke-jev.mjs",
@@ -62,7 +65,7 @@
       "@termloop/terminal-wire": "file:vendor/termloop/packages/termloop-terminal-wire-2.0.7.tgz"
     }
   },
-  "description": "A desktop workspace for finding jobs and managing candidate applications.",
+  "description": "A desktop workspace for personal web automations, reusable templates and job applications.",
   "author": {
     "name": "Ferit \u00d6zcan",
     "email": "feritzcan93@gmail.com"

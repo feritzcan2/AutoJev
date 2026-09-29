@@ -46,13 +46,13 @@
 .agent-settings { margin: 0 0 20px; padding: 16px 22px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); }
 .agent-settings-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
 .agent-settings-head h2 { font-size: 14px; font-weight: 550; }
-#agent-settings-status { color: var(--text-muted); font-size: 12px; text-align: right; }
-#agent-settings-form { display: block; max-width: none; margin: 0; padding: 0; border: 0; background: transparent; }
-#agent-settings-form .settings-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; align-items: start; }
-#agent-settings-form label { gap: 6px; }
-#agent-settings-form select { width: 100%; }
+:is(#agent-settings-status,.workspace-agent-settings-status) { color: var(--text-muted); font-size: 12px; text-align: right; }
+:is(#agent-settings-form,.workspace-agent-settings-form) { display: block; max-width: none; margin: 0; padding: 0; border: 0; background: transparent; }
+:is(#agent-settings-form,.workspace-agent-settings-form) .settings-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; align-items: start; }
+:is(#agent-settings-form,.workspace-agent-settings-form) label { gap: 6px; }
+:is(#agent-settings-form,.workspace-agent-settings-form) select { width: 100%; }
 .agent-settings.is-off { opacity: .55; pointer-events: none; }
-@media (max-width: 900px) { #agent-settings-form .settings-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 900px) { :is(#agent-settings-form,.workspace-agent-settings-form) .settings-grid { grid-template-columns: 1fr 1fr; } }
 
-#agent-settings-form .browser-settings { display: grid; gap: 12px; }
+:is(#agent-settings-form,.workspace-agent-settings-form) .browser-settings { display: grid; gap: 12px; }
 #chrome-profile-hint { color: var(--text-muted); font-size: 11px; line-height: 1.5; }

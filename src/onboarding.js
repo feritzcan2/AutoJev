@@ -3,14 +3,14 @@ import {browserWaitView} from './browser-status.js';
 import {readinessPanel} from './readiness.js';
 import './onboarding.css';
 export function onboarding(api,{select,refresh,cancel,showProfile}){
- const $=id=>document.getElementById(id),root=$('onboarding');let snapshot=null,catalog=[],started=false,busy=false,celebrate=false,questionKey='',profileKey='',sessionKey='';
+ const $=id=>document.getElementById(id),root=$('onboarding');let enabled=!api.automationTemplates,snapshot=null,catalog=[],started=false,busy=false,celebrate=false,questionKey='',profileKey='',sessionKey='';
  const error=e=>{$('setup-error').textContent=e.message??String(e);};
  const run=fn=>async(...args)=>{args[0]?.preventDefault?.();if(busy)return;busy=true;$('setup-error').textContent='';render();try{await fn(...args);}catch(e){error(e);}finally{busy=false;render();}};
  function settings(){return{provider:$('setup-provider').value,model:$('setup-model').value,permission:$('setup-permission').value,reasoning:$('setup-reasoning').value,network:$('setup-network').value==='inherit'?null:$('setup-network').value==='true'};}
  const readiness=readinessPanel(api,$('setup-readiness'),{getSettings:()=>({provider:snapshot?.profile.agentSettings?.provider??$('setup-provider').value??'codex',browserMode:snapshot?.profile.browserMode??'existing',chromeProfile:snapshot?.profile.chromeProfile??null})});
  function options(){const c=catalog.find(c=>c.id===$('setup-provider').value);if(!c)return;for(const key of ['model','permission','reasoning']){$('setup-'+key).replaceChildren(...c[key==='model'?'models':key==='permission'?'permissions':'reasoning'].map(v=>new Option(v,v)));$('setup-'+key).value='default';}}
- async function ensure(){if(snapshot?.setup&&snapshot.setup.status!=='complete')return snapshot.profile.id;const p=await api.createSetup(settings());await select(p.id);return p.id;}
- async function cv(file){await readiness.ensure();const id=await ensure();const picked=file?await api.importSetupCv(id,file):await api.pickCv(id);await refresh();if(picked)await api.beginSetup(id);await refresh();}
+ async function ensure(){if(snapshot?.setup&&snapshot.setup.status!=='complete')return snapshot.profile.id;const p=await api.workspaceCreate('job-search',{intake:true,agentSettings:settings()});await select(p.id);return p.id;}
+ async function cv(file){await readiness.ensure();const id=await ensure();const picked=file?await api.importSetupCv(id,file):await api.pickDocument(id,{purpose:'cv'});await refresh();if(picked)await api.beginSetup(id);await refresh();}
  $('setup-begin').onclick=()=>{started=true;render();};
  $('setup-cv').onclick=run(()=>cv());
  $('setup-link-form').onsubmit=run(async e=>{e.preventDefault();const source=$('setup-link').value.trim();if(!source)throw Error('LinkedIn profil bağlantısını gir');await readiness.ensure();const id=await ensure();await api.beginSetup(id,source);await refresh();});
@@ -26,6 +26,7 @@ export function onboarding(api,{select,refresh,cancel,showProfile}){
  $('setup-back').onclick=run(async()=>{if(snapshot?.setup?.mode==='improve'&&snapshot.setup.status!=='complete'){await api.finishProfileImprovement(snapshot.profile.id);await refresh();showProfile();}else{started=false;await cancel();}});
  function text(tag,value){const el=document.createElement(tag);el.textContent=value;return el;}
  function render(){
+  if(!enabled){root.hidden=true;document.body.classList.remove('onboarding-active');return;}
   const browserWait=browserWaitView(snapshot);
   const setup=snapshot?.setup,needed=!snapshot||setup&&setup.status!=='complete';root.hidden=!needed&&!celebrate;document.body.classList.toggle('onboarding-active',!root.hidden);if(root.hidden)return;
   const improving=setup?.mode==='improve',key=JSON.stringify([snapshot?.profile.id,setup?.startedAt]);
@@ -64,5 +65,5 @@ export function onboarding(api,{select,refresh,cancel,showProfile}){
   if(stage==='review'){const key=JSON.stringify([snapshot.profile.id,snapshot.profile.name,snapshot.profile.preferences,snapshot.profile.facts,snapshot.profile.authorization]);if(key!==profileKey){profileKey=key;for(const field of ['name','preferences','facts','authorization'])$('setup-review').elements[field].value=snapshot.profile[field];}}
   $('setup-ready-name').textContent=`Profilin hazır, ${snapshot?.profile.name.split(' ')[0]??''}.`;
  }
- return {update(value,providers){snapshot=value;if(!catalog.length&&providers.length){catalog=providers;$('setup-provider').replaceChildren(...catalog.filter(c=>c.supported).map(c=>new Option(c.label,c.id)));options();}render();},reset(){snapshot=null;started=false;celebrate=false;profileKey='';questionKey='';readiness.invalidate();$('setup-error').textContent='';render();}};
+ return {setEnabled(value){enabled=value;render();},update(value,providers){snapshot=value;if(!catalog.length&&providers.length){catalog=providers;$('setup-provider').replaceChildren(...catalog.filter(c=>c.supported).map(c=>new Option(c.label,c.id)));options();}render();},reset(){enabled=true;snapshot=null;started=false;celebrate=false;profileKey='';questionKey='';readiness.invalidate();$('setup-error').textContent='';render();}};
 }

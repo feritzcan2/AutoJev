@@ -1,0 +1,35 @@
+{
+  "format": "loop-template",
+  "version": 2,
+  "template": {
+    "title": "İkinci el araba takibi",
+    "description": "İlanları bul, bütçene ve araç kriterlerine göre değerlendir, satıcıya mesaj hazırla.",
+    "kind": "web",
+    "execution": {"driver": "browser", "maxWorkers": 8},
+    "fields": [
+      {"id": "location", "label": "Şehir", "question": "Hangi şehir ve çevresinde arayalım?", "required": true, "type": "text"},
+      {"id": "budget", "label": "Azami fiyat (€)", "question": "Toplam bütçen nedir?", "required": true, "type": "money"},
+      {"id": "transmission", "label": "Vites", "question": "Hangi vites türü?", "required": true, "type": "choice", "options": ["Otomatik", "Manuel", "Fark etmez"]}
+    ],
+    "table": {"title": "Araç ilanları", "columns": [
+      {"key": "source", "label": "Kaynak", "type": "text"},
+      {"key": "title", "label": "Araç", "type": "text"},
+      {"key": "price", "label": "Fiyat (€)", "type": "money"},
+      {"key": "mileage", "label": "Kilometre", "type": "number"},
+      {"key": "year", "label": "Model yılı", "type": "number"}
+    ]},
+    "records": {
+      "identity": "url",
+      "states": [{"id":"found","label":"Bulundu"},{"id":"shortlisted","label":"Kısa listede"},{"id":"prepared","label":"Mesaj hazır"},{"id":"completed","label":"İletişime geçildi"},{"id":"uncertain","label":"Sonuç kontrol edilmeli"},{"id":"dismissed","label":"Elendi"}],
+      "actions": [{"id":"shortlist","label":"Kısa listeye al","from":["found"],"to":"shortlisted"},{"id":"unshortlist","label":"Listeden çıkar","from":["shortlisted"],"to":"found"}]
+    },
+    "steps": ["Kaynaklarda araç bul", "Kriterlere göre değerlendir", "Satıcı mesajını hazırla", "Yetki varsa gönder"],
+    "workflow": [
+      {"id":"discover","capability":"browser.observe","scope":"source","instructions":"Yalnızca atanmış kaynaktaki güncel araç ilanlarını bul. Fiyat, kilometre ve model yılını gözlenen gerçeklerden kaydet. Mesaj taslağı hazırlama."},
+      {"id":"evaluate","capability":"browser.evaluate","scope":"record","after":["discover"],"instructions":"Atanmış aracı kriterlerle karşılaştır. Uygunsa shortlist geçişini uygula. Eksik bilgiyi uydurma; özette belirt."},
+      {"id":"prepare","capability":"browser.prepare","scope":"record","after":["evaluate"],"instructions":"Yalnızca kısa listeye alınmış araç için kullanıcının verdiği bilgilerden satıcı mesajı hazırla. Gönderme."},
+      {"id":"contact","capability":"browser.act","scope":"record","after":["prepare"],"instructions":"Yalnızca atanmış araç için uygulamanın izin verdiği mesajı ayır, gönder ve gerçek sonucu doğrula. Ödeme veya satın alma yapma."}
+    ],
+    "guidance": "Verilen kaynaklarda kayıtlı kriterleri uygula. Eksik fiyat, hasar veya kilometre bilgisi uydurma. Kullanıcının hedefi gerçekleştiğinde dur."
+  }
+}

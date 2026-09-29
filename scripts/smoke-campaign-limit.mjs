@@ -34,7 +34,7 @@ try{
   await page.waitForFunction(()=>!document.querySelector('#campaign-limit-warning').hidden&&!document.querySelector('#start').disabled&&document.activeElement.id==='campaign-limit-warning');
   assert.equal(await page.locator('#notice').isVisible(),false);
   assert.equal(await page.locator('#agent').isVisible(),true);assert.equal(await warning.isVisible(),true);
-  const snapshot=await page.evaluate(id=>window.jobloop.snapshot(id),profile.id);
+  const snapshot=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),profile.id);
   assert.equal(snapshot.active,null);assert.equal(snapshot.campaign.status,'complete');
  }
  assert.equal(await app.evaluate(()=>globalThis.agentStarts),0);
@@ -46,7 +46,7 @@ try{
  await page.locator('#campaign-target').fill('3');await page.locator('#start').click();
  await page.waitForFunction(()=>document.querySelector('#campaign-status').textContent.includes('Görev kuyrukta'));
  await warning.waitFor({state:'hidden'});
- const started=await page.evaluate(id=>window.jobloop.snapshot(id),profile.id);
+ const started=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),profile.id);
  assert.equal(started.campaign.target,3);assert.equal(started.campaign.status,'running');assert.ok(started.active);
  assert.equal(await app.evaluate(()=>globalThis.agentStarts),1);assert.deepEqual(errors,[]);
  console.log('CAMPAIGN_LIMIT_UI_PASS',path.join(data,'limit-warning.png'));

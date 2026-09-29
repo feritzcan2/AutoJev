@@ -58,7 +58,7 @@ test('restore stages safely, keeps current data until restart, rebases CVs and p
  const f=await fixture(t);f.store.saveCampaign(f.profile.id,{status:'running',task:{id:'task',jobId:f.job.id,kind:'application'},wakeAt:0});
  const worker=f.store.workerState.add(f.profile.id);f.store.workerState.write(f.profile.id,worker.id,'campaign',{status:'running',task:null});
  const background=new BackgroundStore(f.store);background.putTask(f.profile.id,{enabled:true});background.putRun({id:'run',candidateId:f.profile.id,status:'running'});
- f.store.db.prepare('UPDATE jobs SET data=? WHERE id=?').run(JSON.stringify({...f.job,status:'submitting',sessionId:'session',resumeContext:{tabId:'old'}}),f.job.id);
+ f.store.db.prepare('UPDATE workspace_records SET data=? WHERE id=?').run(JSON.stringify({...f.job,status:'submitting',sessionId:'session',resumeContext:{tabId:'old'}}),f.job.id);
  await f.create();f.store.renameWorkspace(f.profile.id,'Newer live data');
  const target=path.join(f.base,'another-computer');await mkdir(target);const targetStore=new Store(path.join(target,'jobloop.sqlite'));targetStore.saveProfile({name:'Existing Candidate',preferences:'Local'});
  const staged=await stageRestore({dataDirectory:target,directory:f.backup,db:targetStore.db,appVersion:'0.2.0'});assert.equal(staged.restartRequired,true);assert.equal(targetStore.candidates()[0].name,'Existing Candidate');assert.equal((await inspectBackup(staged.recoveryBackup)).candidates,1);targetStore.close();
@@ -138,7 +138,7 @@ test('portable exports and same-install restores clear every worker task review'
  f.store.saveTaskReview(f.profile.id,taskId,'main worker review');f.store.forWorker(worker.id).saveTaskReview(f.profile.id,taskId,'secondary worker review');
  await f.create();
  const exported=new DatabaseSync(path.join(f.backup,'jobloop.sqlite'),{readOnly:true});
- try{assert.equal(exported.prepare('SELECT count(*) AS n FROM task_context_reviews').get().n,0);assert.equal(exported.prepare("SELECT count(*) AS n FROM worker_state WHERE kind='review'").get().n,0);assert.equal(exported.prepare('SELECT count(*) AS n FROM agent_workers').get().n,1);}finally{exported.close();}
+ try{assert.equal(exported.prepare('SELECT count(*) AS n FROM task_context_reviews').get().n,0);assert.equal(exported.prepare("SELECT count(*) AS n FROM worker_state WHERE kind='review'").get().n,0);assert.equal(exported.prepare('SELECT count(*) AS n FROM workspace_workers').get().n,1);}finally{exported.close();}
  await mkdir(path.join(f.data,'backups'));const backup=await createBackup({dataDirectory:f.data,db:f.store.db,destination:path.join(f.data,'backups','upgrade-review'),appVersion:'0.1.0',kind:'upgrade'});
  await stageRestore({dataDirectory:f.data,directory:backup.path,db:f.store.db,appVersion:'0.1.0'});f.store.close();await applyPendingRestore({dataDirectory:f.data});
  const restored=new Store(path.join(f.data,'jobloop.sqlite'));

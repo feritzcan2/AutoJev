@@ -78,7 +78,7 @@ try{
  await page.locator('#improve-profile').click();await page.locator('#setup-questions textarea').waitFor({state:'visible'});
  await page.locator('#setup-back').click();await page.locator('#onboarding').waitFor({state:'hidden'});
  assert.equal(store.questions(p.id).filter(q=>q.answer===null).length,1);assert.equal(store.questions(p.id).find(q=>q.id===pending.id).answer,null);
- assert.equal((await page.evaluate(id=>window.jobloop.snapshot(id),p.id)).active,null);
+ assert.equal((await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),p.id)).active,null);
  await page.reload();await page.locator('#onboarding').waitFor({state:'hidden'});
  assert.deepEqual(errors,[]);console.log('PROFILE_IMPROVEMENT_UI_PASS',data);
 }catch(error){const page=await app.firstWindow();console.error(await page.locator('body').innerText());await page.screenshot({path:path.join(data,'failure.png'),fullPage:true});throw error;}finally{await app.close();store.close();}

@@ -49,7 +49,7 @@ test('weights and totals persist, are candidate-scoped, and support legacy asses
   const original=rankedJob(store,p.id),foreign=rankedJob(store,other.id);
   const legacy={...p};delete legacy.rankWeights;delete original.rank.weights;
   store.db.prepare('UPDATE candidates SET data=? WHERE id=?').run(JSON.stringify(legacy),p.id);
-  store.db.prepare('UPDATE jobs SET data=? WHERE id=?').run(JSON.stringify(original),original.id);
+  store.db.prepare('UPDATE workspace_records SET data=? WHERE id=?').run(JSON.stringify(original),original.id);
   assert.deepEqual(store.profile(p.id).rankWeights,rankWeights);
   store.saveRankSettings(p.id,{threshold:30,weights:custom});
   store.close();store=new Store(join(dir,'db'));
@@ -90,7 +90,7 @@ test('reweighting preserves user overrides, completed statuses and unavailable r
 test('profile and all totals roll back together if a stored score cannot be updated',()=>{
  const store=new Store(':memory:');try{
   const p=store.saveProfile({name:'A',preferences:'Backend'}),first=rankedJob(store,p.id),second=rankedJob(store,p.id,'https://example.test/second');
-  store.db.exec("CREATE TRIGGER reject_reweight BEFORE UPDATE ON jobs WHEN old.url='https://example.test/second' BEGIN SELECT RAISE(ABORT,'test failure'); END");
+  store.db.exec("CREATE TRIGGER reject_reweight BEFORE UPDATE ON workspace_records WHEN old.record_key='https://example.test/second' BEGIN SELECT RAISE(ABORT,'test failure'); END");
   assert.throws(()=>store.saveRankSettings(p.id,{threshold:20,weights:custom}),/test failure/);
   assert.equal(store.profile(p.id).rankThreshold,50);assert.deepEqual(store.profile(p.id).rankWeights,rankWeights);
   assert.deepEqual(store.job(p.id,first.id),first);assert.deepEqual(store.job(p.id,second.id),second);

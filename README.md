@@ -1,9 +1,24 @@
-# JobLoop
+# Loop · Web otomasyonları
 
-JobLoop, aday profillerini ve iş başvurularını Codex veya Claude Code ile yöneten
-bir masaüstü uygulamasıdır. İlan arama, puanlama, başvuru hazırlığı ve başvurular
-aynı adayın worker’ları arasında paylaşılır. Bekleyen sorular ve bildirimler
-isteğe bağlı Telegram botları üzerinden yönetilir. Arayüz Türkçedir.
+Loop, kişisel web işlerini template ve asistanla kurulan otomasyonlarla yöneten bir
+masaüstü uygulamasıdır. İş arama arayüzündeki çalışma alanı seçimi, **Başvurular**
+tablosu, Kaynaklar, Agent, Arka plan işleri ve Dosyalar sayfaları korunur. İş arama,
+ev arama ve randevu takibi bu ortak düzeni kullanır. Agent ihtiyacını sorularla
+öğrenir; profili ve tablo sütunlarını otomasyona göre düzenler. Bütün template’ler
+aynı kayıt deposunu, görev kuyruğunu, 1–8 worker altyapısını, Agent terminalini ve tarayıcı yönetimini kullanır. Template soruları, sütunları, durumları ve işlem adımlarını tanımlar.
+[Ortak çalışma alanı mimarisi](docs/workspace-architecture.md) geçişi ve template’e
+ait kuralları açıklar.
+
+İş arama template’i mevcut JobLoop aday profillerini, CV’leri, başvuruları ve Telegram
+bağlantılarını kullanır. Diğer otomasyonlar kendi konuşmasına, kaynaklarına, tarayıcı
+ayarlarına, yetkilerine ve sonuç geçmişine sahiptir. Tekrar kullanılabilir template’ler
+kaydedilebilir ve JSON dosyasıyla paylaşılabilir. Arayüz Türkçedir.
+
+**Başlangıç:** Yeni çalışma alanı → template seç → Agent ile konuş → profili kaydet → deneme
+çalıştır → bir kez veya düzenli çalıştır. Zamanlama için uygulama ve bilgisayar açık
+kalmalıdır. [Otomasyon rehberi](docs/automation-templates.md) çalışma modlarını,
+denemenin kapsamını ve mevcut sınırları açıklar. Dağıtım kimliği ve veri klasörü
+mevcut JobLoop kurulumlarıyla uyumluluk için korunur.
 
 ## Kurulum
 
@@ -26,14 +41,16 @@ bu sürümde kod imzası taşımaz. Platform kontrolleri ve kalan beta çalışm
 1. [Codex CLI](https://github.com/openai/codex) veya
    [Claude Code](https://code.claude.com/docs/en/overview) kur ve kendi hesabınla
    terminalde oturum aç. Sağlayıcı kullanımı hesabının ücret ve veri koşullarına tabidir.
-2. Chrome tabanlı tarayıcı modları için Google Chrome kur. Jev kullanırken mevcut
+2. Genel web otomasyonları için Google Chrome kur. Agent ayarlarından ayrı tarayıcı
+   veya Jev seçebilirsin. Ayrı tarayıcı her otomasyon için kendi profilini açar;
+   **Tarayıcıyı aç** düğmesinden hesaplarına giriş yapabilirsin. Jev kullanırken mevcut
    Chrome’da `chrome://inspect/#remote-debugging` bağlantısını aç ve bağlantı
    isteğine izin ver. Agent’ın kendi tarayıcı modunda araçları agent içinde etkinleştir.
 3. Jev kullanacaksan **Yapılandırma → Jev** bölümünden TypeSafe API anahtarını
    kaydet ve bağlantıyı test et. Hazır kaynakların CLI araç modu ayrıca **Bun** ister;
    web ve tarayıcı aramaları için Bun gerekmez.
-4. **Kurulum kontrolü** bölümünü aç, aday profilini ve CV’yi ekle. Başvuru
-   yetkisini, tercihleri ve aday bilgilerini kontrol et.
+4. **Template’ler** bölümünden başla ve çalışma alanı profilini kontrol et. İş arama
+   template’inde aday profilini ve CV’yi ekle; başvuru yetkisini ve tercihleri seç.
 
 Portal üyelik şifresi, o aday adına **yeni iş sitesi hesapları oluşturmak** için
 saklanır. Her adayın kaydı ayrıdır. Mevcut bir hesabın şifresi olduğunu varsaymaz.
@@ -79,6 +96,8 @@ pnpm test
 pnpm build
 pnpm engine:build
 pnpm test:ui
+pnpm test:automations
+pnpm test:automations:jev
 ```
 
 Paketleme, native CI ve yayın adımları: [release rehberi](docs/releasing.md).

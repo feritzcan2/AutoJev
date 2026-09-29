@@ -16,7 +16,7 @@ export function createJobFilters(select,onChange){
   hint.className='job-filter-hint';hint.textContent='Seçtiklerinden en az birine uyan ilanlar gösterilir.';
   panel.append(hint);
   const inputs=new Map();
-  for(const {value,label} of options){
+  const addOption=({value,label})=>{
     const row=document.createElement('label'),input=document.createElement('input'),text=document.createElement('span');
     row.className='job-filter-option';input.type='checkbox';input.value=value;input.setAttribute('aria-controls','jobs');text.textContent=label;
     input.onchange=()=>{
@@ -32,6 +32,7 @@ export function createJobFilters(select,onChange){
     };
     inputs.set(value,input);row.append(input,text);panel.append(row);
   }
+  for(const option of options)addOption(option);
   function update(){
     for(const [value,input] of inputs)input.checked=selected.has(value);
     const labels=options.filter(option=>selected.has(option.value)).map(option=>option.label);
@@ -49,5 +50,6 @@ export function createJobFilters(select,onChange){
   });
   document.addEventListener('pointerdown',event=>{if(!root.contains(event.target))root.open=false;});
   document.addEventListener('focusin',event=>{if(!root.contains(event.target))root.open=false;});
-  return {get values(){return [...selected];}};
+  let definitionKey='';
+  return {setTemplate(definition){const states=definition?.personal?definition.records.states:[],key=JSON.stringify(states);if(key===definitionKey)return;definitionKey=key;for(const [value,input]of inputs)if(value.startsWith('state:')){input.closest('label').remove();inputs.delete(value);selected.delete(value);}for(let i=options.length-1;i>=0;i--)if(options[i].value.startsWith('state:'))options.splice(i,1);for(const state of states){const option={value:'state:'+state.id,label:state.label};options.push(option);addOption(option);}if(!selected.size)selected.add('all');update();},get values(){return [...selected];}};
 }

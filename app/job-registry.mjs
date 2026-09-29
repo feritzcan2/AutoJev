@@ -12,30 +12,19 @@ const primaryPreference=job=>job.preparation&&['found','working','blocked','prep
 export class JobRegistry {
   constructor(db){
     this.db=db;this.sequence=0;
-    const uniqueMetadata=db.prepare('PRAGMA index_list(jobs)').all().some(index=>index.unique&&db.prepare(`PRAGMA index_info("${index.name.replaceAll('"','""')}")`).all().map(c=>c.name).join(',')==='candidate_id,identity');
-    if(uniqueMetadata){
-      db.exec('PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE');
-      try{
-        db.exec(`CREATE TABLE jobs_new(id TEXT PRIMARY KEY,candidate_id TEXT NOT NULL REFERENCES candidates(id),url TEXT NOT NULL,identity TEXT NOT NULL,data TEXT NOT NULL,UNIQUE(candidate_id,url));
-          INSERT INTO jobs_new SELECT * FROM jobs;
-          DROP TABLE jobs; ALTER TABLE jobs_new RENAME TO jobs;`);
-        if(db.prepare('PRAGMA foreign_key_check').all().length)throw Error('İlan geçmişi taşınırken ilişki doğrulaması başarısız');
-        db.exec('COMMIT');
-      }catch(error){db.exec('ROLLBACK');throw error;}finally{db.exec('PRAGMA foreign_keys=ON');}
-    }
-    db.exec(`CREATE INDEX IF NOT EXISTS jobs_candidate ON jobs(candidate_id);
-      CREATE TABLE IF NOT EXISTS job_members(candidate_id TEXT NOT NULL REFERENCES candidates(id),job_id TEXT PRIMARY KEY REFERENCES jobs(id),canonical_id TEXT NOT NULL REFERENCES jobs(id),match_key TEXT NOT NULL);
+    db.exec(`CREATE INDEX IF NOT EXISTS workspace_records_owner ON workspace_records(workspace_id);
+      CREATE TABLE IF NOT EXISTS job_members(candidate_id TEXT NOT NULL REFERENCES candidates(id),job_id TEXT PRIMARY KEY REFERENCES workspace_records(id),canonical_id TEXT NOT NULL REFERENCES workspace_records(id),match_key TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS job_members_group ON job_members(candidate_id,canonical_id);
       CREATE INDEX IF NOT EXISTS job_members_match ON job_members(candidate_id,match_key);
-      CREATE TABLE IF NOT EXISTS job_keys(candidate_id TEXT NOT NULL REFERENCES candidates(id),key TEXT NOT NULL,job_id TEXT NOT NULL REFERENCES jobs(id),PRIMARY KEY(candidate_id,key));
+      CREATE TABLE IF NOT EXISTS job_keys(candidate_id TEXT NOT NULL REFERENCES candidates(id),key TEXT NOT NULL,job_id TEXT NOT NULL REFERENCES workspace_records(id),PRIMARY KEY(candidate_id,key));
       CREATE INDEX IF NOT EXISTS job_keys_job ON job_keys(job_id);
-      CREATE TABLE IF NOT EXISTS job_urls(candidate_id TEXT NOT NULL REFERENCES candidates(id),url TEXT NOT NULL,job_id TEXT NOT NULL REFERENCES jobs(id),evidence TEXT NOT NULL,PRIMARY KEY(candidate_id,url));
+      CREATE TABLE IF NOT EXISTS job_urls(candidate_id TEXT NOT NULL REFERENCES candidates(id),url TEXT NOT NULL,job_id TEXT NOT NULL REFERENCES workspace_records(id),evidence TEXT NOT NULL,PRIMARY KEY(candidate_id,url));
       CREATE TABLE IF NOT EXISTS job_registry_lock(id INTEGER PRIMARY KEY);
       INSERT OR IGNORE INTO job_registry_lock VALUES(1);`);
     this.atomic(()=>{
       // Reindex on startup so new route support and jobs imported by older
       // app versions also acquire identities. No application row is rewritten.
-      const rows=db.prepare('SELECT data FROM jobs ORDER BY rowid').all();
+      const rows=db.prepare('SELECT r.data FROM workspace_records r JOIN candidates c ON c.id=r.workspace_id ORDER BY r.rowid').all();
       for(const row of rows)this.register(JSON.parse(row.data));
     });
   }
@@ -50,8 +39,8 @@ export class JobRegistry {
     }catch(error){this.db.exec(`ROLLBACK TO ${name}; RELEASE ${name}`);throw error;}
   }
   canonical(candidate,id){return this.db.prepare('SELECT canonical_id FROM job_members WHERE candidate_id=? AND job_id=?').get(candidate,id)?.canonical_id??id;}
-  raw(candidate,id){const row=this.db.prepare('SELECT data FROM jobs WHERE candidate_id=? AND id=?').get(candidate,id);if(!row)throw Error('İlan bulunamadı');return JSON.parse(row.data);}
-  members(candidate,id){return this.db.prepare('SELECT j.data FROM jobs j JOIN job_members m ON m.job_id=j.id WHERE m.candidate_id=? AND m.canonical_id=? ORDER BY j.rowid').all(candidate,this.canonical(candidate,id)).map(r=>JSON.parse(r.data));}
+  raw(candidate,id){const row=this.db.prepare('SELECT data FROM workspace_records WHERE workspace_id=? AND id=?').get(candidate,id);if(!row)throw Error('İlan bulunamadı');return JSON.parse(row.data);}
+  members(candidate,id){return this.db.prepare('SELECT j.data FROM workspace_records j JOIN job_members m ON m.job_id=j.id WHERE m.candidate_id=? AND m.canonical_id=? ORDER BY j.rowid').all(candidate,this.canonical(candidate,id)).map(r=>JSON.parse(r.data));}
   selectPrimary(candidate,ids){
     const peers=ids.flatMap(id=>this.members(candidate,id));
     peers.sort((a,b)=>primaryPreference(b)-primaryPreference(a)||Number(Boolean(b.proof))-Number(Boolean(a.proof))||Number(b.rank?.status==='scored')-Number(a.rank?.status==='scored')||String(a.createdAt).localeCompare(String(b.createdAt))||a.id.localeCompare(b.id));
@@ -93,7 +82,7 @@ export class JobRegistry {
   }
   job(candidate,id){
     const job=this.raw(candidate,id),canonical=this.canonical(candidate,id);
-    const rows=this.db.prepare(`SELECT j.data,m.canonical_id FROM jobs j JOIN job_members m ON m.job_id=j.id
+    const rows=this.db.prepare(`SELECT j.data,m.canonical_id FROM workspace_records j JOIN job_members m ON m.job_id=j.id
       WHERE m.candidate_id=? AND (m.canonical_id=? OR m.match_key=?)`).all(candidate,canonical,vacancyGroupKey(job));
     const peers=rows.map(r=>({...JSON.parse(r.data),canonicalJobId:r.canonical_id}));
     const groupKeys=new Map();

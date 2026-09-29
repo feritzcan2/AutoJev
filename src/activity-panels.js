@@ -4,6 +4,7 @@ export function activityPanels(single,{openLink,notice}){
  const parts=['title','detail','state','age','link','events'];
  for(const name of parts)single.querySelector(`#now-${name}`).dataset.activityPart=name;
  const template=single.cloneNode(true),row=document.createElement('section'),cards=new Map();
+ template.querySelectorAll('[data-web-only]').forEach(element=>element.remove());
  row.className='worker-activity';row.hidden=true;row.setAttribute('aria-label','Worker’ların şu anki işleri');single.after(row);
  let candidate=null;
  function bind(panel){
@@ -32,9 +33,9 @@ export function activityPanels(single,{openLink,notice}){
   if(!view.history.length){const li=document.createElement('li');li.textContent='Henüz kaydedilmiş işlem yok.';p.events.append(li);}
  }
  return {update(snapshot,history=false){
-  if(candidate!==snapshot?.profile?.id){candidate=snapshot?.profile?.id;cards.clear();row.replaceChildren();row.scrollLeft=0;history=true;}
-  const workers=snapshot?.workers??[],multiple=workers.length>1;single.hidden=multiple;row.hidden=!multiple;
-  if(!multiple){cards.clear();row.replaceChildren();draw(primary,activityView(snapshot),history);return;}
+  if(candidate!==snapshot?.workspace?.id){candidate=snapshot?.workspace?.id;cards.clear();row.replaceChildren();row.scrollLeft=0;history=true;}
+  const workers=snapshot?.workers??[],multiple=workers.length>1&&!snapshot?.progress;single.hidden=multiple;row.hidden=!multiple;
+  if(!multiple){cards.clear();row.replaceChildren();draw(primary,snapshot?.activity??activityView(snapshot),history);return;}
   for(const [id,card] of cards)if(!workers.some(w=>w.id===id)){card.panel.remove();cards.delete(id);}
   for(const worker of workers){const existing=cards.get(worker.id),card=existing??create(worker);draw(card,workerActivityView(snapshot,worker),history||!existing);}
  }};

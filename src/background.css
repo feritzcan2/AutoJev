@@ -1,5 +1,5 @@
 /* Background jobs: one status panel with its settings folded away, results first, then each run beside its output. */
-#background { --run-terminal-height: 420px; --run-terminal-head: 42px; }
+:is(#background,.automation-history-section) { --run-terminal-height: 420px; --run-terminal-head: 42px; }
 
 .background-head { margin: 24px 0 18px; }
 .background-head h2 { font-size: 20px; letter-spacing: -.3px; }

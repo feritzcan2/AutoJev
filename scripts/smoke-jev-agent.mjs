@@ -22,7 +22,7 @@ try{
   app=await electron.launch({executablePath:require('electron'),args:[root],env:{...process.env,JOBLOOP_DATA_DIR:data}});
   const page=await app.firstWindow();
   await page.evaluate(()=>{window.jevTestEvents=[];window.jobloop.onAgentEvent(event=>window.jevTestEvents.push(event));});
-  await page.evaluate(id=>window.jobloop.start(id,{target:1,intervalMinutes:1440}),candidateId);
+  await page.evaluate(id=>window.jobloop.workspaceStart(id,{target:1,intervalMinutes:1440}),candidateId);
   console.log('JEV_AGENT_STARTED',data);
   const store=new Store(path.join(data,'jobloop.sqlite'));
   try{

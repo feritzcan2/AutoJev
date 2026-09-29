@@ -98,15 +98,15 @@ test('worker history, task reviews and reservations survive reopening and stay c
   const dir=mkdtempSync(path.join(tmpdir(),'jobloop-workers-')),file=path.join(dir,'db');const f=fixture(file);let reopened;
   try{
     const w=f.store.workerState.add(f.p.id),other=f.store.forWorker(w.id),job=f.job(1);
-    f.store.db.prepare('UPDATE agent_workers SET data=? WHERE id=?').run(JSON.stringify({...w,role:'search'}),w.id);
+    f.store.db.prepare('UPDATE workspace_workers SET data=? WHERE id=?').run(JSON.stringify({...w,role:'search'}),w.id);
     f.store.saveConversation(f.p.id,'codex','primary-thread',{});other.saveConversation(f.p.id,'codex','other-thread',{});
     f.store.saveTaskReview(f.p.id,'one','primary review');other.saveTaskReview(f.p.id,'two','other review');
     other.saveCampaign(f.p.id,{status:'running',task:{id:'task-two',kind:'application',jobId:job.id},attempts:{}});
     assert.throws(()=>f.store.saveCampaign(f.p.id,{status:'running',task:{id:'task-one',jobId:job.id}}),/başka bir worker/);
-    const outsider=f.store.saveProfile({name:'Other candidate',preferences:'Remote'});assert.throws(()=>f.store.workerState.get(outsider.id,w.id),/adaya ait/);
+    const outsider=f.store.saveProfile({name:'Other candidate',preferences:'Remote'});assert.throws(()=>f.store.workerState.get(outsider.id,w.id),/çalışma alanına ait/);
     f.store.close();reopened=new Store(file);const scoped=reopened.forWorker(w.id);
     assert.equal(reopened.workerState.get(f.p.id,w.id).role,undefined);
-    assert.equal(JSON.parse(reopened.db.prepare('SELECT data FROM agent_workers WHERE id=?').get(w.id).data).role,undefined);
+    assert.equal(JSON.parse(reopened.db.prepare('SELECT data FROM workspace_workers WHERE id=?').get(w.id).data).role,undefined);
     assert.equal(reopened.workers(f.p.id).length,2);assert.equal(reopened.conversation(f.p.id,'codex'),'primary-thread');assert.equal(scoped.conversation(f.p.id,'codex'),'other-thread');
     assert.equal(scoped.taskReview(f.p.id,'two'),'other review');assert.equal(reopened.taskReview(f.p.id,'one'),'primary review');assert.equal(scoped.taskReview(f.p.id,'one'),undefined);
     assert.equal(reopened.workerState.tasks(f.p.id)[0].task.id,'task-two');

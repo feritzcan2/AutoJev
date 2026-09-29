@@ -5,6 +5,7 @@ import {createRequire} from 'node:module';
 import path from 'node:path';
 import {mkdir,readFile,realpath,stat} from 'node:fs/promises';
 import {JevBrowser,jevTools} from './jev-browser.mjs';
+import {pressBrowserTarget} from './browser-target.mjs';
 const require=createRequire(import.meta.url);
 
 export function browserArguments(mode,directory){
@@ -56,8 +57,9 @@ export class BrowserTools {
     this.clients.set(clientKey,{mode,key,pending});return pending;
   }
   async open(candidateId,mode,options={}){
-    const directory=path.join(this.directory,'browsers',this.clientKey(candidateId));
-    const workspace=path.join(this.directory,'candidates',candidateId);
+    const base=this.directoryFor?.(candidateId)??this.directory;
+    const directory=path.join(base,'browsers',this.clientKey(candidateId));
+    const workspace=path.join(base,'candidates',candidateId);
     await mkdir(workspace,{recursive:true,mode:0o700});
     await mkdir(directory,{recursive:true,mode:0o700});
     if(mode==='jev')return {client:new JevBrowser(path.join(directory,'jev-profile'),{...options,workspace,onDisconnect:()=>this.connections.disconnected(candidateId),onProgress:(jobId,progress,owner)=>this.onProgress?.(candidateId,jobId,progress,owner),beforeSubmit:(jobId,url,owner,verificationContinuation)=>this.beforeSubmit?.(candidateId,jobId,url,owner,{verificationContinuation})}),tools:jevTools,directory,workspace};
@@ -68,7 +70,7 @@ export class BrowserTools {
     catch(error){await transport.close();throw error;}
   }
   async tools(candidateId){const mode=this.modeForCandidate(candidateId)??'existing';if(mode==='existing')return [];if(mode==='jev')return jevTools;return(await this.connect(candidateId)).tools;}
-  call(candidateId,name,args,sessionId){return this.enqueue(candidateId,()=>this.performCall(candidateId,name,args,sessionId));}
+  call(candidateId,name,args,sessionId,options){return this.enqueue(candidateId,()=>this.performCall(candidateId,name,args,sessionId,options));}
   async enqueue(candidateId,run){
     const key=this.clientKey(candidateId),previous=this.operations.get(key)??Promise.resolve();
     const operation=previous.catch(()=>{}).then(()=>{if(this.isActive&&!this.isActive())throw Error('Worker oturumu kapandı.');return run();});
@@ -76,12 +78,13 @@ export class BrowserTools {
     try{return await operation;}finally{if(this.operations.get(key)===operation)this.operations.delete(key);}
   }
   async waitForOperations(candidateId){await this.operations.get(this.clientKey(candidateId))?.catch(()=>{});}
-  async performCall(candidateId,name,args,sessionId){
+  async performCall(candidateId,name,args,sessionId,{completeSnapshot=false,automationTabKey}={}){
     if(this.modeForCandidate(candidateId)==='jev'&&!this.prepare(candidateId).ready)return {content:[{type:'text',text:JSON.stringify(browserWaitResult())}]};
     const {client,tools,directory,workspace}=await this.connect(candidateId);
     if(this.isActive&&!this.isActive())throw Error('Worker oturumu kapandı.');
+    if(name==='browser_target_press')return pressBrowserTarget(client,client instanceof JevBrowser,args,sessionId);
     if(!tools.some(t=>t.name===name))throw Error('Unknown browser tool');
-    let result;try{result=await (client instanceof JevBrowser?client.callTool({name,arguments:args},sessionId,this.options(candidateId).lifecycle??{}):client.callTool({name,arguments:args}));}catch(error){if(client instanceof JevBrowser&&(!client.browser&&client.connection==='existing'||error.code==='BROWSER_DISCONNECTED')){this.connections.disconnected(candidateId);return {content:[{type:'text',text:JSON.stringify(browserWaitResult())}]};}throw error;}
+    let result;try{result=await (client instanceof JevBrowser?client.callTool({name,arguments:args},sessionId,{...this.options(candidateId).lifecycle,...(automationTabKey?{automationTabKey}:{})}):client.callTool({name,arguments:args}));}catch(error){if(client instanceof JevBrowser&&(!client.browser&&client.connection==='existing'||error.code==='BROWSER_DISCONNECTED')){this.connections.disconnected(candidateId);return {content:[{type:'text',text:JSON.stringify(browserWaitResult())}]};}throw error;}
     // Newer Playwright versions return snapshot files. Inline only this candidate's
     // bounded browser artifacts, so the agent can act without filesystem access.
     for(const part of [...(result.content??[])]){
@@ -92,7 +95,9 @@ export class BrowserTools {
           const artifacts=await realpath(path.join(directory,'artifacts'));
           if(!file.startsWith(artifacts+path.sep)||(await stat(file)).size>512000)continue;
           const snapshot=await readFile(file,'utf8');
-          result.content.push({type:'text',text:snapshot.slice(0,100000)});
+          // The automation workflow pages the complete snapshot itself. Keep
+          // the existing limit for callers without that reader.
+          result.content.push({type:'text',text:completeSnapshot?snapshot:snapshot.slice(0,100000)});
         }catch{/* Keep the original artifact reference if it was removed. */}
       }
     }

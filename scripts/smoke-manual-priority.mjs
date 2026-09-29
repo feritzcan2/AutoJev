@@ -23,10 +23,10 @@ try{
  await page.locator('#candidates').selectOption(p.id);
  const row=page.locator('tr',{has:page.getByText('Priority',{exact:true})}),button=row.getByRole('button',{name:'Priority başvurusunu sıraya al'});
  await button.waitFor();assert.match(await button.getAttribute('title'),/profil yetkisi/);await button.click();
- await page.waitForFunction(id=>window.jobloop.snapshot(id).then(s=>Boolean(s.campaign?.task?.manualRequestId)),p.id);
+ await page.waitForFunction(id=>window.jobloop.workspaceSnapshot(id).then(s=>Boolean(s.campaign?.task?.manualRequestId)),p.id);
  await page.getByText(/^İlan sıraya alındı\./).waitFor();
- await page.waitForFunction(id=>window.jobloop.snapshot(id).then(s=>Boolean(s.active)),p.id);
- const snap=await page.evaluate(id=>window.jobloop.snapshot(id),p.id);
+ await page.waitForFunction(id=>window.jobloop.workspaceSnapshot(id).then(s=>Boolean(s.active)),p.id);
+ const snap=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),p.id);
  assert.equal(snap.campaign.task.jobId,requested.id);assert.equal(snap.campaign.task.kind,'application');assert.equal(snap.campaign.target,1);assert.equal(snap.profile.authorization,'research');
  assert.equal(snap.jobs.find(j=>j.id===other.id).manualApplication,undefined);assert.equal(snap.sources.find(s=>s.id===source.id).applyMode,'find_only');
  assert.equal(await button.isDisabled(),true);assert.equal((await app.evaluate(()=>globalThis.testPrompts)).length,1);
@@ -34,8 +34,8 @@ try{
  await verifyButton.waitFor();assert.equal(await verifyButton.textContent(),'Öncelikli doğrula');assert.match(await verifyButton.getAttribute('title'),/yeniden başvuru gönderilmez/);
  await verifyButton.click();await page.getByText(/^Başvuru öncelikli doğrulama sırasına alındı/).waitFor();assert.equal(await verifyButton.isDisabled(),true);
  const extra=await page.evaluate(id=>window.jobloop.addWorker(id),p.id);
- await page.waitForFunction(({id,worker})=>window.jobloop.snapshot(id).then(s=>s.workers.find(w=>w.id===worker)?.campaign?.task?.verificationOnly),{id:p.id,worker:extra.id});
- const verified=await page.evaluate(id=>window.jobloop.snapshot(id),p.id),task=verified.workers.find(w=>w.id===extra.id).campaign.task;
+ await page.waitForFunction(({id,worker})=>window.jobloop.workspaceSnapshot(id).then(s=>s.workers.find(w=>w.id===worker)?.campaign?.task?.verificationOnly),{id:p.id,worker:extra.id});
+ const verified=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),p.id),task=verified.workers.find(w=>w.id===extra.id).campaign.task;
  assert.equal(task.kind,'verify');assert.equal(task.jobId,verification.id);assert.equal(verified.workers[0].campaign.task.jobId,requested.id);assert.equal(verified.jobs.find(j=>j.id===verification.id).status,'uncertain');
  await page.screenshot({path:path.join(data,'priority.png'),fullPage:true});assert.deepEqual(errors,[]);
  console.log('MANUAL_PRIORITY_UI_PASS',data);

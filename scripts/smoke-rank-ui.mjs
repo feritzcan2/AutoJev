@@ -31,18 +31,18 @@ try{
  await page.screenshot({path:path.join(data,'ranking.png'),fullPage:true});
  await page.locator('#filter > summary').click();await page.getByRole('checkbox',{name:'Puan eşiğinin altında',exact:true}).check();await page.locator('#filter > summary').click();assert.equal(await page.locator('.jobs-table tbody tr').count(),1);
  await page.getByRole('button',{name:'Borderline başvurusunu sıraya al'}).click();await page.getByText(/^İlan sıraya alındı/).waitFor();
- await page.locator('#filter > summary').click();await page.getByRole('checkbox',{name:'Tüm ilanlar',exact:true}).check();await page.locator('#filter > summary').click();await page.waitForFunction(id=>window.jobloop.snapshot(id).then(s=>Boolean(s.jobs.find(j=>j.company==='Borderline').manualApplication)),p.id);
+ await page.locator('#filter > summary').click();await page.getByRole('checkbox',{name:'Tüm ilanlar',exact:true}).check();await page.locator('#filter > summary').click();await page.waitForFunction(id=>window.jobloop.workspaceSnapshot(id).then(s=>Boolean(s.jobs.find(j=>j.company==='Borderline').manualApplication)),p.id);
  const sourceRow=page.locator('tr',{has:page.getByText('Find only',{exact:true})});await sourceRow.getByText('Kaynak: sadece bul',{exact:true}).waitFor();
  await page.locator('#rank-settings [name=threshold]').fill('95');await page.locator('#rank-settings [type=submit]').click();await page.getByText('Puanlama ayarları kaydedildi.',{exact:true}).waitFor();
  await page.reload();await page.waitForFunction(()=>document.querySelector('#rank-settings [name=threshold]')?.value==='95');
- const snap=await page.evaluate(id=>window.jobloop.snapshot(id),p.id);assert.equal(snap.profile.rankThreshold,95);assert.equal(snap.jobs.find(j=>j.company==='Borderline').manualApplication!==undefined,true);assert.equal(snap.profile.authorization,'submit');
+ const snap=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),p.id);assert.equal(snap.profile.rankThreshold,95);assert.equal(snap.jobs.find(j=>j.company==='Borderline').manualApplication!==undefined,true);assert.equal(snap.profile.authorization,'submit');
  const form=page.locator('#rank-settings'),save=form.locator('[type=submit]');
  await form.locator('summary').click();
  await form.locator('[name=technicalEnabled]').uncheck();await form.locator('[name=experienceEnabled]').uncheck();
  assert.equal(await save.isDisabled(),true);assert.equal(await form.locator('[name=technical]').isDisabled(),true);
  await form.locator('[name=role]').fill('25');await form.locator('[name=preferences]').fill('75');
  assert.equal(await save.isDisabled(),false);await save.click();
- await page.waitForFunction(id=>window.jobloop.snapshot(id).then(s=>s.profile.rankWeights.preferences===75),p.id);
+ await page.waitForFunction(id=>window.jobloop.workspaceSnapshot(id).then(s=>s.profile.rankWeights.preferences===75),p.id);
  await page.getByText('58/100',{exact:true}).waitFor();
  await page.reload();await form.locator('summary').click();
  assert.equal(await form.locator('[name=preferences]').inputValue(),'75');assert.equal(await form.locator('[name=technicalEnabled]').isChecked(),false);
@@ -52,7 +52,7 @@ try{
  // Background/board refreshes must preserve an unfinished edit, including invalid totals.
  await form.locator('[name=role]').fill('24');await page.locator('#filter > summary').click();await page.getByRole('checkbox',{name:'Puan eşiğinin altında',exact:true}).check();await page.locator('#filter > summary').click();
  assert.equal(await form.locator('[name=role]').inputValue(),'24');assert.equal(await save.isDisabled(),true);
- const saved=await page.evaluate(id=>window.jobloop.snapshot(id),p.id);assert.equal(saved.profile.rankWeights.role,25);
+ const saved=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),p.id);assert.equal(saved.profile.rankWeights.role,25);
  const other=await page.evaluate(()=>window.jobloop.saveProfile({name:'Other Candidate',preferences:'Remote'}));
  await page.waitForFunction(id=>[...document.querySelector('#candidates').options].some(o=>o.value===id),other.id);
  await page.locator('#candidates').selectOption(other.id);await page.waitForFunction(()=>document.querySelector('#rank-settings [name=role]').value==='20');
@@ -60,7 +60,7 @@ try{
  await page.locator('#filter > summary').click();await page.getByRole('checkbox',{name:'Tüm ilanlar',exact:true}).check();await page.locator('#filter > summary').click();
  await form.screenshot({path:path.join(data,'ranking-settings.png')});
  await form.locator('[data-defaults]').click();assert.equal(await form.locator('[name=technical]').inputValue(),'40');assert.equal(await form.locator('[name=threshold]').inputValue(),'95');
- await save.click();await page.waitForFunction(id=>window.jobloop.snapshot(id).then(s=>s.profile.rankWeights.technical===40),p.id);
+ await save.click();await page.waitForFunction(id=>window.jobloop.workspaceSnapshot(id).then(s=>s.profile.rankWeights.technical===40),p.id);
  await page.getByText('91/100',{exact:true}).waitFor();assert.equal(errors.length,0,errors.join('\n'));
  console.log('RANK_UI_PASS',data);
 }finally{await app.close();}

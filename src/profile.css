@@ -1,5 +1,5 @@
 /* Profile: one settings document. Every card uses the same two columns: what it is on the left, what you edit on the right. */
-#profile { --profile-width: 1040px; --profile-copy: 232px; }
+:is(#profile,.automation-plan) { --profile-width: 1040px; --profile-copy: 232px; }
 
 .profile-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; max-width: var(--profile-width); margin: 8px 0 18px; }
 .profile-head h2 { font-size: 20px; font-weight: 600; letter-spacing: -.3px; }

@@ -2,6 +2,7 @@ import {mkdtemp,mkdir,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {Store} from '../app/store.mjs';
+import {AgentSessions} from '../app/agent-sessions.mjs';
 import {BackgroundStore} from '../app/background-store.mjs';
 import {BackgroundJobs} from '../app/background.mjs';
 import {startMcp} from '../app/mcp.mjs';
@@ -25,7 +26,8 @@ await mkdir(path.join(workspace,'.codex'),{recursive:true});await mkdir(path.joi
 await writeFile(path.join(workspace,'.codex/config.toml'),`[mcp_servers.gmail_fixture]\nurl = "${connector.endpoint}"\nhttp_headers = { Authorization = "Bearer ${connectorToken}" }\n`);
 await writeFile(path.join(workspace,'.mcp.json'),JSON.stringify({mcpServers:{gmail_fixture:{type:'http',url:connector.endpoint,headers:{Authorization:`Bearer ${connectorToken}`}}}}));
 await writeFile(path.join(workspace,'.claude/settings.local.json'),JSON.stringify({enableAllProjectMcpServers:true}));
-let output='',manager;manager=new BackgroundJobs(db,{launch:(run,task,onEvent,signal)=>launchSkillWorker({root:process.cwd(),data,db,run,task,onEvent,signal,complete:(...args)=>manager.complete(...args),onOutput:bytes=>{output=(output+Buffer.from(bytes).toString()).slice(-12000);}})});
+const agents=new AgentSessions({root:process.cwd(),data}),mcp=await startMcp(store,()=>{},hook=>{const session=[...agents.sessions.values()].find(s=>s.sessionId===hook.observation?.sessionId);if(!session)throw Error('No agent');return agents.engineFor(session).request('hook',{token:hook.token,observation:hook.observation});});
+let output='',manager;manager=new BackgroundJobs(db,{launch:(run,task,onEvent,signal)=>launchSkillWorker({root:process.cwd(),data,db,agents,mcp,run,task,onEvent,signal,complete:(...args)=>manager.complete(...args),onOutput:bytes=>{output=(output+Buffer.from(bytes).toString()).slice(-12000);}})});
 let trustApprovals=0;
 async function waitForRun(run){const deadline=Date.now()+110000;let trusted=false;while(manager.active.size&&Date.now()<deadline){
  // Only this synthetic workspace is approved by the test; production shows the provider prompt to its user.
@@ -39,4 +41,4 @@ async function waitForRun(run){const deadline=Date.now()+110000;let trusted=fals
  }
  await new Promise(r=>setTimeout(r,500));
 }const result=db.run(run.id);if(result.status!=='completed')throw Error(`${result.status}: ${result.summary}\n${output}`);return result;}
-try{const result=await waitForRun(await manager.start(p.id));if(db.signals(p.id).length!==1||db.signals(p.id)[0].jobId!==job.id||db.signals(p.id)[0].outcome!=='interview')throw Error('Incorrect mail classification');output='';await waitForRun(await manager.start(p.id));if(db.signals(p.id).length!==1)throw Error('Duplicate mail result');if(searches<2||reads<1)throw Error('Existing connector was not actually used');if(trustApprovals>1)throw Error('Workspace trust repeated');if(store.conversation(p.id,p.agentSettings.provider)!==null)throw Error('Main conversation was changed');console.log('LIVE_GMAIL_CONNECTOR_AGENT_PASS',data,result.summary);}finally{await manager.close();await connector.close();store.close();}
+try{const result=await waitForRun(await manager.start(p.id));if(db.signals(p.id).length!==1||db.signals(p.id)[0].jobId!==job.id||db.signals(p.id)[0].outcome!=='interview')throw Error('Incorrect mail classification');output='';await waitForRun(await manager.start(p.id));if(db.signals(p.id).length!==1)throw Error('Duplicate mail result');if(searches<2||reads<1)throw Error('Existing connector was not actually used');if(trustApprovals>1)throw Error('Workspace trust repeated');if(store.conversation(p.id,p.agentSettings.provider)!==null)throw Error('Main conversation was changed');console.log('LIVE_GMAIL_CONNECTOR_AGENT_PASS',data,result.summary);}finally{await manager.close();await agents.close();await mcp.close();await connector.close();store.close();}

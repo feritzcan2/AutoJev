@@ -54,7 +54,7 @@ export async function inspectApplicationForm(page,slot=null){
 // submission remain separate reviewed operations. Keep actual element handles.
 function inspectField(e){
   const type=e.tagName==='TEXTAREA'?'textarea':e.type;
-  if(!(e.tagName==='TEXTAREA'||e.tagName==='INPUT'&&['text','email','tel','url','date'].includes(type))||
+  if(!(e.tagName==='TEXTAREA'||e.tagName==='INPUT'&&['text','search','number','email','tel','url','date'].includes(type))||
     window.__jevFast?.autocomplete(e)||e.getAttribute('role')==='combobox'||e.hasAttribute('list')||e.hasAttribute('aria-autocomplete')||
     !e.isConnected||e.readOnly||e.matches(':disabled')||e.closest('[aria-disabled="true"],[aria-readonly="true"],[inert],[aria-hidden="true"]')||
     !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}))return null;

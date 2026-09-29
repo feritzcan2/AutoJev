@@ -5,7 +5,7 @@ const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {
 
 test('maintenance refuses in-flight IPC and blocks new calls while copying',async()=>{
  const events=[],gate=new Maintenance({assertIdle(){},stop:async()=>events.push('stop'),resume:async()=>events.push('resume')});
- const ipc=deferred(),pending=gate.invoke('pick-cv',()=>ipc.promise);
+ const ipc=deferred(),pending=gate.invoke('pick-document',()=>ipc.promise);
  await assert.rejects(gate.run(async()=>events.push('copy')),/Devam eden/);assert.equal(gate.busy,false);
  ipc.resolve();await pending;
  const copy=deferred(),started=deferred();

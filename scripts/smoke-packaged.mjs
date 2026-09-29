@@ -74,12 +74,12 @@ async function onboarding(page){
  await page.locator('#packaged-setup-cv-fixture').setInputFiles(cv);
  const copiedCv=await bounded(page.evaluate(id=>window.jobloop.importSetupCv(id,document.querySelector('#packaged-setup-cv-fixture').files[0]),candidate.id),'Import setup CV');
  assert.equal(await readFile(copiedCv,'utf8'),await readFile(cv,'utf8'));
- const before=await page.evaluate(id=>window.jobloop.snapshot(id),candidate.id);
+ const before=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),candidate.id);
  assert.deepEqual(before.browserStatus,{state:'unmanaged',ready:true});
  await bounded(page.evaluate(id=>window.jobloop.beginSetup(id),candidate.id),'Begin packaged onboarding');
  let snapshot,fixture;
  for(let attempt=0;attempt<100;attempt++){
-  snapshot=await page.evaluate(id=>window.jobloop.snapshot(id),candidate.id);
+  snapshot=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),candidate.id);
   fixture=await bounded(application.evaluate(()=>globalThis.packagedSetupFixture),'Read onboarding result');
   if(snapshot.setup?.error||fixture.starts.length)break;
   await new Promise(resolve=>setTimeout(resolve,100));
@@ -95,13 +95,13 @@ async function onboarding(page){
 try{
  let {page,errors}=await launch();
  const candidate=await page.evaluate(()=>window.jobloop.saveProfile({name:'Release fixture',preferences:'Remote',authorization:'research'}));
- const snapshot=await page.evaluate(id=>window.jobloop.snapshot(id),candidate.id);assert.equal(snapshot.profile.name,'Release fixture');
+ const snapshot=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),candidate.id);assert.equal(snapshot.profile.name,'Release fixture');
  const source=await page.evaluate(id=>window.jobloop.saveSource(id,{name:'LinkedIn',url:'https://www.linkedin.com/jobs/',kind:'linkedin',integrationId:'linkedin',query:'Fixture source',intervalMinutes:30,enabled:false,applyMode:'find_only'}),candidate.id);
  const instructions=await page.evaluate(({id,sourceId})=>window.jobloop.sourceInstructions(id,sourceId),{id:candidate.id,sourceId:source.id});assert.ok(instructions.skillText.length>100);
  await onboarding(page);
  assert.deepEqual(errors,[]);await closeApplication();
  ({page,errors}=await launch());
- const persisted=await page.evaluate(id=>window.jobloop.snapshot(id),candidate.id);assert.equal(persisted.profile.name,'Release fixture');assert.deepEqual(errors,[]);
+ const persisted=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),candidate.id);assert.equal(persisted.profile.name,'Release fixture');assert.deepEqual(errors,[]);
  await closeApplication();
  const resources=platform==='darwin'?path.resolve(executable,'../../Resources'):path.join(path.dirname(executable),'resources');
  const engine=path.join(resources,'engine',platform==='win32'?'jobloop-engine.exe':'jobloop-engine');

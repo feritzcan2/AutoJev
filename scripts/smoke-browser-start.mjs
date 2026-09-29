@@ -29,7 +29,7 @@ try{
   BrowserTools.prototype.prepare=function(id){globalThis.fixtureBrowser=this;if(globalThis.chromeState.state==='idle'){globalThis.chromeState={state:'connecting',ready:false};this.onStatus?.(id,globalThis.chromeState);}return globalThis.chromeState;};
  },{engine:pathToFileURL(path.join(root,'app/engine.mjs')).href,browser:pathToFileURL(path.join(root,'app/browser.mjs')).href});
  const setChrome=async state=>application.evaluate((_,{state,id})=>{globalThis.chromeState=state;globalThis.fixtureBrowser?.onStatus?.(id,state);},{state,id:profile.id});
- const snapshot=()=>page.evaluate(id=>window.jobloop.snapshot(id),profile.id);
+ const snapshot=()=>page.evaluate(id=>window.jobloop.workspaceSnapshot(id),profile.id);
  const starts=()=>application.evaluate(()=>globalThis.agentStarts);
  const banner=page.getByRole('dialog',{name:'Chrome izni bekleniyor'}),modal=page.locator('dialog.chrome-approval'),reminder=page.locator('.chrome-approval-reminder');
  await page.locator('#start').click();await banner.waitFor({state:'visible'});
@@ -55,7 +55,7 @@ try{
  assert.match(await modal.innerText(),/reddedildi/);assert.equal(await modal.getByRole('button',{name:'Yeniden bağlan'}).isVisible(),true);
  assert.equal(await starts(),0);
  await setChrome({state:'ready',ready:true});
- await page.waitForFunction(async id=>Boolean((await window.jobloop.snapshot(id)).active),profile.id);
+ await page.waitForFunction(async id=>Boolean((await window.jobloop.workspaceSnapshot(id)).active),profile.id);
  await modal.waitFor({state:'hidden'});await page.waitForTimeout(1200);assert.equal(await starts(),1);
  await page.locator('#restart-agent').click();
  await page.waitForFunction(()=>!document.querySelector('#restart-agent').disabled);
@@ -68,7 +68,7 @@ try{
  assert.equal(await starts(),2);assert.equal((await snapshot()).active,null);assert.equal(await page.locator('#setup-retry').isVisible(),false);
  await page.screenshot({path:path.join(data,'profile-approval-wait.png'),animations:'disabled'});
  await setChrome({state:'ready',ready:true});
- await page.waitForFunction(async id=>Boolean((await window.jobloop.snapshot(id)).active),profile.id);
+ await page.waitForFunction(async id=>Boolean((await window.jobloop.workspaceSnapshot(id)).active),profile.id);
  await setupBanner.waitFor({state:'hidden'});await page.waitForTimeout(1200);assert.equal(await starts(),3);
  await page.locator('#setup-back').click();await page.locator('#onboarding').waitFor({state:'hidden'});
  await setChrome({state:'connecting',ready:false});await page.locator('#improve-profile').click();await modal.waitFor({state:'visible'});

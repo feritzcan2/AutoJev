@@ -1,3 +1,4 @@
+import {pruneInstructionLogs} from './instruction-log.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import {createReadStream} from 'node:fs';
 import {mkdir,readdir,lstat,realpath,readFile,writeFile,copyFile,chmod,rename,rm,open} from 'node:fs/promises';
@@ -8,7 +9,7 @@ export {DATA_SCHEMA_VERSION,LOG_RETENTION} from './data-management-schema.mjs';
 
 const FORMAT='jobloop-backup',FORMAT_VERSION=1,MAX_FILES=20000,MAX_FILE_BYTES=512*1024*1024,MAX_TOTAL_BYTES=2*1024*1024*1024;
 const excluded=new Set(['runtime','node_modules','AGENTS.md','CLAUDE.md']);
-const restoreTargets=['jobloop.sqlite','jobloop.sqlite-wal','jobloop.sqlite-shm','candidates','processes','browsers','background','telegram.json','google-oauth.json','mobile.json'];
+const restoreTargets=['jobloop.sqlite','jobloop.sqlite-wal','jobloop.sqlite-shm','candidates','automations','processes','browsers','background','telegram.json','google-oauth.json','mobile.json'];
 const exists=async file=>{try{await lstat(file);return true;}catch(error){if(error.code==='ENOENT')return false;throw error;}};
 const within=(base,file)=>file===base||file.startsWith(base+path.sep);
 const tableExists=(db,name)=>Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
@@ -18,7 +19,7 @@ function safeRelative(value){
  if(typeof value!=='string'||value.length>1500||value.includes('\\')||value.includes('\0')||path.posix.isAbsolute(value))throw Error('Yedekte geçersiz dosya yolu.');
  const parts=value.split('/');
  if(parts.some(p=>!p||p==='.'||p==='..'||p.startsWith('.')||excluded.has(p)||/[<>:"|?*\x00-\x1f]/.test(p)||/[ .]$/.test(p)||/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(p)))throw Error('Yedekte güvenli olmayan dosya yolu.');
- if(value!=='jobloop.sqlite'&&(parts[0]!=='candidates'||parts.length<3))throw Error('Yedek yalnızca aday dosyalarını ve veritabanını içerebilir.');
+ if(value!=='jobloop.sqlite'&&!(parts[0]==='candidates'&&parts.length>=3)&&!(parts[0]==='automations'&&parts[1]==='workspaces'&&parts.length>=4))throw Error('Yedek yalnızca çalışma alanı dosyalarını ve veritabanını içerebilir.');
  return value;
 }
 async function regularFile(root,relative){
@@ -48,23 +49,24 @@ function sqliteCheck(file){
   db.exec('PRAGMA trusted_schema=OFF');assertDataSchemaVersion(db);
   if(db.prepare("SELECT 1 FROM sqlite_master WHERE type IN ('trigger','view') OR sql LIKE 'CREATE VIRTUAL TABLE%'").get())throw Error('Yedek desteklenmeyen veritabanı nesneleri içeriyor.');
   if(db.prepare('PRAGMA quick_check').get().quick_check!=='ok')throw Error('Yedek veritabanı bozuk.');
-  for(const name of ['candidates','jobs','sources','questions'])if(!tableExists(db,name))throw Error('Bu dosya bir JobLoop veritabanı değil.');
+  for(const name of tableExists(db,'workspaces')?['workspaces','workspace_records']:['candidates','jobs','sources','questions'])if(!tableExists(db,name))throw Error('Bu dosya bir JobLoop veritabanı değil.');
   if(db.prepare('PRAGMA foreign_key_check').get())throw Error('Yedek veritabanının ilişkileri tutarsız.');
-  for(const table of ['candidates','jobs','agent_workers','background_runs'])if(tableExists(db,table))for(const row of db.prepare(`SELECT id,data FROM ${table}`).iterate()){
+  for(const table of ['candidates','jobs','workspace_records','workspace_workers','workspace_tasks','agent_workers','background_runs','workspaces','automation_templates','automations','automation_runs','automation_results','automation_messages'])if(tableExists(db,table))for(const row of db.prepare(`SELECT id,data FROM ${table}`).iterate()){
    const value=JSON.parse(row.data);if(!/^[A-Za-z0-9][A-Za-z0-9_-]{0,149}$/.test(row.id)||value.id!==row.id)throw Error('Yedekte geçersiz kayıt kimliği var.');
   }
-  return {schemaVersion:db.prepare('PRAGMA user_version').get().user_version,candidates:db.prepare('SELECT count(*) AS n FROM candidates').get().n,jobs:db.prepare('SELECT count(*) AS n FROM jobs').get().n};
+  return {schemaVersion:db.prepare('PRAGMA user_version').get().user_version,candidates:tableExists(db,'candidates')?db.prepare('SELECT count(*) AS n FROM candidates').get().n:0,jobs:!tableExists(db,'candidates')?0:(tableExists(db,'workspace_records')?db.prepare('SELECT count(*) AS n FROM workspace_records WHERE workspace_id IN (SELECT id FROM candidates)'):db.prepare('SELECT count(*) AS n FROM jobs')).get().n};
  }finally{db.close();}
 }
 function sanitizeExport(db){
  db.exec('PRAGMA secure_delete=ON');
  if(tableExists(db,'account_credentials'))db.exec('UPDATE account_credentials SET ciphertext=NULL,pending=NULL');
- for(const table of ['jev_settings','gmail_accounts','telegram_job_messages','telegram_outbox','telegram_pairs','telegram_links','telegram_configs','telegram_meta','prompts','agent_conversations','conversation_launch_settings','task_context_reviews'])if(tableExists(db,table))db.exec(`DELETE FROM ${table}`);
+ for(const table of ['jev_settings','gmail_accounts','telegram_job_messages','telegram_outbox','telegram_pairs','telegram_links','telegram_configs','telegram_meta','prompts','workspace_instruction_events','workspace_conversations','agent_conversations','conversation_launch_settings','task_context_reviews'])if(tableExists(db,table))db.exec(`DELETE FROM ${table}`);
  if(tableExists(db,'worker_state'))db.exec("DELETE FROM worker_state WHERE kind LIKE 'conversation:%' OR kind IN ('review','task_context_review')");
+ if(tableExists(db,'automations'))db.exec("UPDATE automations SET data=json_remove(data,'$.conversations')");
  // Remove deleted secrets from SQLite free pages in the exported copy.
  db.exec('VACUUM');
 }
-async function candidateFiles(root){
+async function candidateFiles(root,prefix='candidates'){
  const files=[];
  async function walk(directory,relative='',depth=0){
   if(depth>20)throw Error('Aday dosyaları çok fazla iç içe klasör içeriyor.');
@@ -73,7 +75,7 @@ async function candidateFiles(root){
    const rel=relative?relative+'/'+entry.name:entry.name,file=path.join(directory,entry.name);
    if(entry.isSymbolicLink())throw Error('Aday dosyalarında sembolik bağlantı var; yedeği oluşturmadan önce normal bir dosyaya dönüştür.');
    if(entry.isDirectory())await walk(file,rel,depth+1);
-   else if(entry.isFile()){files.push(safeRelative('candidates/'+rel));if(files.length>MAX_FILES-1)throw Error('Yedekte çok fazla dosya var.');}
+   else if(entry.isFile()){files.push(safeRelative(prefix+'/'+rel));if(files.length>MAX_FILES-1)throw Error('Yedekte çok fazla dosya var.');}
   }
  }
  if(await exists(root)){if((await lstat(root)).isSymbolicLink())throw Error('Aday klasörü sembolik bağlantı olamaz.');await walk(root);}
@@ -95,7 +97,7 @@ export async function createBackup({dataDirectory,db=null,destination,appVersion
   connection.prepare('VACUUM INTO ?').run(path.join(temporary,'jobloop.sqlite'));
   await chmod(path.join(temporary,'jobloop.sqlite'),0o600);
   if(!internal){const copy=new DatabaseSync(path.join(temporary,'jobloop.sqlite'));try{sanitizeExport(copy);}finally{copy.close();}}
-  const files=['jobloop.sqlite',...await candidateFiles(path.join(base,'candidates'))],manifestFiles=[];let totalBytes=0;
+  const files=['jobloop.sqlite',...await candidateFiles(path.join(base,'candidates')),...await candidateFiles(path.join(base,'automations','workspaces'),'automations/workspaces')],manifestFiles=[];let totalBytes=0;if(files.length>MAX_FILES)throw Error('Yedekte çok fazla dosya var.');
   for(const name of files){
    const source=name==='jobloop.sqlite'?path.join(temporary,name):await regularFile(base,name);
    const info=await lstat(source);totalBytes+=info.size;
@@ -155,7 +157,7 @@ function prepareRestoredDatabase(file,manifest,dataDirectory){
  const files=new Map(manifest.files.map(entry=>[fileKey(entry.path),entry.path]));
  try{
   db.exec('PRAGMA trusted_schema=OFF; PRAGMA secure_delete=ON; BEGIN');
-  for(const table of ['candidates','jobs','sources','setups','campaigns','worker_state','background_tasks','background_runs','mail_signals']){
+  for(const table of ['candidates','jobs','workspace_records','workspace_tasks','sources','setups','campaigns','worker_state','background_tasks','background_runs','mail_signals','automations','automation_runs','automation_results','automation_messages']){
    if(!tableExists(db,table))continue;
    for(const row of db.prepare(`SELECT rowid,data FROM ${table}`).all()){
     let value=rewritePath(JSON.parse(row.data),sourceDirectories,dataDirectory);if(!value||typeof value!=='object')continue;
@@ -163,14 +165,21 @@ function prepareRestoredDatabase(file,manifest,dataDirectory){
     if(table==='candidates'&&value.cvPath){const relative=path.relative(dataDirectory,value.cvPath).split(path.sep).join('/'),included=files.get(fileKey(relative));value.cvPath=included&&fileKey(relative).startsWith(fileKey('candidates/'+value.id+'/'))?path.join(dataDirectory,...included.split('/')):null;}
     if(table==='background_tasks')Object.assign(value,{enabled:false,connection:null,connectorAccess:null});
     if(table==='background_runs'&&value.status==='running')Object.assign(value,{status:'interrupted',finishedAt:Date.now()});
+    if(table==='automations')Object.assign(value,{status:'paused',nextRunAt:null,trial:null,reviewedRevision:null});
+    if(table==='automation_runs'&&value.status==='running')Object.assign(value,{status:'interrupted',finishedAt:Date.now(),actionId:null});
+    if(table==='workspace_tasks'){value.state='interrupted';value.finishedAt=Date.now();}
+    const jobRecord=table==='jobs'||table==='workspace_records'&&value.candidateId;
+    if(table==='automation_results'||table==='workspace_records'&&value.automationId){value.approvedDigest=null;if(value.status==='executing')value.status='uncertain';}
     if(table==='setups'&&value.status==='running')Object.assign(value,{status:'cancelled',needsTurn:false});
-    if(table==='sources'||table==='jobs')value.resumeContext=null;
-    if(table==='jobs'){value.sessionId=null;if(value.status==='submitting'){value.status='uncertain';value.note='Yedekten geri yüklendi; tekrar göndermeden önce başvuru sonucunu doğrula.';}else if(value.status==='working'){value.status='blocked';value.note='Yedekten geri yüklendi; başvuru sonucunu kontrol et.';}}
+    if(table==='sources'||jobRecord)value.resumeContext=null;
+    if(jobRecord){value.sessionId=null;if(value.status==='submitting'){value.status='uncertain';value.note='Yedekten geri yüklendi; tekrar göndermeden önce başvuru sonucunu doğrula.';}else if(value.status==='working'){value.status='blocked';value.note='Yedekten geri yüklendi; başvuru sonucunu kontrol et.';}}
     db.prepare(`UPDATE ${table} SET data=? WHERE rowid=?`).run(JSON.stringify(value),row.rowid);
    }
   }
-  for(const table of ['agent_conversations','conversation_launch_settings','task_context_reviews','telegram_pairs'])if(tableExists(db,table))db.exec(`DELETE FROM ${table}`);
+  if(tableExists(db,'workspace_tasks'))db.exec("UPDATE workspace_tasks SET state='interrupted' WHERE state IN ('running','reported','paused','pending')");
+  for(const table of ['workspace_instruction_events','workspace_conversations','agent_conversations','conversation_launch_settings','task_context_reviews','telegram_pairs'])if(tableExists(db,table))db.exec(`DELETE FROM ${table}`);
   if(tableExists(db,'worker_state'))db.exec("DELETE FROM worker_state WHERE kind LIKE 'conversation:%' OR kind IN ('review','task_context_review')");
+ if(tableExists(db,'automations'))db.exec("UPDATE automations SET data=json_remove(data,'$.conversations')");
   // Restores never resume Telegram polling or pending deliveries automatically.
   if(tableExists(db,'telegram_configs'))for(const row of db.prepare('SELECT candidate_id,data FROM telegram_configs').all()){const value=JSON.parse(row.data);value.enabled=false;db.prepare('UPDATE telegram_configs SET data=? WHERE candidate_id=?').run(JSON.stringify(value),row.candidate_id);}
   db.exec('COMMIT; VACUUM');
@@ -223,7 +232,7 @@ export async function applyPendingRestore({dataDirectory}){
  const journal={version:1,stageName,rollbackName,originals};await atomicJson(journalPath,journal);
  try{
   for(const name of restoreTargets)if(originals.includes(name))await rename(path.join(base,name),path.join(rollback,name));
-  for(const name of ['jobloop.sqlite','candidates'])if(await exists(path.join(stage,name)))await rename(path.join(stage,name),path.join(base,name));
+  for(const name of ['jobloop.sqlite','candidates','automations'])if(await exists(path.join(stage,name)))await rename(path.join(stage,name),path.join(base,name));
   sqliteCheck(path.join(base,'jobloop.sqlite'));
   // Removing the journal commits the replacement. Interrupted earlier operations roll back.
   await rm(pendingPath,{force:true});await rm(journalPath,{force:true});
@@ -259,9 +268,10 @@ export async function completeDataUpgrade({dataDirectory,appVersion}){
 }
 
 export async function pruneLogs({dataDirectory,db,now=Date.now(),clear=false,activeBackgroundRunIds=[]}){
+ const instructionEvents=pruneInstructionLogs(db,{now,clear});
  const prompts=clear?(tableExists(db,'prompts')?Number(db.prepare('DELETE FROM prompts').run().changes):0):prunePromptLogs(db,{now});
- const directory=path.join(dataDirectory,'background'),files=[],active=new Set(activeBackgroundRunIds);let terminalFiles=0;
- if(await exists(directory)&&!(await lstat(directory)).isSymbolicLink())for(const entry of await readdir(directory,{withFileTypes:true})){
+ const directories=[path.join(dataDirectory,'background'),path.join(dataDirectory,'automations','runs')],files=[],active=new Set(activeBackgroundRunIds);let terminalFiles=0;
+ for(const directory of directories)if(await exists(directory)&&!(await lstat(directory)).isSymbolicLink())for(const entry of await readdir(directory,{withFileTypes:true})){
   if(!entry.isDirectory()||entry.isSymbolicLink()||entry.name==='workspaces'||active.has(entry.name))continue;
   const file=path.join(directory,entry.name,'terminal.log');if(!await exists(file))continue;
   const info=await lstat(file);if(info.isFile()&&!info.isSymbolicLink())files.push({file,mtime:info.mtimeMs,size:info.size});
@@ -273,7 +283,7 @@ export async function pruneLogs({dataDirectory,db,now=Date.now(),clear=false,act
  }
  // Remove obsolete WAL pages after pruning; a busy reader leaves the next pass to retry.
  db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
- return {prompts,terminalFiles};
+ return {prompts,terminalFiles,instructionEvents};
 }
 export async function dataManagementStatus({dataDirectory,db,appVersion}){
  const directory=path.join(dataDirectory,'backups'),backups=[];
@@ -281,5 +291,5 @@ export async function dataManagementStatus({dataDirectory,db,appVersion}){
   if(!entry.isDirectory()||entry.isSymbolicLink())continue;
   try{const manifest=JSON.parse(await readFile(path.join(directory,entry.name,'manifest.json'),'utf8'));if(manifest.format===FORMAT)backups.push({name:entry.name,...summary(manifest)});}catch{}
  }
- return {appVersion,schemaVersion:assertDataSchemaVersion(db),retention:LOG_RETENTION,prompts:db.prepare('SELECT count(*) AS n FROM prompts').get().n,backups:backups.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)),pendingRestore:await exists(path.join(dataDirectory,'pending-restore.json'))};
+ return {appVersion,schemaVersion:assertDataSchemaVersion(db),retention:LOG_RETENTION,prompts:tableExists(db,'prompts')?db.prepare('SELECT count(*) AS n FROM prompts').get().n:0,backups:backups.sort((a,b)=>b.createdAt.localeCompare(a.createdAt)),pendingRestore:await exists(path.join(dataDirectory,'pending-restore.json'))};
 }

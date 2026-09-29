@@ -1,6 +1,6 @@
 // Increase this version whenever a release changes the persisted data contract.
 // Startup takes a backup before opening Store when this version or the app changes.
-export const DATA_SCHEMA_VERSION=1;
+export const DATA_SCHEMA_VERSION=6;
 export const LOG_RETENTION={days:30,promptsPerCandidate:2000,promptsTotal:10000,promptCharacters:128000,terminalFiles:100,terminalBytes:150000};
 export function assertDataSchemaVersion(db){
  const version=db.prepare('PRAGMA user_version').get().user_version;

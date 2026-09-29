@@ -23,8 +23,8 @@ try{
   BrowserTools.prototype.prepare=()=>({state:'ready',ready:true});
  },{engine:pathToFileURL(path.join(root,'app/engine.mjs')).href,browser:pathToFileURL(path.join(root,'app/browser.mjs')).href});
  await page.getByRole('button',{name:'Northstar başvurusunu hazırla',exact:true}).click();
- await page.waitForFunction(async id=>(await window.jobloop.snapshot(id)).campaign?.task?.kind==='preparation',p.id);
- const snapshot=await page.evaluate(id=>window.jobloop.snapshot(id),p.id),session=snapshot.active?.sessionId??'ui-fixture';
+ await page.waitForFunction(async id=>(await window.jobloop.workspaceSnapshot(id)).campaign?.task?.kind==='preparation',p.id);
+ const snapshot=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),p.id),session=snapshot.active?.sessionId??'ui-fixture';
  assert.equal(snapshot.jobs[0].preparation.hold,true);
  store.updateJob(p.id,job.id,'working','Başvuru formu inceleniyor',session);
  const folder=path.join(store.candidateDirectory(p.id),'documents',job.id);await mkdir(folder,{recursive:true});await writeFile(path.join(folder,'cover-letter.md'),'Dear Northstar team,\n\nI build reliable backend services.');
@@ -45,7 +45,7 @@ try{
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(data,'preparation-mobile.png'),fullPage:true});
  const overflow=await panel.evaluate(e=>e.scrollWidth>e.clientWidth+1);assert.equal(overflow,false);
  await panel.getByRole('button',{name:'Başvur',exact:true}).click();
- await page.waitForFunction(async id=>(await window.jobloop.snapshot(id)).campaign?.task?.kind==='application',p.id);
+ await page.waitForFunction(async id=>(await window.jobloop.workspaceSnapshot(id)).campaign?.task?.kind==='application',p.id);
  assert.equal(store.job(p.id,job.id).preparation.hold,false);assert.equal(store.job(p.id,job.id).preparation.requirements[1].answer,'My own answer, preserved for the application.');
  assert.deepEqual(errors,[]);console.log(JSON.stringify({ok:true,data,checks:['prepare IPC and scheduler','package panel','preview','edit retention','ZIP export','narrow layout','explicit application handoff']}));
 }finally{

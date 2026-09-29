@@ -22,14 +22,15 @@ test('workspace name persists separately from candidate identity and deletion re
     assert.throws(()=>store.profile(first.id),/bulunamadı/);
     assert.equal(store.profile(second.id).name,'Grace Hopper');
     assert.deepEqual(store.db.prepare('PRAGMA foreign_key_check').all(),[]);
-    for(const table of ['jobs','questions','background_tasks','background_runs','events'])assert.equal(store.db.prepare(`SELECT count(*) AS count FROM ${table} WHERE candidate_id=?`).get(first.id).count,0);
+    for(const table of ['questions','background_tasks','background_runs','events'])assert.equal(store.db.prepare(`SELECT count(*) AS count FROM ${table} WHERE candidate_id=?`).get(first.id).count,0);
   }finally{store.close();}
 });
 
 import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {writeWorkspaceInstructions,STARTUP_INSTRUCTIONS} from '../app/workspace-instructions.mjs';
+import {writeWorkspaceInstructions} from '../app/workspace-instructions.mjs';
+import {STARTUP_INSTRUCTIONS} from '../app/extensions/job-search/instructions.mjs';
 test('Claude imports one shared instruction source and preserves user additions across launches',async()=>{
  const dir=await mkdtemp(path.join(os.tmpdir(),'jobloop-instructions-'));
  try{
