@@ -52,15 +52,16 @@ export class BrowserTools {
     const clientKey=this.clientKey(candidateId),previous=this.clients.get(clientKey);
     if(previous?.key===key)return previous.pending;
     if(previous)try{await(await previous.pending).client.close();}catch{}
-    const pending=this.open(candidateId,mode,options).catch(error=>{this.clients.delete(clientKey);throw error;});
-    this.clients.set(clientKey,{mode,key,pending});return pending;
+    const connection={mode,key};
+    const pending=this.open(candidateId,mode,options).then(value=>{connection.client=value.client;return value;}).catch(error=>{if(this.clients.get(clientKey)===connection)this.clients.delete(clientKey);throw error;});
+    connection.pending=pending;this.clients.set(clientKey,connection);return pending;
   }
   async open(candidateId,mode,options={}){
     const directory=path.join(this.directory,'browsers',this.clientKey(candidateId));
     const workspace=path.join(this.directory,'candidates',candidateId);
     await mkdir(workspace,{recursive:true,mode:0o700});
     await mkdir(directory,{recursive:true,mode:0o700});
-    if(mode==='jev')return {client:new JevBrowser(path.join(directory,'jev-profile'),{...options,workspace,onDisconnect:()=>this.connections.disconnected(candidateId),onProgress:(jobId,progress,owner)=>this.onProgress?.(candidateId,jobId,progress,owner),beforeSubmit:(jobId,url,owner,verificationContinuation)=>this.beforeSubmit?.(candidateId,jobId,url,owner,{verificationContinuation})}),tools:jevTools,directory,workspace};
+    if(mode==='jev')return {client:new JevBrowser(path.join(directory,'jev-profile'),{...options,workspace,onDisconnect:()=>this.connections.disconnected(candidateId),onTabsClosed:ids=>{if(!this.closed)return this.onTabsClosed?.(candidateId,ids);},onProgress:(jobId,progress,owner)=>this.onProgress?.(candidateId,jobId,progress,owner),beforeSubmit:(jobId,url,owner,verificationContinuation)=>this.beforeSubmit?.(candidateId,jobId,url,owner,{verificationContinuation})}),tools:jevTools,directory,workspace};
     const cli=path.join(path.dirname(require.resolve('@playwright/mcp/package.json')),'cli.js').replace(/([/\\])(app(?:-(?:x64|arm64))?\.asar)([/\\])/,'$1$2.unpacked$3');
     const transport=new StdioClientTransport({command:process.execPath,args:[cli,...browserArguments(mode,directory),'--output-dir',path.join(directory,'artifacts')],cwd:workspace,env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},stderr:'pipe'});
     const client=new Client({name:'jobloop-browser',version:'0.1.0'});
@@ -69,9 +70,9 @@ export class BrowserTools {
   }
   async tools(candidateId){const mode=this.modeForCandidate(candidateId)??'existing';if(mode==='existing')return [];if(mode==='jev')return jevTools;return(await this.connect(candidateId)).tools;}
   call(candidateId,name,args,sessionId){return this.enqueue(candidateId,()=>this.performCall(candidateId,name,args,sessionId));}
-  async enqueue(candidateId,run){
+  async enqueue(candidateId,run,{checkActive=true}={}){
     const key=this.clientKey(candidateId),previous=this.operations.get(key)??Promise.resolve();
-    const operation=previous.catch(()=>{}).then(()=>{if(this.isActive&&!this.isActive())throw Error('Worker oturumu kapandı.');return run();});
+    const operation=previous.catch(()=>{}).then(()=>{if(checkActive&&this.isActive&&!this.isActive())throw Error('Worker oturumu kapandı.');return run();});
     this.operations.set(key,operation);
     try{return await operation;}finally{if(this.operations.get(key)===operation)this.operations.delete(key);}
   }
@@ -98,20 +99,34 @@ export class BrowserTools {
     }
     return result;
   }
-  cleanupSearch(candidateId,taskId){return this.enqueue(candidateId,()=>this.performCleanupSearch(candidateId,taskId));}
+  cleanupSearch(candidateId,taskId){return this.enqueue(candidateId,()=>this.performCleanupSearch(candidateId,taskId),{checkActive:false});}
   async performCleanupSearch(candidateId,taskId){
     if(this.modeForCandidate(candidateId)!=='jev')return {deferred:true};
-    const options=this.options(candidateId),{client}=await this.connect(candidateId);
+    const connection=this.clients.get(candidateId);
+    if(connection?.mode!=='jev')return {deferred:true};
+    const options=this.options(candidateId),{client}=await connection.pending;
     if(client.profile?.directory!==options.profile?.directory)return {deferred:true};
     return client.cleanupSearch(taskId,options.lifecycle??{});
   }
-  cleanup(candidateId){return this.enqueue(candidateId,()=>this.performCleanup(candidateId));}
+  cleanup(candidateId){return this.enqueue(candidateId,()=>this.performCleanup(candidateId),{checkActive:false});}
   async performCleanup(candidateId){
     const connection=this.clients.get(candidateId),options=this.options(candidateId);
     if(connection?.mode!=='jev'||this.modeForCandidate(candidateId)!=='jev')return {deferred:true};
     const {client}=await connection.pending;
     if(client.profile?.directory!==options.profile?.directory)return {deferred:true};
     return client.cleanupCompleted(options.lifecycle??{});
+  }
+  maintain(candidateId){
+    const connection=this.clients.get(candidateId),client=connection?.client;
+    // Maintenance never starts Chrome, requests permission or queues behind a
+    // running agent operation. The next tick retries disconnected/busy clients.
+    if(this.closed||this.modeForCandidate(candidateId)!=='jev'||connection?.mode!=='jev'||!client||client.closed||client.busy||!client.opening||client.connection==='existing'&&!client.browser?.isConnected()||this.operations.has(candidateId))return Promise.resolve({deferred:true});
+    return this.enqueue(candidateId,async()=>{
+      if(this.clients.get(candidateId)!==connection)return {deferred:true};
+      const options=this.options(candidateId);
+      if(client.profile?.directory!==options.profile?.directory)return {deferred:true};
+      return client.cleanupCompleted(options.lifecycle??{});
+    });
   }
   async focus(candidateId,context){
     if(this.modeForCandidate(candidateId)!=='jev')throw Object.assign(Error('Bu aday için Jev tarayıcı modu seçili değil.'),{code:'BROWSER_MODE_CHANGED'});
@@ -141,5 +156,5 @@ export class BrowserTools {
     // Focus the live page directly; never reconnect or open a replacement here.
     await connected.client.tab(context.tabId).page.bringToFront();return {focused:true};
   }
-  async close(){this.connections.close();for(const {pending} of this.clients.values()){try{await(await pending).client.close();}catch{}}this.clients.clear();}
+  async close(){this.closed=true;this.connections.close();for(const {pending} of this.clients.values()){try{await(await pending).client.close();}catch{}}this.clients.clear();}
 }

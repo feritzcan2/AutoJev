@@ -4,7 +4,8 @@
   "license": "GPL-3.0-or-later",
   "adaptations": [
     "Workspace members narrowed to the Rust dependencies used by JobLoop.",
-    "JS workspace narrowed to terminal-wire and terminal-surface. Packages built with upstream build/pack scripts."
+    "JS workspace narrowed to terminal-wire and terminal-surface. Packages built with upstream build/pack scripts.",
+    "Claude auto and acceptEdits permissions are exposed and preserved separately in the catalog, launch arguments, and observations."
   ],
   "files": {
     "Cargo.toml": "2beb100daf07989a014d3f2a0eac5b4d5c8e5a21f9dfab0630885dba4477d890",
@@ -54,8 +55,8 @@
     "modules/agents/Cargo.toml": "bb460144384e669923fd8ba5095d97a5126bad4ed2552d49db0b4645a5f9f6c8",
     "modules/agents/GEMINI.md": "396f5fdc4614244531ff768cb79ccf6b4d65dbc8d428e468e6b9ee5ec8071122",
     "modules/agents/src/account_context.rs": "4c4e7850afc79c0f9ca4fa9802e77be2f95a5f8cae3383b85e26fff1e9b76b79",
-    "modules/agents/src/catalog.rs": "3390e0974542fd8ca8ae8699b5fb727cf5d3d802e6910df63e110df5f2296dae",
-    "modules/agents/src/claude_transcript.rs": "241210dc4d758828a298daedbd13855e5226b0ccc81d781766f3dacc4117afce",
+    "modules/agents/src/catalog.rs": "470f6ea33d60791b90850172f75032eaad35986c74e3875c1ed8037e6fe02aa0",
+    "modules/agents/src/claude_transcript.rs": "f9c66df2be9e66ffde846cc8b411b35e0551278eefb35879be56ece69c7778a4",
     "modules/agents/src/codex_history.rs": "bc038f28e079244a7d50194a0b81fae5815586a795623f1e945297961cfed5f7",
     "modules/agents/src/codex_name.rs": "f82ec51582f80c0b9125ce9287cb9138762b2ffb9ff7c6edaa1decfc89cd3641",
     "modules/agents/src/codex_resume.rs": "14888e8d832429cac0d4cbcef6b391c0e3675a71956581795b6247f7dabe33d0",
@@ -93,9 +94,9 @@
     "modules/launch/src/provider.rs": "b99063383bdade9e9d648ed6a6015477951db0c407df3379d20f1c9d89ec19ec",
     "modules/launch/src/request.rs": "aabd3ee5f04747ceb8544b5e4653e05db416b7dd365631566f1762aea90f1089",
     "modules/launch/src/resolve.rs": "741b14ae3d9680e89e0b433837acd30313fc02c6310c51630480eba019a52778",
-    "modules/launch/src/selection.rs": "e310ee5399cf6d254d7e97f5b48a3aa877fe7f49d825cb781dedba28ac9e24ff",
+    "modules/launch/src/selection.rs": "d116fe942986d6c0156780edc15c61561b2b42911fcb0f2d0c78cdd17148c916",
     "modules/launch/src/submission.rs": "27b543a0d013af10bc608d4d7a444ccfa9db9b7397efdef87a41568212b4bab3",
-    "modules/launch/src/tests.rs": "0800d72e268f5879daa97c3cf0d5f95291ccaeff57fd3be44e0c95fe1b8d3ad7",
+    "modules/launch/src/tests.rs": "84bf73ff2b95f0a2ef66bfa2f56ba69a641b823d899843e6fc5469c19c3be7fa",
     "modules/launch/src/types.rs": "698c0b7f592d99526c6fe02f5c20d63936d8c3b774b92f6667f2d3988a2592d9",
     "modules/platform/CLAUDE.md": "05b029ee7f74a6de74265ee69d091ec1f4a8a1135c0a6408a8e98da9f3b6073e",
     "modules/platform/Cargo.toml": "bcc4486a9fd8a6601d0d62fe14749ebfad1b7f6da1dcd416af74069e06f29caf",

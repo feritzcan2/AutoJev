@@ -67,6 +67,58 @@ fn quick_action_bypass_is_an_exact_provider_flag() {
 }
 
 #[test]
+fn claude_permission_selection_survives_launch_resume_and_observation() {
+    let template = PromptTemplate {
+        id: "example",
+        version: 1,
+        authored_body: "Example",
+    };
+    let conversation =
+        ConversationHandle::from_native("claude", "11111111-1111-4111-8111-111111111111".into())
+            .unwrap();
+    let descriptor = termloop_agents::agent_descriptor("claude").unwrap();
+    for permission in ["acceptEdits", "auto"] {
+        assert!(descriptor.permissions.contains(&permission));
+        validate_agent_configuration("claude", "default", permission, "default").unwrap();
+        for resume in [false, true] {
+            let mut request = LaunchRequest::interactive("claude", "/tmp/example", &template);
+            request.permission = permission;
+            request.explicit_configuration = true;
+            if resume {
+                request.conversation = conversation.resume();
+            }
+            let payload = resolve(request).unwrap().into_payload();
+            let mode = payload
+                .args()
+                .windows(2)
+                .find(|pair| pair[0] == "--permission-mode")
+                .expect("Claude launch must include the selected permission mode")[1]
+                .as_str();
+            assert_eq!(mode, permission);
+            assert_eq!(
+                termloop_agents::claude_observed_permission(mode),
+                Some(permission)
+            );
+            assert!(
+                !payload
+                    .args()
+                    .iter()
+                    .any(|arg| arg == "--dangerously-skip-permissions")
+            );
+        }
+    }
+    for provider in ["codex", "gemini"] {
+        assert!(
+            !termloop_agents::agent_descriptor(provider)
+                .unwrap()
+                .permissions
+                .contains(&"auto")
+        );
+        assert!(validate_agent_configuration(provider, "default", "auto", "default").is_err());
+    }
+}
+
+#[test]
 fn codex_accept_edits_uses_the_self_contained_approval_flag() {
     assert_eq!(
         permission_args("codex", "acceptEdits").unwrap(),

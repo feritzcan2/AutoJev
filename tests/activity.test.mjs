@@ -36,6 +36,18 @@ test('questions for completed or skipped applications leave the pending list',()
  assert.deepEqual(pendingQuestions({questions,jobs}).map(q=>q.jobId),['blocked']);
 });
 
+test('a queued question retry follows its worker even when another worker supplies the campaign summary',()=>{
+ const questions=[{id:'retry',jobId:'j',answer:null},{id:'other',jobId:'other',answer:null},{id:'profile',answer:null}];
+ const queued={status:'running',pendingRecoveries:{j:'retry'},task:null};
+ const busy={status:'running',task:{kind:'application',jobId:'other'}};
+ const snapshot={questions,workers:[{id:'main',campaign:queued},{id:'second',campaign:busy}],campaign:busy};
+ assert.deepEqual(pendingQuestions(snapshot).map(q=>q.id),['other','profile']);
+ queued.status='paused';
+ assert.deepEqual(pendingQuestions(snapshot).map(q=>q.id),['retry','other','profile']);
+ queued.status='running';queued.failures=1;
+ assert.deepEqual(pendingQuestions(snapshot).map(q=>q.id),['retry','other','profile']);
+});
+
 test('queued search is not presented as scanning while agent is idle',()=>{const snapshot={...base,active:{...base.active,state:'Idle'},campaign:{status:'running',task:{kind:'search',sourceId:'join',seenWorking:false}}};assert.equal(activityView(snapshot).title,'Görevin başlaması bekleniyor');assert.equal(sourceResultView({id:'join'},snapshot.campaign).scanning,false);});
 
 test('application row indicator follows current candidate task and actual runtime state',()=>{

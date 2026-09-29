@@ -58,6 +58,10 @@ export class JevCdpTransport {
   receive(message){
     const pending=this.pending.get(message.id);
     if(pending){clearTimeout(pending.timer);this.pending.delete(message.id);message.error?pending.reject(Error(message.error.message)):pending.resolve(message.result);return;}
+    if(!message.sessionId&&message.method==='Target.targetDestroyed'){
+      const id=message.params.targetId;
+      const owned=this.owned.delete(id);this.attached.delete(id);if(owned)this.onTargetDestroyed?.(id);
+    }
     if(!message.sessionId&&['Target.targetCreated','Target.targetInfoChanged'].includes(message.method)){
       const target=message.params.targetInfo;
       if(target.type==='page'&&this.owned.has(target.openerId)&&!this.owned.has(target.targetId)){
