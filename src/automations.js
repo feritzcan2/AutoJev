@@ -123,6 +123,7 @@ export function automationsPage(api,{notice,getCatalog,startJob,navigate,onSnaps
   if(id==='message')return openConversation();
   if(id==='profile'){navigate('profile');find('#automation-plan-form').scrollIntoView({block:'start'});return;}
   if(id==='results')return navigate('board');
+  if(id==='sources')return navigate('sources');
   if(id==='terminal'){navigate('agent');focusAgent();document.querySelector('#agent #terminal').scrollIntoView({block:'center'});return;}
   if(id==='browser')return api.automationBrowser(selected);
   if(id==='stop')return stop();

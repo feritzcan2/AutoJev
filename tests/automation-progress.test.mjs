@@ -42,6 +42,12 @@ test('successful trial offers tracking and one-off execution as separate actions
  assert.equal(p.title,'Deneme başarılı');assert.equal(p.primary.id,'enable');assert.ok(p.secondary.some(a=>a.id==='run'));assert.match(p.next,/Düzenli takip kapalı/);
 });
 
+test('a paused source failure exposes tracking for healthy sources without retrying the blocked source',()=>{
+ const s=snapshot({status:'paused',trial:{revision:2,status:'passed'}},{runs:[{...finished('run','blocked','IP blocked'),sourceUrl:'https://blocked.example/'}],sources:[{enabled:true,blocked:true},{enabled:true,blocked:false}]});
+ const p=automationProgress(s);assert.equal(p.primary.id,'enable');assert.equal(p.primary.label,'Düzenli takibi sürdür');assert.ok(p.secondary.some(a=>a.id==='sources'));assert.ok(!p.secondary.some(a=>a.id==='run'));
+ for(const changed of [{automation:{...s.automation,status:'blocked'}},{runs:[{...s.runs[0],recordId:'uncertain-action'}]},{sources:[{enabled:true,blocked:true}]}])assert.notEqual(automationProgress({...s,...changed}).primary.id,'enable');
+});
+
 test('one completed scan does not claim the overall goal is complete or tracking is enabled',()=>{
  const run=finished('run','completed','İki ilan bulundu.');
  const stopped=automationProgress(snapshot({trial:{revision:2,status:'passed'}},{runs:[run]}));assert.equal(stopped.title,'Bu tur tamamlandı');assert.equal(stopped.primary.id,'enable');

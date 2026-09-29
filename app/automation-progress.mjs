@@ -27,6 +27,7 @@ export function automationProgress(snapshot,{dirty=false}={}){
    let attempts=0;for(const run of runs){if(run.revision!==a.revision||run.kind!=='trial'||!failures.has(run.status))break;attempts++;}
    if(attempts>1)set({next:`Bu kurulumla art arda ${attempts} deneme tamamlanamadı. Agent ile engeli çöz veya kaynakları güncelle; ardından tekrar dene.`,primary:action('message','Agent ile engeli çöz'),secondary:[action('browser','Tarayıcıyı aç'),action('trial','Denemeyi tekrar çalıştır')]});
   }
+  if(!trial&&!setup&&a.status==='paused'&&reviewed&&passed&&relevant.sourceUrl&&!relevant.recordId&&(snapshot.sources??[]).some(s=>s.enabled&&!s.blocked))set({title:'Diğer kaynakların takibi kapalı',next:'Düzenli takibi açınca engelli olmayan kaynaklar kendi aralıklarında çalışır. Engelli kaynağı Kaynaklar sayfasından ayrıca yönetebilirsin.',primary:action('enable','Düzenli takibi sürdür'),secondary:[action('sources','Kaynakları gör'),action('message','Agent ile düzelt')]});
  }else if(!reviewed){
   if(missing.length)set({title:latest?.kind==='interview'?'Kurulum için yanıtın gerekiyor':'Kurulumu tamamlayalım',label:'Bilgi bekliyor',detail:reply?.text??result.detail,next:'Eksik bilgiler: '+missing.join(', '),primary:action('message','Yanıt yaz')});
   else set({title:'Kurulum taslağı hazır',label:'İncelemen gerekiyor',detail:latest?.kind==='interview'?latest.summary:'Agent kriterleri ve kaynakları hazırladı.',next:'Profili ve işlem yetkisini kontrol edip kaydet. Sonraki adım kaynakları denemek.',primary:action('profile','Profili incele ve kaydet')});
