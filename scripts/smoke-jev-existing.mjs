@@ -143,6 +143,25 @@ try{
  assert.deepEqual((await root.send('Target.getTargets')).targetInfos.map(t=>t.targetId).sort(),targetsBefore);
  assert.equal(windowRequests,beforeJobWindowRequests);
  console.log('JEV_SOURCE_SEARCH_RESTART_SAME_TABS_FILTERS_TASK_PASS');
+ // A busy cleanup survives disconnect/restart and core retries it without an
+ // agent report. Active source work and all saved application drafts survive.
+ const retiredState={...state(null),taskKind:'search',activeSearchTaskId:'retired-research'};
+ const retired=await call(restarted,'browser_jev_open',{url:fixture.url+'#retired-research'},retiredState);
+ await restarted.tab(retired.tabId).page.setContent('<h1>Completed research</h1>');
+ restarted.busy=true;
+ assert.equal((await restarted.cleanupSearch('retired-research')).deferred,true);
+ restarted.busy=false;
+ assert.ok((await new JevTabs(aDirectory,profile.directory).read()).cleanupTasks.includes('retired-research'));
+ await restarted.close();restarted=new JevBrowser(aDirectory,{profile,endpoint,openWindow});
+ await call(restarted,'browser_jev_tabs',{},searchState);
+ const retry=await restarted.cleanupCompleted({...state(null),activeSearchTaskIds:['saved-source-search']});
+ assert.ok(retry.closed.includes(retired.tabId));
+ assert.equal(restarted.tab(search.tabId).page.isClosed(),false);
+ const afterCleanup=await new JevTabs(aDirectory,profile.directory).read();
+ assert.equal(afterCleanup.targets.includes(retired.tabId),false);
+ assert.equal(afterCleanup.cleanupTasks.includes('retired-research'),false);
+ assert.equal(restarted.transport.attached.has(retired.tabId),false);
+ console.log('JEV_CORE_CLEANUP_RESTART_RETRY_AND_TARGET_RETIREMENT_PASS');
  await restarted.close();await b.close();await coldTools.close();
  assert.equal(personal.isClosed(),false);assert.equal(personal.url(),fixture.url);
  assert.equal((await root.send('Target.getTargets')).targetInfos.filter(t=>[first.tabId,second.tabId,third.tabId].includes(t.targetId)).length,2);

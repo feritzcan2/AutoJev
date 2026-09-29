@@ -31,10 +31,14 @@ sistemine uygun paketi kullan:
 | Windows | NSIS kurulum EXE | x64 |
 | Linux | AppImage / DEB | x64 |
 
-İlk public sürüm [v0.1.0](https://github.com/feritzcan2/jobmaster/releases/tag/v0.1.0)
-yayımlandı. macOS paketi Developer ID imzalı ve notarize edilmiştir; Windows EXE
+Güncel sürüm [v0.1.1](https://github.com/feritzcan2/jobmaster/releases/tag/v0.1.1)
+yayımlandı. İlk profil hazırlanırken görülen `skills not found` hatası giderildi.
+macOS paketi Developer ID imzalı ve notarize edilmiştir; Windows EXE
 bu sürümde kod imzası taşımaz. Platform kontrolleri ve kalan beta çalışmaları
 [yayın kontrol listesinde](docs/public-release-checklist.md) izlenir.
+
+0.1.0 sürümünde profil hazırlığında kaldıysan uygulamayı kapat, yeni paketi kur ve
+yeniden aç. Kayıtlı profil ve CV korunur; hazırlık yeniden denenir.
 
 ### Başlamadan önce
 

@@ -20,6 +20,17 @@ try{
  await client.cleanupCompleted({jobs:[job]});assert.equal(uncertain.page.isClosed(),false);
  const rank=await make('<h1>Ranked listing</h1>');client.tabSearches.set(rank.id,'rank-task');
  const rankClean=await client.cleanupSearch('rank-task',{jobs:[job]});assert.ok(rankClean.closed.includes(rank.id));assert.equal(form.page.isClosed(),false);
+ const research=await make('<input type="search" value="backend"><h1>Finished research</h1>');
+ const typed=await make('<input value="Unsent application answer">');
+ const login=await make('<input type="password"><p>Sign in</p>');
+ const challenge=await make('<h1>Verify you are human</h1>');
+ const framed=await make('<iframe srcdoc="&lt;input value=&quot;Embedded draft&quot;&gt;"></iframe>');
+ await framed.page.frameLocator('iframe').locator('input').waitFor();
+ for(const slot of [research,typed,login,challenge,framed])client.tabSearches.set(slot.id,'completed-research');
+ const collected=await client.cleanupSearch('completed-research',{jobs:[job]});
+ assert.deepEqual(collected.closed,[research.id]);
+ for(const slot of [typed,login,challenge,framed])assert.equal(slot.page.isClosed(),false);
+ console.log('TAB_HYGIENE_RESEARCH_QUERY_DRAFT_LOGIN_VERIFICATION_IFRAME_PASS');
  await form.page.close();assert.equal(client.tabs.has(form.id),false);assert.equal(client.tabJobs.has(form.id),false);
  console.log('TAB_HYGIENE_LISTING_RANK_DRAFT_USER_UNCERTAIN_MANUAL_CLOSE_PASS');
 }finally{await client.close();await rm(dir,{recursive:true,force:true});}

@@ -48,12 +48,9 @@ fn reasoning_args(agent_id: &str, reasoning: &str) -> Result<Vec<String>, Invoca
 fn permission_args(agent_id: &str, permission: &str) -> Result<Vec<String>, InvocationError> {
     let args = match (agent_id, permission) {
         ("claude", "default") => vec!["--permission-mode".into(), "default".into()],
-        // Claude renamed accept-edits to `auto`. Passing the legacy name still
-        // launches, but the TUI then labels the Session "accept edits" while
-        // TermLoop calls it auto, and an unchanged mode reads as a mode the
-        // user never picked. The stored selection keeps its contract value.
-        ("claude", "acceptEdits") => vec!["--permission-mode".into(), "auto".into()],
-        ("claude", "plan") => vec!["--permission-mode".into(), permission.into()],
+        ("claude", "acceptEdits" | "plan" | "auto") => {
+            vec!["--permission-mode".into(), permission.into()]
+        }
         ("claude", "bypassPermissions") => vec!["--dangerously-skip-permissions".into()],
         ("codex", "default") => vec![],
         // `--approve-for-me` already selects the workspace-write sandbox.

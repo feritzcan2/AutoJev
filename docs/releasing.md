@@ -95,7 +95,11 @@ paketleme Apple hesabı gerektirmez. Release paketleri imzalı workflow’dan ü
 Kaynak araçları paketlenirken güvenlik taraması, altı CLI’ın yardım/hata sözleşmeleri
 ve ağ kullanmayan arama/ilan detayı fixture’ları yeniden çalışır.
 Native smoke; ayrı çalışma dizininden açılışı, paketli Rust engine/skills/MCP
-yardımcısını ve yeniden açılışta verinin korunmasını kontrol eder. Gerçek sağlayıcı
+yardımcısını ve yeniden açılışta verinin korunmasını kontrol eder. Gerçek preload
+IPC üzerinden CV yükler ve profil hazırlamayı başlatır; aday klasörüne kopyalanan
+tüm skill/referans dosyalarının checksum’larını, çalışma talimatlarını ve gerekli
+klasörleri doğrular. Rust engine katalog ve ayar doğrulaması gerçek süreçte çalışır;
+ücretli sağlayıcı oturumu başlatma çağrısı testte taklit edilir. Gerçek sağlayıcı
 hesabı veya iş başvurusu kullanmaz.
 
 Uygulama içi güncelleme yalnızca kullanıcı isteğiyle kontrol edilir ve indirilir.

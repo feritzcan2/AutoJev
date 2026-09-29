@@ -47,6 +47,7 @@ async function boot(){
  const browser=new BrowserTools(data,id=>core.workspaces.get(id).browserMode,(id,worker)=>workspaces.template(id).browserOptions(id,worker));
  browser.directoryFor=id=>workspaces.template(id).browserDirectory(id);
  browser.onStatus=(id,state)=>{workspaces.template(id).onBrowserStatus?.(id,state);changed(id);};
+ browser.onTabsClosed=(id,ids)=>{workspaces.template(id).onTabsClosed?.(id,ids);changed(id);};
  browser.onProgress=(id,...args)=>workspaces.template(id).onBrowserProgress?.(id,...args);
  browser.beforeSubmit=(id,...args)=>workspaces.template(id).beforeSubmit?.(id,...args);
  const mcp=await startToolServer({onExchange:(grant,event)=>instructionLog.tool(grant,event),assertOwner:id=>core.workspaces.get(id),resolve(grant){

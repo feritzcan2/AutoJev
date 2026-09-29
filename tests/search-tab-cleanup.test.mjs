@@ -24,7 +24,7 @@ test('search cleanup closes only finished task tabs and preserves drafts, unrela
  browser.homeId='home';
  const add=(id,task,{openerId='home',changed=false}={})=>{
   const url=`https://example.test/${id}`;
-  browser.tabs.set(id,{id,openerId,page:{url:()=>changed?url+'/changed':url,isClosed:()=>false,close:async()=>closed.push(id)}});
+  browser.tabs.set(id,{id,openerId,page:{url:()=>changed?url+'/changed':url,isClosed:()=>false,frames:()=>[{locator:()=>({evaluate:async()=>true})}],close:async()=>closed.push(id)}});
   if(task)browser.tabSearches.set(id,task);
   browser.urlHashes.set(id,createHash('sha256').update(url).digest('hex'));
  };

@@ -50,6 +50,13 @@ const CODEX_MODELS: &[&str] = &[
     "gpt-5.5-pro",
 ];
 const GEMINI_MODELS: &[&str] = &["default", "auto", "pro", "flash", "flash-lite"];
+const CLAUDE_PERMISSIONS: &[&str] = &[
+    "default",
+    "acceptEdits",
+    "plan",
+    "auto",
+    "bypassPermissions",
+];
 const STANDARD_PERMISSIONS: &[&str] = &["default", "acceptEdits", "plan", "bypassPermissions"];
 const STANDARD_REASONING: &[&str] = &["default", "low", "medium", "high", "xhigh", "max"];
 const DEFAULT_REASONING: &[&str] = &["default"];
@@ -61,7 +68,7 @@ const AGENT_CATALOG: &[AgentDescriptor] = &[
         executable_candidates: CLAUDE_EXECUTABLE_CANDIDATES,
         adapter: BuiltinAgentAdapter::Claude,
         models: CLAUDE_MODELS,
-        permissions: STANDARD_PERMISSIONS,
+        permissions: CLAUDE_PERMISSIONS,
         reasoning: STANDARD_REASONING,
         resume_identity_scope: ResumeIdentityScope::Global,
         generated_input_coordination_supported: true,

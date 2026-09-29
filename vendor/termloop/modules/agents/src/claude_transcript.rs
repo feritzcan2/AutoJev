@@ -69,10 +69,9 @@ const MODEL_FAMILIES: &[(&str, ClaudeObservedModel)] = &[
 const MAX_PROVIDER_MODEL_ID_BYTES: usize = 64;
 
 /// Maps one hook-reported permission mode onto the launch selection vocabulary.
-/// Claude renamed the modes it displays (`manual`, `auto`) while still
-/// accepting the older names, and every hook payload carries the mode the
-/// Session is on right now — the only provider-authored evidence that an
-/// in-TUI `Shift+Tab` moved the Session off its launch selection.
+/// Claude displays `default` as `manual`. `acceptEdits` and `auto` are distinct
+/// modes. Every hook payload carries the current mode, providing evidence
+/// that an in-TUI `Shift+Tab` moved the Session off its launch selection.
 ///
 /// An unrecognised mode degrades to `None`. `dontAsk` has no launch selection
 /// that means exactly the same thing, and guessing `bypassPermissions` would
@@ -80,7 +79,8 @@ const MAX_PROVIDER_MODEL_ID_BYTES: usize = 64;
 pub fn claude_observed_permission(permission_mode: &str) -> Option<&'static str> {
     match permission_mode {
         "default" | "manual" => Some("default"),
-        "acceptEdits" | "auto" => Some("acceptEdits"),
+        "acceptEdits" => Some("acceptEdits"),
+        "auto" => Some("auto"),
         "plan" => Some("plan"),
         "bypassPermissions" => Some("bypassPermissions"),
         _ => None,
@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn every_named_permission_mode_maps_onto_one_launch_selection() {
-        assert_eq!(claude_observed_permission("auto"), Some("acceptEdits"));
+        assert_eq!(claude_observed_permission("auto"), Some("auto"));
         assert_eq!(
             claude_observed_permission("acceptEdits"),
             Some("acceptEdits")

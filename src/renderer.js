@@ -281,7 +281,7 @@ function renderAgentStatus(){
  if(automationUI?.selected){automationUI.renderShell();return;}
  const active=snapshot?.active?.candidateId===candidate?snapshot.active:snapshot?.workers?.find(w=>w.active)?.active??null,state=active?.state;
  let label='Kapalı',tone='neutral';
- if(active){label=({Working:'Çalışıyor',Compacting:'Özetliyor',AwaitingInput:'Onay bekliyor',Idle:'Hazır',Failed:'Hata',Interrupted:'Kesildi'})[state]??'Bağlanıyor';tone=['Working','Compacting'].includes(state)?'active':['AwaitingInput','Failed','Interrupted'].includes(state)?'waiting':'neutral';if(state==='Idle'&&pendingQuestions(snapshot).length>0){label='Yanıt bekliyor';tone='waiting';}}
+ if(active){label=({Working:'Çalışıyor',Compacting:'Özetliyor',AwaitingInput:'Onay bekliyor',Idle:'Hazır',Failed:'Hata',Interrupted:'Kesildi'})[state]??'Bağlanıyor';tone=['Working','Compacting'].includes(state)?'active':['AwaitingInput','Failed','Interrupted'].includes(state)?'waiting':'neutral';if(state==='Idle'&&visibleQuestions().length>0){label='Yanıt bekliyor';tone='waiting';}}
  if(!active&&snapshot?.campaign?.status==='running'){label='Bekliyor';tone='waiting';}
  if(!['Working','Compacting'].includes(state)&&['paused','stopped','complete'].includes(snapshot?.campaign?.status)){label={paused:'Duraklatıldı',stopped:'Durduruldu',complete:'Hedef tamamlandı'}[snapshot.campaign.status];tone=snapshot.campaign.status==='paused'?'waiting':'neutral';}
  if(browserWaitView(snapshot)){label='Chrome bekliyor';tone='waiting';}
@@ -294,7 +294,18 @@ function renderActivity(history=false){
 }
 setInterval(()=>{renderActivity();},1000);
 let questionRenderKey='';
-function renderQuestionBadge(){const count=pendingQuestions(snapshot).length,badge=$('question-badge'),button=badge.parentElement;badge.hidden=count===0;badge.textContent=String(count);button.setAttribute('aria-label',count?`Başvurular, ${count} yanıt bekleyen soru`:'Başvurular');button.title=count?`${count} soru yanıtını bekliyor`:'Başvurular';}
+const pendingQuestionActions=new Map();
+function questionActionPending(owner,q){return [...pendingQuestionActions.values()].some(action=>action.owner===owner&&(action.questionId===q.id||action.jobId&&action.jobId===q.jobId));}
+function visibleQuestions(){return pendingQuestions(snapshot).filter(q=>!questionActionPending(candidate,q));}
+function renderQuestionBadge(){const count=visibleQuestions().length,badge=$('question-badge'),button=badge.parentElement;badge.hidden=count===0;badge.textContent=String(count);button.setAttribute('aria-label',count?`Başvurular, ${count} yanıt bekleyen soru`:'Başvurular');button.title=count?`${count} soru yanıtını bekliyor`:'Başvurular';}
+async function runQuestionAction(owner,q,perform,{wholeJob=false,message}={}){
+ if(questionActionPending(owner,q))return;
+ const key=`${owner}:${q.id}`;pendingQuestionActions.set(key,{owner,questionId:q.id,jobId:wholeJob?q.jobId:null});
+ renderQuestions();renderQuestionBadge();if(candidate===owner)notice('');
+ try{const result=await perform();await refresh();if(candidate===owner)notice(result?.message??message??'');return result;}
+ catch(error){if(candidate===owner)notice(error.message);throw error;}
+ finally{pendingQuestionActions.delete(key);renderQuestions();renderQuestionBadge();}
+}
 function renderPipeline(campaign,jobs){
   const status=$('campaign-status');status.replaceChildren();$('pipeline').dataset.status=campaign?.status??'off';
   if(!campaign)status.append(element('b','','Kampanya kapalı'),document.createTextNode(snapshot?' Agent’ı başlatınca kaynaklar taranır ve başvurular buraya düşer.':''));
@@ -306,17 +317,19 @@ function renderPipeline(campaign,jobs){
   const goal=element('span','pipeline-target',target?`${jobs.length} ilan, hedef ${target} başvuru`:`${jobs.length} ilan`);legend.append(goal);
   $('metrics').replaceChildren(bar,legend);
 }
-function renderBoard(){jobFilters.setTemplate(snapshot?.definition);preparationUI.update(candidate,snapshot);rankSettings.update(candidate,snapshot?.profile);const campaign=snapshot?.campaign,jobs=snapshot?.jobs??[];renderPipeline(campaign,jobs);
-  const questions=pendingQuestions(snapshot),questionKey=JSON.stringify([candidate,questions,questions.map(q=>snapshot.jobs.find(j=>j.id===q.jobId)?.status)]);if(questionKey!==questionRenderKey){questionRenderKey=questionKey;$('questions').replaceChildren();for(const q of questions){const owner=candidate,card=element('div','question'),head=element('div','question-head'),title=element('div','question-title');title.append(element('strong','','Agent’ın bir sorusu var'));const job=snapshot.jobs.find(j=>j.id===q.jobId);if(job){const heading=element('h3','question-job');heading.append(element('b','',job.company),element('span','',job.role));if(job.resumeContext?.step)heading.append(element('em','question-step',job.resumeContext.step));title.append(heading);}head.append(title);card.append(head);if(q.fields)card.append(element('p','question-brief',q.question));if(job){const actions=element('div','question-link-actions');if(job.resumeContext){const tab=element('button','quiet','Sekmeye git ↗'),tabStatus=element('span','tab-status');tabStatus.setAttribute('role','status');tabStatus.hidden=true;tab.type='button';tab.onclick=attempt(async()=>{tab.disabled=true;tabStatus.hidden=true;try{const result=await api.openQuestionTab(owner,q.id);if(result?.message){tabStatus.textContent=result.message;tabStatus.hidden=false;}}catch(error){tabStatus.textContent=error.message;tabStatus.hidden=false;}finally{tab.disabled=false;}});actions.append(tab,tabStatus);}const listing=element('button','quiet','İlan bağlantısını aç ↗');listing.type='button';listing.onclick=attempt(()=>api.openLink(job.url));actions.append(listing);if(!['submitted','already_submitted','skipped'].includes(job.status)){
+function renderQuestions(){
+  const questions=visibleQuestions(),questionKey=JSON.stringify([candidate,questions,questions.map(q=>snapshot.jobs.find(j=>j.id===q.jobId)?.status)]);if(questionKey!==questionRenderKey){questionRenderKey=questionKey;$('questions').replaceChildren();for(const q of questions){const owner=candidate,card=element('div','question'),head=element('div','question-head'),title=element('div','question-title');title.append(element('strong','','Agent’ın bir sorusu var'));const job=snapshot.jobs.find(j=>j.id===q.jobId);if(job){const heading=element('h3','question-job');heading.append(element('b','',job.company),element('span','',job.role));if(job.resumeContext?.step)heading.append(element('em','question-step',job.resumeContext.step));title.append(heading);}head.append(title);card.append(head);if(q.fields)card.append(element('p','question-brief',q.question));if(job){const actions=element('div','question-link-actions');if(job.resumeContext){const tab=element('button','quiet','Sekmeye git ↗'),tabStatus=element('span','tab-status');tabStatus.setAttribute('role','status');tabStatus.hidden=true;tab.type='button';tab.onclick=attempt(async()=>{tab.disabled=true;tabStatus.hidden=true;try{const result=await api.openQuestionTab(owner,q.id);if(result?.message){tabStatus.textContent=result.message;tabStatus.hidden=false;}}catch(error){tabStatus.textContent=error.message;tabStatus.hidden=false;}finally{tab.disabled=false;}});actions.append(tab,tabStatus);}const listing=element('button','quiet','İlan bağlantısını aç ↗');listing.type='button';listing.onclick=attempt(()=>api.openLink(job.url));actions.append(listing);if(!['submitted','already_submitted','skipped'].includes(job.status)){
  const retry=element('button','quiet','Tekrar dene'),cancel=element('button','quiet danger','Başvuruyu iptal et');
  retry.type=cancel.type='button';
  retry.title='Agent başvuruyu yeniden denesin; kapanan sekmeyi kayıtlı ilandan açsın';
  cancel.title='Başvuruyu Vazgeçildi olarak kaydet ve bekleyen soruları kapat';
- retry.onclick=attempt(async()=>{retry.disabled=cancel.disabled=true;try{const result=await api.recoverQuestion(owner,q.id);await refresh();notice(result.message);}finally{retry.disabled=cancel.disabled=false;}});
- cancel.onclick=attempt(async()=>{retry.disabled=cancel.disabled=true;try{await api.setManualJobStatus(owner,job.id,'withdrawn');await refresh();notice('Başvuru Vazgeçildi olarak kaydedildi.');}finally{retry.disabled=cancel.disabled=false;}});
+ retry.onclick=attempt(()=>runQuestionAction(owner,q,()=>api.recoverQuestion(owner,q.id),{wholeJob:true}));
+ cancel.onclick=attempt(()=>runQuestionAction(owner,q,()=>api.setManualJobStatus(owner,job.id,'withdrawn'),{wholeJob:true,message:'Başvuru Vazgeçildi olarak kaydedildi.'}));
  actions.append(retry,cancel);
- }head.append(actions);}card.append(questionForm(owner,q,async values=>{const result=await api.answer(owner,q.id,values);notice(result.message??'Yanıt kaydedildi.');await refresh();}));$('questions').append(card);}}
+ }head.append(actions);}card.append(questionForm(owner,q,values=>runQuestionAction(owner,q,()=>api.answer(owner,q.id,values),{message:'Yanıt kaydedildi.'})));$('questions').append(card);}}
+}
 
+function renderBoard(){jobFilters.setTemplate(snapshot?.definition);preparationUI.update(candidate,snapshot);rankSettings.update(candidate,snapshot?.profile);const campaign=snapshot?.campaign,jobs=snapshot?.jobs??[];renderPipeline(campaign,jobs);renderQuestions();
   const filters=jobFilters.values,filter=filters.length===1?filters[0]:null,searchTerms=normalizeJobSearch(jobSearch.value).trim().split(/\s+/).filter(Boolean);
   const filtered=jobs.filter(j=>(j.hidden?filters.includes('hidden'):filters.some(value=>matchesJobFilter(j,value)))&&matchesJobSearch(j,searchTerms)),visible=sortJobs(filtered);
   const pinned=visible.filter(j=>applicationActivity(snapshot,j.id));

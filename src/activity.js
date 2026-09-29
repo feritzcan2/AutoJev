@@ -1,7 +1,7 @@
 import {browserWaitView} from './browser-status.js';
 const runtimeNames={Working:'Çalışıyor',AwaitingInput:'Giriş / onay bekliyor',Idle:'Tur tamamlandı',Compacting:'Konuşma özetleniyor',Failed:'Agent hatası',Interrupted:'Kesildi',Unknown:'Durum bekleniyor'};
 export function isQuestionRetryPending(snapshot,jobId){
- const worker=snapshot?.workers?.find(w=>w.campaign?.task?.jobId===jobId);
+ const worker=snapshot?.workers?.find(w=>w.campaign?.task?.jobId===jobId)??snapshot?.workers?.find(w=>w.campaign?.pendingRecoveries?.[jobId]);
  const campaign=worker?.campaign??snapshot?.campaign;
  return Boolean(jobId&&campaign?.status==='running'&&(!campaign.failures||campaign.task)&&!campaign.waitingReason&&campaign.pendingRecoveries?.[jobId]);
 }
