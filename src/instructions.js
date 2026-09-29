@@ -1,3 +1,4 @@
+import {instructionExplanation} from './instruction-explanations.js';
 import './instructions.css';
 const labels={system:'Sistem',template:'Template',workspace:'Çalışma alanı',user:'Kullanıcı',skill:'Beceri',tool:'Araç'};
 const states={unrecorded:'Seçili kapsamda kayıt yok',changed:'Güncel sürüm kayıttakinden farklı',available:'Dosyada mevcut · okunması doğrulanmadı',recorded:'Aynı içerik kayıtta var'};
@@ -23,6 +24,7 @@ export function instructionsPanel(api,agent){
  <div class="instruction-filters"><label>Worker<select data-worker aria-label="Talimat worker filtresi"></select></label><label>Oturum<select data-session aria-label="Talimat oturum filtresi"></select></label><label class="instruction-search">Metinde ara<input type="search" data-search placeholder="Sekme, bütçe, yetki…" aria-label="Talimatlarda ara"></label></div>
  <p class="instruction-error" role="alert" hidden></p><div class="instruction-stats"></div>
  <div class="instruction-modes" role="tablist" aria-label="Talimat görünümü"><button type="button" role="tab" data-mode="parts">Talimat parçaları</button><button type="button" role="tab" data-mode="history">Gönderim geçmişi</button></div>
+ <details class="instruction-guide"><summary>Talimatlar agent’a nasıl ulaşır?</summary><ol><li><strong>Oturum açılır:</strong> Başlangıç mesajı iletilir, talimat ve beceri dosyaları erişime açılır. Dosyanın okunması ayrı bir adımdır.</li><li><strong>Bir görev başlar:</strong> Agent kayıtlı planı ve görev bilgilerini ister; kriterlerin, özel talimatların ve işlem yetkisi bu yanıtın içinde verilir.</li><li><strong>Agent çalışır:</strong> Açtığı sayfalar ve kullandığı araçların sonuçları geldikçe yeni bilgi alır. Planın tamamı her işlemde yeniden gönderilmez.</li></ol><p>Bu sayfa güncel tanımları gösterir. Bir ayarı değiştirmen, çalışan agent’ın değişikliği hemen gördüğü anlamına gelmez. Belirli bir oturumun ne aldığını <strong>Gönderim geçmişi</strong> bölümünde kontrol et.</p></details>
  <p class="instruction-scope"></p><div class="instruction-sources"></div><div class="instruction-content"></div><button type="button" class="quiet instruction-more" hidden>Daha eski kayıtlar</button>
  <p class="instruction-footnote">Dosyanın oturumda bulunması okunduğunu, mesajın kuyruğa alınması modelin onu işlediğini kanıtlamaz. Terminalde doğrudan yazılan tuşlar, sağlayıcının kendi talimatları ve harici araçların yanıtları bu geçmişte izlenmez. Kayıtlar bu özellik etkinleştirildikten sonra oluşur; 30 gün ve kayıt sınırları uygulanır.</p>`;
  agent.prepend(tabs);agent.append(root);
@@ -63,8 +65,12 @@ export function instructionsPanel(api,agent){
   if(mode==='parts'){
    for(const part of data.parts){if(source&&part.source!==source||query&&!`${title(part)} ${part.text}`.toLocaleLowerCase('tr-TR').includes(query))continue;
     const card=node('details','instruction-card');card.dataset.key=part.key;card.open=open.has(part.key);const summary=node('summary'),main=node('div');
-    main.append(node('small','instruction-source',labels[part.source]??part.source),node('strong','',title(part)),node('span','instruction-when',part.when??'İlgili görev veya bağlam çağrısında.'));
-    const state=node('span','instruction-state',states[part.state]);state.dataset.state=part.state;summary.append(main,state);card.append(summary,textBody(part));content.append(card);
+    const explanation=instructionExplanation(part);
+    main.append(node('small','instruction-source',labels[part.source]??part.source),node('strong','',title(part)),node('span','instruction-purpose',explanation.purpose));
+    const timing=node('span','instruction-when');timing.append(node('b','','Ne zaman verilir? '),document.createTextNode(explanation.timing));main.append(timing);
+    const help=node('div','instruction-change');help.append(node('strong','','Değiştirirsen ne olur?'),node('p','',explanation.change));
+
+    const state=node('span','instruction-state',states[part.state]);state.dataset.state=part.state;summary.append(main,state);card.append(summary,help,textBody(part));content.append(card);
    }
   }else{
    for(const event of data.events){if(query&&!`${event.title} ${event.detail??''} ${event.parts.map(p=>p.title).join(' ')}`.toLocaleLowerCase('tr-TR').includes(query))continue;
