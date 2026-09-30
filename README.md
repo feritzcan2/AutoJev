@@ -22,7 +22,7 @@ klasörü mevcut JobLoop kurulumlarıyla uyumluluk için korunur.
 
 ## Kurulum
 
-[Sürümler](https://github.com/feritzcan2/jobmaster/releases) sayfasındaki işletim
+[Sürümler](https://github.com/feritzcan2/AutoJev/releases) sayfasındaki işletim
 sistemine uygun paketi kullan:
 
 | Sistem | Paket | Mimari |
@@ -31,11 +31,14 @@ sistemine uygun paketi kullan:
 | Windows | NSIS kurulum EXE | x64 |
 | Linux | AppImage / DEB | x64 |
 
-Güncel sürüm [v0.1.1](https://github.com/feritzcan2/jobmaster/releases/tag/v0.1.1)
-yayımlandı. İlk profil hazırlanırken görülen `skills not found` hatası giderildi.
+Güncel sürüm [v0.1.2](https://github.com/feritzcan2/AutoJev/releases/tag/v0.1.2)
+yayımlandı. Ortak çalışma alanları, otomasyon şablonları ve yayın hazırlığında
+toplanan yerel değişiklikleri (`1320b7e`) içerir.
 macOS paketi Developer ID imzalı ve notarize edilmiştir; Windows EXE
 bu sürümde kod imzası taşımaz. Platform kontrolleri ve kalan beta çalışmaları
 [yayın kontrol listesinde](docs/public-release-checklist.md) izlenir.
+Bu yayında istek üzerine testler çalıştırılmadı; native derleme, imzalama ve
+paket bütünlüğü kontrolleri uygulandı.
 
 0.1.0 sürümünde profil hazırlığında kaldıysan uygulamayı kapat, yeni paketi kur ve
 yeniden aç. Kayıtlı profil ve CV korunur; hazırlık yeniden denenir.
@@ -84,8 +87,8 @@ yerel derleme araçları. Windows’ta MSVC araçları, macOS’ta Xcode Command
 gerekir. Paket üretiminde Bun da kullanılır.
 
 ```sh
-git clone https://github.com/feritzcan2/jobmaster.git
-cd jobmaster
+git clone https://github.com/feritzcan2/AutoJev.git
+cd AutoJev
 corepack enable
 pnpm bootstrap
 pnpm start
@@ -113,7 +116,7 @@ Katkılar: [CONTRIBUTING](CONTRIBUTING.md).
 
 ## Destek ve lisans
 
-Hata bildirimlerini [Issues](https://github.com/feritzcan2/jobmaster/issues)
+Hata bildirimlerini [Issues](https://github.com/feritzcan2/AutoJev/issues)
 üzerinden ilet. CV, aday bilgisi, bot token’ı veya ham terminal kaydı paylaşma.
 Güvenlik açıkları için [SECURITY](SECURITY.md) içindeki özel kanalı kullan.
 

@@ -1,7 +1,18 @@
 # Public yayın kontrol listesi
 
 Hedef: GitHub deposunu ve indirilebilir JobLoop uygulamasını birlikte yayımlamak.
-Durum: 28 Eylül 2026, [v0.1.1 public yayında](https://github.com/feritzcan2/jobmaster/releases/tag/v0.1.1).
+Durum: 30 Eylül 2026, [v0.1.2 public yayında](https://github.com/feritzcan2/AutoJev/releases/tag/v0.1.2).
+
+## 0.1.2 yayını
+
+- [x] Son kullanıcı commit’i ve yayın sırasında eklenen yerel otomasyon kayıt değişiklikleri `1320b7e` içinde toplandı.
+- [x] [Release çalıştırması](https://github.com/feritzcan2/AutoJev/actions/runs/36718237918) aynı commit’ten macOS universal, Windows x64 ve Linux x64 paketlerini üretti.
+- [x] macOS Developer ID imzası, notarization, stapler ve Gatekeeper kontrolleri geçti.
+- [x] 13 yayın dosyası anonim indirilebiliyor; checksum’lar ve üç güncelleme manifesti doğrulandı.
+- [x] Public macOS ZIP indirilip checksum, Universal mimari, imza ve Apple onayı kontrol edildi.
+- [ ] İstek üzerine bu yayında testler ve önceki CI testi şartı atlandı. Önceki test sonuçları 0.1.2 için yeni test kanıtı değildir.
+
+Aşağıdaki uygulama işleri ve test kayıtları önceki 0.1.0/0.1.1 yayınlarına aittir.
 
 ## Tamamlanan uygulama işleri
 
