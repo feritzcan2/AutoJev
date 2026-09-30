@@ -62,6 +62,7 @@ export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,
    tabId=result.page.tabId;restoreRecord=false;if(!tabId)throw Error('Jev sekmesi açılamadı');return document(id,result,session);
   }
   if(!tabId)throw Error('Önce bu tur için browser_open veya research_automation_source ile bir sayfa aç');
+  if(name==='browser_jev_inspect_form')return (await native(id,name,{tabId},session,options)).page;
   let tool,parameters={tabId};
  if(name==='browser_snapshot'){tool='browser_jev_observe';Object.assign(parameters,{scope:'document',full:true,fullReason:'context_loss'});}
   else if(name==='browser_click'){tool='browser_jev_click';parameters.targetId=args.target;}
@@ -72,6 +73,7 @@ export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,
   else if(name==='browser_jev_act'){tool=name;Object.assign(parameters,args);}
   else if(name==='browser_jev_options'){tool='browser_jev_list_options';parameters.controlId=args.ref;}
   else if(name==='browser_jev_scroll'){tool=name;Object.assign(parameters,{controlId:args.controlId,direction:args.direction});}
+  else if(name==='browser_jev_reveal'){tool=name;parameters.controlId=args.controlId;}
   else if(name==='browser_target_press'){tool=name;Object.assign(parameters,{ref:args.ref,key:args.key});}
   else if(['browser_jev_list_suggestions','browser_jev_autocomplete'].includes(name)){tool=name;parameters.controlId=args.controlId;if(args.text!==undefined)parameters.text=args.text;if(args.option!==undefined)parameters.option=args.option;}
   else throw Error('Jev için gözlenen hedefi kullan veya browser_jev_next ile bir adım önerisi al');

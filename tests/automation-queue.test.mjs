@@ -7,10 +7,10 @@ import {automationWorkflow} from '../app/automation-worker.mjs';
 
 const sources=['https://a.example/list','https://b.example/list'];
 const settle=()=>new Promise(r=>setImmediate(r));
-function fixture(t,{mode='prepare',workers=1}={}){
- const store=new WorkspaceDatabase(':memory:'),db=new AutomationStore(store),template=db.template('job-search');
+function fixture(t,{mode='prepare',workers=1,templateId='job-search'}={}){
+ const store=new WorkspaceDatabase(':memory:'),db=new AutomationStore(store),template=db.template(templateId);
  const a=db.create(template.id,{goal:'Find backend jobs',criteria:Object.fromEntries(template.fields.filter(f=>f.required).map(f=>[f.id,'Known criteria'])),sources});
- db.review(a.id);db.skipTrial(a.id);db.save(a.id,{mode});
+ db.review(a.id);const trial=db.begin(a.id,'trial');for(const url of a.sources)db.observe(a.id,trial.id,url,'Observed source');db.finish(a.id,trial.id,'completed','Source checked');db.save(a.id,{mode});
  for(let i=1;i<workers;i++)store.workspaces.workers.add(a.id);
  const launches=[],closed=[];
  const options={launch:async run=>{launches.push(run);return {close:async()=>{closed.push(run.id);}};}};
@@ -27,9 +27,11 @@ test('workspace restart keeps source permissions, disabled sources and the one-o
  f.db.saveSource(f.id,sources[0],{mode:'observe'});f.db.saveSource(f.id,sources[1],{enabled:false});
  for(const worker of f.runtime.workers.list(f.id))f.store.workspaces.history(f.id,worker.id).saveConversation(f.id,'codex','old-'+worker.id,{});
  await f.runtime.runOnce(f.id);await settle();const first=f.launches[0];
+ f.db.putRun({...f.db.run(first.id),conversation:{provider:'codex',nativeId:'source-thread'}});
  f.db.observe(f.id,first.id,sources[0]+'?page=8','Page 8');f.db.reportPage(f.id,first.id,{url:sources[0]+'?page=8',currentPage:8,evidence:'Page 8',at:Date.now()});
  await f.runtime.restart(f.id);await settle();
  const run=f.launches.at(-1),flow=f.flow(run);let context=await flow.call(f.id,run.id,'get_automation_context',{});
+ assert.equal(f.db.run(first.id).conversation,null);assert.equal(run.continuation,undefined);
  if(context.context){
   let page=context,text=page.text;
   while(page.context.nextOffset!==null){page=await flow.call(f.id,run.id,'read_automation_context_part',{contextId:page.context.id,offset:page.context.nextOffset});text+=page.text;}
@@ -101,7 +103,7 @@ test('restart after a reserved submission preserves uncertainty and never resubm
  await f.runtime.runRecord(f.id,item.id,'execute',{direct:true});await settle();const run=f.launches[0];
  f.record(run,item.url,'Verified submission');f.db.reserve(f.id,run.id,item.id);
  await f.runtime.restart(f.id);await f.runtime.tick();
- assert.equal(f.db.result(f.id,item.id).status,'uncertain');assert.equal(f.db.get(f.id).status,'blocked');assert.equal(f.launches.length,1);
+ assert.equal(f.db.result(f.id,item.id).status,'uncertain');assert.equal(f.db.get(f.id).status,'enabled');assert.ok(f.launches.length>1);assert.ok(f.launches.slice(1).every(r=>!r.recordId));await assert.rejects(f.runtime.runRecord(f.id,item.id,'execute',{direct:true}),/yeniden gönderilemez/);
 });
 
 for(const answerBeforeFinish of [false,true])test(`a source answer resumes only its source and preserves unrelated record work (early: ${answerBeforeFinish})`,async t=>{
@@ -156,4 +158,31 @@ test('answering a source question after an explicit stop does not restart its sc
  const question=await f.flow(scan).call(f.id,scan.id,'ask_workspace_question',{text:'Required category?'});
  await f.runtime.stopSource(f.id,sources[0]);await f.runtime.answer(f.id,question.id,'Backend');await f.runtime.tick();
  assert.equal(f.launches.length,1);assert.equal(f.runtime.queue.get(f.id,scan.taskId).state,'cancelled');
+});
+
+for(const templateId of ['job-search','housing'])for(const shutdown of [false,true])test(`${templateId}: uncertain record leaves source scanning enabled (shutdown: ${shutdown})`,async t=>{
+ const f=fixture(t,{mode:'observe',workers:2,templateId});
+ const seed=f.db.begin(f.id,'run'),item=f.record(seed,sources[1]+'/application','Verified submission');f.db.finish(f.id,seed.id,'completed','Saved');
+ f.db.saveSource(f.id,sources[1],{enabled:false});f.db.enable(f.id);
+ await f.runtime.runRecord(f.id,item.id,'execute',{direct:true});await settle();
+ const execution=f.launches.find(r=>r.recordId===item.id),scan=f.launches.find(r=>r.sourceUrl===sources[0]&&!r.recordId);
+ assert.ok(execution);assert.ok(scan);f.db.reserve(f.id,execution.id,item.id);
+ const page=sources[0]+'?page=6';f.db.observe(f.id,scan.id,page,'Page 6');f.db.reportPage(f.id,scan.id,{url:page,currentPage:6,evidence:'Page 6',at:Date.now()});
+ f.db.putRun({...f.db.run(scan.id),conversation:{provider:'codex',nativeId:'keep-source-thread'}});
+ let resumed;
+ try{
+  if(shutdown){
+   await f.runtime.close();resumed=new WebTasks(f.db,f.options);await resumed.tick();await settle();
+   const next=f.launches.filter(r=>r.sourceUrl===sources[0]&&!r.recordId).at(-1);
+   assert.notEqual(next.id,scan.id);assert.equal(next.pageProgress.currentPage,6);assert.equal(next.continuation.runId,scan.id);
+   const verification=f.launches.find(r=>r.recordId===item.id&&r.id!==execution.id);assert.equal(verification.recordOperation,'verify');
+  }else{
+   await f.finish(execution,'blocked');await f.runtime.tick();await settle();
+   assert.equal(f.db.run(scan.id).status,'running');assert.equal(f.db.run(scan.id).pageProgress.currentPage,6);
+  }
+  assert.equal(f.db.get(f.id).status,'enabled');assert.equal(f.db.result(f.id,item.id).status,'uncertain');
+  assert.equal(f.launches.filter(r=>r.recordId===item.id&&r.recordOperation==='execute').length,1);
+  assert.equal(f.db.sources(f.id).find(s=>s.url===sources[1]).enabled,false);
+  await assert.rejects((resumed??f.runtime).runRecord(f.id,item.id,'execute',{direct:true}),/yeniden gönderilemez/);
+ }finally{await resumed?.close();}
 });

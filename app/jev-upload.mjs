@@ -2,16 +2,16 @@
 export function uploadDetails(e){
  const rendered=n=>n?.isConnected&&!n.closest('[inert],[aria-hidden="true"]')&&n.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})&&n.getBoundingClientRect().width>1&&n.getBoundingClientRect().height>1;
  if(!e.isConnected||e.disabled)return null;
- for(let p=e.parentElement;p;p=p.parentElement)if(p.hidden||p.matches('[inert],[aria-hidden="true"]')||getComputedStyle(p).display==='none'||getComputedStyle(p).visibility==='hidden'||getComputedStyle(p).opacity==='0')return null;
+ if(e.closest('[inert],[aria-hidden="true"]'))return null;
  const root=e.getRootNode();
  for(let h=root.host;h;h=h.getRootNode().host)if(!rendered(h))return null;
  const labels=[...(e.labels??[])];
  const refs=(e.getAttribute('aria-labelledby')||'').split(/\s+/).map(id=>root.getElementById?.(id)).filter(Boolean);
  const linked=e.id?[...root.querySelectorAll('[aria-controls]')].filter(n=>n.getAttribute('aria-controls').split(/\s+/).includes(e.id)):[];
  let localTrigger=false;
- for(let p=e.parentElement,depth=0;p&&depth<2&&!p.matches('form,body');p=p.parentElement,depth++){
+ for(let p=e.parentElement,depth=0;p&&depth<4&&!p.matches('form,body');p=p.parentElement,depth++){
   if(p.querySelectorAll('input[type=file]').length!==1)break;
-  localTrigger||=[...p.querySelectorAll('button,[role=button]')].some(n=>rendered(n)&&/upload|attach|browse|resume|cv|hochladen|anhängen|anfügen|datei auswählen|yükle|add file|datei hinzufügen|dosya ekle/i.test(n.textContent||n.getAttribute('aria-label')||''));
+  localTrigger||=[...p.querySelectorAll('button,[role=button],a,[role=link]')].some(n=>rendered(n)&&/upload|attach|browse|select files?|choose files?|resume|cv|hochladen|anhängen|anfügen|datei auswählen|yükle|add file|datei hinzufügen|dosya ekle/i.test(n.textContent||n.getAttribute('aria-label')||''));
  }
  if(!rendered(e)&&![...labels,...refs,...linked].some(rendered)&&!localTrigger)return null;
  const explicit=e.getAttribute('aria-label')||refs.map(n=>n.textContent.trim()).join(' ')||labels.map(l=>l.innerText).join(' ')||e.name||'File upload';
@@ -23,6 +23,19 @@ export function uploadDetails(e){
   if(cv!==letter){context=cv?'Resume/CV':'Cover Letter';break;}
  }
  return {label:context&&!/\b(?:resume|résumé|curriculum vitae|cv)\b|cover\s*letter|anschreiben|ön\s*yazı/i.test(explicit)?`${context} — ${explicit}`:explicit,accept:e.accept,multiple:e.multiple};
+}
+
+// Resolve only a known native file input and its rendered local trigger.
+// An ordinary button elsewhere in a large form must never be intercepted.
+export function isUploadTrigger({input,node}){
+ const target=window.__jevFast?.nodes.get(node);if(!target||!input.isConnected)return false;
+ if(input===target||[...(input.labels??[])].some(label=>label.contains(target)))return true;
+ if(!/^(select files?|choose files?|browse|upload(?: file)?|attach(?: file)?|dosya seç|datei auswählen)$/i.test((target.innerText||target.getAttribute('aria-label')||'').trim()))return false;
+ for(let p=input.parentElement,depth=0;p&&depth<4&&!p.matches('form,body');p=p.parentElement,depth++){
+  if(p.querySelectorAll('input[type=file]').length!==1)return false;
+  if(p.contains(target))return true;
+ }
+ return false;
 }
 
 export function validateUploadPurpose(label,filename){

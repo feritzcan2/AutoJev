@@ -1,4 +1,4 @@
-import {automationTrialReady} from './automation-trial.mjs';
+import {automationTrialReady,automationReady} from './automation-trial.mjs';
 // Durable source failures remain visible even while other workers are running.
 import {providerLimitAttention} from './provider-limit.mjs';
 export function automationAttention(snapshot){
@@ -29,7 +29,7 @@ export function automationAttention(snapshot){
    closing:activeRuns.some(r=>r.sourceUrl===source.url||r.id===run?.id),
    message:source.lastResult??run?.summary??'Bu kaynakta devam etmek için müdahale gerekiyor.',
    url:saved.url??run?.observations?.at(-1)?.url??source.scan?.evidenceUrl??source.url,tabId:saved.tabId,
-   retry:!uncertain&&automationTrialReady(automation)&&automation.reviewedRevision===automation.revision?'source':null});
+   retry:!uncertain&&automationReady(automation)?'source':null});
  }
  const latest=runs[0];
  if(!issues.length&&!activeRuns.length&&latest&&!(latest.kind==='trial'&&automation.trial?.status==='skipped'&&automationTrialReady(automation))&&['blocked','failed','timeout'].includes(latest.status)&&!latest.sourceUrl&&latest.revision===automation.revision){

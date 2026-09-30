@@ -13,6 +13,8 @@ test('Jev full document reading is explicit; automation scopes scroll to its cur
  await adapter.call('workspace','browser_navigate',{url:'https://example.com/list'},'run');
  await adapter.call('workspace','browser_snapshot',{},'run');assert.deepEqual(calls.at(-1).args,{tabId:'owned-tab',scope:'document',full:true,fullReason:'context_loss'});
  await adapter.call('workspace','browser_jev_scroll',{controlId:'observed-scroll',direction:'down',tabId:'foreign-tab'},'run');assert.deepEqual(calls.at(-1).args,{tabId:'owned-tab',controlId:'observed-scroll',direction:'down'});
+ await adapter.call('workspace','browser_jev_reveal',{controlId:'date',tabId:'foreign'},'run');assert.deepEqual(calls.at(-1).args,{tabId:'owned-tab',controlId:'date'});
+ await adapter.call('workspace','browser_jev_inspect_form',{tabId:'foreign'},'run');assert.deepEqual(calls.at(-1).args,{tabId:'owned-tab'});
  validateJevArgs('browser_jev_observe',{tabId:'owned-tab',scope:'document'});validateJevArgs('browser_jev_observe',{tabId:'owned-tab'});
  assert.throws(()=>validateJevArgs('browser_jev_observe',{tabId:'owned-tab',scope:'hidden_state'}));
 });

@@ -20,7 +20,7 @@ appointment monitoring/booking and custom workflows.
    text in the source field is sent as a source request, not granted browser access.
    The interview can research public search pages and official sites through up to
    12 managed navigation/snapshot steps. Research does not allow form interaction,
-   activate a source or replace the review and trial.
+   activate a source or replace setup review and the first source trial.
    Observed detail pages on saved source origins can be kept in the existing table
    as **Araştırma örneği** while personal criteria are still missing. These samples
    require a detail-page observation in the same turn, contain no action proposal,
@@ -29,15 +29,24 @@ appointment monitoring/booking and custom workflows.
    Progress and errors appear next to Send. **Agent ekranını aç** takes you directly
    to provider login or permission prompts.
 3. Review **Çalışma alanı profili**: goal, criteria, source URLs, workflow, personal facts,
-   action permission, interval, end date, daily action limit, timeout and browser
-   step budget. Sources should link directly to the relevant results where possible.
-4. Save the setup and run a trial. The trial opens actual source pages, reads them
+   action permission. Scan intervals are configured per source on Sources. Sources should link directly to the relevant results where possible.
+4. Save the setup and run once or enable a schedule. There is no workspace-wide
+   trial gate. Each source gets an automatic trial the first time it is dispatched.
+   That trial opens only its assigned source, reads it
    and can save sample results. It can search, filter, paginate and dismiss cookies
    through `browser_interact`. The agent is instructed not to send external actions
    during a trial; browser tools do not enforce that distinction.
-   Every configured source origin must have a real browser observation.
+   The assigned source must have a fresh browser or configured tool observation.
+   The agent tests search/filtering, pagination, detail reading and access, then
+   saves a source skill. Untested methods remain explicitly unverified. Pagination
+   requires different observations before and after a real page transition.
+   A successful trial
+   ends that source turn; its next scheduled turn performs the normal workflow.
+   Failed trials block only that source. Trial samples cannot trigger actions.
    The model must report access barriers as blocked, even if a login page is readable.
-5. Run once or enable a schedule. The app and computer must remain awake and open.
+5. Check each source’s trial and scheduling status on **Kaynaklar**. New sources
+   start with their own trial; existing source trials remain saved. The app and
+   computer must remain awake and open.
    Missed intervals produce one subsequent run, not a backlog. Up to three generic
    automations run at once. Job-search workers retain their existing limits.
 
@@ -51,6 +60,14 @@ directly in the terminal: while a provider is running, keystrokes go to its sess
 when idle, Enter sends the typed request as a new conversation turn. Provider
 settings save automatically and apply to the next launch. The optional conversation
 panel keeps messages and attachments available.
+Successive completed scans resume the conversation saved for that source, even
+when a different worker handles the next turn or the app has reopened. Each turn
+reads the current saved criteria, scan plan and progress; past completion and
+blocker reports do not establish the current result. Changed search scope or
+incompatible agent settings start a fresh conversation. Context renewal at the
+configured threshold, rejected history, a failed previous scan and **Yeniden başlat**
+also start fresh while preserving saved findings and scan progress. Source trials
+and new record tasks keep their separate conversation rules.
 System notifications announce completed runs and blockers when the app is not
 focused. Telegram is available for all workspaces. Its record actions use the same
 queue as the desktop, including verification of uncertain outcomes. Card fields
@@ -78,8 +95,8 @@ table conversation pauses scheduled work, as other setup conversations do.
 - **Hazırla, onayımı bekle:** prepare proposals. The user can approve an individual
   proposal; the next run can execute that exact proposal. Editing its URL or text
   removes that approval.
-- **Sınırlarım içinde uygula:** the worker can reserve and execute prepared actions
-  within the saved daily limit.
+- **Otomatik uygula:** the worker can reserve and execute prepared actions
+  under the saved source permission.
 
 All UI interaction uses `browser_interact` or the Jev decision tools in every mode.
 No result, approval or action reservation is required before a browser interaction.
@@ -88,9 +105,8 @@ The agent assesses authorization from user instructions, the saved mode and the
 assigned task. Tool availability does not itself authorize an external action.
 
 `reserve_automation_action` remains optional record bookkeeping for eligible saved
-proposals. It persists an attempt, counts it against the daily allowance and supports
-duplicate/outcome tracking. It does not grant browser access. Unreserved interactions
-are not counted in that allowance; the agent must respect the saved action limits.
+proposals. It persists an attempt and supports duplicate/outcome tracking. It does not grant browser access.
+Daily and total action quotas and workspace expiry dates are not used.
 `record_automation_outcome` verifies the recorded attempt against a fresh observation.
 Session/workspace isolation, cancellation, browser-step limits and timeouts remain
 enforced. Whether a page proves success remains the agent's responsibility.
@@ -98,8 +114,14 @@ enforced. Whether a page proves success remains the agent's responsibility.
 The separate browser mode gives each automation a persistent Chrome profile.
 Jev connects to the selected existing Chrome profile and uses the Jev configuration
 in Settings. Select the engine and Chrome profile in the original Agent settings
-panel. Changing either pauses the automation and requires a new reading trial.
-User login, MFA and access checks happen in the visible browser. Sources are task
+panel. Changing either pauses the automation. Changing the browser engine resets
+source trials; they run automatically when those sources are next dispatched.
+Existing-account login may use credentials already filled by the selected browser:
+Jev exposes `savedLogin.ready` and password-filled booleans without exposing passwords.
+The agent may click the observed login button once, including during trial or verification.
+Missing credentials, failed login and MFA require an evidence-backed question form;
+the agent cannot close a reported login blocker with only a summary. Passwords and
+verification codes are never requested in chat. Sources are task
 starting points, not a browser-origin allowlist. Task-relevant links and redirects
 can be followed without changing the plan; the agent assesses scope and authority.
 Read-only navigation may still cause a website to log page visits or serve redirects;
@@ -122,18 +144,21 @@ App-created automation directories use the same per-launch Codex folder-trust
 setting as background tasks. This avoids a hidden folder-trust prompt without
 changing provider permission modes or the user's global trust configuration.
 
-A successful trial verifies page reading and matching. It does not certify a portal's
+A successful trial saves learned methods with evidence and explicit unknowns.
+**Skill ve araçlar** shows the learned skill and its version history alongside the
+user's editable instructions. Later scans apply the current criteria using these
+methods and update changed sections after testing them. A trial does not certify a portal's
 booking flow, future availability, message delivery or payment support. Appointment
 automation defaults to observation; automatic booking requires user-selected action
 permission and a working site-specific flow. CAPTCHA and other access barriers are
 handed to the user. Payments and cancellation are outside the default template.
 
-Profile changes require a new review but preserve a successful trial or an explicit
-trial skip. The original trial run remains unchanged. Changing scheduling or action
-limits does not silently resume an automation. Blocked, failed and timed-out scheduled
+Profile changes require a new review but preserve trials for retained sources.
+The original trial runs remain unchanged. Legacy workspace-wide skips do not
+count as source evidence. Changing source scheduling does not silently resume an automation. Blocked, failed and timed-out scheduled
 runs suspend automatic retries. Editing a plan through chat pauses scheduling.
 Stopping or restarting during a reserved action preserves an uncertain outcome.
-An explicit goal-completed report ends scheduling; end dates also stop future runs.
+An explicit goal-completed report ends scheduling.
 
 ## Reusable templates
 
@@ -142,7 +167,8 @@ The template contains question definitions, workflow steps and table columns; it
 automation with empty answers and source lists. The user reviews workflow text for
 personal details before sharing it. Template export/import uses a bounded, validated
 `loop-template` JSON document, not executable code. Imported and saved templates
-default to observation and require a new setup review and trial for each instance.
+default to observation and require setup review. Each source is automatically
+trialled on its first turn in the new instance.
 
 Example templates can be imported from **Template’ler**:
 

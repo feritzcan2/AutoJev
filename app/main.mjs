@@ -1,4 +1,3 @@
-import {automationTrialReady} from './automation-trial.mjs';
 import {registerWorkspaceSupport} from './workspace-support-services.mjs';
 import {upgradeWorkspaces} from './workspace-upgrade.mjs';
 import {workspaceBrowserDirectory} from './workspace-paths.mjs';
@@ -86,7 +85,7 @@ async function boot(){
   rename:(id,name)=>automationDb.rename(id,name),remove:web.remove,browserDirectory:id=>workspaceBrowserDirectory(data,core.workspaces.get(id)),browserOptions:id=>({config:()=>jevSettings.config(),profile:core.workspaces.get(id).chromeProfile,lifecycle:{multiWorker:true}}),
   workers:{add:(id,input)=>web.runtime.add(id,input),start:(id,worker,state)=>web.runtime.startWorker(id,worker,state),restartState:(id,worker)=>web.runtime.restartState(id,worker),stop:(id,worker)=>web.runtime.stopWorker(id,worker),remove:(id,worker)=>web.runtime.remove(id,worker)},
   message:(id,text,worker)=>web.runtime.message(id,text,worker),snapshot:id=>web.snapshot(id),
-  start:async id=>{const a=automationDb.get(id);if(!automationTrialReady(a))return web.runtime.start(id,'trial');automationDb.enable(id);await web.runtime.tick();},stop:id=>web.runtime.pause(id),restart:id=>web.runtime.restart(id),settings:(id,input)=>web.save(id,input)
+  start:async id=>{automationDb.enable(id);await web.runtime.tick();},stop:id=>web.runtime.pause(id),restart:id=>web.runtime.restart(id),settings:(id,input)=>web.save(id,input)
  };
  services.push({...web,assertIdle(){if(web.runtime.active.size)throw Error('Önce çalışan otomasyonları durdur.');},stop:()=>{web.runtime.closed=true;},resume:()=>{web.runtime.closed=false;},activeRunIds:()=>[...web.runtime.active.values()].map(slot=>slot.run.id)});
  const support=await registerWorkspaceSupport({root,data,db:automationDb,runtime:web.runtime,agents,profiles,mcp,scheduler,handle,emit,dialog,shell,getWindow:()=>window,encryptSecret,decryptSecret,isQuitting:()=>quitting});services.push(support);

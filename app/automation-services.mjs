@@ -39,7 +39,7 @@ export function registerAutomationServices({root,data,handle,emit,validateSettin
  handle('workspace-answer',(id,question,value)=>runtime.answer(id,question,value));
  handle('automation-setup',id=>runtime.setup(id));
  handle('workspace-source-integrations',()=>sourceIntegrations);
- handle('workspace-source-instructions',async(id,url)=>{const source=db.sources(id).find(s=>s.url===url);if(!source)throw Error('Kaynak bulunamadı');return workspaceSourceInstructions(root,source);});
+ handle('workspace-source-instructions',async(id,url,version)=>{const source=db.sources(id).find(s=>s.url===url);if(!source)throw Error('Kaynak bulunamadı');return {...await workspaceSourceInstructions(root,source,{learnedSkill:db.sourceSkills.get(id,url,version)}),skillHistory:db.sourceSkills.history(id,url)};});
  handle('workspace-source-test',async(id,url)=>{const source=db.sources(id).find(s=>s.url===url);if(!source)throw Error('Kaynak bulunamadı');return runSourceTool(root,source,['search','--help'],{test:true});});
  handle('automation-source-save',(id,url,input)=>runtime.saveSource(id,url,input));
  handle('automation-sources-interval',(id,intervalMinutes)=>runtime.saveSourcesInterval(id,intervalMinutes));
@@ -56,7 +56,7 @@ export function registerAutomationServices({root,data,handle,emit,validateSettin
  handle('automation-review',id=>{const a=db.review(id);changed(id);return a;});
  handle('automation-skip-trial',id=>{if(runtime.slots(id).length)throw Error('Önce çalışan otomasyonu durdur');const a=db.skipTrial(id);changed(id);return a;});
  handle('automation-message',(id,text)=>runtime.message(id,text));
- handle('automation-run',async(id,kind)=>{if(!['trial','run'].includes(kind))throw Error('Geçersiz çalışma');return kind==='run'?runtime.runOnce(id):runtime.start(id,kind);});
+ handle('automation-run',async(id,kind)=>{if(!['trial','run'].includes(kind))throw Error('Geçersiz çalışma');return runtime.runOnce(id);});
  handle('automation-record-run',(id,itemId,kind,input)=>runtime.runRecord(id,itemId,kind,input));
  handle('automation-approve',(id,itemId)=>{const item=db.approve(id,itemId);changed(id);return item;});
  handle('automation-dismiss',(id,itemId)=>runtime.dismissRecord(id,itemId));

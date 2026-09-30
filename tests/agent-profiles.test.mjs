@@ -46,7 +46,7 @@ test('interviews resume their conversation; trials start fresh and require a cur
   const worker=await launchAutomationWorker({data,db,run,automation:a,signal:{aborted:false},browser:{},report:()=>{},onEvent:()=>{},agents,mcp});await worker.close();
  }
  assert.equal(launches[0].resume,true);
- for(const launch of launches.slice(1)){assert.equal(launch.resume,false);assert.match(launch.prompt,/Use browser_open to open each configured source/);assert.match(launch.prompt,/Previous runs are historical context/);assert.match(launch.prompt,/site_wait response is current application evidence/);assert.match(launch.prompt,/Use browser_interact to handle cookie overlays, search, filter and paginate/);assert.match(launch.prompt,/actual tool call returns a permission error/);assert.doesNotMatch(launch.prompt,/Do not use other browser tools/);}
+ for(const launch of launches.slice(1)){assert.equal(launch.resume,false);assert.match(launch.prompt,/run_workspace_source_tool before any browser discovery/);assert.match(launch.prompt,/Previous runs are historical context/);assert.match(launch.prompt,/site_wait response is current application evidence/);assert.match(launch.prompt,/When the selected method or its configured fallback uses the browser/);assert.match(launch.prompt,/actual tool call returns a permission error/);assert.doesNotMatch(launch.prompt,/Do not use other browser tools/);}
 });
 for(const provider of ['claude','codex'])test(`${provider}: setup launch resumes native history until model or permission changes`,async t=>{
  const {core,db,a}=fixture(t),dir=await mkdtemp(path.join(tmpdir(),'loop-setup-resume-')),launches=[];

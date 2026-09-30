@@ -6,8 +6,8 @@ import {observeFormFrame,actFormFrame,usableFormFrame} from './jev-frame-actions
 import {captureCookieFrameTargets,clickCookieFrameTarget} from './jev-cookie-frame.mjs';
 import {presentRankObservation} from './jev-rank-observation.mjs';
 import {documentObservation,waitForDocument} from './jev-document.mjs';
-import {uploadDetails,validateUploadPurpose} from './jev-upload.mjs';
-import {capturePasswordFields,fillAccountPassword} from './jev-credentials.mjs';
+import {uploadDetails,validateUploadPurpose,isUploadTrigger} from './jev-upload.mjs';
+import {capturePasswordFields,fillAccountPassword,savedLoginState} from './jev-credentials.mjs';
 import {captureEmbeddedForms,embeddedFormTarget} from './jev-frames.mjs';
 import {takeUploadAttempt} from './upload-budget.mjs';
 import {assertTaskTool,assertRankAction,rankActionAllowed} from './task-scope.mjs';
@@ -431,7 +431,7 @@ export class JevBrowser {
       const files=await slot.page.locator('input[type=file]').evaluateAll(nodes=>nodes.map(e=>({label:e.getAttribute('aria-label')||[...(e.labels??[])].map(l=>l.innerText).join(' ')||e.name||'File upload',files:[...(e.files??[])].map(f=>f.name)})));
       await this.onProgress(progressJobId,{tabId:slot.id,url:observed.url,fields:fillFields.map(({label,type,value})=>({label,type,value})),controls:(observed.controls??[]).map(({node,...control})=>({...control,...Object.fromEntries(Object.entries(observed.actions.find(a=>a.node===node)??{}).filter(([key])=>['checked','pressed'].includes(key)))})),files},slot.owner);
     }
-    return {passwordFields:await capturePasswordFields(slot,slot.owner),accountCredentials:this.accountVault?.status()??{configured:false},browser:'Jev Chrome',tabId:slot.id,url:observed.url,title:observed.title,text:observed.text,verification,embeddedForms:await captureEmbeddedForms(slot),links,elements:compactElements(actionSpace(observed.actions).elements),clickTargets:[...captureClickTargets(slot,slot.owner),...await captureCookieFrameTargets(slot),...await captureVerificationTargets(slot)],...captureControls(slot,slot.owner),fillFields,uploads,verificationDiagnostics:slot.verificationDiagnostics?.length?slot.verificationDiagnostics:undefined,history:slot.history.slice(-4),omittedActions:observed.omitted_actions};
+    return {savedLogin:await slot.page.evaluate(savedLoginState),passwordFields:await capturePasswordFields(slot,slot.owner),accountCredentials:this.accountVault?.status()??{configured:false},browser:'Jev Chrome',tabId:slot.id,url:observed.url,title:observed.title,text:observed.text,verification,embeddedForms:await captureEmbeddedForms(slot),links,elements:compactElements(actionSpace(observed.actions).elements),clickTargets:[...captureClickTargets(slot,slot.owner),...await captureCookieFrameTargets(slot),...await captureVerificationTargets(slot)],...captureControls(slot,slot.owner),fillFields,uploads,verificationDiagnostics:slot.verificationDiagnostics?.length?slot.verificationDiagnostics:undefined,history:slot.history.slice(-4),omittedActions:observed.omitted_actions};
   }
   async fresh(slot,page,action){
     if(action?.kind==='scroll'){
@@ -461,6 +461,9 @@ export class JevBrowser {
     if(slot.verification&&!continuation&&action?.kind==='click'&&/submit|send application|apply now|başvur|gönder/i.test(action.label??''))return {...verificationHandoff(slot),message:'Site doğrulaması çözümlenmedi. Başvuruyu tekrar gönderme; mevcut doğrulama adımını veya belirsiz sonucu işle.'};
     if(!await this.fresh(slot,observed,action))return {...await this.observe(slot),status:'stale',executed:false,message:'Sayfa değişti. Yeni bir Jev kararı al.'};
     if(!action)return {...await this.observe(slot),status:operation.toLowerCase(),executed:false,verified:false};
+    if(action.kind==='click')for(const upload of slot.uploads?.values()??[]){
+      if(upload.owner===slot.owner&&await slot.page.evaluate(isUploadTrigger,{input:upload.input,node:action.node}).catch(()=>false))return {...await this.observe(slot),status:'upload_required',executed:false,message:'Dosya seçici açılmadı. Güncel uploads listesindeki uploadId ve çalışma alanındaki belge yolu ile browser_upload_document (doğrudan Jev: browser_jev_upload) kullan. Normal tıklamayı tekrarlama.'};
+    }
     // A final send must have a durable submitting checkpoint BEFORE mouse input.
     // Do not classify ordinary Apply links, Next, search or login as a final send.
     let finalSend=action.kind==='click'&&!['link','tab'].includes(action.role)&&/^(submit(?: (?:my |your )?application)?|send application|apply|bewerbung (?:absenden|senden)|jetzt bewerben|başvuruyu gönder|başvuruyu tamamla)$/i.test((action.label??'').replace(/\s+/g,' ').trim());
@@ -727,7 +730,10 @@ export class JevBrowser {
           }
         }
         if(name==='browser_jev_inspect_form'&&slot.verification?.handoff)return {content:[{type:'text',text:JSON.stringify(verificationHandoff(slot))}]};
-        if(name==='browser_jev_inspect_form')return {content:[{type:'text',text:JSON.stringify({browser:'Jev Chrome',tabId:slot.id,url:slot.page.url(),...await inspectApplicationForm(slot.page,slot)})}]};
+        if(name==='browser_jev_inspect_form'){
+          const observation=await this.observe(slot);
+          return {content:[{type:'text',text:JSON.stringify({browser:'Jev Chrome',tabId:slot.id,url:slot.page.url(),uploads:observation.uploads,...await inspectApplicationForm(slot.page,slot)})}]};
+        }
         if(['browser_jev_reveal','browser_jev_scroll','browser_jev_select_option','browser_jev_list_options'].includes(name)){
           const result=await navigateObserved(slot,name,args,owner,this.reader);
           value={...await this.observe(slot),...result};

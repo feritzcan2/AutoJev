@@ -48,3 +48,11 @@ test('a real live login barrier is saved with its evidence and ordinary question
  assert.equal(q.accessCheck.url,'https://portal.test/login');assert.equal(q.accessCheck.evidence,'Create a new account');assert.ok(q.accessCheck.checkedAt);
  const fact=await f.call('ask_workspace_question',{text:'Ne zaman başlayabilirsiniz?'});assert.equal(fact.accessCheck,undefined);
 });
+
+test('a login blocker must create an actionable question before closing the run',async t=>{
+ const f=fixture(t),read=await f.call('browser_open',{url:'https://portal.test/login'});
+ await assert.rejects(f.call('finish_automation_run',{status:'blocked',summary:'Please sign in to continue'}),/ask_workspace_question/);
+ const question=await f.call('ask_workspace_question',{text:'Hesabınıza giriş yapın.',accessCheck:{...proof,snapshotId:read.snapshot.id}});
+ assert.equal(question.fields[0].id,'loggedIn');assert.equal(question.fields[0].type,'boolean');
+ await f.call('finish_automation_run',{status:'blocked',summary:'Please sign in to continue'});
+});

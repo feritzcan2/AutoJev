@@ -111,6 +111,14 @@ export function automationResultsTable(root,{button,badge,time,api,refresh,statu
    if(openIds.has(result.id))actions.insertBefore(goToTab,open);
    recordActions(actions,result,data.definition,async action=>{try{await api.workspaceTransition(data.automation.id,result.id,action);await refresh();}catch(error){window.alert(error.message);}});
    const recordAction=result.recordAction;
+   if(recordAction?.retryOperation){
+    const op=recordAction.retryOperation,retry=button(requesting?'Sıraya ekleniyor…':'Tekrar dene',async()=>{
+     if(op.review){showReview(result);return;}
+     try{await sendOperation(result,op.kind,op.direct?{direct:true}:{});}catch(error){window.alert(error.message);}
+    },'record-retry');
+    retry.dataset.recordRetry=result.id;retry.disabled=busy||requesting||op.disabled;
+    retry.title=op.reason??(op.kind==='verify'?'Yeniden göndermeden önce işlemin sonucunu doğrula.':'Son yarım kalan işlemi yeniden dene.');state.append(retry);
+   }
    if(recordAction?.directOperation&&!recordAction.task){
     const op=recordAction.directOperation,apply=button(requesting?'Sıraya ekleniyor…':op.label,async()=>{try{await sendOperation(result,'execute',{direct:true});}catch(error){window.alert(error.message);}},'primary');
     apply.dataset.recordDirect='execute';apply.disabled=busy||requesting||op.disabled;

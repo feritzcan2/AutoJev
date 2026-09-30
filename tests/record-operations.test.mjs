@@ -12,7 +12,7 @@ const source='https://example.test/list',settle=()=>new Promise(r=>setImmediate(
 function fixture(t,template='job-search',{onRunFinished}={}){
  const store=new WorkspaceDatabase(':memory:'),db=new AutomationStore(store),definition=db.template(template);
  const a=db.create(template,{goal:'Find a suitable result',criteria:Object.fromEntries(definition.fields.filter(f=>f.required).map(f=>[f.id,'Known criteria'])),sources:[source]});
- db.review(a.id);db.skipTrial(a.id);
+ db.review(a.id);const trial=db.begin(a.id,'trial');for(const url of a.sources)db.observe(a.id,trial.id,url,'Observed source');db.finish(a.id,trial.id,'completed','Source checked');
  const seed=db.begin(a.id,'run'),item=db.record(a.id,seed.id,{key:source+'/1',url:source+'/1',title:'Result',summary:'Observed facts'});
  db.finish(a.id,seed.id,'completed','Saved');const launches=[];
  const runtime=new WebTasks(db,{onRunFinished,launch:async run=>{launches.push(run);return {close:async()=>{}};}});
@@ -26,6 +26,29 @@ function fixture(t,template='job-search',{onRunFinished}={}){
  };
  return {store,db,id:a.id,item,runtime,launches,flow,finish,prepare};
 }
+
+for(const kind of ['prepare','execute','verify'])test(`retry offers the stopped ${kind} operation and disappears while queued`,async t=>{
+ const f=fixture(t);let item=f.item;
+ if(kind!=='prepare')item=await f.prepare();
+ await f.runtime.runRecord(f.id,item.id,kind==='verify'?'execute':kind,kind==='prepare'?{}:{direct:true});await settle();
+ const run=f.launches.at(-1);
+ if(kind==='verify')f.db.reserve(f.id,run.id,item.id);
+ await f.finish(run,'failed');
+ const retry=f.db.snapshot(f.id).results.find(r=>r.id===item.id).recordAction.retryOperation;
+ assert.equal(retry.kind,kind);assert.equal(retry.direct,kind==='execute');assert.equal(retry.disabled,false);assert.equal(retry.review,false);
+ await f.runtime.runRecord(f.id,item.id,retry.kind,retry.direct?{direct:true}:{});await settle();
+ assert.equal(f.db.snapshot(f.id).results.find(r=>r.id===item.id).recordAction.retryOperation,null);
+});
+
+test('retry of a reviewed execution opens review again and pending answers prevent retry',async t=>{
+ const f=fixture(t),item=await f.prepare();
+ await f.runtime.runRecord(f.id,item.id,'execute',{digest:item.digest});await settle();await f.finish(f.launches.at(-1),'blocked');
+ const retry=()=>f.db.snapshot(f.id).results.find(r=>r.id===item.id).recordAction.retryOperation;
+ assert.equal(retry().review,true);assert.equal(retry().direct,false);
+ f.db.askQuestion(f.id,{recordId:item.id,text:'Required answer'});
+ assert.equal(retry().disabled,true);assert.match(retry().reason,/soruları yanıtla/);
+ f.db.putResult({...f.db.result(f.id,item.id),status:'completed'});assert.equal(retry(),null);
+});
 
 test('template labels, operation instructions and success criteria round-trip through export/import',()=>{
  for(const [id,label]of [['job-search','Başvur'],['housing','Mesaj gönder'],['appointment','Rezervasyon yap'],['custom','Uygula']]){
@@ -178,11 +201,9 @@ test('source observations preserve existing drafts and do not overwrite an activ
  const repeat=f.db.record(f.id,scan.id,{key:f.item.key,url:f.item.url,title:f.item.title,summary:'Must not overwrite active operation'});assert.equal(repeat.duplicate,true);assert.equal(repeat.summary,'Updated listing facts');
 });
 
-for(const mode of ['observe','prepare','auto'])test(`manual consent remains exact in ${mode} mode and cannot bypass limits`,async t=>{
+for(const mode of ['observe','prepare','auto'])test(`manual consent remains exact in ${mode} mode after proposal edits`,async t=>{
  const f=fixture(t),prepared=await f.prepare();f.db.put({...f.db.get(f.id),mode});
  await f.runtime.runRecord(f.id,f.item.id,'execute',{digest:prepared.digest});await settle();const run=f.launches.at(-1);
- f.db.put({...f.db.get(f.id),maxActionsTotal:0});assert.throws(()=>f.db.reserve(f.id,run.id,f.item.id),/Toplam/);
- f.db.put({...f.db.get(f.id),maxActionsTotal:null,maxActionsPerDay:0});assert.throws(()=>f.db.reserve(f.id,run.id,f.item.id),/Günlük/);
  f.db.put({...f.db.get(f.id),maxActionsPerDay:10});
  f.db.record(f.id,run.id,{key:f.item.key,url:f.item.url,title:f.item.title,summary:'Changed requirement',proposal:'Changed document'});
  assert.throws(()=>f.db.reserve(f.id,run.id,f.item.id),/yeniden onay/);await f.finish(run);
@@ -290,7 +311,7 @@ test('record context does not replay another record login blocker from the same 
  assert.equal(context.previousRuns.some(r=>r.id===old.id),false);
 });
 
-for(const template of ['job-search','housing','appointment','custom'])test(`direct execution needs no prior preparation, preserves limits and records a verified outcome (${template})`,async t=>{
+for(const template of ['job-search','housing','appointment','custom'])test(`direct execution needs no prior preparation, preserves authorization and records a verified outcome (${template})`,async t=>{
  const f=fixture(t,template),originalMode=f.db.get(f.id).mode;
  const initial=f.db.snapshot(f.id).results[0];assert.equal(initial.status,'found');assert.equal(initial.recordAction.directOperation.disabled,false);
  await assert.rejects(f.runtime.runRecord(f.id,f.item.id,'execute'),/taslağını/);
@@ -308,15 +329,13 @@ for(const template of ['job-search','housing','appointment','custom'])test(`dire
  await assert.rejects(f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true}),/yeniden gönderilemez/);
 });
 
-test('direct execution is explicit, record-scoped, and still enforces total and daily limits',async t=>{
+test('direct execution is explicit, record-scoped, and still requires the current setup revision',async t=>{
  const f=fixture(t),{enqueueRecordOperation}=await import('../app/record-operations.mjs');
  f.db.put({...f.db.get(f.id),mode:'auto'});
  assert.throws(()=>enqueueRecordOperation(f.runtime,f.id,f.item.id,'execute',{manual:false,direct:true}),/kullanıcı isteği/);
  await f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true});await settle();const run=f.launches.at(-1);
  const other=f.db.putResult({...f.item,id:'not-assigned',key:'not-assigned'});assert.throws(()=>f.db.reserve(f.id,run.id,other.id),/ait değil/);
  f.db.record(f.id,run.id,{key:f.item.key,url:f.item.url,title:f.item.title,summary:'Checked',proposal:'Verified form'});
- f.db.put({...f.db.get(f.id),maxActionsTotal:0});assert.throws(()=>f.db.reserve(f.id,run.id,f.item.id),/Toplam işlem sınır/);
- f.db.put({...f.db.get(f.id),maxActionsTotal:null,maxActionsPerDay:0});assert.throws(()=>f.db.reserve(f.id,run.id,f.item.id),/Günlük işlem sınır/);
  f.db.put({...f.db.get(f.id),maxActionsPerDay:10,revision:f.db.get(f.id).revision+1});assert.throws(()=>f.db.reserve(f.id,run.id,f.item.id),/yeniden onay/);
 });
 
@@ -370,4 +389,84 @@ test('explicit destination changes invalidate reviewed consent and cannot target
  const other=f.db.putResult({...f.item,id:'foreign-record',key:source+'/other',url:source+'/other'});
  for(const change of [{recordId:other.id},{key:other.key},{url:other.url},{actionUrl:other.url}])assert.throws(()=>f.db.record(f.id,run.id,{...input,...change}),/ait değil/);
  assert.equal(f.db.result(f.id,other.id).proposal,'');assert.equal(f.db.result(f.id,f.item.id).actionUrl,form);
+});
+
+test('rediscovering a listing keeps its form destination and does not create a duplicate',async t=>{
+ const f=fixture(t);await f.runtime.runRecord(f.id,f.item.id,'prepare');await settle();const run=f.launches.at(-1),form='https://forms.test/apply/rediscovered';
+ f.db.observe(f.id,run.id,form,'Form');
+ const saved=f.db.record(f.id,run.id,{recordId:f.item.id,key:f.item.key,url:f.item.url,actionUrl:form,title:f.item.title,summary:'Ready',proposal:'Saved answers'});
+ await f.finish(run);
+ const scan=f.db.begin(f.id,'run'),rediscovered=f.db.record(f.id,scan.id,{key:f.item.key,url:f.item.url,title:f.item.title,summary:'Found again'});
+ assert.equal(rediscovered.id,f.item.id);assert.equal(rediscovered.actionUrl,form);assert.equal(rediscovered.digest,saved.digest);assert.equal(f.db.results(f.id,{all:true}).length,1);
+ f.db.finish(f.id,scan.id,'completed','Done');
+});
+
+for(const template of ['job-search','housing','appointment','custom'])test(`${template}: legacy action quotas and expiry cannot block authorized execution`,async t=>{
+ const f=fixture(t,template);
+ // Simulate a database written by a pre-removal release, bypassing new writes.
+ f.db.db.prepare("UPDATE automations SET data=json_set(data,'$.maxActionsTotal',0,'$.maxActionsPerDay',0,'$.endAt',1) WHERE id=?").run(f.id);
+ assert.equal(f.db.get(f.id).maxActionsTotal,undefined);assert.equal(f.db.get(f.id).maxActionsPerDay,undefined);assert.equal(f.db.get(f.id).endAt,undefined);
+ await f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true});await settle();const run=f.launches.at(-1);
+ const context=await f.flow(run).call(f.id,run.id,'get_automation_context',{});
+ for(const key of ['maxActionsTotal','maxActionsPerDay','endAt'])assert.equal(key in context.automation,false);
+ f.db.record(f.id,run.id,{key:f.item.key,url:f.item.url,title:f.item.title,summary:'Verified',proposal:'Authorized action'});
+ assert.equal(f.db.reserve(f.id,run.id,f.item.id).reserved,true);
+ assert.throws(()=>f.db.reserve(f.id,run.id,f.item.id));
+});
+
+for(const template of ['job-search','housing','appointment'])test(`${template}: positive not-submitted proof resumes the authorized record in a separate execution`,async t=>{
+ const f=fixture(t,template),draft=await f.prepare();
+ await f.runtime.runRecord(f.id,f.item.id,'execute',{digest:draft.digest});await settle();const execute=f.launches.at(-1);
+ f.db.reserve(f.id,execute.id,f.item.id);await f.runtime.finish(f.id,'blocked','Upload interrupted',execute.workerId);
+ await f.runtime.runRecord(f.id,f.item.id,'verify');await settle();const verify=f.launches.at(-1);
+ const quote=`${f.item.url} — Draft`,page={url:f.item.url,text:quote};f.db.observe(f.id,verify.id,page.url,quote);
+ const result=f.db.resolve(f.id,verify.id,f.item.id,{status:'not_submitted',url:page.url,evidence:quote,notSubmittedProof:{kind:'draft',quote,recordEvidence:f.item.url}},page);
+ assert.equal(result.status,'prepared');assert.equal(result.notSubmitted.attemptRunId,execute.id);assert.equal(f.db.run(verify.id).actionId,null);
+ assert.throws(()=>f.db.reserve(f.id,verify.id,f.item.id));await f.finish(verify);await f.runtime.tick();await settle();
+ const resumed=f.launches.at(-1);assert.notEqual(resumed.id,verify.id);assert.equal(resumed.recordOperation,'execute');assert.equal(resumed.recordId,f.item.id);assert.equal(resumed.request.digest,draft.digest);
+ assert.equal(f.db.reserve(f.id,resumed.id,f.item.id).reserved,true);
+});
+
+test('absence of confirmation, stale identity and foreign site cannot release uncertainty',async t=>{
+ const f=fixture(t),draft=await f.prepare();await f.runtime.runRecord(f.id,f.item.id,'execute',{digest:draft.digest});await settle();const execute=f.launches.at(-1);
+ f.db.reserve(f.id,execute.id,f.item.id);await f.runtime.finish(f.id,'blocked','Unknown outcome',execute.workerId);
+ await f.runtime.runRecord(f.id,f.item.id,'verify');await settle();const verify=f.launches.at(-1);
+ for(const [quote,identity,url,loading] of [
+  [`${f.item.url} My Experience. Upload a file. No success confirmation.`,f.item.url,f.item.url,false],
+  ['https://example.test/other — Draft','https://example.test/other',f.item.url,false],
+  [`${f.item.url} — Draft`,f.item.url,'https://foreign.test/',false],
+  [`${f.item.url} — Draft`,f.item.url,f.item.url,true],
+ ]){
+  f.db.observe(f.id,verify.id,url,quote);
+  assert.throws(()=>f.db.resolve(f.id,verify.id,f.item.id,{status:'not_submitted',url,evidence:quote,notSubmittedProof:{kind:'draft',quote,recordEvidence:identity}},{url,text:quote,readiness:{loading}}));
+  assert.equal(f.db.result(f.id,f.item.id).status,'uncertain');
+ }
+});
+
+for(const change of ['proposal','revision','stop'])test(`not-submitted recovery does not revive authority after ${change}`,async t=>{
+ const f=fixture(t),draft=await f.prepare();await f.runtime.runRecord(f.id,f.item.id,'execute',{digest:draft.digest});await settle();const execute=f.launches.at(-1);
+ f.db.reserve(f.id,execute.id,f.item.id);await f.runtime.finish(f.id,'blocked','Unknown outcome',execute.workerId);
+ await f.runtime.runRecord(f.id,f.item.id,'verify');await settle();const verify=f.launches.at(-1),quote=`${f.item.url} — Draft`;
+ f.db.observe(f.id,verify.id,f.item.url,quote);f.db.resolve(f.id,verify.id,f.item.id,{status:'not_submitted',url:f.item.url,evidence:quote,notSubmittedProof:{kind:'draft',quote,recordEvidence:f.item.url}},{url:f.item.url,text:quote});
+ await f.finish(verify);const before=f.launches.length;
+ if(change==='proposal')f.db.putResult({...f.db.result(f.id,f.item.id),digest:'changed',proposal:'Changed commitment'});
+ if(change==='revision')f.db.put({...f.db.get(f.id),revision:f.db.get(f.id).revision+1});
+ if(change==='stop')await f.runtime.pause(f.id);
+ await f.runtime.tick();await settle();assert.equal(f.launches.length,before);assert.equal(f.db.result(f.id,f.item.id).status,'prepared');
+});
+
+test('not-submitted tool rechecks the live page and does not trust an earlier draft snapshot',async t=>{
+ const f=fixture(t),draft=await f.prepare();await f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true});await settle();const execute=f.launches.at(-1);
+ f.db.reserve(f.id,execute.id,f.item.id);await f.runtime.finish(f.id,'blocked','Unknown outcome',execute.workerId);
+ await f.runtime.runRecord(f.id,f.item.id,'verify');await settle();const verify=f.launches.at(-1);
+ const quote=`${f.item.url} — Draft`;let text=quote;
+ const browser={call:async()=>({content:[{type:'text',text:`### Page\n- Page URL: ${f.item.url}\n${text}`}]})};
+ const flow=automationWorkflow({db:f.db,run:verify,signal:{aborted:false},browser,report:(...args)=>f.runtime.report(...args)});
+ let observed=await flow.call(f.id,verify.id,'browser_read',{});
+ const args={itemId:f.item.id,status:'not_submitted',url:f.item.url,evidence:quote,notSubmittedProof:{snapshotId:observed.snapshot.id,kind:'draft',quote,recordEvidence:f.item.url}};
+ text=`${f.item.url} — Submitted`;
+ await assert.rejects(flow.call(f.id,verify.id,'record_automation_outcome',args),/kanıt/);assert.equal(f.db.result(f.id,f.item.id).status,'uncertain');
+ text=quote;observed=await flow.call(f.id,verify.id,'browser_read',{});args.notSubmittedProof.snapshotId=observed.snapshot.id;
+ assert.equal((await flow.call(f.id,verify.id,'record_automation_outcome',args)).status,'prepared');
+ await f.finish(verify);await f.runtime.tick();await settle();assert.equal(f.launches.at(-1).request.direct,true);
 });

@@ -21,6 +21,18 @@ try{
  r=await call('browser_jev_fill_account_password',args);assert.equal(r.passwordFilled,true);assert.ok(!JSON.stringify(r).includes(secret));
  assert.equal(await page.locator('input[type=password]').first().inputValue(),secret);assert.equal(await page.locator('input[type=password]').last().inputValue(),secret);assert.equal(await page.evaluate(()=>window.sends),0);
  const inspect=await call('browser_jev_inspect_form',{tabId});assert.ok(!JSON.stringify(inspect).includes(secret));
+ // Saved login exposes only readiness; signup never qualifies.
+ assert.equal((await call('browser_jev_observe',{tabId})).savedLogin,null);
+ await page.setContent('<form><label>Email Address<input type="text" value="candidate@example.com"></label><label>Password<input type="password" autocomplete="current-password"></label><button type="button" onclick="window.loginClicks=(window.loginClicks||0)+1">Sign In</button></form>');
+ o=await call('browser_jev_observe',{tabId});assert.equal(o.savedLogin.ready,false);assert.equal(o.passwordFields[0].filled,false);
+ await page.locator('input[type=password]').fill(secret);
+ o=await call('browser_jev_observe',{tabId});assert.equal(o.savedLogin.ready,true);assert.equal(o.passwordFields[0].filled,true);assert.ok(!JSON.stringify(o).includes(secret));
+ const signIn=o.clickTargets.find(t=>t.label==='Sign In');assert.ok(signIn);
+ await call('browser_jev_click',{tabId,targetId:signIn.targetId});assert.equal(await page.evaluate(()=>window.loginClicks),1);
+ await page.locator('input[type=text]').fill('');o=await call('browser_jev_observe',{tabId});assert.equal(o.savedLogin.ready,false);
+ await page.locator('input[type=text]').fill('candidate@example.com');
+ await page.evaluate(()=>{const otp=document.createElement('input');otp.autocomplete='one-time-code';document.querySelector('form').append(otp);});
+ o=await call('browser_jev_observe',{tabId});assert.equal(o.savedLogin.ready,false);assert.equal(o.savedLogin.requiresUser,true);
  // Text email fields (Workday-style), including associated labels and shadow roots.
  for(const emailField of ['<label>Email Address<input type="text" value="candidate@example.com"></label>','<span id="email-label">Email address</span><input aria-labelledby="email-label" value="candidate@example.com">']){
   await page.setContent(`<form>${emailField}<input type="password"></form>`);

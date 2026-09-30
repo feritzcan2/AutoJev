@@ -11,7 +11,7 @@ const settings={provider:'codex',model:'selected',reasoning:'high',permission:'b
 const settle=()=>new Promise(r=>setImmediate(r));
 function fixture(t){
  const store=new WorkspaceDatabase(':memory:'),db=new AutomationStore(store),a=db.create('custom',{goal:'Find',criteria:Object.fromEntries(db.template('custom').fields.filter(f=>f.required).map(f=>[f.id,'Known'])),sources:['https://example.test']});
- db.review(a.id);db.skipTrial(a.id);
+ db.review(a.id);const trial=db.begin(a.id,'trial');for(const url of a.sources)db.observe(a.id,trial.id,url,'Observed source');db.finish(a.id,trial.id,'completed','Source checked');
  const seed=db.begin(a.id,'run'),item=db.record(a.id,seed.id,{key:'one',url:'https://example.test/one',title:'One',summary:'Facts'});
  db.finish(a.id,seed.id,'completed','Saved');const launches=[];
  const runtime=new WebTasks(db,{launch:async run=>{launches.push(run);return {close:async()=>{}};}});
@@ -64,7 +64,7 @@ test('setup answers use their original conversation and consume it only once',as
  db.finish(a.id,next.id,'blocked','Done');assert.equal(db.begin(a.id,'interview').continuation,undefined);
 });
 
-test('a failed source retry resumes its own last conversation across workers, never a different batch',async t=>{
+test('a failed source retry and later scans resume the source conversation instead of unrelated worker history',async t=>{
  const f=fixture(t);await f.runtime.runOnce(f.a.id);await settle();const first=f.launches.at(-1);
  f.history(first).saveConversation(f.a.id,'codex','source-thread',settings);
  f.db.putRun({...f.db.run(first.id),resumeContext:{tabId:'results-page',url:first.sourceUrl}});
@@ -73,8 +73,10 @@ test('a failed source retry resumes its own last conversation across workers, ne
  await f.runtime.tick();await settle();const next=f.launches.at(-1);
  assert.notEqual(next.id,first.id);assert.equal(next.taskId,first.taskId);assert.equal(next.continuation.reason,'task_retry');assert.equal(next.continuation.runId,first.id);
  assert.equal(selectResume(f.history(next),f.a.id,settings),'source-thread');assert.equal(next.continuation.browserContext.tabId,'results-page');
+ f.history(next).saveConversation(f.a.id,'codex','source-thread',settings);
  await f.runtime.finish(f.a.id,'completed','Done',next.workerId);
- await f.runtime.runSource(f.a.id,first.sourceUrl);await settle();assert.equal(f.launches.at(-1).continuation,undefined);
+ await f.runtime.runSource(f.a.id,first.sourceUrl);await settle();const scan=f.launches.at(-1);
+ assert.equal(scan.continuation.reason,'source_scan');assert.equal(scan.continuation.runId,next.id);assert.equal(selectResume(f.history(scan),f.a.id,settings),'source-thread');
 });
 
 test('shutdown recovery resumes record preparation but never execution after an uncertain send',async t=>{

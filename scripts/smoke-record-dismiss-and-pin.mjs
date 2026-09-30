@@ -25,7 +25,7 @@ try{
   const {automationResultsTable}=await import('../src/automation-results.js');
   const host=document.createElement('section'),head=document.createElement('div'),root=document.createElement('div');host.style.cssText='grid-column:1 / -1;min-width:0;padding:24px';host.append(head,root);document.body.replaceChildren(host);
   const button=(text,click)=>{const e=document.createElement('button');e.textContent=text;e.onclick=click;return e;};
-  const table=automationResultsTable(root,{button,badge:()=>document.createElement('span'),time:String,api:{workspaceTabs:async()=>window.pinFixture.tabs},refresh:()=>{}});
+  const table=automationResultsTable(root,{button,badge:()=>document.createElement('span'),time:String,api:{workspaceTabs:async()=>window.pinFixture.tabs,automationRecordRun:async(...args)=>{window.pinFixture.calls.push(args);}},refresh:()=>{}});
   const record=(id,title,at,state)=>({id,title,url:'https://example.test/'+id,status:'found',updatedAt:at,recordAction:state?{task:{state,kind:'prepare',at}}:{}});
   const records=[record('working','Zulu working',1,'running'),record('reporting','Alpha reporting',2,'reported'),{...record('waiting','A waiting',0),recordAction:{question:{id:'q',text:'A pending question'}}},...Array.from({length:14},(_,i)=>record('idle-'+i,'Idle '+i,1000+i))];
   window.pinFixture={table,tabs:[],snapshot:{automation:{id:'test',browserMode:'jev',table:{columns:[{key:'source',label:'Kaynak',type:'text'},{key:'title',label:'Pozisyon',type:'text'}]}},definition:{records:{states:[],actions:[]}},results:records}};
@@ -65,5 +65,18 @@ try{
  await page.locator('[data-result-sort=title]').click();assert.deepEqual((await ids()).slice(0,3),['waiting','working','reporting']);
  await page.evaluate(()=>{for(const r of window.pinFixture.snapshot.results)r.recordAction={};window.pinFixture.table.update(window.pinFixture.snapshot,false);});
  assert.equal((await ids())[1],'idle-13','Completed work returns to the chosen sort order');
+ await page.evaluate(()=>{
+  const f=window.pinFixture;f.calls=[];
+  f.snapshot.results=['prepare','execute','verify'].map((kind,i)=>({id:kind,title:kind,url:'https://example.test/'+kind,status:kind==='verify'?'uncertain':'prepared',updatedAt:i+1,recordAction:{lastTask:{kind,state:'blocked',at:i+2,summary:'Stopped'},retryOperation:{kind,direct:kind==='execute',disabled:false}}}));
+  f.table.update(f.snapshot,false);
+ });
+ for(const kind of ['prepare','execute','verify']){
+  const retry=page.locator(`[data-record-retry="${kind}"]`);
+  assert.equal(await retry.isVisible(),true,'Retry is visible without opening the row menu');
+  await retry.click();
+ }
+ assert.deepEqual(await page.evaluate(()=>window.pinFixture.calls),[['test','prepare','prepare',{}],['test','execute','execute',{direct:true}],['test','verify','verify',{}]]);
+ await page.evaluate(()=>{const f=window.pinFixture;f.snapshot.results[0].recordAction.retryOperation.disabled=true;f.snapshot.results[0].recordAction.retryOperation.reason='Önce soruyu yanıtla';f.table.update(f.snapshot,false);});
+ assert.equal(await page.locator('[data-record-retry="prepare"]').isDisabled(),true);
  console.log('RECORD_DISMISS_AND_WAITING_FIRST_UI_PASS',data);
 }finally{await app.close();}

@@ -14,8 +14,10 @@ bağlantılarını kullanır. Diğer otomasyonlar kendi konuşmasına, kaynaklar
 ayarlarına, yetkilerine ve sonuç geçmişine sahiptir. Tekrar kullanılabilir template’ler
 kaydedilebilir ve JSON dosyasıyla paylaşılabilir. Arayüz Türkçedir.
 
-**Başlangıç:** Yeni çalışma alanı → template seç → Agent ile konuş → profili kaydet → deneme
-çalıştır → bir kez veya düzenli çalıştır. Zamanlama için uygulama ve bilgisayar açık
+**Başlangıç:** Yeni çalışma alanı → template seç → Agent ile konuş → profili kaydet →
+bir kez veya düzenli çalıştır. Her kaynağın ilk turu otomatik denemedir. Agent arama,
+sayfalama ve detay okuma yöntemlerini test edip kaynak skill’ine kaydeder;
+sonraki turlar bu bilgiyi güncel kriterlerle kullanır. Zamanlama için uygulama ve bilgisayar açık
 kalmalıdır. [Otomasyon rehberi](docs/automation-templates.md) çalışma modlarını,
 denemenin kapsamını ve mevcut sınırları açıklar. Uygulamanın eski adı JobLoop’tur; dağıtım kimliği ve veri
 klasörü mevcut JobLoop kurulumlarıyla uyumluluk için korunur.

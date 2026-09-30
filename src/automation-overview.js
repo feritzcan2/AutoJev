@@ -22,7 +22,7 @@ export function automationOverview(root,{button,navigate,performAction}){
   for(const [view,title,detail,ready] of [
    ['profile','Profil ve kriterler',progress.reviewed?'Profil onaylandı':a.goal?'Taslağı incele ve tercihlerini kaydet':'Amacını ve tercihlerini birlikte belirleyelim',progress.reviewed],
    ['sources','Kaynaklar',sources.length?`${sources.filter(s=>s.enabled).length} etkin kaynak · ${sources.length} toplam`:'Agent uygun siteleri bulup önersin',sources.length>0],
-   ['agent','Agent ve takip',progress.passed?progress.label:progress.reviewed?'Kaynakları denemeye hazır':'Kurulumdan sonra kaynakları dene',progress.passed],
+   ['agent','Agent ve takip',progress.reviewed?progress.label:'Kurulumu kaydedip takibi başlat',progress.reviewed],
   ]){
    const item=button('',()=>navigate(view),'workspace-overview-section');item.dataset.overviewView=view;
    const icon=el('span',ready?'✓':view==='profile'?'1':view==='sources'?'2':'3','workspace-overview-icon'),text=el('span');icon.dataset.ready=String(ready);icon.setAttribute('aria-hidden','true');

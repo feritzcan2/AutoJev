@@ -48,7 +48,7 @@ test('unfinished coverage cannot escape validation by switching completed to fai
   assert.equal(f.db.run(f.run.id).status,'running');assert.notEqual(f.db.sources(f.id)[0].blocked,true);
  }
  await f.call('browser_open',{url:source});
- await f.call('finish_automation_run',{status:'blocked',summary:'User login needed',stop:{kind:'access',evidence:'Login required on the actual results page'}});
+ await f.call('finish_automation_run',{status:'blocked',summary:'Site access denied',stop:{kind:'access',evidence:'Access denied on the actual results page'}});
  assert.equal(f.db.sources(f.id)[0].blocked,true);assert.equal(f.db.sources(f.id)[0].blocker.stop.kind,'access');
  assert.equal(automationAttention({...f.db.snapshot(f.id),activeRuns:[]})[0].retry,'source');
 });

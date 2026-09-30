@@ -4,7 +4,7 @@ contextBridge.exposeInMainWorld('jobloop',{
   saveAgentProfile:(id,role,input)=>ipcRenderer.invoke('agent-profile-save',id,role,input),
   instructionSnapshot:(id,options)=>ipcRenderer.invoke('instruction-snapshot',id,options),instructionEvent:(id,seq)=>ipcRenderer.invoke('instruction-event',id,seq),onInstructionsChange:callback=>subscribe('instructions-changed',callback),
  configurationCatalog:id=>ipcRenderer.invoke('configuration-catalog',id),
- workspaceSourceIntegrations:()=>ipcRenderer.invoke('workspace-source-integrations'),workspaceSourceInstructions:(id,url)=>ipcRenderer.invoke('workspace-source-instructions',id,url),workspaceSourceTest:(id,url)=>ipcRenderer.invoke('workspace-source-test',id,url),
+ workspaceSourceIntegrations:()=>ipcRenderer.invoke('workspace-source-integrations'),workspaceSourceInstructions:(id,url,version)=>ipcRenderer.invoke('workspace-source-instructions',id,url,version),workspaceSourceTest:(id,url)=>ipcRenderer.invoke('workspace-source-test',id,url),
  workspaceAnswer:(id,question,value)=>ipcRenderer.invoke('workspace-answer',id,question,value),
  automationSourceStop:(id,url)=>ipcRenderer.invoke('automation-source-stop',id,url),
  workspaces:()=>ipcRenderer.invoke('workspaces'),

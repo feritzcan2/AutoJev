@@ -16,7 +16,7 @@ export function automationTaskContext(db,id,active){
  const a=db.get(id),definition=db.template(a.templateId),interview=active.kind==='interview';
  const assignedRecord=active.recordId?db.result(id,active.recordId):null;
  const source=active.sourceUrl?db.sources(id).find(s=>s.url===active.sourceUrl):null;
- const assignedSource=source?pick(source,['url','name','query','enabled','mode','searchMethod','integrationId','fallback','intervalMinutes']):null;
+ const assignedSource=source?pick(source,['url','name','query','enabled','mode','searchMethod','integrationId','fallback','intervalMinutes','trial','learnedSkill']):null;
  const questions=(a.questions??[]).filter(q=>{
   if(interview)return !q.recordId;
   if(q.recordId)return q.recordId===active.recordId;
@@ -29,7 +29,7 @@ export function automationTaskContext(db,id,active){
  const referenceData=a.referenceData?pick(a.referenceData,['profile','applicationPolicy','ranking']):null;
  const operation=active.kind==='run'&&active.operation&&findOperation(definition,active.operation)?operationFor(definition,active.operation):null;
  return {
-  automation:{...pick(a,['id','templateId','title','goal','criteria','instructions','facts','status','revision','reviewedRevision','maxActionsTotal','maxActionsPerDay','endAt','table','browserMode']),mode:sourceMode(a,active.sourceUrl),sources:active.sources??a.sources},
+  automation:{...pick(a,['id','templateId','title','goal','criteria','instructions','facts','status','revision','reviewedRevision','table','browserMode']),mode:active.kind==='trial'?'observe':sourceMode(a,active.sourceUrl),sources:active.sources??a.sources},
   assignedSource,assignedRecord,assignedOperation:operation,
   sourceExamples:!active.recordId&&active.sourceUrl?db.results(id,{all:true}).filter(r=>r.sourceUrl===active.sourceUrl).slice(0,3).map(r=>pick(r,['url','title','status'])):[],
   template:interview?definition:{...pick(definition,['id','version','title','guidance','records','table']),recordOperations:active.recordOperation?{[active.recordOperation]:operation}:{},workflow:operation?[operation]:[]},

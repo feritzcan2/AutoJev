@@ -14,14 +14,14 @@ test('an interview completion asks for missing answers or profile review, never 
 });
 
 test('reviewed setup names the exact next action and explains the read-only trial',()=>{
- const p=automationProgress(snapshot());assert.equal(p.primary.id,'trial');assert.equal(p.title,'Kurulum tamamlandı');assert.match(p.next,/göndermez/);
- assert.deepEqual(p.steps.map(s=>s.state),['done','current','pending']);
+ const p=automationProgress(snapshot());assert.equal(p.primary.id,'enable');assert.equal(p.title,'Kurulum tamamlandı');assert.match(p.next,/göndermez/);
+ assert.deepEqual(p.steps.map(s=>s.state),['done','current']);
 });
 
 test('a failed trial takes precedence over a ready profile on every Agent surface',()=>{
  const s=snapshot({trial:{revision:2,status:'failed'}},{runs:[finished('trial','blocked','Çerez diyaloğunu kapatıp tekrar dene.')]});
  const p=automationProgress(s),v=webWorkspaceView(s,{sessions:new Map()});
- assert.equal(p.title,'Deneme tamamlanamadı');assert.equal(p.primary.id,'trial');assert.match(p.detail,/Çerez/);assert.equal(p.passed,false);
+ assert.equal(p.title,'Deneme tamamlanamadı');assert.equal(p.primary.id,'sources');assert.match(p.detail,/Çerez/);assert.equal(p.passed,false);
  assert.equal(v.activity.title,p.title);assert.equal(v.workers[0].presentation.outcome.title,p.title);assert.equal(v.workers[0].presentation.status,p.label);assert.equal(v.active,null);
 });
 
@@ -32,25 +32,23 @@ test('a recorded result remains closing until the active run is released',()=>{
 
 test('repeated failed trials lead to fixing the blocker, and another active worker prevents a finished banner',()=>{
  const blocked=finished('trial','blocked'),s=snapshot({trial:{revision:2,status:'failed'}},{runs:[blocked,{...blocked,id:'previous'}]});
- const repeated=automationProgress(s);assert.equal(repeated.primary.id,'message');assert.match(repeated.next,/art arda 2 deneme/);assert.ok(repeated.secondary.some(a=>a.id==='trial'));
+ const repeated=automationProgress(s);assert.equal(repeated.primary.id,'sources');assert.match(repeated.next,/engelli kaynağı/);
  const ended=finished('run','completed'),running={...ended,id:'another',status:'running',finishedAt:null};
  const p=automationProgress(snapshot({}, {runs:[ended,running],activeRun:ended,activeRuns:[ended,running]}));assert.equal(p.title,'Kaynaklar taranıyor');assert.equal(p.finishedRun,null);
 });
 
 test('successful trial offers tracking and one-off execution as separate actions',()=>{
  const p=automationProgress(snapshot({trial:{revision:2,status:'passed'}},{runs:[finished('trial','completed')]}));
- assert.equal(p.title,'Deneme başarılı');assert.equal(p.primary.id,'enable');assert.ok(p.secondary.some(a=>a.id==='run'));assert.match(p.next,/Düzenli takip kapalı/);
+ assert.equal(p.title,'Kurulum tamamlandı');assert.equal(p.primary.id,'enable');assert.ok(p.secondary.some(a=>a.id==='run'));assert.match(p.next,/Düzenli takip kapalı/);
 });
 
-test('skip trial is offered after review and leads to tracking without claiming success',()=>{
- const ready=automationProgress(snapshot());assert.ok(ready.secondary.some(a=>a.id==='skip-trial'));
- const failed=finished('trial','failed');
- const skipped=automationProgress(snapshot({trial:{revision:2,status:'skipped'}},{runs:[failed]}));
- assert.equal(skipped.title,'Deneme atlandı');assert.equal(skipped.primary.id,'enable');
- assert.equal(skipped.steps[1].label,'Deneme atlandı');assert.match(skipped.detail,/denenmeden/);
- assert.ok(skipped.secondary.some(a=>a.id==='run'));
- for(const p of [automationProgress(snapshot({reviewedRevision:null})),automationProgress(snapshot(),{dirty:true}),automationProgress(snapshot({}, {activeRun:{...failed,status:'running'},runs:[]})),automationProgress(snapshot({endAt:1})),automationProgress(snapshot({questions:[{answer:null}]}))])assert.ok(!p.secondary.some(a=>a.id==='skip-trial'));
- assert.equal(automationProgress(snapshot({trial:{revision:1,status:'skipped'}})).primary.id,'trial');
+test('reviewed setup has no workspace trial gate, including legacy skip metadata',()=>{
+ for(const trial of [null,{revision:2,status:'skipped'},{revision:1,status:'failed'}]){
+  const p=automationProgress(snapshot({trial}));
+  assert.equal(p.primary.id,'enable');assert.ok(p.secondary.some(a=>a.id==='run'));
+  assert.deepEqual(p.steps.map(step=>step.label),['Kurulum','Takip']);
+  assert.ok(!p.secondary.some(a=>a.id==='skip-trial'));assert.match(p.next,/ilk turu denemedir/);
+ }
 });
 
 test('a paused source failure exposes tracking for healthy sources without retrying the blocked source',()=>{
@@ -71,10 +69,10 @@ test('dirty and revised plans cannot present an old trial as ready to run',()=>{
  const dirty=automationProgress(snapshot({trial:{revision:2,status:'passed'}}),{dirty:true});assert.equal(dirty.primary.id,'profile');assert.match(dirty.title,/kaydedilmedi/);
 });
 
-test('provider permission requests lead to the live terminal, and expired end dates lead to the profile',()=>{
+test('provider permission requests lead to the live terminal, and legacy expiry dates do not block tracking',()=>{
  const run={...finished('trial','running'),finishedAt:null,state:'AwaitingInput'};
  const p=automationProgress(snapshot({}, {activeRun:run,runs:[run]}));assert.equal(p.primary.id,'terminal');assert.equal(p.tone,'waiting');
- const expired=automationProgress(snapshot({endAt:1}));assert.equal(expired.primary.id,'profile');assert.match(expired.next,/bitiş tarihini/);
+ const expired=automationProgress(snapshot({endAt:1}));assert.equal(expired.primary.id,'enable');assert.doesNotMatch(expired.next,/bitiş tarihi/);
 });
 
 

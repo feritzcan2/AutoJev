@@ -28,7 +28,8 @@ export function recoverExhaustedSourceRetries(db){
 const legacyMessages=new Set(['Agent sonuç bildirmeden durdu. Agent ekranını kontrol et.','Agent oturumu sonuç bildirmeden kapandı.']);
 function resumable(db,run){
  const a=db.get(run.automationId);
- if(run.kind!=='run'||!run.sourceUrl||run.recordId||run.actionId||!run.taskId||a.status!=='enabled'||!a.sources.includes(run.sourceUrl)||a.sourceSettings?.[run.sourceUrl]?.enabled===false)return false;
+ if(!['run','trial'].includes(run.kind)||!run.sourceUrl||run.recordId||run.actionId||!run.taskId||a.status!=='enabled'||!a.sources.includes(run.sourceUrl)||a.sourceSettings?.[run.sourceUrl]?.enabled===false)return false;
+ if(run.kind==='trial')return true;
  const template=db.template(a.templateId);if(!template.workflow.some(step=>step.id===run.operation))return false;
  const step=operationFor(template,run.operation);
  return step.scope==='source'&&(step.effect==='read'||sourceMode(a,run.sourceUrl)==='observe')&&!db.results(a.id,{all:true}).some(r=>r.runId===run.id&&['executing','uncertain'].includes(r.status));

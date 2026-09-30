@@ -71,7 +71,7 @@ test('task context excludes unrelated questions and history while keeping exact 
  const context=automationTaskContext(db,a.id,active);
  assert.deepEqual(context.questions.map(q=>q.id),['own','global','source']);assert.equal(context.questions[0].answerValues.consent,false);
  assert.deepEqual(context.assignedRecord,saved);assert.equal(context.recordAuthorization.directExecution,true);assert.equal(context.recordAuthorization.approvedProposalDigest,'exact');
- assert.equal(context.automation.maxActionsTotal,9);assert.equal(context.automation.maxActionsPerDay,2);assert.equal(context.automation.facts,'Verified fact');assert.equal(context.referenceData.profile.permission,false);
+ assert.equal('maxActionsTotal' in context.automation,false);assert.equal('maxActionsPerDay' in context.automation,false);assert.equal(context.automation.facts,'Verified fact');assert.equal(context.referenceData.profile.permission,false);
  assert.deepEqual(context.scanProgress,active.scan);assert.deepEqual(context.currentRun.resumeContext,active.resumeContext);assert.ok(context.currentRun.observations.every(o=>o.text===undefined));
  assert.deepEqual(context.results,[]);assert.deepEqual(context.sourceExamples,[]);assert.equal(context.referenceData.previousTasks,undefined);assert.ok(size(context)<20000);
  const scan=automationTaskContext(db,a.id,{...active,recordId:null,recordOperation:null,operation:'scan'});assert.deepEqual(scan.questions.map(q=>q.id),['global','source']);assert.equal(scan.sourceExamples.length,1);

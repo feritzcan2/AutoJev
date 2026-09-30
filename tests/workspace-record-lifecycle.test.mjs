@@ -15,7 +15,7 @@ const settle=()=>new Promise(resolve=>setImmediate(resolve));
 async function fixture(t,template='job-search',{sourceUrl=false}={}){
  const core=new WorkspaceDatabase(':memory:'),db=new AutomationStore(core),definition=db.template(template);
  const a=db.create(template,{goal:'Track suitable records',criteria:Object.fromEntries(definition.fields.filter(f=>f.required).map(f=>[f.id,'Known'])),sources:[source]});
- db.review(a.id);db.skipTrial(a.id);db.save(a.id,{mode:'observe'});
+ db.review(a.id);const trial=db.begin(a.id,'trial');for(const url of a.sources)db.observe(a.id,trial.id,url,'Observed source');db.finish(a.id,trial.id,'completed','Source checked');db.save(a.id,{mode:'observe'});
  const seed=db.begin(a.id,'run');let item=db.record(a.id,seed.id,{url:source+'/1',title:'Synthetic record',summary:'Observed facts',proposal:'Verified form answers'});
  if(sourceUrl)item=db.putResult({...item,sourceUrl:source});db.finish(a.id,seed.id,'completed','Prepared');db.pause(a.id);
  db.put({...db.get(a.id),sourceSettings:{[source]:{enabled:false}},sourceState:{[source]:{blocked:true,lastResult:'Access barrier',nextRunAt:null}}});

@@ -22,7 +22,7 @@ try{
  for(const view of ['board','sources','profile','agent','files','background'])assert.equal(await page.locator(`[data-view=${view}]`).evaluate(node=>getComputedStyle(node).opacity),'1');
  await page.screenshot({path:path.join(data,'blank-board.png'),fullPage:true});
  // The shared shell is present before any setup message, and navigation never launches work.
- await page.locator('[data-overview-view=profile]').click();await page.locator('#automation-plan-form').waitFor();
+ await page.locator('[data-overview-view=profile]').click();await page.locator('#automation-plan-form').waitFor();assert.equal(await page.locator('#automation-plan-form [name=maxActionsPerDay], #automation-plan-form [name=maxActionsTotal], #automation-plan-form [name=endAt], #automation-plan-form [name=intervalMinutes]').count(),0);
  await page.locator('[data-view=sources]').click();await page.locator('[data-source-discover]').click();await page.locator('#automation-message').waitFor();
  assert.match(await page.locator('#automation-message').inputValue(),/kaynakları araştırıp öner/);
  assert.equal(await page.locator('#agent-settings').isVisible(),true);

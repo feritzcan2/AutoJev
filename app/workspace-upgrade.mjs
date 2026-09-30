@@ -49,8 +49,8 @@ export function upgradeWorkspaces(db){
    const migratedQuestions=questions.filter(q=>!q.resolution).map(q=>({id:q.id,recordId:q.job_id??null,text:q.question,fields:JSON.parse(q.fields??'null'),answerValues:JSON.parse(q.answer_values??'null'),resolution:q.resolution,answer:q.answer,createdAt:at(q.created_at),answeredAt:q.answer==null?null:now}));
    const a={id,templateId:workspace.templateId,templateVersion:2,title:workspace.title,goal:p.preferences||'Kayıtlı profile uygun iş ilanlarını bul ve başvuruları takip et.',
     criteria:{...p.criteria,preferences:p.preferences??'',ranking:p.criteria?.ranking??JSON.stringify({threshold:p.rankThreshold,weights:p.rankWeights},null,2),application_policy:p.criteria?.application_policy??JSON.stringify(p.applicationPolicy??{},null,2)},facts:(p.facts??'').slice(0,12000),instructions:'Kayıtlı belgeleri, geçmiş başvuruları ve profil bilgilerini kullan. Aynı ilana tekrar başvurma.',
-    sources:sources.map(s=>webUrl(s.url)),sourceSettings,sourceState,mode:mode(p.authorization),intervalMinutes:campaign?.intervalMinutes??30,maxActionsPerDay:5,maxActionsTotal:campaign?.target??null,
-    revision:1,reviewedRevision:null,trial:null,status:'paused',nextRunAt:null,createdAt:at(p.createdAt)||now,updatedAt:now,endAt:null,
+    sources:sources.map(s=>webUrl(s.url)),sourceSettings,sourceState,mode:mode(p.authorization),intervalMinutes:campaign?.intervalMinutes??30,
+    revision:1,reviewedRevision:null,trial:null,status:'paused',nextRunAt:null,createdAt:at(p.createdAt)||now,updatedAt:now,
     referenceData:{profile:p,applicationPolicy:p.applicationPolicy??{},ranking:{threshold:p.rankThreshold,weights:p.rankWeights},previousTasks:tasks},questions:migratedQuestions,
     migration:{from:'applications',at:now},table};
    // Keep the existing files, Chrome profile, identity and worker conversations.
@@ -68,7 +68,7 @@ export function upgradeWorkspaces(db){
    }
    // Legacy task payloads remain as history, but cannot hold a live worker lease.
    for(const task of tasks)if(['pending','running','reported','paused'].includes(task.state))core.tasks.finish(id,task.id,'interrupted','Ortak otomasyon modeline taşındı; kayıtlı devam noktası korundu.');
-   db.message(id,'system','Çalışma alanı ortak otomasyon modeline taşındı. Kayıtlar, belgeler, kaynak aralıkları ve bekleyen sorular korundu. Profili kontrol edip kaydet; kaynak denemesinden sonra takibi sürdürebilirsin.');
+   db.message(id,'system','Çalışma alanı ortak otomasyon modeline taşındı. Kayıtlar, belgeler, kaynak aralıkları ve bekleyen sorular korundu. Profili kontrol edip kaydet; takibi sürdürebilirsin. Her kaynak ilk turunda otomatik denenir.');
    for(const q of migratedQuestions)db.message(id,q.answer==null?'assistant':'system',q.text+(q.answer==null?'':'\nKayıtlı yanıt: '+q.answer));
    if(core.exists('telegram_links'))sql.prepare('UPDATE telegram_links SET cursor=0 WHERE candidate_id=?').run(id);
    sql.prepare('INSERT INTO workspace_imports VALUES(?,?)').run(id,JSON.stringify({profile:p,sources,campaign,questions,tasks,at:now}));

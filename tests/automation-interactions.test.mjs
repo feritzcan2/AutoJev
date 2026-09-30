@@ -15,8 +15,10 @@ for(const kind of ['interview','trial','run'])for(const mode of ['observe','prep
  await call('browser_open',{url:current});
  for(const input of [{operation:'click',ref:'e1'},{operation:'type',ref:'e1',text:'Any text'},{operation:'select',ref:'e1',text:'Any option'},{operation:'press',ref:'e1',key:'Shift+Tab'},{operation:'autocomplete',ref:'c1',text:'Berlin'},{operation:'autocomplete',ref:'c1',option:'Berlin'}])await call('browser_interact',input);
  await call('browser_jev_act',{decisionId:'current-decision'});
+ await call('browser_jev_inspect_form',{});await call('browser_jev_reveal',{controlId:'offscreen-date'});
+ assert.ok(flow.tools.some(t=>t.name==='browser_jev_inspect_form'));assert.ok(calls.some(c=>c.name==='browser_jev_reveal'&&c.args.controlId==='offscreen-date'));
  for(const name of ['browser_click','browser_type','browser_select_option','browser_target_press','browser_jev_list_suggestions','browser_jev_autocomplete','browser_jev_act'])assert.ok(calls.some(c=>c.name===name),name);
- assert.ok(calls.every(c=>!c.options?.browsing));assert.equal(db.run(run.id).browserSteps,8);assert.equal(db.run(run.id).actionId,null);assert.equal(db.results(a.id).length,0);
+ assert.ok(calls.every(c=>!c.options?.browsing));assert.equal(db.run(run.id).browserSteps,10);assert.equal(db.run(run.id).actionId,null);assert.equal(db.results(a.id).length,0);
  await assert.rejects(flow.call('foreign',run.id,'browser_interact',{operation:'click',ref:'e1'}),/geçersiz/);
  await assert.rejects(flow.call(a.id,'old-session','browser_jev_act',{decisionId:'current-decision'}),/geçersiz/);
  controller.abort();await assert.rejects(call('browser_interact',{operation:'click',ref:'e1'}),/geçersiz/);

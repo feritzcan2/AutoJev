@@ -114,14 +114,15 @@ test('source scope and permission reach the agent, cannot exceed profile authori
  assert.throws(()=>db.saveSource(id,urls[0],{mode:'auto'}),/durdur/);await runtime.pause(id);db.save(id,{mode:'observe'});assert.throws(()=>db.saveSource(id,urls[0],{mode:'auto'}),/aşamaz/);assert.throws(()=>db.saveSource(id,'https://other.test/',{enabled:true}),/ait/);
 });
 
-test('an uncertain record action still blocks the workspace without changing its source result',async t=>{
+test('an uncertain record action leaves the workspace enabled without changing its source result',async t=>{
  const {db,id,runtime,launches,finish}=fixture(t);db.save(id,{mode:'auto'});await runtime.runSource(id,urls[0]);await settle();const scan=launches[0];
  const record=db.record(id,scan.id,{url:'https://blocked.test/home',title:'Home',summary:'Observed'});await finish(scan);
  await runtime.runRecord(id,record.id,'prepare');await settle();const prepare=launches.at(-1);
  const draft=db.record(id,prepare.id,{url:record.url,title:record.title,summary:record.summary,proposal:'Hello'});await finish(prepare);
  const before=db.get(id).sourceState;await runtime.runRecord(id,record.id,'execute',{digest:draft.digest});await settle();const run=launches.at(-1);
- db.put({...db.get(id),status:'enabled'});db.reserve(id,run.id,record.id);runtime.report(id,run.id,'blocked','Send not verified');await runtime.finish(id);await runtime.tick();
- assert.equal(db.get(id).status,'blocked');assert.equal(db.result(id,record.id).status,'uncertain');assert.deepEqual(db.get(id).sourceState,before);
+ db.put({...db.get(id),status:'enabled'});db.reserve(id,run.id,record.id);runtime.report(id,run.id,'blocked','Send not verified');await runtime.finish(id);
+ assert.equal(db.get(id).status,'enabled');assert.equal(db.result(id,record.id).status,'uncertain');assert.deepEqual(db.get(id).sourceState,before);
+ await runtime.tick();assert.equal(db.result(id,record.id).status,'uncertain');
 });
 
 test('source blocking is visible without claiming the whole schedule stopped or promising retries',async t=>{

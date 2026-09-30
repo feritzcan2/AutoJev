@@ -53,7 +53,7 @@ for(const state of ['missing','failed','stale'])test(`profile edits do not grant
  if(state==='failed'){db.review(id);const run=db.begin(id,'trial');db.finish(id,run.id,'blocked','Login required');}
  if(state==='stale'){trial(db,id);const a=db.get(id);db.put({...a,trial:{...a.trial,revision:0}});}
  db.save(id,{facts:'Updated personal information'});db.review(id);
- assert.equal(db.get(id).trial,null);assert.throws(()=>db.enable(id),/deneme/);
+ assert.equal(db.get(id).trial,null);assert.equal(db.enable(id).status,'enabled');
 });
 
 test('agent table edits persist without changing plan review, action authority or result evidence',async t=>{
@@ -104,7 +104,7 @@ test('browser engine selection persists and requires a new trial while keeping t
  const selected=db.save(id,{browserMode:'jev',chromeProfile:{directory:'Profile 1',name:'Work'}});
  assert.equal(selected.browserMode,'jev');assert.equal(db.get(id).chromeProfile.directory,'Profile 1');
  assert.equal(selected.revision,before.revision);assert.equal(selected.reviewedRevision,before.reviewedRevision);assert.equal(selected.trial,null);assert.equal(selected.status,'paused');
- assert.throws(()=>db.begin(id,'run'),/deneme/);assert.throws(()=>db.save(id,{browserMode:'unknown'}),/tarayıcı/);
+ assert.equal(db.get(id).sourceState[setup.sources[0]].trial,null);assert.equal(db.enable(id).status,'enabled');assert.throws(()=>db.save(id,{browserMode:'unknown'}),/tarayıcı/);
  assert.throws(()=>db.save(id,{chromeProfile:{directory:'../other',name:'Other'}}),/profil/);
  const run=db.begin(id,'trial');assert.throws(()=>db.save(id,{browserMode:'separate'}),/durdur/);db.finish(id,run.id,'interrupted','Stopped');
  assert.equal(db.get(id).browserMode,'jev');
@@ -123,14 +123,14 @@ test('Chrome profile changes preserve the successful trial and allow restarting 
  }
  const changed=db.save(id,{chromeProfile:{directory:'Default',name:'Personal'},goal:'Find other homes'});
  assert.deepEqual(changed.trial,{...before.trial,revision:changed.revision});assert.equal(changed.reviewedRevision,null);
- assert.throws(()=>db.enable(id),/deneme/);
+ assert.throws(()=>db.enable(id),/kurulumu/);
 });
 
 test('trial retries cannot repeat a historical blocker without a new browser attempt',async t=>{
  const {db,id}=fixture(t);trial(db,id);const previous=db.begin(id,'trial');db.finish(id,previous.id,'blocked','Old IP block');
  const run=db.begin(id,'trial'),reports=[];
  const flow=automationWorkflow({db,run,signal:{aborted:false},browser:{call:async()=>{throw Error('Chrome disconnected now');}},report:(...args)=>reports.push(args)});
- for(const status of ['blocked','failed','completed'])await assert.rejects(flow.call(id,run.id,'finish_automation_run',{status,summary:'Old IP block'}),/henüz tarayıcı kontrolü yapılmadı/);
+ for(const status of ['blocked','failed','completed'])await assert.rejects(flow.call(id,run.id,'finish_automation_run',{status,summary:'Old IP block'}),/henüz kaynak kontrolü yapılmadı/);
  assert.equal(reports.length,0);assert.equal(db.run(run.id).status,'running');
  await assert.rejects(flow.call(id,run.id,'browser_open',{url:setup.sources[0]}),/Chrome disconnected now/);
  await flow.call(id,run.id,'finish_automation_run',{status:'blocked',summary:'Chrome disconnected now'});
@@ -157,8 +157,8 @@ test('completed goals stop scheduling; timeouts block retries and respect concur
  db.enable(id);await runtime.start(id);await runtime.finish(id,'timeout','Timed out');assert.equal(db.get(id).status,'blocked');await runtime.tick();assert.equal(runtime.active.size,0);
 });
 test('profile edits require review but preserve a successful trial',t=>{
- const {db,id}=fixture(t);assert.throws(()=>db.enable(id),/deneme/);assert.throws(()=>db.begin(id,'trial'),/kurulum/);
- db.review(id);let run=db.begin(id,'trial');const result=db.finish(id,run.id,'completed','No actual browser');assert.equal(result.status,'failed');assert.throws(()=>db.enable(id));
+ const {db,id}=fixture(t);assert.throws(()=>db.enable(id),/kurulumu/);assert.throws(()=>db.begin(id,'trial'),/kurulum/);
+ db.review(id);let run=db.begin(id,'trial');const result=db.finish(id,run.id,'completed','No actual browser');assert.equal(result.status,'failed');assert.equal(db.enable(id).status,'enabled');
  trial(db,id);db.enable(id);assert.equal(db.get(id).status,'enabled');db.pause(id);db.save(id,{criteria:{...setup.criteria,budget:'1600 EUR'}});assert.equal(db.get(id).trial.status,'passed');assert.equal(db.get(id).status,'draft');assert.throws(()=>db.begin(id,'run'));db.review(id);assert.equal(db.begin(id,'run').kind,'run');
 });
 test('every source origin needs evidence; blocked trials never pass',t=>{
@@ -171,10 +171,10 @@ test('optional action tracking respects the saved mode and exact proposal approv
  db.approve(id,item.id);run=db.begin(id,'run');db.reserve(id,run.id,item.id);assert.equal(db.run(run.id).actionId,item.id);db.observe(id,run.id,item.url,'Message sent');db.resolve(id,run.id,item.id,{status:'completed',evidence:'Message sent',url:item.url});assert.equal(db.run(run.id).actionId,null);db.finish(id,run.id,'completed','Sent');
  run=db.begin(id,'trial');item=record(db,id,run,'2');assert.throws(()=>db.reserve(id,run.id,item.id),/gözlem/);db.finish(id,run.id,'blocked','Test');assert.throws(()=>db.approve(id,item.id),/Güncel/);
 });
-test('daily limits count interrupted attempts and cannot be bypassed with a new listing key',t=>{
+test('interrupted attempts stay protected while other listings have no daily quota',t=>{
  const {db,id}=fixture(t);trial(db,id);db.save(id,{mode:'auto',maxActionsPerDay:1});let run=db.begin(id,'run'),item=record(db,id,run);db.reserve(id,run.id,item.id);db.finish(id,run.id,'interrupted','Stopped');assert.equal(db.result(id,item.id).status,'uncertain');
  run=db.begin(id,'run');const duplicate=db.record(id,run.id,{key:'different-key',url:item.url,title:'Again',summary:'Again',proposal:'New words'});assert.equal(duplicate.id,item.id);assert.equal(duplicate.duplicate,true);assert.throws(()=>db.reserve(id,run.id,item.id));
- const second=record(db,id,run,'2');assert.throws(()=>db.reserve(id,run.id,second.id),/Günlük/);db.observe(id,run.id,item.url,'Previously sent');db.resolve(id,run.id,item.id,{status:'completed',evidence:'History confirms message',url:item.url});db.finish(id,run.id,'completed','Verified');assert.equal(db.result(id,item.id).status,'completed');
+ const second=record(db,id,run,'2');assert.equal(db.reserve(id,run.id,second.id).reserved,true);db.observe(id,run.id,second.url,'Second sent');db.resolve(id,run.id,second.id,{status:'completed',evidence:'Second sent',url:second.url});db.observe(id,run.id,item.url,'Previously sent');db.resolve(id,run.id,item.id,{status:'completed',evidence:'History confirms message',url:item.url});db.finish(id,run.id,'completed','Verified');assert.equal(db.result(id,item.id).status,'completed');
 });
 test('counts, export data and approval invalidation cover results older than the UI window',t=>{
  const {db,id}=fixture(t);trial(db,id);const run=db.begin(id,'run');let first;
@@ -193,12 +193,12 @@ test('stop during launch waits for termination and stale sessions cannot mutate'
  const {db,id}=fixture(t);trial(db,id);let release,closed=0;const runtime=new WebTasks(db,{launch:()=>new Promise(resolve=>{release=()=>resolve({close:async()=>{closed++;}});})});t.after(()=>runtime.close());
  const start=runtime.start(id);await settle();const stop=runtime.pause(id);release();await Promise.all([start,stop]);assert.equal(closed,1);assert.equal(db.runs(id)[0].status,'interrupted');assert.throws(()=>db.record(id,db.runs(id)[0].id,{...setup}));
 });
-test('restart marks a reserved action uncertain and suspends its automation',t=>{
- const {db,id}=fixture(t);trial(db,id);db.save(id,{mode:'auto'});db.enable(id);const run=db.begin(id,'run'),item=record(db,id,run);db.reserve(id,run.id,item.id);db.recover();assert.equal(db.result(id,item.id).status,'uncertain');assert.equal(db.get(id).status,'blocked');assert.equal(db.run(run.id).status,'interrupted');
+test('restart holds the reserved record without suspending its automation',t=>{
+ const {db,id}=fixture(t);trial(db,id);db.save(id,{mode:'auto'});db.enable(id);const run=db.begin(id,'run'),item=record(db,id,run);db.reserve(id,run.id,item.id);db.recover();assert.equal(db.result(id,item.id).status,'uncertain');assert.equal(db.get(id).status,'enabled');assert.equal(db.run(run.id).status,'interrupted');
 });
-test('a new trial pauses an existing schedule; graceful shutdown also blocks uncertain sends',async t=>{
- const {db,id}=fixture(t);trial(db,id);db.enable(id);const attempt=db.begin(id,'trial');assert.equal(db.get(id).status,'paused');db.finish(id,attempt.id,'blocked','Session expired');assert.throws(()=>db.enable(id));
- trial(db,id);db.save(id,{mode:'auto'});db.enable(id);const runtime=new WebTasks(db,{launch:async()=>({close:async()=>{}})});t.after(()=>runtime.close());const run=await runtime.start(id),item=record(db,id,run);db.reserve(id,run.id,item.id);await runtime.close();assert.equal(db.get(id).status,'blocked');assert.equal(db.result(id,item.id).status,'uncertain');
+test('a new trial pauses an existing schedule; graceful shutdown holds only uncertain records',async t=>{
+ const {db,id}=fixture(t);trial(db,id);db.enable(id);const attempt=db.begin(id,'trial');assert.equal(db.get(id).status,'paused');db.finish(id,attempt.id,'blocked','Session expired');assert.equal(db.enable(id).status,'enabled');
+ trial(db,id);db.save(id,{mode:'auto'});db.enable(id);const runtime=new WebTasks(db,{launch:async()=>({close:async()=>{}})});t.after(()=>runtime.close());const run=await runtime.start(id),item=record(db,id,run);db.reserve(id,run.id,item.id);await runtime.close();assert.equal(db.get(id).status,'enabled');assert.equal(db.result(id,item.id).status,'uncertain');
 });
 test('log cleanup removes completed automation output and preserves active run output',async t=>{
  const {store}=fixture(t),data=await mkdtemp(path.join(tmpdir(),'loop-retention-'));t.after(()=>rm(data,{recursive:true,force:true}));for(const id of ['active','complete']){await mkdir(path.join(data,'automations','runs',id),{recursive:true});await writeFile(path.join(data,'automations','runs',id,'terminal.log'),'Output');}
@@ -268,7 +268,7 @@ test('interview samples require an observed source detail and cannot authorize o
  assert.throws(()=>db.reserve(id,run.id,saved.id),/gözlem/);
  db.finish(id,run.id,'completed','Sources and examples observed');
  assert.equal(db.get(id).reviewedRevision,null);assert.equal(db.get(id).trial,null);assert.equal(db.get(id).nextRunAt,null);
- assert.throws(()=>db.approve(id,saved.id),/Güncel/);assert.throws(()=>db.enable(id),/deneme/);
+ assert.throws(()=>db.approve(id,saved.id),/Güncel/);assert.throws(()=>db.enable(id),/kurulumu/);
  trial(db,id);const liveRun=db.begin(id,'run'),live=record(db,id,liveRun);
  assert.equal(live.id,saved.id);assert.equal(live.trial,false);assert.equal(live.sampleKind,null);assert.equal(db.resultCounts(id).resultCount,1);
 });
@@ -283,5 +283,5 @@ test('backup includes automation documents, pauses schedules and clears approval
  const root=await mkdtemp(path.join(tmpdir(),'loop-automation-backup-'));t.after(()=>rm(root,{recursive:true,force:true}));const data=path.join(root,'data');await mkdir(data);const store=new Store(path.join(data,'jobloop.sqlite')),db=new AutomationStore(store),a=db.create('housing',setup);trial(db,a.id);db.enable(a.id);
  const documents=path.join(data,'automations','workspaces',a.id,'documents');await mkdir(documents,{recursive:true});await writeFile(path.join(documents,'intro.txt'),'A tenant introduction');
  const backup=path.join(root,'backup');await createBackup({dataDirectory:data,db:store.db,destination:backup,appVersion:'test'});assert.equal(await readFile(path.join(backup,'automations','workspaces',a.id,'documents','intro.txt'),'utf8'),'A tenant introduction');
- await stageRestore({dataDirectory:data,directory:backup,db:store.db,appVersion:'test'});store.close();await applyPendingRestore({dataDirectory:data});const restored=new Store(path.join(data,'jobloop.sqlite'));t.after(()=>restored.close());const db2=new AutomationStore(restored);assert.equal(db2.get(a.id).status,'paused');assert.equal(db2.get(a.id).trial,null);assert.equal(db2.get(a.id).reviewedRevision,null);
+ await stageRestore({dataDirectory:data,directory:backup,db:store.db,appVersion:'test'});store.close();await applyPendingRestore({dataDirectory:data});const restored=new Store(path.join(data,'jobloop.sqlite'));t.after(()=>restored.close());const db2=new AutomationStore(restored);assert.equal(db2.get(a.id).status,'paused');assert.equal(db2.get(a.id).trial,null);assert.equal(db2.get(a.id).reviewedRevision,null);assert.equal(db2.get(a.id).sourceState[setup.sources[0]].trial,null);assert.equal(db2.get(a.id).sourceTrialsVersion,1);
 });

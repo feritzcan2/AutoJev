@@ -1,5 +1,5 @@
 import {sourceMode} from './automation-sources.mjs';
-import {automationTrialReady} from './automation-trial.mjs';
+import {automationReady} from './automation-trial.mjs';
 import {workerKey} from './worker-key.mjs';
 
 const live=['pending','running','reported','paused'];
@@ -11,8 +11,7 @@ export function recordOperationError(a,item,kind,{manual=false,digest,direct=fal
  if(item.trial)return 'Araştırma örneği üzerinde işlem yapılamaz';
  if(kind==='verify')return item.status==='uncertain'?null:'Yalnızca sonucu belirsiz bir işlem doğrulanabilir';
  if(['completed','executing','uncertain','dismissed'].includes(item.status))return 'Bu kayıt yeniden gönderilemez';
- if(a.reviewedRevision!==a.revision||!automationTrialReady(a))return 'Önce kurulumu kontrol edip denemeyi çalıştır veya geç';
- if(a.endAt&&a.endAt<=now)return 'Otomasyonun bitiş tarihi geçti';
+ if(!automationReady(a))return 'Önce kurulumu kontrol edip kaydet';
  if(pendingRecordQuestion(a,item))return waitingForAnswer;
  const mode=sourceMode(a,recordSource(a,item));
  if(!manual&&mode==='observe')return 'Kaynak yalnızca bul modunda';
@@ -74,8 +73,21 @@ export function resumeRecordOperation(runtime,id,item,task){
 export async function dispatchRecordOperations(runtime,id){
  const {db,queue}=runtime,a=db.get(id),ops=db.template(a.templateId).recordOperations;
  if(!ops||runtime.slots(id).some(s=>s.run.kind!=='run'))return;
+ const savedTasks=queue.list(id);
+ for(const task of savedTasks.filter(t=>t.resumeRecordAfterVerification&&!live.includes(t.state))){
+  queue.put({...task,resumeRecordAfterVerification:false});
+  const item=db.result(id,task.recordId),proof=item.notSubmitted;
+  if(task.state!=='completed'||task.stopRequested||!task.request?.manual||!proof||proof.digest!==item.digest||recordTask(db,id,item.id))continue;
+  let origin;try{if(db.run(proof.runId).taskId!==task.id)continue;origin=db.run(proof.attemptRunId);}catch{continue;}
+  const request=origin.request;
+  if(origin.automationId!==id||origin.recordId!==item.id||origin.recordOperation!=='execute'||origin.stopRequested||!request?.manual||request.revision!==a.revision||item.revision!==a.revision)continue;
+  const originTask=origin.taskId&&queue.get(id,origin.taskId);
+  if(originTask?.stopRequested||/Kullanıcı|Worker durduruldu/.test(origin.summary??'')||request.direct!==true&&request.digest!==item.digest)continue;
+  try{enqueueRecordOperation(runtime,id,item.id,'execute',{manual:true,direct:request.direct===true,digest:request.direct===true?undefined:request.digest});}
+  catch(error){db.message(id,'system','Gönderilmediği doğrulandı. Devam için kayıt işlemini kontrol et: '+error.message);}
+ }
  // Old templates with explicit record workflow steps keep their own scheduler.
- for(const task of queue.list(id).filter(t=>t.resumeRecordAfterAnswer&&!live.includes(t.state))){
+ for(const task of savedTasks.filter(t=>t.resumeRecordAfterAnswer&&!live.includes(t.state))){
   queue.put({...task,resumeRecordAfterAnswer:false});
   const item=db.result(id,task.recordId);
   if(!recordTask(db,id,item.id)&&!['completed','executing','dismissed'].includes(item.status)){
@@ -118,5 +130,13 @@ export function recordOperationState(db,id,item,{a=db.get(id),definition=db.temp
  const directOp=['found','prepared'].includes(item.status)&&definition.recordOperations?.execute;
  const directError=directOp?recordOperationError(a,item,'execute',{manual:true,direct:true,now:db.now()}):null;
  const question=(a.questions??[]).find(q=>q.recordId===item.id&&q.answer==null);
- return {directOperation:directOp?{kind:'execute',label:directOp.label,disabled:Boolean(directError||task),reason:directError}:null,question:question?{id:question.id,text:question.text}:null,lastTask:last?{kind:last.recordOperation,state:last.state,summary:last.summary,at:last.finishedAt??last.startedAt??last.createdAt}:null,task:task?{id:task.id,kind:task.recordOperation,state:task.state,workerId:task.workerId,at:task.startedAt??task.createdAt,manual:task.request?.manual===true}:null,operation:operation?{kind,label:operation.label,reviewLabel:operation.reviewLabel,disabled:Boolean(error||task),reason:error}:null};
+ let retryOperation=null;
+ if(!task&&last&&['blocked','failed','interrupted'].includes(last.state)&&!item.trial&&!['completed','executing','dismissed'].includes(item.status)){
+  const retryKind=item.status==='uncertain'?'verify':last.recordOperation,direct=retryKind==='execute'&&last.request?.direct===true;
+  if(definition.recordOperations?.[retryKind]){
+   const reason=recordOperationError(a,item,retryKind,{manual:true,direct,digest:item.digest,now:db.now()});
+   retryOperation={kind:retryKind,direct,review:retryKind==='execute'&&!direct,disabled:Boolean(reason),reason};
+  }
+ }
+ return {retryOperation,directOperation:directOp?{kind:'execute',label:directOp.label,disabled:Boolean(directError||task),reason:directError}:null,question:question?{id:question.id,text:question.text}:null,lastTask:last?{kind:last.recordOperation,state:last.state,summary:last.summary,at:last.finishedAt??last.startedAt??last.createdAt}:null,task:task?{id:task.id,kind:task.recordOperation,state:task.state,workerId:task.workerId,at:task.startedAt??task.createdAt,manual:task.request?.manual===true}:null,operation:operation?{kind,label:operation.label,reviewLabel:operation.reviewLabel,disabled:Boolean(error||task),reason:error}:null};
 }
