@@ -127,7 +127,8 @@ automation defaults to observation; automatic booking requires user-selected act
 permission and a working site-specific flow. CAPTCHA and other access barriers are
 handed to the user. Payments and cancellation are outside the default template.
 
-Plan changes invalidate the saved review and trial. Changing scheduling or action
+Profile changes require a new review but preserve a successful trial or an explicit
+trial skip. The original trial run remains unchanged. Changing scheduling or action
 limits does not silently resume an automation. Blocked, failed and timed-out scheduled
 runs suspend automatic retries. Editing a plan through chat pauses scheduling.
 Stopping or restarting during a reserved action preserves an uncertain outcome.

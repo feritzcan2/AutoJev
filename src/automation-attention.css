@@ -12,6 +12,11 @@ body:not(.automation-workspace) .automation-attention-banner { display: none; }
 .automation-help-summary, .automation-help-card details p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
 .automation-help-instructions { color: var(--text-muted); font-size: 13px; margin: 10px 0 16px; }
 .automation-help-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.automation-help-reply { display: grid; gap: 12px; margin-top: 16px; }
+.automation-help-reply[hidden] { display: none; }
+.automation-help-reply label { display: grid; gap: 8px; font-size: 13px; }
+.automation-help-reply textarea { width: 100%; box-sizing: border-box; min-height: 96px; resize: vertical; }
+.automation-help-reply .automation-help-instructions { margin: 0; }
 .automation-help-card details { margin-top: 14px; font-size: 13px; color: var(--text-muted); }
 .automation-help-tabs { display: grid; gap: 8px; margin-top: 12px; }
 .automation-help-tabs button { text-align: left; overflow-wrap: anywhere; }

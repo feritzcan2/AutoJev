@@ -1,96 +1,78 @@
 # Template ve ortak çalışma alanı altyapısı
 
-İş arama, ev arama, randevu ve içe aktarılan template’ler aynı kayıt deposunu, kalıcı görev kuyruğunu, worker kaydını, Agent oturumlarını ve tablo araçlarını kullanır. Eski Başvurular, Kaynaklar, Agent, Dosyalar ve profil ekranları korunur.
+İş arama, ev arama, randevu ve özel template’ler aynı otomasyon ekranını ve `browser` yürütücüsünü kullanır. İş arama, `app/templates/job-search.mjs` içinde alanları, tablo sütunlarını ve talimatları tanımlar. Üretim başlangıcı eski `Campaigns` veya aday MCP servislerini yüklemez.
 
-```mermaid
-flowchart TD
-  T[Template tanımı] --> UI[Mevcut ekranlar ve alanlar]
-  T --> P[İşlem yetenekleri ve görev seçimi]
-  P --> Q[WorkspaceTasks: bağımlılık ve worker rezervasyonu]
-  Q --> A[AgentSessions: Codex / Claude]
-  A --> M[Ortak MCP ve Chrome / Jev]
-  M --> R[WorkspaceRecords]
-  R --> UI
-```
+## Ortak akış
+
+`TemplateRegistry` → `AutomationStore` → `WebTasks` → `WorkspaceTasks` → `AgentSessions` → ortak MCP ve Chrome/Jev.
+
+- `workspace_records`: sonuçlar, taslaklar, durumlar, kanıtlar ve tablo hücreleri.
+- `workspace_tasks`: kaynak/kayıt görevleri, bağımlılıklar ve worker rezervasyonları.
+- `workspace_workers`: worker kimlikleri ve adları.
+- `workspaces`: kimlik, template, agent ayarları, tarayıcı profili ve tablo.
+- `automations`: hedef, kriterler, yetki, kaynak ayarları, sorular ve tarama ilerlemesi.
+- `workspace_events`: ortak soru/kayıt bildirimleri.
+
+`src/renderer.js` bütün çalışma alanlarını `automationsPage` ile açar. Kaynaklar, takip tablosu, profil, Agent, belgeler, arka plan işleri ve bildirimler aynı bileşenleri kullanır. Workspace seçimi ve menü sıralaması aynı kimlik üzerinden saklanır.
 
 ## Template sözleşmesi
 
-`template-contract.mjs` bütün tanımları sürüm 2’ye normalize eder. Sürüm 1 dosyaları içe aktarılabilir.
+`template-contract.mjs` tanımları sürüm 2’ye normalize eder. Sürüm 1 dosyaları içe aktarılabilir.
 
-- `fields`: kurulum soruları, zorunluluk, metin/sayı/para/tarih/URL/evet-hayır/seçenek türleri.
-- `table`: başlık ve typed sütunlar. Agent mevcut UI içinde sütunları ve hücreleri düzenleyebilir.
-- `records`: alan eşlemeleri, URL veya anahtar ile tekilleştirme, durum etiketleri ve sınıflandırma geçişleri.
-- `workflow`: adım kimliği, yetenek, kaynak/kayıt kapsamı, talimat ve önce tamamlanması gereken adımlar.
-- `execution`: kayıtlı yetenek yürütücüsü ve 1–8 worker sınırı.
+- `fields`: kurulum alanları ve türleri.
+- `table`: başlık ve sütunlar.
+- `records`: alan eşlemeleri, tekilleştirme ve sınıflandırma geçişleri.
+- `workflow`: yetenek, kaynak/kayıt kapsamı, talimat ve bağımlılıklar.
+- `execution`: kayıtlı yürütücü ve worker sınırı.
 
-[İkinci el araba template’i](examples/car-search.loop-template.json) uygulama koduna eklenmeden içe aktarılır. İlan bulma, değerlendirme, mesaj hazırlama ve yetkili gönderim adımlarını; fiyat/kilometre sütunlarını ve kısa liste butonunu tanımlar.
+`browser.observe`, `browser.evaluate`, `browser.prepare` ve `browser.act` bütün yerleşik template’lerde ortaktır. Template dosyaları çalıştırılabilir JavaScript içermez. Yeni bir entegrasyon yeni bir yetenek gerektirebilir; mevcut yetenekleri kullanan bir template için yeni ekran gerekmez.
 
-## Tek kayıt ve görev modeli
+## Kaynaklar ve sorular
 
-Web template'lerinde kaynaklar bağımsız tarama turları kullanır. Her kaynak için
-ad, kapsam, etkinlik, aralık, işlem modu, son sonuç ve sonraki çalışma zamanı
-saklanır. Kaynaklar ekranı bunları eski satır düzeninde gösterir; tek kaynak
-başlatılabilir veya kapatılabilir. Kaynak işlem yetkisi profil yetkisini aşamaz.
+Her kaynak ad, kapsam, etkinlik, tarama aralığı, işlem modu, skill, araç ve devam noktası saklar. Toplu tarama aralığı kapalı kaynaklara da uygulanır; başka çalışma alanını değiştirmez. Kaynak yetkisi çalışma alanının yetkisini aşamaz. Engelli kaynaklar kendi yeniden deneme durumunu korur.
 
-Bir kaynakta IP engeli, giriş engeli veya süre aşımı diğer kaynakların kuyruğunu
-durdurmaz. Engelli kaynak kullanıcı yeniden denediğinde açılır; otomatik yeniden
-deneme sözü verilmez. Sağlıklı kaynaklar kendi aralıklarını kullanır. Kaynak
-başına görev grafiği ve kayıt bağımlılıkları ortak `workspace_tasks` kuyruğunda
-kalır. Worker kapanmadan aynı görev yeniden verilemez. Sonucu belirsiz bir dış
-işlem veya sonlandırılamayan sağlayıcı oturumu çalışma alanını durdurmaya devam
-eder. Yeni kaynak eklenmesi profil inceleme ve denemesini yeniden gerektirir.
+`get_workspace_source_instructions` atanmış kaynağın skill ve CLI açıklamasını verir. `run_workspace_source_tool` yalnızca atanmış kaynağın kayıtlı aracını çalıştırır. Sonuçlar ve tarama ilerlemesi ortak otomasyon araçlarına kaydedilir.
 
-Kaynak agent'ı turu bitirirken yapılandırılmış tarama kapsamını bildirir:
-`complete`, `pendingUrls`, `reason`, `evidenceUrl`. Kapsam verilmeden veya
-bekleyen adres varken kaynak tamamlanmış sayılamaz. Kalan adresler gerçekten
-gözlenen, aynı kaynağa ait bağlantılar olmalıdır. Kısmi tur `partial` olarak
-kaydedilir; sağlayıcı kapandıktan sonra aynı görev, kayıtlı adreslerle yeniden
-kuyruğa alınır. Alt adımlar kaynak taraması tamamlanana kadar bekler. Tek seferlik
-çalıştırma da kısmi turun sonunda durmaz. Devam noktası duraklatma ve yeniden
-açılışta korunur; ilerlemeyen aynı adres listesi tekrar tekrar kuyruğa alınamaz.
-Bu kontrol agent'ın bütün ilanları doğru değerlendirdiğini tek başına kanıtlamaz;
-son sayfaya ulaşıldığı ve eleme gerekçeleri ayrıca denetlenmelidir.
+Hazır template seçimi kurulum agent’ını ilk mesajı beklemeden başlatır. Agent template alanlarını ve kayıtlı belgeleri kullanarak eksik bilgileri sorar. Özel boş çalışma alanında kullanıcı önce amacını yazar. Kurulum turları önceki sağlayıcı oturumunu sürdürmez; ortak depodaki plan, sorular, yanıtlar ve mesajlarla yeni oturum açar.
 
-`workspace_records`, eski `jobs` ve `automation_results` tablolarının yerini alır. Kimlik, çalışma alanı, tekilleştirme anahtarı ve kayıt verisi burada saklanır. Template alan eşlemeleri eski şirket/pozisyon alanlarını ortak `fields` görünümüne çevirir. CV ve başvuruya özgü kanıtlar kaybolmadan aynı kaydın uzantı alanlarında kalır.
+`ask_workspace_question` bütün template’lerde metin, sayı, tarih, evet/hayır, tek seçim ve çoklu seçim formları oluşturur. Aynı yanıtsız soru tekrar oluşturulmaz. `workspace-answer` yanıtları çalışma alanı kimliğine göre doğrular; yanıt ve yapılandırılmış değerler agent bağlamında saklanır. Kullanıcı form yerine serbest metinle de yanıtlayabilir. Taslak yanıtlar çalışma alanı/soru kimliğiyle yerelde korunur. Son bekleyen form yanıtı kaydedilince kurulum agent’ı otomatik devam eder. Başlatma hatasında yanıt korunur ve tekrar devam düğmesi gösterilir. Kurulum sırasında soru kaydedip bitiş aracı çağırmadan duran agent, form yanıtı bekliyor olarak gösterilir; soru veya sonuç kaydetmeyen duruş hata olarak kalır. Bekleyen ilgili sorular işlem rezervasyonunu engeller; yanıt vermek işlem yetkisi sağlamaz.
 
-`workspace_tasks` bekleyen/çalışan/sonucu kaydedilmiş/duraklatılmış/tamamlanmış görevleri saklar. Her worker tek görev alır; aynı kaynak veya kayıt için çakışan rezervasyonlar engellenir. Bağımlılıklar tamamlanmadan sonraki adım başlayamaz. Web görevinde sonuç bildirilmesiyle sağlayıcı sürecinin kapanması farklı aşamalardır; bağımlılıklar kapanış doğrulandıktan sonra açılır.
+## Entegrasyonlar
 
-İş aramanın görev gövdesi de bu tabloda saklanır. Kampanya kayıtları yalnızca görev kimliğine işaret eder; eski kontrol akışı bu ortak kaydı okuyarak devam eder. `workspace_workers`, bütün template’lerin worker kimliklerini ve isimlerini tutar. Konuşmalar worker bazında ayrılır.
+`workspace-support-services.mjs` arka plan becerilerini ve Telegram servislerini bütün çalışma alanları için kaydeder. `WorkspaceSupport` ortak kayıtları mevcut taşıma protokollerine uyarlar. Bu uyumluluk görünümü eski iş arama yürütücüsünü çalıştırmaz. Bildirim, posta ve arka plan tabloları `workspaces` kimliğine bağlıdır.
 
-## Özel yeteneklerin sınırı
+## Eski verilerin geçişi
 
-İş arama isteğe bağlı `job-search` uzantısıdır. `app/main.mjs` yalnızca ortak veri deposunu, tarayıcıyı, agent oturumlarını, MCP taşımasını ve kayıtlı uzantıları açar. `app/extensions/job-search` başvuru durumlarını, `jobs.*` yeteneklerini, aday deposunu, MCP araçlarını, başlangıç talimatlarını ve başvuru servislerini sağlar. Kampanya ve başvuru devam koduna yalnızca bu uzantı üzerinden ulaşılır. `app/store.mjs` ve `app/mcp.mjs` mevcut başvuru istemcileri için uyumluluk girişleridir; genel başlangıç bunları yüklemez.
+Şema 8 öncesinde mevcut yedek mekanizması çalışır. `upgradeWorkspaces` eski aday alanlarını bir kez ortak otomasyona taşır:
 
-`TemplateRegistry`, yürütücülerin yeteneklerini, varsayılan adımlarını, kayıt durumlarını ve template’lerini kaydeder. Çekirdek `applications` / `browser` ayrımı yapmaz. Yeni bir yürütücü kendi sözleşmesini ve çalışma metotlarını kaydeder; kayıtlı olmayan yürütücü ve yetenekler reddedilir. Workspace oluşturma da `workspaceCreate(templateId, input)` üzerinden ilgili uzantıya gider.
+- Çalışma alanı, worker, kayıt ve soru kimlikleri korunur.
+- Kaynak aralıkları, durumları, araçları ve devam noktaları korunur.
+- Soruların alanları ve önceki yanıtları taşınır.
+- Gönderilmiş kayıtlar `completed`, sonucu belirsiz girişimler `uncertain` olur. Tekrar gönderim için uygun sayılmazlar.
+- Eski profil, başvuru politikası, puanlama ayarları ve görev geçmişi referans verisi olarak korunur.
+- Dosya ve tarayıcı dizinleri yerinde kalır; ortak dizin çözümleyicisi bunları kullanır.
+- Kişisel iş arama template’leri de `browser` yürütücüsüne taşınır.
 
-Varsayılan kurulum iş arama uzantısını yükler. `LOOP_EXTENSIONS=''` ile başlatıldığında genel web otomasyonu tek başına açılır; aday, başvuru kampanyası ve soru tabloları oluşturulmaz, başvuru araçları sunulmaz. Daha önce kaydedilmiş bir uzantının verileri korunur; uzantı kapalıyken o workspace’ler listelenmez. Uzantı yeniden açıldığında aynı kimliklerle kullanılabilir.
+Taşınan alan duraklatılır; kullanıcı profili kontrol edip kaynak denemesini yaptıktan sonra devam eder. Eski görevler kesilmiş geçmiş olarak kalır. `workspace_imports` makbuzu yeniden açılışta eski verinin değişiklikleri ezmesini veya silinen alanın geri gelmesini engeller. Silme işlemi eski alana bağlı kayıtları ve dosyaları da kaldırır.
 
-Ortak Agent ekranı `workspace`, `execution`, `workers[].execution`, `presentation` ve `capabilities` alanlarını okur. Web snapshot’ında yapay `profile` veya `campaign` bulunmaz. Başvuruya özel ekranlar gerçek aday ve kampanya verilerini uzantıdan almaya devam eder.
+Eski `app/extensions/job-search` modülleri eski veri sözleşmesinin testleri ve geçiş uyumluluğu için depoda bulunur. Varsayılan uygulama bunları kaydetmez; eski `LOOP_EXTENSIONS=job-search` ayarı da ayrı bir çalışma yolu açmaz.
 
-Genel tarayıcı yürütücüsü template grafiğini kaynak ve kayıt görevlerine dönüştürür. `browser.observe`, `browser.evaluate`, `browser.prepare` ve `browser.act` kayıtlı yeteneklerdir. İki kaynak iki worker’a, sonraki kayıt görevleri boşalan worker’lara dağıtılabilir. `TaskRuns` süre sınırı, kapanış ve kesintiyi; `AgentSessions` sağlayıcı sürecini yönetir.
+## Doğrulama
 
-Başvuru uzantısı `jobs.search`, `jobs.rank`, `jobs.prepare`, `jobs.apply` ve `jobs.verify` yeteneklerini sağlar. CV, uygunluk puanı, kullanıcı yanıtından devam etme, başvuru hedefi ve belirsiz gönderimden toparlanma kuralları `Campaigns` içinde korunur. Bunlar başvuruya ait görev seçme ve doğrulama kurallarıdır; ayrı kayıt deposu, worker kuyruğu veya Agent motoru kurmazlar. Bu uzantının özel görev sırası serbest bir JSON grafiğiyle değiştirilemez; yeni bir başvuru davranışı ilgili yetenek koduna eklenir.
+`workspace-upgrade.test.mjs` kimlik, geçmiş, soru, kaynak aralığı, yeniden açılış ve silme geçişini sınar. `workspace-questions.test.mjs` dört template’in ortak agent aracıyla form oluşturmasını, yanıt doğrulamasını ve çalışma alanları arasındaki yalıtımı sınar. `extensions.test.mjs` varsayılan başlangıçta eski yürütücü bağımlılığı olmadığını doğrular.
 
-Yeni bir web template’i mevcut yetenekleri kullanıyorsa uygulama kodu gerektirmez. Yeni bir entegrasyon veya tarayıcının sunmadığı işlem yeni bir kayıtlı yetenek gerektirir. Template dosyaları çalıştırılabilir JavaScript içermez.
+`scripts/smoke-generic-workspace-ui.mjs` izole Electron verisiyle eski iş arama ve yeni ev arama alanlarını açar; ortak kaynak ekranında aralıkları değiştirir, soru formlarını yanıtlar ve yeniden açılışta kaydı kontrol eder. Canlı portallara başvuru göndermez.
 
-## Ekran ve yetki
+## Kayıt üzerinden işlem yapma
 
-Tek `#agent` ekranı, terminal, ayarlar ve worker bileşeni kullanılır. Listeleme, durum okuma, başlatma, durdurma, yeniden başlatma ve ayarlar `workspaces` / `workspace-*` API’sinden geçer. Eski `snapshot`, `start`, `stop`, `pause` ve paralel `automation-list` / `automation-snapshot` girişleri kaldırılmıştır. Template ekranı ile Agent ekranı aynı snapshot’ı kullanır; `active` sağlayıcı oturumunu, `activeRun` web görevini belirtir. `record-table.js` tablo/hücre/özel durum butonlarını, `template-fields.js` tanımlı soruları çizer. Mevcut başvuru tablosunun CV/puanlama/başvuru kontrolleri yetenek uzantısı olarak kalır.
+Tarayıcı template’leri `recordOperations.prepare`, `execute` ve `verify` tanımlarını paylaşır. Template düğme adlarını, görev talimatlarını ve başarı koşulunu belirler; kuyruk, izinler, belgeler ve sonuç kaydı ortak yürütücüde kalır. İş arama başvuru, ev arama mesaj, randevu template’i rezervasyon adlarını kullanır. Tanımlar template dışa/içe aktarımında korunur; bir işlem veya tamamı `false` ile kapatılabilir.
 
-Agent’ın ortak araçları: `configure_workspace_table`, `get_workspace_records`, `update_workspace_cells`, `transition_workspace_record`. Sınıflandırma geçişi gönderim kanıtını, işlem yetkisini veya onayı değiştirmez. İşlem sonucu ayrıca gösterilir. Gönderim hâlâ kayıtlı yetki, güncel taslak, tekilleştirme ve sonuç doğrulamasından geçer.
+Varsayılan kaynak görevi yalnızca bulguları kaydeder. Kayıt işlemi kaynak taramasının tamamlanmasına bağlı değildir; kendi kayıt kilidi ve tarayıcı sekmesini kullanır. `observe` otomatik hazırlık/gönderim başlatmaz; `prepare` taslak oluşturur ve onay bekler; `auto` kayıtlı kapsam ve sınırlar içinde yürütür. Mevcut özel kayıt workflow’ları kendi bağımlılıklarını korur.
 
-## Veri geçişi ve doğrulama
+Tabloda kullanıcı taslağı hazırlar, içeriği inceler ve tek kayıt için onaylar. Bu onay taslak özeti (digest) ve kurulum sürümüne bağlıdır; çalışma alanının izin modunu değiştirmez. Değişen taslak yeniden onay gerektirir. Gönderim öncesinde kalıcı rezervasyon yapılır; günlük/toplam sınırlar ve yinelenen gönderim kontrolü uygulanır. İşlemden sonra güncel sayfa kanıtı gerekir. Kesilen gönderim `uncertain` kalır ve yalnızca doğrulama sunar.
 
-Agent ayarları, tarayıcı seçimi, Chrome profili ve tablo şeması yalnızca `workspaces` içinde saklanır. CV, öğrenilen bilgiler, başvuru politikası ve puan eşiği güncellemeleri ortak alanları `candidates` kaydına geri yazmaz. Açılış geçişi eski kopyaları temizler; mevcut workspace ayarlarını korur.
+Eksik bilgiler ortak soru formuyla kayda bağlı sorulur; yanıt aynı kayıt için hazırlığı sürdürür. `browser_upload_document` yalnızca gönderim rezervasyonu yapılmış kayıtta, taslakta adı bulunan ve gerçek yolu çalışma alanında kalan dosyaları yükler. Jev gözlenen `uploadId`, ayrı tarayıcı açık dosya seçicisini kullanır. Tarayıcı ve agent aynı çalışma alanı dosya dizinini paylaşır.
 
-Worker ekleme, başlatma, durdurma, yeniden başlatma ve kaldırma çağrıları `Workspaces` servisinden geçer. Üyelik kontrolü, yeniden başlatma kilidi, sağlayıcı kapandıktan sonra konuşmayı temizleme ve terminal çıktısını kaldırma ortaktır. Başvuru uzantısı yeniden başlatma öncesinde CV ve hedefi doğrular; kesilen gönderimin doğrulama görevi olarak devam etmesini sağlar. Web uzantısı kendi kalıcı görevlerini aynı worker arayüzüne bağlar.
+`tests/record-operations.test.mjs` izin, değişen taslak, limit, soru devamı, belge yolu, sekme yalıtımı ve belirsiz sonuç kontrollerini sınar. `scripts/smoke-record-operations.mjs` ayrı Electron verisi ve yerel HTTP formuyla hazırlama, inceleme, belge yükleme, gönderme ve doğrulamayı; üç template’in ortak düğmelerini kontrol eder. Provider kararları testte taklit edilir; canlı siteye başvuru gönderilmez.
 
-Arayüz bütün template’lerde aynı `renameWorkspace`, `deleteWorkspace`, `documents`, `pickDocument`, `readDocument` ve `openDocument` API’lerini kullanır. CV seçimi `pickDocument(id, {purpose:'cv'})` üzerinden başvuru uzantısına iletilir. Belgelerin dizin sınırları ve metin önizleme kontrolleri ortaktır; eski `automationRename`, `automationDelete` ve paralel belge API’leri kaldırılmıştır.
-
-Şema 5, eski kayıtları JSON içeriğini değiştirmeden ortak tabloya taşır; soru ve ilan eşleme ilişkilerini yeni tabloya bağlar. Eski worker isimleri, konuşma kimlikleri ve görev gövdeleri taşınır. Taşıma tamamlanınca `agent_workers`, `agent_conversations` ve `conversation_launch_settings` kaldırılır; yeni açılışlarda yeniden oluşturulmaz. Kişisel başvuru template’lerinin kimliği yeniden açılışta korunur. Yeniden deneme bilgileri ortak worker kuyruğunda saklanır; kampanya kayıtlarına kopyalanmaz. Ortak kuyruğa taşınmış görevler her açılışta yeniden yazılmaz. Geçiş tekrarlanabilir; açılış öncesinde mevcut yedek mekanizması çalışır. Tarayıcı giriş dizinleri taşınmaz. Yedek geri yükleme görevleri durdurur, konuşma kimliklerini ve işlem onaylarını temizler.
-
-`generic-workspaces.test.mjs` yeni template tanımını, iki worker ile adım bağımlılıklarını, kapanış rezervasyonunu, gönderim yetkisini ve şema 4 geçişini sınar. Mevcut iş arama testleri başvuru devam kurallarını doğrular. Electron testleri gerçek içe aktarma, alan türleri, kısa liste butonu/filtre, aynı Agent ekranında iki worker, özgün iş arama ekranı, yedek geri yükleme ve yerel form gönderimini kapsar. Sağlayıcı kararları testlerde kontrollüdür; canlı portallarda başarı garantisi çıkarılmaz.
-
-`extensions.test.mjs` üçüncü bir yürütücünün kaydını, iş arama kapatılıp yeniden açıldığında veri korunmasını ve genel başlangıcın başvuru modüllerine statik bağımlılığı olmadığını sınar. `scripts/smoke-web-only.mjs`, iş arama uzantısı tamamen kapalıyken Electron’da workspace oluşturur; gerçek Chrome ile deneme, sayfalama ve iki ilanı kaydetme akışını çalıştırır. SQLite’ta aday/başvuru tablolarının oluşmadığını ve MCP’de başvuru araçlarının sunulmadığını doğrular. Bu testte sağlayıcı yanıtları kontrollüdür; tarayıcı, IPC, MCP ve veri deposu gerçektir.
-
-Eski şema ve sürüm 1 template dosyalarını okumak için gereken dönüşümler korunur. CV, puanlama ve başvuru devam kuralları yetenek uzantıları olarak korunur.
+Kullanıcının hazırlama isteği, sıradaki geçerli hazırlamalar için mevcut worker havuzunu açar. Tek iş için bir worker yeterlidir; birden çok kayıt varsa ekli worker’lar ihtiyaç kadar açılır. Yeni worker oluşturulmaz; kapasiteyi aşan işler sırada kalır. Onaylı uygulama ve doğrulama isteği, bütün worker’lar kapalıysa ana worker’ı açar. Tekrar seçilen kuyruk isteği aynı görevi korur. Arka plan döngüsü kullanıcının durdurduğu worker’ı kendiliğinden açmaz; yeni açık kullanıcı isteği bu tercihi yeniler. Çalışma alanının izin modu veya kaynak takibi değişmez.

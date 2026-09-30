@@ -1,9 +1,10 @@
+import {migrateApplicationConversations} from './legacy-conversations.mjs';
 import {templateContract} from './template-contract.mjs';
 import {browserDefinition} from './browser-definition.mjs';
 import {automationTemplates} from './automation-templates.mjs';
 
 export class TemplateRegistry {
- constructor(drivers=[]){this.drivers=new Map();this.templates=new Map();this.register({...browserDefinition,templates:automationTemplates});for(const driver of drivers)this.register(driver);}
+ constructor(drivers=[]){this.drivers=new Map();this.templates=new Map();this.register({...browserDefinition,...(!drivers.some(d=>d.id==='applications')?{legacyWorkspaces:[...browserDefinition.legacyWorkspaces,{table:'candidates',defaultTemplate:'job-search'}],legacyRecords:[...browserDefinition.legacyRecords,{table:'jobs',owner:'candidate_id',key:'url',identity:'identity'}],legacyWorkers:[{table:'agent_workers',owner:'candidate_id'}],migrate:migrateApplicationConversations}:{}),templates:automationTemplates.filter(t=>!drivers.some(d=>d.templates?.some(own=>own.id===t.id)))});for(const driver of drivers)this.register(driver);}
  register(driver){
   if(!/^[a-z][a-z0-9_-]*$/.test(driver.id)||this.drivers.has(driver.id))throw Error('Yürütücü kimliği benzersiz olmalı');
   this.drivers.set(driver.id,driver);

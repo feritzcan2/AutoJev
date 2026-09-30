@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {mkdtemp} from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
+import {AutomationStore} from '../app/automation-store.mjs';
+const require=createRequire(import.meta.url),{_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
+const data=await mkdtemp(path.join(os.tmpdir(),'table-layout-')),core=new WorkspaceDatabase(path.join(data,'jobloop.sqlite')),db=new AutomationStore(core),definition=db.template('housing');
+const a=db.create('housing',{title:'Table layout check',goal:'Find a home',criteria:Object.fromEntries(definition.fields.filter(f=>f.required).map(f=>[f.id,'Known'])),sources:['https://example.test/list']});db.review(a.id);db.skipTrial(a.id);
+const run=db.begin(a.id,'run'),item=db.record(a.id,run.id,{key:'home',url:'https://example.test/detail',title:'A sufficiently long listing title to check compact text',summary:'Observed listing'});db.finish(a.id,run.id,'completed','Found');db.pause(a.id);
+const text='Giriş tamamlandıktan sonra bu kaydın hazırlığı devam edebilir. '.repeat(15);db.askQuestion(a.id,{recordId:item.id,text});core.close();
+const env={...process.env,JOBLOOP_DATA_DIR:data};delete env.ELECTRON_RUN_AS_NODE;
+const app=await electron.launch({executablePath:require('electron'),args:[process.cwd()],env});
+try{
+ const page=await app.firstWindow();await page.locator('aside nav [data-view=board]').click();await page.setViewportSize({width:1040,height:900});
+ const row=page.locator(`[data-result-id="${item.id}"]`),detail=row.locator('.record-operation-detail');await detail.waitFor();
+ const layout=await row.evaluate(r=>{const d=r.querySelector('.record-operation-detail'),time=r.querySelector('time');return {height:r.clientHeight,detailHeight:d.clientHeight,line:parseFloat(getComputedStyle(d).lineHeight),dateWidth:time.parentElement.clientWidth,dateTop:time.children[0].getBoundingClientRect().top,timeTop:time.children[1].getBoundingClientRect().top};});
+ assert.ok(layout.height<190);assert.ok(layout.detailHeight<=layout.line*3+2);assert.ok(layout.dateWidth<140);assert.ok(layout.timeTop>layout.dateTop);assert.equal(await detail.getAttribute('title'),text.trim());await detail.hover();
+ await app.evaluate(({ipcMain},item)=>{globalThis.focused=[];ipcMain.removeHandler('workspace-tabs');ipcMain.handle('workspace-tabs',()=>[{tabId:'owned',recordId:item.id,url:'https://example.test/login'}]);ipcMain.removeHandler('focus-workspace-tab');ipcMain.handle('focus-workspace-tab',(_,id,tab)=>{globalThis.focused.push({id,tab});return {focused:true};});},item);
+ await row.getByRole('button',{name:'Sekmeye git',exact:true}).click();assert.deepEqual(await app.evaluate(()=>globalThis.focused),[{id:a.id,tab:'owned'}]);
+ const controls=page.locator('.record-table-scroll-controls'),slider=page.getByRole('slider',{name:'Tablonun yatay kaydırma konumu'});await controls.waitFor();await slider.focus();await slider.press('Home');await page.waitForFunction(()=>document.querySelector('.record-table-scroller').dataset.left==='false');await page.getByRole('button',{name:'Tabloyu sağa kaydır',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.jobs-table-wrap').scrollLeft>50);
+ await slider.focus();await slider.press('End');await page.waitForFunction(()=>document.querySelector('.record-table-scroller').dataset.right==='false');assert.equal(await page.getByRole('button',{name:'Tabloyu sağa kaydır',exact:true}).isDisabled(),true);
+ await page.locator('[data-result-sort=status]').click();await page.waitForFunction(()=>document.querySelector('.jobs-table-wrap').scrollLeft>50);
+ await page.screenshot({path:path.join(data,'narrow.png')});await page.setViewportSize({width:2200,height:1000});await controls.waitFor({state:'hidden'});
+ await page.screenshot({path:path.join(data,'wide.png')});console.log('TABLE_LAYOUT_SCROLL_COMPACT_TEXT_DATE_AND_EXACT_TAB_PASS',JSON.stringify({layout,data}));
+}finally{await app.close();}

@@ -54,7 +54,7 @@ test('read navigation uses an app-owned stable scope, never URL-matched foreign 
   const adapter=automationBrowser(browser,{mode:'jev',readTabKey:'read:main'});
   for(const url of ['https://example.com/page','https://example.com/detail'])await adapter.call('workspace','browser_navigate',{url},session);
  }
- assert.equal(calls.length,4);assert.ok(calls.every(c=>c.name==='browser_jev_open'&&c.options.automationTabKey==='read:main'));assert.ok(calls.every(c=>!c.args.tabId));
+ const opens=calls.filter(c=>c.name==='browser_jev_open'),reads=calls.filter(c=>c.name==='browser_jev_observe');assert.equal(opens.length,4);assert.equal(reads.length,4);assert.ok(opens.every(c=>c.options.automationTabKey==='source:https://example.com'&&c.options.automationSourceUrl==='https://example.com'&&!c.args.tabId));assert.ok(reads.every(c=>c.args.tabId==='reading'&&c.args.scope==='document'));
 });
 
 test('source tab changes invalidate cached page handles and are unavailable to other task kinds',async t=>{

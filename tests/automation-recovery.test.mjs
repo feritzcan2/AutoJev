@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {Store} from '../app/store.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {WebTasks} from '../app/web-template.mjs';
-import {unreportedSourceRun} from '../app/automation-recovery.mjs';
+import {unreportedSourceRun,retryTechnicalSource} from '../app/automation-recovery.mjs';
 
 const source='https://listings.test/results',second=source+'?page=49',settle=()=>new Promise(r=>setImmediate(r));
 function fixture(t){
@@ -17,6 +17,18 @@ function fixture(t){
  const checkpoint=run=>{db.observe(a.id,run.id,second,'Page 49 of 71');db.reportPage(a.id,run.id,{currentPage:49,totalPages:71,url:second,evidence:'Page 49 of 71',at:Date.now()});};
  return {db,store,id:a.id,runtime,launches,options,event,checkpoint,busy:value=>{busy=value;},state:value=>{state=value;},close:fn=>{close=fn;}};
 }
+
+test('verified technical recovery preserves the task and cutoff and waits before relaunching',async t=>{
+ const f=fixture(t);await f.runtime.runOnce(f.id);await settle();const run=f.launches[0];f.checkpoint(run);
+ const plan=f.db.run(run.id).scanPlan,outcome=retryTechnicalSource(f.db,f.id,run.id,'Rendering unfinished',Date.now());
+ f.runtime.report(f.id,run.id,outcome.status,outcome.summary);t.mock.timers.tick(150);await settle();
+ const task=f.store.workspaces.tasks.get(f.id,run.taskId);assert.equal(task.state,'pending');assert.equal(task.technicalRecovery.attempt,1);
+ assert.equal(f.db.sources(f.id)[0].blocked,false);await f.runtime.tick();assert.equal(f.launches.length,1);
+ t.mock.timers.tick(30000);await f.runtime.tick();await settle();
+ assert.equal(f.launches.length,2);assert.equal(f.launches[1].taskId,run.taskId);assert.deepEqual(f.launches[1].scanPlan,plan);assert.deepEqual(f.launches[1].scan.pendingUrls,[second]);
+ const again=retryTechnicalSource(f.db,f.id,f.launches[1].id,'Still unavailable',Date.now());
+ assert.equal(f.db.run(f.launches[1].id).recovery.readyAt-Date.now(),120000);assert.equal(again.status,'interrupted');
+});
 
 test('Claude compaction cannot turn an intermediate idle into a failed source',async t=>{
  const f=fixture(t);await f.runtime.runOnce(f.id);await settle();const run=f.launches[0];f.checkpoint(run);f.event('Working');f.event('Idle');f.busy(true);
@@ -68,6 +80,16 @@ test('a reported completion is never retried by a subsequent provider exit',asyn
  const f=fixture(t);await f.runtime.runOnce(f.id);await settle();const run=f.launches[0];
  f.runtime.report(f.id,run.id,'completed','All pages processed');f.runtime.event(f.id,{event:'eof'},run.id);t.mock.timers.tick(150);await settle();await f.runtime.tick();
  t.mock.timers.tick(60000);await f.runtime.tick();assert.equal(f.launches.length,1);assert.equal(f.db.run(run.id).status,'completed');assert.equal(f.store.workspaces.tasks.get(f.id,run.taskId).state,'completed');
+});
+
+test('a provider usage limit waits in the same session and clears without restarting completed page work',async t=>{
+ const f=fixture(t);await f.runtime.runOnce(f.id);await settle();const run=f.launches[0];f.checkpoint(run);f.event('Working');
+ const usageLimit={provider:'claude',resetLabel:'06:00 (Europe/Istanbul)',automaticResume:true};
+ f.runtime.event(f.id,{event:'usage_limit',usageLimit},run.id);f.event('Idle');t.mock.timers.tick(7200000);await settle();await f.runtime.tick();
+ assert.equal(f.launches.length,1);assert.equal(f.db.run(run.id).status,'running');assert.equal(f.db.run(run.id).pageProgress.currentPage,49);assert.deepEqual(f.db.run(run.id).usageLimit,usageLimit);
+ f.runtime.event(f.id,{event:'usage_limit',usageLimit:null},run.id);f.event('Working');t.mock.timers.tick(60000);await settle();assert.equal(f.launches.length,1);assert.equal(f.db.run(run.id).usageLimit,null);
+ f.runtime.event(f.id,{event:'usage_limit',usageLimit},run.id);f.runtime.event(f.id,{event:'eof'},run.id);await settle();t.mock.timers.tick(60000);await f.runtime.tick();
+ assert.equal(f.launches.length,1,'A closed quota-limited provider must not enter automatic recovery');assert.equal(f.db.run(run.id).status,'blocked');assert.equal(f.db.run(run.id).usageLimit.automaticResume,false);
 });
 
 test('legacy unreported errors recover on restart; real access blockers and paused workspaces remain blocked',async t=>{

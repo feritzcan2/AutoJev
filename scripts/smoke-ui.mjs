@@ -63,6 +63,7 @@ try{
  await page.locator('#reasoning').selectOption('high');
  await page.locator('[name=contextRestartPercent]').fill('16');
  await page.locator('[name=contextRestartPercent]').press('Tab');
+ await page.locator('#agent-settings-save').click();
  await page.waitForFunction(()=>document.querySelector('#agent-settings-status').textContent.startsWith('Kaydedildi'));
  await page.reload();
  await page.locator('button[data-view=agent]').click();
@@ -70,7 +71,8 @@ try{
  if(await page.locator('[name=contextRestartPercent]').inputValue()!=='16')throw Error('Context threshold was not persisted');
  await page.locator('[name=browserMode]').selectOption('jev');
  await page.locator('#chrome-profile-field').waitFor({state:'visible'});
- await page.waitForFunction(()=>document.querySelector('#agent-settings-status').textContent.startsWith('Kaydedildi. Tarayıcı'));
+ await page.locator('#agent-settings-save').click();
+ await page.waitForFunction(()=>document.querySelector('#agent-settings-status').textContent.startsWith('Kaydedildi.'));
  await page.reload();await page.locator('button[data-view=agent]').click();
  if(await page.locator('[name=browserMode]').inputValue()!=='jev')throw Error('Jev selection was not persisted');
  await page.locator('.chrome-status').waitFor({state:'visible'});
@@ -80,6 +82,7 @@ try{
  await page.locator('#provider').selectOption('claude');
  await page.locator('#model').selectOption('sonnet');
  await page.locator('#permission').selectOption('acceptEdits');
+ await page.locator('#agent-settings-save').click();
  await page.waitForFunction(()=>document.querySelector('#agent-settings-status').textContent.startsWith('Kaydedildi'));
  const contextSettings=await page.evaluate(async()=>{const c=(await window.jobloop.candidates())[0];return (await window.jobloop.workspaceSnapshot(c.id)).profile.agentSettings;});
  if(contextSettings.provider!=='claude'||contextSettings.contextRestartPercent!==16)throw Error('Claude did not retain the context threshold');

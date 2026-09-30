@@ -16,7 +16,7 @@ export function orderWorkspaces(workspaces,order){
 export function workspaceSwitcher(select){
  const mac=/Mac|iPhone|iPad/.test(navigator.platform),modifier=mac?'⌘':'Ctrl+';
  let saved=[];
- try{const value=JSON.parse(localStorage.getItem(ORDER_KEY));if(Array.isArray(value))saved=[...new Set(value.filter(id=>typeof id==='string'&&id))];}catch{}
+ try{const value=JSON.parse(localStorage.getItem(ORDER_KEY));if(Array.isArray(value))saved=[...new Set(value.filter(id=>typeof id==='string'&&id).map(id=>id.replace(/^automation:/,'')))];}catch{}
  const container=select.parentElement,trigger=document.createElement('button'),avatar=document.createElement('span'),label=document.createElement('span'),chevron=document.createElement('span'),menu=document.createElement('div');
  trigger.type='button';trigger.className='workspace-switcher-trigger';trigger.setAttribute('aria-haspopup','menu');trigger.setAttribute('aria-expanded','false');
  avatar.className='workspace-switcher-avatar';avatar.setAttribute('aria-hidden','true');label.className='workspace-switcher-label';chevron.className='workspace-switcher-chevron';chevron.setAttribute('aria-hidden','true');chevron.textContent='⌄';trigger.append(avatar,label,chevron);

@@ -1,3 +1,4 @@
+import {validateSourceSearch} from './source-integrations.mjs';
 import {boundedText,webUrl} from './automation-templates.mjs';
 
 const modes=['observe','prepare','auto'];
@@ -7,11 +8,11 @@ export function sourceMode(automation,url){
 }
 export function automationSources(a){return a.sources.map(url=>{
  const saved=a.sourceSettings?.[url]??{},state=a.sourceState?.[url]??{};
- return {id:url,url,name:saved.name??new URL(url).hostname.replace(/^www\./,''),query:saved.query??a.goal,enabled:saved.enabled!==false,intervalMinutes:saved.intervalMinutes??a.intervalMinutes,mode:sourceMode(a,url),...state};
+ return {...saved,id:url,url,name:saved.name??new URL(url).hostname.replace(/^www\./,''),query:saved.query??a.goal,enabled:saved.enabled!==false,intervalMinutes:saved.intervalMinutes??a.intervalMinutes,mode:sourceMode(a,url),...state};
 });}
 export function sourceInput(a,url,input){
  url=webUrl(url);if(!a.sources.includes(url))throw Error('Kaynak bu çalışma alanına ait değil');
- const saved=a.sourceSettings?.[url]??{},result={...saved};
+ const saved=a.sourceSettings?.[url]??{},result={...saved,...validateSourceSearch(input,saved)};
  if(input.name!==undefined)result.name=boundedText(input.name,'Kaynak adı',120);
  if(input.query!==undefined)result.query=boundedText(input.query,'Arama kapsamı',2000);
  if(input.enabled!==undefined){if(typeof input.enabled!=='boolean')throw Error('Geçersiz kaynak durumu');result.enabled=input.enabled;}

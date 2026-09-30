@@ -21,7 +21,7 @@ export class BrowserSnapshot {
  capture(result){
   const content=result.content??[],text=content.filter(p=>p.type==='text').map(p=>p.text).join('\n');
   const snapshotId=randomUUID();
-  this.current={id:snapshotId,url:result.url,text,...(result.pageNavigation?{pageNavigation:result.pageNavigation}:{})};
+  this.current={id:snapshotId,url:result.url,text,...(result.readiness?{readiness:result.readiness}:{}),...(result.pageNavigation?{pageNavigation:result.pageNavigation}:{})};
   const snapshot={id:snapshotId,totalCharacters:text.length,offset:0,endOffset:text.length,nextOffset:null,complete:true};
   const full={...result,snapshot};
   if(size(full)<=BROWSER_RESPONSE_BYTES)return full;
@@ -37,7 +37,7 @@ export class BrowserSnapshot {
  read({snapshotId,offset=0,limit=BROWSER_PART_CHARACTERS}){
   const page=this.get(snapshotId);
   if(!integer(offset,0,page.text.length)||!integer(limit,1,BROWSER_PART_CHARACTERS))throw Error('Geçersiz sayfa aralığı. Dönen nextOffset değerini kullan.');
-  const build=end=>({url:page.url,...(page.pageNavigation?{pageNavigation:page.pageNavigation}:{}),content:[{type:'text',text:page.text.slice(offset,end)}],snapshot:{id:page.id,totalCharacters:page.text.length,offset,endOffset:end,nextOffset:end<page.text.length?end:null,complete:offset===0&&end===page.text.length},...(offset>0||end<page.text.length?{notice:'Bu, kaydedilmiş sayfanın bir parçasıdır. Devamı için browser_read_part(snapshotId, offset: nextOffset), belirli içerik için browser_search kullan. Parçaları okumak tarayıcı adımı harcamaz; tüm sayfayı okumuş sayılmazsın.'}:{})});
+  const build=end=>({url:page.url,...(page.readiness?{readiness:page.readiness}:{}),...(page.pageNavigation?{pageNavigation:page.pageNavigation}:{}),content:[{type:'text',text:page.text.slice(offset,end)}],snapshot:{id:page.id,totalCharacters:page.text.length,offset,endOffset:end,nextOffset:end<page.text.length?end:null,complete:offset===0&&end===page.text.length},...(offset>0||end<page.text.length?{notice:'Bu, kaydedilmiş sayfanın bir parçasıdır. Devamı için browser_read_part(snapshotId, offset: nextOffset), belirli içerik için browser_search kullan. Parçaları okumak tarayıcı adımı harcamaz; tüm sayfayı okumuş sayılmazsın.'}:{})});
   let end=Math.min(page.text.length,offset+limit);
   // Preserve readable lines when possible, while retaining an exact cursor for
   // single enormous lines and snapshots containing serialized JSON.

@@ -20,6 +20,16 @@ export function unreportedSourceRun(db,id,runId,reason,now){
  db.putRun({...run,recovery});return {status:'interrupted',summary};
 }
 
+export function retryTechnicalSource(db,id,runId,summary,now){
+ const run=db.run(runId);if(!resumable(db,run))return null;
+ const task=db.store.workspaces.tasks.get(id,run.taskId),attempt=(task.technicalRecovery?.attempt??0)+1;
+ const delay=[30000,120000,600000,1800000][Math.min(attempt-1,3)];
+ const recovery={reason:'technical_page',attempt,readyAt:now+delay};
+ db.putRun({...run,recovery});
+ db.store.workspaces.tasks.put({...task,technicalRecovery:recovery});
+ return {status:'interrupted',summary:`Geçici tarama sorunu; kaydedilen adresler ${delay/60000<1?'30 saniye':delay/60000+' dakika'} sonra otomatik yeniden denenecek. ${summary}`.slice(0,6000)};
+}
+
 export function requeueSourceRun(db,run){return db.store.workspaces.tasks.atomic(()=>{
  const q=db.store.workspaces.tasks,task=q.get(run.automationId,run.taskId),a=db.get(run.automationId),state=a.sourceState?.[run.sourceUrl]??{};
  q.put({...task,state:'pending',workerId:null,scan:run.scan??task.scan,scanPlan:run.scanPlan??task.scanPlan,completionState:null,summary:run.summary,retryAt:run.recovery?.readyAt??null,...(run.recovery?{recovery:run.recovery}:{})});
@@ -36,4 +46,11 @@ export function recoverUnreportedSources(db,now){
   const outcome=unreportedSourceRun(db,a.id,run.id,'legacy_unreported',now);if(!outcome)continue;
   const recovered={...db.run(run.id),...outcome};db.putRun(recovered);requeueSourceRun(db,recovered);
  }
+}
+
+export function unreportedInterviewRun(db,id,runId){
+ const run=db.run(runId);if(run.kind!=='interview')return null;
+ const pending=(db.get(id).questions??[]).filter(q=>q.answer==null&&q.createdAt>=run.startedAt);
+ if(!pending.length)return null;
+ return {status:'completed',summary:'Kurulum soruları kaydedildi; form yanıtların bekleniyor.'};
 }

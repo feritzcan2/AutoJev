@@ -58,7 +58,7 @@ Dosya uygulamanın template içe aktarma şemasıyla doğrulandı. Yeni kuruluml
 kriterler ve kaynaklarla başlar; kendi şehirleri için araştırma ve deneme gerekir.
 
 Test otomasyonu kullanıcıya açık bırakıldı; kriterler **Çalışma alanı profili**
-sayfasından değiştirilebilir. Değişiklik sonrasında yeni deneme gerekir. Takip
+sayfasından değiştirilebilir. Profil kaydedilince önceki deneme sonucu korunur. Takip
 üstteki **Durdur** düğmesiyle durdurulabilir.
 
 ## Eski arayüzle tablo düzenleme testi

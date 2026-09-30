@@ -1,4 +1,3 @@
-import './question-form.css';
 const node=(tag,value)=>{const e=document.createElement(tag);if(value!==undefined)e.textContent=value;return e;};
 export function questionForm(candidate,q,submit){
  const form=node('form');form.className='candidate-question-form';const key=`jobloop-question:${candidate}:${q.id}`;let draft={};try{draft=JSON.parse(localStorage.getItem(key)??'{}');}catch{}

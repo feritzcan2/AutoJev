@@ -1,3 +1,7 @@
+import {automationTrialReady} from './automation-trial.mjs';
+import {registerWorkspaceSupport} from './workspace-support-services.mjs';
+import {upgradeWorkspaces} from './workspace-upgrade.mjs';
+import {workspaceBrowserDirectory} from './workspace-paths.mjs';
 import {AgentProfiles} from './agent-profiles.mjs';
 import {WEB_AGENTS,WEB_AGENT_ROLES} from './automation-agent-profiles.mjs';
 import {InstructionLog} from './instruction-log.mjs';
@@ -70,18 +74,21 @@ async function boot(){
   stop:async()=>{for(const service of services)await service.stop?.();},resume:async()=>{if(!quitting)for(const service of services)await service.resume?.();}
  });
  function handle(name,fn){ipcMain.handle(name,async(event,...args)=>{if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame)throw Error('Untrusted sender');return maintenance.invoke(name,()=>fn(...args));});}
- const automationDb=new AutomationStore(core),web=registerAutomationServices({root,data,db:automationDb,browsers:browser,mcp,agents,handle,emit,validateSettings:settings=>ensureEngine().request('validate',settings),dialog,shell,window:()=>window,notify:(title,body)=>{if(Notification.isSupported()&&!window?.isFocused()){const notification=new Notification({title,body:body.slice(0,300)});notification.on('click',()=>{window?.show();window?.focus();});notification.show();}}});
+ const automationDb=new AutomationStore(core);upgradeWorkspaces(automationDb);
+ const web=registerAutomationServices({root,data,db:automationDb,browsers:browser,mcp,agents,handle,emit,validateSettings:settings=>ensureEngine().request('validate',settings),dialog,shell,window:()=>window,notify:(title,body)=>{if(Notification.isSupported()&&!window?.isFocused()){const notification=new Notification({title,body:body.slice(0,300)});notification.on('click',()=>{window?.show();window?.focus();});notification.show();}}});
  workspaces.templates[browserDefinition.id]={
-  agentRoles:()=>WEB_AGENT_ROLES,
-  instructions:(id,role)=>webInstructionCatalog(automationDb,id,role),
+  agentRoles:()=>[...WEB_AGENT_ROLES,'background'],
+  instructions:(id,role)=>role==='background'?support.instructions(id):webInstructionCatalog(automationDb,id,role),
   configuration:id=>webPromptCatalog(automationDb.get(id)),
   create:(templateId,input)=>automationDb.create(templateId,input),directory:web.workspace,documentPurposes:['attachment'],beforeDocument:id=>automationDb.assertIdle(id),documentAdded:(id,document)=>automationDb.message(id,'system',`Kullanıcı bir belge ekledi: ${document.relative} (${document.name}). Yalnızca bu otomasyon kapsamında kullan.`),
-  rename:(id,name)=>automationDb.rename(id,name),remove:web.remove,browserDirectory:()=>path.join(data,'automations'),browserOptions:id=>({config:()=>jevSettings.config(),profile:core.workspaces.get(id).chromeProfile,lifecycle:{multiWorker:true}}),
-  workers:{add:(id,input)=>web.runtime.add(id,input),start:(id,worker)=>web.runtime.startWorker(id,worker),stop:(id,worker)=>web.runtime.stopWorker(id,worker),remove:(id,worker)=>web.runtime.remove(id,worker)},
+  rename:(id,name)=>automationDb.rename(id,name),remove:web.remove,browserDirectory:id=>workspaceBrowserDirectory(data,core.workspaces.get(id)),browserOptions:id=>({config:()=>jevSettings.config(),profile:core.workspaces.get(id).chromeProfile,lifecycle:{multiWorker:true}}),
+  workers:{add:(id,input)=>web.runtime.add(id,input),start:(id,worker,state)=>web.runtime.startWorker(id,worker,state),restartState:(id,worker)=>web.runtime.restartState(id,worker),stop:(id,worker)=>web.runtime.stopWorker(id,worker),remove:(id,worker)=>web.runtime.remove(id,worker)},
   message:(id,text,worker)=>web.runtime.message(id,text,worker),snapshot:id=>web.snapshot(id),
-  start:async id=>{const a=automationDb.get(id);if(a.trial?.status!=='passed')return web.runtime.start(id,'trial');automationDb.enable(id);await web.runtime.tick();},stop:id=>web.runtime.pause(id),restart:async id=>{await web.runtime.pause(id);for(const provider of ['codex','claude'])automationDb.forgetConversation(id,provider,automationDb.conversation(id,provider));return web.runtime.start(id,'run');},settings:(id,input)=>web.save(id,input)
+  start:async id=>{const a=automationDb.get(id);if(!automationTrialReady(a))return web.runtime.start(id,'trial');automationDb.enable(id);await web.runtime.tick();},stop:id=>web.runtime.pause(id),restart:async id=>{await web.runtime.pause(id);for(const provider of ['codex','claude'])automationDb.forgetConversation(id,provider,automationDb.conversation(id,provider));return web.runtime.start(id,'run');},settings:(id,input)=>web.save(id,input)
  };
  services.push({...web,assertIdle(){if(web.runtime.active.size)throw Error('Önce çalışan otomasyonları durdur.');},stop:()=>{web.runtime.closed=true;},resume:()=>{web.runtime.closed=false;},activeRunIds:()=>[...web.runtime.active.values()].map(slot=>slot.run.id)});
+ const support=await registerWorkspaceSupport({root,data,db:automationDb,runtime:web.runtime,agents,profiles,mcp,scheduler,handle,emit,dialog,shell,getWindow:()=>window,encryptSecret,decryptSecret,isQuitting:()=>quitting});services.push(support);
+ const removeWorkspace=workspaces.templates.browser.remove;workspaces.templates.browser.remove=async id=>{await support.remove(id);return removeWorkspace(id);};
  for(const extension of extensions){const service=await extension.register({root,data,core,handle,emit,agents,profiles,browser,mcp,scheduler,maintenance,documents,dialog,shell,getWindow:()=>window,encryptSecret,decryptSecret,jevSettings,restartingAgents:changing,isQuitting:()=>quitting});workspaces.templates[extension.definition.id]=service.driver;services.push(service);}
  handle('configuration-catalog',id=>configurationCatalog({id,workspaces,profiles}));
  handle('instruction-snapshot',(id,options)=>instructionSnapshot({id,options,log:instructionLog,agents,workspaces,profiles}));

@@ -7,7 +7,39 @@ import {automationAttention} from '../app/automation-attention.mjs';
 import {attentionTabs} from '../src/automation-attention.js';
 
 const source={url:'https://homes.example/list',name:'Homes',enabled:true,blocked:true,lastResult:'CAPTCHA kaldı. Açık sekmede doğrulamayı tamamla.'};
-const snapshot=()=>({automation:{revision:1,reviewedRevision:1,trial:{status:'passed'}},sources:[source],runs:[],activeRuns:[]});
+const snapshot=()=>({automation:{revision:1,reviewedRevision:1,trial:{status:'passed',revision:1}},sources:[source],runs:[],activeRuns:[]});
+
+test('question cards keep the exact tab across login redirects and history pruning',()=>{
+ const s=snapshot();s.sources=[];s.automation.questions=[{id:'question',text:'Log in',answer:null,recordId:'record',browserContext:{tabId:'login',url:'https://homes.example/login'}}];
+ const [issue]=automationAttention(s);
+ const tabs=[{tabId:'another',url:'https://homes.example/login'},{tabId:'login',url:'https://homes.example/application'}];
+ assert.deepEqual(attentionTabs(issue,tabs,[]),[tabs[1]]);
+ assert.equal(issue.kind,'question');assert.equal(issue.tabId,'login');
+});
+
+test('questions save their observed tab and old questions recover it from durable runs',t=>{
+ const store=new Store(':memory:');t.after(()=>store.close());let now=1000;const db=new AutomationStore(store,{now:()=>now});
+ const a=db.create('custom',{goal:'Find records'}),run=db.begin(a.id,'interview');
+ db.observe(a.id,run.id,'https://homes.example/login','Sign in',[],{tabId:'login'});
+ const q=db.askQuestion(a.id,{text:'Did you sign in?'},{runId:run.id});
+ assert.equal(q.browserContext.tabId,'login');now=2000;db.finish(a.id,run.id,'completed','Waiting');
+ db.put({...db.get(a.id),questions:[{...q,browserContext:undefined}]});
+ const old=db.questionContext(a.id,db.get(a.id).questions[0]);assert.equal(old.browserContext.tabId,'login');
+ const [issue]=automationAttention({...db.snapshot(a.id),runs:[]});assert.equal(issue.tabId,'login');
+});
+
+test('skipping a failed trial clears its prompt while source blockers remain actionable',()=>{
+ const s=snapshot();s.automation.trial.status='skipped';
+ assert.equal(automationAttention(s)[0].retry,'source');
+ s.sources=[];s.runs=[{id:'trial',kind:'trial',status:'blocked',revision:1,summary:'Access unavailable'}];
+ assert.deepEqual(automationAttention(s),[]);
+ s.automation.trial.revision=0;assert.equal(automationAttention(s)[0].retry,'trial');
+});
+
+test('blocked trials retain the worker that should receive the reply',()=>{
+ const s=snapshot();s.sources=[];s.runs=[{id:'trial',kind:'trial',status:'blocked',revision:1,summary:'Doğrulama gerekiyor',workerId:'second'}];
+ const [issue]=automationAttention(s);assert.equal(issue.retry,'trial');assert.equal(issue.workerId,'second');
+});
 
 test('a blocked source stays visible beside working sources, and disappears only after retry or disable',()=>{
  const s=snapshot();s.sources.push({...source,url:'https://other.example',blocked:false,scanning:true});s.activeRuns=[{id:'other-run'}];
@@ -35,7 +67,7 @@ test('browser checkpoint survives a blocked report and recent run history prunin
  run=db.begin(a.id,{kind:'run',taskId:task.id});
  const url='https://homes.example/detail/2',flow=automationWorkflow({db,run,signal:new AbortController().signal,browser:{async call(){return {pageContext:{tabId:'captcha-tab',url},content:[{type:'text',text:`Page URL: ${url}\nHuman verification required`}]};}},report:(id,runId,status,summary)=>db.finish(id,runId,status,summary)});
  await flow.call(a.id,run.id,'browser_read',{});
- await flow.call(a.id,run.id,'finish_automation_run',{status:'blocked',summary:source.lastResult});
+ await flow.call(a.id,run.id,'finish_automation_run',{status:'blocked',summary:source.lastResult,stop:{kind:'access',evidence:'Human verification required'}});
  const s=db.snapshot(a.id),[issue]=automationAttention({...s,runs:[]});
  assert.equal(issue.tabId,'captcha-tab');assert.equal(issue.url,url);assert.equal(issue.workerId,'main');assert.equal(issue.retry,'source');
  assert.equal(db.get(a.id).status,'enabled','Other sources keep running');

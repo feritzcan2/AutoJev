@@ -18,6 +18,44 @@ function trial(db,id){db.review(id);const run=db.begin(id,'trial');db.observe(id
 function record(db,id,run,key='1',proposal='Merhaba, bu evle ilgileniyorum.'){return db.record(id,run.id,{key,url:'https://example.com/homes/'+key,title:'İki odalı ev',summary:'Berlin, 1400 EUR warm',proposal});}
 const settle=()=>new Promise(r=>setImmediate(r));
 
+test('explicit trial skip permits execution only for the reviewed revision without starting work',t=>{
+ const {db,id}=fixture(t);
+ assert.throws(()=>db.skipTrial(id),/kurulum kartını/);
+ db.review(id);const trialRun=db.begin(id,'trial');
+ assert.throws(()=>db.skipTrial(id),/çalışan otomasyonu/);
+ db.finish(id,trialRun.id,'blocked','Access unavailable');
+ const before=db.runs(id).length,a=db.skipTrial(id);
+ assert.equal(a.trial.status,'skipped');assert.equal(a.status,'ready');assert.equal(a.nextRunAt,null);
+ assert.equal(db.runs(id).length,before);assert.equal(a.trial.runId,undefined);
+ db.enable(id);const run=db.begin(id,'run');assert.equal(run.kind,'run');db.finish(id,run.id,'completed','Done');
+ db.save(id,{goal:'Updated search'});assert.equal(db.get(id).trial.status,'skipped');
+ assert.throws(()=>db.enable(id),/kurulumu/);assert.throws(()=>db.skipTrial(id),/kurulum kartını/);
+ db.review(id);assert.equal(db.begin(id,'run').kind,'run');
+});
+
+test('profile fields preserve trial history while requiring review and clearing old approvals',t=>{
+ const {db,id}=fixture(t),trialRun=trial(db,id),original=db.get(id).trial;
+ const run=db.begin(id,'run'),item=record(db,id,run);db.finish(id,run.id,'completed','Prepared');db.approve(id,item.id);
+ for(const input of [{title:'Updated title'},{goal:'Updated goal'},{criteria:{...setup.criteria,budget:'1600 EUR'}},{facts:'Available next month'},{instructions:'Include furnished homes'},{sources:['https://second.example/homes']}]){
+  const saved=db.save(id,input);
+  assert.deepEqual(saved.trial,{...original,revision:saved.revision});
+  assert.equal(db.run(trialRun.id).revision,original.revision);
+  assert.equal(saved.reviewedRevision,null);assert.equal(saved.nextRunAt,null);
+  assert.equal(db.result(id,item.id).approvedDigest,undefined);
+  assert.throws(()=>db.enable(id),/kurulumu/);
+  db.review(id);assert.equal(db.enable(id).status,'enabled');db.pause(id);
+ }
+ assert.equal(db.runs(id).filter(run=>run.kind==='trial').length,1);
+});
+
+for(const state of ['missing','failed','stale'])test(`profile edits do not grant a trial when the previous trial is ${state}`,t=>{
+ const {db,id}=fixture(t);
+ if(state==='failed'){db.review(id);const run=db.begin(id,'trial');db.finish(id,run.id,'blocked','Login required');}
+ if(state==='stale'){trial(db,id);const a=db.get(id);db.put({...a,trial:{...a.trial,revision:0}});}
+ db.save(id,{facts:'Updated personal information'});db.review(id);
+ assert.equal(db.get(id).trial,null);assert.throws(()=>db.enable(id),/deneme/);
+});
+
 test('agent table edits persist without changing plan review, action authority or result evidence',async t=>{
  const {db,id}=fixture(t);trial(db,id);const run=db.begin(id,'run'),item=record(db,id,run);db.finish(id,run.id,'completed','Prepared');db.approve(id,item.id);db.star(id,item.id,true);
  const before=db.get(id),saved=db.result(id,item.id),interview=db.begin(id,'interview');
@@ -84,7 +122,7 @@ test('Chrome profile changes preserve the successful trial and allow restarting 
   const run=db.begin(id,'run');db.finish(id,run.id,'completed','Done');
  }
  const changed=db.save(id,{chromeProfile:{directory:'Default',name:'Personal'},goal:'Find other homes'});
- assert.equal(changed.trial,null);assert.equal(changed.reviewedRevision,null);
+ assert.deepEqual(changed.trial,{...before.trial,revision:changed.revision});assert.equal(changed.reviewedRevision,null);
  assert.throws(()=>db.enable(id),/deneme/);
 });
 
@@ -118,10 +156,10 @@ test('completed goals stop scheduling; timeouts block retries and respect concur
  runtime.report(id,runtime.active.get(id).run.id,'completed','User-defined goal achieved',true);await runtime.finish(id);assert.equal(db.get(id).status,'complete');await runtime.tick();assert.equal(runtime.active.size,0);
  db.enable(id);await runtime.start(id);await runtime.finish(id,'timeout','Timed out');assert.equal(db.get(id).status,'blocked');await runtime.tick();assert.equal(runtime.active.size,0);
 });
-test('review and a real trial are required; updates invalidate previous evidence',t=>{
+test('profile edits require review but preserve a successful trial',t=>{
  const {db,id}=fixture(t);assert.throws(()=>db.enable(id),/deneme/);assert.throws(()=>db.begin(id,'trial'),/kurulum/);
  db.review(id);let run=db.begin(id,'trial');const result=db.finish(id,run.id,'completed','No actual browser');assert.equal(result.status,'failed');assert.throws(()=>db.enable(id));
- trial(db,id);db.enable(id);assert.equal(db.get(id).status,'enabled');db.pause(id);db.save(id,{criteria:{...setup.criteria,budget:'1600 EUR'}});assert.equal(db.get(id).trial,null);assert.equal(db.get(id).status,'draft');assert.throws(()=>db.begin(id,'run'));
+ trial(db,id);db.enable(id);assert.equal(db.get(id).status,'enabled');db.pause(id);db.save(id,{criteria:{...setup.criteria,budget:'1600 EUR'}});assert.equal(db.get(id).trial.status,'passed');assert.equal(db.get(id).status,'draft');assert.throws(()=>db.begin(id,'run'));db.review(id);assert.equal(db.begin(id,'run').kind,'run');
 });
 test('every source origin needs evidence; blocked trials never pass',t=>{
  const {db,id}=fixture(t);db.save(id,{sources:[...setup.sources,'https://second.example/']});db.review(id);const run=db.begin(id,'trial');db.observe(id,run.id,setup.sources[0],'Observed');assert.equal(db.finish(id,run.id,'completed','Done').status,'failed');

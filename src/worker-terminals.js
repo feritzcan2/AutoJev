@@ -5,6 +5,7 @@ import {terminalConversation} from './terminal-conversation.js';
 import {scanPageLabel} from '../app/scan-page.mjs';
 import {workerConversation,conversationSignature} from './worker-conversation.js';
 import {terminalAttention} from './agent-attention.js';
+import {providerLimitAttention} from '../app/provider-limit.mjs';
 
 const states={Working:'Çalışıyor',Idle:'Hazır',AwaitingInput:'Giriş bekliyor',Compacting:'Özetliyor',Failed:'Hata',Interrupted:'Kesildi',Unknown:'Bağlanıyor'};
 const clear=new TextEncoder().encode('\x1b[2J\x1b[3J\x1b[H');
@@ -117,10 +118,10 @@ export function workerTerminals(api,{container,notice,refresh,beforeAction=async
   function render(pane){
     const {worker}=pane,c=worker.execution,active=worker.active,paused=worker.enabled===false&&!active;
     const prompt=pane.dismissedPrompt?null:pane.promptAttention;
-    const attention=active?(prompt??terminalAttention('',active.state)):null;
+    const attention=active?(providerLimitAttention(active.usageLimit)??prompt??terminalAttention('',active.state)):null;
     pane.attention.hidden=!attention;
-    if(attention){pane.attentionTitle.textContent=attention.title;pane.attentionDetail.textContent=attention.detail;}
-    pane.status.textContent=attention?'Yanıt bekliyor':paused?'Durduruldu':worker.presentation?.status??(active?(states[active.state]??'Bağlanıyor'):c?.status==='running'?'Görev bekliyor':c?.status==='complete'?'Tamamlandı':'Kapalı');
+    if(attention){pane.attentionTitle.textContent=attention.title;pane.attentionDetail.textContent=attention.detail;pane.attentionButton.textContent=attention.kind==='usage_limit'?'Terminali göster':'Terminalde yanıtla';}
+    pane.status.textContent=attention?.kind==='usage_limit'?'Kullanım limiti':attention?'Yanıt bekliyor':paused?'Durduruldu':worker.presentation?.status??(active?(states[active.state]??'Bağlanıyor'):c?.status==='running'?'Görev bekliyor':c?.status==='complete'?'Tamamlandı':'Kapalı');
     pane.status.dataset.active=String(Boolean(active));
     pane.status.dataset.attention=String(Boolean(attention));
     pane.card.dataset.attention=String(Boolean(attention));

@@ -1,3 +1,4 @@
+import {automationTrialReady} from './automation-trial.mjs';
 import {publicSession} from './agent-sessions.mjs';
 import {workerKey} from './worker-key.mjs';
 import {automationProgress,runKindLabel,runOperationLabel} from './automation-progress.mjs';
@@ -14,7 +15,7 @@ export function webWorkspaceView(snapshot,agents){
    return {...worker,active:ownActive,execution:{...execution,...(worker.enabled===false?{status:'paused'}:{}),task:ownRun?{id:ownRun.id,kind:ownRun.kind,operation:ownRun.operation,createdAt:ownRun.startedAt}:null},presentation:{pageProgress:ownRun?.pageProgress??null,title:waiting?'Sıradaki görev bekleniyor':ownRun?runOperationLabel(ownRun.operation,ownRun.kind):title,status:ownActive?'Çalışıyor':waiting?'Görev bekliyor':progress.label,startLabel:worker.id==='main'?progress.primary?.label:'Worker’ı başlat',detail:waiting?'Worker açık; çalışan agent oturumu yok. Uygun görev geldiğinde otomatik başlayacak.':ownRun?(ownRun.sources??[]).join(' · '):progress.next,outcome:!waiting&&!ownRun&&progress.finishedRun?{id:progress.finishedRun.id,title:progress.title,detail:progress.next,tone:progress.tone}:null}};
   });
  return {...snapshot,progress,template:{id:a.templateId,kind:'web'},
-  capabilities:{maxWorkers:snapshot.definition?.execution.maxWorkers??8,canStart:true,canRestart:a.trial?.status==='passed',browserModes:snapshot.definition?.execution.browserModes??['separate','jev'],documents:true,terminalConversation:true,workerRestart:false,workerDescription:'Agent, çalışma alanının kaynaklarını ve kayıtlarını takip eder.'},
+  capabilities:{maxWorkers:snapshot.definition?.execution.maxWorkers??8,canStart:true,canRestart:automationTrialReady(a),browserModes:snapshot.definition?.execution.browserModes??['separate','jev'],documents:true,terminalConversation:true,workerRestart:false,workerDescription:'Agent, çalışma alanının kaynaklarını ve kayıtlarını takip eder.'},
   active:workers.find(w=>w.active?.sessionId===run?.id)?.active??workers.find(w=>w.active)?.active??null,execution,workers,
   activity:{title,detail:progress.detail,state:progress.label,tone:progress.tone,running:Boolean(run?.startedAt),at:(run?.startedAt??progress.finishedRun?.finishedAt)?new Date(run?.startedAt??progress.finishedRun.finishedAt).toISOString():null,url:null,history:runs.slice(0,10).map(r=>({at:r.startedAt,kind:'agent_activity',data:{message:`${runKindLabel(r.kind)} · ${r.summary}`}}))}
  };

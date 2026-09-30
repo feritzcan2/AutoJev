@@ -42,7 +42,12 @@ export function renderedDocument(){
   const children=assigned.length?assigned:e.shadowRoot?.childNodes??e.childNodes;
   for(let i=children.length-1;i>=0;i--)stack.push(children[i]);
  }
- return {url:location.href,text:words.join('\n'),links,pagination};
+ // Streaming render fragments are not listings until the site reveals them.
+ // Report only readiness metadata; never expose the hidden fragment contents.
+ const pendingFragments=body.querySelectorAll('[hidden][id^="S:"]').length;
+ const busy=[...body.querySelectorAll('[aria-busy="true"]')].some(e=>e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}));
+ const loading=document.readyState==='loading'||pendingFragments>0||busy;
+ return {url:location.href,text:words.join('\n'),links,pagination,readiness:{loading,reason:pendingFragments?'stream_pending':busy?'aria_busy':loading?'document_loading':null}};
 }
 
 export async function documentObservation(slot,value){
@@ -50,10 +55,20 @@ export async function documentObservation(slot,value){
  if(document.url!==value.url)throw Error('Sayfa okuma sırasında yönlendi; browser_read ile güncel sayfayı tekrar oku.');
  const result={...value,observationMode:'document',controlMaps:'replace',mapDeltas:false,
   viewportText:value.text??slot.presented?.text??'',text:document.text,links:document.links,pagination:document.pagination,
-  reading:{scope:'rendered_document',truncated:false,unreadFrames:slot.page.frames().length-1,
+  reading:{scope:'rendered_document',truncated:false,readiness:document.readiness,unreadFrames:slot.page.frames().length-1,
    guidance:'Includes currently rendered main-document text and actual links below the fold, including open shadow roots. Hidden content, form values and iframe contents are excluded. Lazy or virtualized listings may require browser_jev_scroll with a current scrollTargets.controlId, then another read. No guessed URLs. Read details through observed links when list cards omit addresses. An absent address remains unknown.'}};
  delete result.textUnchanged;
  // Action IDs come from the current guarded viewport snapshot. Document links
  // are reading/navigation evidence, never a replacement click target map.
  return result;
+}
+
+export async function waitForDocument(slot,{attempts=8,delay=250}={}){
+ // Bound a single observation, not the task. A stuck renderer remains visibly
+ // pending and can be retried in a fresh read-only tab by the source worker.
+ for(let i=0;i<attempts;i++){
+  const state=await slot.page.evaluate(()=>({loading:document.readyState==='loading'||Boolean(document.querySelector('[hidden][id^="S:"]'))||[...document.querySelectorAll('[aria-busy="true"]')].some(e=>e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}))}));
+  if(!state.loading)return;
+  await new Promise(resolve=>setTimeout(resolve,delay));
+ }
 }

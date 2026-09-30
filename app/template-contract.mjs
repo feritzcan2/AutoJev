@@ -1,4 +1,5 @@
 import {browserDefinition} from './browser-definition.mjs';
+import {normalizeRecordOperations} from './record-operation-definitions.mjs';
 const key=/^[a-z][a-z0-9_-]{0,59}$/;
 const text=(value,label,max=6000)=>{if(typeof value!=='string'||!value.trim()||value.length>max)throw Error(label+' geçersiz');return value.trim();};
 export function templateContract(input,driver=browserDefinition){
@@ -23,6 +24,9 @@ export function templateContract(input,driver=browserDefinition){
  const bindings=records.bindings??driver.records.bindings;
  for(const [name,value]of Object.entries(bindings))if(!key.test(name)||!key.test(value)||['__proto__','constructor','prototype'].includes(value))throw Error('Geçersiz alan eşlemesi');
  const identity=records.identity??'key';if(!['url','key'].includes(identity))throw Error('Geçersiz kayıt kimlik kuralı');
- return {...input,version:2,kind:driver.kind,execution:{driver:execution.driver,maxWorkers,browserModes:driver.browserModes,defaultBrowserMode:driver.defaultBrowserMode},workflow,records:{states,actions,bindings,identity,initial:records.initial??states[0].id}};
+ const recordOperations=normalizeRecordOperations(input.recordOperations,driver);
+ if(workflow.some(step=>Object.values(recordOperations).some(op=>op.id===step.id)))throw Error('Kayıt işlemi kimliği workflow içinde tekrar edemez');
+ return {...input,version:2,kind:driver.kind,execution:{driver:execution.driver,maxWorkers,browserModes:driver.browserModes,defaultBrowserMode:driver.defaultBrowserMode},workflow,recordOperations,records:{states,actions,bindings,identity,initial:records.initial??states[0].id}};
 }
-export function operationFor(template,id){const operation=template.workflow.find(s=>s.id===id);if(!operation)throw Error('Template adımı bulunamadı');return operation;}
+export function findOperation(template,id){return template.workflow.find(s=>s.id===id)??Object.values(template.recordOperations??{}).find(s=>s.id===id);}
+export function operationFor(template,id){const operation=findOperation(template,id);if(!operation)throw Error('Template adımı bulunamadı');return operation;}

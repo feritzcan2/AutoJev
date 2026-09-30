@@ -108,7 +108,7 @@ test('a long source task remains visible after more than thirty other runs',asyn
 
 test('genuine source blockers still stop immediately and preserve the checkpoint',async t=>{
  const {db,id,runtime,launches,workflow}=fixture(t);await runtime.runOnce(id);await settle();const run=launches[0],flow=workflow(run);await reportPage(flow,id,run,2);
- await flow.call(id,run.id,'finish_automation_run',{status:'blocked',summary:'Login required'});await runtime.finish(id);await runtime.tick();
+ await flow.call(id,run.id,'finish_automation_run',{status:'blocked',summary:'Login required',stop:{kind:'access',evidence:'Login form on results page'}});await runtime.finish(id);await runtime.tick();
  assert.equal(db.sources(id)[0].blocked,true);assert.deepEqual(db.sources(id)[0].scan.pendingUrls,[second]);assert.equal(launches.length,1);
 });
 

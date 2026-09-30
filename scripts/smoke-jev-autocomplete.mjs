@@ -45,13 +45,14 @@ try{
  assert.equal(result.status,'ready');assert.equal(result.selection.verified,true);assert.equal(result.selection.actual,label);
  assert.equal(await page.locator('#selected-location').inputValue(),'accepted');
  assert.equal(await page.evaluate(()=>window.submits+window.unrelated),0);
- assert.equal(result.observationMode,'delta');
+ assert.equal(result.observationMode,'compact');assert.equal(result.controlMaps,'replace');
  console.log('JEV_AUTOCOMPLETE_ONE_CALL_PASS',JSON.stringify({elapsedMs:Date.now()-start,modelCalls:0,operationCalls:1}));
  // Exact matches only; show options without inventing a city or clicking elsewhere.
  observed=await reset({aria:true});control=observed.controls.find(c=>c.label==='Current location');
  result=await call('browser_jev_autocomplete',{tabId,controlId:control.controlId,text:'Berlin',option:'Berlin, Germany'});
  assert.equal(result.status,'needs_selection');assert.ok(result.suggestions.includes(label));assert.equal(await page.evaluate(()=>window.selections+window.unrelated),0);
  // The compatibility action space now includes the actual plain/ARIA options.
+ result=await call('browser_jev_observe',{tabId,full:true,fullReason:'context_loss'});
  assert.ok(result.elements.some(e=>e.label===label&&e.role==='option'));
  const current=result.controls.find(c=>c.label==='Current location');
  result=await call('browser_jev_autocomplete',{tabId,controlId:current.controlId,text:'Berlin',option:'Berlin, Germany'});
@@ -76,7 +77,7 @@ try{
  result=await call('browser_jev_autocomplete',{tabId,controlId:result.controls.find(c=>c.label==='Current location').controlId,text:'Berlin',option:label});assert.equal(result.status,'no_progress');assert.equal(await page.evaluate(()=>window.selections),1);
  // Plain div options must also be surfaced as real click targets, excluding hidden errors.
  observed=await reset();await page.locator('#location').fill('Berlin');await page.locator('.dropdown-location').first().waitFor();
-  result=await call('browser_jev_observe',{tabId});assert.ok(result.elements.some(e=>e.label===label&&e.role==='option'));
+  result=await call('browser_jev_observe',{tabId,full:true,fullReason:'context_loss'});assert.ok(result.elements.some(e=>e.label===label&&e.role==='option'));
   assert.equal(result.controls.find(c=>c.label==='Current location').label,'Current location');assert.ok(!result.controls.find(c=>c.label==='Current location').label.includes('Loading'));
   client.choose=async snapshot=>({operation:'CLICK',action:snapshot.actions.find(a=>a.role==='option'&&a.label===label),confidence:1});
   const decision=await call('browser_jev_next',{tabId,goal:'Select the exact city'});

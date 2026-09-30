@@ -4,12 +4,14 @@ import {mkdtemp,rm,writeFile,readFile,symlink,realpath} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {Workspaces} from '../app/workspaces.mjs';
 import {WorkspaceDocuments} from '../app/workspace-documents.mjs';
 import {WorkerCampaigns} from '../app/worker-campaigns.mjs';
 import {WebTasks} from '../app/web-template.mjs';
 import {addRankedJob} from './rank-fixture.mjs';
+import {saveAgentSettings} from '../src/agent-settings-save.js';
 
 const raw=(store,table,id)=>JSON.parse(store.db.prepare(`SELECT data FROM ${table} WHERE id=?`).get(id).data);
 const assertDomain=value=>{for(const key of ['agentSettings','browserMode','chromeProfile','table'])assert.equal(Object.hasOwn(value,key),false,key);};
@@ -33,8 +35,28 @@ test('migration removes stale copies without overwriting canonical settings and 
 
 function drivers(store,db,pool,runtime){return {
  applications:{rename:(id,name)=>store.renameWorkspace(id,name),remove:id=>store.deleteWorkspace(id),workers:{add:(...a)=>pool.add(...a),start:(...a)=>pool.startWorker(...a),stop:(...a)=>pool.stopWorker(...a),remove:(...a)=>pool.remove(...a),restartState:(...a)=>pool.restartState(...a)}},
- browser:{rename:(id,name)=>db.rename(id,name),remove:id=>db.remove(id),workers:{add:(...a)=>runtime.add(...a),start:(...a)=>runtime.startWorker(...a),stop:(...a)=>runtime.stopWorker(...a),remove:(...a)=>runtime.remove(...a)}}
+ browser:{rename:(id,name)=>db.rename(id,name),remove:id=>db.remove(id),workers:{add:(...a)=>runtime.add(...a),start:(...a)=>runtime.startWorker(...a),stop:(...a)=>runtime.stopWorker(...a),remove:(...a)=>runtime.remove(...a),restartState:(...a)=>runtime.restartState(...a)}}
 };}
+
+for(const template of ['custom','housing','appointment','job-search'])for(const browserChange of [false,true])test(`${template}: confirmed settings restart continues setup after ${browserChange?'browser closure':'an agent setting change'}`,async t=>{
+ const store=new WorkspaceDatabase(':memory:'),db=new AutomationStore(store),a=db.create(template),launches=[],closed=[];
+ const history=store.workspaces.history(a.id).forProfile('builtin.agent-profile.loop-web-interview');
+ history.saveConversation(a.id,'claude','setup-conversation',{provider:'claude',model:'default',permission:'auto'});
+ const runtime=new WebTasks(db,{launch:async run=>{launches.push(run);return {close:async()=>closed.push(run.id)};}});t.after(async()=>{await runtime.close();store.close();});
+ const workspaces=new Workspaces(store.workspaces,{templates:drivers(store,db,{},runtime)});
+ await runtime.setup(a.id);const first=launches[0];
+ const question=db.askQuestion(a.id,{text:'Nerede?'});
+ let confirmed=0;
+ const result=await saveAgentSettings({owner:a.id,input:{agentSettings:{...db.get(a.id).agentSettings,contextCompactPercent:60}},confirmRestart:async count=>{confirmed++;assert.equal(count,1);return true;},api:{
+  workspaceSnapshot:async()=>({workers:[{id:'main',active:{sessionId:first.id},execution:{task:{id:first.id,kind:'interview'}}}]}),
+  workspaceSettings:async(id,input)=>{if(browserChange)await runtime.pause(id);db.save(id,input);},
+  restartWorker:(...args)=>workspaces.restartWorker(...args)
+ }});
+ assert.deepEqual(result,{restarted:1,failed:[]});assert.equal(confirmed,1);assert.deepEqual(closed,[first.id]);
+ assert.equal(launches.length,2);assert.equal(launches[1].kind,'interview');assert.equal(runtime.slots(a.id)[0].run.id,launches[1].id);
+ assert.equal(history.conversation(a.id,'claude'),'setup-conversation');assert.equal(db.get(a.id).questions[0].id,question.id);
+ assert.equal(db.get(a.id).trial,null);
+});
 
 test('shared worker restart preserves interrupted submissions and isolates other workers',async t=>{
  const {store,db,job,web}=fixture(t);store.setCv(job.id,'/tmp/CV.pdf');

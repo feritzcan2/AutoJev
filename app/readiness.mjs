@@ -8,6 +8,7 @@ import {listChromeProfiles} from './chrome-profiles.mjs';
 import {existingChromeEndpoint} from './jev-chrome.mjs';
 import {findChrome,findExecutable} from './chrome-installation.mjs';
 import {launchEnvironment as readinessEnvironment} from './launch-environment.mjs';
+import {missingAgentMessage} from './agent-installation.mjs';
 export {findChrome,findExecutable} from './chrome-installation.mjs';
 export {launchEnvironment as readinessEnvironment} from './launch-environment.mjs';
 const exec=promisify(execFile);
@@ -46,7 +47,7 @@ export async function collectReadiness(input={},options={}){
  const deps={env,platform,home},checks=[],descriptor=providers[provider];
  if(options.enginePath){let usable=false;try{await access(options.enginePath,platform==='win32'?constants.F_OK:constants.X_OK);usable=(await stat(options.enginePath)).isFile();}catch{}checks.push(item('engine','AutoJev engine',usable?'ready':'error',usable?'Uygulama motoru hazır.':'Uygulama motoru bulunamadı. AutoJev’i yeniden kur; kaynak koddan çalıştırıyorsan engine:build komutunu çalıştır.'));}
  const executable=await (options.findExecutable??findExecutable)(provider,deps);
- checks.push(item('agent',descriptor.label,executable?'ready':'error',executable?'Agent komutu bulundu.':`${descriptor.label} CLI’ını kur ve AutoJev’i yeniden aç. Komutun terminalden çalışabildiğini kontrol et.`));
+ checks.push(item('agent',descriptor.label,executable?'ready':'error',executable?'Agent komutu bulundu.':missingAgentMessage(provider)));
  if(executable)checks.push(await (options.inspectLogin??inspectLogin)(provider,executable,deps));
  const bun=await (options.findExecutable??findExecutable)('bun',deps);
  checks.push(item('bun','İlan kaynakları için Bun',bun?'ready':'warning',bun?'Kaynak araçlarını çalıştıran Bun bulundu.':'CLI ile ilan tarayan kaynaklar için Bun’u kur. Tarayıcı kullanan kaynaklarla devam edebilirsin.'));

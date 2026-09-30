@@ -41,14 +41,18 @@ test('source scope and permission reach the agent, cannot exceed profile authori
  const {db,id,runtime,launches}=fixture(t);db.save(id,{mode:'auto'});db.saveSource(id,urls[0],{name:'First',query:'Only two-room apartments',mode:'observe'});db.enable(id);await runtime.tick();await settle();
  const run=launches[0],flow=automationWorkflow({db,run,signal:new AbortController().signal,browser:{},report:()=>{}}),context=await flow.call(id,run.id,'get_automation_context',{});
  assert.equal(context.assignedSource.query,'Only two-room apartments');assert.equal(context.automation.mode,'observe');assert.deepEqual(context.automation.sources,[urls[0]]);
- const record=db.record(id,run.id,{url:'https://blocked.test/home',title:'Home',summary:'Observed',proposal:'Hello'});assert.equal(record.sourceUrl,urls[0]);assert.throws(()=>db.reserve(id,run.id,record.id),/gözlem/);
+ const record=db.record(id,run.id,{url:'https://blocked.test/home',title:'Home',summary:'Observed'});assert.equal(record.sourceUrl,urls[0]);assert.throws(()=>db.reserve(id,run.id,record.id),/gönderim/);
  assert.throws(()=>db.saveSource(id,urls[0],{mode:'auto'}),/durdur/);await runtime.pause(id);db.save(id,{mode:'observe'});assert.throws(()=>db.saveSource(id,urls[0],{mode:'auto'}),/aşamaz/);assert.throws(()=>db.saveSource(id,'https://other.test/',{enabled:true}),/ait/);
 });
 
-test('an uncertain external action still blocks the workspace',async t=>{
- const {db,id,runtime,launches}=fixture(t);db.save(id,{mode:'auto'});db.enable(id);await runtime.tick();await settle();const run=launches[0];
- const record=db.record(id,run.id,{url:'https://blocked.test/home',title:'Home',summary:'Observed',proposal:'Hello'});db.reserve(id,run.id,record.id);runtime.report(id,run.id,'blocked','Send not verified');await runtime.finish(id);await runtime.tick();
- assert.equal(db.get(id).status,'blocked');assert.equal(db.result(id,record.id).status,'uncertain');assert.equal(launches.length,1);
+test('an uncertain record action still blocks the workspace without changing its source result',async t=>{
+ const {db,id,runtime,launches,finish}=fixture(t);db.save(id,{mode:'auto'});await runtime.runSource(id,urls[0]);await settle();const scan=launches[0];
+ const record=db.record(id,scan.id,{url:'https://blocked.test/home',title:'Home',summary:'Observed'});await finish(scan);
+ await runtime.runRecord(id,record.id,'prepare');await settle();const prepare=launches.at(-1);
+ const draft=db.record(id,prepare.id,{url:record.url,title:record.title,summary:record.summary,proposal:'Hello'});await finish(prepare);
+ const before=db.get(id).sourceState;await runtime.runRecord(id,record.id,'execute',{digest:draft.digest});await settle();const run=launches.at(-1);
+ db.put({...db.get(id),status:'enabled'});db.reserve(id,run.id,record.id);runtime.report(id,run.id,'blocked','Send not verified');await runtime.finish(id);await runtime.tick();
+ assert.equal(db.get(id).status,'blocked');assert.equal(db.result(id,record.id).status,'uncertain');assert.deepEqual(db.get(id).sourceState,before);
 });
 
 test('source blocking is visible without claiming the whole schedule stopped or promising retries',async t=>{

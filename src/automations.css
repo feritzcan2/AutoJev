@@ -19,7 +19,9 @@
 .automation-results-table [data-column=title]{min-width:200px;max-width:300px}
 .automation-results-table [data-column=source]{min-width:130px}
 .automation-results-table [data-column=actions]{min-width:135px}
-.automation-results-table [data-column=updatedAt]{min-width:100px;color:var(--text-muted)}
+.automation-results-table [data-column=updatedAt]{min-width:96px;white-space:nowrap;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.automation-result-time time{display:flex;flex-direction:column;gap:3px}
+.automation-result-clock{font-size:11px;color:var(--text-muted)}
 .automation-results-table .automation-number-cell{white-space:nowrap;font-variant-numeric:tabular-nums}
 .automation-results-table .automation-badge{display:inline-block;border-radius:5px;padding:4px 7px;background:var(--bg-hover);color:var(--text-secondary)}
 .automation-results-table .automation-trial-label,.automation-results-table .automation-approved{display:block;margin-top:6px}
@@ -174,3 +176,30 @@ body:not(.automation-workspace) [data-web-only]{display:none!important}
 .automations-page .section-title .automation-results-toolbar{flex-wrap:wrap}
 .workspace-fresh #now-history{display:none}
 .workspace-fresh #now-panel .workspace-intro{padding:0 0 16px}
+
+.record-table-scroller{min-width:0;max-width:100%}
+.record-table-scroll-controls{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 14px;margin-bottom:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg-raised)}
+.record-table-scroll-hint{font-size:12px;color:var(--text-secondary)}
+.record-table-scroll-navigation{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.record-table-scroll-navigation button{min-width:34px;min-height:32px;padding:4px 10px;font-size:18px}
+.record-table-scroll-navigation input[type=range]{width:160px;min-width:0;height:24px;padding:0;border:0;accent-color:var(--accent);cursor:ew-resize;background:transparent}
+.record-table-scroll-frame{position:relative;min-width:0}
+.record-table-scroll-frame::before,.record-table-scroll-frame::after{content:'';position:absolute;top:0;bottom:0;width:30px;z-index:2;pointer-events:none;opacity:0;transition:opacity .15s}
+.record-table-scroll-frame::before{left:0;border-radius:12px 0 0 12px;background:linear-gradient(to right,var(--bg-app),transparent)}
+.record-table-scroll-frame::after{right:0;border-radius:0 12px 12px 0;background:linear-gradient(to left,var(--bg-app),transparent)}
+.record-table-scroller[data-left=true] .record-table-scroll-frame::before,.record-table-scroller[data-right=true] .record-table-scroll-frame::after{opacity:1}
+.record-table-scroll-frame .jobs-table-wrap:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media(max-width:1100px){.record-table-scroll-navigation input[type=range]{width:100px}}
+.record-tab-feedback:not(:empty){display:block;margin-top:8px;max-width:180px;font-size:11px;color:var(--text-secondary)}
+.record-tab-choices{display:grid;gap:5px;max-width:190px}.record-tab-choices button{overflow-wrap:anywhere;text-align:left;font-size:11px}
+
+.automation-results-table .automation-cell-text,
+.automation-results-table .record-operation-detail,
+.automation-results-table .role-cell strong{
+ display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;text-overflow:ellipsis;
+}
+.automation-results-table .company-heading>span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
+.automation-results-table [data-column=status]{min-width:135px;max-width:190px}
+.automation-results-table [data-column=actions]{min-width:180px}
+.automation-results-table .table-actions{display:grid;grid-template-columns:max-content max-content;justify-content:end;gap:6px}
+.automation-results-table .table-actions [data-record-operation]{grid-column:1/-1;order:1}

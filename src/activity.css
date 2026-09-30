@@ -46,6 +46,12 @@
 .agent-settings { margin: 0 0 20px; padding: 16px 22px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); }
 .agent-settings-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
 .agent-settings-head h2 { font-size: 14px; font-weight: 550; }
+.agent-settings-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+#agent-settings-restart-dialog { width: min(480px, calc(100vw - 32px)); padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); color: var(--text); }
+#agent-settings-restart-dialog::backdrop { background: #0009; }
+#agent-settings-restart-dialog form { display: block; max-width: none; margin: 0; padding: 0; border: 0; }
+#agent-settings-restart-dialog h2 { margin: 0 0 16px; font-size: 20px; }
+#agent-settings-restart-dialog p { margin: 0 0 18px; font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
 :is(#agent-settings-status,.workspace-agent-settings-status) { color: var(--text-muted); font-size: 12px; text-align: right; }
 :is(#agent-settings-form,.workspace-agent-settings-form) { display: block; max-width: none; margin: 0; padding: 0; border: 0; background: transparent; }
 :is(#agent-settings-form,.workspace-agent-settings-form) .settings-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; align-items: start; }
@@ -63,3 +69,16 @@
 @keyframes now-working { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
 @keyframes working-dot { from { opacity: 1; } to { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .now-panel[data-tone="active"]::after { animation: none; width: 100%; opacity: .5; } }
+
+.automation-record-review { width: min(720px, calc(100vw - 48px)); max-height: 85vh; overflow: auto; padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); color: var(--text); }
+.automation-record-review pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; padding: 16px; border: 1px solid var(--border); border-radius: 8px; }
+.automation-record-review .actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px; }
+
+.automation-record-review::backdrop { background: #0009; }
+.automation-record-review h2 { margin: 0 0 16px; font-size: 20px; }
+.automation-record-review p { font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
+
+.record-activity-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-raised); font-size: 13px; }
+.record-operation-detail { display: block; max-width: 240px; margin-top: 6px; color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
+.automation-results-table .automation-badge.running,.automation-results-table .automation-badge.queued { color: var(--accent); background: rgba(102,179,255,.12); }
+.automation-results-table .automation-badge.blocked { color: #ebc88b; background: #413625; }

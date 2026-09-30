@@ -14,6 +14,15 @@ export class TerminalScreen {
   this.queue=this.queue.then(()=>new Promise(resolve=>this.terminal.write(data,()=>{this.sequence=sequence;resolve();})));
  }
  resize({rows,cols}){this.queue=this.queue.then(()=>this.terminal.resize(cols,rows));}
+ text(){return this.queue.then(()=>{
+  const buffer=this.terminal.buffer.active,lines=[];
+  for(let row=buffer.baseY;row<buffer.baseY+this.terminal.rows;row++){
+   const line=buffer.getLine(row);if(!line)continue;
+   const text=line.translateToString(!buffer.getLine(row+1)?.isWrapped);
+   if(line.isWrapped&&lines.length)lines[lines.length-1]+=text;else lines.push(text);
+  }
+  return lines.join('\n');
+ });}
  snapshot(sessionId){
   const result=this.queue.then(()=>({bytes:[...Buffer.from(this.serializer.serialize())],rows:this.terminal.rows,cols:this.terminal.cols,sequence:this.sequence,sessionId}));
   this.queue=result.then(()=>{});return result;
