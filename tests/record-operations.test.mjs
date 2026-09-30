@@ -465,8 +465,32 @@ test('not-submitted tool rechecks the live page and does not trust an earlier dr
  let observed=await flow.call(f.id,verify.id,'browser_read',{});
  const args={itemId:f.item.id,status:'not_submitted',url:f.item.url,evidence:quote,notSubmittedProof:{snapshotId:observed.snapshot.id,kind:'draft',quote,recordEvidence:f.item.url}};
  text=`${f.item.url} — Submitted`;
- await assert.rejects(flow.call(f.id,verify.id,'record_automation_outcome',args),/kanıt/);assert.equal(f.db.result(f.id,f.item.id).status,'uncertain');
- text=quote;observed=await flow.call(f.id,verify.id,'browser_read',{});args.notSubmittedProof.snapshotId=observed.snapshot.id;
+ const rejected=await flow.call(f.id,verify.id,'record_automation_outcome',args);
+ assert.equal(rejected.status,'evidence_rejected');assert.equal(rejected.saved,false);assert.match(rejected.error,/kanıt/);
+ assert.ok(rejected.snapshot.id);assert.notEqual(rejected.snapshot.id,observed.snapshot.id);assert.equal(f.db.result(f.id,f.item.id).status,'uncertain');
+ text=quote;args.notSubmittedProof.snapshotId=rejected.snapshot.id;
  assert.equal((await flow.call(f.id,verify.id,'record_automation_outcome',args)).status,'prepared');
  await f.finish(verify);await f.runtime.tick();await settle();assert.equal(f.launches.at(-1).request.direct,true);
+});
+
+test('Jev multiline portal evidence releases uncertainty and a rejected quote returns a usable fresh snapshot',async t=>{
+ const f=fixture(t);await f.prepare();
+ const title='Sr. Intelligence Software Engineer (Remote, DEU)',code='R30035';
+ f.db.putResult({...f.db.result(f.id,f.item.id),title:`${title} — CrowdStrike ${code}`});
+ await f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true});await settle();const execute=f.launches.at(-1);
+ f.db.reserve(f.id,execute.id,f.item.id);await f.runtime.finish(f.id,'blocked','Unknown outcome',execute.workerId);
+ await f.runtime.runRecord(f.id,f.item.id,'verify');await settle();const verify=f.launches.at(-1);
+ const quote=`${title}\n${code}\nNot Submitted`;
+ const browser={call:async()=>({content:[{type:'text',text:`Page URL: ${f.item.url}\n${JSON.stringify({browser:'Jev Chrome',url:f.item.url,text:`My Applications\n${quote}\nCreated on September 30, 2026`})}`}]})};
+ const flow=automationWorkflow({db:f.db,run:verify,signal:{aborted:false},browser,report:(...args)=>f.runtime.report(...args)});
+ const observed=await flow.call(f.id,verify.id,'browser_read',{});
+ const args={itemId:f.item.id,status:'not_submitted',url:f.item.url,evidence:quote,notSubmittedProof:{snapshotId:observed.snapshot.id,kind:'draft',quote:quote.replaceAll('\n',' — '),recordEvidence:code}};
+ const rejected=await flow.call(f.id,verify.id,'record_automation_outcome',args);
+ assert.equal(rejected.status,'evidence_rejected');assert.equal(f.db.result(f.id,f.item.id).status,'uncertain');
+ args.notSubmittedProof={...args.notSubmittedProof,quote,snapshotId:rejected.snapshot.id};
+ const saved=await flow.call(f.id,verify.id,'record_automation_outcome',args);
+ assert.equal(saved.status,'prepared');assert.equal(saved.notSubmitted.quote,quote);
+ assert.equal(f.db.run(verify.id).actionId,null);
+ await f.finish(verify);await f.runtime.tick();await settle();
+ assert.equal(f.launches.at(-1).recordOperation,'execute');assert.equal(f.launches.at(-1).request.direct,true);
 });

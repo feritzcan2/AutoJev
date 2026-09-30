@@ -63,6 +63,10 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
             return Err(InvocationError::InvalidResumeReference);
         }
     };
+    // OpenCode's --prompt starts a fresh session; resumed TUI routes need a
+    // queued submission after the exact conversation has become idle.
+    let opencode_initial_prompt = agent_id == "opencode"
+        && matches!(conversation, AgentConversationLaunch::Fresh { .. });
     let inherits_codex_permissions = agent_id == "codex"
         && matches!(
             conversation,
@@ -141,6 +145,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
     }
     if let Some(instructions) = provider_instructions {
         match agent_id {
+            "opencode" => {}, // Delivered through the native agent prompt configuration below.
             "codex" => {
                 let instructions = serde_json::to_string(instructions)
                     .map_err(|_| InvocationError::InvalidDeveloperInstructions)?;
@@ -227,6 +232,15 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         return Err(InvocationError::InvalidMcpEndpoint);
     }
 
+    if opencode_initial_prompt {
+        if let Some(prompt) = prompt {
+            arguments.extend([
+                ResolvedArgument::exact("--prompt", "initial OpenCode prompt"),
+                ResolvedArgument::private(prompt, "initial OpenCode prompt"),
+            ]);
+        }
+    }
+
     let cargo_shard_key = observation
         .as_ref()
         .map(|observation| observation.session_id);
@@ -260,6 +274,26 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
             environment = environment.with_explicit(variable, path);
         }
     }
+    if agent_id == "opencode" {
+        // Runtime overrides merge with the user's providers and credentials.
+        let mut config = serde_json::json!({"autoupdate": false});
+        if let Some(mcp) = mcp {
+            config["mcp"] = serde_json::json!({mcp.server_name: {
+                "type": "remote", "url": mcp.endpoint, "enabled": true, "oauth": false,
+                "headers": {"Authorization": "Bearer {env:TERMLOOP_MCP_TOKEN}"}
+            }});
+            for tool in approved_tools {
+                config["permission"][format!("{}_{}", mcp.server_name, tool)] = serde_json::json!("allow");
+            }
+        }
+        if let Some(instructions) = delivered_provider_instructions {
+            config["agent"] = serde_json::json!({
+                "build": {"prompt": instructions}, "plan": {"prompt": instructions}
+            });
+            config["default_agent"] = serde_json::json!("build");
+        }
+        environment = environment.with_explicit("OPENCODE_CONFIG_CONTENT", config.to_string());
+    }
     if let Some(mcp) = mcp {
         environment = environment.with_explicit("TERMLOOP_MCP_TOKEN", mcp.token);
     }
@@ -286,7 +320,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
                 "first-message",
                 "firstMessage",
                 format!("resources/prompts/{}", template.id),
-                "terminalInput",
+                if opencode_initial_prompt { "argv" } else { "terminalInput" },
                 &delivered,
             )]
         })
@@ -312,6 +346,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
             match agent_id {
                 "codex" => "codexDeveloperInstructions",
                 "claude" => "claudeAppendedSystemPrompt",
+                "opencode" => "opencodeAgentPrompt",
                 _ => unreachable!("agent id was validated"),
             },
             instructions,
@@ -362,11 +397,13 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         },
         content_parts,
         transport: if prompt.is_some() {
-            transport("terminalInput", &terminal_delivery)
+            if opencode_initial_prompt { transport("argv", &delivered) } else { transport("terminalInput", &terminal_delivery) }
         } else if let Some(instructions) = delivered_provider_instructions {
             transport(
                 if agent_id == "codex" {
                     "codexDeveloperInstructions"
+                } else if agent_id == "opencode" {
+                    "opencodeAgentPrompt"
                 } else {
                     "claudeAppendedSystemPrompt"
                 },
@@ -454,7 +491,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         } else {
             None
         },
-        initial_input: prompt
+        initial_input: prompt.filter(|_| !opencode_initial_prompt)
             .map(|_| InitialInputDelivery::submitted(&delivered))
             .transpose()?,
         inspectable,

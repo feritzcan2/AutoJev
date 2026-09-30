@@ -27,7 +27,7 @@ impl PersonalAgent {
             && bounded_text(&self.category, 40)
             && bounded_text(&self.instructions, AGENT_INSTRUCTIONS_MAX)
             && self.instructions.len() <= AGENT_INSTRUCTIONS_MAX
-            && matches!(self.agent_id.as_str(), "claude" | "codex")
+            && matches!(self.agent_id.as_str(), "claude" | "codex" | "opencode")
             && self.selection.is_well_formed()
     }
 }

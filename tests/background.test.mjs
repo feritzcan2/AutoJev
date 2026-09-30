@@ -90,7 +90,7 @@ test('a message promotes an automatic task to interactive without closing it or 
 
 test('background model override is independent, survives profile edits, and can return to inheritance',()=>{
  const {store,p,db}=fixture();try{
-  const original=store.profile(p.id).agentSettings,override={provider:'claude',model:'opus',permission:'default',reasoning:'default',network:null};
+  const original=store.profile(p.id).agentSettings,override={provider:'claude',model:'opus',permission:'default',reasoning:'default',network:null,contextRestartPercent:0};
   db.putTask(p.id,{...db.task(p.id),connection:{status:'missing'},connectorAccess:{provider:'codex',appId:'old'}});
   db.save(p.id,{enabled:false,intervalMinutes:30,agentOverride:override});assert.deepEqual(db.task(p.id).agentSettings,override);assert.equal(db.task(p.id).connection,null);assert.equal(db.task(p.id).connectorAccess,null);assert.deepEqual(store.profile(p.id).agentSettings,original);
   store.saveProfile({...store.profile(p.id),agentSettings:{...original,model:'another-model'}});assert.deepEqual(db.begin(p.id).agentSettings,override);

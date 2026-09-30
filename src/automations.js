@@ -58,7 +58,7 @@ export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,
   host.append(el('p','Bu bilgisayarda çalışır. Düzenli kontroller için uygulamayı ve bilgisayarı açık tut.','automation-local-note'));
  }
  async function select(id){questionDialog.update(null);notice('');selected=id;data=null;host.hidden=false;localStorage.setItem('selected-workspace',id);pane=null;formRevision='';dirty=false;buildDetail();navigate('board');await refresh();if(selected!==id)return;if(!data){data=await api.workspaceSnapshot(id);if(selected!==id)return;renderDetail();}if(automationProgress(data).fresh){openConversation();if(data.automation.templateId!=='custom'){await api.automationSetup(id);if(selected===id)await refresh();}}}
- const setupProviders=()=>getCatalog().filter(provider=>provider.supported&&['codex','claude'].includes(provider.id));
+ const setupProviders=()=>getCatalog().filter(provider=>provider.supported&&['codex','claude','opencode'].includes(provider.id));
  const defaultModel=(provider,saved)=>{const models=provider?.models??[];return models.includes(saved)?saved:models.includes('default')?'default':models[0]??'';};
  async function createBlank(){
   const providers=setupProviders();

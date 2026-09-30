@@ -54,8 +54,12 @@ export async function inspectApplicationForm(page,slot=null){
 // submission remain separate reviewed operations. Keep actual element handles.
 function inspectField(e){
   const type=e.tagName==='TEXTAREA'?'textarea':e.type;
+  // Search suggestions do not require selecting a predefined answer. Google,
+  // for example, exposes its free-text query as a textarea with role=combobox.
+  // Keep application autocompletes on the exact-option selection path.
+  const search=e.type==='search'||e.getAttribute('role')==='searchbox'||Boolean(e.closest('[role="search"]'));
   if(!(e.tagName==='TEXTAREA'||e.tagName==='INPUT'&&['text','search','number','email','tel','url','date'].includes(type))||
-    window.__jevFast?.autocomplete(e)||e.getAttribute('role')==='combobox'||e.hasAttribute('list')||e.hasAttribute('aria-autocomplete')||
+    !search&&(window.__jevFast?.autocomplete(e)||e.getAttribute('role')==='combobox'||e.hasAttribute('list')||e.hasAttribute('aria-autocomplete'))||
     !e.isConnected||e.readOnly||e.matches(':disabled')||e.closest('[aria-disabled="true"],[aria-readonly="true"],[inert],[aria-hidden="true"]')||
     !e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}))return null;
   const r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;

@@ -25,6 +25,17 @@ try{
  await save.click();await page.waitForFunction(()=>document.querySelector('#agent-settings-status').textContent.startsWith('Kaydedildi.'));
  assert.equal((await snapshot()).workspace.agentSettings.contextCompactPercent,60);
  assert.equal(await page.locator('#agent-settings-restart-dialog').isVisible(),false);
+ await form.locator('[name=provider]').selectOption('opencode');
+ assert.deepEqual(await form.locator('[name=permission] option').evaluateAll(options=>options.map(option=>option.value)),['default','plan','bypassPermissions']);
+ await form.locator('[name=model]').selectOption('opencode-go/kimi-k2.7-code');
+ assert.equal(await field.isDisabled(),true);
+ assert.equal(await form.locator('[name=network]').isDisabled(),true);
+ await save.click();await page.waitForFunction(()=>document.querySelector('#agent-settings-status').textContent.startsWith('Kaydedildi.'));
+ assert.equal((await snapshot()).workspace.agentSettings.provider,'opencode');
+ await page.reload();await page.locator('[data-view=agent]').click();
+ assert.equal(await form.locator('[name=provider]').inputValue(),'opencode');
+ assert.equal(await form.locator('[name=model]').inputValue(),'opencode-go/kimi-k2.7-code');
+ console.log('OPENCODE_SETTINGS_UI_PASS');
  // Simulate active workers without launching any provider or touching real workspaces.
  await app.evaluate(({ipcMain},{initial})=>{
   globalThis.settingsTest={restarts:[],failSave:false,failRestart:false,input:null};

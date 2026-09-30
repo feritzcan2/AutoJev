@@ -227,7 +227,7 @@ export class WebTasks extends TaskRuns {
    await this.pause(id);
    for(const worker of this.workers.list(id)){
     const history=this.db.store.workspaces.history(id,worker.id);
-    for(const provider of ['codex','claude'])history.forgetConversation(id,provider,history.conversation(id,provider));
+    for(const provider of ['codex','claude','opencode'])history.forgetConversation(id,provider,history.conversation(id,provider));
    }
    this.db.db.prepare("UPDATE automation_runs SET data=json_set(data,'$.conversation',NULL) WHERE automation_id=? AND json_extract(data,'$.conversation') IS NOT NULL").run(id);
    if(setup)return await this.start(id,setup.kind,setup.workerId);

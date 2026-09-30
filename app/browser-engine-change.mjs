@@ -13,7 +13,7 @@ export async function saveProfileWithBrowserChange({store,campaigns,stop,resetBr
  try{
   profile=store.saveProfile(input);
   if(engineChanged)restartDraftsForBrowser(store,input.id,previous.browserMode,profile.browserMode);
-  for(const worker of store.workers(input.id))for(const provider of ['codex','claude']){
+  for(const worker of store.workers(input.id))for(const provider of ['codex','claude','opencode']){
    const scoped=store.forWorker(worker.id),nativeId=scoped.conversation(input.id,provider);
    if(nativeId)scoped.forgetConversation(input.id,provider,nativeId);
   }

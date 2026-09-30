@@ -18,11 +18,11 @@ test('macOS GUI PATH discovers Homebrew agent CLIs with the same environment use
 test('launch repair preserves command precedence, appends missing paths only, and leaves Windows unchanged',()=>{
  const input={HOME:'/Users/fixture',PATH:'/custom/bin:/usr/local/bin:/usr/bin',OTHER:'preserved'};
  const output=launchEnvironment(input,'darwin');
- assert.equal(output.PATH,'/custom/bin:/usr/local/bin:/usr/bin:/Users/fixture/.local/bin:/Users/fixture/.bun/bin:/opt/homebrew/bin');
+ assert.equal(output.PATH,'/custom/bin:/usr/local/bin:/usr/bin:/Users/fixture/.local/bin:/Users/fixture/.bun/bin:/Users/fixture/.opencode/bin:/opt/homebrew/bin');
  assert.deepEqual(launchEnvironment(output,'darwin'),output);assert.equal(output.OTHER,'preserved');assert.notEqual(output,input);
  assert.equal(readinessEnvironment,launchEnvironment);
  const windows={USERPROFILE:'C:\\Users\\fixture',Path:'C:\\tools;C:\\Windows'};assert.deepEqual(launchEnvironment(windows,'win32'),windows);
- const linux=launchEnvironment({PATH:'/usr/bin'},'linux','/home/fixture');assert.equal(linux.PATH,'/usr/bin:/home/fixture/.local/bin:/home/fixture/.bun/bin');
+ const linux=launchEnvironment({PATH:'/usr/bin'},'linux','/home/fixture');assert.equal(linux.PATH,'/usr/bin:/home/fixture/.local/bin:/home/fixture/.bun/bin:/home/fixture/.opencode/bin');
 });
 test('engine spawn inherits the repaired launch environment',{timeout:10000},async()=>{
  const directory=await mkdtemp(path.join(tmpdir(),'jobloop-engine-env-')),file=path.join(directory,'fixture.mjs');let engine;
@@ -44,7 +44,7 @@ test('Linux desktop launch discovers terminal-installed CLIs and their Node inte
   assert.equal(options.timeout,5000);assert.equal(options.killSignal,'SIGKILL');assert.equal(options.cwd,env.HOME);assert.equal(options.env,env);
   return {stdout:`Welcome to bash\n\0JOBLOOP_SHELL_PATH=${bin}:/usr/bin:/bin:.:relative\0Goodbye\n`,stderr:'no job control'};
  }});
- assert.equal(resolved.PATH,`${bin}:/usr/bin:/bin:/home/fixture/.local/bin:/home/fixture/.bun/bin`);
+ assert.equal(resolved.PATH,`${bin}:/usr/bin:/bin:/home/fixture/.local/bin:/home/fixture/.bun/bin:/home/fixture/.opencode/bin`);
  assert.equal(resolved.KEEP,'desktop');assert.equal(env.PATH,'/usr/bin:/bin');
  const readiness=await collectReadiness({provider:'codex'},{env:resolved,platform:'linux',home:env.HOME,
   findExecutable:(name,options)=>findExecutable(name,{...options,accessImpl:async file=>{if(file!==`${bin}/codex`)throw Error('missing');},statImpl:async()=>({isFile:()=>true})}),

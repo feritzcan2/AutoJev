@@ -384,6 +384,19 @@ impl AgentCapabilities {
     }
 }
 
+pub fn provider_hook_native_session_id(agent_id: &str, value: &str) -> Option<String> {
+    match agent_descriptor(agent_id)?.adapter {
+        BuiltinAgentAdapter::Claude | BuiltinAgentAdapter::Gemini => {
+            uuid::Uuid::parse_str(value).ok().map(|id| id.to_string())
+        }
+        BuiltinAgentAdapter::OpenCode => {
+            ResumeRef::for_provider(ResumeProvider::Opencode, value.to_owned())
+                .map(|reference| reference.native_session_id)
+        }
+        BuiltinAgentAdapter::Codex => None,
+    }
+}
+
 pub fn normalize_hook_event(value: &str, notification_type: Option<&str>) -> Option<AgentSignal> {
     match value {
         "SessionStart" => Some(AgentSignal::SessionStarted),
@@ -640,14 +653,20 @@ pub fn discover_capabilities_with_environment(
         .ok()
         .filter(|probe| probe.success)
         .map(|probe| {
-            observation_capability_for_adapter(
-                descriptor.adapter,
-                &probe.stdout,
-                &probe.stderr,
-                app_server_help.as_deref(),
-                gemini_hooks_help.as_deref(),
-                !termloop_platform::gemini_cli_system_defaults_source_present(environment),
-            )
+            if descriptor.adapter == BuiltinAgentAdapter::OpenCode
+                && opencode_plugin_version_supported(version.as_deref())
+            {
+                ObservationCapability::LaunchScopedHook
+            } else {
+                observation_capability_for_adapter(
+                    descriptor.adapter,
+                    &probe.stdout,
+                    &probe.stderr,
+                    app_server_help.as_deref(),
+                    gemini_hooks_help.as_deref(),
+                    !termloop_platform::gemini_cli_system_defaults_source_present(environment),
+                )
+            }
         })
         .unwrap_or(ObservationCapability::None);
     let mcp_http_supported = help.as_ref().is_ok_and(|probe| {
@@ -657,7 +676,7 @@ pub fn discover_capabilities_with_environment(
                     help_advertises_flag(&probe.stdout, &probe.stderr, "--mcp-config")
                 }
                 BuiltinAgentAdapter::Codex => codex_http_mcp_supported(version.as_deref()),
-                BuiltinAgentAdapter::Gemini => false,
+                BuiltinAgentAdapter::Gemini | BuiltinAgentAdapter::OpenCode => false,
             }
     });
     AgentCapabilities {
@@ -670,21 +689,25 @@ pub fn discover_capabilities_with_environment(
             && help.as_ref().is_ok_and(|probe| {
                 probe.success && help_advertises_flag(&probe.stdout, &probe.stderr, "--session-id")
             }),
-        resume_supported: descriptor.resume_identity_scope == ResumeIdentityScope::Global
-            && match descriptor.adapter {
-                BuiltinAgentAdapter::Claude => help.as_ref().is_ok_and(|probe| {
-                    probe.success && help_advertises_flag(&probe.stdout, &probe.stderr, "--resume")
-                }),
-                BuiltinAgentAdapter::Codex => {
-                    observation == ObservationCapability::DaemonOwnedBridge
-                        && resume_help
-                            .as_deref()
-                            .is_some_and(codex_resume_help_supported)
-                }
-                BuiltinAgentAdapter::Gemini => help.as_ref().is_ok_and(|probe| {
-                    probe.success && help_advertises_flag(&probe.stdout, &probe.stderr, "--resume")
-                }),
-            },
+        resume_supported: match descriptor.adapter {
+            BuiltinAgentAdapter::Claude => help.as_ref().is_ok_and(|probe| {
+                probe.success && help_advertises_flag(&probe.stdout, &probe.stderr, "--resume")
+            }),
+            BuiltinAgentAdapter::Codex => {
+                observation == ObservationCapability::DaemonOwnedBridge
+                    && resume_help
+                        .as_deref()
+                        .is_some_and(codex_resume_help_supported)
+            }
+            BuiltinAgentAdapter::Gemini => false,
+            BuiltinAgentAdapter::OpenCode => {
+                observation == ObservationCapability::LaunchScopedHook
+                    && help.as_ref().is_ok_and(|probe| {
+                        probe.success
+                            && help_advertises_flag(&probe.stdout, &probe.stderr, "--session")
+                    })
+            }
+        },
         native_fork_supported: match descriptor.adapter {
             BuiltinAgentAdapter::Claude => help.as_ref().is_ok_and(|probe| {
                 probe.success
@@ -694,6 +717,13 @@ pub fn discover_capabilities_with_environment(
             BuiltinAgentAdapter::Codex => {
                 observation == ObservationCapability::DaemonOwnedBridge
                     && fork_help.as_deref().is_some_and(codex_fork_help_supported)
+            }
+            BuiltinAgentAdapter::OpenCode => {
+                observation == ObservationCapability::LaunchScopedHook
+                    && help.as_ref().is_ok_and(|probe| {
+                        probe.success
+                            && help_advertises_flag(&probe.stdout, &probe.stderr, "--fork")
+                    })
             }
             BuiltinAgentAdapter::Gemini => false,
         },
@@ -706,6 +736,26 @@ fn codex_http_mcp_supported(version: Option<&str>) -> bool {
         return false;
     };
     prerelease.is_none() && (major, minor, patch) >= (0, 147, 0)
+}
+
+fn opencode_plugin_version_supported(version: Option<&str>) -> bool {
+    let Some(version) = version else {
+        return false;
+    };
+    version
+        .split_ascii_whitespace()
+        .find_map(|part| {
+            let mut parts = part.trim_start_matches('v').split('.');
+            let (major, minor, patch) = (parts.next()?, parts.next()?, parts.next()?);
+            parts.next().is_none().then(|| {
+                Some((
+                    major.parse::<u64>().ok()?,
+                    minor.parse::<u64>().ok()?,
+                    patch.parse::<u64>().ok()?,
+                ))
+            })?
+        })
+        .is_some_and(|version| version >= (1, 18, 33))
 }
 
 type SemanticVersion = (u64, u64, u64);
@@ -803,9 +853,10 @@ fn observation_capability_for_adapter(
         BuiltinAgentAdapter::Gemini if gemini_overlay_available && gemini_hooks_help.is_some() => {
             ObservationCapability::LaunchScopedHook
         }
-        BuiltinAgentAdapter::Claude | BuiltinAgentAdapter::Codex | BuiltinAgentAdapter::Gemini => {
-            ObservationCapability::None
-        }
+        BuiltinAgentAdapter::Claude
+        | BuiltinAgentAdapter::Codex
+        | BuiltinAgentAdapter::Gemini
+        | BuiltinAgentAdapter::OpenCode => ObservationCapability::None,
     }
 }
 
@@ -1996,6 +2047,20 @@ mod tests {
         assert!(gemini.quick_action_supported());
         assert!(!gemini.tracked_helpers_supported());
 
+        let opencode = capabilities(
+            "opencode",
+            true,
+            ObservationCapability::None,
+            false,
+            false,
+            false,
+        );
+        assert_eq!(
+            opencode.integration_level(),
+            AgentIntegrationLevel::LaunchOnly
+        );
+        assert!(!opencode.quick_action_supported());
+
         let unavailable = capabilities(
             "gemini",
             false,
@@ -2479,6 +2544,34 @@ mod tests {
             managed.integration_level(),
             AgentIntegrationLevel::LaunchOnly
         );
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn opencode_discovery_requires_a_plugin_capable_version_and_exact_resume_flags() {
+        let directory = capability_fixture_directory("opencode");
+        termloop_platform::test_support::write_cli_fixture(
+            &directory,
+            "opencode",
+            "#!/bin/sh\ncase \"$1\" in\n--help) printf '  -s, --session <id>  Session\\n  --fork  Fork session\\n'; exit 0 ;;\n--version) printf '1.18.33\\n'; exit 0 ;;\nesac\nexit 1\n",
+            "@echo off\r\nif \"%1\"==\"--help\" (echo   -s, --session ^<id^>  Session& echo   --fork  Fork session& exit /b 0)\r\nif \"%1\"==\"--version\" (echo 1.18.33& exit /b 0)\r\nexit /b 1\r\n",
+        ).unwrap();
+        let environment =
+            termloop_platform::LaunchEnvironment::os_baseline().with_explicit("PATH", &directory);
+        let capabilities = discover_capabilities_with_environment("opencode", &environment);
+        assert_eq!(
+            capabilities.observation,
+            ObservationCapability::LaunchScopedHook
+        );
+        assert!(capabilities.resume_supported);
+        assert!(capabilities.native_fork_supported);
+        assert_eq!(
+            capabilities.integration_level(),
+            AgentIntegrationLevel::Resumable
+        );
+        assert!(!capabilities.quick_action_supported());
+        assert!(!opencode_plugin_version_supported(Some("1.18.32")));
+        assert!(!opencode_plugin_version_supported(Some("unknown")));
         let _ = std::fs::remove_dir_all(directory);
     }
 

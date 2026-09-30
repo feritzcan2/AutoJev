@@ -27,7 +27,7 @@ export class Workspaces {
    const state=await driver.restartState?.(id,worker);
    await driver.stop(id,worker);
    const history=this.store.history(id,worker);
-   if(!state?.resume)for(const provider of ['codex','claude']){const native=history.conversation(id,provider);if(native)history.forgetConversation(id,provider,native);}
+   if(!state?.resume)for(const provider of ['codex','claude','opencode']){const native=history.conversation(id,provider);if(native)history.forgetConversation(id,provider,native);}
    return await driver.start(id,worker,state);
   }finally{this.changing.delete(id);this.changed(id);}
  }
@@ -37,7 +37,7 @@ export class Workspaces {
  async settings(id,input){
   this.assertMutable(id);const fields=['agentSettings','browserMode','chromeProfile'];if(!input||Object.keys(input).some(key=>!fields.includes(key)))throw Error('Geçersiz agent ayarı');
   if(input.agentSettings){
-   const s=withAgentDefaults(input.agentSettings);input={...input,agentSettings:s};if(!['codex','claude'].includes(s.provider)||![true,false,null].includes(s.network))throw Error('Geçersiz agent ayarları');
+   const s=withAgentDefaults(input.agentSettings);input={...input,agentSettings:s};if(!['codex','claude','opencode'].includes(s.provider)||![true,false,null].includes(s.network))throw Error('Geçersiz agent ayarları');
    await this.validateSettings(s);
   }return this.template(id).settings(id,input);
  }

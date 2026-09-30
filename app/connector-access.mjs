@@ -18,6 +18,6 @@ export function gmailAccess(app){
  return {appId:app.id,installUrl,status:!app.isAccessible?'missing':!app.isEnabled?'disabled':'available',message:!app.isAccessible?'Gmail bu Codex hesabına bağlı değil. Bağlantıyı tamamlayıp tekrar kontrol et.':!app.isEnabled?'Gmail bağlı, fakat Codex ayarlarında devre dışı. Codex /apps ekranından etkinleştir.':'Gmail bağlantısı kullanılabilir. Skill çalışırken doğru posta hesabı ayrıca doğrulanacak.'};
 }
 export async function inspectGmailAccess(provider,cwd,options){
- if(provider!=='codex')return {status:'provider_setup',message:'Bu aday Claude kullanıyor. Gmail MCP bağlantısını Claude terminal ayarlarında kur; ardından Yeniden dene ile doğrula. Codex Gmail bağlantısı Claude’a aktarılmaz.',installUrl:null};
+ if(provider!=='codex')return {status:'provider_setup',message:`Bu aday ${provider==='opencode'?'OpenCode':'Claude'} kullanıyor. Gmail MCP bağlantısını bu sağlayıcının terminal ayarlarında kur; ardından Yeniden dene ile doğrula.`,installUrl:null};
  return withCodexApps(cwd,async request=>{let cursor=null;for(let page=0;page<20;page++){const result=await request('app/list',{cursor,limit:100,forceRefetch:page===0});const gmail=result.data?.find(app=>/^gmail$/i.test(app.name));if(gmail)return gmailAccess(gmail);if(!result.nextCursor)break;cursor=result.nextCursor;}return gmailAccess(null);},options);
 }

@@ -57,7 +57,7 @@ export class WorkspaceStore {
     if(!profileId){this.db.prepare('DELETE FROM workspace_conversations WHERE workspace_id=? AND worker_id=? AND provider=?').run(id,worker,provider);return;}
     const data=read(provider);delete data.profiles[profileId];if(data.nativeId===nativeId){data.nativeId=null;data.settings=null;}write(provider,data);
    },
-   saveConversation:(_,provider,nativeId,settings)=>{this.get(id);if(!['codex','claude'].includes(provider)||typeof nativeId!=='string'||!nativeId.trim()||nativeId.length>256)throw Error('Geçersiz sağlayıcı oturumu');
+   saveConversation:(_,provider,nativeId,settings)=>{this.get(id);if(!['codex','claude','opencode'].includes(provider)||typeof nativeId!=='string'||!nativeId.trim()||nativeId.length>256)throw Error('Geçersiz sağlayıcı oturumu');
     const saved={nativeId,settings:settings??null},data=read(provider)??{};write(provider,{...data,...saved,...(profileId?{profiles:{...data.profiles,[profileId]:saved}}:{})});}
   };
  }

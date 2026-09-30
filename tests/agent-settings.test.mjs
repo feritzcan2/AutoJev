@@ -4,7 +4,7 @@ import {Store} from '../app/store.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {BackgroundStore} from '../app/background-store.mjs';
 
-for(const [provider,permission] of [['claude','auto'],['codex','bypassPermissions']]){
+for(const [provider,permission] of [['claude','auto'],['codex','bypassPermissions'],['opencode','default']]){
  test(`${provider} defaults reach profiles, automations and background workers`,t=>{
   const store=new Store(':memory:');t.after(()=>store.close());
   const profile=store.saveProfile({name:'Test',preferences:'Remote',agentSettings:{provider}});
@@ -16,7 +16,7 @@ for(const [provider,permission] of [['claude','auto'],['codex','bypassPermission
   assert.equal(background.save(profile.id,{enabled:false,intervalMinutes:30,agentOverride:{provider}}).agentSettings.permission,permission);
   assert.equal(background.task(profile.id).agentSettings.permission,permission);
  });
- for(const permission of ['default','plan','acceptEdits','bypassPermissions'])test(`${provider} preserves explicit ${permission} across saves`,t=>{
+ for(const permission of (provider==='opencode'?['default','plan','bypassPermissions']:['default','plan','acceptEdits','bypassPermissions']))test(`${provider} preserves explicit ${permission} across saves`,t=>{
   const store=new Store(':memory:');t.after(()=>store.close());
   const profile=store.saveProfile({name:'Test',preferences:'Remote',agentSettings:{provider,permission}});
   assert.equal(store.saveProfile({...profile,name:'Updated'}).agentSettings.permission,permission);

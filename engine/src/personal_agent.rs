@@ -32,7 +32,7 @@ mod tests {
     fn profile(provider: &str) -> Value {json!({"id":"builtin.agent-profile.loop-trial","version":1,"name":"Trial","description":"Inspect sources","category":"Web","instructions":"Only test sources. {{literal}}","agent_id":provider,"selection":{"model":"default","permission":"default","reasoning":"default"}})}
     #[test]
     fn profiles_use_upstream_binding_and_validation() {
-        for provider in ["codex","claude"] {
+        for provider in ["codex","claude","opencode"] {
             let result=validate(&json!({"profile":profile(provider)})).unwrap();
             assert!(result["instructions"].as_str().unwrap().contains("Saved agent: builtin.agent-profile.loop-trial · revision 1"));
             assert!(result["instructions"].as_str().unwrap().contains("{{literal}}"));
@@ -48,7 +48,7 @@ mod tests {
     }
     #[test]
     fn instructions_use_native_provider_transport() {
-        for provider in ["codex", "claude"] {
+        for provider in ["codex", "claude", "opencode"] {
             let profile: PersonalAgent=serde_json::from_value(profile(provider)).unwrap();
             let instructions=termloop_launch::personal_agent_provider_instructions(&profile).unwrap();
             let mut request=termloop_launch::LaunchRequest::interactive(provider,"/tmp",&termloop_launch::PERSONAL_AGENT_TEMPLATE);
@@ -57,6 +57,7 @@ mod tests {
             request.provider_instructions=Some(&instructions);
             let launch=termloop_launch::resolve(request).unwrap().into_payload();
             if provider=="codex" {assert_eq!(launch.codex_app_server_developer_instructions(),Some(instructions.as_str()));}
+            else if provider=="opencode" {assert!(launch.environment().entries().find(|(key,_)| *key=="OPENCODE_CONFIG_CONTENT").unwrap().1.to_string_lossy().contains("Saved agent"));}
             else {let index=launch.args().iter().position(|a|a=="--append-system-prompt").unwrap();assert_eq!(launch.args()[index+1],instructions);}
         }
     }

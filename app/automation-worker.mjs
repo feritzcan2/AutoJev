@@ -65,7 +65,7 @@ export const automationTools=[...workspaceTableTools,...browserSnapshotTools,...
  tool('browser_jev_reveal','Jev only: bring an observed controls.controlId into view, including offscreen date fields and nested scrolling forms. Does not click or type. Use the fresh fillFields fieldId in the result for text entry; never type into a controlId.',{controlId:str}),
  tool('reserve_automation_action','Persist an outgoing action reservation for duplicate detection and outcome tracking. Required before document uploads and record execution. A reservation does not prove any file was uploaded or an application submitted. Requires a current eligible proposal.',{itemId:str}),
  tool('browser_upload_document','Execute tasks only: upload one document explicitly listed in the reserved proposal. filePath is relative to this workspace. With Jev, ref is a current observed uploadId. With the separate browser, first click the observed file input to open its chooser; ref identifies that input. Upload can transmit the document immediately; never upload during preparation or verification.',{ref:str,filePath:str}),
- tool('browser_interact','Interact with the current observed page: click, type, select, press a key, or use Jev autocomplete. Available in every mode without a result, approval or reservation. You must decide whether the action is authorized by the user and saved instructions. Use fresh observed refs. For autocomplete use a controls.controlId: text reads suggestions, option selects an exact observed suggestion.',{operation:{type:'string',enum:['click','type','select','press','autocomplete']},ref:str,text:optional,option:optional,key:str},['operation','ref']),
+ tool('browser_interact','Interact with the current observed page: click, type, select, press a key, or use Jev autocomplete. Available in every mode without a result, approval or reservation. You must decide whether the action is authorized by the user and saved instructions. Use fresh observed refs. For type use fillFields.fieldId, including search query fields; clickTargets.targetId and controls.controlId cannot be used for type. For autocomplete use a controls.controlId: text reads suggestions, option selects an exact observed suggestion.',{operation:{type:'string',enum:['click','type','select','press','autocomplete']},ref:str,text:optional,option:optional,key:str},['operation','ref']),
  tool('record_automation_outcome','Record completed or uncertain. In an assigned verify task, not_submitted releases the hold only with an explicit current site draft/not-submitted or rejected-submission status for this exact record. Supply notSubmittedProof with the latest snapshotId, kind draft/rejected, an exact quote containing both status and record identity, and recordEvidence (exact title, ID or URL fragment, at least 6 characters). An unfinished form, empty CV or missing success message is insufficient. Verification never submits; any authorized continuation is a separate task.',{itemId:str,status:{type:'string',enum:['completed','uncertain','not_submitted']},evidence:str,url:str,notSubmittedProof:object({snapshotId:str,kind:{type:'string',enum:['draft','rejected']},quote:str,recordEvidence:str})},['itemId','status','evidence','url']),
  tool('finish_automation_run','Finish this assigned turn. Source runs require scan when completed: completion=end after all accessible pages/details; cutoff only with a saved scanPlan.boundary; user_stop only for an explicit user stopping condition. There is no time or browser-step budget. Save recovery progress while working. Trials require fresh source observations and a saved source skill; document untested sections honestly. For failed/blocked SOURCE scans, stop is required: access for an observed access barrier, technical for an actual verified tool/runtime failure (stop.issueIds required; obtain them from recheck_scan_page or repeated transport errors; process other pending URLs first), user_input for a missing required user fact, incomplete for unfinished coverage (the tool will require continuing). Cite the actual error or remaining user action in stop.evidence. Partial coverage and a marketing page without listings are not blockers. goalReached ends all scheduling; never use it merely for reaching the incremental cutoff. Stop after this call.',{status:{type:'string',enum:['completed','blocked','failed']},summary:str,stop:object({kind:{type:'string',enum:['access','technical','user_input','incomplete']},evidence:{type:'string',minLength:1,maxLength:2000},issueIds:{type:'array',maxItems:100,items:str}},['kind','evidence']),goalReached:{type:'boolean'},scan:object({complete:{type:'boolean'},pendingUrls:{type:'array',maxItems:100,items:str},reason:str,evidenceUrl:str,completion:{type:'string',enum:['end','cutoff','user_stop']}},['complete','pendingUrls','reason','evidenceUrl'])},['status','summary'])
 ];
@@ -207,13 +207,18 @@ export function automationWorkflow({root,workspace,db,run,signal,browser,report,
    case 'record_automation_result':result=db.record(id,run.id,args);break;
    case 'reserve_automation_action':result=db.reserve(id,run.id,args.itemId);break;
    case 'record_automation_outcome':{
-    let page;
+    let page,fresh;
     if(args.status==='not_submitted'){
      const previous=snapshots.get(args.notSubmittedProof?.snapshotId);
      if(previous.url!==args.url)throw Error('Kanıt adresi güncel sayfayla eşleşmiyor');
-     const fresh=await inspect();page=snapshots.get(fresh.snapshot.id);
+     fresh=await inspect();page=snapshots.get(fresh.snapshot.id);
     }
-    result=db.resolve(id,run.id,args.itemId,args,page);break;
+    try{result=db.resolve(id,run.id,args.itemId,args,page);}
+    catch(error){
+     if(!fresh)throw error;
+     return {...fresh,status:'evidence_rejected',saved:false,error:error.message,message:'Kanıt kabul edilmedi; kayıt değiştirilmedi. Dönen güncel sayfayı ve snapshot.id değerini kullan. Alıntıyı görünür metinden aynen al; ayraç veya eksik metin ekleme.'};
+    }
+    break;
    }
    case 'browser_open':{
     const research=active.kind==='interview';db.spendStep(id,run.id,{research});const url=research?researchUrl(args.url):webUrl(args.url);

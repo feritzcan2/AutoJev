@@ -51,6 +51,7 @@ export class ContextUsage {
  }
  async read(){
   try{
+   if(!['codex','claude'].includes(this.provider))return this.value(false);
    if(!/^[a-f0-9-]{36}$/i.test(this.nativeId??''))return this.value(false);
    if(!this.file){
     if(this.now()<this.nextLookup)return this.value(false);

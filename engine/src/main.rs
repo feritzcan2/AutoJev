@@ -1,3 +1,4 @@
+mod opencode;
 mod personal_agent;
 mod hooks;
 mod history;
@@ -35,7 +36,13 @@ impl Engine {
 
             "start"=>{
                 if self.observed.is_some(){return Err("An agent is already running".into());}
-                let provider=field(v,"provider")?;if provider!="codex"&&provider!="claude"{return Err("This provider does not yet support JobLoop MCP".into());}
+                let provider=field(v,"provider")?;if !matches!(provider,"codex"|"claude"|"opencode"){return Err("This provider does not yet support JobLoop MCP".into());}
+                if provider=="opencode" {
+                    let capability=termloop_agents::discover_capabilities(provider);
+                    if capability.available && capability.observation!=termloop_agents::ObservationCapability::LaunchScopedHook {
+                        return Err("OpenCode 1.18.33 veya daha yeni bir sürüm gerekli. Terminalde opencode upgrade ile güncelle.".into());
+                    }
+                }
                 let id=field(v,"sessionId")?;let cwd=field(v,"cwd")?;let directory=field(v,"runtimeDirectory")?;
                 let config_path=Path::new(directory).join("mcp.json");
                 if provider=="claude"{std::fs::write(&config_path,json!({"mcpServers":{"jobloop":{"type":"http","url":field(v,"endpoint")?,"headers":{"Authorization":format!("Bearer {}",field(v,"token")?)}}}}).to_string()).map_err(|e|e.to_string())?;}
@@ -65,8 +72,13 @@ impl Engine {
                         settings.inspectable_content=context_status::settings(&settings.inspectable_content,Path::new("jobloop-engine"),Path::new("<session-context>"))?;
                     }
                 }
+                let observation_path=Path::new(directory).join("opencode-tui.json");
+                if provider=="opencode" {
+                    opencode::prepare(settings.as_mut().ok_or("Missing OpenCode observation settings")?, &observation_path)?;
+                }
+                let observation_path=observation_path.to_str().ok_or("Invalid observation path")?;
                 let hook_endpoint=format!("{}/agent-observation",field(v,"endpoint")?.trim_end_matches("/mcp"));
-                request.observation=Some(AgentObservationLaunch{session_id:id,endpoint:&hook_endpoint,token:runtime.token(),transport:if let Some(ref settings)=settings{AgentObservationLaunchTransport::InlineSettings{content:&settings.content,inspectable_content:&settings.inspectable_content}}else{AgentObservationLaunchTransport::DaemonOwnedBridge{endpoint:termloop_launch::CODEX_APP_SERVER_RUNTIME_PLACEHOLDER}}});
+                request.observation=Some(AgentObservationLaunch{session_id:id,endpoint:&hook_endpoint,token:runtime.token(),transport:if let Some(ref settings)=settings{match settings.delivery {termloop_agents::ProviderHookSettingsDelivery::InlineSettings=>AgentObservationLaunchTransport::InlineSettings{content:&settings.content,inspectable_content:&settings.inspectable_content},termloop_agents::ProviderHookSettingsDelivery::EnvironmentSettingsPath{variable}=>AgentObservationLaunchTransport::EnvironmentSettingsPath{variable,path:observation_path,content:&settings.content,inspectable_content:&settings.inspectable_content}}}else{AgentObservationLaunchTransport::DaemonOwnedBridge{endpoint:termloop_launch::CODEX_APP_SERVER_RUNTIME_PLACEHOLDER}}});
                 let mut launch=termloop_launch::resolve(request).map_err(|e|e.to_string())?.into_payload();
                 if provider=="codex"{runtime.start_codex_with_project_trust(cwd,Path::new(directory),Some(mcp),&mut launch,None,project_trust).map_err(|e|e.to_string())?;}
                 if let (Some(rows),Some(cols))=(v["rows"].as_u64(),v["cols"].as_u64()){

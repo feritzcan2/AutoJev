@@ -54,6 +54,7 @@ export class TranscriptReader {
  }
  async read(){
   try{
+   if(!['codex','claude'].includes(this.provider))return this.messages;
    if(!NATIVE_ID.test(this.nativeId??''))return this.messages;
    if(!this.file){if(this.now()<this.nextLookup)return this.messages;this.nextLookup=this.now()+3000;this.file=await this.locate();if(!this.file)return this.messages;}
    const file=await open(this.file,'r');

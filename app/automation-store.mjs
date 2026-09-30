@@ -24,7 +24,7 @@ const json=row=>row?JSON.parse(row.data):null;
 const integer=(value,label,min,max)=>{if(!Number.isInteger(value)||value<min||value>max)throw Error(`${label}: ${min}–${max} arasında tam sayı gerekli`);return value;};
 const planKey=value=>JSON.stringify([value.title,value.goal,value.criteria,value.sources,value.instructions,value.facts]);
 function agentSettings(input){
- if(!['codex','claude'].includes(input?.provider))throw Error('Desteklenmeyen sağlayıcı');
+ if(!['codex','claude','opencode'].includes(input?.provider))throw Error('Desteklenmeyen sağlayıcı');
  input=withAgentDefaults(input);
  for(const key of ['model','permission','reasoning'])boundedText(input[key],key,120);
  if(![true,false,null].includes(input.network))throw Error('Geçersiz ağ ayarı');

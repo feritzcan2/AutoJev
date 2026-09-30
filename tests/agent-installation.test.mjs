@@ -17,12 +17,12 @@ createInterface({input:process.stdin}).on('line',line=>{
 `);
  try{
   engine=new Engine(process.execPath,file,()=>{});
-  for(const provider of ['codex','claude']){
+  for(const provider of ['codex','claude','opencode']){
    const readiness=await collectReadiness({provider},{findExecutable:async()=>null});
    const detail=readiness.checks.find(check=>check.id==='agent').detail;
    assert.equal(readiness.ready,false);
    assert.ok(detail.includes(provider+' --version'));
-   assert.ok(detail.includes(provider==='codex'?'codex login':'claude auth login'));
+   assert.ok(detail.includes(provider==='opencode'?'opencode auth login':provider==='codex'?'codex login':'claude auth login'));
    assert.match(detail,/AutoJev bu aracı içermez/);
    await assert.rejects(engine.request('launch',{provider}),error=>error.message===detail);
   }

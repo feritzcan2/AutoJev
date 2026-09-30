@@ -20,7 +20,7 @@ fn apply_tool_approvals(
     for tool in tools {
         validate_config_name(tool)?;
     }
-    if tools.is_empty() {
+    if tools.is_empty() || agent_id == "opencode" {
         return Ok(());
     }
     if agent_id == "claude" {

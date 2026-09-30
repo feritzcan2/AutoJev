@@ -12,7 +12,7 @@ import {missingAgentMessage} from './agent-installation.mjs';
 export {findChrome,findExecutable} from './chrome-installation.mjs';
 export {launchEnvironment as readinessEnvironment} from './launch-environment.mjs';
 const exec=promisify(execFile);
-const providers={codex:{label:'Codex',args:['login','status'],login:'codex login'},claude:{label:'Claude Code',args:['auth','status','--json'],login:'claude auth login'}};
+const providers={opencode:{label:'OpenCode',args:['auth','list'],login:'opencode auth login'},codex:{label:'Codex',args:['login','status'],login:'codex login'},claude:{label:'Claude Code',args:['auth','status','--json'],login:'claude auth login'}};
 const item=(id,label,state,detail)=>({id,label,state,detail});
 
 export async function inspectLogin(provider,executable,{execImpl=exec,env=process.env,platform=process.platform,home=homedir()}={}){
@@ -29,6 +29,7 @@ export async function inspectLogin(provider,executable,{execImpl=exec,env=proces
  }
  let authenticated=false;
  if(provider==='claude'){try{const status=JSON.parse(stdout.trim());if(status.loggedIn===false)return item('login','Agent oturumu','error',`Terminalde ${descriptor.login} ile oturum aç ve tekrar kontrol et.`);authenticated=status.loggedIn===true;}catch{}}
+ else if(provider==='opencode')authenticated=/\b[1-9]\d* credentials?\b/i.test(output.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g,''));
  else authenticated=/\blogged in\b/i.test(output)&&!/\bnot logged in\b/i.test(output);
  return authenticated?item('login','Agent oturumu','ready','CLI oturum bilgisi mevcut. Hizmet erişimi görev başladığında doğrulanır.'):item('login','Agent oturumu','warning',`Oturum durumu doğrulanamadı. Terminalde ${descriptor.login} ile kontrol et.`);
 }

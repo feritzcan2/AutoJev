@@ -48,7 +48,7 @@ test('interviews resume their conversation; trials start fresh and require a cur
  assert.equal(launches[0].resume,true);
  for(const launch of launches.slice(1)){assert.equal(launch.resume,false);assert.match(launch.prompt,/run_workspace_source_tool before any browser discovery/);assert.match(launch.prompt,/Previous runs are historical context/);assert.match(launch.prompt,/site_wait response is current application evidence/);assert.match(launch.prompt,/When the selected method or its configured fallback uses the browser/);assert.match(launch.prompt,/actual tool call returns a permission error/);assert.doesNotMatch(launch.prompt,/Do not use other browser tools/);}
 });
-for(const provider of ['claude','codex'])test(`${provider}: setup launch resumes native history until model or permission changes`,async t=>{
+for(const provider of ['claude','codex','opencode'])test(`${provider}: setup launch resumes native history until model or permission changes`,async t=>{
  const {core,db,a}=fixture(t),dir=await mkdtemp(path.join(tmpdir(),'loop-setup-resume-')),launches=[];
  const agents=new AgentSessions({root:process.cwd(),data:dir,createEngine:(_binary,_directory,onEvent)=>({
   request:async(op,args)=>{if(op==='start'){launches.push(args);await onEvent({event:'identity',sessionId:args.sessionId,nativeId:args.resumeId??'native-'+launches.length});}return {};},close:async()=>{}
@@ -65,7 +65,7 @@ for(const provider of ['claude','codex'])test(`${provider}: setup launch resumes
  assert.equal(core.workspaces.history(a.id).forProfile(agentProfileId('web-interview')).conversation(a.id,provider),'native-4');
 });
 
-for(const provider of ['claude','codex'])test(`${provider}: record continuation launches the exact native conversation even after an unrelated task`,async t=>{
+for(const provider of ['claude','codex','opencode'])test(`${provider}: record continuation launches the exact native conversation even after an unrelated task`,async t=>{
  const {core,db,a}=fixture(t),dir=await mkdtemp(path.join(tmpdir(),'loop-record-resume-')),launches=[];
  const agents=new AgentSessions({root:process.cwd(),data:dir,createEngine:(_binary,_directory,onEvent)=>({
   request:async(op,args)=>{if(op==='start'){launches.push(args);await onEvent({event:'identity',sessionId:args.sessionId,nativeId:args.resumeId??'native-'+launches.length});}return {};},close:async()=>{}

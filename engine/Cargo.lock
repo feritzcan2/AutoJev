@@ -905,6 +905,7 @@ dependencies = [
  "termloop-agents",
  "termloop-domain",
  "termloop-launch",
+ "termloop-platform",
  "termloop-terminal",
  "tokio",
 ]

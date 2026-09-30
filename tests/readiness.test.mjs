@@ -7,6 +7,13 @@ import {collectReadiness,findExecutable,findChrome,inspectLogin,readinessEnviron
 
 const ready={state:'ready',id:'login',label:'Agent oturumu',detail:'Ready'};
 const dependencies={findExecutable:async()=>'/safe/bin/cli',inspectLogin:async()=>ready,findChrome:async()=>'/chrome',listChromeProfiles:async()=>[{directory:'Default',name:'Personal'}],existingChromeEndpoint:async()=> 'ws://127.0.0.1:9222/devtools/browser/example',chromePortAvailable:async()=>true,jevStatus:async()=>({configured:true})};
+test('OpenCode readiness accepts credentials without exposing account output',async()=>{
+ assert.equal((await collectReadiness({provider:'opencode'},dependencies)).ready,true);
+ for(const [stdout,expected] of [['\x1b[90m└  2 credentials\x1b[0m\nprivate-account','ready'],['└  0 credentials','warning'],['unknown status','warning']]){
+  const result=await inspectLogin('opencode','/safe/opencode',{execImpl:async(file,args)=>{assert.deepEqual(args,['auth','list']);return {stdout,stderr:''};}});
+  assert.equal(result.state,expected);assert.doesNotMatch(JSON.stringify(result),/private-account/);
+ }
+});
 test('first-run checks diagnose missing CLI while optional source/runtime tools remain warnings',async()=>{
  let login=0;
  const result=await collectReadiness({provider:'codex'}, {...dependencies,findExecutable:async()=>null,inspectLogin:async()=>{login++;return ready;}});
