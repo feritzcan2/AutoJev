@@ -1,7 +1,7 @@
 export function missingAgentMessage(provider){
  const label=provider==='codex'?'Codex CLI':'Claude Code';
  const login=provider==='codex'?'codex login':'claude auth login';
- return `${label} komutu bu bilgisayarda bulunamadı. AutoJev bu aracı içermez; ayrıca kurman gerekir. Zaten kuruluysa terminalde ${provider} --version komutunun çalıştığını kontrol et. Ardından ${login} ile oturum aç, AutoJev’i tamamen kapatıp yeniden aç ve kuruluma devam et. Kayıtlı bilgilerin korunur.`;
+ return `AutoJev ${label} komutunu bulamadı. Terminalde ${provider} --version ile kontrol et. Komut çalışıyorsa AutoJev’i tamamen kapatıp aynı terminalden aç. AutoJev bu aracı içermez; kurulu değilse ayrıca kur ve ${login} ile oturum aç. Ardından kuruluma devam et. Kayıtlı bilgilerin korunur.`;
 }
 
 export function engineErrorMessage(message){

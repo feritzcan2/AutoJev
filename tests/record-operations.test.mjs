@@ -238,3 +238,10 @@ test('preparation backlog uses all configured workers and leaves excess work que
  await f.finish(f.launches[1],'blocked');await f.runtime.tick();await settle();assert.equal(f.launches.length,4);
  assert.equal(f.runtime.workers.list(f.id).length,3);
 });
+
+test('record context does not replay another record login blocker from the same source',async t=>{
+ const f=fixture(t);const old=f.db.begin(f.id,'run');f.db.putRun({...old,sourceUrl:source,recordId:'unrelated-record'});f.db.finish(f.id,old.id,'blocked','Another record required login');
+ await f.runtime.runRecord(f.id,f.item.id,'prepare');await settle();const current=f.launches.at(-1);
+ const context=await f.flow(current).call(f.id,current.id,'get_automation_context',{});
+ assert.equal(context.previousRuns.some(r=>r.id===old.id),false);
+});

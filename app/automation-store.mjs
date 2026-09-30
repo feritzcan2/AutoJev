@@ -123,11 +123,11 @@ export class AutomationStore {
   return this.put(a);
  }
  event(id,kind,data){this.get(id);this.db.prepare('INSERT INTO workspace_events(workspace_id,kind,data,at) VALUES(?,?,?,?)').run(id,kind,JSON.stringify(data),this.now());}
- askQuestion(id,{text,recordId=null,fields=null},{runId}={}){
+ askQuestion(id,{text,recordId=null,fields=null,accessCheck=null},{runId}={}){
   text=boundedText(text,'Soru',6000);fields=normalizeFields(fields);if(recordId)this.result(id,recordId);
   const a=this.get(id),previous=(a.questions??[]).find(q=>q.answer==null&&q.text===text&&q.recordId===recordId&&JSON.stringify(q.fields??null)===JSON.stringify(fields));if(previous)return previous;
   const run=runId?this.activeRun(id,runId):null;
-  const question={id:randomUUID(),text,recordId,fields,answer:null,createdAt:this.now(),...(run?.resumeContext?{browserContext:{...run.resumeContext,runId:run.id,workerId:run.workerId,sourceUrl:run.sourceUrl}}:{})};
+  const question={id:randomUUID(),text,recordId,fields,...(accessCheck?{accessCheck}:{}),answer:null,createdAt:this.now(),...(run?.resumeContext?{browserContext:{...run.resumeContext,runId:run.id,workerId:run.workerId,sourceUrl:run.sourceUrl}}:{})};
   this.store.workspaces.tasks.atomic(()=>{this.put({...a,questions:[...(a.questions??[]),question]});this.event(id,'question_asked',{id:question.id});});return question;
  }
  answerQuestion(id,questionId,value){

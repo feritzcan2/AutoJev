@@ -30,6 +30,7 @@ import {workerKey} from './worker-key.mjs';
 import {BrowserTools} from './browser.mjs';
 import {listChromeProfiles} from './chrome-profiles.mjs';
 import {browserDefinition} from './browser-definition.mjs';
+import {resolveLaunchEnvironment} from './launch-environment.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 async function boot(){
@@ -38,6 +39,7 @@ async function boot(){
  if(process.env.JOBLOOP_DATA_DIR)app.setPath('userData',process.env.JOBLOOP_DATA_DIR);
  if(!app.requestSingleInstanceLock()){app.quit();return;}
  await app.whenReady();
+ if(process.platform!=='win32')process.env.PATH=(await resolveLaunchEnvironment()).PATH;
  if(process.platform==='darwin'){app.setAboutPanelOptions({applicationName:'AutoJev'});if(!app.isPackaged)app.dock.setIcon(path.join(root,'build/icon.png'));Menu.setApplicationMenu(Menu.buildFromTemplate([{label:'AutoJev',submenu:[{role:'about',label:'About AutoJev'},{type:'separator'},{role:'services'},{type:'separator'},{role:'hide',label:'Hide AutoJev'},{role:'hideOthers'},{role:'unhide'},{type:'separator'},{role:'quit',label:'Quit AutoJev'}]},{role:'editMenu'},{role:'viewMenu'},{role:'windowMenu'}]));}
  const bootstrapDirectory=app.getPath('userData');await mkdir(bootstrapDirectory,{recursive:true,mode:0o700});
  let data=await currentDataDirectory(bootstrapDirectory);
