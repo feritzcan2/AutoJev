@@ -1,11 +1,11 @@
 import {withAgentDefaults} from './agent-settings.mjs';
 import {randomUUID} from 'node:crypto';
-import {text} from './store.mjs';
+import {boundedText as text} from './automation-templates.mjs';
 export class BackgroundStore {
  constructor(store){this.store=store;this.db=store.db;this.db.exec(`
- CREATE TABLE IF NOT EXISTS background_tasks(candidate_id TEXT PRIMARY KEY REFERENCES candidates(id), data TEXT NOT NULL);
- CREATE TABLE IF NOT EXISTS background_runs(id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL REFERENCES candidates(id), data TEXT NOT NULL);
- CREATE TABLE IF NOT EXISTS mail_signals(id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL REFERENCES candidates(id), account TEXT NOT NULL, message_id TEXT NOT NULL, data TEXT NOT NULL, UNIQUE(candidate_id,account,message_id));`);
+ CREATE TABLE IF NOT EXISTS background_tasks(candidate_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE, data TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS background_runs(id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, data TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS mail_signals(id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, account TEXT NOT NULL, message_id TEXT NOT NULL, data TEXT NOT NULL, UNIQUE(candidate_id,account,message_id));`);
  // Preserve mailbox selection while retiring application-owned OAuth credentials.
  if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gmail_accounts'").get()){
   for(const row of this.db.prepare('SELECT candidate_id,email FROM gmail_accounts').all()){const task=this.task(row.candidate_id);if(!task.mailbox)this.putTask(row.candidate_id,{...task,mailbox:row.email.toLowerCase(),connection:null});}

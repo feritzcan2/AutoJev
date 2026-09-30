@@ -33,6 +33,7 @@ export function migrateManualApplications(store){
 }
 
 export function applicationQueueState(store,candidate,job,{campaign=store.campaign(candidate),tasks=store.workerState.tasks(candidate)}={}){
+ if(store.queueState)return store.queueState(candidate,job);
  const verificationOnly=job.status==='uncertain',actionLabel=verificationOnly?'Öncelikli doğrula':'Öncelikli başvur';
  const action={verificationOnly,actionLabel},unavailable=message=>({...action,state:'unavailable',message});
  if(job.duplicateApplication)return unavailable('Bu ilan önceki bir başvuruyla eşleşiyor. AutoJev’den kontrol et.');

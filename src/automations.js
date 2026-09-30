@@ -1,3 +1,4 @@
+import {automationTrialReady} from '../app/automation-trial.mjs';
 import {defaultPermission} from '../app/agent-settings.mjs';
 import {templateFields} from './template-fields.js';
 import {automationProgress,runKindLabel} from '../app/automation-progress.mjs';
@@ -16,7 +17,7 @@ const time=value=>value?new Date(value).toLocaleString('tr-TR'):'—';
 const modeNames={observe:'Bul ve bildir',prepare:'Hazırla, onayımı bekle',auto:'Sınırlarım içinde uygula'};
 const dateInput=value=>{if(!value)return '';const d=new Date(value);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);};
 
-export function automationsPage(api,{notice,getCatalog,startJob,navigate,deleteWorkspace,isDeleting=()=>false,onSnapshot=()=>{},focusAgent=()=>{},syncWorkspaceMenu=()=>{},refreshWorkspaces=async()=>{}}){
+export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,isDeleting=()=>false,onSnapshot=()=>{},focusAgent=()=>{},syncWorkspaceMenu=()=>{},refreshWorkspaces=async()=>{}}){
  let sourcePanel,overview;
  const host=el('section',null,'automations-page');host.id='automations';host.hidden=true;document.querySelector('main').append(host);
  const agentConversation=el('div',null,'workspace-conversation');agentConversation.dataset.webOnly='';document.querySelector('#now-history').before(agentConversation);
@@ -28,7 +29,7 @@ export function automationsPage(api,{notice,getCatalog,startJob,navigate,deleteW
  let progressSignature='';
  const templateNav=el('button');templateNav.type='button';templateNav.dataset.view='templates';templateNav.innerHTML='<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span>Template’ler</span>';document.querySelector('aside nav button[data-view=config]').before(templateNav);
  let templates=[],selected=null,data=null,pane=null,generation=0,busy=false,dirty=false,formRevision='',chatSending=false,chatError='',resultsTable=null,composerOpen=false,composerState='';
- const attention=automationAttentionPanel(api,{navigate,refresh,ask:openConversation});
+ const attention=automationAttentionPanel(api,{navigate,refresh});
  const hasUnsaved=()=>dirty;
  const attempt=fn=>async(...args)=>{args[0]?.preventDefault?.();if(busy||isDeleting())return;busy=true;setBusy();notice('');try{return await fn(...args);}catch(error){notice(error.message);}finally{busy=false;setBusy();}};
  const button=(label,fn,cls='quiet')=>{const b=el('button',label,cls);b.type='button';b.onclick=attempt(fn);return b;};
@@ -40,11 +41,10 @@ export function automationsPage(api,{notice,getCatalog,startJob,navigate,deleteW
  // A blank workspace has nothing in it yet, so picking a template replaces it instead of leaving an empty one behind.
  async function replaceBlank(template){
   const blank=selected,agentSettings=data.automation.agentSettings;
-  if(template.kind==='jobs')await startJob(template);
-  else{const a=await api.workspaceCreate(template.id,agentSettings?{agentSettings}:{});await select(a.id);}
+  const a=await api.workspaceCreate(template.id,agentSettings?{agentSettings}:{});await select(a.id);
   await api.deleteWorkspace(blank);await refreshWorkspaces();
  }
- async function create(template){if(template.kind==='jobs'){await startJob(template);return;}const a=await api.workspaceCreate(template.id,{});await select(a.id);}
+ async function create(template){const a=await api.workspaceCreate(template.id,{});await select(a.id);}
  function renderList(){
   if(selected||host.hidden)return;host.replaceChildren();
   const heading=el('div',null,'automation-heading');heading.append(sectionTitle('Bir template ile başla','Hazır bir işleyiş seç; agent sorularla çalışma alanını sana göre düzenlesin.'));
@@ -52,7 +52,7 @@ export function automationsPage(api,{notice,getCatalog,startJob,navigate,deleteW
   const grid=el('div',null,'automation-grid template-grid');for(const t of templates){const card=el('article',null,'automation-card template-card');card.append(el('span',t.icon,'automation-icon'),el('h3',t.title),el('p',t.description));const steps=el('ol');for(const step of t.steps)steps.append(el('li',step));card.append(steps);const choose=button(t.id==='custom'?'Ne istediğini anlat →':'Bu template ile başla →',()=>create(t),'primary');choose.dataset.template=t.id;card.append(choose);card.append(button('Template’i dışa aktar',()=>api.automationTemplateExport(t.id),'automation-export-template'));grid.append(card);}host.append(grid);
   host.append(el('p','Bu bilgisayarda çalışır. Düzenli kontroller için uygulamayı ve bilgisayarı açık tut.','automation-local-note'));
  }
- async function select(id){selected=id;data=null;host.hidden=false;localStorage.setItem('selected-automation',id);pane=null;formRevision='';dirty=false;buildDetail();navigate('board');await refresh();if(selected!==id)return;if(!data){data=await api.workspaceSnapshot(id);if(selected!==id)return;renderDetail();}}
+ async function select(id){notice('');selected=id;data=null;host.hidden=false;localStorage.setItem('selected-workspace',id);pane=null;formRevision='';dirty=false;buildDetail();navigate('board');await refresh();if(selected!==id)return;if(!data){data=await api.workspaceSnapshot(id);if(selected!==id)return;renderDetail();}if(automationProgress(data).fresh){openConversation();if(data.automation.templateId!=='custom'){await api.automationSetup(id);if(selected===id)await refresh();}}}
  const setupProviders=()=>getCatalog().filter(provider=>provider.supported&&['codex','claude'].includes(provider.id));
  const defaultModel=(provider,saved)=>{const models=provider?.models??[];return models.includes(saved)?saved:models.includes('default')?'default':models[0]??'';};
  async function createBlank(){
@@ -67,7 +67,7 @@ export function automationsPage(api,{notice,getCatalog,startJob,navigate,deleteW
   agentConversation.replaceChildren();progressSignature='';
   host.innerHTML=`<div id="automation-controls" class="actions"></div><p id="automation-runtime-note" class="automation-runtime-note" role="status"></p>
 <div class="automation-setup-grid"><section class="automation-conversation"><div class="automation-section-head"><h2>Asistanla kur</h2><p>İhtiyacını anlat, soruları yanıtla veya yapmak istediğin değişikliği yaz.</p></div><div id="automation-messages" class="automation-messages" role="log" aria-label="Kurulum konuşması"></div><form id="automation-chat"><label for="automation-message">Mesajın</label><textarea id="automation-message" placeholder="Örneğin: Berlin’de 1.500 euroya kadar iki odalı ev arıyorum…" maxlength="12000" required></textarea><div class="actions"><button id="automation-send" data-idle type="submit" class="primary">Gönder</button><button id="automation-add-document" data-idle type="button" class="quiet">Belge ekle</button></div><small>Değişiklik konuşması düzenli çalışmayı duraklatır. Yeni bilgiler çalışma alanı profilinde görünür.</small></form></section>
-<section class="automation-plan"><div class="automation-section-head"><h2>Kurulum kartı</h2><p>Asistanın hazırladıklarını incele ve düzenle. Yetkiyi buradan sen seçersin.</p></div><form id="automation-plan-form"><label>Ad<input name="title" required maxlength="150"></label><label>Amaç<textarea name="goal" required maxlength="6000"></textarea></label><div id="automation-criteria"></div><label>Kaynak adresleri<textarea name="sources" required placeholder="Her satıra bir adres. Mümkünse doğrudan arama sonuçları bağlantısını kullan."></textarea></label><label>İşleyiş ve bitiş koşulu<textarea name="instructions" maxlength="12000"></textarea></label><details><summary>Kişisel bilgiler ve belgeler</summary><label>Bu otomasyonun kullanabileceği bilgiler<textarea name="facts" maxlength="12000" placeholder="Yalnızca bu iş için gereken bilgiler. Şifreleri burada paylaşma."></textarea></label><div id="automation-documents"></div></details><label>İşlem yetkisi<select name="mode"><option value="observe">Bul ve bildir</option><option value="prepare">Hazırla, onayımı bekle</option><option value="auto">Sınırlarım içinde uygula</option></select></label><div class="automation-form-grid"><label>Kontrol aralığı (dakika)<input type="number" name="intervalMinutes" min="1" max="10080" required></label><label>Günlük işlem sınırı<input type="number" name="maxActionsPerDay" min="1" max="1000" required></label></div><label>Bitiş tarihi (isteğe bağlı)<input type="datetime-local" name="endAt"></label><div class="automation-plan-footer"><small id="automation-save-state" role="status"></small><button data-idle type="submit" class="primary">Kurulumu kaydet</button></div></form></section></div>
+<section class="automation-plan"><div class="automation-section-head"><h2>Kurulum kartı</h2><p>Asistanın hazırladıklarını incele ve düzenle. Yetkiyi buradan sen seçersin.</p></div><form id="automation-plan-form"><label>Ad<input name="title" required maxlength="150"></label><label>Amaç<textarea name="goal" required maxlength="6000"></textarea></label><div id="automation-criteria"></div><label>Kaynak adresleri<textarea name="sources" required placeholder="Her satıra bir adres. Mümkünse doğrudan arama sonuçları bağlantısını kullan."></textarea></label><label>İşleyiş ve bitiş koşulu<textarea name="instructions" maxlength="12000"></textarea></label><details><summary>Kişisel bilgiler ve belgeler</summary><label>Bu otomasyonun kullanabileceği bilgiler<textarea name="facts" maxlength="12000" placeholder="Yalnızca bu iş için gereken bilgiler. Şifreleri burada paylaşma."></textarea></label><div id="automation-documents"></div></details><label>İşlem yetkisi<select name="mode"><option value="observe">Bul ve bildir</option><option value="prepare">Hazırla, onayımı bekle</option><option value="auto">Sınırlarım içinde uygula</option></select></label><div class="automation-form-grid"><label>Kontrol aralığı (dakika)<input type="number" name="intervalMinutes" min="1" max="10080" required></label><label>Günlük işlem sınırı<input type="number" name="maxActionsPerDay" min="1" max="1000" required></label></div><label>Toplam işlem sınırı (isteğe bağlı)<input type="number" name="maxActionsTotal" min="1" max="10000"></label><label>Bitiş tarihi (isteğe bağlı)<input type="datetime-local" name="endAt"></label><div class="automation-plan-footer"><small id="automation-save-state" role="status"></small><button data-idle type="submit" class="primary">Kurulumu kaydet</button></div></form></section></div>
 <section class="automation-results-section"><div class="automation-heading"><div><h2>Sonuçlar</h2><p id="automation-results-summary"></p></div><button id="automation-export" type="button" class="quiet">Sonuçları dışa aktar</button></div><div id="automation-results"></div></section>
 <section class="automation-history-section"><div class="automation-section-head"><h2>Çalışma geçmişi</h2><p>Her turun sonucu ve gerektiğinde agent ekranı.</p></div><div id="automation-runs"></div></section><div class="automation-bottom-actions"><button id="automation-delete" type="button" class="quiet danger">Otomasyonu sil</button></div>`;
  const $=id=>find('#'+id),form=$('automation-plan-form');
@@ -93,11 +93,11 @@ export function automationsPage(api,{notice,getCatalog,startJob,navigate,deleteW
   conversation.prepend(buildIntro(chat));
   const profileHead=plan.querySelector('.automation-section-head'),profileCopy=el('div');profileCopy.append(...profileHead.children);profileHead.replaceChildren(profileCopy);profileHead.className='profile-head';
   const improve=button('Agent ile geliştir',openConversation);plan.querySelector('.profile-head').append(improve);
-  const sections=[['Çalışma alanı','Bu otomasyonun adı ve amacı.',['title','goal']],['Ne arıyorsun','Agent sonuçları bu kriterlere göre değerlendirir.',['criteria']],['Kaynaklar ve işleyiş','Taranacak adresler ve takip edilecek adımlar.',['sources','instructions']],['Kişisel bilgiler','Agent yalnızca burada verdiğin bilgileri kullanır.',['facts']],['İşlem yetkisi','Hangi işlemleri yapabileceğini sen seçersin.',['mode']],['Çalışma düzeni','Kontrol sıklığı, günlük işlem yetkisi ve bitiş tarihi.',['intervalMinutes','maxActionsPerDay','endAt']]];
+  const sections=[['Çalışma alanı','Bu otomasyonun adı ve amacı.',['title','goal']],['Ne arıyorsun','Agent sonuçları bu kriterlere göre değerlendirir.',['criteria']],['Kaynaklar ve işleyiş','Taranacak adresler ve takip edilecek adımlar.',['sources','instructions']],['Kişisel bilgiler','Agent yalnızca burada verdiğin bilgileri kullanır.',['facts']],['İşlem yetkisi','Hangi işlemleri yapabileceğini sen seçersin.',['mode']],['Çalışma düzeni','Kontrol sıklığı, günlük işlem yetkisi ve bitiş tarihi.',['intervalMinutes','maxActionsPerDay','maxActionsTotal','endAt']]];
   const profileSections=[];for(const [title,description,names] of sections){const section=el('div',null,'profile-section'),copy=el('div',null,'profile-section-copy'),fields=el('div',null,'profile-fields');copy.append(el('h3',title),el('p',description));for(const name of names){const field=name==='criteria'?$('automation-criteria'):form.elements[name].closest('label');fields.append(field);}if(names.includes('facts'))fields.append($('automation-documents'));section.append(copy,fields);profileSections.push(section);}
   const mode=profileSections.flatMap(section=>[...section.querySelectorAll('select[name=mode]')])[0],authorization=el('div',null,'authorization');for(const [value,title,description] of [['observe','Bul ve bildir','Ara, filtrele ve uygun sonuçları kaydet; mesaj veya başvuru gönderme.'],['prepare','Hazırla, onayımı bekle','İşlem taslağını hazırla; göndermeden önce onayımı al.'],['auto','Sınırlarım içinde uygula','Kaydettiğim kurallara ve günlük sınıra göre işlemleri uygula.']]){const choice=el('label',null,'choice'),input=el('input'),copy=el('span');input.type='radio';input.name='mode';input.value=value;copy.append(el('b',title),el('small',description));choice.append(input,copy);authorization.append(choice);}mode.closest('label').replaceWith(authorization);
   const footer=form.querySelector('.automation-plan-footer');footer.className='profile-foot';footer.querySelector('button').textContent='Profili kaydet';form.replaceChildren(...profileSections,footer);
-  history.className='automation-history-section';history.innerHTML='<div class="background-head"><h2>Arka plan işleri</h2><p>Çalışma alanının turları ve sonuçları.</p></div><section class="background-history"><div class="section-title"><h2>Çalışma geçmişi</h2></div><div id="automation-runs" class="run-list"></div></section>';
+  history.className='automation-history-section';history.innerHTML='<div class="background-head"><h2>Otomasyon geçmişi</h2><p>Çalışma alanının turları ve sonuçları.</p></div><section class="background-history"><div class="section-title"><h2>Çalışma geçmişi</h2></div><div id="automation-runs" class="run-list"></div></section>';
   const pipeline=el('div',null,'pipeline');pipeline.id='automation-pipeline';const top=el('div',null,'pipeline-top');$('automation-runtime-note').className='campaign-state';top.append($('automation-runtime-note'),$('automation-controls'));pipeline.append(top,el('div',null,'automation-metrics'));results.prepend(pipeline);
   results.querySelector('.automation-heading').className='section-title';results.querySelector('h2').id='automation-table-title';
   const summary=el('section');summary.id='automation-overview';results.prepend(summary);overview=automationOverview(summary,{button,navigate,performAction});
@@ -122,7 +122,7 @@ export function automationsPage(api,{notice,getCatalog,startJob,navigate,deleteW
   const gallery=el('details',null,'workspace-intro-templates');gallery.append(el('summary','Hazır bir template kullan'));const cards=el('div');gallery.append(cards);
   intro.append(examples,gallery,agentRow);
   intro.sync=()=>{const providers=setupProviders(),saved=data.automation.agentSettings??{};if(provider.dataset.catalog!==String(providers.length)){provider.dataset.catalog=String(providers.length);provider.replaceChildren(...providers.map(item=>new Option(item.label,item.id)));}if(providers.some(item=>item.id===saved.provider))provider.value=saved.provider;fillModels(saved.model);
-   const offered=templates.filter(t=>t.id!=='custom').sort((a,b)=>(b.kind==='jobs')-(a.kind==='jobs'));gallery.hidden=!offered.length;if(cards.dataset.catalog!==offered.map(t=>t.id).join()){cards.dataset.catalog=offered.map(t=>t.id).join();cards.replaceChildren(...offered.map(t=>{const card=button('',()=>replaceBlank(t),'workspace-template');card.dataset.introTemplate=t.id;card.dataset.idle='';card.append(el('span',t.icon,'automation-icon'),el('b',t.title),el('small',t.description));return card;}));}};
+   const offered=templates.filter(t=>t.id!=='custom');gallery.hidden=!offered.length;if(cards.dataset.catalog!==offered.map(t=>t.id).join()){cards.dataset.catalog=offered.map(t=>t.id).join();cards.replaceChildren(...offered.map(t=>{const card=button('',()=>replaceBlank(t),'workspace-template');card.dataset.introTemplate=t.id;card.dataset.idle='';card.append(el('span',t.icon,'automation-icon'),el('b',t.title),el('small',t.description));return card;}));}};
   return intro;
  }
  function renderIntro(){
@@ -143,8 +143,8 @@ export function automationsPage(api,{notice,getCatalog,startJob,navigate,deleteW
  }
  function setPane(name){const page=({results:'board',setup:'profile',history:'background'})[name]??name;pane=page;localStorage.setItem('selected-view',page);for(const b of document.querySelectorAll('aside nav button'))b.classList.toggle('selected',b.dataset.view===page);for(const section of host.querySelectorAll('[data-automation-pane]'))section.hidden=section.dataset.automationPane!==page;}
  function renderShell(){
-  if(!selected||!data)return;const locked=busy||isDeleting(),p=renderProgress(),a=data.automation,active=Boolean(data.activeRun)||a.status==='enabled',ready=a.trial?.status==='passed'&&a.trial.revision===a.revision;
-  document.querySelector('#heading').textContent=a.title;const workspaces=document.querySelector('#candidates'),value='automation:'+a.id;if(![...workspaces.options].some(o=>o.value===value))workspaces.add(new Option(a.title,value));workspaces.value=value;const state=document.querySelector('#agent-state');state.textContent=p.label;state.dataset.active=String(active);
+  if(!selected||!data)return;const locked=busy||isDeleting(),p=renderProgress(),a=data.automation,active=Boolean(data.activeRun)||a.status==='enabled',ready=automationTrialReady(a);
+  document.querySelector('#heading').textContent=a.title;const workspaces=document.querySelector('#candidates'),value=a.id;if(![...workspaces.options].some(o=>o.value===value))workspaces.add(new Option(a.title,value));workspaces.value=value;const state=document.querySelector('#agent-state');state.textContent=p.label;state.dataset.active=String(active);
   const start=document.querySelector('#start'),stop=document.querySelector('#stop'),restart=document.querySelector('#restart-agent');start.hidden=active||!p.primary;stop.hidden=!active;start.disabled=locked||hasUnsaved();stop.disabled=locked;restart.disabled=locked||hasUnsaved()||!ready;start.textContent=p.primary?.label??'Çalışıyor';stop.textContent=data.activeRun?'Turu durdur':'Takibi duraklat';restart.hidden=true;
   for(const id of ['candidates','new'])document.querySelector('#'+id).disabled=locked;
   document.querySelector('#rename-workspace').disabled=locked||Boolean(data.activeRun);
@@ -160,6 +160,8 @@ export function automationsPage(api,{notice,getCatalog,startJob,navigate,deleteW
  async function performAction(id){
   if(!data)return;
   if(id==='message')return openConversation();
+  if(id==='questions'){navigate('agent');document.querySelector('.automation-attention')?.scrollIntoView({block:'start'});return;}
+  if(id==='setup'){await api.automationSetup(selected);await refresh();navigate('agent');return;}
   if(id==='profile'){navigate('profile');find('#automation-plan-form').scrollIntoView({block:'start'});return;}
   if(id==='results')return navigate('board');
   if(id==='sources')return navigate('sources');
@@ -168,6 +170,7 @@ export function automationsPage(api,{notice,getCatalog,startJob,navigate,deleteW
   if(id==='stop')return stop();
   if(hasUnsaved()){navigate('profile');notice('Önce profil değişikliklerini kaydet.');return;}
   if(id==='enable')await api.workspaceStart(selected);
+  else if(id==='skip-trial')await api.automationSkipTrial(selected);
   else if(id==='trial'||id==='run')await api.automationRun(selected,id);
   await refresh();navigate('agent');document.querySelector('#now-panel').scrollIntoView({block:'start',behavior:'smooth'});
  }
@@ -188,13 +191,13 @@ export function automationsPage(api,{notice,getCatalog,startJob,navigate,deleteW
  async function stop(){await api.workspaceStop(selected);await refresh();}
  async function restart(){await api.workspaceRestart(selected);await refresh();}
  function agentNavLabel(){const nav=document.querySelector('aside nav button[data-view=agent]');nav.querySelector('span').textContent='Agent';}
- function deselect(){attention.update(null,null);agentNavLabel(false);agentConversation.replaceChildren();document.body.classList.remove('workspace-fresh');selected=null;data=null;localStorage.removeItem('selected-automation');host.hidden=true;onSnapshot(null);document.body.classList.remove('automation-workspace');document.querySelector('[data-view=profile] span').textContent='Aday profili';document.querySelector('[data-view=board] span').textContent='Başvurular';}
- function readForm(){const f=find('#automation-plan-form').elements,t=templates.find(t=>t.id===data.automation.templateId);return {title:f.title.value,goal:f.goal.value,criteria:Object.fromEntries(t.fields.map(field=>[field.id,f['criteria-'+field.id].value])),sources:f.sources.value.split('\n').map(v=>v.trim()).filter(Boolean),instructions:f.instructions.value,facts:f.facts.value,mode:f.mode.value,intervalMinutes:Number(f.intervalMinutes.value),maxActionsPerDay:Number(f.maxActionsPerDay.value),endAt:f.endAt.value?new Date(f.endAt.value).getTime():null};}
+ function deselect(){attention.update(null,null);agentNavLabel(false);agentConversation.replaceChildren();document.body.classList.remove('workspace-fresh');selected=null;data=null;localStorage.removeItem('selected-workspace');host.hidden=true;onSnapshot(null);document.body.classList.remove('automation-workspace');document.querySelector('[data-view=profile] span').textContent='Çalışma alanı profili';document.querySelector('[data-view=board] span').textContent='Takip tablosu';}
+ function readForm(){const f=find('#automation-plan-form').elements,t=templates.find(t=>t.id===data.automation.templateId);return {title:f.title.value,goal:f.goal.value,criteria:Object.fromEntries(t.fields.map(field=>[field.id,f['criteria-'+field.id].value])),sources:f.sources.value.split('\n').map(v=>v.trim()).filter(Boolean),instructions:f.instructions.value,facts:f.facts.value,mode:f.mode.value,intervalMinutes:Number(f.intervalMinutes.value),maxActionsPerDay:Number(f.maxActionsPerDay.value),maxActionsTotal:f.maxActionsTotal.value?Number(f.maxActionsTotal.value):null,endAt:f.endAt.value?new Date(f.endAt.value).getTime():null};}
  function fillForm(){
   const a=data.automation,key=JSON.stringify([a.id,a.revision,a.updatedAt]);if(hasUnsaved()||formRevision===key)return;formRevision=key;
   const f=find('#automation-plan-form').elements,criteria=find('#automation-criteria');criteria.replaceChildren();
   templateFields(criteria,data.definition?.fields??templates.find(t=>t.id===a.templateId).fields,a.criteria);
-  for(const key of ['title','goal','instructions','facts','mode','intervalMinutes','maxActionsPerDay'])f[key].value=a[key];f.sources.value=a.sources.join('\n');f.endAt.value=dateInput(a.endAt);
+  for(const key of ['title','goal','instructions','facts','mode','intervalMinutes','maxActionsPerDay'])f[key].value=a[key];f.sources.value=a.sources.join('\n');f.endAt.value=dateInput(a.endAt);f.maxActionsTotal.value=a.maxActionsTotal??'';
 
  }
  function renderChatStatus(){
@@ -208,7 +211,7 @@ export function automationsPage(api,{notice,getCatalog,startJob,navigate,deleteW
   const action=(label,fn,id,disabled)=>{const b=button(label,fn);b.id=id;b.disabled=Boolean(disabled||busy||data.activeRun);controls.append(b);};
   action('Tarayıcıyı aç',()=>api.automationBrowser(selected),'automation-browser',!a.sources.length||hasUnsaved());
   action('Deneme çalıştır',()=>performAction('trial'),'automation-trial',hasUnsaved()||a.reviewedRevision!==a.revision);
-  action('Bir kez çalıştır',()=>performAction('run'),'automation-run',hasUnsaved()||a.trial?.status!=='passed'||a.trial.revision!==a.revision);
+  action('Bir kez çalıştır',()=>performAction('run'),'automation-run',hasUnsaved()||!automationTrialReady(a));
   const p=automationProgress(data,{dirty:hasUnsaved()});if(p.primary&&!['trial','run'].includes(p.primary.id))action(p.primary.label,()=>performAction(p.primary.id),'automation-next',hasUnsaved());
   overview?.update(data,p,{busy:busy||isDeleting()});
   renderShell();
@@ -252,7 +255,7 @@ export function automationsPage(api,{notice,getCatalog,startJob,navigate,deleteW
  }
  async function show(name='templates',{detail=false}={}){
   host.hidden=false;if(detail&&selected)return;
-  agentNavLabel(false);agentConversation.replaceChildren();document.body.classList.remove('workspace-fresh');selected=null;data=null;dirty=false;formRevision='';localStorage.removeItem('selected-automation');navigate('templates',{detail:true});await loadList();
+  agentNavLabel(false);agentConversation.replaceChildren();document.body.classList.remove('workspace-fresh');selected=null;data=null;dirty=false;formRevision='';localStorage.removeItem('selected-workspace');navigate('templates',{detail:true});await loadList();
  }
  api.onAutomationChange(event=>{if(!event.automationId)templates=[];if(!host.hidden&&!selected)loadList().catch(e=>notice(e.message));});
  return {element:host,show,select,createBlank,refresh,start,stop,restart,reconnectBrowser:async()=>{await api.automationBrowser(selected);await refresh();},renderShell,deselect,showPane(name){setPane(name);},sendMessage,get busy(){return busy;},get dirty(){return hasUnsaved();},get data(){return data;},hide(){host.hidden=true;},get selected(){return selected;}};

@@ -65,6 +65,7 @@ export class WorkspaceStore {
  migrate(){
   this.db.exec('SAVEPOINT workspace_migration');try{this.db.exec('UPDATE workspaces SET data=data WHERE 0');
    for(const {table,defaultTemplate:kind=null} of [...this.registry.drivers.values()].flatMap(driver=>driver.legacyWorkspaces??[]))if(this.exists(table))for(const row of this.db.prepare(`SELECT id,data FROM ${table}`).all()){
+    if(table==='candidates'&&this.exists('workspace_imports')&&this.db.prepare('SELECT 1 FROM workspace_imports WHERE workspace_id=?').get(row.id))continue;
     const value=parse(row),existing=this.has(row.id)?this.get(row.id):null,templateId=value.templateId??existing?.templateId??kind;if(!existing)this.save(row.id,templateId,value);else if(existing.templateId!==templateId)throw Error('Eski kayıtlarda çalışma alanı kimliği çakışması var');
     for(const [provider,saved] of Object.entries(value.conversations??{}))if(saved?.nativeId)this.history(row.id).saveConversation(row.id,provider,saved.nativeId,saved.settings);
     delete value.conversations;

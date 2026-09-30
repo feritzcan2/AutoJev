@@ -13,9 +13,11 @@ export function observedLinks(response,pageUrl){
 export function scanCheckpoint(run,input,{checkpoint=false}={}){
  if(run.kind!=='run'||!run.sourceUrl||run.recordId)throw Error('Tarama kapsamı yalnızca kaynak görevine aittir');
  if(!input||typeof input.complete!=='boolean'||!Array.isArray(input.pendingUrls)||input.pendingUrls.length>100)throw Error('Tarama kapsamı gerekli: complete, pendingUrls, reason, evidenceUrl');
- const pendingUrls=[...new Set(input.pendingUrls.map(webUrl))],origin=new URL(run.sourceUrl).origin;
- const known=new Set([run.sourceUrl,...(run.observedLinks??[]),...(run.scan?.pendingUrls??[])]);
- if(pendingUrls.some(url=>new URL(url).origin!==origin||!known.has(url)))throw Error('Devam adresleri bu kaynakta gerçekten gözlenen bağlantılar olmalı; URL tahmin etme');
+ const pendingUrls=[...new Set(input.pendingUrls.map(webUrl))];
+ // A source can discover an employer board on another host. Ownership is the
+ // assigned run, not the marketing site's origin; guessed URLs remain invalid.
+ const known=new Set([run.sourceUrl,...(run.observedLinks??[]),...(run.navigation??[]).map(n=>n.url),...(run.scan?.pendingUrls??[])]);
+ if(pendingUrls.some(url=>!known.has(url)))throw Error('Devam adresleri bu görevde gerçekten gözlenen bağlantılar olmalı; URL tahmin etme');
  const evidenceUrl=webUrl(input.evidenceUrl),reason=boundedText(input.reason,'Kapsam açıklaması',2000);
  if(!(run.navigation??run.observations??[]).some(o=>o.url===evidenceUrl))throw Error('Kapsamın kanıt sayfasını bu turda gerçekten aç');
  if(input.complete&&pendingUrls.length)throw Error('Bekleyen sayfa veya ilan varken tarama tamamlandı denemez');

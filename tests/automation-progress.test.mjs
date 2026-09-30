@@ -42,6 +42,17 @@ test('successful trial offers tracking and one-off execution as separate actions
  assert.equal(p.title,'Deneme başarılı');assert.equal(p.primary.id,'enable');assert.ok(p.secondary.some(a=>a.id==='run'));assert.match(p.next,/Düzenli takip kapalı/);
 });
 
+test('skip trial is offered after review and leads to tracking without claiming success',()=>{
+ const ready=automationProgress(snapshot());assert.ok(ready.secondary.some(a=>a.id==='skip-trial'));
+ const failed=finished('trial','failed');
+ const skipped=automationProgress(snapshot({trial:{revision:2,status:'skipped'}},{runs:[failed]}));
+ assert.equal(skipped.title,'Deneme atlandı');assert.equal(skipped.primary.id,'enable');
+ assert.equal(skipped.steps[1].label,'Deneme atlandı');assert.match(skipped.detail,/denenmeden/);
+ assert.ok(skipped.secondary.some(a=>a.id==='run'));
+ for(const p of [automationProgress(snapshot({reviewedRevision:null})),automationProgress(snapshot(),{dirty:true}),automationProgress(snapshot({}, {activeRun:{...failed,status:'running'},runs:[]})),automationProgress(snapshot({endAt:1})),automationProgress(snapshot({questions:[{answer:null}]}))])assert.ok(!p.secondary.some(a=>a.id==='skip-trial'));
+ assert.equal(automationProgress(snapshot({trial:{revision:1,status:'skipped'}})).primary.id,'trial');
+});
+
 test('a paused source failure exposes tracking for healthy sources without retrying the blocked source',()=>{
  const s=snapshot({status:'paused',trial:{revision:2,status:'passed'}},{runs:[{...finished('run','blocked','IP blocked'),sourceUrl:'https://blocked.example/'}],sources:[{enabled:true,blocked:true},{enabled:true,blocked:false}]});
  const p=automationProgress(s);assert.equal(p.primary.id,'enable');assert.equal(p.primary.label,'Düzenli takibi sürdür');assert.ok(p.secondary.some(a=>a.id==='sources'));assert.ok(!p.secondary.some(a=>a.id==='run'));

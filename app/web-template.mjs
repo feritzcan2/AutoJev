@@ -1,15 +1,16 @@
+import {automationTrialReady} from './automation-trial.mjs';
 import {TaskRuns} from './task-runs.mjs';
 import {workerKey} from './worker-key.mjs';
 import {randomUUID} from 'node:crypto';
 import {sourceInput} from './automation-sources.mjs';
 import {automationAttention} from './automation-attention.mjs';
-import {unreportedSourceRun,requeueSourceRun,recoverUnreportedSources} from './automation-recovery.mjs';
+import {unreportedInterviewRun,unreportedSourceRun,requeueSourceRun,recoverUnreportedSources} from './automation-recovery.mjs';
 // Template definitions select operations; the common queue owns dependencies,
 // worker leases and record/source exclusivity. No template-name dispatch here.
 export class WebTasks extends TaskRuns {
  constructor(db,options){super({
   idleGraceMs:10000,
-  unreported:(id,runId,reason)=>unreportedSourceRun(db,id,runId,reason,(options?.now??Date.now)()),
+  unreported:(id,runId,reason)=>unreportedInterviewRun(db,id,runId)??unreportedSourceRun(db,id,runId,reason,(options?.now??Date.now)()),
   recover:()=>{const interrupted=db.list().flatMap(a=>db.store.workspaces.tasks.list(a.id,{states:['running','reported','paused']}));db.recover();for(const previous of interrupted){
    const queue=db.store.workspaces.tasks,a=db.get(previous.workspaceId),task=queue.get(a.id,previous.id),source=a.sourceState?.[task.sourceUrl],scan=task.scan??source?.scan;
    if(task.sourceUrl&&!task.recordId&&['interrupted','partial'].includes(task.completionState??task.state)&&a.status==='enabled'&&!source?.blocked)queue.put({...task,state:'pending',workerId:null,scan,completionState:null});
@@ -74,6 +75,11 @@ export class WebTasks extends TaskRuns {
    const pending=[];
    for(const source of this.db.sources(a.id)){
     if(!source.enabled||a.onceSources&&!a.onceSources.includes(source.url))continue;
+    if(source.siteWait?.waiting)continue;
+    if(source.siteBlocked&&!source.blocker?.recordId){
+     this.sourceState(a.id,source.url,{blocked:false,siteBlocked:false,batchId:null,nextRunAt:this.now(),onceCompleted:false});
+     Object.assign(source,{blocked:false,batchId:null,nextRunAt:this.now(),onceCompleted:false});
+    }
     let batchId=source.batchId;
     if(!batchId){
      if(source.blocked||source.nextRunAt>this.now()||a.once&&source.onceCompleted)continue;
@@ -88,10 +94,10 @@ export class WebTasks extends TaskRuns {
     }else pending.push(...waiting.filter(task=>!task.retryAt||task.retryAt<=this.now()));
    }
    const sources=this.db.sources(a.id),eligible=sources.filter(s=>s.enabled&&(!a.onceSources||a.onceSources.includes(s.url)));
-   if(a.once&&!this.slots(a.id).length&&!pending.length&&eligible.every(s=>s.blocked||s.onceCompleted)){
+   if(a.once&&!this.slots(a.id).length&&!pending.length&&eligible.every(s=>!s.siteWait&&(s.blocked||s.onceCompleted))){
     this.db.put({...this.db.get(a.id),once:false,onceSources:null,status:'paused',nextRunAt:null});this.changed(a.id);continue;
    }
-   const next=sources.filter(s=>s.enabled&&!s.blocked).map(s=>s.nextRunAt??this.now());
+   const next=sources.filter(s=>s.enabled&&(!s.blocked||s.siteWait)).map(s=>s.siteWait?.retryAt??s.nextRunAt??this.now());
    this.db.put({...this.db.get(a.id),nextRunAt:next.length?Math.min(...next):null});
    pending.sort((x,y)=>x.createdAt-y.createdAt);
    for(const worker of this.workers.list(a.id)){
@@ -122,8 +128,25 @@ export class WebTasks extends TaskRuns {
   if(input.enabled===true&&!before.enabled)this.resetSources(id,[url]);
   this.changed(id);await this.tick();return this.db.sources(id).find(s=>s.url===url);
  }
+ async setup(id){
+  const active=this.slots(id);if(active.length){if(active.length===1&&active[0].run.kind==='interview')return active[0].run;throw Error('Önce çalışan görevi durdur');}
+  if((this.db.get(id).questions??[]).some(q=>q.answer==null))return {waitingForAnswers:true};
+  return this.start(id,'interview');
+ }
+ async answer(id,questionId,value){
+  const answer=this.db.answerQuestion(id,questionId,value);this.changed(id);
+  if((this.db.get(id).questions??[]).some(q=>q.answer==null))return answer;
+  try{await this.pause(id);await this.setup(id);}catch(error){this.db.message(id,'system','Yanıtın kaydedildi. Agent devam edemedi: '+error.message);this.changed(id);}
+  return answer;
+ }
  async message(id,text,workerId='main'){await this.pause(id);this.db.message(id,'user',text);this.changed(id);return this.start(id,'interview',workerId);}
- report(id,runId,status,summary,goalReached=false){return this.complete(id,runId,status,summary,{goalReached});}
+ report(id,runId,status,summary,goalReached=false){
+  const result=this.complete(id,runId,status,summary,{goalReached}),run=this.db.run(runId);
+  if(status==='blocked'&&run.kind==='trial'&&run.siteWait){
+   const a=this.db.get(id);this.db.put({...a,retryPlan:{...a.retryPlan,[runId]:{at:run.siteWait.retryAt,revision:a.revision}}});this.changed(id);
+  }
+  return result;
+ }
  async pause(id,status='paused'){
   this.db.pause(id,status);await Promise.all(this.slots(id).map(slot=>this.finish(id,'interrupted','Kullanıcı durdurdu.',slot.workerId)));
   for(const task of this.queue.list(id,{states:['pending']}))this.queue.finish(id,task.id,'cancelled','Çalışma durduruldu');
@@ -131,7 +154,13 @@ export class WebTasks extends TaskRuns {
   this.db.put({...this.db.get(id),batchId:null,once:false,onceSources:null,retryPlan:{}});this.changed(id);
  }
  async add(id,input){const worker=this.workers.add(id,input);this.changed(id);await this.tick();return worker;}
- async startWorker(id,worker){this.workers.get(id,worker);this.workers.setEnabled(id,worker,true);const a=this.db.get(id);if(a.trial?.status!=='passed')return this.start(id,'trial',worker);if(a.status!=='enabled'){this.db.enable(id);this.resetSources(id,this.db.sources(id).filter(s=>s.enabled&&!s.blocked).map(s=>s.url));}await this.tick();}
+ restartState(id,worker){
+  // Browser settings can close the session before the restart confirmation.
+  // Keep the last worker task's kind so unfinished setup never becomes a trial.
+  const run=this.slots(id).find(s=>s.workerId===worker)?.run??this.db.runs(id).find(r=>(r.workerId??'main')===worker);
+  return run?{kind:run.kind,resume:run.kind==='interview'}:null;
+ }
+ async startWorker(id,worker,restart){this.workers.get(id,worker);this.workers.setEnabled(id,worker,true);if(['interview','trial'].includes(restart?.kind))return this.start(id,restart.kind,worker);const a=this.db.get(id);if(!automationTrialReady(a))return this.start(id,'trial',worker);if(a.status!=='enabled'){this.db.enable(id);this.resetSources(id,this.db.sources(id).filter(s=>s.enabled&&!s.blocked).map(s=>s.url));}await this.tick();}
  async stopWorker(id,worker){this.workers.get(id,worker);this.workers.setEnabled(id,worker,false);await this.finish(id,'interrupted','Worker durduruldu.',worker);this.changed(id);}
  async remove(id,worker){if(worker==='main')throw Error('İlk worker kaldırılamaz.');await this.stopWorker(id,worker);this.workers.remove(id,worker);this.changed(id);}
 }

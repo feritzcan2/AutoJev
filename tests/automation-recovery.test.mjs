@@ -70,6 +70,16 @@ test('a reported completion is never retried by a subsequent provider exit',asyn
  t.mock.timers.tick(60000);await f.runtime.tick();assert.equal(f.launches.length,1);assert.equal(f.db.run(run.id).status,'completed');assert.equal(f.store.workspaces.tasks.get(f.id,run.taskId).state,'completed');
 });
 
+test('a provider usage limit waits in the same session and clears without restarting completed page work',async t=>{
+ const f=fixture(t);await f.runtime.runOnce(f.id);await settle();const run=f.launches[0];f.checkpoint(run);f.event('Working');
+ const usageLimit={provider:'claude',resetLabel:'06:00 (Europe/Istanbul)',automaticResume:true};
+ f.runtime.event(f.id,{event:'usage_limit',usageLimit},run.id);f.event('Idle');t.mock.timers.tick(7200000);await settle();await f.runtime.tick();
+ assert.equal(f.launches.length,1);assert.equal(f.db.run(run.id).status,'running');assert.equal(f.db.run(run.id).pageProgress.currentPage,49);assert.deepEqual(f.db.run(run.id).usageLimit,usageLimit);
+ f.runtime.event(f.id,{event:'usage_limit',usageLimit:null},run.id);f.event('Working');t.mock.timers.tick(60000);await settle();assert.equal(f.launches.length,1);assert.equal(f.db.run(run.id).usageLimit,null);
+ f.runtime.event(f.id,{event:'usage_limit',usageLimit},run.id);f.runtime.event(f.id,{event:'eof'},run.id);await settle();t.mock.timers.tick(60000);await f.runtime.tick();
+ assert.equal(f.launches.length,1,'A closed quota-limited provider must not enter automatic recovery');assert.equal(f.db.run(run.id).status,'blocked');assert.equal(f.db.run(run.id).usageLimit.automaticResume,false);
+});
+
 test('legacy unreported errors recover on restart; real access blockers and paused workspaces remain blocked',async t=>{
  const f=fixture(t);await f.runtime.runOnce(f.id);await settle();const run=f.launches[0];f.checkpoint(run);
  await f.runtime.finish(f.id,'failed','Agent sonuç bildirmeden durdu. Agent ekranını kontrol et.');assert.equal(f.db.sources(f.id)[0].blocked,true);

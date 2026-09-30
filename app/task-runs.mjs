@@ -1,4 +1,5 @@
 import {workerKey} from './worker-key.mjs';
+import {providerLimitAttention} from './provider-limit.mjs';
 // Shared provider task lifecycle; policies validate durable domain outcomes.
 export class TaskRuns {
  constructor(policy,{launch,changed=()=>{},now=()=>Date.now(),concurrency=Infinity}={}){Object.assign(this,{policy,launch,changed,now,concurrency});this.active=new Map();this.closed=false;policy.recover();}
@@ -15,13 +16,19 @@ export class TaskRuns {
  }
  unreported(slot,reason){
   if(slot.finishing||slot.completionRequested||this.closed)return;
+  if(slot.run.usageLimit){
+   if(reason!=='exit')return;
+   slot.run={...this.policy.run(slot.run.id),usageLimit:{...slot.run.usageLimit,automaticResume:false}};this.policy.save(slot.run);
+   const issue=providerLimitAttention(slot.run.usageLimit);
+   return this.finish(slot.id,'blocked',`${issue.title}. ${issue.detail} Agent oturumu kapandı.`,slot.workerId).catch(()=>{});
+  }
   const outcome=this.policy.unreported?.(slot.id,slot.run.id,reason)??{status:'failed',summary:reason==='idle'?'Agent sonuç bildirmeden durdu. Agent ekranını kontrol et.':'Agent oturumu sonuç bildirmeden kapandı.'};
   return this.finish(slot.id,outcome.status,outcome.summary,slot.workerId).catch(()=>{});
  }
  watchIdle(slot){
   clearTimeout(slot.idleTimer);
   slot.idleTimer=setTimeout(()=>{
-   if(slot.finishing||slot.completionRequested||slot.run.interactive||this.closed)return;
+   if(slot.finishing||slot.completionRequested||slot.run.interactive||slot.run.usageLimit||this.closed)return;
    // Compaction events may be consumed by the provider session layer. Check
    // the live session as well as the last state delivered to this task.
    if(slot.worker?.isBusy?.()){this.watchIdle(slot);return;}
@@ -31,9 +38,14 @@ export class TaskRuns {
   },this.policy.idleGraceMs??2000);
  }
  event(id,event,runId){const slot=this.slot(id,runId);if(!slot||slot.finishing)return;
+  if(event.event==='usage_limit'){
+   slot.run={...this.policy.run(slot.run.id),usageLimit:event.usageLimit??null};clearTimeout(slot.idleTimer);
+   this.policy.save(slot.run);this.changed(id);
+   if(!slot.run.usageLimit&&slot.run.state==='Idle'&&slot.seenWorking&&!slot.completionRequested&&!slot.run.interactive)this.watchIdle(slot);
+  }
   if(event.event==='state'){
    const state=String(event.state).replace(/^Some\((.*)\)$/,'$1');slot.run={...this.policy.run(slot.run.id),state};if(['Working','Compacting'].includes(state))slot.seenWorking=true;clearTimeout(slot.idleTimer);
-   if(state==='Idle'&&slot.seenWorking&&!slot.completionRequested&&!slot.run.interactive)this.watchIdle(slot);
+   if(state==='Idle'&&slot.seenWorking&&!slot.completionRequested&&!slot.run.interactive&&!slot.run.usageLimit)this.watchIdle(slot);
    this.policy.save(slot.run);this.changed(id);
   }
   if(['eof','engine_exit'].includes(event.event)&&!slot.completionRequested)void this.unreported(slot,'exit');

@@ -19,7 +19,11 @@ try{
  await app.evaluate(async({ipcMain},args)=>{
   const vm=process.getBuiltinModule('node:vm'),load=vm.runInThisContext('(url)=>import(url)',{importModuleDynamically:vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER});
   const {Store}=await load(args.store),{AutomationStore}=await load(args.automationStore);
-  globalThis.attentionActions=[];globalThis.attentionTabs=[{tabId:'captcha-tab',url:args.url,sourceUrl:args.source}];globalThis.failAttentionRetry=true;
+  globalThis.attentionActions=[];globalThis.attentionTabs=[{tabId:'captcha-tab',url:args.url,sourceUrl:args.source}];globalThis.failAttentionRetry=true;globalThis.failAttentionReply=true;
+  ipcMain.removeHandler('terminal-message');ipcMain.handle('terminal-message',async(_,id,text,worker)=>{
+   globalThis.attentionActions.push({kind:'reply',id,text,worker});await new Promise(resolve=>setTimeout(resolve,200));
+   if(globalThis.failAttentionReply)throw Error('Test: yanıt iletilemedi');return {};
+  });
   ipcMain.removeHandler('workspace-tabs');ipcMain.handle('workspace-tabs',()=>globalThis.attentionTabs);
   ipcMain.removeHandler('focus-workspace-tab');ipcMain.handle('focus-workspace-tab',(_,id,tabId)=>{globalThis.attentionActions.push({kind:'focus',id,tabId});return {focused:true};});
   ipcMain.removeHandler('automation-source-run');ipcMain.handle('automation-source-run',(_,id,source)=>{
@@ -41,6 +45,25 @@ try{
  await card.getByRole('button',{name:'Sekmeyi göster ↗',exact:true}).click();
  await card.getByRole('button',{name:'https://auth.example/login',exact:true}).click();
  assert.equal(await app.evaluate(()=>globalThis.attentionActions.at(-1).tabId),'one');
+ await card.getByRole('button',{name:'Yanıtla',exact:true}).click();
+ const reply=card.getByRole('textbox',{name:'Agent’a ne yapması gerektiğini yaz'}),send=card.getByRole('button',{name:'Gönder',exact:true});
+ assert.equal(await send.isDisabled(),true);
+ await reply.fill('   ');assert.equal(await send.isDisabled(),true);
+ await reply.fill('Bu kaynağı şimdilik atla, diğer kaynaklarla devam et.');
+ await send.click();assert.equal(await send.isDisabled(),true);
+ await card.getByText(/yanıt iletilemedi/).waitFor();
+ assert.equal(await reply.inputValue(),'Bu kaynağı şimdilik atla, diğer kaynaklarla devam et.');
+ await app.evaluate(()=>{globalThis.failAttentionReply=false;});
+ await page.screenshot({path:path.join(data,'attention-reply.png'),fullPage:true});
+ await send.click();await card.getByText('Yanıtın agente iletildi.',{exact:true}).waitFor();
+ assert.equal(await reply.isVisible(),false);
+ const replies=await app.evaluate(()=>globalThis.attentionActions.filter(a=>a.kind==='reply'));
+ assert.equal(replies.length,2);assert.equal(replies[1].id,a.id);assert.equal(replies[1].worker,'main');
+ assert.ok(replies[1].text.includes(source));assert.ok(replies[1].text.includes('CAPTCHA'));
+ assert.ok(replies[1].text.endsWith('Kullanıcının talimatı:\nBu kaynağı şimdilik atla, diğer kaynaklarla devam et.'));
+ await card.getByRole('button',{name:'Yanıtla',exact:true}).click();assert.equal(await reply.inputValue(),'');
+ await reply.fill('Gönderilmeyecek taslak');await card.getByRole('button',{name:'Vazgeç',exact:true}).click();
+ assert.equal(await reply.isVisible(),false);assert.equal(await app.evaluate(()=>globalThis.attentionActions.filter(a=>a.kind==='reply').length),2);
  await page.screenshot({path:path.join(data,'attention.png'),fullPage:true});
  const scheduledAt=Date.now();
  await card.getByRole('button',{name:'2 saat sonra dene',exact:true}).click();

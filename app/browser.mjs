@@ -63,7 +63,7 @@ export class BrowserTools {
     const workspace=path.join(base,'candidates',candidateId);
     await mkdir(workspace,{recursive:true,mode:0o700});
     await mkdir(directory,{recursive:true,mode:0o700});
-    if(mode==='jev')return {client:new JevBrowser(path.join(directory,'jev-profile'),{...options,workspace,onDisconnect:()=>this.connections.disconnected(candidateId),onTabsClosed:ids=>{if(!this.closed)return this.onTabsClosed?.(candidateId,ids);},onProgress:(jobId,progress,owner)=>this.onProgress?.(candidateId,jobId,progress,owner),beforeSubmit:(jobId,url,owner,verificationContinuation)=>this.beforeSubmit?.(candidateId,jobId,url,owner,{verificationContinuation})}),tools:jevTools,directory,workspace};
+    if(mode==='jev')return {client:new JevBrowser(path.join(directory,'jev-profile'),{...options,siteAccess:this.siteAccess,workspace,onDisconnect:()=>this.connections.disconnected(candidateId),onTabsClosed:ids=>{if(!this.closed)return this.onTabsClosed?.(candidateId,ids);},onProgress:(jobId,progress,owner)=>this.onProgress?.(candidateId,jobId,progress,owner),beforeSubmit:(jobId,url,owner,verificationContinuation)=>this.beforeSubmit?.(candidateId,jobId,url,owner,{verificationContinuation})}),tools:jevTools,directory,workspace};
     const cli=path.join(path.dirname(require.resolve('@playwright/mcp/package.json')),'cli.js').replace(/([/\\])(app(?:-(?:x64|arm64))?\.asar)([/\\])/,'$1$2.unpacked$3');
     const transport=new StdioClientTransport({command:process.execPath,args:[cli,...browserArguments(mode,directory),'--output-dir',path.join(directory,'artifacts')],cwd:workspace,env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},stderr:'pipe'});
     const client=new Client({name:'jobloop-browser',version:'0.1.0'});
@@ -83,7 +83,14 @@ export class BrowserTools {
     if(this.modeForCandidate(candidateId)==='jev'&&!this.prepare(candidateId).ready)return {content:[{type:'text',text:JSON.stringify(browserWaitResult())}]};
     const {client,tools,directory,workspace}=await this.connect(candidateId);
     if(this.isActive&&!this.isActive())throw Error('Worker oturumu kapandı.');
-    if(name==='browser_target_press')return pressBrowserTarget(client,client instanceof JevBrowser,args,sessionId);
+    if(name==='browser_target_press'){
+      if(client instanceof JevBrowser){
+        const url=client.tab(args.tabId).page.url();
+        try{if(/^https?:/.test(url))this.siteAccess?.assertAction(url);}
+        catch(error){if(error.code!=='SITE_WAIT')throw error;return {content:[{type:'text',text:JSON.stringify({status:'site_wait',url,tabId:args.tabId,siteWait:error.wait,text:error.message,message:error.message,executed:false})}]};}
+      }
+      return pressBrowserTarget(client,client instanceof JevBrowser,args,sessionId);
+    }
     if(!tools.some(t=>t.name===name))throw Error('Unknown browser tool');
     let result;try{result=await (client instanceof JevBrowser?client.callTool({name,arguments:args},sessionId,{...this.options(candidateId).lifecycle,...(automationTabKey?{automationTabKey}:{}),...(automationWorkspaceId?{automationWorkspaceId:candidateId}:{}),...(automationSourceUrl?{automationSourceUrl,automationSourceUrls}:{}),...(automationPreferredTabId?{automationPreferredTabId}:{})}):client.callTool({name,arguments:args}));}catch(error){if(client instanceof JevBrowser&&(!client.browser&&client.connection==='existing'||error.code==='BROWSER_DISCONNECTED')){this.connections.disconnected(candidateId);return {content:[{type:'text',text:JSON.stringify(browserWaitResult())}]};}throw error;}
     // Newer Playwright versions return snapshot files. Inline only this candidate's

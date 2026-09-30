@@ -38,12 +38,14 @@ test('late CLI rejection is eligible for fresh recovery only on a resumed Codex 
 
 import {selectResume} from '../app/resume.mjs';
 import {Store} from '../app/store.mjs';
-test('permission or network changes start fresh; identical permissions preserve resume',()=>{
+test('model, permission or network changes start fresh; compatible settings preserve resume',()=>{
  const store=new Store(':memory:');try{
   const p=store.saveProfile({name:'Test',preferences:'Remote'}),settings={provider:'codex',permission:'plan',network:false};
   store.saveConversation(p.id,'codex','old');assert.equal(selectResume(store,p.id,settings),undefined);
   store.saveConversation(p.id,'codex','old',settings);assert.equal(selectResume(store,p.id,settings),'old');
-  assert.equal(selectResume(store,p.id,{...settings,model:'another-model'}),'old');
+  assert.equal(selectResume(store,p.id,{...settings,model:'default'}),'old');
+  assert.equal(selectResume(store,p.id,{...settings,model:'another-model'}),undefined);
+  assert.equal(selectResume(store,p.id,{...settings,reasoning:'high'}),'old');
   assert.equal(selectResume(store,p.id,{...settings,permission:'bypassPermissions'}),undefined);
   assert.equal(selectResume(store,p.id,{...settings,network:true}),undefined);
   store.saveConversation(p.id,'codex','new',{...settings,permission:'bypassPermissions'});

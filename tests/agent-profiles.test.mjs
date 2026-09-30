@@ -38,7 +38,7 @@ test('run and trial contexts exclude raw setup messages but preserve the saved p
   const context=await flow.call(a.id,kind,'get_automation_context',{});assert.equal(context.messages.length,kind==='interview'?db.messages(a.id).length:0);assert.equal(context.automation.title,'Profiles');
  }
 });
-test('each trial launches with fresh provider context and an explicit current access check',async t=>{
+test('interviews resume their conversation; trials start fresh and require a current access check',async t=>{
  const {db,a}=fixture(t),data=await mkdtemp(path.join(tmpdir(),'loop-trial-context-'));t.after(()=>rm(data,{recursive:true,force:true}));
  const launches=[],agents={start:async input=>launches.push(input),stop:async()=>{},output:()=>({bytes:[]})},mcp={endpoint:'http://localhost/mcp',grant:()=> 'test-token',revoke:()=>{}};
  for(const kind of ['interview','trial','trial']){
@@ -46,8 +46,25 @@ test('each trial launches with fresh provider context and an explicit current ac
   const worker=await launchAutomationWorker({data,db,run,automation:a,signal:{aborted:false},browser:{},report:()=>{},onEvent:()=>{},agents,mcp});await worker.close();
  }
  assert.equal(launches[0].resume,true);
- for(const launch of launches.slice(1)){assert.equal(launch.resume,false);assert.match(launch.prompt,/Use browser_open to navigate to each configured source again/);assert.match(launch.prompt,/Previous runs are historical context/);}
+ for(const launch of launches.slice(1)){assert.equal(launch.resume,false);assert.match(launch.prompt,/Use browser_open to inspect each configured source/);assert.match(launch.prompt,/Previous runs are historical context/);assert.match(launch.prompt,/site_wait response is current application evidence/);}
 });
+for(const provider of ['claude','codex'])test(`${provider}: setup launch resumes native history until model or permission changes`,async t=>{
+ const {core,db,a}=fixture(t),dir=await mkdtemp(path.join(tmpdir(),'loop-setup-resume-')),launches=[];
+ const agents=new AgentSessions({root:process.cwd(),data:dir,createEngine:(_binary,_directory,onEvent)=>({
+  request:async(op,args)=>{if(op==='start'){launches.push(args);await onEvent({event:'identity',sessionId:args.sessionId,nativeId:args.resumeId??'native-'+launches.length});}return {};},close:async()=>{}
+ })});
+ t.after(async()=>{await agents.close();await rm(dir,{recursive:true,force:true});});
+ const mcp={endpoint:'http://localhost/mcp',grant:()=> 'test-token',revoke:()=>{}};
+ const initial={...settings,provider};
+ for(const agentSettings of [initial,{...initial,contextCompactPercent:60},{...initial,model:'new-model'},{...initial,model:'new-model',permission:'bypassPermissions'}]){
+  const run={id:'setup-'+launches.length,automationId:a.id,kind:'interview'};
+  const worker=await launchAutomationWorker({root:process.cwd(),data:dir,db,run,automation:{...a,agentSettings},signal:{aborted:false},browser:{},report:()=>{},onEvent:()=>{},agents,mcp});
+  await worker.close();
+ }
+ assert.deepEqual(launches.map(l=>l.resumeId),[undefined,'native-1',undefined,undefined]);
+ assert.equal(core.workspaces.history(a.id).forProfile(agentProfileId('web-interview')).conversation(a.id,provider),'native-4');
+});
+
 test('launch pins the saved native profile and journal filters match its identity',async t=>{
  const {core,a,profiles}=fixture(t),log=new InstructionLog(core.workspaces),dir=await mkdtemp(path.join(tmpdir(),'loop-profiles-'));t.after(()=>rm(dir,{recursive:true,force:true}));const calls=[];
  const agents=new AgentSessions({root:process.cwd(),data:dir,profiles,instructions:log,createEngine:()=>({request:async(op,args)=>{calls.push({op,args});return{};},close:async()=>{}})});t.after(()=>agents.close());

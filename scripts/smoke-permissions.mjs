@@ -21,6 +21,7 @@ try{
  await page.locator('#provider').selectOption('claude');
  for(const permission of ['acceptEdits','auto']){
   await page.locator('#permission').selectOption(permission);
+  await page.locator('#agent-settings-save').click();
   await page.waitForFunction(async({id,permission})=>(await window.jobloop.workspaceSnapshot(id)).workspace.agentSettings.permission===permission,{id:candidate.id,permission});
   await page.reload();await page.locator('button[data-view=agent]').click();
   assert.equal(await page.locator('#permission').inputValue(),permission);

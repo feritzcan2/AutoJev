@@ -12,15 +12,15 @@ export class TelegramStore{
   this.store=store;this.db=store.db;this.now=now;this.botId=botId==null?null:String(botId);
   this.db.exec(`
    CREATE TABLE IF NOT EXISTS telegram_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
-   CREATE TABLE IF NOT EXISTS telegram_configs(candidate_id TEXT PRIMARY KEY REFERENCES candidates(id) ON DELETE CASCADE,bot_id TEXT NOT NULL,data TEXT NOT NULL);
-   CREATE TABLE IF NOT EXISTS telegram_links(candidate_id TEXT PRIMARY KEY REFERENCES candidates(id) ON DELETE CASCADE,
+   CREATE TABLE IF NOT EXISTS telegram_configs(candidate_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,bot_id TEXT NOT NULL,data TEXT NOT NULL);
+   CREATE TABLE IF NOT EXISTS telegram_links(candidate_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
     bot_id TEXT NOT NULL,chat_id TEXT NOT NULL,user_id TEXT NOT NULL,data TEXT NOT NULL,cursor INTEGER NOT NULL,UNIQUE(bot_id,chat_id),UNIQUE(bot_id,user_id));
-   CREATE TABLE IF NOT EXISTS telegram_pairs(hash TEXT PRIMARY KEY,candidate_id TEXT UNIQUE NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,expires INTEGER NOT NULL);
-   CREATE TABLE IF NOT EXISTS telegram_outbox(id TEXT PRIMARY KEY,candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+   CREATE TABLE IF NOT EXISTS telegram_pairs(hash TEXT PRIMARY KEY,candidate_id TEXT UNIQUE NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,expires INTEGER NOT NULL);
+   CREATE TABLE IF NOT EXISTS telegram_outbox(id TEXT PRIMARY KEY,candidate_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     event_key TEXT NOT NULL,data TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',attempts INTEGER NOT NULL DEFAULT 0,
     next_at INTEGER NOT NULL DEFAULT 0,message_id INTEGER,error TEXT,UNIQUE(candidate_id,event_key));
    CREATE INDEX IF NOT EXISTS telegram_pending ON telegram_outbox(status,next_at);
-   CREATE TABLE IF NOT EXISTS telegram_job_deliveries(candidate_id TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+   CREATE TABLE IF NOT EXISTS telegram_job_deliveries(candidate_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
     bot_id TEXT NOT NULL,job_id TEXT NOT NULL,sent_at INTEGER NOT NULL,PRIMARY KEY(candidate_id,bot_id,job_id));
    CREATE TABLE IF NOT EXISTS telegram_job_messages(delivery_id TEXT PRIMARY KEY REFERENCES telegram_outbox(id) ON DELETE CASCADE,
     job_id TEXT NOT NULL,body TEXT,status TEXT NOT NULL DEFAULT 'pending',attempts INTEGER NOT NULL DEFAULT 0,
@@ -36,14 +36,14 @@ export class TelegramStore{
   // question cards and form prompts. Backfill saved messages on upgrade.
   if(!this.db.prepare('PRAGMA table_info(telegram_job_messages)').all().some(column=>column.name==='question_id'))this.db.exec('ALTER TABLE telegram_job_messages ADD COLUMN question_id TEXT');
   if(!this.db.prepare('PRAGMA table_info(telegram_job_messages)').all().some(column=>column.name==='priority'))this.db.exec('ALTER TABLE telegram_job_messages ADD COLUMN priority INTEGER NOT NULL DEFAULT 0');
-  this.db.exec(`CREATE INDEX IF NOT EXISTS telegram_question_message_updates ON telegram_job_messages(question_id,status);
-   INSERT OR IGNORE INTO telegram_job_messages(delivery_id,job_id,question_id)
+  this.db.exec('CREATE INDEX IF NOT EXISTS telegram_question_message_updates ON telegram_job_messages(question_id,status)');
+  if(!store.generic)this.db.exec(`INSERT OR IGNORE INTO telegram_job_messages(delivery_id,job_id,question_id)
     SELECT o.id,coalesce(q.job_id,''),q.id FROM telegram_outbox o
     JOIN questions q ON q.candidate_id=o.candidate_id AND q.id=json_extract(o.data,'$.questionId')
     WHERE o.status='sent' AND o.message_id>0 AND json_extract(o.data,'$.kind') IN ('question','message')
      AND coalesce(json_extract(o.data,'$.reply_markup.force_reply'),0)=0;`);
   if(!this.db.prepare('PRAGMA table_info(telegram_links)').all().some(column=>column.name==='bot_id'))this.transaction(()=>{
-   this.db.exec(`CREATE TABLE telegram_links_scoped(candidate_id TEXT PRIMARY KEY REFERENCES candidates(id) ON DELETE CASCADE,
+   this.db.exec(`CREATE TABLE telegram_links_scoped(candidate_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
     bot_id TEXT NOT NULL,chat_id TEXT NOT NULL,user_id TEXT NOT NULL,data TEXT NOT NULL,cursor INTEGER NOT NULL,UNIQUE(bot_id,chat_id),UNIQUE(bot_id,user_id));
     INSERT INTO telegram_links_scoped SELECT candidate_id,coalesce((SELECT value FROM telegram_meta WHERE key='bot'),''),chat_id,user_id,data,cursor FROM telegram_links;
     DROP TABLE telegram_links;ALTER TABLE telegram_links_scoped RENAME TO telegram_links;`);
@@ -78,7 +78,7 @@ export class TelegramStore{
    if(!pair||this.link(pair.candidate_id))return null;
    const botId=this.config(pair.candidate_id).bot_id;
    if(this.db.prepare('SELECT 1 FROM telegram_links WHERE bot_id=? AND (chat_id=? OR user_id=?)').get(botId,String(chat),String(user)))return null;
-   const cursor=this.db.prepare('SELECT coalesce(max(seq),0) AS seq FROM events').get().seq;
+   const cursor=this.store.maxEventSeq?.()??this.db.prepare('SELECT coalesce(max(seq),0) AS seq FROM events').get().seq;
    const data={name:String(name).slice(0,150),newJobs:true,notifications:true,questions:true,linkedAt:this.now(),dialog:null};
    this.db.prepare('INSERT INTO telegram_links VALUES(?,?,?,?,?,?)').run(pair.candidate_id,botId,String(chat),String(user),JSON.stringify(data),cursor);
    this.db.prepare('DELETE FROM telegram_pairs WHERE candidate_id=?').run(pair.candidate_id);
@@ -110,7 +110,7 @@ export class TelegramStore{
  delivery(deliveryId){return decode(this.db.prepare(`SELECT * FROM telegram_outbox WHERE id=? AND ${this.scope('candidate_id')}`).get(deliveryId,this.botId,this.botId));}
  question(candidate,questionId){
   this.assertCandidate(candidate);
-  const q=this.db.prepare('SELECT id,question,answer,job_id AS jobId,resolution FROM questions WHERE candidate_id=? AND id=?').get(candidate,questionId);
+  const q=this.store.generic?this.store.questions(candidate).find(q=>q.id===questionId):this.db.prepare('SELECT id,question,answer,job_id AS jobId,resolution FROM questions WHERE candidate_id=? AND id=?').get(candidate,questionId);
   return q?{...q,resolution:JSON.parse(q.resolution??'null')}:null;
  }
  pending(){return this.db.prepare(`SELECT * FROM telegram_outbox WHERE status='pending' AND next_at<=? AND ${this.scope('candidate_id',true)} ORDER BY rowid LIMIT 20`).all(this.now(),this.botId,this.botId).map(decode);}
@@ -215,7 +215,7 @@ export class TelegramStore{
     Object.keys(campaign?.pendingRetries??{}),Object.keys(campaign?.pendingResumes??{}),Object.keys(campaign?.pendingRecoveries??{}),
     profile.authorization,profile.rankThreshold,this.store.sources(link.candidate_id).map(source=>[source.id,source.applyMode])]));
    if(link.data.queueSignature!==queueSignature){this.refreshJobMessages(link.candidate_id);link.data.queueSignature=queueSignature;}
-   const rows=this.db.prepare('SELECT seq,kind,data FROM events WHERE candidate_id=? AND seq>? ORDER BY seq LIMIT 200').all(link.candidate_id,link.cursor);
+   const rows=this.store.eventsAfter?.(link.candidate_id,link.cursor)??this.db.prepare('SELECT seq,kind,data FROM events WHERE candidate_id=? AND seq>? ORDER BY seq LIMIT 200').all(link.candidate_id,link.cursor);
    for(const row of rows){
     const data=JSON.parse(row.data);
     // Keep retries/backoff intact and coalesce all job changes into the next edit.

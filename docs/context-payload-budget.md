@@ -4,6 +4,15 @@ Context optimization is an output projection, not a database migration. Full rec
 
 ## Current projections
 
+Web automation context now has a 16,000-byte serialized response limit. Small
+`get_automation_context` responses keep their existing shape. Larger responses
+return exact JSON fragments, with `context.id` and `context.nextOffset` for
+`read_automation_context_part`. Agents read every fragment before acting. The
+cache belongs to one workflow and is separate from browser snapshots; fetching
+new context replaces it. This avoids provider spill-file reads and shell
+permission requests while retaining the complete context projection. Saved
+criteria, permissions and scan recovery data are not shortened to fit the limit.
+
 - Completed setup: status/stage/mode/needsTurn/error only. Active setup and profile improvement retain full context. A historical `mode=improve` with `needsTurn=false` is not active improvement.
 - Assigned application/verification: omit fit prose and rank dimensions/strengths/evidence; retain rank decision, score, gaps, blockers and uncertainties, plus all operational job fields.
 - Answered questions: retain exact answers, field labels/help/scope and selected option labels. Unanswered fields retain their full schemas. Free-text answers without structured values retain all options.

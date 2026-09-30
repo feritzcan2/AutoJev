@@ -101,7 +101,9 @@ test('record actions and user stopping conditions do not advance source coverage
 test('known identity lookup includes older saved results outside the context sample and rejects foreign snapshots',async t=>{
  const {db,id,start,flow}=fixture(t),run=start(),worker=flow(run);
  for(let i=0;i<110;i++)db.record(id,run.id,{url:source+'/item/'+i,title:'Match '+i,summary:'Observed'});
- const context=await worker.call(id,run.id,'get_automation_context',{});assert.equal(context.results.length,100);assert.ok(!context.results.some(r=>r.url===source+'/item/0'));
+ let context=await worker.call(id,run.id,'get_automation_context',{});
+ if(context.context){let fragment=context,text=fragment.text;while(fragment.context.nextOffset!==null){fragment=await worker.call(id,run.id,'read_automation_context_part',{contextId:fragment.context.id,offset:fragment.context.nextOffset});text+=fragment.text;}context=JSON.parse(text);}
+ assert.equal(context.results.length,100);assert.ok(!context.results.some(r=>r.url===source+'/item/0'));
  const [known,unknown]=await worker.call(id,run.id,'lookup_scan_results',{keys:[source+'/item/0',source+'/missing']});assert.equal(known.known,true);assert.equal(unknown.known,false);
  const observed=await worker.call(id,run.id,'browser_open',{url:source});await worker.call(id,run.id,'browser_open',{url:source+'?page=2'});
  await assert.rejects(worker.call(id,run.id,'save_scan_progress',{snapshotId:observed.snapshot.id,pendingUrls:[],reason:'Stale'}),/eski/);

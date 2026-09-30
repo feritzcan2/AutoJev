@@ -27,7 +27,7 @@ export class Workspaces {
    const state=await driver.restartState?.(id,worker);
    await driver.stop(id,worker);
    const history=this.store.history(id,worker);
-   for(const provider of ['codex','claude']){const native=history.conversation(id,provider);if(native)history.forgetConversation(id,provider,native);}
+   if(!state?.resume)for(const provider of ['codex','claude']){const native=history.conversation(id,provider);if(native)history.forgetConversation(id,provider,native);}
    return await driver.start(id,worker,state);
   }finally{this.changing.delete(id);this.changed(id);}
  }

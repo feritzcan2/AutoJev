@@ -10,6 +10,7 @@ import {Workspaces} from '../app/workspaces.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {Store} from '../app/store.mjs';
 import {loadExtensions} from '../app/extensions.mjs';
+import {upgradeWorkspaces} from '../app/workspace-upgrade.mjs';
 
 test('the default web database and catalog do not create application state',async t=>{
  const core=new WorkspaceDatabase(':memory:');t.after(()=>core.close());const web=new AutomationStore(core),a=web.create('housing');
@@ -17,7 +18,8 @@ test('the default web database and catalog do not create application state',asyn
  for(const name of ['candidates','campaigns','sources','questions','job_members','worker_state'])assert.ok(!tables.includes(name),name);
  assert.ok(web.catalog().every(template=>template.kind==='web'));assert.equal(core.workspaces.get(a.id).templateId,'housing');
  assert.deepEqual(await loadExtensions(''),[]);
- assert.throws(()=>core.workspaces.template('job-search'),/bulunamadı/);
+ assert.equal(core.workspaces.template('job-search').execution.driver,'browser');
+ assert.deepEqual(await loadExtensions('job-search'),[]);
 });
 
 test('a third executor registers its own capabilities and runs through the same workspace queue',async t=>{
@@ -30,11 +32,13 @@ test('a third executor registers its own capabilities and runs through the same 
  assert.throws(()=>registry.normalize({execution:{driver:'unregistered'}}),/uzantısı/);
 });
 
-test('disabling the application extension preserves its data and only lists supported workspaces',async t=>{
+test('legacy and personal job templates upgrade to the shared browser executor',async t=>{
  const dir=await mkdtemp(path.join(tmpdir(),'loop-optional-extension-'));t.after(()=>rm(dir,{recursive:true,force:true}));const file=path.join(dir,'db.sqlite');
- let store=new Store(file);const automation=new AutomationStore(store),candidate=store.saveProfile({name:'Keep',preferences:'Remote'}),web=automation.create('housing'),personal=automation.saveTemplate({...automation.template('job-search'),title:'Personal applications'});const intake=store.createSetup(store.profile(candidate.id).agentSettings,personal.id);assert.equal(store.profile(intake.id).templateId,personal.id);const saved=store.db.prepare('SELECT data FROM candidates WHERE id=?').get(candidate.id).data;store.close();
- const core=new WorkspaceDatabase(file);try{const api=new Workspaces(core.workspaces,{templates:{browser:{}}});assert.deepEqual(api.list().map(w=>w.id),[web.id]);assert.ok(new AutomationStore(core).catalog().every(t=>t.execution.driver==='browser'));assert.equal(core.db.prepare('SELECT data FROM candidates WHERE id=?').get(candidate.id).data,saved);}finally{core.close();}
- store=new Store(file);t.after(()=>store.close());assert.equal(store.candidates().length,2);assert.equal(store.profile(candidate.id).name,'Keep');assert.equal(store.workspaces.template(personal.id).execution.driver,'applications');
+ const store=new Store(file),automation=new AutomationStore(store),candidate=store.saveProfile({name:'Keep',preferences:'Remote'}),web=automation.create('housing'),personal=automation.saveTemplate({...automation.template('job-search'),title:'Personal applications'}),intake=store.createSetup(store.profile(candidate.id).agentSettings,personal.id);const saved=store.db.prepare('SELECT data FROM candidates WHERE id=?').get(candidate.id).data;store.close();
+ const core=new WorkspaceDatabase(file);t.after(()=>core.close());const db=new AutomationStore(core);upgradeWorkspaces(db);
+ const api=new Workspaces(core.workspaces,{templates:{browser:{}}});assert.deepEqual(new Set(api.list().map(w=>w.id)),new Set([web.id,candidate.id,intake.id]));
+ assert.ok(db.catalog().every(t=>t.execution.driver==='browser'));assert.equal(core.workspaces.template(personal.id).execution.driver,'browser');
+ assert.equal(core.db.prepare('SELECT data FROM candidates WHERE id=?').get(candidate.id).data,saved);assert.equal(db.get(candidate.id).title,'Keep');
 });
 
 test('generic boot has no static dependency on application stores, campaigns or MCP handlers',async()=>{

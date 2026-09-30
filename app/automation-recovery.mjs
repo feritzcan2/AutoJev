@@ -37,3 +37,10 @@ export function recoverUnreportedSources(db,now){
   const recovered={...db.run(run.id),...outcome};db.putRun(recovered);requeueSourceRun(db,recovered);
  }
 }
+
+export function unreportedInterviewRun(db,id,runId){
+ const run=db.run(runId);if(run.kind!=='interview')return null;
+ const pending=(db.get(id).questions??[]).filter(q=>q.answer==null&&q.createdAt>=run.startedAt);
+ if(!pending.length)return null;
+ return {status:'completed',summary:'Kurulum soruları kaydedildi; form yanıtların bekleniyor.'};
+}

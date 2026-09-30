@@ -18,30 +18,30 @@ try{
  const field=page.locator('[name=contextRestartPercent]');assert.equal(await field.inputValue(),'0');
  for(const provider of ['codex','claude']){
   await page.locator('#provider').selectOption(provider);
-  await compact.fill(provider==='codex'?'60':'55');await compact.press('Tab');
-  await page.waitForFunction(({id,percent})=>window.jobloop.workspaceSnapshot(id).then(s=>s.profile.agentSettings.contextCompactPercent===percent),{id:profile.id,percent:provider==='codex'?60:55});
-  await field.fill(provider==='codex'?'16':'20');await field.press('Tab');
-  await page.waitForFunction(({id,provider,percent})=>window.jobloop.workspaceSnapshot(id).then(s=>s.profile.agentSettings.provider===provider&&s.profile.agentSettings.contextRestartPercent===percent),{id:profile.id,provider,percent:provider==='codex'?16:20});
+  await compact.fill(provider==='codex'?'60':'55');await compact.press('Tab');await page.locator('#agent-settings-save').click();
+  await page.waitForFunction(({id,percent})=>window.jobloop.workspaceSnapshot(id).then(s=>s.workspace.agentSettings.contextCompactPercent===percent),{id:profile.id,percent:provider==='codex'?60:55});
+  await field.fill(provider==='codex'?'16':'20');await field.press('Tab');await page.locator('#agent-settings-save').click();
+  await page.waitForFunction(({id,provider,percent})=>window.jobloop.workspaceSnapshot(id).then(s=>s.workspace.agentSettings.provider===provider&&s.workspace.agentSettings.contextRestartPercent===percent),{id:profile.id,provider,percent:provider==='codex'?16:20});
   await page.reload();await page.locator('button[data-view=agent]').click();
   assert.equal(await compact.inputValue(),provider==='codex'?'60':'55');
   assert.equal(await field.inputValue(),provider==='codex'?'16':'20');
   assert.equal((await snapshot()).active,null,'settings must never start an agent');
  }
- await compact.fill('101');await compact.press('Tab');
- await page.waitForFunction(()=>document.querySelector('#agent-settings-status').textContent.startsWith('Kaydedilemedi'));
- assert.equal((await snapshot()).profile.agentSettings.contextCompactPercent,55);
- await compact.fill('0');await compact.press('Tab');
- await page.waitForFunction(id=>window.jobloop.workspaceSnapshot(id).then(s=>s.profile.agentSettings.contextCompactPercent===0),profile.id);
- await field.fill('500');await field.press('Tab');
- await page.waitForFunction(()=>document.querySelector('#agent-settings-status').textContent.startsWith('Kaydedilemedi'));
- assert.equal((await snapshot()).profile.agentSettings.contextRestartPercent,20);
- await field.fill('0');await field.press('Tab');
- await page.waitForFunction(id=>window.jobloop.workspaceSnapshot(id).then(s=>s.profile.agentSettings.contextRestartPercent===0),profile.id);
+ await compact.fill('101');await compact.press('Tab');await page.locator('#agent-settings-save').click();
+ assert.equal(await page.locator('#agent-settings-form').evaluate(form=>form.checkValidity()),false);
+ assert.equal((await snapshot()).workspace.agentSettings.contextCompactPercent,55);
+ await compact.fill('0');await compact.press('Tab');await page.locator('#agent-settings-save').click();
+ await page.waitForFunction(id=>window.jobloop.workspaceSnapshot(id).then(s=>s.workspace.agentSettings.contextCompactPercent===0),profile.id);
+ await field.fill('500');await field.press('Tab');await page.locator('#agent-settings-save').click();
+ assert.equal(await page.locator('#agent-settings-form').evaluate(form=>form.checkValidity()),false);
+ assert.equal((await snapshot()).workspace.agentSettings.contextRestartPercent,20);
+ await field.fill('0');await field.press('Tab');await page.locator('#agent-settings-save').click();
+ await page.waitForFunction(id=>window.jobloop.workspaceSnapshot(id).then(s=>s.workspace.agentSettings.contextRestartPercent===0),profile.id);
  await page.reload();await page.locator('button[data-view=agent]').click();assert.equal(await field.inputValue(),'0');
  // Show measured usage and pending reset while keeping the test entirely local.
  const before=await snapshot();
  await app.evaluate(({ipcMain},{before})=>{
-  ipcMain.removeHandler('workspace-snapshot');ipcMain.handle('workspace-snapshot',()=>({...before,profile:{...before.profile,agentSettings:{...before.profile.agentSettings,contextRestartPercent:16}},active:{candidateId:before.profile.id,sessionId:'ui-context-session',state:'Working',compaction:{state:'submitted'},contextUsage:{percent:18,peakPercent:18}}}));
+  ipcMain.removeHandler('workspace-snapshot');ipcMain.handle('workspace-snapshot',()=>({...before,workspace:{...before.workspace,agentSettings:{...before.workspace.agentSettings,contextRestartPercent:16}},active:{candidateId:before.workspace.id,sessionId:'ui-context-session',state:'Working',compaction:{state:'submitted'},contextUsage:{percent:18,peakPercent:18}}}));
  },{before});
  await page.reload();await page.locator('button[data-view=agent]').click();
  await page.getByText('Context kullanımı: %18. Eşik aşıldı; görev tamamlanınca yenilenecek.',{exact:true}).waitFor();

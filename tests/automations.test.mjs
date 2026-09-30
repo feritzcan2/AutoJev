@@ -18,6 +18,21 @@ function trial(db,id){db.review(id);const run=db.begin(id,'trial');db.observe(id
 function record(db,id,run,key='1',proposal='Merhaba, bu evle ilgileniyorum.'){return db.record(id,run.id,{key,url:'https://example.com/homes/'+key,title:'İki odalı ev',summary:'Berlin, 1400 EUR warm',proposal});}
 const settle=()=>new Promise(r=>setImmediate(r));
 
+test('explicit trial skip permits execution only for the reviewed revision without starting work',t=>{
+ const {db,id}=fixture(t);
+ assert.throws(()=>db.skipTrial(id),/kurulum kartını/);
+ db.review(id);const trialRun=db.begin(id,'trial');
+ assert.throws(()=>db.skipTrial(id),/çalışan otomasyonu/);
+ db.finish(id,trialRun.id,'blocked','Access unavailable');
+ const before=db.runs(id).length,a=db.skipTrial(id);
+ assert.equal(a.trial.status,'skipped');assert.equal(a.status,'ready');assert.equal(a.nextRunAt,null);
+ assert.equal(db.runs(id).length,before);assert.equal(a.trial.runId,undefined);
+ db.enable(id);const run=db.begin(id,'run');assert.equal(run.kind,'run');db.finish(id,run.id,'completed','Done');
+ db.save(id,{goal:'Updated search'});assert.equal(db.get(id).trial,null);
+ assert.throws(()=>db.enable(id),/kurulumu/);assert.throws(()=>db.skipTrial(id),/kurulum kartını/);
+ db.review(id);assert.throws(()=>db.begin(id,'run'),/denemeyi/);
+});
+
 test('agent table edits persist without changing plan review, action authority or result evidence',async t=>{
  const {db,id}=fixture(t);trial(db,id);const run=db.begin(id,'run'),item=record(db,id,run);db.finish(id,run.id,'completed','Prepared');db.approve(id,item.id);db.star(id,item.id,true);
  const before=db.get(id),saved=db.result(id,item.id),interview=db.begin(id,'interview');

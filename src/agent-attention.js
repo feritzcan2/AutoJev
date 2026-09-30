@@ -1,6 +1,8 @@
 // Inspect the rendered terminal screen: interactive prompts are often redrawn
 // in place and can be split across PTY output events.
-export function terminalAttention(screen, state){
+import {providerLimit,providerLimitAttention} from '../app/provider-limit.mjs';
+export function terminalAttention(screen, state,provider='claude'){
+ const limit=providerLimit(screen,provider);if(limit)return providerLimitAttention(limit);
  const text=String(screen??'').replace(/\s+/g,' ').trim();
  const trust=/(?:quick safety check|do you trust (?:the files in )?this (?:folder|workspace|project))/i.test(text)
   && /(?:yes,? i trust this folder|trust this (?:folder|workspace|project))/i.test(text)

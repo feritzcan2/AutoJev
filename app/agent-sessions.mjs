@@ -10,8 +10,9 @@ import {startWithResumeRepair,rejectedResumeOnExit,selectResume} from './resume.
 import {ContextUsage} from './context-usage.mjs';
 import {TranscriptReader} from './agent-transcript.mjs';
 import {ContextCompaction,compactionPending} from './context-compaction.mjs';
+import {providerLimit} from './provider-limit.mjs';
 
-export const publicSession=active=>active?{candidateId:active.candidateId,workerId:active.workerId??MAIN_WORKER,sessionId:active.sessionId,agentProfile:active.agentProfile?{id:active.agentProfile.id,name:active.agentProfile.name,version:active.agentProfile.version}:null,state:active.state??'Unknown',contextUsage:active.contextUsage??null,compaction:active.compaction??null}:null;
+export const publicSession=active=>active?{candidateId:active.candidateId,workerId:active.workerId??MAIN_WORKER,sessionId:active.sessionId,agentProfile:active.agentProfile?{id:active.agentProfile.id,name:active.agentProfile.name,version:active.agentProfile.version}:null,state:active.state??'Unknown',contextUsage:active.contextUsage??null,compaction:active.compaction??null,usageLimit:active.usageLimit??null}:null;
 
 // The original worker session lifecycle, shared by every workspace template.
 // Templates supply instructions, tools and task policy; they never own a PTY.
@@ -32,7 +33,7 @@ export class AgentSessions {
  ensure(id='catalog',worker=MAIN_WORKER){
   const key=workerKey(id,worker);if(this.closing.has(key)||this.failedStops.has(key))throw Error('Önce önceki agent oturumunun kapanması doğrulanmalı.');
   if(!this.engines.has(key)){
-   const instance=this.createEngine(engineBinaryPath({root:this.root}),path.join(this.data,'processes',key),event=>{
+   const instance=this.createEngine(engineBinaryPath({root:this.root}),path.join(this.data,'processes',key),async event=>{
     if(this.engines.get(key)!==instance)return;
     const s=this.sessions.get(key);if(event.sessionId&&event.sessionId!==s?.sessionId)return;
     if(event.event==='identity'&&s){s.history?.saveConversation(id,s.provider,event.nativeId,s.launchSettings);
@@ -44,6 +45,14 @@ export class AgentSessions {
      if(!this.screens.has(key))this.screens.set(key,new TerminalScreen(this.grid(id,worker)));
      this.screens.get(key).write(event.bytes,event.sequence);
      this.outputs.set(key,Buffer.concat([this.outputs.get(key)??Buffer.alloc(0),Buffer.from(event.bytes)]).subarray(-1000000));
+     if(s)this.queueLimitCheck(s);
+    }
+    // A provider can print its limit and exit in the same burst. Drain the
+    // rendered screen before publishing the exit, so recovery does not relaunch
+    // the same exhausted provider without noticing the cause.
+    if(s?.provider==='claude'&&['engine_exit','eof'].includes(event.event)){
+     await this.checkUsageLimit(s).catch(()=>{});
+     if(this.engines.get(key)!==instance||this.sessions.get(key)!==s)return;
     }
     if(event.event==='compaction'&&s)this.compaction.delivery(s,event);
     if(s&&['delivery','compaction'].includes(event.event))this.audit(s,{kind:event.event,title:event.event==='delivery'?'Sağlayıcı teslim durumu':'Context sıkıştırma',status:'observed',detail:String(event.state),parts:[]});
@@ -57,6 +66,18 @@ export class AgentSessions {
     this.emit({...event,candidateId:id,workerId:worker});
    });this.engines.set(key,instance);
   }return this.engines.get(key);
+ }
+ queueLimitCheck(s,delay=200){
+  if(s.provider!=='claude'||s.limitTimer)return;
+  s.limitTimer=setTimeout(()=>{s.limitTimer=null;void this.checkUsageLimit(s).catch(()=>{});},delay);
+ }
+ async checkUsageLimit(s){
+  const key=workerKey(s.candidateId,s.workerId),screen=this.screens.get(key);if(!screen||this.sessions.get(key)!==s)return;
+  const found=providerLimit(await screen.text(),s.provider);if(this.sessions.get(key)!==s)return;
+  if(found)s.limitMissingAt=null;
+  else if(s.usageLimit){s.limitMissingAt??=Date.now();if(Date.now()-s.limitMissingAt<600){this.queueLimitCheck(s,650);return;}}
+  if(JSON.stringify(found)===JSON.stringify(s.usageLimit??null))return;
+  s.usageLimit=found;s.onEvent?.({event:'usage_limit',sessionId:s.sessionId,usageLimit:found},s);this.changed(s.candidateId);
  }
  async start({id,worker=MAIN_WORKER,sessionId,settings,cwd,runtimeDirectory,endpoint,token,prompt,history,approvedTools,taskType,agentProfile,onEvent,onExit,onRetire,onRecord,onSettled,currentSettings=()=>settings,resume=true,reserved=false,rotateAtBoundary=false}){
   settings=withAgentDefaults(settings);
@@ -84,7 +105,7 @@ export class AgentSessions {
    await engine.request('resize',this.grid(id,worker));this.changed(id);return {sessionId};
   }catch(error){this.audit(s,{kind:'launch_failed',title:'Başlatma tamamlanamadı',status:'failed',detail:error.message,parts:[]});await this.stop(id,worker).catch(()=>{});throw error;}finally{this.starting.delete(key);}
  }
- retire(id,worker=MAIN_WORKER){const key=workerKey(id,worker),s=this.sessions.get(key);if(s){const threshold=s.currentSettings().contextRestartPercent??0;if(s.rotateAtBoundary&&threshold>0&&s.contextUsage?.peakPercent>=threshold){const nativeId=s.contextReader?.nativeId??s.resumeId;if(nativeId)s.history?.forgetConversation(id,s.provider,nativeId);s.onRecord?.('agent_context_restart',{workerId:worker,provider:s.provider,peakPercent:s.contextUsage.peakPercent,threshold});}this.sessions.delete(key);s.onRetire?.();this.changed(id);}}
+ retire(id,worker=MAIN_WORKER){const key=workerKey(id,worker),s=this.sessions.get(key);if(s){const threshold=s.currentSettings().contextRestartPercent??0;if(s.rotateAtBoundary&&threshold>0&&s.contextUsage?.peakPercent>=threshold){const nativeId=s.contextReader?.nativeId??s.resumeId;if(nativeId)s.history?.forgetConversation(id,s.provider,nativeId);s.onRecord?.('agent_context_restart',{workerId:worker,provider:s.provider,peakPercent:s.contextUsage.peakPercent,threshold});}clearTimeout(s.limitTimer);this.sessions.delete(key);s.onRetire?.();this.changed(id);}}
  stop(id,worker=MAIN_WORKER,{settle=async()=>{}}={}){
   const key=workerKey(id,worker);if(this.closing.has(key))return this.closing.get(key);
   const engine=this.engines.get(key);this.engines.delete(key);this.retire(id,worker);
@@ -106,10 +127,10 @@ export class AgentSessions {
    const previous=s.contextUsage,reader=s.contextReader,usage=await reader?.read()??null;
    if(this.sessions.get(workerKey(id,s.workerId))!==s||s.contextReader!==reader)return null;
    s.contextUsage=usage;if(previous?.percent!==usage?.percent||previous?.peakPercent!==usage?.peakPercent)this.changed(id);
-   await this.compaction.tick(s,usage,settings.contextCompactPercent);return usage;
+   if(!s.usageLimit)await this.compaction.tick(s,usage,settings.contextCompactPercent);return usage;
   })().finally(()=>{s.contextRead=null;});return s.contextRead;
  }
- contextBusy(id,worker=MAIN_WORKER){return compactionPending(this.sessions.get(workerKey(id,worker)));}
+ contextBusy(id,worker=MAIN_WORKER){const s=this.sessions.get(workerKey(id,worker));return Boolean(s?.usageLimit)||compactionPending(s);}
  clear(id,worker=MAIN_WORKER){const key=workerKey(id,worker);this.clearOutput(key);this.sequences.delete(key);this.grids.delete(key);this.transcripts.delete(key);}
  async close(){await Promise.all([...this.engines.keys()].map(key=>{const s=this.sessions.get(key);return s?this.stop(s.candidateId,s.workerId):this.stop(key);}));this.clearOutputs();}
 }

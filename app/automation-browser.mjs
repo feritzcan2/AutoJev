@@ -2,7 +2,13 @@
 // Run ownership and step limits stay in automationWorkflow; the agent assesses authority.
 export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,sourceUrls=[]}={}){
  if(mode!=='jev')return browser;
- let tabId=null;
+ let tabId=null,activeSource=sourceUrl;
+ const sourceFor=url=>{
+  if(sourceUrl)return sourceUrl;
+  const parsed=new URL(url),host=parsed.hostname.replace(/^www\./,'');
+  const candidates=sourceUrls.filter(value=>new URL(value).hostname.replace(/^www\./,'')===host);
+  return candidates.find(value=>value===url)??(activeSource&&candidates.includes(activeSource)?activeSource:candidates[0])??parsed.origin;
+ };
  const value=response=>{
   if(response?.isError)throw Error(response.content?.filter(p=>p.type==='text').map(p=>p.text).join('\n')||'Jev adımı tamamlanamadı');
   for(const part of response?.content??[]){if(part.type!=='text')continue;try{return JSON.parse(part.text);}catch{}}
@@ -13,8 +19,8 @@ export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,
   await browser.connections.pending.get(id);
   const current=browser.status(id);if(!current.ready)throw Error(current.message||'Jev için Chrome bağlantısını aç ve bağlantı isteğine izin ver.');
  };
- const native=async(id,name,args,session,options)=>{await ready(id);const response=await browser.call(id,name,args,session,{...options,automationWorkspaceId:id,...(readTabKey?{automationTabKey:readTabKey}:{}),...(sourceUrl?{automationSourceUrl:sourceUrl,automationSourceUrls:sourceUrls}:{})}),page=value(response);if(page.status==='browser_wait')throw Error('Jev Chrome bağlantısı bekliyor. Tarayıcıyı aç düğmesinden yeniden bağlan.');return {response,page};};
- const observed=({response,page})=>({pageContext:{url:page.url,tabId:page.tabId},content:[{type:'text',text:(page.url?`Page URL: ${page.url}\n`:'')+JSON.stringify(page)},...(response.content??[]).filter(p=>p.type!=='text')],action:{status:page.status,executed:page.executed,verified:page.verified,message:page.message}});
+ const native=async(id,name,args,session,options)=>{await ready(id);const response=await browser.call(id,name,args,session,{...options,automationWorkspaceId:id,...(readTabKey?{automationTabKey:activeSource?`source:${activeSource}`:readTabKey}:{}),...(activeSource?{automationSourceUrl:activeSource,automationSourceUrls:[...new Set([...sourceUrls,activeSource])]}:{})}),page=value(response);if(page.status==='browser_wait')throw Error('Jev Chrome bağlantısı bekliyor. Tarayıcıyı aç düğmesinden yeniden bağlan.');return {response,page};};
+ const observed=({response,page})=>({pageContext:{url:page.url,tabId:page.tabId},siteWait:page.siteWait,content:[{type:'text',text:(page.url?`Page URL: ${page.url}\n`:'')+JSON.stringify(page)},...(response.content??[]).filter(p=>p.type!=='text')],action:{status:page.status,executed:page.executed,verified:page.verified,message:page.message}});
  return {waitForOperations:id=>browser.waitForOperations(id),async currentUrl(id){
   await ready(id);if(!tabId)throw Error('Önce bir sayfa aç');
   // Reading the URL must not invalidate Jev's one-use pending decision.
@@ -35,7 +41,9 @@ export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,
   }
   if(name==='browser_navigate'){
    if(readTabKey){
+    const nextSource=sourceFor(args.url);if(nextSource!==activeSource)tabId=null;activeSource=nextSource;
     const result=await native(id,'browser_jev_open',{url:args.url},session,{automationPreferredTabId:tabId});
+    if(result.page.siteWait){tabId=result.page.tabId??tabId;return observed(result);}
     tabId=result.page.tabId;if(!tabId)throw Error('Jev sekmesi açılamadı');return observed(result);
    }
    const {page:tabs}=await native(id,'browser_jev_tabs',{},session),existing=tabs.tabs?.find(t=>t.url===args.url);

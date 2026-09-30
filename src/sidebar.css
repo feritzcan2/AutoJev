@@ -193,3 +193,6 @@ header .actions .primary { font-weight: 600; }
 .agent-nav-status[data-tone="active"]::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: working-dot .9s ease-in-out infinite alternate; }
 #agent-state[data-active="true"]::before { animation: working-dot .9s ease-in-out infinite alternate; }
 @media (prefers-reduced-motion: reduce) { .agent-nav-status[data-tone="active"]::before, #agent-state[data-active="true"]::before { animation: none; } }
+
+.sources-nav-status { flex-shrink: 0; white-space: nowrap; }
+.sources-nav-status[hidden] { display: none; }
