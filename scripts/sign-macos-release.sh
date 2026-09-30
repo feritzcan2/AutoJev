@@ -49,7 +49,7 @@ if [ "$notarize_api" = true ]; then
   export APPLE_API_KEY_ID="$MACOS_API_KEY_ID" APPLE_API_ISSUER="$MACOS_API_ISSUER"
 fi
 node scripts/package.mjs
-codesign --verify --deep --strict --verbose=2 'release/mac-universal/JobLoop.app'
-codesign -dvv 'release/mac-universal/JobLoop.app' 2>&1 | grep -q 'Authority=Developer ID Application'
-xcrun stapler validate 'release/mac-universal/JobLoop.app'
-spctl --assess --type execute --verbose 'release/mac-universal/JobLoop.app'
+codesign --verify --deep --strict --verbose=2 'release/mac-universal/AutoJev.app'
+codesign -dvv 'release/mac-universal/AutoJev.app' 2>&1 | grep -q 'Authority=Developer ID Application'
+xcrun stapler validate 'release/mac-universal/AutoJev.app'
+spctl --assess --type execute --verbose 'release/mac-universal/AutoJev.app'

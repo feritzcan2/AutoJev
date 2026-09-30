@@ -21,4 +21,5 @@ for(const source of sourceIntegrations){
   await cp(path.join(cwd,'node_modules',name),path.join(root,'dist/source-tools/node_modules',name),{recursive:true,dereference:true});
  }
 }
-execFileSync(process.execPath,['scripts/smoke-source-tools.mjs'],{cwd:root,stdio:'inherit'});
+if(process.env.JOBLOOP_SKIP_TESTS!=='1')execFileSync(process.execPath,['scripts/smoke-source-tools.mjs'],{cwd:root,stdio:'inherit'});
+else console.log('Source-tool tests skipped by explicit release request');

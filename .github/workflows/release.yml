@@ -5,9 +5,14 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing stable version tag with successful native CI
+        description: Existing stable version tag
         required: true
         type: string
+      skip_tests:
+        description: Explicitly publish without tests or prior CI evidence
+        required: false
+        default: false
+        type: boolean
 permissions:
   contents: read
   actions: read
@@ -16,6 +21,7 @@ concurrency:
   cancel-in-progress: false
 env:
   JOBLOOP_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  JOBLOOP_SKIP_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_tests && '1' || '0' }}
 jobs:
   confirm-candidate:
     runs-on: ubuntu-24.04
@@ -30,7 +36,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22.22.3
-      - name: Require immutable candidate and all native CI jobs
+      - name: Verify immutable candidate and requested validation mode
         id: candidate
         env:
           GH_TOKEN: ${{ github.token }}
@@ -58,6 +64,8 @@ jobs:
           ref: ${{ needs.confirm-candidate.outputs.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup-build
+      - name: Audit application production dependencies
+        run: pnpm audit --prod
       - name: Package signed and notarized macOS universal app
         if: runner.os == 'macOS'
         shell: bash
@@ -82,6 +90,7 @@ jobs:
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: pnpm package
       - name: Smoke final application
+        if: env.JOBLOOP_SKIP_TESTS != '1'
         shell: bash
         run: |
           if [ "$RUNNER_OS" = Linux ]; then xvfb-run -a pnpm test:packaged; else pnpm test:packaged; fi
@@ -108,7 +117,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22.22.3
-      - name: Revalidate tag and exact native CI evidence before publication
+      - name: Revalidate candidate before publication
         env:
           GH_TOKEN: ${{ github.token }}
           JOBLOOP_CANDIDATE_SHA: ${{ needs.confirm-candidate.outputs.sha }}
@@ -137,4 +146,8 @@ jobs:
             gh release create "$JOBLOOP_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "$JOBLOOP_RELEASE_TAG" --generate-notes
           fi
           gh release upload "$JOBLOOP_RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
-          gh release edit "$JOBLOOP_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          gh release view "$JOBLOOP_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/release-notes.md"
+          if [ "$JOBLOOP_SKIP_TESTS" = 1 ]; then
+            printf '\n\nTests were skipped for this explicitly requested manual release. Native builds, dependency audits, macOS signing/notarization and artifact checksums completed.\n' >> "$RUNNER_TEMP/release-notes.md"
+          fi
+          gh release edit "$JOBLOOP_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest --notes-file "$RUNNER_TEMP/release-notes.md"

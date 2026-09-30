@@ -39,7 +39,7 @@ afterPack: scripts/verify-universal-inputs.cjs
 publish:
   provider: github
   owner: feritzcan2
-  repo: jobmaster
+  repo: AutoJev
   releaseType: release
 mac:
   mergeASARs: false

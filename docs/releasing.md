@@ -2,7 +2,7 @@
 
 JobLoop, TermLoop’un exact commit doğrulaması ve üç yerel işletim sistemi build’i
 üzerinden yayımlanır. Dağıtım adresi
-[GitHub Releases](https://github.com/feritzcan2/jobmaster/releases) sayfasıdır.
+[GitHub Releases](https://github.com/feritzcan2/AutoJev/releases) sayfasıdır.
 
 ## İş akışları
 
@@ -114,3 +114,14 @@ Chrome izinleri, ilk aday/CV, ilan arama, hazırlık, durdurma/devam, Telegram e
 yedekleme/geri yükleme ve önceki sürümden güncelleme doğrulanmalıdır. Gerçek
 başvuru yalnızca adayın açık yetkisiyle yapılır. Harici kullanıcı beta sonucunu
 otomasyon sonucu olarak işaretleme.
+
+## Açıkça istenen testsiz yayın
+
+Release workflow’u elle başlatılırken `skip_tests=true` seçilebilir. Bu seçenek
+yalnız o elle başlatılan çalıştırma için önceki native CI kanıtı, paketli uygulama
+testi ve kaynak araçlarının testlerini atlar. Varsayılan değer `false` kalır;
+tag push ile başlayan normal yayınlar aynı SHA için başarılı CI gerektirir.
+
+Testsiz yayında da sabit tag, main geçmişi, sürüm eşleşmesi, üç native paket,
+bağımlılık taramaları, zorunlu macOS imzası/notarization ve artifact/checksum
+kontrolleri uygulanır. Testlerin atlandığı yayın notlarına yazılır.

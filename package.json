@@ -1,6 +1,6 @@
 {
   "name": "jobloop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "main": "app/main.mjs",
@@ -75,9 +75,9 @@
     "email": "feritzcan93@gmail.com"
   },
   "license": "GPL-3.0-or-later",
-  "homepage": "https://github.com/feritzcan2/jobmaster",
+  "homepage": "https://github.com/feritzcan2/AutoJev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/feritzcan2/jobmaster.git"
+    "url": "https://github.com/feritzcan2/AutoJev.git"
   }
 }
