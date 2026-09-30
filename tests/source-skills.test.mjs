@@ -9,10 +9,35 @@ import {AutomationStore} from '../app/automation-store.mjs';
 import {automationWorkflow,automationPrompt} from '../app/automation-worker.mjs';
 import {automationTaskContext} from '../app/automation-task-context.mjs';
 import {AUTOMATION_INSTRUCTIONS} from '../app/automation-agent-profiles.mjs';
+import {guideSections} from '../app/source-guide.mjs';
+import {sourceScanScope} from '../app/source-scan.mjs';
 import {createBackup,stageRestore,applyPendingRestore,prepareDataUpgrade,inspectBackup} from '../app/data-management.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url)),url='https://homes.test/search';
 const section=(key,status,instructions,evidenceIds=[])=>({key,status,instructions,evidenceIds});
+
+test('user guide edits survive agent learning while untouched sections keep updating',async t=>{
+ const f=fixture(t),trial=f.start();await learn(f,trial);await trial.call('finish_automation_run',{status:'completed',summary:'Ready'});
+ const before=sourceScanScope(f.db.get(f.id),url);
+ f.db.saveSource(f.id,url,{guideOverrides:{search:'Always clear promotion filters before searching.'},guideBaseVersion:1});
+ assert.notEqual(sourceScanScope(f.db.get(f.id),url),before);
+ const scan=f.start('run'),config=await scan.call('get_workspace_source_instructions');
+ assert.equal(config.guideOverrides.search,'Always clear promotion filters before searching.');
+ const page=await scan.observe('New list with a working filter and public details.'),proof=await scan.proof(page,'working filter and public details');
+ await scan.call('save_workspace_source_skill',{baseVersion:1,summary:'Updated site controls',sections:[section('search','verified','Use the new site filter.',[proof]),section('details','verified','Read the new details panel.',[proof])]});
+ const updated=await scan.call('get_workspace_source_instructions'),effective=guideSections(updated.learnedSkill,updated.guideOverrides);
+ assert.equal(updated.learnedSkill.version,2);
+ assert.equal(effective.find(s=>s.key==='search').instructions,config.guideOverrides.search);
+ assert.equal(effective.find(s=>s.key==='search').status,'unverified');
+ assert.deepEqual(effective.find(s=>s.key==='search').evidence,[]);
+ assert.equal(effective.find(s=>s.key==='details').instructions,'Read the new details panel.');
+ f.db.finish(f.id,scan.run.id,'interrupted','Stop for editing');
+ assert.throws(()=>f.db.saveSource(f.id,url,{guideOverrides:{search:'Stale edit'},guideBaseVersion:1}),/güncellendi/);
+ assert.equal(f.db.get(f.id).sourceSettings[url].guideOverrides.search,config.guideOverrides.search);
+ f.db.saveSource(f.id,url,{guideOverrides:{},guideBaseVersion:2});
+ assert.equal(guideSections(f.db.sourceSkills.get(f.id,url),f.db.get(f.id).sourceSettings[url].guideOverrides)[0].instructions,'Use the new site filter.');
+ assert.equal(f.db.sourceSkills.history(f.id,url).length,2);
+});
 function fixture(t,{file=':memory:'}={}){
  const store=new Store(file),db=new AutomationStore(store),a=db.create('housing',{goal:'Find homes',criteria:{location:'Berlin',budget:'1500',requirements:'Two rooms'},sources:[url,'https://homes.test/other']});
  db.review(a.id);db.saveSource(a.id,url,{skillText:'Keep my manual instructions. Use the current criteria.'});

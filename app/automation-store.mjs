@@ -102,7 +102,7 @@ export class AutomationStore {
    const last=runs.find(r=>!r.recordId&&!r.recordOperation&&['run','trial'].includes(r.kind)&&(r.sourceUrl===source.url||!r.sourceUrl&&r.sources?.length===1&&r.sources[0]===source.url));
    const active=runs.find(r=>!r.recordId&&!r.recordOperation&&r.status==='running'&&['run','trial'].includes(r.kind)&&(r.sourceUrl===source.url||r.sources?.length===1&&r.sources[0]===source.url));
    const resultCount=records.filter(r=>!r.trial&&(r.sourceUrl?r.sourceUrl===source.url:new URL(r.url).origin===new URL(source.url).origin&&a.sources.filter(url=>new URL(url).origin===new URL(source.url).origin).length===1)).length;
-   return {...(last?{lastRunAt:last.finishedAt,lastStatus:last.status,lastResult:last.summary,blocked:['blocked','failed','timeout'].includes(last.status),lastFound:records.filter(r=>!r.trial&&r.runId===last.id).length}:{}),...source,learnedSkill:sourceSkillSummary(this.sourceSkills.get(id,source.url)),siteWait:this.siteAccess.status(source.url),pageProgress:active&&!active.recordId?active.pageProgress??null:source.pageProgress??null,observedPage:active?.observedPage??source.observedPage??null,resultCount,scanning:Boolean(active),trialRunning:active?.kind==='trial',scanIssue:active?Object.values(active.scanIssues??{}).sort((a,b)=>b.at-a.at)[0]??null:null,workerId:active?.workerId??null};
+   return {...(last?{lastRunAt:last.finishedAt,lastStatus:last.status,lastResult:last.summary,blocked:['blocked','failed','timeout'].includes(last.status),lastFound:records.filter(r=>!r.trial&&r.runId===last.id).length}:{}),...source,learnedSkill:sourceSkillSummary(this.sourceSkills.get(id,source.url),source.guideOverrides),siteWait:this.siteAccess.status(source.url),pageProgress:active&&!active.recordId?active.pageProgress??null:source.pageProgress??null,observedPage:active?.observedPage??source.observedPage??null,resultCount,scanning:Boolean(active),trialRunning:active?.kind==='trial',scanIssue:active?Object.values(active.scanIssues??{}).sort((a,b)=>b.at-a.at)[0]??null:null,workerId:active?.workerId??null};
   });
  }
  saveSourcesInterval(id,intervalMinutes){
@@ -117,6 +117,7 @@ export class AutomationStore {
   const a=this.get(id),settings=sourceInput(a,url,input);
   const intervalOnly=Object.keys(input).length===1&&input.intervalMinutes!==undefined;
   if(!intervalOnly&&this.runs(id).some(r=>r.status==='running'&&(r.sourceUrl===url||r.kind==='interview'||!r.sourceUrl)))throw Error('Önce bu kaynağın çalışan görevini durdur');
+  if(input.guideOverrides!==undefined&&input.guideBaseVersion!==(this.sourceSkills.get(id,url)?.version??0))throw Error('Kaynak rehberi güncellendi. Pencereyi yeniden açıp güncel sürümü düzenle.');
   const old=a.sourceSettings?.[url]??{};
   a.sourceSettings={...a.sourceSettings,[url]:settings};
   if(old.query!==settings.query||old.mode!==settings.mode)this.clearApprovals(id);

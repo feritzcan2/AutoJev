@@ -7,7 +7,7 @@ const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==
 // Schedule, provider, table layout and permission changes do not change which
 // listings belong to a search. Search criteria do.
 export function sourceScanScope(a,url){
- return createHash('sha256').update(JSON.stringify(stable({url,query:a.sourceSettings?.[url]?.query??a.goal,goal:a.goal,criteria:a.criteria,instructions:a.instructions,facts:a.facts,workflow:a.workflow,templateId:a.templateId,templateVersion:a.templateVersion}))).digest('hex');
+ return createHash('sha256').update(JSON.stringify(stable({...(a.sourceSettings?.[url]?.skillText?{sourceInstructions:a.sourceSettings[url].skillText}:{}),...(Object.keys(a.sourceSettings?.[url]?.guideOverrides??{}).length?{guideOverrides:a.sourceSettings[url].guideOverrides}:{}),url,query:a.sourceSettings?.[url]?.query??a.goal,goal:a.goal,criteria:a.criteria,instructions:a.instructions,facts:a.facts,workflow:a.workflow,templateId:a.templateId,templateVersion:a.templateVersion}))).digest('hex');
 }
 
 export function beginSourceScan(saved,scopeKey,now){

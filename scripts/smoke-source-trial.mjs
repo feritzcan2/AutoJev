@@ -68,11 +68,11 @@ try{
  assert.equal((await snapshot()).activeRun.sourceUrl,sources[0]);const reused=await tool('get_workspace_source_instructions');assert.equal(reused.learnedSkill.version,1);assert.match(reused.learnedSkill.skillText,/Follow Next page/);assert.equal(reused.skillText,'Keep my own source instructions. Use the current criteria.');await page.evaluate(id=>window.jobloop.workspaceStop(id),owner.id);await wait(s=>!s.activeRun);
  await page.screenshot({path:path.join(data,'source-trials-passed.png'),fullPage:true});
  await page.reload();await page.locator('[data-view=sources]').click();await page.locator('.source-trial-status[data-status=passed]').first().waitFor();assert.equal(await page.locator('.source-trial-status[data-status=passed]').count(),2);
- await page.locator('.source-row').first().getByRole('button',{name:'Skill ve araçlar',exact:true}).click();
- await page.locator('[data-learned-text]').waitFor();assert.equal(await page.locator('[name=skillText]').inputValue(),'Keep my own source instructions. Use the current criteria.');assert.match(await page.locator('[data-learned-text]').textContent(),/Sayfalama — Doğrulandı/);
- await page.locator('[data-learned-text]').scrollIntoViewIfNeeded();await page.screenshot({path:path.join(data,'learned-source-skill.png'),fullPage:true});await page.locator('[data-close]').click();
- await page.locator('.source-row').nth(1).getByRole('button',{name:'Skill ve araçlar',exact:true}).click();assert.equal(await page.locator('[data-skill-version] option').count(),2);
- await page.locator('[data-skill-version]').selectOption('1');await page.waitForFunction(()=>document.querySelector('[data-learned-text]').textContent.includes('Erişim ve engeller — Engel gözlendi'));
- await page.locator('[data-learned-text]').scrollIntoViewIfNeeded();await page.screenshot({path:path.join(data,'source-skill-history.png'),fullPage:true});await page.locator('[data-close]').click();
+ await page.locator('.source-row').first().getByRole('button',{name:'Rehber ve araçlar',exact:true}).click();
+ await page.locator('[data-guide-key=pagination]').waitFor();assert.equal(await page.locator('[name=skillText]').inputValue(),'Keep my own source instructions. Use the current criteria.');assert.match(await page.locator('[data-guide-key=pagination]').inputValue(),/Follow Next page/);assert.match(await page.locator('.source-guide-section').filter({has:page.locator('[data-guide-key=pagination]')}).textContent(),/Doğrulandı/);
+ await page.locator('[data-guide-key=pagination]').scrollIntoViewIfNeeded();await page.screenshot({path:path.join(data,'learned-source-skill.png'),fullPage:true});await page.locator('[data-close]').click();
+ await page.locator('.source-row').nth(1).getByRole('button',{name:'Rehber ve araçlar',exact:true}).click();assert.equal(await page.locator('[data-skill-version] option').count(),3);
+ await page.locator('[data-skill-version]').selectOption('1');await page.waitForFunction(()=>document.querySelector('[data-guide-key=access]')?.readOnly && document.querySelector('[data-guide-sections]').textContent.includes('Engel gözlendi'));
+ await page.locator('[data-guide-key=pagination]').scrollIntoViewIfNeeded();await page.screenshot({path:path.join(data,'source-skill-history.png'),fullPage:true});await page.locator('[data-close]').click();
  assert.deepEqual(errors,[]);console.log('SOURCE_TRIAL_UI_PASS',data);
 }finally{await app.close();await new Promise(resolve=>server.close(resolve));}
