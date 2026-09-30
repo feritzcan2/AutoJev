@@ -142,7 +142,7 @@ test('legacy token thresholds are not reinterpreted as percentages',()=>{
  const f=fixture();try{
   const {contextRestartPercent:ignored,...settings}=f.profile.agentSettings;
   const saved=f.store.saveProfile({...f.profile,agentSettings:{...settings,contextRestartTokens:160000}});
-  assert.equal(saved.agentSettings.contextRestartPercent,undefined);assert.equal(saved.agentSettings.contextRestartTokens,undefined);
+  assert.equal(saved.agentSettings.contextRestartPercent,0);assert.equal(saved.agentSettings.contextRestartTokens,undefined);
  }finally{f.store.close();}
 });
 

@@ -8,7 +8,7 @@ const tabIdentity=tabs=>JSON.stringify(tabs.map(({tabId,recordId,runId})=>[tabId
 
 export function automationResultsTable(root,{button,badge,time,api,refresh,statusNames,onQuestion=()=>{}}){
  let data,busy=false,page=1,sort='updatedAt',direction=-1,scrollLeft=0,disposeTable=()=>{};
- let tabOwner=null,liveTabs=[],tabVersion=0;
+ let tabOwner=null,liveTabs=[],liveTabIdentity='[]',tabVersion=0;
  const expanded=new Set(),requests=new Set(),visibleTabButtons=new Map(),pageSize=10;
  const review=el('dialog',null,'automation-record-review'),reviewTitle=el('h2'),reviewSummary=el('p'),proposal=el('pre'),reviewError=el('p'),reviewActions=el('div',null,'actions');
  const cancel=button('Vazgeç',()=>review.close()),confirm=button('Onayla ve uygula',()=>{},'primary');
@@ -43,7 +43,7 @@ export function automationResultsTable(root,{button,badge,time,api,refresh,statu
   const id=tabOwner,version=++tabVersion;
   const next=await api.workspaceTabs(id).catch(()=>[]);
   if(tabOwner!==id||version!==tabVersion)return;
-  const changed=tabIdentity(liveTabs)!==tabIdentity(next);liveTabs=next;
+  const identity=tabIdentity(next),changed=identity!==liveTabIdentity;liveTabs=next;liveTabIdentity=identity;
   if(changed)render();else syncTabButtons();
  }
  const tabTimer=setInterval(()=>{if(root.isConnected&&root.getClientRects().length)void refreshTabs();},1000);
@@ -101,7 +101,7 @@ export function automationResultsTable(root,{button,badge,time,api,refresh,statu
     tabFeedback.textContent='';tabChoices.replaceChildren();
     try{const version=++tabVersion,openTabs=await api.workspaceTabs(tabWorkspace);
      if(tabOwner!==tabWorkspace)return;
-     if(version===tabVersion){const changed=tabIdentity(liveTabs)!==tabIdentity(openTabs);liveTabs=openTabs;if(changed)render();else syncTabButtons();}
+     if(version===tabVersion){const identity=tabIdentity(openTabs),changed=identity!==liveTabIdentity;liveTabs=openTabs;liveTabIdentity=identity;if(changed)render();else syncTabButtons();}
      const current=data.results.find(item=>item.id===result.id),tabs=current?recordTabs(current,openTabs,data):[];
      if(!tabs.length){tabFeedback.textContent='Bu kaydın açık sekmesi bulunamadı.';return;}
      if(tabs.length===1){await focusTab(tabs[0]);return;}
@@ -135,5 +135,5 @@ export function automationResultsTable(root,{button,badge,time,api,refresh,statu
   }
 
  }
- return {showQuestions(){search.value='';filter.value='waiting';page=1;render();root.scrollIntoView({block:'start',behavior:'smooth'});},dispose:()=>{clearInterval(tabTimer);tabOwner=null;tabVersion++;disposeTable();},update(snapshot,isBusy){if(data?.automation.id!==snapshot.automation.id){review.close();reviewed=null;scrollLeft=0;}if(tabOwner!==snapshot.automation.id||snapshot.automation.browserMode!=='jev'){liveTabs=[];tabVersion++;}tabOwner=snapshot.automation.id;data=snapshot;busy=isBusy;const selected=filter.value;filter.replaceChildren(new Option('Tüm kayıtlar','all'),new Option('★ Yıldızlılar','starred'),new Option('İşlemdeki kayıtlar','active'),new Option('Yanıt bekleyenler','waiting'),...(data.definition?.records.states??[]).map(s=>new Option(s.label,s.id)),new Option('Araştırma ve deneme örnekleri','trial'));if([...filter.options].some(o=>o.value===selected))filter.value=selected;render();void refreshTabs();}};
+ return {showQuestions(){search.value='';filter.value='waiting';page=1;render();root.scrollIntoView({block:'start',behavior:'smooth'});},dispose:()=>{clearInterval(tabTimer);tabOwner=null;tabVersion++;disposeTable();},update(snapshot,isBusy){if(data?.automation.id!==snapshot.automation.id){review.close();reviewed=null;scrollLeft=0;}if(tabOwner!==snapshot.automation.id||snapshot.automation.browserMode!=='jev'){liveTabs=[];liveTabIdentity='[]';tabVersion++;}tabOwner=snapshot.automation.id;data=snapshot;busy=isBusy;const selected=filter.value;filter.replaceChildren(new Option('Tüm kayıtlar','all'),new Option('★ Yıldızlılar','starred'),new Option('İşlemdeki kayıtlar','active'),new Option('Yanıt bekleyenler','waiting'),...(data.definition?.records.states??[]).map(s=>new Option(s.label,s.id)),new Option('Araştırma ve deneme örnekleri','trial'));if([...filter.options].some(o=>o.value===selected))filter.value=selected;render();void refreshTabs();}};
 }
