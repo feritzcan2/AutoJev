@@ -21,4 +21,4 @@ for(const source of sourceIntegrations){
   await cp(path.join(cwd,'node_modules',name),path.join(root,'dist/source-tools/node_modules',name),{recursive:true,dereference:true});
  }
 }
-execFileSync(process.execPath,['scripts/smoke-source-tools.mjs'],{cwd:root,stdio:'inherit'});
+if(!process.argv.includes('--skip-tests'))execFileSync(process.execPath,['scripts/smoke-source-tools.mjs'],{cwd:root,stdio:'inherit'});
