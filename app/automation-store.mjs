@@ -266,7 +266,22 @@ export class AutomationStore {
  updateCells(id,itemId,input){return this.store.workspaces.updateCells(id,itemId,input);}
  record(id,runId,input){
   const run=this.activeRun(id,runId),research=run.kind==='interview';
-  const url=webUrl(input.url),key=this.template(this.get(id).templateId).records.identity==='url'?url:boundedText(input.key??url,'Sonuç anahtarı',2000),previous=json(this.db.prepare('SELECT data FROM workspace_records WHERE workspace_id=? AND record_key=?').get(id,key));
+  const observedUrl=webUrl(input.url),inputKey=boundedText(input.key??observedUrl,'Sonuç anahtarı',2000);
+  let url=observedUrl,key=this.template(this.get(id).templateId).records.identity==='url'?url:inputKey;
+  let previous=this.store.workspaces.records.find(id,key),actionUrl=previous?.actionUrl;
+  if(run.recordId){
+   // A redirect to an application/booking form does not create a new record.
+   // The durable assignment owns identity; URLs only describe its destination.
+   const assigned=this.result(id,run.recordId),keyRecord=this.store.workspaces.records.find(id,inputKey);
+   if(input.recordId&&input.recordId!==assigned.id||previous&&previous.id!==assigned.id||keyRecord&&keyRecord.id!==assigned.id)throw Error('Kayıt bu göreve ait değil');
+   if(inputKey!==assigned.key&&inputKey!==observedUrl)throw Error('Atanmış kaydın mevcut key değerini kullan');
+   previous=assigned;key=assigned.key;url=assigned.url;actionUrl=assigned.actionUrl;
+   const destination=input.actionUrl?webUrl(input.actionUrl):observedUrl!==url?observedUrl:actionUrl;
+   const destinationRecord=destination&&this.store.workspaces.records.find(id,destination);
+   if(destinationRecord&&destinationRecord.id!==assigned.id)throw Error('Kayıt bu göreve ait değil');
+   if(destination&&destination!==url&&destination!==actionUrl&&!run.observations.some(o=>o.url===destination&&o.evidence?.trim()))throw Error('İşlem adresini önce bu görevde tarayıcıda gözlemle');
+   actionUrl=destination===url?undefined:destination;
+  }else if(input.recordId||input.actionUrl)throw Error('Kayıt ID ve işlem adresi yalnızca atanmış kayıt görevinde kullanılabilir');
   if(research){
    if(input.proposal?.trim())throw Error('Kurulumda yalnızca araştırma örneği kaydedilebilir; işlem taslağı oluşturulamaz');
    if(!run.observations.some(o=>o.url===url&&o.evidence.trim()))throw Error('Araştırma örneğinin detay sayfasını önce bu turda gözlemle');
@@ -277,11 +292,11 @@ export class AutomationStore {
   if(previous&&['completed','uncertain','executing','dismissed'].includes(previous.status))return {...previous,duplicate:true};
   if(previous&&!run.recordId&&this.store.workspaces.tasks.list(id,{states:['running','reported','paused']}).some(t=>t.recordId===previous.id))return {...previous,duplicate:true};
   const title=boundedText(input.title,'Başlık',300),summary=boundedText(input.summary,'Özet',6000),proposal=boundedText(input.proposal??previous?.proposal??'','İşlem taslağı',12000,{empty:true});
-  const digest=createHash('sha256').update(JSON.stringify([url,proposal])).digest('hex');
+  const digest=createHash('sha256').update(JSON.stringify(actionUrl?[url,proposal,actionUrl]:[url,proposal])).digest('hex');
   if(input.proposal!==undefined&&(input.proposal.trim()||previous?.proposal)&&run.operation&&findOperation(this.template(this.get(id).templateId),run.operation)&&operationFor(this.template(this.get(id).templateId),run.operation).effect==='read')throw Error('Bu adım yalnızca gözlem ve değerlendirme yapabilir');
   const cells=input.cells===undefined?{}:automationCells(input.cells,this.get(id).table);
   const initial=this.template(this.get(id).templateId).records.initial;
-  const item={...previous,...(!previous?.workflowState&&initial&&initial!=='found'?{workflowState:initial}:{}),id:previous?.id??randomUUID(),automationId:id,key,url,title,summary,proposal,digest,status:proposal?'prepared':'found',approvedDigest:previous?.digest===digest?previous.approvedDigest:null,createdAt:previous?.createdAt??this.now(),updatedAt:this.now(),runId,revision:proposal&&input.proposal===undefined&&previous?previous.revision:run.revision,trial:run.kind!=='run',sampleKind:research?'interview':null,cells:{...previous?.cells,...cells},starred:previous?.starred??false};
+  const item={...previous,...(!previous?.workflowState&&initial&&initial!=='found'?{workflowState:initial}:{}),id:previous?.id??randomUUID(),automationId:id,key,url,...(actionUrl||previous?.actionUrl?{actionUrl}:{}),title,summary,proposal,digest,status:proposal?'prepared':'found',approvedDigest:previous?.digest===digest?previous.approvedDigest:null,createdAt:previous?.createdAt??this.now(),updatedAt:this.now(),runId,revision:proposal&&input.proposal===undefined&&previous?previous.revision:run.revision,trial:run.kind!=='run',sampleKind:research?'interview':null,cells:{...previous?.cells,...cells},starred:previous?.starred??false};
   if(run.recordOperation==='execute'&&run.request?.manual&&run.request.direct!==true&&digest!==run.request.digest)item.requiresReview=true;
   if(run.sourceUrl)item.sourceUrl=run.sourceUrl;
   return this.putResult(item);
@@ -322,7 +337,7 @@ export class AutomationStore {
   if(used>=a.maxActionsPerDay)throw Error('Günlük işlem sınırına ulaşıldı');
   // Both reservation and attempted state are durable before any browser write.
   this.putResult({...item,status:'executing',attemptedAt:this.now(),attemptRunId:runId,approvedDigest:null},{run:{...run,actionId:item.id}});
-  return {reserved:true,itemId:item.id,proposal:item.proposal,url:item.url};
+  return {reserved:true,itemId:item.id,proposal:item.proposal,url:item.actionUrl??item.url};
  }
  resolve(id,runId,itemId,{status,evidence,url}){
   const run=this.activeRun(id,runId),item=this.result(id,itemId);if(run.kind!=='run'||!['completed','uncertain'].includes(status)||!['executing','uncertain'].includes(item.status))throw Error('Doğrulanabilecek işlem bulunamadı');

@@ -344,3 +344,30 @@ test('uncertain direct execution cannot be retried as another submission',async 
  assert.equal(f.db.result(f.id,f.item.id).status,'uncertain');await assert.rejects(f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true}),/yeniden gönderilemez/);
  assert.equal(f.db.snapshot(f.id).results[0].recordAction.directOperation,null);
 });
+
+for(const template of ['job-search','housing','appointment','custom'])test(`${template}: a redirected form updates the assigned ID without changing discovery identity`,async t=>{
+ const f=fixture(t,template),form='https://forms.test/apply/123';
+ await f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true});await settle();const run=f.launches.at(-1);
+ const input={key:f.item.key,url:form,title:f.item.title,summary:'Form inspected',proposal:'Exact form answers'};
+ assert.throws(()=>f.db.record(f.id,run.id,input),/önce bu görevde/);
+ f.db.observe(f.id,run.id,form,'Application form for the assigned listing');
+ const saved=f.db.record(f.id,run.id,input);
+ assert.equal(saved.id,f.item.id);assert.equal(saved.key,f.item.key);assert.equal(saved.url,f.item.url);assert.equal(saved.actionUrl,form);
+ assert.equal(f.store.workspaces.records.find(f.id,f.item.key).id,f.item.id);assert.equal(f.store.workspaces.records.find(f.id,form),null);
+ assert.equal(f.db.results(f.id,{all:true}).length,1);
+ // Legacy clients sometimes use the form URL for both key and url.
+ assert.equal(f.db.record(f.id,run.id,{...input,key:form}).id,f.item.id);
+ assert.equal(f.db.reserve(f.id,run.id,f.item.id).url,form);
+});
+
+test('explicit destination changes invalidate reviewed consent and cannot target another record',async t=>{
+ const f=fixture(t),prepared=await f.prepare();
+ await f.runtime.runRecord(f.id,f.item.id,'execute',{digest:prepared.digest});await settle();const run=f.launches.at(-1);
+ const form='https://forms.test/apply/changed';f.db.observe(f.id,run.id,form,'Observed form');
+ const input={recordId:f.item.id,key:f.item.key,url:f.item.url,actionUrl:form,title:f.item.title,summary:'Changed form',proposal:prepared.proposal};
+ const saved=f.db.record(f.id,run.id,input);assert.notEqual(saved.digest,prepared.digest);assert.equal(saved.approvedDigest,null);
+ assert.throws(()=>f.db.reserve(f.id,run.id,f.item.id),/onay/);
+ const other=f.db.putResult({...f.item,id:'foreign-record',key:source+'/other',url:source+'/other'});
+ for(const change of [{recordId:other.id},{key:other.key},{url:other.url},{actionUrl:other.url}])assert.throws(()=>f.db.record(f.id,run.id,{...input,...change}),/ait değil/);
+ assert.equal(f.db.result(f.id,other.id).proposal,'');assert.equal(f.db.result(f.id,f.item.id).actionUrl,form);
+});
