@@ -24,6 +24,7 @@
 - `records`: alan eşlemeleri, tekilleştirme ve sınıflandırma geçişleri.
 - `workflow`: yetenek, kaynak/kayıt kapsamı, talimat ve bağımlılıklar.
 - `execution`: kayıtlı yürütücü ve worker sınırı.
+- `mail`: posta tarama talimatı ve izin verilen sonuç kimlikleri/etiketleri. Tanımlanmayan template'ler ortak onay, yanıt, güncelleme ve olumsuz dönüş sonuçlarını kullanır; iş arama template'i işe alım sonuçlarını tanımlar. Alan JSON dışa/içe aktarımında korunur.
 
 `browser.observe`, `browser.evaluate`, `browser.prepare` ve `browser.act` bütün yerleşik template’lerde ortaktır. Template dosyaları çalıştırılabilir JavaScript içermez. Yeni bir entegrasyon yeni bir yetenek gerektirebilir; mevcut yetenekleri kullanan bir template için yeni ekran gerekmez.
 
@@ -40,6 +41,14 @@ Hazır template seçimi kurulum agent’ını ilk mesajı beklemeden başlatır.
 ## Entegrasyonlar
 
 `workspace-support-services.mjs` arka plan becerilerini ve Telegram servislerini bütün çalışma alanları için kaydeder. `WorkspaceSupport` ortak kayıtları mevcut taşıma protokollerine uyarlar. Bu uyumluluk görünümü eski iş arama yürütücüsünü çalıştırmaz. Bildirim, posta ve arka plan tabloları `workspaces` kimliğine bağlıdır.
+
+Telegram kayıt düğmeleri masaüstüyle aynı `WebTasks.runRecord` ve `dismissRecord` akışlarını kullanır. Açık kullanıcı isteği yalnızca seçilen kaydı işler; kaynak taramasını başlatmaz. Belirsiz kayıt yalnızca doğrulanır. Kartın işlem kimliği kayıt içeriğine ve kurulum sürümüne bağlıdır; eski kart yenilenmeden işlem başlatılamaz. Bekleyen görevler de kuyruk ve sabitleme durumuna dahildir. Kart başlıkları ve durumları çalışma alanının tablo/template tanımından gelir.
+
+Kayıt, ilişkili çalışma durumu ve `workspace_events` olayı tek transaction içinde yazılır. Görev isteği commit edildikten sonra worker uyandırılır ve arayüz bilgilendirilir. Bu sınırlar yazma hatasında eksik bildirim veya açık kalmış işlem bırakmaz.
+
+Varsayılan Gmail becerisi template'in `mail` sözleşmesini okur; ortak araçta kayıt eşlemesi `recordId` kullanır. Kişisel skill seçildiğinde yalnızca bağlam ve bitiş araçları verilir. Eski posta kayıtları ve taşıma kimlikleri korunur. Şema 9'a geçişten önce mevcut yedek mekanizması çalışır; eski template'lerde eksik `mail` alanı okuma sırasında varsayılanlarla tamamlanır. Aday modelinden taşınmış kişisel template'ler işe alım sonuçlarını korur; kaydedilmiş özel posta sözleşmeleri değiştirilmez.
+
+`tests/workspace-record-lifecycle.test.mjs` dört template'in Telegram kuyruğunu, eski kartları, eleme akışını ve yazma hatasında geri almayı sınar. `tests/workspace-mail.test.mjs` posta sözleşmesini, eski veri geçişini ve yedekten geri yüklemeyi doğrular. `scripts/smoke-workspace-mail.mjs` ayrı Electron verisiyle ev arama, iş arama ve özel posta sonuçlarını gerçek eşleştirme arayüzünde kontrol eder.
 
 ## Eski verilerin geçişi
 
@@ -76,3 +85,38 @@ Eksik bilgiler ortak soru formuyla kayda bağlı sorulur; yanıt aynı kayıt i�
 `tests/record-operations.test.mjs` izin, değişen taslak, limit, soru devamı, belge yolu, sekme yalıtımı ve belirsiz sonuç kontrollerini sınar. `scripts/smoke-record-operations.mjs` ayrı Electron verisi ve yerel HTTP formuyla hazırlama, inceleme, belge yükleme, gönderme ve doğrulamayı; üç template’in ortak düğmelerini kontrol eder. Provider kararları testte taklit edilir; canlı siteye başvuru gönderilmez.
 
 Kullanıcının hazırlama isteği, sıradaki geçerli hazırlamalar için mevcut worker havuzunu açar. Tek iş için bir worker yeterlidir; birden çok kayıt varsa ekli worker’lar ihtiyaç kadar açılır. Yeni worker oluşturulmaz; kapasiteyi aşan işler sırada kalır. Onaylı uygulama ve doğrulama isteği, bütün worker’lar kapalıysa ana worker’ı açar. Tekrar seçilen kuyruk isteği aynı görevi korur. Arka plan döngüsü kullanıcının durdurduğu worker’ı kendiliğinden açmaz; yeni açık kullanıcı isteği bu tercihi yeniler. Çalışma alanının izin modu veya kaynak takibi değişmez.
+
+Giriş soruları, `accessCheck` ile son gözlem kimliği ve görünür giriş engelinden alıntı taşır. Kaynak/kayıt çalışmasında giriş isteyen soru kaydedilmeden sayfa yeniden okunur. Kayıt bağlantısı, `/signup` adresi, gizli kontroller, yüklenmekte olan sayfa ve önceki turun raporu tek başına giriş engeli sayılmaz. Güncel giriş formu veya açık giriş zorunluluğu metni gerekir. Sayfa değişmişse agent güncel içeriği incelemeye yönlendirilir. Kayıt bağlamındaki önceki çalışmalar aynı kayıtla sınırlandırılır.
+
+Soru formundaki “Giriş durumunu yeniden kontrol et” eylemi, giriş yapıldığını iddia etmeden ve gönderim onayı vermeden güncel başvuru akışının kontrolünü ister. Eski sorular da bu kontrolü sunar; kullanıcıdan parola veya doğrulama kodu istenmez. `login-question.test.mjs` eski/gizli kanıtı, gerçek giriş formunu ve kontrol sırasında kaybolan engeli sınar; kayıt işlemleri UI testi gerçek soru formundan yeniden kontrole dönüşü doğrular.
+
+Explicit direct execution (`execute`, `request.direct: true`) can start from a found record without a preparation task or draft-review dialog. The shared UI uses each template’s execute label and retains optional prepare/review actions. The agent inspects the real form, saves verified answers/documents as a proposal within that same task, reserves under the existing limits, submits, then records fresh confirmation. This authority is restricted to the assigned record and configuration revision; it never changes source permissions or permits resending completed/uncertain actions. Record questions retain their originating task ID so answers resume an outstanding direct request; stopping/cancelling it or changing setup removes that carry-over authority. Exact-digest reviewed execution keeps its existing changed-draft checks.
+
+
+## Görev devamı ve teknik hata kontrolü
+
+Aynı yarım kalmış kuyruk görevi yeniden başladığında kendi son sağlayıcı konuşmasını sürdürür. Başka bir kaydın ya da yeni tarama turunun konuşması kullanılmaz. Kurulum revizyonu, sağlayıcı ayarları veya işlem türü değiştiğinde yeni konuşma gerekir. Sonuç bildirmeden boşta kalan kaynak agentine aynı oturumda bir kez devam mesajı gönderilir; tekrar boşta kalırsa mevcut gecikmeli kurtarma uygulanır.
+
+Başlangıç bağlamı atanmış kayıt, ilgili sorular ve yanıtlar, geçerli kurallar, işlem izinleri ve kaydedilmiş ilerleme ile sınırlıdır. Diğer kayıtlar gerektiğinde arama araçlarından okunur. Yanıtların yapılandırılmış değerleri ve işlem sınırları aynen korunur.
+
+Jev kaynaklarında teknik hatadan sonraki otomatik deneme öncesinde uygulama, kayıtlı hatalı adresi geçici sekmede kontrol eder. Bu kontrol model veya worker başlatmaz; kendi açtığı sekmeyi kapatır. Sayfa hâlâ yüklenemiyorsa kontroller arasındaki süre uzar. Kontrol denemeleri, mevcut üç agent denemesi sınırından ayrı sayılır. Durdurulan veya değiştirilen görev, geç gelen kontrol sonucuyla yeniden başlatılmaz. Ayrı tarayıcı modu mevcut gecikmeli deneme davranışını korur.
+
+### Source scan work
+
+Source scans use the same durable work ledger for every template. `scan.work`
+contains named searches with separate pending/processed URL sets, page progress,
+and scan plans. `save_scan_searches` adds search scopes and `select_scan_search`
+restores a scope without changing another scope's work.
+
+`report_scan_page` records an observation. Revisiting an earlier page for access
+recovery cannot replace the saved frontier or pending queue. `save_scan_progress`
+adds `pendingUrls` and explicitly retires `processedUrls`; omission never removes
+work. The 100-URL limit applies to one tool request/response, not the stored queue.
+Use repeated saves and paged `get_scan_queue` reads for larger queues. Keep a
+results page pending until all of its relevant links have been saved.
+
+`complete_scan_search` verifies one scope's empty queue and end/cutoff evidence.
+A source with multiple searches cannot finish until all scopes have completed.
+Each scope retains its own chronology, so a page number or date cutoff from one
+search cannot complete another. Template criteria control relevance and priority;
+the common runtime controls persistence, ownership, recovery and completion.

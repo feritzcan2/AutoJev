@@ -14,13 +14,25 @@ export class TaskRuns {
   slot.ready=Promise.resolve().then(()=>this.launch(run,task,event=>this.event(id,event,run.id),slot.controller.signal));
   try{slot.worker=await slot.ready;return run;}catch(error){if(!slot.finishing)await this.finish(id,'failed',error.message,workerId);throw error;}
  }
- unreported(slot,reason){
+ async unreported(slot,reason){
   if(slot.finishing||slot.completionRequested||this.closed)return;
   if(slot.run.usageLimit){
    if(reason!=='exit')return;
    slot.run={...this.policy.run(slot.run.id),usageLimit:{...slot.run.usageLimit,automaticResume:false}};this.policy.save(slot.run);
    const issue=providerLimitAttention(slot.run.usageLimit);
    return this.finish(slot.id,'blocked',`${issue.title}. ${issue.detail} Agent oturumu kapandı.`,slot.workerId).catch(()=>{});
+  }
+  if(reason==='idle'&&!slot.idleContinuation&&slot.worker?.message){
+   const message=this.policy.continueIdle?.(slot.id,slot.run.id);
+   if(message){
+    slot.idleContinuation=true;
+    try{
+     await slot.worker.message(message);
+     if(!slot.finishing&&!slot.completionRequested&&this.active.get(slot.key)===slot&&!this.closed)this.watchIdle(slot);
+     return;
+    }catch{/* A failed delivery follows the ordinary durable recovery path. */}
+    if(slot.finishing||slot.completionRequested||this.active.get(slot.key)!==slot||this.closed)return;
+   }
   }
   const outcome=this.policy.unreported?.(slot.id,slot.run.id,reason)??{status:'failed',summary:reason==='idle'?'Agent sonuç bildirmeden durdu. Agent ekranını kontrol et.':'Agent oturumu sonuç bildirmeden kapandı.'};
   return this.finish(slot.id,outcome.status,outcome.summary,slot.workerId).catch(()=>{});
@@ -64,7 +76,9 @@ export class TaskRuns {
   slot.finishing=true;clearTimeout(slot.timer);clearTimeout(slot.idleTimer);clearTimeout(slot.completionTimer);slot.controller.abort();
   slot.finishPromise=(async()=>{
    try{const worker=slot.worker??await slot.ready?.catch(()=>null);await worker?.close();}catch(error){this.policy.closeFailed?.(id,slot.run.id,error);slot.finishing=false;this.changed(id);throw error;}
-   this.policy.finish(id,slot.run.id,status,summary);this.active.delete(slot.key);this.changed(id);
+   this.policy.finish(id,slot.run.id,status,summary);
+   try{await this.policy.afterFinish?.(id,slot.run.id);}catch(error){console.warn('Görev sekmeleri temizlenemedi:',error);}
+   this.active.delete(slot.key);this.changed(id);
   })();return slot.finishPromise;
  }
  async close(){this.closed=true;await Promise.all([...this.active.values()].map(s=>this.finish(s.id,'interrupted','Uygulama kapatıldı.',s.workerId)));}

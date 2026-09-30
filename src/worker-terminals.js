@@ -1,3 +1,4 @@
+import {workerTabControls} from './worker-tabs.js';
 import {WorkerTerminalSurface} from './worker-terminal-surface.js';
 import './worker-terminals.css';
 import {workerPane} from './worker-pane.js';
@@ -18,12 +19,12 @@ const clock=value=>{const at=Date.parse(value??'');return Number.isFinite(at)?ne
 
 export function workerTerminals(api,{container,notice,refresh,beforeAction=async()=>{},sendMessage=(id,text,worker)=>api.terminalMessage(id,text,worker)}){
   let candidate=null,snapshot=null,adding=false;
-  const panes=new Map();
+  const panes=new Map(),tabControls=workerTabControls(api,{notice});
   container.classList.add('worker-terminals');
   container.innerHTML='<div class="worker-toolbar"><div><h2>Agent worker’ları</h2><p>Her worker arama, puanlama ve başvuru işlerini ortak kuyruktan alır.</p></div><div class="worker-add"><button id="worker-add" class="primary" type="button">＋ Worker ekle</button></div></div><div class="worker-splits" aria-label="Worker terminalleri"></div>';
   const splits=container.querySelector('.worker-splits'),add=container.querySelector('#worker-add');
   add.onclick=async()=>{if(!candidate||adding)return;const id=candidate;adding=true;add.disabled=true;try{await api.addWorker(id);await refresh();}catch(error){notice(error.message);}finally{adding=false;add.disabled=!candidate||panes.size>=8;}};
-  function dispose(){for(const pane of panes.values()){pane.dead=true;pane.surface.dispose();pane.host.remove();}panes.clear();splits.replaceChildren();}
+  function dispose(){tabControls.reset();for(const pane of panes.values()){pane.dead=true;pane.surface.dispose();pane.host.remove();}panes.clear();splits.replaceChildren();}
   function syncSize(pane){
     if(!pane.size||pane.dead||pane.loading)return;
     const {rows,cols}=pane.size,session=pane.worker.active?.sessionId,key=`${session??'idle'}:${rows}:${cols}`;
@@ -57,7 +58,7 @@ export function workerTerminals(api,{container,notice,refresh,beforeAction=async
   }
   function create(worker){
     const pane={id:worker.id,candidate,worker,version:0,sequence:0,pending:[],loading:true,dead:false,busy:false};
-    Object.assign(pane,workerPane({id:worker.id,name:worker.name,terminalId:worker.id==='main'?'terminal':null,showChat:!snapshot?.automation,view:snapshot?.automation?'terminal':savedView(candidate,worker.id),onView:view=>{saveView(pane.candidate,pane.id,view);pane.chatSignature=null;pane.follow=true;if(!pane.dead){render(pane);requestAnimationFrame(()=>{pane.chatLog.scrollTop=pane.chatLog.scrollHeight;});void pollTranscript(pane);}},actions:{start:()=>action(pane,'startWorker'),stop:()=>action(pane,'stopWorker'),restart:()=>action(pane,'restartWorker'),remove:()=>action(pane,'removeWorker')}}));
+    Object.assign(pane,workerPane({id:worker.id,name:worker.name,terminalId:worker.id==='main'?'terminal':null,showChat:!snapshot?.automation,view:snapshot?.automation?'terminal':savedView(candidate,worker.id),onView:view=>{saveView(pane.candidate,pane.id,view);pane.chatSignature=null;pane.follow=true;if(!pane.dead){render(pane);requestAnimationFrame(()=>{pane.chatLog.scrollTop=pane.chatLog.scrollHeight;});void pollTranscript(pane);}},actions:{tab:()=>tabControls.toggle(pane),start:()=>action(pane,'startWorker'),stop:()=>action(pane,'stopWorker'),restart:()=>action(pane,'restartWorker'),remove:()=>action(pane,'removeWorker')}}));
     const {host}=pane;splits.append(pane.card);pane.local=[];pane.chatSignature=null;pane.follow=true;
     pane.idleHistory.onclick=()=>{pane.showHistory=!pane.showHistory;render(pane);};
     // Follow the newest message until the reader scrolls up; a jump pill brings them back.
@@ -133,6 +134,7 @@ export function workerTerminals(api,{container,notice,refresh,beforeAction=async
     pane.start.hidden=Boolean(active)||c?.status==='running';pane.stop.hidden=pane.start.hidden===false;
     pane.start.textContent=worker.presentation?.startLabel??'Başlat';pane.start.setAttribute('aria-label',worker.presentation?.startLabel??`${worker.name} başlat`);
     const web=Boolean(snapshot?.automation);
+    tabControls.render(pane);
     pane.card.dataset.persistentTerminal=String(web);
     if(active)pane.showHistory=false;
     pane.card.dataset.closed=String(!active);pane.card.dataset.history=String(Boolean(pane.showHistory));
@@ -170,6 +172,7 @@ export function workerTerminals(api,{container,notice,refresh,beforeAction=async
     let changed=false;
     for(const [worker,pane] of panes)if(!workers.some(w=>w.id===worker)){pane.dead=true;pane.surface.dispose();pane.host.remove();pane.card.remove();panes.delete(worker);changed=true;}
     for(const worker of workers){let pane=panes.get(worker.id);if(!pane){pane=create(worker);changed=true;}else{const ended=pane.worker.active&&!worker.active;pane.worker=worker;if(worker.active?.sessionId&&pane.session!==worker.active.sessionId){pane.session=worker.active.sessionId;pane.transcript=[];pane.chatSignature=null;void replay(pane);void pollTranscript(pane);}if(ended){pane.promptShown=false;pane.promptAttention=null;pane.dismissedPrompt=false;if(snapshot?.capabilities?.terminalConversation)pane.surface.writeln('\r\n── Oturum sona erdi · Sonuç ve sonraki adım yukarıda ──');}render(pane);}}
+    tabControls.update(id,value,panes);
     if(changed)separators();
     const main=panes.get('main');if(main){const home=value?.setup?.status==='running'?document.getElementById('setup-terminal'):main.card;if(home&&main.host.parentElement!==home)home.append(main.host);}
     const maxWorkers=value?.capabilities?.maxWorkers??8;add.hidden=maxWorkers===1;

@@ -16,3 +16,20 @@ export function recordOperationStatus(record){
  return null;
 }
 export const recordActivityAt=record=>Math.max(record.updatedAt,record.recordAction?.task?.at??0,record.recordAction?.lastTask?.at??0);
+export const recordIsWorking=record=>record.status!=='dismissed'&&!record.recordAction?.question&&['running','reported'].includes(record.recordAction?.task?.state);
+
+export const recordNeedsAnswer=record=>record.status!=='dismissed'&&Boolean(record.recordAction?.question);
+
+
+export function activeRecordOperations(snapshot){
+ const counts=new Map(),seen=new Set();
+ for(const slot of snapshot.activeRuns??(snapshot.activeRun?[snapshot.activeRun]:[])){
+  const run=snapshot.runs?.find(r=>r.id===slot.id)??slot;
+  if(seen.has(run.id)||run.status!=='running'||!run.recordId||!run.recordOperation)continue;
+  const worker=snapshot.workers?.find(w=>w.id===(run.workerId??'main'));
+  if(!worker?.active||worker.execution?.task?.id!==run.id)continue;
+  if(snapshot.automation?.questions?.some(q=>q.recordId===run.recordId&&q.answer==null))continue;
+  seen.add(run.id);counts.set(run.recordOperation,(counts.get(run.recordOperation)??0)+1);
+ }
+ return ['execute','prepare','verify'].filter(kind=>counts.has(kind)).map(kind=>({kind,count:counts.get(kind),label:(snapshot.definition?.recordOperations?.[kind]?.runningLabel??running[kind]).toLocaleLowerCase('tr-TR')}));
+}

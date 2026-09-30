@@ -7,7 +7,7 @@ export function automationAttention(snapshot){
  for(const question of automation.questions??[])if(question.answer==null){
   const matches=runs.filter(r=>(r.recordId??null)===(question.recordId??null)&&r.startedAt<=question.createdAt&&(!r.finishedAt||r.finishedAt>=question.createdAt)),run=matches.length===1?matches[0]:null;
   const context=question.browserContext??run?.resumeContext??{};
-  issues.push({id:question.id,kind:'question',name:'Yanıt bekleniyor',message:question.text,recordId:question.recordId,fields:question.fields,...context});
+  issues.push({id:question.id,kind:'question',name:'Yanıt bekleniyor',message:question.text,recordId:question.recordId,canDismissRecord:question.canDismissRecord,fields:question.fields,...context});
  }
  const limitIssue=(run,worker,limit)=>{
   const attention=providerLimitAttention(limit),source=sources.find(s=>s.url===run.sourceUrl);

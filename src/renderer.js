@@ -57,7 +57,7 @@ const chromeProfileChange=element('button','quiet chrome-profile-change','Profil
 const chromeProfileDialog=createChromeProfileDialog({loadProfiles:async()=>{chromeProfiles=await api.chromeProfiles();chromeProfilesError='';return chromeProfiles;},save:async(owner,chromeProfile)=>{await settingsQueue;await api.workspaceSettings(owner.id,{chromeProfile});await api.browserReconnect(owner.id);await refresh();notice('Chrome profili kaydedildi.');}});document.body.append(chromeProfileDialog.element);
 chromeProfileChange.onclick=()=>{const a=automationUI.data?.automation;if(a)chromeProfileDialog.show({id:a.id,chromeProfile:a.chromeProfile,web:true});};
 chromeReconnect.onclick=attempt(()=>automationUI.reconnectBrowser());
-const sourcesNav=element('button');sourcesNav.dataset.view='sources';sourcesNav.innerHTML='<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Kaynaklar</span>';document.querySelector('nav button[data-view="agent"]').before(sourcesNav);
+const sourcesNav=element('button');sourcesNav.dataset.view='sources';sourcesNav.innerHTML='<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Kaynaklar</span><span id="sources-nav-status" class="agent-nav-status sources-nav-status" data-tone="active" aria-hidden="true" hidden></span>';document.querySelector('nav button[data-view="agent"]').before(sourcesNav);
 function switchView(name,options={}){
  const global=['automations','templates'].includes(name),selected=automationUI.selected;
  document.querySelector('main>header>.actions').hidden=global||!selected;document.body.classList.toggle('automation-workspace',Boolean(selected)&&!global);

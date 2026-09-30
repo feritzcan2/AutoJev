@@ -104,3 +104,73 @@ test('legacy unreported errors recover on restart; real access blockers and paus
  resumed.policy.recover();assert.equal(f.db.sources(f.id)[0].blocked,true);
  f.db.enable(f.id);await resumed.tick();assert.equal(f.db.sources(f.id)[0].blocked,false,'Starting tracking also repairs an old unreported error');
 });
+
+test('an unreported run with verified browser failures uses technical backoff instead of rapid provider relaunch',async t=>{
+ const f=fixture(t);await f.runtime.runOnce(f.id);await settle();const run=f.launches[0];f.checkpoint(run);
+ f.db.putRun({...f.db.run(run.id),scanIssues:{[second]:{id:'transport',url:second,kind:'browser_error',attempts:2,verified:true,evidence:'Execution context was destroyed'}}});
+ f.event('Working');f.event('Idle');t.mock.timers.tick(10000);await settle();
+ const task=f.store.workspaces.tasks.get(f.id,run.taskId);
+ assert.equal(task.technicalRecovery.attempt,1);assert.equal(task.retryAt,Date.now()+30000);
+ assert.deepEqual(task.scan.pendingUrls,[second]);
+ assert.match(f.db.sources(f.id)[0].lastResult,/Sayfa yüklenemedi/);
+});
+
+test('three technical failures stop automatic retries across ticks and restarts; manual retry keeps progress and resets the count',async t=>{
+ const f=fixture(t);await f.runtime.runOnce(f.id);await settle();const original=f.launches[0];f.checkpoint(original);
+ for(let attempt=1;attempt<=3;attempt++){
+  const run=f.launches.at(-1),outcome=retryTechnicalSource(f.db,f.id,run.id,'HTTP2 error',Date.now());
+  assert.equal(outcome.status,attempt<3?'interrupted':'blocked');
+  f.runtime.report(f.id,run.id,outcome.status,outcome.summary);t.mock.timers.tick(150);await settle();
+  if(attempt<3){t.mock.timers.tick(attempt===1?30000:120000);await f.runtime.tick();await settle();}
+ }
+ assert.equal(f.launches.length,3);
+ let sourceState=f.db.sources(f.id)[0];assert.equal(sourceState.blocked,true);assert.equal(sourceState.recovery,null);assert.equal(sourceState.nextRunAt,null);
+ assert.equal(sourceState.blocker.stop.retryExhausted,true);assert.deepEqual(sourceState.scan.pendingUrls,[second]);assert.match(sourceState.lastResult,/Erişim sorunu sürüyor/);
+ const task=f.store.workspaces.tasks.get(f.id,original.taskId);assert.equal(task.state,'blocked');assert.equal(task.technicalRecovery.attempt,3);
+ for(let i=0;i<3;i++){t.mock.timers.tick(3600000);await f.runtime.tick();await settle();}
+ assert.equal(f.launches.length,3);
+ const restarted=new WebTasks(f.db,f.options);t.after(()=>restarted.close());await restarted.tick();assert.equal(f.launches.length,3);
+ await restarted.runSource(f.id,source);await settle();assert.equal(f.launches.length,4);
+ const manual=f.launches.at(-1);assert.notEqual(manual.taskId,original.taskId);assert.deepEqual(manual.scan.pendingUrls,[second]);
+ sourceState=f.db.sources(f.id)[0];assert.equal(sourceState.blocked,false);assert.equal(sourceState.blocker,null);
+ const again=retryTechnicalSource(f.db,f.id,manual.id,'HTTP2 error',Date.now());assert.equal(again.status,'interrupted');assert.equal(f.db.run(manual.id).recovery.attempt,1);await restarted.close();
+});
+
+test('older pending retries already beyond the limit are blocked before another worker launches',async t=>{
+ const f=fixture(t);await f.runtime.runOnce(f.id);await settle();const run=f.launches[0];f.checkpoint(run);
+ const outcome=retryTechnicalSource(f.db,f.id,run.id,'Old HTTP2 error',Date.now());f.runtime.report(f.id,run.id,outcome.status,outcome.summary);t.mock.timers.tick(150);await settle();
+ const q=f.store.workspaces.tasks,task=q.get(f.id,run.taskId);q.put({...task,technicalRecovery:{...task.technicalRecovery,attempt:5}});
+ const restarted=new WebTasks(f.db,f.options);t.after(()=>restarted.close());
+ t.mock.timers.tick(3600000);await restarted.tick();await settle();
+ assert.equal(f.launches.length,1);assert.equal(q.get(f.id,task.id).state,'blocked');assert.equal(f.db.sources(f.id)[0].blocker.stop.retryExhausted,true);
+ assert.deepEqual(f.db.sources(f.id)[0].scan.pendingUrls,[second]);
+});
+
+test('an unreported idle continues in the same provider once, without a new launch or infinite nudges',async t=>{
+ const f=fixture(t),messages=[];f.options.launch=async run=>{f.launches.push(run);return {close:async()=>{},state:()=>f.db.run(run.id).state,message:async text=>messages.push(text)};};f.runtime.launch=f.options.launch;
+ await f.runtime.runOnce(f.id);await settle();const run=f.launches[0];f.checkpoint(run);
+ f.event('Working');f.event('Idle');t.mock.timers.tick(10000);await settle();
+ assert.equal(messages.length,1);assert.equal(f.launches.length,1);assert.equal(f.db.run(run.id).status,'running');
+ f.event('Working');f.db.spendStep(f.id,run.id);f.event('Idle');t.mock.timers.tick(10000);await settle();
+ assert.equal(messages.length,1);assert.equal(f.db.run(run.id).status,'interrupted');
+});
+
+test('technical retries check the browser without launching an agent and release only after recovery',async t=>{
+ const f=fixture(t);let ready=false,checks=0;f.runtime.sourceChecks.probe=async()=>{checks++;return {ready};};
+ await f.runtime.runOnce(f.id);await settle();const run=f.launches[0];f.checkpoint(run);
+ const outcome=retryTechnicalSource(f.db,f.id,run.id,'Network failed',Date.now());f.runtime.report(f.id,run.id,outcome.status,outcome.summary);t.mock.timers.tick(150);await settle();
+ t.mock.timers.tick(30000);await f.runtime.tick();await settle();assert.equal(checks,1);assert.equal(f.launches.length,1);
+ for(let i=0;i<5;i++)await f.runtime.tick();assert.equal(checks,1);
+ assert.equal(f.store.workspaces.tasks.get(f.id,run.taskId).technicalRecovery.attempt,1,'Browser checks do not consume provider retry attempts');
+ t.mock.timers.tick(120000);ready=true;await f.runtime.tick();await settle();assert.equal(checks,2);assert.equal(f.launches.length,1);
+ await f.runtime.tick();await settle();assert.equal(f.launches.length,2);assert.equal(f.launches[1].taskId,run.taskId);assert.deepEqual(f.launches[1].scan.pendingUrls,[second]);
+});
+
+test('a pending browser check cannot revive a user-stopped source or block the scheduler',async t=>{
+ const f=fixture(t);let resolve;f.runtime.sourceChecks.probe=()=>new Promise(r=>{resolve=r;});
+ await f.runtime.runOnce(f.id);await settle();const run=f.launches[0];f.checkpoint(run);
+ const outcome=retryTechnicalSource(f.db,f.id,run.id,'Network failed',Date.now());f.runtime.report(f.id,run.id,outcome.status,outcome.summary);t.mock.timers.tick(150);await settle();
+ t.mock.timers.tick(30000);await f.runtime.tick();await settle();assert.ok(resolve);assert.equal(f.runtime.dispatching,false);
+ await f.runtime.stopSource(f.id,source);resolve({ready:true});await settle();await f.runtime.tick();assert.equal(f.launches.length,1);
+ assert.equal(f.store.workspaces.tasks.get(f.id,run.taskId).state,'cancelled');
+});

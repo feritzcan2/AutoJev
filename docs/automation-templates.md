@@ -52,8 +52,9 @@ when idle, Enter sends the typed request as a new conversation turn. Provider
 settings save automatically and apply to the next launch. The optional conversation
 panel keeps messages and attachments available.
 System notifications announce completed runs and blockers when the app is not
-focused. Existing Telegram integration remains part of the job-search template;
-generic automations currently use the desktop conversation and notifications.
+focused. Telegram is available for all workspaces. Its record actions use the same
+queue as the desktop, including verification of uncertain outcomes. Card fields
+and status labels come from the workspace table and template.
 
 ## Agent-controlled tables
 

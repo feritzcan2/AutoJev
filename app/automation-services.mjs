@@ -17,8 +17,8 @@ export function registerAutomationServices({root,data,handle,emit,validateSettin
  browsers.workspaceFor=id=>workspaceDirectory(data,db.store.workspaces.get(id));
  db.siteAccess.changed=()=>{for(const a of db.list())emit('automation-changed',{automationId:a.id});};
  const changed=id=>emit('automation-changed',{automationId:id});
- const runtime=new WebTasks(db,{changed,launch:(run,automation,onEvent,signal)=>launch({root,data,db,run,automation,onEvent,signal,agents,mcp,
-  browser:automationBrowser(browsers.forWorker(run.workerId??'main',()=>!signal.aborted&&db.run(run.id).status==='running'),{mode:automation.browserMode,recordId:run.recordOperation?run.recordId:undefined,sourceUrl:run.recordOperation?undefined:run.sourceUrl,sourceUrls:automation.sources,readTabKey:run.recordOperation?`record:${run.recordId}`:run.sourceUrl&&!run.recordId?`source:${run.sourceUrl}`:run.kind!=='run'?`read:${run.sourceUrl??run.workerId??'main'}`:undefined}),
+ const runtime=new WebTasks(db,{changed,probeSource:(id,task)=>browsers.probeAutomationSource(id,task),onRunFinished:(id,run,options)=>browsers.finishAutomationRun(id,run,options),browserReady:id=>{if(browsers.status(id).ready)return true;const a=db.get(id);if(a.status==='enabled'||db.store.workspaces.tasks.list(id,{states:['pending']}).some(t=>t.request?.manual))browsers.prepare(id);return browsers.status(id).ready;},launch:(run,automation,onEvent,signal)=>launch({root,data,db,run,automation,onEvent,signal,agents,mcp,
+  browser:automationBrowser(browsers.forWorker(run.workerId??'main',()=>!signal.aborted&&db.run(run.id).status==='running'),{mode:automation.browserMode,resumeContext:run.continuation?.browserContext??run.resumeContext,recordId:run.recordOperation?run.recordId:undefined,sourceUrl:run.recordOperation?undefined:run.sourceUrl,sourceUrls:automation.sources,readTabKey:run.recordOperation?`record:${run.recordId}`:run.sourceUrl&&!run.recordId?`source:${run.sourceUrl}`:run.kind!=='run'?`read:${run.sourceUrl??run.workerId??'main'}`:undefined}),
   report:(id,runId,status,summary,goalReached)=>{const result=runtime.report(id,runId,status,summary,goalReached);if(run.kind!=='interview')notify(automation.title,db.run(runId).summary);return result;},changed,
   onOutput:bytes=>{outputs.set(run.id,Buffer.concat([outputs.get(run.id)??Buffer.alloc(0),Buffer.from(bytes)]).subarray(-150000));while(outputs.size>30)outputs.delete(outputs.keys().next().value);emit('automation-output',{automationId:run.automationId,runId:run.id,bytes});}
  })});
@@ -45,6 +45,7 @@ export function registerAutomationServices({root,data,handle,emit,validateSettin
  handle('automation-sources-interval',(id,intervalMinutes)=>runtime.saveSourcesInterval(id,intervalMinutes));
  handle('automation-source-modes',(id,mode)=>{db.assertIdle(id);const a=db.get(id);for(const url of a.sources)sourceInput(a,url,{mode});db.store.workspaces.tasks.atomic(()=>{for(const url of a.sources)db.saveSource(id,url,{mode});});changed(id);});
  handle('automation-source-run',(id,url)=>runtime.runSource(id,url));
+ handle('automation-source-stop',(id,url)=>runtime.stopSource(id,url));
  handle('automation-retry-later',(id,key,cancel)=>runtime.retryLater(id,key,cancel===true));
  handle('automation-source-add',(id,input)=>{
   const a=db.get(id),url=webUrl(input.url);if(a.sources.includes(url))throw Error('Bu kaynak zaten kayıtlı');
@@ -58,7 +59,7 @@ export function registerAutomationServices({root,data,handle,emit,validateSettin
  handle('automation-run',async(id,kind)=>{if(!['trial','run'].includes(kind))throw Error('Geçersiz çalışma');return kind==='run'?runtime.runOnce(id):runtime.start(id,kind);});
  handle('automation-record-run',(id,itemId,kind,input)=>runtime.runRecord(id,itemId,kind,input));
  handle('automation-approve',(id,itemId)=>{const item=db.approve(id,itemId);changed(id);return item;});
- handle('automation-dismiss',(id,itemId)=>{const item=db.dismiss(id,itemId);changed(id);return item;});
+ handle('automation-dismiss',(id,itemId)=>runtime.dismissRecord(id,itemId));
  handle('automation-star',(id,itemId,starred)=>{const item=db.star(id,itemId,starred);changed(id);return item;});
  const remove=async id=>{const files=workspace(id);await runtime.pause(id);await browsers.resetCandidate(id);const runs=db.db.prepare('SELECT id FROM automation_runs WHERE automation_id=?').all(id);db.remove(id);for(const run of runs){outputs.delete(run.id);await rm(path.join(data,'automations','runs',run.id),{recursive:true,force:true});}await rm(files,{recursive:true,force:true});for(const directory of ['workspaces','browsers','candidates'])await rm(path.join(data,'automations',directory,id),{recursive:true,force:true});changed(id);};
  handle('automation-browser',async id=>{

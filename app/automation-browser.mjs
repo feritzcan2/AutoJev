@@ -1,8 +1,8 @@
 // Adapt the existing Jev engine to the scoped automation browser tools.
 // Run ownership and step limits stay in automationWorkflow; the agent assesses authority.
-export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,sourceUrls=[],recordId}={}){
+export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,sourceUrls=[],recordId,resumeContext}={}){
  if(mode!=='jev')return browser;
- let tabId=null,activeSource=sourceUrl;
+ let tabId=recordId?resumeContext?.tabId??null:null,activeSource=sourceUrl,restoreRecord=Boolean(recordId);
  const sourceFor=url=>{
   if(sourceUrl)return sourceUrl;
   const parsed=new URL(url),host=parsed.hostname.replace(/^www\./,'');
@@ -21,7 +21,12 @@ export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,
  };
  const native=async(id,name,args,session,options)=>{await ready(id);const response=await browser.call(id,name,args,session,{...options,automationWorkspaceId:id,...(readTabKey?{automationTabKey:activeSource?`source:${activeSource}`:readTabKey}:{}),...(activeSource?{automationSourceUrl:activeSource,automationSourceUrls:[...new Set([...sourceUrls,activeSource])]}:{})}),page=value(response);if(page.status==='browser_wait')throw Error('Jev Chrome bağlantısı bekliyor. Tarayıcıyı aç düğmesinden yeniden bağlan.');return {response,page};};
  const observed=({response,page})=>({pageContext:{url:page.url,tabId:page.tabId},siteWait:page.siteWait,readiness:page.reading?.readiness,content:[{type:'text',text:(page.url?`Page URL: ${page.url}\n`:'')+JSON.stringify(page)},...(response.content??[]).filter(p=>p.type!=='text')],action:{status:page.status,executed:page.executed,verified:page.verified,message:page.message}});
- const document=async(id,result,session)=>result.page.siteWait?observed(result):observed(await native(id,'browser_jev_observe',{tabId:result.page.tabId,scope:'document',full:true,fullReason:'context_loss'},session));
+ const document=async(id,result,session)=>{
+  // Preserve the original transport error (and the owned tab) instead of
+  // masking it with a second observation of Chrome's error document.
+  if(result.page.navigationError)throw Error(result.page.navigationError);
+  return result.page.siteWait?observed(result):observed(await native(id,'browser_jev_observe',{tabId:result.page.tabId,scope:'document',full:true,fullReason:'context_loss'},session));
+ };
  return {waitForOperations:id=>browser.waitForOperations(id),async currentUrl(id){
   await ready(id);if(!tabId)throw Error('Önce bir sayfa aç');
   // Reading the URL must not invalidate Jev's one-use pending decision.
@@ -38,7 +43,7 @@ export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,
   }
   if(name==='browser_jev_use_tab'){
    const result=await native(id,'browser_jev_observe',{tabId:args.tabId,scope:'document',full:true,fullReason:'context_loss'},session,options);
-   tabId=result.page.tabId;return observed(result);
+   tabId=result.page.tabId;restoreRecord=false;return observed(result);
   }
   if(name==='browser_jev_close_tab'){
    const {page}=await native(id,name,{tabId:args.tabId},session,options);
@@ -48,13 +53,13 @@ export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,
   if(name==='browser_navigate'){
    if(readTabKey){
     if(!recordId){const nextSource=sourceFor(args.url);if(nextSource!==activeSource)tabId=null;activeSource=nextSource;}
-    const result=await native(id,'browser_jev_open',{url:args.url},session,{automationPreferredTabId:tabId});
+    const result=await native(id,'browser_jev_open',{url:args.url},session,{automationPreferredTabId:tabId,automationResumeRecord:restoreRecord});
     if(result.page.siteWait){tabId=result.page.tabId??tabId;return observed(result);}
-    tabId=result.page.tabId;if(!tabId)throw Error('Jev sekmesi açılamadı');return document(id,result,session);
+    tabId=result.page.tabId;restoreRecord=false;if(!tabId)throw Error('Jev sekmesi açılamadı');return document(id,result,session);
    }
    const {page:tabs}=await native(id,'browser_jev_tabs',{},session),existing=tabs.tabs?.find(t=>t.url===args.url);
    const result=await native(id,existing?'browser_jev_observe':'browser_jev_open',existing?{tabId:existing.tabId,full:true,fullReason:'context_loss'}:{url:args.url},session);
-   tabId=result.page.tabId;if(!tabId)throw Error('Jev sekmesi açılamadı');return document(id,result,session);
+   tabId=result.page.tabId;restoreRecord=false;if(!tabId)throw Error('Jev sekmesi açılamadı');return document(id,result,session);
   }
   if(!tabId)throw Error('Önce bu tur için browser_open veya research_automation_source ile bir sayfa aç');
   let tool,parameters={tabId};
@@ -70,6 +75,6 @@ export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,
   else if(name==='browser_target_press'){tool=name;Object.assign(parameters,{ref:args.ref,key:args.key});}
   else if(['browser_jev_list_suggestions','browser_jev_autocomplete'].includes(name)){tool=name;parameters.controlId=args.controlId;if(args.text!==undefined)parameters.text=args.text;if(args.option!==undefined)parameters.option=args.option;}
   else throw Error('Jev için gözlenen hedefi kullan veya browser_jev_next ile bir adım önerisi al');
-  return observed(await native(id,tool,parameters,session,options));
+  const result=await native(id,tool,parameters,session,options);tabId=result.page.tabId??tabId;restoreRecord=false;return observed(result);
  }};
 }

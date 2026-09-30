@@ -13,10 +13,11 @@ export function workerPane({id='main',name='Worker 1',terminalId='terminal',acti
  for(const [key,label] of WORKER_VIEWS.filter(([key])=>showChat||key==='terminal')){const button=node('button','',label);button.type='button';button.setAttribute('role','tab');button.dataset.view=key;button.onclick=()=>setView(key);switcher.append(button);views[key]=button;}
  switcher.hidden=!showChat;
  switcher.onkeydown=event=>{if(!['ArrowLeft','ArrowRight'].includes(event.key))return;event.preventDefault();const next=card.dataset.view==='chat'?'terminal':'chat';setView(next);views[next].focus();};
- for(const [key,text,label] of [['start','Başlat','başlat'],['stop','Durdur','durdur'],['restart','Yenile','yeniden başlat'],['remove','×','kaldır']]){
+ for(const [key,text,label] of [['tab','Sekmeler','aktif işinin sekmelerini göster'],['start','Başlat','başlat'],['stop','Durdur','durdur'],['restart','Yenile','yeniden başlat'],['remove','×','kaldır']]){
   const button=node('button','quiet'+(key==='remove'?' worker-remove':''),text);button.type='button';button.setAttribute('aria-label',`${name} ${label}`);button.title=`${name} ${label}`;button.onclick=actions[key];controls.append(button);buttons[key]=button;
  }
- buttons.remove.hidden=id==='main';top.append(identity,switcher,controls);
+ buttons.tab.hidden=!actions.tab;buttons.tab.dataset.workerTab=id;buttons.remove.hidden=id==='main';top.append(identity,switcher,controls);
+ const tabList=node('div','worker-tabs');tabList.hidden=true;tabList.id=`worker-tabs-${id}`;buttons.tab.setAttribute('aria-controls',tabList.id);buttons.tab.setAttribute('aria-expanded','false');
  const task=node('div','worker-task'),title=node('strong','worker-task-title'),detail=node('small','worker-task-detail'),pageProgress=node('small','worker-page-progress');pageProgress.hidden=true;pageProgress.setAttribute('aria-live','polite');task.append(title,detail,pageProgress);
  const host=node('div','worker-terminal');if(terminalId)host.id=terminalId;
  const idle=node('div','worker-idle');idle.hidden=true;
@@ -37,7 +38,7 @@ export function workerPane({id='main',name='Worker 1',terminalId='terminal',acti
  const outcome=node('div','worker-outcome');outcome.hidden=true;outcome.setAttribute('role','status');
  const outcomeTitle=node('strong',''),outcomeDetail=node('span',''),outcomeLink=node('button','quiet','Sonuç ve sonraki adım ↑');outcomeLink.type='button';outcomeLink.onclick=()=>document.querySelector('#now-panel')?.scrollIntoView({block:'start',behavior:'smooth'});outcome.append(outcomeTitle,outcomeDetail,outcomeLink);
  const inputHint=node('p','worker-input-hint');inputHint.hidden=true;
- card.append(top,task,attention,idle,host,chat,outcome,inputHint);
+ card.append(top,tabList,task,attention,idle,host,chat,outcome,inputHint);
  function setView(next,{notify=true}={}){
   if(!views[next])next='terminal';
   const changed=card.dataset.view!==next;card.dataset.view=next;
@@ -45,5 +46,5 @@ export function workerPane({id='main',name='Worker 1',terminalId='terminal',acti
   if(changed&&notify)onView(next);
  }
  setView(view,{notify:false});
- return {card,host,status,idle,idleTitle,idleDetail,idleHistory,task,title,detail,pageProgress,attention,attentionTitle,attentionDetail,attentionButton,outcome,outcomeTitle,outcomeDetail,inputHint,chat,chatLog,chatJump,chatForm,chatInput,chatSend,setView,view:()=>card.dataset.view,...buttons};
+ return {card,host,tabList,status,idle,idleTitle,idleDetail,idleHistory,task,title,detail,pageProgress,attention,attentionTitle,attentionDetail,attentionButton,outcome,outcomeTitle,outcomeDetail,inputHint,chat,chatLog,chatJump,chatForm,chatInput,chatSend,setView,view:()=>card.dataset.view,...buttons};
 }

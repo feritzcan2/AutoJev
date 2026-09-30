@@ -44,7 +44,7 @@ test('incremental finish needs current full-page chronology, not known results o
  const done={status:'completed',summary:'Done',scan:{complete:true,pendingUrls:[],reason:'Old items',evidenceUrl:source,completion:'cutoff'}};
  await assert.rejects(call('finish_automation_run',done),/Tarih sınırı/);
  await assert.rejects(call('finish_automation_run',{...done,scan:{...done.scan,completion:'end'}}),/Son sayfaya/);
- const args={snapshotId:observed.snapshot.id,pendingUrls:[],reason:'Every card on this page was checked',chronology};
+ const args={snapshotId:observed.snapshot.id,pendingUrls:[],processedUrls:[source],reason:'Every card on this page was checked',chronology};
  validate(worker.tools.find(t=>t.name==='save_scan_progress').inputSchema,args);
  const saved=await call('save_scan_progress',args);assert.ok(saved.scanPlan.boundary);
  await call('browser_read',{});await assert.rejects(call('finish_automation_run',done),/Tarih sınırı/);
@@ -103,7 +103,7 @@ test('known identity lookup includes older saved results outside the context sam
  for(let i=0;i<110;i++)db.record(id,run.id,{url:source+'/item/'+i,title:'Match '+i,summary:'Observed'});
  let context=await worker.call(id,run.id,'get_automation_context',{});
  if(context.context){let fragment=context,text=fragment.text;while(fragment.context.nextOffset!==null){fragment=await worker.call(id,run.id,'read_automation_context_part',{contextId:fragment.context.id,offset:fragment.context.nextOffset});text+=fragment.text;}context=JSON.parse(text);}
- assert.equal(context.results.length,100);assert.ok(!context.results.some(r=>r.url===source+'/item/0'));
+ assert.equal(context.results.length,0);assert.ok(!context.results.some(r=>r.url===source+'/item/0'));
  const [known,unknown]=await worker.call(id,run.id,'lookup_scan_results',{keys:[source+'/item/0',source+'/missing']});assert.equal(known.known,true);assert.equal(unknown.known,false);
  const observed=await worker.call(id,run.id,'browser_open',{url:source});await worker.call(id,run.id,'browser_open',{url:source+'?page=2'});
  await assert.rejects(worker.call(id,run.id,'save_scan_progress',{snapshotId:observed.snapshot.id,pendingUrls:[],reason:'Stale'}),/eski/);

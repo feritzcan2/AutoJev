@@ -1,3 +1,4 @@
+import {otherScanSearchesPending} from './scan-work.mjs';
 import {boundedText} from './automation-templates.mjs';
 
 // A partial scan is unfinished work, not a request for human intervention.
@@ -12,6 +13,7 @@ export function sourceStop(run,input){
   const issues=Object.values(run.scanIssues??{}),ids=stop.issueIds;
   if(!Array.isArray(ids)||!ids.length||ids.some(id=>!issues.some(issue=>issue.id===id&&issue.verified)))throw Error('Teknik duruş için bu turda araçla doğrulanmış issueIds gerekli. Yükleme sorunu için recheck_scan_page kullan; gerçek tarayıcı hatasını bir kez yeniden kontrol et. Açıklama tek başına kanıt değildir.');
   const selected=issues.filter(issue=>ids.includes(issue.id));
+  if(otherScanSearchesPending(run)&&!selected.some(issue=>issue.global))throw Error('Diğer kayıtlı aramalar henüz bitmedi. Önce erişilebilir aramaları select_scan_search ile işle.');
   const remaining=(run.scan?.pendingUrls??[]).filter(url=>!selected.some(issue=>issue.global||issue.url===url));
   if(remaining.length)throw Error(`Sorun tüm kaynağı durdurmuyor. Önce erişilebilir ${remaining.length} bekleyen adresi işle: ${remaining.slice(0,3).join(', ')}. Yalnızca doğrulanmış sorunlu adresleri sona bırak.`);
   return {kind:stop.kind,evidence,issueIds:ids};

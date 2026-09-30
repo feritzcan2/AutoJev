@@ -12,8 +12,12 @@ const proof=value=>typeof value==='string'?value:JSON.stringify(value??'');
 export function upgradeWorkspaces(db){
  const core=db.store.workspaces,sql=db.db;
  sql.exec('CREATE TABLE IF NOT EXISTS workspace_imports(workspace_id TEXT PRIMARY KEY,data TEXT NOT NULL)');
- if(!core.exists('candidates'))return [];
  return core.tasks.atomic(()=>{
+  // Previously imported application templates keep their mail vocabulary.
+  for(const row of sql.prepare("SELECT DISTINCT t.id,t.data FROM automation_templates t JOIN workspaces w ON w.template_id=t.id JOIN automations a ON a.id=w.id WHERE json_extract(a.data,'$.migration.from')='applications' AND json_type(t.data,'$.mail') IS NULL").all()){
+   sql.prepare('UPDATE automation_templates SET data=? WHERE id=?').run(JSON.stringify({...parse(row),mail:jobSearchTemplate.mail}),row.id);
+  }
+  if(!core.exists('candidates'))return [];
   const migrated=[];
   for(const row of sql.prepare('SELECT id,data FROM candidates').all()){
    if(sql.prepare('SELECT 1 FROM workspace_imports WHERE workspace_id=?').get(row.id))continue;
@@ -22,7 +26,7 @@ export function upgradeWorkspaces(db){
    const personal=core.exists('automation_templates')?parse(sql.prepare('SELECT data FROM automation_templates WHERE id=?').get(workspace.templateId)):null;
    if(personal){
     const fields=[...jobSearchTemplate.fields,...(personal.fields??[]).filter(f=>!jobSearchTemplate.fields.some(x=>x.id===f.id))];
-    const template={...personal,kind:'web',execution:{driver:'browser'},records:jobSearchTemplate.records,workflow:undefined,fields,guidance:[jobSearchTemplate.guidance,personal.guidance].filter(Boolean).join('\n\n')};
+    const template={...personal,kind:'web',execution:{driver:'browser'},records:jobSearchTemplate.records,mail:personal.mail??jobSearchTemplate.mail,workflow:undefined,fields,guidance:[jobSearchTemplate.guidance,personal.guidance].filter(Boolean).join('\n\n')};
     sql.prepare('UPDATE automation_templates SET data=? WHERE id=?').run(JSON.stringify(template),workspace.templateId);
    }
    const sources=core.exists('sources')?sql.prepare('SELECT data FROM sources WHERE candidate_id=? ORDER BY rowid').all(id).map(parse):[];

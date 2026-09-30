@@ -16,7 +16,8 @@ const jobStatus=job=>{
  if(job.followupStopped)status=job.status==='skipped'?'⚫ Başvuru takibi bırakıldı':`${status} · Takip bırakıldı`;
  return status;
 };
-const withDeleteButton=(row,body)=>deletable(row.data)&&body.reply_markup?.inline_keyboard?{...body,reply_markup:{inline_keyboard:[...body.reply_markup.inline_keyboard,[{text:jobCard(row.data)?'🗑 Sil · Vazgeç':'🗑 Sil',style:'danger',callback_data:`d:${row.id}`}]]}}:body;
+const withDeleteButton=(row,body,generic=false)=>deletable(row.data)&&body.reply_markup?.inline_keyboard?{...body,reply_markup:{inline_keyboard:[...body.reply_markup.inline_keyboard,[{text:jobCard(row.data)?generic?'🗑 Sil · Kaydı ele':'🗑 Sil · Vazgeç':'🗑 Sil',style:'danger',callback_data:`d:${row.id}`}]]}}:body;
+const recordHeading=view=>view.heading.slice(0,6).map(field=>`<b>${html(clip(field.label,100))}:</b> ${html(clip(String(field.value),300))}`).join('\n');
 export class TelegramApi{
  constructor(token,{fetcher=fetch}={}){this.token=token;this.fetcher=fetcher;}
  async call(method,body={},signal){
@@ -101,11 +102,11 @@ export class TelegramBot{
   }
  }
  notification(callback,action){
-  const message=callback.message,user=callback.from,deliveryId=callback.data?.match(new RegExp(`^${action}:([a-f0-9]{24})$`))?.[1];
+  const message=callback.message,user=callback.from,match=callback.data?.match(new RegExp(`^${action}:([a-f0-9]{24})${action==='queue'?'(?::([a-f0-9]{24}))?':''}$`)),deliveryId=match?.[1];
   if(!deliveryId||message?.chat?.type!=='private'||!Number.isSafeInteger(message.chat.id)||!Number.isSafeInteger(message.message_id)||message.message_id<=0||!Number.isSafeInteger(user?.id)||user.is_bot)return null;
   const link=this.db.sender(message.chat.id,user.id),row=this.db.delivery(deliveryId);
   if(!link||!row||row.candidate_id!==link.candidate_id||row.message_id!==message.message_id)return null;
-  return {link,row};
+  return {link,row,token:match?.[2]};
  }
  async updateNotification(row,signal){
   try{
@@ -130,7 +131,8 @@ export class TelegramBot{
    }
    // The desktop handler persists the queue request before awaiting agent startup.
    // Refresh that state now; starting the browser/agent must not delay the card.
-   const application=this.queueApplication(candidate,job.id);
+   if(this.store.generic&&notification.token!==state.token){this.db.refreshJobMessages(candidate,job.id);await this.updateNotification(row,signal);return {text:'Kayıt değişti. Güncellenen karttaki işlemi yeniden seç.',show_alert:true};}
+   const application=this.queueApplication(candidate,job.id,notification.token);
    this.db.refreshJobMessages(candidate,job.id);this.changed(candidate);
    const [outcome]=await Promise.allSettled([application,this.updateNotification(row,signal)]);
    if(outcome.status==='rejected')throw outcome.reason;
@@ -156,14 +158,14 @@ export class TelegramBot{
      await this.withdrawApplication(link.candidate_id,job.id);
     }
     withdrawn=true;this.db.refreshJobMessages(link.candidate_id,job.id);this.changed(link.candidate_id);
-   }catch{return {text:'Vazgeçildi olarak kaydedilemedi; mesaj silinmedi. AutoJev’den kontrol edip yeniden dene.',show_alert:true};}
+   }catch{return {text:this.store.generic?'Kayıt elenemedi; mesaj silinmedi. AutoJev’den kontrol edip yeniden dene.':'Vazgeçildi olarak kaydedilemedi; mesaj silinmedi. AutoJev’den kontrol edip yeniden dene.',show_alert:true};}
   }
-  const prefix=withdrawn?'Vazgeçildi olarak kaydedildi. ':'';
+  const prefix=withdrawn?(this.store.generic?'Kayıt elendi. ':'Vazgeçildi olarak kaydedildi. '):'';
   if(Number.isFinite(message.date)&&message.date>0&&this.now()-message.date*1000>=48*60*60*1000)return {text:prefix+'Telegram botları 48 saatten eski mesajları silemez. Mesaja basılı tutup Telegram’dan silebilirsin.',show_alert:true};
   try{
    await this.api.call('deleteMessage',{chat_id:link.chat_id,message_id:row.message_id},signal);
    // Keep the delivery receipt so collecting events or retrying cannot send it again.
-   this.db.deleted(row.id);return {text:withdrawn?'Mesaj silindi; başvurudan vazgeçildi.':'Mesaj silindi.'};
+   this.db.deleted(row.id);return {text:withdrawn?(this.store.generic?'Mesaj silindi; kayıt elendi.':'Mesaj silindi; başvurudan vazgeçildi.'):'Mesaj silindi.'};
   }catch(error){
    return {text:prefix+([400,403].includes(error.code)?'Mesaj silinemedi. Telegram’da mesaja basılı tutup silebilirsin.':'Mesaj silinemedi. Biraz sonra Sil düğmesine yeniden bas.'),show_alert:true};
   }
@@ -176,14 +178,18 @@ export class TelegramBot{
    let job;try{job=this.store.job(link.candidate_id,data.jobId);}catch{return null;}
    if(!edit&&data.backfill&&applicationCompleted(job))return null;
    const score=job.rank?.status==='scored'&&Number.isFinite(job.rank.score)?`🎯 <b>Uygunluk puanı: ${job.rank.score}/100</b>`:job.rank?.status==='unavailable'?'⚠️ <i>Puan hesaplanamadı</i>':'⚪ <i>Henüz puanlanmadı</i>';
-   const queue=this.queueApplication?applicationQueueState(this.store,link.candidate_id,job):null,buttons=[[{text:'İlanı aç',style:'primary',url:job.url}]];
-   if(queue?.state==='available')buttons.push([{text:queue.actionLabel,style:'success',callback_data:`queue:${row.id}`}]);
+   const view=this.store.recordNotification?.(link.candidate_id,job.id);
+   const queue=this.queueApplication?applicationQueueState(this.store,link.candidate_id,job):null,buttons=[[{text:view?'Kaydı aç':'İlanı aç',style:'primary',url:job.url}]];
+   if(queue?.state==='available')buttons.push([{text:queue.actionLabel,style:'success',callback_data:`queue:${row.id}${queue.token?':'+queue.token:''}`}]);
+   if(view){const status=['queued','active'].includes(queue?.state)?queue.message:view.status;return {text:`<b>${html(view.title)} · ${html(status)}</b>\n\n${recordHeading(view)}\n\n${html(clip(view.summary??'',1000))}`,parse_mode:'HTML',reply_markup:{inline_keyboard:buttons}};}
    const status=queue?.state==='queued'?(queue.verificationOnly?'🔵 Öncelikli doğrulama sırasında':'🔵 Başvuru sırasında · Öncelikli'):queue?.state==='active'&&['found','blocked','uncertain'].includes(job.status)?`🟣 ${queue.message}`:jobStatus(job);
    return {text:`<b>${html(status)}</b>\n\n${jobHeading(job)}\n\n${score}`,parse_mode:'HTML',reply_markup:{inline_keyboard:buttons}};
   }
   if(data.kind==='submission'){
    if(!link.data.notifications)return null;
    let job;try{job=this.store.job(link.candidate_id,data.jobId);}catch{return null;}
+   const view=this.store.recordNotification?.(link.candidate_id,job.id);
+   if(view)return {text:`<b>✅ ${html(view.title)} · ${html(view.completed)}</b>\n\n${recordHeading(view)}`,parse_mode:'HTML',reply_markup:{inline_keyboard:[[{text:'Kaydı aç',style:'primary',url:job.url}]]}};
    const title=data.event==='existing_submission_recorded'?'ℹ️ Bu ilana daha önce başvurulmuş':data.event==='candidate_submission_recorded'?'✅ Başvurun, bildirimin üzerine gönderildi olarak kaydedildi':'✅ Başvurun gönderildi';
    return {text:`<b>${html(title)}</b>\n\n${jobHeading(job)}`,parse_mode:'HTML',reply_markup:{inline_keyboard:[[{text:'İlanı aç',style:'primary',url:job.url}]]}};
   }
@@ -219,7 +225,7 @@ export class TelegramBot{
    const link=this.db.link(row.candidate_id);if(!link)continue;
    if((this.nextChatSend.get(link.chat_id)??0)>this.now())continue;
    const delivery=this.delivery(row,link);if(!delivery){this.db.skipped(row.id);continue;}
-   const body=withDeleteButton(row,delivery);
+   const body=withDeleteButton(row,delivery,this.store.generic);
    try{
     const result=await this.api.call('sendMessage',{chat_id:link.chat_id,...body,link_preview_options:{is_disabled:true}},signal);
     this.db.sent(row.id,result.message_id,this.config.bot?.id??this.db.meta('bot'),body);
@@ -257,7 +263,7 @@ export class TelegramBot{
    if(!link||row.status!=='sent')continue;
    const delivery=this.delivery(row,link,{edit:true});
    if(!delivery){this.db.edited(row.id,null);continue;}
-   const body=withDeleteButton(row,delivery);
+   const body=withDeleteButton(row,delivery,this.store.generic);
    if(JSON.stringify(body)===pending.rendered_body){this.db.edited(row.id,body);continue;}
    if((this.nextChatSend.get(link.chat_id)??0)>this.now())continue;
    try{

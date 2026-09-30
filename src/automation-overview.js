@@ -8,7 +8,9 @@ export function automationOverview(root,{button,navigate,performAction}){
   if(key===signature)return;signature=key;
   root.replaceChildren();root.className='workspace-overview';root.setAttribute('aria-label','Çalışma alanı özeti');
   const head=el('div',null,'workspace-overview-head'),copy=el('div');
-  copy.append(el('span','ÇALIŞMA ALANI','workspace-overview-eyebrow'),el('h2',progress.fresh?'Ne takip etmek istiyorsun?':a.goal||'Çalışma alanını hazırlayalım'),el('p',progress.fresh?'İhtiyacını anlat. Agent kaynakları araştırsın, kriterlerini ve takip tablonu birlikte hazırlayın.':'Kaynakların, kayıtların ve agent’ın yaptığı işlemler bu çalışma alanında toplanır.'));
+  copy.append(el('span','ÇALIŞMA ALANI','workspace-overview-eyebrow'),el('h2',progress.fresh?'Ne takip etmek istiyorsun?':a.title||'Çalışma alanı'));
+  if(progress.fresh)copy.append(el('p','İhtiyacını anlat. Agent kaynakları araştırsın, kriterlerini ve takip tablonu birlikte hazırlayın.'));
+  else copy.append(el('p','Amaç ve kriterlerini çalışma alanı profilinden düzenleyebilirsin.'));
   const actions=el('div',null,'actions');
   if(progress.primary&&progress.primary.id!=='results'){
    const primary=button(progress.fresh?'Agent ile kur':progress.primary.label,()=>performAction(progress.primary.id),'primary');primary.dataset.overviewAction=progress.primary.id;primary.disabled=busy;actions.append(primary);

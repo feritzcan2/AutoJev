@@ -14,6 +14,6 @@ export function clearScanIssue(db,id,runId,url){
 }
 export function browserFailure(error){
  const text=String(error.message??error);
- if(!/timeout|timed out|zaman aşımı|net::|ECONN|disconnected|connection.*closed|Chrome bağlantısı|BROWSER_DISCONNECTED/i.test(text))return null;
+ if(!/timeout|timed out|zaman aşımı|net::|ERR_[A-Z_]+|ECONN|Execution context was destroyed|interrupted by another navigation|Cannot find context with specified id|Sayfa gözlemi alınamadı|disconnected|connection.*closed|Chrome bağlantısı|BROWSER_DISCONNECTED/i.test(text))return null;
  return {kind:'browser_error',evidence:text,global:/disconnected|connection.*closed|Chrome bağlantısı|BROWSER_DISCONNECTED/i.test(text)};
 }

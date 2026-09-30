@@ -1,13 +1,25 @@
 const el=(tag,text,className)=>{const node=document.createElement(tag);if(text!=null)node.textContent=text;if(className)node.className=className;return node;};
 const host=url=>{try{return new URL(url).hostname.replace(/^www\./,'');}catch{return null;}};
 
+export function workerTabs(snapshot,workerId,tabs){
+ const worker=snapshot.workers?.find(w=>w.id===workerId),runId=worker?.execution?.task?.id;
+ if(!worker?.active||!runId)return [];
+ const run=snapshot.runs?.find(r=>r.id===runId&&(r.workerId??'main')===workerId&&r.status==='running');
+ if(!run)return [];
+ // Exact run ownership includes popups and redirects. A legacy checkpoint is
+ // safe only while it has no newer owner; same-host and old record tabs are not evidence.
+ return tabs.filter(t=>(t.runId===run.id||!t.runId&&t.tabId===run.resumeContext?.tabId)&&(!t.recordId||t.recordId===run.recordId));
+}
+
+export function workerTab(snapshot,workerId,tabs){return workerTabs(snapshot,workerId,tabs)[0]??null;}
+
 export function recordTabs(record,tabs,snapshot){
  const run=(snapshot.runs??[]).filter(r=>r.recordId===record.id&&r.resumeContext?.tabId).sort((a,b)=>b.startedAt-a.startedAt)[0];
- const current=tabs.find(t=>t.tabId===run?.resumeContext.tabId&&(!t.recordId||t.recordId===record.id));if(current)return [current];
+ const current=tabs.find(t=>t.tabId===run?.resumeContext.tabId&&(!t.recordId||t.recordId===record.id)&&(!t.runId||t.runId===run.id));if(current)return [current];
  const owned=tabs.filter(t=>t.recordId===record.id);if(owned.length)return owned;
  const question=(snapshot.automation.questions??[]).find(q=>q.recordId===record.id&&q.answer==null&&q.browserContext?.tabId);
- const retained=tabs.find(t=>t.tabId===question?.browserContext.tabId&&(!t.recordId||t.recordId===record.id));if(retained)return [retained];
- return tabs.filter(t=>t.url===record.url&&(!t.recordId||t.recordId===record.id));
+ const retained=tabs.find(t=>t.tabId===question?.browserContext.tabId&&(!t.recordId||t.recordId===record.id)&&(!t.runId||t.runId===question.browserContext.runId));if(retained)return [retained];
+ return [];
 }
 
 export function groupWorkspaceTabs(tabs,sources,sourceForTab=()=>null){

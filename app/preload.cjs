@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('jobloop',{
  configurationCatalog:id=>ipcRenderer.invoke('configuration-catalog',id),
  workspaceSourceIntegrations:()=>ipcRenderer.invoke('workspace-source-integrations'),workspaceSourceInstructions:(id,url)=>ipcRenderer.invoke('workspace-source-instructions',id,url),workspaceSourceTest:(id,url)=>ipcRenderer.invoke('workspace-source-test',id,url),
  workspaceAnswer:(id,question,value)=>ipcRenderer.invoke('workspace-answer',id,question,value),
+ automationSourceStop:(id,url)=>ipcRenderer.invoke('automation-source-stop',id,url),
  workspaces:()=>ipcRenderer.invoke('workspaces'),
  workspaceStart:(id,options)=>ipcRenderer.invoke('workspace-start',id,options),
  workspaceStop:id=>ipcRenderer.invoke('workspace-stop',id),

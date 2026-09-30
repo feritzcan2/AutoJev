@@ -13,7 +13,7 @@ function fixture(t,{recover=false}={}){
  const task=store.workspaces.tasks.enqueue(a.id,{operation:'scan',sourceUrl:source,sources:[source],lockKey:'source:'+source});
  const run=db.begin(a.id,{kind:'run',taskId:task.id});let current=source,reopened=false,error=null;
  const calls=[],browser={async call(id,name,args){
-  calls.push({name,args});if(error)throw Error(error);
+  calls.push({name,args});if(error==='EMPTY_OBSERVATION')return {content:[{type:'text',text:'Chrome error page'}]};if(error)throw Error(error);
   if(args.url)current=args.url;if(name==='browser_reopen_readonly')reopened=true;
   const loading=current===next&&!(recover&&reopened),text=loading?'Search header':current===source?'Page 2 of 13 '+details.join(' ')+' '+next:'Actual listing';
   return {pageContext:{url:current,tabId:reopened?'recovery':'original'},readiness:{loading,reason:loading?'stream_pending':null},content:[{type:'text',text:'Page URL: '+current+'\n'+text}]};
@@ -41,7 +41,7 @@ test('a failed results page cannot abandon 17 reachable details, then retries on
  await assert.rejects(f.call('finish_automation_run',{status:'completed',summary:'Done',scan:{complete:true,pendingUrls:[],reason:'Done',evidenceUrl:next}}),/Çözümlenmemiş/);
  let observed;
  for(const url of details){observed=await f.call('browser_open',{url});await f.call('record_automation_result',{key:url,url,title:'Listing',summary:'Observed details'});}
- await f.call('save_scan_progress',{snapshotId:observed.snapshot.id,pendingUrls:[next],reason:'All 17 details processed; retry results page'});
+ await f.call('save_scan_progress',{snapshotId:observed.snapshot.id,pendingUrls:[next],processedUrls:details,reason:'All 17 details processed; retry results page'});
  const result=await f.call('finish_automation_run',{status:'blocked',stop,summary:'Only results page remains'});
  assert.equal(result.status,'interrupted');assert.equal(result.recovery.reason,'technical_page');
  assert.deepEqual(result.scan.pendingUrls,[next]);assert.equal(f.db.results(f.id,{all:true}).length,17);
@@ -66,4 +66,41 @@ test('an explicitly empty but loaded page gets a fresh read; it does not produce
  const result=await f.call('recheck_scan_page',{snapshotId:page.snapshot.id});
  assert.equal(result.technicalIssue,undefined);assert.equal(result.readiness.loading,false);
  assert.equal(f.calls.filter(c=>c.name==='browser_reopen_readonly').length,1);
+});
+
+test('navigation context errors and missing observations retain the attempted page and stop a retry loop',async t=>{
+ for(const missing of [false,true]){
+  const f=fixture(t),page=await f.call('browser_open',{url:source});
+  await f.call('save_scan_progress',{snapshotId:page.snapshot.id,pendingUrls:[next],reason:'Only the last results page remains'});
+  f.error(missing?'EMPTY_OBSERVATION':'jsHandle.evaluate: Execution context was destroyed, most likely because of a navigation');
+  await assert.rejects(f.call('browser_open',{url:next}),/verified: false/);
+  await assert.rejects(f.call('browser_read'),/verified: true/);
+  assert.equal(f.db.sources(f.id)[0].scanIssue.url,next,'Failure belongs to the attempted page, not the previous good page');
+  await assert.rejects(f.call('browser_read'),/Tarama beklemeye alındı/);
+  const run=f.db.run(f.run.id);
+  assert.equal(run.status,'interrupted');assert.equal(run.recovery.reason,'technical_page');
+  assert.deepEqual(run.scan.pendingUrls,[next]);assert.equal(run.scan.complete,false);
+  const count=f.calls.length;await assert.rejects(f.call('browser_read'));assert.equal(f.calls.length,count);
+ }
+});
+
+test('repeated page errors block further attempts to that URL but preserve reachable details',async t=>{
+ const f=fixture(t),page=await f.call('browser_open',{url:source});
+ await f.call('save_scan_progress',{snapshotId:page.snapshot.id,pendingUrls:[details[0],next],reason:'Read the detail and last results page'});
+ f.error('net::ERR_HTTP2_PROTOCOL_ERROR');
+ for(let i=0;i<3;i++)await assert.rejects(f.call('browser_open',{url:next}),/ERR_HTTP2/);
+ assert.equal(f.db.run(f.run.id).status,'running');
+ const count=f.calls.length;await assert.rejects(f.call('browser_open',{url:next}),/Diğer bekleyen/);assert.equal(f.calls.length,count);
+ f.error(null);const detail=await f.call('browser_open',{url:details[0]});
+ await f.call('save_scan_progress',{snapshotId:detail.snapshot.id,pendingUrls:[next],processedUrls:[details[0]],reason:'Detail processed; last page unavailable'});
+ const issue=f.db.run(f.run.id).scanIssues[next];
+ const result=await f.call('finish_automation_run',{status:'blocked',summary:'Last page unavailable',stop:{kind:'technical',evidence:'Repeated HTTP2 errors',issueIds:[issue.id]}});
+ assert.equal(result.status,'interrupted');assert.deepEqual(result.scan.pendingUrls,[next]);
+});
+
+test('a global disconnection pauses without dropping any pending details',async t=>{
+ const f=fixture(t),page=await f.call('browser_open',{url:source});
+ await f.call('save_scan_progress',{snapshotId:page.snapshot.id,pendingUrls:[...details,next],reason:'Read details and next page'});
+ f.error('Connection closed');for(let i=0;i<3;i++)await assert.rejects(f.call('browser_open',{url:next}));
+ assert.equal(f.db.run(f.run.id).status,'interrupted');assert.deepEqual(f.db.run(f.run.id).scan.pendingUrls,[...details,next]);
 });

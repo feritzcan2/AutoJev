@@ -1,3 +1,4 @@
+import {checkSourceBrowser} from './source-browser-check.mjs';
 import {BrowserConnections,browserWaitResult} from './browser-connection.mjs';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StdioClientTransport} from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -7,6 +8,10 @@ import {mkdir,readFile,realpath,stat} from 'node:fs/promises';
 import {JevBrowser,jevTools} from './jev-browser.mjs';
 import {pressBrowserTarget} from './browser-target.mjs';
 const require=createRequire(import.meta.url);
+const playwrightTabs=result=>{
+  const output=(result.content??[]).filter(part=>part.type==='text').map(part=>part.text).join('\n');
+  return [...output.matchAll(/^- (\d+): (\(current\) )?\[.*\]\((.*)\)$/gm)].map(match=>({index:Number(match[1]),current:Boolean(match[2]),url:match[3]}));
+};
 
 export function browserArguments(mode,directory){
   if(mode==='existing')throw Error('Mevcut Chrome, Codex’in kendi tarayıcı araçlarıyla kullanılır.');
@@ -14,7 +19,7 @@ export function browserArguments(mode,directory){
   throw Error('Unknown browser mode');
 }
 export class BrowserTools {
-  constructor(directory,modeForCandidate=()=> 'existing',jevOptionsForCandidate=()=>({})){this.directory=directory;this.modeForCandidate=modeForCandidate;this.jevOptionsForCandidate=jevOptionsForCandidate;this.clients=new Map();this.operations=new Map();this.connectionKeys=new Map();this.connections=new BrowserConnections({connect:async id=>{const {client}=await this.connect(id);await client.context();},changed:(id,state)=>this.onStatus?.(id,state)});}
+  constructor(directory,modeForCandidate=()=> 'existing',jevOptionsForCandidate=()=>({})){this.directory=directory;this.modeForCandidate=modeForCandidate;this.jevOptionsForCandidate=jevOptionsForCandidate;this.clients=new Map();this.operations=new Map();this.connectionKeys=new Map();this.runTabs=new Map();this.connections=new BrowserConnections({connect:async id=>{const {client}=await this.connect(id);await client.context();},changed:(id,state)=>this.onStatus?.(id,state)});}
   forWorker(workerId='main',isActive=()=>true){const scoped=Object.create(this);scoped.workerId=workerId;scoped.isActive=isActive;return scoped;}
   clientKey(id){return this.modeForCandidate(id)==='separate'&&this.workerId&&this.workerId!=='main'?`${id}/workers/${this.workerId}`:id;}
   options(id){return this.jevOptionsForCandidate(id,this.workerId??'main');}
@@ -30,6 +35,7 @@ export class BrowserTools {
     this.connections.reset(id);
     const keys=[...this.clients.keys()].filter(key=>key===id||key.startsWith(id+'/workers/'));
     const previous=keys.map(key=>this.clients.get(key));for(const key of keys)this.clients.delete(key);
+    for(const runKey of this.runTabs.keys())if(keys.some(key=>runKey.startsWith(key+':')))this.runTabs.delete(runKey);
     this.connectionKeys.delete(id);
     for(const connection of previous){const connected=await connection.pending.catch(()=>null);if(connected)await connected.client.close();}
   }
@@ -52,6 +58,7 @@ export class BrowserTools {
     const options=this.options(candidateId),key=JSON.stringify({mode,profile:options.profile?.directory,connection:options.connection});
     const clientKey=this.clientKey(candidateId),previous=this.clients.get(clientKey);
     if(previous?.key===key)return previous.pending;
+    if(previous)for(const runKey of this.runTabs.keys())if(runKey.startsWith(clientKey+':'))this.runTabs.delete(runKey);
     if(previous)try{await(await previous.pending).client.close();}catch{}
     const connection={mode,key};
     const pending=this.open(candidateId,mode,options).then(value=>{connection.client=value.client;return value;}).catch(error=>{if(this.clients.get(clientKey)===connection)this.clients.delete(clientKey);throw error;});
@@ -79,7 +86,7 @@ export class BrowserTools {
     try{return await operation;}finally{if(this.operations.get(key)===operation)this.operations.delete(key);}
   }
   async waitForOperations(candidateId){await this.operations.get(this.clientKey(candidateId))?.catch(()=>{});}
-  async performCall(candidateId,name,args,sessionId,{completeSnapshot=false,automationTabKey,automationWorkspaceId,automationSourceUrl,automationSourceUrls,automationPreferredTabId,automationFreshTab}={}){
+  async performCall(candidateId,name,args,sessionId,{completeSnapshot=false,automationTabKey,automationWorkspaceId,automationSourceUrl,automationSourceUrls,automationPreferredTabId,automationFreshTab,automationResumeRecord}={}){
     if(this.modeForCandidate(candidateId)==='jev'&&!this.prepare(candidateId).ready)return {content:[{type:'text',text:JSON.stringify(browserWaitResult())}]};
     const {client,tools,directory,workspace}=await this.connect(candidateId);
     if(this.isActive&&!this.isActive())throw Error('Worker oturumu kapandı.');
@@ -92,7 +99,13 @@ export class BrowserTools {
       return pressBrowserTarget(client,client instanceof JevBrowser,args,sessionId);
     }
     if(!tools.some(t=>t.name===name))throw Error('Unknown browser tool');
-    let result;try{result=await (client instanceof JevBrowser?client.callTool({name,arguments:args},sessionId,{...this.options(candidateId).lifecycle,...(automationTabKey?{automationTabKey}:{}),...(automationWorkspaceId?{automationWorkspaceId:candidateId}:{}),...(automationSourceUrl?{automationSourceUrl,automationSourceUrls}:{}),...(automationPreferredTabId?{automationPreferredTabId}:{}),...(automationFreshTab?{automationFreshTab:true}:{})}):client.callTool({name,arguments:args}));}catch(error){if(client instanceof JevBrowser&&(!client.browser&&client.connection==='existing'||error.code==='BROWSER_DISCONNECTED')){this.connections.disconnected(candidateId);return {content:[{type:'text',text:JSON.stringify(browserWaitResult())}]};}throw error;}
+    let result;try{result=await (client instanceof JevBrowser?client.callTool({name,arguments:args},sessionId,{...this.options(candidateId).lifecycle,...(automationTabKey?{automationTabKey}:{}),...(automationWorkspaceId?{automationWorkspaceId:candidateId}:{}),...(automationSourceUrl?{automationSourceUrl,automationSourceUrls}:{}),...(automationPreferredTabId?{automationPreferredTabId}:{}),...(automationFreshTab?{automationFreshTab:true}:{}),...(automationResumeRecord?{automationResumeRecord:true}:{})}):client.callTool({name,arguments:args}));}catch(error){if(client instanceof JevBrowser&&(!client.browser&&client.connection==='existing'||error.code==='BROWSER_DISCONNECTED')){this.connections.disconnected(candidateId);return {content:[{type:'text',text:JSON.stringify(browserWaitResult())}]};}throw error;}
+    if(!(client instanceof JevBrowser)&&sessionId&&!result.isError&&(['browser_navigate','browser_click'].includes(name)||name==='browser_tabs'&&args.action==='select')&&tools.some(tool=>tool.name==='browser_tabs')){
+      try{
+        const listing=await client.callTool({name:'browser_tabs',arguments:{action:'list'}}),current=!listing.isError&&playwrightTabs(listing).find(tab=>tab.current);
+        if(current){const runKey=`${this.clientKey(candidateId)}:${sessionId}`,tabs=this.runTabs.get(runKey)??new Map();tabs.set(current.index,current.url);this.runTabs.set(runKey,tabs);}
+      }catch{/* An unverified tab must stay open. */}
+    }
     // Newer Playwright versions return snapshot files. Inline only this candidate's
     // bounded browser artifacts, so the agent can act without filesystem access.
     for(const part of [...(result.content??[])]){
@@ -144,6 +157,16 @@ export class BrowserTools {
     if(this.modeForCandidate(candidateId)!=='jev')throw Object.assign(Error('Bu aday için Jev tarayıcı modu seçili değil.'),{code:'BROWSER_MODE_CHANGED'});
     return (await this.connect(candidateId)).client.focus(context.tabId);
   }
+  probeAutomationSource(id,task){
+    // Separate-browser providers retain their existing delayed retry policy.
+    if(this.modeForCandidate(id)!=='jev')return Promise.resolve({ready:true,unsupported:true});
+    const connection=this.clients.get(id),client=connection?.client;
+    if(this.closed||!client||client.closed||client.busy||this.operations.has(id)||!this.status(id).ready)return Promise.resolve({ready:false,deferred:true});
+    return this.enqueue(id,()=>{
+      if(this.clients.get(id)!==connection||client.profile?.directory!==this.options(id).profile?.directory)return {ready:false,deferred:true};
+      return checkSourceBrowser(client,id,task);
+    },{checkActive:false});
+  }
   async workspaceTabs(id){
     if(this.modeForCandidate(id)!=='jev')return [];
     // Reading the Sources page must not connect to Chrome or show a permission prompt.
@@ -159,7 +182,7 @@ export class BrowserTools {
       // exact owned-target set. Never infer ownership from URL or profile alone.
       return !client.tabJobs.has(slot.id)&&!client.tabSearches.has(slot.id)&&(client.connection==='existing'?client.transport?.owned.has(slot.id):true);
     };
-    return [...client.tabs.values()].filter(slot=>slot.id!==client.homeId&&!slot.page.isClosed()&&(jobs?(client.tabJobs.has(slot.id)||client.tabSearches.has(slot.id)||checkpoints.has(slot.id)):webTab(slot))).map(slot=>({tabId:slot.id,url:slot.page.url(),browser:'Jev Chrome',...(client.automationTabs.get(slot.id)?.startsWith('record:')?{recordId:client.automationTabs.get(slot.id).slice(7)}:{}),kind:client.tabJobs.has(slot.id)?'application':client.tabSearches.has(slot.id)?'search':'workspace',...(client.tabJobs.has(slot.id)?{jobId:client.tabJobs.get(slot.id)}:{}),...(client.tabSearches.has(slot.id)?{searchTaskId:client.tabSearches.get(slot.id)}:{}),...(client.automationSources.has(slot.id)?{sourceUrl:client.automationSources.get(slot.id)}:{})}));
+    return [...client.tabs.values()].filter(slot=>slot.id!==client.homeId&&!slot.page.isClosed()&&(jobs?(client.tabJobs.has(slot.id)||client.tabSearches.has(slot.id)||checkpoints.has(slot.id)):webTab(slot))).map(slot=>({tabId:slot.id,url:slot.page.url(),title:slot.observed?.title??'',browser:'Jev Chrome',...(client.automationRuns.has(slot.id)?{runId:client.automationRuns.get(slot.id)}:{}),...(client.automationTabs.get(slot.id)?.startsWith('record:')?{recordId:client.automationTabs.get(slot.id).slice(7)}:{}),kind:client.tabJobs.has(slot.id)?'application':client.tabSearches.has(slot.id)?'search':'workspace',...(client.tabJobs.has(slot.id)?{jobId:client.tabJobs.get(slot.id)}:{}),...(client.tabSearches.has(slot.id)?{searchTaskId:client.tabSearches.get(slot.id)}:{}),...(client.automationSources.has(slot.id)?{sourceUrl:client.automationSources.get(slot.id)}:{})}));
   }
   async focusWorkspaceTab(id,tabId){
     if(typeof tabId!=='string'||!(await this.workspaceTabs(id)).some(tab=>tab.tabId===tabId))throw Object.assign(Error('Bu çalışma alanının açık sekmesi bulunamadı.'),{code:'TAB_MISSING'});
@@ -183,6 +206,34 @@ export class BrowserTools {
       if(closed.length)await client.onTabsClosed(closed);
       await client.persistTabs();
       return {closed,failed};
+    },{checkActive:false});
+  }
+  async finishAutomationRun(id,run,{closeTabs=false,pendingTabIds=[],pendingUrls=[]}={}){
+    const scoped=this.forWorker(run.workerId??'main'),key=scoped.clientKey(id),runKey=`${key}:${run.id}`,ownedTabs=this.runTabs.get(runKey);
+    if(!closeTabs){this.runTabs.delete(runKey);return {closed:[]};}
+    const connection=this.clients.get(key);
+    if(!connection)return {deferred:true};
+    return scoped.enqueue(id,async()=>{
+      if(this.clients.get(key)!==connection)return {deferred:true};
+      const connected=await connection.pending.catch(()=>null),client=connected?.client;
+      if(!client||client.closed)return {deferred:true};
+      if(connection.mode==='jev'){
+        if(client.profile?.directory!==scoped.options(id).profile?.directory)return {deferred:true};
+        return client.closeFinishedAutomationRunTabs(run.id,id,{sourceScan:!run.recordId,pendingTabIds});
+      }
+      if(connection.mode!=='separate'||!connected.tools?.some(tool=>tool.name==='browser_tabs'))return {deferred:true};
+      const listing=await client.callTool({name:'browser_tabs',arguments:{action:'list'}});
+      if(listing.isError)throw Error('Görev sekmeleri listelenemedi.');
+      const available=playwrightTabs(listing),closed=[],retained=[];
+      for(const [index,url] of [...(ownedTabs??new Map())].sort((a,b)=>b[0]-a[0])){
+        const live=available.find(tab=>tab.index===index);
+        if(!live||live.url!==url||pendingUrls.includes(url)||live.current&&url!==run.resumeContext?.url){retained.push(index);continue;}
+        const result=await client.callTool({name:'browser_tabs',arguments:{action:'close',index}});
+        if(result.isError){retained.push(index);continue;}
+        closed.push(index);
+      }
+      this.runTabs.delete(runKey);
+      return {closed,retained};
     },{checkActive:false});
   }
   async sourceTabs(candidateId,sources,task){
@@ -209,5 +260,17 @@ export class BrowserTools {
     // Focus the live page directly; never reconnect or open a replacement here.
     await connected.client.tab(context.tabId).page.bringToFront();return {focused:true};
   }
-  async close(){this.closed=true;this.connections.close();for(const {pending} of this.clients.values()){try{await(await pending).client.close();}catch{}}this.clients.clear();}
+  async close({closeTabs=false}={}){
+    this.closed=true;this.connections.close();
+    for(const [key,{pending}] of this.clients){
+      try{
+        const {client}=await pending;
+        const result=await client.close(client instanceof JevBrowser?{closeTabs}:undefined);
+        if(closeTabs&&result?.closed?.length)this.onTabsClosed?.(key.split('/workers/')[0],result.closed);
+        if(result?.failed?.length)console.warn(`Chrome sekmeleri kapatılamadı: ${result.failed.join(', ')}`);
+      }catch(error){console.warn('Tarayıcı bağlantısı kapatılamadı:',error);}
+    }
+    this.clients.clear();
+    this.runTabs.clear();
+  }
 }

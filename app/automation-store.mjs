@@ -1,4 +1,6 @@
-import {validateRecordTask,recordOperationState} from './record-operations.mjs';
+import {scanWork,activeSearch,withScanWork,scanQueue,scanWorkSummary,declareScanSearches,selectScanSearch,reportWorkPage,updateScanQueue,completeScanSearch,validateWorkCompletion,scanPlanView,scanProgressView} from './scan-work.mjs';
+import {answerContinuation} from './automation-continuation.mjs';
+import {validateRecordTask,recordOperationState,pendingRecordQuestion} from './record-operations.mjs';
 import {SiteAccess} from './site-access.mjs';
 import {automationTrialReady} from './automation-trial.mjs';
 import {normalizeFields,validateAnswers} from './question-forms.mjs';
@@ -12,7 +14,7 @@ import {randomUUID,createHash} from 'node:crypto';
 import {reusableTemplate,planInput,missingPlanFields,defaultAutomationSettings,boundedText,webUrl} from './automation-templates.mjs';
 import {automationTable,automationCells,defaultAutomationTable} from './automation-templates.mjs';
 import {automationSources,sourceInput,sourceMode} from './automation-sources.mjs';
-import {beginSourceScan,sourceScanScope,advanceSourceScan,completeSourceScan,validateScanCompletion} from './source-scan.mjs';
+import {beginSourceScan,sourceScanScope,advanceSourceScan,completeSourceScan} from './source-scan.mjs';
 import {scanCheckpoint} from './automation-scan.mjs';
 
 const json=row=>row?JSON.parse(row.data):null;
@@ -41,7 +43,7 @@ export class AutomationStore {
  conversationSettings(id,provider,nativeId){return this.store.workspaces.history(id).conversationSettings(id,provider,nativeId);}
  saveConversation(id,provider,nativeId,settings){return this.store.workspaces.history(id).saveConversation(id,provider,nativeId,settings);}
  forgetConversation(id,provider,nativeId){return this.store.workspaces.history(id).forgetConversation(id,provider,nativeId);}
- get(id){const a=json(this.db.prepare('SELECT data FROM automations WHERE id=?').get(id));if(!a)throw Error('Otomasyon bulunamadı');delete a.timeoutMinutes;delete a.maxBrowserSteps;return {...a,...this.store.workspaces.fields(id),table:this.store.workspaces.table(id)};}
+ get(id){const a=json(this.db.prepare('SELECT data FROM automations WHERE id=?').get(id));if(!a)throw Error('Otomasyon bulunamadı');delete a.timeoutMinutes;delete a.maxBrowserSteps;if(a.questions)a.questions=a.questions.map(q=>this.questionScope(id,q));return {...a,...this.store.workspaces.fields(id),table:this.store.workspaces.table(id)};}
  catalog(){return [...this.store.workspaces.registry.catalog(),...this.db.prepare('SELECT data FROM automation_templates ORDER BY rowid DESC').all().map(json).filter(input=>this.store.workspaces.registry.supports(input)).map(input=>this.store.workspaces.registry.normalize(input))];}
  template(id){return this.store.workspaces.template(id);}
  saveTemplate(input){const template={...reusableTemplate(input,value=>this.store.workspaces.registry.normalize(value)),id:'template-'+randomUUID(),personal:true};this.db.prepare('INSERT INTO automation_templates VALUES(?,?)').run(template.id,JSON.stringify(template));return template;}
@@ -95,10 +97,10 @@ export class AutomationStore {
  sources(id){
   const a=this.get(id),runs=this.runs(id),records=this.results(id,{all:true});
   return automationSources(a).map(source=>{
-   const last=runs.find(r=>r.kind==='run'&&(r.sourceUrl===source.url||!r.sourceUrl&&r.sources?.length===1&&r.sources[0]===source.url));
-   const active=runs.find(r=>r.status==='running'&&r.kind==='run'&&(r.sourceUrl===source.url||r.sources?.length===1&&r.sources[0]===source.url));
+   const last=runs.find(r=>!r.recordId&&!r.recordOperation&&r.kind==='run'&&(r.sourceUrl===source.url||!r.sourceUrl&&r.sources?.length===1&&r.sources[0]===source.url));
+   const active=runs.find(r=>!r.recordId&&!r.recordOperation&&r.status==='running'&&r.kind==='run'&&(r.sourceUrl===source.url||r.sources?.length===1&&r.sources[0]===source.url));
    const resultCount=records.filter(r=>!r.trial&&(r.sourceUrl?r.sourceUrl===source.url:new URL(r.url).origin===new URL(source.url).origin&&a.sources.filter(url=>new URL(url).origin===new URL(source.url).origin).length===1)).length;
-   return {...(last?{lastRunAt:last.finishedAt,lastStatus:last.status,lastResult:last.summary,blocked:['blocked','failed','timeout'].includes(last.status),lastFound:records.filter(r=>!r.trial&&r.runId===last.id).length}:{}),...source,siteWait:this.siteAccess.status(source.url),pageProgress:active&&!active.recordId?active.pageProgress??null:source.pageProgress??null,resultCount,scanning:Boolean(active),workerId:active?.workerId??null};
+   return {...(last?{lastRunAt:last.finishedAt,lastStatus:last.status,lastResult:last.summary,blocked:['blocked','failed','timeout'].includes(last.status),lastFound:records.filter(r=>!r.trial&&r.runId===last.id).length}:{}),...source,siteWait:this.siteAccess.status(source.url),pageProgress:active&&!active.recordId?active.pageProgress??null:source.pageProgress??null,observedPage:active?.observedPage??source.observedPage??null,resultCount,scanning:Boolean(active),scanIssue:active?Object.values(active.scanIssues??{}).sort((a,b)=>b.at-a.at)[0]??null:null,workerId:active?.workerId??null};
   });
  }
  saveSourcesInterval(id,intervalMinutes){
@@ -123,11 +125,18 @@ export class AutomationStore {
   return this.put(a);
  }
  event(id,kind,data){this.get(id);this.db.prepare('INSERT INTO workspace_events(workspace_id,kind,data,at) VALUES(?,?,?,?)').run(id,kind,JSON.stringify(data),this.now());}
+ questionScope(id,question){
+  if(question.recordId||Object.hasOwn(question,'sourceUrl'))return question;
+  // Recover the scope of older questions from their durable task, never from
+  // the currently assigned worker or a guessed URL host.
+  const task=question.taskId?json(this.db.prepare('SELECT data FROM workspace_tasks WHERE workspace_id=? AND id=?').get(id,question.taskId)):null;
+  return {...question,sourceUrl:task&&!task.recordId?task.sourceUrl??null:null};
+ }
  askQuestion(id,{text,recordId=null,fields=null,accessCheck=null},{runId}={}){
-  text=boundedText(text,'Soru',6000);fields=normalizeFields(fields);if(recordId)this.result(id,recordId);
-  const a=this.get(id),previous=(a.questions??[]).find(q=>q.answer==null&&q.text===text&&q.recordId===recordId&&JSON.stringify(q.fields??null)===JSON.stringify(fields));if(previous)return previous;
-  const run=runId?this.activeRun(id,runId):null;
-  const question={id:randomUUID(),text,recordId,fields,...(accessCheck?{accessCheck}:{}),answer:null,createdAt:this.now(),...(run?.resumeContext?{browserContext:{...run.resumeContext,runId:run.id,workerId:run.workerId,sourceUrl:run.sourceUrl}}:{})};
+  text=boundedText(text,'Soru',6000);fields=normalizeFields(fields);if(recordId&&this.result(id,recordId).status==='dismissed')throw Error('Elenen kayıt için soru sorulamaz');
+  const run=runId?this.activeRun(id,runId):null,sourceUrl=!recordId&&run?.kind==='run'?run.sourceUrl??null:null;
+  const a=this.get(id),previous=(a.questions??[]).find(q=>q.answer==null&&q.text===text&&q.recordId===recordId&&(q.sourceUrl??null)===sourceUrl&&JSON.stringify(q.fields??null)===JSON.stringify(fields));if(previous)return previous;
+  const question={id:randomUUID(),text,recordId,sourceUrl,fields,...(accessCheck?{accessCheck}:{}),answer:null,createdAt:this.now(),...(run?{runId:run.id}:{}),...(run?.taskId?{taskId:run.taskId}:{}),...(run?.resumeContext?{browserContext:{...run.resumeContext,runId:run.id,workerId:run.workerId,sourceUrl:run.sourceUrl}}:{})};
   this.store.workspaces.tasks.atomic(()=>{this.put({...a,questions:[...(a.questions??[]),question]});this.event(id,'question_asked',{id:question.id});});return question;
  }
  answerQuestion(id,questionId,value){
@@ -138,6 +147,7 @@ export class AutomationStore {
   this.store.workspaces.tasks.atomic(()=>{this.put({...a,questions:a.questions.map(q=>q.id===questionId?updated:q)});this.message(id,'user',question.text+'\nYanıt: '+answer);this.event(id,'question_answered',{id:questionId});});return updated;
  }
  questionContext(id,question){
+  if(question.answer==null&&question.recordId)question={...question,canDismissRecord:['found','prepared'].includes(this.result(id,question.recordId).status)};
   if(question.answer!=null||question.browserContext)return question;
   // Older questions predate saved tab context. Match their owning run even
   // after it leaves the short recent-history list; never guess across workers.
@@ -167,29 +177,57 @@ export class AutomationStore {
   const savedScan=!task.recordId&&scopeMatches&&(task.scan??state.scan),pageProgress=scopeMatches?state.pageProgress:null;
   const scanState=kind==='run'&&task.sourceUrl&&!task.recordId?beginSourceScan(state.scanState,scopeKey,this.now()):null;
   if(scanState){this.put({...a,sourceState:{...a.sourceState,[task.sourceUrl]:{...state,scanState}}});queue.put({...queue.get(id,task.id),scanPlan:scanState.active});}
-  return this.putRun({id:randomUUID(),automationId:id,workerId,taskId:task.id,operation:task.operation,...(task.recordOperation?{recordOperation:task.recordOperation,request:task.request}:{}),sources:task.sources??a.sources,sourceUrl:task.sourceUrl??null,recordId:task.recordId??null,batchId:task.batchId??null,...(scanState?{scanPlan:scanState.active}:{}),...(savedScan&&!savedScan.complete?{scan:savedScan,...(pageProgress?{pageProgress}:{})}:{}),kind,revision:a.revision,status:'running',state:'Starting',startedAt:this.now(),finishedAt:null,browserSteps:0,observations:[],summary:'Başlatılıyor',actionId:null});
+  const continuation=answerContinuation(this,id,task,kind),runId=randomUUID();
+  if(continuation){queue.put({...queue.get(id,task.id),continuation});const current=this.get(id);this.put({...current,questions:(current.questions??[]).map(q=>continuation.questionIds.includes(q.id)?{...q,continuationRunId:runId}:q)});}
+  return this.putRun({id:runId,...(continuation?{continuation}:{}),automationId:id,workerId,taskId:task.id,operation:task.operation,...(task.recordOperation?{recordOperation:task.recordOperation,request:task.request}:{}),sources:task.sources??a.sources,sourceUrl:task.sourceUrl??null,recordId:task.recordId??null,batchId:task.batchId??null,...(scanState?{scanPlan:scanState.active}:{}),...(savedScan&&!savedScan.complete?{scan:savedScan,...(pageProgress?{pageProgress}:{})}:{}),kind,revision:a.revision,status:'running',state:'Starting',startedAt:this.now(),finishedAt:null,browserSteps:0,observations:[],summary:'Başlatılıyor',actionId:null});
  });}
  activeRun(automationId,runId){const run=this.run(runId);if(run.automationId!==automationId||run.status!=='running')throw Error('Çalışma oturumu geçersiz');return run;}
  spendStep(id,runId,{research=false}={}){const run=this.activeRun(id,runId);if(run.kind==='interview'&&!research)throw Error('Kurulum sırasında yalnızca kaynak araştırması yapılabilir');if(research&&run.kind!=='interview')throw Error('Kaynak araştırması yalnızca kurulum sırasında yapılabilir');run.browserSteps++;this.putRun(run);}
  reportPage(id,runId,pageProgress){return this.store.workspaces.tasks.atomic(()=>{
   const run=this.activeRun(id,runId);if(run.kind!=='run'||!run.sourceUrl||run.recordId)throw Error('Sayfa bildirimi yalnızca kaynak taramasında kullanılabilir.');
   if(!(run.navigation??[]).some(n=>n.url===pageProgress.url))throw Error('Bildirilen sayfa bu görevde gözlenmedi.');
-  const scan={complete:false,pendingUrls:[pageProgress.url],reason:`Son bildirilen sonuç sayfası ${pageProgress.currentPage}. Bu sayfadaki kalan adayları ve sonraki sayfaları işle.`,evidenceUrl:pageProgress.url};
-  const scanPlan=run.scanPlan?{...run.scanPlan,boundary:null,checkpoint:{url:pageProgress.url,pendingUrls:scan.pendingUrls,reason:scan.reason,page:pageProgress.currentPage,at:this.now()}}:null;
-  this.persistScan(id,{...run,pageProgress,scan,...(scanPlan?{scanPlan}:{})});
-  return {pageProgress,scanProgress:scan};
+  const reported=reportWorkPage(run,pageProgress),scan=withScanWork(run,reported.work,{reason:run.scan?.reason??`Son bildirilen sonuç sayfası ${pageProgress.currentPage}.`,evidenceUrl:run.scan?.evidenceUrl??pageProgress.url});
+  // Observation and resumable work are separate: even a successful recovery
+  // visit to page one must not replace the saved page eight or pending details.
+  const scanPlan=run.scanPlan?{...run.scanPlan,boundary:null}:null;
+  this.persistScan(id,{...run,observedPage:pageProgress,pageProgress:reported.pageProgress,scan,...(scanPlan?{scanPlan}:{})});
+  return {pageProgress:reported.pageProgress,observedPage:pageProgress,revisiting:reported.revisiting,scanProgress:this.scanProgressView(this.run(runId)),queue:scanQueue(this.run(runId)),...(reported.revisiting?{guidance:'Recovery page observed. Saved progress is unchanged. Resume the pending queue; do not scan earlier pages again.'}:{})};
  });}
  persistScan(id,run){
+  if(run.scan?.work){
+   const work=scanWork(run),known=new Set(work.searches.flatMap(s=>s.pendingUrls));
+   const extra=(run.scan.pendingUrls??[]).filter(url=>!known.has(url));
+   activeSearch(work).pendingUrls.push(...extra);run={...run,scan:withScanWork(run,work)};
+  }
   this.putRun(run);const a=this.get(id),state=a.sourceState?.[run.sourceUrl]??{};
-  this.put({...a,sourceState:{...a.sourceState,[run.sourceUrl]:{...state,...(run.pageProgress?{pageProgress:run.pageProgress}:{}),scan:run.scan,...(run.scanPlan?{scanState:{...state.scanState,active:run.scanPlan}}:{})}}});
+  this.put({...a,sourceState:{...a.sourceState,[run.sourceUrl]:{...state,pageProgress:run.pageProgress??null,observedPage:run.observedPage??null,scan:run.scan,...(run.scanPlan?{scanState:{...state.scanState,active:run.scanPlan}}:{})}}});
   if(run.taskId){const queue=this.store.workspaces.tasks;queue.put({...queue.get(id,run.taskId),scan:run.scan,scanPlan:run.scanPlan});}
  }
+ scanProgressView(run){return scanProgressView(run);}
+ scanWorkRun(id,runId){const run=this.activeRun(id,runId);if(run.kind!=='run'||!run.sourceUrl||run.recordId)throw Error('Tarama kuyruğu yalnızca kaynak görevine aittir.');return run;}
+ scanQueue(id,runId,input){return scanQueue(this.scanWorkRun(id,runId),input);}
+ saveScanSearches(id,runId,searches){return this.store.workspaces.tasks.atomic(()=>{
+  const run=this.scanWorkRun(id,runId),work=declareScanSearches(run,searches);
+  this.persistScan(id,{...run,scan:withScanWork(run,work)});return scanWorkSummary(this.run(runId));
+ });}
+ selectScanSearch(id,runId,searchId){return this.store.workspaces.tasks.atomic(()=>{
+  const run=this.scanWorkRun(id,runId),selected=selectScanSearch(run,searchId);
+  this.persistScan(id,{...run,scan:withScanWork(run,selected.work),scanPlan:selected.plan,pageProgress:selected.pageProgress,observedPage:null});
+  return {scanWork:scanWorkSummary(this.run(runId)),scanPlan:scanPlanView(selected.plan)};
+ });}
+ completeScanSearch(id,runId,completion,snapshot){return this.store.workspaces.tasks.atomic(()=>{
+  const run=this.scanWorkRun(id,runId),work=completeScanSearch(run,completion,snapshot.url);
+  this.persistScan(id,{...run,scan:withScanWork(run,work)});return scanWorkSummary(this.run(runId));
+ });}
  saveScanProgress(id,runId,input,snapshot){return this.store.workspaces.tasks.atomic(()=>{
-  const run=this.activeRun(id,runId);
-  const scan=scanCheckpoint(run,{complete:false,pendingUrls:input.pendingUrls,reason:input.reason,evidenceUrl:snapshot.url},{checkpoint:true});
-  if(input.chronology?.fromStart&&run.pageProgress?.url===snapshot.url&&run.pageProgress.currentPage!==1)throw Error('Başlangıç kanıtı ilk sonuç sayfasından gelmeli.');
-  const scanPlan=advanceSourceScan(run.scanPlan,{...input,pendingUrls:scan.pendingUrls},snapshot,runId,this.now());
-  this.persistScan(id,{...run,scan,scanPlan});return {scanProgress:scan,scanPlan};
+  const run=this.scanWorkRun(id,runId);
+  if(!Array.isArray(input.pendingUrls)||input.pendingUrls.length>100)throw Error('Bir seferde en fazla 100 bekleyen adres ekle; kalanları sonraki çağrıda ekleyebilirsin.');
+  scanCheckpoint(run,{complete:false,pendingUrls:input.pendingUrls,reason:input.reason,evidenceUrl:snapshot.url},{checkpoint:true});
+  const work=updateScanQueue(run,input,snapshot),search=activeSearch(work);
+  if(input.chronology?.fromStart&&run.observedPage?.url===snapshot.url&&run.observedPage.currentPage!==1)throw Error('Başlangıç kanıtı ilk sonuç sayfasından gelmeli.');
+  const scanPlan=advanceSourceScan(run.scanPlan,{...input,pendingUrls:search.pendingUrls},snapshot,runId,this.now());search.plan=scanPlan;
+  const scan=withScanWork(run,work,{reason:input.reason,evidenceUrl:snapshot.url});
+  this.persistScan(id,{...run,scan,scanPlan});return {scanProgress:this.scanProgressView(this.run(runId)),scanPlan:scanPlanView(scanPlan),queue:scanQueue(this.run(runId))};
  });}
  knownResults(id,runId,keys){
   const run=this.activeRun(id,runId);if(!run.sourceUrl||run.recordId||!Array.isArray(keys)||keys.length>100)throw Error('Kaynak taraması için en fazla 100 ilan anahtarı gerekli.');
@@ -217,7 +255,12 @@ export class AutomationStore {
   count(CASE WHEN NOT json_extract(data,'$.trial') AND json_extract(data,'$.status')='uncertain' THEN 1 END) AS uncertainCount
   FROM workspace_records WHERE workspace_id=?`).get(id);}
  result(id,itemId){this.get(id);const item=json(this.db.prepare('SELECT data FROM workspace_records WHERE id=? AND workspace_id=?').get(itemId,id));if(!item)throw Error('Sonuç bu otomasyona ait değil');return item;}
- putResult(item){const previous=this.store.workspaces.records.find(item.automationId,item.key),saved=this.store.workspaces.records.put(item.automationId,item.key,item);if(!previous)this.event(item.automationId,'job_found',{id:item.id});else if(previous.status!==item.status)this.event(item.automationId,item.status==='completed'?'submission_recorded':'record_updated',{id:item.id});return saved;}
+ putResult(item,{run}={}){return this.store.workspaces.tasks.atomic(()=>{
+  const previous=this.store.workspaces.records.find(item.automationId,item.key),saved=this.store.workspaces.records.put(item.automationId,item.key,item);
+  if(run){if(run.automationId!==item.automationId)throw Error('Çalışma bu otomasyona ait değil');this.putRun(run);}
+  if(!previous)this.event(item.automationId,'job_found',{id:saved.id});else if(previous.status!==item.status)this.event(item.automationId,item.status==='completed'?'submission_recorded':'record_updated',{id:saved.id});
+  return saved;
+ });}
  configureTable(id,input){this.get(id);this.store.workspaces.configureTable(id,input);return this.get(id);}
  rename(id,title){this.assertIdle(id);return this.put({...this.get(id),title:boundedText(title,'Ad',150)});}
  updateCells(id,itemId,input){return this.store.workspaces.updateCells(id,itemId,input);}
@@ -239,33 +282,46 @@ export class AutomationStore {
   const cells=input.cells===undefined?{}:automationCells(input.cells,this.get(id).table);
   const initial=this.template(this.get(id).templateId).records.initial;
   const item={...previous,...(!previous?.workflowState&&initial&&initial!=='found'?{workflowState:initial}:{}),id:previous?.id??randomUUID(),automationId:id,key,url,title,summary,proposal,digest,status:proposal?'prepared':'found',approvedDigest:previous?.digest===digest?previous.approvedDigest:null,createdAt:previous?.createdAt??this.now(),updatedAt:this.now(),runId,revision:proposal&&input.proposal===undefined&&previous?previous.revision:run.revision,trial:run.kind!=='run',sampleKind:research?'interview':null,cells:{...previous?.cells,...cells},starred:previous?.starred??false};
-  if(run.recordOperation==='execute'&&run.request?.manual&&digest!==run.request.digest)item.requiresReview=true;
+  if(run.recordOperation==='execute'&&run.request?.manual&&run.request.direct!==true&&digest!==run.request.digest)item.requiresReview=true;
   if(run.sourceUrl)item.sourceUrl=run.sourceUrl;
   return this.putResult(item);
  }
  assertRecordIdle(id,itemId){if(this.store.workspaces.tasks.list(id,{states:['pending','running','reported','paused']}).some(t=>t.recordId===itemId))throw Error('Bu kayıt için işlem sırada veya çalışıyor');}
  star(id,itemId,starred){if(typeof starred!=='boolean')throw Error('Geçersiz yıldız durumu');const item=this.result(id,itemId);return this.putResult({...item,starred});}
  approve(id,itemId){this.assertRecordIdle(id,itemId);const a=this.get(id),item=this.result(id,itemId);if(!['prepared'].includes(item.status)||!item.proposal||item.trial||item.revision!==a.revision)throw Error('Güncel bir çalışma sonucundaki işlem taslağı gerekli');return this.putResult({...item,approvedDigest:item.digest});}
- dismiss(id,itemId){this.assertRecordIdle(id,itemId);const item=this.result(id,itemId);if(['executing','completed','uncertain'].includes(item.status))throw Error('İşlem geçmişi değiştirilemez');return this.putResult({...item,status:'dismissed',approvedDigest:null});}
+ dismiss(id,itemId,{stopActive=false}={}){return this.store.workspaces.tasks.atomic(()=>{
+  const item=this.result(id,itemId);if(['executing','completed','uncertain'].includes(item.status))throw Error('İşlem geçmişi değiştirilemez');
+  if(!stopActive)this.assertRecordIdle(id,itemId);
+  const summary='Kullanıcı bu kaydı eledi. Bu kayıt için işleme devam etme.',a=this.get(id),at=this.now(),queue=this.store.workspaces.tasks;
+  // Persist exclusion before closing a worker; late proposals and reservations
+  // cannot revive the record, and other records keep their own tasks/questions.
+  const saved=this.putResult({...item,status:'dismissed',approvedDigest:null,updatedAt:at});
+  this.put({...a,questions:(a.questions??[]).map(q=>q.recordId===itemId&&q.answer==null?{...q,answer:summary,answerValues:null,answeredAt:at,resolution:'record_dismissed'}:q)});
+  for(const task of queue.list(id).filter(t=>t.recordId===itemId)){
+   if(task.resumeRecordAfterAnswer)queue.put({...task,resumeRecordAfterAnswer:false});
+   if(task.state==='pending')queue.finish(id,task.id,'cancelled',summary);
+  }
+  this.event(id,'record_dismissed',{itemId});return saved;
+ });}
  reserve(id,runId,itemId){
   const run=this.activeRun(id,runId),a=this.get(id),item=this.result(id,itemId),mode=sourceMode(a,run.sourceUrl??item.sourceUrl);
   if(a.endAt&&a.endAt<=this.now())throw Error('Otomasyonun bitiş tarihi geçti');
   if(run.operation&&findOperation(this.template(a.templateId),run.operation)&&operationFor(this.template(a.templateId),run.operation).effect!=='write')throw Error('Bu görev adımı gönderim yapamaz');
   if(run.recordId&&run.recordId!==itemId)throw Error('Kayıt bu göreve ait değil');
-  const explicit=run.recordOperation==='execute'&&run.request?.manual&&run.request.revision===a.revision&&run.request.digest===item.digest;
+  const explicit=run.recordOperation==='execute'&&run.request?.manual&&run.request.revision===a.revision&&(run.request.direct===true||run.request.digest===item.digest);
   if(run.recordOperation==='execute'&&run.request?.manual&&!explicit)throw Error('Taslak veya kurulum değişti; yeniden onay gerekli');
   if(!explicit&&item.requiresReview&&item.approvedDigest!==item.digest)throw Error('Değişen taslak yeniden onay bekliyor');
   if(run.kind!=='run'||mode==='observe'&&!explicit)throw Error('Bu çalışma yalnızca gözlem yapabilir');
   if(item.trial||item.revision!==a.revision||item.status!=='prepared'||!item.proposal)throw Error('Güncel ve gönderilmemiş işlem taslağı gerekli');
   if(run.actionId)throw Error('Önce mevcut işlemin sonucunu doğrula');
   if(!explicit&&mode!=='auto'&&item.approvedDigest!==item.digest)throw Error('İşlem kullanıcı onayı bekliyor');
-  if((a.questions??[]).some(q=>q.answer==null&&(!q.recordId||q.recordId===itemId)))throw Error('Önce bu işlem için bekleyen soruları yanıtla');
+  if(pendingRecordQuestion(a,item))throw Error('Önce bu işlem için bekleyen soruları yanıtla');
   if(a.maxActionsTotal!=null){const used=this.results(id,{all:true}).filter(r=>['completed','executing','uncertain'].includes(r.status)).length;if(used>=a.maxActionsTotal)throw Error('Toplam işlem sınırına ulaşıldı');}
   const dayStart=new Date(this.now());dayStart.setHours(0,0,0,0);
   const used=this.db.prepare("SELECT count(*) AS n FROM workspace_records WHERE workspace_id=? AND json_extract(data,'$.attemptedAt')>=?").get(id,dayStart.getTime()).n;
   if(used>=a.maxActionsPerDay)throw Error('Günlük işlem sınırına ulaşıldı');
   // Both reservation and attempted state are durable before any browser write.
-  this.db.exec('SAVEPOINT automation_reserve');try{this.putResult({...item,status:'executing',attemptedAt:this.now(),attemptRunId:runId,approvedDigest:null});this.putRun({...run,actionId:item.id});this.db.exec('RELEASE automation_reserve');}catch(e){this.db.exec('ROLLBACK TO automation_reserve; RELEASE automation_reserve');throw e;}
+  this.putResult({...item,status:'executing',attemptedAt:this.now(),attemptRunId:runId,approvedDigest:null},{run:{...run,actionId:item.id}});
   return {reserved:true,itemId:item.id,proposal:item.proposal,url:item.url};
  }
  resolve(id,runId,itemId,{status,evidence,url}){
@@ -273,14 +329,14 @@ export class AutomationStore {
   if(item.status==='executing'&&run.actionId!==item.id)throw Error('İşlem bu çalışmaya ait değil');
   if(run.recordId&&run.recordId!==itemId)throw Error('Kayıt bu göreve ait değil');
   const proofUrl=webUrl(url);if(!run.observations.some(o=>o.url===proofUrl&&o.at>=(item.attemptedAt??0)))throw Error('Önce sonuç adresindeki güncel durumu tarayıcıda gözlemle');
-  const result=this.putResult({...item,status,evidence:boundedText(evidence,'Sonuç kanıtı',4000),proofUrl,verifiedAt:this.now()});if(run.actionId===itemId)this.putRun({...run,actionId:null});return result;
+  return this.putResult({...item,status,evidence:boundedText(evidence,'Sonuç kanıtı',4000),proofUrl,verifiedAt:this.now()},{run:run.actionId===itemId?{...run,actionId:null}:undefined});
  }
  finish(id,runId,status,summary,{release=true}={}){return this.store.workspaces.tasks.atomic(()=>{
   const run=this.activeRun(id,runId);if(!['completed','partial','failed','blocked','interrupted','timeout'].includes(status))throw Error('Geçersiz çalışma sonucu');
   if(status==='completed'&&run.recordOperation){
    const item=this.result(id,run.recordId),question=(this.get(id).questions??[]).some(q=>q.recordId===item.id&&(q.answer==null||q.createdAt>=run.startedAt));
    if(run.recordOperation==='prepare'&&!(item.status==='prepared'&&item.proposal&&item.runId===run.id)&&!question)throw Error('Önce bu kayıt için taslağı kaydet veya eksik bilgi sorusunu sor');
-   if(run.recordOperation==='execute'&&item.status!=='completed'&&!run.actionId&&!(item.status==='prepared'&&item.digest!==run.request?.digest)&&!question)throw Error('Gönderim tamamlanmadı; gerçek sonucu doğrula veya engeli bildir');
+   if(run.recordOperation==='execute'&&item.status!=='completed'&&!run.actionId&&!(run.request?.direct!==true&&item.status==='prepared'&&item.digest!==run.request?.digest)&&!question)throw Error('Gönderim tamamlanmadı; gerçek sonucu doğrula veya engeli bildir');
    if(run.recordOperation==='verify'&&item.status!=='completed')throw Error('Sonuç henüz doğrulanmadı; belirsiz durumu koru ve engeli bildir');
   }
   if(status==='partial'&&(!run.sourceUrl||run.recordId||!run.scan?.pendingUrls.length))throw Error('Kısmi çalışma için kaydedilmiş kaynak devam noktası gerekli');
@@ -290,7 +346,7 @@ export class AutomationStore {
    if(!(run.sources??a.sources).every(url=>hosts.has(new URL(url).origin))||!a.sources.length||a.revision!==run.revision){status='failed';summary='Deneme tamamlanamadı: her kaynakta gerçek sayfa gözlemi gerekli.';}
   }
   let scanCompletion=null;
-  if(status==='completed'&&run.kind==='run'&&run.sourceUrl&&!run.recordId&&run.scan?.complete)scanCompletion=validateScanCompletion(run.scanPlan,run.scan,run.pageProgress,run.id);
+  if(status==='completed'&&run.kind==='run'&&run.sourceUrl&&!run.recordId&&run.scan?.complete){scanCompletion=validateWorkCompletion(run,run.scan);}
   this.putRun({...run,status,summary:boundedText(summary,'Çalışma özeti',6000),finishedAt:this.now(),actionId:null});
   if(run.kind==='run'&&run.sourceUrl&&!run.recordId&&run.scanPlan){const state=a.sourceState?.[run.sourceUrl]??{};
    a.sourceState={...a.sourceState,[run.sourceUrl]:{...state,scanState:scanCompletion?completeSourceScan(state.scanState,run.scanPlan,scanCompletion,this.now()):state.scanState}};
@@ -310,5 +366,10 @@ export class AutomationStore {
  });}
  recover(){for(const row of this.db.prepare("SELECT data FROM automation_runs WHERE json_extract(data,'$.status')='running'").all()){const run=json(row);this.finish(run.automationId,run.id,'interrupted','Uygulama kapandı. Kaydedilen sonuçlar korunuyor.');const a=this.get(run.automationId);if(run.actionId)this.pause(a.id,'blocked');}}
  remove(id){this.assertIdle(id);this.get(id);this.db.exec('SAVEPOINT automation_delete');try{for(const t of ['automation_messages','automation_runs'])this.db.prepare(`DELETE FROM ${t} WHERE automation_id=?`).run(id);this.db.prepare('DELETE FROM automations WHERE id=?').run(id);removeImportedWorkspace(this.db,id);this.store.workspaces.remove(id);this.db.exec('RELEASE automation_delete');}catch(e){this.db.exec('ROLLBACK TO automation_delete; RELEASE automation_delete');throw e;}}
- snapshot(id){const a=this.get(id),definition=this.template(a.templateId),tasks=this.store.workspaces.tasks.list(id);return {automation:{...a,questions:(a.questions??[]).map(q=>this.questionContext(id,q))},definition,sources:this.sources(id),workers:this.store.workspaces.workers.list(id),tasks:tasks.slice(-100).reverse(),messages:this.messages(id),runs:this.runs(id),results:this.results(id).map(item=>({...item,recordAction:recordOperationState(this,id,item,{a,definition,tasks})})),resultCounts:this.resultCounts(id),missing:missingPlanFields(a,definition)};}
+ snapshot(id){
+  const a=this.get(id),definition=this.template(a.templateId),tasks=this.store.workspaces.tasks.list(id),results=this.results(id),included=new Set(results.map(item=>item.id));
+  // A worker may prepare an older record outside the recent-results window.
+  for(const task of tasks)if(task.recordId&&['running','reported'].includes(task.state)&&!included.has(task.recordId)){results.push(this.result(id,task.recordId));included.add(task.recordId);}
+  return {automation:{...a,questions:(a.questions??[]).map(q=>this.questionContext(id,q))},definition,sources:this.sources(id),workers:this.store.workspaces.workers.list(id),tasks:tasks.slice(-100).reverse(),messages:this.messages(id),runs:this.runs(id),results:results.map(item=>({...item,recordAction:recordOperationState(this,id,item,{a,definition,tasks})})),resultCounts:this.resultCounts(id),missing:missingPlanFields(a,definition)};
+ }
 }

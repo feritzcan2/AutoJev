@@ -53,3 +53,26 @@ test('automation context can be fully read through MCP without file or browser a
  await call('get_automation_context');await assert.rejects(flow.call(a.id,run.id,'read_automation_context_part',args),/eski/);
  controller.abort();await assert.rejects(flow.call(a.id,run.id,'read_automation_context_part',{contextId:page.context.id,offset:0}),/geçersiz/);
 });
+
+test('task context excludes unrelated questions and history while keeping exact answers, limits and assigned proposal',async t=>{
+ const {automationTaskContext}=await import('../app/automation-task-context.mjs');
+ const store=new Store(':memory:');t.after(()=>store.close());const db=new AutomationStore(store),a=db.create('custom',{goal:'Find',sources:['https://example.test']});
+ const source=db.get(a.id).sources[0];
+ const own={id:'mine',sourceUrl:source,status:'prepared',proposal:{answers:{consent:false},document:'documents/cv.pdf'},digest:'exact',approvedDigest:'exact'};
+ db.putResult({...own,automationId:a.id,key:'mine',url:source+'mine',title:'Mine',createdAt:1,updatedAt:1});
+ const saved=db.result(a.id,'mine');
+ db.put({...db.get(a.id),maxActionsTotal:9,maxActionsPerDay:2,facts:'Verified fact',referenceData:{profile:{permission:false},applicationPolicy:{minimumScore:75},previousTasks:'irrelevant'.repeat(10000)},questions:[
+  {id:'own',recordId:'mine',text:'Consent?',answer:'No',answerValues:{consent:false},fields:[{id:'consent',type:'boolean'}]},
+  {id:'global',text:'Location?',answer:'Berlin'},
+  {id:'source',sourceUrl:source,text:'Source fact',answer:'Exact'},
+  ...Array.from({length:100},(_,i)=>({id:'other'+i,recordId:'elsewhere',text:'Unrelated'.repeat(1000)})),
+  {id:'foreign-source',sourceUrl:'https://other.test/',text:'Foreign'}]});
+ const active={id:'current',automationId:a.id,kind:'run',recordId:'mine',recordOperation:'execute',operation:db.template(a.templateId).recordOperations.execute.id,sourceUrl:source,request:{manual:true,direct:true,digest:'exact'},scan:{pendingUrls:['https://example.test/pending'],cursor:'exact-cursor'},resumeContext:{tabId:'retained'},observations:[{text:'large'.repeat(10000)}]};
+ const context=automationTaskContext(db,a.id,active);
+ assert.deepEqual(context.questions.map(q=>q.id),['own','global','source']);assert.equal(context.questions[0].answerValues.consent,false);
+ assert.deepEqual(context.assignedRecord,saved);assert.equal(context.recordAuthorization.directExecution,true);assert.equal(context.recordAuthorization.approvedProposalDigest,'exact');
+ assert.equal(context.automation.maxActionsTotal,9);assert.equal(context.automation.maxActionsPerDay,2);assert.equal(context.automation.facts,'Verified fact');assert.equal(context.referenceData.profile.permission,false);
+ assert.deepEqual(context.scanProgress,active.scan);assert.deepEqual(context.currentRun.resumeContext,active.resumeContext);assert.ok(context.currentRun.observations.every(o=>o.text===undefined));
+ assert.deepEqual(context.results,[]);assert.deepEqual(context.sourceExamples,[]);assert.equal(context.referenceData.previousTasks,undefined);assert.ok(size(context)<20000);
+ const scan=automationTaskContext(db,a.id,{...active,recordId:null,recordOperation:null,operation:'scan'});assert.deepEqual(scan.questions.map(q=>q.id),['global','source']);assert.equal(scan.sourceExamples.length,1);
+});

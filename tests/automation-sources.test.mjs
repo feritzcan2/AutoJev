@@ -8,10 +8,10 @@ import {automationProgress} from '../app/automation-progress.mjs';
 
 const urls=['https://blocked.test/search','https://fast.test/search','https://slow.test/search'];
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
-function fixture(t){
+function fixture(t,{onRunFinished}={}){
  const store=new Store(':memory:');let now=1_790_000_000_000;const db=new AutomationStore(store,{now:()=>now});
  const a=db.create('housing',{title:'Evler',goal:'Uygun evleri bul',criteria:{location:'Berlin',budget:'2000',requirements:'2 oda'},sources:urls});db.review(a.id);const trial=db.begin(a.id,'trial');for(const url of urls)db.observe(a.id,trial.id,url,'Observed listings');db.finish(a.id,trial.id,'completed','Read all sources');
- const launches=[],runtime=new WebTasks(db,{now:()=>now,launch:async run=>{launches.push(run);return {close:async()=>{}};}});t.after(async()=>{await runtime.close();store.close();});
+ const launches=[],runtime=new WebTasks(db,{now:()=>now,onRunFinished,launch:async run=>{launches.push(run);return {close:async()=>{}};}});t.after(async()=>{await runtime.close();store.close();});
  const finish=async(run,status='completed')=>{runtime.report(a.id,run.id,status,status==='blocked'?'IP range blocked':'Observed');await runtime.finish(a.id,status,'Observed',run.workerId);};
  return {store,db,id:a.id,runtime,launches,finish,advance:minutes=>{now+=minutes*60000;}};
 }
@@ -29,6 +29,75 @@ test('parallel workers retain their own source leases and disabling one source l
  const {store,db,id,runtime,launches}=fixture(t);store.workspaces.workers.add(id);db.enable(id);await runtime.tick();await settle();assert.equal(launches.length,2);
  const other=launches[1];await runtime.saveSource(id,urls[0],{enabled:false});await settle();assert.equal(db.run(other.id).status,'running');assert.equal(db.sources(id)[0].enabled,false);
  assert.equal(launches.length,3);assert.equal(launches[2].sourceUrl,urls[2]);assert.equal(db.get(id).status,'enabled');
+});
+
+test('disabling a running source waits for its scan to stop before switching it off',async t=>{
+ const {store,db,id,runtime,launches}=fixture(t);store.workspaces.workers.add(id);db.enable(id);await runtime.tick();await settle();
+ const scan=launches.find(run=>run.sourceUrl===urls[0]),other=launches.find(run=>run.sourceUrl===urls[1]);
+ runtime.sourceState(id,urls[0],{scan:{complete:false,pendingUrls:['https://blocked.test/next']}});
+ let release;runtime.slots(id).find(slot=>slot.run.id===scan.id).worker.close=()=>new Promise(resolve=>{release=resolve;});
+ const disabling=runtime.saveSource(id,urls[0],{enabled:false});
+ assert.equal(db.sources(id)[0].enabled,true);assert.equal(db.sources(id)[0].stopping,true);
+ assert.equal(db.run(other.id).status,'running');
+ release();await disabling;
+ const source=db.sources(id)[0],task=runtime.queue.get(id,scan.taskId);
+ assert.equal(source.enabled,false);assert.equal(source.scanning,false);assert.equal(source.stopping,false);
+ assert.deepEqual(source.scan,{complete:false,pendingUrls:['https://blocked.test/next']});
+ assert.equal(task.stopRequested,true);assert.equal(task.state,'cancelled');
+ assert.equal(db.run(other.id).status,'running');
+});
+
+test('confirmed scan completion cleans tabs before the worker becomes available',async t=>{
+ const calls=[];let release;
+ const {db,id,runtime,launches}=fixture(t,{onRunFinished:(owner,run,options)=>{calls.push({owner,run,options});return new Promise(resolve=>{release=resolve;});}});
+ db.enable(id);await runtime.tick();await settle();const scan=launches[0];
+ db.putRun({...db.run(scan.id),scan:{complete:true,pendingUrls:[],reason:'Reached the end',evidenceUrl:scan.sourceUrl,completion:'end'}});
+ runtime.report(id,scan.id,'completed','All pages checked');
+ const finishing=runtime.finish(id,'completed','All pages checked',scan.workerId);
+ await settle();assert.equal(calls.length,1);assert.equal(calls[0].options.closeTabs,true);
+ assert.equal(runtime.slots(id).length,1);
+ release();await finishing;assert.equal(runtime.slots(id).length,0);
+});
+
+test('a source waiting for an answer keeps its task tabs open',async t=>{
+ const calls=[],{db,id,runtime,launches}=fixture(t,{onRunFinished:(owner,run,options)=>calls.push(options)});
+ db.enable(id);await runtime.tick();await settle();const scan=launches[0];
+ db.putRun({...db.run(scan.id),scan:{complete:true,pendingUrls:[],reason:'Reached the end',evidenceUrl:scan.sourceUrl,completion:'end'}});
+ db.askQuestion(id,{text:'Which location should I use?'},{runId:scan.id});
+ runtime.report(id,scan.id,'completed','All pages checked');
+ await runtime.finish(id,'completed','All pages checked',scan.workerId);
+ assert.equal(calls.at(-1).closeTabs,false);
+});
+
+test('stop source preserves progress, other workers and record operations, then waits for its interval',async t=>{
+ const {store,db,id,runtime,launches,advance}=fixture(t);db.save(id,{mode:'observe'});store.workspaces.workers.add(id);db.enable(id);await runtime.tick();await settle();
+ const scan=launches.find(r=>r.sourceUrl===urls[0]),other=launches.find(r=>r.sourceUrl===urls[1]);
+ const item=db.record(id,scan.id,{url:'https://blocked.test/home',title:'Home',summary:'Saved before stop'});
+ const a=db.get(id);runtime.sourceState(id,urls[0],{pageProgress:{page:2,evidence:'Page two',at:db.now()},scan:{complete:false,pendingUrls:['https://blocked.test/next']}});
+ const worker=store.workspaces.workers.add(id),recordTask=runtime.queue.enqueue(id,{recordId:item.id,recordOperation:'prepare',sourceUrl:urls[0],operation:'prepare'});runtime.queue.claim(id,recordTask.id,worker.id);
+ const before={...db.sources(id)[0],pageProgress:db.get(id).sourceState[urls[0]].pageProgress};await runtime.stopSource(id,urls[0]);
+ const stopped=db.sources(id)[0];assert.equal(stopped.scanning,false);assert.equal(stopped.enabled,true);assert.equal(stopped.blocked,false);assert.equal(stopped.nextRunAt,db.now()+before.intervalMinutes*60000);assert.deepEqual(stopped.pageProgress,before.pageProgress);assert.deepEqual(stopped.scan,before.scan);
+ assert.equal(db.result(id,item.id).summary,'Saved before stop');assert.equal(db.run(other.id).status,'running');assert.equal(runtime.queue.get(id,recordTask.id).state,'running');assert.equal(runtime.queue.get(id,scan.taskId).state,'cancelled');assert.equal(db.get(id).status,a.status);
+ await runtime.tick();assert.equal(launches.filter(r=>r.sourceUrl===urls[0]).length,1);
+ advance(before.intervalMinutes+1);await runtime.finish(id,'completed','Finished other source',other.workerId);await runtime.tick();await settle();assert.ok(launches.some(r=>r.sourceUrl===urls[0]&&r.id!==scan.id));
+});
+
+test('stop scan cannot restart during closure and persists across app recovery',async t=>{
+ const {db,id,runtime,launches}=fixture(t);db.enable(id);await runtime.tick();await settle();const scan=launches[0];let release;
+ runtime.slots(id)[0].worker.close=()=>new Promise(resolve=>{release=resolve;});
+ const stopping=runtime.stopSource(id,urls[0]);await runtime.tick();assert.equal(launches.length,1);assert.equal(db.sources(id)[0].stopping,true);
+ release();await stopping;const task=runtime.queue.get(id,scan.taskId);assert.equal(task.stopRequested,true);assert.equal(task.state,'cancelled');
+ // Simulate a crash after stop intent was stored but before the session closed.
+ runtime.queue.put({...task,state:'running'});db.putRun({...db.run(scan.id),status:'running',finishedAt:null});runtime.sourceState(id,urls[0],{stopping:true});
+ const recovered=new WebTasks(db,{launch:async()=>({close:async()=>{}})});assert.equal(recovered.queue.get(id,task.id).state,'cancelled');assert.equal(db.sources(id)[0].stopping,false);assert.ok(db.sources(id)[0].nextRunAt>db.now());await recovered.close();
+ await assert.rejects(runtime.stopSource(id,'https://unknown.test/'),/ait değil/);
+});
+
+test('record preparation does not appear as an active source scan',async t=>{
+ const {db,id,runtime,launches,finish}=fixture(t);db.save(id,{mode:'observe'});await runtime.runSource(id,urls[0]);await settle();const scan=launches[0];
+ const item=db.record(id,scan.id,{url:'https://blocked.test/home',title:'Home',summary:'Observed'});await finish(scan);await runtime.runRecord(id,item.id,'prepare');await settle();
+ assert.equal(launches.at(-1).recordId,item.id);assert.equal(db.sources(id)[0].scanning,false);
+ await runtime.stopSource(id,urls[0]);assert.equal(db.run(launches.at(-1).id).status,'running');
 });
 
 test('one-off scans finish every independent source without scheduling repeats',async t=>{

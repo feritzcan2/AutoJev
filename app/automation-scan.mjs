@@ -12,7 +12,7 @@ export function observedLinks(response,pageUrl){
 
 export function scanCheckpoint(run,input,{checkpoint=false}={}){
  if(run.kind!=='run'||!run.sourceUrl||run.recordId)throw Error('Tarama kapsamı yalnızca kaynak görevine aittir');
- if(!input||typeof input.complete!=='boolean'||!Array.isArray(input.pendingUrls)||input.pendingUrls.length>100)throw Error('Tarama kapsamı gerekli: complete, pendingUrls, reason, evidenceUrl');
+ if(!input||typeof input.complete!=='boolean'||!Array.isArray(input.pendingUrls))throw Error('Tarama kapsamı gerekli: complete, pendingUrls, reason, evidenceUrl');
  const pendingUrls=[...new Set(input.pendingUrls.map(webUrl))];
  // A source can discover an employer board on another host. Ownership is the
  // assigned run, not the marketing site's origin; guessed URLs remain invalid.
@@ -23,5 +23,5 @@ export function scanCheckpoint(run,input,{checkpoint=false}={}){
  if(input.complete&&pendingUrls.length)throw Error('Bekleyen sayfa veya ilan varken tarama tamamlandı denemez');
  if(!checkpoint&&!input.complete&&!pendingUrls.length)throw Error('Kısmi taramada kalan sayfa/ilan bağlantılarını kaydet; ilerleyemiyorsan engeli bildir');
  if(!checkpoint&&!input.complete&&JSON.stringify([...pendingUrls].sort())===JSON.stringify([...(run.scan?.pendingUrls??[])].sort()))throw Error('Devam noktası ilerlemedi. Kalan sayfaları işle veya gerçek engeli bildir; aynı işi tekrar kuyruğa koyma');
- return {complete:input.complete,pendingUrls,reason,evidenceUrl,...(input.completion?{completion:input.completion}:{})};
+ return {...run.scan,complete:input.complete,pendingUrls,reason,evidenceUrl,...(input.completion?{completion:input.completion}:{})};
 }

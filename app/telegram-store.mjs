@@ -111,7 +111,7 @@ export class TelegramStore{
  question(candidate,questionId){
   this.assertCandidate(candidate);
   const q=this.store.generic?this.store.questions(candidate).find(q=>q.id===questionId):this.db.prepare('SELECT id,question,answer,job_id AS jobId,resolution FROM questions WHERE candidate_id=? AND id=?').get(candidate,questionId);
-  return q?{...q,resolution:JSON.parse(q.resolution??'null')}:null;
+  return q?{...q,resolution:this.store.generic?q.resolution??null:JSON.parse(q.resolution??'null')}:null;
  }
  pending(){return this.db.prepare(`SELECT * FROM telegram_outbox WHERE status='pending' AND next_at<=? AND ${this.scope('candidate_id',true)} ORDER BY rowid LIMIT 20`).all(this.now(),this.botId,this.botId).map(decode);}
  recordJobDelivery(row,botId){
@@ -210,8 +210,8 @@ export class TelegramStore{
    // Queue changes live on the campaign rather than the job. Refresh old cards on
    // upgrade, and whenever scheduling or permissions change without a job event.
    const campaign=this.store.campaign(link.candidate_id),profile=this.store.profile(link.candidate_id);
-   const queueSignature=hash(JSON.stringify(['cards-v3',campaign?.status,campaign?.task?.jobId,campaign?.task?.kind,Boolean(campaign?.task?.report),
-    this.store.workerState.tasks(link.candidate_id).map(({workerId,task})=>[workerId,task.jobId,task.kind,Boolean(task.report)]),
+   const queueSignature=hash(JSON.stringify([this.store.generic?'workspace-cards-v1':'cards-v3',campaign?.status,campaign?.task?.jobId,campaign?.task?.kind,Boolean(campaign?.task?.report),
+    this.store.workerState.tasks(link.candidate_id).map(({workerId,task})=>[workerId,task.jobId,task.kind,task.state,Boolean(task.report)]),
     Object.keys(campaign?.pendingRetries??{}),Object.keys(campaign?.pendingResumes??{}),Object.keys(campaign?.pendingRecoveries??{}),
     profile.authorization,profile.rankThreshold,this.store.sources(link.candidate_id).map(source=>[source.id,source.applyMode])]));
    if(link.data.queueSignature!==queueSignature){this.refreshJobMessages(link.candidate_id);link.data.queueSignature=queueSignature;}

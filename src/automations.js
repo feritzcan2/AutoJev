@@ -1,3 +1,5 @@
+import {activeRecordOperations} from './record-operation-status.js';
+import {recordQuestionDialog} from './record-question-dialog.js';
 import {automationTrialReady} from '../app/automation-trial.mjs';
 import {defaultPermission} from '../app/agent-settings.mjs';
 import {templateFields} from './template-fields.js';
@@ -5,7 +7,6 @@ import {automationProgress,runKindLabel} from '../app/automation-progress.mjs';
 import {prepareAutomationChat} from './automation-chat.js';
 import {automationResultsTable} from './automation-results.js';
 import {automationSourcesPanel} from './automation-sources.js';
-import {automationOverview} from './automation-overview.js';
 import {automationAttentionPanel} from './automation-attention.js';
 import {renderMessageText} from './message-text.js';
 import './automation-attention.css';
@@ -18,7 +19,7 @@ const modeNames={observe:'Bul ve bildir',prepare:'Hazırla, onayımı bekle',aut
 const dateInput=value=>{if(!value)return '';const d=new Date(value);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);};
 
 export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,isDeleting=()=>false,onSnapshot=()=>{},focusAgent=()=>{},syncWorkspaceMenu=()=>{},refreshWorkspaces=async()=>{}}){
- let sourcePanel,overview;
+ let sourcePanel;
  const host=el('section',null,'automations-page');host.id='automations';host.hidden=true;document.querySelector('main').append(host);
  const agentConversation=el('div',null,'workspace-conversation');agentConversation.dataset.webOnly='';document.querySelector('#now-history').before(agentConversation);
  const progressBox=el('div',null,'workspace-progress');progressBox.dataset.webOnly='';progressBox.innerHTML='<ol id="automation-steps" aria-label="Kurulum ilerlemesi"></ol><p id="automation-next-step"></p><div id="automation-next-actions" class="actions"></div><section id="automation-agent-reply" aria-label="Agent’ın son yanıtı"><b>Agent’ın yanıtı</b><p></p></section>';
@@ -29,7 +30,12 @@ export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,
  let progressSignature='';
  const templateNav=el('button');templateNav.type='button';templateNav.dataset.view='templates';templateNav.innerHTML='<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span>Template’ler</span>';document.querySelector('aside nav button[data-view=config]').before(templateNav);
  let templates=[],selected=null,data=null,pane=null,generation=0,busy=false,dirty=false,formRevision='',chatSending=false,chatError='',resultsTable=null,composerOpen=false,composerState='';
- const attention=automationAttentionPanel(api,{navigate,refresh});
+ const questionDialog=recordQuestionDialog(api,{refresh});
+ const attention=automationAttentionPanel(api,{navigate,refresh,showRecordQuestions:()=>{navigate('board');resultsTable?.showQuestions();}});
+ const boardNav=document.querySelector('[data-view=board]'),recordWork=el('span',null,'board-nav-work');recordWork.id='board-nav-work';recordWork.hidden=true;recordWork.setAttribute('aria-hidden','true');boardNav.append(recordWork);
+ const questionBadge=document.querySelector('#question-badge');
+ questionBadge.className='agent-nav-status board-nav-status';questionBadge.dataset.tone='waiting';
+ questionBadge.onclick=event=>{event.stopPropagation();navigate('board');resultsTable?.showQuestions();};
  const hasUnsaved=()=>dirty;
  const attempt=fn=>async(...args)=>{args[0]?.preventDefault?.();if(busy||isDeleting())return;busy=true;setBusy();notice('');try{return await fn(...args);}catch(error){notice(error.message);}finally{busy=false;setBusy();}};
  const button=(label,fn,cls='quiet')=>{const b=el('button',label,cls);b.type='button';b.onclick=attempt(fn);return b;};
@@ -52,7 +58,7 @@ export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,
   const grid=el('div',null,'automation-grid template-grid');for(const t of templates){const card=el('article',null,'automation-card template-card');card.append(el('span',t.icon,'automation-icon'),el('h3',t.title),el('p',t.description));const steps=el('ol');for(const step of t.steps)steps.append(el('li',step));card.append(steps);const choose=button(t.id==='custom'?'Ne istediğini anlat →':'Bu template ile başla →',()=>create(t),'primary');choose.dataset.template=t.id;card.append(choose);card.append(button('Template’i dışa aktar',()=>api.automationTemplateExport(t.id),'automation-export-template'));grid.append(card);}host.append(grid);
   host.append(el('p','Bu bilgisayarda çalışır. Düzenli kontroller için uygulamayı ve bilgisayarı açık tut.','automation-local-note'));
  }
- async function select(id){notice('');selected=id;data=null;host.hidden=false;localStorage.setItem('selected-workspace',id);pane=null;formRevision='';dirty=false;buildDetail();navigate('board');await refresh();if(selected!==id)return;if(!data){data=await api.workspaceSnapshot(id);if(selected!==id)return;renderDetail();}if(automationProgress(data).fresh){openConversation();if(data.automation.templateId!=='custom'){await api.automationSetup(id);if(selected===id)await refresh();}}}
+ async function select(id){questionDialog.update(null);notice('');selected=id;data=null;host.hidden=false;localStorage.setItem('selected-workspace',id);pane=null;formRevision='';dirty=false;buildDetail();navigate('board');await refresh();if(selected!==id)return;if(!data){data=await api.workspaceSnapshot(id);if(selected!==id)return;renderDetail();}if(automationProgress(data).fresh){openConversation();if(data.automation.templateId!=='custom'){await api.automationSetup(id);if(selected===id)await refresh();}}}
  const setupProviders=()=>getCatalog().filter(provider=>provider.supported&&['codex','claude'].includes(provider.id));
  const defaultModel=(provider,saved)=>{const models=provider?.models??[];return models.includes(saved)?saved:models.includes('default')?'default':models[0]??'';};
  async function createBlank(){
@@ -72,7 +78,7 @@ export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,
 <section class="automation-results-section"><div class="automation-heading"><div><h2>Sonuçlar</h2><p id="automation-results-summary"></p></div><button id="automation-export" type="button" class="quiet">Sonuçları dışa aktar</button></div><div id="automation-results"></div></section>
 <section class="automation-history-section"><div class="automation-section-head"><h2>Çalışma geçmişi</h2><p>Her turun sonucu ve gerektiğinde agent ekranı.</p></div><div id="automation-runs"></div></section><div class="automation-bottom-actions"><button id="automation-delete" type="button" class="quiet danger">Otomasyonu sil</button></div>`;
  const $=id=>find('#'+id),form=$('automation-plan-form');
-  resultsTable=automationResultsTable($('automation-results'),{button,badge,time,api,refresh,statusNames});
+  resultsTable=automationResultsTable($('automation-results'),{button,badge,time,api,refresh,statusNames,onQuestion:id=>questionDialog.open(id)});
   chatError='';chatSending=false;
   const chatFeedback=el('p',null,'automation-chat-feedback');chatFeedback.id='automation-chat-feedback';chatFeedback.setAttribute('role','status');chatFeedback.setAttribute('aria-live','polite');$('automation-chat').querySelector('.actions').after(chatFeedback);
   const compose=el('button','Tercihlerimi düzenle','quiet automation-compose');compose.type='button';compose.onclick=()=>{openComposer();$('automation-message').focus();};$('automation-chat').prepend(compose);
@@ -101,7 +107,6 @@ export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,
   history.className='automation-history-section';history.innerHTML='<div class="background-head"><h2>Otomasyon geçmişi</h2><p>Çalışma alanının turları ve sonuçları.</p></div><section class="background-history"><div class="section-title"><h2>Çalışma geçmişi</h2></div><div id="automation-runs" class="run-list"></div></section>';
   const pipeline=el('div',null,'pipeline');pipeline.id='automation-pipeline';const top=el('div',null,'pipeline-top');$('automation-runtime-note').className='campaign-state';top.append($('automation-runtime-note'),$('automation-controls'));pipeline.append(top,el('div',null,'automation-metrics'));results.prepend(pipeline);
   results.querySelector('.automation-heading').className='section-title';results.querySelector('h2').id='automation-table-title';
-  const summary=el('section');summary.id='automation-overview';results.prepend(summary);overview=automationOverview(summary,{button,navigate,performAction});
   const sources=el('section');sources.dataset.automationPane='sources';sourcePanel=automationSourcesPanel(sources,api,{refresh,notice,ask:()=>{openConversation();const input=find('#automation-message');if(!input.value.trim())input.value='Hedefime uygun kaynakları araştırıp öner ve takip planımı hazırlamama yardımcı ol.';}});
   const files=el('section');files.dataset.automationPane='files';files.innerHTML='<div class="section-title"><h2>Dosyalar</h2><span>Çalışma alanının belgeleri</span></div><div id="automation-file-list"></div>';files.querySelector('.section-title').append(button('Belge ekle',async()=>{await api.pickDocument(selected);await refresh();}));
   host.append(results,history,files,sources,plan,find('.automation-bottom-actions'));setupGrid.remove();
@@ -151,8 +156,16 @@ export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,
   document.querySelector('#rename-workspace').disabled=locked||Boolean(data.activeRun);
   document.querySelector('#delete-workspace').disabled=locked;
   find('#automation-delete').disabled=locked;
-  const helpCount=attention.update(selected,data);
-  const status=document.querySelector('#agent-nav-status');status.textContent=helpCount?`${helpCount} müdahale`:p.fresh?'1/3':state.textContent;status.dataset.tone=helpCount?'waiting':active?'active':p.tone;agentNavLabel(p.fresh);document.querySelector('#question-badge').hidden=true;document.querySelector('#background-badge').hidden=true;
+  questionDialog.update(data);const helpCount=attention.update(selected,data),questionCount=(a.questions??[]).filter(q=>q.recordId&&q.answer==null).length,agentHelpCount=Math.max(0,helpCount-questionCount),running=(data.activeRuns??(data.activeRun?[data.activeRun]:[])).length;
+  questionBadge.hidden=!questionCount;questionBadge.textContent=questionCount?`${questionCount} yanıt`:'';questionBadge.title=`${questionCount} yanıt bekliyor`;
+  const work=activeRecordOperations(data),workSummary=work.map(({count,label})=>`${count} ${label}`);
+  recordWork.hidden=!work.length;recordWork.replaceChildren(...work.map(({kind,count,label})=>{const badge=el('span',`${count} ${label}`,'agent-nav-status');badge.dataset.tone='active';badge.dataset.operation=kind;return badge;}));
+  boardNav.title=[...workSummary,...(questionCount?[`${questionCount} yanıt bekliyor`]:[])].join(' · ');
+  boardNav.setAttribute('aria-label',['Takip tablosu',boardNav.title].filter(Boolean).join(' · '));
+  const status=document.querySelector('#agent-nav-status');status.textContent=agentHelpCount?`${agentHelpCount} müdahale`:questionCount?(running?`${running} worker`:''):p.fresh?'1/3':state.textContent;status.hidden=!status.textContent;status.dataset.tone=agentHelpCount?'waiting':active?'active':p.tone;agentNavLabel(p.fresh);document.querySelector('#background-badge').hidden=true;
+  const scanning=new Set((data.activeRuns??(data.activeRun?[data.activeRun]:[])).map(slot=>data.runs.find(r=>r.id===slot.id)??slot).filter(r=>r.status==='running'&&r.kind==='run'&&!r.recordId&&!r.recordOperation).flatMap(r=>r.sourceUrl?[r.sourceUrl]:r.sources??[]));
+  const sourcesNav=document.querySelector('[data-view=sources]'),sourceStatus=document.querySelector('#sources-nav-status');
+  if(sourceStatus){const names=[...scanning].map(url=>data.sources.find(s=>s.url===url)?.name??new URL(url).hostname);sourceStatus.hidden=!scanning.size;sourceStatus.textContent=scanning.size?`${scanning.size} taranıyor`:'';sourcesNav.title=names.join(', ');sourcesNav.setAttribute('aria-label',scanning.size?`Kaynaklar · ${scanning.size} kaynak taranıyor: ${names.join(', ')}`:'Kaynaklar');}
   document.querySelector('[data-view=profile] span').textContent='Çalışma alanı profili';
   document.querySelector('[data-view=board] span').textContent='Takip tablosu';
   const chrome=document.querySelector('.chrome-status'),connection=data.browserStatus??{};chrome.hidden=a.browserMode!=='jev';chrome.dataset.state=connection.state??'idle';chrome.querySelector('b').textContent=connection.ready?'Chrome bağlı':connection.state==='connecting'?'Chrome’a bağlanıyor…':'Chrome bağlantısı';chrome.querySelector('small').textContent=connection.ready?(a.chromeProfile?.name??'Seçili Chrome oturumu'):(connection.message??'Chrome’da chrome://inspect/#remote-debugging bağlantısını aç ve bağlantı isteğine izin ver.');chrome.querySelector('.chrome-reconnect').hidden=Boolean(connection.ready);chrome.querySelector('.chrome-reconnect').disabled=locked||connection.state==='connecting';chrome.querySelector('.chrome-profile-change').disabled=locked;
@@ -161,7 +174,7 @@ export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,
  async function performAction(id){
   if(!data)return;
   if(id==='message')return openConversation();
-  if(id==='questions'){navigate('agent');document.querySelector('.automation-attention')?.scrollIntoView({block:'start'});return;}
+  if(id==='questions'){attention.review();return;}
   if(id==='setup'){await api.automationSetup(selected);await refresh();navigate('agent');return;}
   if(id==='profile'){navigate('profile');find('#automation-plan-form').scrollIntoView({block:'start'});return;}
   if(id==='results')return navigate('board');
@@ -192,7 +205,7 @@ export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,
  async function stop(){await api.workspaceStop(selected);await refresh();}
  async function restart(){await api.workspaceRestart(selected);await refresh();}
  function agentNavLabel(){const nav=document.querySelector('aside nav button[data-view=agent]');nav.querySelector('span').textContent='Agent';}
- function deselect(){resultsTable?.dispose();attention.update(null,null);resultsTable?.dispose();agentNavLabel(false);agentConversation.replaceChildren();document.body.classList.remove('workspace-fresh');selected=null;data=null;localStorage.removeItem('selected-workspace');host.hidden=true;onSnapshot(null);document.body.classList.remove('automation-workspace');document.querySelector('[data-view=profile] span').textContent='Çalışma alanı profili';document.querySelector('[data-view=board] span').textContent='Takip tablosu';}
+ function deselect(){recordWork.hidden=true;recordWork.replaceChildren();boardNav.title='';questionBadge.hidden=true;document.querySelector('[data-view=board]').setAttribute('aria-label','Takip tablosu');const sourceStatus=document.querySelector('#sources-nav-status');if(sourceStatus)sourceStatus.hidden=true;const sourcesNav=document.querySelector('[data-view=sources]');if(sourcesNav){sourcesNav.title='';sourcesNav.setAttribute('aria-label','Kaynaklar');}resultsTable?.dispose();attention.update(null,null);questionDialog.update(null);resultsTable?.dispose();agentNavLabel(false);agentConversation.replaceChildren();document.body.classList.remove('workspace-fresh');selected=null;data=null;localStorage.removeItem('selected-workspace');host.hidden=true;onSnapshot(null);document.body.classList.remove('automation-workspace');document.querySelector('[data-view=profile] span').textContent='Çalışma alanı profili';document.querySelector('[data-view=board] span').textContent='Takip tablosu';}
  function readForm(){const f=find('#automation-plan-form').elements,t=templates.find(t=>t.id===data.automation.templateId);return {title:f.title.value,goal:f.goal.value,criteria:Object.fromEntries(t.fields.map(field=>[field.id,f['criteria-'+field.id].value])),sources:f.sources.value.split('\n').map(v=>v.trim()).filter(Boolean),instructions:f.instructions.value,facts:f.facts.value,mode:f.mode.value,intervalMinutes:Number(f.intervalMinutes.value),maxActionsPerDay:Number(f.maxActionsPerDay.value),maxActionsTotal:f.maxActionsTotal.value?Number(f.maxActionsTotal.value):null,endAt:f.endAt.value?new Date(f.endAt.value).getTime():null};}
  function fillForm(){
   const a=data.automation,key=JSON.stringify([a.id,a.revision,a.updatedAt]);if(hasUnsaved()||formRevision===key)return;formRevision=key;
@@ -214,7 +227,6 @@ export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,
   action('Deneme çalıştır',()=>performAction('trial'),'automation-trial',hasUnsaved()||a.reviewedRevision!==a.revision);
   action('Bir kez çalıştır',()=>performAction('run'),'automation-run',hasUnsaved()||!automationTrialReady(a));
   const p=automationProgress(data,{dirty:hasUnsaved()});if(p.primary&&!['trial','run'].includes(p.primary.id))action(p.primary.label,()=>performAction(p.primary.id),'automation-next',hasUnsaved());
-  overview?.update(data,p,{busy:busy||isDeleting()});
   renderShell();
  }
  function renderDetail(){
@@ -256,7 +268,7 @@ export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,
  }
  async function show(name='templates',{detail=false}={}){
   host.hidden=false;if(detail&&selected)return;
-  resultsTable?.dispose();agentNavLabel(false);agentConversation.replaceChildren();document.body.classList.remove('workspace-fresh');selected=null;data=null;dirty=false;formRevision='';localStorage.removeItem('selected-workspace');navigate('templates',{detail:true});await loadList();
+  questionBadge.hidden=true;document.querySelector('[data-view=board]').setAttribute('aria-label','Takip tablosu');resultsTable?.dispose();agentNavLabel(false);agentConversation.replaceChildren();document.body.classList.remove('workspace-fresh');selected=null;data=null;dirty=false;formRevision='';localStorage.removeItem('selected-workspace');navigate('templates',{detail:true});await loadList();
  }
  api.onAutomationChange(event=>{if(!event.automationId)templates=[];if(!host.hidden&&!selected)loadList().catch(e=>notice(e.message));});
  return {element:host,show,select,createBlank,refresh,start,stop,restart,reconnectBrowser:async()=>{await api.automationBrowser(selected);await refresh();},renderShell,deselect,showPane(name){setPane(name);},sendMessage,get busy(){return busy;},get dirty(){return hasUnsaved();},get data(){return data;},hide(){host.hidden=true;},get selected(){return selected;}};

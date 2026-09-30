@@ -2,7 +2,7 @@
 // excluding hidden controls and URLs, before asking the user to log in.
 export function asksForLogin(question){
  if(question.accessCheck?.kind==='login')return true;
- const text=[question.text,...(question.fields??[]).flatMap(f=>[f.label,f.help])].filter(Boolean).join(' ');
+ const text=[question.text??question.question,...(question.fields??[]).flatMap(f=>[f.label,f.help])].filter(Boolean).join(' ');
  return /giriş\s+yap|oturum(?:u|unuz|unuzu|unuzun)?\s+(?:aç|yok|olma|gerek)|hesab(?:ınıza|ına)\s+gir|\blog\s*in\b|\bsign\s*in\b|\banmeld(?:en|ung)\b/iu.test(text);
 }
 function rendered(page){

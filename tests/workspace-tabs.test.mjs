@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {BrowserTools} from '../app/browser.mjs';
 import {JevBrowser} from '../app/jev-browser.mjs';
 import {automationBrowser} from '../app/automation-browser.mjs';
-import {groupWorkspaceTabs,recordTabs} from '../src/workspace-tabs.js';
+import {groupWorkspaceTabs,recordTabs,workerTab,workerTabs} from '../src/workspace-tabs.js';
 
 function fixture(kind='web'){
  const profile={directory:'Default'},browser=new BrowserTools('/unused',()=> 'jev',()=>({profile,...(kind==='jobs'?{lifecycle:{jobs:[]},checkpoints:[{browser:'Jev Chrome',tabId:'saved'}]}:{lifecycle:{multiWorker:true}})}));
@@ -37,6 +37,11 @@ test('record tabs retain ownership across redirects and never fall back to anoth
  const legacy={tabId:'legacy',url:'https://example.test/login'};
  assert.deepEqual(recordTabs(item,[legacy],{...snapshot,runs:[{recordId:item.id,startedAt:1,resumeContext:{tabId:'legacy'}}]}),[legacy]);
  assert.deepEqual(recordTabs(item,[legacy],snapshot),[]);
+ assert.deepEqual(recordTabs(item,[{...legacy,url:item.url}],snapshot),[],'Matching a listing URL does not prove record ownership');
+ assert.deepEqual(recordTabs(item,[{...legacy,runId:'another-run'}],{...snapshot,runs:[{id:'record-run',recordId:item.id,startedAt:1,resumeContext:{tabId:'legacy'}}]}),[],'Reassigned tabs are not shown for an older record run');
+ const waiting={...snapshot,automation:{questions:[{recordId:item.id,answer:null,browserContext:{tabId:'legacy',runId:'question-run'}}]}};
+ assert.deepEqual(recordTabs(item,[{...legacy,runId:'question-run'}],waiting),[{...legacy,runId:'question-run'}]);
+ assert.deepEqual(recordTabs(item,[{...legacy,runId:'other-run'}],waiting),[]);
 });
 
 test('Sources recovers live workspace tabs opened before workspace labels existed',async()=>{
@@ -89,4 +94,47 @@ test('a shared host without a source assignment stays in the other tabs menu',()
  const sources=[{id:'a',url:'https://example.com/search/a'},{id:'b',url:'https://example.com/search/b'}],tab={tabId:'old',url:'https://example.com/detail/1'};
  const {grouped,other}=groupWorkspaceTabs([tab],sources);
  assert.equal(grouped.get('a').length,0);assert.equal(grouped.get('b').length,0);assert.deepEqual(other,[tab]);
+});
+
+
+test('worker tab uses the current running task, follows redirects, and never selects another worker or stale session',()=>{
+ const tabs=[{tabId:'current',url:'https://form.test/apply',recordId:'assigned'},{tabId:'old',url:'https://example.test/old'}];
+ const snapshot={workers:[{id:'main',active:{sessionId:'provider'},execution:{task:{id:'run'}}}],runs:[{id:'old-run',workerId:'main',status:'completed',resumeContext:{tabId:'old'}},{id:'run',workerId:'main',recordId:'assigned',status:'running',resumeContext:{tabId:'current'}}]};
+ assert.equal(workerTab(snapshot,'main',tabs),tabs[0]);assert.equal(workerTab(snapshot,'other',tabs),null);
+ assert.equal(workerTab(snapshot,'main',[tabs[1]]),null);assert.equal(workerTab(snapshot,'main',[{...tabs[0],recordId:'other'}]),null);
+ snapshot.runs[1].resumeContext.tabId='new-tab';assert.equal(workerTab(snapshot,'main',tabs),null);
+ snapshot.runs[1].resumeContext.tabId='current';snapshot.runs[1].status='completed';assert.equal(workerTab(snapshot,'main',tabs),null);
+ snapshot.runs[1].status='running';snapshot.workers[0].active=null;assert.equal(workerTab(snapshot,'main',tabs),null);
+});
+
+
+test('worker menus include all current-run tabs and exclude older tasks, other workers and reassigned checkpoints',async()=>{
+ const f=fixture();for(const id of ['listing','form','old','other','checkpoint'])f.add(id);
+ for(const id of ['listing','form','old','other','checkpoint'])f.client.automationWorkspaces.set(id,'workspace');
+ for(const id of ['listing','form']){f.client.automationRuns.set(id,'run');f.client.automationTabs.set(id,'record:item');}
+ f.client.automationRuns.set('old','old-run');f.client.automationTabs.set('old','record:item');
+ f.client.automationRuns.set('other','other-run');f.client.automationRuns.set('checkpoint','other-run');
+ const snapshot={workers:[{id:'main',active:{sessionId:'provider'},execution:{task:{id:'run'}}}],runs:[{id:'run',workerId:'main',recordId:'item',status:'running',resumeContext:{tabId:'checkpoint'}}]};
+ assert.deepEqual(workerTabs(snapshot,'main',await f.browser.workspaceTabs('workspace')).map(t=>t.tabId),['listing','form']);
+ f.client.forgetTab('form');assert.deepEqual(workerTabs(snapshot,'main',await f.browser.workspaceTabs('workspace')).map(t=>t.tabId),['listing']);
+ snapshot.runs[0].status='completed';assert.deepEqual(workerTabs(snapshot,'main',await f.browser.workspaceTabs('workspace')),[]);
+});
+
+test('a reused automation tab is assigned to the new run without transferring its old sibling tabs',async()=>{
+ const client=new JevBrowser('/unused',{connection:'separate'});
+ client.context=async()=>({});client.reconcileJobs=async()=>{};
+ for(const id of ['listing','old-sibling']){client.tabs.set(id,{id,page:{url:()=>`https://example.test/${id}`,isClosed:()=>false}});client.automationTabs.set(id,'record:item');client.automationWorkspaces.set(id,'workspace');client.automationRuns.set(id,'old-run');}
+ client.observe=async slot=>({tabId:slot.id,url:slot.page.url()});
+ await client.callTool({name:'browser_jev_observe',arguments:{tabId:'listing'}},'new-run',{automationWorkspaceId:'workspace',automationTabKey:'record:item'});
+ assert.equal(client.automationRuns.get('listing'),'new-run');assert.equal(client.automationRuns.get('old-sibling'),'old-run');
+});
+
+
+test('popup ownership survives reconnect when its opener has since moved to a different run',async()=>{
+ const client=new JevBrowser('/unused',{connection:'separate'});
+ client.automationRuns.set('parent','new-run');client.automationTabs.set('parent','record:new');
+ client.automationRuns.set('restored-child','old-run');client.automationTabs.set('restored-child','record:old');
+ const track=id=>client.track({newCDPSession:async()=>({send:async()=>({targetInfo:{targetId:id,openerId:'parent'}})})},{on:()=>{}});
+ await track('restored-child');assert.equal(client.automationRuns.get('restored-child'),'old-run');assert.equal(client.automationTabs.get('restored-child'),'record:old');
+ await track('new-child');assert.equal(client.automationRuns.get('new-child'),'new-run');assert.equal(client.automationTabs.get('new-child'),'record:new');
 });

@@ -9,13 +9,13 @@ import {automationTemplate,reusableTemplate} from '../app/automation-templates.m
 import {dispatchRecordOperations} from '../app/record-operations.mjs';
 
 const source='https://example.test/list',settle=()=>new Promise(r=>setImmediate(r));
-function fixture(t,template='job-search'){
+function fixture(t,template='job-search',{onRunFinished}={}){
  const store=new WorkspaceDatabase(':memory:'),db=new AutomationStore(store),definition=db.template(template);
  const a=db.create(template,{goal:'Find a suitable result',criteria:Object.fromEntries(definition.fields.filter(f=>f.required).map(f=>[f.id,'Known criteria'])),sources:[source]});
  db.review(a.id);db.skipTrial(a.id);
  const seed=db.begin(a.id,'run'),item=db.record(a.id,seed.id,{key:source+'/1',url:source+'/1',title:'Result',summary:'Observed facts'});
  db.finish(a.id,seed.id,'completed','Saved');const launches=[];
- const runtime=new WebTasks(db,{launch:async run=>{launches.push(run);return {close:async()=>{}};}});
+ const runtime=new WebTasks(db,{onRunFinished,launch:async run=>{launches.push(run);return {close:async()=>{}};}});
  t.after(async()=>{await runtime.close();store.close();});
  const flow=run=>automationWorkflow({db,run,signal:{aborted:false},browser:{},report:(id,runId,status,summary)=>runtime.report(id,runId,status,summary)});
  const finish=async(run,status='completed')=>{runtime.report(a.id,run.id,status,'Done');await runtime.finish(a.id,status,'Done',run.workerId);};
@@ -61,6 +61,14 @@ test('manual preparation runs on a paused workspace with a blocked source and do
  assert.equal(f.db.snapshot(f.id).results[0].recordAction.operation.label,'Başvur');
 });
 
+test('draft preparation keeps its tab; verified submission closes the completed task tab',async t=>{
+ const calls=[],f=fixture(t,'job-search',{onRunFinished:(id,run,options)=>calls.push({run,options})});
+ const prepared=await f.prepare();assert.equal(calls.at(-1).options.closeTabs,false);
+ await f.runtime.runRecord(f.id,f.item.id,'execute',{digest:prepared.digest});await settle();const run=f.launches.at(-1);
+ f.db.reserve(f.id,run.id,f.item.id);f.db.observe(f.id,run.id,f.item.url,'Submitted');f.db.resolve(f.id,run.id,f.item.id,{status:'completed',evidence:'Submitted',url:f.item.url});
+ await f.finish(run);assert.equal(calls.at(-1).run.id,run.id);assert.equal(calls.at(-1).options.closeTabs,true);
+});
+
 test('exact manual approval permits only the selected draft without changing observe permissions; duplicate submission is rejected',async t=>{
  const f=fixture(t),prepared=await f.prepare();
  await assert.rejects(f.runtime.runRecord(f.id,f.item.id,'execute',{digest:'stale'}),/Taslak değişti/);
@@ -102,6 +110,42 @@ test('record questions resume preparation without pausing other scans or startin
  const q=await flow.call(f.id,first.id,'ask_workspace_question',{text:'Start date?',fields:[{id:'date',label:'Date',type:'date'}]});assert.equal(q.recordId,f.item.id);await f.finish(first);
  await f.runtime.answer(f.id,q.id,{date:'2026-10-01'});await settle();const next=f.launches.at(-1);
  assert.notEqual(next.id,first.id);assert.equal(next.recordOperation,'prepare');assert.equal(next.recordId,f.item.id);assert.equal(f.launches.some(r=>r.kind==='interview'),false);
+});
+
+test('dismissing a record closes only its questions and worker, and prevents late writes or retries',async t=>{
+ const f=fixture(t);await f.runtime.runRecord(f.id,f.item.id,'prepare');await settle();const run=f.launches.at(-1);
+ const other=f.db.putResult({...f.item,id:'other-record',key:'other-record',url:source+'/other'});
+ const q=f.db.askQuestion(f.id,{recordId:f.item.id,text:'Missing information?'}),q2=f.db.askQuestion(f.id,{recordId:f.item.id,text:'Another question?'}),otherQ=f.db.askQuestion(f.id,{recordId:other.id,text:'Other record?'}),general=f.db.askQuestion(f.id,{text:'Workspace question?'});
+ const otherTask=f.runtime.queue.enqueue(f.id,{recordId:other.id,operation:'prepare',lockKey:'record:'+other.id});
+ const worker=f.runtime.workers.add(f.id);f.runtime.queue.claim(f.id,otherTask.id,worker.id);
+ let release;f.runtime.slots(f.id)[0].worker.close=()=>new Promise(resolve=>{release=resolve;});
+ const dismissing=f.runtime.dismissRecord(f.id,f.item.id);
+ assert.equal(f.db.result(f.id,f.item.id).status,'dismissed');
+ assert.throws(()=>f.db.askQuestion(f.id,{recordId:f.item.id,text:'Late question'}),/Elenen/);
+ assert.equal(f.db.record(f.id,run.id,{key:f.item.key,url:f.item.url,title:'Late draft',summary:'Late',proposal:'Do not save'}).status,'dismissed');
+ await assert.rejects(f.runtime.runRecord(f.id,f.item.id,'prepare'),/yeniden gönderilemez/);
+ release();await dismissing;
+ for(const id of [q.id,q2.id])assert.equal(f.db.get(f.id).questions.find(q=>q.id===id).resolution,'record_dismissed');
+ for(const id of [otherQ.id,general.id])assert.equal(f.db.get(f.id).questions.find(q=>q.id===id).answer,null);
+ assert.equal(f.runtime.queue.get(f.id,otherTask.id).state,'running');assert.equal(f.db.result(f.id,other.id).status,'found');assert.equal(f.runtime.slots(f.id).length,0);
+ await assert.rejects(f.runtime.answer(f.id,q.id,'Late answer'),/zaten/);
+});
+
+test('dismissal cancels queued work and rejects foreign or already attempted records without mutations',async t=>{
+ const f=fixture(t),queue=f.runtime.queue,task=queue.enqueue(f.id,{recordId:f.item.id,operation:'prepare',resumeRecordAfterAnswer:true});
+ const other=f.db.create('custom');await assert.rejects(f.runtime.dismissRecord(other.id,f.item.id),/ait değil/);assert.equal(queue.get(f.id,task.id).state,'pending');
+ for(const status of ['executing','completed','uncertain']){
+  f.db.putResult({...f.item,status});await assert.rejects(f.runtime.dismissRecord(f.id,f.item.id),/geçmişi/);assert.equal(f.db.result(f.id,f.item.id).status,status);assert.equal(queue.get(f.id,task.id).state,'pending');
+ }
+ f.db.putResult(f.item);await f.runtime.dismissRecord(f.id,f.item.id);assert.equal(queue.get(f.id,task.id).state,'cancelled');assert.equal(queue.get(f.id,task.id).resumeRecordAfterAnswer,false);
+ assert.equal(f.db.template('job-search').records.dismissLabel,'Başvuruyu ele');assert.equal(reusableTemplate(f.db.template('job-search')).records.dismissLabel,'Başvuruyu ele');assert.equal(f.db.template('housing').records.dismissLabel,'Kaydı ele');
+});
+
+test('working records and question dismissal remain available outside the latest 500 records',async t=>{
+ const f=fixture(t);await f.runtime.runRecord(f.id,f.item.id,'prepare');await settle();
+ const q=f.db.askQuestion(f.id,{recordId:f.item.id,text:'Old record details?'});
+ for(let i=0;i<501;i++)f.db.putResult({...f.item,id:'recent-'+i,key:'recent-'+i});
+ const snapshot=f.db.snapshot(f.id);assert.ok(snapshot.results.some(item=>item.id===f.item.id&&item.recordAction.task.state==='running'));assert.equal(snapshot.automation.questions.find(item=>item.id===q.id).canDismissRecord,true);
 });
 
 test('preparation and execution cannot claim success without their durable results',async t=>{
@@ -244,4 +288,59 @@ test('record context does not replay another record login blocker from the same 
  await f.runtime.runRecord(f.id,f.item.id,'prepare');await settle();const current=f.launches.at(-1);
  const context=await f.flow(current).call(f.id,current.id,'get_automation_context',{});
  assert.equal(context.previousRuns.some(r=>r.id===old.id),false);
+});
+
+for(const template of ['job-search','housing','appointment','custom'])test(`direct execution needs no prior preparation, preserves limits and records a verified outcome (${template})`,async t=>{
+ const f=fixture(t,template),originalMode=f.db.get(f.id).mode;
+ const initial=f.db.snapshot(f.id).results[0];assert.equal(initial.status,'found');assert.equal(initial.recordAction.directOperation.disabled,false);
+ await assert.rejects(f.runtime.runRecord(f.id,f.item.id,'execute'),/taslağını/);
+ const task=await f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true});await settle();const run=f.launches.at(-1);
+ assert.equal((await f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true})).id,task.id);
+ assert.equal(f.launches.length,1);assert.equal(run.recordOperation,'execute');assert.equal(run.request.digest,undefined);
+ const context=await f.flow(run).call(f.id,run.id,'get_automation_context',{});
+ assert.equal(context.recordAuthorization.directExecution,true);assert.equal(context.recordAuthorization.approvedProposalDigest,null);assert.match(context.recordAuthorization.rule,/No prior preparation/);
+ assert.throws(()=>f.db.reserve(f.id,run.id,f.item.id),/taslağı gerekli/);
+ f.db.record(f.id,run.id,{key:f.item.key,url:f.item.url,title:f.item.title,summary:'Verified answers',proposal:'Actual form: verified answers, documents/cv.pdf, no additional commitments'});
+ assert.throws(()=>f.db.finish(f.id,run.id,'completed','Only saved a draft'),/Gönderim tamamlanmadı/);
+ f.db.reserve(f.id,run.id,f.item.id);assert.throws(()=>f.db.reserve(f.id,run.id,f.item.id));
+ f.db.observe(f.id,run.id,f.item.url,'Confirmed submitted');f.db.resolve(f.id,run.id,f.item.id,{status:'completed',url:f.item.url,evidence:'Confirmed submitted'});await f.finish(run);
+ assert.equal(f.db.snapshot(f.id).results[0].recordAction.directOperation,null);assert.equal(f.db.get(f.id).mode,originalMode);
+ await assert.rejects(f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true}),/yeniden gönderilemez/);
+});
+
+test('direct execution is explicit, record-scoped, and still enforces total and daily limits',async t=>{
+ const f=fixture(t),{enqueueRecordOperation}=await import('../app/record-operations.mjs');
+ f.db.put({...f.db.get(f.id),mode:'auto'});
+ assert.throws(()=>enqueueRecordOperation(f.runtime,f.id,f.item.id,'execute',{manual:false,direct:true}),/kullanıcı isteği/);
+ await f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true});await settle();const run=f.launches.at(-1);
+ const other=f.db.putResult({...f.item,id:'not-assigned',key:'not-assigned'});assert.throws(()=>f.db.reserve(f.id,run.id,other.id),/ait değil/);
+ f.db.record(f.id,run.id,{key:f.item.key,url:f.item.url,title:f.item.title,summary:'Checked',proposal:'Verified form'});
+ f.db.put({...f.db.get(f.id),maxActionsTotal:0});assert.throws(()=>f.db.reserve(f.id,run.id,f.item.id),/Toplam işlem sınır/);
+ f.db.put({...f.db.get(f.id),maxActionsTotal:null,maxActionsPerDay:0});assert.throws(()=>f.db.reserve(f.id,run.id,f.item.id),/Günlük işlem sınır/);
+ f.db.put({...f.db.get(f.id),maxActionsPerDay:10,revision:f.db.get(f.id).revision+1});assert.throws(()=>f.db.reserve(f.id,run.id,f.item.id),/yeniden onay/);
+});
+
+for(const answerBeforeFinish of [false,true])test(`direct request continues after record questions without a preparation detour (answer before finish: ${answerBeforeFinish})`,async t=>{
+ const f=fixture(t);await f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true});await settle();const run=f.launches.at(-1);
+ const q=await f.flow(run).call(f.id,run.id,'ask_workspace_question',{text:'Earliest available date?',fields:[{id:'date',label:'Date',type:'date'}]});
+ assert.equal(q.taskId,run.taskId);
+ if(!answerBeforeFinish)await f.finish(run);
+ await f.runtime.answer(f.id,q.id,{date:'2026-10-15'});
+ if(answerBeforeFinish){await f.finish(run);await f.runtime.tick();}
+ await settle();const next=f.launches.at(-1);assert.notEqual(next.id,run.id);assert.equal(next.recordOperation,'execute');assert.equal(next.request.direct,true);assert.equal(next.recordId,f.item.id);
+});
+
+test('stopping a direct request revokes submission authority when a later answer resumes preparation',async t=>{
+ const f=fixture(t);await f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true});await settle();const run=f.launches.at(-1);
+ const q=await f.flow(run).call(f.id,run.id,'ask_workspace_question',{text:'Missing fact?'});
+ await f.runtime.stopWorker(f.id,run.workerId);await f.runtime.answer(f.id,q.id,'Known now');await settle();
+ assert.equal(f.launches.at(-1).recordOperation,'prepare');assert.notEqual(f.launches.at(-1).request.direct,true);
+});
+
+test('uncertain direct execution cannot be retried as another submission',async t=>{
+ const f=fixture(t);await f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true});await settle();const run=f.launches.at(-1);
+ f.db.record(f.id,run.id,{key:f.item.key,url:f.item.url,title:f.item.title,summary:'Checked',proposal:'Verified form'});f.db.reserve(f.id,run.id,f.item.id);
+ await f.runtime.finish(f.id,'interrupted','Connection lost',run.workerId);
+ assert.equal(f.db.result(f.id,f.item.id).status,'uncertain');await assert.rejects(f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true}),/yeniden gönderilemez/);
+ assert.equal(f.db.snapshot(f.id).results[0].recordAction.directOperation,null);
 });

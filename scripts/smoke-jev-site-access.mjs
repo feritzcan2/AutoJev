@@ -40,5 +40,11 @@ try{
  now=deadline;const again=await open(browser,'one',blockedUrl);assert.equal(again.siteWait.attempts,2);assert.equal(count(blockedUrl),2);
  blocked=false;now=again.siteWait.retryAt;assert.ok(!(await open(browser,'one',blockedUrl)).siteWait);assert.equal(browsers.siteAccess.status(a),null);assert.equal(count(blockedUrl),3);
  limited=true;const limitedResult=await open(browser,'one',a.replace('/list','/limited'));assert.equal(limitedResult.siteWait.reason,'rate_limit');assert.equal(limitedResult.siteWait.retryAt,now+180000);
+ const failedUrl=b.replace('/list','/broken');
+ const navigate=client.navigate.bind(client);
+ client.navigate=async(slot,url)=>{if(url===failedUrl)throw Error('net::ERR_HTTP2_PROTOCOL_ERROR');return navigate(slot,url);};
+ await assert.rejects(open(browser,'one',failedUrl),/net::ERR_HTTP2_PROTOCOL_ERROR/,'Original navigation error survives Jev and the automation adapter');
+ client.navigate=navigate;
+ assert.ok((await open(browser,'one',b)).pageContext,'The owned source tab remains usable after a navigation failure');
  console.log('JEV_SOURCE_TABS_PRIVATE_STATE_SHARED_WAIT_RECOVERY_PASS');
 }finally{await browsers.close();db.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await rm(directory,{recursive:true,force:true});}

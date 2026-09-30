@@ -17,7 +17,7 @@ const backgroundOutput=new Map();
 const background=new BackgroundJobs(backgroundDb,{changed:candidateId=>emit('background-changed',{candidateId}),launch:(run,task,onEvent,signal)=>launchSkillWorker({root,data,agents,mcp,db:backgroundDb,run,task,onEvent,signal,complete:(...args)=>background.complete(...args),onOutput:bytes=>{
  const output=Buffer.concat([backgroundOutput.get(run.id)??Buffer.alloc(0),Buffer.from(bytes)]).subarray(-150000);backgroundOutput.set(run.id,output);while(backgroundOutput.size>30)backgroundOutput.delete(backgroundOutput.keys().next().value);emit('background-output',{candidateId:run.candidateId,runId:run.id,bytes});
 }})});
-handle('background-snapshot',async id=>({task:backgroundDb.task(id),runs:backgroundDb.runs(id),signals:backgroundDb.signals(id),applications:store.jobs(id).map(({id,company,role,status,updatedAt})=>({id,company,role,status,updatedAt}))}));
+handle('background-snapshot',async id=>({task:backgroundDb.task(id),mail:backgroundDb.mailContract(id),runs:backgroundDb.runs(id),signals:backgroundDb.signals(id),applications:store.jobs(id).map(({id,company,role,status,updatedAt})=>({id,company,role,status,updatedAt}))}));
 handle('background-save',async(id,input)=>{if(input.agentOverride!=null){const settings=withAgentDefaults(input.agentOverride);if(!['codex','claude'].includes(settings.provider)||![true,false,null].includes(settings.network))throw Error('Geçersiz agent ayarları');await ensureEngine().request('validate',settings);input={...input,agentOverride:{provider:settings.provider,model:settings.model,permission:settings.permission,reasoning:settings.reasoning,network:settings.provider==='codex'?settings.network:null}};}if(input.skillPath){if(!path.isAbsolute(input.skillPath)||path.extname(input.skillPath).toLowerCase()!=='.md')throw Error('Bir Markdown skill dosyası seç');if(!(await readFile(input.skillPath,'utf8')).trim())throw Error('Skill dosyası boş');}const result=backgroundDb.save(id,input);emit('background-changed',{candidateId:id});return result;});
 handle('background-pick-skill',async()=>{const result=await dialog.showOpenDialog(getWindow(),{properties:['openFile'],filters:[{name:'Skill',extensions:['md']}]});return result.canceled?null:result.filePaths[0];});
 handle('background-read-skill',async id=>readFile(backgroundDb.task(id).skillPath||path.join(root,'skills/gmail-sync/SKILL.md'),'utf8'));
@@ -40,8 +40,8 @@ handle('dismiss-mail-signal',(id,signalId)=>{backgroundDb.dismiss(id,signalId);e
 
  const telegram=new Telegram({store,data,encrypt:encryptSecret,decrypt:decryptSecret,changed:id=>emit('changed',{candidateId:id}),
   answer:async(id,question,text)=>{const result=await runtime.answer(id,question,text);emit('changed',{candidateId:id});return result;},
-  queueApplication:async(id,itemId)=>{db.approve(id,itemId);const item=db.result(id,itemId);if(item.sourceUrl)await runtime.runSource(id,item.sourceUrl);emit('changed',{candidateId:id});return {queued:true,message:'Kayıtlı taslak onaylandı.'};},
-  withdrawApplication:async(id,itemId)=>{const result=db.dismiss(id,itemId);emit('changed',{candidateId:id});return result;}});
+  queueApplication:(id,itemId,token)=>store.queueRecord(id,itemId,token),
+  withdrawApplication:(id,itemId)=>runtime.dismissRecord(id,itemId)});
  handle('telegram-status',id=>telegram.status(id));handle('telegram-configure',(id,input)=>telegram.configure(id,input));
  handle('telegram-pair',id=>telegram.pairing(id));handle('telegram-unlink',id=>telegram.unlink(id));handle('telegram-preferences',(id,input)=>telegram.preferences(id,input));handle('telegram-retry',id=>telegram.retry(id));handle('telegram-send-unsent-jobs',id=>telegram.sendUnsentJobs(id));
  scheduler.register('background-skills',()=>background.tick(),{interval:5000});await telegram.load();

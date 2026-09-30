@@ -44,6 +44,7 @@ test('one agent processes every page without a timer or browser step cap, includ
  for(let page=1;page<=3;page++){await reportPage(flow,id,run,page);await runtime.tick();assert.equal(launches.length,1);assert.equal(db.sources(id)[0].pageProgress.currentPage,page);}
  const context=await flow.call(id,run.id,'get_automation_context',{});assert.equal(context.currentRun.budget,undefined);assert.equal(context.automation.timeoutMinutes,undefined);assert.equal(context.automation.maxBrowserSteps,undefined);
  assert.equal(db.run(run.id).browserSteps,10002);
+ const finalPage=await flow.call(id,run.id,'browser_read',{});await flow.call(id,run.id,'save_scan_progress',{snapshotId:finalPage.snapshot.id,pendingUrls:[],processedUrls:[source,second,third],reason:'All three pages processed'});
  await flow.call(id,run.id,'finish_automation_run',{status:'completed',summary:'All pages processed',scan:{complete:true,pendingUrls:[],reason:'Final page and all relevant details processed',evidenceUrl:third}});
  await runtime.finish(id);await runtime.tick();assert.equal(db.get(id).status,'paused');assert.equal(db.sources(id)[0].scan.complete,true);
  await runtime.runSource(id,source);await settle();assert.equal(db.sources(id)[0].pageProgress,null);assert.equal(launches[1].pageProgress,undefined);

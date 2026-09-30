@@ -12,7 +12,7 @@ export function attentionTabs(issue,tabs,sources){
  return groupWorkspaceTabs(tabs,sources.map(s=>({id:s.url,url:s.url}))).grouped.get(issue.sourceUrl)??[];
 }
 
-export function automationAttentionPanel(api,{navigate,refresh}){
+export function automationAttentionPanel(api,{navigate,refresh,showRecordQuestions=()=>{}}){
  const banner=el('div',null,'automation-attention-banner');banner.hidden=true;banner.dataset.webOnly='';
  const bannerText=el('strong'),review=el('button','Müdahaleleri göster','quiet');review.type='button';
  banner.append(el('span','!','attention-icon'),bannerText,review);document.querySelector('main>header').after(banner);
@@ -34,7 +34,7 @@ export function automationAttentionPanel(api,{navigate,refresh}){
   }catch(error){feedback.textContent=error.message;}finally{open.disabled=false;}};
   return {open,choices};
  }
- review.onclick=()=>{navigate('agent');panel.scrollIntoView({block:'start',behavior:'smooth'});cards.values().next().value?.open.focus({preventScroll:true});};
+ review.onclick=()=>{const issues=automationAttention(snapshot).filter(i=>!i.retryAt);if(issues.length&&issues.every(i=>i.kind==='question'&&i.recordId)){showRecordQuestions();return;}navigate('agent');panel.scrollIntoView({block:'start',behavior:'smooth'});cards.values().next().value?.open.focus({preventScroll:true});};
  function create(issue){
   if(issue.kind==='question')return createQuestion(issue);
   if(issue.kind==='setup')return createSetup(issue);
@@ -97,6 +97,12 @@ export function automationAttentionPanel(api,{navigate,refresh}){
   attach.onclick=async()=>{attach.disabled=true;try{const added=await api.pickDocument(workspace);if(added){feedback.textContent='Belge eklendi. Formu gönderdiğinde agent inceleyecek.';if(owner===workspace)await refresh();}}catch(error){feedback.textContent=error.message;}finally{attach.disabled=false;}};
   const tab=issue.tabId||issue.url?questionTab(issue,workspace,feedback):null,actions=el('div',null,'automation-help-actions');
   if(tab)actions.append(tab.open);actions.append(attach);
+  if(issue.recordId&&issue.canDismissRecord){
+   const dismiss=el('button',snapshot.definition?.records?.dismissLabel??'Kaydı ele','quiet');dismiss.type='button';dismiss.dataset.dismissRecord=issue.recordId;
+   dismiss.onclick=async()=>{if(dismiss.disabled)return;const controls=[...card.querySelectorAll('button,input,textarea,select')],disabled=controls.map(control=>control.disabled);controls.forEach(control=>control.disabled=true);feedback.textContent='';
+    try{await api.automationDismiss(workspace,issue.recordId);if(owner===workspace)await refresh();}catch(error){feedback.textContent=error.message;}finally{controls.forEach((control,index)=>control.disabled=disabled[index]);}
+   };actions.append(dismiss);
+  }
   card.append(el('h3',issue.message),form,actions,...(tab?[tab.choices]:[]),feedback);list.append(card);return {card,open:tab?.open??form.querySelector('textarea,input,select,button')};
  }
  function createLimit(issue){
@@ -108,12 +114,14 @@ export function automationAttentionPanel(api,{navigate,refresh}){
   card.append(heading,el('p',issue.title,'automation-help-summary'),el('p',issue.message,'automation-help-summary'),el('p',issue.sessionOpen?'Görev ve devam noktası korunuyor. Yeniden agent açılmadan bu oturumda bekleniyor.':'Sağlayıcı limiti nedeniyle oturum kapandı. Limit yenilendikten sonra görevi yeniden başlatabilirsin.','automation-help-instructions'),actions);
   list.append(card);return {card,open};
  }
- return {update(id,value){
+ return {review:()=>review.click(),update(id,value){
   if(owner!==id){owner=id;signature='';planSignature='';scheduled.open=false;cards.clear();replyDrafts.clear();list.replaceChildren();}
   snapshot=value;const all=id?automationAttention(value):[],issues=all.filter(issue=>!issue.retryAt),plans=all.filter(issue=>issue.retryAt),next=JSON.stringify(issues);
-  banner.hidden=panel.hidden=!issues.length;
+  const panelIssues=issues.filter(i=>i.kind!=='question'||!i.recordId);
+  banner.hidden=!issues.length;panel.hidden=!panelIssues.length;
+  const onlyRecordQuestions=issues.length&&!panelIssues.length;review.textContent=onlyRecordQuestions?'Yanıt bekleyenleri göster':'Müdahaleleri göster';
   bannerText.textContent=issues.length&&issues.every(i=>i.kind==='usage_limit')?`${issues.length} agent kullanım limitini bekliyor`:`${issues.length} müdahale bekleniyor`;
-  if(next!==signature){signature=next;cards.clear();list.replaceChildren();for(const issue of issues)cards.set(issue.id,create(issue));announcement.textContent=issues.length?'Agent’ın beklediği durumlar aşağıda gösteriliyor.':'';}
+  if(next!==signature){signature=next;cards.clear();list.replaceChildren();for(const issue of panelIssues)cards.set(issue.id,create(issue));announcement.textContent=issues.length?'Agent’ın beklediği durumlar aşağıda gösteriliyor.':'';}
   scheduled.hidden=!plans.length;
   const nextPlans=JSON.stringify(plans);
   if(nextPlans!==planSignature){

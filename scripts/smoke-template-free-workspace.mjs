@@ -16,7 +16,7 @@ try{
  const id=await page.evaluate(()=>localStorage.getItem('selected-automation'));
  assert.equal(await page.locator('[data-view=board]').getAttribute('class'),'selected');
  assert.equal(await page.locator('[data-view=board] span').first().textContent(),'Takip tablosu');
- assert.deepEqual(await page.locator('.automation-results-table th').allTextContents(),['Kaynak','Kayıt','Durum','Son aktivite ↓','İşlemler']);
+ assert.deepEqual(await page.locator('.automation-results-table th').allTextContents(),['Son aktivite ↓','Kaynak','Kayıt','Durum']);
  await page.getByText('Henüz kayıt yok',{exact:true}).waitFor();
  assert.equal(await page.locator('#start').isVisible(),true);
  for(const view of ['board','sources','profile','agent','files','background'])assert.equal(await page.locator(`[data-view=${view}]`).evaluate(node=>getComputedStyle(node).opacity),'1');

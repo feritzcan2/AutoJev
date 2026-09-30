@@ -20,6 +20,11 @@
 .now-worker { color: var(--text); font-weight: 600; }
 
 .now-panel details { margin: 14px 0 0; font-size: 12px; }
+.now-panel .activity-description { margin-top: 8px; }
+.now-panel .activity-description[hidden] { display: none; }
+.now-panel .activity-description summary { display: list-item; list-style: disclosure-closed; }
+.now-panel .activity-description[open] summary { list-style: disclosure-open; }
+.now-panel .activity-description p { max-height: none; overflow: visible; }
 .now-panel summary { display: inline; cursor: pointer; color: var(--text-muted); list-style: none; }
 .now-panel summary::-webkit-details-marker { display: none; }
 .now-panel summary:hover, .now-panel details[open] summary { color: var(--accent-strong); }

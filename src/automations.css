@@ -18,7 +18,6 @@
 .automation-results-table th,.automation-results-table td{width:auto!important;font-size:12px;overflow-wrap:anywhere}
 .automation-results-table [data-column=title]{min-width:200px;max-width:300px}
 .automation-results-table [data-column=source]{min-width:130px}
-.automation-results-table [data-column=actions]{min-width:135px}
 .automation-results-table [data-column=updatedAt]{min-width:96px;white-space:nowrap;color:var(--text-muted);font-variant-numeric:tabular-nums}
 .automation-result-time time{display:flex;flex-direction:column;gap:3px}
 .automation-result-clock{font-size:11px;color:var(--text-muted)}
@@ -51,9 +50,8 @@
 .automation-results-table [data-column=rooms],.automation-results-table [data-column=area]{min-width:45px}
 .automation-results-table [data-column=rent]{min-width:90px}
 .automation-results-table th{white-space:nowrap}
-.automation-results-table [data-column=actions]{position:sticky;right:0;z-index:1;background:var(--bg-raised);box-shadow:-1px 0 var(--border)}
-.automation-results-table th[data-column=actions]{background:var(--bg-app)}
-.automation-results-table tbody tr:hover [data-column=actions]{background:var(--bg-hover)}
+.automation-results-table [data-column=status]{position:sticky;right:0;z-index:1;background:var(--bg-raised);box-shadow:-1px 0 var(--border)}
+.automation-results-table th[data-column=status]{background:var(--bg-app)}
 
 .workspace-conversation .automation-conversation[hidden]{display:none!important}
 .workspace-conversation .background-chat{margin:0;border:0;border-top:1px solid var(--border);border-radius:0;max-width:none;background:var(--bg-raised)}
@@ -199,7 +197,54 @@ body:not(.automation-workspace) [data-web-only]{display:none!important}
  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;text-overflow:ellipsis;
 }
 .automation-results-table .company-heading>span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
-.automation-results-table [data-column=status]{min-width:135px;max-width:190px}
-.automation-results-table [data-column=actions]{min-width:180px}
-.automation-results-table .table-actions{display:grid;grid-template-columns:max-content max-content;justify-content:end;gap:6px}
-.automation-results-table .table-actions [data-record-operation]{grid-column:1/-1;order:1}
+.automation-results-table [data-column=status]{min-width:160px;max-width:190px;padding-right:42px}
+.automation-results-table .record-row-menu{position:absolute;top:8px;right:8px;display:grid;place-items:center;width:28px;height:26px;padding:0;border:1px solid var(--border-strong);border-radius:6px;background:var(--bg-app);color:var(--text-secondary);font-size:20px;line-height:1;cursor:pointer}
+.automation-results-table .record-row-menu:hover,.automation-results-table .record-row-menu:focus-visible,.automation-results-table .record-row-menu[aria-expanded=true]{background:var(--bg-hover);color:var(--text)}
+.automation-results-table .record-row-actions:popover-open{position:fixed;inset:auto;width:200px;max-width:calc(100vw - 48px);max-height:min(70vh,320px);overflow:auto;margin:0;padding:5px;border:1px solid var(--border-strong);border-radius:8px;background:var(--bg-raised);box-shadow:0 12px 28px #0008;color:var(--text-secondary)}
+.automation-results-table .record-row-actions .table-actions{display:grid;grid-template-columns:minmax(0,1fr);gap:2px}
+.automation-results-table .record-row-actions .table-actions [data-record-operation]{grid-column:auto;order:0}
+.automation-results-table .record-row-actions .table-actions button{width:100%;min-height:30px;padding:7px 9px;border:0;border-radius:5px;background:transparent;color:var(--text-secondary);font-size:11px;text-align:left}
+.automation-results-table .record-row-actions .table-actions button:hover:not(:disabled),.automation-results-table .record-row-actions .table-actions button:focus-visible{background:var(--bg-hover);color:var(--text)}
+.automation-results-table .record-row-actions .table-actions button:disabled{opacity:.5}
+.automation-results-table .record-row-actions .table-actions [data-record-direct],.automation-results-table .record-row-actions .table-actions [data-record-operation]{color:var(--accent-strong);font-weight:600}
+.automation-results-table .record-row-actions .table-actions [data-record-direct]{margin-top:5px;border-top:1px solid var(--border);border-radius:0}
+.automation-results-table .record-row-actions .record-tab-choices{max-width:none}
+
+.automation-results-table tr[data-needs-answer=true]>td{background:color-mix(in srgb,var(--warning,#d7a74f) 7%,var(--bg-raised))}
+.automation-results-table tr[data-needs-answer=true]>td:first-child{box-shadow:inset 3px 0 var(--warning,#d7a74f)}
+.record-question-badge{display:inline-block;margin-top:8px;padding:3px 7px;border-radius:5px;background:#d7a74f26;color:var(--warning,#d7a74f);font-size:11px;font-weight:600}
+.record-question-preview{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;margin-top:6px;color:var(--text-secondary);font-size:11px;line-height:1.5}
+.automation-results-table .record-question-link{display:block;margin-top:7px;padding:0;background:transparent;border:0;color:var(--accent-strong);font-size:12px;text-align:left}
+
+.automation-results-table tr[data-working=true]>td{background:color-mix(in srgb,var(--accent,#66b3ff) 12%,var(--bg-raised));box-shadow:inset 0 -1px color-mix(in srgb,var(--accent,#66b3ff) 45%,var(--border))}
+.automation-results-table tr[data-working=true]>td:first-child{box-shadow:inset 4px 0 var(--accent),inset 0 -1px var(--border)}
+.record-working-badge{display:inline-flex;align-items:center;gap:7px;margin-bottom:9px;padding:5px 8px;border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);border-radius:6px;background:color-mix(in srgb,var(--accent) 14%,var(--bg-raised));color:var(--accent-strong);font-size:11px;font-weight:650;white-space:nowrap}
+.record-working-badge::before{content:'';width:7px;height:7px;flex-shrink:0;border-radius:50%;background:var(--accent);animation:source-pulse 1.6s ease-out infinite}
+@media(prefers-reduced-motion:reduce){.record-working-badge::before{animation:none}}
+
+/* The menu trigger appears with the row and stays visible while open. */
+@media(hover:hover) and (pointer:fine){
+ .automation-results-table .record-row-menu{opacity:0}
+ .automation-results-table tbody tr:is(:hover,:focus-within) .record-row-menu,.automation-results-table .record-row-menu[aria-expanded=true]{opacity:1}
+}
+
+.automation-workspace aside nav button[data-view=board]{display:grid;grid-template-columns:16px minmax(0,1fr) auto;align-items:center;gap:6px 8px}
+.board-nav-work{grid-column:2/-1;display:flex;flex-wrap:wrap;gap:4px;min-width:0}
+.board-nav-work .agent-nav-status{margin-left:0;white-space:nowrap}
+.board-nav-work[hidden]{display:none}
+
+/* Saved drafts and finished actions stay distinct from live work and questions. */
+.automation-results-table tr[data-outcome=prepared]{--record-outcome:#c5a8ff}
+.automation-results-table tr[data-outcome=completed]{--record-outcome:var(--success,#60cd9a)}
+.automation-results-table tr:is([data-outcome=prepared],[data-outcome=completed])>td{background:color-mix(in srgb,var(--record-outcome) 8%,var(--bg-raised))}
+.automation-results-table tr:is([data-outcome=prepared],[data-outcome=completed]):hover>td{background:color-mix(in srgb,var(--record-outcome) 13%,var(--bg-raised))}
+.automation-results-table tr:is([data-outcome=prepared],[data-outcome=completed])>td:first-child{box-shadow:inset 3px 0 var(--record-outcome)}
+.automation-results-table tr:is([data-outcome=prepared],[data-outcome=completed]) .automation-badge{display:inline-flex;align-items:center;gap:6px;background:color-mix(in srgb,var(--record-outcome) 16%,var(--bg-raised));color:var(--record-outcome);font-weight:650}
+.automation-results-table tr[data-outcome=prepared] .automation-badge::before{content:'✎' / '';font-size:14px;line-height:1}
+.automation-results-table tr[data-outcome=completed] .automation-badge::before{content:'✓' / '';font-size:14px;line-height:1}
+
+/* A live record tab stays recognizable across waiting, working and saved states. */
+.automation-results-table tr[data-open-tab=true]:not([data-needs-answer=true])>td{background:color-mix(in srgb,#4fd5c6 13%,var(--bg-raised))}
+.automation-results-table tr[data-open-tab=true]:not([data-needs-answer=true]):hover>td{background:color-mix(in srgb,#4fd5c6 18%,var(--bg-raised))}
+.automation-results-table tr[data-open-tab=true]>td:first-child{box-shadow:inset 4px 0 #4fd5c6}
+.automation-results-table tr[data-open-tab=true] .role-cell strong{color:#91eadf}

@@ -57,12 +57,29 @@ for(const provider of ['claude','codex'])test(`${provider}: setup launch resumes
  const mcp={endpoint:'http://localhost/mcp',grant:()=> 'test-token',revoke:()=>{}};
  const initial={...settings,provider};
  for(const agentSettings of [initial,{...initial,contextCompactPercent:60},{...initial,model:'new-model'},{...initial,model:'new-model',permission:'bypassPermissions'}]){
-  const run={id:'setup-'+launches.length,automationId:a.id,kind:'interview'};
+  const run=db.putRun({id:'setup-'+launches.length,automationId:a.id,kind:'interview'});
   const worker=await launchAutomationWorker({root:process.cwd(),data:dir,db,run,automation:{...a,agentSettings},signal:{aborted:false},browser:{},report:()=>{},onEvent:()=>{},agents,mcp});
   await worker.close();
  }
  assert.deepEqual(launches.map(l=>l.resumeId),[undefined,'native-1',undefined,undefined]);
  assert.equal(core.workspaces.history(a.id).forProfile(agentProfileId('web-interview')).conversation(a.id,provider),'native-4');
+});
+
+for(const provider of ['claude','codex'])test(`${provider}: record continuation launches the exact native conversation even after an unrelated task`,async t=>{
+ const {core,db,a}=fixture(t),dir=await mkdtemp(path.join(tmpdir(),'loop-record-resume-')),launches=[];
+ const agents=new AgentSessions({root:process.cwd(),data:dir,createEngine:(_binary,_directory,onEvent)=>({
+  request:async(op,args)=>{if(op==='start'){launches.push(args);await onEvent({event:'identity',sessionId:args.sessionId,nativeId:args.resumeId??'native-'+launches.length});}return {};},close:async()=>{}
+ })});
+ t.after(async()=>{await agents.close();await rm(dir,{recursive:true,force:true});});
+ const mcp={endpoint:'http://localhost/mcp',grant:()=> 'test-token',revoke:()=>{}};
+ for(const [id,recordId,continuation,model] of [['asking','one',null,'default'],['other','two',null,'default'],['answer','one',{runId:'asking'},'default'],['changed','one',{runId:'asking'},'new-model']]){
+  const run=db.putRun({id,automationId:a.id,kind:'run',recordOperation:'prepare',recordId,continuation});
+  const worker=await launchAutomationWorker({root:process.cwd(),data:dir,db,run,automation:{...a,agentSettings:{...settings,provider,model}},signal:{aborted:false},browser:{},report:()=>{},onEvent:()=>{},agents,mcp});
+  await worker.close();
+ }
+ assert.deepEqual(launches.map(l=>l.resumeId),[undefined,undefined,'native-1',undefined]);
+ assert.equal(db.run('asking').conversation.nativeId,'native-1');
+ assert.equal(db.run('answer').conversation.nativeId,'native-1');
 });
 
 test('launch pins the saved native profile and journal filters match its identity',async t=>{

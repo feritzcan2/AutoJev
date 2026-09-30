@@ -86,7 +86,7 @@ export class JevBrowser {
   constructor(directory,{config=jevConfig,choose=chooseJev,launch,headless=false,workspace,siteAccess,connection='existing',profile,endpoint=existingChromeEndpoint,openWindow=openChromeWindow,checkpoints=[],accountVault=null,onDisconnect=()=>{},onProgress=()=>{},onTabsClosed=()=>{},beforeSubmit=()=>{}}={}){
     this.siteAccess=siteAccess;this.accountVault=accountVault;this.directory=directory;this.config=config;this.choose=choose;this.launch=launch;this.headless=headless;this.workspace=workspace;
     this.onDisconnect=onDisconnect;this.onProgress=onProgress;this.onTabsClosed=onTabsClosed;this.beforeSubmit=beforeSubmit;this.checkpoints=checkpoints;this.connection=connection;this.profile=profile;this.endpoint=endpoint;this.openWindow=openWindow;
-    this.tabs=new Map();this.automationTabs=new Map();this.automationWorkspaces=new Map();this.automationSources=new Map();this.tabSearches=new Map();this.tabJobs=new Map();this.urlHashes=new Map();this.cleanupTasks=new Set();this.busy=false;this.closed=false;this.abort=new AbortController();this.startedAt=Date.now();this.usedContinuations=new Set();
+    this.tabs=new Map();this.automationTabs=new Map();this.automationRuns=new Map();this.automationWorkspaces=new Map();this.automationSources=new Map();this.tabSearches=new Map();this.tabJobs=new Map();this.urlHashes=new Map();this.cleanupTasks=new Set();this.busy=false;this.closed=false;this.abort=new AbortController();this.startedAt=Date.now();this.usedContinuations=new Set();
   }
   async context(){
     if(this.closed)throw Error('Jev browser is closed');
@@ -117,6 +117,7 @@ export class JevBrowser {
           this.tabJobs=new Map(restored.filter(id=>typeof saved?.jobs?.[id]==='string').map(id=>[id,saved.jobs[id]]));
           this.tabSearches=new Map(restored.filter(id=>typeof saved?.searches?.[id]==='string').map(id=>[id,saved.searches[id]]));
           this.automationTabs=new Map(restored.filter(id=>typeof saved?.automationTabs?.[id]==='string').map(id=>[id,saved.automationTabs[id]]));
+          this.automationRuns=new Map(restored.filter(id=>typeof saved?.automationRuns?.[id]==='string').map(id=>[id,saved.automationRuns[id]]));
           this.automationWorkspaces=new Map(restored.filter(id=>typeof saved?.automationWorkspaces?.[id]==='string').map(id=>[id,saved.automationWorkspaces[id]]));
           this.automationSources=new Map(restored.filter(id=>typeof saved?.automationSources?.[id]==='string').map(id=>[id,saved.automationSources[id]]));
           this.urlHashes=new Map(restored.filter(id=>typeof saved?.urlHashes?.[id]==='string').map(id=>[id,saved.urlHashes[id]]));
@@ -187,16 +188,26 @@ export class JevBrowser {
       this.tabs.set(slot.id,slot);
       if(this.tabJobs.has(slot.openerId))this.tabJobs.set(slot.id,this.tabJobs.get(slot.openerId));
       if(this.tabSearches.has(slot.openerId))this.tabSearches.set(slot.id,this.tabSearches.get(slot.openerId));
+      if(!this.automationTabs.has(slot.id)&&this.automationTabs.has(slot.openerId))this.automationTabs.set(slot.id,this.automationTabs.get(slot.openerId));
+      if(!this.automationRuns.has(slot.id)&&this.automationRuns.has(slot.openerId))this.automationRuns.set(slot.id,this.automationRuns.get(slot.openerId));
       if(this.automationWorkspaces.has(slot.openerId))this.automationWorkspaces.set(slot.id,this.automationWorkspaces.get(slot.openerId));
       if(this.automationSources.has(slot.openerId))this.automationSources.set(slot.id,this.automationSources.get(slot.openerId));
       page.on('close',()=>{if(this.tabs.get(slot.id)===slot){this.tabs.delete(slot.id);if(this.connection==='existing'&&this.transport?.socket.readyState!==WebSocket.OPEN)return;this.forgetTab(slot.id);this.persistTabs().catch(()=>{});}});await this.persistTabs();return slot;
     })();this.tracking.set(page,pending);return pending;
   }
+  async claimAutomationTab(slot,owner,state){
+    if(!state.automationWorkspaceId)return;
+    if(this.automationRuns.get(slot.id)===owner&&this.automationWorkspaces.get(slot.id)===state.automationWorkspaceId&&(!state.automationTabKey||this.automationTabs.get(slot.id)===state.automationTabKey))return;
+    this.automationRuns.set(slot.id,owner);
+    if(state.automationTabKey)this.automationTabs.set(slot.id,state.automationTabKey);
+    this.automationWorkspaces.set(slot.id,state.automationWorkspaceId);
+    await this.persistTabs();
+  }
   async persistTabs(){
-    if(this.connection==='existing'&&this.transport&&this.contextId)await this.registry.save(this.connectedEndpoint,this.contextId,this.transport.owned,{homeId:this.homeId??null,windowId:this.windowId??null,automationTabs:Object.fromEntries(this.automationTabs),automationWorkspaces:Object.fromEntries(this.automationWorkspaces),automationSources:Object.fromEntries(this.automationSources),jobs:Object.fromEntries(this.tabJobs),searches:Object.fromEntries(this.tabSearches),urlHashes:Object.fromEntries(this.urlHashes),cleanupTasks:[...this.cleanupTasks]});
+    if(this.connection==='existing'&&this.transport&&this.contextId)await this.registry.save(this.connectedEndpoint,this.contextId,this.transport.owned,{homeId:this.homeId??null,windowId:this.windowId??null,automationTabs:Object.fromEntries(this.automationTabs),automationRuns:Object.fromEntries(this.automationRuns),automationWorkspaces:Object.fromEntries(this.automationWorkspaces),automationSources:Object.fromEntries(this.automationSources),jobs:Object.fromEntries(this.tabJobs),searches:Object.fromEntries(this.tabSearches),urlHashes:Object.fromEntries(this.urlHashes),cleanupTasks:[...this.cleanupTasks]});
   }
   forgetTab(id){
-    this.tabs.delete(id);this.automationTabs.delete(id);this.automationWorkspaces.delete(id);this.automationSources.delete(id);this.tabJobs.delete(id);this.tabSearches.delete(id);this.urlHashes.delete(id);
+    this.tabs.delete(id);this.automationTabs.delete(id);this.automationRuns.delete(id);this.automationWorkspaces.delete(id);this.automationSources.delete(id);this.tabJobs.delete(id);this.tabSearches.delete(id);this.urlHashes.delete(id);
     this.transport?.owned.delete(id);this.transport?.attached.delete(id);
     for(const slot of this.tabs.values())for(const [url,child] of slot.openedFrames??[])if(child===id)slot.openedFrames.delete(url);
     for(const task of this.cleanupTasks)if(![...this.tabSearches.values()].includes(task))this.cleanupTasks.delete(task);
@@ -354,6 +365,20 @@ export class JevBrowser {
     try{
       const jobs=await this.reconcileJobs(state),research=await this.cleanupResearch(state);
       return {closed:[...(jobs?.closed??[]),...research.closed],retained:[...(jobs?.retained??[]),...research.retained]};
+    }finally{this.busy=false;}
+  }
+  async closeFinishedAutomationRunTabs(runId,workspaceId,{sourceScan=false,pendingTabIds=[]}={}){
+    if(this.closed||this.busy||!this.opening||this.connection==='existing'&&!this.browser?.isConnected())return {deferred:true};
+    this.busy=true;
+    try{
+      const closed=[],retained=[],pending=new Set(pendingTabIds);
+      for(const slot of [...this.tabs.values()]){
+        if(slot.id===this.homeId||slot.page.isClosed()||this.automationRuns.get(slot.id)!==runId||this.automationWorkspaces.get(slot.id)!==workspaceId||this.tabJobs.has(slot.id)||this.tabSearches.has(slot.id))continue;
+        if(pending.has(slot.id)||slot.verification||this.urlHashes.get(slot.id)!==urlHash(slot.page.url())||sourceScan&&!await disposableResearchTab(slot)){retained.push(slot.id);continue;}
+        try{await slot.page.close({runBeforeUnload:false});this.forgetTab(slot.id);closed.push(slot.id);}catch{retained.push(slot.id);}
+      }
+      if(closed.length)await this.onTabsClosed(closed);
+      await this.persistTabs();return {closed,retained};
     }finally{this.busy=false;}
   }
   tab(id){if(/^\d+$/.test(id))throw Object.assign(Error('Bu sayısal sekme kimliği mevcut Chrome aracına ait, Jev CDP kimliği değil. Kayıtlı taslağı orijinal Chrome aracıyla ve doğrulanmış aday profilinde sürdür; Jev bağlantısını yenileme veya yeni başvuru açma.'),{code:'TAB_BACKEND_MISMATCH'});const slot=this.tabs.get(id);if(!slot||slot.page.isClosed())throw Object.assign(Error('Jev sekmesi bulunamadı: kayıtlı sekme kapatılmış veya seçili Chrome oturumunda artık mevcut değil. browser_jev_tabs ile kurtarılan sekmeleri kontrol et. Başvuruyu yeniden açmadan önce kayıtlı gönderim/sonuç durumunu doğrula; gönderildiği belirsiz bir başvuruyu tekrar gönderme.'),{code:'TAB_MISSING'});return slot;}
@@ -545,7 +570,9 @@ export class JevBrowser {
         }
         if(migrated)await this.persistTabs();
       }
+      const recordScope=Boolean(state.automationWorkspaceId&&state.automationTabKey?.startsWith('record:'));
       const accessible=slot=>{
+        if(recordScope)return slot.id!==this.homeId&&!slot.page.isClosed()&&!this.tabJobs.has(slot.id)&&this.automationWorkspaces.get(slot.id)===state.automationWorkspaceId&&this.automationTabs.get(slot.id)===state.automationTabKey;
         if(sourceScope)return slot.id!==this.homeId&&!slot.page.isClosed()&&!this.tabJobs.has(slot.id)&&!this.tabSearches.has(slot.id)&&this.automationWorkspaces.get(slot.id)===state.automationWorkspaceId&&this.automationSources.get(slot.id)===state.automationSourceUrl;
         if(!state.multiWorker)return true;
         const job=this.tabJobs.get(slot.id),search=this.tabSearches.get(slot.id);
@@ -562,7 +589,7 @@ export class JevBrowser {
         mail.owner=owner;
         return {content:[{type:'text',text:JSON.stringify({...presentObservation(mail,await this.observe(mail),{full:true}),expectedEmail:credentials.email,verificationMail:true,message:'Önce görünen Gmail hesap adresini expectedEmail ile doğrula. Yalnızca etkin başvurunun güncel doğrulama iletisini oku; farklı hesaba veya ilgisiz postalara geçme.'})}]};
       }
-      if(name==='browser_jev_tabs')value={browser:'Jev Chrome',tabs:[...this.tabs.values()].filter(s=>s.id!==this.homeId&&!s.page.isClosed()&&accessible(s)).map(s=>({tabId:s.id,url:s.page.url(),title:s.observed?.title??'',changedSinceLastObservation:this.urlHashes.get(s.id)!==urlHash(s.page.url()),...(this.tabSearches.has(s.id)?{searchTaskId:this.tabSearches.get(s.id)}:{}),...(this.tabJobs.has(s.id)?{jobId:this.tabJobs.get(s.id)}:{})}))};
+      if(name==='browser_jev_tabs')value={browser:'Jev Chrome',tabs:[...this.tabs.values()].filter(s=>s.id!==this.homeId&&!s.page.isClosed()&&accessible(s)).map(s=>({tabId:s.id,url:s.page.url(),title:s.observed?.title??'',changedSinceLastObservation:this.urlHashes.get(s.id)!==urlHash(s.page.url()),...(this.automationTabs.get(s.id)?.startsWith('record:')?{recordId:this.automationTabs.get(s.id).slice(7)}:{}),...(this.tabSearches.has(s.id)?{searchTaskId:this.tabSearches.get(s.id)}:{}),...(this.tabJobs.has(s.id)?{jobId:this.tabJobs.get(s.id)}:{})}))};
       else if(name==='browser_jev_close_tab'){
         const slot=this.tab(args.tabId);
         if(!sourceScope||!accessible(slot))throw Error('Yalnızca devraldığın kaynağın tarama sekmesi kapatılabilir.');
@@ -573,22 +600,26 @@ export class JevBrowser {
       else if(name==='browser_jev_open'&&state.automationTabKey){
         // Internal read-only automation scope, never a model-selected target or job draft.
         if(state.activeJobId)throw Error('Başvuru sekmesi tarama için yeniden kullanılamaz.');
-        const reusable=[...this.tabs.values()].filter(s=>(sourceScope||this.automationTabs.get(s.id)===state.automationTabKey)&&accessible(s)&&!this.tabJobs.has(s.id)&&!s.page.isClosed()&&this.urlHashes.get(s.id)===urlHash(s.page.url()));
-        let slot=state.automationFreshTab?null:reusable.find(s=>s.page.url()===args.url)??reusable.find(s=>s.id===state.automationPreferredTabId)??reusable.find(s=>this.automationTabs.get(s.id)===state.automationTabKey)??reusable[0];
+        const reusable=[...this.tabs.values()].filter(s=>(sourceScope||this.automationTabs.get(s.id)===state.automationTabKey)&&accessible(s)&&!this.tabJobs.has(s.id)&&!s.page.isClosed()&&(recordScope||this.urlHashes.get(s.id)===urlHash(s.page.url())||sourceScope&&s.navigationFailed&&s.page.url().startsWith('chrome-error://')));
+        const retained=recordScope&&state.automationResumeRecord&&(reusable.find(s=>s.id===state.automationPreferredTabId)??reusable.at(-1));
+        let slot=retained||(state.automationFreshTab?null:reusable.find(s=>s.page.url()===args.url)??reusable.find(s=>s.id===state.automationPreferredTabId)??reusable.find(s=>this.automationTabs.get(s.id)===state.automationTabKey)??reusable[0]);
         if(!slot){
           const page=this.connection==='existing'?await this.openTabFrom(await this.home()):await context.newPage();
           slot=await this.track(page.context(),page);this.automationTabs.set(slot.id,state.automationTabKey);if(state.automationWorkspaceId)this.automationWorkspaces.set(slot.id,state.automationWorkspaceId);if(state.automationSourceUrl)this.automationSources.set(slot.id,state.automationSourceUrl);await this.persistTabs();
         }
-        slot.owner=owner;
+        slot.owner=owner;await this.claimAutomationTab(slot,owner,state);
         if(state.automationWorkspaceId&&!this.automationWorkspaces.has(slot.id)){this.automationWorkspaces.set(slot.id,state.automationWorkspaceId);await this.persistTabs();}
         if(state.automationSourceUrl&&this.automationSources.get(slot.id)!==state.automationSourceUrl){this.automationSources.set(slot.id,state.automationSourceUrl);await this.persistTabs();}
         try{
-          if(slot.page.url()!==args.url||this.siteAccess?.status(args.url))await this.navigate(slot,checkedUrl(args.url));
-          value=await this.observe(slot);
+          if(!retained&&(slot.page.url()!==args.url||this.siteAccess?.status(args.url)))await this.navigate(slot,checkedUrl(args.url));
+          value=await this.observe(slot);slot.navigationFailed=false;
         }catch(error){
           if(error.code==='SITE_WAIT')throw error;
+          // Chrome may commit its error document after goto rejects. Keep
+          // that owned source tab reusable without accepting unrelated URLs.
+          slot.navigationFailed=sourceScope&&!recordScope;
           this.urlHashes.set(slot.id,urlHash(slot.page.url()));await this.persistTabs();
-          value={browser:'Jev Chrome',tabId:slot.id,url:slot.page.url(),status:'loading',message:'Gezinme tamamlanmadı; aynı sekmeyi gözlemle.'};
+          value={browser:'Jev Chrome',tabId:slot.id,url:slot.page.url(),status:'loading',message:'Gezinme tamamlanmadı; aynı sekmeyi gözlemle.',...(sourceScope&&!recordScope?{navigationError:String(error.message??error),requestedUrl:args.url}:{})};
         }
       }
       else if(name==='browser_jev_open'){
@@ -611,7 +642,7 @@ export class JevBrowser {
           await this.reserveResearchTab(state);
         }
         const page=this.connection==='existing'?await this.openTabFrom(await this.home()):await context.newPage();
-        const slot=await this.track(page.context(),page);slot.owner=owner;
+        const slot=await this.track(page.context(),page);slot.owner=owner;await this.claimAutomationTab(slot,owner,state);
         if(state.activeJobId)this.tabJobs.set(slot.id,state.activeJobId);
         else if(state.activeSearchTaskId)this.tabSearches.set(slot.id,state.activeSearchTaskId);
         else if(state.automationWorkspaceId)this.automationWorkspaces.set(slot.id,state.automationWorkspaceId);
@@ -619,7 +650,7 @@ export class JevBrowser {
         await this.persistTabs();
         try{await this.navigate(slot,checkedUrl(args.url));value=await this.observe(slot);}catch(error){if(error.code==='SITE_WAIT')throw error;value={browser:'Jev Chrome',tabId:slot.id,url:page.url(),status:'loading',message:'Gezinme tamamlanmadı; aynı sekmeyi gözlemle.'};}
       }else{
-        const slot=this.tab(args.tabId);if(!accessible(slot))throw Error('Sekme başka bir worker’ın görevine ait. Kendi görev sekmeni kullan.');slot.owner=owner;
+        const slot=this.tab(args.tabId);if(!accessible(slot))throw Error('Sekme başka bir worker’ın görevine ait. Kendi görev sekmeni kullan.');slot.owner=owner;await this.claimAutomationTab(slot,owner,state);
         if(state.automationWorkspaceId&&!this.automationWorkspaces.has(slot.id)){this.automationWorkspaces.set(slot.id,state.automationWorkspaceId);await this.persistTabs();}
         if(state.automationSourceUrl&&this.automationSources.get(slot.id)!==state.automationSourceUrl){this.automationSources.set(slot.id,state.automationSourceUrl);await this.persistTabs();}
         if(state.multiWorker&&state.activeSearchTaskId&&slot.id===state.activeSourceTabId&&!this.tabJobs.has(slot.id)){this.tabSearches.set(slot.id,state.activeSearchTaskId);await this.persistTabs();}
@@ -665,12 +696,12 @@ export class JevBrowser {
           const url=await embeddedFormTarget(slot,args.frameId,owner);
           const openedId=slot.openedFrames?.get(url),opened=openedId?this.tabs.get(openedId):null;
           if(opened&&!opened.page.isClosed()){
-            opened.owner=owner;
+            opened.owner=owner;await this.claimAutomationTab(opened,owner,state);
             return {content:[{type:'text',text:JSON.stringify({...presentObservation(opened,await this.observe(opened),{full:true}),parentTabId:slot.id,reused:true})}]};
           }
           if(this.tabSearches.has(slot.id)&&!this.tabJobs.has(slot.id))await this.reserveResearchTab(state,{exclude:[slot.id]});
           const page=this.connection==='existing'?await this.openTabFrom(slot):await context.newPage();
-          const child=await this.track(page.context(),page);child.owner=owner;
+          const child=await this.track(page.context(),page);child.owner=owner;await this.claimAutomationTab(child,owner,state);
           slot.openedFrames??=new Map();slot.openedFrames.set(url,child.id);
           const jobId=this.tabJobs.get(slot.id);if(jobId)this.tabJobs.set(child.id,jobId);
           else if(this.tabSearches.has(slot.id))this.tabSearches.set(child.id,this.tabSearches.get(slot.id));
@@ -777,10 +808,26 @@ export class JevBrowser {
     }finally{this.busy=false;}
   }
   async focus(id){await this.context();await this.tab(id).page.bringToFront();return {focused:true};}
-  async close(){
-    this.closed=true;this.abort.abort();this.transport?.close();
+  async close({closeTabs=false}={}){
+    this.closed=true;this.abort.abort();
+    const closed=[],failed=[];
+    if(closeTabs&&this.connection==='existing'&&this.transport){
+      // The CDP ownership set includes restored tabs and tabs opened by pages.
+      // Never close other tabs in the user's Chrome profile.
+      const ids=[...this.transport.owned].sort((a,b)=>(a===this.homeId)-(b===this.homeId));
+      for(const id of ids){
+        try{
+          const result=await this.transport.call('Target.closeTarget',{targetId:id});
+          if(!result.success)throw Error('Chrome did not close the target');
+          this.forgetTab(id);closed.push(id);
+        }catch{failed.push(id);}
+      }
+      if(closed.length)try{await this.persistTabs();}catch(error){console.warn('Kapatılan Chrome sekmeleri kaydedilemedi:',error);}
+    }
+    this.transport?.close();
     const context=await this.opening?.catch(()=>null);
     if(this.connection==='existing')await this.browser?.close();else await context?.close();
     this.tabs.clear();
+    return {closed,failed};
   }
 }

@@ -45,7 +45,7 @@ test('model, permission or network changes start fresh; compatible settings pres
   store.saveConversation(p.id,'codex','old',settings);assert.equal(selectResume(store,p.id,settings),'old');
   assert.equal(selectResume(store,p.id,{...settings,model:'default'}),'old');
   assert.equal(selectResume(store,p.id,{...settings,model:'another-model'}),undefined);
-  assert.equal(selectResume(store,p.id,{...settings,reasoning:'high'}),'old');
+  assert.equal(selectResume(store,p.id,{...settings,reasoning:'high'}),undefined);
   assert.equal(selectResume(store,p.id,{...settings,permission:'bypassPermissions'}),undefined);
   assert.equal(selectResume(store,p.id,{...settings,network:true}),undefined);
   store.saveConversation(p.id,'codex','new',{...settings,permission:'bypassPermissions'});
