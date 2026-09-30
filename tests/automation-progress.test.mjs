@@ -75,3 +75,35 @@ test('a secondary worker supplies the shared session view while run state keeps 
  assert.equal(view.activeRun.kind,'run');assert.equal(view.workers[0].active,null);assert.equal(view.workers[1].active.sessionId,run.id);
  assert.equal(automationProgress(view).running,true);
 });
+
+test('an enabled worker with no task waits instead of borrowing another worker’s running status',()=>{
+ const run={...finished('run','running'),workerId:'main',operation:'scan',sources:['https://homes.test/'],finishedAt:null};
+ const session={candidateId:'home',workerId:'main',sessionId:run.id,state:'Working'};
+ const s=snapshot({status:'enabled'},{runs:[run],activeRun:run,activeRuns:[run],workers:[{id:'main',name:'Worker 1'},{id:'helper',name:'Worker 2'}]});
+ const view=webWorkspaceView(s,{sessions:new Map([['home',session]])});
+ assert.equal(view.workers[0].presentation.status,'Çalışıyor');
+ const idle=view.workers[1];
+ assert.equal(idle.active,null);assert.equal(idle.execution.task,null);
+ assert.equal(idle.execution.status,'running'); // Still enabled to receive work.
+ assert.equal(idle.presentation.status,'Görev bekliyor');
+ assert.equal(idle.presentation.title,'Sıradaki görev bekleniyor');
+ assert.match(idle.presentation.detail,/çalışan agent oturumu yok/);
+ assert.equal(idle.presentation.outcome,null);
+ s.activeRun=null;s.activeRuns=[];s.runs=[finished('run','completed')];
+ assert.equal(webWorkspaceView(s,{sessions:new Map()}).workers[1].presentation.status,'Görev bekliyor');
+ s.workers[1].enabled=false;
+ const stopped=webWorkspaceView(s,{sessions:new Map()}).workers[1];
+ assert.equal(stopped.execution.status,'paused');
+ assert.notEqual(stopped.presentation.status,'Görev bekliyor');
+});
+
+test('a brand-new workspace with no conversation invites the first message instead of listing missing fields',()=>{
+ const greeting={role:'assistant',text:'Ne yapmak istediğini anlat.',at:1};
+ const s=snapshot({goal:'',reviewedRevision:null},{messages:[greeting],missing:['Amaç','En az bir kaynak adresi','Beklenen sonuç']});
+ const p=automationProgress(s);
+ assert.equal(p.title,'Ne yapmak istediğini anlat');assert.equal(p.next,'İlk mesajını Agent sayfasına yaz; gerisini agent sorar.');assert.equal(p.primary.id,'message');assert.equal(p.fresh,true);
+ assert.doesNotMatch(p.next,/Eksik/);
+ assert.equal(automationProgress({...s,messages:[{role:'assistant',text:'Ne yapmak istediğini anlat.',at:1}]}).fresh,true);
+ const after=automationProgress({...s,messages:[greeting,{role:'user',text:'Ev arıyorum',at:2}]});
+ assert.match(after.next,/Eksik bilgiler/);assert.equal(after.fresh,false);
+});

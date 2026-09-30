@@ -35,7 +35,7 @@ export function migrateManualApplications(store){
 export function applicationQueueState(store,candidate,job,{campaign=store.campaign(candidate),tasks=store.workerState.tasks(candidate)}={}){
  const verificationOnly=job.status==='uncertain',actionLabel=verificationOnly?'Öncelikli doğrula':'Öncelikli başvur';
  const action={verificationOnly,actionLabel},unavailable=message=>({...action,state:'unavailable',message});
- if(job.duplicateApplication)return unavailable('Bu ilan önceki bir başvuruyla eşleşiyor. JobLoop’tan kontrol et.');
+ if(job.duplicateApplication)return unavailable('Bu ilan önceki bir başvuruyla eşleşiyor. AutoJev’den kontrol et.');
  if(job.followupStopped)return unavailable('Bu başvurunun takibi bırakılmış.');
  if(['submitted','already_submitted'].includes(job.status)||['manual_submitted','already_submitted'].includes(job.manualOutcome))return unavailable('Bu başvuru zaten tamamlanmış.');
  const task=tasks.find(w=>w.task.jobId===job.id)?.task;

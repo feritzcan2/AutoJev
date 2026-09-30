@@ -106,5 +106,6 @@ test('owned tabs attach their out-of-process form frames without attaching other
   assert.deepEqual(commands[0].params,{targetId:'owned-page',flatten:true});
   assert.equal(commands[1].method,'Target.setAutoAttach');
   assert.equal(commands[1].sessionId,'owned-page-session');
+  assert.equal(commands[1].params.waitForDebuggerOnStart,true);
   assert.deepEqual(commands[1].params.filter,[{type:'iframe',exclude:false},{exclude:true}]);
 });

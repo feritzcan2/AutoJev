@@ -12,6 +12,7 @@ export function pendingQuestions(snapshot){
 export function sourceResultView(source,campaign){
   const scanning=campaign?.status==='running'&&(campaign.tasks??[campaign.task]).some(task=>task?.kind==='search'&&task.sourceId===source.id&&task.seenWorking===true);
   if(scanning)return{title:'Taranıyor',detail:'Agent şu anda bu kaynağı tarıyor.',scanning:true};
+  if(source.lastStatus==='partial'&&source.scanProgress)return{title:'Kısmi tarama',detail:`${source.lastResult} Devam: ${source.scanProgress.nextStep??`${source.scanProgress.pendingUrls.length} bağlantı kaldı`}`,scanning:false};
   return{title:source.lastRunAt?(source.lastFound?`${source.lastFound} yeni ilan`:'Yeni ilan yok'):'Taranmayı bekliyor',detail:source.lastResult,scanning:false};
 }
 export function activityView(snapshot,now=Date.now()){
@@ -46,7 +47,16 @@ export function ageLabel(at,now=Date.now()){
   if(!at)return 'Henüz işlem bildirimi yok';
   const seconds=Math.max(0,Math.floor((now-Date.parse(at))/1000));
   if(!Number.isFinite(seconds))return 'Güncelleme zamanı bilinmiyor';
-  return `Son bildirim: ${seconds<60?seconds+' saniye':seconds<3600?Math.floor(seconds/60)+' dakika':Math.floor(seconds/3600)+' saat'} önce`;
+  return `Son bildirim: ${duration(seconds)} önce`;
+}
+// A running turn counts up from its start instead of reading like a stale report.
+export function elapsedLabel(at,now=Date.now()){
+  const seconds=Math.max(0,Math.floor((now-Date.parse(at))/1000));
+  if(!Number.isFinite(seconds))return 'Çalışıyor';
+  return `${seconds<60?seconds+' saniyedir':seconds<3600?Math.floor(seconds/60)+' dakikadır':Math.floor(seconds/3600)+' saattir'} çalışıyor`;
+}
+function duration(seconds){
+  return seconds<60?seconds+' saniye':seconds<3600?Math.floor(seconds/60)+' dakika':Math.floor(seconds/3600)+' saat';
 }
 
 export function workerActivityView(snapshot,worker,now=Date.now()){

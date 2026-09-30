@@ -3,6 +3,11 @@ import './data-management.css';
 export function createDataManagement(api,{notice=()=>{}}={}){
  const element=document.createElement('section');element.id='config-data';element.className='config-section data-management';
  element.innerHTML=`<h3>Veriler ve yedekler</h3>
+ <h4>Veri klasörü</h4><p data-directory class="data-directory"></p>
+ <p>Tüm çalışma alanlarının kayıtları ve belgeleri bu klasörde tutulur.</p>
+ <div class="data-actions"><button type="button" class="quiet" data-open-directory>Klasörü göster</button><button type="button" data-use-directory>Mevcut veri klasörünü aç</button><button type="button" class="quiet" data-change-directory>Verileri başka klasöre taşı</button></div>
+ <p>Mevcut veri klasörünü açarken jobloop.sqlite dosyasının bulunduğu klasörü seç. Uygulama yeniden başlar ve sonraki açılışlarda da seçilen klasördeki kayıtları kullanır. Verileri taşımak için boş bir klasör seç; eski klasör kurtarma kopyası olarak kalır.</p>
+ <h4>Yedekler</h4>
  <p>Otomasyonlarını, template’lerini, aday profillerini, belgelerini ve sonuç kayıtlarını bir yedek klasörüne aktar.</p>
  <p class="data-notice">Yedekler kişisel veriler içerir ve şifrelenmez; güvenli bir yerde sakla. Dışa aktarılan yedekte kayıtlı portal şifreleri, Telegram bağlantıları, Jev anahtarı ve agent oturumları bulunmaz. Geri yükledikten sonra bunları yeniden bağlamalısın.</p>
  <div class="data-actions"><button type="button" data-backup>Yedek dışa aktar</button><button type="button" class="quiet" data-restore>Yedekten geri yükle</button><button type="button" class="quiet" data-open>Otomatik yedekleri aç</button></div>
@@ -14,6 +19,7 @@ export function createDataManagement(api,{notice=()=>{}}={}){
  async function load(){
   try{
    const data=await api.dataStatus();
+   element.querySelector('[data-directory]').textContent=data.directory??'Veri konumu okunamadı';
    element.querySelector('[data-retention]').textContent=`Prompt kayıtları en fazla ${data.retention.days} gün, aday başına ${data.retention.promptsPerCandidate.toLocaleString('tr-TR')} ve toplam ${data.retention.promptsTotal.toLocaleString('tr-TR')} kayıt tutulur. Tamamlanan arka plan ve otomasyon terminal kayıtlarında ${data.retention.days} gün ve ${data.retention.terminalFiles} dosya sınırı vardır. Başvuru geçmişi, otomasyon konuşmaları ve sonuçlar bu temizliğe dahil değildir.`;
    status.textContent=`Sürüm ${data.appVersion} · ${data.prompts.toLocaleString('tr-TR')} prompt kaydı${data.pendingRestore?' · Geri yükleme için yeniden başlatma bekleniyor':''}`;
    list.replaceChildren();
@@ -23,7 +29,10 @@ export function createDataManagement(api,{notice=()=>{}}={}){
  }
  async function run(action){if(busy)return;busy=true;for(const button of buttons)button.disabled=true;status.textContent='İşlem sürüyor…';try{await action();await load();}catch(error){status.textContent=error.message;notice(error.message);}finally{busy=false;for(const button of buttons)button.disabled=false;}}
  element.querySelector('[data-backup]').onclick=()=>run(async()=>{const result=await api.dataBackup();if(result)notice('Yedek oluşturuldu: '+result.path);});
- element.querySelector('[data-restore]').onclick=()=>run(async()=>{const result=await api.dataRestore();if(result?.restartRequired)notice('Yedek doğrulandı. JobLoop geri yüklemek için yeniden başlatılıyor.');});
+ element.querySelector('[data-open-directory]').onclick=()=>run(()=>api.dataOpenDirectory());
+ element.querySelector('[data-use-directory]').onclick=()=>run(async()=>{const result=await api.dataUseDirectory();if(result?.restartRequired)notice('Seçilen veri klasörüyle uygulama yeniden başlatılıyor.');else if(result?.changed===false)notice('Bu veri klasörü zaten açık.');});
+ element.querySelector('[data-change-directory]').onclick=()=>run(async()=>{const result=await api.dataChangeDirectory();if(result?.restartRequired)notice('Veriler yeni klasöre taşınmak üzere uygulama yeniden başlatılıyor.');});
+ element.querySelector('[data-restore]').onclick=()=>run(async()=>{const result=await api.dataRestore();if(result?.restartRequired)notice('Yedek doğrulandı. AutoJev geri yüklemek için yeniden başlatılıyor.');});
  element.querySelector('[data-open]').onclick=()=>run(()=>api.dataOpenBackups());
  element.querySelector('[data-clear]').onclick=()=>run(async()=>{const result=await api.dataClearLogs();if(result)notice('Prompt ve terminal kayıtları temizlendi.');});
  return {element,load};

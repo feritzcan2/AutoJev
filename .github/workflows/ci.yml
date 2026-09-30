@@ -88,7 +88,7 @@ jobs:
           if [ "$RUNNER_OS" = Linux ]; then xvfb-run -a pnpm test:packaged; else pnpm test:packaged; fi
       - name: Check universal bundle signature
         if: runner.os == 'macOS'
-        run: codesign --verify --deep --strict 'release/mac-universal/JobLoop.app'
+        run: codesign --verify --deep --strict 'release/mac-universal/AutoJev.app'
       - name: Collect unsigned packaging evidence
         run: node scripts/release-assets.mjs release-assets --collect
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

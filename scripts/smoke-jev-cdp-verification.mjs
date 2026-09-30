@@ -18,12 +18,21 @@ const endpoint=async()=>`ws://127.0.0.1:${port}${route}`;
 const openWindow=async url=>root.send('Target.createTarget',{url,newWindow:true,browserContextId:targetInfo.browserContextId});
 const client=new JevBrowser(path.join(directory,'candidate'),{profile:{directory:'Test'},endpoint,openWindow});
 try{
- await context.route('https://portal.test/**',r=>r.fulfill({contentType:'text/html',body:'<iframe title="reCAPTCHA" src="https://recaptcha.net/recaptcha/api2/anchor?fixture=1" style="width:304px;height:150px"></iframe>'}));
- await context.route('https://recaptcha.net/recaptcha/api2/anchor*',r=>r.fulfill({contentType:'text/html',body:'<span id="recaptcha-anchor" role="checkbox" aria-checked="false" style="display:inline-block;width:28px;height:28px">✓</span>'}));
+ await context.route('https://portal.test/**',r=>r.fulfill({contentType:'text/html',body:`<iframe title="reCAPTCHA" src="https://recaptcha.net/recaptcha/api2/anchor?fixture=1" style="width:304px;height:150px"></iframe><button onclick="document.body.textContent='Listings'">Absenden</button>`}));
+ await context.route('https://recaptcha.net/recaptcha/api2/anchor*',r=>r.fulfill({contentType:'text/html',body:`<span id="recaptcha-anchor" role="checkbox" aria-checked="false" style="display:inline-block;width:28px;height:28px" onclick="this.setAttribute('aria-checked','true')">✓</span>`}));
  const o=JSON.parse((await client.callTool({name:'browser_jev_open',arguments:{url:'https://portal.test/register'}},'local',{})).content[0].text);
  const slot=client.tab(o.tabId);await slot.page.frames()[1].waitForLoadState();
  const obs=await client.observe(slot);
  assert.ok(obs.clickTargets.some(t=>t.verification));
  assert.equal(obs.verification.checkbox,true);
- console.log('SCOPED_CDP_CROSS_ORIGIN_CHECKBOX_DISCOVERY_PASS');
+ const call=async(name,args)=>JSON.parse((await client.callTool({name,arguments:args},'local',{})).content[0].text);
+ const checked=await call('browser_jev_click',{tabId:o.tabId,targetId:obs.clickTargets.find(t=>t.verification).targetId});
+ assert.equal(checked.executed,true);
+ assert.equal(checked.verification.state,'cleared');
+ const continued=await call('browser_jev_click',{tabId:o.tabId,targetId:checked.clickTargets.find(t=>t.label==='Absenden').targetId});
+ assert.equal(continued.executed,true);
+ assert.equal(await slot.page.locator('body').innerText(),'Listings');
+ assert.equal(personal.isClosed(),false);
+ assert.equal(personal.url(),fixture.url);
+ console.log('SCOPED_CDP_CROSS_ORIGIN_CHECKBOX_CLICK_AND_CONTINUE_PASS');
 }finally{await client.close();await context.close();await fixture.close();await rm(directory,{recursive:true,force:true});}

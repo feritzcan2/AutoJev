@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {activityView,workerActivityView,ageLabel,sourceResultView,applicationActivity,pendingQuestions} from '../src/activity.js';
+import {activityView,workerActivityView,ageLabel,elapsedLabel,sourceResultView,applicationActivity,pendingQuestions} from '../src/activity.js';
 import {Store} from '../app/store.mjs';
 const base={profile:{id:'a'},active:{candidateId:'a',sessionId:'s',state:'Working'},campaign:{status:'running',task:{id:'t',kind:'application',jobId:'j',seenWorking:true}},jobs:[{id:'j',company:'Example',role:'Counsel',url:'https://example.test'}],questions:[],events:[]};
 test('live action follows session and task; timestamps are not fabricated',()=>{
@@ -73,4 +73,11 @@ test('worker cards show their own task, state and history while another worker p
  assert.equal(b.title,'LinkedIn taranıyor');assert.equal(b.detail,'LinkedIn taranıyor');assert.equal(b.url,null);assert.equal(b.history.length,2);
  second.active=null;second.campaign={status:'stopped',note:'Worker durduruldu',task:null};
  assert.equal(workerActivityView(snapshot,second).title,'Durduruldu');assert.equal(workerActivityView(snapshot,main).state,'Çalışıyor');
+});
+
+test('running turns count up from their start',()=>{
+ const start=Date.parse('2026-01-01T10:00:00Z'),at=new Date(start).toISOString();
+ assert.equal(elapsedLabel(at,start+42000),'42 saniyedir çalışıyor');
+ assert.equal(elapsedLabel(at,start+5*60000),'5 dakikadır çalışıyor');
+ assert.equal(elapsedLabel(at,start+2*3600000),'2 saattir çalışıyor');
 });

@@ -122,7 +122,7 @@ export class TelegramBot{
   if(!notification||notification.row.status!=='sent'||notification.row.data.kind!=='new_job')return {text:'Bu ilan bu bağlantı üzerinden sıraya alınamıyor.',show_alert:true};
   const {row,link}=notification,candidate=link.candidate_id;
   try{
-   if(!this.queueApplication)throw Error('Sıraya alma kullanılamıyor. JobLoop’u yeniden başlat.');
+   if(!this.queueApplication)throw Error('Sıraya alma kullanılamıyor. AutoJev’i yeniden başlat.');
    const job=this.store.job(candidate,row.data.jobId),state=applicationQueueState(this.store,candidate,job);
    if(state.state!=='available'){
     this.db.refreshJobMessages(candidate,job.id);await this.updateNotification(row,signal);
@@ -151,12 +151,12 @@ export class TelegramBot{
    try{
     const job=this.store.job(link.candidate_id,row.data.jobId);
     if(job.manualOutcome!=='withdrawn'){
-     if(!this.withdrawApplication)throw Error('JobLoop’u yeniden başlat.');
+     if(!this.withdrawApplication)throw Error('AutoJev’i yeniden başlat.');
      // Use the desktop action so an active application is stopped before withdrawal.
      await this.withdrawApplication(link.candidate_id,job.id);
     }
     withdrawn=true;this.db.refreshJobMessages(link.candidate_id,job.id);this.changed(link.candidate_id);
-   }catch{return {text:'Vazgeçildi olarak kaydedilemedi; mesaj silinmedi. JobLoop’tan kontrol edip yeniden dene.',show_alert:true};}
+   }catch{return {text:'Vazgeçildi olarak kaydedilemedi; mesaj silinmedi. AutoJev’den kontrol edip yeniden dene.',show_alert:true};}
   }
   const prefix=withdrawn?'Vazgeçildi olarak kaydedildi. ':'';
   if(Number.isFinite(message.date)&&message.date>0&&this.now()-message.date*1000>=48*60*60*1000)return {text:prefix+'Telegram botları 48 saatten eski mesajları silemez. Mesaja basılı tutup Telegram’dan silebilirsin.',show_alert:true};

@@ -52,7 +52,9 @@ export class JevCdpTransport {
       // Cross-origin application forms can run as out-of-process iframes.
       // Attach their targets from the owned page session, without attaching
       // unrelated tabs in the user's Chrome profile.
-      await this.call('Target.setAutoAttach',{autoAttach:true,waitForDebuggerOnStart:false,flatten:true,filter:[{type:'iframe',exclude:false},{exclude:true}]},sessionId);
+      // Let Playwright initialize the frame session before navigation runs;
+      // otherwise it can miss the frame URL and its visible controls.
+      await this.call('Target.setAutoAttach',{autoAttach:true,waitForDebuggerOnStart:true,flatten:true,filter:[{type:'iframe',exclude:false},{exclude:true}]},sessionId);
     }catch(error){this.attached.delete(targetId);throw error;}
   }
   receive(message){

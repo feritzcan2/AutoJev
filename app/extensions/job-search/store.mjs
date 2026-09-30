@@ -1,3 +1,4 @@
+import {withAgentDefaults} from '../../agent-settings.mjs';
 import {TemplateRegistry} from '../../template-registry.mjs';
 import {jobSearchDefinition} from './definition.mjs';
 import {planInput} from '../../automation-templates.mjs';
@@ -18,6 +19,7 @@ import {JobRegistry} from '../../job-registry.mjs';
 import {applicationReadiness,rankDecision,rankProfileKey,rankThreshold,normalizeRank} from '../../ranking.mjs';
 import {normalizeRankWeights,weightedRankScore} from '../../rank-criteria.mjs';
 import {sourceIntegrations,validateSourceSearch} from '../../source-integrations.mjs';
+import {sourceCoverage} from '../../source-coverage.mjs';
 import {normalizeFields,validateAnswers} from '../../question-forms.mjs';
 import {reusableAnswers,reusableFactKeys} from '../../candidate-answers.mjs';
 export {reusableFactKeys} from '../../candidate-answers.mjs';
@@ -100,16 +102,17 @@ export class Store {
     if(!['research','prepare','submit'].includes(scope))throw Error('Geçersiz başvuru yetkisi');
     // Token thresholds cannot be interpreted as percentages. Saving the new
     // settings removes the old unit without silently enabling a guessed limit.
-    const {contextRestartTokens:legacyTokens,...settings}=input.agentSettings??previous.agentSettings??{provider:'codex',model:'default',permission:'default',reasoning:'default',network:null};
+    const {contextRestartTokens:legacyTokens,...settings}=withAgentDefaults(input.agentSettings??previous.agentSettings);
     contextRestartPercent(settings.contextRestartPercent);
     settings.contextCompactPercent=contextCompactPercent(settings.contextCompactPercent);
-    if(!['existing','separate','jev'].includes(input.browserMode??previous.browserMode??'existing'))throw Error('Geçersiz tarayıcı seçimi');
+    const browserMode=input.browserMode??previous.browserMode??template.execution.defaultBrowserMode;
+    if(!['existing','separate','jev'].includes(browserMode))throw Error('Geçersiz tarayıcı seçimi');
     let chromeProfile=input.chromeProfile===undefined?previous.chromeProfile??null:input.chromeProfile;
     if(chromeProfile!==null){
       if(typeof chromeProfile!=='object'||!/^[-\w ]{1,100}$/.test(chromeProfile.directory??''))throw Error('Geçersiz Chrome profili');
       chromeProfile={directory:chromeProfile.directory,name:text(chromeProfile.name,'Chrome profili',300)};
     }
-    const profile={id,criteria:planInput(template,{criteria:input.criteria??previous.criteria??{}}).criteria,workspaceName:previous.workspaceName??null,rankThreshold:rankThreshold(input.rankThreshold??previous.rankThreshold),rankWeights:normalizeRankWeights(input.rankWeights===undefined?previous.rankWeights:input.rankWeights),cvRevision:previous.cvRevision??null,chromeProfile,learnedFacts:Object.fromEntries(Object.entries(previous.learnedFacts??{}).filter(([key,fact])=>typeof input.facts!=='string'||input.facts.split('\n').includes(`[${key}] ${fact.value}`))),agentSettings:settings,name:text(input.name,'İsim',150),preferences:text(input.preferences,'Tercihler'),facts:typeof input.facts==='string'?input.facts.slice(0,30000):'',authorization:scope,browserMode:input.browserMode??previous.browserMode??'existing',applicationPolicy:input.applicationPolicy??previous.applicationPolicy??defaultPolicy,cvPath:previous.cvPath??null,updatedAt:new Date().toISOString()};
+    const profile={id,criteria:planInput(template,{criteria:input.criteria??previous.criteria??{}}).criteria,workspaceName:previous.workspaceName??null,rankThreshold:rankThreshold(input.rankThreshold??previous.rankThreshold),rankWeights:normalizeRankWeights(input.rankWeights===undefined?previous.rankWeights:input.rankWeights),cvRevision:previous.cvRevision??null,chromeProfile,learnedFacts:Object.fromEntries(Object.entries(previous.learnedFacts??{}).filter(([key,fact])=>typeof input.facts!=='string'||input.facts.split('\n').includes(`[${key}] ${fact.value}`))),agentSettings:settings,name:text(input.name,'İsim',150),preferences:text(input.preferences,'Tercihler'),facts:typeof input.facts==='string'?input.facts.slice(0,30000):'',authorization:scope,browserMode,applicationPolicy:input.applicationPolicy??previous.applicationPolicy??defaultPolicy,cvPath:previous.cvPath??null,updatedAt:new Date().toISOString()};
     this.db.exec('SAVEPOINT save_profile');
     try{
       this.db.prepare('INSERT INTO candidates VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(id,JSON.stringify(domainData(profile)));
@@ -189,9 +192,19 @@ export class Store {
     const enabled=Boolean(input.enabled),scheduleChanged=previous.id&&(intervalMinutes!==previous.intervalMinutes||enabled&&!previous.enabled);
     // Settings forms may predate a completed scan. Keep the persisted schedule;
     // interval changes and re-enabling count from the last completed scan.
-    const nextRunAt=scheduleChanged?(previous.lastRunAt==null?0:previous.lastRunAt+intervalMinutes*60000):previous.nextRunAt??input.nextRunAt??0;
-    const source={...validateSourceSearch(input,previous),modeInherited:silent?previous.modeInherited??true:false,id,candidateId:candidate,name:text(input.name,'Kaynak adı',120),kind:text(input.kind??previous.kind??'custom','Kaynak türü',60),query:text(input.query,'Arama kapsamı',2000),url:canonicalUrl(input.url),enabled,intervalMinutes,applyMode,resumeContext:previous.resumeContext??null,lastRunAt:previous.lastRunAt??null,nextRunAt,lastResult:previous.lastResult??'Henüz taranmadı',lastFound:previous.lastFound??0,updatedAt:new Date().toISOString()};
+    const nextRunAt=previous.lastStatus==='partial'&&previous.scanProgress?previous.nextRunAt??0:scheduleChanged?(previous.lastRunAt==null?0:previous.lastRunAt+intervalMinutes*60000):previous.nextRunAt??input.nextRunAt??0;
+    const source={...validateSourceSearch(input,previous),modeInherited:silent?previous.modeInherited??true:false,id,candidateId:candidate,name:text(input.name,'Kaynak adı',120),kind:text(input.kind??previous.kind??'custom','Kaynak türü',60),query:text(input.query,'Arama kapsamı',2000),url:canonicalUrl(input.url),enabled,intervalMinutes,applyMode,resumeContext:previous.resumeContext??null,scanProgress:previous.scanProgress??null,lastStatus:previous.lastStatus??null,lastRunAt:previous.lastRunAt??null,nextRunAt,lastResult:previous.lastResult??'Henüz taranmadı',lastFound:previous.lastFound??0,updatedAt:new Date().toISOString()};
     this.db.prepare('INSERT INTO sources VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(id,candidate,JSON.stringify(source));if(!silent)this.event(candidate,'source_updated',{id,name:source.name,enabled:source.enabled,intervalMinutes,applyMode:source.applyMode});return source;
+  }
+  saveSourcesInterval(candidate,value){
+    const intervalMinutes=Number(value);
+    if(!Number.isInteger(intervalMinutes)||intervalMinutes<1||intervalMinutes>10080)throw Error('Tarama aralığı 1–10080 dakika olmalı');
+    const sources=this.sources(candidate);
+    this.db.exec('BEGIN');
+    try{
+      const result=sources.map(source=>this.saveSource(candidate,{...source,intervalMinutes}));
+      this.db.exec('COMMIT');return result;
+    }catch(error){this.db.exec('ROLLBACK');throw error;}
   }
   saveSourcesApplyMode(candidate,applyMode){
     if(!['find_only','auto'].includes(applyMode))throw Error('Geçersiz başvuru modu');
@@ -218,13 +231,20 @@ export class Store {
       this.db.prepare('UPDATE sources SET data=? WHERE id=? AND candidate_id=?').run(JSON.stringify(source),source.id,candidate);
     }
   }
-  markSourceRun(candidate,id,{at,nextRunAt,result,found}){const source=this.source(candidate,id);Object.assign(source,{lastRunAt:at,nextRunAt,lastResult:text(result,'Tarama sonucu',3000),lastFound:found,updatedAt:new Date().toISOString()});this.db.prepare('UPDATE sources SET data=? WHERE id=?').run(JSON.stringify(source),id);this.event(candidate,'source_scanned',{id,name:source.name,found,result:source.lastResult});return source;}
+  saveSourceProgress(candidate,id,input){
+    const source=this.source(candidate,id),task=this.campaign(candidate)?.task;
+    if(this.campaign(candidate)?.status!=='running'||task?.kind!=='search'||task.sourceId!==id)throw Error('Etkin kaynak taraması bulunamadı');
+    source.scanProgress={...sourceCoverage(input,{outcome:input.complete?'done':'partial'}),taskId:task.id,savedAt:new Date().toISOString()};
+    this.db.prepare('UPDATE sources SET data=? WHERE id=? AND candidate_id=?').run(JSON.stringify(source),id,candidate);
+    this.event(candidate,'source_progress_saved',{id,pending:source.scanProgress.pendingUrls.length});return source.scanProgress;
+  }
+  markSourceRun(candidate,id,{at,nextRunAt,result,found,status='done',coverage}){const source=this.source(candidate,id);Object.assign(source,{lastRunAt:at,nextRunAt,lastStatus:status,lastResult:text(result,'Tarama sonucu',3000),lastFound:found,updatedAt:new Date().toISOString()});if(['done','no_results'].includes(status))source.scanProgress=null;else if(coverage&&!coverage.complete)source.scanProgress={...coverage,savedAt:new Date(at).toISOString()};this.db.prepare('UPDATE sources SET data=? WHERE id=?').run(JSON.stringify(source),id);this.event(candidate,'source_scanned',{id,name:source.name,found,status,result:source.lastResult});return source;}
   restoreSourceSchedule(candidate){
     // Older starts cleared nextRunAt. Rebuild it from completed work so a
     // campaign or worker restart cannot bypass the source's waiting interval.
     for(const {data} of this.db.prepare('SELECT data FROM sources WHERE candidate_id=?').all(candidate)){
       const source=JSON.parse(data);
-      if(source.lastRunAt==null)continue;
+      if(source.lastRunAt==null||source.lastStatus==='partial'&&source.scanProgress)continue;
       const nextRunAt=source.lastRunAt+source.intervalMinutes*60000;
       if(source.nextRunAt===nextRunAt)continue;
       source.nextRunAt=nextRunAt;

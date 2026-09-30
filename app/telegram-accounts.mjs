@@ -60,7 +60,7 @@ export class Telegram{
    const api=this.apiFactory(token);let bot=previous?.data.bot;
    if(input.enabled||typed||!bot){
     bot=await api.call('getMe');if(!bot?.is_bot||!bot.username||!Number.isSafeInteger(bot.id))throw Error('Geçerli bir Telegram botu gerekli.');
-    const webhook=await api.call('getWebhookInfo');if(webhook?.url)throw Error('Bu botta webhook etkin. JobLoop için ayrı bir bot oluştur veya mevcut webhook’u kaldır.');
+    const webhook=await api.call('getWebhookInfo');if(webhook?.url)throw Error('Bu botta webhook etkin. AutoJev için ayrı bir bot oluştur veya mevcut webhook’u kaldır.');
    }
    const config={enabled:input.enabled,bot:{id:bot.id,username:bot.username},secret:this.encrypt(token)},botId=String(bot.id);
    affected=[...new Set([previous?.bot_id,botId].filter(Boolean))];

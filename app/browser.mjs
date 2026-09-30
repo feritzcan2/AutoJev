@@ -79,13 +79,13 @@ export class BrowserTools {
     try{return await operation;}finally{if(this.operations.get(key)===operation)this.operations.delete(key);}
   }
   async waitForOperations(candidateId){await this.operations.get(this.clientKey(candidateId))?.catch(()=>{});}
-  async performCall(candidateId,name,args,sessionId,{completeSnapshot=false,automationTabKey}={}){
+  async performCall(candidateId,name,args,sessionId,{completeSnapshot=false,automationTabKey,automationWorkspaceId,automationSourceUrl,automationSourceUrls,automationPreferredTabId}={}){
     if(this.modeForCandidate(candidateId)==='jev'&&!this.prepare(candidateId).ready)return {content:[{type:'text',text:JSON.stringify(browserWaitResult())}]};
     const {client,tools,directory,workspace}=await this.connect(candidateId);
     if(this.isActive&&!this.isActive())throw Error('Worker oturumu kapandı.');
     if(name==='browser_target_press')return pressBrowserTarget(client,client instanceof JevBrowser,args,sessionId);
     if(!tools.some(t=>t.name===name))throw Error('Unknown browser tool');
-    let result;try{result=await (client instanceof JevBrowser?client.callTool({name,arguments:args},sessionId,{...this.options(candidateId).lifecycle,...(automationTabKey?{automationTabKey}:{})}):client.callTool({name,arguments:args}));}catch(error){if(client instanceof JevBrowser&&(!client.browser&&client.connection==='existing'||error.code==='BROWSER_DISCONNECTED')){this.connections.disconnected(candidateId);return {content:[{type:'text',text:JSON.stringify(browserWaitResult())}]};}throw error;}
+    let result;try{result=await (client instanceof JevBrowser?client.callTool({name,arguments:args},sessionId,{...this.options(candidateId).lifecycle,...(automationTabKey?{automationTabKey}:{}),...(automationWorkspaceId?{automationWorkspaceId:candidateId}:{}),...(automationSourceUrl?{automationSourceUrl,automationSourceUrls}:{}),...(automationPreferredTabId?{automationPreferredTabId}:{})}):client.callTool({name,arguments:args}));}catch(error){if(client instanceof JevBrowser&&(!client.browser&&client.connection==='existing'||error.code==='BROWSER_DISCONNECTED')){this.connections.disconnected(candidateId);return {content:[{type:'text',text:JSON.stringify(browserWaitResult())}]};}throw error;}
     // Newer Playwright versions return snapshot files. Inline only this candidate's
     // bounded browser artifacts, so the agent can act without filesystem access.
     for(const part of [...(result.content??[])]){
@@ -136,6 +136,47 @@ export class BrowserTools {
   async focus(candidateId,context){
     if(this.modeForCandidate(candidateId)!=='jev')throw Object.assign(Error('Bu aday için Jev tarayıcı modu seçili değil.'),{code:'BROWSER_MODE_CHANGED'});
     return (await this.connect(candidateId)).client.focus(context.tabId);
+  }
+  async workspaceTabs(id){
+    if(this.modeForCandidate(id)!=='jev')return [];
+    // Reading the Sources page must not connect to Chrome or show a permission prompt.
+    const connection=this.clients.get(id);
+    if(connection?.mode!=='jev')return [];
+    const connected=await connection.pending.catch(()=>null),client=connected?.client,options=this.options(id);
+    if(!client||client.closed||this.clients.get(id)!==connection||client.profile?.directory!==options.profile?.directory||client.connection==='existing'&&!client.browser?.isConnected())return [];
+    const jobs=Array.isArray(options.lifecycle?.jobs),checkpoints=new Set((options.checkpoints??[]).filter(c=>c?.browser==='Jev Chrome').map(c=>c.tabId));
+    const webTab=slot=>{
+      const owner=client.automationWorkspaces.get(slot.id);
+      if(owner)return owner===id;
+      // Tabs created before workspace labels were added remain in this browser's
+      // exact owned-target set. Never infer ownership from URL or profile alone.
+      return !client.tabJobs.has(slot.id)&&!client.tabSearches.has(slot.id)&&(client.connection==='existing'?client.transport?.owned.has(slot.id):true);
+    };
+    return [...client.tabs.values()].filter(slot=>slot.id!==client.homeId&&!slot.page.isClosed()&&(jobs?(client.tabJobs.has(slot.id)||client.tabSearches.has(slot.id)||checkpoints.has(slot.id)):webTab(slot))).map(slot=>({tabId:slot.id,url:slot.page.url(),browser:'Jev Chrome',kind:client.tabJobs.has(slot.id)?'application':client.tabSearches.has(slot.id)?'search':'workspace',...(client.tabJobs.has(slot.id)?{jobId:client.tabJobs.get(slot.id)}:{}),...(client.tabSearches.has(slot.id)?{searchTaskId:client.tabSearches.get(slot.id)}:{}),...(client.automationSources.has(slot.id)?{sourceUrl:client.automationSources.get(slot.id)}:{})}));
+  }
+  async focusWorkspaceTab(id,tabId){
+    if(typeof tabId!=='string'||!(await this.workspaceTabs(id)).some(tab=>tab.tabId===tabId))throw Object.assign(Error('Bu çalışma alanının açık sekmesi bulunamadı.'),{code:'TAB_MISSING'});
+    const connection=this.clients.get(id),client=(await connection?.pending)?.client,slot=client?.tabs.get(tabId);
+    if(this.clients.get(id)!==connection||!slot||slot.page.isClosed())throw Object.assign(Error('Sekme kapandı.'),{code:'TAB_MISSING'});
+    await slot.page.bringToFront();return {focused:true};
+  }
+  async closeWorkspaceTabs(id,selection){
+    if(!Array.isArray(selection)||!selection.length||selection.some(tab=>!tab||typeof tab.tabId!=='string'||typeof tab.url!=='string')||new Set(selection.map(tab=>tab.tabId)).size!==selection.length)throw Error('Kapatılacak sekmeler geçersiz.');
+    return this.enqueue(id,async()=>{
+      const available=new Map((await this.workspaceTabs(id)).map(tab=>[tab.tabId,tab]));
+      if(selection.some(tab=>{const live=available.get(tab.tabId);return !live||live.url!==tab.url||live.sourceUrl!==tab.sourceUrl;}))throw Object.assign(Error('Sekmeler değişti. Listeyi yenileyip tekrar dene.'),{code:'TAB_CHANGED'});
+      const connection=this.clients.get(id),client=(await connection?.pending)?.client;
+      if(this.clients.get(id)!==connection||!client)throw Object.assign(Error('Chrome bağlantısı kapandı.'),{code:'TAB_MISSING'});
+      const closed=[],failed=[];
+      for(const tab of selection){
+        const slot=client.tabs.get(tab.tabId);
+        if(!slot||slot.page.isClosed()||slot.page.url()!==tab.url){failed.push(tab.tabId);continue;}
+        try{await slot.page.close({runBeforeUnload:false});client.forgetTab(tab.tabId);closed.push(tab.tabId);}catch{failed.push(tab.tabId);}
+      }
+      if(closed.length)await client.onTabsClosed(closed);
+      await client.persistTabs();
+      return {closed,failed};
+    },{checkActive:false});
   }
   async sourceTabs(candidateId,sources,task){
     const mode=this.modeForCandidate(candidateId),result={};

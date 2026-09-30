@@ -1,5 +1,5 @@
 appId: dev.jobloop.desktop
-productName: JobLoop
+productName: AutoJev
 directories:
   output: release
   buildResources: build

@@ -6,25 +6,46 @@ import {collectReadiness} from './readiness.mjs';
 import {engineBinaryPath} from './runtime-paths.mjs';
 import {createUpdateManager} from './update-manager.mjs';
 import {createBackup,inspectBackup,stageRestore,pruneLogs,dataManagementStatus} from './data-management.mjs';
+import {requestDataLocation,requestExistingDataLocation} from './data-location.mjs';
 
-export async function registerSettingsServices({app,root,data,store,jevSettings,handle,window,maintenance,emit,clearTerminalOutputs,activeRunIds}){
+export async function registerSettingsServices({app,root,data,bootstrapDirectory=data,store,jevSettings,handle,window,maintenance,emit,clearTerminalOutputs,activeRunIds}){
  const params={dataDirectory:data,db:store.db,appVersion:app.getVersion()};
  handle('readiness',input=>collectReadiness(input,{enginePath:engineBinaryPath({root}),jevStatus:()=>jevSettings.status()}));
  handle('jev-settings-status',()=>jevSettings.status());
  handle('jev-settings-save',input=>jevSettings.save(input));
  handle('jev-settings-remove',()=>jevSettings.remove());
  handle('jev-settings-test',()=>jevSettings.testConnection());
- handle('data-status',()=>dataManagementStatus(params));
+ handle('data-status',async()=>({...await dataManagementStatus(params),directory:data}));
+ handle('data-open-directory',async()=>{const error=await shell.openPath(data);if(error)throw Error(error);return {opened:true};});
+ let choosingDirectory=false;
+ handle('data-use-directory',async()=>{
+  if(choosingDirectory)throw Error('Veri klasörü seçimi zaten açık.');choosingDirectory=true;
+  try{
+   const selected=await dialog.showOpenDialog(window(),{title:'Mevcut AutoJev veri klasörünü seç',buttonLabel:'Aç ve yeniden başlat',properties:['openDirectory']});
+   if(selected.canceled)return null;
+   const result=await requestExistingDataLocation({bootstrapDirectory,dataDirectory:data,destination:selected.filePaths[0]});
+   if(result.restartRequired){app.relaunch();app.quit();}return result;
+  }finally{choosingDirectory=false;}
+ });
+ handle('data-change-directory',async()=>{
+  if(choosingDirectory)throw Error('Veri klasörü seçimi zaten açık.');choosingDirectory=true;
+  try{
+   const selected=await dialog.showOpenDialog(window(),{title:'Verilerin taşınacağı boş klasörü seç',buttonLabel:'Taşı ve yeniden başlat',properties:['openDirectory','createDirectory']});
+   if(selected.canceled)return null;
+   const result=await requestDataLocation({bootstrapDirectory,dataDirectory:data,destination:selected.filePaths[0]});
+   if(result.restartRequired){app.relaunch();app.quit();}return result;
+  }finally{choosingDirectory=false;}
+ });
  handle('data-backup',()=>maintenance.run(async()=>{
   const selected=await dialog.showOpenDialog(window(),{title:'Yedeğin kaydedileceği klasörü seç',properties:['openDirectory','createDirectory']});
   if(selected.canceled)return null;
-  return createBackup({...params,destination:path.join(selected.filePaths[0],`JobLoop-backup-${Date.now()}-${randomUUID().slice(0,8)}`),kind:'manual'});
+  return createBackup({...params,destination:path.join(selected.filePaths[0],`AutoJev-backup-${Date.now()}-${randomUUID().slice(0,8)}`),kind:'manual'});
  }));
  handle('data-restore',async()=>{
   // Keep the maintenance lock only once a validated restore is staged.
   let restart=false;
   const result=await maintenance.run(async()=>{
-   const selected=await dialog.showOpenDialog(window(),{title:'JobLoop yedek klasörünü seç',properties:['openDirectory']});
+   const selected=await dialog.showOpenDialog(window(),{title:'AutoJev yedek klasörünü seç',properties:['openDirectory']});
    if(selected.canceled)return null;
    const directory=selected.filePaths[0],preview=await inspectBackup(directory);
    const answer=await dialog.showMessageBox(window(),{type:'warning',buttons:['Vazgeç','Geri yükle ve yeniden başlat'],defaultId:0,cancelId:0,title:'Yedeği geri yükle',message:'Mevcut otomasyonlar, template’ler, adaylar ve sonuç kayıtları bu yedekle değiştirilecek.',detail:`Önce mevcut verilerin kurtarma yedeği alınır. Etkin görevler durdurulmuş olarak açılır. Eski bir yedek, sonradan yapılan işlemleri içermeyebilir; devam etmeden sonuçları kontrol et. Otomasyonları yeniden dene; taşınabilir yedeklerde portal şifreleri, Telegram ve Jev anahtarı yeniden girilir.\n\nYedek: ${directory}\n${preview.candidates??preview.summary?.candidates??'?'} aday · ${preview.jobs??preview.summary?.jobs??'?'} ilan`});

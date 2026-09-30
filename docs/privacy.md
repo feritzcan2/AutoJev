@@ -1,6 +1,6 @@
 # Veriler ve paylaşım
 
-Bu metin Loop / JobLoop’un uyguladığı veri akışını açıklar. Son güncelleme: 29 Eylül 2026.
+Bu metin AutoJev’in (eski adıyla JobLoop) uyguladığı veri akışını açıklar. Son güncelleme: 29 Eylül 2026.
 
 ## Bu bilgisayarda
 
@@ -9,7 +9,7 @@ veritabanındadır. Genel otomasyonlar, template’ler, kurulum konuşmaları, k
 işlem taslakları, onaylar ve sonuç kanıtları da bu veritabanında tutulur.
 CV’ler, otomasyon ve aday belgeleri, ayrı Chrome profilleri ve sınırlı işlem
 kayıtları uygulama veri klasöründe saklanır. Bu veritabanı ve belge dosyaları
-JobLoop tarafından bütünüyle şifrelenmez. Jev, Chrome’un bağımsız mevcut profilini
+AutoJev tarafından bütünüyle şifrelenmez. Jev, Chrome’un bağımsız mevcut profilini
 kullanır. İşletim sistemi hesabını ve diskini koru.
 
 Portal üyelik şifreleri aday başına, Telegram token’ları aday bot ayarında ve Jev
@@ -33,7 +33,7 @@ kaydedilmez. Jev’deki portal şifresi aracı şifreyi doğrudan site alanına 
 | Güncelleme kontrolü / indirme | Standart ağ isteği, platforma uygun sürüm dosyası isteği | GitHub Releases ve dağıtım altyapısı |
 
 Formlardaki kişisel bilgiler Jev gözlemlerine girebilir. Sağlayıcıların veri
-saklama koşulları ve kullanıcının hesap ayarları ayrıca geçerlidir. JobLoop’a
+saklama koşulları ve kullanıcının hesap ayarları ayrıca geçerlidir. AutoJev’e
 merkezi analitik veya telemetri hizmeti eklenmemiştir. Özelliklerin kendi ağ
 istekleri yukarıda belirtilmiştir.
 

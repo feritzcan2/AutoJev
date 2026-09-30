@@ -6,6 +6,8 @@
 .config-search input { width: 100%; padding: 9px 12px; }
 .config-search input::-webkit-search-cancel-button { cursor: pointer; }
 .config-search small { display: block; margin-top: 6px; color: var(--text-muted); font-size: 12px; text-align: right; min-height: 1.4em; }
+.config-group { margin-bottom: 24px; }
+.config-group h4 { margin: 0 0 12px; color: var(--text-secondary); font-size: 13px; font-weight: 550; }
 
 .config-body { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 36px; align-items: start; }
 .config-nav { position: sticky; top: 24px; display: grid; gap: 2px; padding-right: 16px; border-right: 1px solid var(--border); }

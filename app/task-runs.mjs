@@ -9,18 +9,34 @@ export class TaskRuns {
   const key=workerKey(id,workerId);if(this.closed)throw Error('Uygulama kapanıyor');if(this.active.has(key))throw Error('Bu worker’ın görevi zaten çalışıyor');
   if(this.active.size>=this.concurrency)throw Error(`Aynı anda en fazla ${this.concurrency} görev çalışabilir`);
   const run=this.policy.begin(id,input,workerId),task=this.policy.config(id),slot={id,key,workerId,run,worker:null,controller:new AbortController(),finishing:false,ready:null};this.active.set(key,slot);this.changed(id);
-  if(!run.interactive)slot.timer=setTimeout(()=>{void this.finish(id,'timeout','Tur süresi doldu. Devam etmek için sonucu kontrol et.',workerId).catch(()=>{});},task.timeoutMinutes*60000);
+  if(!run.interactive&&Number.isFinite(task.timeoutMinutes)&&task.timeoutMinutes>0)slot.timer=setTimeout(()=>{void this.finish(id,'timeout','Tur süresi doldu. Devam etmek için sonucu kontrol et.',workerId).catch(()=>{});},task.timeoutMinutes*60000);
   slot.ready=Promise.resolve().then(()=>this.launch(run,task,event=>this.event(id,event,run.id),slot.controller.signal));
   try{slot.worker=await slot.ready;return run;}catch(error){if(!slot.finishing)await this.finish(id,'failed',error.message,workerId);throw error;}
  }
+ unreported(slot,reason){
+  if(slot.finishing||slot.completionRequested||this.closed)return;
+  const outcome=this.policy.unreported?.(slot.id,slot.run.id,reason)??{status:'failed',summary:reason==='idle'?'Agent sonuç bildirmeden durdu. Agent ekranını kontrol et.':'Agent oturumu sonuç bildirmeden kapandı.'};
+  return this.finish(slot.id,outcome.status,outcome.summary,slot.workerId).catch(()=>{});
+ }
+ watchIdle(slot){
+  clearTimeout(slot.idleTimer);
+  slot.idleTimer=setTimeout(()=>{
+   if(slot.finishing||slot.completionRequested||slot.run.interactive||this.closed)return;
+   // Compaction events may be consumed by the provider session layer. Check
+   // the live session as well as the last state delivered to this task.
+   if(slot.worker?.isBusy?.()){this.watchIdle(slot);return;}
+   const state=slot.worker?.state?.()??slot.run.state;
+   if(state!=='Idle')return;
+   void this.unreported(slot,'idle');
+  },this.policy.idleGraceMs??2000);
+ }
  event(id,event,runId){const slot=this.slot(id,runId);if(!slot||slot.finishing)return;
-  const fail=message=>this.finish(id,'failed',message,slot.workerId).catch(()=>{});
   if(event.event==='state'){
    const state=String(event.state).replace(/^Some\((.*)\)$/,'$1');slot.run={...this.policy.run(slot.run.id),state};if(['Working','Compacting'].includes(state))slot.seenWorking=true;clearTimeout(slot.idleTimer);
-   if(state==='Idle'&&slot.seenWorking&&!slot.completionRequested&&!slot.run.interactive)slot.idleTimer=setTimeout(()=>{if(!slot.completionRequested)void fail('Agent sonuç bildirmeden durdu. Agent ekranını kontrol et.');},2000);
+   if(state==='Idle'&&slot.seenWorking&&!slot.completionRequested&&!slot.run.interactive)this.watchIdle(slot);
    this.policy.save(slot.run);this.changed(id);
   }
-  if(['eof','engine_exit'].includes(event.event)&&!slot.completionRequested)void fail('Agent oturumu sonuç bildirmeden kapandı.');
+  if(['eof','engine_exit'].includes(event.event)&&!slot.completionRequested)void this.unreported(slot,'exit');
  }
  interactive(id){const slot=this.active.get(id);if(!slot||slot.finishing)throw Error('Etkin görev bulunamadı');slot.run={...this.policy.run(slot.run.id),interactive:true};slot.completionRequested=false;clearTimeout(slot.timer);clearTimeout(slot.idleTimer);clearTimeout(slot.completionTimer);this.policy.save(slot.run);this.changed(id);return slot;}
  complete(id,runId,status,summary,{goalReached=false}={}){

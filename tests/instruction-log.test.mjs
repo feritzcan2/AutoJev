@@ -52,6 +52,15 @@ test('tool exchange logging captures the actual returned context and tools witho
  assert.equal((await call('tools/list')).body.result.tools[0].description,'Read saved criteria');assert.equal((await call('tools/call')).status,200);assert.equal(calls,1);assert.equal((await call('tools/call','bad')).status,401);assert.equal(calls,1);
  const events=log.history(a.id).events;assert.deepEqual(events.map(e=>e.kind),['tool_result','tool_catalog']);const text=JSON.stringify(log.detail(a.id,events[0].seq));assert.ok(text.includes('Ev bul'));assert.ok(!text.includes('private'));assert.ok(!text.includes(token));
 });
+test('page report validation errors and successful checkpoints remain inspectable',t=>{
+ const {a,log}=fixture(t),grant={workspaceId:a.id,sessionId:'scan'};
+ log.tool(grant,{name:'report_scan_page',result:{isError:true,content:[{type:'text',text:'Sayfalama kanıtı bu tarayıcı gözleminde bulunamadı.'}]}});
+ log.tool(grant,{name:'report_scan_page',result:{content:[{type:'text',text:JSON.stringify({pageProgress:{currentPage:8,totalPages:null,evidence:'Seite 8'}})}]}});
+ const events=log.history(a.id,{session:'scan'}).events;
+ assert.deepEqual(events.map(e=>({title:e.title,status:e.status})),[{title:'report_scan_page',status:'returned'},{title:'report_scan_page',status:'failed'}]);
+ assert.match(log.detail(a.id,events[0].seq).parts[0].text,/Seite 8/);
+});
+
 test('portable backups and clear-logs remove instruction content while leaving saved plans intact',async t=>{
  const dir=await mkdtemp(path.join(tmpdir(),'loop-instruction-backup-'));t.after(()=>rm(dir,{recursive:true,force:true}));const data=path.join(dir,'data');await mkdir(data);const {core,a,log,record}=fixture(t,path.join(data,'jobloop.sqlite'));
  record([instructionPart('secret-plan','Saved criteria','workspace','Private criteria')]);const backup=path.join(dir,'backup');await createBackup({dataDirectory:data,destination:backup,db:core.db,appVersion:'0.1.1'});

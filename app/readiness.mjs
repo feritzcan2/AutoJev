@@ -44,13 +44,13 @@ export async function collectReadiness(input={},options={}){
  if(profile!==undefined&&(typeof profile!=='string'||!/^[\w -]{1,100}$/.test(profile)))throw Error('Geçersiz Chrome profili.');
  const platform=options.platform??process.platform,home=options.home??homedir(),env=readinessEnvironment(options.env??process.env,platform,home);
  const deps={env,platform,home},checks=[],descriptor=providers[provider];
- if(options.enginePath){let usable=false;try{await access(options.enginePath,platform==='win32'?constants.F_OK:constants.X_OK);usable=(await stat(options.enginePath)).isFile();}catch{}checks.push(item('engine','JobLoop engine',usable?'ready':'error',usable?'Uygulama motoru hazır.':'Uygulama motoru bulunamadı. JobLoop’u yeniden kur; kaynak koddan çalıştırıyorsan engine:build komutunu çalıştır.'));}
+ if(options.enginePath){let usable=false;try{await access(options.enginePath,platform==='win32'?constants.F_OK:constants.X_OK);usable=(await stat(options.enginePath)).isFile();}catch{}checks.push(item('engine','AutoJev engine',usable?'ready':'error',usable?'Uygulama motoru hazır.':'Uygulama motoru bulunamadı. AutoJev’i yeniden kur; kaynak koddan çalıştırıyorsan engine:build komutunu çalıştır.'));}
  const executable=await (options.findExecutable??findExecutable)(provider,deps);
- checks.push(item('agent',descriptor.label,executable?'ready':'error',executable?'Agent komutu bulundu.':`${descriptor.label} CLI’ını kur ve JobLoop’u yeniden aç. Komutun terminalden çalışabildiğini kontrol et.`));
+ checks.push(item('agent',descriptor.label,executable?'ready':'error',executable?'Agent komutu bulundu.':`${descriptor.label} CLI’ını kur ve AutoJev’i yeniden aç. Komutun terminalden çalışabildiğini kontrol et.`));
  if(executable)checks.push(await (options.inspectLogin??inspectLogin)(provider,executable,deps));
  const bun=await (options.findExecutable??findExecutable)('bun',deps);
  checks.push(item('bun','İlan kaynakları için Bun',bun?'ready':'warning',bun?'Kaynak araçlarını çalıştıran Bun bulundu.':'CLI ile ilan tarayan kaynaklar için Bun’u kur. Tarayıcı kullanan kaynaklarla devam edebilirsin.'));
- if(browserMode==='existing')checks.push(item('browser','Agent tarayıcısı','warning','Tarayıcı araçlarını seçtiğin agent içinde etkinleştir. Bu bağlantı JobLoop tarafından otomatik doğrulanamaz.'));
+ if(browserMode==='existing')checks.push(item('browser','Agent tarayıcısı','warning','Tarayıcı araçlarını seçtiğin agent içinde etkinleştir. Bu bağlantı AutoJev tarafından otomatik doğrulanamaz.'));
  else{
   const chrome=await (options.findChrome??findChrome)(deps);
   checks.push(item('chrome','Google Chrome',chrome?'ready':'error',chrome?'Chrome kurulumu bulundu.':'Google Chrome’u kur ve en az bir kez aç.'));

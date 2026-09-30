@@ -61,7 +61,7 @@ test('Agent settings can be saved during a run without changing its plan or acti
  assert.throws(()=>db.save(id,{agentSettings:{...settings,provider:'unknown'}}),/sağlayıcı/);
 });
 
-test('browser selection persists and requires a new trial while keeping the plan and records',t=>{
+test('browser engine selection persists and requires a new trial while keeping the plan and records',t=>{
  const {db,id}=fixture(t);trial(db,id);const before=db.get(id);
  const selected=db.save(id,{browserMode:'jev',chromeProfile:{directory:'Profile 1',name:'Work'}});
  assert.equal(selected.browserMode,'jev');assert.equal(db.get(id).chromeProfile.directory,'Profile 1');
@@ -70,6 +70,33 @@ test('browser selection persists and requires a new trial while keeping the plan
  assert.throws(()=>db.save(id,{chromeProfile:{directory:'../other',name:'Other'}}),/profil/);
  const run=db.begin(id,'trial');assert.throws(()=>db.save(id,{browserMode:'separate'}),/durdur/);db.finish(id,run.id,'interrupted','Stopped');
  assert.equal(db.get(id).browserMode,'jev');
+});
+
+test('Chrome profile changes preserve the successful trial and allow restarting without another trial',t=>{
+ const {db,id}=fixture(t);db.save(id,{browserMode:'jev'});trial(db,id);const before=db.get(id);
+ for(const chromeProfile of [{directory:'Default',name:'Personal'},{directory:'Profile 2',name:'Work'},null]){
+  db.enable(id);
+  const saved=db.save(id,{chromeProfile});
+  assert.deepEqual(saved.trial,before.trial);
+  assert.equal(saved.revision,before.revision);assert.equal(saved.reviewedRevision,before.reviewedRevision);
+  assert.equal(saved.status,'paused');assert.equal(saved.nextRunAt,null);
+  assert.equal(db.enable(id).status,'enabled');
+  const run=db.begin(id,'run');db.finish(id,run.id,'completed','Done');
+ }
+ const changed=db.save(id,{chromeProfile:{directory:'Default',name:'Personal'},goal:'Find other homes'});
+ assert.equal(changed.trial,null);assert.equal(changed.reviewedRevision,null);
+ assert.throws(()=>db.enable(id),/deneme/);
+});
+
+test('trial retries cannot repeat a historical blocker without a new browser attempt',async t=>{
+ const {db,id}=fixture(t);trial(db,id);const previous=db.begin(id,'trial');db.finish(id,previous.id,'blocked','Old IP block');
+ const run=db.begin(id,'trial'),reports=[];
+ const flow=automationWorkflow({db,run,signal:{aborted:false},browser:{call:async()=>{throw Error('Chrome disconnected now');}},report:(...args)=>reports.push(args)});
+ for(const status of ['blocked','failed','completed'])await assert.rejects(flow.call(id,run.id,'finish_automation_run',{status,summary:'Old IP block'}),/henüz tarayıcı kontrolü yapılmadı/);
+ assert.equal(reports.length,0);assert.equal(db.run(run.id).status,'running');
+ await assert.rejects(flow.call(id,run.id,'browser_open',{url:setup.sources[0]}),/Chrome disconnected now/);
+ await flow.call(id,run.id,'finish_automation_run',{status:'blocked',summary:'Chrome disconnected now'});
+ assert.equal(reports.length,1);assert.equal(reports[0][3],'Chrome disconnected now');
 });
 
 test('templates are isolated; jobs remain in the existing workspace and generic tasks do not create candidates',t=>{
@@ -143,7 +170,7 @@ test('a failed process close retains the slot until a later stop confirms termin
  const {db,id}=fixture(t);trial(db,id);let stops=0;const runtime=new WebTasks(db,{launch:async()=>({close:async()=>{if(++stops===1)throw Error('Still running');}})});t.after(()=>runtime.close());await runtime.start(id);
  await assert.rejects(runtime.pause(id),/Still running/);assert.equal(runtime.active.size,1);assert.equal(db.get(id).status,'blocked');await assert.rejects(runtime.start(id),/zaten/);await runtime.pause(id);assert.equal(runtime.active.size,0);assert.equal(stops,2);
 });
-test('browser tools enforce session ownership and step limits without browser authority gates',async t=>{
+test('browser tools enforce session ownership without imposing step limits',async t=>{
  const {store,db,id}=fixture(t);trial(db,id);db.save(id,{maxBrowserSteps:5});const run=db.begin(id,'run'),controller=new AbortController();let writes=0;
  const browser={async call(owner,name,args){if(name==='browser_click')writes++;return {content:[{type:'text',text:'### Page\n- Page URL: https://example.com/homes\n- Heading: Actual listings'}]};}};
  const flow=automationWorkflow({db,run,signal:controller.signal,browser,report:(id,runId,status,summary)=>db.finish(id,runId,status,summary)});
@@ -155,7 +182,7 @@ test('browser tools enforce session ownership and step limits without browser au
  const call=async(method,params)=>{const r=await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});return r.json();};
  const list=(await call('tools/list')).result.tools.map(t=>t.name);assert.ok(list.includes('browser_open'));assert.ok(!list.includes('browser_run_code'));assert.ok(!list.includes('record_submission'));
  const denied=await call('tools/call',{name:'browser_click',arguments:{ref:'e1'}});assert.equal(denied.result.isError,true);
- await flow.call(id,run.id,'browser_read',{});assert.equal(db.run(run.id).observations.length,4);while(db.run(run.id).browserSteps<5)await flow.call(id,run.id,'browser_read',{});await assert.rejects(flow.call(id,run.id,'browser_read',{}),/sınır/);
+ await flow.call(id,run.id,'browser_read',{});assert.equal(db.run(run.id).observations.length,4);while(db.run(run.id).browserSteps<8)await flow.call(id,run.id,'browser_read',{});assert.equal(db.run(run.id).browserSteps,8);
  controller.abort();await assert.rejects(flow.call(id,run.id,'get_automation_context',{}),/geçersiz/);
 });
 test('interviews can research and interact without activating sources or scheduling work',async t=>{
@@ -168,7 +195,7 @@ test('interviews can research and interact without activating sources or schedul
  await flow.call(id,run.id,'research_automation_source',{url:'https://official.example/appointments'});assert.equal(db.run(run.id).observations.length,1);assert.deepEqual(db.get(id).sources,setup.sources);assert.equal(db.get(id).reviewedRevision,null);
  const previous=calls;await flow.call(id,run.id,'browser_interact',{operation:'click',ref:'e1'});assert.equal(calls,previous+3);
  await assert.rejects(flow.call(id,run.id,'research_automation_source',{url:'http://127.0.0.1/private'}),/herkese açık/);
- while(db.run(run.id).browserSteps<12)await flow.call(id,run.id,'browser_read',{});await assert.rejects(flow.call(id,run.id,'browser_read',{}),/sınır/);
+ while(db.run(run.id).browserSteps<12)await flow.call(id,run.id,'browser_read',{});await flow.call(id,run.id,'browser_read',{});assert.equal(db.run(run.id).browserSteps,13);
  for(const url of ['http://localhost/a','http://service.internal/','http://[::1]/','file:///etc/passwd'])assert.throws(()=>researchUrl(url));
  db.finish(id,run.id,'completed','Sources researched');trial(db,id);const trialRun=db.begin(id,'trial'),trialFlow=automationWorkflow({db,run:trialRun,signal:controller.signal,browser,report:()=>{}});await assert.rejects(trialFlow.call(id,trialRun.id,'research_automation_source',{url:'https://unapproved.example/'}),/kurulum/);
 });

@@ -1,3 +1,4 @@
+import {defaultPermission} from '../app/agent-settings.mjs';
 import {questionForm} from './question-form.js';
 import {browserWaitView} from './browser-status.js';
 import {readinessPanel} from './readiness.js';
@@ -7,8 +8,8 @@ export function onboarding(api,{select,refresh,cancel,showProfile}){
  const error=e=>{$('setup-error').textContent=e.message??String(e);};
  const run=fn=>async(...args)=>{args[0]?.preventDefault?.();if(busy)return;busy=true;$('setup-error').textContent='';render();try{await fn(...args);}catch(e){error(e);}finally{busy=false;render();}};
  function settings(){return{provider:$('setup-provider').value,model:$('setup-model').value,permission:$('setup-permission').value,reasoning:$('setup-reasoning').value,network:$('setup-network').value==='inherit'?null:$('setup-network').value==='true'};}
- const readiness=readinessPanel(api,$('setup-readiness'),{getSettings:()=>({provider:snapshot?.profile.agentSettings?.provider??$('setup-provider').value??'codex',browserMode:snapshot?.profile.browserMode??'existing',chromeProfile:snapshot?.profile.chromeProfile??null})});
- function options(){const c=catalog.find(c=>c.id===$('setup-provider').value);if(!c)return;for(const key of ['model','permission','reasoning']){$('setup-'+key).replaceChildren(...c[key==='model'?'models':key==='permission'?'permissions':'reasoning'].map(v=>new Option(v,v)));$('setup-'+key).value='default';}}
+ const readiness=readinessPanel(api,$('setup-readiness'),{getSettings:()=>({provider:snapshot?.profile.agentSettings?.provider??$('setup-provider').value??'codex',browserMode:snapshot?.profile.browserMode??'jev',chromeProfile:snapshot?.profile.chromeProfile??null})});
+ function options(){const c=catalog.find(c=>c.id===$('setup-provider').value);if(!c)return;for(const key of ['model','permission','reasoning']){$('setup-'+key).replaceChildren(...c[key==='model'?'models':key==='permission'?'permissions':'reasoning'].map(v=>new Option(v,v)));$('setup-'+key).value=key==='permission'?defaultPermission(c.id):'default';}}
  async function ensure(){if(snapshot?.setup&&snapshot.setup.status!=='complete')return snapshot.profile.id;const p=await api.workspaceCreate('job-search',{intake:true,agentSettings:settings()});await select(p.id);return p.id;}
  async function cv(file){await readiness.ensure();const id=await ensure();const picked=file?await api.importSetupCv(id,file):await api.pickDocument(id,{purpose:'cv'});await refresh();if(picked)await api.beginSetup(id);await refresh();}
  $('setup-begin').onclick=()=>{started=true;render();};

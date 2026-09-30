@@ -1,4 +1,5 @@
-import {activityView,workerActivityView,ageLabel} from './activity.js';
+import {activityView,workerActivityView,ageLabel,elapsedLabel} from './activity.js';
+import {renderMessageText} from './message-text.js';
 
 export function activityPanels(single,{openLink,notice}){
  const parts=['title','detail','state','age','link','events'];
@@ -21,8 +22,8 @@ export function activityPanels(single,{openLink,notice}){
  }
  function draw(card,view,history){
   card.view=view;const {panel,parts:p}=card;
-  panel.dataset.tone=view.tone;p.title.textContent=view.title;p.detail.textContent=view.detail;p.state.textContent=view.state;
-  p.age.textContent=ageLabel(view.at);p.age.title=view.at?new Date(view.at).toLocaleString('tr-TR'):'';p.link.hidden=!view.url;
+  panel.dataset.tone=view.tone;p.title.textContent=view.title;renderMessageText(p.detail,view.detail);p.state.textContent=view.state;
+  p.age.textContent=view.running&&view.at?elapsedLabel(view.at):ageLabel(view.at);p.age.title=view.at?new Date(view.at).toLocaleString('tr-TR'):'';p.link.hidden=!view.url;
   if(!history)return;
   p.events.replaceChildren(...view.history.map(event=>{
    const li=document.createElement('li'),time=document.createElement('time'),label=document.createElement('span'),d=event.data;

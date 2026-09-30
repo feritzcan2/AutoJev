@@ -62,6 +62,16 @@ test('web workers share restart ordering, ownership checks and removal cleanup',
  await assert.rejects(workspaces.removeWorker(web.id,'main'),/İlk worker/);
 });
 
+test('deleting a running automation stops its active worker before removing the workspace',async t=>{
+ const {store,db,web}=fixture(t);const closed=[];
+ db.save(web.id,{goal:'Find homes',criteria:{location:'Berlin',budget:'1500',requirements:'Two rooms'},sources:['https://homes.test/']});db.review(web.id);
+ const runtime=new WebTasks(db,{launch:async run=>({close:async()=>closed.push(run.id)})});t.after(()=>runtime.close());
+ const workspaces=new Workspaces(store.workspaces,{templates:{browser:{remove:async id=>{await runtime.pause(id);db.remove(id);}}}});
+ await runtime.start(web.id,'trial');assert.equal(runtime.slots(web.id).length,1);
+ await workspaces.remove(web.id);
+ assert.equal(runtime.slots(web.id).length,0);assert.equal(closed.length,1);assert.equal(store.workspaces.has(web.id),false);
+});
+
 test('a failed stop keeps conversation history and never starts a replacement worker',async t=>{
  const {store,web}=fixture(t);store.workspaces.history(web.id).saveConversation(web.id,'codex','keep',{});
  let starts=0;const workspaces=new Workspaces(store.workspaces,{templates:{browser:{workers:{stop:async()=>{throw Error('Still alive');},start:()=>starts++}}}});

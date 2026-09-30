@@ -11,7 +11,7 @@ export function assertTaskTool(task,name){
 
 export function assertWorkerAssignment(store,candidate,name,args){
   const task=store.campaign(candidate)?.task;
-  const mutations=new Set([...applicationTools,'save_preparation','add_job','link_job_url','record_job_rank','save_source_checkpoint','run_source_tool','report_campaign_work','resolve_technical_question']);
+  const mutations=new Set([...applicationTools,'save_preparation','add_job','link_job_url','record_job_rank','save_source_checkpoint','save_source_progress','run_source_tool','report_campaign_work','resolve_technical_question']);
   if(!mutations.has(name)&&!name?.startsWith('browser_'))return;
   if(!task&&store.setup(candidate)?.status!=='running')throw Error('Bu worker’a henüz görev atanmadı. Yeni görev bekle.');
   if(!task)return;
@@ -22,7 +22,7 @@ export function assertWorkerAssignment(store,candidate,name,args){
   if(task.kind==='search'&&name==='ask_candidate'&&args.jobId)throw Error('Arama görevinde başvuru sorusu açılamaz.');
   if(name==='add_job'&&task.kind!=='search')throw Error('İlan eklemek için arama görevi gerekli.');
   if(name==='record_job_rank'&&task.kind==='search'&&store.job(candidate,args.jobId).discoveryTaskId!==task.id)throw Error('Bu ilan başka bir görevde puanlanacak.');
-  if(args.sourceId&&['run_source_tool','save_source_checkpoint'].includes(name)&&args.sourceId!==task.sourceId)throw Error('Kaynak bu worker’ın görevine ait değil.');
+  if(args.sourceId&&['run_source_tool','save_source_checkpoint','save_source_progress'].includes(name)&&args.sourceId!==task.sourceId)throw Error('Kaynak bu worker’ın görevine ait değil.');
 }
 
 // Check resolved observed actions too: act/click must not bypass the tool gate.

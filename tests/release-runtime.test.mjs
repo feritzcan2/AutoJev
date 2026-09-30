@@ -8,7 +8,7 @@ import verifyUniversalInputs from '../scripts/verify-universal-inputs.cjs';
 import {engineBinaryPath,runtimeResourceRoot} from '../app/runtime-paths.mjs';
 import {createUpdateManager} from '../app/update-manager.mjs';
 test('packaged engine resolves outside asar and development uses an existing debug binary',()=>{
- assert.equal(engineBinaryPath({root:'/Applications/JobLoop.app/Contents/Resources/app.asar',resourcesPath:'/resources',platform:'win32'}),path.join('/resources','engine','jobloop-engine.exe'));
+ assert.equal(engineBinaryPath({root:'/Applications/AutoJev.app/Contents/Resources/app.asar',resourcesPath:'/resources',platform:'win32'}),path.join('/resources','engine','jobloop-engine.exe'));
  assert.equal(engineBinaryPath({root:'/src',platform:'linux',exists:()=>false}),path.join('/src','engine/target/release/jobloop-engine'));
  assert.equal(engineBinaryPath({root:'/src',platform:'linux',exists:()=>true}),path.join('/src','engine/target/debug/jobloop-engine'));
  assert.equal(runtimeResourceRoot({root:'/app/resources/app.asar'}),'/app/resources/app.asar.unpacked');
@@ -43,10 +43,10 @@ test('installer errors release maintenance whether thrown or emitted asynchronou
 test('universal packaging refuses mixed source snapshots before creating an ESM-incompatible bootstrap',async()=>{
  const directory=await mkdtemp(path.join(os.tmpdir(),'jobloop-universal-'));
  try{
-  for(const arch of ['x64','arm64']){const resources=path.join(directory,`mac-universal-${arch}-temp/JobLoop.app/Contents/Resources`);await mkdir(resources,{recursive:true});await writeFile(path.join(resources,'app.asar'),'immutable source');}
-  const context={appOutDir:path.join(directory,'mac-universal-arm64-temp'),packager:{appInfo:{productFilename:'JobLoop'}}};
+  for(const arch of ['x64','arm64']){const resources=path.join(directory,`mac-universal-${arch}-temp/AutoJev.app/Contents/Resources`);await mkdir(resources,{recursive:true});await writeFile(path.join(resources,'app.asar'),'immutable source');}
+  const context={appOutDir:path.join(directory,'mac-universal-arm64-temp'),packager:{appInfo:{productFilename:'AutoJev'}}};
   await verifyUniversalInputs(context);
-  await writeFile(path.join(context.appOutDir,'JobLoop.app/Contents/Resources/app.asar'),'concurrent edit');
+  await writeFile(path.join(context.appOutDir,'AutoJev.app/Contents/Resources/app.asar'),'concurrent edit');
   await assert.rejects(verifyUniversalInputs(context),/immutable checkout/);
  }finally{await rm(directory,{recursive:true,force:true});}
 });

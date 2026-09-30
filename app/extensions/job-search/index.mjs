@@ -1,3 +1,6 @@
+import {JOB_AGENTS,JOB_AGENT_ROLES,jobAgentRole,jobAgentProfile} from './agent-profiles.mjs';
+import {BACKGROUND_AGENT,BACKGROUND_AGENTS_MD} from '../../background-worker.mjs';
+import {withAgentDefaults} from '../../agent-settings.mjs';
 import {fileInstructionParts,contextInstructionParts,instructionPart} from '../../instruction-log.mjs';
 import {runtimeResourceRoot} from '../../runtime-paths.mjs';
 import {AccountVault} from '../../account-vault.mjs';
@@ -27,7 +30,8 @@ import {applicationWorkerView} from './view.mjs';
 import {publicSession} from '../../agent-sessions.mjs';
 import {applicationProtocol} from './mcp.mjs';
 export {jobSearchDefinition as definition} from './definition.mjs';
-export async function register({root,data,core,handle,emit,agents,browser,mcp,scheduler,maintenance,documents,dialog,shell,getWindow,encryptSecret,decryptSecret,jevSettings,restartingAgents,isQuitting}){
+export async function register({root,data,core,handle,emit,agents,profiles,browser,mcp,scheduler,maintenance,documents,dialog,shell,getWindow,encryptSecret,decryptSecret,jevSettings,restartingAgents,isQuitting}){
+ profiles.register([...JOB_AGENTS,BACKGROUND_AGENT]);
  const store=new Store(path.join(data,'jobloop.sqlite'),{core});
  const {engines,sessions,starting}=agents,ensureEngine=(id='catalog',worker=MAIN_WORKER)=>agents.ensure(id,worker);
 const accountVault=new AccountVault(store.db,{encrypt:encryptSecret,decrypt:decryptSecret});
@@ -41,7 +45,7 @@ const background=new BackgroundJobs(backgroundDb,{changed:candidateId=>emit('bac
  const output=Buffer.concat([backgroundOutput.get(run.id)??Buffer.alloc(0),Buffer.from(bytes)]).subarray(-150000);backgroundOutput.set(run.id,output);while(backgroundOutput.size>30)backgroundOutput.delete(backgroundOutput.keys().next().value);emit('background-output',{candidateId:run.candidateId,runId:run.id,bytes});
 }})});
 handle('background-snapshot',async id=>({task:backgroundDb.task(id),runs:backgroundDb.runs(id),signals:backgroundDb.signals(id),applications:store.jobs(id).map(({id,company,role,status,updatedAt})=>({id,company,role,status,updatedAt}))}));
-handle('background-save',async(id,input)=>{if(input.agentOverride!=null){const settings=input.agentOverride;if(!['codex','claude'].includes(settings.provider)||![true,false,null].includes(settings.network))throw Error('Geçersiz agent ayarları');await ensureEngine().request('validate',settings);input={...input,agentOverride:{provider:settings.provider,model:settings.model,permission:settings.permission,reasoning:settings.reasoning,network:settings.provider==='codex'?settings.network:null}};}if(input.skillPath){if(!path.isAbsolute(input.skillPath)||path.extname(input.skillPath).toLowerCase()!=='.md')throw Error('Bir Markdown skill dosyası seç');if(!(await readFile(input.skillPath,'utf8')).trim())throw Error('Skill dosyası boş');}const result=backgroundDb.save(id,input);emit('background-changed',{candidateId:id});return result;});
+handle('background-save',async(id,input)=>{if(input.agentOverride!=null){const settings=withAgentDefaults(input.agentOverride);if(!['codex','claude'].includes(settings.provider)||![true,false,null].includes(settings.network))throw Error('Geçersiz agent ayarları');await ensureEngine().request('validate',settings);input={...input,agentOverride:{provider:settings.provider,model:settings.model,permission:settings.permission,reasoning:settings.reasoning,network:settings.provider==='codex'?settings.network:null}};}if(input.skillPath){if(!path.isAbsolute(input.skillPath)||path.extname(input.skillPath).toLowerCase()!=='.md')throw Error('Bir Markdown skill dosyası seç');if(!(await readFile(input.skillPath,'utf8')).trim())throw Error('Skill dosyası boş');}const result=backgroundDb.save(id,input);emit('background-changed',{candidateId:id});return result;});
 handle('background-pick-skill',async()=>{const result=await dialog.showOpenDialog(getWindow(),{properties:['openFile'],filters:[{name:'Skill',extensions:['md']}]});return result.canceled?null:result.filePaths[0];});
 handle('background-read-skill',async id=>readFile(backgroundDb.task(id).skillPath||path.join(root,'skills/gmail-sync/SKILL.md'),'utf8'));
 const connectorChecks=new Map();
@@ -63,12 +67,11 @@ handle('dismiss-mail-signal',(id,signalId)=>{backgroundDb.dismiss(id,signalId);e
 const sourceTabs=async id=>Object.assign({},...await Promise.all(store.workers(id).map(w=>browser.forWorker(w.id).sourceTabs(id,store.sources(id),store.forWorker(w.id).campaign(id)?.task))));
 handle('source-tabs',sourceTabs);
 const workerSnapshot=id=>store.workers(id).map(w=>({...w,campaign:store.forWorker(w.id).campaign(id),active:publicSession(sessions.get(workerKey(id,w.id)))}));
-const jobSnapshot=async id=>{const workers=workerSnapshot(id),campaign=campaigns.summary(id),owner=workers.find(w=>w.campaign?.task?.id===campaign?.task?.id&&w.active)??workers.find(w=>w.active);const snapshot=store.snapshot(id);return {...snapshot,definition:store.workspaces.definition(id),capabilities:{maxWorkers:store.workspaces.definition(id).execution.maxWorkers,canStart:Boolean(store.profile(id).cvPath),canRestart:Boolean(store.profile(id).cvPath),browserModes:['existing','separate','jev'],workerRestart:true,terminalConversation:false,workerDescription:'Her worker arama, puanlama ve başvuru işlerini ortak kuyruktan alır.'},campaign,execution:{status:campaign?.status??'idle',task:campaign?.task??null,note:campaign?.note},workers:workers.map(worker=>applicationWorkerView(worker,snapshot)),accountCredentials:accountVault.status(id),sourceTabs:await sourceTabs(id),documents:await documents.list(id),browserStatus:browser.status(id),active:owner?.active??null};};
-handle('browser-reconnect',id=>{store.profile(id);return browser.prepare(id,{force:true});});
+const jobSnapshot=async id=>{const workers=workerSnapshot(id),campaign=campaigns.summary(id),owner=workers.find(w=>w.campaign?.task?.id===campaign?.task?.id&&w.active)??workers.find(w=>w.active);const snapshot=store.snapshot(id);return {...snapshot,prompts:store.prompts(id,80).filter(p=>p.kind==='message'),definition:store.workspaces.definition(id),capabilities:{maxWorkers:store.workspaces.definition(id).execution.maxWorkers,canStart:Boolean(store.profile(id).cvPath),canRestart:Boolean(store.profile(id).cvPath),browserModes:['existing','separate','jev'],workerRestart:true,terminalConversation:false,workerDescription:'Her worker arama, puanlama ve başvuru işlerini ortak kuyruktan alır.'},campaign,execution:{status:campaign?.status??'idle',task:campaign?.task??null,note:campaign?.note},workers:workers.map(worker=>applicationWorkerView(worker,snapshot)),accountCredentials:accountVault.status(id),sourceTabs:await sourceTabs(id),documents:await documents.list(id),browserStatus:browser.status(id),active:owner?.active??null};};
 
 handle('account-credentials-save',(id,input)=>{store.profile(id);const result=accountVault.save(id,input);emit('changed',{candidateId:id});return result;});
 handle('account-credentials-remove',id=>{store.profile(id);accountVault.remove(id);emit('changed',{candidateId:id});return {configured:false};});
-handle('save-profile',async p=>{if(p.agentSettings){await ensureEngine().request('validate',p.agentSettings);if(p.agentSettings.provider==='gemini')throw Error('Gemini MCP entegrasyonu henüz desteklenmiyor');if(![true,false,null].includes(p.agentSettings.network))throw Error('Geçersiz ağ tercihi');}const profile=await saveProfileWithBrowserChange({store,campaigns,stop:stopAgent,resetBrowser:id=>browser.resetCandidate(id)},p);emit('changed',{});return profile;});
+handle('save-profile',async p=>{if(p.agentSettings){p={...p,agentSettings:withAgentDefaults(p.agentSettings)};await ensureEngine().request('validate',p.agentSettings);if(p.agentSettings.provider==='gemini')throw Error('Gemini MCP entegrasyonu henüz desteklenmiyor');if(![true,false,null].includes(p.agentSettings.network))throw Error('Geçersiz ağ tercihi');}const profile=await saveProfileWithBrowserChange({store,campaigns,stop:stopAgent,resetBrowser:id=>browser.resetCandidate(id)},p);emit('changed',{});return profile;});
 
 const deletingWorkspaces=new Set();
 const deleteJobWorkspace=async id=>{
@@ -98,6 +101,7 @@ handle('source-instructions',(id,sourceId)=>sourceInstructions(root,store.source
 handle('source-test',async(id,sourceId)=>{const result=await runSourceTool(root,store.source(id,sourceId),['search','--help'],{test:true});store.event(id,'source_tool_tested',{sourceId,ok:result.ok});return result;});
 handle('save-source',(candidateId,source)=>{if(restartingAgents.has(candidateId))throw Error('Agent yeniden başlatılıyor.');return campaigns.saveSource(candidateId,source);});
 handle('save-sources-apply-mode',async(candidateId,applyMode)=>{if(restartingAgents.has(candidateId))throw Error('Agent yeniden başlatılıyor.');const result=store.saveSourcesApplyMode(candidateId,applyMode);emit('changed',{candidateId});await campaigns.tick();return result;});
+handle('save-sources-interval',async(candidateId,intervalMinutes)=>{if(restartingAgents.has(candidateId))throw Error('Agent yeniden başlatılıyor.');const result=store.saveSourcesInterval(candidateId,intervalMinutes);emit('changed',{candidateId});await campaigns.tick();return result;});
 handle('delete-source',(candidateId,id)=>{const result=store.deleteSource(candidateId,id);emit('changed',{candidateId});return result;});
 handle('save-rank-settings',async(id,input)=>{const result=store.saveRankSettings(id,input);emit('changed',{candidateId:id});await campaigns.tick();return result;});
 handle('save-rank-threshold',async(id,value)=>{const result=store.saveRankThreshold(id,value);emit('changed',{candidateId:id});await campaigns.tick();return result;});
@@ -129,7 +133,7 @@ async function startAgent(candidateId,prompt,jobId,workerId=MAIN_WORKER){
     await mkdir(path.join(cwd,'runtime'),{recursive:true});await mkdir(path.join(cwd,'documents'),{recursive:true});
     requireBrowserReady(candidateId);
     if(jobId){const job=store.job(candidateId,jobId);if(['blocked','uncertain'].includes(job.status)&&job.sessionId!==sessionId)store.reclaim(candidateId,jobId,sessionId);}
-    await agents.start({id:candidateId,worker:workerId,reserved:true,sessionId,settings:profile.agentSettings,cwd,runtimeDirectory:path.join(cwd,'runtime'),endpoint:mcp.endpoint,token,prompt,history:scoped,
+    await agents.start({agentProfile:jobAgentProfile(jobAgentRole(store,candidateId,workerId),profile.agentSettings),id:candidateId,worker:workerId,reserved:true,sessionId,settings:profile.agentSettings,cwd,runtimeDirectory:path.join(cwd,'runtime'),endpoint:mcp.endpoint,token,prompt,history:store.workspaces.history(candidateId,workerId),
       currentSettings:()=>store.profile(candidateId).agentSettings,
       onRecord:(kind,value)=>store.event(candidateId,kind,value),
       onRetire:()=>{store.recoverSession(candidateId,sessionId);mcp.revoke(token);},
@@ -141,14 +145,17 @@ async function startAgent(candidateId,prompt,jobId,workerId=MAIN_WORKER){
   }catch(error){mcp.revoke(token);await agents.stop(candidateId,workerId).catch(()=>{});throw error;}finally{starting.delete(key);}
 }
 const stopAgent=(id,workerId=MAIN_WORKER)=>agents.stop(id,workerId,{settle:()=>browser.forWorker(workerId).waitForOperations(id)});
-const sendPrompt=(text,id,workerId=MAIN_WORKER)=>{store.logPrompt(id,{kind:'message',text,sessionId:sessions.get(workerKey(id,workerId))?.sessionId??null});return agents.message(id,text,workerId);};
+const sendPrompt=async(text,id,workerId=MAIN_WORKER)=>{
+ const role=jobAgentRole(store,id,workerId),active=sessions.get(workerKey(id,workerId));
+ if(active?.agentProfile?.id!==jobAgentProfile(role,store.profile(id).agentSettings).id){await stopAgent(id,workerId);return startAgent(id,text,null,workerId);}
+store.logPrompt(id,{kind:'message',text,sessionId:sessions.get(workerKey(id,workerId))?.sessionId??null});return agents.message(id,text,workerId);};
 const readContext=(id,session)=>agents.readContext(id,session);
 const campaigns=new WorkerCampaigns(store,{browserReady:id=>browser.prepare(id),launch:startAgent,send:sendPrompt,stop:stopAgent,active:(id,workerId)=>sessions.get(workerKey(id,workerId)),changed:id=>emit('changed',{candidateId:id}),readContext,contextBusy:(id,workerId)=>agents.contextBusy(id,workerId),rotateContext:(id,session,usage,threshold,workerId)=>rotateAgentContext({store:store.forWorker(workerId),stop:id=>stopAgent(id,workerId)},id,session,usage,threshold)});
 for(const candidate of store.candidates()){campaigns.recheckLegacyFormQuestions(candidate.id);campaigns.recheckPendingVerifications(candidate.id);}
 for(const p of store.candidates())for(const w of store.workers(p.id)){const scoped=store.forWorker(w.id),c=scoped.campaign(p.id);if(c?.status==='running')scoped.saveCampaign(p.id,{...c,task:c.task?{...c.task,report:null,seenWorking:false,recovery:{readyAt:Date.now()+2000,reason:'App restarted; resume the unfinished task after checking saved outcomes'}}:null,wakeAt:Date.now()+2000});}
 const setups=new Setups(store,{browserReady:id=>browser.prepare(id),launch:startAgent,send:sendPrompt,active:id=>sessions.get(id),changed:id=>emit('changed',{candidateId:id})});
 for(const p of store.candidates()){const s=store.setup(p.id);if(s?.status==='running')store.saveSetup(p.id,{...s,needsTurn:true});}
-handle('create-setup',async settings=>{await ensureEngine().request('validate',settings);if(!['codex','claude'].includes(settings.provider))throw Error('Desteklenmeyen sağlayıcı');const p=store.createSetup(settings);emit('changed',{});return p;});
+handle('create-setup',async settings=>{settings=withAgentDefaults(settings);await ensureEngine().request('validate',settings);if(!['codex','claude'].includes(settings.provider))throw Error('Desteklenmeyen sağlayıcı');const p=store.createSetup(settings);emit('changed',{});return p;});
 handle('begin-setup',async(id,source)=>{const s=store.setup(id);if(!s||s.status==='complete')throw Error('Setup bulunamadı');if(source){const url=new URL(source);if(url.protocol!=='https:'||!['linkedin.com','www.linkedin.com'].includes(url.hostname)||!url.pathname.startsWith('/in/'))throw Error('Geçerli bir LinkedIn profil bağlantısı gir');store.saveSetup(id,{...s,source:url.toString()});}await setups.begin(id);});
 handle('complete-setup',async(id,fields)=>{if(sessions.has(id))await stopAgent(id);const p=store.completeSetup(id,fields);emit('changed',{});return p;});
 handle('import-setup-cv',async(id,file)=>{if(store.setup(id)?.status!=='intake')throw Error('CV yüklemek için setup başlangıcında olmalısın');if(typeof file!=='string'||!path.isAbsolute(file)||!['.pdf','.docx','.txt'].includes(path.extname(file).toLowerCase()))throw Error('PDF, Word veya TXT CV seç');const dir=path.join(data,'candidates',id);await mkdir(dir,{recursive:true,mode:0o700});const target=path.join(dir,'CV'+path.extname(file).toLowerCase());await copyFile(file,target);await chmod(target,0o600);store.setCv(id,target);emit('changed',{});return target;});
@@ -211,10 +218,14 @@ scheduler.register('job-browser-maintenance',async()=>{if(isQuitting())return;aw
 scheduler.register('job-search',()=>campaigns.tick());scheduler.register('job-setup',()=>setups.tick());scheduler.register('background-skills',()=>background.tick(),{interval:5000});
 await telegram.load();
 return {driver:{
- instructions:async id=>{
+ configuration:()=>promptCatalog(runtimeResourceRoot({root})),
+ agentRoles:()=>[...JOB_AGENT_ROLES,'background'],
+ agentProfileSettings:(id,role)=>role==='background'?backgroundDb.task(id).agentSettings:store.profile(id).agentSettings,
+ instructions:async (id,role)=>{
+  if(role==='background'){const task=backgroundDb.task(id);return [...fileInstructionParts('AGENTS.md',BACKGROUND_AGENTS_MD),...fileInstructionParts('TASK.md',await readFile(task.skillPath||path.join(runtimeResourceRoot({root}),'skills/gmail-sync/SKILL.md'),'utf8'))];}
   const profile=store.profile(id),catalog=await promptCatalog(runtimeResourceRoot({root}));
   return [...fileInstructionParts('AGENTS.md',AGENTS_MD),instructionPart('startup-routing','Görev yönlendirme','system',STARTUP_INSTRUCTIONS,{when:'Her başlangıç mesajına eklenir.'}),instructionPart('browser-profile','Tarayıcı talimatı','system',browserProfileInstruction(profile),{when:'Seçilen tarayıcıya göre başlangıç mesajına eklenir.'}),
-   ...catalog.skills.flatMap(skill=>fileInstructionParts('.agents/'+skill.path,skill.text)),
+   ...catalog.skills.filter(skill=>!role||skill.id===(JOB_AGENTS.find(a=>a.role===role)?.skill)||(role==='background'&&skill.id==='gmail-sync')||['candidate-profile','write-cover-letter'].includes(skill.id)).flatMap(skill=>fileInstructionParts('.agents/'+skill.path,skill.text)),
    ...contextInstructionParts('get_task_context',{profile:Object.fromEntries(['preferences','facts','authorization','applicationPolicy'].map(key=>[key,profile[key]])),template:store.workspaces.definition(id)}).map(part=>({...part,when:'Görev bağlamı istendiğinde; dönen alanlar görev kapsamına göre değişebilir.'}))];
  },
   directory:id=>store.candidateDirectory(id),documentPurposes:['attachment','cv'],documentAdded:(id,document)=>{if(document.purpose==='cv')store.setCv(id,document.path);},

@@ -46,6 +46,15 @@ try{
  const deletedStore=new Store(path.join(data,'jobloop.sqlite'));
  if(deletedStore.candidates().some(p=>p.id===removable.id))throw Error('Deleted workspace remains in database');deletedStore.close();
  if(await import('node:fs/promises').then(fs=>fs.stat(removableDir).then(()=>true,()=>false)))throw Error('Deleted workspace files remain');
+ const removableAutomation=await page.evaluate(async()=>window.jobloop.workspaceCreate('custom',{title:'Temporary automation'}));
+ await page.reload();await page.locator('#candidates').selectOption('automation:'+removableAutomation.id);
+ await page.evaluate(id=>window.jobloop.automationMessage(id,'Find a suitable home'),removableAutomation.id);
+ await page.waitForFunction(id=>document.querySelector('#candidates').value==='automation:'+id&&!document.querySelector('#delete-workspace').disabled,removableAutomation.id);
+ await page.locator('button[data-view=profile]').click();
+ page.once('dialog',dialog=>dialog.accept());
+ await page.locator('#automation-delete').click();
+ await page.waitForFunction(id=>![...document.querySelector('#candidates').options].some(option=>option.value==='automation:'+id),removableAutomation.id);
+ await application.evaluate(()=>{globalThis.agentStarts=0;});
  await page.locator('#candidates').selectOption(originalWorkspace);
  await page.locator('button[data-view=agent]').click();
  await page.locator('#provider').selectOption('codex');
@@ -150,12 +159,32 @@ try{
  await page.locator('#now-panel').waitFor({state:'visible'});
  await page.locator('#terminal').waitFor({state:'hidden'});
  await page.locator('#now-history summary').click();
- await page.evaluate(id=>window.jobloop.startWorker(id,'main'),candidate);await page.locator('#terminal').waitFor({state:'visible'});
+ await page.evaluate(id=>window.jobloop.startWorker(id,'main'),candidate);
+ // Chat is the default view; the terminal checks below need the terminal lens.
+ await page.locator('.worker-pane[data-worker-id=main][data-view=chat] .worker-chat').waitFor({state:'visible'});
+ await page.locator('.worker-pane[data-worker-id=main]').getByRole('tab',{name:'Terminal'}).click();await page.locator('#terminal').waitFor({state:'visible'});
  for(const [width,height] of [[1100,740],[1440,950]]){
    await application.evaluate(({BrowserWindow},size)=>BrowserWindow.getAllWindows()[0].setSize(...size),[width,height]);
    await page.waitForFunction(()=>{const host=document.querySelector('#terminal'),surface=host.querySelector('.terminal-surface'),screen=host.querySelector('.xterm-screen');const h=host.getBoundingClientRect(),s=screen.getBoundingClientRect();return surface.clientHeight>200&&s.width>500&&s.right<=h.right+1&&s.bottom<=h.bottom+1&&s.height>=host.clientHeight-40;},null,{timeout:10000}).catch(async error=>{console.log(JSON.stringify(await page.locator("#terminal").evaluate(host=>({html:host.innerHTML.slice(0,500),rect:host.getBoundingClientRect().toJSON(),children:[...host.querySelectorAll(".terminal-surface,.xterm,.xterm-screen")].map(x=>({cls:x.className,rect:x.getBoundingClientRect().toJSON(),style:getComputedStyle(x).height}))})),null,2));throw error;});
  }
  await page.screenshot({path:path.join(data,'campaign.png'),fullPage:true});
+ // The chat view shows saved records instead of terminal bytes and survives a reload.
+ const mainPane=page.locator('.worker-pane[data-worker-id=main]');
+ await mainPane.getByRole('tab',{name:'Sohbet'}).click();
+ await mainPane.locator('.worker-chat').waitFor({state:'visible'});
+ if(await mainPane.locator('.worker-terminal').isVisible())throw Error('Terminal stayed visible in chat view');
+ await mainPane.locator('.worker-chat-entry, .worker-chat-empty').first().waitFor({state:'visible'});
+ await page.screenshot({path:path.join(data,'worker-chat.png'),fullPage:true});
+ await page.reload();await page.locator('button[data-view=agent]').click();
+ await page.locator('.worker-pane[data-worker-id=main][data-view=chat] .worker-chat').waitFor({state:'visible'});
+ await page.locator('.worker-pane[data-worker-id=main]').getByRole('tab',{name:'Terminal'}).click();
+ await page.locator('#terminal').waitFor({state:'visible'});
+ await page.waitForFunction(()=>{const host=document.querySelector('#terminal'),screen=host.querySelector('.xterm-screen');if(!screen)return false;const h=host.getBoundingClientRect(),s=screen.getBoundingClientRect();return s.width>500&&s.right<=h.right+1&&s.bottom<=h.bottom+1;},null,{timeout:10000});
+ await page.reload();await page.locator('button[data-view=agent]').click();
+ await page.locator('.worker-pane[data-worker-id=main][data-view=terminal]').waitFor();
+ await page.evaluate(()=>{for(const key of Object.keys(localStorage))if(key.startsWith('worker-view:'))localStorage.removeItem(key);});
+ await page.reload();await page.locator('button[data-view=agent]').click();
+ await page.locator('.worker-pane[data-worker-id=main][data-view=chat] .worker-chat').waitFor({state:'visible'});
  await page.evaluate(id=>window.jobloop.workspaceStop(id),candidate);
  await page.locator('button[data-view=templates]').click();await page.locator('[data-template=job-search]').click();
  await page.locator('#setup-begin').waitFor({state:'visible'});

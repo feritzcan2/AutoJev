@@ -1,6 +1,9 @@
+import {AgentProfiles} from './agent-profiles.mjs';
+import {WEB_AGENTS,WEB_AGENT_ROLES} from './automation-agent-profiles.mjs';
 import {InstructionLog} from './instruction-log.mjs';
 import {webInstructionCatalog,instructionSnapshot} from './instruction-catalog.mjs';
-import {app,BrowserWindow,ipcMain,dialog,shell,safeStorage,Notification} from 'electron';
+import {configurationCatalog,webPromptCatalog} from './configuration-catalog.mjs';
+import {app,BrowserWindow,Menu,ipcMain,dialog,shell,safeStorage,Notification} from 'electron';
 import {mkdir,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -10,6 +13,7 @@ import {AutomationStore} from './automation-store.mjs';
 import {registerSettingsServices} from './settings-services.mjs';
 import {JevSettings} from './jev-settings.mjs';
 import {applyPendingRestore,prepareDataUpgrade,completeDataUpgrade} from './data-management.mjs';
+import {currentDataDirectory,resolveDataDirectory,cancelDataLocation} from './data-location.mjs';
 import {AgentSessions} from './agent-sessions.mjs';
 import {WorkspaceScheduler} from './workspace-scheduler.mjs';
 import {Workspaces} from './workspaces.mjs';
@@ -25,11 +29,16 @@ import {browserDefinition} from './browser-definition.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 async function boot(){
+ // The internal name keeps the JobLoop data folder and keychain entry; users see AutoJev.
  app.setName('JobLoop');
  if(process.env.JOBLOOP_DATA_DIR)app.setPath('userData',process.env.JOBLOOP_DATA_DIR);
  if(!app.requestSingleInstanceLock()){app.quit();return;}
  await app.whenReady();
- const data=app.getPath('userData');await mkdir(data,{recursive:true,mode:0o700});await rm(path.join(data,'mobile.json'),{force:true});
+ if(process.platform==='darwin'){app.setAboutPanelOptions({applicationName:'AutoJev'});if(!app.isPackaged)app.dock.setIcon(path.join(root,'build/icon.png'));Menu.setApplicationMenu(Menu.buildFromTemplate([{label:'AutoJev',submenu:[{role:'about',label:'About AutoJev'},{type:'separator'},{role:'services'},{type:'separator'},{role:'hide',label:'Hide AutoJev'},{role:'hideOthers'},{role:'unhide'},{type:'separator'},{role:'quit',label:'Quit AutoJev'}]},{role:'editMenu'},{role:'viewMenu'},{role:'windowMenu'}]));}
+ const bootstrapDirectory=app.getPath('userData');await mkdir(bootstrapDirectory,{recursive:true,mode:0o700});
+ let data=await currentDataDirectory(bootstrapDirectory);
+ try{data=await resolveDataDirectory({bootstrapDirectory});}catch(error){await cancelDataLocation(bootstrapDirectory);dialog.showErrorBox('Veri klasörü değiştirilemedi',`${error.message}\n\nÖnceki veri konumuyla devam ediliyor: ${data}`);}
+ await mkdir(data,{recursive:true,mode:0o700});await rm(path.join(data,'mobile.json'),{force:true});
  await applyPendingRestore({dataDirectory:data});await prepareDataUpgrade({dataDirectory:data,appVersion:app.getVersion()});
  const extensions=await loadExtensions(),registry=new TemplateRegistry(extensions.map(extension=>extension.definition));
  const core=new WorkspaceDatabase(path.join(data,'jobloop.sqlite'),{registry});
@@ -42,7 +51,8 @@ async function boot(){
  const instructionLog=new InstructionLog(core.workspaces,{changed:id=>emit('instructions-changed',{workspaceId:id})});
  const agents=new AgentSessions({root,data,instructions:instructionLog,emit:event=>emit('agent-event',event),changed}),changing=new Set(),services=[];
  const ensureEngine=()=>agents.ensure('catalog');
- const workspaces=new Workspaces(core.workspaces,{templates:{},changing,changed,validateSettings:settings=>ensureEngine().request('validate',settings),workerRemoved:(id,worker)=>{const key=workerKey(id,worker);agents.outputs.delete(key);agents.sequences.delete(key);agents.grids.delete(key);}});
+ const profiles=new AgentProfiles(core.workspaces,{validate:library=>ensureEngine().request('validate-profile',{library}),changed:id=>emit('instructions-changed',{workspaceId:id})});profiles.register(WEB_AGENTS);agents.profiles=profiles;
+ const workspaces=new Workspaces(core.workspaces,{templates:{},changing,changed,validateSettings:settings=>ensureEngine().request('validate',settings),workerRemoved:(id,worker)=>agents.clear(id,worker)});
  const documents=new WorkspaceDocuments(workspaces,{dialog,shell,window:()=>window});
  const browser=new BrowserTools(data,id=>core.workspaces.get(id).browserMode,(id,worker)=>workspaces.template(id).browserOptions(id,worker));
  browser.directoryFor=id=>workspaces.template(id).browserDirectory(id);
@@ -50,7 +60,7 @@ async function boot(){
  browser.onTabsClosed=(id,ids)=>{workspaces.template(id).onTabsClosed?.(id,ids);changed(id);};
  browser.onProgress=(id,...args)=>workspaces.template(id).onBrowserProgress?.(id,...args);
  browser.beforeSubmit=(id,...args)=>workspaces.template(id).beforeSubmit?.(id,...args);
- const mcp=await startToolServer({onExchange:(grant,event)=>instructionLog.tool(grant,event),assertOwner:id=>core.workspaces.get(id),resolve(grant){
+ const mcp=await startToolServer({onExchange:(grant,event)=>instructionLog.tool({...grant,agentProfileId:agents.sessions.get(workerKey(grant.workspaceId,grant.workerId))?.agentProfile?.id},event),assertOwner:id=>core.workspaces.get(id),resolve(grant){
   if(agents.sessions.get(workerKey(grant.workspaceId,grant.workerId))?.sessionId!==grant.sessionId)throw Error('Worker oturumu kapandı.');
   return grant.workflow??workspaces.template(grant.workspaceId).protocol(grant);
  },onHook:hook=>{const active=[...agents.sessions.values()].find(a=>a.sessionId===hook.observation?.sessionId);if(!active)throw Error('No agent');return agents.engines.get(workerKey(active.candidateId,active.workerId)).request('hook',{token:hook.token,observation:hook.observation});}});
@@ -62,7 +72,9 @@ async function boot(){
  function handle(name,fn){ipcMain.handle(name,async(event,...args)=>{if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame)throw Error('Untrusted sender');return maintenance.invoke(name,()=>fn(...args));});}
  const automationDb=new AutomationStore(core),web=registerAutomationServices({root,data,db:automationDb,browsers:browser,mcp,agents,handle,emit,validateSettings:settings=>ensureEngine().request('validate',settings),dialog,shell,window:()=>window,notify:(title,body)=>{if(Notification.isSupported()&&!window?.isFocused()){const notification=new Notification({title,body:body.slice(0,300)});notification.on('click',()=>{window?.show();window?.focus();});notification.show();}}});
  workspaces.templates[browserDefinition.id]={
-  instructions:id=>webInstructionCatalog(automationDb,id),
+  agentRoles:()=>WEB_AGENT_ROLES,
+  instructions:(id,role)=>webInstructionCatalog(automationDb,id,role),
+  configuration:id=>webPromptCatalog(automationDb.get(id)),
   create:(templateId,input)=>automationDb.create(templateId,input),directory:web.workspace,documentPurposes:['attachment'],beforeDocument:id=>automationDb.assertIdle(id),documentAdded:(id,document)=>automationDb.message(id,'system',`Kullanıcı bir belge ekledi: ${document.relative} (${document.name}). Yalnızca bu otomasyon kapsamında kullan.`),
   rename:(id,name)=>automationDb.rename(id,name),remove:web.remove,browserDirectory:()=>path.join(data,'automations'),browserOptions:id=>({config:()=>jevSettings.config(),profile:core.workspaces.get(id).chromeProfile,lifecycle:{multiWorker:true}}),
   workers:{add:(id,input)=>web.runtime.add(id,input),start:(id,worker)=>web.runtime.startWorker(id,worker),stop:(id,worker)=>web.runtime.stopWorker(id,worker),remove:(id,worker)=>web.runtime.remove(id,worker)},
@@ -70,25 +82,32 @@ async function boot(){
   start:async id=>{const a=automationDb.get(id);if(a.trial?.status!=='passed')return web.runtime.start(id,'trial');automationDb.enable(id);await web.runtime.tick();},stop:id=>web.runtime.pause(id),restart:async id=>{await web.runtime.pause(id);for(const provider of ['codex','claude'])automationDb.forgetConversation(id,provider,automationDb.conversation(id,provider));return web.runtime.start(id,'run');},settings:(id,input)=>web.save(id,input)
  };
  services.push({...web,assertIdle(){if(web.runtime.active.size)throw Error('Önce çalışan otomasyonları durdur.');},stop:()=>{web.runtime.closed=true;},resume:()=>{web.runtime.closed=false;},activeRunIds:()=>[...web.runtime.active.values()].map(slot=>slot.run.id)});
- for(const extension of extensions){const service=await extension.register({root,data,core,handle,emit,agents,browser,mcp,scheduler,maintenance,documents,dialog,shell,getWindow:()=>window,encryptSecret,decryptSecret,jevSettings,restartingAgents:changing,isQuitting:()=>quitting});workspaces.templates[extension.definition.id]=service.driver;services.push(service);}
- handle('instruction-snapshot',(id,options)=>instructionSnapshot({id,options,log:instructionLog,agents,workspaces}));
+ for(const extension of extensions){const service=await extension.register({root,data,core,handle,emit,agents,profiles,browser,mcp,scheduler,maintenance,documents,dialog,shell,getWindow:()=>window,encryptSecret,decryptSecret,jevSettings,restartingAgents:changing,isQuitting:()=>quitting});workspaces.templates[extension.definition.id]=service.driver;services.push(service);}
+ handle('configuration-catalog',id=>configurationCatalog({id,workspaces,profiles}));
+ handle('instruction-snapshot',(id,options)=>instructionSnapshot({id,options,log:instructionLog,agents,workspaces,profiles}));
+ handle('agent-profile-save',async(id,role,input)=>{if(!workspaces.template(id).agentRoles?.(id).includes(role))throw Error('Bu çalışma alanında agent bulunamadı');return profiles.update(id,role,input);});
  handle('instruction-event',(id,seq)=>instructionLog.detail(id,seq));
  handle('workspace-create',(templateId,input)=>workspaces.create(templateId,input));
  handle('workspaces',()=>workspaces.list());handle('workspace-snapshot',id=>workspaces.snapshot(id));
+ handle('workspace-tabs',id=>{core.workspaces.get(id);return browser.workspaceTabs(id);});
+ handle('browser-reconnect',id=>{core.workspaces.get(id);return browser.prepare(id,{force:true});});
+ handle('focus-workspace-tab',(id,tabId)=>{core.workspaces.get(id);return browser.focusWorkspaceTab(id,tabId);});
+ handle('close-workspace-tabs',(id,tabs)=>{core.workspaces.get(id);return browser.closeWorkspaceTabs(id,tabs);});
  handle('workspace-start',(id,options)=>workspaces.start(id,options));handle('workspace-stop',id=>workspaces.stop(id));handle('workspace-restart',(id,options)=>workspaces.restart(id,options));handle('workspace-settings',(id,input)=>workspaces.settings(id,input));
  handle('workspace-transition',(id,itemId,action)=>{const result=core.workspaces.transition(id,itemId,action);changed(id);return result;});
  handle('rename-workspace',(id,name)=>workspaces.rename(id,name));handle('delete-workspace',id=>workspaces.remove(id));
  handle('documents',id=>documents.list(id));handle('pick-document',(id,options)=>documents.pick(id,options));handle('read-document',(id,file)=>documents.read(id,file));handle('open-document',(id,file)=>documents.open(id,file));
  handle('worker-add',(id,input)=>workspaces.addWorker(id,input));handle('worker-start',(id,worker)=>workspaces.startWorker(id,worker));handle('worker-stop',(id,worker)=>workspaces.stopWorker(id,worker));handle('worker-restart',(id,worker)=>workspaces.restartWorker(id,worker));handle('worker-remove',(id,worker)=>workspaces.removeWorker(id,worker));
- handle('terminal-output',(id,worker='main')=>{workspaces.validateWorker(id,worker);return agents.output(id,worker);});
+ handle('terminal-output',(id,worker='main')=>{workspaces.validateWorker(id,worker);return agents.snapshot(id,worker);});
+ handle('worker-transcript',(id,worker='main')=>{workspaces.validateWorker(id,worker);return agents.transcript(id,worker);});
  handle('terminal-input',(id,text,worker='main',session)=>{workspaces.beforeInput(id,text,worker);return agents.input(id,text,worker,session);});
  handle('terminal-message',(id,text,worker='main')=>workspaces.message(id,text,worker));handle('terminal-resize',(id,rows,cols,worker='main',session)=>{workspaces.validateWorker(id,worker);return agents.resize(id,rows,cols,worker,session);});
  handle('catalog',()=>ensureEngine().request('catalog'));handle('chrome-profiles',()=>listChromeProfiles());
  handle('open-link',async url=>{const u=new URL(url);if(!['https:','http:'].includes(u.protocol))throw Error('Geçersiz bağlantı');await shell.openExternal(u.toString());});
  scheduler.register('agents',async()=>{for(const session of agents.sessions.values())await agents.readContext(session.candidateId,session);});
  scheduler.register('browsers',()=>{for(const workspace of workspaces.list())if(browser.status(workspace.id).state==='waiting')browser.prepare(workspace.id);});scheduler.register('web-templates',()=>web.runtime.tick());scheduler.start();
- const settingsServices=await registerSettingsServices({app,root,data,store:core,jevSettings,handle,window:()=>window,maintenance,emit,clearTerminalOutputs:()=>{agents.outputs.clear();for(const service of services)service.clearOutputs?.();emit('logs-cleared',{});},activeRunIds:()=>services.flatMap(service=>service.activeRunIds?.()??[])});
- window=new BrowserWindow({width:1440,height:950,minWidth:1040,minHeight:720,title:'Loop · Web otomasyonları',backgroundColor:'#11151b',webPreferences:{preload:path.join(root,'app/preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+ const settingsServices=await registerSettingsServices({app,root,data,bootstrapDirectory,store:core,jevSettings,handle,window:()=>window,maintenance,emit,clearTerminalOutputs:()=>{agents.clearOutputs();for(const service of services)service.clearOutputs?.();emit('logs-cleared',{});},activeRunIds:()=>services.flatMap(service=>service.activeRunIds?.()??[])});
+ window=new BrowserWindow({width:1440,height:950,minWidth:1040,minHeight:720,title:'AutoJev · Web otomasyonları',backgroundColor:'#11151b',webPreferences:{preload:path.join(root,'app/preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
  window.webContents.setWindowOpenHandler(()=>({action:'deny'}));window.webContents.on('will-navigate',event=>event.preventDefault());await window.loadFile(path.join(root,'dist/index.html'));
  await completeDataUpgrade({dataDirectory:data,appVersion:app.getVersion()});app.on('second-instance',()=>{window?.show();window?.focus();});app.on('window-all-closed',()=>app.quit());
  app.on('before-quit',event=>{if(quitting)return;event.preventDefault();quitting=true;settingsServices.dispose();scheduler.close();(async()=>{for(const service of services)await service.close?.();await agents.close();await browser.close();await mcp.close();core.close();app.quit();})();});

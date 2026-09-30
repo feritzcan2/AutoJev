@@ -1,10 +1,11 @@
+import {withAgentDefaults} from './agent-settings.mjs';
 // A workspace is a template plus shared settings/state. Domain extensions define
 // eligibility and task instructions; the app exposes one control surface.
 export class Workspaces {
  constructor(store,{templates,validateSettings=async()=>{},changing=new Set(),assertAvailable=()=>{},changed=()=>{},workerRemoved=()=>{}}){Object.assign(this,{store,templates,validateSettings,changing,assertAvailable,changed,workerRemoved});}
  assertMutable(id){this.store.get(id);this.assertAvailable(id);if(this.changing.has(id))throw Error('Çalışma alanı güncelleniyor.');}
  template(id){const definition=this.store.definition(id);const driver=this.templates[definition.execution.driver];if(!driver)throw Error('Template yürütücüsü bulunamadı: '+definition.execution.driver);return driver;}
- async create(templateId,input={}){const definition=this.store.template(templateId),driver=this.templates[definition.execution.driver];if(!driver)throw Error('Template uzantısı yüklü değil');if(input.agentSettings)await this.validateSettings(input.agentSettings);const result=await driver.create(templateId,input);this.changed(result.id);return result;}
+ async create(templateId,input={}){const definition=this.store.template(templateId),driver=this.templates[definition.execution.driver];if(!driver)throw Error('Template uzantısı yüklü değil');if(input.agentSettings){input={...input,agentSettings:withAgentDefaults(input.agentSettings)};await this.validateSettings(input.agentSettings);}const result=await driver.create(templateId,input);this.changed(result.id);return result;}
  list(){return this.store.list().filter(w=>this.store.supports(w.templateId)).map(w=>({...w,kind:this.store.definition(w.id).kind,driver:this.store.definition(w.id).execution.driver})).filter(w=>this.templates[w.driver]);}
  snapshot(id){const result=this.template(id).snapshot(id),decorate=value=>({...value,workspace:this.store.get(id)});return result?.then?result.then(decorate):decorate(result);}
  start(id,options){this.assertMutable(id);return this.template(id).start(id,options);}
@@ -36,7 +37,7 @@ export class Workspaces {
  async settings(id,input){
   this.assertMutable(id);const fields=['agentSettings','browserMode','chromeProfile'];if(!input||Object.keys(input).some(key=>!fields.includes(key)))throw Error('Geçersiz agent ayarı');
   if(input.agentSettings){
-   const s=input.agentSettings;if(!['codex','claude'].includes(s.provider)||![true,false,null].includes(s.network))throw Error('Geçersiz agent ayarları');
+   const s=withAgentDefaults(input.agentSettings);input={...input,agentSettings:s};if(!['codex','claude'].includes(s.provider)||![true,false,null].includes(s.network))throw Error('Geçersiz agent ayarları');
    await this.validateSettings(s);
   }return this.template(id).settings(id,input);
  }

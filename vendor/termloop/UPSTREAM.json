@@ -5,7 +5,8 @@
   "adaptations": [
     "Workspace members narrowed to the Rust dependencies used by JobLoop.",
     "JS workspace narrowed to terminal-wire and terminal-surface. Packages built with upstream build/pack scripts.",
-    "Claude auto and acceptEdits permissions are exposed and preserved separately in the catalog, launch arguments, and observations."
+    "Claude auto and acceptEdits permissions are exposed and preserved separately in the catalog, launch arguments, and observations.",
+    "PersonalAgent provider instruction binding and builtin.agent.personal prompt reused from pinned invocation module in launch; Loop supplies its own MCP protocol instead of TermLoop interactive instructions."
   ],
   "files": {
     "Cargo.toml": "2beb100daf07989a014d3f2a0eac5b4d5c8e5a21f9dfab0630885dba4477d890",
@@ -86,9 +87,10 @@
     "modules/launch/src/arguments.rs": "63d8afb819c9ee56150f51ed8c17c505eac5d29d8a85979bc02a2ba0c0a54480",
     "modules/launch/src/codex_config.rs": "6c9e88eea3af00d321056fedf61c246b8afd0862404ee7d30a2e255092d9b4ec",
     "modules/launch/src/environment.rs": "5d568d10dbe744fa7eb327a44b1d00e449c8f6eb9b06c5022641a12332be9685",
-    "modules/launch/src/lib.rs": "597db947067902e4d242367cd514333f9b7ccb4b1ef164f3cb76b910ee3c8d2d",
+    "modules/launch/src/lib.rs": "f8ec6cffc3ffbebcc43290f9985abe9059744c9b502dec2412d8f78bd51572ee",
     "modules/launch/src/manifest.rs": "e289b98cc113f69311d934470f1f19241184f017c649fe89d606f0c97485857c",
     "modules/launch/src/payload.rs": "eda1a91c848b48dc04e5a3c91fd5c721a7af2b02cdf75a0ceb0c3794521d4f4a",
+    "modules/launch/src/personal_agent.rs": "341b0c9a86d0d98b8fc27d864a0ce1f9cde95dfcb14f492ccf52cec013f0fa18",
     "modules/launch/src/policy.rs": "559e3ff4c99daa5fa92f57a2fb38cddb221cfd69588336e104631cec56a30be4",
     "modules/launch/src/prompt.rs": "765c1b7df0d5436bc8ed811c2a37de4bc618ef6978a248713d3236029ba63a3a",
     "modules/launch/src/provider.rs": "b99063383bdade9e9d648ed6a6015477951db0c407df3379d20f1c9d89ec19ec",
@@ -159,6 +161,7 @@
     "packages/termloop-terminal-wire-2.0.7.tgz": "e3a46ccd06e48e5757d5111c56664b47d2930e4ff379f271bac0b778aad9e56e",
     "pnpm-lock.yaml": "b6aecc3947b607b710dbbf4c954190fb49943885007900750f4d10082b8414a2",
     "pnpm-workspace.yaml": "637e06973b5f87773e91f2eb03552ba43da669db76438807453fd1c31292efea",
+    "resources/prompts/builtin.agent.personal.md": "47d8339ce27aad335e2d28b5179c75a80eccce9c03c1aa4d7e46676566946bff",
     "tsconfig.base.json": "afadc784e5ffda58d533924822773de3539430f8c11fcb642729b4391e7f7649"
   }
 }

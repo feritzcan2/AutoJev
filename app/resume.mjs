@@ -27,6 +27,6 @@ export function selectResume(store,candidateId,settings){
  const nativeId=store.conversation(candidateId,settings.provider);if(!nativeId)return undefined;
  const previous=store.conversationSettings(candidateId,settings.provider,nativeId);
  // Legacy sessions without launch settings cannot prove permission continuity.
- if(!previous||previous.permission!==settings.permission||(previous.network??null)!==(settings.network??null))return undefined;
+ if(!previous||(previous.agentProfileDigest??null)!==(settings.agentProfileDigest??null)||previous.permission!==settings.permission||(previous.network??null)!==(settings.network??null))return undefined;
  return nativeId;
 }

@@ -4,6 +4,7 @@ version = "0.1.1"
 edition = "2024"
 
 [dependencies]
+termloop-domain = { path = "../vendor/termloop/modules/domain" }
 termloop-agents = { path = "../vendor/termloop/modules/agents" }
 termloop-launch = { path = "../vendor/termloop/modules/launch" }
 termloop-agent-runtime = { path = "../vendor/termloop/modules/agent-runtime" }

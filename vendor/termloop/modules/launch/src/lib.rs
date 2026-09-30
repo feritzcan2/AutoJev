@@ -30,3 +30,6 @@ include!("policy.rs");
 #[cfg(test)]
 mod tests;
 pub use manifest::content_digest;
+
+mod personal_agent;
+pub use personal_agent::{PERSONAL_AGENT_TEMPLATE, personal_agent_provider_instructions};

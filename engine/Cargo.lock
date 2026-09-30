@@ -903,6 +903,7 @@ dependencies = [
  "serde_json",
  "termloop-agent-runtime",
  "termloop-agents",
+ "termloop-domain",
  "termloop-launch",
  "termloop-terminal",
  "tokio",

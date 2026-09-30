@@ -31,6 +31,16 @@ try{
  assert.deepEqual(collected.closed,[research.id]);
  for(const slot of [typed,login,challenge,framed])assert.equal(slot.page.isClosed(),false);
  console.log('TAB_HYGIENE_RESEARCH_QUERY_DRAFT_LOGIN_VERIFICATION_IFRAME_PASS');
+ const searchBar=await make('<section><input role="combobox" placeholder="(Jobtitel, Kompetenz oder Firmenname)" value="backend"><input role="combobox" placeholder="(Ort oder 5-stellige PLZ)" value="Berlin"><button>Jobs finden</button></section>');
+ const alert=await make('<form id="jobAlert-signup"><label>Email<input type="email" value="candidate@example.test"></label><button>Activate</button></form>');
+ const editedAlert=await make('<form id="jobAlert-signup"><input type="email" value="candidate@example.test"><button>Activate</button></form>');await editedAlert.page.locator('input').fill('edited@example.test');
+ const application=await make('<form id="application"><input type="email" value="candidate@example.test"><input placeholder="Job title" value="Engineer"><button>Apply</button></form>');
+ const personalTitle=await make('<input placeholder="Job title" value="Engineer">');
+ for(const slot of [searchBar,alert,editedAlert,application,personalTitle])client.tabSearches.set(slot.id,'finished-filters');
+ const filters=await client.cleanupSearch('finished-filters',{jobs:[job]});
+ assert.deepEqual(filters.closed.sort(),[searchBar.id,alert.id].sort());
+ for(const slot of [editedAlert,application,personalTitle])assert.equal(slot.page.isClosed(),false);
+ console.log('TAB_HYGIENE_UNNAMED_SEARCH_DEFAULT_ALERT_EDITED_EMAIL_APPLICATION_PASS');
  await form.page.close();assert.equal(client.tabs.has(form.id),false);assert.equal(client.tabJobs.has(form.id),false);
  console.log('TAB_HYGIENE_LISTING_RANK_DRAFT_USER_UNCERTAIN_MANUAL_CLOSE_PASS');
 }finally{await client.close();await rm(dir,{recursive:true,force:true});}

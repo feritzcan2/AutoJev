@@ -87,6 +87,25 @@ try{
   assert.equal(calls.filter(c=>c.owner.endsWith(extra.id)).map(c=>c.args.text).join(''),'SECOND_ONLY');
   const output=await page.evaluate(async({id,worker})=>[await window.jobloop.terminalOutput(id,'main'),await window.jobloop.terminalOutput(id,worker)],{id:a.id,worker:extra.id});
   assert.ok(!Buffer.from(output[0].bytes).toString().includes('SECOND'));assert.ok(!Buffer.from(output[1].bytes).toString().includes('PRIMARY'));
+  // A provider can still report Working while its terminal waits for a folder
+  // trust decision. The prompt must stand out and focus the correct terminal.
+  await app.evaluate((_,id)=>{
+    const engine=[...globalThis.workerEngines.entries()].find(([key])=>key.endsWith(id))[1];
+    const prompt='\x1b[2J\x1b[HAccessing workspace:\r\n/Users/example/workspace\r\nQuick safety check: Is this a project you trust?\r\nClaude Code can read, edit, and execute files here.\r\nNo, exit\r\nYes, I trust this folder\r\nEnter to confirm · Esc to cancel';
+    engine.child.stdout.emit('data',Buffer.from(JSON.stringify({event:'output',sessionId:engine.testSession,bytes:[...Buffer.from(prompt)]})+'\n'));
+  },a.id);
+  await primary.locator('.worker-attention').waitFor({state:'visible'});
+  assert.match(await primary.locator('.worker-attention-title').textContent(),/güven onayı/);
+  assert.equal(await primary.locator('.worker-status').textContent(),'Yanıt bekliyor');
+  assert.equal(await secondary.locator('.worker-attention').isVisible(),false);
+  await primary.screenshot({path:path.join(data,'worker-attention.png')});
+  await primary.locator('[data-view="chat"]').click();
+  await primary.locator('.worker-attention-button').click();
+  assert.equal(await primary.getAttribute('data-view'),'terminal');
+  assert.equal(await primary.locator('.xterm-helper-textarea').evaluate(el=>document.activeElement===el),true);
+  await page.keyboard.press('ArrowDown');assert.equal(await primary.locator('.worker-attention').isVisible(),true);
+  await page.keyboard.press('Enter');await primary.locator('.worker-attention').waitFor({state:'hidden'});
+  assert.equal(await primary.locator('.worker-status').textContent(),'Çalışıyor');
   const divider=page.getByRole('separator',{name:'Terminal genişliğini ayarla'});await divider.focus();await page.keyboard.press('ArrowRight');
   const resized=await primary.boundingBox();assert.ok(resized.width>layout[0].width);
   await page.locator('.worker-activity').scrollIntoViewIfNeeded();await page.screenshot({path:path.join(data,'worker-splits.png')});

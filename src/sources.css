@@ -13,6 +13,25 @@
 .source-bulk-mode button[aria-pressed="true"] { color: var(--accent-strong); border-color: var(--accent); background: rgba(102, 179, 255, .1); }
 .source-bulk-mode small { color: var(--text-muted); font-size: 12px; }
 
+#sources .source-bulk-interval, [data-automation-pane="sources"] .source-bulk-interval { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; max-width: none; margin: 0 0 18px; padding: 0; border: 0; background: none; }
+.source-bulk-interval label { margin: 0; font-size: 12px; }
+.source-bulk-interval input { width: 100px; padding: 8px 10px; }
+.source-bulk-interval button { padding: 8px 12px; font-size: 12px; }
+.source-bulk-interval small { color: var(--text-secondary); font-size: 12px; }
+
+.source-tabs-control { position: relative; }
+.source-tabs-control[data-open="true"], .source-tabs-other[data-open="true"] { z-index: 5; }
+.source-tabs-control[hidden], .source-tabs-other[hidden] { display: none; }
+.source-tabs-control .source-tabs-toggle { width: 100%; }
+.source-tabs-other { position: relative; padding: 10px 18px; border-top: 1px solid var(--border); text-align: right; }
+.source-tabs-menu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 10; width: min(390px, calc(100vw - 40px)); max-height: 290px; overflow: auto; margin: 0; padding: 5px; list-style: none; border: 1px solid var(--border-strong); border-radius: 9px; background: var(--bg-raised); box-shadow: 0 12px 28px rgba(0,0,0,.28); text-align: left; }
+.source-tabs-menu li + li { border-top: 1px solid var(--border); }
+.source-tabs-menu .source-tab-link { width: 100%; overflow: hidden; padding: 9px 10px; border: 0; background: transparent; color: var(--text-secondary); text-align: left; font-size: 11px; }
+.source-tabs-menu .source-tab-link:hover { background: var(--bg-hover); color: var(--text); }
+.source-tabs-menu .source-tabs-close { width: 100%; padding: 9px 10px; border: 0; background: transparent; color: var(--text-secondary); text-align: right; font-size: 11px; font-weight: 600; }
+.source-tabs-menu .source-tabs-close:hover { background: var(--bg-hover); color: var(--text); }
+.source-tab-address { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Switch: the only control that stays live inside a row. */
 .switch { position: relative; appearance: none; width: 34px; height: 20px; margin: 0; padding: 0; flex-shrink: 0; border: 0; border-radius: 10px; background: var(--border-strong); cursor: pointer; transition: background .18s; }
 .switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--text); transition: transform .18s, background .18s; }
@@ -72,6 +91,22 @@
 .source-editor-foot [data-cancel] { margin-left: auto; }
 .source-remove { border-color: transparent; color: var(--danger); }
 .source-remove:hover { background: rgba(225, 117, 126, .1); filter: none; }
+
+.source-progress-details { grid-column: 1 / -1; min-width: 0; padding: 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-raised); }
+.source-memory { grid-column: 2 / -1; margin-top: 14px; }
+.source-progress-details h3 { margin: 0 0 14px; color: var(--text); font-size: 13px; }
+.source-progress-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 0; }
+.source-progress-facts dt { color: var(--text-secondary); font-size: 11px; }
+.source-progress-facts dd { margin: 4px 0 0; color: var(--text); font-weight: 550; }
+.source-progress-note { display: grid; gap: 4px; margin-top: 14px; min-width: 0; }
+.source-progress-note b { color: var(--text-secondary); font-size: 11px; font-weight: 500; }
+.source-progress-note p { margin: 0; color: var(--text); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.source-progress-url { display: block; width: fit-content; max-width: 100%; padding: 0; border: 0; background: transparent; color: var(--accent-strong); font-size: 12px; line-height: 1.6; text-align: left; overflow-wrap: anywhere; }
+.source-progress-url:hover { text-decoration: underline; }
+.source-progress-pending { margin-top: 14px; }
+.source-progress-pending summary { color: var(--text); cursor: pointer; }
+.source-progress-pending ol { display: grid; gap: 6px; margin: 10px 0 0; padding-left: 22px; }
+@media (max-width: 900px) { .source-progress-facts { grid-template-columns: 1fr; } }
 
 .source-empty { margin: 0; padding: 48px 24px; text-align: center; border: 1px dashed var(--border-strong); border-radius: 12px; color: var(--text-secondary); line-height: 1.7; }
 .source-empty strong { display: block; margin-bottom: 6px; color: var(--text); font-size: 18px; font-weight: 550; }

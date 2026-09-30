@@ -21,6 +21,7 @@ const descriptions={
 };
 export function instructionExplanation(part){
  const key=part.key,field=key.split(':').at(-1);
+ if(key.startsWith('agent-profile:'))return {purpose:'Seçilen agent’ın görevini ve çalışma kurallarını tanımlar.',timing:'Bu agent için oturum açılırken Codex’e geliştirici talimatı, Claude’a ek sistem talimatı olarak doğrudan verilir.',change:'Kaydettiğin sürüm sonraki oturumda kullanılır. Açık oturumun talimatları değişmez; farklı sürümdeki eski konuşma sürdürülmez.'};
  if(key.startsWith('file:'))return {
   purpose:part.source==='skill'?'Belirli bir işi nasıl yapacağını anlatan beceri dosyası. Her görevde bütün becerilerin okunması gerekmez.':'Agent’ın çalışma biçimini belirleyen talimat dosyasının bir bölümü.',
   timing:part.source==='skill'?'Oturum hazırlanırken dosya erişime açılır. Agent ilgili görev için bu dosyayı açıp okursa içeriği öğrenir.':'Oturum hazırlanırken çalışma klasörüne konur. Sağlayıcı veya agent bu dosyayı okuduğunda içeriği öğrenir.',
@@ -33,7 +34,7 @@ export function instructionExplanation(part){
  };
  if(key.includes(':messages:'))return {
   purpose:part.source==='user'?'Bu çalışma alanındaki konuşmada yazdığın mesaj. Agent isteğini ve önceki yanıtlarını hatırlamak için kullanır.':'Çalışma alanının kayıtlı konuşmasından bir mesaj; sonraki turda konuşmanın devamını anlamaya yardımcı olur.',
-  timing:'Agent yeni konuşma veya çalışma turunda kayıtlı görev bilgilerini istediğinde, boyut sınırına sığan son mesajlarla birlikte verilir.',
+  timing:'Kurulum agent’ı kayıtlı görev bilgilerini istediğinde, boyut sınırına sığan son mesajlarla birlikte verilir. Deneme ve Çalışma agent’larına ham kurulum sohbeti gönderilmez.',
   change:'Bir mesajın burada listelenmesi tek başına o oturuma iletildiğini göstermez. Gönderim geçmişindeki bağlam yanıtını kontrol edebilirsin.'
  };
  if(key.startsWith('tool:get_'))return {

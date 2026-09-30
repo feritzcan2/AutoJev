@@ -48,3 +48,29 @@ test('stop failure prevents mode and draft changes',async()=>{
   assert.equal(f.store.profile(f.profile.id).browserMode,'jev');assert.deepEqual(f.store.job(f.profile.id,j.id),j);
  }finally{f.store.close();}
 });
+test('Chrome profile change disconnects the old browser and pauses work while preserving drafts',async()=>{
+ const f=fixture();try{
+  const j=f.job('working');
+  f.store.saveCampaign(f.profile.id,{status:'running',target:100,intervalMinutes:30,task:{jobId:j.id}});
+  const chromeProfile={directory:'Profile 2',name:'Work'};
+  await saveProfileWithBrowserChange(f.deps,{...f.store.profile(f.profile.id),chromeProfile});
+  assert.deepEqual(f.calls,['pause','reset']);
+  assert.deepEqual(f.store.profile(f.profile.id).chromeProfile,chromeProfile);
+  assert.equal(f.store.campaign(f.profile.id).status,'paused');
+  assert.deepEqual(f.store.job(f.profile.id,j.id),j);
+  f.calls.length=0;
+  await saveProfileWithBrowserChange(f.deps,{...f.store.profile(f.profile.id),chromeProfile:{...chromeProfile,name:'Renamed'}});
+  assert.deepEqual(f.calls,[]);
+  await saveProfileWithBrowserChange(f.deps,{...f.store.profile(f.profile.id),chromeProfile:null});
+  assert.deepEqual(f.calls,['pause','reset']);
+  assert.equal(f.store.profile(f.profile.id).chromeProfile,null);
+ }finally{f.store.close();}
+});
+test('failed stop leaves the selected Chrome profile unchanged',async()=>{
+ const f=fixture();try{
+  f.deps.stop=async()=>{throw Error('cannot stop');};
+  await assert.rejects(()=>saveProfileWithBrowserChange(f.deps,{...f.store.profile(f.profile.id),chromeProfile:{directory:'Default',name:'Personal'}}),/cannot stop/);
+  assert.equal(f.store.profile(f.profile.id).chromeProfile,null);
+  assert.deepEqual(f.calls,[]);
+ }finally{f.store.close();}
+});

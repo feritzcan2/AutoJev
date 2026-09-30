@@ -57,16 +57,16 @@ export class InstructionLog {
   pruneInstructionLogs(this.db,{now:this.now()});this.changed(workspaceId);return Number(result.lastInsertRowid);
  }
  detail(id,seq){this.workspaces.get(id);const row=this.db.prepare('SELECT seq,worker_id AS workerId,session_id AS sessionId,at,kind,data FROM workspace_instruction_events WHERE workspace_id=? AND seq=?').get(id,seq);if(!row)throw Error('Talimat kaydı bulunamadı veya saklama süresi doldu.');const {data,...meta}=row;return {...meta,...JSON.parse(data)};}
- history(id,{worker='',session='',before=Number.MAX_SAFE_INTEGER}={}){
-  this.workspaces.get(id);if(typeof worker!=='string'||typeof session!=='string'||!Number.isSafeInteger(before)||before<1)throw Error('Geçersiz talimat filtresi');
-  const rows=this.db.prepare("SELECT seq FROM workspace_instruction_events WHERE workspace_id=? AND (?='' OR worker_id=?) AND (?='' OR session_id=?) AND seq<? ORDER BY seq DESC LIMIT 101").all(id,worker,worker,session,session,before);
+ history(id,{worker='',session='',profile='',before=Number.MAX_SAFE_INTEGER}={}){
+  this.workspaces.get(id);if(typeof worker!=='string'||typeof session!=='string'||typeof profile!=='string'||!Number.isSafeInteger(before)||before<1)throw Error('Geçersiz talimat filtresi');
+  const rows=this.db.prepare("SELECT seq FROM workspace_instruction_events WHERE workspace_id=? AND (?='' OR worker_id=?) AND (?='' OR session_id=?) AND (?='' OR json_extract(data,'$.agentProfileId')=?) AND seq<? ORDER BY seq DESC LIMIT 101").all(id,worker,worker,session,session,profile,profile,before);
   const events=rows.slice(0,100).map(({seq})=>{const event=this.detail(id,seq);return {...event,parts:event.parts.map(({text,...meta})=>meta)};});
   return {events,next:rows.length>100?events.at(-1).seq:null};
  }
- sessions(id){this.workspaces.get(id);return this.db.prepare('SELECT session_id AS id,worker_id AS workerId,min(at) AS startedAt,max(seq) AS latest FROM workspace_instruction_events WHERE workspace_id=? GROUP BY session_id,worker_id ORDER BY latest DESC LIMIT 100').all(id);}
- status(id,parts,{worker='',session=''}={}){
+ sessions(id,{profile=''}={}){this.workspaces.get(id);return this.db.prepare("SELECT session_id AS id,worker_id AS workerId,min(at) AS startedAt,max(seq) AS latest FROM workspace_instruction_events WHERE workspace_id=? AND (?='' OR json_extract(data,'$.agentProfileId')=?) GROUP BY session_id,worker_id ORDER BY latest DESC LIMIT 100").all(id,profile,profile);}
+ status(id,parts,{worker='',session='',profile=''}={}){
   this.workspaces.get(id);
-  const rows=this.db.prepare("SELECT kind,data FROM workspace_instruction_events WHERE workspace_id=? AND (?='' OR worker_id=?) AND (?='' OR session_id=?) ORDER BY seq DESC").all(id,worker,worker,session,session),latest=new Map(),launches=[];
+  const rows=this.db.prepare("SELECT kind,data FROM workspace_instruction_events WHERE workspace_id=? AND (?='' OR worker_id=?) AND (?='' OR session_id=?) AND (?='' OR json_extract(data,'$.agentProfileId')=?) ORDER BY seq DESC").all(id,worker,worker,session,session,profile,profile),latest=new Map(),launches=[];
   for(const row of rows){const event=JSON.parse(row.data);if(event.status==='failed')continue;if(row.kind==='launch')launches.push(...event.parts.filter(p=>!p.truncated).map(p=>p.text));for(const part of event.parts)if(!latest.has(part.key))latest.set(part.key,{...part,status:event.status});}
   return parts.map(part=>{const match=latest.get(part.key),text=instructionText(part.text);return {...part,hash:hash(text),state:!match?(text&&launches.some(prompt=>prompt.includes(text))?'recorded':'unrecorded'):match.hash!==hash(text)?'changed':match.status==='available'?'available':'recorded'};});
  }
@@ -74,11 +74,11 @@ export class InstructionLog {
   const context=/(?:^get_.*context$)/.test(name);
   // Capture context and browser responses, never credential-vault tool results.
   if(kind!=='tool_catalog'&&/(?:credential|password|secret|token)/i.test(name))return;
-  if(kind!=='tool_catalog'&&!context&&!name.startsWith('browser_')&&!name.startsWith('research_'))return;
+  if(kind!=='tool_catalog'&&!context&&!name.startsWith('browser_')&&!name.startsWith('research_')&&name!=='report_scan_page')return;
   let value=result;
   if(context&&result?.content?.length===1&&result.content[0].type==='text'){try{value=JSON.parse(result.content[0].text);}catch{}}
   const parts=kind==='tool_catalog'?result.tools.map(t=>instructionPart(`tool-definition:${t.name}`,t.name,'tool',t)):
    context?contextInstructionParts(name,value):[instructionPart(`response:${name}`,name,'tool',{...result,content:result.content?.map(p=>p.type==='image'||p.type==='audio'?{type:p.type,mimeType:p.mimeType,note:'İkili içerik kaydedilmedi'}:p)})];
-  return this.record({workspaceId:grant.workspaceId,workerId:grant.workerId,sessionId:grant.sessionId,kind,title:kind==='tool_catalog'?'Araç tanımları':name,status:result?.isError?'failed':'returned',parts});
+  return this.record({workspaceId:grant.workspaceId,workerId:grant.workerId,sessionId:grant.sessionId,agentProfileId:grant.agentProfileId,kind,title:kind==='tool_catalog'?'Araç tanımları':name,status:result?.isError?'failed':'returned',parts});
  }
 }

@@ -9,6 +9,46 @@ import {WorkerCampaigns} from '../app/worker-campaigns.mjs';
 import {restartAgentFresh} from '../app/agent-restart.mjs';
 
 const minute=60000;
+test('bulk interval updates enabled and disabled sources only for the selected candidate',t=>{
+ const store=new Store(':memory:');t.after(()=>store.close());
+ const first=store.saveProfile({name:'First',preferences:'Remote'}),second=store.saveProfile({name:'Second',preferences:'Remote'});
+ const original=store.sources(first.id),other=store.sources(second.id);
+ const at=Date.parse('2026-09-28T13:25:00Z');
+ for(const source of original)store.markSourceRun(first.id,source.id,{at,nextRunAt:at+source.intervalMinutes*minute,result:'Complete',found:2});
+ const before=store.sources(first.id);
+ assert.ok(before.some(source=>!source.enabled));
+ const result=store.saveSourcesInterval(first.id,120);
+ for(const source of result){
+  const previous=before.find(item=>item.id===source.id);
+  assert.equal(source.intervalMinutes,120);assert.equal(source.nextRunAt,at+120*minute);
+  for(const key of ['enabled','applyMode','name','query','lastRunAt','lastResult','lastFound','resumeContext','scanProgress'])assert.deepEqual(source[key],previous[key]);
+ }
+ assert.deepEqual(store.sources(second.id),other);
+ assert.deepEqual(store.sources(first.id),result);
+});
+
+test('bulk interval validates before changing any sources and rolls back failed saves',t=>{
+ const store=new Store(':memory:');t.after(()=>store.close());
+ const p=store.saveProfile({name:'Bulk validation',preferences:'Remote'}),before=store.sources(p.id);
+ for(const value of [0,-1,1.5,10081,'invalid',null])assert.throws(()=>store.saveSourcesInterval(p.id,value),/1–10080/);
+ assert.deepEqual(store.sources(p.id),before);
+ const save=store.saveSource.bind(store);let count=0;
+ store.saveSource=(...args)=>{if(++count===2)throw Error('Save failed');return save(...args);};
+ assert.throws(()=>store.saveSourcesInterval(p.id,120),/Save failed/);
+ assert.deepEqual(store.sources(p.id),before);
+});
+
+test('bulk interval preserves partial scan continuation and unscheduled new sources',t=>{
+ const store=new Store(':memory:');t.after(()=>store.close());
+ const p=store.saveProfile({name:'Partial scan',preferences:'Remote'}),[partial,fresh]=store.sources(p.id);
+ const progress={page:2},at=Date.now(),nextRunAt=at+minute;
+ store.db.prepare("UPDATE sources SET data=json_set(data,'$.lastStatus','partial','$.lastRunAt',?,'$.nextRunAt',?,'$.scanProgress',json(?)) WHERE id=?").run(at,nextRunAt,JSON.stringify(progress),partial.id);
+ store.saveSourcesInterval(p.id,10080);
+ assert.equal(store.source(p.id,partial.id).nextRunAt,nextRunAt);
+ assert.deepEqual(store.source(p.id,partial.id).scanProgress,progress);
+ assert.equal(store.source(p.id,fresh.id).nextRunAt,0);
+});
+
 function fixture(t){
  const store=new Store(':memory:');t.after(()=>store.close());
  const p=store.saveProfile({name:'Source schedule',preferences:'Berlin',authorization:'research'});

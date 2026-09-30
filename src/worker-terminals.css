@@ -1,7 +1,17 @@
-main,#agent{min-width:0}.worker-terminals{margin:22px 0 30px}.worker-toolbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:14px}.worker-toolbar p{font-size:12px;color:#8f9daa;margin:7px 0 0}.worker-add{display:flex;align-items:center;gap:8px;flex-shrink:0}.worker-splits{display:flex;overflow-x:auto;min-width:0;padding-bottom:10px;align-items:stretch}.worker-pane{flex:1 0 380px;min-width:320px;overflow:hidden;border:1px solid #34414b;border-radius:10px;background:#191f27}.worker-pane:focus-within{border-color:#8cae9a}.worker-pane-head{display:flex;align-items:center;justify-content:space-between;padding:12px;gap:10px;border-bottom:1px solid #303b45}.worker-identity{display:flex;align-items:center;gap:8px;min-width:0}.worker-identity h3{margin:0;font-size:13px;white-space:nowrap}.worker-status{font-size:10px;color:#9aa8b6;white-space:nowrap}.worker-status[data-active=true]{color:#bce9bc}.worker-controls{display:flex;gap:5px}.worker-controls button{font-size:11px;padding:5px 7px}.worker-controls .worker-remove{font-size:17px;line-height:13px;color:#a6b1be}.worker-task{display:grid;gap:5px;padding:12px 14px;height:65px}.worker-task-title{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.worker-task-detail{font-size:11px;color:#8f9daa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.worker-terminal,#terminal.worker-terminal{height:480px;width:100%;padding:0;resize:none;background:#282c34;border:0;border-radius:0;overflow:hidden}.worker-divider{flex:0 0 10px;cursor:col-resize;position:relative;touch-action:none}.worker-divider:after{content:'';position:absolute;width:2px;height:40px;left:4px;top:48%;border-radius:2px;background:#44525e}.worker-divider:hover:after,.worker-divider:focus-visible:after{background:#bce9bc}.worker-divider:focus-visible{outline:1px solid #bce9bc;outline-offset:-2px}.sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}@media(max-width:900px){.worker-toolbar{align-items:flex-start;flex-direction:column}.worker-terminal,#terminal.worker-terminal{height:420px}.worker-pane{flex-basis:85vw}.worker-add{width:100%}}
+main,#agent{min-width:0}.worker-terminals{margin:22px 0 30px}.worker-toolbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:14px}.worker-toolbar p{font-size:12px;color:#8f9daa;margin:7px 0 0}.worker-add{display:flex;align-items:center;gap:8px;flex-shrink:0}.worker-splits{display:flex;overflow-x:auto;min-width:0;padding-bottom:10px;align-items:stretch}.worker-pane{flex:1 0 380px;min-width:320px;overflow:hidden;border:1px solid #34414b;border-radius:10px;background:#191f27}.worker-pane:focus-within{border-color:#8cae9a}.worker-pane-head{display:flex;align-items:center;justify-content:space-between;padding:12px;gap:10px;border-bottom:1px solid #303b45}.worker-identity{display:flex;align-items:center;gap:8px;min-width:0}.worker-identity h3{margin:0;font-size:13px;white-space:nowrap}.worker-status{font-size:10px;color:#9aa8b6;white-space:nowrap}.worker-status[data-active=true]{color:#bce9bc}.worker-controls{display:flex;gap:5px}.worker-controls button{font-size:11px;padding:5px 7px}.worker-controls .worker-remove{font-size:17px;line-height:13px;color:#a6b1be}.worker-task{display:grid;gap:5px;padding:12px 14px;min-height:65px}.worker-page-progress{color:#72b9f3;font-size:11px;font-weight:600}.worker-task-title{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.worker-task-detail{font-size:11px;color:#8f9daa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.worker-terminal,#terminal.worker-terminal{height:480px;width:100%;padding:0;resize:none;background:#282c34;border:0;border-radius:0;overflow:hidden}.worker-divider{flex:0 0 10px;cursor:col-resize;position:relative;touch-action:none}.worker-divider:after{content:'';position:absolute;width:2px;height:40px;left:4px;top:48%;border-radius:2px;background:#44525e}.worker-divider:hover:after,.worker-divider:focus-visible:after{background:#bce9bc}.worker-divider:focus-visible{outline:1px solid #bce9bc;outline-offset:-2px}.sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}@media(max-width:900px){.worker-toolbar{align-items:flex-start;flex-direction:column}.worker-terminal,#terminal.worker-terminal{height:420px}.worker-pane{flex-basis:85vw}.worker-add{width:100%}}
 
 .worker-terminal .terminal-surface{width:100%;height:100%;min-width:0;min-height:0;overflow:hidden}.worker-terminal .xterm,#terminal.worker-terminal .xterm{height:100%;padding:12px 14px}.worker-terminal .xterm-viewport{background-color:var(--bg-terminal)!important}
-.worker-pane:has(.worker-status:not([data-active=true])) :is(.worker-terminal,.worker-input-hint){display:none!important}
+
+.worker-view-switch[hidden],.worker-task[hidden]{display:none}
+.worker-pane[data-attention=true]{border-color:#d7a74f;box-shadow:0 0 0 1px #d7a74f55}
+.worker-status[data-attention=true]{color:#f0c778;font-weight:700}
+.worker-attention{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;border-block:1px solid #d7a74f70;background:#d7a74f1b;color:#f5dfa9}
+.worker-attention[hidden]{display:none}
+.worker-attention-copy{display:grid;gap:4px;min-width:0}
+.worker-attention strong{font-size:13px;line-height:1.4}
+.worker-attention span{font-size:12px;line-height:1.5;color:#e4d0a7}
+.worker-attention-button{flex:none;padding:8px 12px;border:1px solid #d7a74f88;border-radius:7px;background:#d7a74f2b;color:#f5dfa9;font-size:12px;font-weight:650;cursor:pointer}
+.worker-attention-button:hover,.worker-attention-button:focus-visible{background:#d7a74f45}
 .worker-outcome{display:grid;grid-template-columns:1fr auto;gap:6px 16px;padding:16px;border-top:1px solid var(--border-strong);background:var(--bg-raised)}
 .worker-outcome strong{font-size:14px}.worker-outcome span{grid-column:1;font-size:12px;color:var(--text-secondary);line-height:1.6}
 .worker-outcome button{grid-column:2;grid-row:1/3;align-self:center;font-size:12px}
@@ -9,3 +19,93 @@ main,#agent{min-width:0}.worker-terminals{margin:22px 0 30px}.worker-toolbar{dis
 .worker-outcome[data-tone=success]{border-left:3px solid var(--success,#8dcba4)}
 .worker-input-hint{margin:0;padding:10px 14px;border-top:1px solid var(--border);font-size:11px;line-height:1.6;color:var(--text-muted);background:var(--bg-app)}
 @media(max-width:900px){.worker-outcome{grid-template-columns:1fr}.worker-outcome button{grid-column:1;grid-row:auto;justify-self:start}}
+
+/* One session, two views. The switch sits between identity and controls so it reads as a lens on the worker, not as an action. */
+.worker-view-switch{display:flex;gap:2px;padding:2px;border-radius:8px;background:var(--bg-app);border:1px solid var(--border)}
+.worker-view-switch button{font-size:11px;padding:4px 10px;border:0;border-radius:6px;background:transparent;color:var(--text-muted);line-height:1.4}
+.worker-view-switch button[aria-selected=true]{background:var(--bg-raised);color:var(--text);box-shadow:inset 0 0 0 1px var(--border-strong)}
+.worker-view-switch button:focus-visible{outline:1px solid var(--accent-strong);outline-offset:1px}
+.worker-pane[data-view=chat] .worker-terminal,.worker-pane[data-view=chat] .worker-input-hint{display:none!important}
+.worker-pane[data-view=terminal] .worker-chat{display:none!important}
+.worker-chat{display:flex;flex-direction:column;height:480px;background:var(--bg-app);position:relative}
+.worker-chat-jump{position:absolute;left:50%;bottom:72px;transform:translateX(-50%);font-size:11px;padding:5px 12px;border-radius:14px;background:var(--accent);color:#152330;border:0;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+.worker-chat-jump[hidden]{display:none}
+.worker-chat-log{flex:1;min-height:0;overflow:auto;padding:18px 16px 8px;display:flex;flex-direction:column;gap:14px;scrollbar-width:thin}
+.worker-chat-day{align-self:center;font-size:10px;color:var(--text-muted);padding:2px 8px;border-radius:10px;border:1px solid var(--border);margin:4px 0}
+.worker-chat-entry{max-width:88%;padding:10px 13px;border-radius:12px;background:var(--bg-raised);border:1px solid var(--border)}
+.worker-chat-entry p{margin:5px 0 0;font-size:13px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
+.worker-chat-meta{display:flex;justify-content:space-between;gap:12px;font-size:10px;color:var(--text-secondary)}
+.worker-chat-meta span{font-weight:600;letter-spacing:.01em}
+.worker-chat-entry[data-role=user]{align-self:flex-end;background:var(--accent-wash);border-color:transparent;border-bottom-right-radius:4px}
+.worker-chat-entry[data-role=user] .worker-chat-meta span{color:var(--accent-strong)}
+.worker-chat-entry[data-role=agent]{align-self:flex-start;border-bottom-left-radius:4px}
+.worker-chat-entry[data-role=agent][data-pending=true]{border-left:3px solid var(--warning);padding-left:11px}
+.worker-chat-entry[data-role=task]{align-self:stretch;max-width:none;background:transparent;border:0;border-left:2px solid var(--border-strong);border-radius:0;padding:2px 12px;margin:-4px 0}
+.worker-chat-entry[data-role=task] .worker-chat-meta{font-size:10px}
+.worker-chat-task summary{cursor:pointer;font-size:12px;color:var(--text-secondary);line-height:1.6;list-style:none;overflow-wrap:anywhere}
+.worker-chat-task summary::-webkit-details-marker{display:none}
+.worker-chat-task summary::before{content:'▸ ';color:var(--text-muted)}
+.worker-chat-task[open] summary::before{content:'▾ '}
+.worker-chat-task[open] summary{color:var(--text-muted)}
+.worker-chat-task p{margin:6px 0 4px;font-size:12px;color:var(--text-secondary);line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.worker-chat-entry[data-role=system]{align-self:stretch;max-width:none;display:grid;grid-template-columns:auto 1fr;gap:2px 10px;align-items:baseline;background:transparent;border:0;border-left:2px solid var(--border-strong);border-radius:0;padding:2px 12px;margin:-4px 0}
+.worker-chat-entry[data-role=system] .worker-chat-meta{display:contents}
+.worker-chat-entry[data-role=system] .worker-chat-meta time{grid-column:2;grid-row:2;font-size:10px;color:var(--text-muted)}
+.worker-chat-entry[data-role=system] p{grid-column:2;grid-row:1;font-size:12px;color:var(--text-secondary);margin:0}
+.worker-chat-entry[data-role=system] .worker-chat-meta span{grid-column:1;grid-row:1}
+.worker-chat-entry[data-local=true]{opacity:.65}
+.worker-chat-empty{margin:auto;max-width:34ch;text-align:center;display:grid;gap:8px;color:var(--text-secondary);font-size:12px;line-height:1.7}
+.worker-chat-empty strong{font-size:13px;color:var(--text)}
+.worker-chat-form,.worker-pane form.worker-chat-form{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;max-width:none;margin:0;padding:10px 12px;border:0;border-top:1px solid var(--border);border-radius:0;background:var(--bg-raised)}
+.worker-chat-form textarea{min-height:36px;max-height:160px;resize:none;font-size:13px;line-height:1.5;padding:8px 10px;border-radius:8px}
+.worker-chat-form button{font-size:12px;padding:8px 14px}
+.worker-chat-form textarea:disabled,.worker-chat-form button:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:900px){.worker-chat{height:420px}.worker-pane-head{flex-wrap:wrap}.worker-view-switch{order:3;width:100%;justify-content:stretch}.worker-view-switch button{flex:1}.worker-attention{align-items:flex-start;flex-direction:column}.worker-attention-button{align-self:flex-start}}
+@media(prefers-reduced-motion:no-preference){.worker-chat-entry[data-local=true]{transition:opacity .2s}}
+.worker-status[data-active=true]:not([data-attention=true]){display:inline-flex;align-items:center;gap:5px}
+.worker-status[data-active=true]:not([data-attention=true])::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;animation:working-dot .9s ease-in-out infinite alternate}
+@media(prefers-reduced-motion:reduce){.worker-status[data-active=true]::before{animation:none}}
+
+/* In chat view the head, task and transcript share one surface; the task becomes a pinned card that matches the entries. */
+.worker-pane[data-view=chat]{background:var(--bg-app)}
+.worker-pane[data-view=chat] .worker-pane-head{border-bottom:0;padding-bottom:6px}
+.worker-pane[data-view=chat] .worker-task{margin:0 16px 4px;padding:10px 13px;min-height:0;border:1px solid var(--border);border-radius:12px;background:var(--bg-raised)}
+.worker-pane[data-view=chat] .worker-task-title{font-size:12px;color:var(--text-secondary);font-weight:600;letter-spacing:.01em}
+.worker-pane[data-view=chat] .worker-task-detail{font-size:12px;color:var(--text)}
+.worker-pane[data-view=chat] .worker-page-progress{color:var(--accent-strong)}
+.worker-pane[data-view=chat] .worker-chat-log{padding-top:12px}
+
+/* The worker section is a framed panel; its toolbar is the panel’s header, not floating text. */
+.terminal-section.worker-terminals{margin:22px 0 30px;padding:0;overflow:hidden}
+.worker-terminals .worker-toolbar{margin:0;padding:14px 18px;gap:18px;border-bottom:1px solid var(--border-strong);background:var(--bg-raised)}
+.worker-terminals .worker-toolbar h2{display:flex;align-items:center;gap:8px;margin:0;font-size:13px;font-weight:550}
+.worker-terminals .worker-toolbar h2::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 7px rgba(102,179,255,.7)}
+.worker-terminals .worker-toolbar p{margin:4px 0 0 16px;font-size:12px;color:var(--text-secondary)}
+.worker-terminals .worker-add button{font-size:12px;padding:7px 12px;background:transparent;color:var(--accent-strong);border:1px solid var(--border-strong);border-radius:8px;white-space:nowrap}
+.worker-terminals .worker-add button:hover:not(:disabled){background:var(--accent-wash);border-color:var(--accent)}
+.worker-terminals .worker-add button:disabled{opacity:.45}
+.worker-terminals .worker-splits{padding:14px 16px 16px;gap:0}
+.worker-terminals .worker-pane{border-radius:10px}
+@media(max-width:900px){.worker-terminals .worker-toolbar{padding:12px 14px}.worker-terminals .worker-toolbar p{margin-left:0}.worker-terminals .worker-splits{padding:10px}}
+
+/* Keep the sleeping terminal measurable so the next session starts at its real grid. */
+.worker-pane{position:relative}
+.worker-pane[data-closed=true]{display:flex;flex-direction:column;background:var(--bg-app)}
+.worker-pane[data-closed=true]>:not(.worker-idle){flex-shrink:0}
+.worker-pane[data-closed=true][data-history=false][data-view=terminal]>.worker-idle{flex:1}
+.worker-pane[data-closed=true][data-history=false] .worker-terminal{position:absolute;visibility:hidden;pointer-events:none;top:0;left:0}
+.worker-pane[data-closed=true][data-history=false] .worker-input-hint{display:none}
+.worker-idle{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:290px;padding:28px 24px 32px;text-align:center;background:radial-gradient(ellipse at 50% 40%,#8eb9bd0b,transparent 65%),var(--bg-app);border-top:1px solid var(--border)}
+.worker-idle[hidden]{display:none}
+.worker-idle-robot{position:relative;width:116px;height:102px;margin-bottom:12px;color:#a8c8c0}
+.worker-idle-robot svg{display:block;width:100%;height:100%}
+.worker-idle-zzz{position:absolute;right:4px;top:0;font-size:17px;font-weight:600;color:#a8c8c0;transform:rotate(10deg)}
+.worker-idle-zzz span{position:absolute;left:12px;top:-10px;font-size:12px;opacity:.55}
+.worker-idle-title{font-size:16px;font-weight:600;color:var(--text)}
+.worker-idle-detail{margin:8px 0 20px;max-width:38ch;color:var(--text-secondary);font-size:12px;line-height:1.65}
+.worker-idle-actions{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
+.worker-idle-actions button{padding:8px 13px;font-size:12px;border-radius:8px}
+.worker-idle-history{background:transparent;border:1px solid var(--border);color:var(--text-secondary)}
+.worker-pane[data-history=true] .worker-idle,.worker-pane[data-view=chat] .worker-idle{min-height:0;padding:20px}
+.worker-pane[data-history=true] .worker-idle-robot,.worker-pane[data-view=chat] .worker-idle-robot{width:70px;height:62px;margin-bottom:8px}
+@media(prefers-reduced-motion:no-preference){.worker-idle-zzz{animation:worker-sleep 3s ease-in-out infinite}@keyframes worker-sleep{0%,100%{opacity:.45;transform:translateY(2px) rotate(10deg)}50%{opacity:1;transform:translateY(-3px) rotate(10deg)}}}

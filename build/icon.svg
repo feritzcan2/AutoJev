@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2b4762"/><stop offset=".55" stop-color="#16232f"/><stop offset="1" stop-color="#0b1118"/></linearGradient>
+ <radialGradient id="halo" cx=".72" cy=".2" r=".6"><stop offset="0" stop-color="#66b3ff" stop-opacity=".34"/><stop offset="1" stop-color="#66b3ff" stop-opacity="0"/></radialGradient>
+ <linearGradient id="ink" gradientUnits="userSpaceOnUse" x1="0" y1="300" x2="0" y2="820"><stop offset="0" stop-color="#b3dbff"/><stop offset="1" stop-color="#3a8ae4"/></linearGradient>
+ <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".2"/><stop offset=".4" stop-color="#fff" stop-opacity="0"/></linearGradient>
+ <radialGradient id="spark"><stop offset="0" stop-color="#ffffff"/><stop offset=".6" stop-color="#e6f3ff"/><stop offset="1" stop-color="#a6d3ff"/></radialGradient>
+ <radialGradient id="glow"><stop offset="0" stop-color="#8ec8ff" stop-opacity=".7"/><stop offset="1" stop-color="#8ec8ff" stop-opacity="0"/></radialGradient>
+ <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceAlpha" stdDeviation="18"/><feOffset dy="16"/><feComponentTransfer><feFuncA type="linear" slope=".45"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+ <filter id="soft"><feGaussianBlur stdDeviation="10"/></filter>
+ <clipPath id="sq"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+</defs>
+<g filter="url(#shadow)"><rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/></g>
+<g clip-path="url(#sq)">
+ <rect x="100" y="100" width="824" height="824" fill="url(#halo)"/>
+ <g transform="translate(0 16)" opacity=".4" filter="url(#soft)"><path d="M717,348 L717,590 A205,205 0 1 1 327.7,500.1" fill="none" stroke="#000" stroke-width="104" stroke-linecap="round"/><path d="M379.5,394.1 L415.1,558.3 L228.1,467.1 Z" fill="#000" stroke="#000" stroke-width="18" stroke-linejoin="round"/></g>
+ <g><path d="M717,348 L717,590 A205,205 0 1 1 327.7,500.1" fill="none" stroke="url(#ink)" stroke-width="104" stroke-linecap="round"/><path d="M379.5,394.1 L415.1,558.3 L228.1,467.1 Z" fill="url(#ink)" stroke="url(#ink)" stroke-width="18" stroke-linejoin="round"/></g>
+ <circle cx="717" cy="222" r="118" fill="url(#glow)"/>
+ <circle cx="717" cy="222" r="58" fill="url(#spark)"/>
+ <rect x="100" y="100" width="824" height="824" rx="185" fill="none" stroke="url(#rim)" stroke-width="6"/>
+</g>
+</svg>

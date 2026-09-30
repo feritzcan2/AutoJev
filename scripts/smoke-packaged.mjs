@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 const require=createRequire(import.meta.url),{_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
 const root=process.cwd(),platform=process.platform;
-const executable=process.env.JOBLOOP_PACKAGED_BINARY||path.join(root,platform==='darwin'?'release/mac-universal/JobLoop.app/Contents/MacOS/JobLoop':platform==='win32'?'release/win-unpacked/JobLoop.exe':'release/linux-unpacked/jobloop');
+const executable=process.env.JOBLOOP_PACKAGED_BINARY||path.join(root,platform==='darwin'?'release/mac-universal/AutoJev.app/Contents/MacOS/AutoJev':platform==='win32'?'release/win-unpacked/AutoJev.exe':'release/linux-unpacked/jobloop');
 const data=await mkdtemp(path.join(os.tmpdir(),'jobloop-packaged-')),working=await mkdtemp(path.join(os.tmpdir(),'jobloop-cwd-'));
 let application,archiveName='app.asar';
 async function bounded(promise,label,timeout=20000){

@@ -6,11 +6,12 @@ import path from 'node:path';
 import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {InstructionLog,fileInstructionParts,contextInstructionParts,instructionPart} from '../app/instruction-log.mjs';
+import {agentProfileId} from '../app/agent-profiles.mjs';
 import {AUTOMATION_INSTRUCTIONS} from '../app/automation-worker.mjs';
 const require=createRequire(import.meta.url),{_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
 const data=await mkdtemp(path.join(tmpdir(),'loop-instructions-ui-'));
 const core=new WorkspaceDatabase(path.join(data,'jobloop.sqlite')),db=new AutomationStore(core),a=db.create('housing',{title:'Amsterdam ev araması',goal:'Uygun evleri bul',criteria:{location:'Amsterdam',budget:'1500 €',requirements:'En az 2 oda'}}),b=db.create('custom',{title:'Boş geçmiş'}),log=new InstructionLog(core.workspaces);
-const record=(parts,extra={})=>log.record({workspaceId:a.id,sessionId:'session-first',workerId:'main',kind:'context',title:'Görev bağlamı okundu',status:'returned',parts,...extra});
+const record=(parts,extra={})=>log.record({workspaceId:a.id,agentProfileId:agentProfileId('web-interview'),sessionId:'session-first',workerId:'main',kind:'context',title:'Görev bağlamı okundu',status:'returned',parts,...extra});
 record(fileInstructionParts('AGENTS.md',AUTOMATION_INSTRUCTIONS),{kind:'files',title:'Oturum talimat dosyaları',status:'available'});
 record(contextInstructionParts('get_automation_context',{automation:{...a,criteria:{...a.criteria,budget:'1200 €'}},template:db.template(a.templateId)}));
 record([instructionPart('launch-prompt','Başlangıç mesajı','system','İlan kartlarını önce listeden incele. Detay gerekiyorsa tek sekmeyi kullan.')],{kind:'launch',title:'Oturum başlangıç mesajı',status:'requested'});
@@ -21,8 +22,41 @@ try{
  const page=await app.firstWindow(),errors=[];page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));
  await page.waitForFunction(()=>Boolean(window.jobloop)&&document.querySelector('#setup-provider').options.length>0);
  await page.waitForFunction(id=>[...document.querySelector('#candidates').options].some(o=>o.value==='automation:'+id),a.id);
- await page.locator('#candidates').selectOption('automation:'+a.id);await page.locator('[data-view=agent]').click();await page.getByRole('tab',{name:'Talimatlar',exact:true}).click();
+ await page.locator('#candidates').selectOption('automation:'+a.id);
+ await page.locator('[data-view=config]').click();await page.locator('a[href="#config-instructions"]').click();
+ await page.waitForFunction(()=>document.querySelectorAll('#config-instructions-list .prompt-card').length>10);
+ assert.equal(await page.locator('#config-workspace').count(),0);
+ const compareCatalog=async id=>{
+  const {config,agent}=await page.evaluate(async id=>({config:await window.jobloop.configurationCatalog(id),agent:await window.jobloop.instructionSnapshot(id)}),id);
+  assert.deepEqual(config.instructions.filter(p=>p.key.startsWith('file:AGENTS.md:')),agent.parts.filter(p=>p.key.startsWith('file:AGENTS.md:')).map(({hash,state,...part})=>part));
+  return config;
+ };
+ const webCatalog=await compareCatalog(a.id);
+ assert.ok(webCatalog.tools.some(t=>t.name==='get_automation_context'));assert.ok(!webCatalog.tools.some(t=>t.name==='get_task_context'));
+ assert.equal(webCatalog.tasks.length,3);assert.equal(webCatalog.skills.length,0);
+ assert.ok((await page.locator('#config-instructions-list').textContent()).includes('personal web automation'));
+ assert.ok(!(await page.locator('#config-instructions-list').textContent()).includes('JobLoop scheduler messages'));
+ assert.ok(await page.locator('#config-instructions-list .config-group').count()>=3);
+ await page.getByLabel('Metinlerde ara',{exact:true}).fill('1500');
+ assert.equal(await page.locator('#config-instructions-list .prompt-card:visible').count(),1);
+ await page.locator('#config-instructions-list .prompt-card:visible summary').click();
+ assert.ok((await page.locator('#config-instructions-list pre:visible').textContent()).includes('1500'));
+ await page.locator('#candidates').selectOption('automation:'+b.id);await page.waitForFunction(title=>document.querySelector('#heading').textContent===title,b.title);await page.locator('[data-view=config]').click();
+ await page.waitForFunction(()=>document.querySelector('#config-search-note').textContent==='Eşleşme yok');
+ await page.getByLabel('Metinlerde ara',{exact:true}).fill('');
+ assert.ok(!(await page.locator('#config-instructions-list').textContent()).includes('1500'));
+ await page.locator('#candidates').selectOption('automation:'+a.id);await page.waitForFunction(title=>document.querySelector('#heading').textContent===title,a.title);await page.locator('[data-view=config]').click();
+ await page.waitForFunction(()=>document.querySelector('#config-instructions-list').textContent.includes('1500'));
+ await page.screenshot({path:'/tmp/loop-config-sections.png',fullPage:false});
+ await page.locator('a[href="#config-skills"]').click();assert.ok((await page.locator('#config-skills').textContent()).includes('ayrı bir beceri dosyası tanımlı değil'));
+ await page.locator('[data-view=agent]').click();await page.getByRole('tab',{name:'Talimatlar',exact:true}).click();
  await page.waitForFunction(()=>document.querySelectorAll('.instruction-card').length>10);
+ assert.equal(await page.getByRole('tab',{name:'Kurulum',exact:true}).count(),1);
+ await page.getByRole('tab',{name:'Çalışma',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.instruction-agent-summary h3')?.textContent==='Çalışma agent');
+ assert.ok((await page.locator('.instruction-agent-summary').textContent()).includes('kurulum sohbetini almaz'));
+ await page.locator('.instruction-profile-editor>summary').click();await page.getByLabel('Agent talimatı',{exact:true}).fill('Only the assigned work. Save observed results.');await page.getByRole('button',{name:'Talimatı kaydet',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('.instruction-agent-summary small')?.textContent.startsWith('Sürüm 2'));
+ await page.getByRole('tab',{name:'Kurulum',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.instruction-agent-summary h3')?.textContent==='Kurulum agent');
  assert.ok(await page.getByText('Güncel sürüm kayıttakinden farklı',{exact:true}).count()>0);
  assert.equal(await page.locator('#agent-settings').isVisible(),false);
  await page.getByLabel('Talimatlarda ara',{exact:true}).fill('1500');assert.equal(await page.locator('.instruction-card').count(),1);
@@ -37,7 +71,7 @@ try{
  await page.waitForFunction(()=>document.querySelectorAll('.instruction-event').length===3);
  await page.locator('#candidates').selectOption('automation:'+b.id);await page.locator('[data-view=agent]').click();
  await page.waitForFunction(()=>document.querySelector('.instruction-empty')?.textContent.includes('Henüz kayıt yok'));
- await page.getByRole('tab',{name:'Çalışma alanı',exact:true}).click();assert.equal(await page.locator('#agent-settings').isVisible(),true);
+ await page.getByRole('tab',{name:'Çalışma alanı',exact:true}).click();assert.equal(await page.locator('.workspace-conversation').isVisible(),true);
  if(process.env.LOOP_EXTENSIONS==='job-search'){
   const job=await page.evaluate(()=>window.jobloop.workspaceCreate('job-search',{name:'Talimat testi',preferences:'Remote engineering'}));
   await page.waitForFunction(id=>[...document.querySelector('#candidates').options].some(o=>o.value===id),job.id);
@@ -45,6 +79,14 @@ try{
   await page.getByRole('tab',{name:'Talimat parçaları',exact:true}).click();
   await page.waitForFunction(()=>[...document.querySelectorAll('.instruction-card')].some(c=>c.textContent.includes('Görev yönlendirme')));
   const catalog=await page.evaluate(id=>window.jobloop.instructionSnapshot(id),job.id);assert.ok(catalog.parts.some(p=>p.source==='skill'));assert.ok(catalog.parts.some(p=>p.key==='startup-routing'));
+  await page.locator('[data-view=config]').click();await page.locator('a[href="#config-instructions"]').click();
+  await page.waitForFunction(()=>document.querySelector('#config-instructions-list').textContent.includes('JobLoop scheduler messages'));
+  assert.equal(await page.locator('#config-workspace').count(),0);
+  const jobCatalog=await compareCatalog(job.id);assert.ok(jobCatalog.skills.length>0);assert.ok(jobCatalog.tools.some(t=>t.name==='get_task_context'));
+  await page.locator('#candidates').selectOption('automation:'+a.id);await page.waitForFunction(title=>document.querySelector('#heading').textContent===title,a.title);await page.locator('[data-view=config]').click();
+  await page.waitForFunction(()=>document.querySelector('#config-instructions-list').textContent.includes('personal web automation'));
+  assert.ok(!(await page.locator('#config-instructions-list').textContent()).includes('JobLoop scheduler messages'));
+
  }
- assert.deepEqual(errors,[]);console.log('INSTRUCTIONS_UI_PASS: configured extensions, current/history separation, search, worker/session filters, empty workspace, terminal view; /tmp/loop-instructions-{parts,history}.png');
-}finally{await app.close();await rm(data,{recursive:true,force:true});}
+ assert.deepEqual(errors,[]);console.log('INSTRUCTIONS_UI_PASS: selected workspace configuration, matching AGENTS.md sections, scoped catalogs, current/history separation, search, worker/session filters, empty workspace, terminal view; /tmp/loop-instructions-{parts,history}.png');
+}catch(error){for(const page of app.windows()){await page.screenshot({path:'/tmp/loop-instructions-error.png'});console.error(await page.locator('#agent').evaluate(n=>({hidden:n.hidden,panel:n.dataset.panel,tabs:[...n.querySelectorAll('[role=tab]')].map(t=>({text:t.textContent,hidden:t.hidden,rect:t.getBoundingClientRect().toJSON()}))})));}throw error;}finally{await app.close();await rm(data,{recursive:true,force:true});}

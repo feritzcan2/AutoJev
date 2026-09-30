@@ -1,6 +1,6 @@
-# Loop · Web otomasyonları
+# AutoJev · Web otomasyonları
 
-Loop, kişisel web işlerini template ve asistanla kurulan otomasyonlarla yöneten bir
+AutoJev, kişisel web işlerini template ve asistanla kurulan otomasyonlarla yöneten bir
 masaüstü uygulamasıdır. İş arama arayüzündeki çalışma alanı seçimi, **Başvurular**
 tablosu, Kaynaklar, Agent, Arka plan işleri ve Dosyalar sayfaları korunur. İş arama,
 ev arama ve randevu takibi bu ortak düzeni kullanır. Agent ihtiyacını sorularla
@@ -17,8 +17,8 @@ kaydedilebilir ve JSON dosyasıyla paylaşılabilir. Arayüz Türkçedir.
 **Başlangıç:** Yeni çalışma alanı → template seç → Agent ile konuş → profili kaydet → deneme
 çalıştır → bir kez veya düzenli çalıştır. Zamanlama için uygulama ve bilgisayar açık
 kalmalıdır. [Otomasyon rehberi](docs/automation-templates.md) çalışma modlarını,
-denemenin kapsamını ve mevcut sınırları açıklar. Dağıtım kimliği ve veri klasörü
-mevcut JobLoop kurulumlarıyla uyumluluk için korunur.
+denemenin kapsamını ve mevcut sınırları açıklar. Uygulamanın eski adı JobLoop’tur; dağıtım kimliği ve veri
+klasörü mevcut JobLoop kurulumlarıyla uyumluluk için korunur.
 
 ## Kurulum
 
@@ -62,6 +62,10 @@ Telegram kurulumu için [Telegram rehberine](docs/telegram.md) bak.
 
 ## Veriler ve güncellemeler
 
+- **Yapılandırma → Veriler ve yedekler → Mevcut veri klasörünü aç** ile
+  `jobloop.sqlite` içeren bir AutoJev veri klasörünü seçebilirsin. Uygulama yeniden
+  başlar ve sonraki açılışlarda da o klasördeki kayıtları kullanır. Dışa aktarılmış
+  yedekler için **Yedekten geri yükle** seçeneğini kullan.
 - Profiller, CV’ler ve başvuru geçmişi uygulamanın yerel veri klasöründedir.
   Agent, Jev ve Telegram kullanıldığında ilgili bilgiler dış hizmetlere gönderilir.
   Ayrıntılar: [veri paylaşımı](docs/privacy.md).
@@ -113,5 +117,5 @@ Hata bildirimlerini [Issues](https://github.com/feritzcan2/jobmaster/issues)
 üzerinden ilet. CV, aday bilgisi, bot token’ı veya ham terminal kaydı paylaşma.
 Güvenlik açıkları için [SECURITY](SECURITY.md) içindeki özel kanalı kullan.
 
-JobLoop GPL-3.0-or-later ve ticari lisans seçenekleriyle sunulur; [LICENSE](LICENSE).
+AutoJev GPL-3.0-or-later ve ticari lisans seçenekleriyle sunulur; [LICENSE](LICENSE).
 Üçüncü taraf bileşenler kendi lisanslarına tabidir: [bildirimler](THIRD_PARTY_NOTICES.md).

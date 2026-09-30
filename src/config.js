@@ -19,29 +19,36 @@ export function configPage(api,{notice,relativeTime,openNotifications}){
 <section id="config-jev" class="config-section"><h3>Jev</h3><div id="config-jev-panel"></div></section>
 <section id="config-updates" class="config-section"><div id="config-updates-panel"></div></section>
 <section id="config-privacy" class="config-section"><h3>Veri paylaşımı</h3><div id="config-privacy-panel"></div></section>
-<section id="config-instructions" class="config-section"><h3>Talimatlar</h3><p>Her oturumda agent’ın önüne konan sabit metinler.</p><div id="config-instructions-list"></div></section>
-<section id="config-tasks" class="config-section"><h3>Görev promptları</h3><p>Kampanya her görevi bu şablonlardan biriyle gönderir. Mavi alanlar o anda gerçek değerle dolar.</p><div id="config-tasks-list"></div></section>
-<section id="config-skills" class="config-section"><h3>Beceriler</h3><p>Aday çalışma alanına kopyalanan SKILL.md dosyaları. Agent çalışmaya başlamadan bunları okur.</p><div id="config-skills-list"></div></section>
-<section id="config-tools" class="config-section"><h3>MCP araçları</h3><p>Agent’ın profil ve başvuru verisine ulaştığı araçlar ve parametreleri. Tarayıcı araçları ayarlara göre ayrıca eklenir. Çerçeveli parametreler zorunlu.</p><div id="config-tools-list" class="tool-list"></div></section>
+<section id="config-instructions" class="config-section"><h3>Talimatlar</h3><p>Seçilen çalışma alanının güncel talimatları, kaynaklarına göre bölümler halinde.</p><div id="config-instructions-list"></div></section>
+<section id="config-tasks" class="config-section"><h3>Görev promptları</h3><p>Agent görevleri bu şablonlarla başlatılır. Mavi alanlar o anda gerçek değerle dolar.</p><div id="config-tasks-list"></div></section>
+<section id="config-skills" class="config-section"><h3>Beceriler</h3><p>Bu çalışma alanı için tanımlı beceri dosyaları. Agent ilgili görevde ihtiyaç duyduğu beceriyi okur.</p><div id="config-skills-list"></div></section>
+<section id="config-tools" class="config-section"><h3>MCP araçları</h3><p>Bu çalışma alanındaki görevlerde kullanılan araçlar ve parametreleri. Oturuma sunulan araçlar göreve ve tarayıcı ayarlarına göre daralabilir. Çerçeveli parametreler zorunlu.</p><div id="config-tools-list" class="tool-list"></div></section>
 </div></div>`;
  const $=id=>root.querySelector('#'+id);
- let catalog=null,candidate=null,dirty=true,loading=false;
+ let catalog=null,candidate=null,version=0;
  const lists={instructions:$('config-instructions-list'),tasks:$('config-tasks-list'),skills:$('config-skills-list'),tools:$('config-tools-list')};
  // One section at a time; a search query overrides that and shows every section with a hit.
  const tabKey='jobloop-config-tab';let active='telegram';try{active=localStorage.getItem(tabKey)||'telegram';}catch{}
  function layout(){const query=$('config-search').value.trim().toLowerCase();if(![...root.querySelectorAll('.config-nav a:not([hidden])')].some(tab=>tab.getAttribute('href')===`#config-${active}`))active=openNotifications?'telegram':'instructions';for(const section of root.querySelectorAll('.config-section')){const key=section.id.slice(7),tab=root.querySelector(`.config-nav a[href="#config-${key}"]`);if(tab.hidden){section.hidden=true;continue;}const hits=section.querySelectorAll('[data-search]:not([hidden])').length;section.hidden=query?!hits:key!==active;tab.classList.toggle('active',!query&&key===active);tab.classList.toggle('hit',Boolean(query&&hits));tab.setAttribute('aria-current',!query&&key===active?'page':'false');}root.dataset.searching=String(Boolean(query));}
  function open(key){active=key;try{localStorage.setItem(tabKey,key);}catch{}if($('config-search').value){$('config-search').value='';counts();}else layout();if(window.scrollY)window.scrollTo({top:0});}
  for(const a of root.querySelectorAll('.config-nav a'))a.onclick=e=>{e.preventDefault();open(a.getAttribute('href').slice(8));};
- function counts(){const query=$('config-search').value.trim().toLowerCase();let shown=0,total=0;for(const [key,list]of Object.entries(lists)){const items=[...list.querySelectorAll('[data-search]')];let visible=0;for(const item of items){const hit=!query||item.dataset.search.includes(query);item.hidden=!hit;if(hit)visible++;}shown+=visible;total+=items.length;const badge=root.querySelector(`.config-nav a[href="#config-${key}"] b`);badge.textContent=query?`${visible}/${items.length}`:String(items.length);list.querySelector('.config-nomatch')?.remove();}$('config-search-note').textContent=query?(shown?`${shown} / ${total} eşleşme`:'Eşleşme yok'):'';layout();}
+ function counts(){const query=$('config-search').value.trim().toLowerCase();let shown=0,total=0;for(const [key,list]of Object.entries(lists)){const items=[...list.querySelectorAll('[data-search]')];let visible=0;for(const item of items){const hit=!query||item.dataset.search.includes(query);item.hidden=!hit;if(hit)visible++;}shown+=visible;total+=items.length;const badge=root.querySelector(`.config-nav a[href="#config-${key}"] b`);badge.textContent=query?`${visible}/${items.length}`:String(items.length);for(const group of list.querySelectorAll('.config-group'))group.hidden=![...group.querySelectorAll('[data-search]')].some(item=>!item.hidden);}$('config-search-note').textContent=query?(shown?`${shown} / ${total} eşleşme`:'Eşleşme yok'):'';layout();}
  $('config-search').oninput=counts;
  function renderCatalog(){
-  lists.instructions.replaceChildren(...catalog.instructions.map(p=>card({title:p.title,when:`${p.where} · ${p.when}`,text:p.text,open:p.id==='agents-md'})));
+  lists.instructions.replaceChildren();
+  const groups=[['system','Sistem talimatları'],['template','Template kuralları'],['workspace','Çalışma alanı bilgileri'],['user','Kullanıcı mesajları'],['tool','Araç bağlamı']];
+  for(const [source,label]of groups){
+   const parts=catalog.instructions.filter(p=>p.source===source);if(!parts.length)continue;
+   const group=node('div','config-group');group.append(node('h4','',label));
+   group.append(...parts.map(p=>card({title:p.title,when:p.when,text:p.text})));lists.instructions.append(group);
+  }
   lists.tasks.replaceChildren(...catalog.tasks.map(p=>card({title:p.title,when:p.when,text:p.text,open:p.id==='search-source'})));
   lists.skills.replaceChildren(...catalog.skills.map(s=>card({title:s.title,when:`${s.usedBy} · ${s.description}`,path:s.path,text:s.text})));
   lists.tools.replaceChildren(...catalog.tools.map(t=>{const el=node('details','tool-card');el.dataset.search=(t.name+' '+t.description+' '+t.params.map(p=>p.name).join(' ')).toLowerCase();const summary=node('summary'),head=node('span');head.append(node('code','',t.name),node('span','tool-brief',t.description));const required=t.params.filter(p=>p.required).length;summary.append(head,node('span','tool-count',t.params.length?`${t.params.length} parametre${required?`, ${required} zorunlu`:''}`:'parametresiz'));el.append(summary);const body=node('div','tool-body');body.append(node('p','',t.description));if(t.params.length){const params=node('div','tool-params');for(const p of t.params){const chip=node('span');chip.dataset.required=String(p.required);chip.append(p.name,node('i','',': '+p.type));params.append(chip);}body.append(params);}el.append(body);return el;}));
+  for(const [key,list]of Object.entries(lists))if(!list.children.length)list.append(node('p','config-empty',key==='skills'?'Bu çalışma alanı için ayrı bir beceri dosyası tanımlı değil.':'Bu çalışma alanında bu bölüm için içerik tanımlı değil.'));
  }
  const jev=jevSettingsPanel(api,$('config-jev-panel'),{notice});
- const readiness=readinessPanel(api,$('config-readiness-panel'),{getSettings:async()=>{if(!candidate)return {};const snapshot=await api.workspaceSnapshot(candidate),profile=snapshot.profile;return {provider:profile.agentSettings.provider,browserMode:profile.browserMode,chromeProfile:profile.chromeProfile};}});
+ const readiness=readinessPanel(api,$('config-readiness-panel'),{getSettings:async()=>{if(!candidate)return {};const snapshot=await api.workspaceSnapshot(candidate),profile=snapshot.workspace;return {provider:profile.agentSettings.provider,browserMode:profile.browserMode,chromeProfile:profile.chromeProfile};}});
  const dataPanel=api.dataStatus?createDataManagement(api,{notice}):null;
  if(dataPanel)root.querySelector('.config-sections').append(dataPanel.element);else root.querySelector('a[href="#config-data"]').hidden=true;
  const updates=api.updateStatus?updatesPanel(api,$('config-updates-panel'),{notice}):null;
@@ -50,7 +57,17 @@ export function configPage(api,{notice,relativeTime,openNotifications}){
  function loadSettings(){jev.load();readiness.load();dataPanel?.load();updates?.load();}
  $('open-notifications').onclick=openNotifications;
  if(!openNotifications){$('config-telegram').hidden=true;root.querySelector('a[href="#config-telegram"]').hidden=true;}
- async function load(){if(root.hidden||loading)return;loading=true;loadSettings();try{if(!catalog){catalog=await api.promptCatalog();renderCatalog();}dirty=false;counts();}catch(e){notice(e.message);}finally{loading=false;}}
+ function clearCatalog(message='İçerikler yükleniyor…'){
+  catalog=null;for(const list of Object.values(lists))list.replaceChildren(node('p','config-empty',message));counts();
+ }
+ async function load(){
+  if(root.hidden)return;const request=++version;loadSettings();
+  try{
+   if(!candidate){clearCatalog('İçerikleri görmek için bir çalışma alanı seç.');return;}
+   const next=await api.configurationCatalog(candidate);if(request!==version)return;
+   catalog=next;renderCatalog();counts();
+  }catch(e){if(request!==version)return;clearCatalog('İçerikler yüklenemedi.');notice(e.message);}
+ }
  layout();
- return {open,select(id){if(id!==candidate){candidate=id;dirty=true;readiness.invalidate();}load();},refresh(){dirty=true;load();},show(){loadSettings();layout();if(dirty||!catalog)load();}};
+ return {open,select(id){if(id===candidate)return;candidate=id;version++;clearCatalog();readiness.invalidate();void load();},refresh(){version++;clearCatalog();void load();},show(){layout();void load();}};
 }

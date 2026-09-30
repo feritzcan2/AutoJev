@@ -1,8 +1,9 @@
+import {withAgentDefaults} from './agent-settings.mjs';
 import path from 'node:path';
 import {readFile,rm,writeFile,stat} from 'node:fs/promises';
 import {WebTasks} from './web-template.mjs';
 import {reusableTemplate,webUrl} from './automation-templates.mjs';
-import {sourceInput,sourceMode} from './automation-sources.mjs';
+import {sourceInput} from './automation-sources.mjs';
 import {launchAutomationWorker} from './automation-worker.mjs';
 import {automationBrowser} from './automation-browser.mjs';
 import {webWorkspaceView} from './workspace-view.mjs';
@@ -12,7 +13,7 @@ export function registerAutomationServices({root,data,handle,emit,validateSettin
  const outputs=new Map();
  const changed=id=>emit('automation-changed',{automationId:id});
  const runtime=new WebTasks(db,{changed,launch:(run,automation,onEvent,signal)=>launch({root,data,db,run,automation,onEvent,signal,agents,mcp,
-  browser:automationBrowser(browsers.forWorker(run.workerId??'main',()=>!signal.aborted&&db.run(run.id).status==='running'),{mode:automation.browserMode,readTabKey:run.kind!=='run'||!run.recordId&&sourceMode(automation,run.sourceUrl)==='observe'?`read:${run.workerId??'main'}`:undefined}),
+  browser:automationBrowser(browsers.forWorker(run.workerId??'main',()=>!signal.aborted&&db.run(run.id).status==='running'),{mode:automation.browserMode,sourceUrl:run.sourceUrl,sourceUrls:automation.sources,readTabKey:run.sourceUrl&&!run.recordId?`source:${run.sourceUrl}`:run.kind!=='run'?`read:${run.sourceUrl??run.workerId??'main'}`:undefined}),
   report:(id,runId,status,summary,goalReached)=>{const result=runtime.report(id,runId,status,summary,goalReached);if(run.kind!=='interview')notify(automation.title,db.run(runId).summary);return result;},changed,
   onOutput:bytes=>{outputs.set(run.id,Buffer.concat([outputs.get(run.id)??Buffer.alloc(0),Buffer.from(bytes)]).subarray(-150000));while(outputs.size>30)outputs.delete(outputs.keys().next().value);emit('automation-output',{automationId:run.automationId,runId:run.id,bytes});}
  })});
@@ -23,7 +24,7 @@ export function registerAutomationServices({root,data,handle,emit,validateSettin
  handle('automation-template-import',async()=>{const picked=await dialog.showOpenDialog(window(),{properties:['openFile'],filters:[{name:'Loop template',extensions:['json']}]});if(picked.canceled)return null;const file=picked.filePaths[0];if((await stat(file)).size>100000)throw Error('Template dosyası çok büyük');const input=JSON.parse(await readFile(file,'utf8'));if(input.format!=='loop-template'||![1,2].includes(input.version))throw Error('Desteklenmeyen template dosyası');const template=db.saveTemplate(input.template);changed(null);return template;});
  const snapshot=async id=>{const activeRuns=runtime.slots(id).map(s=>s.run);return webWorkspaceView({...db.snapshot(id),activeRun:activeRuns[0]??null,activeRuns,documents:await listDocuments(workspace(id)),browserStatus:browsers.status(id)},agents);};
  const save=async(id,input)=>{
-  if(input.agentSettings)await validateSettings(input.agentSettings);
+  if(input.agentSettings){input={...input,agentSettings:withAgentDefaults(input.agentSettings)};await validateSettings(input.agentSettings);}
   const before=db.get(id),browserChanged=input.browserMode!==undefined&&input.browserMode!==before.browserMode||input.chromeProfile!==undefined&&JSON.stringify(input.chromeProfile)!==JSON.stringify(before.chromeProfile);
   if(browserChanged){if(!['separate','jev'].includes(input.browserMode??before.browserMode))throw Error('Geçersiz tarayıcı seçimi');await runtime.pause(id);}
   else if(!(Object.keys(input).length===1&&input.agentSettings))db.assertIdle(id);
@@ -31,8 +32,10 @@ export function registerAutomationServices({root,data,handle,emit,validateSettin
  };
  handle('automation-save',save);
  handle('automation-source-save',(id,url,input)=>runtime.saveSource(id,url,input));
+ handle('automation-sources-interval',(id,intervalMinutes)=>runtime.saveSourcesInterval(id,intervalMinutes));
  handle('automation-source-modes',(id,mode)=>{db.assertIdle(id);const a=db.get(id);for(const url of a.sources)sourceInput(a,url,{mode});db.store.workspaces.tasks.atomic(()=>{for(const url of a.sources)db.saveSource(id,url,{mode});});changed(id);});
  handle('automation-source-run',(id,url)=>runtime.runSource(id,url));
+ handle('automation-retry-later',(id,key,cancel)=>runtime.retryLater(id,key,cancel===true));
  handle('automation-source-add',(id,input)=>{
   const a=db.get(id),url=webUrl(input.url);if(a.sources.includes(url))throw Error('Bu kaynak zaten kayıtlı');
   sourceInput({...a,sources:[...a.sources,url]},url,input);

@@ -3,7 +3,7 @@ import {validateAnswers} from './question-forms.mjs';
 
 export const clip=(value,max=3500)=>Array.from(String(value??'')).slice(0,max).join('');
 const signature=q=>JSON.stringify([q.question,q.fields]);
-const help='Yeni ilanlar ve başvuru bildirimlerin bu sohbete gelir. Bildirim tercihlerini JobLoop’taki Telegram ayarlarından değiştirebilirsin.\n/sorular — Bekleyen sorular\n/durum — Başvuru özeti\n/iptal — Yazdığın yanıtı iptal et\n/baglantiyikes — Telegram bağlantısını kaldır';
+const help='Yeni ilanlar ve başvuru bildirimlerin bu sohbete gelir. Bildirim tercihlerini AutoJev’deki Telegram ayarlarından değiştirebilirsin.\n/sorular — Bekleyen sorular\n/durum — Başvuru özeti\n/iptal — Yazdığın yanıtı iptal et\n/baglantiyikes — Telegram bağlantısını kaldır';
 const keyboard=rows=>({inline_keyboard:rows});
 
 export class TelegramConversation{
@@ -26,7 +26,7 @@ export class TelegramConversation{
   if(!f){
    const summary=q.fields?validateAnswers(fields,dialog.values).summary:dialog.values.reply;
    const chunks=Array.from(summary);for(let i=0;i<chunks.length;i+=3300)this.say(link,`${i===0?'Yanıtların:\n\n':''}${chunks.slice(i,i+3300).join('')}`,{questionId:q.id,promptId});
-   this.say(link,'Bu yanıtları JobLoop’a gönderelim mi?',{questionId:q.id,promptId,reply_markup:keyboard([[button('Yanıtları gönder','save')],[button('Baştan yanıtla','restart'),button('Vazgeç','cancel')]])});
+   this.say(link,'Bu yanıtları AutoJev’e gönderelim mi?',{questionId:q.id,promptId,reply_markup:keyboard([[button('Yanıtları gönder','save')],[button('Baştan yanıtla','restart'),button('Vazgeç','cancel')]])});
    return;
   }
   const rows=[];
@@ -51,11 +51,11 @@ export class TelegramConversation{
   const command=text.match(/^\/(\w+)(?:@\w+)?(?:\s+(.+))?$/s);
   if(command?.[1]==='start'&&command[2]){
    const bound=this.db.bind(command[2].trim(),chat,user.id,[user.first_name,user.last_name].filter(Boolean).join(' ')||user.username||'Telegram kullanıcısı');
-   if(!bound)return {chat,text:'Bağlantı geçersiz, süresi dolmuş veya hesap zaten bağlı. JobLoop’tan yeni bir bağlantı oluştur.'};
+   if(!bound)return {chat,text:'Bağlantı geçersiz, süresi dolmuş veya hesap zaten bağlı. AutoJev’den yeni bir bağlantı oluştur.'};
    link=bound;this.say(link,`${this.store.profile(link.candidate_id).name}, Telegram bağlantın hazır.\n\n${help}`,{},`linked:${link.data.linkedAt}`);
    this.db.openQuestions(link);this.changed(link.candidate_id);return null;
   }
-  if(!link)return command?{chat,text:'Bağlanmak için JobLoop’ta adayını seç, Yapılandırma → Telegram bölümünden bağlantı oluştur ve burada Başlat’a bas.'}:null;
+  if(!link)return command?{chat,text:'Bağlanmak için AutoJev’de adayını seç, Yapılandırma → Telegram bölümünden bağlantı oluştur ve burada Başlat’a bas.'}:null;
   if(command){
    if(['start','help'].includes(command[1]))this.say(link,help);
    else if(command[1]==='baglantiyikes'){this.db.unlink(link.candidate_id);this.changed(link.candidate_id);return {chat,text:'Telegram bağlantın kaldırıldı. Yeni bildirim gönderilmeyecek.'};}
@@ -64,7 +64,7 @@ export class TelegramConversation{
     const jobs=this.store.visibleJobs(link.candidate_id),sent=jobs.filter(j=>['submitted','already_submitted'].includes(j.status)).length,pending=this.store.questions(link.candidate_id).filter(q=>q.answer===null).length;
     this.say(link,`${this.store.profile(link.candidate_id).name}\n${sent} gönderilmiş başvuru\n${pending} bekleyen soru\n\n${link.data.questions?'Soruları yanıtlamak için /sorular yaz.':'Soru bildirimleri kapalı.'}`);
    }else if(command[1]==='sorular'){
-    if(!link.data.questions)this.say(link,'Soru bildirimleri kapalı. JobLoop’taki Telegram ayarlarından açabilirsin.');
+    if(!link.data.questions)this.say(link,'Soru bildirimleri kapalı. AutoJev’deki Telegram ayarlarından açabilirsin.');
     else {const questions=this.store.questions(link.candidate_id).filter(q=>q.answer===null);for(const q of questions.slice(0,10))this.notifyQuestion(link,q);if(!questions.length)this.say(link,'Bekleyen soru yok.');else if(questions.length>10)this.say(link,'İlk 10 soru gösterildi. Bunları yanıtladıktan sonra /sorular ile devam edebilirsin.');}
    }else this.say(link,help);
    return null;
@@ -99,11 +99,11 @@ export class TelegramConversation{
    try{await this.answer(link.candidate_id,q.id,values);}
    catch(error){
     if(this.question(link,q.id)){this.say(link,`Yanıt kaydedilemedi: ${clip(error.message,600)}`);return null;}
-    this.say(link,'Yanıt kaydedildi. Başvuruya devam etmek için JobLoop’taki agent durumunu kontrol et.');
+    this.say(link,'Yanıt kaydedildi. Başvuruya devam etmek için AutoJev’deki agent durumunu kontrol et.');
    }
    const current=this.db.link(link.candidate_id);
    if(current?.chat_id!==link.chat_id||current?.user_id!==link.user_id)return null;
-   current.data.dialog=null;this.db.saveLink(current);this.say(current,'Yanıtların JobLoop’a kaydedildi. Başvuru durumu buradan bildirilecek.');this.changed(link.candidate_id);return null;
+   current.data.dialog=null;this.db.saveLink(current);this.say(current,'Yanıtların AutoJev’e kaydedildi. Başvuru durumu buradan bildirilecek.');this.changed(link.candidate_id);return null;
   }
   try{
    if(action==='skip'&&f.required===false)delete dialog.values[f.id];

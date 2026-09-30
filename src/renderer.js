@@ -1,3 +1,4 @@
+import {defaultPermission} from '../app/agent-settings.mjs';
 import {instructionsPanel} from './instructions.js';
 import {templateFields,templateValues} from './template-fields.js';
 import {recordTable,recordCell,recordActions,recordState} from './record-table.js';
@@ -6,10 +7,13 @@ import {automationsPage} from './automations.js';
 import {accountCredentials} from './account-credentials.js';
 import {jobDisplayStatus} from './job-status.js';
 import {browserWaitView,createBrowserWaitDialog} from './browser-status.js';
+import {createChromeProfileDialog} from './chrome-profile-dialog.js';
 import {jobRankCell} from './job-rank.js';
 import {createJobFilters} from './job-filters.js';
 import {createRankSettings} from './rank-settings.js';
 import {openSourcePanel} from './source-panel.js';
+import {workspaceSourceTabs} from './workspace-tabs.js';
+import {workspaceSwitcher} from './workspace-switcher.js';
 import {questionForm} from './question-form.js';
 import {workerTerminals} from './worker-terminals.js';
 import {activityPanels} from './activity-panels.js';
@@ -34,13 +38,14 @@ const pinnedRowObserver=new ResizeObserver(updatePinnedJobOffsets);
 let chromeProfiles=[],chromeProfilesError='';
 let catalog=[],jobPage=1,jobSort=loadJobSort();
 let workspaceAgent=null,agentSettingsSignature='';
-let candidate=localStorage.getItem('selected-candidate'),snapshot=null,running=false,busy=false,newCandidate=false;
+let candidate=localStorage.getItem('selected-candidate'),snapshot=null,running=false,busy=false,newCandidate=false,deletingWorkspace=null;
 const names={found:'Bulundu',working:'Üzerinde çalışıyor',prepared:'Gönderime hazır',submitting:'Gönderiliyor',submitted:'Gönderildi',already_submitted:'Gönderildi',blocked:'Bilgi / işlem bekliyor',uncertain:'Sonuç doğrulanmalı',skipped:'Elendi'};
 const jobStatusLabel=job=>job.preparation?.hold&&!['submitted','already_submitted','skipped','uncertain','submitting'].includes(job.status)?preparationLabel(job.preparation):jobDisplayStatus(snapshot,job)==='queued'?'Başvuru sırasında':jobDisplayStatus(snapshot,job)==='working'&&job.status==='blocked'?'Üzerinde çalışıyor':isQuestionRetryPending(snapshot,job.id)?'Yeniden deneme sırasında':job.candidateSubmission&&job.status==='submitted'?'Gönderildi · Kullanıcı beyanı':job.missingDocuments&&job.status==='blocked'?'Belge bekliyor':job.followupStopped&&jobDisplayStatus(snapshot,job)!=='submitted'?(job.status==='uncertain'?'Takip bırakıldı · Sonuç belirsiz':'Takip bırakıldı'):({already_submitted:'Gönderildi',manual_submitted:'Manuel gönderildi',withdrawn:'Vazgeçildi'}[job.manualOutcome]??names[job.status]);
 const setupUI=onboarding(api,{showProfile:()=>switchView('profile'),select:async id=>{candidate=id;newCandidate=false;await refresh();fillProfile();},refresh:async()=>{await refresh();fillProfile();},cancel:async()=>{candidate=null;newCandidate=false;await refresh();fillProfile();switchView('automations');}});
 const notice=message=>{$('notice').textContent=message;$('notice').hidden=!message;};
 const attempt=fn=>async(...args)=>{try{return await fn(...args);}catch(e){notice(e.message);}};
 const workspaceActions=document.createElement('div');workspaceActions.className='workspace-actions';
+const workspaceMenu=workspaceSwitcher($('candidates'));
 workspaceActions.innerHTML='<button id="rename-workspace" class="quiet" type="button">Yeniden adlandır</button><button id="delete-workspace" class="quiet danger" type="button">Sil</button>';
 $('new').after(workspaceActions);
 const renameDialog=document.createElement('dialog');renameDialog.id='rename-workspace-dialog';
@@ -50,12 +55,24 @@ renameDialog.querySelector('[data-cancel]').onclick=()=>renameDialog.close();
 const selectedWorkspace=()=>({id:automationUI?.selected??candidate,title:automationUI?.selected?automationUI.data.automation.title:snapshot?.profile.workspaceName||snapshot?.profile.name});
 $('rename-workspace').onclick=()=>{const owner=selectedWorkspace();if(!owner.id)return;renameDialog.dataset.workspaceId=owner.id;renameDialog.querySelector('input').value=owner.title;renameDialog.showModal();renameDialog.querySelector('input').select();};
 renameDialog.querySelector('form').onsubmit=attempt(async event=>{event.preventDefault();const owner=renameDialog.dataset.workspaceId,submit=renameDialog.querySelector('[type=submit]');submit.disabled=true;try{await api.renameWorkspace(owner,renameDialog.querySelector('input').value);renameDialog.close();await refresh();notice('Çalışma alanı yeniden adlandırıldı.');}finally{submit.disabled=false;}});
-$('delete-workspace').onclick=attempt(async()=>{const owner=selectedWorkspace();if(!owner.id)return;if(!confirm(`“${owner.title}” çalışma alanı silinsin mi? Kayıtlar, belgeler ve çalışma geçmişi kalıcı olarak kaldırılacak.`))return;busy=true;controls();try{await api.deleteWorkspace(owner.id);if(automationUI?.selected===owner.id)automationUI.deselect();if(candidate===owner.id){candidate=null;localStorage.removeItem('selected-candidate');}await refresh();fillProfile();switchView(candidate?'board':'templates');notice(`“${owner.title}” çalışma alanı silindi.`);}finally{busy=false;controls();}});
+async function finishWorkspaceDeletion(owner){if(automationUI?.selected===owner.id)automationUI.deselect();if(candidate===owner.id){candidate=null;localStorage.removeItem('selected-candidate');}await refresh();fillProfile();switchView(candidate?'board':'templates');notice(`“${owner.title}” çalışma alanı silindi.`);}
+async function deleteWorkspace(owner=selectedWorkspace()){
+ if(!owner.id||busy||deletingWorkspace||automationUI?.busy)return;
+ if(!confirm(`“${owner.title}” çalışma alanı silinsin mi? Kayıtlar, belgeler ve çalışma geçmişi kalıcı olarak kaldırılacak.`))return;
+ deletingWorkspace=owner.id;busy=true;++refreshVersion;
+ try{
+  controls();notice(`“${owner.title}” çalışma alanı siliniyor…`);
+  await settingsQueue;await api.deleteWorkspace(owner.id);
+  deletingWorkspace=null;await finishWorkspaceDeletion(owner);
+ }catch(error){notice(`“${owner.title}” çalışma alanı silinemedi: ${error.message}`);}
+ finally{deletingWorkspace=null;busy=false;controls();}
+}
+$('delete-workspace').onclick=()=>deleteWorkspace();
 const backgroundUI=backgroundPage(api,{notice,getCatalog:()=>catalog});
 const notificationsUI=notificationsPage(api,{notice});
 const configUI=configPage(api,{notice,relativeTime,openNotifications:()=>switchView('notifications')});
 let newJobTemplate='job-search',newJobDefinition=null;
-const automationUI=automationsPage(api,{notice,getCatalog:()=>catalog,navigate:(name,options)=>switchView(name,options),startJob:async template=>newJobWorkspace(template),onSnapshot:syncWorkspaceAgent,focusAgent:()=>terminals.focus()});
+const automationUI=automationsPage(api,{notice,getCatalog:()=>catalog,navigate:(name,options)=>switchView(name,options),startJob:async template=>newJobWorkspace(template),onSnapshot:syncWorkspaceAgent,focusAgent:options=>terminals.focus(options),syncWorkspaceMenu:()=>workspaceMenu.sync(),refreshWorkspaces:()=>refresh(),deleteWorkspace,isDeleting:()=>Boolean(deletingWorkspace)});
 const accountUI=api.saveAccountCredentials?accountCredentials(api,{profile:$('profile-form'),board:$('board'),showProfile:()=>switchView('profile'),queue:(id,jobId)=>api.queueApplication(id,jobId)}):null;
 if(api.telegramStatus){const card=document.createElement('section');card.className='profile-card profile-telegram';card.innerHTML='<div class="profile-section"><div class="profile-section-copy"><h3>Telegram</h3><p>Başvurularını takip et ve agent’ın sorularını telefondan yanıtla.</p></div><div class="profile-fields telegram-row"><button type="button" class="quiet">Telegram’a bağlan</button></div></div>';card.querySelector('button').onclick=()=>{switchView('notifications');};$('profile').append(card);}
 await document.fonts.ready;
@@ -83,6 +100,20 @@ $('campaign-target').addEventListener('input',()=>{requestedLimit=null;renderCam
 const chromeStatus=element('div','chrome-status');chromeStatus.setAttribute('role','status');chromeStatus.setAttribute('aria-live','polite');
 const chromeTitle=element('b'),chromeDetail=element('small'),chromeReconnect=element('button','quiet','Yeniden bağlan');chromeReconnect.type='button';
 chromeStatus.append(chromeTitle,chromeDetail,chromeReconnect);document.querySelector('.sidebar-bottom').before(chromeStatus);
+chromeReconnect.classList.add('chrome-reconnect');
+const chromeProfileChange=element('button','quiet chrome-profile-change','Profili değiştir');chromeProfileChange.type='button';chromeProfileChange.setAttribute('aria-haspopup','dialog');chromeStatus.append(chromeProfileChange);
+const chromeProfileDialog=createChromeProfileDialog({
+ loadProfiles:async()=>{chromeProfiles=await api.chromeProfiles();chromeProfilesError='';return chromeProfiles;},
+ save:async(owner,chromeProfile)=>{
+  await settingsQueue;
+  await api.workspaceSettings(owner.id,{chromeProfile});
+  await refresh();
+  await api.browserReconnect(owner.id);
+  await refresh();notice('Chrome profili kaydedildi. Bağlantı hazır olduğunda işleri yeniden başlatabilirsin.');
+ }
+});
+document.body.append(chromeProfileDialog.element);
+chromeProfileChange.onclick=()=>{const web=Boolean(automationUI?.selected),profile=web?automationUI.data?.automation:snapshot?.profile;if(profile)chromeProfileDialog.show({id:profile.id,chromeProfile:profile.chromeProfile,web});};
 chromeReconnect.onclick=attempt(async()=>{chromeReconnect.disabled=true;if(automationUI?.selected){await automationUI.reconnectBrowser();return;}await api.browserReconnect(candidate);await refresh();});
 const chromeApproval=createBrowserWaitDialog({
  reconnect:async id=>{await api.browserReconnect(id);await refresh();},
@@ -90,6 +121,7 @@ const chromeApproval=createBrowserWaitDialog({
 });
 document.body.append(chromeApproval.element,chromeApproval.reminder);
 function renderChromeStatus(){
+ chromeProfileChange.disabled=busy;
  if(automationUI?.selected){automationUI.renderShell();return;}
   const state=snapshot?.browserStatus??{state:'idle'};
   chromeApproval.update(snapshot,busy);
@@ -117,13 +149,14 @@ function switchView(name,options={}){
  for(const id of ['notifications','config','background','profile','board','agent','files','sources'])$(id).hidden=workspace||global||id!==name;
  if(automationUI){automationUI.element.hidden=!global&&!workspace;
   if(global){$('heading').textContent='Yeni çalışma alanı';if(!options.detail)automationUI.show('templates').catch(e=>notice(e.message));}
-  else if(workspace){automationUI.renderShell();if(name==='config'){automationUI.element.hidden=true;$('config').hidden=false;configUI.select(null);configUI.show();}else if(name==='notifications'){automationUI.element.hidden=true;$('notifications').hidden=false;notificationsUI.show(null);}else{automationUI.showPane(name);if(name==='agent')$('agent').hidden=false;}}
+  else if(workspace){automationUI.renderShell();if(name==='config'){automationUI.element.hidden=true;$('config').hidden=false;configUI.select(automationUI.selected);configUI.show();}else if(name==='notifications'){automationUI.element.hidden=true;$('notifications').hidden=false;notificationsUI.show(null);}else{automationUI.showPane(name);if(name==='agent')$('agent').hidden=false;}}
  }
- if(!workspace){document.querySelector('[data-view=profile] span').textContent='Aday profili';if(name==='notifications')notificationsUI.show(candidate);if(name==='config')configUI.show();}
+ if(!workspace){document.querySelector('[data-view=board] span').textContent='Başvurular';document.querySelector('[data-view=profile] span').textContent='Aday profili';if(name==='notifications')notificationsUI.show(candidate);if(name==='config')configUI.show();}
  localStorage.setItem('selected-view',name);document.querySelectorAll('aside nav button').forEach(b=>b.classList.toggle('selected',b.dataset.view===name));
+ workspaceMenu.sync();
 }
 
-function settingsOptions(saved){const current=catalog.find(a=>a.id===$('provider').value);if(!current)return;$('agent-settings-form').elements.network.disabled=current.id!=='codex';for(const [key,list]of [['model',current.models],['permission',current.permissions],['reasoning',current.reasoning]]){$(key).replaceChildren(...list.map(value=>new Option(value,value)));$(key).value=list.includes(saved?.[key])?saved[key]:'default';}}
+function settingsOptions(saved){const current=catalog.find(a=>a.id===$('provider').value);if(!current)return;$('agent-settings-form').elements.network.disabled=current.id!=='codex';for(const [key,list]of [['model',current.models],['permission',current.permissions],['reasoning',current.reasoning]]){$(key).replaceChildren(...list.map(value=>new Option(value,value)));$(key).value=list.includes(saved?.[key])?saved[key]:key==='permission'?defaultPermission(current.id):'default';}}
 function chromeProfileOptions(selected=snapshot?.profile?.chromeProfile){
  const select=$('agent-settings-form').elements.chromeProfile;
  select.replaceChildren(new Option('Profil belirtme',''),...chromeProfiles.map(p=>new Option(`${p.name} — ${p.directory}`,p.directory)));
@@ -133,14 +166,14 @@ function chromeProfileOptions(selected=snapshot?.profile?.chromeProfile){
 }
 function chromeProfileVisibility(){
  $('chrome-profile-field').hidden=!['existing','jev'].includes($('agent-settings-form').elements.browserMode.value);
- $('chrome-profile-hint').textContent=chromeProfilesError||(chromeProfiles.length?($('agent-settings-form').elements.browserMode.value==='jev'?'Jev mevcut girişini kullanır; ilanları tek Jobloop penceresinde sekmeler olarak açar.':'Seçimin agent’a talimat olarak iletilir.'):'Chrome profili bulunamadı.');
+ $('chrome-profile-hint').textContent=chromeProfilesError||(chromeProfiles.length?($('agent-settings-form').elements.browserMode.value==='jev'?'Jev mevcut girişini kullanır; ilanları tek AutoJev penceresinde sekmeler olarak açar.':'Seçimin agent’a talimat olarak iletilir.'):'Chrome profili bulunamadı.');
 }
 function fillAgentSettings(profile,id){
  const changedOwner=agentSettingsOwner!==id;agentSettingsOwner=id;
  const p=profile??{},key=JSON.stringify([id,p.agentSettings,p.browserMode,p.chromeProfile]);if(agentSettingsSignature===key)return;agentSettingsSignature=key;
  const form=$('agent-settings-form'),modes=workspaceAgent?.workspace.id===id?workspaceAgent.capabilities.browserModes:['existing','separate','jev'];
  for(const option of form.elements.browserMode.options)option.disabled=!modes.includes(option.value);
- form.elements.browserMode.value=p.browserMode??'existing';chromeProfileOptions(p.chromeProfile);$('agent-settings').classList.toggle('is-off',!id);if(!id)$('agent-settings-status').textContent='Önce bir çalışma alanı seç';else if(changedOwner||$('agent-settings-status').textContent==='Önce bir çalışma alanı seç')$('agent-settings-status').textContent='Ayarlar kaydedilir; sonraki başlatmada uygulanır';
+ form.elements.browserMode.value=p.browserMode??'jev';chromeProfileOptions(p.chromeProfile);$('agent-settings').classList.toggle('is-off',!id);if(!id)$('agent-settings-status').textContent='Önce bir çalışma alanı seç';else if(changedOwner||$('agent-settings-status').textContent==='Önce bir çalışma alanı seç')$('agent-settings-status').textContent='Ayarlar kaydedilir; sonraki başlatmada uygulanır';
  $('provider').value=p.agentSettings?.provider??'codex';settingsOptions(p.agentSettings);form.elements.network.value=p.agentSettings?.network==null?'inherit':String(p.agentSettings.network);form.elements.contextRestartPercent.value=p.agentSettings?.contextRestartPercent??0;form.elements.contextCompactPercent.value=p.agentSettings?.contextCompactPercent??80;
 }
 let agentSettingsOwner=null;
@@ -163,7 +196,7 @@ function renderContext(value){
  $('context-usage-status').textContent=!threshold&&!compactThreshold?'Otomatik context yönetimi kapalı.':!value?.active?'Sonraki oturumda context izlenecek.':usage?.percent==null?'Context yüzdesi bekleniyor.':`Context kullanımı: %${usage.percent.toLocaleString('tr-TR',{maximumFractionDigits:1})}.${threshold>0&&usage.peakPercent>=threshold?' Eşik aşıldı; görev tamamlanınca yenilenecek.':''}`;
 }
 function controls(){
- if(automationUI?.selected){automationUI.renderShell();return;}
+ if(automationUI?.selected){automationUI.renderShell();workspaceMenu.sync();return;}
  renderChromeStatus();renderQuestionBadge();renderActivity();renderCampaignLimit();
  renderContext(snapshot);
  const active=campaignControlsActive();
@@ -173,10 +206,26 @@ function controls(){
  $('restart-agent').hidden=false;$('stop').textContent='Durdur';$('restart-agent').disabled=busy||!snapshot?.profile.cvPath||Boolean(browserWaitView(snapshot)?.starting);
  $('improve-profile').disabled=busy||!candidate;
  $('campaign-target').disabled=busy||active;$('campaign-interval').disabled=busy||active;$('candidates').disabled=busy;$('new').disabled=busy;$('rename-workspace').disabled=busy||!candidate;$('delete-workspace').disabled=busy||!candidate;
+ workspaceMenu.sync();
 }
 let refreshVersion=0;
 async function selectTerminal(id){instructionsUI.select(id);terminals.update(id,id?snapshot:null);}
-async function refresh(){const version=++refreshVersion;const workspaces=await api.workspaces();const candidates=workspaces.filter(w=>w.kind==='jobs'),allWorkspaces=workspaces.filter(w=>w.kind==='web');if(version!==refreshVersion)return;$('candidates').replaceChildren(new Option('Çalışma alanı seç',''),...candidates.map(p=>new Option(p.title,p.id)),...allWorkspaces.map(a=>new Option(a.title,'automation:'+a.id)));if(automationUI?.selected){$('candidates').value='automation:'+automationUI.selected;await automationUI.refresh();return;}if(candidate&&!candidates.some(p=>p.id===candidate))candidate=null;if(!candidate&&!newCandidate&&candidates.length)candidate=candidates[0].id;$('candidates').value=candidate??'';if(candidate)localStorage.setItem('selected-candidate',candidate);const nextSnapshot=candidate?await api.workspaceSnapshot(candidate):null;if(version!==refreshVersion)return;snapshot=nextSnapshot;for(const active of [snapshot?.active,...(snapshot?.workers??[]).map(w=>w.active)])if(active&&observedStates.has(active.sessionId))active.state=observedStates.get(active.sessionId);accountUI?.update(candidate,snapshot?.accountCredentials);$('agent-state').textContent=snapshot?.active?.state??snapshot?.workers?.find(w=>w.active)?.active?.state??(snapshot?.campaign?.status==='running'?'Bekliyor':'Agent kapalı');if(snapshot?.active&&!snapshot.active.state)snapshot.active.state=observedStates.get(snapshot.active.sessionId);running=Boolean(snapshot?.workers?.some(w=>w.active)||snapshot?.active);$('heading').textContent=snapshot?`${snapshot.profile.name.split(' ')[0]}, sıradaki fırsatın.`:'Bir sonraki adımın.';backgroundUI.select(candidate);configUI.select(candidate);notificationsUI.select(candidate);await selectTerminal(candidate);controls();renderBoard();renderSources();renderDocuments();renderActivity(true);setupUI.update(snapshot,catalog);}
+async function refresh(){
+ if(deletingWorkspace)return;const version=++refreshVersion;
+ try{
+  const workspaces=await api.workspaces();
+  const candidates=workspaces.filter(w=>w.kind==='jobs'),allWorkspaces=workspaces.filter(w=>w.kind==='web');if(version!==refreshVersion)return;
+  $('candidates').replaceChildren(new Option('Çalışma alanı seç',''),...candidates.map(p=>new Option(p.title,p.id)),...allWorkspaces.map(a=>new Option(a.title,'automation:'+a.id)));
+  if(automationUI?.selected&&!allWorkspaces.some(w=>w.id===automationUI.selected))automationUI.deselect();
+  if(automationUI?.selected){$('candidates').value='automation:'+automationUI.selected;workspaceMenu.sync();await automationUI.refresh();workspaceMenu.sync();return;}
+  if(candidate&&!candidates.some(p=>p.id===candidate))candidate=null;if(!candidate&&!newCandidate&&candidates.length)candidate=candidates[0].id;$('candidates').value=candidate??'';workspaceMenu.sync();if(candidate)localStorage.setItem('selected-candidate',candidate);
+  const nextSnapshot=candidate?await api.workspaceSnapshot(candidate):null;if(version!==refreshVersion)return;
+  snapshot=nextSnapshot;for(const active of [snapshot?.active,...(snapshot?.workers??[]).map(w=>w.active)])if(active&&observedStates.has(active.sessionId))active.state=observedStates.get(active.sessionId);
+  accountUI?.update(candidate,snapshot?.accountCredentials);$('agent-state').textContent=snapshot?.active?.state??snapshot?.workers?.find(w=>w.active)?.active?.state??(snapshot?.campaign?.status==='running'?'Bekliyor':'Agent kapalı');if(snapshot?.active&&!snapshot.active.state)snapshot.active.state=observedStates.get(snapshot.active.sessionId);
+  running=Boolean(snapshot?.workers?.some(w=>w.active)||snapshot?.active);$('heading').textContent=snapshot?`${snapshot.profile.name.split(' ')[0]}, sıradaki fırsatın.`:'Bir sonraki adımın.';
+  backgroundUI.select(candidate);configUI.select(candidate);notificationsUI.select(candidate);await selectTerminal(candidate);controls();renderBoard();renderSources();renderDocuments();renderActivity(true);setupUI.update(snapshot,catalog);
+ }catch(error){if(version===refreshVersion&&!deletingWorkspace)throw error;}
+}
 function documentActions(doc){
  const actions=element('div','actions'),id=candidate,open=element('button','quiet','Aç ↗');open.onclick=attempt(()=>api.openDocument(id,doc.path));actions.append(open);
  if(doc.preview){const preview=element('button','quiet','Önizle');preview.onclick=attempt(async()=>{const content=await api.readDocument(id,doc.path);if(id!==candidate)return;$('preview-name').textContent=doc.name;$('preview-content').textContent=content;$('document-preview').showModal();});actions.prepend(preview);}return actions;
@@ -193,8 +242,33 @@ const sourceModes=element('div','source-bulk-mode');
 sourceModes.setAttribute('role','group');sourceModes.setAttribute('aria-label','Tüm kaynakların başvuru modu');
 sourceModes.innerHTML='<span>Tüm kaynaklar</span><button type="button" class="quiet" data-mode="auto" aria-pressed="false">Otomatik gönder</button><button type="button" class="quiet" data-mode="find_only" aria-pressed="false">Sadece bul</button><small role="status"></small>';
 sourcesView.querySelector('.sources-head').after(sourceModes);
+let sourceIntervalSaving=false,sourceIntervalOwner=null,sourceIntervalDirty=false;
+const sourceIntervalForm=element('form','source-bulk-interval');
+sourceIntervalForm.innerHTML='<label for="sources-interval">Tarama aralığı (dk)</label><input id="sources-interval" name="intervalMinutes" type="number" min="1" max="10080" step="1" required aria-describedby="sources-interval-help"><button type="submit" class="quiet">Tümüne uygula</button><small id="sources-interval-help">Kapalı kaynaklar dahil tüm kaynaklara uygulanır.</small><small role="status"></small>';
+sourceModes.after(sourceIntervalForm);
+sourceIntervalForm.elements.intervalMinutes.oninput=()=>{sourceIntervalDirty=true;};
+sourceIntervalForm.onsubmit=attempt(async event=>{
+  event.preventDefault();
+  if(!candidate||!snapshot?.sources.length||sourceIntervalSaving||sourceModeSaving||!sourceIntervalForm.reportValidity())return;
+  const owner=candidate,intervalMinutes=Number(sourceIntervalForm.elements.intervalMinutes.value);
+  sourceIntervalSaving=true;renderSources();
+  try{
+    await api.saveSourcesInterval(owner,intervalMinutes);
+    if(candidate===owner){
+      const editor=$('source-rows').querySelector('.source-editor');if(editor)editor.elements.intervalMinutes.value=String(intervalMinutes);
+      sourceIntervalDirty=false;
+      await refresh();notice(`Tüm kaynakların tarama aralığı ${intervalMinutes} dakika olarak ayarlandı.`);
+    }
+  }finally{sourceIntervalSaving=false;renderSources();}
+});
+const sourceTabControls=workspaceSourceTabs(api,{notice,sourceForTab:tab=>{
+  const source=snapshot?.sources?.find(source=>source.resumeContext?.tabId===tab.tabId);if(source)return source.id;
+  if(tab.jobId)return snapshot?.jobs?.find(job=>job.id===tab.jobId)?.sourceId;
+  if(tab.searchTaskId)return snapshot?.workers?.find(worker=>worker.campaign?.task?.id===tab.searchTaskId)?.campaign?.task?.sourceId;
+  return null;
+}});
 for(const button of sourceModes.querySelectorAll('button'))button.onclick=attempt(async()=>{
-  if(!candidate||!snapshot?.sources.length||sourceModeSaving)return;
+  if(!candidate||!snapshot?.sources.length||sourceModeSaving||sourceIntervalSaving)return;
   const owner=candidate,mode=button.dataset.mode;sourceModeSaving=true;renderSources();
   try{
     await api.saveSourcesApplyMode(owner,mode);
@@ -229,12 +303,18 @@ function sourceEditor(source){
   return form;
 }
 function renderSources(){
-  const body=$('source-rows');const draft=body.querySelector('.source-editor');const kept=draft&&draft.dataset.sourceId===openSourceId?Object.fromEntries(new FormData(draft)):null;body.replaceChildren();
+  const body=$('source-rows');const draft=body.querySelector('.source-editor');const kept=draft&&draft.dataset.sourceId===openSourceId?Object.fromEntries(new FormData(draft)):null,tabHosts=new Map();body.replaceChildren();
   const sources=snapshot?.sources??[],now=Date.now();
+  const bulkSaving=sourceModeSaving||sourceIntervalSaving;
+  if(sourceIntervalOwner!==candidate){sourceIntervalOwner=candidate;sourceIntervalDirty=false;}
+  if(!sourceIntervalDirty){const common=sources.length&&sources.every(source=>source.intervalMinutes===sources[0].intervalMinutes);sourceIntervalForm.elements.intervalMinutes.value=common?String(sources[0].intervalMinutes):'';sourceIntervalForm.elements.intervalMinutes.placeholder=sources.length?'Farklı':'Dakika';}
+  sourceIntervalForm.setAttribute('aria-busy',String(sourceIntervalSaving));
+  sourceIntervalForm.querySelector('[role=status]').textContent=sourceIntervalSaving?'Kaydediliyor…':'';
+  for(const control of sourceIntervalForm.querySelectorAll('input,button'))control.disabled=bulkSaving||!candidate||!sources.length;
   sourceModes.setAttribute('aria-busy',String(sourceModeSaving));
   sourceModes.querySelector('[role=status]').textContent=sourceModeSaving?'Kaydediliyor…':'';
-  for(const button of sourceModes.querySelectorAll('button')){button.disabled=sourceModeSaving||!candidate||!sources.length;button.setAttribute('aria-pressed',String(sources.length>0&&sources.every(source=>source.applyMode===button.dataset.mode)));}
-  body.inert=sourceModeSaving;$('source-add').inert=sourceModeSaving;$('source-add-toggle').disabled=sourceModeSaving||!candidate;
+  for(const button of sourceModes.querySelectorAll('button')){button.disabled=bulkSaving||!candidate||!sources.length;button.setAttribute('aria-pressed',String(sources.length>0&&sources.every(source=>source.applyMode===button.dataset.mode)));}
+  body.inert=bulkSaving;$('source-add').inert=bulkSaving;$('source-add-toggle').disabled=bulkSaving||!candidate;
   for(const source of sources){
     const result=sourceResultView(source,snapshot?.campaign),tone=sourceTone(source,result),open=openSourceId===source.id;
     const row=element('li','source-row');row.dataset.sourceId=source.id;row.dataset.tone=tone;row.dataset.open=String(open);
@@ -245,15 +325,18 @@ function renderSources(){
     const timing=element('div','source-timing');const last=source.lastRunAt?`Son tarama ${relativeTime(source.lastRunAt,{past:true,now})}`:'Henüz taranmadı';const next=!source.enabled?'Kapalı':result.scanning?'Şu anda taranıyor':source.nextRunAt&&new Date(source.nextRunAt).getTime()>now?`Sonraki tarama ${relativeTime(source.nextRunAt,{now})}`:'Sıradaki tarama';timing.append(element('b','',next),document.createTextNode(last));if(source.lastRunAt)timing.title=`Son tarama ${sourceTime(source.lastRunAt)}`;
     const edit=element('button','quiet source-edit',open?'Kapat':'Düzenle');edit.type='button';edit.setAttribute('aria-expanded',String(open));edit.setAttribute('aria-label',`${source.name} kaynağını ${open?'kapat':'düzenle'}`);edit.onclick=()=>{openSourceId=open?null:source.id;renderSources();if(!open)body.querySelector(`.source-editor[data-source-id="${source.id}"] input[name=name]`)?.focus();};
     const actions=element('div','source-actions'),owner=candidate;
-    if(snapshot?.sourceTabs?.[source.id]){
+    if(snapshot?.profile?.browserMode!=='jev'&&snapshot?.sourceTabs?.[source.id]){
       const tab=element('button','quiet source-open-tab','Sekmeye git ↗');tab.type='button';tab.title='Açık arama sekmesini öne getir';tab.setAttribute('aria-label',`${source.name} sekmesine git`);
       tab.onclick=attempt(async()=>{tab.disabled=true;try{await api.openSourceTab(owner,source.id);}finally{await refreshSourceTabs();tab.disabled=false;}});actions.append(tab);
     }
-    const skill=element('button','quiet','Skill ve araçlar');skill.type='button';skill.onclick=attempt(()=>openSourcePanel(api,owner,source,refresh));actions.append(skill,edit);row.append(enabled,main,plan,status,timing,actions);
+    const tabHost=element('div','source-tabs-control');tabHosts.set(source.id,tabHost);
+    const skill=element('button','quiet','Skill ve araçlar');skill.type='button';skill.onclick=attempt(()=>openSourcePanel(api,owner,source,refresh));actions.append(tabHost,skill,edit);row.append(enabled,main,plan,status,timing,actions);
     if(open){const editor=sourceEditor(source);if(kept){for(const [key,value] of Object.entries(kept))if(editor.elements[key]&&!editor.elements[key].disabled)editor.elements[key].value=value;}row.append(editor);}
     body.append(row);
   }
   if(!sources.length){const empty=element('li','source-empty');empty.append(element('strong','','Henüz kaynak yok'),document.createTextNode('Agent’ın hangi sitelerde, ne sıklıkla ilan arayacağını burada belirlersin.'));const add=element('button','primary','Kaynak ekle');add.type='button';add.onclick=()=>openSourceAdd(true);empty.append(element('br'),add);body.append(empty);}
+  const otherHost=element('li','source-tabs-other');body.append(otherHost);
+  sourceTabControls.update(candidate,snapshot?.profile?.browserMode,sources.map(source=>({id:source.id,url:source.url})),tabHosts,otherHost,body);
   const on=sources.filter(s=>s.enabled),off=sources.length-on.length,running=snapshot?.campaign?.status==='running';const upcoming=running?on.map(s=>({s,at:new Date(s.nextRunAt||0).getTime()})).sort((a,b)=>a.at-b.at)[0]:null;
   const summary=$('sources-summary');summary.replaceChildren();
   if(!sources.length)summary.textContent='Agent yalnızca etkin kaynakları, belirlediğin aralıklarla tarar.';
@@ -436,9 +519,10 @@ $('improve-profile').onclick=attempt(async()=>{
  finally{busy=false;await refresh();fillProfile();}
 });
 $('cv').onclick=attempt(async()=>{if(!candidate)throw Error('Önce profili kaydet');await api.pickDocument(candidate,{purpose:'cv'});await refresh();fillProfile();});
-async function newJobWorkspace(template){newJobTemplate=template?.id??'job-search';newJobDefinition=template??null;automationUI?.deselect();busy=true;controls();try{newCandidate=true;candidate=null;snapshot=null;running=false;await selectTerminal(null);setupUI.reset();renderDocuments();$('document-preview').close();jobPage=1;$('candidates').value='';fillProfile();renderActivity(true);switchView('profile');}finally{busy=false;controls();}}
+async function newJobWorkspace(template){newJobTemplate=template?.id??'job-search';newJobDefinition=template??null;automationUI?.deselect();busy=true;controls();try{newCandidate=true;candidate=null;snapshot=null;running=false;await selectTerminal(null);setupUI.reset();renderDocuments();$('document-preview').close();jobPage=1;$('candidates').value='';workspaceMenu.sync();fillProfile();renderActivity(true);switchView('profile');}finally{busy=false;controls();}}
 $('new').textContent='Yeni çalışma alanı';$('new').onclick=attempt(async()=>{if(automationUI)await automationUI.createBlank();else await newJobWorkspace();});
 $('candidates').onchange=attempt(async()=>{
+ notice('');
  const next=$('candidates').value||null;if(next?.startsWith('automation:')){await automationUI.select(next.slice(11));return;}if(next===candidate&&!automationUI?.selected)return;automationUI?.deselect();
  if(!next){$('new').click();return;}
  busy=true;controls();

@@ -56,3 +56,10 @@
 
 :is(#agent-settings-form,.workspace-agent-settings-form) .browser-settings { display: grid; gap: 12px; }
 #chrome-profile-hint { color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+/* While the agent works the panel itself moves, so a running agent never looks idle. */
+.now-panel { position: relative; overflow: hidden; }
+.now-panel[data-tone="active"] { border-color: rgba(102, 179, 255, .38); }
+.now-panel[data-tone="active"]::after { content: ''; position: absolute; top: 0; left: 0; width: 35%; height: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); animation: now-working 1.8s ease-in-out infinite; }
+@keyframes now-working { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+@keyframes working-dot { from { opacity: 1; } to { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .now-panel[data-tone="active"]::after { animation: none; width: 100%; opacity: .5; } }

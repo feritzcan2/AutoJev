@@ -1,3 +1,4 @@
+import {withAgentDefaults} from './agent-settings.mjs';
 import {WorkspaceTasks} from './workspace-tasks.mjs';
 import {WorkspaceWorkers} from './workspace-workers.mjs';
 import {TemplateRegistry} from './template-registry.mjs';
@@ -19,14 +20,14 @@ export class WorkspaceStore {
  `);this.migrate();this.records=new WorkspaceRecords(this);this.tasks=new WorkspaceTasks(this);this.workers=new WorkspaceWorkers(this);}
  exists(table){return Boolean(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table));}
  has(id){return Boolean(this.db.prepare('SELECT 1 FROM workspaces WHERE id=?').get(id));}
- get(id){const value=parse(this.db.prepare('SELECT data FROM workspaces WHERE id=?').get(id));if(!value)throw Error('Çalışma alanı bulunamadı');return value;}
+ get(id){const value=parse(this.db.prepare('SELECT data FROM workspaces WHERE id=?').get(id));if(!value)throw Error('Çalışma alanı bulunamadı');return {...value,agentSettings:withAgentDefaults(value.agentSettings)};}
  templateInput(templateId){const saved=this.exists('automation_templates')?parse(this.db.prepare('SELECT data FROM automation_templates WHERE id=?').get(templateId)):null;return saved??this.registry.templates.get(templateId);}
  supports(templateId){const input=this.templateInput(templateId);return Boolean(input&&this.registry.supports(input));}
  template(templateId){const input=this.templateInput(templateId);if(!input)throw Error('Template bulunamadı');return this.registry.normalize(structuredClone(input));}
  definition(id){return this.template(this.get(id).templateId);}
  list(){return this.db.prepare('SELECT data FROM workspaces ORDER BY rowid').all().map(parse);}
  save(id,templateId,value){
-  const previous=this.has(id)?this.get(id):{},s=value.agentSettings??previous.agentSettings??{provider:'codex',model:'default',permission:'default',reasoning:'default',network:null};
+  const previous=this.has(id)?this.get(id):{},s=withAgentDefaults(value.agentSettings??previous.agentSettings);
   if(previous.templateId&&previous.templateId!==templateId)throw Error('Çalışma alanı kimliği farklı bir template’e ait');
   const workspace={...previous,id,templateId,title:value.title??value.workspaceName??value.name??previous.title,
    agentSettings:{...s,contextCompactPercent:contextCompactPercent(s.contextCompactPercent),...(s.contextRestartPercent===undefined?{}:{contextRestartPercent:contextRestartPercent(s.contextRestartPercent)})},
@@ -44,13 +45,20 @@ export class WorkspaceStore {
  updateCells(id,itemId,input){
   const w=this.get(id);return this.records.update(id,itemId,item=>({...item,cells:{...item.cells,...automationCells(input,w.table)},tableUpdatedAt:Date.now()}));
  }
- history(id,worker='main'){
+ history(id,worker='main',profileId=null){
   const read=provider=>{this.get(id);return parse(this.db.prepare('SELECT data FROM workspace_conversations WHERE workspace_id=? AND worker_id=? AND provider=?').get(id,worker,provider));};
+  const scoped=provider=>{const data=read(provider);return profileId?data?.profiles?.[profileId]:data;};
+  const write=(provider,data)=>this.db.prepare('INSERT INTO workspace_conversations VALUES(?,?,?,?) ON CONFLICT(workspace_id,worker_id,provider) DO UPDATE SET data=excluded.data').run(id,worker,provider,JSON.stringify(data));
   return {
-   conversation:(_,provider)=>read(provider)?.nativeId??null,
-   conversationSettings:(_,provider,nativeId)=>{const s=read(provider);return s?.nativeId===nativeId?s.settings:null;},
-   forgetConversation:(_,provider,nativeId)=>{this.get(id);if(read(provider)?.nativeId===nativeId)this.db.prepare('DELETE FROM workspace_conversations WHERE workspace_id=? AND worker_id=? AND provider=?').run(id,worker,provider);},
-   saveConversation:(_,provider,nativeId,settings)=>{this.get(id);if(!['codex','claude'].includes(provider)||typeof nativeId!=='string'||!nativeId.trim()||nativeId.length>256)throw Error('Geçersiz sağlayıcı oturumu');this.db.prepare('INSERT INTO workspace_conversations VALUES(?,?,?,?) ON CONFLICT(workspace_id,worker_id,provider) DO UPDATE SET data=excluded.data').run(id,worker,provider,JSON.stringify({nativeId,settings:settings??null}));}
+   forProfile:profile=>this.history(id,worker,profile),
+   conversation:(_,provider)=>scoped(provider)?.nativeId??null,
+   conversationSettings:(_,provider,nativeId)=>{const s=scoped(provider);return s?.nativeId===nativeId?s.settings:null;},
+   forgetConversation:(_,provider,nativeId)=>{this.get(id);if(scoped(provider)?.nativeId!==nativeId)return;
+    if(!profileId){this.db.prepare('DELETE FROM workspace_conversations WHERE workspace_id=? AND worker_id=? AND provider=?').run(id,worker,provider);return;}
+    const data=read(provider);delete data.profiles[profileId];if(data.nativeId===nativeId){data.nativeId=null;data.settings=null;}write(provider,data);
+   },
+   saveConversation:(_,provider,nativeId,settings)=>{this.get(id);if(!['codex','claude'].includes(provider)||typeof nativeId!=='string'||!nativeId.trim()||nativeId.length>256)throw Error('Geçersiz sağlayıcı oturumu');
+    const saved={nativeId,settings:settings??null},data=read(provider)??{};write(provider,{...data,...saved,...(profileId?{profiles:{...data.profiles,[profileId]:saved}}:{})});}
   };
  }
  remove(id){this.db.prepare('DELETE FROM workspaces WHERE id=?').run(id);}

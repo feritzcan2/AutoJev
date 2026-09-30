@@ -49,7 +49,7 @@ function sqliteCheck(file){
   db.exec('PRAGMA trusted_schema=OFF');assertDataSchemaVersion(db);
   if(db.prepare("SELECT 1 FROM sqlite_master WHERE type IN ('trigger','view') OR sql LIKE 'CREATE VIRTUAL TABLE%'").get())throw Error('Yedek desteklenmeyen veritabanı nesneleri içeriyor.');
   if(db.prepare('PRAGMA quick_check').get().quick_check!=='ok')throw Error('Yedek veritabanı bozuk.');
-  for(const name of tableExists(db,'workspaces')?['workspaces','workspace_records']:['candidates','jobs','sources','questions'])if(!tableExists(db,name))throw Error('Bu dosya bir JobLoop veritabanı değil.');
+  for(const name of tableExists(db,'workspaces')?['workspaces','workspace_records']:['candidates','jobs','sources','questions'])if(!tableExists(db,name))throw Error('Bu dosya bir AutoJev veritabanı değil.');
   if(db.prepare('PRAGMA foreign_key_check').get())throw Error('Yedek veritabanının ilişkileri tutarsız.');
   for(const table of ['candidates','jobs','workspace_records','workspace_workers','workspace_tasks','agent_workers','background_runs','workspaces','automation_templates','automations','automation_runs','automation_results','automation_messages'])if(tableExists(db,table))for(const row of db.prepare(`SELECT id,data FROM ${table}`).iterate()){
    const value=JSON.parse(row.data);if(!/^[A-Za-z0-9][A-Za-z0-9_-]{0,149}$/.test(row.id)||value.id!==row.id)throw Error('Yedekte geçersiz kayıt kimliği var.');
@@ -120,7 +120,7 @@ export async function inspectBackup(directory){
  const root=await realpath(requested),manifestPath=path.join(root,'manifest.json'),info=await lstat(manifestPath);
  if(!info.isFile()||info.isSymbolicLink()||info.size>8*1024*1024)throw Error('Geçersiz yedek manifesti.');
  const manifest=JSON.parse(await readFile(manifestPath,'utf8'));
- if(manifest.format!==FORMAT||manifest.version!==FORMAT_VERSION||!Array.isArray(manifest.files)||!manifest.files.length||manifest.files.length>MAX_FILES||!['manual','upgrade','before-restore'].includes(manifest.kind)||!['excluded','os-encrypted-same-user'].includes(manifest.secrets)||!validSourceDirectory(manifest.sourceDirectory)||manifest.canonicalSourceDirectory!==undefined&&!validSourceDirectory(manifest.canonicalSourceDirectory)||!Number.isSafeInteger(manifest.schemaVersion)||manifest.schemaVersion<0||manifest.schemaVersion>DATA_SCHEMA_VERSION||typeof manifest.appVersion!=='string'||manifest.appVersion.length>100||!Number.isFinite(Date.parse(manifest.createdAt)))throw Error('Desteklenmeyen veya geçersiz JobLoop yedeği.');
+ if(manifest.format!==FORMAT||manifest.version!==FORMAT_VERSION||!Array.isArray(manifest.files)||!manifest.files.length||manifest.files.length>MAX_FILES||!['manual','upgrade','before-restore'].includes(manifest.kind)||!['excluded','os-encrypted-same-user'].includes(manifest.secrets)||!validSourceDirectory(manifest.sourceDirectory)||manifest.canonicalSourceDirectory!==undefined&&!validSourceDirectory(manifest.canonicalSourceDirectory)||!Number.isSafeInteger(manifest.schemaVersion)||manifest.schemaVersion<0||manifest.schemaVersion>DATA_SCHEMA_VERSION||typeof manifest.appVersion!=='string'||manifest.appVersion.length>100||!Number.isFinite(Date.parse(manifest.createdAt)))throw Error('Desteklenmeyen veya geçersiz AutoJev yedeği.');
  const seen=new Set();let total=0;
  for(const entry of manifest.files){
   const name=safeRelative(entry.path),key=name.normalize('NFC').toLocaleLowerCase('en');
@@ -226,7 +226,7 @@ export async function applyPendingRestore({dataDirectory}){
  if(!await exists(pendingPath))return {restored:false};
  let stageName,stage;
  try{const pending=JSON.parse(await readFile(pendingPath,'utf8'));stageName=validateStageName(pending.stageName,'.restore-stage-');stage=path.join(base,stageName);await inspectBackup(stage);}
- catch(error){await rm(pendingPath,{force:true});if(stage)await rm(stage,{recursive:true,force:true});throw Error('Yedek doğrulanamadı; mevcut veriler korundu. JobLoop’u yeniden açabilirsin. '+error.message);}
+ catch(error){await rm(pendingPath,{force:true});if(stage)await rm(stage,{recursive:true,force:true});throw Error('Yedek doğrulanamadı; mevcut veriler korundu. AutoJev’i yeniden açabilirsin. '+error.message);}
  const rollbackName='.restore-rollback-'+randomUUID(),rollback=path.join(base,rollbackName);await mkdir(rollback,{mode:0o700});
  const originals=[];for(const name of restoreTargets)if(await exists(path.join(base,name)))originals.push(name);
  const journal={version:1,stageName,rollbackName,originals};await atomicJson(journalPath,journal);

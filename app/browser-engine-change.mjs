@@ -2,7 +2,9 @@
 // archiving drafts; never turn a pending send into a new application.
 export async function saveProfileWithBrowserChange({store,campaigns,stop,resetBrowser},input){
  const previous=input.id?store.profile(input.id):null;
- if(!previous||input.browserMode===undefined||input.browserMode===previous.browserMode)return store.saveProfile(input);
+ const engineChanged=previous&&input.browserMode!==undefined&&input.browserMode!==previous.browserMode;
+ const profileChanged=previous&&input.chromeProfile!==undefined&&(input.chromeProfile?.directory??null)!==(previous.chromeProfile?.directory??null);
+ if(!engineChanged&&!profileChanged)return store.saveProfile(input);
  const before=campaigns.summary?.(input.id)??store.campaign(input.id),wasRunning=before?.status==='running';
  if(before)await campaigns.pause(input.id);else await stop(input.id);
  await resetBrowser(input.id);
@@ -10,14 +12,15 @@ export async function saveProfileWithBrowserChange({store,campaigns,stop,resetBr
  let profile;
  try{
   profile=store.saveProfile(input);
-  restartDraftsForBrowser(store,input.id,previous.browserMode,profile.browserMode);
+  if(engineChanged)restartDraftsForBrowser(store,input.id,previous.browserMode,profile.browserMode);
   for(const worker of store.workers(input.id))for(const provider of ['codex','claude']){
    const scoped=store.forWorker(worker.id),nativeId=scoped.conversation(input.id,provider);
    if(nativeId)scoped.forgetConversation(input.id,provider,nativeId);
   }
   store.db.exec('RELEASE browser_engine_change');
  }catch(error){store.db.exec('ROLLBACK TO browser_engine_change');store.db.exec('RELEASE browser_engine_change');throw error;}
- if(wasRunning)await campaigns.start(input.id,{target:before.target,intervalMinutes:before.intervalMinutes});
+ // Changing accounts requires an explicit restart; preserve the original drafts.
+ if(wasRunning&&!profileChanged)await campaigns.start(input.id,{target:before.target,intervalMinutes:before.intervalMinutes});
  return profile;
 }
 

@@ -1,6 +1,8 @@
 const action=(id,label)=>({id,label});
 const failures=new Set(['failed','blocked','timeout']);
 export const runKindLabel=kind=>({interview:'Kurulum konuşması',trial:'Deneme',run:'Kaynak taraması'}[kind]??'Çalışma');
+// Task operations are queue identifiers; people see what the worker is doing, not the id.
+export const runOperationLabel=(operation,kind)=>({interview:'Kurulum konuşması',trial:'Deneme taraması',run:'Kaynak taraması',scan:'Kaynak taraması',detail:'İlan ayrıntısı okunuyor',inspect:'İlan ayrıntısı okunuyor',verify:'Sonuç doğrulanıyor'}[operation]??runKindLabel(kind));
 
 // One presentation of the durable run outcome and the next allowed step.
 // A saved result and a provider process that is still closing are separate states.
@@ -11,7 +13,9 @@ export function automationProgress(snapshot,{dirty=false}={}){
  const latest=runs[0],reviewed=a.reviewedRevision===a.revision,passed=a.trial?.status==='passed'&&a.trial.revision===a.revision;
  const relevant=latest?.revision===a.revision?latest:null;
  const reply=[...messages].reverse().find(m=>m.role==='assistant');
- const result={stage:0,tone:'neutral',title:'Ne yapmak istediğini anlat',label:'Kurulum',detail:'Agent sorularla kriterlerini ve kaynaklarını hazırlayacak.',next:'İlk mesajını aşağıya yaz.',primary:action('message','Agent’a yaz'),secondary:[],running:Boolean(current),finishedRun:!current&&latest?.finishedAt?latest:null,reply,reviewed,passed};
+ // A workspace nobody has written to yet is a blank page, not a list of missing fields.
+ const fresh=!current&&!runs.length&&!messages.some(m=>m.role==='user')&&!a.goal&&!reviewed;
+ const result={stage:0,tone:'neutral',title:'Ne yapmak istediğini anlat',label:'Kurulum',detail:'Agent sorularla kriterlerini ve kaynaklarını hazırlayacak.',next:'İlk mesajını Agent sayfasına yaz; gerisini agent sorar.',primary:action('message','Agent’a yaz'),secondary:[],running:Boolean(current),finishedRun:!current&&latest?.finishedAt?latest:null,reply,reviewed,passed,fresh};
  const set=value=>Object.assign(result,value);
  if(current){
   const closing=current.status!=='running',waiting=current.state==='AwaitingInput';
@@ -28,6 +32,8 @@ export function automationProgress(snapshot,{dirty=false}={}){
    if(attempts>1)set({next:`Bu kurulumla art arda ${attempts} deneme tamamlanamadı. Agent ile engeli çöz veya kaynakları güncelle; ardından tekrar dene.`,primary:action('message','Agent ile engeli çöz'),secondary:[action('browser','Tarayıcıyı aç'),action('trial','Denemeyi tekrar çalıştır')]});
   }
   if(!trial&&!setup&&a.status==='paused'&&reviewed&&passed&&relevant.sourceUrl&&!relevant.recordId&&(snapshot.sources??[]).some(s=>s.enabled&&!s.blocked))set({title:'Diğer kaynakların takibi kapalı',next:'Düzenli takibi açınca engelli olmayan kaynaklar kendi aralıklarında çalışır. Engelli kaynağı Kaynaklar sayfasından ayrıca yönetebilirsin.',primary:action('enable','Düzenli takibi sürdür'),secondary:[action('sources','Kaynakları gör'),action('message','Agent ile düzelt')]});
+ }else if(fresh){
+  // keep the blank-page invitation
  }else if(!reviewed){
   if(missing.length)set({title:latest?.kind==='interview'?'Kurulum için yanıtın gerekiyor':'Kurulumu tamamlayalım',label:'Bilgi bekliyor',detail:reply?.text??result.detail,next:'Eksik bilgiler: '+missing.join(', '),primary:action('message','Yanıt yaz')});
   else set({title:'Kurulum taslağı hazır',label:'İncelemen gerekiyor',detail:latest?.kind==='interview'?latest.summary:'Agent kriterleri ve kaynakları hazırladı.',next:'Profili ve işlem yetkisini kontrol edip kaydet. Sonraki adım kaynakları denemek.',primary:action('profile','Profili incele ve kaydet')});

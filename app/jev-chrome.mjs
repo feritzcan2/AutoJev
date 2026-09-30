@@ -15,7 +15,7 @@ export async function chromeWindowMarker(){
   const server=createServer((req,res)=>{
     if(req.url!==route||req.headers.host!==`127.0.0.1:${server.address().port}`){res.writeHead(404);res.end();return;}
     res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'none'"});
-    res.end('<!doctype html><title>Jobloop · Jev</title><p>Jobloop mevcut Chrome oturumuna bağlanıyor…</p>');
+    res.end('<!doctype html><title>AutoJev · Jev</title><p>AutoJev mevcut Chrome oturumuna bağlanıyor…</p>');
   });
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
   return {url:`http://127.0.0.1:${server.address().port}${route}`,close(){server.closeAllConnections();server.close();}};

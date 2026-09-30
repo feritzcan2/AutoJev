@@ -8,14 +8,14 @@ import {startMcp} from '../app/mcp.mjs';
 test('restored tab lists identify search tasks and application drafts for resumption',async()=>{
  const browser=new JevBrowser('/unused',{connection:'test'});
  browser.context=async()=>({});browser.reconcileJobs=async()=>{};browser.homeId='home';
- for(const id of ['home','search','listing','draft','other-search','unclassified'])browser.tabs.set(id,{id,page:{url:()=>`https://example.test/${id}`}});
+ for(const id of ['home','search','listing','draft','other-search','unclassified'])browser.tabs.set(id,{id,page:{url:()=>`https://example.test/${id}`,isClosed:()=>false}});
  for(const id of ['search','listing','draft'])browser.tabSearches.set(id,'current-task');
  browser.tabSearches.set('other-search','other-task');browser.tabJobs.set('draft','application');
  const result=JSON.parse((await browser.callTool({name:'browser_jev_tabs',arguments:{}},'new-session',{taskKind:'search'})).content[0].text);
  assert.deepEqual(result.tabs.filter(t=>t.searchTaskId==='current-task'&&!t.jobId).map(t=>t.tabId),['search','listing']);
  assert.equal(result.tabs.find(t=>t.tabId==='draft').jobId,'application');
  assert.equal(result.tabs.some(t=>t.tabId==='home'),false);
- assert.deepEqual(result.tabs.find(t=>t.tabId==='unclassified'),{tabId:'unclassified',url:'https://example.test/unclassified'});
+ assert.deepEqual(result.tabs.find(t=>t.tabId==='unclassified'),{tabId:'unclassified',url:'https://example.test/unclassified',title:'',changedSinceLastObservation:true});
 });
 
 test('search cleanup closes only finished task tabs and preserves drafts, unrelated and changed tabs',async()=>{
@@ -50,7 +50,7 @@ test('successful completed search and rank reports clean tabs and clear closed s
  const campaigns={get:id=>store.campaign(id),report:()=>{if(reject)throw Error('Invalid report');return {...store.campaign(p.id),task:{...store.campaign(p.id).task,report:{outcome:'done'}}};}};
  const browser={cleanupSearch:async(id,taskId)=>{calls.push([id,taskId]);return {closed:['search-tab'],retained:['draft']};}};
  const mcp=await startMcp(store,()=>{},undefined,browser,campaigns),token=mcp.grant(p.id,'session');
- const call=async outcome=>(await(await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'report_campaign_work',arguments:{taskId:task.id,outcome,note:'Search result'}}})})).json()).result;
+ const call=async outcome=>(await(await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'report_campaign_work',arguments:{taskId:task.id,outcome,note:'Search result',...(outcome==='done'&&store.campaign(p.id).task.kind==='search'?{coverage:{complete:true,pendingUrls:[],evidence:'Final results page checked'}}:{})}}})})).json()).result;
  try{
   await call('blocked');assert.equal(calls.length,0);assert.ok(store.source(p.id,source.id).resumeContext);
   reject=true;assert.equal((await call('done')).isError,true);assert.equal(calls.length,0);
