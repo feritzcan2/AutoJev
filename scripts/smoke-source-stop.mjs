@@ -7,8 +7,8 @@ const require=createRequire(import.meta.url),{_electron:electron}=createRequire(
 const data=await mkdtemp(path.join(os.tmpdir(),'source-stop-')),env={...process.env,JOBLOOP_DATA_DIR:data};delete env.ELECTRON_RUN_AS_NODE;
 const app=await electron.launch({executablePath:require('electron'),args:[process.cwd()],env});
 try{
- const page=await app.firstWindow();await page.evaluate(async()=>{
-  const {automationSourcesPanel}=await import('../src/automation-sources.js');const host=document.createElement('section');document.body.replaceChildren(host);window.stopCalls=[];window.runCalls=[];
+ const page=await app.firstWindow();await page.clock.install({time:new Date('2026-10-01T10:00:00Z')});await page.evaluate(async()=>{
+  const {automationSourcesPanel}=await import('../src/automation-sources.js');const main=document.createElement('main'),host=document.createElement('section');main.style.gridColumn='1 / -1';host.id='sources';main.append(host);document.body.replaceChildren(main);window.stopCalls=[];window.runCalls=[];
   const source={url:'https://example.test/jobs',name:'Example',enabled:true,scanning:true,mode:'observe',intervalMinutes:30,resultCount:2,lastResult:'Uygulama kapatıldı.'};
   const snapshot={automation:{id:'owner',mode:'observe',status:'enabled',browserMode:'separate'},sources:[source],progress:{reviewed:true,passed:true}};
   const api={workspaceTabs:async()=>[],automationSourceStop:async(id,url)=>{window.stopCalls.push({id,url});await new Promise(resolve=>{window.finishStop=resolve;});source.scanning=false;source.nextRunAt=Date.now()+1800000;source.lastResult='Tarama kullanıcı tarafından durduruldu.';},automationSourceRun:async(id,url)=>window.runCalls.push({id,url})};
@@ -41,5 +41,24 @@ try{
  await page.getByRole('button',{name:'Sonraki 100 adresi göster',exact:true}).click();assert.equal(await page.locator('.source-progress-pending li').count(),200);
  await page.getByRole('button',{name:'Sonraki 100 adresi göster',exact:true}).click();assert.equal(await page.locator('.source-progress-pending li').count(),250);
  assert.equal(await page.getByRole('button',{name:'Sonraki 100 adresi göster',exact:true}).isVisible(),false);
+ await page.evaluate(()=>{
+  const {snapshot,panel}=window.sourceFixture,now=Date.now();
+  snapshot.sources=['completed','failed','blocked','interrupted','partial','timeout','none'].map((status,index)=>({url:`https://status-${index}.test/jobs`,name:['Başarılı kaynak','Yeniden taranan kaynak','Engelli kaynak','Durdurulan kaynak','Kısmi kaynak','Süresi dolan kaynak','Yeni kaynak'][index],enabled:true,scanning:status==='failed',mode:'observe',intervalMinutes:555,resultCount:0,trial:{status:'passed'},lastStatus:status==='none'?null:status,lastRun:status==='none'?null:{status,finishedAt:now-3600000,summary:'Son turun sonucu'},nextRunAt:now+(index===0?25*3600000:65*60000)}));
+  panel.update(snapshot,'owner');
+ });
+ assert.deepEqual(await page.locator('.source-last-run').allTextContents(),['Son tur: Başarılı','Son tur: Başarısız','Son tur: Engellendi','Son tur: Durduruldu','Son tur: Kısmi tamamlandı','Son tur: Süre doldu','Son tur: Henüz çalışmadı']);
+ const rows=page.locator('.source-row');assert.equal(await rows.nth(1).locator('.source-status b').textContent(),'Taranıyor');
+ assert.equal(await rows.nth(0).locator('.source-timing b').textContent(),'Sonraki tarama 1 gün 1 saat sonra');
+ assert.equal(await rows.nth(2).locator('.source-timing b').textContent(),'Sonraki tarama 1 saat 5 dk sonra');
+ assert.match(await page.locator('.sources-head p').textContent(),/Sıradaki tarama 1 saat 5 dk sonra: Engelli kaynak/);
+ assert.match(await rows.nth(0).locator('.source-timing b').getAttribute('title'),/02[./]10/);
+ await page.clock.fastForward(60000);
+ assert.equal(await rows.nth(2).locator('.source-timing b').textContent(),'Sonraki tarama 1 saat 4 dk sonra');
+ assert.match(await page.locator('.sources-head p').textContent(),/Sıradaki tarama 1 saat 4 dk sonra/);
+ await page.screenshot({path:path.join(data,'source-status.png'),fullPage:true});
+ await page.evaluate(()=>{const {snapshot,panel}=window.sourceFixture;snapshot.sources[0].nextRunAt=Date.now()-1;snapshot.sources[2].nextRunAt=Date.now()+30000;panel.update(snapshot,'owner');});
+ assert.equal(await rows.nth(0).locator('.source-timing b').textContent(),'Sonraki tarama sırası geldi');
+ assert.equal(await rows.nth(2).locator('.source-timing b').textContent(),'Sonraki tarama 1 dk içinde');
+ console.log('SOURCE_LAST_OUTCOME_AND_COUNTDOWN_PASS',data);
  console.log('SOURCE_STOP_BUTTON_SCOPE_BUSY_AND_RESTART_PASS');
 }finally{await app.close();}

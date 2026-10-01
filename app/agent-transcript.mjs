@@ -1,6 +1,7 @@
 import {open,readdir,realpath} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import path from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
 
 // The provider's own conversation file is the only faithful record of what the
 // agent said. Terminal bytes carry TUI redraws; saved run summaries come late.
@@ -37,10 +38,11 @@ async function locateCodex(root,nativeId,depth=0){
 }
 
 export class TranscriptReader {
- constructor({provider,nativeId,cwd,claudeRoot,codexRoot,appSent=[],now=()=>Date.now(),chunkBytes=2*1024*1024,limit=80}){
+ constructor({provider,nativeId,cwd,claudeRoot,codexRoot,opencodeFile,appSent=[],now=()=>Date.now(),chunkBytes=2*1024*1024,limit=80}){
   Object.assign(this,{provider,nativeId,cwd,now,chunkBytes,limit});this.appSent=new Set(appSent.map(t=>String(t??'').trim()).filter(Boolean));
   this.claudeRoot=claudeRoot??path.join(process.env.CLAUDE_CONFIG_DIR||path.join(homedir(),'.claude'),'projects');
   this.codexRoot=codexRoot??path.join(process.env.CODEX_HOME||path.join(homedir(),'.codex'),'sessions');
+  this.opencodeFile=opencodeFile??path.join(process.env.XDG_DATA_HOME||path.join(homedir(),'.local','share'),'opencode','opencode.db');this.activity=null;
   this.file=null;this.nextLookup=0;this.offset=null;this.partial='';this.discard=false;this.messages=[];this.verified=false;
  }
  async locate(){
@@ -54,6 +56,7 @@ export class TranscriptReader {
  }
  async read(){
   try{
+   if(this.provider==='opencode')return await this.readOpenCode();
    if(!['codex','claude'].includes(this.provider))return this.messages;
    if(!NATIVE_ID.test(this.nativeId??''))return this.messages;
    if(!this.file){if(this.now()<this.nextLookup)return this.messages;this.nextLookup=this.now()+3000;this.file=await this.locate();if(!this.file)return this.messages;}
@@ -82,5 +85,23 @@ export class TranscriptReader {
     return this.messages;
    }finally{await file.close();}
   }catch{this.file=null;this.verified=false;this.offset=null;this.partial='';return this.messages;}
+ }
+ async readOpenCode(){
+  if(!/^ses_[A-Za-z0-9_-]{16,80}$/.test(this.nativeId??''))return [];
+  let db;
+  try{
+   db=new DatabaseSync(this.opencodeFile,{readOnly:true});
+   const session=db.prepare('SELECT directory FROM session WHERE id=?').get(this.nativeId);
+   const normalize=value=>realpath(value).catch(()=>path.resolve(value));
+   if(!session||await normalize(session.directory)!==await normalize(this.cwd)){this.messages=[];this.activity=null;return [];}
+   const messages=db.prepare("SELECT id,time_created,json_extract(data,'$.role') AS role FROM message WHERE session_id=? ORDER BY time_created DESC LIMIT ?").all(this.nativeId,this.limit).reverse(),result=[];this.activity=null;
+   const parts=db.prepare("SELECT id,time_created,json_extract(data,'$.type') AS type,json_extract(data,'$.text') AS text,json_extract(data,'$.synthetic') AS synthetic,json_extract(data,'$.ignored') AS ignored,json_extract(data,'$.tool') AS tool,json_extract(data,'$.state.status') AS status FROM part WHERE session_id=? AND message_id=? ORDER BY time_created,id");
+   for(const message of messages){
+    const rows=parts.all(this.nativeId,message.id),body=rows.filter(p=>p.type==='text'&&!p.synthetic&&!p.ignored).map(p=>p.text??'').join('\n').trim();
+    if(body&&['user','assistant'].includes(message.role))result.push({id:message.id,role:message.role==='assistant'?'agent':this.appSent.has(body)?'task':'user',text:body,at:new Date(message.time_created).toISOString()});
+    if(message.role==='assistant')for(const p of rows)if(p.type==='tool')this.activity={tool:p.tool,status:p.status,at:p.time_created};
+   }
+   this.messages=result;return result;
+  }catch{return this.messages;}finally{db?.close();}
  }
 }

@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
 
 for(const kind of ['interview','trial','run'])for(const mode of ['observe','prepare','auto'])test(`${kind}/${mode}: interactions and Jev decisions need no result or reservation`,async t=>{
- const store=new Store(':memory:');t.after(()=>store.close());const db=new AutomationStore(store);
+ const store=new WorkspaceDatabase(':memory:');t.after(()=>store.close());const db=new AutomationStore(store);
  const a=db.create('housing',{goal:'Find homes',criteria:{location:'Berlin',budget:'2000',requirements:'2 rooms'},sources:['https://example.com/list']});db.save(a.id,{mode,browserMode:'jev',maxBrowserSteps:12});db.review(a.id);
  if(kind==='run'){const trial=db.begin(a.id,'trial');db.observe(a.id,trial.id,a.sources[0],'Listings');db.finish(a.id,trial.id,'completed','Read source');}
  const run=db.begin(a.id,kind),calls=[],controller=new AbortController();let current='https://other.example/search';

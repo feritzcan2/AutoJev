@@ -1,13 +1,14 @@
+import {AutomationStore} from '../app/automation-store.mjs';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 const require=createRequire(import.meta.url),{_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
-const data=await mkdtemp(path.join(tmpdir(),'loop-terminal-replay-')),store=new Store(path.join(data,'jobloop.sqlite'));
-const candidate=store.saveProfile({name:'Terminal fixture',preferences:'Remote'});store.close();
+const data=await mkdtemp(path.join(tmpdir(),'loop-terminal-replay-')),store=new WorkspaceDatabase(path.join(data,'jobloop.sqlite'));
+const candidate=new AutomationStore(store).create('job-search',{title:'Terminal fixture',goal:'Remote'});store.close();
 const env={...process.env,JOBLOOP_DATA_DIR:data};delete env.ELECTRON_RUN_AS_NODE;
 const app=await electron.launch({executablePath:require('electron'),args:[process.cwd()],env});
 let page;
@@ -43,7 +44,7 @@ try{
  assert.equal(await lines(),before,'reload preserves the resized screen and cursor edits');
  await emit('\r\nCanlı çıktı: İstanbul ✓');await page.waitForFunction(()=>document.querySelector('#terminal .xterm-rows').textContent.includes('İstanbul ✓'));
  const live=await lines();
- await page.locator('#candidates').selectOption(candidate.id);await page.locator('#candidates').selectOption('automation:'+id);await page.locator('[data-view=agent]').click();
+ await page.locator('#candidates').selectOption(candidate.id);await page.locator('#candidates').selectOption(id);await page.locator('[data-view=agent]').click();
  await page.waitForFunction(()=>document.querySelector('#terminal .xterm-rows').textContent.includes('İstanbul ✓'));
  assert.equal(await lines(),live,'workspace return preserves live text');
  // Updates buffered during restoration must appear once, after the snapshot.

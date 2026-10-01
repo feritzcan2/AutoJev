@@ -8,7 +8,7 @@ const data=await mkdtemp(path.join(tmpdir(),'jobloop-readiness-ui-'));
 const app=await electron.launch({executablePath:process.env.JOBLOOP_ELECTRON_BINARY||require('electron'),args:[process.cwd()],env:{...process.env,JOBLOOP_DATA_DIR:data}});
 try{
  const page=await app.firstWindow(),errors=[];page.on('pageerror',error=>errors.push(error.message));
- await page.waitForFunction(()=>document.querySelector('#setup-provider').options.length>0);
+ await page.waitForFunction(()=>Boolean(window.jobloop));
  // Fixed local fixtures replace only status probes. No provider session, browser
  // connection, paid API request or actual application is started by this smoke.
  await app.evaluate(({ipcMain,safeStorage})=>{
@@ -20,19 +20,13 @@ try{
   safeStorage.isEncryptionAvailable=()=>true;safeStorage.getSelectedStorageBackend=()=> 'fixture';
   safeStorage.encryptString=value=>Buffer.from(value).reverse();safeStorage.decryptString=value=>Buffer.from(value).reverse().toString();
  });
- await page.getByRole('button',{name:'Başlayalım'}).click();
- await page.locator('#setup-readiness li[data-state=error]').waitFor({state:'visible'});
- await page.locator('#setup-cv').click();
- await page.waitForFunction(()=>document.querySelector('#setup-error').textContent.includes('Codex CLI'));
- assert.deepEqual(await page.evaluate(()=>window.jobloop.candidates()),[],'A failed preflight must not create a candidate or start an agent');
- await page.screenshot({path:path.join(data,'setup-readiness.png')});
- await app.evaluate(()=>{globalThis.readinessFixtureReady=true;});
- await page.locator('#setup-readiness button').click();await page.locator('#setup-readiness li[data-state=ready]').waitFor({state:'visible'});
- await page.evaluate(()=>window.jobloop.saveProfile({name:'Readiness Fixture',preferences:'Synthetic UI fixture',facts:'No real candidate',browserMode:'existing'}));
- await page.reload();await page.locator('#onboarding').waitFor({state:'hidden'});
+ const workspace=await page.evaluate(()=>window.jobloop.workspaceCreate('custom',{title:'Readiness Fixture',goal:'Synthetic UI fixture'}));
+ const blocked=await page.evaluate(()=>window.jobloop.readiness({provider:'codex',browserMode:'separate'}));assert.equal(blocked.ready,false);
+ assert.equal((await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id)).activeRun,null);
+ await app.evaluate(()=>{globalThis.readinessFixtureReady=true;});await page.reload();
  await page.locator('[data-view=config]').click();
  await page.locator('a[href="#config-readiness"]').click();await page.locator('#config-readiness li[data-state=ready]').waitFor({state:'visible'});
- assert.ok((await app.evaluate(()=>globalThis.readinessFixtureInputs)).some(input=>input.provider==='codex'&&input.browserMode==='existing'));
+ assert.ok((await app.evaluate(()=>globalThis.readinessFixtureInputs)).some(input=>input.provider==='codex'&&input.browserMode==='separate'));
  await page.locator('a[href="#config-jev"]').click();
  await page.locator('#config-jev input[name=apiKey]').fill('synthetic-ui-test-key');
  await page.locator('#config-jev input[name=model]').fill('jev-latest');
@@ -53,8 +47,8 @@ try{
  await page.locator('a[href="#config-data"]').click();await page.locator('#config-data').waitFor({state:'visible'});
  const dataStatus=await page.evaluate(()=>window.jobloop.dataStatus());
  await page.waitForFunction(()=>document.querySelector('#config-data .data-status').textContent.includes('prompt kaydı'));
- const dataText=await page.locator('#config-data').innerText();assert.ok(dataText.includes(`${dataStatus.retention.days} gün`));assert.ok(dataText.includes('Başvuru geçmişi bu temizliğe dahil değildir'));assert.ok(dataText.includes('Jev anahtarı'));assert.ok(dataText.includes('şifrelenmez'));
- assert.equal(await page.locator('#config-data button').count(),4);await page.screenshot({path:path.join(data,'data-management.png')});
+ const dataText=await page.locator('#config-data').innerText();assert.ok(dataText.includes(`${dataStatus.retention.days} gün`));assert.ok(dataText.includes('Başvuru geçmişi, otomasyon konuşmaları ve sonuçlar bu temizliğe dahil değildir'));assert.ok(dataText.includes('Jev anahtarı'));assert.ok(dataText.includes('şifrelenmez'));
+ for(const action of ['backup','restore','open','clear','open-directory','use-directory','change-directory'])assert.equal(await page.locator(`#config-data [data-${action}]`).isEnabled(),true,action);await page.screenshot({path:path.join(data,'data-management.png')});
  await page.locator('a[href="#config-updates"]').click();await page.locator('#config-updates').waitFor({state:'visible'});
  const updateStatus=await page.evaluate(()=>window.jobloop.updateStatus());assert.equal(updateStatus.enabled,false,'Development smoke must not enable a release updater');
  await page.waitForFunction(()=>document.querySelector('#config-updates [data-status]').textContent.includes('desteklenmiyor'));

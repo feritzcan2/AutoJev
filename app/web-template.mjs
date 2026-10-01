@@ -1,4 +1,7 @@
 import {SourceRetryChecks} from './source-retry-check.mjs';
+import {CONVERSATION_WORKER,isConversation,conversationWaiting} from './workspace-conversation.mjs';
+import {conversationContextVersion} from './automation-task-context.mjs';
+import {setupAgentHistory,setupAgentSettings,setupAgentSettingsKey,resetSetupAgentHistory} from './setup-agent.mjs';
 import {enqueueRecordOperation,dispatchRecordOperations,recordTask,resumeRecordOperation,pendingRecordQuestion} from './record-operations.mjs';
 import {sourceTrialReady} from './automation-trial.mjs';
 import {TaskRuns} from './task-runs.mjs';
@@ -12,6 +15,7 @@ import {continueSourceRun,unreportedInterviewRun,unreportedSourceRun,requeueSour
 // worker leases and record/source exclusivity. No template-name dispatch here.
 export class WebTasks extends TaskRuns {
  constructor(db,options){super({
+  separateCapacity:worker=>worker===CONVERSATION_WORKER,
   idleGraceMs:10000,
   continueIdle:(id,runId)=>continueSourceRun(db,id,runId),
   unreported:(id,runId,reason)=>unreportedInterviewRun(db,id,runId)??unreportedSourceRun(db,id,runId,reason,(options?.now??Date.now)()),
@@ -31,7 +35,7 @@ export class WebTasks extends TaskRuns {
    if(['partial','interrupted'].includes(run.status)&&run.sourceUrl&&!run.recordId&&db.get(id).status==='enabled')requeueSourceRun(db,run);
    else queue.finish(id,run.taskId,run.status==='timeout'?'failed':run.status,run.summary);
   },
-  closeFailed:(id,runId,error)=>{const run=db.run(runId),summary='Oturum kapatılamadı: '+error.message;if(run.status==='running')db.finish(id,runId,'failed',summary);else db.putRun({...run,status:'failed',summary});if(run.taskId){const q=db.store.workspaces.tasks;q.put({...q.get(id,run.taskId),state:'paused'});}db.pause(id,'blocked');},
+  closeFailed:(id,runId,error)=>{const run=db.run(runId),summary='Oturum kapatılamadı: '+error.message;if(run.status==='running')db.finish(id,runId,'failed',summary);else db.putRun({...run,status:'failed',summary});if(run.taskId){const q=db.store.workspaces.tasks;q.put({...q.get(id,run.taskId),state:'paused'});}if(!isConversation(run))db.pause(id,'blocked');},
   afterFinish:async(id,runId)=>{
    const run=db.run(runId),pending=(db.get(id).questions??[]).some(q=>q.answer==null&&q.taskId===run.taskId);
    const completeSource=run.kind==='run'&&!run.recordId&&run.sourceUrl&&run.scan?.complete&&run.scan.completion!=='user_stop';
@@ -80,7 +84,7 @@ export class WebTasks extends TaskRuns {
    for(const [key,retry] of Object.entries(a.retryPlan??{})){
     const issue=automationAttention({...this.db.snapshot(a.id),activeRuns:this.slots(a.id).map(s=>s.run)}).find(i=>i.id===key);
     if(retry.revision!==a.revision||!issue?.retry){this.clearRetry(a.id,key);continue;}
-    if(retry.at>this.now()||issue.closing||this.active.size>=this.concurrency||a.status!=='enabled'&&this.slots(a.id).length)continue;
+    if(retry.at>this.now()||issue.closing||this.capacityUsed>=this.concurrency||a.status!=='enabled'&&this.slots(a.id).length)continue;
     const worker=issue.retry==='trial'?this.workers.list(a.id).find(w=>w.enabled!==false):null;
     if(issue.retry==='trial'&&!worker)continue;
     this.clearRetry(a.id,key);
@@ -94,11 +98,11 @@ export class WebTasks extends TaskRuns {
    a=this.db.get(a.id);
    await dispatchRecordOperations(this,a.id);
    if(a.status!=='enabled')continue;
-   if(this.slots(a.id).some(s=>s.run.kind==='interview'||s.run.kind==='trial'&&!s.run.sourceUrl))continue;
+   if(this.slots(a.id).some(s=>!isConversation(s.run)&&(s.run.kind==='interview'||s.run.kind==='trial'&&!s.run.sourceUrl)))continue;
    const pending=[];
    for(const source of this.db.sources(a.id)){
     if(!source.enabled||source.stopping||a.onceSources&&!a.onceSources.includes(source.url))continue;
-    if((a.questions??[]).some(q=>q.answer==null&&!q.recordId&&(!q.sourceUrl||q.sourceUrl===source.url)))continue;
+    if((a.questions??[]).some(q=>!q.conversation&&q.answer==null&&!q.recordId&&(!q.sourceUrl||q.sourceUrl===source.url)))continue;
     if(source.siteWait?.waiting)continue;
     if(source.siteBlocked&&!source.blocker?.recordId){
      this.sourceState(a.id,source.url,{blocked:false,siteBlocked:false,batchId:null,nextRunAt:this.now(),onceCompleted:false});
@@ -118,14 +122,14 @@ export class WebTasks extends TaskRuns {
     }else pending.push(...waiting.filter(task=>!task.retryAt||task.retryAt<=this.now()));
    }
    const sources=this.db.sources(a.id),eligible=sources.filter(s=>s.enabled&&(!a.onceSources||a.onceSources.includes(s.url)));
-   if(a.once&&!this.slots(a.id).length&&!pending.length&&eligible.every(s=>!s.siteWait&&(s.blocked||s.onceCompleted)&&!(a.questions??[]).some(q=>q.answer==null&&!q.recordId&&(!q.sourceUrl||q.sourceUrl===s.url)))){
+   if(a.once&&!this.slots(a.id).some(s=>!isConversation(s.run))&&!pending.length&&eligible.every(s=>!s.siteWait&&(s.blocked||s.onceCompleted)&&!(a.questions??[]).some(q=>!q.conversation&&q.answer==null&&!q.recordId&&(!q.sourceUrl||q.sourceUrl===s.url)))){
     this.db.put({...this.db.get(a.id),once:false,onceSources:null,status:'paused',nextRunAt:null});this.changed(a.id);continue;
    }
    const next=sources.filter(s=>s.enabled&&(!s.blocked||s.siteWait)).map(s=>s.siteWait?.retryAt??s.nextRunAt??this.now());
    this.db.put({...this.db.get(a.id),nextRunAt:next.length?Math.min(...next):null});
    pending.sort((x,y)=>x.createdAt-y.createdAt);
    for(const worker of this.workers.list(a.id).sort((x,y)=>a.id===workspaceId?Number(y.id===workerId)-Number(x.id===workerId):0)){
-    if(worker.enabled===false||this.active.has(workerKey(a.id,worker.id))||this.active.size>=this.concurrency)continue;
+    if(worker.enabled===false||this.active.has(workerKey(a.id,worker.id))||this.capacityUsed>=this.concurrency)continue;
     const index=pending.findIndex(task=>this.sourceChecks.ready(a.id,task));if(index<0)break;
     const [task]=pending.splice(index,1);
     // Reservation occurs synchronously inside start before provider awaits.
@@ -181,13 +185,40 @@ export class WebTasks extends TaskRuns {
   if(input.enabled===true&&!before.enabled)this.resetSources(id,[url]);
   this.changed(id);await this.tick();return this.db.sources(id).find(s=>s.url===url);
  }
+ conversationWorker(id){this.db.get(id);return CONVERSATION_WORKER;}
+ assertConversationAvailable(id){if(this.conversationChanges?.has(id))throw Error('Kurulum agenti güncelleniyor.');}
+ async configureConversation(id,settings,{restart=false}={}){
+  if(settings)settings=this.db.normalizeSetupAgentSettings(settings);
+  this.assertConversationAvailable(id);this.conversationChanges??=new Set();this.conversationChanges.add(id);
+  try{
+   const before=setupAgentSettings(this.db,id),reset=restart||setupAgentSettingsKey(before)!==setupAgentSettingsKey(settings??before);
+   const active=this.slots(id).find(slot=>slot.run.kind==='interview');
+   setupAgentHistory(this.db,id);
+   if(reset&&active)await this.finish(id,'interrupted',restart?'Kurulum agenti yeniden başlatıldı.':'Kurulum agenti ayarları değişti.',active.workerId);
+   if(settings)this.db.saveSetupAgentSettings(id,settings);
+   if(reset)resetSetupAgentHistory(this.db,id);
+   this.changed(id);
+   if(reset&&(active||restart))return await this.start(id,'interview',CONVERSATION_WORKER);
+   return {saved:true,restarted:false};
+  }finally{this.conversationChanges.delete(id);}
+ }
  async setup(id){
-  const active=this.slots(id);if(active.length){if(active.length===1&&active[0].run.kind==='interview')return active[0].run;throw Error('Önce çalışan görevi durdur');}
-  if((this.db.get(id).questions??[]).some(q=>q.answer==null))return {waitingForAnswers:true};
-  return this.start(id,'interview');
+  this.assertConversationAvailable(id);
+  const active=this.slots(id).find(s=>s.run.kind==='interview');if(active)return active.run;
+  const worker=this.conversationWorker(id);
+  if((this.db.get(id).questions??[]).some(q=>q.answer==null&&!q.recordId&&!q.sourceUrl&&(worker===CONVERSATION_WORKER?q.conversation:!q.conversation)))return {waitingForAnswers:true};
+  return this.start(id,'interview',worker);
  }
  async answer(id,questionId,value){
+  this.assertConversationAvailable(id);
   const answer=this.db.answerQuestion(id,questionId,value);this.changed(id);
+  if(answer.conversation){
+   if(!(this.db.get(id).questions??[]).some(q=>q.conversation&&q.answer==null)){
+    const active=this.slots(id).find(s=>isConversation(s.run));
+    if(active?.run.interactive)await this.sendConversation(id,active,'Kayıtlı sorunun yanıtı: '+JSON.stringify({question:answer.text,answer:answer.answer,values:answer.answerValues}),{messageId:null,inputQuestionIds:[questionId]});
+    else{if(active)await this.finish(id,'interrupted','Sohbet yanıtla devam ediyor.',active.workerId);await this.start(id,{kind:'interview',inputQuestionIds:[questionId]},CONVERSATION_WORKER);}
+   }return answer;
+  }
   if(answer.recordId){
    if(!pendingRecordQuestion(this.db.get(id),this.db.result(id,answer.recordId))){
     try{const active=recordTask(this.db,id,answer.recordId);if(active&&active.state!=='pending'){this.queue.put({...active,resumeRecordAfterAnswer:true});return answer;}const item=this.db.result(id,answer.recordId);const origin=answer.taskId?this.queue.get(id,answer.taskId):null;resumeRecordOperation(this,id,item,origin);await this.tick();}catch(error){this.db.message(id,'system','Yanıt kaydedildi. Kayıt işlemi: '+error.message);}
@@ -195,16 +226,36 @@ export class WebTasks extends TaskRuns {
   }
   if(answer.sourceUrl){
    const a=this.db.get(id);
-   if(!(a.questions??[]).some(q=>q.answer==null&&!q.recordId&&(!q.sourceUrl||q.sourceUrl===answer.sourceUrl))&&answer.taskId){
+   if(!(a.questions??[]).some(q=>!q.conversation&&q.answer==null&&!q.recordId&&(!q.sourceUrl||q.sourceUrl===answer.sourceUrl))&&answer.taskId){
     const task=this.queue.get(id,answer.taskId);this.queue.put({...task,resumeSourceAfterAnswer:true});await this.tick();
    }
    return answer;
   }
-  if((this.db.get(id).questions??[]).some(q=>q.answer==null))return answer;
-  try{await this.pause(id);await this.setup(id);}catch(error){this.db.message(id,'system','Yanıtın kaydedildi. Agent devam edemedi: '+error.message);this.changed(id);}
+  if((this.db.get(id).questions??[]).some(q=>!q.conversation&&!q.recordId&&!q.sourceUrl&&q.answer==null))return answer;
+  try{const interview=this.slots(id).find(s=>s.run.kind==='interview');if(interview)await this.finish(id,'interrupted','Kurulum yanıtla devam ediyor.',interview.workerId);await this.setup(id);}catch(error){this.db.message(id,'system','Yanıtın kaydedildi. Agent devam edemedi: '+error.message);this.changed(id);}
   return answer;
  }
- async message(id,text,workerId='main'){await this.pause(id);this.db.message(id,'user',text);this.changed(id);return this.start(id,'interview',workerId);}
+ async message(id,text){
+  this.assertConversationAvailable(id);
+  const active=this.slots(id).find(s=>s.run.kind==='interview');
+  if(active){
+   if(!conversationWaiting(this.db.run(active.run.id))||active.finishing||active.worker?.isBusy?.())throw Error('Sohbet agent’ı yanıtını hazırlıyor. Yanıt tamamlanınca yeni mesaj gönderebilirsin.');
+   const message=this.db.message(id,'user',text,{conversation:true,runId:active.run.id});this.changed(id);
+   return this.sendConversation(id,active,message.text,{messageId:message.id,inputQuestionIds:[]});
+  }
+  const worker=this.conversationWorker(id),message=this.db.message(id,'user',text,{conversation:true});this.changed(id);
+  return this.start(id,{kind:'interview',messageId:message.id},worker);
+ }
+ async sendConversation(id,slot,text,input={}){
+  if(slot.finishing||this.closed)throw Error('Sohbet kapanıyor.');
+  const before=this.db.run(slot.run.id),changed=before.contextVersion!==conversationContextVersion(this.db.get(id));
+  slot.seenWorking=false;slot.run=this.db.putRun({...before,...input,awaitingMessage:false,lastMessageAt:this.now()});this.changed(id);
+  try{
+   const worker=slot.worker??await slot.ready;
+   await worker.message(changed?'Workspace profile or permissions changed. Read get_automation_context once before acting.\n\n'+text:text);
+   return this.db.run(slot.run.id);
+  }catch(error){if(!slot.finishing){slot.run=this.db.putRun({...this.db.run(slot.run.id),awaitingMessage:true});this.changed(id);}throw error;}
+ }
  report(id,runId,status,summary,goalReached=false){
   const result=this.complete(id,runId,status,summary,{goalReached}),run=this.db.run(runId);
   if(status==='blocked'&&run.kind==='trial'&&!run.sourceUrl&&run.siteWait){
@@ -221,18 +272,20 @@ export class WebTasks extends TaskRuns {
  }
  async restart(id){
   if(this.restarting.has(id))throw Error('Çalışma alanı yeniden başlatılıyor.');
-  const a=this.db.get(id),runs=this.slots(id).map(slot=>this.db.run(slot.run.id)),setup=runs.find(run=>run.kind==='interview');
+  const a=this.db.get(id),runs=this.slots(id).map(slot=>this.db.run(slot.run.id)),conversation=runs.find(isConversation),setup=runs.find(run=>run.kind==='interview'&&!isConversation(run));
   this.restarting.add(id);
   try{
    await this.pause(id);
-   for(const worker of this.workers.list(id)){
+   for(const worker of [...this.workers.list(id),{id:CONVERSATION_WORKER}]){
     const history=this.db.store.workspaces.history(id,worker.id);
     for(const provider of ['codex','claude','opencode'])history.forgetConversation(id,provider,history.conversation(id,provider));
    }
    this.db.db.prepare("UPDATE automation_runs SET data=json_set(data,'$.conversation',NULL) WHERE automation_id=? AND json_extract(data,'$.conversation') IS NOT NULL").run(id);
    if(setup)return await this.start(id,setup.kind,setup.workerId);
+   if(conversation&&a.status!=='enabled'&&!runs.some(run=>!isConversation(run)))return await this.start(id,{kind:'interview',messageId:conversation.messageId,inputQuestionIds:conversation.inputQuestionIds},CONVERSATION_WORKER);
    this.db.enable(id);
    if(a.once)this.db.put({...this.db.get(id),once:true,onceSources:a.onceSources});
+   if(conversation)await this.start(id,{kind:'interview',messageId:conversation.messageId,inputQuestionIds:conversation.inputQuestionIds},CONVERSATION_WORKER);
   }finally{this.restarting.delete(id);}
   await this.tick();return this.slots(id)[0]?.run??null;
  }
@@ -241,9 +294,9 @@ export class WebTasks extends TaskRuns {
   // Browser settings can close the session before the restart confirmation.
   // Keep the last worker task's kind so unfinished setup never becomes a trial.
   const run=this.slots(id).find(s=>s.workerId===worker)?.run??this.db.runs(id).find(r=>(r.workerId??'main')===worker);
-  return run?{kind:run.kind,resume:run.kind==='interview'}:null;
+  return run?{kind:run.kind,resume:run.kind==='interview'&&!isConversation(run)}:null;
  }
- async startWorker(id,worker,restart){this.workers.get(id,worker);this.workers.setEnabled(id,worker,true);if(restart?.kind==='interview')return this.start(id,'interview',worker);const a=this.db.get(id);if(a.status!=='enabled'){this.db.enable(id);this.resetSources(id,this.db.sources(id).filter(s=>s.enabled&&!s.blocked).map(s=>s.url));}await this.tick({workspaceId:id,workerId:worker});}
- async stopWorker(id,worker){this.workers.get(id,worker);this.workers.setEnabled(id,worker,false);await this.finish(id,'interrupted','Worker durduruldu.',worker);this.changed(id);}
- async remove(id,worker){if(worker==='main')throw Error('İlk worker kaldırılamaz.');await this.stopWorker(id,worker);this.workers.remove(id,worker);this.changed(id);}
+ async startWorker(id,worker,restart){this.workers.get(id,worker);if(worker===CONVERSATION_WORKER)return restart?this.configureConversation(id,null,{restart:true}):this.setup(id);this.workers.setEnabled(id,worker,true);if(restart?.kind==='interview')return this.start(id,'interview',worker);const a=this.db.get(id);if(a.status!=='enabled'){this.db.enable(id);this.resetSources(id,this.db.sources(id).filter(s=>s.enabled&&!s.blocked).map(s=>s.url));}await this.tick({workspaceId:id,workerId:worker});}
+ async stopWorker(id,worker){this.workers.get(id,worker);if(worker!==CONVERSATION_WORKER)this.workers.setEnabled(id,worker,false);await this.finish(id,'interrupted',worker===CONVERSATION_WORKER?'Sohbet durduruldu.':'Worker durduruldu.',worker);this.changed(id);}
+ async remove(id,worker){if(worker==='main'||worker===CONVERSATION_WORKER)throw Error('İlk worker kaldırılamaz.');await this.stopWorker(id,worker);this.workers.remove(id,worker);this.changed(id);}
 }

@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BrowserConnections} from '../app/browser-connection.mjs';
 import {BrowserTools} from '../app/browser.mjs';
-import {Store} from '../app/store.mjs';
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 test('one connection handshake, backoff, disconnect and retry without agent calls',async()=>{
  let count=0,now=100,resolve,reject;
@@ -23,19 +22,6 @@ test('resume uses the database URL and returns historical progress separately',a
  await assert.rejects(()=>browser.resumeApplication('c','job','other'),/oturuma/);
  job.resumeContext={browser:'Chrome profile old',tabId:'123'};await assert.rejects(()=>browser.resumeApplication('c','job','s'),/orijinal/);
  job.status='submitted';assert.equal(JSON.parse((await browser.resumeApplication('c','job','s')).content[0].text).status,'complete');
-});
-test('progress persists observed values and files without stale control IDs or changing submission state',()=>{
- const store=new Store(':memory:');try{
- const p=store.saveProfile({name:'Test',preferences:'Remote',authorization:'prepare'});
- const job=store.addJob(p.id,{url:'https://example.test/job',company:'Example',role:'Engineer',location:'Remote',fit:'Test'}).job;
- store.saveBrowserProgress(p.id,job.id,{tabId:'first',url:job.url,fields:[{fieldId:'stale',label:'Email',type:'email',value:'test@example.test'}],files:[{label:'CV',files:['CV.pdf']}]},'s');
- let current=store.job(p.id,job.id);assert.equal(current.status,'found');assert.equal(current.resumeContext.tabId,'first');assert.equal(current.browserProgress.fields[0].fieldId,undefined);assert.deepEqual(current.browserProgress.files[0].files,['CV.pdf']);
- store.saveBrowserProgress(p.id,job.id,{tabId:'new',url:job.url,fields:[{label:'Email',type:'email',value:''}],files:[]},'s');
- current=store.job(p.id,job.id);assert.equal(current.browserProgress.fields[0].value,'');assert.deepEqual(current.browserProgress.files,[]);
- current.status='uncertain';current.sessionId='s';store.saveJob(current,'test');
- assert.throws(()=>store.saveBrowserProgress(p.id,job.id,{tabId:'new',url:job.url},'other'),/oturuma/);
- store.saveBrowserProgress(p.id,job.id,{tabId:'new',url:job.url},'s');assert.equal(store.job(p.id,job.id).status,'uncertain');
- }finally{store.close();}
 });
 
 test('a late handshake cannot mark a newly selected Chrome profile ready',async()=>{

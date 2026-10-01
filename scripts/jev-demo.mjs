@@ -21,16 +21,17 @@ export async function startJevFixture({port=0}={}){
 }
 
 export async function seedJevDemo(data,url,{linkedin=false,chromeProfile,agentSettings}={}){
-  const {Store}=await import('../app/store.mjs');const store=new Store(path.join(data,'jobloop.sqlite'));
+  const {WorkspaceDatabase}=await import('../app/workspace-database.mjs'),{AutomationStore}=await import('../app/automation-store.mjs');
+  const core=new WorkspaceDatabase(path.join(data,'jobloop.sqlite'));
   try{
-    const profile=store.saveProfile({name:linkedin?'LinkedIn · Jev':'Jev demo',preferences:linkedin?JEV_LINKEDIN_GOAL:`Only test the synthetic local job board at ${url}. ${JEV_DEMO_GOAL} Do not browse external job sites or submit applications.`,facts:linkedin?'Communication language: Turkish. The user authorized a real LinkedIn search for Senior Python remote roles. No personal candidate facts or qualifications were supplied. Search only; do not apply or contact employers.':'Synthetic demo candidate. Communication language: Turkish. This is a browser integration demonstration, not a real job search.',authorization:'research',browserMode:'jev',chromeProfile,agentSettings});
-    const workspace=path.join(data,'candidates',profile.id);await mkdir(workspace,{recursive:true});
-    const cv=path.join(workspace,'CV.txt');await writeFile(cv,linkedin?'Search-only context, not a candidate CV. Requested search: Senior Python, remote. Do not infer candidate qualifications or use this file for applications.':'Synthetic demo candidate. Senior Python engineer; remote work only. No real applications authorized.');store.setCv(profile.id,cv);
-    for(const source of store.sources(profile.id))store.saveSource(profile.id,{...source,enabled:false});
-    const skillText=linkedin?`The user requests a REAL LinkedIn search, not the local demo. Start at ${url} and use only browser_jev_* tools. Goal: ${JEV_LINKEDIN_GOAL} Let Jev propose actions with browser_jev_next and review/execute them with browser_jev_act. You supply text yourself. Save the source checkpoint. Read visible results and actual link URLs from browser_jev_observe. Only add_job for listings whose title, company and URL you actually observed; do not invent links or claim candidate qualifications. Report each result in Turkish. If LinkedIn requires login, CAPTCHA or blocks access, preserve the tab and report the exact observed blocker through report_activity and report_campaign_work; do not bypass it, switch tools or claim success. Stop after one bounded search and leave the tab open.`:`This is a user-authorized local integration test. Use only browser_jev_* tools on ${url}. Goal: ${JEV_DEMO_GOAL} Call browser_jev_next to let Jev select each action, then review and execute with browser_jev_act. Supply all TYPE_TEXT values yourself. No OpenRouter key or separate text model is needed. Save the actual source checkpoint. Once done, use browser_jev_observe to confirm Python, Remote, Senior and exactly Atlas Labs and Northstar. Report these names and observed results via report_activity and report_campaign_work. These listings are synthetic: do not add them as real job records and do not apply. Leave the tab open.`;
-    const source=store.saveSource(profile.id,{name:linkedin?'LinkedIn · Jev araması':'Jev · yerel demo',kind:'custom',url,query:linkedin?JEV_LINKEDIN_GOAL:JEV_DEMO_GOAL,enabled:true,intervalMinutes:1440,applyMode:'find_only',searchMethod:'browser',fallback:'none',skillText});
-    return {candidateId:profile.id,sourceId:source.id};
-  }finally{store.close();}
+    const db=new AutomationStore(core),goal=linkedin?JEV_LINKEDIN_GOAL:JEV_DEMO_GOAL;
+    const a=db.create('custom',{title:linkedin?'LinkedIn · Jev':'Jev demo',goal,criteria:{outcome:goal,rules:'Search only. Do not apply or contact employers.',completion:'Stop after the matching results are visible.'},sources:[url],browserMode:'jev',chromeProfile,agentSettings,
+      facts:linkedin?'No candidate qualifications supplied.':'Synthetic local browser integration demo.',
+      instructions:'Use the managed Jev browser. Inspect actual results and observed links, preserve access blockers and report the observed outcome through finish_automation_run.'});
+    db.save(a.id,{browserMode:'jev',chromeProfile});
+    db.saveSource(a.id,url,{name:linkedin?'LinkedIn · Jev araması':'Jev · yerel demo',enabled:true,intervalMinutes:1440,mode:'observe',searchMethod:'browser',fallback:'none',skillText:goal});db.review(a.id);
+    return {candidateId:a.id,sourceId:url};
+  }finally{core.close();}
 }
 
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){

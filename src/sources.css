@@ -68,6 +68,10 @@
 .source-status b { display: flex; align-items: center; gap: 8px; color: var(--text); font-weight: 550; }
 .source-status b::before { content: ''; width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: var(--text-muted); }
 .source-status small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; margin-top: 4px; overflow: hidden; font-size: 12px; color: var(--text-muted); line-height: 1.45; }
+.source-last-run { display: inline-block; margin-top: 6px; padding: 3px 7px; border-radius: 6px; background: var(--bg-hover); color: var(--text-secondary); font-size: 11px; font-weight: 600; }
+.source-last-run[data-status="completed"] { background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); }
+.source-last-run[data-status="failed"], .source-last-run[data-status="timeout"] { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+.source-last-run[data-status="blocked"], .source-last-run[data-status="interrupted"], .source-last-run[data-status="partial"] { background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--warning); }
 .source-row[data-tone="found"] .source-status b::before { background: var(--success); }
 .source-row[data-tone="found"] .source-status b { color: var(--success); }
 .source-row[data-tone="scanning"] .source-status b { color: var(--accent-strong); }

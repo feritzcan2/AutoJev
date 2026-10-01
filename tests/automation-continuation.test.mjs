@@ -91,3 +91,16 @@ test('shutdown recovery resumes record preparation but never execution after an 
  f.db.putResult({...f.db.result(f.a.id,f.item.id),status:'uncertain'});
  const verify=f.db.begin(f.a.id,{kind:'run',taskId:saved.id});assert.equal(verify.continuation,undefined);f.db.finish(f.a.id,verify.id,'blocked','Still uncertain');
 });
+
+for(const stop of ['technical','manual'])test(`runSource resumes the source conversation after a ${stop} stop creates a new queue task`,async t=>{
+ const f=fixture(t);await f.runtime.runOnce(f.a.id);await settle();const first=f.launches.at(-1);
+ f.history(first).saveConversation(f.a.id,'codex','source-thread',settings);
+ if(stop==='manual')await f.runtime.stopSource(f.a.id,first.sourceUrl);
+ else await f.runtime.finish(f.a.id,'interrupted','Geçici tarama sorunu.',first.workerId);
+ assert.equal(f.runtime.slots(f.a.id).length,0);
+ if(stop==='manual'){await f.runtime.tick();assert.equal(f.launches.length,1,'A stop must still prevent automatic relaunch');}
+ f.store.workspaces.history(f.a.id,first.workerId).forProfile('web-run').saveConversation(f.a.id,'codex','different-task',settings);
+ await f.runtime.runSource(f.a.id,first.sourceUrl);await settle();const next=f.launches.at(-1);
+ assert.notEqual(next.taskId,first.taskId);assert.equal(next.continuation.reason,'source_retry');
+ assert.equal(next.continuation.runId,first.id);assert.equal(selectResume(f.history(next),f.a.id,settings),'source-thread');
+});

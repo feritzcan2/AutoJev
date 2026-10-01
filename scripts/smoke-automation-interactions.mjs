@@ -6,7 +6,7 @@ import path from 'node:path';
 import {createRequire} from 'node:module';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StdioClientTransport} from '@modelcontextprotocol/sdk/client/stdio.js';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
 import {automationBrowser} from '../app/automation-browser.mjs';
@@ -45,7 +45,7 @@ class TestBrowsers extends BrowserTools{
 const pageOf=result=>JSON.parse(result.content.find(c=>c.type==='text').text.replace(/^Page URL: [^\n]+\n/,''));
 try{
  for(const mode of ['jev','separate']){
-  const store=new Store(':memory:'),db=new AutomationStore(store),browsers=new TestBrowsers(directory,()=>mode,()=>({connection:'separate',headless:true}));
+  const store=new WorkspaceDatabase(':memory:'),db=new AutomationStore(store),browsers=new TestBrowsers(directory,()=>mode,()=>({connection:'separate',headless:true}));
   try{
    const a=db.create('housing',{goal:'Read listings',criteria:{location:'Berlin',budget:'2000',requirements:'2 rooms'},sources:[url]});db.save(a.id,{browserMode:mode,mode:'observe',maxBrowserSteps:50});db.review(a.id);
    const run=db.begin(a.id,'trial'),flow=automationWorkflow({db,run,signal:new AbortController().signal,browser:automationBrowser(browsers,{mode}),report:()=>{}});

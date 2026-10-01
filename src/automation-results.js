@@ -88,6 +88,7 @@ export function automationResultsTable(root,{button,badge,time,api,refresh,statu
       const question=result.recordAction.question,mark=el('span','Yanıt bekliyor','record-question-badge'),preview=el('span',question.text,'record-question-preview'),reply=button('Soruyu yanıtla',()=>onQuestion(question.id),'record-question-link');
       preview.title=question.text;reply.dataset.recordQuestion=question.id;reply.setAttribute('aria-label',result.title+' · Soruyu yanıtla');cell.append(mark,preview,reply);
      }}
+    else if(column.key==='score'&&result.assessment){const assessment=result.assessment,score=button(assessment.score===null?'Değerlendirilemedi':`${assessment.score}/100`,()=>{expanded.has(result.id)?expanded.delete(result.id):expanded.add(result.id);render();},'sort-button');score.title=assessment.summary;score.setAttribute('aria-expanded',String(expanded.has(result.id)));score.setAttribute('aria-label',result.title+' · Puanlama gerekçesi');score.dataset.recordScore=result.id;cell.append(score);if(assessment.revision!==data.automation.revision)cell.append(el('small','Eski değerlendirme','record-score-stale'));}
     else{row.append(recordCell(column,result.cells?.[column.key],{openLink:url=>api.openLink(url)}));continue;}
     row.append(cell);
    }
@@ -111,6 +112,10 @@ export function automationResultsTable(root,{button,badge,time,api,refresh,statu
    if(openIds.has(result.id))actions.insertBefore(goToTab,open);
    recordActions(actions,result,data.definition,async action=>{try{await api.workspaceTransition(data.automation.id,result.id,action);await refresh();}catch(error){window.alert(error.message);}});
    const recordAction=result.recordAction;
+   if(recordAction?.scoreOperation){
+    const op=recordAction.scoreOperation,score=button(requesting?'Sıraya ekleniyor…':recordAction.task?.kind==='score'?progress.label:op.label,async()=>{try{await sendOperation(result,'score');}catch(error){window.alert(error.message);}});
+    score.dataset.recordOperation='score';score.disabled=busy||requesting||op.disabled;score.title=op.reason??'İlanı kayıtlı puanlama kriterlerine, profile ve CV’ye göre değerlendir.';actions.append(score);
+   }
    if(recordAction?.retryOperation){
     const op=recordAction.retryOperation,retry=button(requesting?'Sıraya ekleniyor…':'Tekrar dene',async()=>{
      if(op.review){showReview(result);return;}
@@ -136,6 +141,13 @@ export function automationResultsTable(root,{button,badge,time,api,refresh,statu
    for(const control of actions.querySelectorAll('[data-idle]'))control.disabled=busy||requesting||Boolean(recordAction?.task);
    actionsPanel.append(actions,tabChoices,tabFeedback);state.append(actionsToggle,actionsPanel);row.append(state);body.append(row);
    const detailRow=el('tr',null,'automation-result-detail'),cell=el('td');detailRow.id=detailsId;detailRow.hidden=!expanded.has(result.id);cell.colSpan=columns.length+2;cell.append(el('p',result.summary));
+   if(result.assessment){
+    const assessment=result.assessment;cell.append(el('h3',assessment.score===null?'Puanlama · Değerlendirilemedi':`Uygunluk puanı · ${assessment.score}/100`),el('p',assessment.summary));
+    if(assessment.revision!==data.automation.revision)cell.append(el('p','Profil veya kriterler değişti. Bu değerlendirme eski bilgilere dayanıyor.','record-score-stale'));
+    for(const [key,label] of [['strengths','Eşleşmeler'],['gaps','Eksikler'],['uncertainties','Belirsizlikler']])if(assessment[key]?.length){const list=el('ul');for(const note of assessment[key])list.append(el('li',note));cell.append(el('h4',label),list);}
+    if(assessment.rubric)cell.append(el('h4','Kullanılan puanlama kriterleri'),el('p',assessment.rubric));
+    cell.append(el('blockquote',assessment.evidence),button('Değerlendirilen ilan ↗',()=>api.openLink(assessment.evidenceUrl)),el('small',`Değerlendirme: ${time(assessment.scoredAt)} · Başarı olasılığı değildir.`));
+   }
    if(result.proposal)cell.append(el('h3','İşlem taslağı'),el('pre',result.proposal));
    if(recordAction?.lastTask?.summary)cell.append(el('h3','Son kayıt işlemi'),el('p',recordAction.lastTask.summary));
    if(result.evidence)cell.append(el('h3','Sonuç kanıtı'),el('blockquote',result.evidence));

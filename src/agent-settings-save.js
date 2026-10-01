@@ -1,7 +1,8 @@
 // Capture the affected workers before saving: browser changes can stop them.
 export async function saveAgentSettings({api,owner,input,confirmRestart,onSaved=()=>{}}){
  const before=await api.workspaceSnapshot(owner);
- const workers=(before.workers??[]).filter(worker=>worker.active||worker.execution?.task);
+ const browserChanged=input.browserMode!==undefined||input.chromeProfile!==undefined;
+ const workers=(before.workers??[]).filter(worker=>(worker.active||worker.execution?.task)&&(!worker.conversation||browserChanged));
  await api.workspaceSettings(owner,input);
  await onSaved();
  if(!workers.length)return {restarted:0,failed:[]};

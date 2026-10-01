@@ -1,18 +1,54 @@
+import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {Store} from '../app/store.mjs';
-import {BackgroundStore} from '../app/background-store.mjs';
+import {DatabaseSync} from 'node:sqlite';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
+import {AutomationStore} from '../app/automation-store.mjs';
+
 const require=createRequire(import.meta.url),{_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
-const data=await mkdtemp(path.join(tmpdir(),'jobloop-background-ui-')),store=new Store(path.join(data,'jobloop.sqlite')),db=new BackgroundStore(store);
-const p=store.saveProfile({name:'Demo Candidate',preferences:'Berlin Backend'}),other=store.saveProfile({name:'Other Candidate',preferences:'Remote'}),job=store.addJob(p.id,{company:'Example Company',role:'Backend Engineer',location:'Berlin',url:'https://example.com/job',fit:'Synthetic'}).job;
-db.record(p.id,'demo@example.com',{id:'m1',threadId:'t1',subject:'Interview invitation',date:new Date().toISOString()},{jobId:job.id,outcome:'interview',summary:'Example Company ilk görüşmeye davet etti.'});const run=db.begin(p.id);db.putRun({...run,status:'completed',finishedAt:Date.now(),summary:'1 mülakat daveti kaydedildi.'});store.close();
-let app=await electron.launch({executablePath:process.env.JOBLOOP_ELECTRON_BINARY||require('electron'),args:[process.cwd()],env:{...process.env,JOBLOOP_DATA_DIR:data}});
-try{let page=await app.firstWindow();const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.locator('#candidates').selectOption(p.id);await page.locator('button[data-view=background]').click();await page.locator('#background-signals').getByText('Example Company ilk görüşmeye davet etti.',{exact:true}).waitFor();
- if(await page.locator('#gmail-configure').count())throw Error('Legacy OAuth UI remains');if(await page.locator('#background-run').isDisabled())throw Error('Agent connector discovery must be runnable');if(await page.locator('#background-form [name=mailbox],#background-form [name=timeoutMinutes]').count())throw Error('Legacy task settings remain');await page.locator('#background-settings').click();await page.locator('#background-skill-details summary').click();await page.locator('#background-skill-content').getByText('name: gmail-sync',{exact:false}).waitFor();
- await page.locator('#background-form [name=inheritAgent]').uncheck();await page.locator('#background-form [name=provider]').selectOption('claude');await page.locator('#background-form [name=model]').selectOption('opus');await page.locator('#background-form [name=intervalMinutes]').fill('45');await page.locator('#background-form button[type=submit]').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent==='Arka plan görevi kaydedildi.');
- await page.screenshot({path:path.join(data,'background.png'),fullPage:true});await page.reload();await page.locator('button[data-view=background]').click();await page.waitForFunction(()=>document.querySelector('#background-form [name=intervalMinutes]').value==='45'&&document.querySelector('#background-skill-name').textContent==='gmail-sync / SKILL.md');
- if(await page.locator('#background-form [name=provider]').inputValue()!=='claude'||await page.locator('#background-form [name=model]').inputValue()!=='opus')throw Error('Background model did not persist');const selected=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),p.id);if(selected.profile.agentSettings.provider==='claude')throw Error('Background override changed main agent');await page.locator('button[data-view=board]').click();await page.locator(`[data-job-mails="${job.id}"] summary`).getByText('Mülakat daveti',{exact:false}).waitFor();
- await page.locator('button[data-view=background]').click();if(!await page.locator('#background > #background-chat #background-chat-message').count())throw Error('Composer is missing');if(await page.locator('#background-terminal').count())throw Error('Background terminal remains');if(!await page.locator('#background-runs .run-row').count())throw Error('Run history is missing');await page.locator('#background-chat-message').fill('Gmail bağlantısını nasıl açarım?');await page.locator('#candidates').selectOption(other.id);await page.locator('button[data-view=background]').click();await page.locator('#background-history').waitFor({state:'hidden'});if((await page.locator('#background-signals').textContent()).includes('Example Company'))throw Error('Signals leaked across candidates');if(await page.locator('#gmail-check').isHidden())throw Error('Connector check action missing');await page.locator('#candidates').selectOption(p.id);await page.locator('button[data-view=background]').click();await page.waitForFunction(()=>document.querySelector('#background-chat-message').value==='Gmail bağlantısını nasıl açarım?');await app.evaluate(({ipcMain})=>{ipcMain.removeHandler('background-message');ipcMain.handle('background-message',(_,id,text,runId)=>{globalThis.chatReceived={id,text,runId};return{id:runId};});});await page.locator('#background-chat-send').click();await page.waitForFunction(()=>document.querySelector('#background-chat-message').value==='');const delivered=await app.evaluate(()=>globalThis.chatReceived);if(delivered.id!==p.id||delivered.text!=='Gmail bağlantısını nasıl açarım?'||delivered.runId!==run.id)throw Error('Chat routed incorrectly');if(errors.length)throw Error(errors.join('\n'));console.log('BACKGROUND_UI_PASS',data);
+const data=await mkdtemp(path.join(tmpdir(),'jobloop-history-ui-')),core=new WorkspaceDatabase(path.join(data,'jobloop.sqlite')),db=new AutomationStore(core);
+const sourceUrl='https://listings.test/search',workspace=db.create('custom',{title:'Berlin iPhone takibi',sources:[sourceUrl]}),other=db.create('custom',{title:'Diğer çalışma alanı'});
+db.saveSource(workspace.id,sourceUrl,{name:'Berlin ilanları'});
+db.putRun({id:'history-fixture',automationId:workspace.id,kind:'run',sourceUrl,status:'completed',startedAt:Date.now()-60000,finishedAt:Date.now(),summary:'Berlin ilanları kontrol edildi.'});
+for(let n=0;n<3;n++)db.putResult({automationId:workspace.id,key:`listing-${n}`,url:`https://listings.test/${n}`,title:`İlan ${n}`,summary:'Yeni ilan',status:'found',trial:false,runId:'history-fixture',createdAt:Date.now(),updatedAt:Date.now(),cells:{}});
+db.putRun({id:'empty-fixture',automationId:workspace.id,kind:'run',sourceUrl,status:'completed',startedAt:Date.now(),finishedAt:Date.now(),summary:'Yeni ilan yok.'});
+db.putRun({id:'record-fixture',automationId:workspace.id,kind:'run',sourceUrl,recordId:db.results(workspace.id)[0].id,recordOperation:'score',status:'completed',startedAt:Date.now(),finishedAt:Date.now(),summary:'İlan puanlandı.'});
+// Old enabled tasks must remain inert after the Gmail feature is removed.
+core.db.exec('CREATE TABLE background_tasks(candidate_id TEXT PRIMARY KEY REFERENCES workspaces(id),data TEXT NOT NULL)');
+core.db.prepare('INSERT INTO background_tasks VALUES(?,?)').run(workspace.id,JSON.stringify({enabled:true,intervalMinutes:1,nextRunAt:0}));core.close();
+const app=await electron.launch({executablePath:process.env.JOBLOOP_ELECTRON_BINARY||require('electron'),args:[process.cwd()],env:{...process.env,JOBLOOP_DATA_DIR:data}});
+let page;const errors=[];
+try{
+ page=await app.firstWindow();page.setDefaultTimeout(20000);page.on('pageerror',e=>errors.push(e.message));
+ await page.waitForFunction(id=>[...document.querySelector('#candidates').options].some(option=>option.value===id),workspace.id);
+ await page.locator('#candidates').selectOption(workspace.id);await page.locator('[data-view=background]').click();
+ const history=page.locator('[data-automation-pane=background]');await history.waitFor({state:'visible'});
+ const found=history.locator('[data-run-id="history-fixture"]');await found.waitFor({state:'visible'});
+ assert.deepEqual(await history.locator('h2').allTextContents(),['Çalışma geçmişi']);
+ assert.equal(await history.locator('.run-row').count(),3);assert.ok((await history.textContent()).includes('Berlin ilanları kontrol edildi.'));
+ assert.equal(await found.locator('.run-found').textContent(),'Bu turda 3 yeni kayıt');assert.equal(await found.locator('.run-source').textContent(),'Berlin ilanları');
+ assert.equal(await history.locator('[data-run-id="empty-fixture"] .run-found').textContent(),'Bu turda 0 yeni kayıt');
+ assert.equal(await history.locator('[data-run-id="record-fixture"] .run-found').count(),0);
+ assert.equal(await history.locator('button,form,textarea').count(),0);
+ assert.equal(await page.locator('#background,#background-status,#background-chat,#background-signals,#background-badge').count(),0);
+ assert.deepEqual(await page.evaluate(()=>Object.keys(window.jobloop).filter(name=>/background|MailSignal/i.test(name))),[]);
+ const configuration=await page.evaluate(id=>window.jobloop.configurationCatalog(id),workspace.id);
+ assert.ok(!configuration.instructions.some(part=>/background|gmail-sync/i.test(part.id) || /gmail-sync/.test(part.text??'')));
+ const handlers=await app.evaluate(({ipcMain})=>[...ipcMain._invokeHandlers.keys()].filter(name=>/^background-|mail-signal/.test(name)));assert.deepEqual(handlers,[]);
+ await page.screenshot({path:path.join(data,'history.png'),fullPage:true});
+ await page.locator('#candidates').selectOption(other.id);await page.locator('[data-view=background]').click();
+ await history.getByText('Henüz çalışma yok.',{exact:true}).waitFor();assert.equal(await history.locator('.run-row').count(),0);
+ await page.locator('#candidates').selectOption(workspace.id);await page.locator('[data-view=background]').click();await page.reload();
+ await history.waitFor({state:'visible'});await history.getByText('Berlin ilanları kontrol edildi.',{exact:true}).waitFor();
+ const sqlite=new DatabaseSync(path.join(data,'jobloop.sqlite'),{readOnly:true});try{
+  const tables=sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row=>row.name);
+  assert.ok(!tables.includes('background_runs'));assert.ok(!tables.includes('mail_signals'));
+  assert.equal(sqlite.prepare('SELECT count(*) AS n FROM automation_runs').get().n,3);
+ }finally{sqlite.close();}
+ assert.deepEqual(errors,[]);console.log('BACKGROUND_HISTORY_UI_PASS',data);
+}catch(error){
+ if(page){await page.screenshot({path:path.join(data,'failure.png'),fullPage:true}).catch(()=>{});console.error('UI_ERRORS',errors,'PAGE',await page.locator('body').innerText().catch(()=>''));}
+ console.error('ARTIFACTS',data);throw error;
 }finally{await app.close();}

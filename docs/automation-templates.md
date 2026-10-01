@@ -140,8 +140,8 @@ The worker explicitly approves its named app tools for the provider session, so
 reading context, saving a draft and reporting a result do not require repeated
 terminal approvals. The browser action and budget gates still run on every call;
 other provider tools keep their configured permissions.
-App-created automation directories use the same per-launch Codex folder-trust
-setting as background tasks. This avoids a hidden folder-trust prompt without
+App-created automation directories set Codex folder trust for each launch.
+This avoids a hidden folder-trust prompt without
 changing provider permission modes or the user's global trust configuration.
 
 A successful trial saves learned methods with evidence and explicit unknowns.
@@ -163,8 +163,16 @@ An explicit goal-completed report ends scheduling.
 ## Reusable templates
 
 **Template olarak kaydet** opens a review dialog for a title, description and workflow.
+
+Templates may define `defaultSources`: named starting URLs with scan intervals,
+enabled flags and configured source integrations. The shared workspace creation
+flow copies these presets once. Explicit source lists (including an empty list)
+take precedence; editing or removing sources never restores the presets. The job
+search template supplies 10 enabled sources and four disabled Denmark integrations.
+Template export/import preserves these presets separately from private workspace
+source lists.
 The template contains question definitions, workflow steps and table columns; it starts each new
-automation with empty answers and source lists. The user reviews workflow text for
+automation with empty answers and its declared starting sources. The user reviews workflow text for
 personal details before sharing it. Template export/import uses a bounded, validated
 `loop-template` JSON document, not executable code. Imported and saved templates
 default to observation and require setup review. Each source is automatically
@@ -185,7 +193,7 @@ Example templates can be imported from **Template’ler**:
 - `automation-store.mjs`: templates, instances, conversations, results, reservations,
   run state, review revisions and trial evidence in SQLite.
 - `workspace-scheduler.mjs`: one application scheduler for all template policies.
-- `task-runs.mjs`: bounded task lifecycle shared by web templates and background skills.
+- `task-runs.mjs`: bounded task lifecycle for web templates.
 - `web-template.mjs`: interview, trial and scheduled web task policy.
 - `agent-sessions.mjs`: shared provider processes, terminals, resume and context tracking.
 - `workspace-store.mjs`: common workspace identity, settings, conversations and table schema.
@@ -237,3 +245,34 @@ a single verified submission and duplicate prevention.
 ## Template sözleşmesi ve ortak kuyruk
 
 Sürüm 2 tanımları soru türlerini, kayıt durumlarını, sınıflandırma butonlarını ve bağımlı işlem adımlarını içerir. Bütün alanlarda 1–8 worker kullanılabilir. Kayıtlar `workspace_records`, görevler `workspace_tasks`, worker’lar `workspace_workers` içinde tutulur. [Mimari ve uzantı sınırları](workspace-architecture.md), [kodsuz eklenen araba template’i](examples/car-search.loop-template.json).
+
+## İlan puanlama
+
+İş arama kurulumu **Puanlama kriterleri** alanını içerir. Agent, CV ve tercihlere
+göre kriterleri, toplamı %100 olan ağırlıkları ve varsa başvuru alt sınırını önerir;
+kullanıcı bunları kurulum kartında kontrol eder. Kriterler profilden değiştirilebilir. **Agent ile kaynak bul** üzerinden açılan
+sohbette de “Puanlama kriterlerimi belirle / güncelle” diyebilirsin; agent değişikliği
+profil taslağına yazar, kurulum kartını kaydedince uygulanır.
+
+İlanı bulan agent, yeni kaydı eklemeden önce aynı kriterlerle değerlendirir. Puan,
+gerekçe, eşleşmeler, eksikler, belirsizlikler ve gözlenen ilan kanıtı kayıtla birlikte
+saklanır. Değerlendirilemeyen ilanlarda sayı yerine neden gösterilir. Araştırma ve
+deneme örnekleri puanlanmaz.
+
+Kayıt menüsündeki **Puanla / Yeniden puanla**, seçilen ilanı mevcut worker kuyruğuna
+ekler. Puanlama başvuru taslağını veya onayını değiştirmez. Puanın üzerine tıklayarak
+gerekçeyi ve kullanılan kriterleri açabilirsin. Profil değişirse eski değerlendirme
+işaretlenir; yeniden puanlama kullanıcı isteğiyle başlar. Eski çalışma alanlarında
+puanlama kriterleri yoksa önce profilde belirlenmelidir.
+
+Puanlama, hazırlama, uygulama ve doğrulama görevlerinde aynı işlem aynı hatayla
+**3 kez** başarısız olursa uygulama ilgili agent oturumunu kapatır. Hata hem kayıtta
+hem müdahale uyarısında gösterilir; diğer worker'lar çalışmaya devam eder. Araç
+parametrelerinin doğrulama hataları da sayılır. Araya başka araç çağrıları girmesi
+veya gerekçenin değiştirilmesi sayacı sıfırlamaz; yalnızca ilgili işlemin başarılı
+olması sıfırlar. Tarayıcı işlemleri sayfa ve eyleme göre ayrılır. Sayaç görevle
+saklanır, oturumun tekrar açılmasıyla kaybolmaz. Kullanıcı **Tekrar dene** ile yeni
+görev başlatabilir. Sonucu belirsiz gönderimlerde önce doğrulama gerekir.
+
+Kontroller: `node --test tests/record-scoring.test.mjs tests/record-tool-guard.test.mjs` ve
+`pnpm build && node scripts/smoke-record-scoring.mjs`.

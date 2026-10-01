@@ -1,17 +1,18 @@
+import {AutomationStore} from '../app/automation-store.mjs';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {mkdtemp,mkdir,writeFile,stat,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 
 const require=createRequire(import.meta.url);
 const {_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const data=await mkdtemp(path.join(os.tmpdir(),'jobloop-deletion-'));
-const store=new Store(path.join(data,'jobloop.sqlite'));
-const keeper=store.saveProfile({name:'Keep me',preferences:'Remote'});store.close();
+const store=new WorkspaceDatabase(path.join(data,'jobloop.sqlite'));
+const keeper=new AutomationStore(store).create('job-search',{title:'Keep me',goal:'Remote'});store.close();
 const app=await electron.launch({executablePath:require('electron'),args:[root],env:{...process.env,JOBLOOP_DATA_DIR:data}});
 try{
  const page=await app.firstWindow(),errors=[];page.on('pageerror',error=>errors.push(error.message));
@@ -37,7 +38,7 @@ try{
   const workspace=await page.evaluate(()=>window.jobloop.workspaceCreate('custom',{title:'Delete this workspace'}));
   const directory=path.join(data,'automations','workspaces',workspace.id);
   await mkdir(directory,{recursive:true});await writeFile(path.join(directory,'note.txt'),'Temporary');
-  await page.reload();await page.locator('#candidates').selectOption('automation:'+workspace.id);
+  await page.reload();await page.locator('#candidates').selectOption(workspace.id);
   await page.waitForFunction(()=>document.querySelector('#heading').textContent==='Delete this workspace');
   await page.locator('[data-view=profile]').click();
   page.once('dialog',dialog=>dialog.dismiss());await page.locator(button).click();
@@ -68,7 +69,7 @@ try{
   // Flush the late renderer promise before checking the final message.
   await page.evaluate(()=>new Promise(resolve=>setTimeout(resolve,100)));
   assert.match(await page.locator('#notice').textContent(),/çalışma alanı silindi\./);
-  await page.waitForFunction(id=>![...document.querySelector('#candidates').options].some(o=>o.value==='automation:'+id),workspace.id);
+  await page.waitForFunction(id=>![...document.querySelector('#candidates').options].some(o=>o.value===id),workspace.id);
   assert.equal(await stat(directory).then(()=>true,()=>false),false);
   await page.reload();await page.waitForFunction(id=>document.querySelector('#candidates').value===id,keeper.id);
   assert.equal((await page.evaluate(()=>window.jobloop.workspaces())).some(w=>w.id===workspace.id),false);

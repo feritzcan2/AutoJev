@@ -4,6 +4,7 @@ import {mkdtemp,writeFile,appendFile,mkdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {transcriptMessage,TranscriptReader,claudeProjectDirectory} from '../app/agent-transcript.mjs';
+import {DatabaseSync} from 'node:sqlite';
 
 test('Claude assistant and user text records become chat messages; tools and sidechains do not',()=>{
  const id='11111111-1111-1111-1111-111111111111';
@@ -40,5 +41,24 @@ test('reader tails the transcript incrementally, verifies the workspace, and kee
  const elsewhere=path.join(root,'elsewhere'),otherDir=path.join(root,'projects',claudeProjectDirectory(elsewhere));await mkdir(otherDir,{recursive:true});
  await writeFile(path.join(otherDir,`${id}.jsonl`),line('9','yabancı'));
  const other=new TranscriptReader({provider:'claude',nativeId:id,cwd:elsewhere,claudeRoot:path.join(root,'projects')});
+ assert.deepEqual(await other.read(),[]);
+});
+
+test('OpenCode live text updates in place, excludes reasoning and verifies the exact workspace',async t=>{
+ const root=await mkdtemp(path.join(tmpdir(),'opencode-transcript-')),file=path.join(root,'opencode.db'),id='ses_12345678901234567890';
+ const db=new DatabaseSync(file);t.after(()=>db.close());
+ db.exec('CREATE TABLE session(id TEXT,directory TEXT); CREATE TABLE message(id TEXT,session_id TEXT,time_created INTEGER,data TEXT); CREATE TABLE part(id TEXT,message_id TEXT,session_id TEXT,time_created INTEGER,data TEXT);');
+ db.prepare('INSERT INTO session VALUES(?,?)').run(id,root);
+ db.prepare('INSERT INTO message VALUES(?,?,?,?)').run('m',id,1000,JSON.stringify({role:'assistant'}));
+ const part=db.prepare('INSERT INTO part VALUES(?,?,?,?,?)');
+ part.run('text','m',id,1000,JSON.stringify({type:'text',text:'İlk cümle'}));
+ part.run('reasoning','m',id,1001,JSON.stringify({type:'reasoning',text:'PRIVATE REASONING'}));
+ part.run('tool','m',id,1002,JSON.stringify({type:'tool',tool:'jobloop_get_workspace_records',state:{status:'running',output:'PRIVATE OUTPUT'}}));
+ const reader=new TranscriptReader({provider:'opencode',nativeId:id,cwd:root,opencodeFile:file});
+ assert.deepEqual((await reader.read()).map(m=>m.text),['İlk cümle']);assert.equal(reader.activity.tool,'jobloop_get_workspace_records');
+ db.prepare('UPDATE part SET data=? WHERE id=?').run(JSON.stringify({type:'text',text:'İlk cümle. Devamı geldi.'}),'text');
+ assert.deepEqual((await reader.read()).map(m=>m.text),['İlk cümle. Devamı geldi.']);
+ assert.ok(!JSON.stringify(reader.messages).includes('PRIVATE'));assert.ok(!JSON.stringify(reader.activity).includes('PRIVATE'));
+ const other=new TranscriptReader({provider:'opencode',nativeId:id,cwd:path.join(root,'other'),opencodeFile:file});
  assert.deepEqual(await other.read(),[]);
 });

@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {WebTasks} from '../app/web-template.mjs';
 import {automationAttention} from '../app/automation-attention.mjs';
 const source='https://homes.example/list',other='https://other.example/list',twoHours=7200000;
 function fixture(t){
- let now=Date.now();const clock=()=>now,store=new Store(':memory:'),db=new AutomationStore(store,{now:clock});
+ let now=Date.now();const clock=()=>now,store=new WorkspaceDatabase(':memory:'),db=new AutomationStore(store,{now:clock});
  const a=db.create('housing',{goal:'Find homes',criteria:{location:'Berlin',budget:'2000',requirements:'2 rooms'},sources:[source,other]});db.review(a.id);
  const trial=db.begin(a.id,'trial');for(const url of [source,other])db.observe(a.id,trial.id,url,'Listings');db.finish(a.id,trial.id,'completed','Ready');db.enable(a.id);
  db.put({...db.get(a.id),sourceState:{[source]:{blocked:true,lastStatus:'blocked',lastResult:'CAPTCHA',nextRunAt:null},[other]:{nextRunAt:now+10*twoHours}}});
@@ -30,14 +30,14 @@ test('source retry waits two hours, survives runtime restart and runs only once'
 });
 test('a persisted retry still executes after closing and reopening the database',async t=>{
  const directory=await mkdtemp(path.join(tmpdir(),'loop-retry-')),file=path.join(directory,'db.sqlite');
- let now=Date.now(),store=new Store(file),db=new AutomationStore(store,{now:()=>now}),runtime;
+ let now=Date.now(),store=new WorkspaceDatabase(file),db=new AutomationStore(store,{now:()=>now}),runtime;
  t.after(async()=>{await runtime?.close();store.close();await rm(directory,{recursive:true,force:true});});
  const a=db.create('housing',{goal:'Find homes',criteria:{location:'Berlin',budget:'2000',requirements:'2 rooms'},sources:[source]});db.review(a.id);
  const trial=db.begin(a.id,'trial');db.observe(a.id,trial.id,source,'Listings');db.finish(a.id,trial.id,'completed','Ready');
  db.put({...db.get(a.id),status:'paused',sourceState:{[source]:{blocked:true,lastResult:'CAPTCHA'}}});
  const launches=[],options={now:()=>now,launch:async run=>{launches.push(run);return {close:async()=>{}};}};
  runtime=new WebTasks(db,options);const {at}=runtime.retryLater(a.id,source);await runtime.close();store.close();
- store=new Store(file);db=new AutomationStore(store,{now:()=>now});runtime=new WebTasks(db,options);
+ store=new WorkspaceDatabase(file);db=new AutomationStore(store,{now:()=>now});runtime=new WebTasks(db,options);
  assert.equal(db.get(a.id).retryPlan[source].at,at);now=at+1000;await runtime.tick();await settle();
  assert.equal(launches.length,1);assert.equal(launches[0].sourceUrl,source);assert.equal(db.get(a.id).retryPlan[source],undefined);
 });

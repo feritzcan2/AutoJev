@@ -92,7 +92,7 @@ export function recoverUnreportedSources(db,now){
 
 export function unreportedInterviewRun(db,id,runId){
  const run=db.run(runId);if(run.kind!=='interview')return null;
- const pending=(db.get(id).questions??[]).filter(q=>q.answer==null&&q.createdAt>=run.startedAt);
+ const pending=(db.get(id).questions??[]).filter(q=>q.answer==null&&q.createdAt>=run.startedAt&&(q.runId?q.runId===runId:!q.recordId&&!q.sourceUrl));
  if(!pending.length)return null;
  return {status:'completed',summary:'Kurulum soruları kaydedildi; form yanıtların bekleniyor.'};
 }

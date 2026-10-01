@@ -1,9 +1,9 @@
 import {createHash} from 'node:crypto';
 import {recordOperationState} from './record-operations.mjs';
-// Compatibility projection for mail and Telegram transports. All data and actions
+// Compatibility projection for Telegram transports. All data and actions
 // come from the shared automation runtime; there is no candidate execution path.
 export class WorkspaceSupport {
- constructor(automation,runtime){this.automation=automation;this.runtime=runtime;this.db=automation.db;this.workspaces=automation.store.workspaces;this.generic=true;
+ constructor(automation,runtime){this.automation=automation;this.runtime=runtime;this.db=automation.db;this.workspaces=automation.store.workspaces;
   this.db.exec('CREATE TABLE IF NOT EXISTS workspace_events(seq INTEGER PRIMARY KEY,workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,kind TEXT NOT NULL,data TEXT NOT NULL,at INTEGER NOT NULL)');
   this.workerState={tasks:id=>this.workspaces.tasks.list(id,{states:['pending','running','reported','paused']}).map(t=>({workerId:t.workerId,task:{id:t.id,jobId:t.recordId,kind:t.recordOperation??t.operation,state:t.state}}))};
  }
@@ -20,8 +20,6 @@ export class WorkspaceSupport {
   return {title:definition.title,status:label(item.status),completed:label('completed'),heading:this.workspaces.table(id).columns.map(column=>({label:column.label,value:record.fields[column.key]})).filter(field=>field.value!==undefined&&field.value!==''),summary:item.summary};
  }
  sources(id){return this.automation.sources(id).map(s=>({...s,applyMode:s.mode==='observe'?'find_only':s.mode}));}
- mailContract(id){return this.workspaces.definition(id).mail;}
- mailRecords(id){const definition=this.workspaces.definition(id);return this.automation.results(id,{all:true}).filter(item=>!item.trial).map(item=>this.workspaces.records.project(id,item,definition));}
  campaign(id){const a=this.automation.get(id);return {status:a.status==='enabled'?'running':a.status,task:this.workerState.tasks(id)[0]?.task};}
  questions(id){return (this.automation.get(id).questions??[]).map(q=>({...q,question:q.text,jobId:q.recordId,createdAt:q.createdAt}));}
  queueState(id,item){

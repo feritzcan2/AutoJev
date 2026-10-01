@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BrowserSnapshot,BROWSER_RESPONSE_BYTES,browserSnapshotTools} from '../app/browser-snapshot.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
-import {startMcp,validate} from '../app/mcp.mjs';
+import {validate} from '../app/tool-schema.mjs';
+import {startTestServer} from './helpers/tool-server.mjs';
 import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -62,7 +63,7 @@ test('small structured Jev replies remain intact; cache IDs and input bounds are
 });
 
 function workflowFixture(t){
- const store=new Store(':memory:');t.after(()=>store.close());const db=new AutomationStore(store);
+ const store=new WorkspaceDatabase(':memory:');t.after(()=>store.close());const db=new AutomationStore(store);
  const a=db.create('custom',{goal:'Find actual listings',sources:[url],criteria:{outcome:'Listings',rules:'Match facts',completion:'One scan'}});
  const run=db.begin(a.id,'interview'),controller=new AbortController();let calls=0,fail=false;
  const browser={async call(){calls++;if(fail)throw Error('Navigation failed');return {content:[{type:'text',text:largePage}]};}};
@@ -71,7 +72,7 @@ function workflowFixture(t){
 }
 
 test('MCP returns small readable page parts and searches without spending browser steps or minting proof',async t=>{
- const f=workflowFixture(t),mcp=await startMcp(f.store,()=>{},async()=>({}),null,null,f.flow);t.after(()=>mcp.close());
+ const f=workflowFixture(t),mcp=await startTestServer(f.store,f.flow);t.after(()=>mcp.close());
  const token=mcp.grant(f.a.id,f.run.id);
  const rpc=async(name,args={})=>{
   const response=await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}})});

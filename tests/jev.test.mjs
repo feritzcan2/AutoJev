@@ -5,11 +5,11 @@ import path from 'node:path';
 import os from 'node:os';
 import {actionSpace,chooseJev,jevConfig,validateChoice} from '../app/jev-policy.mjs';
 import {validateJevArgs} from '../app/jev-browser.mjs';
-import {browserProfileInstruction} from '../app/prompts.mjs';
-import {Store} from '../app/store.mjs';
+import {AutomationStore} from '../app/automation-store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {seedJevDemo,startJevFixture} from '../scripts/jev-demo.mjs';
 import {compactElements,presentObservation} from '../app/jev-navigation.mjs';
-import {AGENTS_MD} from '../app/prompts.mjs';
+import {AUTOMATION_INSTRUCTIONS} from '../app/automation-agent-profiles.mjs';
 const page={url:'https://fixture.example',title:'Jobs',text:'Synthetic jobs',actions:[
   {id:'e1',node:1,kind:'fill',role:'textbox',label:'Keywords',value:''},
   {id:'e2',node:1,kind:'click',role:'textbox',label:'Open Keywords',value:''},
@@ -67,17 +67,13 @@ test('settings load only Jev config and do not mutate the process environment',a
     assert.deepEqual(await jevConfig({TYPESAFE_API_KEY:'override'},file),{apiKey:'override',model:'jev-latest'});
   }finally{await rm(dir,{recursive:true,force:true});}
 });
-test('Jev selection persists and instructs the existing agent to supply text',()=>{
-  const store=new Store(':memory:');try{
-    const profile=store.saveProfile({name:'Test',preferences:'Remote',browserMode:'jev'});
-    assert.equal(store.profile(profile.id).browserMode,'jev');assert.match(browserProfileInstruction(profile),/YOU remain the Jobloop agent/);assert.match(browserProfileInstruction(profile),/No OpenRouter/);
-  }finally{store.close();}
-});
-test('demo seeds the real app with only a local synthetic source',async()=>{
+test('Jev selection persists in the shared workspace',()=>{
+ const core=new WorkspaceDatabase(':memory:');try{const db=new AutomationStore(core),a=db.create('job-search');db.save(a.id,{browserMode:'jev'});assert.equal(db.get(a.id).browserMode,'jev');}finally{core.close();}
+});test('demo seeds the real app with only a local synthetic source',async()=>{
   const fixture=await startJevFixture(),dir=await mkdtemp(path.join(os.tmpdir(),'jev-seed-'));
   try{
-    const {candidateId}=await seedJevDemo(dir,fixture.url),store=new Store(path.join(dir,'jobloop.sqlite'));
-    try{assert.equal(store.profile(candidateId).browserMode,'jev');const enabled=store.sources(candidateId).filter(s=>s.enabled);assert.equal(enabled.length,1);assert.equal(enabled[0].url,fixture.url);assert.equal(enabled[0].fallback,'none');}finally{store.close();}
+    const {candidateId}=await seedJevDemo(dir,fixture.url),store=new WorkspaceDatabase(path.join(dir,'jobloop.sqlite'));
+    try{const db=new AutomationStore(store);assert.equal(db.get(candidateId).browserMode,'jev');const enabled=db.sources(candidateId).filter(s=>s.enabled);assert.equal(enabled.length,1);assert.equal(enabled[0].url,fixture.url);assert.equal(enabled[0].fallback,'none');}finally{store.close();}
     assert.equal((await fetch(fixture.url)).status,200);assert.equal((await fetch(fixture.url.replace('/jobs','/.env.jev'))).status,404);
   }finally{await fixture.close();await rm(dir,{recursive:true,force:true});}
 });
@@ -107,13 +103,9 @@ test('compact observations preserve complete IDs while omitting repeated content
   const third=presentObservation(slot,{...value,elements:[]});assert.deepEqual(third.removedElements,['1']);
   assert.equal(presentObservation(slot,{...value,url:'https://other.example'}).observationMode,'full');
 });
-test('task instructions require one authoritative context check and direct navigation',()=>{
-  assert.match(AGENTS_MD,/one get_task_context|single get_task_context/);assert.doesNotMatch(AGENTS_MD,/status using get_campaign|completion using list_applications/);
-  const prompt=browserProfileInstruction({browserMode:'jev'});
-  for(const name of ['browser_jev_reveal','browser_jev_scroll','browser_jev_select_option','no_progress','observationMode=delta','removedControls','baseObservationId'])assert.ok(prompt.includes(name));
-  assert.doesNotMatch(prompt,/controls, scrollTargets and fillFields are always complete/);
+test('shared task instructions describe Jev navigation and current observations',()=>{
+ for(const name of ['browser_jev_scroll','browser_jev_options','no_progress'])assert.ok(AUTOMATION_INSTRUCTIONS.includes(name));
 });
-
 test('autocomplete requires observed control and exact answer, never accepts selectors or code',()=>{
  const args={tabId:'tab',controlId:'observed',text:'Berlin',option:'Berlin, DEU'};
  validateJevArgs('browser_jev_autocomplete',args);

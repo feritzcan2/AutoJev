@@ -1,12 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {AutomationContext,AUTOMATION_CONTEXT_BYTES} from '../app/automation-context.mjs';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
-import {startMcp} from '../app/mcp.mjs';
+import {startTestServer} from './helpers/tool-server.mjs';
 
 const size=value=>Buffer.byteLength(JSON.stringify(value));
+test('context pages use the byte budget without dropping Unicode or escaped text',()=>{
+ for(const prose of ['Ordinary saved instructions. ','Türkçe görev bağlamı. ','家😀\n"\\']){
+  const value={facts:prose.repeat(3000)},cache=new AutomationContext();let page=cache.capture(value),text='';
+  while(true){
+   const bytes=size(page);assert.ok(bytes<=AUTOMATION_CONTEXT_BYTES);
+   if(page.context.nextOffset!==null)assert.ok(bytes>=AUTOMATION_CONTEXT_BYTES-20,`underfilled response: ${bytes}`);
+   assert.ok(!/[\uD800-\uDBFF]$/.test(page.text));
+   text+=page.text;if(page.context.nextOffset===null)break;
+   page=cache.read({contextId:page.context.id,offset:page.context.nextOffset});
+  }
+  assert.deepEqual(JSON.parse(text),value);
+ }
+ const cache=new AutomationContext(),value={facts:'x'.repeat(23000)};
+ const first=cache.capture(value),second=cache.read({contextId:first.context.id,offset:first.context.nextOffset});
+ assert.equal(second.context.nextOffset,null,'a 23K context should need just one additional call');
+});
+
 test('large context preserves exact criteria, permission and recovery state in bounded fragments',()=>{
  const cache=new AutomationContext();
  const value={automation:{criteria:{location:'Berlin',requirements:'ö家😀\n"\\'.repeat(7000)},mode:'observe'},questions:[{answer:false}],scanProgress:{pendingUrls:['https://example.com/pending'],cursor:'saved'},assignedRecord:{status:'uncertain',approved:false}};
@@ -30,12 +47,12 @@ test('large context preserves exact criteria, permission and recovery state in b
 });
 
 test('automation context can be fully read through MCP without file or browser access',async t=>{
- const store=new Store(':memory:');t.after(()=>store.close());
+ const store=new WorkspaceDatabase(':memory:');t.after(()=>store.close());
  const db=new AutomationStore(store),a=db.create('housing',{title:'Berlin',goal:'Find homes',criteria:{location:'Berlin'},sources:['https://example.com/homes']});
  for(let n=0;n<3;n++)db.message(a.id,'user',`${n}: `+'Saved requirement. '.repeat(450));
  const run=db.begin(a.id,'interview'),controller=new AbortController();
  const flow=automationWorkflow({db,run,signal:controller.signal,browser:{call(){throw Error('Context must not open the browser');}},report:()=>{}});
- const server=await startMcp(store,()=>{},async()=>({}),null,null,flow);t.after(()=>server.close());const token=server.grant(a.id,run.id);
+ const server=await startTestServer(store,flow);t.after(()=>server.close());const token=server.grant(a.id,run.id);
  const call=async(name,args={})=>{
   const response=await fetch(server.endpoint,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}})});
   const result=(await response.json()).result;assert.ok(!result.isError,JSON.stringify(result));
@@ -56,7 +73,7 @@ test('automation context can be fully read through MCP without file or browser a
 
 test('task context excludes unrelated questions and history while keeping exact answers, limits and assigned proposal',async t=>{
  const {automationTaskContext}=await import('../app/automation-task-context.mjs');
- const store=new Store(':memory:');t.after(()=>store.close());const db=new AutomationStore(store),a=db.create('custom',{goal:'Find',sources:['https://example.test']});
+ const store=new WorkspaceDatabase(':memory:');t.after(()=>store.close());const db=new AutomationStore(store),a=db.create('custom',{goal:'Find',sources:['https://example.test']});
  const source=db.get(a.id).sources[0];
  const own={id:'mine',sourceUrl:source,status:'prepared',proposal:{answers:{consent:false},document:'documents/cv.pdf'},digest:'exact',approvedDigest:'exact'};
  db.putResult({...own,automationId:a.id,key:'mine',url:source+'mine',title:'Mine',createdAt:1,updatedAt:1});

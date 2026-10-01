@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {WebTasks} from '../app/web-template.mjs';
 import {unreportedSourceRun,retryTechnicalSource} from '../app/automation-recovery.mjs';
@@ -8,7 +8,7 @@ import {unreportedSourceRun,retryTechnicalSource} from '../app/automation-recove
 const source='https://listings.test/results',second=source+'?page=49',settle=()=>new Promise(r=>setImmediate(r));
 function fixture(t){
  t.mock.timers.enable({apis:['setTimeout','Date'],now:Date.parse('2026-09-30T12:00:00Z')});
- const store=new Store(':memory:'),db=new AutomationStore(store),a=db.create('custom',{goal:'Find every match',criteria:Object.fromEntries(db.template('custom').fields.filter(f=>f.required).map(f=>[f.id,'Test criteria'])),sources:[source]});
+ const store=new WorkspaceDatabase(':memory:'),db=new AutomationStore(store),a=db.create('custom',{goal:'Find every match',criteria:Object.fromEntries(db.template('custom').fields.filter(f=>f.required).map(f=>[f.id,'Test criteria'])),sources:[source]});
  db.review(a.id);const trial=db.begin(a.id,'trial');db.observe(a.id,trial.id,source,'Listings');db.finish(a.id,trial.id,'completed','Read');
  const launches=[];let state='Working',busy=false,close=async()=>{};
  const options={launch:async run=>{launches.push(run);return {close:()=>close(),state:()=>state,isBusy:()=>busy};}};

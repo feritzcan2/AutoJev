@@ -1,4 +1,4 @@
-export const DEFAULT_COMPACT_PERCENT=80;
+export const DEFAULT_COMPACT_PERCENT=0;
 export function contextCompactPercent(value=DEFAULT_COMPACT_PERCENT){
  if(!Number.isInteger(value)||value<0||value>100)throw Error('Compaction eşiği 0 (kapalı) veya %1–100 olmalı.');
  return value;

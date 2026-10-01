@@ -1,13 +1,15 @@
 import {automationTrialReady,automationReady} from './automation-trial.mjs';
 // Durable source failures remain visible even while other workers are running.
 import {providerLimitAttention} from './provider-limit.mjs';
+import {isConversation} from './workspace-conversation.mjs';
 export function automationAttention(snapshot){
  const {automation={},sources=[],runs=[],activeRuns=[]}=snapshot??{};
  const issues=[];
  for(const question of automation.questions??[])if(question.answer==null){
-  const matches=runs.filter(r=>(r.recordId??null)===(question.recordId??null)&&r.startedAt<=question.createdAt&&(!r.finishedAt||r.finishedAt>=question.createdAt)),run=matches.length===1?matches[0]:null;
+  const matches=runs.filter(r=>(r.recordId??null)===(question.recordId??null)&&r.startedAt<=question.createdAt&&(!r.finishedAt||r.finishedAt>=question.createdAt)),run=runs.find(r=>r.id===question.runId)??(matches.length===1?matches[0]:null);
   const context=question.browserContext??run?.resumeContext??{};
-  issues.push({id:question.id,kind:'question',name:'Yanıt bekleniyor',message:question.text,recordId:question.recordId,canDismissRecord:question.canDismissRecord,fields:question.fields,...context});
+  const conversation=!question.recordId&&(question.conversation===true||run?.kind==='interview'||!question.sourceUrl&&!context.sourceUrl);
+  issues.push({id:question.id,kind:'question',name:'Yanıt bekleniyor',message:question.text,recordId:question.recordId,canDismissRecord:question.canDismissRecord,fields:question.fields,...context,conversation});
  }
  const limitIssue=(run,worker,limit)=>{
   const attention=providerLimitAttention(limit),source=sources.find(s=>s.url===run.sourceUrl);
@@ -16,6 +18,11 @@ export function automationAttention(snapshot){
  for(const active of activeRuns){
   const run=runs.find(r=>r.id===active.id)??active,worker=snapshot.workers?.find(w=>w.id===(run.workerId??'main')),limit=worker?.active?.usageLimit??run.usageLimit;
   if(run.status==='running'&&limit)issues.push(limitIssue(run,worker,limit));
+ }
+ for(const item of snapshot?.results??[]){
+  const last=item.recordAction?.lastTask,failure=last?.toolFailure;
+  if(!failure||!['reported','blocked','failed','paused'].includes(last.state)||['completed','dismissed'].includes(item.status))continue;
+  issues.push({id:'tool-failure:'+failure.runId,kind:'repeated_tool_error',runId:failure.runId,recordId:item.id,name:item.title,message:last.summary,retry:null});
  }
  for(const source of sources){
   if(!source.enabled||!source.blocked||source.scanning)continue;
@@ -30,6 +37,11 @@ export function automationAttention(snapshot){
    message:source.lastResult??run?.summary??'Bu kaynakta devam etmek için müdahale gerekiyor.',
    url:saved.url??run?.observations?.at(-1)?.url??source.scan?.evidenceUrl??source.url,tabId:saved.tabId,
    retry:!uncertain&&automationReady(automation)?'source':null});
+ }
+ const conversation=runs.find(isConversation);
+ if(conversation&&['blocked','failed','timeout'].includes(conversation.status)&&!activeRuns.some(isConversation)&&!issues.some(issue=>issue.runId===conversation.id)){
+  if(conversation.usageLimit)issues.push(limitIssue(conversation,snapshot.workers?.find(w=>w.id===conversation.workerId),{...conversation.usageLimit,automaticResume:false}));
+  else issues.push({id:conversation.id,kind:'conversation',name:'Sohbet',message:conversation.summary,workerId:conversation.workerId,retry:null});
  }
  const latest=runs[0];
  if(!issues.length&&!activeRuns.length&&latest&&!(latest.kind==='trial'&&automation.trial?.status==='skipped'&&automationTrialReady(automation))&&['blocked','failed','timeout'].includes(latest.status)&&!latest.sourceUrl&&latest.revision===automation.revision){

@@ -18,7 +18,7 @@ function fixture(t,{mode='prepare',workers=1,templateId='job-search'}={}){
  t.after(async()=>{await runtime.close();store.close();});
  const finish=async(run,status='completed')=>{runtime.report(a.id,run.id,status,'Observed outcome');await runtime.finish(a.id,status,'Observed outcome',run.workerId);};
  const flow=run=>automationWorkflow({db,run,signal:{aborted:false},browser:{},report:(...args)=>runtime.report(...args)});
- const record=(run,url,proposal)=>db.record(a.id,run.id,{url,title:'Backend',summary:'Verified facts',...(proposal?{proposal}:{})});
+ const record=(run,url,proposal)=>{db.observe(a.id,run.id,url,'Verified facts');return db.record(a.id,run.id,{url,title:'Backend',summary:'Verified facts',...(proposal?{proposal}:{}),...(template.recordOperations?.score?{assessment:{status:'scored',score:80,summary:'Fits criteria',evidenceUrl:url,evidence:'Verified facts',strengths:['Backend'],gaps:[],uncertainties:[]}}:{})});};
  return {store,db,id:a.id,runtime,launches,closed,finish,flow,record,options};
 }
 

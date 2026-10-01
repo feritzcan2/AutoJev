@@ -1,6 +1,181 @@
 use super::*;
 
 #[test]
+fn opencode_v2_uses_private_server_configuration_for_every_model_and_permission() {
+    let directory = std::env::temp_dir().join(format!(
+        "termloop-opencode-v2-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    termloop_platform::test_support::write_cli_fixture(
+        &directory,
+        "opencode",
+        "#!/bin/sh\nif [ \"$1\" = --help ]; then printf '  --standalone  Private server\\n  --auto  Auto approve\\n  --prompt <text>  Prompt\\n'; exit 0; fi\nexit 1\n",
+        "@echo off\r\nif \"%1\"==\"--help\" (echo   --standalone  Private server& echo   --auto  Auto approve& echo   --prompt ^<text^>  Prompt& exit /b 0)\r\nexit /b 1\r\n",
+    ).unwrap();
+    let template = PromptTemplate {
+        id: "opencode-v2-test",
+        version: 1,
+        authored_body: "Inspect the project",
+    };
+    let descriptor = termloop_agents::agent_descriptor("opencode").unwrap();
+    for model in descriptor.models {
+        for permission in descriptor.permissions {
+            let mut request = LaunchRequest::interactive("opencode", "/tmp/example", &template);
+            request.executable_directory = Some(&directory);
+            request.model = model;
+            request.permission = permission;
+            request.prompt = Some("--help\nTürkçe 'literal' $HOME");
+            request.mcp = Some(McpConnection {
+                endpoint: "http://127.0.0.1:1234/mcp", token: "test-private-token",
+                claude_config_path: "unused", server_name: "jobloop", instructions: None,
+            });
+            request.provider_instructions_source = Some(&template);
+            request.provider_instructions = Some("AutoJev fixture instructions");
+            request.approved_tools = &["ask_candidate"];
+            let payload = resolve(request).unwrap().into_payload();
+            assert!(
+                !payload
+                    .args()
+                    .iter()
+                    .any(|arg| arg == "--model" || arg == "--agent")
+            );
+            assert_eq!(
+                payload.args().iter().any(|arg| arg == "--auto"),
+                *permission == "bypassPermissions"
+            );
+            assert_eq!(
+                payload.args().last().unwrap(),
+                "--prompt=--help\nTürkçe 'literal' $HOME"
+            );
+            assert!(payload.initial_input_submission().is_none());
+            let has_config = true; // AutoJev always supplies its own MCP configuration.
+            assert_eq!(
+                payload.args().iter().any(|arg| arg == "--standalone"),
+                has_config
+            );
+            let config = payload
+                .environment
+                .entries()
+                .find(|(key, _)| *key == "OPENCODE_CONFIG_CONTENT");
+            assert_eq!(config.is_some(), has_config);
+            if let Some((_, config)) = config {
+                let config: serde_json::Value =
+                    serde_json::from_str(config.to_str().unwrap()).unwrap();
+                assert_eq!(
+                    config.get("model").and_then(|value| value.as_str()),
+                    (*model != "default").then_some(*model)
+                );
+                assert_eq!(
+                    config.get("default_agent").and_then(|value| value.as_str()),
+                    Some(if *permission == "plan" { "plan" } else { "build" })
+                );
+                assert!(config.get("permissions").is_none());
+                assert_eq!(config["mcp"]["jobloop"]["url"], "http://127.0.0.1:1234/mcp");
+                assert_eq!(config["permission"]["jobloop_ask_candidate"], "allow");
+                assert_eq!(config["agent"]["build"]["prompt"], "AutoJev fixture instructions");
+                assert_eq!(config["agent"]["plan"]["prompt"], "AutoJev fixture instructions");
+            }
+            let manifest = payload.inspectable_manifest();
+            assert_eq!(manifest.target.model, *model);
+            assert_eq!(manifest.target.permission, *permission);
+            assert_eq!(
+                manifest
+                    .environment
+                    .iter()
+                    .any(|entry| entry.key == "OPENCODE_CONFIG_CONTENT"
+                        && entry.source == "invocation"
+                        && entry.visibility == "redacted"),
+                has_config
+            );
+            assert_eq!(manifest.arguments.last().unwrap().visibility, "redacted");
+            assert!(!serde_json::to_string(manifest).unwrap().contains("test-private-token"));
+        }
+    }
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn opencode_initial_prompt_is_literal_and_never_replayed_through_the_terminal() {
+    let directory = std::env::temp_dir().join(format!(
+        "termloop-opencode-prompt-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    termloop_platform::test_support::write_cli_fixture(
+        &directory,
+        "opencode",
+        "#!/bin/sh\nexit 0\n",
+        "@echo off\r\nexit /b 0\r\n",
+    )
+    .unwrap();
+    let template = PromptTemplate {
+        id: "opencode-prompt-test",
+        version: 1,
+        authored_body: "Inspect the project",
+    };
+    for prompt in [
+        "Review this project",
+        "--help\nTürkçe 'quoted' \"text\" $HOME `literal`",
+    ] {
+        let mut request = LaunchRequest::interactive("opencode", "/tmp/example", &template);
+        request.executable_directory = Some(&directory);
+        request.model = "opencode-go/kimi-k2.7-code";
+        request.permission = "plan";
+        request.prompt = Some(prompt);
+        let payload = resolve(request).unwrap().into_payload();
+        assert!(
+            payload
+                .args()
+                .windows(2)
+                .any(|args| args == ["--model", "opencode-go/kimi-k2.7-code"])
+        );
+        assert!(
+            payload
+                .args()
+                .windows(2)
+                .any(|args| args == ["--agent", "plan"])
+        );
+        assert_eq!(
+            payload
+                .args()
+                .iter()
+                .filter(|arg| arg.starts_with("--prompt="))
+                .count(),
+            1
+        );
+        assert_eq!(
+            payload.args().last().unwrap(),
+            &format!("--prompt={prompt}")
+        );
+        assert!(payload.initial_input_submission().is_none());
+        let manifest = payload.inspectable_manifest();
+        assert_eq!(manifest.transport.kind, "providerPromptArgument");
+        assert_eq!(manifest.transport.delivered_content, prompt);
+        assert_eq!(manifest.transport.byte_length, prompt.len());
+        assert_eq!(manifest.provenance.delivered_digest, content_digest(prompt));
+        assert_eq!(manifest.content_parts[0].content, prompt);
+        assert_eq!(manifest.arguments.last().unwrap().visibility, "redacted");
+    }
+    let mut request = LaunchRequest::interactive("opencode", "/tmp/example", &template);
+    request.executable_directory = Some(&directory);
+    let payload = resolve(request).unwrap().into_payload();
+    assert!(!payload.args().iter().any(|arg| arg.starts_with("--prompt")));
+    assert_eq!(payload.inspectable_manifest().transport.kind, "none");
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+
+
+#[test]
 fn external_product_names_cannot_inject_provider_configuration() {
     let mut arguments = Vec::new();
     for name in ["", "app.tools", "app\nother", "app=untrusted", "app[0]"] {

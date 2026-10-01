@@ -6,7 +6,6 @@ import {createChromeProfileDialog} from './chrome-profile-dialog.js';
 import {workspaceSwitcher} from './workspace-switcher.js';
 import {workerTerminals} from './worker-terminals.js';
 import {activityPanels} from './activity-panels.js';
-import {backgroundPage} from './background.js';
 import {configPage} from './config.js';
 import {notificationsPage} from './notifications.js';
 import './style.css';
@@ -42,13 +41,12 @@ async function deleteWorkspace(owner=selectedWorkspace()){
  catch(error){notice(error.message);}finally{deletingWorkspace=null;}
 }
 $('delete-workspace').onclick=()=>deleteWorkspace();
-const backgroundUI=backgroundPage(api,{notice,getCatalog:()=>catalog});
 const notificationsUI=notificationsPage(api,{notice});
 const configUI=configPage(api,{notice,relativeTime,openNotifications:()=>switchView('notifications')});
 const automationUI=automationsPage(api,{notice,getCatalog:()=>catalog,navigate:switchView,onSnapshot:syncWorkspaceAgent,focusAgent:options=>terminals.focus(options),syncWorkspaceMenu:()=>workspaceMenu.sync(),refreshWorkspaces:refresh,deleteWorkspace,isDeleting:()=>Boolean(deletingWorkspace)});
 await document.fonts.ready;
 const terminalSection=document.querySelector('#agent .terminal-section');$('agent-settings').before(terminalSection);
-const terminals=workerTerminals(api,{container:terminalSection,notice,refresh,beforeAction:async(id,method,worker)=>{await settingsQueue;if(automationUI.dirty&&['startWorker','restartWorker'].includes(method)){switchView('profile');throw Error('Önce profil değişikliklerini kaydet.');}if(method==='startWorker'&&worker==='main'&&!(automationUI.data.progress.reviewed&&automationUI.data.progress.passed)){await automationUI.start();return false;}},sendMessage:async(id,text,worker)=>{await settingsQueue;return worker==='main'?automationUI.sendMessage(text):api.terminalMessage(id,text,worker);}});
+const terminals=workerTerminals(api,{container:terminalSection,conversationContainer:$('setup-agent-terminal'),notice,refresh,beforeAction:async(id,method,worker)=>{await settingsQueue;if(automationUI.dirty&&['startWorker','restartWorker'].includes(method)){switchView('profile');throw Error('Önce profil değişikliklerini kaydet.');}if(method==='startWorker'&&worker==='main'&&!(automationUI.data.progress.reviewed&&automationUI.data.progress.passed)){await automationUI.start();return false;}},sendMessage:async(id,text,worker)=>{await settingsQueue;return worker==='main'?automationUI.sendMessage(text):api.terminalMessage(id,text,worker);}});
 const instructionsUI=instructionsPanel(api,$('agent'));
 const activities=activityPanels($('now-panel'),{openLink:url=>api.openLink(url),notice});
 const chromeStatus=element('div','chrome-status');chromeStatus.setAttribute('role','status');chromeStatus.setAttribute('aria-live','polite');
@@ -60,14 +58,23 @@ chromeReconnect.onclick=attempt(()=>automationUI.reconnectBrowser());
 const sourcesNav=element('button');sourcesNav.dataset.view='sources';sourcesNav.innerHTML='<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Kaynaklar</span><span id="sources-nav-status" class="agent-nav-status sources-nav-status" data-tone="active" aria-hidden="true" hidden></span>';document.querySelector('nav button[data-view="agent"]').before(sourcesNav);
 function switchView(name,options={}){
  const global=['automations','templates'].includes(name),selected=automationUI.selected;
- document.querySelector('main>header>.actions').hidden=global||!selected;document.body.classList.toggle('automation-workspace',Boolean(selected)&&!global);
- for(const id of ['notifications','config','background','profile','board','agent','files'])if($(id))$(id).hidden=true;
+ document.querySelector('main>header>.actions').hidden=global||!selected||name==='setup-agent';document.body.classList.toggle('automation-workspace',Boolean(selected)&&!global);
+ for(const id of ['notifications','config','profile','board','agent','setup-agent','files'])if($(id))$(id).hidden=true;
  automationUI.element.hidden=false;
  if(global){$('heading').textContent='Yeni çalışma alanı';if(!options.detail)automationUI.show('templates').catch(error=>notice(error.message));}
- else if(selected){automationUI.renderShell();if(name==='config'){automationUI.element.hidden=true;$('config').hidden=false;configUI.select(selected);configUI.show();}else if(name==='notifications'){automationUI.element.hidden=true;$('notifications').hidden=false;notificationsUI.show(selected);}else if(name==='background'){automationUI.showPane('background');$('background').hidden=false;backgroundUI.select(selected);}else{automationUI.showPane(name);if(name==='agent')$('agent').hidden=false;}}
+ else if(selected){automationUI.renderShell();if(name==='config'){automationUI.element.hidden=true;$('config').hidden=false;configUI.select(selected);configUI.show();}else if(name==='notifications'){automationUI.element.hidden=true;$('notifications').hidden=false;notificationsUI.show(selected);}else{automationUI.showPane(name);if(['agent','setup-agent'].includes(name))$(name).hidden=false;}}
  localStorage.setItem('selected-view',name);document.querySelectorAll('aside nav button').forEach(button=>button.classList.toggle('selected',button.dataset.view===name));workspaceMenu.sync();
 }
-function settingsOptions(saved){const current=catalog.find(a=>a.id===$('provider').value);if(!current)return;$('agent-settings-form').elements.network.disabled=current.id!=='codex';for(const name of ['contextCompactPercent','contextRestartPercent'])$('agent-settings-form').elements[name].disabled=current.id==='opencode';for(const [key,list]of [['model',current.models],['permission',current.permissions],['reasoning',current.reasoning]]){$(key).replaceChildren(...list.map(value=>new Option(value,value)));$(key).value=list.includes(saved?.[key])?saved[key]:key==='permission'?defaultPermission(current.id):'default';}}
+function settingsOptions(saved){
+ const current=catalog.find(a=>a.id===$('provider').value);if(!current)return;
+ const fields=$('agent-settings-form').elements;fields.network.disabled=current.id!=='codex';
+ for(const [name,fallback]of [['contextCompactPercent',0],['contextRestartPercent',0]]){
+  const field=fields[name],value=saved?saved[name]??fallback:field.disabled?field.dataset.configuredValue:field.value;
+  // Display inactive thresholds as zero while preserving them for other providers.
+  field.dataset.configuredValue=value;field.disabled=current.id==='opencode';field.value=field.disabled?'0':value;
+ }
+ for(const [key,list]of [['model',current.models],['permission',current.permissions],['reasoning',current.reasoning]]){$(key).replaceChildren(...list.map(value=>new Option(value,value)));$(key).value=list.includes(saved?.[key])?saved[key]:key==='permission'?defaultPermission(current.id):'default';}
+}
 function chromeProfileOptions(selected=workspaceAgent?.workspace?.chromeProfile){
  const select=$('agent-settings-form').elements.chromeProfile;
  select.replaceChildren(new Option('Profil belirtme',''),...chromeProfiles.map(p=>new Option(`${p.name} — ${p.directory}`,p.directory)));
@@ -87,7 +94,7 @@ function fillAgentSettings(profile,id){
  const form=$('agent-settings-form'),modes=workspaceAgent?.workspace.id===id?workspaceAgent.capabilities.browserModes:['existing','separate','jev'];
  for(const option of form.elements.browserMode.options)option.disabled=!modes.includes(option.value);
  form.elements.browserMode.value=p.browserMode??'jev';chromeProfileOptions(p.chromeProfile);$('agent-settings').classList.toggle('is-off',!id);if(!id)$('agent-settings-status').textContent='Önce bir çalışma alanı seç';else if(changedOwner||$('agent-settings-status').textContent==='Önce bir çalışma alanı seç')$('agent-settings-status').textContent='Değişiklikleri Kaydet ile uygula';
- $('provider').value=p.agentSettings?.provider??'codex';settingsOptions(p.agentSettings);form.elements.network.value=p.agentSettings?.network==null?'inherit':String(p.agentSettings.network);form.elements.contextRestartPercent.value=p.agentSettings?.contextRestartPercent??0;form.elements.contextCompactPercent.value=p.agentSettings?.contextCompactPercent??80;
+ $('provider').value=p.agentSettings?.provider??'codex';settingsOptions(p.agentSettings??{});form.elements.network.value=p.agentSettings?.network==null?'inherit':String(p.agentSettings.network);
  agentSettingsBaseline=JSON.stringify(readAgentSettings());$('agent-settings-save').disabled=true;
 }
 function syncWorkspaceAgent(value){
@@ -97,7 +104,7 @@ function syncWorkspaceAgent(value){
  instructionsUI.select(id);terminals.update(id,next);activities.update(next,true);fillAgentSettings(next.workspace,id);renderContext(next);configUI.select(id);notificationsUI.select(id);
 }
 function renderContext(value){
- const usage=value?.active?.contextUsage,threshold=value?.workspace.agentSettings.contextRestartPercent??0,compactThreshold=value?.workspace.agentSettings.contextCompactPercent??80,compact=value?.active?.compaction;
+ const usage=value?.active?.contextUsage,threshold=value?.workspace.agentSettings.contextRestartPercent??0,compactThreshold=value?.workspace.agentSettings.contextCompactPercent??0,compact=value?.active?.compaction;
  $('context-compact-status').textContent=({sending:'/compact gönderiliyor…',submitted:'/compact gönderildi; sağlayıcıdan compaction bekleniyor.',running_command:'Sağlayıcı /compact komutunu işliyor…',verified:'Compaction tamamlandı.',compacting:'Context sıkıştırılıyor…',awaiting_usage:'Compaction turu bitti; yeni context ölçümü bekleniyor.',completed:'Context kullanımı eşik altına indi.',waiting:'Terminalin komut almaya hazır olması bekleniyor.',unconfirmed:'Compaction doğrulanamadı. '+(compact?.error??'')})[compact?.state]??(compactThreshold?`Otomatik compaction: %${compactThreshold}.`:'Otomatik compaction kapalı.');
  if(value?.workspace.agentSettings.provider==='opencode'){$('context-compact-status').textContent='OpenCode kendi context sıkıştırmasını yönetir.';$('context-usage-status').textContent='OpenCode için context yüzdesine göre otomatik yenileme desteklenmiyor.';}
  else $('context-usage-status').textContent=!threshold&&!compactThreshold?'Otomatik context yönetimi kapalı.':!value?.active?'Sonraki oturumda context izlenecek.':usage?.percent==null?'Context yüzdesi bekleniyor.':`Context kullanımı: %${usage.percent.toLocaleString('tr-TR',{maximumFractionDigits:1})}.${threshold>0&&usage.peakPercent>=threshold?' Eşik aşıldı; görev tamamlanınca yenilenecek.':''}`;
@@ -121,8 +128,9 @@ chromeProfiles=await api.chromeProfiles().catch(error=>{chromeProfilesError=erro
 catalog=await api.catalog();$('provider').replaceChildren(...catalog.map(item=>{const option=new Option(item.label+(item.supported?'':' — MCP henüz yok'),item.id);option.disabled=!item.supported;return option;}));$('provider').onchange=()=>settingsOptions();
 function readAgentSettings(){
  const profile=workspaceAgent?.workspace,f=$('agent-settings-form').elements;
+ const contextPercent=name=>{const field=f[name],value=field.disabled?field.dataset.configuredValue:field.value;return value===''?NaN:Number(value);};
  const browserMode=f.browserMode.value,chromeProfile=chromeProfiles.find(p=>p.directory===f.chromeProfile.value)??(profile?.chromeProfile?.directory===f.chromeProfile.value?profile.chromeProfile:null);
- const agentSettings={provider:f.provider.value,model:f.model.value,permission:f.permission.value,reasoning:f.reasoning.value,network:f.provider.value!=='codex'||f.network.value==='inherit'?null:f.network.value==='true',contextRestartPercent:f.contextRestartPercent.value===''?NaN:Number(f.contextRestartPercent.value),contextCompactPercent:f.contextCompactPercent.value===''?NaN:Number(f.contextCompactPercent.value)};
+ const agentSettings={provider:f.provider.value,model:f.model.value,permission:f.permission.value,reasoning:f.reasoning.value,network:f.provider.value!=='codex'||f.network.value==='inherit'?null:f.network.value==='true',contextRestartPercent:contextPercent('contextRestartPercent'),contextCompactPercent:contextPercent('contextCompactPercent')};
  return {agentSettings,browserMode,chromeProfile};
 }
 function markAgentSettingsDirty(){
@@ -155,6 +163,6 @@ $('agent-settings-form').onsubmit=event=>{
 };
 const initialView=localStorage.getItem('selected-view'),saved=localStorage.getItem('selected-workspace')??localStorage.getItem('selected-automation')??localStorage.getItem('selected-candidate');
 await refresh();const items=await api.workspaces(),selected=items.find(item=>item.id===saved)??items[0];
-if(selected){await automationUI.select(selected.id);await refresh();switchView((automationUI.data.progress.fresh||automationUI.data.automation.status==='draft')&&(!initialView||initialView==='board')?'agent':['board','agent','profile','sources','files','background','config','notifications'].includes(initialView)?initialView:'board');}else switchView('templates');
+if(selected){await automationUI.select(selected.id);await refresh();switchView((automationUI.data.progress.fresh||automationUI.data.automation.status==='draft')&&(!initialView||initialView==='board')?'setup-agent':['board','agent','setup-agent','profile','sources','files','background','config','notifications'].includes(initialView)?initialView:'board');}else switchView('templates');
 localStorage.removeItem('selected-candidate');localStorage.removeItem('selected-automation');
 api.onAutomationChange?.(()=>refresh().catch(error=>notice(error.message)));

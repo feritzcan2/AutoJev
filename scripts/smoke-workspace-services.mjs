@@ -14,7 +14,7 @@ try{
  const profiles=await page.evaluate(async()=>[await window.jobloop.workspaceCreate('job-search',{name:'Job fixture',preferences:'Local test'}),await window.jobloop.workspaceCreate('housing',{title:'Housing fixture'})]);
  assert.deepEqual(await page.evaluate(()=>['automationRename','automationDelete','automationPickDocument','automationOpenDocument','pickCv'].filter(key=>key in window.jobloop)),[]);
  for(const [index,profile] of profiles.entries()){
-  const value=index?'automation:'+profile.id:profile.id;
+  const value=index?profile.id:profile.id;
   await page.waitForFunction(value=>[...document.querySelector('#candidates').options].some(o=>o.value===value),value);
   await page.locator('#candidates').selectOption(value);
   await page.locator('#rename-workspace').click();await page.locator('#rename-workspace-dialog input').fill(`Renamed ${index}`);await page.locator('#rename-workspace-dialog [type=submit]').click();
@@ -27,7 +27,7 @@ try{
  }
  const cv=await page.evaluate(id=>window.jobloop.pickDocument(id,{purpose:'cv'}),profiles[0].id);assert.equal((await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),profiles[0].id)).profile.cvPath,cv);
  for(const [index,profile] of [...profiles.entries()].reverse()){
-  await page.locator('#candidates').selectOption(index?'automation:'+profile.id:profile.id);
+  await page.locator('#candidates').selectOption(index?profile.id:profile.id);
   page.once('dialog',dialog=>dialog.accept());await page.locator('#delete-workspace').click();
   await page.waitForFunction(async id=>!(await window.jobloop.workspaces()).some(w=>w.id===id),profile.id);
  }

@@ -1,17 +1,18 @@
 import {sourceTrialReady} from './automation-trial.mjs';
 import {providerLimitAttention} from './provider-limit.mjs';
+import {isConversation,conversationWaiting} from './workspace-conversation.mjs';
 const action=(id,label)=>({id,label});
 const failures=new Set(['failed','blocked','timeout']);
-export const runKindLabel=kind=>({'record-prepare':'İşlem hazırlanıyor','record-execute':'İşlem uygulanıyor','record-verify':'Sonuç doğrulanıyor',interview:'Kurulum konuşması',trial:'Deneme',run:'Kaynak taraması'}[kind]??'Çalışma');
+export const runKindLabel=kind=>({'record-score':'İlan puanlanıyor','record-prepare':'İşlem hazırlanıyor','record-execute':'İşlem uygulanıyor','record-verify':'Sonuç doğrulanıyor',interview:'Kurulum konuşması',trial:'Deneme',run:'Kaynak taraması'}[kind]??'Çalışma');
 // Task operations are queue identifiers; people see what the worker is doing, not the id.
-export const runOperationLabel=(operation,kind)=>({'record-prepare':'İşlem hazırlanıyor','record-execute':'İşlem uygulanıyor','record-verify':'Sonuç doğrulanıyor',interview:'Kurulum konuşması',trial:'Deneme taraması',run:'Kaynak taraması',scan:'Kaynak taraması',detail:'İlan ayrıntısı okunuyor',inspect:'İlan ayrıntısı okunuyor',verify:'Sonuç doğrulanıyor'}[operation]??runKindLabel(kind));
+export const runOperationLabel=(operation,kind)=>({'record-score':'İlan puanlanıyor','record-prepare':'İşlem hazırlanıyor','record-execute':'İşlem uygulanıyor','record-verify':'Sonuç doğrulanıyor',interview:'Kurulum konuşması',trial:'Deneme taraması',run:'Kaynak taraması',scan:'Kaynak taraması',detail:'İlan ayrıntısı okunuyor',inspect:'İlan ayrıntısı okunuyor',verify:'Sonuç doğrulanıyor'}[operation]??runKindLabel(kind));
 
 // One presentation of the durable run outcome and the next allowed step.
 // A saved result and a provider process that is still closing are separate states.
 export function automationProgress(snapshot,{dirty=false}={}){
  const {automation:a,runs=[],missing=[],messages=[]}=snapshot;
  const activeRuns=(snapshot.activeRuns??(snapshot.activeRun?[snapshot.activeRun]:[])).map(run=>runs.find(r=>r.id===run.id)??run);
- const current=activeRuns.find(run=>run.status==='running')??activeRuns[0]??null;
+ const current=activeRuns.find(run=>run.status==='running'&&!isConversation(run))??activeRuns.find(run=>run.status==='running')??activeRuns[0]??null;
  const enabledSources=(a.sources??[]).filter(url=>a.sourceSettings?.[url]?.enabled!==false);
  const latest=runs[0],reviewed=a.reviewedRevision===a.revision,passed=enabledSources.length>0&&enabledSources.every(url=>sourceTrialReady(a,url));
  const relevant=latest?.revision===a.revision?latest:null;
@@ -20,7 +21,11 @@ export function automationProgress(snapshot,{dirty=false}={}){
  const fresh=!current&&!runs.length&&!messages.some(m=>m.role==='user')&&!a.goal&&!reviewed;
  const result={stage:0,tone:'neutral',title:'Ne yapmak istediğini anlat',label:'Kurulum',detail:'Agent sorularla kriterlerini ve kaynaklarını hazırlayacak.',next:'İlk mesajını Agent sayfasına yaz; gerisini agent sorar.',primary:action('message','Agent’a yaz'),secondary:[],running:Boolean(current),finishedRun:!current&&latest?.finishedAt?latest:null,reply,reviewed,passed,fresh};
  const set=value=>Object.assign(result,value);
- if(current){
+ if(current&&isConversation(current)){
+  const waiting=conversationWaiting(current);
+  set({stage:reviewed?2:0,tone:waiting?'neutral':'active',label:waiting?'Mesaj bekliyor':'Çalışıyor',title:waiting?'Sohbet açık':'Agent yanıtını hazırlıyor',detail:waiting?'Yeni mesajını aynı sohbetten gönderebilirsin.':'Agent mesajını inceliyor. Kaynaklar kendi görevlerine devam eder.',next:'Sohbeti kapatana kadar oturum açık kalır.',running:!waiting,primary:waiting?action('message','Mesaj yaz'):null,secondary:[]});
+  if(current.usageLimit){const limit=providerLimitAttention(current.usageLimit);set({tone:'waiting',label:'Kullanım limiti',title:limit.title,detail:limit.detail,primary:action('terminal','Terminale git')});}
+ }else if(current){
   const closing=current.status!=='running',waiting=current.state==='AwaitingInput';
   set({stage:current.kind==='interview'?0:2,tone:waiting?'waiting':'active',label:closing?'Sonuç kaydedildi':waiting?'Giriş / onay gerekiyor':'Çalışıyor',title:closing?'Oturum kapanıyor…':waiting?'Devam etmek için terminali kontrol et':({interview:'Agent kurulumu hazırlıyor',trial:'Deneme sürüyor',run:'Kaynaklar taranıyor'}[current.kind]),detail:closing?current.summary:current.kind==='trial'?'Bu kaynağın okunabildiği kontrol ediliyor. Denemede işlem gönderilmez.':current.kind==='interview'?'Template ve kayıtlı bilgiler inceleniyor; kurulum soruları, profil ve kaynaklar hazırlanıyor.':a.goal,next:closing?'Sonraki adım oturum kapandığında açılacak.':waiting?'Sağlayıcının giriş veya araç izni isteğini aşağıdaki canlı terminalde yanıtla.':'Bu tur bittiğinde sonucu ve sonraki adımı burada göreceksin.',primary:waiting?action('terminal','Terminale git'):null,secondary:closing?[]:[action('stop','Durdur')]});
   if(!closing&&current.usageLimit){const limit=providerLimitAttention(current.usageLimit);set({tone:'waiting',label:'Kullanım limiti',title:limit.title,detail:limit.detail,next:'Görev ve kaydedilen ilerleme korunuyor.',primary:action('terminal','Terminale git')});}

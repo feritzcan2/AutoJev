@@ -1,20 +1,21 @@
+import {AutomationStore} from '../app/automation-store.mjs';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 const require=createRequire(import.meta.url);
 const {_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
 const data=await mkdtemp(path.join(tmpdir(),'jobloop-context-ui-'));
-const store=new Store(path.join(data,'jobloop.sqlite'));
-const profile=store.saveProfile({name:'Context Settings',preferences:'Local UI test',authorization:'research'});store.close();
+const store=new WorkspaceDatabase(path.join(data,'jobloop.sqlite'));
+const profile=new AutomationStore(store).create('job-search',{title:'Context Settings',goal:'Local UI test',mode:'observe'});store.close();
 const app=await electron.launch({executablePath:process.env.JOBLOOP_ELECTRON_BINARY||require('electron'),args:[process.cwd()],env:{...process.env,JOBLOOP_DATA_DIR:data}});
 try{
  const page=await app.firstWindow(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  const snapshot=()=>page.evaluate(id=>window.jobloop.workspaceSnapshot(id),profile.id);
  await page.locator('button[data-view=agent]').click();
- const compact=page.locator('[name=contextCompactPercent]');assert.equal(await compact.inputValue(),'80');
+ const compact=page.locator('[name=contextCompactPercent]');assert.equal(await compact.inputValue(),'0');
  const field=page.locator('[name=contextRestartPercent]');assert.equal(await field.inputValue(),'0');
  for(const provider of ['codex','claude']){
   await page.locator('#provider').selectOption(provider);

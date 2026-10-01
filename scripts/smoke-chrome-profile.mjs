@@ -1,4 +1,5 @@
-import {Store} from '../app/store.mjs';
+import {AutomationStore} from '../app/automation-store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {createRequire} from 'node:module';
 import {mkdtemp} from 'node:fs/promises';
 import path from 'node:path';
@@ -9,8 +10,8 @@ const require=createRequire(import.meta.url);
 const {_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const data=await mkdtemp(path.join(os.tmpdir(),'jobloop-chrome-profile-'));
-const store=new Store(path.join(data,'jobloop.sqlite'));
-const candidate=store.saveProfile({name:'Test candidate',preferences:'Remote',browserMode:'jev',chromeProfile:{directory:'Default',name:'Personal'}});store.close();
+const store=new WorkspaceDatabase(path.join(data,'jobloop.sqlite'));
+const candidate=new AutomationStore(store).create('job-search',{title:'Test candidate',goal:'Remote',browserMode:'jev',chromeProfile:{directory:'Default',name:'Personal'}});new AutomationStore(store).save(candidate.id,{browserMode:'jev',chromeProfile:{directory:'Default',name:'Personal'}});store.close();
 const application=await electron.launch({executablePath:require('electron'),args:[root],env:{...process.env,JOBLOOP_DATA_DIR:data}});
 try{
  const page=await application.firstWindow(),errors=[];page.on('pageerror',error=>errors.push(error.message));
@@ -29,17 +30,17 @@ try{
  const dialog=page.locator('.chrome-profile-dialog');await dialog.locator('select:not([disabled])').waitFor();
  assert.equal(await dialog.locator('select').inputValue(),'Default');
  await dialog.locator('select').selectOption('Profile 2');await dialog.locator('[data-cancel]').click();
- assert.equal((await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),candidate.id)).profile.chromeProfile.directory,'Default');
+ assert.equal((await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),candidate.id)).workspace.chromeProfile.directory,'Default');
  await page.locator('.chrome-profile-change').click();await dialog.locator('select:not([disabled])').waitFor();
  await dialog.locator('select').selectOption('Profile 2');await page.screenshot({path:path.join(data,'profile-picker.png')});
  await dialog.locator('[type=submit]').click();await dialog.waitFor({state:'hidden'});
  await page.waitForFunction(()=>document.querySelector('.chrome-status small').textContent==='Work');
- assert.equal((await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),candidate.id)).profile.chromeProfile.directory,'Profile 2');
+ assert.equal((await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),candidate.id)).workspace.chromeProfile.directory,'Profile 2');
  const calls=await application.evaluate(()=>({resets:globalThis.resets,reconnects:globalThis.reconnects}));
  assert.deepEqual(calls.resets,[candidate.id]);assert.equal(calls.reconnects.at(-1).profile.directory,'Profile 2');
  const web=await page.evaluate(()=>window.jobloop.workspaceCreate('custom',{title:'Web test'}));
  await page.evaluate(id=>window.jobloop.workspaceSettings(id,{browserMode:'jev',chromeProfile:{directory:'Default',name:'Personal'}}),web.id);
- await page.locator('#candidates').selectOption('automation:'+web.id);
+ await page.locator('#candidates').selectOption(web.id);
  await page.waitForFunction(()=>document.querySelector('.chrome-status small').textContent==='Personal');
  await page.locator('.chrome-profile-change').click();await dialog.locator('select:not([disabled])').waitFor();
  await dialog.locator('select').selectOption('Profile 2');await dialog.locator('[type=submit]').click();await dialog.waitFor({state:'hidden'});

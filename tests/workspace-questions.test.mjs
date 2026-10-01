@@ -16,7 +16,8 @@ for(const template of ['job-search','housing','appointment','custom'])test(`${te
  const q=await call('ask_workspace_question',{text:'Eksik bilgiler',fields});assert.equal((await call('ask_workspace_question',{text:'Eksik bilgiler',fields})).id,q.id);
  assert.throws(()=>db.answerQuestion(other.id,q.id,{}),/ait değil/);assert.throws(()=>db.answerQuestion(a.id,q.id,{date:'2026-02-30'}),/geçerli/);
  const answer={date:'2026-10-01',choice:'A',count:2,consent:false,areas:['X','Y']};db.answerQuestion(a.id,q.id,answer);
- assert.deepEqual((await call('get_automation_context')).questions[0].answerValues,answer);assert.equal(db.messages(a.id).at(-1).role,'user');assert.throws(()=>db.answerQuestion(a.id,q.id,answer),/zaten/);
+ let context=await call('get_automation_context');if(context.context){let text=context.text;while(context.context.nextOffset!==null){context=await call('read_automation_context_part',{contextId:context.context.id,offset:context.context.nextOffset});text+=context.text;}context=JSON.parse(text);}
+ assert.deepEqual(context.questions[0].answerValues,answer);assert.equal(db.messages(a.id).at(-1).role,'user');assert.throws(()=>db.answerQuestion(a.id,q.id,answer),/zaten/);
  const free=await call('ask_workspace_question',{text:'Başka bilgi?',fields:[{id:'text',label:'Bilgi',type:'text'}]});assert.equal(db.answerQuestion(a.id,free.id,'Kendi cümlelerim').answerValues,null);
  await assert.rejects(call('run_workspace_source_tool',{args:[]}),/atanmış kaynak/);
 });

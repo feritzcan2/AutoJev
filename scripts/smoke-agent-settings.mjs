@@ -3,12 +3,12 @@ import {createRequire} from 'node:module';
 import {mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 const require=createRequire(import.meta.url);
 const {_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
 const data=await mkdtemp(path.join(tmpdir(),'jobloop-agent-settings-'));
-const store=new Store(path.join(data,'jobloop.sqlite')),db=new AutomationStore(store);
+const store=new WorkspaceDatabase(path.join(data,'jobloop.sqlite')),db=new AutomationStore(store);
 const owner=db.create('custom',{title:'Settings test'});store.close();
 const app=await electron.launch({executablePath:process.env.JOBLOOP_ELECTRON_BINARY||require('electron'),args:[process.cwd()],env:{...process.env,JOBLOOP_DATA_DIR:data}});
 try{
@@ -19,7 +19,7 @@ try{
  const initial=await snapshot();
  // Periodic snapshots must not overwrite the draft, and editing must not save it.
  await field.fill('60');await field.press('Tab');
- assert.equal((await snapshot()).workspace.agentSettings.contextCompactPercent,80);
+ assert.equal((await snapshot()).workspace.agentSettings.contextCompactPercent,0);
  await app.evaluate(({BrowserWindow},id)=>BrowserWindow.getAllWindows()[0].webContents.send('changed',{candidateId:id}),owner.id);
  assert.equal(await field.inputValue(),'60');
  await save.click();await page.waitForFunction(()=>document.querySelector('#agent-settings-status').textContent.startsWith('Kaydedildi.'));

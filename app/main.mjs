@@ -78,8 +78,8 @@ async function boot(){
  const automationDb=new AutomationStore(core);upgradeWorkspaces(automationDb);
  const web=registerAutomationServices({root,data,db:automationDb,browsers:browser,mcp,agents,handle,emit,validateSettings:settings=>ensureEngine().request('validate',settings),dialog,shell,window:()=>window,notify:(title,body)=>{if(Notification.isSupported()&&!window?.isFocused()){const notification=new Notification({title,body:body.slice(0,300)});notification.on('click',()=>{window?.show();window?.focus();});notification.show();}}});
  workspaces.templates[browserDefinition.id]={
-  agentRoles:()=>[...WEB_AGENT_ROLES,'background'],
-  instructions:(id,role)=>role==='background'?support.instructions(id):webInstructionCatalog(automationDb,id,role),
+  agentRoles:()=>WEB_AGENT_ROLES,
+  instructions:(id,role)=>webInstructionCatalog(automationDb,id,role),
   configuration:id=>webPromptCatalog(automationDb.get(id)),
   create:(templateId,input)=>automationDb.create(templateId,input),directory:web.workspace,documentPurposes:['attachment'],beforeDocument:id=>automationDb.assertIdle(id),documentAdded:(id,document)=>automationDb.message(id,'system',`Kullanıcı bir belge ekledi: ${document.relative} (${document.name}). Yalnızca bu otomasyon kapsamında kullan.`),
   rename:(id,name)=>automationDb.rename(id,name),remove:web.remove,browserDirectory:id=>workspaceBrowserDirectory(data,core.workspaces.get(id)),browserOptions:id=>({config:()=>jevSettings.config(),profile:core.workspaces.get(id).chromeProfile,lifecycle:{multiWorker:true}}),
@@ -88,7 +88,7 @@ async function boot(){
   start:async id=>{automationDb.enable(id);await web.runtime.tick();},stop:id=>web.runtime.pause(id),restart:id=>web.runtime.restart(id),settings:(id,input)=>web.save(id,input)
  };
  services.push({...web,assertIdle(){if(web.runtime.active.size)throw Error('Önce çalışan otomasyonları durdur.');},stop:()=>{web.runtime.closed=true;},resume:()=>{web.runtime.closed=false;},activeRunIds:()=>[...web.runtime.active.values()].map(slot=>slot.run.id)});
- const support=await registerWorkspaceSupport({root,data,db:automationDb,runtime:web.runtime,agents,profiles,mcp,scheduler,handle,emit,dialog,shell,getWindow:()=>window,encryptSecret,decryptSecret,isQuitting:()=>quitting});services.push(support);
+ const support=await registerWorkspaceSupport({data,db:automationDb,runtime:web.runtime,handle,emit,encryptSecret,decryptSecret});services.push(support);
  const removeWorkspace=workspaces.templates.browser.remove;workspaces.templates.browser.remove=async id=>{await support.remove(id);return removeWorkspace(id);};
  for(const extension of extensions){const service=await extension.register({root,data,core,handle,emit,agents,profiles,browser,mcp,scheduler,maintenance,documents,dialog,shell,getWindow:()=>window,encryptSecret,decryptSecret,jevSettings,restartingAgents:changing,isQuitting:()=>quitting});workspaces.templates[extension.definition.id]=service.driver;services.push(service);}
  handle('configuration-catalog',id=>configurationCatalog({id,workspaces,profiles}));

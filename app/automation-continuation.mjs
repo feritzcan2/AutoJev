@@ -24,6 +24,18 @@ export function answerContinuation(db,id,task,kind){
  matches.sort((x,y)=>y.question.createdAt-x.question.createdAt);
  const latest=matches[0];
  if(!latest){
+  if(sourceScan){
+   // The source owns its conversation, even when a manual retry creates a new
+   // queue task or another worker picks it up. Stop/block/failure ends a turn,
+   // not that identity. Only inspect the latest inserted run: wall-clock changes
+   // must not revive an older conversation after rotation or resume repair.
+   const row=db.db.prepare(`SELECT data FROM automation_runs WHERE automation_id=? AND json_extract(data,'$.sourceUrl')=? AND json_extract(data,'$.kind')='run' AND json_extract(data,'$.recordId') IS NULL AND json_extract(data,'$.recordOperation') IS NULL ORDER BY rowid DESC LIMIT 1`).get(id,task.sourceUrl);
+   const previous=row?JSON.parse(row.data):null;
+   if(!sameTask(previous)||previous.operation!==task.operation||!previous.conversation||previous.actionId)return null;
+   if(previous.status==='completed')return {reason:'source_scan',runId:previous.id,questionIds:[]};
+   if(['interrupted','partial','blocked','failed'].includes(previous.status))return {reason:previous.taskId===task.id?'task_retry':'source_retry',runId:previous.id,questionIds:[],browserContext:previous.resumeContext??previous.continuation?.browserContext??null};
+   return null;
+  }
   // A retry is the same durable task, not the worker's most recent unrelated
   // conversation. Changed scope and execution→verification stay fresh.
   const row=db.db.prepare(`SELECT data FROM automation_runs WHERE automation_id=? AND json_extract(data,'$.taskId')=? ORDER BY json_extract(data,'$.startedAt') DESC,rowid DESC LIMIT 1`).get(id,task.id);
@@ -32,13 +44,6 @@ export function answerContinuation(db,id,task,kind){
   // A launch interrupted by shutdown can retry the same durable queue task.
   // Changing it to verification must not revive an execution conversation.
   if(task.continuation){try{if(sameTask(db.run(task.continuation.runId)))return task.continuation;}catch{}}
-  if(sourceScan){
-   // Inspect only the latest scan for this source, including a cleared identity:
-   // rotation or a failed run must not resurrect an older conversation.
-   const row=db.db.prepare(`SELECT data FROM automation_runs WHERE automation_id=? AND json_extract(data,'$.sourceUrl')=? AND json_extract(data,'$.kind')='run' AND json_extract(data,'$.recordId') IS NULL AND json_extract(data,'$.recordOperation') IS NULL ORDER BY json_extract(data,'$.startedAt') DESC,rowid DESC LIMIT 1`).get(id,task.sourceUrl);
-   const previous=row?JSON.parse(row.data):null;
-   if(sameTask(previous)&&previous.operation===task.operation&&previous.status==='completed'&&previous.conversation&&!previous.stopRequested&&!previous.actionId)return {reason:'source_scan',runId:previous.id,questionIds:[]};
-  }
   return null;
  }
  return {runId:latest.origin.id,questionIds:matches.map(m=>m.question.id),browserContext:latest.question.browserContext??latest.origin.resumeContext??null};

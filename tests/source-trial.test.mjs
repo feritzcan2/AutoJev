@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {WebTasks} from '../app/web-template.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
@@ -9,7 +9,7 @@ import {automationAttention} from '../app/automation-attention.mjs';
 const urls=['https://homes.test/berlin','https://homes.test/hamburg'];
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(t,{workers=1}={}){
- const store=new Store(':memory:');let now=1790000000000;
+ const store=new WorkspaceDatabase(':memory:');let now=1790000000000;
  const db=new AutomationStore(store,{now:()=>now}),a=db.create('housing',{goal:'Find homes',criteria:{location:'Germany',budget:'2000',requirements:'Two rooms'},sources:urls});
  db.review(a.id);db.save(a.id,{mode:'auto'});
  for(let n=1;n<workers;n++)store.workspaces.workers.add(a.id);

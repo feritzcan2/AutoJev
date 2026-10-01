@@ -1,4 +1,5 @@
-import {Store} from '../app/store.mjs';
+import {AutomationStore} from '../app/automation-store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {createRequire} from 'node:module';
 import {mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -6,7 +7,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 const require=createRequire(import.meta.url),{_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
 const root=path.resolve(import.meta.dirname,'..'),data=await mkdtemp(path.join(tmpdir(),'jobloop-sources-'));
-const seed=new Store(path.join(data,'jobloop.sqlite'));seed.saveProfile({name:'Sources test',preferences:'Berlin remote',authorization:'research'});seed.close();
+const seed=new WorkspaceDatabase(path.join(data,'jobloop.sqlite'));new AutomationStore(seed).create('job-search',{title:'Sources test',goal:'Berlin remote',mode:'observe'});seed.close();
 const app=await electron.launch({executablePath:process.env.JOBLOOP_ELECTRON_BINARY||require('electron'),args:[root],env:{...process.env,JOBLOOP_DATA_DIR:data}});
 try{
  const page=await app.firstWindow();const errors=[];page.on('pageerror',e=>errors.push(e.message));

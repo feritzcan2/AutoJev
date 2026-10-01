@@ -28,7 +28,7 @@ export function workerConversation(snapshot,worker,transcript=[]){
  const entries=transcript.map(m=>entry(`native:${m.id}`,m.role,m.text,m.at,m.role==='task'?{label:'Görev'}:{})),native=new Set(entries.map(e=>e.text));
  if(snapshot.automation){
   // The setup conversation belongs to the workspace and runs on the main worker; extra workers only carry their own runs.
-  if(worker.id==='main')for(const m of snapshot.messages??[]){const document=m.role==='system'?/^Kullanıcı bir belge ekledi: \S+ \((.+?)\)\./.exec(m.text):null;entries.push(document?entry(`message:${m.id}`,'system',`Belge eklendi: ${document[1]}`,m.at,{label:'Belge'}):entry(`message:${m.id}`,m.role==='assistant'?'agent':m.role==='user'?'user':'system',m.text,m.at));}
+  for(const m of snapshot.messages??[]){if(worker.conversation?!m.conversation:worker.id!=='main'||m.conversation)continue;const document=m.role==='system'?/^Kullanıcı bir belge ekledi: \S+ \((.+?)\)\./.exec(m.text):null;entries.push(document?entry(`message:${m.id}`,'system',`Belge eklendi: ${document[1]}`,m.at,{label:'Belge'}):entry(`message:${m.id}`,m.role==='assistant'?'agent':m.role==='user'?'user':'system',m.text,m.at));}
   // A run still in progress is described by the task strip above; only finished turns become records.
   for(const run of snapshot.runs??[])if((run.workerId??'main')===worker.id&&run.summary&&run.status!=='running')entries.push(entry(`run:${run.id}`,'system',`${runKinds[run.kind]??run.kind} · ${run.summary}`,run.finishedAt??run.startedAt,{label:runStatuses[run.status]??run.status}));
  }else{

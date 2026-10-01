@@ -19,7 +19,7 @@ try{
  const catalog=await page.evaluate(()=>window.jobloop.automationTemplates());assert.ok(catalog.some(t=>t.id==='housing'));assert.ok(catalog.every(t=>t.execution.driver!=='applications'));
  await application.evaluate(async(_,moduleUrl)=>{const vm=process.getBuiltinModule('node:vm'),load=vm.runInThisContext('(url)=>import(url)',{importModuleDynamically:vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER}),{Engine}=await load(moduleUrl),original=Engine.prototype.request;Engine.prototype.request=function(op,args){if(op==='start'){globalThis.webOnlyLaunch=args;return Promise.resolve({});}if(op==='resize')return Promise.resolve({});return original.call(this,op,args);};},pathToFileURL(path.join(process.cwd(),'app/engine.mjs')).href);
  const workspace=await page.evaluate(url=>window.jobloop.workspaceCreate('housing',{title:'Web-only homes',goal:'Find matching homes',criteria:{location:'Berlin',budget:'1500',requirements:'Two rooms'},sources:[url]}),url);
- await page.locator('#candidates').selectOption('automation:'+workspace.id);await page.locator('[data-view=agent]').click();
+ await page.locator('#candidates').selectOption(workspace.id);await page.locator('[data-view=agent]').click();
  const snapshot=()=>page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id);
  const initial=await snapshot();assert.equal(initial.workspace.id,workspace.id);assert.equal(initial.profile,undefined);assert.equal(initial.campaign,undefined);assert.ok(initial.workers.every(worker=>worker.execution&&!worker.campaign));
  await page.evaluate(id=>window.jobloop.automationReview(id),workspace.id);await page.evaluate(id=>window.jobloop.workspaceStart(id),workspace.id);

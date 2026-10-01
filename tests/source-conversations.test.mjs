@@ -42,7 +42,7 @@ async function fixture(t,provider='codex'){
  };
 }
 
-for(const provider of ['claude','codex'])test(`${provider}: source conversations survive completed cycles, worker changes and app reopening`,async t=>{
+for(const provider of ['claude','codex','opencode'])test(`${provider}: source conversations survive completed cycles, worker changes and app reopening`,async t=>{
  const f=await fixture(t,provider),first=await f.start();assert.equal(first.launch.resumeId,undefined);await f.finish(first);
  const other=await f.start(sources[1]);assert.equal(other.launch.resumeId,undefined);await f.finish(other);
  // The source can fall outside the UI's 30-run history window.
@@ -98,10 +98,40 @@ test('a rejected source resume starts fresh and saves the replacement for the fo
  const next=await f.start();assert.equal(next.launch.resumeId,'native-3');await f.finish(next);
 });
 
-test('a failed latest scan cannot fall back to an older completed conversation',async t=>{
+for(const provider of ['claude','codex','opencode'])for(const status of ['interrupted','partial','blocked','failed'])test(`${provider}: a new task resumes the same source after ${status}`,async t=>{
+ const f=await fixture(t,provider),first=await f.start(),tab={tabId:'retained',url:sources[0]};
+ const scan={complete:false,pendingUrls:[sources[0]],reason:'Saved progress',evidenceUrl:sources[0]};
+ f.db.putRun({...f.db.run(first.run.id),resumeContext:tab,scan});await f.finish(first,status);
+ const other=await f.start(sources[1]);await f.finish(other);f.reopen();
+ const next=await f.start(sources[0],f.second);
+ assert.notEqual(next.run.taskId,first.run.taskId);assert.equal(next.launch.resumeId,'native-1');
+ assert.equal(next.run.continuation.runId,first.run.id);assert.equal(next.run.continuation.reason,'source_retry');
+ assert.deepEqual(next.run.continuation.browserContext,tab);assert.deepEqual(next.run.scanPlan,first.run.scanPlan);
+ assert.deepEqual(next.run.scan.pendingUrls,scan.pendingUrls);
+ assert.match(next.launch.prompt,/Resume the same source conversation/);assert.doesNotMatch(next.launch.prompt,/previous source scan completed|user answered your saved question/);
+ await f.finish(next);
+});
+
+test('manual source stop preserves the conversation for a later explicit start',async t=>{
+ const f=await fixture(t,'opencode'),first=await f.start();
+ f.db.putRun({...f.db.run(first.run.id),stopRequested:true});await f.finish(first,'interrupted');
+ const next=await f.start();assert.equal(next.launch.resumeId,'native-1');assert.equal(next.run.stopRequested,undefined);await f.finish(next);
+});
+
+test('source continuation follows insertion order when the clock moves backwards',async t=>{
+ const f=await fixture(t,'opencode'),first=await f.start();await f.finish(first);
+ f.db.putRun({...f.db.run(first.run.id),startedAt:Date.now()+3600000});
+ f.rejectResume();const replaced=await f.start();assert.equal(f.db.run(replaced.run.id).conversation.nativeId,'native-3');await f.finish(replaced,'interrupted');
+ const next=await f.start();assert.equal(next.run.continuation.runId,replaced.run.id);assert.equal(next.launch.resumeId,'native-3');await f.finish(next);
+});
+
+test('a cleared latest source identity never revives a saved task continuation',async t=>{
  const f=await fixture(t),first=await f.start();await f.finish(first);
- const failed=await f.start();assert.equal(failed.launch.resumeId,'native-1');await f.finish(failed,'failed');
- const fresh=await f.start();assert.equal(fresh.launch.resumeId,undefined);await f.finish(fresh);
+ const next=await f.start();await f.finish(next,'interrupted');
+ f.db.putRun({...f.db.run(next.run.id),conversation:null});
+ const queue=f.store.workspaces.tasks;queue.put({...queue.get(f.id,next.run.taskId),state:'pending',workerId:null});
+ const run=f.db.begin(f.id,{kind:'run',taskId:next.run.taskId});assert.equal(run.continuation,undefined);
+ f.db.finish(f.id,run.id,'interrupted','Test done');
 });
 
 test('a latest scan with no saved conversation never falls back to an older source or worker conversation',async t=>{

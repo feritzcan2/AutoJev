@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
 import {automationBrowser} from '../app/automation-browser.mjs';
 import {validateJevArgs} from '../app/jev-browser.mjs';
-import {validate} from '../app/mcp.mjs';
+import {validate} from '../app/tool-schema.mjs';
 
 test('Jev full document reading is explicit; automation scopes scroll to its current tab',async()=>{
  const calls=[],browser={prepare:()=>({ready:true}),async call(id,name,args){calls.push({id,name,args});return {content:[{type:'text',text:JSON.stringify({tabId:'owned-tab',url:'https://example.com/list',tabs:[]})}]};}};
@@ -20,7 +20,7 @@ test('Jev full document reading is explicit; automation scopes scroll to its cur
 });
 
 function fixture(t,kind='trial',mode='jev'){
- const store=new Store(':memory:');t.after(()=>store.close());const db=new AutomationStore(store),url='https://example.com/list';
+ const store=new WorkspaceDatabase(':memory:');t.after(()=>store.close());const db=new AutomationStore(store),url='https://example.com/list';
  const a=db.create('custom',{goal:'Read listings',sources:[url],criteria:{outcome:'Listings',rules:'Read only',completion:'One scan'}});db.save(a.id,{browserMode:mode,maxBrowserSteps:5});if(kind!=='interview')db.review(a.id);
  const run=db.begin(a.id,kind),controller=new AbortController();let current=url,calls=[];
  const browser={async currentUrl(){return current;},async call(id,name,args){calls.push(name);return {content:[{type:'text',text:`Page URL: ${current}\nCurrent listings`}],action:{status:'ready',executed:true}};}};

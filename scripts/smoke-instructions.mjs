@@ -21,8 +21,8 @@ const app=await electron.launch({executablePath:process.env.JOBLOOP_ELECTRON_BIN
 try{
  const page=await app.firstWindow(),errors=[];page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));
  await page.waitForFunction(()=>Boolean(window.jobloop)&&document.querySelector('#setup-provider').options.length>0);
- await page.waitForFunction(id=>[...document.querySelector('#candidates').options].some(o=>o.value==='automation:'+id),a.id);
- await page.locator('#candidates').selectOption('automation:'+a.id);
+ await page.waitForFunction(id=>[...document.querySelector('#candidates').options].some(o=>o.value===id),a.id);
+ await page.locator('#candidates').selectOption(a.id);
  await page.locator('[data-view=config]').click();await page.locator('a[href="#config-instructions"]').click();
  await page.waitForFunction(()=>document.querySelectorAll('#config-instructions-list .prompt-card').length>10);
  assert.equal(await page.locator('#config-workspace').count(),0);
@@ -41,11 +41,11 @@ try{
  assert.equal(await page.locator('#config-instructions-list .prompt-card:visible').count(),1);
  await page.locator('#config-instructions-list .prompt-card:visible summary').click();
  assert.ok((await page.locator('#config-instructions-list pre:visible').textContent()).includes('1500'));
- await page.locator('#candidates').selectOption('automation:'+b.id);await page.waitForFunction(title=>document.querySelector('#heading').textContent===title,b.title);await page.locator('[data-view=config]').click();
+ await page.locator('#candidates').selectOption(b.id);await page.waitForFunction(title=>document.querySelector('#heading').textContent===title,b.title);await page.locator('[data-view=config]').click();
  await page.waitForFunction(()=>document.querySelector('#config-search-note').textContent==='Eşleşme yok');
  await page.getByLabel('Metinlerde ara',{exact:true}).fill('');
  assert.ok(!(await page.locator('#config-instructions-list').textContent()).includes('1500'));
- await page.locator('#candidates').selectOption('automation:'+a.id);await page.waitForFunction(title=>document.querySelector('#heading').textContent===title,a.title);await page.locator('[data-view=config]').click();
+ await page.locator('#candidates').selectOption(a.id);await page.waitForFunction(title=>document.querySelector('#heading').textContent===title,a.title);await page.locator('[data-view=config]').click();
  await page.waitForFunction(()=>document.querySelector('#config-instructions-list').textContent.includes('1500'));
  await page.screenshot({path:'/tmp/loop-config-sections.png',fullPage:false});
  await page.locator('a[href="#config-skills"]').click();assert.ok((await page.locator('#config-skills').textContent()).includes('ayrı bir beceri dosyası tanımlı değil'));
@@ -69,7 +69,7 @@ try{
  await page.screenshot({path:'/tmp/loop-instructions-history.png',fullPage:false});
  await page.getByLabel('Talimat worker filtresi').selectOption('');await page.getByLabel('Talimat oturum filtresi').selectOption('session-first');
  await page.waitForFunction(()=>document.querySelectorAll('.instruction-event').length===3);
- await page.locator('#candidates').selectOption('automation:'+b.id);await page.locator('[data-view=agent]').click();
+ await page.locator('#candidates').selectOption(b.id);await page.locator('[data-view=agent]').click();
  await page.waitForFunction(()=>document.querySelector('.instruction-empty')?.textContent.includes('Henüz kayıt yok'));
  await page.getByRole('tab',{name:'Çalışma alanı',exact:true}).click();assert.equal(await page.locator('.workspace-conversation').isVisible(),true);
  if(process.env.LOOP_EXTENSIONS==='job-search'){
@@ -83,7 +83,7 @@ try{
   await page.waitForFunction(()=>document.querySelector('#config-instructions-list').textContent.includes('JobLoop scheduler messages'));
   assert.equal(await page.locator('#config-workspace').count(),0);
   const jobCatalog=await compareCatalog(job.id);assert.ok(jobCatalog.skills.length>0);assert.ok(jobCatalog.tools.some(t=>t.name==='get_task_context'));
-  await page.locator('#candidates').selectOption('automation:'+a.id);await page.waitForFunction(title=>document.querySelector('#heading').textContent===title,a.title);await page.locator('[data-view=config]').click();
+  await page.locator('#candidates').selectOption(a.id);await page.waitForFunction(title=>document.querySelector('#heading').textContent===title,a.title);await page.locator('[data-view=config]').click();
   await page.waitForFunction(()=>document.querySelector('#config-instructions-list').textContent.includes('personal web automation'));
   assert.ok(!(await page.locator('#config-instructions-list').textContent()).includes('JobLoop scheduler messages'));
 
