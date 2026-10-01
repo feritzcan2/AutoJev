@@ -9,15 +9,8 @@ import {homedir} from 'node:os';
 import {sourceMethodGuidance} from './source-method.mjs';
 import {validateGuideOverrides} from './source-guide.mjs';
 const exec=promisify(execFile);
-export const sourceIntegrations=[
- {id:'linkedin',name:'LinkedIn',url:'https://www.linkedin.com/jobs/',market:'global'},
- {id:'freehire',name:'FreeHire',url:'https://freehire.me/',market:'global'},
- {id:'jobindex',name:'Jobindex',url:'https://www.jobindex.dk/',market:'DK'},
- {id:'jobnet',name:'Jobnet',url:'https://jobnet.dk/',market:'DK'},
- {id:'jobdanmark',name:'Jobdanmark',url:'https://jobdanmark.dk/',market:'DK'},
- {id:'jobbank',name:'Akademikernes Jobbank',url:'https://jobbank.dk/',market:'DK'},
-];
-export function integration(id){return sourceIntegrations.find(x=>x.id===id);}
+import {sourceIntegrations,integration} from './source-catalog.mjs';
+export {sourceIntegrations,integration} from './source-catalog.mjs';
 export function validateSourceSearch(input,previous={}){
  const method=input.searchMethod??previous.searchMethod??'free',integrationId=input.integrationId===undefined?previous.integrationId??null:input.integrationId;
  if(!['free','browser','tool'].includes(method))throw Error('Geçersiz arama yöntemi');

@@ -37,18 +37,18 @@ test('late CLI rejection is eligible for fresh recovery only on a resumed Codex 
 });
 
 import {selectResume} from '../app/resume.mjs';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 test('model, permission or network changes start fresh; compatible settings preserve resume',()=>{
- const store=new Store(':memory:');try{
-  const p=store.saveProfile({name:'Test',preferences:'Remote'}),settings={provider:'codex',permission:'plan',network:false};
-  store.saveConversation(p.id,'codex','old');assert.equal(selectResume(store,p.id,settings),undefined);
-  store.saveConversation(p.id,'codex','old',settings);assert.equal(selectResume(store,p.id,settings),'old');
-  assert.equal(selectResume(store,p.id,{...settings,model:'default'}),'old');
-  assert.equal(selectResume(store,p.id,{...settings,model:'another-model'}),undefined);
-  assert.equal(selectResume(store,p.id,{...settings,reasoning:'high'}),undefined);
-  assert.equal(selectResume(store,p.id,{...settings,permission:'bypassPermissions'}),undefined);
-  assert.equal(selectResume(store,p.id,{...settings,network:true}),undefined);
-  store.saveConversation(p.id,'codex','new',{...settings,permission:'bypassPermissions'});
-  assert.equal(selectResume(store,p.id,{...settings,permission:'bypassPermissions'}),'new');
+ const store=new WorkspaceDatabase(':memory:');try{
+  const p=store.workspaces.save('test','job-search',{title:'Test'}),history=store.workspaces.history(p.id),settings={provider:'codex',permission:'plan',network:false};
+  history.saveConversation(p.id,'codex','old');assert.equal(selectResume(history,p.id,settings),undefined);
+  history.saveConversation(p.id,'codex','old',settings);assert.equal(selectResume(history,p.id,settings),'old');
+  assert.equal(selectResume(history,p.id,{...settings,model:'default'}),'old');
+  assert.equal(selectResume(history,p.id,{...settings,model:'another-model'}),undefined);
+  assert.equal(selectResume(history,p.id,{...settings,reasoning:'high'}),undefined);
+  assert.equal(selectResume(history,p.id,{...settings,permission:'bypassPermissions'}),undefined);
+  assert.equal(selectResume(history,p.id,{...settings,network:true}),undefined);
+  history.saveConversation(p.id,'codex','new',{...settings,permission:'bypassPermissions'});
+  assert.equal(selectResume(history,p.id,{...settings,permission:'bypassPermissions'}),'new');
  }finally{store.close();}
 });

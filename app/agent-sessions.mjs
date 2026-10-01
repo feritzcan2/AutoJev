@@ -60,7 +60,7 @@ export class AgentSessions {
     if(event.event==='state'&&s){s.state=String(event.state).replace(/^Some\((.*)\)$/,'$1');compacting=this.compaction.signal(s,s.state);this.changed(id);}
     if(!compacting)s?.onEvent?.(event,s);
     if(['engine_exit','eof'].includes(event.event)){
-     if(rejectedResumeOnExit(s)){s.history?.forgetConversation(id,s.provider,s.resumeId);s.onRecord?.('resume_fallback',{fresh:true,replacedResumeId:s.resumeId,reason:'Resume rejected; next launch starts fresh with saved task context'});}
+     if(rejectedResumeOnExit(s)&&!s.persistent){s.history?.forgetConversation(id,s.provider,s.resumeId);s.onRecord?.('resume_fallback',{fresh:true,replacedResumeId:s.resumeId,reason:'Resume rejected; next launch starts fresh with saved task context'});}
      this.engines.delete(key);this.retire(id,worker);if(event.event==='eof')instance.close().catch(()=>{});s?.onExit?.(event);
     }
     this.emit({...event,candidateId:id,workerId:worker});
@@ -79,7 +79,7 @@ export class AgentSessions {
   if(JSON.stringify(found)===JSON.stringify(s.usageLimit??null))return;
   s.usageLimit=found;s.onEvent?.({event:'usage_limit',sessionId:s.sessionId,usageLimit:found},s);this.changed(s.candidateId);
  }
- async start({id,worker=MAIN_WORKER,sessionId,settings,cwd,runtimeDirectory,endpoint,token,prompt,history,approvedTools,taskType,agentProfile,onEvent,onExit,onRetire,onRecord,onSettled,currentSettings=()=>settings,resume=true,reserved=false,rotateAtBoundary=false}){
+ async start({id,worker=MAIN_WORKER,sessionId,settings,cwd,runtimeDirectory,endpoint,token,prompt,history,approvedTools,taskType,agentProfile,onEvent,onExit,onRetire,onRecord,onSettled,currentSettings=()=>settings,resume=true,reserved=false,rotateAtBoundary=false,persistent=false}){
   settings=withAgentDefaults(settings);
   if(agentProfile){
    if(this.profiles)agentProfile=this.profiles.get(id,agentProfile.id.replace('builtin.agent-profile.loop-',''),settings);
@@ -89,8 +89,8 @@ export class AgentSessions {
   const key=workerKey(id,worker);
   if(this.sessions.has(key)||this.starting.has(key)&&!reserved||this.closing.has(key)||this.failedStops.has(key))throw Error('Bu worker’ın agent oturumu zaten açık veya kapanıyor.');
   this.starting.add(key);
-  const resumeId=resume&&history?selectResume(history,id,settings):undefined;
-  const s={candidateId:id,workerId:worker,sessionId,token,agentProfile,provider:settings.provider,launchSettings:{...settings},cwd,runtimeDirectory,resumeId,history,onEvent,onExit,onRetire,onRecord,onSettled,currentSettings,rotateAtBoundary,launchPrompt:typeof prompt==='string'?prompt:''};
+  const resumeId=resume&&history?selectResume(history,id,settings,{persistent}):undefined;
+  const s={candidateId:id,workerId:worker,sessionId,token,agentProfile,provider:settings.provider,launchSettings:{...settings},cwd,runtimeDirectory,resumeId,history,onEvent,onExit,onRetire,onRecord,onSettled,currentSettings,rotateAtBoundary:rotateAtBoundary&&!persistent,persistent,launchPrompt:typeof prompt==='string'?prompt:''};
   this.sessions.set(key,s);this.clearOutput(key);
   try{
    if(this.instructions){try{this.audit(s,{kind:'files',title:'Oturum talimat dosyaları',status:'available',parts:await launchInstructionParts(cwd)});}catch(error){this.emit({event:'instruction-log-error',candidateId:id,error:error.message});}}
@@ -99,7 +99,7 @@ export class AgentSessions {
    const engine=this.ensure(id,worker);
    const launch=await startWithResumeRepair(engine,{sessionId,cwd,runtimeDirectory,endpoint,token,...settings,...(agentProfile?{agentProfile}:{}),resumeId,prompt,...this.grid(id,worker),...(approvedTools?{approvedTools}:{}),...(taskType?{taskType}:{})},result=>{
     if(result.fresh){history?.forgetConversation(id,settings.provider,result.replacedResumeId);s.resumeId=null;s.resumeDiagnostic='';}onRecord?.('history_repaired',result);this.changed(id);
-   });
+   },{allowFreshFallback:!persistent});
    this.audit(s,{kind:'launch_accepted',title:'Başlatma isteği kabul edildi',status:'accepted',parts:launch?.providerInstructions?[instructionPart('provider-agent-instructions','Sağlayıcıya verilen agent talimatı','system',launch.providerInstructions)]:[]});
    if(this.sessions.get(key)!==s)throw Error('Agent başlatılırken oturum kapandı.');
    await engine.request('resize',this.grid(id,worker));this.changed(id);return {sessionId};
@@ -113,7 +113,7 @@ export class AgentSessions {
   this.closing.set(key,pending);return pending;
  }
  // The latest native conversation for a worker, kept after the session closes until a new one starts.
- async transcript(id,worker=MAIN_WORKER){const reader=this.transcripts.get(workerKey(id,worker));return reader?{nativeId:reader.nativeId,messages:await reader.read()}:{nativeId:null,messages:[]};}
+ async transcript(id,worker=MAIN_WORKER){const reader=this.transcripts.get(workerKey(id,worker));return reader?{nativeId:reader.nativeId,messages:await reader.read(),activity:reader.activity??null}:{nativeId:null,messages:[]};}
  output(id,worker=MAIN_WORKER){const key=workerKey(id,worker);return {bytes:[...(this.outputs.get(key)??Buffer.alloc(0))],sequence:this.sequences.get(key)??0,sessionId:this.sessions.get(key)?.sessionId??null};}
  snapshot(id,worker=MAIN_WORKER){const key=workerKey(id,worker),sessionId=this.sessions.get(key)?.sessionId??null;return this.screens.get(key)?.snapshot(sessionId)??Promise.resolve({...this.output(id,worker),...this.grid(id,worker)});}
  clearOutput(key){this.screens.get(key)?.dispose();this.screens.delete(key);this.outputs.delete(key);}

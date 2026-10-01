@@ -17,14 +17,15 @@ const saveView=(candidate,worker,view)=>{try{localStorage.setItem(viewKey(candid
 const roleNames={user:'Sen',agent:'Agent',system:'Kayıt',task:'Görev'};
 const clock=value=>{const at=Date.parse(value??'');return Number.isFinite(at)?new Date(at).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}):'';};
 
-export function workerTerminals(api,{container,notice,refresh,beforeAction=async()=>{},sendMessage=(id,text,worker)=>api.terminalMessage(id,text,worker)}){
+export function workerTerminals(api,{container,conversationContainer,notice,refresh,beforeAction=async()=>{},sendMessage=(id,text,worker)=>api.terminalMessage(id,text,worker)}){
   let candidate=null,snapshot=null,adding=false;
   const panes=new Map(),tabControls=workerTabControls(api,{notice});
   container.classList.add('worker-terminals');
   container.innerHTML='<div class="worker-toolbar"><div><h2>Agent worker’ları</h2><p>Her worker arama, puanlama ve başvuru işlerini ortak kuyruktan alır.</p></div><div class="worker-add"><button id="worker-add" class="primary" type="button">＋ Worker ekle</button></div></div><div class="worker-splits" aria-label="Worker terminalleri"></div>';
   const splits=container.querySelector('.worker-splits'),add=container.querySelector('#worker-add');
-  add.onclick=async()=>{if(!candidate||adding)return;const id=candidate;adding=true;add.disabled=true;try{await api.addWorker(id);await refresh();}catch(error){notice(error.message);}finally{adding=false;add.disabled=!candidate||panes.size>=8;}};
-  function dispose(){tabControls.reset();for(const pane of panes.values()){pane.dead=true;pane.surface.dispose();pane.host.remove();}panes.clear();splits.replaceChildren();}
+  const conversationSplits=conversationContainer?node('div','worker-splits'):null;if(conversationSplits){conversationSplits.setAttribute('aria-label','Kurulum agenti terminali');conversationContainer.append(conversationSplits);}
+  add.onclick=async()=>{if(!candidate||adding)return;const id=candidate;adding=true;add.disabled=true;try{await api.addWorker(id);await refresh();}catch(error){notice(error.message);}finally{adding=false;add.disabled=!candidate||[...panes.values()].filter(p=>!p.worker.conversation).length>=(snapshot?.capabilities?.maxWorkers??8);}};
+  function dispose(){tabControls.reset();for(const pane of panes.values()){pane.dead=true;pane.surface.dispose();pane.host.remove();pane.card.remove();}panes.clear();splits.replaceChildren();conversationSplits?.replaceChildren();}
   function syncSize(pane){
     if(!pane.size||pane.dead||pane.loading)return;
     const {rows,cols}=pane.size,session=pane.worker.active?.sessionId,key=`${session??'idle'}:${rows}:${cols}`;
@@ -148,16 +149,17 @@ export function workerTerminals(api,{container,notice,refresh,beforeAction=async
     if(web&&worker.id==='main'&&snapshot.progress?.primary?.id==='message')pane.start.hidden=true;
     const outcome=worker.presentation?.outcome;pane.outcome.hidden=web||!outcome;
     if(outcome){pane.outcomeTitle.textContent=outcome.title;pane.outcomeDetail.textContent=outcome.detail;pane.outcome.dataset.tone=outcome.tone;}
-    pane.inputHint.hidden=!snapshot?.capabilities?.terminalConversation;pane.inputHint.textContent=active?'Canlı terminal · Giriş ve izin isteklerini burada yanıtlayabilirsin.':web?'Oturum kapalı · Yeni bir mesaj için yukarıdaki yanıt alanını kullanabilirsin.':'Oturum kapalı · Yukarıdaki çıktı önceki oturuma ait. Yeni mesaj yazıp Enter’a basarak agent ile konuşabilirsin.';
+    pane.inputHint.hidden=!snapshot?.capabilities?.terminalConversation;pane.inputHint.textContent=active?'Canlı terminal · Giriş ve izin isteklerini burada yanıtlayabilirsin.':web?'Oturum kapalı · Yeni mesajlarını Kurulum agenti sayfasından gönderebilirsin.':'Oturum kapalı · Yukarıdaki çıktı önceki oturuma ait. Yeni mesaj yazıp Enter’a basarak agent ile konuşabilirsin.';
     pane.start.disabled=pane.busy||!(snapshot?.capabilities?.canStart??false);pane.stop.disabled=pane.busy;pane.restart.disabled=pane.busy||!(snapshot?.capabilities?.canRestart??false);pane.remove.disabled=pane.busy;
     pane.restart.hidden=!snapshot?.capabilities?.workerRestart;pane.card.setAttribute('aria-busy',String(pane.busy));syncSize(pane);showPrompt(pane);
+    if(worker.conversation){pane.start.hidden=true;pane.restart.hidden=true;pane.remove.hidden=true;pane.stop.hidden=!active;pane.stop.textContent='Kapat';pane.stop.setAttribute('aria-label','Sohbeti kapat');}
     const blocked=Boolean(prompt),closed=!active&&!snapshot?.capabilities?.terminalConversation;
     pane.chatInput.placeholder=blocked?'Önce terminaldeki onayı yanıtla':active?'Agent’a yaz…':'Agent’a mesaj bırak…';pane.chatSend.disabled=pane.sending||blocked||closed;pane.chatInput.disabled=pane.sending||blocked||closed;
     pane.chatForm.title=blocked?'Agent terminalde bir onay bekliyor. Yukarıdaki düğmeyle terminale geç ve seçimini yap.':closed?'Bu çalışma alanında kapalı oturuma mesaj bırakılamaz; worker’ı başlat.':'';renderChat(pane);
   }
   function separators(){
     splits.querySelectorAll('.worker-divider').forEach(el=>el.remove());
-    const cards=[...panes.values()].map(p=>p.card);
+    const cards=[...panes.values()].map(p=>p.card).filter(card=>card.parentElement===splits);
     for(let i=1;i<cards.length;i++){
       const left=cards[i-1],right=cards[i],divider=node('div','worker-divider');divider.tabIndex=0;divider.setAttribute('role','separator');divider.setAttribute('aria-orientation','vertical');divider.setAttribute('aria-label','Terminal genişliğini ayarla');divider.setAttribute('aria-valuemin','20');divider.setAttribute('aria-valuemax','80');divider.setAttribute('aria-valuenow','50');
       const resize=(delta,a=left.getBoundingClientRect().width,b=right.getBoundingClientRect().width)=>{const size=Math.max(320,Math.min(a+b-320,a+delta));left.style.flex=`0 0 ${size}px`;right.style.flex=`0 0 ${a+b-size}px`;divider.setAttribute('aria-valuenow',String(Math.round(size/(a+b)*100)));};
@@ -172,13 +174,17 @@ export function workerTerminals(api,{container,notice,refresh,beforeAction=async
     let changed=false;
     for(const [worker,pane] of panes)if(!workers.some(w=>w.id===worker)){pane.dead=true;pane.surface.dispose();pane.host.remove();pane.card.remove();panes.delete(worker);changed=true;}
     for(const worker of workers){let pane=panes.get(worker.id);if(!pane){pane=create(worker);changed=true;}else{const ended=pane.worker.active&&!worker.active;pane.worker=worker;if(worker.active?.sessionId&&pane.session!==worker.active.sessionId){pane.session=worker.active.sessionId;pane.transcript=[];pane.chatSignature=null;void replay(pane);void pollTranscript(pane);}if(ended){pane.promptShown=false;pane.promptAttention=null;pane.dismissedPrompt=false;if(snapshot?.capabilities?.terminalConversation)pane.surface.writeln('\r\n── Oturum sona erdi · Sonuç ve sonraki adım yukarıda ──');}render(pane);}}
+    if(conversationSplits)for(const pane of panes.values()){
+      const interview=value?.automation&&(value.activeRuns??[]).some(run=>run.kind==='interview'&&(run.workerId??'main')===pane.id);
+      const home=pane.worker.conversation||interview?conversationSplits:splits;if(pane.card.parentElement!==home){home.append(pane.card);changed=true;}
+    }
     tabControls.update(id,value,panes);
     if(changed)separators();
     const main=panes.get('main');if(main){const home=value?.setup?.status==='running'?document.getElementById('setup-terminal'):main.card;if(home&&main.host.parentElement!==home)home.append(main.host);}
     const maxWorkers=value?.capabilities?.maxWorkers??8;add.hidden=maxWorkers===1;
     container.querySelector('.worker-toolbar h2').textContent=value?.automation?'Terminal':'Agent worker’ları';
     container.querySelector('.worker-toolbar p').textContent=value?.automation?'Asistanın çalışmasını izle; giriş ve izin isteklerini burada yanıtla.':value?.capabilities?.workerDescription??'Worker’lar çalışma alanının görevlerini ortak kuyruktan alır.';
-    add.disabled=adding||!id||workers.length>=maxWorkers||Boolean(value?.setup&&value.setup.status!=='complete');
+    add.disabled=adding||!id||workers.filter(w=>!w.conversation).length>=maxWorkers||Boolean(value?.setup&&value.setup.status!=='complete');
   }
   function event(event){
     if(event.candidateId!==candidate)return;
@@ -191,5 +197,5 @@ export function workerTerminals(api,{container,notice,refresh,beforeAction=async
     else if(event.event==='state'&&pane.worker.active?.sessionId===event.sessionId){pane.worker.active.state=event.state.replace(/^Some\((.*)\)$/,'$1');render(pane);}
   }
   api.onLogsCleared?.(()=>{for(const pane of panes.values()){pane.version++;pane.loading=false;pane.pending=[];pane.promptAttention=null;pane.dismissedPrompt=false;pane.hasOutput=false;pane.showHistory=false;pane.surface.write(clear,()=>sampleAttention(pane));render(pane);}});
-  return {update,event,dispose,focus({view}={}){const main=panes.get('main');if(!main)return;if(view)main.setView(view);if(main.view()==='chat')main.chatInput.focus();else main.host.querySelector('.xterm-helper-textarea')?.focus();}};
+  return {update,event,dispose,focus({view,worker='main'}={}){const main=panes.get(worker);if(!main)return;if(view)main.setView(view);if(main.view()==='chat')main.chatInput.focus();else main.host.querySelector('.xterm-helper-textarea')?.focus();}};
 }

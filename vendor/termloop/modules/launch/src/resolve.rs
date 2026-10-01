@@ -232,15 +232,6 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         return Err(InvocationError::InvalidMcpEndpoint);
     }
 
-    if opencode_initial_prompt {
-        if let Some(prompt) = prompt {
-            arguments.extend([
-                ResolvedArgument::exact("--prompt", "initial OpenCode prompt"),
-                ResolvedArgument::private(prompt, "initial OpenCode prompt"),
-            ]);
-        }
-    }
-
     let cargo_shard_key = observation
         .as_ref()
         .map(|observation| observation.session_id);
@@ -306,6 +297,15 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
     let target = termloop_agents::resolve_agent_cli(agent_id, &environment)
         .map_err(|error| agent_cli_error(agent_id, error))?;
     let executable = launch_target_utf8(agent_id, &target)?;
+    if agent_id == "opencode" {
+        configure_opencode_launch(&target, &mut arguments, &mut environment, model, permission)?;
+    }
+    if opencode_initial_prompt && let Some(prompt) = prompt {
+        // One argv value keeps leading dashes and newlines literal.
+        arguments.push(ResolvedArgument::private(
+            format!("--prompt={prompt}"), "initial OpenCode prompt",
+        ));
+    }
 
     let delivered = prompt.unwrap_or_default().to_owned();
     let provenance_delivery = if prompt.is_some() {
@@ -320,7 +320,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
                 "first-message",
                 "firstMessage",
                 format!("resources/prompts/{}", template.id),
-                if opencode_initial_prompt { "argv" } else { "terminalInput" },
+                if opencode_initial_prompt { "providerPromptArgument" } else { "terminalInput" },
                 &delivered,
             )]
         })
@@ -397,7 +397,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         },
         content_parts,
         transport: if prompt.is_some() {
-            if opencode_initial_prompt { transport("argv", &delivered) } else { transport("terminalInput", &terminal_delivery) }
+            if opencode_initial_prompt { transport("providerPromptArgument", &delivered) } else { transport("terminalInput", &terminal_delivery) }
         } else if let Some(instructions) = delivered_provider_instructions {
             transport(
                 if agent_id == "codex" {

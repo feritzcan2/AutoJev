@@ -7,7 +7,7 @@ const fieldLabels={goal:'Hedef',criteria:'Kriterler',instructions:'Özel talimat
 const node=(tag,cls,text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
 const time=value=>new Date(value).toLocaleString('tr-TR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'});
 const title=part=>fieldLabels[part.key.split(':').at(-1)]??part.title;
-const workerName=id=>id==='main'?'Worker 1':id==='background'?'Arka plan':id;
+const workerName=id=>id==='main'?'Worker 1':id;
 function textBody(part){
  const wrap=node('div','instruction-text'),head=node('div','instruction-text-head'),copy=node('button','quiet','Kopyala');copy.type='button';
  copy.onclick=async()=>{try{await navigator.clipboard.writeText(part.text);copy.textContent='Kopyalandı';}catch{copy.textContent='Kopyalanamadı';}};
@@ -39,7 +39,7 @@ export function instructionsPanel(api,agent){
   for(const item of [...(data?.profiles??[]),{id:'all',name:'Tüm kayıtlar'}]){const button=node('button','',item.name);button.type='button';button.setAttribute('role','tab');button.setAttribute('aria-selected',String(profile===item.id));button.tabIndex=profile===item.id?0:-1;button.onclick=()=>{if(editing&&editing.value!==editing.original&&!window.confirm('Kaydedilmeyen agent talimatı silinsin mi?'))return;editing=null;profile=item.id;worker.value='';session.value='';source='';if(profile==='all')mode='history';void refresh();};strip.append(button);}
   strip.hidden=!data?.profiles?.length;
   const summary=find('.instruction-agent-summary'),selected=data?.profiles?.find(a=>a.id===profile);summary.replaceChildren();if(!selected)return;
-  summary.append(node('h3','',selected.name+' agent'),node('p','',selected.description),node('p','',selected.when),node('small','',`Sürüm ${selected.version} · ${selected.agent_id} · ${selected.selection.model}. Sağlayıcı ve model ${selected.role==='background'?'arka plan görevi':'çalışma alanı'} ayarlarından alınır.`));
+  summary.append(node('h3','',selected.name+' agent'),node('p','',selected.description),node('p','',selected.when),node('small','',`Sürüm ${selected.version} · ${selected.agent_id} · ${selected.selection.model}. Sağlayıcı ve model çalışma alanı ayarlarından alınır.`));
   const edit=node('details','instruction-profile-editor');edit.append(node('summary','','Agent talimatını düzenle'));
   const note=node('p','','Kaydedilen talimat sonraki oturum açılışında sistem/geliştirici talimatı olarak verilir. Açık oturum kendi sürümüyle devam eder. Ortak kurallar aşağıda ayrıca gösterilir.');
   const input=node('textarea');input.setAttribute('aria-label','Agent talimatı');input.value=editing?.id===profile?editing.value:selected.instructions;input.rows=10;

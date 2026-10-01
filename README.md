@@ -49,7 +49,7 @@ yeniden aç. Kayıtlı profil ve CV korunur; hazırlık yeniden denenir.
 
 1. [Codex CLI](https://github.com/openai/codex) veya
    [Claude Code](https://code.claude.com/docs/en/overview) ya da
-   [OpenCode](https://opencode.ai) (1.18.33+) kur ve kendi hesabınla
+   [OpenCode](https://opencode.ai) (1.18.33–1.x) kur ve kendi hesabınla
    terminalde oturum aç. Sağlayıcı kullanımı hesabının ücret ve veri koşullarına tabidir.
 2. Genel web otomasyonları için Google Chrome kur. Agent ayarlarından ayrı tarayıcı
    veya Jev seçebilirsin. Ayrı tarayıcı her otomasyon için kendi profilini açar;
@@ -131,7 +131,9 @@ AutoJev GPL-3.0-or-later ve ticari lisans seçenekleriyle sunulur; [LICENSE](LIC
 Agent ayarlarında OpenCode seçilebilir. TermLoop ile aynı OpenCode Go modelleri,
 `default`, `plan` ve `bypassPermissions` izinleri kullanılır. Oturum devamı,
 MCP araçları ve agent talimatları desteklenir. Kurulum için `opencode auth login`
-kullanılır; durum takibi OpenCode 1.18.33 veya üzerini gerektirir.
+kullanılır; durum takibi OpenCode 1.18.33–1.x gerektirir. OpenCode v2’nin başlatma
+ayarları tanınır; durum takibi ve oturum devamı bulunmadığı için v2 henüz
+AutoJev otomasyonlarında kullanılamaz.
 OpenCode kendi context sıkıştırmasını yönetir; AutoJev context eşikleri ve
 yerel metin konuşma dökümü şu anda Claude/Codex içindir. OpenCode konuşması
 agent terminalinde görüntülenir.

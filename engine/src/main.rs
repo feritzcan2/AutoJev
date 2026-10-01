@@ -13,7 +13,6 @@ use termloop_terminal::{TerminalEvent, TerminalService, TerminalGrid, TerminalGr
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 const TEMPLATE: PromptTemplate = PromptTemplate { id: "jobloop.application-assistant", version: 1, authored_body: "You are JobLoop's job application assistant. Read AGENTS.md and the referenced skills. Read the candidate profile and application history through JobLoop MCP. Work only within the recorded authorization. Report actual work through MCP; never invent submission confirmation." };
-const BACKGROUND_TEMPLATE: PromptTemplate = PromptTemplate { id: "jobloop.background-skill", version: 1, authored_body: "You are a temporary JobLoop background worker. Read AGENTS.md and execute only the assigned skill through its scoped MCP tools. Record the result and finish." };
 fn emit(value:Value){let mut out=io::stdout().lock();let _=writeln!(out,"{value}");let _=out.flush();}
 fn field<'a>(value:&'a Value,key:&str)->Result<&'a str,String>{value[key].as_str().filter(|s|!s.is_empty()).ok_or_else(||format!("Missing {key}"))}
 fn now()->u64{std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64}
@@ -40,7 +39,7 @@ impl Engine {
                 if provider=="opencode" {
                     let capability=termloop_agents::discover_capabilities(provider);
                     if capability.available && capability.observation!=termloop_agents::ObservationCapability::LaunchScopedHook {
-                        return Err("OpenCode 1.18.33 veya daha yeni bir sürüm gerekli. Terminalde opencode upgrade ile güncelle.".into());
+                        return Err("AutoJev otomasyonları durum takibi için OpenCode 1.18.33–1.x gerektiriyor. OpenCode v2 için durum takibi ve oturum devamı henüz desteklenmiyor; uyumlu bir 1.x sürümü veya başka bir sağlayıcı seç.".into());
                     }
                 }
                 let id=field(v,"sessionId")?;let cwd=field(v,"cwd")?;let directory=field(v,"runtimeDirectory")?;
@@ -51,7 +50,7 @@ impl Engine {
                 let conversation=v["resumeId"].as_str().map(|identity|ConversationHandle::from_native(provider,identity.into())).transpose().map_err(|e|e.to_string())?;
                 let profile=personal_agent::for_launch(v)?;
                 let instructions=profile.as_ref().map(termloop_launch::personal_agent_provider_instructions).transpose().map_err(|e|e.to_string())?;
-                let mut request=LaunchRequest::interactive(provider,cwd,if profile.is_some() { &termloop_launch::PERSONAL_AGENT_TEMPLATE } else if v["taskType"]=="background" { &BACKGROUND_TEMPLATE } else { &TEMPLATE });
+                let mut request=LaunchRequest::interactive(provider,cwd,if profile.is_some() { &termloop_launch::PERSONAL_AGENT_TEMPLATE } else { &TEMPLATE });
                 if let Some(ref instructions)=instructions {request.provider_instructions_source=Some(&termloop_launch::PERSONAL_AGENT_TEMPLATE);request.provider_instructions=Some(instructions);}
                 let project_trust=workspace_trust(v);request.codex_project_trust=project_trust;
                 if let Some(ref conversation)=conversation{request.conversation=conversation.resume();}
@@ -65,7 +64,7 @@ impl Engine {
                 request.model=field(v,"model")?;request.permission=field(v,"permission")?;request.reasoning=field(v,"reasoning")?;request.explicit_configuration=true;request.workspace_network=v["network"].as_bool();
                 let executable=std::env::current_exe().map_err(|e|e.to_string())?;
                 let mut settings=termloop_agents::provider_hook_settings(provider,&executable).map_err(|e|e.to_string())?;
-                if provider=="claude"&&v["taskType"]!="background" {
+                if provider=="claude" {
                     if let Some(ref mut settings)=settings {
                         let output=Path::new(directory).join(format!("context-{id}.jsonl"));
                         settings.content=context_status::settings(&settings.content,&executable,&output)?;
@@ -152,7 +151,7 @@ async fn main(){
 // Provider permission settings and the user's global trust file stay unchanged.
 fn workspace_trust(input: &Value) -> CodexProjectTrust {
     match input["taskType"].as_str() {
-        Some("background" | "automation") => CodexProjectTrust::ManagedWorkspace,
+        Some("automation") => CodexProjectTrust::ManagedWorkspace,
         _ => CodexProjectTrust::Inherit,
     }
 }
@@ -162,10 +161,8 @@ mod workspace_trust_tests {
     use super::*;
     #[test]
     fn only_managed_tasks_override_folder_trust() {
-        for task_type in ["background", "automation"] {
-            assert_eq!(workspace_trust(&json!({"taskType":task_type})), CodexProjectTrust::ManagedWorkspace);
-        }
-        for value in [json!({}), json!({"taskType":"application"}), json!({"taskType":"unknown"})] {
+        assert_eq!(workspace_trust(&json!({"taskType":"automation"})), CodexProjectTrust::ManagedWorkspace);
+        for value in [json!({}), json!({"taskType":"application"}), json!({"taskType":"unknown"}), json!({"taskType":"background"})] {
             assert_eq!(workspace_trust(&value), CodexProjectTrust::Inherit);
         }
     }

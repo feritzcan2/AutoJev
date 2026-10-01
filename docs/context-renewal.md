@@ -1,8 +1,8 @@
 # Otomatik context yönetimi
 
-## Compaction — varsayılan %80
+## Compaction — varsayılan kapalı
 
-Agent → Agent ayarları → **Otomatik compaction eşiği (%)**. Varsayılan **80**; `0` kapatır. Ayarı bulunmayan eski profiller de %80 kullanır. Eşik değişikliği çalışan aday agent'ında bir sonraki ölçümde uygulanır. Claude ve Codex desteklenir; aday setup oturumları da izlenir. Background Jobs kapsam dışındadır.
+Agent → Agent ayarları → **Otomatik compaction eşiği (%)**. Varsayılan **0 (kapalı)**; %1–100 arasında bir eşik seçerek açılır. Ayarı bulunmayan eski profillerde de kapalıdır. Eşik değişikliği çalışan aday agent'ında bir sonraki ölçümde uygulanır. Claude ve Codex desteklenir; aday setup oturumları da izlenir.
 
 Güncel kullanım eşiğe ulaşınca `/compact` bir kez gönderilir. Görev sonucu beklenmez. Codex çalışan turda komutu Tab ile, Claude Enter ile kendi kuyruğuna alır; komutun çalışmaya başlama zamanını sağlayıcı belirler. Uygulama turu zorla kesmez. İzin ekranı, kullanıcı taslağı veya devam eden mesaj teslimi varsa terminal hazır olana kadar bekler. Kısmen teslim edilmiş ya da sonucu belirsiz bir komut otomatik tekrarlanmaz.
 
@@ -20,7 +20,7 @@ Son isteğin girdi token sayısı sağlayıcının bildirdiği context kapasites
 
 Eşik aşılırsa mevcut kampanya görevinin geçerli sonuç kaydı ve sağlayıcının `Idle` bildirimi beklenir. Kesinti, hata, Chrome bekleyişi veya sonuçsuz biten tur görevin tamamlandığı anlamına gelmez. Sağlayıcı context'i sıkıştırsa bile gözlenen eşik aşımı görev sonuna kadar hatırlanır.
 
-Görev bitince eski oturum kapanır. Sonraki görev yeni konuşmada açılır. Aday bilgileri, başvuru kayıtları, yanıtlar, belgeler, kaynak tarama takvimi ve tarayıcı sekmeleri korunur. Oturum kapatılamazsa kampanya duraklatılır. Background Jobs zaten ayrı, geçici oturumlar kullanır; bu ayar ana kampanya agent'ına uygulanır.
+Görev bitince eski oturum kapanır. Sonraki görev yeni konuşmada açılır. Aday bilgileri, başvuru kayıtları, yanıtlar, belgeler, kaynak tarama takvimi ve tarayıcı sekmeleri korunur. Oturum kapatılamazsa kampanya duraklatılır.
 
 Kullanım kayıtları yalnızca etkin sağlayıcı konuşmasının kimliği ve aday çalışma alanı eşleşince okunur. Codex için `CODEX_HOME` desteklenir. Claude status line sadece JobLoop'un açtığı ana oturuma eklenir ve terminalde `ctx 16.0%` biçiminde gösterilir; genel Claude ayarlarına yazılmaz. Kayıt biçimi desteklenmezse terminal metninden yüzde tahmini yapılmaz.
 

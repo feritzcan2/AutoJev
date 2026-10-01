@@ -38,7 +38,7 @@ göstermiyor. Rezervasyon, ödeme, başvuru formu gönderimi ve hesap oluşturma
    denemeyi engellenmiş olarak bitirdi. Uygulama düzenli çalışmaya izin vermedi.
 
 Gerçek sağlayıcı çalıştırmasında model yanıtları, MCP yanıtları ve sayfalar taklit edilmedi.
-Tekrarlanabilir yerel form testi ayrıca `scripts/smoke-automations.mjs` ile çalıştırıldı;
+O tarihteki yerel form testi, daha sonra kaldırılan `scripts/smoke-automations.mjs` ile çalıştırıldı;
 o testte yalnızca sağlayıcı çağrıları kontrollü girdiler kullanır.
 
 ## Bu test sırasında düzeltilenler

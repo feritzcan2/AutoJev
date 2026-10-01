@@ -4,7 +4,7 @@ import {mkdtemp,mkdir,rm} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {automationWorkflow,automationPrompt} from '../app/automation-worker.mjs';
 import {automationTaskContext} from '../app/automation-task-context.mjs';
@@ -39,7 +39,7 @@ test('user guide edits survive agent learning while untouched sections keep upda
  assert.equal(f.db.sourceSkills.history(f.id,url).length,2);
 });
 function fixture(t,{file=':memory:'}={}){
- const store=new Store(file),db=new AutomationStore(store),a=db.create('housing',{goal:'Find homes',criteria:{location:'Berlin',budget:'1500',requirements:'Two rooms'},sources:[url,'https://homes.test/other']});
+ const store=new WorkspaceDatabase(file),db=new AutomationStore(store),a=db.create('housing',{goal:'Find homes',criteria:{location:'Berlin',budget:'1500',requirements:'Two rooms'},sources:[url,'https://homes.test/other']});
  db.review(a.id);db.saveSource(a.id,url,{skillText:'Keep my manual instructions. Use the current criteria.'});
  t.after(()=>{try{store.close();}catch{}});
  const start=(kind='trial',sourceUrl=url,workerId='main')=>{
@@ -162,11 +162,11 @@ test('schema upgrade is backed up and restore keeps skill history while requirin
  const run=f.start();await run.call('run_workspace_source_tool',{args:['search']});await learn(f,run);await run.call('finish_automation_run',{status:'completed',summary:'Ready'});
  f.store.db.exec('PRAGMA user_version=11');f.store.close();
  const upgrade=await prepareDataUpgrade({dataDirectory:data,appVersion:'source-skills-test'});assert.ok(upgrade.backup);assert.equal((await inspectBackup(upgrade.backup)).schemaVersion,11);
- const core=new Store(path.join(data,'jobloop.sqlite'));t.after(()=>{try{core.close();}catch{}});
+ const core=new WorkspaceDatabase(path.join(data,'jobloop.sqlite'));t.after(()=>{try{core.close();}catch{}});
  const current=new AutomationStore(core);assert.equal(current.sourceSkills.get(f.id,url).version,1);
  const backup=path.join(base,'export');await createBackup({dataDirectory:data,db:core.db,destination:backup,appVersion:'source-skills-test'});
  await stageRestore({dataDirectory:data,directory:backup,db:core.db,appVersion:'source-skills-test'});core.close();await applyPendingRestore({dataDirectory:data});
- const restored=new Store(path.join(data,'jobloop.sqlite'));try{
+ const restored=new WorkspaceDatabase(path.join(data,'jobloop.sqlite'));try{
   const db=new AutomationStore(restored),skill=db.sourceSkills.get(f.id,url);assert.equal(skill.version,1);assert.equal(skill.needsReview,true);assert.equal(db.sourceSkills.history(f.id,url).length,1);
   assert.equal(db.run(run.run.id).sourceToolCheck.status,'succeeded');assert.deepEqual(db.run(run.run.id).sourceToolCheck.args,['search']);
   assert.equal(db.get(f.id).status,'paused');assert.equal(db.get(f.id).sourceSettings[url].skillText,'Keep my manual instructions. Use the current criteria.');

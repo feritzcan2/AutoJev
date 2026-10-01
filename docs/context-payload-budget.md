@@ -4,6 +4,42 @@ Context optimization is an output projection, not a database migration. Full rec
 
 ## Current projections
 
+### Exact document text and record lookup
+
+Jev document responses omit viewport prose only when every line is already in
+the complete document text (allowing whitespace differences). Any viewport-only
+content keeps the full viewport text. Complete current control maps remain in
+each response; the duplicate `elements` list is omitted when those maps exist.
+The internal guarded browser snapshot is unchanged.
+
+`get_workspace_records` accepts a literal `query` over titles, companies,
+locations, URLs, summaries and table cells. Filtering and pagination happen in
+the app. Lists return record identities, current states, table fields and score
+metadata. The tool explicitly requires an `itemId` read for the full proposal,
+evidence and uncertainties before judging or acting. Template output contains
+the table's record contract rather than unrelated setup/mail instructions.
+Full record reads preserve all stored values and use exact context fragments
+when they exceed the existing byte limit. No saved data is removed.
+
+Replay of complete parseable responses from the 2026-10-01 08:20–09:20 run:
+103 document responses shrank from 933,851 to 727,664 serialized characters
+(22.1%); one record-list response shrank from 26,495 to 3,985 (85%). Partial
+and provider-spilled responses were excluded. These measurements describe
+payload size, not whole-session token or billing savings.
+
+Validation: `tests/jev-document-context.test.mjs`,
+`tests/workspace-record-reading.test.mjs`, and
+`node scripts/smoke-document-context.mjs` cover exact text, viewport-only facts,
+current control IDs, workspace isolation, filtered pagination and full-record
+recovery. This projection does not change compaction thresholds or restart
+running sessions.
+
+The full suite passed (734 tests), as did syntax checks, build and the isolated
+document-context Chrome smoke. The older `smoke-jev-reading.mjs` stops at its
+expectation that an ordinary trial click must be rejected without a reserved
+proposal; the current automation interaction contract allows that click. Its
+document-reading assertions passed before that unrelated assertion.
+
 Web automation context now has a 16,000-byte serialized response limit. Small
 `get_automation_context` responses keep their existing shape. Larger responses
 return exact JSON fragments, with `context.id` and `context.nextOffset` for
@@ -34,7 +70,7 @@ Historical replay of Ferit's f77d86ee session: four task packets shrink from 320
 
 ## Claude startup and targeted recovery
 
-Candidate and background workspaces now generate a small CLAUDE.md with `@AGENTS.md`. Shared rules remain in AGENTS.md; existing Claude-specific additions are preserved. Claude's documented relative import loads those rules without a separate discovery read. Startup revision context-v4 no longer demands the campaign skill before an application. Files update at the next app-managed launch, not inside a running candidate session.
+App-managed workspaces generate a small CLAUDE.md with `@AGENTS.md`. Shared rules remain in AGENTS.md; existing Claude-specific additions are preserved. Claude's documented relative import loads those rules without a separate discovery read. Startup revision context-v4 no longer demands the campaign skill before an application. Files update at the next app-managed launch, not inside a running candidate session.
 
 Recovery is an index plus seven condition-specific files (roughly 0.6–1.8 KB each). The model reads only the observed failure's procedure, rather than the entire recovery document. Control observations include owner-bound fieldId and recommendedTool when supported. Invalid/stale batch-fill responses include a full current observation. Successful task reports now include an explicit end-turn completion receipt and avoid echoing the full campaign.
 

@@ -9,6 +9,8 @@ import {sourceInput} from './automation-sources.mjs';
 import {launchAutomationWorker} from './automation-worker.mjs';
 import {automationBrowser} from './automation-browser.mjs';
 import {webWorkspaceView} from './workspace-view.mjs';
+import {isConversation} from './workspace-conversation.mjs';
+import {setupAgentSettings} from './setup-agent.mjs';
 import {listDocuments} from './artifacts.mjs';
 
 export function registerAutomationServices({root,data,handle,emit,validateSettings,dialog,shell,window,db,browsers,agents,mcp,notify=()=>{},launch=launchAutomationWorker}){
@@ -18,7 +20,7 @@ export function registerAutomationServices({root,data,handle,emit,validateSettin
  db.siteAccess.changed=()=>{for(const a of db.list())emit('automation-changed',{automationId:a.id});};
  const changed=id=>emit('automation-changed',{automationId:id});
  const runtime=new WebTasks(db,{changed,probeSource:(id,task)=>browsers.probeAutomationSource(id,task),onRunFinished:(id,run,options)=>browsers.finishAutomationRun(id,run,options),browserReady:id=>{if(browsers.status(id).ready)return true;const a=db.get(id);if(a.status==='enabled'||db.store.workspaces.tasks.list(id,{states:['pending']}).some(t=>t.request?.manual))browsers.prepare(id);return browsers.status(id).ready;},launch:(run,automation,onEvent,signal)=>launch({root,data,db,run,automation,onEvent,signal,agents,mcp,
-  browser:automationBrowser(browsers.forWorker(run.workerId??'main',()=>!signal.aborted&&db.run(run.id).status==='running'),{mode:automation.browserMode,resumeContext:run.continuation?.browserContext??run.resumeContext,recordId:run.recordOperation?run.recordId:undefined,sourceUrl:run.recordOperation?undefined:run.sourceUrl,sourceUrls:automation.sources,readTabKey:run.recordOperation?`record:${run.recordId}`:run.sourceUrl&&!run.recordId?`source:${run.sourceUrl}`:run.kind!=='run'?`read:${run.sourceUrl??run.workerId??'main'}`:undefined}),
+  browser:automationBrowser(browsers.forWorker(run.workerId??'main',()=>!signal.aborted&&db.run(run.id).status==='running'),{mode:automation.browserMode,isolatedResearch:isConversation(run),resumeContext:run.continuation?.browserContext??run.resumeContext,recordId:run.recordOperation?run.recordId:undefined,sourceUrl:run.recordOperation?undefined:run.sourceUrl,sourceUrls:automation.sources,readTabKey:run.recordOperation?`record:${run.recordId}`:run.sourceUrl&&!run.recordId?`source:${run.sourceUrl}`:run.kind!=='run'?`read:${run.sourceUrl??run.workerId??'main'}`:undefined}),
   report:(id,runId,status,summary,goalReached)=>{const result=runtime.report(id,runId,status,summary,goalReached);if(run.kind!=='interview')notify(automation.title,db.run(runId).summary);return result;},changed,
   onOutput:bytes=>{outputs.set(run.id,Buffer.concat([outputs.get(run.id)??Buffer.alloc(0),Buffer.from(bytes)]).subarray(-150000));while(outputs.size>30)outputs.delete(outputs.keys().next().value);emit('automation-output',{automationId:run.automationId,runId:run.id,bytes});}
  })});
@@ -27,17 +29,19 @@ export function registerAutomationServices({root,data,handle,emit,validateSettin
  handle('automation-template-save',(id,input)=>{const a=db.get(id),base=db.template(a.templateId),template=db.saveTemplate({...base,title:input.title,description:input.description,guidance:input.guidance,table:a.table});changed(null);return template;});
  handle('automation-template-export',async id=>{const t=db.template(id);const template=reusableTemplate(t,value=>db.store.workspaces.registry.normalize(value)),result=await dialog.showSaveDialog(window(),{defaultPath:t.title.replace(/[^\p{L}\p{N} _-]/gu,'')+'.loop-template.json',filters:[{name:'Loop template',extensions:['json']}]});if(result.canceled)return;await writeFile(result.filePath,JSON.stringify({format:'loop-template',version:2,template},null,2)+'\n',{mode:0o600});return result.filePath;});
  handle('automation-template-import',async()=>{const picked=await dialog.showOpenDialog(window(),{properties:['openFile'],filters:[{name:'Loop template',extensions:['json']}]});if(picked.canceled)return null;const file=picked.filePaths[0];if((await stat(file)).size>100000)throw Error('Template dosyası çok büyük');const input=JSON.parse(await readFile(file,'utf8'));if(input.format!=='loop-template'||![1,2].includes(input.version))throw Error('Desteklenmeyen template dosyası');const template=db.saveTemplate(input.template);changed(null);return template;});
- const snapshot=async id=>{const activeRuns=runtime.slots(id).map(s=>s.run);return webWorkspaceView({...db.snapshot(id),activeRun:activeRuns[0]??null,activeRuns,documents:await listDocuments(workspace(id)),browserStatus:browsers.status(id)},agents);};
+ const snapshot=async id=>{const activeRuns=runtime.slots(id).map(s=>s.run);return webWorkspaceView({...db.snapshot(id),setupAgent:{settings:setupAgentSettings(db,id)},activeRun:activeRuns[0]??null,activeRuns,documents:await listDocuments(workspace(id)),browserStatus:browsers.status(id)},agents);};
  const save=async(id,input)=>{
   if(input.agentSettings){input={...input,agentSettings:withAgentDefaults(input.agentSettings)};await validateSettings(input.agentSettings);}
   const before=db.get(id),browserChanged=input.browserMode!==undefined&&input.browserMode!==before.browserMode||input.chromeProfile!==undefined&&JSON.stringify(input.chromeProfile)!==JSON.stringify(before.chromeProfile);
   if(browserChanged){if(!['separate','jev'].includes(input.browserMode??before.browserMode))throw Error('Geçersiz tarayıcı seçimi');await runtime.pause(id);}
-  else if(!(Object.keys(input).length===1&&input.agentSettings))db.assertIdle(id);
+  else if(!(Object.keys(input).length===1&&input.agentSettings))db.assertIdle(id,{allowWaitingConversation:true});
   const a=db.save(id,input);if(browserChanged)await browsers.resetCandidate(id);changed(id);return a;
  };
  handle('automation-save',save);
  handle('workspace-answer',(id,question,value)=>runtime.answer(id,question,value));
  handle('automation-setup',id=>runtime.setup(id));
+ handle('setup-agent-settings',async(id,input)=>{const settings={...withAgentDefaults(input),contextRestartPercent:0};await validateSettings(settings);return runtime.configureConversation(id,settings);});
+ handle('setup-agent-restart',id=>runtime.configureConversation(id,null,{restart:true}));
  handle('workspace-source-integrations',()=>sourceIntegrations);
  handle('workspace-source-instructions',async(id,url,version)=>{const source=db.sources(id).find(s=>s.url===url);if(!source)throw Error('Kaynak bulunamadı');return {...await workspaceSourceInstructions(root,source,{learnedSkill:db.sourceSkills.get(id,url,version)}),skillHistory:db.sourceSkills.history(id,url)};});
  handle('workspace-source-test',async(id,url)=>{const source=db.sources(id).find(s=>s.url===url);if(!source)throw Error('Kaynak bulunamadı');return runSourceTool(root,source,['search','--help'],{test:true});});

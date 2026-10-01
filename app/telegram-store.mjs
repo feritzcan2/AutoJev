@@ -1,5 +1,4 @@
 import {randomBytes,createHash} from 'node:crypto';
-import {applicationQueueState} from './application-queue.mjs';
 
 const id=()=>randomBytes(12).toString('hex');
 const hash=value=>createHash('sha256').update(value).digest('hex');
@@ -37,9 +36,10 @@ export class TelegramStore{
   if(!this.db.prepare('PRAGMA table_info(telegram_job_messages)').all().some(column=>column.name==='question_id'))this.db.exec('ALTER TABLE telegram_job_messages ADD COLUMN question_id TEXT');
   if(!this.db.prepare('PRAGMA table_info(telegram_job_messages)').all().some(column=>column.name==='priority'))this.db.exec('ALTER TABLE telegram_job_messages ADD COLUMN priority INTEGER NOT NULL DEFAULT 0');
   this.db.exec('CREATE INDEX IF NOT EXISTS telegram_question_message_updates ON telegram_job_messages(question_id,status)');
-  if(!store.generic)this.db.exec(`INSERT OR IGNORE INTO telegram_job_messages(delivery_id,job_id,question_id)
-    SELECT o.id,coalesce(q.job_id,''),q.id FROM telegram_outbox o
-    JOIN questions q ON q.candidate_id=o.candidate_id AND q.id=json_extract(o.data,'$.questionId')
+  this.db.exec(`INSERT OR IGNORE INTO telegram_job_messages(delivery_id,job_id,question_id)
+    SELECT o.id,coalesce(json_extract(q.value,'$.recordId'),''),json_extract(q.value,'$.id') FROM telegram_outbox o
+    JOIN automations a ON a.id=o.candidate_id
+    JOIN json_each(a.data,'$.questions') q ON json_extract(q.value,'$.id')=json_extract(o.data,'$.questionId')
     WHERE o.status='sent' AND o.message_id>0 AND json_extract(o.data,'$.kind') IN ('question','message')
      AND coalesce(json_extract(o.data,'$.reply_markup.force_reply'),0)=0;`);
   if(!this.db.prepare('PRAGMA table_info(telegram_links)').all().some(column=>column.name==='bot_id'))this.transaction(()=>{
@@ -78,7 +78,7 @@ export class TelegramStore{
    if(!pair||this.link(pair.candidate_id))return null;
    const botId=this.config(pair.candidate_id).bot_id;
    if(this.db.prepare('SELECT 1 FROM telegram_links WHERE bot_id=? AND (chat_id=? OR user_id=?)').get(botId,String(chat),String(user)))return null;
-   const cursor=this.store.maxEventSeq?.()??this.db.prepare('SELECT coalesce(max(seq),0) AS seq FROM events').get().seq;
+   const cursor=this.store.maxEventSeq();
    const data={name:String(name).slice(0,150),newJobs:true,notifications:true,questions:true,linkedAt:this.now(),dialog:null};
    this.db.prepare('INSERT INTO telegram_links VALUES(?,?,?,?,?,?)').run(pair.candidate_id,botId,String(chat),String(user),JSON.stringify(data),cursor);
    this.db.prepare('DELETE FROM telegram_pairs WHERE candidate_id=?').run(pair.candidate_id);
@@ -110,8 +110,8 @@ export class TelegramStore{
  delivery(deliveryId){return decode(this.db.prepare(`SELECT * FROM telegram_outbox WHERE id=? AND ${this.scope('candidate_id')}`).get(deliveryId,this.botId,this.botId));}
  question(candidate,questionId){
   this.assertCandidate(candidate);
-  const q=this.store.generic?this.store.questions(candidate).find(q=>q.id===questionId):this.db.prepare('SELECT id,question,answer,job_id AS jobId,resolution FROM questions WHERE candidate_id=? AND id=?').get(candidate,questionId);
-  return q?{...q,resolution:this.store.generic?q.resolution??null:JSON.parse(q.resolution??'null')}:null;
+  const q=this.store.questions(candidate).find(q=>q.id===questionId);
+  return q?{...q,resolution:q.resolution??null}:null;
  }
  pending(){return this.db.prepare(`SELECT * FROM telegram_outbox WHERE status='pending' AND next_at<=? AND ${this.scope('candidate_id',true)} ORDER BY rowid LIMIT 20`).all(this.now(),this.botId,this.botId).map(decode);}
  recordJobDelivery(row,botId){
@@ -148,10 +148,10 @@ export class TelegramStore{
  }
  collectPins(){
   for(const link of this.links())this.transaction(()=>{
-   const candidate=link.candidate_id,campaign=this.store.campaign(candidate),tasks=this.store.workerState.tasks(candidate),jobs=new Map(this.store.jobs(candidate).map(job=>[job.id,job]));
+   const candidate=link.candidate_id,jobs=new Map(this.store.jobs(candidate).map(job=>[job.id,job]));
    const rows=this.db.prepare("SELECT o.id,json_extract(o.data,'$.jobId') AS job_id,p.wanted FROM telegram_outbox o LEFT JOIN telegram_pins p ON p.delivery_id=o.id WHERE o.candidate_id=? AND o.status='sent' AND o.message_id>0 AND json_extract(o.data,'$.kind')='new_job'").all(candidate);
    for(const row of rows){
-    const job=jobs.get(row.job_id),wanted=Number(Boolean(job&&['queued','active'].includes(applicationQueueState(this.store,candidate,job,{campaign,tasks}).state)));
+    const job=jobs.get(row.job_id),wanted=Number(Boolean(job&&['queued','active'].includes(this.store.queueState(candidate,job).state)));
     if(row.wanted===null){this.db.prepare('INSERT INTO telegram_pins(delivery_id,wanted,status) VALUES(?,?,?)').run(row.id,wanted,wanted?'pending':'synced');if(wanted)this.prioritizeEdit(row.id);}
     else if(row.wanted!==wanted){this.db.prepare("UPDATE telegram_pins SET wanted=?,status='pending',attempts=0,next_at=0,error=NULL WHERE delivery_id=?").run(wanted,row.id);this.prioritizeEdit(row.id);}
    }
@@ -210,12 +210,11 @@ export class TelegramStore{
    // Queue changes live on the campaign rather than the job. Refresh old cards on
    // upgrade, and whenever scheduling or permissions change without a job event.
    const campaign=this.store.campaign(link.candidate_id),profile=this.store.profile(link.candidate_id);
-   const queueSignature=hash(JSON.stringify([this.store.generic?'workspace-cards-v1':'cards-v3',campaign?.status,campaign?.task?.jobId,campaign?.task?.kind,Boolean(campaign?.task?.report),
+   const queueSignature=hash(JSON.stringify(['workspace-cards-v1',campaign?.status,campaign?.task?.jobId,campaign?.task?.kind,Boolean(campaign?.task?.report),
     this.store.workerState.tasks(link.candidate_id).map(({workerId,task})=>[workerId,task.jobId,task.kind,task.state,Boolean(task.report)]),
-    Object.keys(campaign?.pendingRetries??{}),Object.keys(campaign?.pendingResumes??{}),Object.keys(campaign?.pendingRecoveries??{}),
-    profile.authorization,profile.rankThreshold,this.store.sources(link.candidate_id).map(source=>[source.id,source.applyMode])]));
+    profile.authorization,this.store.sources(link.candidate_id).map(source=>[source.id,source.applyMode])]));
    if(link.data.queueSignature!==queueSignature){this.refreshJobMessages(link.candidate_id);link.data.queueSignature=queueSignature;}
-   const rows=this.store.eventsAfter?.(link.candidate_id,link.cursor)??this.db.prepare('SELECT seq,kind,data FROM events WHERE candidate_id=? AND seq>? ORDER BY seq LIMIT 200').all(link.candidate_id,link.cursor);
+   const rows=this.store.eventsAfter(link.candidate_id,link.cursor);
    for(const row of rows){
     const data=JSON.parse(row.data);
     // Keep retries/backoff intact and coalesce all job changes into the next edit.

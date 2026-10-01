@@ -32,6 +32,18 @@ export class WorkspaceRecords {
  find(id,key){this.workspaces.get(id);return parse(this.db.prepare('SELECT data FROM workspace_records WHERE workspace_id=? AND record_key=?').get(id,key));}
  list(id,{offset=0,limit=500,descending=true}={}){this.workspaces.get(id);return this.db.prepare(`SELECT data FROM workspace_records WHERE workspace_id=? ORDER BY rowid ${descending?'DESC':'ASC'} LIMIT ? OFFSET ?`).all(id,limit,offset).map(parse);}
  count(id){this.workspaces.get(id);return this.db.prepare('SELECT count(*) AS n FROM workspace_records WHERE workspace_id=?').get(id).n;}
+ search(id,{query,offset=0,limit=25}){
+  this.workspaces.get(id);
+  const fold=value=>value.normalize('NFKC').toLowerCase(),needle=fold(query),records=[];let total=0;
+  // Search locally so agents need not load every record to find one listing.
+  // JS case folding also covers non-ASCII company names, unlike SQLite lower.
+  for(const row of this.db.prepare('SELECT data FROM workspace_records WHERE workspace_id=? ORDER BY rowid ASC').iterate(id)){
+   const record=parse(row),text=JSON.stringify([record.title,record.role,record.company,record.location,record.url,record.key,record.sourceUrl,record.summary,record.cells]);
+   if(!fold(text).includes(needle))continue;
+   if(total>=offset&&records.length<limit)records.push(record);total++;
+  }
+  return {records,total};
+ }
  put(id,key,value){
   this.workspaces.get(id);const record={...value,id:value.id??randomUUID()},existing=this.db.prepare('SELECT workspace_id FROM workspace_records WHERE id=?').get(record.id);
   if(existing&&existing.workspace_id!==id)throw Error('Kayıt bu çalışma alanına ait değil');

@@ -1,5 +1,5 @@
-const running={prepare:'Hazırlanıyor',execute:'Uygulanıyor',verify:'Doğrulanıyor'};
-const queued={prepare:'Hazırlama sırada',execute:'Uygulama sırada',verify:'Doğrulama sırada'};
+const running={score:'Puanlanıyor',prepare:'Hazırlanıyor',execute:'Uygulanıyor',verify:'Doğrulanıyor'};
+const queued={score:'Puanlama sırada',prepare:'Hazırlama sırada',execute:'Uygulama sırada',verify:'Doğrulama sırada'};
 export function recordOperationStatus(record){
  const {task,lastTask,question}=record.recordAction??{};
  if(question)return {id:'waiting',label:'Yanıt bekliyor',tone:'blocked',detail:question.text,active:true};
@@ -31,5 +31,5 @@ export function activeRecordOperations(snapshot){
   if(snapshot.automation?.questions?.some(q=>q.recordId===run.recordId&&q.answer==null))continue;
   seen.add(run.id);counts.set(run.recordOperation,(counts.get(run.recordOperation)??0)+1);
  }
- return ['execute','prepare','verify'].filter(kind=>counts.has(kind)).map(kind=>({kind,count:counts.get(kind),label:(snapshot.definition?.recordOperations?.[kind]?.runningLabel??running[kind]).toLocaleLowerCase('tr-TR')}));
+ return ['execute','prepare','score','verify'].filter(kind=>counts.has(kind)).map(kind=>({kind,count:counts.get(kind),label:(snapshot.definition?.recordOperations?.[kind]?.runningLabel??running[kind]).toLocaleLowerCase('tr-TR')}));
 }

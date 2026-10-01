@@ -42,7 +42,7 @@ mod tests {
             let inspection=serde_json::to_string(manifest.inspectable_manifest()).unwrap();
             assert!(!inspection.contains("private-token"));
             let payload=manifest.into_payload();
-            assert_eq!(payload.args().iter().any(|arg| arg=="--prompt"),!resume);
+            assert_eq!(payload.args().iter().any(|arg| arg.starts_with("--prompt=")),!resume);
             assert_eq!(payload.initial_input_submission().is_some(),resume);
             let config=payload.environment().entries().find(|(key,_)| *key=="OPENCODE_CONFIG_CONTENT").unwrap().1;
             let config:serde_json::Value=serde_json::from_str(&config.to_string_lossy()).unwrap();

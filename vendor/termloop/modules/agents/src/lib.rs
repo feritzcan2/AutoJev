@@ -9,6 +9,8 @@ mod codex_history;
 mod codex_name;
 mod codex_resume;
 mod codex_settings;
+mod opencode;
+pub use opencode::opencode_uses_server_configuration;
 mod provider_hooks;
 mod provider_observation;
 mod session_history;
@@ -344,8 +346,12 @@ impl AgentCapabilityDegradedReason {
 impl AgentCapabilities {
     pub fn quick_action_supported(&self) -> bool {
         self.available
-            && self.observation != ObservationCapability::None
-            && supports_generated_input_coordination(&self.agent_id)
+            // OpenCode accepts the first message through its native --prompt
+            // argument, including without observation on v2. Only generated
+            // terminal submissions require provider readiness signals.
+            && (self.agent_id == "opencode"
+                || (self.observation != ObservationCapability::None
+                    && supports_generated_input_coordination(&self.agent_id)))
     }
 
     pub fn tracked_helpers_supported(&self) -> bool {
@@ -755,7 +761,8 @@ fn opencode_plugin_version_supported(version: Option<&str>) -> bool {
                 ))
             })?
         })
-        .is_some_and(|version| version >= (1, 18, 33))
+        // The v2 CLI replaced the v1 TUI plugin API and configuration format.
+        .is_some_and(|version| version.0 == 1 && version >= (1, 18, 33))
 }
 
 type SemanticVersion = (u64, u64, u64);
@@ -2059,7 +2066,29 @@ mod tests {
             opencode.integration_level(),
             AgentIntegrationLevel::LaunchOnly
         );
-        assert!(!opencode.quick_action_supported());
+        assert!(opencode.quick_action_supported());
+        assert!(!opencode.tracked_helpers_supported());
+
+        for agent_id in ["claude", "codex", "gemini"] {
+            let unobserved = capabilities(
+                agent_id,
+                true,
+                ObservationCapability::None,
+                false,
+                false,
+                false,
+            );
+            assert!(!unobserved.quick_action_supported());
+        }
+        let missing_opencode = capabilities(
+            "opencode",
+            false,
+            ObservationCapability::None,
+            false,
+            false,
+            false,
+        );
+        assert!(!missing_opencode.quick_action_supported());
 
         let unavailable = capabilities(
             "gemini",
@@ -2569,8 +2598,11 @@ mod tests {
             capabilities.integration_level(),
             AgentIntegrationLevel::Resumable
         );
-        assert!(!capabilities.quick_action_supported());
+        assert!(capabilities.quick_action_supported());
+        assert!(!capabilities.tracked_helpers_supported());
+        assert!(!supports_generated_input_coordination("opencode"));
         assert!(!opencode_plugin_version_supported(Some("1.18.32")));
+        assert!(!opencode_plugin_version_supported(Some("opencode v2.0.20")));
         assert!(!opencode_plugin_version_supported(Some("unknown")));
         let _ = std::fs::remove_dir_all(directory);
     }

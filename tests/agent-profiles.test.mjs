@@ -1,3 +1,4 @@
+import {WebTasks} from '../app/web-template.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
@@ -55,14 +56,16 @@ for(const provider of ['claude','codex','opencode'])test(`${provider}: setup lau
  })});
  t.after(async()=>{await agents.close();await rm(dir,{recursive:true,force:true});});
  const mcp={endpoint:'http://localhost/mcp',grant:()=> 'test-token',revoke:()=>{}};
- const initial={...settings,provider};
+ const initial={...settings,provider},runtime=new WebTasks(db,{launch:async()=>({close:async()=>{}})});
+ t.after(()=>runtime.close());
  for(const agentSettings of [initial,{...initial,contextCompactPercent:60},{...initial,model:'new-model'},{...initial,model:'new-model',permission:'bypassPermissions'}]){
+  await runtime.configureConversation(a.id,agentSettings);
   const run=db.putRun({id:'setup-'+launches.length,automationId:a.id,kind:'interview'});
   const worker=await launchAutomationWorker({root:process.cwd(),data:dir,db,run,automation:{...a,agentSettings},signal:{aborted:false},browser:{},report:()=>{},onEvent:()=>{},agents,mcp});
   await worker.close();
  }
  assert.deepEqual(launches.map(l=>l.resumeId),[undefined,'native-1',undefined,undefined]);
- assert.equal(core.workspaces.history(a.id).forProfile(agentProfileId('web-interview')).conversation(a.id,provider),'native-4');
+ assert.equal(core.workspaces.history(a.id,'conversation').forProfile(agentProfileId('web-interview')).conversation(a.id,provider),'native-4');
 });
 
 for(const provider of ['claude','codex','opencode'])test(`${provider}: record continuation launches the exact native conversation even after an unrelated task`,async t=>{

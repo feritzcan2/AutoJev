@@ -8,7 +8,7 @@ import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {TemplateRegistry} from '../app/template-registry.mjs';
 import {Workspaces} from '../app/workspaces.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
-import {Store} from '../app/store.mjs';
+import {seedLegacyDatabase} from './helpers/legacy-database.mjs';
 import {loadExtensions} from '../app/extensions.mjs';
 import {upgradeWorkspaces} from '../app/workspace-upgrade.mjs';
 
@@ -34,11 +34,13 @@ test('a third executor registers its own capabilities and runs through the same 
 
 test('legacy and personal job templates upgrade to the shared browser executor',async t=>{
  const dir=await mkdtemp(path.join(tmpdir(),'loop-optional-extension-'));t.after(()=>rm(dir,{recursive:true,force:true}));const file=path.join(dir,'db.sqlite');
- const store=new Store(file),automation=new AutomationStore(store),candidate=store.saveProfile({name:'Keep',preferences:'Remote'}),web=automation.create('housing'),personal=automation.saveTemplate({...automation.template('job-search'),title:'Personal applications'}),intake=store.createSetup(store.profile(candidate.id).agentSettings,personal.id);const saved=store.db.prepare('SELECT data FROM candidates WHERE id=?').get(candidate.id).data;store.close();
+ const {profile}=seedLegacyDatabase(file,{personal:true});
  const core=new WorkspaceDatabase(file);t.after(()=>core.close());const db=new AutomationStore(core);upgradeWorkspaces(db);
- const api=new Workspaces(core.workspaces,{templates:{browser:{}}});assert.deepEqual(new Set(api.list().map(w=>w.id)),new Set([web.id,candidate.id,intake.id]));
- assert.ok(db.catalog().every(t=>t.execution.driver==='browser'));assert.equal(core.workspaces.template(personal.id).execution.driver,'browser');
- assert.equal(core.db.prepare('SELECT data FROM candidates WHERE id=?').get(candidate.id).data,saved);assert.equal(db.get(candidate.id).title,'Keep');
+ const web=db.create('housing'),api=new Workspaces(core.workspaces,{templates:{browser:{}}});
+ assert.deepEqual(new Set(api.list().map(w=>w.id)),new Set([web.id,profile.id]));
+ assert.ok(db.catalog().every(t=>t.execution.driver==='browser'));assert.equal(core.workspaces.template(profile.templateId).execution.driver,'browser');
+ assert.equal(db.get(profile.id).title,profile.name);assert.match(db.template(profile.templateId).guidance,/Keep personal guidance/);
+
 });
 
 test('generic boot has no static dependency on application stores, campaigns or MCP handlers',async()=>{

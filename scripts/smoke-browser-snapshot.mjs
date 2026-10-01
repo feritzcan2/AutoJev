@@ -5,10 +5,10 @@ import path from 'node:path';
 import {createServer} from 'node:http';
 import {BrowserSnapshot,BROWSER_RESPONSE_BYTES} from '../app/browser-snapshot.mjs';
 import {BrowserTools} from '../app/browser.mjs';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
-import {startMcp} from '../app/mcp.mjs';
+import {startToolServer} from '../app/tool-server.mjs';
 
 // Optional reproduction using a provider's saved oversized tool result. Never
 // copy a real page or personal browser data into repository test fixtures.
@@ -21,7 +21,7 @@ if(process.argv[2]){
  console.log('CAPTURED_PAGE_PASS',JSON.stringify({characters:recovered.length,parts,maxBytes}));
 }
 
-const directory=await mkdtemp(path.join(tmpdir(),'loop-browser-snapshot-')),store=new Store(':memory:'),db=new AutomationStore(store);
+const directory=await mkdtemp(path.join(tmpdir(),'loop-browser-snapshot-')),store=new WorkspaceDatabase(':memory:'),db=new AutomationStore(store);
 let requests=0;
 const server=createServer((req,res)=>{
  requests++;res.setHeader('Content-Type','text/html; charset=utf-8');
@@ -31,7 +31,7 @@ await new Promise(r=>server.listen(0,'127.0.0.1',r));const url=`http://127.0.0.1
 const a=db.create('custom',{goal:'Read the last listing of a large page',sources:[url],criteria:{outcome:'Last listing',rules:'Read only',completion:'One scan'}});db.review(a.id);
 const run=db.begin(a.id,'trial'),controller=new AbortController(),browser=new BrowserTools(directory,()=> 'separate');
 const flow=automationWorkflow({db,run,signal:controller.signal,browser,report:(id,runId,status,summary)=>db.finish(id,runId,status,summary)});
-const mcp=await startMcp(store,()=>{},async()=>({}),null,null,flow),token=mcp.grant(a.id,run.id);let seq=0,maxBytes=0;
+const mcp=await startToolServer({defaultWorkflow:flow,resolve:grant=>grant.workflow,assertOwner:id=>store.workspaces.get(id)}),token=mcp.grant(a.id,run.id);let seq=0,maxBytes=0;
 const call=async(name,args={})=>{
  const r=await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:++seq,method:'tools/call',params:{name,arguments:args}})}),rpc=await r.json();
  assert.equal(rpc.result?.isError,undefined,JSON.stringify(rpc));

@@ -1,4 +1,5 @@
-import {Store} from '../app/store.mjs';
+import {AutomationStore} from '../app/automation-store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {createRequire} from 'node:module';
 import {mkdtemp} from 'node:fs/promises';
 import path from 'node:path';
@@ -10,9 +11,9 @@ const require=createRequire(import.meta.url);
 const {_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const data=await mkdtemp(path.join(os.tmpdir(),'jobloop-switcher-'));
-const store=new Store(path.join(data,'jobloop.sqlite'));
-const first=store.saveProfile({name:'İlk aday',preferences:'Remote'});
-const second=store.saveProfile({name:'İkinci aday',preferences:'Remote'});
+const store=new WorkspaceDatabase(path.join(data,'jobloop.sqlite'));
+const first=new AutomationStore(store).create('job-search',{title:'İlk aday',goal:'Remote'});
+const second=new AutomationStore(store).create('job-search',{title:'İkinci aday',goal:'Remote'});
 store.close();
 const application=await electron.launch({executablePath:process.env.JOBLOOP_ELECTRON_BINARY||require('electron'),args:[root],env:{...process.env,JOBLOOP_DATA_DIR:data}});
 try{
@@ -41,11 +42,11 @@ try{
  assert.deepEqual(await page.locator('.workspace-switcher-row strong').allTextContents(),['İkinci aday','İlk aday']);
  await page.keyboard.press('Escape');
  const web=await page.evaluate(()=>window.jobloop.workspaceCreate('custom',{title:'Web takip'}));
- await page.waitForFunction(id=>[...document.querySelector('#candidates').options].some(option=>option.value==='automation:'+id),web.id);
+ await page.waitForFunction(id=>[...document.querySelector('#candidates').options].some(option=>option.value===id),web.id);
  await trigger.click();
  assert.deepEqual(await page.locator('.workspace-switcher-row kbd').allTextContents(),['⌘1','⌘2','⌘3']);
  await page.locator('.workspace-switcher-row').nth(2).click();
- await page.waitForFunction(id=>document.querySelector('.workspace-switcher-label')?.textContent==='Web takip'&&document.querySelector('#candidates').value==='automation:'+id,web.id);
+ await page.waitForFunction(id=>document.querySelector('.workspace-switcher-label')?.textContent==='Web takip'&&document.querySelector('#candidates').value===id,web.id);
  await page.keyboard.press('Meta+1');
  await page.waitForFunction(id=>document.querySelector('#candidates').value===id,second.id);
  await trigger.click();

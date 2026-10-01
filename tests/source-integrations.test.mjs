@@ -1,28 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
-import {Store} from '../app/store.mjs';
 import {sourceInstructions,runSourceTool,validateSourceSearch} from '../app/source-integrations.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url));
-test('catalog installs six integrations once, preserving permissions and removals',()=>{
- const s=new Store(':memory:');try{
- const p=s.saveProfile({name:'Test',preferences:'Berlin',authorization:'submit'});
- const sources=s.sources(p.id);assert.equal(sources.filter(x=>x.integrationId).length,6);
- assert.equal(sources.find(x=>x.integrationId==='linkedin').searchMethod,'tool');
- assert.equal(sources.find(x=>x.integrationId==='jobnet').enabled,false);
- assert.equal(sources.find(x=>x.kind==='employer').searchMethod,'free');
- const free=sources.find(x=>x.integrationId==='freehire');s.deleteSource(p.id,free.id);assert.equal(s.sources(p.id).some(x=>x.id===free.id),false);
- const li=sources.find(x=>x.integrationId==='linkedin');s.saveSource(p.id,{...li,applyMode:'find_only',searchMethod:'browser'});assert.equal(s.sources(p.id).find(x=>x.id===li.id).applyMode,'find_only');
- }finally{s.close();}
-});
-test('setup completion updates inherited modes but preserves explicit source choices',()=>{
- const s=new Store(':memory:');try{
- const p=s.createSetup({provider:'codex',model:'default',permission:'default',reasoning:'default',network:null});const sources=s.sources(p.id);
- const li=sources.find(x=>x.integrationId==='linkedin');s.saveSource(p.id,{...li,applyMode:'find_only'});
- s.saveSetup(p.id,{...s.setup(p.id),status:'review'});s.completeSetup(p.id,{name:'Test',facts:'Engineer',preferences:'Danimarka remote',authorization:'submit'});
- assert.equal(s.source(p.id,li.id).applyMode,'find_only');assert.equal(s.sources(p.id).find(x=>x.integrationId==='freehire').applyMode,'auto');assert.equal(s.sources(p.id).find(x=>x.integrationId==='jobnet').enabled,true);
- }finally{s.close();}
-});
 test('source skill overrides persist, tool arguments use execFile without shell interpolation',async()=>{
  const config=validateSourceSearch({searchMethod:'tool',integrationId:'linkedin',skillText:'Search backend roles',fallback:'browser'});
  const instructions=await sourceInstructions(root,{...config,id:'source',name:'LinkedIn'});assert.equal(instructions.skillText,'Search backend roles');assert.match(instructions.toolReference,/--location/);assert.equal(instructions.upstream.commit.length,40);
@@ -43,20 +23,4 @@ test('built-in sources expose the exact upstream skill as the primary editable i
   assert.equal((await sourceInstructions(root,{...source,skillText:legacy})).skillText,original);
   assert.equal((await sourceInstructions(root,{...source,skillText:'My custom instructions'})).skillText,'My custom instructions');
  }
-});
-
-test('all new sources default to auto independently of profile authorization and preserve later opt-outs',()=>{
- const s=new Store(':memory:');try{
-  for(const authorization of ['research','prepare','submit']){
-   const p=s.saveProfile({name:'Test',preferences:'Remote',authorization});
-   assert.ok(s.sources(p.id).every(source=>source.applyMode==='auto'));
-   assert.equal(s.profile(p.id).authorization,authorization);
-   const source=s.saveSource(p.id,{name:'Custom',url:'https://example.test/'+authorization,query:'Backend',intervalMinutes:30,enabled:true});
-   assert.equal(source.applyMode,'auto');
-   s.saveSource(p.id,{...source,applyMode:'find_only'});
-   const {applyMode,...update}=s.source(p.id,source.id);
-   assert.equal(s.saveSource(p.id,{...update,enabled:false}).applyMode,'find_only');
-   assert.equal(s.sources(p.id).find(item=>item.id===source.id).applyMode,'find_only');
-  }
- }finally{s.close();}
 });

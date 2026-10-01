@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
 import {beginSourceScan,sourceScanScope,advanceSourceScan,validateScanCompletion,FULL_SCAN_INTERVAL_MS,SCAN_OVERLAP_MS} from '../app/source-scan.mjs';
@@ -15,7 +15,7 @@ const chronology={newestFirst:true,evidence:'Newest first',fromStart:true,pageCo
 const epoch=Date.parse('2026-09-30T12:00:00Z');
 
 function fixture(t,file=':memory:'){
- const store=new Store(file);let now=epoch;const db=new AutomationStore(store,{now:()=>now});
+ const store=new WorkspaceDatabase(file);let now=epoch;const db=new AutomationStore(store,{now:()=>now});
  t.after(()=>{try{store.close();}catch{}});
  const a=db.create('custom',{goal:'Find matching listings',criteria:Object.fromEntries(db.template('custom').fields.filter(f=>f.required).map(f=>[f.id,'Test criteria'])),sources:[source,other]});
  db.review(a.id);const trial=db.begin(a.id,'trial');for(const url of a.sources)db.observe(a.id,trial.id,url,'Listings');db.finish(a.id,trial.id,'completed','Read');db.enable(a.id);
@@ -61,7 +61,7 @@ test('failed, interrupted and restarted workers preserve the exact cycle and cut
  const run=start(),worker=flow(run),observed=await worker.call(id,run.id,'browser_open',{url:source});
  await worker.call(id,run.id,'save_scan_progress',{snapshotId:observed.snapshot.id,pendingUrls:[source+'?page=2'],reason:'Continue page two',chronology});
  const active=db.run(run.id).scanPlan;db.finish(id,run.id,'interrupted','App closed');store.close();
- const reopened=new Store(file),restored=new AutomationStore(reopened,{now:()=>epoch+5*86400000});t.after(()=>reopened.close());
+ const reopened=new WorkspaceDatabase(file),restored=new AutomationStore(reopened,{now:()=>epoch+5*86400000});t.after(()=>reopened.close());
  const task=reopened.workspaces.tasks.enqueue(id,{operation:'scan',sourceUrl:source,sources:[source],lockKey:'source:'+source}),resumed=restored.begin(id,{kind:'run',taskId:task.id});
  assert.deepEqual(resumed.scanPlan,active);assert.deepEqual(resumed.scan.pendingUrls,[source+'?page=2']);
  assert.equal(restored.sources(id)[0].scanState.lastSuccessfulStartAt,epoch);

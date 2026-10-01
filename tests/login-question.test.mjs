@@ -27,7 +27,7 @@ test('login proof must come from a current fully rendered page',()=>{
 });
 
 function fixture(t){
- const store=new WorkspaceDatabase(':memory:');t.after(()=>store.close());const db=new AutomationStore(store),a=db.create('job-search',{goal:'Prepare a form',criteria:{preferences:'Remote'},sources:['https://portal.test/jobs']});db.review(a.id);db.skipTrial(a.id);
+ const store=new WorkspaceDatabase(':memory:');t.after(()=>store.close());const db=new AutomationStore(store),a=db.create('job-search',{goal:'Prepare a form',criteria:{preferences:'Remote',ranking:'Remote fit, 0–100'},sources:['https://portal.test/jobs']});db.review(a.id);db.skipTrial(a.id);
  const run=db.begin(a.id,'run');let content=login,reads=0;
  const browser={call:async()=>{reads++;return {content:[{type:'text',text:'Page URL: https://portal.test/login\n'+JSON.stringify({text:content})}]};}};
  const flow=automationWorkflow({db,run,signal:{aborted:false},browser,report:()=>{}});

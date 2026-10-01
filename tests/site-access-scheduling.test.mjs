@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {WebTasks} from '../app/web-template.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
 const source='https://homes.example/list',other='https://other.example/list';
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(t){
- let now=Date.now();const store=new Store(':memory:'),db=new AutomationStore(store,{now:()=>now}),launches=[];
+ let now=Date.now();const store=new WorkspaceDatabase(':memory:'),db=new AutomationStore(store,{now:()=>now}),launches=[];
  const runtime=new WebTasks(db,{now:()=>now,launch:async run=>{launches.push(run);return {close:async()=>{}};}});
  t.after(async()=>{await runtime.close();store.close();});
  const create=()=>{

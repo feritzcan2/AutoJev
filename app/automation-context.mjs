@@ -1,7 +1,6 @@
 import {randomUUID} from 'node:crypto';
 
 export const AUTOMATION_CONTEXT_BYTES=16000;
-const partCharacters=8000;
 const size=value=>Buffer.byteLength(JSON.stringify(value),'utf8');
 export const automationContextTools=[{
  name:'read_automation_context_part',
@@ -28,8 +27,15 @@ export class AutomationContext {
    text:saved.text.slice(offset,end),
    notice:'Saved automation context JSON fragment. Read ALL parts with read_automation_context_part(contextId: context.id, offset: context.nextOffset) until nextOffset is null before browser work or decisions. Join text fragments in order. Do not use shell commands or request file permission.'
   });
-  let end=Math.min(saved.text.length,offset+partCharacters);
-  while(size(build(end))>AUTOMATION_CONTEXT_BYTES)end=offset+Math.floor((end-offset)*.75);
+  // Fill the existing byte budget, including JSON escaping and metadata.
+  // A fixed character count wastes almost half a response for ordinary text.
+  let end=offset,upper=Math.min(saved.text.length,offset+AUTOMATION_CONTEXT_BYTES);
+  if(size(build(upper))<=AUTOMATION_CONTEXT_BYTES)end=upper;
+  else while(end<upper){
+   const middle=Math.ceil((end+upper)/2);
+   if(size(build(middle))<=AUTOMATION_CONTEXT_BYTES)end=middle;
+   else upper=middle-1;
+  }
   if(end>offset&&end<saved.text.length&&/[\uD800-\uDBFF]/.test(saved.text[end-1])&&/[\uDC00-\uDFFF]/.test(saved.text[end]))end--;
   return build(end);
  }

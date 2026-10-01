@@ -10,7 +10,7 @@ import {automationCells} from '../app/automation-templates.mjs';
 const source='https://vendor.example/',detail='https://boards.example/employer/123';
 function fixture(t){
  const store=new WorkspaceDatabase(':memory:');t.after(()=>store.close());const db=new AutomationStore(store);
- const a=db.create('job-search',{goal:'Find jobs',criteria:{preferences:'Berlin backend'},sources:[source]});
+ const a=db.create('job-search',{goal:'Find jobs',criteria:{preferences:'Berlin backend',ranking:'Backend and location fit, 0–100'},sources:[source]});
  db.review(a.id);db.skipTrial(a.id);db.enable(a.id);
  const task=store.workspaces.tasks.enqueue(a.id,{operation:'scan',sourceUrl:source,sources:[source],lockKey:'source:'+source});
  const run=db.begin(a.id,{kind:'run',taskId:task.id});
@@ -29,7 +29,7 @@ test('configured CLI observations checkpoint and resume employer URLs without op
  assert.deepEqual(progress.scanProgress.pendingUrls,[detail]);assert.equal(progress.scanPlan.checkpoint.cursor,'"args":[]');
  assert.equal(f.db.run(f.run.id).browserSteps,0);
  assert.ok(f.db.run(f.run.id).observedLinks.includes(detail));
- const recorded=f.db.record(f.id,f.run.id,{key:detail,url:detail,title:'Engineer',summary:'Observed job'});
+ const recorded=f.db.record(f.id,f.run.id,{key:detail,url:detail,title:'Engineer',summary:'Observed job',assessment:{status:'scored',score:80,summary:'Fits criteria',evidenceUrl:source,evidence:'Observed job from source tool',strengths:['Backend'],gaps:[],uncertainties:[]}});
  assert.equal(recorded.sourceUrl,source);
  await assert.rejects(f.call('save_scan_progress',{snapshotId:output.snapshot.id,pendingUrls:['https://boards.example/invented'],reason:'Guess'}),/gözlenen/);
  const context=await f.call('get_automation_context',{});

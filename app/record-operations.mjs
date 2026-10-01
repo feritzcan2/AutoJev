@@ -1,3 +1,4 @@
+import {isConversation} from './workspace-conversation.mjs';
 import {sourceMode} from './automation-sources.mjs';
 import {automationReady} from './automation-trial.mjs';
 import {workerKey} from './worker-key.mjs';
@@ -5,7 +6,7 @@ import {workerKey} from './worker-key.mjs';
 const live=['pending','running','reported','paused'];
 const waitingForAnswer='Önce bu kayıt için bekleyen soruları yanıtla';
 export function recordSource(a,item){return item.sourceUrl??a.sources.find(url=>new URL(url).origin===new URL(item.url).origin)??null;}
-export function pendingRecordQuestion(a,item){return (a.questions??[]).find(q=>q.answer==null&&(q.recordId?q.recordId===item.id:!q.sourceUrl||q.sourceUrl===recordSource(a,item)));}
+export function pendingRecordQuestion(a,item){return (a.questions??[]).find(q=>!q.conversation&&q.answer==null&&(q.recordId?q.recordId===item.id:!q.sourceUrl||q.sourceUrl===recordSource(a,item)));}
 export function recordTask(db,id,itemId){return db.store.workspaces.tasks.list(id,{states:live}).find(t=>t.recordId===itemId);}
 export function recordOperationError(a,item,kind,{manual=false,digest,direct=false,now=Date.now()}={}){
  if(item.trial)return 'Araştırma örneği üzerinde işlem yapılamaz';
@@ -13,6 +14,7 @@ export function recordOperationError(a,item,kind,{manual=false,digest,direct=fal
  if(['completed','executing','uncertain','dismissed'].includes(item.status))return 'Bu kayıt yeniden gönderilemez';
  if(!automationReady(a))return 'Önce kurulumu kontrol edip kaydet';
  if(pendingRecordQuestion(a,item))return waitingForAnswer;
+ if(kind==='score')return null;
  const mode=sourceMode(a,recordSource(a,item));
  if(!manual&&mode==='observe')return 'Kaynak yalnızca bul modunda';
  if(kind==='prepare')return null;
@@ -27,12 +29,12 @@ export function recordOperationError(a,item,kind,{manual=false,digest,direct=fal
 export function enqueueRecordOperation(runtime,id,itemId,kind,{manual=true,digest,direct=false}={}){
  const {db,queue}=runtime;
  const wake=task=>{
-  // Explicit preparation requests use the existing worker pool. Background
+  // Explicit record requests use the existing worker pool. Background
   // ticks still respect workers the user stopped; no new workers are created.
   if(manual&&task.state==='pending'){
    const workers=runtime.workers.list(id);
-   if(kind==='prepare'||kind==='execute'&&direct===true){
-    const pending=queue.list(id,{states:['pending']}).filter(t=>(t.recordOperation==='prepare'||t.recordOperation==='execute'&&t.request?.direct===true)&&(t.request?.manual||db.get(id).status==='enabled')).filter(t=>{try{validateRecordTask(db,id,t,runtime.now());return true;}catch{return false;}});
+   if(['score','prepare'].includes(kind)||kind==='execute'&&direct===true){
+    const pending=queue.list(id,{states:['pending']}).filter(t=>(['score','prepare'].includes(t.recordOperation)||t.recordOperation==='execute'&&t.request?.direct===true)&&(t.request?.manual||db.get(id).status==='enabled')).filter(t=>{try{validateRecordTask(db,id,t,runtime.now());return true;}catch{return false;}});
     let needed=pending.length-workers.filter(w=>w.enabled!==false&&!runtime.active.has(workerKey(id,w.id))).length;
     for(const worker of workers){if(needed<=0)break;if(worker.enabled===false&&!runtime.active.has(workerKey(id,worker.id))){runtime.workers.setEnabled(id,worker.id,true);needed--;runtime.changed(id);}}
    }else if(!workers.some(w=>w.enabled!==false)){runtime.workers.setEnabled(id,'main',true);runtime.changed(id);}
@@ -67,12 +69,12 @@ export function validateRecordTask(db,id,task,now){
 // submission authority forward. Stops, cancellation and setup edits revoke it.
 export function resumeRecordOperation(runtime,id,item,task){
  const direct=task?.recordOperation==='execute'&&task.request?.manual===true&&task.request?.direct===true&&task.request.revision===runtime.db.get(id).revision&&['completed','blocked'].includes(task.completionState??task.state);
- return enqueueRecordOperation(runtime,id,item.id,item.status==='uncertain'?'verify':direct?'execute':'prepare',{direct});
+ return enqueueRecordOperation(runtime,id,item.id,item.status==='uncertain'?'verify':task?.recordOperation==='score'?'score':direct?'execute':'prepare',{direct});
 }
 
 export async function dispatchRecordOperations(runtime,id){
  const {db,queue}=runtime,a=db.get(id),ops=db.template(a.templateId).recordOperations;
- if(!ops||runtime.slots(id).some(s=>s.run.kind!=='run'))return;
+ if(!ops||runtime.slots(id).some(s=>!isConversation(s.run)&&s.run.kind!=='run'))return;
  const savedTasks=queue.list(id);
  for(const task of savedTasks.filter(t=>t.resumeRecordAfterVerification&&!live.includes(t.state))){
   queue.put({...task,resumeRecordAfterVerification:false});
@@ -112,7 +114,7 @@ export async function dispatchRecordOperations(runtime,id){
  }
  const pending=queue.list(id,{states:['pending']}).filter(t=>t.recordOperation&&(t.request?.manual||a.status==='enabled')).sort((x,y)=>Number(Boolean(y.request?.manual))-Number(Boolean(x.request?.manual)));
  for(const worker of runtime.workers.list(id)){
-  if(worker.enabled===false||runtime.active.has(workerKey(id,worker.id))||runtime.active.size>=runtime.concurrency)continue;
+  if(worker.enabled===false||runtime.active.has(workerKey(id,worker.id))||runtime.capacityUsed>=runtime.concurrency)continue;
   let task;
   while((task=pending.shift())){
    try{validateRecordTask(db,id,task,runtime.now());break;}catch(error){if(error.code!=='RECORD_QUESTION_PENDING'){queue.finish(id,task.id,'cancelled',error.message);runtime.changed(id);}task=null;}
@@ -130,6 +132,9 @@ export function recordOperationState(db,id,item,{a=db.get(id),definition=db.temp
  const directOp=['found','prepared'].includes(item.status)&&definition.recordOperations?.execute;
  const directError=directOp?recordOperationError(a,item,'execute',{manual:true,direct:true,now:db.now()}):null;
  const question=(a.questions??[]).find(q=>q.recordId===item.id&&q.answer==null);
+ const scoreOp=['found','prepared'].includes(item.status)&&definition.recordOperations?.score;
+ const scoreError=scoreOp?recordOperationError(a,item,'score',{manual:true}):null;
+ const scoreOperation=scoreOp?{kind:'score',label:item.assessment?'Yeniden puanla':scoreOp.label,disabled:Boolean(scoreError||task),reason:scoreError}:null;
  let retryOperation=null;
  if(!task&&last&&['blocked','failed','interrupted'].includes(last.state)&&!item.trial&&!['completed','executing','dismissed'].includes(item.status)){
   const retryKind=item.status==='uncertain'?'verify':last.recordOperation,direct=retryKind==='execute'&&last.request?.direct===true;
@@ -138,5 +143,5 @@ export function recordOperationState(db,id,item,{a=db.get(id),definition=db.temp
    retryOperation={kind:retryKind,direct,review:retryKind==='execute'&&!direct,disabled:Boolean(reason),reason};
   }
  }
- return {retryOperation,directOperation:directOp?{kind:'execute',label:directOp.label,disabled:Boolean(directError||task),reason:directError}:null,question:question?{id:question.id,text:question.text}:null,lastTask:last?{kind:last.recordOperation,state:last.state,summary:last.summary,at:last.finishedAt??last.startedAt??last.createdAt}:null,task:task?{id:task.id,kind:task.recordOperation,state:task.state,workerId:task.workerId,at:task.startedAt??task.createdAt,manual:task.request?.manual===true}:null,operation:operation?{kind,label:operation.label,reviewLabel:operation.reviewLabel,disabled:Boolean(error||task),reason:error}:null};
+ return {scoreOperation,retryOperation,directOperation:directOp?{kind:'execute',label:directOp.label,disabled:Boolean(directError||task),reason:directError}:null,question:question?{id:question.id,text:question.text}:null,lastTask:last?{kind:last.recordOperation,state:last.state,summary:last.summary,at:last.finishedAt??last.startedAt??last.createdAt,...(last.toolFailure?{toolFailure:last.toolFailure}:{})}:null,task:task?{id:task.id,kind:task.recordOperation,state:task.state,workerId:task.workerId,at:task.startedAt??task.createdAt,manual:task.request?.manual===true}:null,operation:operation?{kind,label:operation.label,reviewLabel:operation.reviewLabel,disabled:Boolean(error||task),reason:error}:null};
 }

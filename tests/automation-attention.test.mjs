@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
 import {automationAttention} from '../app/automation-attention.mjs';
@@ -8,6 +8,17 @@ import {attentionTabs} from '../src/automation-attention.js';
 
 const source={url:'https://homes.example/list',name:'Homes',enabled:true,blocked:true,lastResult:'CAPTCHA kaldı. Açık sekmede doğrulamayı tamamla.'};
 const snapshot=()=>({automation:{revision:1,reviewedRevision:1,trial:{status:'passed',revision:1}},sources:[source],runs:[],activeRuns:[]});
+
+test('conversation forms stay distinct from source and record questions during concurrent work',()=>{
+ const s=snapshot();s.sources=[];s.runs=[{id:'chat',kind:'interview',startedAt:100},{id:'scan',kind:'run',startedAt:100,sourceUrl:'https://source.example'}];
+ s.automation.questions=[
+  {id:'chat-form',runId:'chat',text:'Puanlama tercihleri',createdAt:200,answer:null},
+  {id:'old-chat-form',conversation:true,text:'Tercihler',answer:null},
+  {id:'source-question',runId:'scan',sourceUrl:'https://source.example',text:'Kaynak sorusu',createdAt:200,answer:null},
+  {id:'record-question',conversation:true,recordId:'record',text:'Kayıt sorusu',answer:null},
+ ];
+ assert.deepEqual(automationAttention(s).map(i=>[i.id,i.conversation]),[['chat-form',true],['old-chat-form',true],['source-question',false],['record-question',false]]);
+});
 
 test('question cards keep the exact tab across login redirects and history pruning',()=>{
  const s=snapshot();s.sources=[];s.automation.questions=[{id:'question',text:'Log in',answer:null,recordId:'record',browserContext:{tabId:'login',url:'https://homes.example/login'}}];
@@ -18,7 +29,7 @@ test('question cards keep the exact tab across login redirects and history pruni
 });
 
 test('questions save their observed tab and old questions recover it from durable runs',t=>{
- const store=new Store(':memory:');t.after(()=>store.close());let now=1000;const db=new AutomationStore(store,{now:()=>now});
+ const store=new WorkspaceDatabase(':memory:');t.after(()=>store.close());let now=1000;const db=new AutomationStore(store,{now:()=>now});
  const a=db.create('custom',{goal:'Find records'}),run=db.begin(a.id,'interview');
  db.observe(a.id,run.id,'https://homes.example/login','Sign in',[],{tabId:'login'});
  const q=db.askQuestion(a.id,{text:'Did you sign in?'},{runId:run.id});
@@ -60,7 +71,7 @@ test('tab focus prefers the saved current URL and never guesses among multiple s
 });
 
 test('browser checkpoint survives a blocked report and recent run history pruning',async t=>{
- const store=new Store(':memory:');t.after(()=>store.close());const db=new AutomationStore(store);
+ const store=new WorkspaceDatabase(':memory:');t.after(()=>store.close());const db=new AutomationStore(store);
  const a=db.create('housing',{goal:'Find homes',criteria:{location:'Berlin',budget:'2000',requirements:'2 rooms'},sources:[source.url]});
  db.review(a.id);let run=db.begin(a.id,'trial');db.observe(a.id,run.id,source.url,'Actual listings');db.finish(a.id,run.id,'completed','Ready');db.enable(a.id);
  const task=store.workspaces.tasks.enqueue(a.id,{operation:'scan',capability:'browser.observe',sources:[source.url],sourceUrl:source.url,lockKey:'source:'+source.url});

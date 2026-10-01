@@ -50,14 +50,25 @@ export function renderedDocument(){
  return {url:location.href,text:words.join('\n'),links,pagination,readiness:{loading,reason:pendingFragments?'stream_pending':busy?'aria_busy':loading?'document_loading':null}};
 }
 
+// Keep the full viewport when it contains anything absent from document text
+// (for example a form value or frame). Only whitespace-equivalent duplicates
+// can be omitted; this is not a summary of the page.
+export function documentViewportText(documentText,viewportText=''){
+ const normalized=documentText.replace(/\s+/g,' ').trim();
+ return viewportText.split('\n').every(line=>normalized.includes(line.replace(/\s+/g,' ').trim()))?'':viewportText;
+}
+
 export async function documentObservation(slot,value){
  const document=await slot.page.evaluate(renderedDocument);
  if(document.url!==value.url)throw Error('Sayfa okuma sırasında yönlendi; browser_read ile güncel sayfayı tekrar oku.');
  const result={...value,observationMode:'document',controlMaps:'replace',mapDeltas:false,
-  viewportText:value.text??slot.presented?.text??'',text:document.text,links:document.links,pagination:document.pagination,
+  viewportText:documentViewportText(document.text,value.text??slot.presented?.text??''),text:document.text,links:document.links,pagination:document.pagination,
   reading:{scope:'rendered_document',truncated:false,readiness:document.readiness,unreadFrames:slot.page.frames().length-1,
    guidance:'Includes currently rendered main-document text and actual links below the fold, including open shadow roots. Hidden content, form values and iframe contents are excluded. Lazy or virtualized listings may require browser_jev_scroll with a current scrollTargets.controlId, then another read. No guessed URLs. Read details through observed links when list cards omit addresses. An absent address remains unknown.'}};
  delete result.textUnchanged;
+ // These complete current maps already represent the actionable elements.
+ // The browser retains its original snapshot for guarded next/act decisions.
+ if(Array.isArray(result.controls)&&Array.isArray(result.clickTargets))delete result.elements;
  // Action IDs come from the current guarded viewport snapshot. Document links
  // are reading/navigation evidence, never a replacement click target map.
  return result;

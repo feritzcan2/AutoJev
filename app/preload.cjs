@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('jobloop',{
  workspaceStop:id=>ipcRenderer.invoke('workspace-stop',id),
  workspaceRestart:(id,options)=>ipcRenderer.invoke('workspace-restart',id,options),
  workspaceSettings:(id,input)=>ipcRenderer.invoke('workspace-settings',id,input),
+ setupAgentSettings:(id,input)=>ipcRenderer.invoke('setup-agent-settings',id,input),setupAgentRestart:id=>ipcRenderer.invoke('setup-agent-restart',id),
  workspaceSnapshot:id=>ipcRenderer.invoke('workspace-snapshot',id),
  workspaceTabs:id=>ipcRenderer.invoke('workspace-tabs',id),
  focusWorkspaceTab:(id,tabId)=>ipcRenderer.invoke('focus-workspace-tab',id,tabId),
@@ -38,7 +39,6 @@ contextBridge.exposeInMainWorld('jobloop',{
   telegramSendUnsentJobs:id=>ipcRenderer.invoke('telegram-send-unsent-jobs',id),
   telegramStatus:id=>ipcRenderer.invoke('telegram-status',id),telegramConfigure:(id,input)=>ipcRenderer.invoke('telegram-configure',id,input),telegramPair:id=>ipcRenderer.invoke('telegram-pair',id),telegramUnlink:id=>ipcRenderer.invoke('telegram-unlink',id),telegramPreferences:(id,input)=>ipcRenderer.invoke('telegram-preferences',id,input),telegramRetry:id=>ipcRenderer.invoke('telegram-retry',id),
   renameWorkspace:(id,name)=>ipcRenderer.invoke('rename-workspace',id,name),deleteWorkspace:id=>ipcRenderer.invoke('delete-workspace',id),
-  backgroundCheckGmail:id=>ipcRenderer.invoke('background-check-gmail',id),backgroundConnectGmail:id=>ipcRenderer.invoke('background-connect-gmail',id),backgroundPickSkill:()=>ipcRenderer.invoke('background-pick-skill'),backgroundReadSkill:id=>ipcRenderer.invoke('background-read-skill',id),backgroundSnapshot:id=>ipcRenderer.invoke('background-snapshot',id),backgroundSave:(id,value)=>ipcRenderer.invoke('background-save',id,value),backgroundMessage:(id,text,runId)=>ipcRenderer.invoke('background-message',id,text,runId),backgroundRun:id=>ipcRenderer.invoke('background-run',id),backgroundStop:id=>ipcRenderer.invoke('background-stop',id),backgroundTerminal:(id,runId)=>ipcRenderer.invoke('background-terminal',id,runId),backgroundInput:(id,runId,text)=>ipcRenderer.invoke('background-input',id,runId,text),backgroundResize:(id,runId,rows,cols)=>ipcRenderer.invoke('background-resize',id,runId,rows,cols),resolveMailSignal:(id,signalId,jobId,outcome)=>ipcRenderer.invoke('resolve-mail-signal',id,signalId,jobId,outcome),dismissMailSignal:(id,signalId)=>ipcRenderer.invoke('dismiss-mail-signal',id,signalId),onBackgroundChange:callback=>subscribe('background-changed',callback),onBackgroundOutput:callback=>subscribe('background-output',callback),
 
   createSetup:settings=>ipcRenderer.invoke('create-setup',settings),beginSetup:(id,source)=>ipcRenderer.invoke('begin-setup',id,source),completeSetup:(id,fields)=>ipcRenderer.invoke('complete-setup',id,fields),importSetupCv:(id,file)=>ipcRenderer.invoke('import-setup-cv',id,webUtils.getPathForFile(file)),
   browserReconnect:id=>ipcRenderer.invoke('browser-reconnect',id),

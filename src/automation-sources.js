@@ -4,12 +4,20 @@ import {workspaceSourceTabs} from './workspace-tabs.js';
 const modes={observe:'Sadece bul',prepare:'Hazırla, onayımı bekle',auto:'Otomatik gönder'};
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;};
 const time=at=>at?new Date(at).toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+const runOutcomes={completed:'Başarılı',failed:'Başarısız',blocked:'Engellendi',timeout:'Süre doldu',interrupted:'Durduruldu',partial:'Kısmi tamamlandı'};
+function timeUntil(at){
+ const remaining=at-Date.now();if(remaining<=0)return 'sırası geldi';if(remaining<60000)return '1 dk içinde';
+ const minutes=Math.ceil(remaining/60000),parts=[[Math.floor(minutes/1440),'gün'],[Math.floor(minutes/60)%24,'saat'],[minutes%60,'dk']];
+ return parts.filter(([value])=>value).slice(0,2).map(([value,unit])=>`${value} ${unit}`).join(' ')+' sonra';
+}
+const updateNextRun=node=>{node.textContent=node.dataset.sourceNextLabel+' '+timeUntil(Number(node.dataset.sourceNextAt))+(node.dataset.sourceNextSuffix??'');};
 
 // Keep the original source-row layout and controls, backed by scoped web tasks.
 export function automationSourcesPanel(host,api,{refresh,notice,ask}){
  let data,owner,editing=null,memory=null,adding=false,saving=false,intervalSaving=false,intervalDirty=false;
  host.innerHTML='<div class="sources-head"><div><h2>Kaynaklar</h2><p></p></div></div><div class="source-bulk-mode"><span>Tüm kaynaklar</span></div><div data-add></div><ul class="source-list"></ul>';
  const head=host.querySelector('.sources-head'),list=host.querySelector('.source-list'),addHost=host.querySelector('[data-add]'),bulk=host.querySelector('.source-bulk-mode');
+ const countdown=setInterval(()=>{if(!host.isConnected){clearInterval(countdown);return;}if(host.getClientRects().length)for(const node of host.querySelectorAll('[data-source-next-at]'))updateNextRun(node);},30000);
  const tabsControl=workspaceSourceTabs(api,{notice});
  const action=fn=>async event=>{event?.preventDefault();if(saving)return;saving=true;notice('');try{await fn();}catch(error){notice(error.message);}finally{saving=false;}};
  const button=(label,fn,cls='quiet')=>{const b=el('button',label,cls);b.type='button';b.onclick=action(fn);return b;};
@@ -81,12 +89,14 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
   return form;
  }
  function render(){
-  if(!data)return;const sources=data.sources??[],active=Boolean(data.activeRuns?.length),enabled=sources.filter(s=>s.enabled),blocked=enabled.filter(s=>s.blocked),upcoming=enabled.filter(s=>!s.blocked&&s.nextRunAt).sort((a,b)=>a.nextRunAt-b.nextRunAt)[0];
+  if(!data)return;const sources=data.sources??[],active=Boolean(data.activeRuns?.length),enabled=sources.filter(s=>s.enabled),blocked=enabled.filter(s=>s.blocked),upcoming=enabled.filter(s=>!s.scanning&&!s.blocked&&s.nextRunAt).sort((a,b)=>a.nextRunAt-b.nextRunAt)[0];
   if(!intervalDirty){const common=sources.length&&sources.every(source=>source.intervalMinutes===sources[0].intervalMinutes);intervalForm.elements.intervalMinutes.value=common?String(sources[0].intervalMinutes):'';intervalForm.elements.intervalMinutes.placeholder=sources.length?'Farklı':'Dakika';}
   for(const control of intervalForm.querySelectorAll('input,button'))control.disabled=intervalSaving||!sources.length;
   intervalForm.setAttribute('aria-busy',String(intervalSaving));intervalForm.querySelector('[role=status]').textContent=intervalSaving?'Kaydediliyor…':'';
   list.inert=intervalSaving;addHost.inert=intervalSaving;bulk.inert=intervalSaving;
-  head.querySelector('p').textContent=`${enabled.length} etkin kaynak, ${sources.length-enabled.length} kapalı${blocked.length?`, ${blocked.length} engelli`:''}. `+(data.automation.status==='enabled'&&upcoming?`Sıradaki tarama ${time(upcoming.nextRunAt)}: ${upcoming.name}.`:'Her kaynak kendi aralığında takip edilir. İlk turu denemedir; işlem gönderilmez.');
+  const overview=head.querySelector('p');overview.textContent=`${enabled.length} etkin kaynak, ${sources.length-enabled.length} kapalı${blocked.length?`, ${blocked.length} engelli`:''}. `;
+  if(data.automation.status==='enabled'&&upcoming){const next=el('span');next.dataset.sourceNextAt=String(upcoming.nextRunAt);next.dataset.sourceNextLabel='Sıradaki tarama';next.dataset.sourceNextSuffix=`: ${upcoming.name}.`;next.title=time(upcoming.nextRunAt);updateNextRun(next);overview.append(next);}
+  else overview.append(document.createTextNode('Her kaynak kendi aralığında takip edilir. İlk turu denemedir; işlem gönderilmez.'));
   add.disabled=active||intervalSaving;add.setAttribute('aria-expanded',String(adding));
   for(const b of bulk.querySelectorAll('button')){b.disabled=active||!sources.length||Object.keys(modes).indexOf(b.dataset.mode)>Object.keys(modes).indexOf(data.automation.mode);b.setAttribute('aria-pressed',String(sources.length>0&&sources.every(s=>s.mode===b.dataset.mode)));}
   if(adding){if(!addHost.firstChild)addHost.append(editor(null));}else addHost.replaceChildren();
@@ -97,16 +107,22 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
    const main=el('div',null,'source-main'),name=el('div',source.name,'source-name'),link=button(new URL(source.url).hostname,()=>api.openLink(source.url),'source-url');link.title=source.url;name.append(link);const query=el('p',source.query,'source-scope');query.title=source.query;main.append(name,query,el('small',source.searchMethod==='tool'?'Kaynağa özel araç':data.automation.browserMode==='jev'?'Jev tarayıcı':'Tarayıcı','source-method'));
    const plan=el('div',null,'source-plan');plan.append(el('b',`Her ${source.intervalMinutes} dk`),document.createTextNode(modes[source.mode]));
    const status=el('div',null,'source-status'),count=`Toplam ${source.resultCount??source.lastFound??0} kayıt`;
-   status.append(el('b',source.blocker?.stop?.retryExhausted?'Erişim sorunu sürüyor':source.siteWait?'Site için ortak bekleme':source.scanning?(source.trialRunning?'Deneme sürüyor':source.scanIssue?'Sayfa yüklenemedi':'Taranıyor'):source.recovery&&data.automation.status==='enabled'?'Otomatik devam bekleniyor':source.blocked?(source.lastStatus==='failed'||source.blocker?.stop?.kind==='technical'?'Tarama tamamlanamadı':'Kaynak engelli'):source.lastStatus==='partial'?`Kısmi tarama · ${source.scan?.pendingUrls.length??0} adres kaldı`:source.lastRunAt?count:'Henüz taranmadı'));
+   status.append(el('b',source.blocker?.stop?.retryExhausted?'Erişim sorunu sürüyor':source.siteWait?'Site için ortak bekleme':source.scanning?(source.trialRunning?'Deneme sürüyor':source.scanIssue?'Sayfa yüklenemedi':'Taranıyor'):source.recovery&&data.automation.status==='enabled'?'Otomatik devam bekleniyor':source.blocked?(source.lastStatus==='failed'||source.blocker?.stop?.kind==='technical'?'Tarama tamamlanamadı':'Kaynak engelli'):source.lastStatus==='partial'?`Kısmi tarama · ${source.scan?.pendingUrls.length??0} adres kaldı`:(source.lastRun?.finishedAt??source.lastRunAt)?count:'Henüz taranmadı'));
    if(source.scanning||source.blocked||source.lastStatus==='partial')status.append(el('small',count));
+   const outcome=source.lastRun??{status:source.lastStatus,summary:source.lastResult,finishedAt:source.lastRunAt},outcomeLabel=runOutcomes[outcome.status];
+   const lastRun=el('span',outcomeLabel?`Son tur: ${outcomeLabel}`:source.scanning?'Son tur: İlk tarama sürüyor':'Son tur: Henüz çalışmadı','source-last-run');lastRun.dataset.status=outcomeLabel?outcome.status:'none';
+   if(outcomeLabel)lastRun.title=[outcome.finishedAt?time(outcome.finishedAt):null,outcome.summary].filter(Boolean).join(' · ');status.append(lastRun);
    const trialStatus=source.trialRunning?'Denemede işlem gönderilmez':source.trial?.status==='passed'?'Deneme başarılı':source.trial?.status==='failed'?'Deneme tamamlanamadı':'İlk turda denenecek';
    const trialLabel=el('small',trialStatus,'source-trial-status');trialLabel.dataset.status=source.trialRunning?'running':source.trial?.status??'pending';status.append(trialLabel);
    if(source.learnedSkill)status.append(el('small',`Rehber v${source.learnedSkill.version} · ${source.learnedSkill.verifiedCount}/4 bölüm doğrulandı${source.learnedSkill.needsReview?' · Kontrol edilecek':''}`,'source-skill-status'));
    if(source.siteWait)status.append(el('small',source.siteWait.message));
-   const currentDetail=source.scanning?(source.scanIssue?`${source.scanIssue.url} · ${source.scanIssue.attempts}. deneme`:null):source.lastResult;
+   const currentDetail=source.scanning?(source.scanIssue?`${source.scanIssue.url} · ${source.scanIssue.attempts}. deneme`:null):outcome.summary??source.lastResult;
    if(currentDetail){const detail=el('small',currentDetail);detail.title=source.scanIssue?.evidence??currentDetail;status.append(detail);}
    const pageLabel=scanPageLabel(source.pageProgress);if(pageLabel){const progress=el('small','Son doğrulanan: '+pageLabel,'source-page-progress');progress.title=`Agent’ın bildirdiği sonuç sayfası; tamamlanma oranı değildir.\n${source.pageProgress.evidence}\n${time(source.pageProgress.at)}`;status.append(progress);}
-   const timing=el('div',null,'source-timing');timing.append(el('b',!source.enabled?'Kapalı':source.siteWait?`Erişim kontrolü ${time(source.siteWait.retryAt)}`:source.scanning?'Şu anda taranıyor':source.blocked?'Yeniden başlatılmayı bekliyor':data.automation.status!=='enabled'?'Takip duraklatıldı':source.nextRunAt?`Sonraki tarama ${time(source.nextRunAt)}`:'Sıradaki tarama'),document.createTextNode(source.lastRunAt?`Son tarama ${time(source.lastRunAt)}`:'Henüz taranmadı'));
+   const timing=el('div',null,'source-timing'),nextRun=el('b',!source.enabled?'Kapalı':source.scanning?'Şu anda taranıyor':source.blocked?'Yeniden başlatılmayı bekliyor':data.automation.status!=='enabled'?'Takip duraklatıldı':'Sıradaki tarama');
+   const nextAt=source.enabled?(source.siteWait?.retryAt??(!source.scanning&&!source.blocked&&data.automation.status==='enabled'?source.nextRunAt:null)):null;
+   if(nextAt){nextRun.dataset.sourceNextAt=String(nextAt);nextRun.dataset.sourceNextLabel=source.siteWait?'Erişim kontrolü':'Sonraki tarama';nextRun.title=nextRun.dataset.sourceNextLabel+' '+time(nextAt);updateNextRun(nextRun);}
+   const lastAt=outcome.finishedAt??source.lastRunAt;timing.append(nextRun,document.createTextNode(lastAt?`Son tarama ${time(lastAt)}`:'Henüz taranmadı'));
    const closing=(data.activeRuns??[]).some(run=>run.sourceUrl===source.url&&!run.recordId&&!run.recordOperation)&&!source.scanning;
    const actions=el('div',null,'source-actions'),run=button(source.blocked?'Tekrar dene':'Şimdi tara',async()=>{await api.automationSourceRun(scope,source.url);await refresh();});run.disabled=closing||source.siteWait?.waiting||source.scanning||!source.enabled||!data.progress?.reviewed;
    if(closing)run.textContent='Oturum kapanıyor…';

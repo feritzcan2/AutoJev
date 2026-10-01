@@ -4,10 +4,10 @@ import {mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 const require=createRequire(import.meta.url),{_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
-const data=await mkdtemp(path.join(tmpdir(),'loop-attention-ui-')),file=path.join(data,'jobloop.sqlite'),store=new Store(file),db=new AutomationStore(store);
+const data=await mkdtemp(path.join(tmpdir(),'loop-attention-ui-')),file=path.join(data,'jobloop.sqlite'),store=new WorkspaceDatabase(file),db=new AutomationStore(store);
 const source='https://homes.example/list',other='https://other.example/list',url='https://homes.example/detail/2';
 const a=db.create('housing',{title:'Berlin ev arama',goal:'Berlin’de uygun evleri bul',criteria:{location:'Berlin',budget:'2000',requirements:'2 oda'},sources:[source,other],browserMode:'jev'});
 db.review(a.id);const trial=db.begin(a.id,'trial');for(const address of [source,other])db.observe(a.id,trial.id,address,'Actual listings');db.finish(a.id,trial.id,'completed','Ready');db.enable(a.id);
@@ -18,7 +18,7 @@ try{
  const page=await app.firstWindow(),errors=[];page.on('pageerror',error=>errors.push(error.message));
  await app.evaluate(async({ipcMain},args)=>{
   const vm=process.getBuiltinModule('node:vm'),load=vm.runInThisContext('(url)=>import(url)',{importModuleDynamically:vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER});
-  const {Store}=await load(args.store),{AutomationStore}=await load(args.automationStore);
+  const {WorkspaceDatabase}=await load(args.store),{AutomationStore}=await load(args.automationStore);
   globalThis.attentionActions=[];globalThis.attentionTabs=[{tabId:'captcha-tab',url:args.url,sourceUrl:args.source}];globalThis.failAttentionRetry=true;globalThis.failAttentionReply=true;
   ipcMain.removeHandler('terminal-message');ipcMain.handle('terminal-message',async(_,id,text,worker)=>{
    globalThis.attentionActions.push({kind:'reply',id,text,worker});await new Promise(resolve=>setTimeout(resolve,200));
@@ -28,10 +28,10 @@ try{
   ipcMain.removeHandler('focus-workspace-tab');ipcMain.handle('focus-workspace-tab',(_,id,tabId)=>{globalThis.attentionActions.push({kind:'focus',id,tabId});return {focused:true};});
   ipcMain.removeHandler('automation-source-run');ipcMain.handle('automation-source-run',(_,id,source)=>{
    globalThis.attentionActions.push({kind:'retry',id,source});if(globalThis.failAttentionRetry)throw Error('Test: kaynak yeniden başlatılamadı');
-   const store=new Store(args.file),db=new AutomationStore(store),a=db.get(id);
+   const store=new WorkspaceDatabase(args.file),db=new AutomationStore(store),a=db.get(id);
    db.put({...a,sourceState:{...a.sourceState,[source]:{...a.sourceState[source],blocked:false,lastStatus:'completed',nextRunAt:Date.now()+3600000}}});store.close();return {};
   });
- },{file,source,url,store:pathToFileURL(path.resolve('app/store.mjs')).href,automationStore:pathToFileURL(path.resolve('app/automation-store.mjs')).href});
+ },{file,source,url,store:pathToFileURL(path.resolve('app/workspace-database.mjs')).href,automationStore:pathToFileURL(path.resolve('app/automation-store.mjs')).href});
  await page.locator('.automation-attention-banner').waitFor({state:'visible'});
  assert.equal(await page.locator('#agent-nav-status').textContent(),'1 müdahale');
  await page.getByRole('button',{name:'Müdahaleleri göster',exact:true}).click();

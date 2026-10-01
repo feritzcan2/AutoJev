@@ -1,6 +1,6 @@
 // Adapt the existing Jev engine to the scoped automation browser tools.
 // Run ownership and step limits stay in automationWorkflow; the agent assesses authority.
-export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,sourceUrls=[],recordId,resumeContext}={}){
+export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,sourceUrls=[],recordId,resumeContext,isolatedResearch=false}={}){
  if(mode!=='jev')return browser;
  let tabId=recordId?resumeContext?.tabId??null:null,activeSource=sourceUrl,restoreRecord=Boolean(recordId);
  const sourceFor=url=>{
@@ -52,7 +52,7 @@ export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,
   }
   if(name==='browser_navigate'){
    if(readTabKey){
-    if(!recordId){const nextSource=sourceFor(args.url);if(nextSource!==activeSource)tabId=null;activeSource=nextSource;}
+    if(!recordId&&!isolatedResearch){const nextSource=sourceFor(args.url);if(nextSource!==activeSource)tabId=null;activeSource=nextSource;}
     const result=await native(id,'browser_jev_open',{url:args.url},session,{automationPreferredTabId:tabId,automationResumeRecord:restoreRecord});
     if(result.page.siteWait){tabId=result.page.tabId??tabId;return observed(result);}
     tabId=result.page.tabId;restoreRecord=false;if(!tabId)throw Error('Jev sekmesi açılamadı');return document(id,result,session);

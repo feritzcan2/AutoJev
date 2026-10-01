@@ -246,7 +246,8 @@ test('Jev document upload uses the current record tab and observed upload ID',as
 
 test('manual preparation takes the next free worker ahead of automatic pending work',async t=>{
  const f=fixture(t);await f.runtime.runOnce(f.id);await settle();const scan=f.launches.at(-1);f.db.put({...f.db.get(f.id),mode:'prepare'});
- const other=f.db.record(f.id,scan.id,{url:source+'/2',title:'Other',summary:'Other finding'});
+ f.db.observe(f.id,scan.id,source+'/2','Other finding');
+ const other=f.db.record(f.id,scan.id,{url:source+'/2',title:'Other',summary:'Other finding',assessment:{status:'scored',score:80,summary:'Fits the saved criteria',evidenceUrl:source+'/2',evidence:'Other finding',strengths:['Relevant role'],gaps:[],uncertainties:[]}});
  const {enqueueRecordOperation}=await import('../app/record-operations.mjs');
  enqueueRecordOperation(f.runtime,f.id,other.id,'prepare',{manual:false});
  const automatic=enqueueRecordOperation(f.runtime,f.id,f.item.id,'prepare',{manual:false});

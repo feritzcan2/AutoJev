@@ -1,6 +1,12 @@
 export function validate(schema,value,path='arguments'){
  try{
-  if(schema.type==='object'){
+  if(Array.isArray(schema.type)){
+    const type=schema.type.find(type=>type==='null'?value===null:type==='array'?Array.isArray(value):type==='integer'?Number.isInteger(value):value!==null&&typeof value===type);
+    if(!type)throw Error('Invalid argument type');
+    return validate({...schema,type},value,path);
+  }
+  if(schema.type==='null'){if(value!==null)throw Error('Expected null');
+  }else if(schema.type==='object'){
     if(!value||typeof value!=='object'||Array.isArray(value))throw Error('arguments must be an object');
     for(const key of schema.required??[])if(!(key in value))throw Error(`Missing ${key}`);
     for(const [key,item]of Object.entries(value)){if(!schema.properties[key])throw Error(`Unknown field ${key}`);validate(schema.properties[key],item,`${path}.${key}`);}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {WebTasks} from '../app/web-template.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
@@ -11,7 +11,7 @@ import {validate} from '../app/tool-schema.mjs';
 const source='https://homes.test/results',second=source+'?page=2',third=source+'?page=3';
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(t,template='housing'){
- const store=new Store(':memory:'),db=new AutomationStore(store),a=db.create(template,{goal:'Find all matching results',criteria:Object.fromEntries(db.template(template).fields.filter(f=>f.required).map(f=>[f.id,'Test criteria'])),sources:[source]});
+ const store=new WorkspaceDatabase(':memory:'),db=new AutomationStore(store),a=db.create(template,{goal:'Find all matching results',criteria:Object.fromEntries(db.template(template).fields.filter(f=>f.required).map(f=>[f.id,'Test criteria'])),sources:[source]});
  db.review(a.id);const trial=db.begin(a.id,'trial');db.observe(a.id,trial.id,source,'Results');db.finish(a.id,trial.id,'completed','Read');
  const launches=[],runtime=new WebTasks(db,{launch:async run=>{launches.push(run);return {close:async()=>{}};}});t.after(async()=>{await runtime.close();store.close();});
  const workflow=run=>{let current;return automationWorkflow({db,run,signal:new AbortController().signal,browser:{async call(id,name,args){if(name==='browser_navigate')current=args.url;const page=[source,second,third].indexOf(current)+1,links=page&&page<3?[{text:'Next page',url:[source,second,third][page]}]:[];return {content:[{type:'text',text:'Page URL: '+current+'\n'+JSON.stringify({url:current,text:page?`Results. Page ${page} of 3`:'Detail',links})}]};}},report:(id,runId,status,summary,goal)=>runtime.report(id,runId,status,summary,goal)});};

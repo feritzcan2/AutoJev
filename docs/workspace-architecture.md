@@ -46,15 +46,15 @@ Hazır template seçimi kurulum agent’ını ilk mesajı beklemeden başlatır.
 
 ## Entegrasyonlar
 
-`workspace-support-services.mjs` arka plan becerilerini ve Telegram servislerini bütün çalışma alanları için kaydeder. `WorkspaceSupport` ortak kayıtları mevcut taşıma protokollerine uyarlar. Bu uyumluluk görünümü eski iş arama yürütücüsünü çalıştırmaz. Bildirim, posta ve arka plan tabloları `workspaces` kimliğine bağlıdır.
+`workspace-support-services.mjs` Telegram servislerini bütün çalışma alanları için kaydeder. `WorkspaceSupport` ortak kayıtları mevcut taşıma protokollerine uyarlar. Bu uyumluluk görünümü eski iş arama yürütücüsünü çalıştırmaz. Bildirim tabloları ve eski posta kayıtları `workspaces` kimliğine bağlıdır.
 
 Telegram kayıt düğmeleri masaüstüyle aynı `WebTasks.runRecord` ve `dismissRecord` akışlarını kullanır. Açık kullanıcı isteği yalnızca seçilen kaydı işler; kaynak taramasını başlatmaz. Belirsiz kayıt yalnızca doğrulanır. Kartın işlem kimliği kayıt içeriğine ve kurulum sürümüne bağlıdır; eski kart yenilenmeden işlem başlatılamaz. Bekleyen görevler de kuyruk ve sabitleme durumuna dahildir. Kart başlıkları ve durumları çalışma alanının tablo/template tanımından gelir.
 
 Kayıt, ilişkili çalışma durumu ve `workspace_events` olayı tek transaction içinde yazılır. Görev isteği commit edildikten sonra worker uyandırılır ve arayüz bilgilendirilir. Bu sınırlar yazma hatasında eksik bildirim veya açık kalmış işlem bırakmaz.
 
-Varsayılan Gmail becerisi template'in `mail` sözleşmesini okur; ortak araçta kayıt eşlemesi `recordId` kullanır. Kişisel skill seçildiğinde yalnızca bağlam ve bitiş araçları verilir. Eski posta kayıtları ve taşıma kimlikleri korunur. Şema 9'a geçişten önce mevcut yedek mekanizması çalışır; eski template'lerde eksik `mail` alanı okuma sırasında varsayılanlarla tamamlanır. Aday modelinden taşınmış kişisel template'ler işe alım sonuçlarını korur; kaydedilmiş özel posta sözleşmeleri değiştirilmez.
+Arka plan işleri sayfasında yalnızca otomasyonun **Çalışma geçmişi** gösterilir. Gmail taraması, zamanlanmış skill çalıştırma, posta eşleştirme ve bunlara ait agent/IPC araçları kaldırılmıştır. Eski posta kayıtları ve template `mail` alanları yedek uyumluluğu için korunur; bu veriler görev başlatmaz.
 
-`tests/workspace-record-lifecycle.test.mjs` dört template'in Telegram kuyruğunu, eski kartları, eleme akışını ve yazma hatasında geri almayı sınar. `tests/workspace-mail.test.mjs` posta sözleşmesini, eski veri geçişini ve yedekten geri yüklemeyi doğrular. `scripts/smoke-workspace-mail.mjs` ayrı Electron verisiyle ev arama, iş arama ve özel posta sonuçlarını gerçek eşleştirme arayüzünde kontrol eder.
+`tests/workspace-record-lifecycle.test.mjs` dört template'in Telegram kuyruğunu, eski kartları, eleme akışını ve yazma hatasında geri almayı sınar. `tests/workspace-mail.test.mjs` eski posta verilerinin taşınmasını ve yedekten geri yüklenmesini doğrular. `scripts/smoke-background-ui.mjs` geçmiş listesini, boş durumu ve çalışma alanları arasında geçişi kontrol eder.
 
 ## Eski verilerin geçişi
 
@@ -70,13 +70,13 @@ Varsayılan Gmail becerisi template'in `mail` sözleşmesini okur; ortak araçta
 
 Taşınan alan duraklatılır; kullanıcı profili kontrol edip kaynak denemesini yaptıktan sonra devam eder. Eski görevler kesilmiş geçmiş olarak kalır. `workspace_imports` makbuzu yeniden açılışta eski verinin değişiklikleri ezmesini veya silinen alanın geri gelmesini engeller. Silme işlemi eski alana bağlı kayıtları ve dosyaları da kaldırır.
 
-Eski `app/extensions/job-search` modülleri eski veri sözleşmesinin testleri ve geçiş uyumluluğu için depoda bulunur. Varsayılan uygulama bunları kaydetmez; eski `LOOP_EXTENSIONS=job-search` ayarı da ayrı bir çalışma yolu açmaz.
+Eski iş arama yürütücüsü, aday MCP uçları, kampanya kodu ve bu uçları kullanan agent skill dosyaları kaldırıldı. Veri geçişi `workspace-upgrade.mjs`, `legacy-conversations.mjs` ve ortak depodaki eski tablo okuyucularında korunur. Geçiş testleri eski motoru çalıştırmak yerine `tests/helpers/legacy-database.mjs` ile eski biçimde sentetik kayıtlar oluşturur. `LOOP_EXTENSIONS=job-search` ayarı geriye uyumluluk için yok sayılır.
 
 ## Doğrulama
 
 `workspace-upgrade.test.mjs` kimlik, geçmiş, soru, kaynak aralığı, yeniden açılış ve silme geçişini sınar. `workspace-questions.test.mjs` dört template’in ortak agent aracıyla form oluşturmasını, yanıt doğrulamasını ve çalışma alanları arasındaki yalıtımı sınar. `extensions.test.mjs` varsayılan başlangıçta eski yürütücü bağımlılığı olmadığını doğrular.
 
-`scripts/smoke-generic-workspace-ui.mjs` izole Electron verisiyle eski iş arama ve yeni ev arama alanlarını açar; ortak kaynak ekranında aralıkları değiştirir, soru formlarını yanıtlar ve yeniden açılışta kaydı kontrol eder. Canlı portallara başvuru göndermez.
+`scripts/smoke-generic-workspace-ui.mjs` izole Electron verisiyle iş arama ve ev arama template’lerini açar; ortak kaynak ekranında aralıkları değiştirir, soru formlarını yanıtlar ve yeniden açılışta kaydı kontrol eder. Canlı portallara başvuru göndermez.
 
 ## Kayıt üzerinden işlem yapma
 

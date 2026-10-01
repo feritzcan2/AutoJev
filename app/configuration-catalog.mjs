@@ -1,4 +1,4 @@
-import {fileInstructionParts,instructionPart} from './instruction-log.mjs';
+import {instructionPart} from './instruction-log.mjs';
 import {automationTools,automationPrompt} from './automation-worker.mjs';
 
 export function webPromptCatalog(plan){
@@ -21,9 +21,7 @@ export async function configurationCatalog({id,workspaces,profiles}){
  const instructions=[
   ...library.agents.map(p=>instructionPart('agent-profile:'+p.id,p.name+' agent talimatı','system',p.instructions,{when:p.when})),
   ...parts.filter(p=>p.source!=='skill'),
-  ...(catalog.instructions??[]).filter(p=>!['agents-md','chrome-profile','jev-browser'].includes(p.id)).flatMap(p=>p.id==='background-agents'
-   ?fileInstructionParts('Background AGENTS.md',p.text)
-   :[instructionPart(p.id,p.title,'system',p.text,{when:[p.where,p.when].filter(Boolean).join(' · ')})])
+  ...(catalog.instructions??[]).filter(p=>!['agents-md','chrome-profile','jev-browser'].includes(p.id)).map(p=>instructionPart(p.id,p.title,'system',p.text,{when:[p.where,p.when].filter(Boolean).join(' · ')}))
  ];
  return {workspace,instructions,tasks:catalog.tasks??[],skills:catalog.skills??[],tools:catalog.tools??[]};
 }

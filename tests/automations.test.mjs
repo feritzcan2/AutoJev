@@ -3,17 +3,18 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {WebTasks} from '../app/web-template.mjs';
 import {automationWorkflow,researchUrl} from '../app/automation-worker.mjs';
 import {automationTemplate,reusableTemplate,webUrl,automationTable,automationCells} from '../app/automation-templates.mjs';
-import {startMcp,validate} from '../app/mcp.mjs';
+import {validate} from '../app/tool-schema.mjs';
+import {startTestServer} from './helpers/tool-server.mjs';
 import {createBackup,stageRestore,applyPendingRestore,pruneLogs} from '../app/data-management.mjs';
 import {prepareAutomationChat} from '../src/automation-chat.js';
 
 const setup={title:'Berlin’de ev',goal:'Uygun evleri bul',criteria:{location:'Berlin',budget:'1500 EUR warm',requirements:'2 oda'},sources:['https://example.com/homes']};
-function fixture(t){const store=new Store(':memory:');t.after(()=>store.close());const db=new AutomationStore(store),a=db.create('housing',setup);return {store,db,id:a.id};}
+function fixture(t){const store=new WorkspaceDatabase(':memory:');t.after(()=>store.close());const db=new AutomationStore(store),a=db.create('housing',setup);return {store,db,id:a.id};}
 function trial(db,id){db.review(id);const run=db.begin(id,'trial');db.observe(id,run.id,'https://example.com/homes','Actual rental listings');db.finish(id,run.id,'completed','İlanlar gözlendi');return run;}
 function record(db,id,run,key='1',proposal='Merhaba, bu evle ilgileniyorum.'){return db.record(id,run.id,{key,url:'https://example.com/homes/'+key,title:'İki odalı ev',summary:'Berlin, 1400 EUR warm',proposal});}
 const settle=()=>new Promise(r=>setImmediate(r));
@@ -137,14 +138,12 @@ test('trial retries cannot repeat a historical blocker without a new browser att
  assert.equal(reports.length,1);assert.equal(reports[0][3],'Chrome disconnected now');
 });
 
-test('templates are isolated; jobs remain in the existing workspace and generic tasks do not create candidates',t=>{
- const {store,db,id}=fixture(t),job=store.saveProfile({name:'Existing',preferences:'Remote'}),other=db.create('appointment');
- assert.equal(store.candidates().length,1);assert.equal(db.list().length,2);assert.equal(automationTemplate('housing').fields.length,4);
- const interview=db.begin(id,'interview');db.save(id,{criteria:{...setup.criteria,budget:'1800 EUR'}},{agent:true});db.finish(id,interview.id,'completed','Updated');
- assert.equal(db.get(other.id).criteria.budget,undefined);assert.equal(store.profile(job.id).preferences,'Remote');
- assert.throws(()=>db.create('job-search'),/aday/);assert.throws(()=>webUrl('https://user:secret@example.com'),/Kullanıcı/);assert.throws(()=>webUrl('file:///tmp/test'));
-});
-test('reusable templates carry questions and workflow, never instance data or activation authority',t=>{
+test('job and housing templates share the runtime without creating legacy candidate tables',t=>{
+ const {store,db,id}=fixture(t),jobs=db.create('job-search',{title:'Jobs'});
+ assert.equal(store.workspaces.exists('candidates'),false);assert.equal(db.get(id).templateId,'housing');assert.equal(db.get(jobs.id).templateId,'job-search');
+ db.rename(jobs.id,'Renamed jobs');assert.notEqual(db.get(id).title,'Renamed jobs');
+ assert.equal(db.template(jobs.templateId).execution.driver,db.template('housing').execution.driver);
+});test('reusable templates carry questions and workflow, never instance data or activation authority',t=>{
  const {db,id}=fixture(t),base=automationTemplate('housing');const template=db.saveTemplate({...base,title:'Berlin evleri',description:'Ev arama başlangıcı',guidance:'Read listings and prepare a message',facts:'Private person',sources:['https://private.example'],mode:'auto',trial:{status:'passed'}});
  const portable=reusableTemplate(template);assert.equal(portable.facts,undefined);assert.equal(portable.sources,undefined);assert.equal(portable.trial,undefined);assert.equal(portable.defaultMode,'observe');
  const a=db.create(template.id);assert.deepEqual(a.criteria,{});assert.equal(a.goal,'');assert.equal(a.mode,'observe');assert.equal(a.trial,null);assert.equal(db.template(a.templateId).guidance,template.guidance);assert.equal(db.catalog().length,5);assert.equal(db.get(id).title,setup.title);
@@ -216,7 +215,7 @@ test('browser tools enforce session ownership without imposing step limits',asyn
  await assert.rejects(flow.call(id,run.id,'save_automation_plan',{}),/kurulum/);
  await flow.call(id,run.id,'browser_open',{url:'https://other.example/'});
  await flow.call(id,run.id,'browser_interact',{operation:'click',ref:'e1'});assert.equal(writes,1);
- const mcp=await startMcp(store,()=>{},async()=>({}),null,null,flow);t.after(()=>mcp.close());const token=mcp.grant(id,run.id);
+ const mcp=await startTestServer(store,flow);t.after(()=>mcp.close());const token=mcp.grant(id,run.id);
  const call=async(method,params)=>{const r=await fetch(mcp.endpoint,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});return r.json();};
  const list=(await call('tools/list')).result.tools.map(t=>t.name);assert.ok(list.includes('browser_open'));assert.ok(!list.includes('browser_run_code'));assert.ok(!list.includes('record_submission'));
  const denied=await call('tools/call',{name:'browser_click',arguments:{ref:'e1'}});assert.equal(denied.result.isError,true);
@@ -280,8 +279,8 @@ for(const kind of ['interview','trial'])test(`${kind} samples never replace live
  assert.equal(db.resultCounts(id).resultCount,1);assert.equal(db.resultCounts(id).storedCount,1);
 });
 test('backup includes automation documents, pauses schedules and clears approvals and trial on restore',async t=>{
- const root=await mkdtemp(path.join(tmpdir(),'loop-automation-backup-'));t.after(()=>rm(root,{recursive:true,force:true}));const data=path.join(root,'data');await mkdir(data);const store=new Store(path.join(data,'jobloop.sqlite')),db=new AutomationStore(store),a=db.create('housing',setup);trial(db,a.id);db.enable(a.id);
+ const root=await mkdtemp(path.join(tmpdir(),'loop-automation-backup-'));t.after(()=>rm(root,{recursive:true,force:true}));const data=path.join(root,'data');await mkdir(data);const store=new WorkspaceDatabase(path.join(data,'jobloop.sqlite')),db=new AutomationStore(store),a=db.create('housing',setup);trial(db,a.id);db.enable(a.id);
  const documents=path.join(data,'automations','workspaces',a.id,'documents');await mkdir(documents,{recursive:true});await writeFile(path.join(documents,'intro.txt'),'A tenant introduction');
  const backup=path.join(root,'backup');await createBackup({dataDirectory:data,db:store.db,destination:backup,appVersion:'test'});assert.equal(await readFile(path.join(backup,'automations','workspaces',a.id,'documents','intro.txt'),'utf8'),'A tenant introduction');
- await stageRestore({dataDirectory:data,directory:backup,db:store.db,appVersion:'test'});store.close();await applyPendingRestore({dataDirectory:data});const restored=new Store(path.join(data,'jobloop.sqlite'));t.after(()=>restored.close());const db2=new AutomationStore(restored);assert.equal(db2.get(a.id).status,'paused');assert.equal(db2.get(a.id).trial,null);assert.equal(db2.get(a.id).reviewedRevision,null);assert.equal(db2.get(a.id).sourceState[setup.sources[0]].trial,null);assert.equal(db2.get(a.id).sourceTrialsVersion,1);
+ await stageRestore({dataDirectory:data,directory:backup,db:store.db,appVersion:'test'});store.close();await applyPendingRestore({dataDirectory:data});const restored=new WorkspaceDatabase(path.join(data,'jobloop.sqlite'));t.after(()=>restored.close());const db2=new AutomationStore(restored);assert.equal(db2.get(a.id).status,'paused');assert.equal(db2.get(a.id).trial,null);assert.equal(db2.get(a.id).reviewedRevision,null);assert.equal(db2.get(a.id).sourceState[setup.sources[0]].trial,null);assert.equal(db2.get(a.id).sourceTrialsVersion,1);
 });

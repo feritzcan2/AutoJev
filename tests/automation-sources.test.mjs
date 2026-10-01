@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Store} from '../app/store.mjs';
+import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {WebTasks} from '../app/web-template.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
@@ -9,7 +9,7 @@ import {automationProgress} from '../app/automation-progress.mjs';
 const urls=['https://blocked.test/search','https://fast.test/search','https://slow.test/search'];
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture(t,{onRunFinished}={}){
- const store=new Store(':memory:');let now=1_790_000_000_000;const db=new AutomationStore(store,{now:()=>now});
+ const store=new WorkspaceDatabase(':memory:');let now=1_790_000_000_000;const db=new AutomationStore(store,{now:()=>now});
  const a=db.create('housing',{title:'Evler',goal:'Uygun evleri bul',criteria:{location:'Berlin',budget:'2000',requirements:'2 oda'},sources:urls});db.review(a.id);const trial=db.begin(a.id,'trial');for(const url of urls)db.observe(a.id,trial.id,url,'Observed listings');db.finish(a.id,trial.id,'completed','Read all sources');
  const launches=[],runtime=new WebTasks(db,{now:()=>now,onRunFinished,launch:async run=>{launches.push(run);return {close:async()=>{}};}});t.after(async()=>{await runtime.close();store.close();});
  const finish=async(run,status='completed')=>{runtime.report(a.id,run.id,status,status==='blocked'?'IP range blocked':'Observed');await runtime.finish(a.id,status,'Observed',run.workerId);};
