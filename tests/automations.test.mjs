@@ -262,7 +262,7 @@ test('interview samples require an observed source detail and cannot authorize o
  await flow.call(id,run.id,'research_automation_source',{url:'https://outside.example/home'});
  const linked=await flow.call(id,run.id,'record_automation_result',{...sample,url:'https://outside.example/home'});assert.equal(linked.url,'https://outside.example/home');assert.equal(linked.trial,true);
  const saved=await flow.call(id,run.id,'record_automation_result',sample);
- assert.equal(saved.trial,true);assert.equal(saved.sampleKind,'interview');assert.equal(saved.status,'found');assert.equal(saved.proposal,'');
+ assert.equal(saved.trial,true);assert.equal(saved.sampleKind,'interview');assert.equal(saved.status,'found');assert.equal(saved.hasProposal,false);assert.equal(db.result(id,saved.id).proposal,'');
  assert.equal(db.resultCounts(id).storedCount,2);assert.equal(db.resultCounts(id).resultCount,0);
  assert.throws(()=>db.reserve(id,run.id,saved.id),/gözlem/);
  db.finish(id,run.id,'completed','Sources and examples observed');

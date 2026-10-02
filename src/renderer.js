@@ -1,4 +1,5 @@
 import {defaultPermission} from '../app/agent-settings.mjs';
+import {coalesceRefresh} from './refresh-queue.js';
 import {saveAgentSettings,createAgentRestartDialog} from './agent-settings-save.js';
 import {instructionsPanel} from './instructions.js';
 import {automationsPage} from './automations.js';
@@ -20,6 +21,7 @@ import './profile.css';
 const api=window.jobloop,$=id=>document.getElementById(id);
 let catalog=[],chromeProfiles=[],chromeProfilesError='',workspaceAgent=null,agentSettingsSignature='',agentSettingsOwner=null,deletingWorkspace=null;
 let settingsQueue=Promise.resolve(),refreshVersion=0;
+const refresh=coalesceRefresh(refreshWorkspace);
 let agentSettingsDirty=false,agentSettingsSaving=false,agentSettingsBaseline='';
 const confirmAgentRestart=createAgentRestartDialog();
 const notice=message=>{$('notice').textContent=message;$('notice').hidden=!message;};
@@ -46,7 +48,7 @@ const configUI=configPage(api,{notice,relativeTime,openNotifications:()=>switchV
 const automationUI=automationsPage(api,{notice,getCatalog:()=>catalog,navigate:switchView,onSnapshot:syncWorkspaceAgent,focusAgent:options=>terminals.focus(options),syncWorkspaceMenu:()=>workspaceMenu.sync(),refreshWorkspaces:refresh,deleteWorkspace,isDeleting:()=>Boolean(deletingWorkspace)});
 await document.fonts.ready;
 const terminalSection=document.querySelector('#agent .terminal-section');$('agent-settings').before(terminalSection);
-const terminals=workerTerminals(api,{container:terminalSection,conversationContainer:$('setup-agent-terminal'),notice,refresh,beforeAction:async(id,method,worker)=>{await settingsQueue;if(automationUI.dirty&&['startWorker','restartWorker'].includes(method)){switchView('profile');throw Error('Önce profil değişikliklerini kaydet.');}if(method==='startWorker'&&worker==='main'&&!(automationUI.data.progress.reviewed&&automationUI.data.progress.passed)){await automationUI.start();return false;}},sendMessage:async(id,text,worker)=>{await settingsQueue;return worker==='main'?automationUI.sendMessage(text):api.terminalMessage(id,text,worker);}});
+const terminals=workerTerminals(api,{container:terminalSection,conversationContainer:$('setup-agent-terminal'),notice,refresh,beforeAction:async(id,method,worker)=>{await settingsQueue;if(automationUI.dirty&&['startWorker','restartWorker'].includes(method)){switchView('profile');throw Error('Önce profil değişikliklerini kaydet.');}if(method==='startWorker'&&worker==='main'&&!automationUI.data.progress.reviewed){await automationUI.start();return false;}},sendMessage:async(id,text,worker)=>{await settingsQueue;return worker==='main'?automationUI.sendMessage(text):api.terminalMessage(id,text,worker);}});
 const instructionsUI=instructionsPanel(api,$('agent'));
 const activities=activityPanels($('now-panel'),{openLink:url=>api.openLink(url),notice});
 const chromeStatus=element('div','chrome-status');chromeStatus.setAttribute('role','status');chromeStatus.setAttribute('aria-live','polite');
@@ -70,8 +72,7 @@ function settingsOptions(saved){
  const fields=$('agent-settings-form').elements;fields.network.disabled=current.id!=='codex';
  for(const [name,fallback]of [['contextCompactPercent',0],['contextRestartPercent',0]]){
   const field=fields[name],value=saved?saved[name]??fallback:field.disabled?field.dataset.configuredValue:field.value;
-  // Display inactive thresholds as zero while preserving them for other providers.
-  field.dataset.configuredValue=value;field.disabled=current.id==='opencode';field.value=field.disabled?'0':value;
+  field.dataset.configuredValue=value;field.disabled=false;field.value=value;
  }
  for(const [key,list]of [['model',current.models],['permission',current.permissions],['reasoning',current.reasoning]]){$(key).replaceChildren(...list.map(value=>new Option(value,value)));$(key).value=list.includes(saved?.[key])?saved[key]:key==='permission'?defaultPermission(current.id):'default';}
 }
@@ -106,10 +107,10 @@ function syncWorkspaceAgent(value){
 function renderContext(value){
  const usage=value?.active?.contextUsage,threshold=value?.workspace.agentSettings.contextRestartPercent??0,compactThreshold=value?.workspace.agentSettings.contextCompactPercent??0,compact=value?.active?.compaction;
  $('context-compact-status').textContent=({sending:'/compact gönderiliyor…',submitted:'/compact gönderildi; sağlayıcıdan compaction bekleniyor.',running_command:'Sağlayıcı /compact komutunu işliyor…',verified:'Compaction tamamlandı.',compacting:'Context sıkıştırılıyor…',awaiting_usage:'Compaction turu bitti; yeni context ölçümü bekleniyor.',completed:'Context kullanımı eşik altına indi.',waiting:'Terminalin komut almaya hazır olması bekleniyor.',unconfirmed:'Compaction doğrulanamadı. '+(compact?.error??'')})[compact?.state]??(compactThreshold?`Otomatik compaction: %${compactThreshold}.`:'Otomatik compaction kapalı.');
- if(value?.workspace.agentSettings.provider==='opencode'){$('context-compact-status').textContent='OpenCode kendi context sıkıştırmasını yönetir.';$('context-usage-status').textContent='OpenCode için context yüzdesine göre otomatik yenileme desteklenmiyor.';}
- else $('context-usage-status').textContent=!threshold&&!compactThreshold?'Otomatik context yönetimi kapalı.':!value?.active?'Sonraki oturumda context izlenecek.':usage?.percent==null?'Context yüzdesi bekleniyor.':`Context kullanımı: %${usage.percent.toLocaleString('tr-TR',{maximumFractionDigits:1})}.${threshold>0&&usage.peakPercent>=threshold?' Eşik aşıldı; görev tamamlanınca yenilenecek.':''}`;
+ if(value?.workspace.agentSettings.provider==='opencode'&&!compact?.state)$('context-compact-status').textContent=compactThreshold?`OpenCode otomatik compaction: %${compactThreshold}. Eşik değişikliği sonraki agent oturumunda uygulanır.`:'Uygulamanın compaction eşiği kapalı; OpenCode kendi varsayılanını kullanır.';
+ $('context-usage-status').textContent=!threshold&&!compactThreshold?'Otomatik context yönetimi kapalı.':!value?.active?'Sonraki oturumda context izlenecek.':usage?.percent==null?'Context yüzdesi bekleniyor.':`Context kullanımı: %${usage.percent.toLocaleString('tr-TR',{maximumFractionDigits:1})}.${threshold>0&&usage.peakPercent>=threshold?' Eşik aşıldı; görev tamamlanınca yenilenecek.':''}`;
 }
-async function refresh(){
+async function refreshWorkspace(){
  if(deletingWorkspace)return;const version=++refreshVersion,items=await api.workspaces();if(version!==refreshVersion)return;
  $('candidates').replaceChildren(new Option('Çalışma alanı seç',''),...items.map(item=>new Option(item.title,item.id)));
  if(automationUI.selected&&!items.some(item=>item.id===automationUI.selected))automationUI.deselect();
@@ -165,4 +166,4 @@ const initialView=localStorage.getItem('selected-view'),saved=localStorage.getIt
 await refresh();const items=await api.workspaces(),selected=items.find(item=>item.id===saved)??items[0];
 if(selected){await automationUI.select(selected.id);await refresh();switchView((automationUI.data.progress.fresh||automationUI.data.automation.status==='draft')&&(!initialView||initialView==='board')?'setup-agent':['board','agent','setup-agent','profile','sources','files','background','config','notifications'].includes(initialView)?initialView:'board');}else switchView('templates');
 localStorage.removeItem('selected-candidate');localStorage.removeItem('selected-automation');
-api.onAutomationChange?.(()=>refresh().catch(error=>notice(error.message)));
+api.onAutomationChange?.(event=>{if(event.automationId&&event.automationId!==automationUI.selected)return;refresh().catch(error=>notice(error.message));});

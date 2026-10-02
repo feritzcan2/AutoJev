@@ -35,6 +35,27 @@ test('verified record completion closes its exact form tab, preserving other tas
   assert.deepEqual(f.closed,['confirmation']);assert.ok(f.browser.tabs.has('other-run'));
 });
 
+test('access reset closes retained source tabs including solved challenges, preserving personal, record and newer-run tabs',async()=>{
+ const f=jevFixture(),source='https://source.test/';
+ for(const id of ['home','challenge','form','changed','previous','personal','record','other-source','new-run','other-workspace']){
+  f.add(id,{draft:id==='form',changed:id==='changed',run:id==='previous'?'previous':id==='new-run'?'new':'finished',workspace:id==='other-workspace'?'elsewhere':'workspace'});
+  if(id!=='personal')f.browser.automationSources.set(id,id==='other-source'?'https://another.test/':source);
+  f.browser.automationTabs.set(id,id==='record'?'record:known-record':'source:'+source);
+ }
+ f.browser.tabs.get('challenge').verification={state:'required'};
+ const result=await f.browser.closeFinishedAutomationRunTabs('finished','workspace',{resetSource:source,sourceRunIds:['finished','previous']});
+ assert.deepEqual(result.closed,['challenge','form','changed','previous']);assert.deepEqual(result.retained,[]);
+ for(const id of ['home','personal','record','other-source','new-run','other-workspace'])assert.ok(f.browser.tabs.has(id),id);
+});
+
+test('source reset retries failed tab closes without falsely reporting cleanup complete',async()=>{
+ const f=jevFixture(),source='https://source.test/';f.add('challenge');f.browser.automationSources.set('challenge',source);
+ const slot=f.browser.tabs.get('challenge'),close=slot.page.close;slot.page.close=async()=>{throw Error('Disconnected');};
+ const options={resetSource:source,sourceRunIds:['finished']};
+ assert.deepEqual(await f.browser.closeFinishedAutomationRunTabs('finished','workspace',options),{closed:[],retained:['challenge']});
+ slot.page.close=close;assert.deepEqual(await f.browser.closeFinishedAutomationRunTabs('finished','workspace',options),{closed:['challenge'],retained:[]});
+});
+
 test('separate browser closes only the tab observed for the completed run',async()=>{
   const browser=new BrowserTools('/unused',()=> 'separate'),calls=[];
   let current='https://example.test/done',index=0;

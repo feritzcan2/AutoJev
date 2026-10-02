@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {mkdtemp,rm,readFile,writeFile} from 'node:fs/promises';
-import {execFileSync,spawnSync} from 'node:child_process';
+import {execFileSync} from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 const require=createRequire(import.meta.url),{_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
@@ -36,11 +36,11 @@ async function onboarding(page){
   const fixture=globalThis.packagedSetupFixture={workspaceId:null,starts:[],realRequests:[]};
   Engine.prototype.request=async function(op,args={}){
    if(op==='start'){
-    assert.ok(fixture.workspaceId);assert.equal(args.cwd,path.join(app.getPath('userData'),'automations','workspaces',fixture.workspaceId));
+    assert.ok(fixture.workspaceId);assert.equal(await fs.realpath(args.cwd),await fs.realpath(path.join(app.getPath('userData'),'automations','workspaces',fixture.workspaceId)));
     assert.equal(args.taskType,'automation');assert.ok(args.approvedTools.includes('ask_workspace_question'));
     assert.match(await fs.readFile(path.join(args.cwd,'AGENTS.md'),'utf8'),/get_automation_context/);
     assert.equal(await fs.readFile(path.join(args.cwd,'CLAUDE.md'),'utf8'),'@AGENTS.md\n\n');
-    for(const name of ['runtime','documents'])assert.equal((await fs.stat(path.join(args.cwd,name))).isDirectory(),true);
+    assert.equal((await fs.stat(path.join(args.cwd,'documents'))).isDirectory(),true);assert.equal((await fs.stat(args.runtimeDirectory)).isDirectory(),true);
     fixture.starts.push({cwd:args.cwd});started.add(this);return {started:true};
    }
    if(['resize','stop','input','message'].includes(op)&&started.has(this))return {};
@@ -67,8 +67,7 @@ try{
  let {page,errors}=await launch();
  const candidate=await page.evaluate(()=>window.jobloop.workspaceCreate('job-search',{title:'Release fixture',goal:'Remote'}));
  const snapshot=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),candidate.id);assert.equal(snapshot.automation.title,'Release fixture');
- const source=snapshot.sources.find(source=>source.integrationId==='linkedin');assert.ok(source);
- const instructions=await page.evaluate(({id,url})=>window.jobloop.workspaceSourceInstructions(id,url),{id:candidate.id,url:source.url});assert.ok(instructions.skillText.length>100);
+ const source=snapshot.sources.find(source=>source.url==='https://www.linkedin.com/jobs/');assert.ok(source);
  await onboarding(page);
  assert.deepEqual(errors,[]);await closeApplication();
  ({page,errors}=await launch());
@@ -80,10 +79,10 @@ try{
  const packageBytes=await readFile(path.join(resources,archiveName));assert.ok(packageBytes.length>10000);
  const mcp=path.join(resources,archiveName+'.unpacked/node_modules/@playwright/mcp/cli.js');
  const mcpVersion=execFileSync(executable,[mcp,'--version'],{cwd:working,env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},encoding:'utf8',timeout:20000});assert.match(mcpVersion,/0\.0\.82/);
- for(const name of ['linkedin','freehire','jobindex','jobnet','jobdanmark','jobbank']){
-  const result=spawnSync(process.env.JOBLOOP_BUN||'bun',[path.join(resources,archiveName+'.unpacked/dist/source-tools',name+'.mjs'),'--help'],{cwd:working,encoding:'utf8',timeout:20000});
-  assert.ok([0,1].includes(result.status)&&!result.error&&!result.stderr.trim()&&/usage|commands|options/i.test(result.stdout),`Packaged source tool failed: ${name}: ${result.error??result.stderr}`);
+ for(const id of ['freehire-search','linkedin-search','jobindex-search','jobnet-search','jobdanmark-search','jobbank-search']){
+  const tool=path.join(resources,archiveName+'.unpacked/dist/source-tools',id+'.mjs');
+  const help=execFileSync(executable,[tool,'--help'],{cwd:working,env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},encoding:'utf8',timeout:20000});assert.match(help,/search/i);assert.match(help,/detail/i);
  }
  if(platform==='darwin')execFileSync('lipo',[engine,'-verify_arch','arm64','x86_64']);
- console.log('PACKAGED_SMOKE_PASS: independent working directory, bundled engine/source tools, shared setup workspace, database restart');
+ console.log('PACKAGED_SMOKE_PASS: independent working directory, bundled engine, shared setup workspace, database restart');
 }finally{await closeApplication().catch(error=>console.error(error.message));await rm(data,{recursive:true,force:true});await rm(working,{recursive:true,force:true});}

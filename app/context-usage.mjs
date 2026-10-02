@@ -1,6 +1,8 @@
 import {open,readdir,realpath} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import path from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
+import {opencodeDatabase,opencodeModel} from './opencode-context.mjs';
 
 const validCount=n=>Number.isSafeInteger(n)&&n>=0;
 export function contextRestartPercent(value=0){
@@ -20,6 +22,13 @@ export function contextTokens(provider,record,nativeId){
  if(provider==='claude'){
   if(record.type!=='context_usage'||record.sessionId!==nativeId||record.isSidechain)return null;
   return validCount(record.tokens)?record.tokens:null;
+ }
+ if(provider==='opencode'){
+  if(record.role!=='assistant'||record.sessionID!==nativeId||record.summary||record.error||!record.time?.completed)return null;
+  const tokens=record.tokens;
+  if(!tokens||!validCount(tokens.input))return null;
+  const counts=[tokens.input,tokens.cache?.read??0,tokens.cache?.write??0];
+  const total=counts.every(validCount)?counts.reduce((a,b)=>a+b,0):0;return total>0?total:null;
  }
  return null;
 }
@@ -44,13 +53,15 @@ async function locate(root,nativeId,depth=0){
 }
 
 export class ContextUsage {
- constructor({provider,nativeId,cwd,root,statusFile,now=()=>Date.now(),chunkBytes=2*1024*1024}){
+ constructor({provider,nativeId,cwd,root,statusFile,opencodeFile=opencodeDatabase(),modelsFile,now=()=>Date.now(),chunkBytes=2*1024*1024}){
   Object.assign(this,{provider,nativeId,cwd,statusFile,now,chunkBytes});
+  Object.assign(this,{opencodeFile,modelsFile});
   this.root=root??path.join(process.env.CODEX_HOME||path.join(homedir(),'.codex'),'sessions');
   this.file=null;this.nextLookup=0;this.offset=null;this.partial='';this.discard=false;this.tokens=null;this.percent=null;this.peakPercent=0;this.contextWindow=null;this.updatedAt=null;this.compactionId=null;
  }
  async read(){
   try{
+   if(this.provider==='opencode')return await this.readOpenCode();
    if(!['codex','claude'].includes(this.provider))return this.value(false);
    if(!/^[a-f0-9-]{36}$/i.test(this.nativeId??''))return this.value(false);
    if(!this.file){
@@ -88,6 +99,27 @@ export class ContextUsage {
     return this.value(this.offset===stat.size,this.offset<stat.size);
    }finally{await file.close();}
   }catch{this.file=null;this.offset=null;this.partial='';return this.value(false);}
+ }
+ async readOpenCode(){
+  if(!/^ses_[A-Za-z0-9_-]{16,80}$/.test(this.nativeId??''))return this.value(false);
+  let db;
+  try{
+   db=new DatabaseSync(this.opencodeFile,{readOnly:true});
+   const session=db.prepare('SELECT directory,parent_id FROM session WHERE id=?').get(this.nativeId);
+   const normalize=value=>realpath(value).catch(()=>path.resolve(value));
+   if(!session||session.parent_id||await normalize(session.directory)!==await normalize(this.cwd))return this.value(false);
+   const rows=db.prepare("SELECT id,time_updated,data FROM message WHERE session_id=? AND json_extract(data,'$.role')='assistant' AND json_extract(data,'$.time.completed') IS NOT NULL ORDER BY time_created DESC LIMIT 100").all(this.nativeId);
+   const summary=rows.find(row=>{const m=JSON.parse(row.data);return m.summary&&m.finish&&!m.error;});
+   if(summary)this.compactionId=summary.id;
+   for(const row of rows){
+    const record={sessionID:this.nativeId,...JSON.parse(row.data)},tokens=contextTokens('opencode',record,this.nativeId);if(tokens===null)continue;
+    const limit=await opencodeModel(record.providerID,record.modelID,this.modelsFile);
+    const sample=contextSample('opencode',{...record,contextWindow:limit?.context},this.nativeId);
+    Object.assign(this,sample);if(sample.percent!==null)this.peakPercent=Math.max(this.peakPercent,sample.percent);
+    this.updatedAt=row.time_updated;return this.value(true);
+   }
+   return this.value(false);
+  }catch{return this.value(false);}finally{db?.close();}
  }
  value(caughtUp,pending=false){return{tokens:this.tokens,contextWindow:this.contextWindow,percent:this.percent,peakPercent:this.peakPercent,updatedAt:this.updatedAt,compactionId:this.compactionId,caughtUp,pending};}
 }

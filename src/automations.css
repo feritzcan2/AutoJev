@@ -254,3 +254,19 @@ body:not(.automation-workspace) [data-web-only]{display:none!important}
 .automation-results-table tr[data-open-tab=true] .role-cell strong{color:#91eadf}
 
 .record-score-stale{display:block;color:var(--muted);font-size:12px;margin-top:4px}
+.record-score-breakdown{max-width:900px;white-space:normal;margin:12px 0}
+.record-score-breakdown table{width:100%;min-width:0;border-collapse:collapse}
+.record-score-breakdown th,.record-score-breakdown td{padding:6px 10px;text-align:left;white-space:normal}
+.record-score-breakdown details p{overflow-wrap:anywhere}
+
+.record-selection-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:10px 12px; margin-bottom:10px; border:1px solid var(--border); border-radius:8px; background:var(--bg-raised); }
+.record-selection-toolbar[hidden] { display:none; }
+.record-selection-toolbar [role="status"] { margin-right:auto; font-weight:600; }
+.record-selection-error { flex-basis:100%; color:var(--danger); }
+.record-selection-error:empty { display:none; }
+.automation-results-table [data-column="selection"] { width:42px; min-width:42px; text-align:center; }
+.automation-results-table [data-column="selection"] input { width:16px; height:16px; margin:0; accent-color:var(--accent); cursor:pointer; }
+.automation-results-table [data-column="selection"] input:disabled { cursor:default; }
+.automation-results-table tr[data-selected="true"] > td { background:color-mix(in srgb,var(--accent) 10%,var(--bg-raised)); }
+
+.record-score-eligibility{display:block;font-size:11px;line-height:1.4;margin-top:4px;white-space:normal;color:var(--muted);}

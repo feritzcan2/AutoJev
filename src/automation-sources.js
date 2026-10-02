@@ -1,6 +1,8 @@
-import {openSourcePanel} from './source-panel.js';
 import {scanPageLabel} from '../app/scan-page.mjs';
 import {workspaceSourceTabs} from './workspace-tabs.js';
+import {sourceLibraryPanel} from './source-library.js';
+import {SOURCE_TOOL_IDS} from '../app/source-tool-ids.mjs';
+import {copySourceSkill} from '../app/source-copy.mjs';
 const modes={observe:'Sadece bul',prepare:'Hazırla, onayımı bekle',auto:'Otomatik gönder'};
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;};
 const time=at=>at?new Date(at).toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
@@ -17,11 +19,49 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
  let data,owner,editing=null,memory=null,adding=false,saving=false,intervalSaving=false,intervalDirty=false;
  host.innerHTML='<div class="sources-head"><div><h2>Kaynaklar</h2><p></p></div></div><div class="source-bulk-mode"><span>Tüm kaynaklar</span></div><div data-add></div><ul class="source-list"></ul>';
  const head=host.querySelector('.sources-head'),list=host.querySelector('.source-list'),addHost=host.querySelector('[data-add]'),bulk=host.querySelector('.source-bulk-mode');
+ const rows=new Map(),otherHost=el('li',null,'source-tabs-other'),empty=el('li','Henüz kaynak yok. Kaynak ekle veya agent’tan bulmasını iste.','source-empty');
+ list.append(otherHost);
  const countdown=setInterval(()=>{if(!host.isConnected){clearInterval(countdown);return;}if(host.getClientRects().length)for(const node of host.querySelectorAll('[data-source-next-at]'))updateNextRun(node);},30000);
  const tabsControl=workspaceSourceTabs(api,{notice});
+ const library=sourceLibraryPanel(api,{refresh,notice});head.after(library.host);
  const action=fn=>async event=>{event?.preventDefault();if(saving)return;saving=true;notice('');try{await fn();}catch(error){notice(error.message);}finally{saving=false;}};
  const button=(label,fn,cls='quiet')=>{const b=el('button',label,cls);b.type='button';b.onclick=action(fn);return b;};
+ function sourceRow(url){
+  const view={row:el('li',null,'source-row'),toggle:el('input',null,'switch'),main:el('div',null,'source-main'),plan:el('div',null,'source-plan'),status:el('div',null,'source-status'),timing:el('div',null,'source-timing'),actions:el('div',null,'source-actions'),tabHost:el('div',null,'source-tabs-control'),run:button('',()=>{}),memoryButton:button('',()=>{},'quiet source-memory-toggle'),edit:button('',()=>{},'quiet source-edit'),remove:button('Kaynağı sil',()=>{},'quiet source-remove'),pending:null};
+  view.toggle.type='checkbox';view.row.dataset.sourceId=url;
+  view.actions.append(view.run,view.tabHost,view.memoryButton,view.edit,view.remove);
+  view.row.append(view.toggle,view.main,view.plan,view.status,view.timing,view.actions);
+  rows.set(url,view);return view;
+ }
+ async function scanAction(view,scope,url,stop){
+  if(view.pending)return;
+  // Each source owns its request, independently of other source edits or scans.
+  const current=()=>owner===scope&&rows.get(url)===view&&host.isConnected;
+  view.pending=stop?'stop':'start';notice('');render();
+  try{
+   await (stop?api.automationSourceStop(scope,url):api.automationSourceRun(scope,url));
+   if(current()){
+    await refresh();
+    if(current())notice(stop?'Tarama durduruldu. Kaydedilen ilerleme korundu; sonraki tarama mevcut aralığa göre yapılacak.':'Tarama isteği alındı. Kaynak çalışmaya hazır olduğunda başlayacak.');
+   }
+  }catch(error){if(current())notice(error.message);}
+  finally{view.pending=null;if(current())render();}
+ }
  const add=button('＋ Kaynak ekle',()=>{adding=!adding;render();},'primary');head.append(add);if(ask){const discover=button('Agent ile kaynak bul',ask);discover.dataset.sourceDiscover='';head.append(discover);}
+ const fromLibrary=button('Listeden ekle',()=>library.toggle());fromLibrary.dataset.openSourceLibrary='';head.append(fromLibrary);
+ head.append(button('Dışa aktar',async()=>{const file=await api.automationSourceExport(owner);if(file)notice('Kaynak tanımları dışa aktarıldı. Arama kriterleri ve geçmiş dahil edilmedi.');}));
+ const proposal=el('section',null,'source-proposal');proposal.setAttribute('aria-label','Agent’ın kaynak önerileri');proposal.hidden=true;head.after(proposal);
+ const busySource=url=>(data.activeRuns??[]).some(run=>run.kind!=='interview'&&(run.sourceUrl?run.sourceUrl===url:(run.sources??data.automation.sources).includes(url)));
+ function renderProposal(){
+  const draft=data.automation.sourceDraft;proposal.hidden=!draft;proposal.replaceChildren();if(!draft)return;
+  const scope=owner,current=data.automation.sources,added=draft.sources.filter(url=>!current.includes(url)),removed=current.filter(url=>!draft.sources.includes(url));
+  proposal.append(el('h3','Agent’ın kaynak önerileri'),el('p','Değişiklikleri inceleyip uygula. Yeni kaynakların ilk turu denemedir.'));
+  const changes=el('ul');for(const [label,urls] of [['Eklenecek',added],['Kaldırılacak',removed]])for(const url of urls){const item=el('li');item.append(el('b',label+': '),el('span',url));changes.append(item);}proposal.append(changes);
+  const actions=el('div',null,'actions'),apply=button('Kaynak önerilerini uygula',async()=>{await api.automationSourceDraft(scope,draft.id,true);await refresh();notice('Kaynak önerileri uygulandı.');},'primary');
+  apply.disabled=removed.some(busySource)||intervalSaving;
+  const discard=button('Önerileri kaldır',async()=>{await api.automationSourceDraft(scope,draft.id,false);await refresh();notice('Kaynak önerileri kaldırıldı.');});discard.disabled=intervalSaving;actions.append(apply,discard);proposal.append(actions);
+  if(removed.some(busySource))proposal.append(el('small','Uygulamak için kaldırılacak kaynakların çalışan görevlerini durdur.'));
+ }
  for(const [mode,label] of Object.entries(modes)){const b=button(label,async()=>{await api.automationSourceModes(owner,mode);await refresh();});b.dataset.mode=mode;bulk.append(b);}
  const intervalForm=el('form',null,'source-bulk-interval');
  intervalForm.innerHTML='<label for="automation-sources-interval">Tarama aralığı (dk)</label><input id="automation-sources-interval" name="intervalMinutes" type="number" min="1" max="10080" step="1" required aria-describedby="automation-sources-interval-help"><button type="submit" class="quiet">Tümüne uygula</button><small id="automation-sources-interval-help">Kapalı kaynaklar dahil tüm kaynaklara uygulanır.</small><small role="status"></small>';
@@ -73,19 +113,22 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
   return section;
  }
  function updateEditor(form,source){
-  for(const field of form.querySelectorAll('input,textarea,select,button[type="submit"]'))field.disabled=Boolean(source.scanning)||field.name==='url';
-  form.querySelector('.source-remove').disabled=Boolean(data.activeRuns?.length);
+  for(const field of form.querySelectorAll('input,textarea,select,button[type="submit"]')){
+   if(field.tagName==='TEXTAREA'){field.readOnly=Boolean(source.scanning);field.disabled=false;}
+   else field.disabled=Boolean(source.scanning)||field.name==='url';
+  }
+  form.querySelector('.source-method-note').textContent=source.scanning?'Kaynak çalışıyor. Talimatı ve skilli değiştirmek için önce taramayı durdur.':'Bu talimat ve skill yalnızca bu kaynağa aittir; kütüphane güncellemelerinden etkilenmez.';
  }
  function editor(source){
   const form=el('form',null,source?'source-editor':'source-add');form.dataset.sourceId=source?.url??'';
-  form.innerHTML='<label>Kaynak adı<input name="name" required maxlength="120"></label><label>Başlangıç adresi<input name="url" type="url" required></label><label class="source-query">Arama kapsamı<textarea name="query" required maxlength="2000"></textarea></label><div class="source-editor-foot"><label>Tarama aralığı (dk)<input name="intervalMinutes" type="number" min="1" max="10080" required></label><label>İşlem modu<select name="mode"></select></label></div>';
+  form.innerHTML='<label>Kaynak adı<input name="name" required maxlength="120"></label><label>Başlangıç adresi<input name="url" type="url" required></label><label>Araç<select name="tool"></select></label><label class="source-query">Çalışma talimatı<textarea name="instructions" maxlength="6000" placeholder="Bu sitede nasıl aranır? Filtreler, sayfalama ve araç kullanımı…"></textarea></label><details class="source-skill"><summary>Skill · kullanım rehberi</summary><label>Skill metni<textarea name="skill" maxlength="60000" spellcheck="false" placeholder="Kaynağın arama, filtreleme ve araç kullanımı rehberi"></textarea></label></details><small class="source-method-note source-query">Bu talimat ve skill yalnızca bu kaynağa aittir; kütüphane güncellemelerinden etkilenmez.</small><label class="source-query">Arama kapsamı<textarea name="query" required maxlength="2000"></textarea></label><div class="source-editor-foot"><label>Tarama aralığı (dk)<input name="intervalMinutes" type="number" min="1" max="10080" required></label><label>İşlem modu<select name="mode"></select></label></div>';
   const f=form.elements,foot=form.lastElementChild,scope=owner;
   for(const [mode,label] of Object.entries(modes)){const option=new Option(label,mode);option.disabled=Object.keys(modes).indexOf(mode)>Object.keys(modes).indexOf(data.automation.mode);f.mode.append(option);}
+  f.tool.append(new Option('Agent tarayıcıyla çalışsın',''));for(const id of SOURCE_TOOL_IDS)f.tool.append(new Option(id,id));if(source?.tool&&!SOURCE_TOOL_IDS.includes(source.tool))f.tool.append(new Option(source.tool+' (bu sürümde yok)',source.tool));f.tool.value=source?.tool??'';f.instructions.value=source?.instructions??'';f.skill.value=source?.skill??'';f.tool.onchange=()=>{if(!f.skill.value)f.skill.value=copySourceSkill({tool:f.tool.value}).skill??'';};
   f.name.value=source?.name??'';f.url.value=source?.url??'';f.url.disabled=Boolean(source);f.query.value=source?.query??data.automation.goal;f.intervalMinutes.value=source?.intervalMinutes??data.automation.intervalMinutes;f.mode.value=source?.mode??data.automation.mode;
-  if(source){const remove=button('Kaynağı kaldır',async()=>{await api.automationSourceRemove(scope,source.url);editing=null;await refresh();},'quiet source-remove');remove.disabled=Boolean(data.activeRuns?.length);foot.append(remove);}
   foot.append(button('Vazgeç',()=>{editing=null;adding=false;render();}));
   const submit=el('button',source?'Kaydet':'Kaynağı ekle','primary');submit.type='submit';foot.append(submit);
-  form.onsubmit=action(async()=>{const input={name:f.name.value,url:f.url.value,query:f.query.value,intervalMinutes:Number(f.intervalMinutes.value),mode:f.mode.value};submit.disabled=true;try{if(source)await api.automationSourceSave(scope,source.url,input);else await api.automationSourceAdd(scope,input);editing=null;adding=false;await refresh();notice(source?'Kaynak kaydedildi.':'Kaynak eklendi. Güncellenen profili kaydet; kaynak ilk turunda otomatik denenir.');}finally{submit.disabled=false;}});
+  form.onsubmit=action(async()=>{const input={name:f.name.value,url:f.url.value,query:f.query.value,instructions:f.instructions.value,skill:f.skill.value,tool:f.tool.value,intervalMinutes:Number(f.intervalMinutes.value),mode:f.mode.value};submit.disabled=true;try{if(source)await api.automationSourceSave(scope,source.url,input);else await api.automationSourceAdd(scope,input);editing=null;adding=false;await refresh();notice(source?'Kaynak kaydedildi.':'Kaynak eklendi. İlk turunda otomatik denenir.');}finally{submit.disabled=false;}});
   return form;
  }
  function render(){
@@ -97,16 +140,22 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
   const overview=head.querySelector('p');overview.textContent=`${enabled.length} etkin kaynak, ${sources.length-enabled.length} kapalı${blocked.length?`, ${blocked.length} engelli`:''}. `;
   if(data.automation.status==='enabled'&&upcoming){const next=el('span');next.dataset.sourceNextAt=String(upcoming.nextRunAt);next.dataset.sourceNextLabel='Sıradaki tarama';next.dataset.sourceNextSuffix=`: ${upcoming.name}.`;next.title=time(upcoming.nextRunAt);updateNextRun(next);overview.append(next);}
   else overview.append(document.createTextNode('Her kaynak kendi aralığında takip edilir. İlk turu denemedir; işlem gönderilmez.'));
-  add.disabled=active||intervalSaving;add.setAttribute('aria-expanded',String(adding));
+  library.update(owner,sources);fromLibrary.disabled=intervalSaving;library.host.inert=intervalSaving;renderProposal();add.disabled=intervalSaving;add.setAttribute('aria-expanded',String(adding));
   for(const b of bulk.querySelectorAll('button')){b.disabled=active||!sources.length||Object.keys(modes).indexOf(b.dataset.mode)>Object.keys(modes).indexOf(data.automation.mode);b.setAttribute('aria-pressed',String(sources.length>0&&sources.every(s=>s.mode===b.dataset.mode)));}
   if(adding){if(!addHost.firstChild)addHost.append(editor(null));}else addHost.replaceChildren();
-  const kept=list.querySelector('.source-editor'),keptMemory=list.querySelector('.source-memory'),tabHosts=new Map();list.replaceChildren();
+  const kept=list.querySelector('.source-editor'),keptMemory=list.querySelector('.source-memory'),tabHosts=new Map(),urls=new Set(sources.map(source=>source.url));
+  for(const [url,view] of rows)if(!urls.has(url)){view.row.remove();rows.delete(url);}
+  let previous=null;
   for(const source of sources){
-   const row=el('li',null,'source-row'),open=editing===source.url,memoryOpen=memory===source.url;row.dataset.sourceId=source.url;row.dataset.open=String(open||memoryOpen);row.dataset.tone=source.scanning?'scanning':!source.enabled?'off':source.blocked?'blocked':source.lastFound?'found':'none';
-   const toggle=el('input',null,'switch');toggle.type='checkbox';toggle.checked=source.enabled;toggle.disabled=Boolean(source.stopping);toggle.setAttribute('aria-label',source.name+' aktif');const scope=owner;toggle.onchange=action(async()=>{const enabled=toggle.checked;toggle.disabled=true;let saved=false;try{await api.automationSourceSave(scope,source.url,{enabled});saved=true;await refresh();}catch(error){if(!saved)toggle.checked=source.enabled;throw error;}finally{toggle.disabled=false;}});
-   const main=el('div',null,'source-main'),name=el('div',source.name,'source-name'),link=button(new URL(source.url).hostname,()=>api.openLink(source.url),'source-url');link.title=source.url;name.append(link);const query=el('p',source.query,'source-scope');query.title=source.query;main.append(name,query,el('small',source.searchMethod==='tool'?'Kaynağa özel araç':data.automation.browserMode==='jev'?'Jev tarayıcı':'Tarayıcı','source-method'));
-   const plan=el('div',null,'source-plan');plan.append(el('b',`Her ${source.intervalMinutes} dk`),document.createTextNode(modes[source.mode]));
-   const status=el('div',null,'source-status'),count=`Toplam ${source.resultCount??source.lastFound??0} kayıt`;
+   const view=rows.get(source.url)??sourceRow(source.url),{row,toggle,main,plan,status,timing,run,memoryButton,edit,remove,tabHost}=view,open=editing===source.url,memoryOpen=memory===source.url;
+   // Keep controls attached while snapshots arrive between pointer down and up.
+   const next=previous?previous.nextElementSibling:list.firstElementChild;if(next!==row)list.insertBefore(row,next);previous=row;
+   row.dataset.open=String(open||memoryOpen);row.dataset.tone=source.scanning?'scanning':!source.enabled?'off':source.blocked?'blocked':source.lastFound?'found':'none';
+   toggle.checked=source.enabled;toggle.disabled=Boolean(source.stopping||view.pending);toggle.setAttribute('aria-label',source.name+' aktif');const scope=owner;toggle.onchange=action(async()=>{const enabled=toggle.checked;toggle.disabled=true;let saved=false;try{await api.automationSourceSave(scope,source.url,{enabled});saved=true;await refresh();}catch(error){if(!saved)toggle.checked=source.enabled;throw error;}finally{toggle.disabled=false;}});
+   const name=el('div',source.name,'source-name'),link=button(new URL(source.url).hostname,()=>api.openLink(source.url),'source-url');link.title=source.url;name.append(link);const query=el('p',source.query,'source-scope');query.title=source.query;main.replaceChildren(name,query);
+   const method=button((source.tool||(data.automation.browserMode==='jev'?'Jev tarayıcı':'Tarayıcı'))+' · Skill',()=>{editing=source.url;render();const details=list.querySelector('.source-editor .source-skill');if(details){details.open=true;details.scrollIntoView({block:'nearest'});}},'source-method');method.title='Bu kaynağın talimatını ve skillini görüntüle veya düzenle';main.append(method);
+   plan.replaceChildren(el('b',`Her ${source.intervalMinutes} dk`),document.createTextNode(modes[source.mode]));
+   status.replaceChildren();const count=`Toplam ${source.resultCount??source.lastFound??0} kayıt`;
    status.append(el('b',source.blocker?.stop?.retryExhausted?'Erişim sorunu sürüyor':source.siteWait?'Site için ortak bekleme':source.scanning?(source.trialRunning?'Deneme sürüyor':source.scanIssue?'Sayfa yüklenemedi':'Taranıyor'):source.recovery&&data.automation.status==='enabled'?'Otomatik devam bekleniyor':source.blocked?(source.lastStatus==='failed'||source.blocker?.stop?.kind==='technical'?'Tarama tamamlanamadı':'Kaynak engelli'):source.lastStatus==='partial'?`Kısmi tarama · ${source.scan?.pendingUrls.length??0} adres kaldı`:(source.lastRun?.finishedAt??source.lastRunAt)?count:'Henüz taranmadı'));
    if(source.scanning||source.blocked||source.lastStatus==='partial')status.append(el('small',count));
    const outcome=source.lastRun??{status:source.lastStatus,summary:source.lastResult,finishedAt:source.lastRunAt},outcomeLabel=runOutcomes[outcome.status];
@@ -114,27 +163,29 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
    if(outcomeLabel)lastRun.title=[outcome.finishedAt?time(outcome.finishedAt):null,outcome.summary].filter(Boolean).join(' · ');status.append(lastRun);
    const trialStatus=source.trialRunning?'Denemede işlem gönderilmez':source.trial?.status==='passed'?'Deneme başarılı':source.trial?.status==='failed'?'Deneme tamamlanamadı':'İlk turda denenecek';
    const trialLabel=el('small',trialStatus,'source-trial-status');trialLabel.dataset.status=source.trialRunning?'running':source.trial?.status??'pending';status.append(trialLabel);
-   if(source.learnedSkill)status.append(el('small',`Rehber v${source.learnedSkill.version} · ${source.learnedSkill.verifiedCount}/4 bölüm doğrulandı${source.learnedSkill.needsReview?' · Kontrol edilecek':''}`,'source-skill-status'));
    if(source.siteWait)status.append(el('small',source.siteWait.message));
    const currentDetail=source.scanning?(source.scanIssue?`${source.scanIssue.url} · ${source.scanIssue.attempts}. deneme`:null):outcome.summary??source.lastResult;
    if(currentDetail){const detail=el('small',currentDetail);detail.title=source.scanIssue?.evidence??currentDetail;status.append(detail);}
    const pageLabel=scanPageLabel(source.pageProgress);if(pageLabel){const progress=el('small','Son doğrulanan: '+pageLabel,'source-page-progress');progress.title=`Agent’ın bildirdiği sonuç sayfası; tamamlanma oranı değildir.\n${source.pageProgress.evidence}\n${time(source.pageProgress.at)}`;status.append(progress);}
-   const timing=el('div',null,'source-timing'),nextRun=el('b',!source.enabled?'Kapalı':source.scanning?'Şu anda taranıyor':source.blocked?'Yeniden başlatılmayı bekliyor':data.automation.status!=='enabled'?'Takip duraklatıldı':'Sıradaki tarama');
+   const nextRun=el('b',!source.enabled?'Kapalı':source.scanning?'Şu anda taranıyor':source.blocked?'Yeniden başlatılmayı bekliyor':data.automation.status!=='enabled'?'Takip duraklatıldı':'Sıradaki tarama');
    const nextAt=source.enabled?(source.siteWait?.retryAt??(!source.scanning&&!source.blocked&&data.automation.status==='enabled'?source.nextRunAt:null)):null;
    if(nextAt){nextRun.dataset.sourceNextAt=String(nextAt);nextRun.dataset.sourceNextLabel=source.siteWait?'Erişim kontrolü':'Sonraki tarama';nextRun.title=nextRun.dataset.sourceNextLabel+' '+time(nextAt);updateNextRun(nextRun);}
-   const lastAt=outcome.finishedAt??source.lastRunAt;timing.append(nextRun,document.createTextNode(lastAt?`Son tarama ${time(lastAt)}`:'Henüz taranmadı'));
+   const lastAt=outcome.finishedAt??source.lastRunAt;timing.replaceChildren(nextRun,document.createTextNode(lastAt?`Son tarama ${time(lastAt)}`:'Henüz taranmadı'));
    const closing=(data.activeRuns??[]).some(run=>run.sourceUrl===source.url&&!run.recordId&&!run.recordOperation)&&!source.scanning;
-   const actions=el('div',null,'source-actions'),run=button(source.blocked?'Tekrar dene':'Şimdi tara',async()=>{await api.automationSourceRun(scope,source.url);await refresh();});run.disabled=closing||source.siteWait?.waiting||source.scanning||!source.enabled||!data.progress?.reviewed;
-   if(closing)run.textContent='Oturum kapanıyor…';
-   if(source.scanning||source.stopping){run.textContent=source.stopping?'Durduruluyor…':'Taramayı durdur';run.disabled=Boolean(source.stopping);run.dataset.sourceStop=source.url;run.onclick=action(async()=>{run.disabled=true;run.textContent='Durduruluyor…';try{await api.automationSourceStop(scope,source.url);if(owner===scope){await refresh();notice('Tarama durduruldu. Kaydedilen ilerleme korundu; sonraki tarama mevcut aralığa göre yapılacak.');}}finally{run.disabled=false;run.textContent='Taramayı durdur';}});}
-   const memoryButton=button(memoryOpen?'Hafızayı kapat':'Tarama hafızası',()=>{memory=memoryOpen?null:source.url;render();},'quiet source-memory-toggle');memoryButton.setAttribute('aria-expanded',String(memoryOpen));
-   const edit=button(open?'Kapat':'Düzenle',()=>{editing=open?null:source.url;render();},'quiet source-edit'),tabHost=el('div',null,'source-tabs-control');edit.setAttribute('aria-expanded',String(open));const skill=button('Rehber ve araçlar',()=>openSourcePanel({sourceInstructions:api.workspaceSourceInstructions,sourceIntegrations:api.workspaceSourceIntegrations,testSource:api.workspaceSourceTest,saveSource:(id,value)=>api.automationSourceSave(id,value.url,value)},scope,source,refresh));actions.append(run,tabHost,memoryButton,skill,edit);tabHosts.set(source.url,tabHost);row.append(toggle,main,plan,status,timing,actions);
+   let runLabel=closing?'Oturum kapanıyor…':source.blocked?'Tekrar dene':'Şimdi tara',runDisabled=closing||source.siteWait?.waiting||!source.enabled||!data.progress?.reviewed;
+   if(source.scanning||source.stopping){runLabel=source.stopping?'Durduruluyor…':'Taramayı durdur';runDisabled=source.stopping;run.dataset.sourceStop=source.url;}else delete run.dataset.sourceStop;
+   if(view.pending){runLabel=view.pending==='stop'?'Durduruluyor…':'Başlatılıyor…';runDisabled=true;}
+   if(run.textContent!==runLabel)run.textContent=runLabel;run.disabled=Boolean(runDisabled);
+   run.setAttribute('aria-busy',String(Boolean(view.pending||source.stopping)));
+   run.onclick=event=>{event.preventDefault();if(!run.disabled)void scanAction(view,scope,source.url,Boolean(source.scanning));};
+   memoryButton.textContent=memoryOpen?'Hafızayı kapat':'Tarama hafızası';memoryButton.onclick=action(()=>{memory=memoryOpen?null:source.url;render();});memoryButton.setAttribute('aria-expanded',String(memoryOpen));
+   edit.textContent=open?'Kapat':'Düzenle';edit.onclick=action(()=>{editing=open?null:source.url;render();});edit.setAttribute('aria-expanded',String(open));remove.onclick=action(async()=>{await api.automationSourceRemove(scope,source.url);if(owner===scope){if(editing===source.url)editing=null;if(memory===source.url)memory=null;await refresh();notice('Kaynak silindi. Bulunan kayıtlar korundu.');}});remove.disabled=Boolean(view.pending)||busySource(source.url)||closing;remove.title=remove.disabled?'Silmek için önce bu kaynağın çalışan görevini durdur.':'Kaynağı ve yerel skillini sil; bulunan kayıtlar korunur.';tabHosts.set(source.url,tabHost);
+   row.querySelector(':scope > .source-memory')?.remove();if(!open)row.querySelector(':scope > .source-editor')?.remove();
    if(memoryOpen){const details=progressDetails(source),previous=keptMemory?.dataset.sourceId===source.url?keptMemory.querySelector('.source-progress-pending'):null,pending=details.querySelector('.source-progress-pending');if(previous&&pending)pending.open=previous.open;row.append(details);}
-   if(open){const form=kept?.dataset.sourceId===source.url?kept:editor(source);updateEditor(form,source);row.append(form);}list.append(row);
+   if(open){const form=kept?.dataset.sourceId===source.url?kept:editor(source);updateEditor(form,source);if(form.parentElement!==row)row.append(form);}
   }
-  if(!sources.length)list.append(el('li','Henüz kaynak yok. Kaynak ekle veya agent’tan bulmasını iste.','source-empty'));
-  const otherHost=el('li',null,'source-tabs-other');list.append(otherHost);
+  if(!sources.length){if(!empty.isConnected)list.insertBefore(empty,otherHost);}else empty.remove();
   tabsControl.update(owner,data.automation.browserMode,sources.map(source=>({id:source.url,url:source.url})),tabHosts,otherHost,list);
  }
- return {update(snapshot,id){if(owner!==id){editing=null;memory=null;adding=false;intervalDirty=false;addHost.replaceChildren();}owner=id;data=snapshot;render();}};
+ return {update(snapshot,id){if(owner!==id){editing=null;memory=null;adding=false;intervalDirty=false;addHost.replaceChildren();for(const view of rows.values())view.row.remove();rows.clear();}owner=id;data=snapshot;render();}};
 }

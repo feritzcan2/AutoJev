@@ -13,7 +13,7 @@ test('macOS GUI PATH discovers Homebrew agent CLIs with the same environment use
   findExecutable:(name,options)=>findExecutable(name,{...options,accessImpl:async file=>{checked.push(file);if(file!=='/opt/homebrew/bin/codex')throw Error('missing');},statImpl:async()=>({isFile:()=>true})}),
   inspectLogin:async(provider,file,{env})=>{assert.equal(provider,'codex');assert.equal(file,'/opt/homebrew/bin/codex');assert.deepEqual(env,launchEnvironment(inherited,'darwin'));return {id:'login',state:'ready',label:'Session',detail:'Fixture'};}
  });
- assert.equal(result.ready,true);assert.equal(result.checks.find(check=>check.id==='agent').state,'ready');assert.ok(checked.includes('/usr/local/bin/bun'));assert.equal(inherited.PATH,'/usr/bin:/bin:/usr/sbin:/sbin');
+ assert.equal(result.ready,true);assert.equal(result.checks.find(check=>check.id==='agent').state,'ready');assert.ok(checked.includes('/opt/homebrew/bin/codex'));assert.equal(checked.some(file=>file.endsWith('/bun')),false);assert.equal(inherited.PATH,'/usr/bin:/bin:/usr/sbin:/sbin');
 });
 test('launch repair preserves command precedence, appends missing paths only, and leaves Windows unchanged',()=>{
  const input={HOME:'/Users/fixture',PATH:'/custom/bin:/usr/local/bin:/usr/bin',OTHER:'preserved'};

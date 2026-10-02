@@ -40,10 +40,40 @@ export function actionSpace(actions){
 }
 export function validateChoice(answer,choices){
   const keys=Object.keys(choices).sort(),probabilities=answer?.probabilities;
-  if(!answer||!keys.includes(answer.choice)||!probabilities||JSON.stringify(Object.keys(probabilities).sort())!==JSON.stringify(keys))throw Error('Jev geçersiz bir seçim döndürdü; işlem yapılmadı.');
+  const invalid=reason=>{throw Object.assign(Error(`Jev geçersiz yanıt döndürdü: ${reason}; işlem yapılmadı.`),{code:'JEV_INVALID_RESPONSE'});};
+  if(!answer||!keys.includes(answer.choice))invalid('seçilen seçenek sunulan seçenekler arasında değil');
+  if(!probabilities||Array.isArray(probabilities)||typeof probabilities!=='object'||JSON.stringify(Object.keys(probabilities).sort())!==JSON.stringify(keys))invalid('olasılık alanları sunulan seçeneklerle eşleşmiyor');
   const values=Object.values(probabilities);
-  if(![answer.confidence,...values].every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1)||Math.abs(values.reduce((a,b)=>a+b,0)-1)>=.02||probabilities[answer.choice]<Math.max(...values)-1e-6)throw Error('Jev geçersiz olasılıklar döndürdü; işlem yapılmadı.');
+  if(![answer.confidence,...values].every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1))invalid('güven ve olasılıklar 0 ile 1 arasında sonlu sayılar olmalı');
+  const total=values.reduce((a,b)=>a+b,0);
+  if(Math.abs(total-1)>=.02)invalid(`olasılık toplamı ${total.toFixed(4)}, beklenen 1`);
+  if(probabilities[answer.choice]<Math.max(...values)-1e-6)invalid('seçilen seçenek en yüksek olasılığa sahip değil');
   return answer;
+}
+export async function askJev(state,questions,{apiKey,model='jev-latest',fetchImpl=fetch,signal}={}){
+  if(!apiKey?.trim())throw Error('Jev için TypeSafe API anahtarı gerekli.');
+  const started=Date.now(),answers={},usage={input_tokens:0,output_tokens:0};let pending=questions;
+  // A malformed answer may be transient. Repair only its question once,
+  // preserving all valid answers and the original state without browser reads.
+  for(let attempt=0;attempt<2;attempt++){
+    signal?.throwIfAborted();
+    const response=await fetchImpl('https://api.typesafe.ai/v1/systemone',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiKey}`},body:JSON.stringify({model,state,questions:pending}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(15000)]):AbortSignal.timeout(15000)});
+    if(!response.ok)throw Error(`TypeSafe HTTP ${response.status}; Jev görevi ilerletilmedi.`);
+    let result;try{result=await response.json();}catch{throw Error('Jev yanıtı JSON olarak okunamadı; işlem yapılmadı.');}
+    for(const key of Object.keys(usage))usage[key]+=Number.isSafeInteger(result.usage?.[key])&&result.usage[key]>=0?result.usage[key]:0;
+    const invalid={};let failure;
+    for(const [key,question] of Object.entries(pending)){
+      const answer=result.answers?.[key];
+      try{
+        if(question.type==='choice')validateChoice(answer,question.criteria);
+        else if(question.type==='noul'&&(!Number.isFinite(answer?.noul)||answer.noul<0||answer.noul>1))throw Object.assign(Error('Jev geçersiz değerlendirme döndürdü: 0 ile 1 arasında sayı gerekli.'),{code:'JEV_INVALID_RESPONSE'});
+        answers[key]=answer;
+      }catch(error){invalid[key]=question;failure=Object.assign(new Error(`${key.slice(0,100)}: ${error.message}`,{cause:error}),{code:'JEV_INVALID_RESPONSE'});}
+    }
+    if(!failure)return {...result,answers,usage,requestCount:attempt+1,latency_ms:Date.now()-started};
+    if(attempt===1)throw Object.assign(failure,{usage,requestCount:attempt+1});
+    pending=invalid;
+  }
 }
 export async function chooseJev(page,goal,history,{apiKey,model='jev-latest',fetchImpl=fetch,signal}={}){
   if(!apiKey?.trim())throw Error('Jev için Yapılandırma → Jev bölümünden TypeSafe API anahtarını kaydet. Geliştirme ortamında TYPESAFE_API_KEY de kullanılabilir. Ayrı metin modeli anahtarı gerekmez.');

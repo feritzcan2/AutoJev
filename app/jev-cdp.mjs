@@ -1,10 +1,11 @@
 import WebSocket from 'ws';
+const INTERNAL_ID_BASE=1000000000;
 
 // Playwright normally auto-attaches every personal tab and waits for all of them
 // to initialize. Expose only task-owned windows to its CDP connection instead.
 export class JevCdpTransport {
   constructor(socket){
-    this.socket=socket;this.owned=new Set();this.attached=new Set();this.pending=new Map();this.sequence=1000000000;
+    this.socket=socket;this.owned=new Set();this.attached=new Set();this.pending=new Map();this.sequence=INTERNAL_ID_BASE;
     socket.onmessage=event=>this.receive(JSON.parse(event.data));
     socket.onclose=()=>{for(const {reject,timer} of this.pending.values()){clearTimeout(timer);reject(Error('Chrome bağlantısı kapandı.'));}this.pending.clear();this.onclose?.();};
   }
@@ -60,6 +61,9 @@ export class JevCdpTransport {
   receive(message){
     const pending=this.pending.get(message.id);
     if(pending){clearTimeout(pending.timer);this.pending.delete(message.id);message.error?pending.reject(Error(message.error.message)):pending.resolve(message.result);return;}
+    // A response can arrive after our timeout removed its callback. It still
+    // belongs to this transport, not to Playwright's independent request map.
+    if(message.id>INTERNAL_ID_BASE)return;
     if(!message.sessionId&&message.method==='Target.targetDestroyed'){
       const id=message.params.targetId;
       const owned=this.owned.delete(id);this.attached.delete(id);if(owned)this.onTargetDestroyed?.(id);

@@ -252,6 +252,69 @@ test('new job preference suppresses queued cards independently and persists acro
  store.addRecord(p.id,{...input,url:'https://example.com/enabled',company:'Enabled'});await flush();assert.equal(calls.length,1);assert.match(calls[0].body.text,/Enabled/);
 });
 
+test('automatic score threshold waits for ranking, isolates candidates and never revives deleted cards',async t=>{
+ const {bot,store,p,other,pair,flush,calls,options,advance}=await fixture(t);
+ const add=(name,score=null,candidate=p.id)=>{const job=store.addRecord(candidate,{url:'https://example.test/auto/'+name,company:name,role:'Engineer',location:'Remote'}).job;if(score!==null)store.scoreRecord(candidate,job.id,score);return job;};
+ const historical=add('BeforePairing',90);pair();pair(other.id,22);
+ bot.preferences(p.id,{newJobs:true,newJobsMinScore:65,notifications:false,questions:true});
+ const unranked=add('Unranked'),boundary=add('Boundary',65),low=add('Low',40),high=add('High',66),foreign=add('OtherCandidate',5,other.id);
+ store.askQuestion(p.id,{question:'Question still delivered',jobId:low.id});
+ for(let i=0;i<8;i++)await flush();
+ const sends=()=>calls.filter(c=>c.method==='sendMessage');assert.equal(sends().length,3);
+ assert.ok(sends().some(c=>c.body.text.includes('Question still delivered')));
+ assert.ok(sends().some(c=>c.body.chat_id==='11'&&c.body.text.includes('High')));
+ assert.ok(sends().some(c=>c.body.chat_id==='22'&&c.body.text.includes('OtherCandidate')));
+ assert.equal(bot.status(p.id).candidate.waitingScore,3);assert.equal(bot.status(p.id).candidate.pending,0);
+ assert.equal(bot.status(other.id).candidate.newJobsMinScore,null);assert.equal(bot.db.jobSent(p.id,bot.config.bot.id,historical.id),false);
+ const original=store.db.prepare("SELECT id FROM telegram_outbox WHERE candidate_id=? AND event_key=?").get(p.id,'new-job:'+high.id);
+ bot.db.deleted(original.id);store.scoreRecord(p.id,high.id,95);store.scoreRecord(p.id,low.id,80);
+ await flush();assert.equal(sends().length,4);assert.equal(bot.db.delivery(original.id).status,'deleted');
+ const restarted=new Telegram(options);restarted.api=bot.api;restarted.config={...bot.config};
+ assert.equal(restarted.status(p.id).candidate.newJobsMinScore,65);assert.equal(restarted.status(p.id).candidate.waitingScore,2);
+ store.scoreRecord(p.id,unranked.id,66);advance(2000);await restarted.flush();
+ assert.equal(sends().length,5);assert.equal(restarted.status(p.id).candidate.waitingScore,1);
+ store.scoreRecord(p.id,unranked.id,90);advance(2000);await restarted.flush();assert.equal(sends().length,5);
+ assert.equal(restarted.db.jobSent(p.id,bot.config.bot.id,boundary.id),false);assert.equal(restarted.db.jobSent(other.id,bot.config.bot.id,foreign.id),true);
+});
+
+test('automatic threshold changes recheck waiting cards and validate saved preferences without backfilling historical jobs',async t=>{
+ const {bot,store,p,pair,flush,calls}=await fixture(t);pair();
+ const preferences={newJobs:true,newJobsMinScore:65,notifications:true,questions:false};bot.preferences(p.id,preferences);
+ const job=store.addRecord(p.id,{url:'https://example.test/waiting',company:'Waiting',role:'Engineer',location:'Remote'}).job;store.scoreRecord(p.id,job.id,60);
+ await flush();assert.equal(bot.status(p.id).candidate.waitingScore,1);
+ const before=bot.db.link(p.id);
+ for(const value of ['65',false,-1,101,NaN,Infinity])assert.throws(()=>bot.preferences(p.id,{...preferences,newJobsMinScore:value}),/minimum puan/);
+ assert.deepEqual(bot.db.link(p.id),before);
+ bot.preferences(p.id,{...preferences,newJobs:false});store.scoreRecord(p.id,job.id,80);await flush();assert.equal(calls.filter(c=>c.method==='sendMessage').length,0);
+ bot.preferences(p.id,preferences);await flush();assert.equal(calls.filter(c=>c.method==='sendMessage').length,1);
+ const unranked=store.addRecord(p.id,{url:'https://example.test/unranked',company:'No score',role:'Engineer',location:'Remote'}).job;
+ await flush();assert.equal(bot.status(p.id).candidate.waitingScore,1);
+ bot.preferences(p.id,{...preferences,newJobsMinScore:null});await flush();assert.equal(bot.status(p.id).candidate.waitingScore,0);
+ assert.equal(bot.db.jobSent(p.id,bot.config.bot.id,unranked.id),true);assert.equal(calls.filter(c=>c.method==='sendMessage').length,2);
+});
+
+test('automatic score changes before delivery are respected and manual batches keep their own score filter',async t=>{
+ const {bot,store,p,pair,flush,calls}=await fixture(t);pair();
+ bot.preferences(p.id,{newJobs:true,newJobsMinScore:65,notifications:false,questions:false});
+ const job=store.addRecord(p.id,{url:'https://example.test/rechecked-score',company:'Score changes',role:'Engineer',location:'Remote'}).job;store.scoreRecord(p.id,job.id,80);
+ bot.db.collect();store.scoreRecord(p.id,job.id,65);await flush();assert.equal(calls.filter(c=>c.method==='sendMessage').length,0);assert.equal(bot.status(p.id).candidate.waitingScore,1);
+ bot.preferences(p.id,{newJobs:true,newJobsMinScore:90,notifications:false,questions:false});store.scoreRecord(p.id,job.id,80);await flush();assert.equal(bot.status(p.id).candidate.waitingScore,1);
+ assert.equal(bot.sendUnsentJobs(p.id,{minScore:65,resend:true}).queued,1);await flush();
+ assert.equal(calls.filter(c=>c.method==='sendMessage').length,1);assert.equal(bot.status(p.id).candidate.waitingScore,0);
+ assert.equal(bot.status(p.id).candidate.newJobsMinScore,90);
+});
+
+test('score waiting cards do not block retries or question delivery and old cards still update below the threshold',async t=>{
+ const {bot,store,p,pair,flush,api,calls,advance}=await fixture(t);pair();
+ bot.preferences(p.id,{newJobs:true,newJobsMinScore:65,notifications:false,questions:true});
+ const job=store.addRecord(p.id,{url:'https://example.test/rate-limit-score',company:'Limited',role:'Engineer',location:'Remote'}).job;store.scoreRecord(p.id,job.id,80);
+ const call=api.call;let limited=true;api.call=async(method,...args)=>{if(method==='sendMessage'&&limited){limited=false;throw Object.assign(Error('Rate limited'),{code:429,retryAfter:5});}return call(method,...args);};
+ await flush();store.scoreRecord(p.id,job.id,60);advance(6000);await flush();assert.equal(bot.status(p.id).candidate.waitingScore,1);
+ store.askQuestion(p.id,{question:'Still actionable',jobId:job.id});await flush();assert.equal(calls.filter(c=>c.method==='sendMessage').length,1);
+ store.scoreRecord(p.id,job.id,70);await flush();assert.equal(calls.filter(c=>c.method==='sendMessage').length,2);
+ store.scoreRecord(p.id,job.id,30);await flush();assert.equal(calls.filter(c=>c.method==='sendMessage').length,2);assert.ok(calls.some(c=>c.method==='editMessageText'&&c.body.text.includes('30')));
+});
+
 test('more than one event batch queues every new job and reopening does not enqueue duplicates',async t=>{
  const {bot,store,p,pair,options}=await fixture(t);pair();
  for(let index=0;index<205;index++)store.addRecord(p.id,{url:`https://example.com/jobs/${index}`,company:`Company ${index}`,role:'Engineer',location:'Remote',fit:'Match'});
@@ -382,8 +445,8 @@ test('manual batch includes every incomplete job, skips completed and delivered 
   if(job===suppressed)bot.db.skipped(row.id);
  }
  const before=store.jobs(p.id);
- assert.deepEqual(bot.sendUnsentJobs(p.id),{queued:9,alreadyQueued:1,alreadySent:2,completed:3});
- assert.deepEqual(bot.sendUnsentJobs(p.id),{queued:0,alreadyQueued:10,alreadySent:2,completed:3});
+ assert.deepEqual(bot.sendUnsentJobs(p.id),{queued:9,alreadyQueued:1,alreadySent:2,completed:3,filtered:0});
+ assert.deepEqual(bot.sendUnsentJobs(p.id),{queued:0,alreadyQueued:10,alreadySent:2,completed:3,filtered:0});
  assert.equal(bot.status(p.id).candidate.newJobs,false);await drain();
  const sent=calls.filter(call=>call.method==='sendMessage');assert.equal(sent.length,10);
  assert.ok(sent.every(call=>call.body.chat_id==='11'&&call.body.parse_mode==='HTML'));
@@ -400,6 +463,59 @@ test('backfill respects bot availability and skips applications completed before
  assert.throws(()=>bot.sendUnsentJobs(other.id),/adayı Telegram/);
  assert.equal(bot.sendUnsentJobs(p.id).queued,1);store.setRecordState(p.id,job.id,'completed');await flush();
  assert.equal(calls.length,0);assert.equal(bot.db.jobSent(p.id,bot.config.bot.id,job.id),false);
+});
+
+test('score-filtered resend includes deleted, delivered and completed jobs without changing records or original messages',async t=>{
+ const {bot,store,p,other,pair,drain,calls}=await fixture(t);
+ const add=(name,score,candidate=p.id)=>{const job=store.addRecord(candidate,{url:`https://example.com/resend/${name}`,company:name,role:'Engineer',location:'Remote'}).job;if(score!==null)store.scoreRecord(candidate,job.id,score);return job;};
+ const deleted=add('Deleted',71),sent=add('Sent',85),completed=add('Completed',100),fresh=add('New',80);
+ add('Boundary',70);add('Low',69);add('Unscored',null);add('Foreign',99,other.id);
+ const hidden=add('Hidden',99);store.saveRecord({...store.job(p.id,hidden.id),hidden:true});
+ store.setRecordState(p.id,completed.id,'completed');pair();bot.preferences(p.id,{newJobs:false,notifications:false,questions:false});
+ const originals=[deleted,sent].map((job,i)=>{const row=bot.db.enqueue(p.id,'new-job:'+job.id,{kind:'new_job',jobId:job.id});bot.db.sent(row.id,900+i);if(i===0)bot.db.deleted(row.id);return bot.db.delivery(row.id);});
+ const before=store.jobs(p.id),selection={minScore:70,resend:true};
+ assert.deepEqual(bot.sendUnsentJobs(p.id,selection),{queued:4,alreadyQueued:0,alreadySent:0,completed:0,filtered:3});
+ assert.equal(bot.sendUnsentJobs(p.id,selection).alreadyQueued,4);await drain();
+ const messages=calls.filter(call=>call.method==='sendMessage');
+ assert.deepEqual(new Set(messages.map(call=>call.body.reply_markup.inline_keyboard[0][0].url)),new Set([deleted,sent,completed,fresh].map(job=>job.url)));
+ assert.equal(messages.length,4);assert.ok(messages.every(call=>call.body.chat_id==='11'));
+ assert.deepEqual(store.jobs(p.id),before);for(const row of originals)assert.deepEqual(bot.db.delivery(row.id),row);
+ assert.equal(bot.sendUnsentJobs(p.id,{minScore:70}).queued,0);
+ assert.equal(bot.sendUnsentJobs(p.id,selection).queued,4);
+});
+
+test('batch score boundary is validated and rechecked after restart while resend preserves completion',async t=>{
+ const {bot,store,p,pair,options,calls,advance}=await fixture(t);pair();bot.preferences(p.id,{newJobs:false,notifications:false,questions:false});
+ const jobs=['Falls','Completes','BecomesUnscored'].map(name=>store.addRecord(p.id,{url:'https://example.com/recheck/'+name,company:name,role:'Engineer',location:'Remote'}).job);
+ for(const job of jobs)store.scoreRecord(p.id,job.id,90);
+ for(const input of [null,[],{minScore:'70'},{minScore:NaN},{minScore:Infinity},{minScore:-1},{minScore:101},{resend:'true'}])assert.throws(()=>bot.sendUnsentJobs(p.id,input),/Geçersiz|Minimum puan/);
+ assert.equal(bot.db.pending().length,0);assert.equal(bot.sendUnsentJobs(p.id,{minScore:100,resend:true}).queued,0);
+ assert.equal(bot.sendUnsentJobs(p.id,{minScore:70,resend:true}).queued,3);
+ store.scoreRecord(p.id,jobs[0].id,70);store.setRecordState(p.id,jobs[1].id,'completed');store.scoreRecord(p.id,jobs[2].id,null);
+ const restarted=new Telegram(options);restarted.api=bot.api;restarted.config={...bot.config};
+ for(let i=0;i<5;i++){advance(2000);await restarted.flush();}
+ const messages=calls.filter(call=>call.method==='sendMessage');assert.equal(messages.length,1);assert.equal(messages[0].body.reply_markup.inline_keyboard[0][0].url,jobs[1].url);
+ assert.equal(restarted.db.pending().length,0);
+ // An empty threshold includes unscored and boundary jobs again.
+ assert.equal(restarted.sendUnsentJobs(p.id,{minScore:null,resend:true}).queued,3);
+});
+
+test('manual resend reuses an automatic pending card and unsent-only filtering still excludes completed applications',async t=>{
+ const {bot,store,p,pair,drain,calls}=await fixture(t);pair();
+ const job=store.addRecord(p.id,{url:'https://example.com/pending',company:'Pending',role:'Engineer',location:'Remote'}).job;
+ store.scoreRecord(p.id,job.id,80);bot.db.collect();assert.equal(bot.db.pending().length,1);
+ assert.equal(bot.sendUnsentJobs(p.id,{minScore:70,resend:true}).alreadyQueued,1);assert.equal(bot.db.pending().length,1);
+ bot.preferences(p.id,{newJobs:false,notifications:false,questions:false});await drain();assert.equal(calls.filter(call=>call.method==='sendMessage').length,1);
+ const completed=store.addRecord(p.id,{url:'https://example.com/completed',company:'Completed',role:'Engineer',location:'Remote'}).job;
+ store.scoreRecord(p.id,completed.id,99);store.setRecordState(p.id,completed.id,'completed');
+ assert.equal(bot.sendUnsentJobs(p.id,{minScore:70}).completed,1);assert.equal(bot.db.pending().length,0);
+});
+
+test('resending a new job before its discovery event is collected creates only one card',async t=>{
+ const {bot,store,p,pair,drain,calls}=await fixture(t);pair();
+ const job=store.addRecord(p.id,{url:'https://example.com/not-yet-collected',company:'New discovery',role:'Engineer',location:'Remote'}).job;store.scoreRecord(p.id,job.id,85);
+ assert.equal(bot.sendUnsentJobs(p.id,{minScore:70,resend:true}).queued,1);
+ bot.db.collect();assert.equal(bot.db.pending().length,1);await drain();assert.equal(calls.filter(call=>call.method==='sendMessage').length,1);
 });
 
 test('delivery history migrates old sent/deleted receipts and survives relinking',async t=>{

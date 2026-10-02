@@ -1,3 +1,4 @@
+import {unknownScorecard} from './helpers/scorecard.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {WorkspaceDatabase} from '../app/workspace-database.mjs';
@@ -18,7 +19,7 @@ function fixture(t,{mode='prepare',workers=1,templateId='job-search'}={}){
  t.after(async()=>{await runtime.close();store.close();});
  const finish=async(run,status='completed')=>{runtime.report(a.id,run.id,status,'Observed outcome');await runtime.finish(a.id,status,'Observed outcome',run.workerId);};
  const flow=run=>automationWorkflow({db,run,signal:{aborted:false},browser:{},report:(...args)=>runtime.report(...args)});
- const record=(run,url,proposal)=>{db.observe(a.id,run.id,url,'Verified facts');return db.record(a.id,run.id,{url,title:'Backend',summary:'Verified facts',...(proposal?{proposal}:{}),...(template.recordOperations?.score?{assessment:{status:'scored',score:80,summary:'Fits criteria',evidenceUrl:url,evidence:'Verified facts',strengths:['Backend'],gaps:[],uncertainties:[]}}:{})});};
+ const record=(run,url,proposal)=>{db.observe(a.id,run.id,url,'Verified facts');return db.record(a.id,run.id,{url,title:'Backend',summary:'Verified facts',...(proposal?{proposal}:{}),...(template.recordOperations?.score?{assessment:{status:'scored',scorecard:unknownScorecard(),score:80,summary:'Fits criteria',evidenceUrl:url,evidence:'Verified facts',strengths:['Backend'],gaps:[],uncertainties:[]}}:{})});};
  return {store,db,id:a.id,runtime,launches,closed,finish,flow,record,options};
 }
 
@@ -69,7 +70,7 @@ test('restart preserves an active interview instead of launching an unscoped pro
  await f.runtime.restart(f.id);assert.equal(f.launches.at(-1).kind,'interview');assert.notEqual(f.launches.at(-1).id,first.id);
 });
 
-test('cancelled and interrupted automatic preparations resume after stop/start',async t=>{
+test('explicitly stopped preparation queues stay cleared after stop/start',async t=>{
  const f=fixture(t),seed=f.db.begin(f.id,'run');
  const items=Array.from({length:3},(_,i)=>f.record(seed,sources[0]+'/'+i));f.db.finish(f.id,seed.id,'completed','Seeded');
  f.db.enable(f.id);await f.runtime.tick();await settle();
@@ -77,11 +78,9 @@ test('cancelled and interrupted automatic preparations resume after stop/start',
  await f.runtime.pause(f.id);
  assert.deepEqual(f.runtime.queue.list(f.id).filter(t=>t.recordOperation).map(t=>t.state),['interrupted','cancelled','cancelled']);
  const before=f.launches.length;await f.runtime.runOnce(f.id);await settle();
- for(let i=0;i<items.length;i++){
-  const run=f.launches.at(-1);assert.equal(run.recordOperation,'prepare');
-  f.record(run,f.db.result(f.id,run.recordId).url,'Verified proposal');await f.finish(run);await f.runtime.tick();await settle();
- }
- assert.deepEqual(new Set(f.launches.slice(before).filter(r=>r.recordOperation==='prepare').map(r=>r.recordId)),new Set(items.map(i=>i.id)));
+ assert.equal(f.launches.slice(before).filter(r=>r.recordOperation==='prepare').length,0);
+ assert.equal(f.runtime.queue.list(f.id,{states:['pending','running']}).filter(t=>t.recordOperation==='prepare').length,0);
+ assert.equal(f.runtime.queue.list(f.id).filter(t=>t.recordOperation==='prepare'&&t.stopRequested).length,items.length);
 });
 
 test('closing the app does not permanently suppress an unfinished automatic preparation',async t=>{

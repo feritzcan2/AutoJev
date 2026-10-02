@@ -40,7 +40,8 @@ try{
  assert.deepEqual(calls.resets,[candidate.id]);assert.equal(calls.reconnects.at(-1).profile.directory,'Profile 2');
  const web=await page.evaluate(()=>window.jobloop.workspaceCreate('custom',{title:'Web test'}));
  await page.evaluate(id=>window.jobloop.workspaceSettings(id,{browserMode:'jev',chromeProfile:{directory:'Default',name:'Personal'}}),web.id);
- await page.locator('#candidates').selectOption(web.id);
+ await page.reload();await page.locator('.workspace-switcher-trigger').click();
+ await page.locator(`[data-workspace-id="${web.id}"]`).click();
  await page.waitForFunction(()=>document.querySelector('.chrome-status small').textContent==='Personal');
  await page.locator('.chrome-profile-change').click();await dialog.locator('select:not([disabled])').waitFor();
  await dialog.locator('select').selectOption('Profile 2');await dialog.locator('[type=submit]').click();await dialog.waitFor({state:'hidden'});

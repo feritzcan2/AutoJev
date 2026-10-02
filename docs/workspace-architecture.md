@@ -30,15 +30,19 @@
 
 ## Kaynaklar ve sorular
 
-Her kaynak ad, kapsam, etkinlik, tarama aralığı, işlem modu, skill, araç ve devam noktası saklar. Toplu tarama aralığı kapalı kaynaklara da uygulanır; başka çalışma alanını değiştirmez. Kaynak yetkisi çalışma alanının yetkisini aşamaz. Engelli kaynaklar kendi yeniden deneme durumunu korur.
+Her kaynak ad, kapsam, etkinlik, tarama aralığı, işlem modu ve devam noktası saklar. Toplu tarama aralığı kapalı kaynaklara da uygulanır; başka çalışma alanını değiştirmez. Kaynak yetkisi çalışma alanının yetkisini aşamaz. Engelli kaynaklar kendi yeniden deneme durumunu korur.
 
-`get_workspace_source_instructions` atanmış kaynağın skill ve CLI açıklamasını verir. `run_workspace_source_tool` yalnızca atanmış kaynağın kayıtlı aracını çalıştırır. Sonuçlar ve tarama ilerlemesi ortak otomasyon araçlarına kaydedilir.
+Kaynak denemeleri ve taramaları kaynağa bağlı CLI veya seçili tarayıcı üzerinden çalışır. `instructions` yöntem metnidir; `skill` bağımsız kopyalanan ve kullanıcı tarafından düzenlenen rehberdir; `tool` paketlenmiş CLI kimliğidir. Agent güncel kriterleri, kaynak sorgusunu, komutu ve yerel skill metnini `get_automation_context` ile alır. CLI kendi terminal aracıyla çalıştırılır; uygulama yeni bir MCP çalıştırıcısı sağlamaz. Sonuçlar ve ilerleme ortak otomasyon araçlarıyla kaydedilir. Deneme, güncel sayfa gözlemi veya açıkça agent raporu olarak tutulan `sourceRead` ile tamamlanır. CLI raporu işlem/gönderim kanıtı değildir.
 
-`workspace_source_skills`, çalışma alanı ve tam kaynak URL’si başına öğrenilen yöntemlerin sürüm geçmişini tutar. Kullanıcının `sourceSettings.skillText` metni korunur. Agent `record_source_skill_evidence` ile o turun güncel sayfa gözleminden kısa alıntı kaydeder; `save_workspace_source_skill` arama, sayfalama, detay ve erişim bölümlerini birleştirir. Doğrulanan veya engelli bölümler kanıt ister; sayfalama için art arda gelen farklı içerik gözlemleri gerekir. Denenemeyen adımlar `unverified` kalır. Başarılı kaynak denemesi bir skill kaydetmelidir. Normal taramalar skill’i güncel kriterlerle kullanır ve değişen bölümleri günceller. Kaynak/kayıt kapsamı ve sürüm kontrolü başka görevin skill’i değiştirmesini engeller.
+Şema 24 geçişi eski kaynak rehberlerini, skill sürümlerini ve CLI ayarlarını kaldırır. Kaynak adresleri, sorguları, zamanlamaları ve tarama devam noktaları korunur.
 
-Şema 11 geçişinden önce yedek alınır. Skill sürümleri yedekte korunur; geri yükleme veya tarayıcı/araç değişikliği yeniden doğrulama gerektirir. Beceri metni görev başlangıç bağlamına kopyalanmaz; agent kaynak talimatları aracıyla gerektiğinde parçalar halinde okur.
+Yeni kaynak kütüphanesi bu eski yapıyı geri getirmez. Public JSON listesi mevcut
+kaynak ayarlarına `instructions`, `skill` ve `tool` ekler; yeni tablo yoktur.
+Şema 26, önceden eklenmiş araçların rehberini bir kez kaynağa kopyalar; kullanıcı düzenlemelerini ve tarama hafızasını korur.
+[Liste biçimi ve araç dağıtımı](../source-library/README.md).
 
-Şema 12, kaynak aracının o turdaki son denemesini `sourceToolCheck` alanında saklar. Özel araç seçili kaynak görevleri gerçek CLI denemesinden önce tarayıcı keşfine başlayamaz; yardım/sürüm çıktısı yeterli değildir. Gerçek hatadan sonra yalnızca kayıtlı alternatif yönteme geçilir. Başarılı araç aramasından sonra gözlenen ilan detayları tarayıcıda okunabilir. Kurulum ve bağımsız kayıt işlemleri bu kaynak araması sırasına tabi değildir.
+
+
 
 Hazır template seçimi kurulum agent’ını ilk mesajı beklemeden başlatır. Agent template alanlarını ve kayıtlı belgeleri kullanarak eksik bilgileri sorar. Özel boş çalışma alanında kullanıcı önce amacını yazar. Kurulum turları önceki sağlayıcı oturumunu sürdürmez; ortak depodaki plan, sorular, yanıtlar ve mesajlarla yeni oturum açar.
 
@@ -101,7 +105,9 @@ Explicit direct execution (`execute`, `request.direct: true`) can start from a f
 
 ## Görev devamı ve teknik hata kontrolü
 
-Aynı yarım kalmış kuyruk görevi yeniden başladığında kendi son sağlayıcı konuşmasını sürdürür. Başka bir kaydın ya da yeni tarama turunun konuşması kullanılmaz. Kurulum revizyonu, sağlayıcı ayarları veya işlem türü değiştiğinde yeni konuşma gerekir. Sonuç bildirmeden boşta kalan kaynak agentine aynı oturumda bir kez devam mesajı gönderilir; tekrar boşta kalırsa mevcut gecikmeli kurtarma uygulanır.
+Kaynak taraması tamamlandığında sonraki tarama yeni sağlayıcı konuşmasıyla başlar. Yarım kalmış aynı tarama, son turun bitişinden itibaren en fazla 5 dakika içinde devam ederse kendi son konuşmasını sürdürebilir; worker değişmesi bu hakkı değiştirmez. Daha uzun beklemelerde yeni konuşma açılır. Çökme sonrası kapanış zamanı bilinmeyen çalışmalar da yeni konuşma açar; kurtarma anı kesinti başlangıcı sayılmaz. Kayıtlı aramalar, tamamlanan aramalar, kalan URL kuyruğu, sayfa/devam noktası, özgün tarama başlangıcı ve tarih sınırı, sonuçlar ve kullanıcı yanıtları korunur. Yeni konuşma eski transkripti yeniden yüklemez. Kaynak sorularına verilen yanıtlar da bu süre kuralına tabidir; kayıt işlemleri ve bağımsız sohbetin devam davranışı değişmez.
+
+Başka bir kaydın ya da yeni tarama turunun konuşması kullanılmaz. Kurulum revizyonu, sağlayıcı ayarları veya işlem türü değiştiğinde yeni konuşma gerekir. Sonuç bildirmeden boşta kalan kaynak agentine aynı oturumda bir kez devam mesajı gönderilir; tekrar boşta kalırsa mevcut gecikmeli kurtarma uygulanır.
 
 Başlangıç bağlamı atanmış kayıt, ilgili sorular ve yanıtlar, geçerli kurallar, işlem izinleri ve kaydedilmiş ilerleme ile sınırlıdır. Diğer kayıtlar gerektiğinde arama araçlarından okunur. Yanıtların yapılandırılmış değerleri ve işlem yetkileri aynen korunur. Günlük/toplam işlem kotası ve çalışma alanı bitiş tarihi kullanılmaz; eski kayıtlardaki değerler yok sayılır.
 
@@ -117,7 +123,11 @@ restores a scope without changing another scope's work.
 `report_scan_page` records an observation. Revisiting an earlier page for access
 recovery cannot replace the saved frontier or pending queue. `save_scan_progress`
 adds `pendingUrls` and explicitly retires `processedUrls`; omission never removes
-work. The 100-URL limit applies to one tool request/response, not the stored queue.
+work. It accepts the agent's report without a snapshot ID or proof that each URL
+was observed. Legacy snapshot IDs are ignored; the current worker page supplies
+optional chronology context. Missing or unmatched chronology falls back to a
+full scan without rejecting the queue update. The 100-URL limit applies to one
+tool request/response, not the stored queue.
 Use repeated saves and paged `get_scan_queue` reads for larger queues. Keep a
 results page pending until all of its relevant links have been saved.
 

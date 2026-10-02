@@ -22,8 +22,8 @@ Aşağıdaki uygulama işleri ve test kayıtları önceki 0.1.0/0.1.1 yayınlar�
   Uzaktan bildirim ve sorular Telegram üzerinden yönetiliyor.
 - [x] TermLoop kaynakları ve terminal paketleri sabit commit, checksum manifesti ve
   lisanslarıyla vendor edildi. Komşu TermLoop deposuna build bağımlılığı kaldırıldı; ayrı temiz checkout’ta bootstrap geçti.
-- [x] Paketli Rust engine, kaynak CLI araçları ve Playwright yardımcı yolları eklendi.
-- [x] Agent kurulumu/oturumu, Chrome ve isteğe bağlı Bun/Jev ön kontrolleri eklendi.
+- [x] Paketli Rust engine ve Playwright yardımcı yolları eklendi.
+- [x] Agent kurulumu/oturumu, Chrome ve isteğe bağlı Jev ön kontrolleri eklendi.
 - [x] Jev anahtarı sistem anahtarlığıyla saklanıyor; açıkça başlatılan bağlantı testi var.
 - [x] AI sağlayıcısı, TypeSafe/Jev, Telegram ve iş sitelerine veri aktarımı açıklanıyor.
 - [x] Taşınabilir aday/CV/belge yedeği, doğrulamalı geri yükleme, sürümlü veri sözleşmesi,
@@ -57,10 +57,9 @@ Aşağıdaki uygulama işleri ve test kayıtları önceki 0.1.0/0.1.1 yayınlar�
   gerçek CV yükleme ve profil hazırlama IPC akışını çalıştırıyor; aday klasöründeki
   tüm skill/referans dosyalarını checksum ile karşılaştırıyor. Yalnız ücretli
   sağlayıcı başlatma çağrısı testte taklit ediliyor.
-- [x] Yerelde 498 Node testi ve kaynak araçlarının 312 offline testi geçti.
-- [x] Ana uygulama üretim bağımlılıkları, altı Bun lockfile’ı ve Rust engine lockfile’ı
-  tarandı; bilinen açık bulunmadı. OpenTUI güncellemesi gömülü eski diff kodunu ve
-  Jimp/file-type zincirini kaldırdı. CI ve paketleme akışı bu taramaları tekrarlıyor.
+- [x] Node testleri geçti.
+- [x] Ana uygulama üretim bağımlılıkları ve Rust engine lockfile’ı
+  güvenlik taramasından geçiyor. CI akışı bu taramaları tekrarlıyor.
 - [x] Git geçmişinde Gitleaks v8.30.1 ile gerçek secret eşleşmesi bulunmadı.
 - [x] Kaynak snapshot’ı, Git geçmişi ve çıkarılmış macOS paketinde Gitleaks taraması temiz.
   Dar istisnalar yalnız vendor checksum’ları ve sır içermeyen bir boolean ifadesidir.

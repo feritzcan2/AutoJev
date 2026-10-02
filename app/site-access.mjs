@@ -2,11 +2,16 @@ import {randomUUID} from 'node:crypto';
 
 export const siteKey=url=>new URL(url).hostname.toLowerCase().replace(/^www\./,'');
 const minute=60000;
-export function accessBarrier({status,text=''}){
+export function accessBarrier({status,title='',text=''}){
  if(status===429)return 'rate_limit';
  // A quoted error in a listing is not a site-wide access barrier.
  const page=text.trim();if(page.length>12000)return null;
- return /^(?:IP-Bereich vorübergehend gesperrt\.?|Your IP (?:address |range )?(?:has been |is )?(?:temporarily )?blocked\.?|IP (?:address |range )?(?:has been |is )?(?:temporarily )?blocked\.?)/i.test(page)?'ip_block':null;
+ // Require both a challenge title and its verification body. Listings may
+ // legitimately mention Cloudflare or quote a verification error.
+ const challengeTitle=/^(?:Just a moment[.!…]*|Additional Verification Required|Attention Required!?\s*\|\s*Cloudflare)$/i.test(title.trim());
+ const verificationLine=/^(?:Additional Verification Required|Verify you are human(?: by completing the action below)?[.!]?|Verifying you are human[.!…]*|Checking your browser(?: before accessing [^\n]+)?[.!…]*)\s*$/im.test(page);
+ if(challengeTitle&&verificationLine&&/(?:\bCloudflare\b|\b(?:Your )?Ray ID\b)/i.test(page))return 'verification';
+ return /^(?:Your IP (?:address |range )?(?:has been |is )?(?:temporarily )?blocked\.?|IP (?:address |range )?(?:has been |is )?(?:temporarily )?blocked\.?)/i.test(page)?'ip_block':null;
 }
 export function retryAfterTime(value,now){
  if(!value)return null;
@@ -26,7 +31,7 @@ export class SiteAccess{
  status(url){
   const row=this.row(url);if(!row)return null;
   const {token,leaseUntil=0,...state}=row,retryAt=Math.max(row.retryAt,leaseUntil),probing=leaseUntil>this.now();
-  return {...state,retryAt,probing,waiting:retryAt>this.now(),message:`${row.site}: ${row.reason==='ip_block'?'IP engeli':'İstek sınırı'} nedeniyle ortak bekleme. ${probing?'Tek bir erişim kontrolü sürüyor.':`Sonraki kontrol: ${new Date(retryAt).toLocaleString('tr-TR')}.`} Diğer siteler çalışmaya devam edebilir.`};
+  return {...state,retryAt,probing,waiting:retryAt>this.now(),message:`${row.site}: ${row.reason==='ip_block'?'IP engeli':row.reason==='verification'?'Erişim doğrulaması':'İstek sınırı'} nedeniyle ortak bekleme. ${probing?'Tek bir erişim kontrolü sürüyor.':`Sonraki kontrol: ${new Date(retryAt).toLocaleString('tr-TR')}.`} Diğer siteler çalışmaya devam edebilir.`};
  }
  begin(url){
   const wait=this.status(url);if(!wait)return null;
@@ -34,6 +39,13 @@ export class SiteAccess{
   const token=randomUUID();this.save({...this.row(url),token,leaseUntil:this.now()+minute});return token;
  }
  assertAction(url){const wait=this.status(url);if(wait)throw new SiteWaitError(wait);}
+ // Only the explicit user-response path may retire an old cooldown early.
+ // A later incident or an in-flight probe must not be cleared by a stale card.
+ acknowledge(waits){
+  for(const wait of waits){const row=this.row('https://'+wait.site);if(row&&(row.blockedAt!==wait.blockedAt||row.leaseUntil>this.now()))throw Error('Bu sitede yeni bir erişim beklemesi var. Güncel müdahale kartını kontrol et.');}
+  for(const wait of waits)this.db.prepare('DELETE FROM browser_site_waits WHERE site=?').run(wait.site);
+  this.changed();
+ }
  block(url,reason,retryAfter,token){
   const previous=this.row(url);
   // Re-reading an existing barrier must not keep extending the wait.

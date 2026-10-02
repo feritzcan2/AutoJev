@@ -16,5 +16,11 @@ test('hidden metadata, malformed JSON, changed identity and changed status are n
   JSON.stringify({history:[{text:quote}]}),
   '{"text":"R30035\\nNot Submitted"',
   JSON.stringify({text:'R30036\nNot Submitted'}),
- ])assert.throws(()=>validateNotSubmitted(item,proof,{url:'https://portal.test/home',text}),/kanıt/);
+ ])assert.throws(()=>validateNotSubmitted(item,proof,{url:'https://portal.test/home',text}),/kanıt|taslak|Atanmış kayıt/);
+});
+
+test('an optional status description need not match the visible wording',()=>{
+ const snapshot={url:'https://portal.test/home',text:quote};
+ assert.equal(validateNotSubmitted(item,{kind:'draft',recordEvidence:'R30035'},snapshot).kind,'draft');
+ assert.equal(validateNotSubmitted(item,{...proof,quote:'Application is still a draft'},snapshot).quote,'Application is still a draft');
 });

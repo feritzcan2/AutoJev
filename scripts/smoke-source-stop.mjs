@@ -3,17 +3,20 @@ import {createRequire} from 'node:module';
 import {mkdtemp} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import {pathToFileURL} from 'node:url';
+import {build} from 'esbuild';
 const require=createRequire(import.meta.url),{_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
 const data=await mkdtemp(path.join(os.tmpdir(),'source-stop-')),env={...process.env,JOBLOOP_DATA_DIR:data};delete env.ELECTRON_RUN_AS_NODE;
+const fixtureModule=path.join(data,'source-panel.mjs');await build({entryPoints:['src/automation-sources.js'],bundle:true,format:'esm',outfile:fixtureModule});
 const app=await electron.launch({executablePath:require('electron'),args:[process.cwd()],env});
 try{
- const page=await app.firstWindow();await page.clock.install({time:new Date('2026-10-01T10:00:00Z')});await page.evaluate(async()=>{
-  const {automationSourcesPanel}=await import('../src/automation-sources.js');const main=document.createElement('main'),host=document.createElement('section');main.style.gridColumn='1 / -1';host.id='sources';main.append(host);document.body.replaceChildren(main);window.stopCalls=[];window.runCalls=[];
+ const page=await app.firstWindow();await page.clock.install({time:new Date('2026-10-01T10:00:00Z')});await page.evaluate(async url=>{
+  const {automationSourcesPanel}=await import(url);const main=document.createElement('main'),host=document.createElement('section');main.style.gridColumn='1 / -1';host.id='sources';main.append(host);document.body.replaceChildren(main);window.stopCalls=[];window.runCalls=[];
   const source={url:'https://example.test/jobs',name:'Example',enabled:true,scanning:true,mode:'observe',intervalMinutes:30,resultCount:2,lastResult:'Uygulama kapatıldı.'};
   const snapshot={automation:{id:'owner',mode:'observe',status:'enabled',browserMode:'separate'},sources:[source],progress:{reviewed:true,passed:true}};
   const api={workspaceTabs:async()=>[],automationSourceStop:async(id,url)=>{window.stopCalls.push({id,url});await new Promise(resolve=>{window.finishStop=resolve;});source.scanning=false;source.nextRunAt=Date.now()+1800000;source.lastResult='Tarama kullanıcı tarafından durduruldu.';},automationSourceRun:async(id,url)=>window.runCalls.push({id,url})};
   const panel=automationSourcesPanel(host,api,{notice:text=>{window.lastNotice=text;},refresh:async()=>panel.update(snapshot,'owner')});panel.update(snapshot,'owner');window.sourceFixture={source,snapshot,panel};
- });
+ },pathToFileURL(fixtureModule).href);
  assert.equal(await page.getByText('Uygulama kapatıldı.',{exact:true}).count(),0);
  await page.evaluate(()=>{const {source,snapshot,panel}=window.sourceFixture;source.scanIssue={url:source.url+'?page=8',attempts:2,evidence:'net::ERR_HTTP2_PROTOCOL_ERROR'};panel.update(snapshot,'owner');});
  await page.getByText('Sayfa yüklenemedi',{exact:true}).waitFor();

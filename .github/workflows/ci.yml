@@ -36,11 +36,8 @@ jobs:
         with:
           node-version: 22.22.3
           cache: pnpm
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.4.2
       - run: pnpm install --frozen-lockfile
-      - name: Audit production and source-tool dependencies
+      - name: Audit production dependencies
         run: node scripts/audit-dependencies.mjs
       - name: Audit Rust engine dependencies
         run: |

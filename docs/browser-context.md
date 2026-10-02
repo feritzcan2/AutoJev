@@ -1,5 +1,7 @@
 # Tarayıcı çıktısının context kullanımı
 
+> **Not (2026-10-02):** Buradaki `get_source_instructions` ve `record_job_rank` araçları artık yok. Değişmeyen sayfa metninin modele yeniden gönderilmemesi artık uygulama tarafında yapılır; bkz. [context-payload-budget.md](context-payload-budget.md) “Unchanged page text is not resent”.
+
 27 Eylül 2026 tarihli EY başvuru konuşmasında modelin bildirdiği giriş
 context'i 43.982 tokendan 760.956 tokena çıktı. Görev yaklaşık 6 dakika sürdü.
 Bu değerler konuşma boyunca toplanan token sayısı değildir; ilgili model

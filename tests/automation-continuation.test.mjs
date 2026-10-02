@@ -6,6 +6,7 @@ import {WebTasks} from '../app/web-template.mjs';
 import {automationRunHistory} from '../app/automation-continuation.mjs';
 import {selectResume} from '../app/resume.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
+import {automationProtocol,prepareAutomationProtocol} from '../app/automation-protocol.mjs';
 
 const settings={provider:'codex',model:'selected',reasoning:'high',permission:'bypassPermissions',network:null,agentProfileDigest:'profile-v1'};
 const settle=()=>new Promise(r=>setImmediate(r));
@@ -19,6 +20,20 @@ function fixture(t){
  const history=run=>automationRunHistory(db,run,store.workspaces.history(a.id,run.workerId)).forProfile('web-run');
  return {store,db,a,item,runtime,launches,history};
 }
+
+test('explicit worker restart clears run conversation references while retaining source work and Jev evidence',async t=>{
+ const f=fixture(t);await f.runtime.runOnce(f.a.id);await settle();const first=f.launches.at(-1);
+ f.history(first).saveConversation(f.a.id,'codex','retired-thread',settings);
+ f.db.observe(f.a.id,first.id,first.sourceUrl,'Saved lead',[first.sourceUrl+'pending']);
+ f.db.saveScanProgress(f.a.id,first.id,{pendingUrls:[first.sourceUrl+'pending'],reason:'Continue saved work'},{url:first.sourceUrl,text:'Saved lead'});
+ f.db.putRun({...f.db.run(first.id),resumeContext:{tabId:'kept-tab',url:first.sourceUrl}});
+ const task=f.db.jevTasks.create(f.a.id,first.taskId,{operation:'collect_details'}),evidence=f.db.jevTasks.evidence(task,{url:first.sourceUrl+'pending',text:'Exact detail'});
+ const restart=f.runtime.restartState(f.a.id,first.workerId);assert.equal(restart.runId,first.id);
+ await f.runtime.stopWorker(f.a.id,first.workerId);await f.runtime.startWorker(f.a.id,first.workerId,restart);await settle();
+ const next=f.launches.at(-1);assert.notEqual(next.id,first.id);assert.equal(selectResume(f.history(next),f.a.id,settings),undefined);assert.equal(f.db.run(first.id).conversation,null);
+ assert.ok(next.scan.pendingUrls.includes(first.sourceUrl+'pending'));
+ assert.equal(f.db.jevTasks.fullEvidence(f.a.id,first.taskId,evidence.id).text,'Exact detail');assert.equal(f.db.run(first.id).resumeContext.tabId,'kept-tab');
+});
 
 for(const early of [false,true])test(`answers resume the asking conversation after other worker history changes (early=${early})`,async t=>{
  const f=fixture(t),{db,a,item,runtime}=f;
@@ -64,7 +79,7 @@ test('setup answers use their original conversation and consume it only once',as
  db.finish(a.id,next.id,'blocked','Done');assert.equal(db.begin(a.id,'interview').continuation,undefined);
 });
 
-test('a failed source retry and later scans resume the source conversation instead of unrelated worker history',async t=>{
+test('a short source retry resumes its conversation; a completed scan starts fresh',async t=>{
  const f=fixture(t);await f.runtime.runOnce(f.a.id);await settle();const first=f.launches.at(-1);
  f.history(first).saveConversation(f.a.id,'codex','source-thread',settings);
  f.db.putRun({...f.db.run(first.id),resumeContext:{tabId:'results-page',url:first.sourceUrl}});
@@ -76,7 +91,7 @@ test('a failed source retry and later scans resume the source conversation inste
  f.history(next).saveConversation(f.a.id,'codex','source-thread',settings);
  await f.runtime.finish(f.a.id,'completed','Done',next.workerId);
  await f.runtime.runSource(f.a.id,first.sourceUrl);await settle();const scan=f.launches.at(-1);
- assert.equal(scan.continuation.reason,'source_scan');assert.equal(scan.continuation.runId,next.id);assert.equal(selectResume(f.history(scan),f.a.id,settings),'source-thread');
+ assert.equal(scan.continuation,undefined);assert.equal(selectResume(f.history(scan),f.a.id,settings),undefined);
 });
 
 test('shutdown recovery resumes record preparation but never execution after an uncertain send',async t=>{
@@ -103,4 +118,40 @@ for(const stop of ['technical','manual'])test(`runSource resumes the source conv
  await f.runtime.runSource(f.a.id,first.sourceUrl);await settle();const next=f.launches.at(-1);
  assert.notEqual(next.taskId,first.taskId);assert.equal(next.continuation.reason,'source_retry');
  assert.equal(next.continuation.runId,first.id);assert.equal(selectResume(f.history(next),f.a.id,settings),'source-thread');
+});
+
+for(const savedProtocol of [undefined,'old-contract','current-contract'])test(`protocol compatibility preserves queue and selects fresh history when needed (${savedProtocol})`,async t=>{
+ const f=fixture(t);await f.runtime.runOnce(f.a.id);await settle();const first=f.launches.at(-1);
+ const history=(run,protocol)=>automationRunHistory(f.db,run,f.store.workspaces.history(f.a.id,run.workerId),null,protocol).forProfile('web-run');
+ f.db.putRun({...f.db.run(first.id),evidenceEpoch:f.db.jevTasks.epoch});
+ history(first,savedProtocol).saveConversation(f.a.id,'codex','previous-thread',settings);
+ f.db.observe(f.a.id,first.id,first.sourceUrl,'Listing',[first.sourceUrl+'one']);f.db.saveScanProgress(f.a.id,first.id,{pendingUrls:[first.sourceUrl+'one'],reason:'Continue'},{url:first.sourceUrl,text:'Listing'});
+ const task=f.store.workspaces.tasks.get(f.a.id,first.taskId);f.store.workspaces.tasks.put({...task,toolFailures:{schema:{count:2}}});
+ await f.runtime.finish(f.a.id,'interrupted','Restart',first.workerId);await f.runtime.tick();await settle();
+ const run=f.launches.at(-1),prepared=prepareAutomationProtocol(f.db,run,'current-contract');
+ assert.equal(prepared.taskId,first.taskId);assert.ok(prepared.scan.pendingUrls.includes(first.sourceUrl+'one'));
+ assert.equal(selectResume(history(prepared,'current-contract'),f.a.id,settings),savedProtocol==='current-contract'?'previous-thread':undefined);
+ assert.deepEqual(f.store.workspaces.tasks.get(f.a.id,first.taskId).toolFailures,savedProtocol==='current-contract'?{schema:{count:2}}:{});
+ history(prepared,'current-contract').saveConversation(f.a.id,'codex','new-thread',settings);
+ assert.equal(f.db.run(prepared.id).conversation.protocol,'current-contract');
+ assert.equal(selectResume(history(prepared,'current-contract').forProfile('other-profile'),f.a.id,settings),undefined);
+});
+
+test('protocol digest changes with instructions or tool schema but is stable for the same contract',()=>{
+ const tools=[{name:'read',inputSchema:{type:'object'}}],one=automationProtocol(tools,['rules']);
+ assert.equal(one,automationProtocol(tools,['rules']));assert.notEqual(one,automationProtocol(tools,['new rules']));assert.notEqual(one,automationProtocol([...tools,{name:'write'}],['rules']));
+});
+
+test('app memory expiry starts fresh history without resetting the error budget or pending queue',async t=>{
+ const f=fixture(t);await f.runtime.runOnce(f.a.id);await settle();let first=f.launches.at(-1);
+ first=prepareAutomationProtocol(f.db,first,'current-contract');
+ const history=run=>automationRunHistory(f.db,run,f.store.workspaces.history(f.a.id,run.workerId),null,'current-contract').forProfile('web-run');
+ history(first).saveConversation(f.a.id,'codex','old-memory-thread',settings);
+ const task=f.store.workspaces.tasks.get(f.a.id,first.taskId);f.store.workspaces.tasks.put({...task,toolFailures:{quotes:{count:2}}});
+ f.db.observe(f.a.id,first.id,first.sourceUrl,'Lead',[first.sourceUrl+'pending']);f.db.saveScanProgress(f.a.id,first.id,{pendingUrls:[first.sourceUrl+'pending'],reason:'Keep pending'},{url:first.sourceUrl,text:'Lead'});
+ await f.runtime.finish(f.a.id,'interrupted','App closed',first.workerId);
+ const reopened=new AutomationStore(f.store);f.db.jevTasks=reopened.jevTasks;f.db.browserEvidence=reopened.browserEvidence;
+ await f.runtime.tick();await settle();const next=prepareAutomationProtocol(f.db,f.launches.at(-1),'current-contract');
+ assert.equal(next.continuation.resumeConversation,false);assert.equal(next.protocolReset.reason,'temporary_evidence_expired');assert.equal(selectResume(history(next),f.a.id,settings),undefined);
+ assert.deepEqual(f.store.workspaces.tasks.get(f.a.id,next.taskId).toolFailures,{quotes:{count:2}});assert.ok(next.scan.pendingUrls.includes(first.sourceUrl+'pending'));
 });

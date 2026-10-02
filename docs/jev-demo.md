@@ -118,9 +118,8 @@ next agent launch. Existing running agents retain their current tools until rest
 Do not use `pnpm demo:jev` for a normal campaign: that command deliberately creates a
 separate temporary candidate and a bounded demonstration source.
 
-For a source that should search through Jev, choose **browser** as that source's
-search method. Sources configured for CLI tools keep their existing tool workflow;
-Jev handles browser steps and configured browser fallbacks. The scheduler, source
+Choose **Jev** in the workspace browser settings to use it for source searches.
+Jev handles browser steps. The scheduler, source
 intervals, deduplication, candidate facts, authorization and application policy are
 unchanged. There is no three-listing limit in the regular integration.
 

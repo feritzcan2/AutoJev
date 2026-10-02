@@ -1,31 +1,26 @@
-// Only known vacancy routes yield an identity. Login, search and generic success
-// pages must never become an identity shared by unrelated applications.
+import {TRACKING_PARAMETER} from './jev-detail-urls.mjs';
+// A canonical URL drops the hash, trailing slash and common tracking
+// parameters so the same page observed twice compares equal.
 export function canonicalJobUrl(raw){
   if(typeof raw!=='string'||!raw.trim()||raw.length>3000)throw Error('Geçersiz ilan bağlantısı');
   const url=new URL(raw.trim());
   if(!['https:','http:'].includes(url.protocol)||url.username||url.password)throw Error('Geçersiz ilan bağlantısı');
   url.hash='';
-  for(const key of [...url.searchParams.keys()])if(/^(utm_|trk$|trackingId$|ref$|source$|gh_src$)/i.test(key))url.searchParams.delete(key);
+  for(const key of [...url.searchParams.keys()])if(TRACKING_PARAMETER.test(key))url.searchParams.delete(key);
   url.searchParams.sort();
   return url.toString().replace(/\/$/,'');
 }
 
+// Identity is the canonical URL. Application-step pages of the same listing
+// (…/apply, …/application, …/confirmation, …/thanks) share its identity. No
+// site-specific routes: any other URL difference is a different record.
+const STEP_SEGMENT=/\/(?:apply|application|applications|confirmation|thanks|already-received|success)$/i;
 export function listingIdentity(raw){
-  let url,path;
-  try{url=new URL(canonicalJobUrl(raw));path=decodeURIComponent(url.pathname);}catch{return null;}
-  const host=url.hostname.toLowerCase(),match=(pattern)=>path.match(pattern);
-  const identity=(namespace,id)=>({namespace,id,key:`${namespace}:${id}`});
-  let m;
-  if(/^(?:[a-z]{2,3}\.)?linkedin\.com$/.test(host)&&(m=match(/^\/jobs\/view\/(?:[^/]*-)?(\d+)(?:\/)?$/)))return identity('linkedin',m[1]);
-  if(/^(?:www\.)?stepstone\.(?:de|at|be|nl|fr|com)$/.test(host)&&(m=match(/--(\d+)-inline\.html$/)))return identity('stepstone:'+host.replace(/^www\./,''),m[1]);
-  if((m=host.match(/^([a-z0-9-]+)\.jobs\.personio\.(?:de|com)$/))){const job=match(/^\/job\/(\d+)(?:\/(?:application|apply))?\/?$/);if(job)return identity('personio:'+m[1],job[1]);}
-  if(['boards.greenhouse.io','job-boards.greenhouse.io','job-boards.eu.greenhouse.io'].includes(host)&&(m=match(/^\/([^/]+)\/jobs\/(\d+)(?:\/(?:confirmation|application))?\/?$/)))return identity('greenhouse:'+m[1].toLowerCase(),m[2]);
-  if(['jobs.lever.co','jobs.eu.lever.co','jobs.ashbyhq.com'].includes(host)&&(m=match(/^\/([^/]+)\/([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})(?:\/(?:apply|application|thanks|confirmation|already-received))?\/?$/i)))return identity((host==='jobs.ashbyhq.com'?'ashby:':'lever:')+m[1].toLowerCase(),m[2].toLowerCase());
-  if(host==='join.com'&&(m=match(/^\/companies\/([^/]+)\/(\d+)(?:-[^/]*)?\/?$/)))return identity('join:'+m[1].toLowerCase(),m[2]);
-  if(host==='jobs.smartrecruiters.com'&&(m=match(/^\/([^/]+)\/(\d+)(?:-[^/]*)?\/?$/)))return identity('smartrecruiters:'+m[1].toLowerCase(),m[2]);
-  if(/^(?:[a-z]{2}|www)\.indeed\.com$/.test(host)&&['/viewjob','/rc/clk'].includes(path)&&/^[a-z0-9]+$/i.test(url.searchParams.get('jk')??''))return identity('indeed',url.searchParams.get('jk'));
-  if(['n26.com','www.n26.com'].includes(host)&&(m=match(/^\/[a-z]{2}-[a-z]{2}\/careers\/positions\/(\d+)\/?$/)))return identity('n26',m[1]);
-  return null;
+  let url;
+  try{url=new URL(canonicalJobUrl(raw));}catch{return null;}
+  const path=url.pathname.replace(STEP_SEGMENT,'')||'/';
+  const base=url.origin+path;
+  return {namespace:'url',id:base,key:'url:'+base};
 }
 
 export const jobUrlKey=url=>listingIdentity(url)?.key??'url:'+canonicalJobUrl(url);

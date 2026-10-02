@@ -11,14 +11,16 @@ import {ContextUsage} from './context-usage.mjs';
 import {TranscriptReader} from './agent-transcript.mjs';
 import {ContextCompaction,compactionPending} from './context-compaction.mjs';
 import {providerLimit} from './provider-limit.mjs';
+import {opencodeCompaction} from './opencode-context.mjs';
+import {readOpenCodeFailure} from './opencode-failure.mjs';
 
 export const publicSession=active=>active?{candidateId:active.candidateId,workerId:active.workerId??MAIN_WORKER,sessionId:active.sessionId,agentProfile:active.agentProfile?{id:active.agentProfile.id,name:active.agentProfile.name,version:active.agentProfile.version}:null,state:active.state??'Unknown',contextUsage:active.contextUsage??null,compaction:active.compaction??null,usageLimit:active.usageLimit??null}:null;
 
 // The original worker session lifecycle, shared by every workspace template.
 // Templates supply instructions, tools and task policy; they never own a PTY.
 export class AgentSessions {
- constructor({root,data,instructions=null,profiles=null,emit=()=>{},changed=()=>{},createEngine=(...args)=>new Engine(...args)}){
-  Object.assign(this,{root,data,instructions,profiles,emit,changed,createEngine});
+ constructor({root,data,instructions=null,profiles=null,emit=()=>{},changed=()=>{},createEngine=(...args)=>new Engine(...args),readProviderFailure=readOpenCodeFailure}){
+  Object.assign(this,{root,data,instructions,profiles,emit,changed,createEngine,readProviderFailure});
   this.engines=new Map();this.sessions=new Map();this.starting=new Set();this.closing=new Map();this.failedStops=new Set();
   this.screens=new Map();this.outputs=new Map();this.sequences=new Map();this.grids=new Map();this.transcripts=new Map();
   this.compaction=new ContextCompaction({
@@ -38,7 +40,7 @@ export class AgentSessions {
     const s=this.sessions.get(key);if(event.sessionId&&event.sessionId!==s?.sessionId)return;
     if(event.event==='identity'&&s){s.history?.saveConversation(id,s.provider,event.nativeId,s.launchSettings);
      if(this.transcripts.get(key)?.nativeId!==event.nativeId)this.transcripts.set(key,new TranscriptReader({provider:s.provider,nativeId:event.nativeId,cwd:s.cwd,appSent:[s.launchPrompt]}));
-     if(s.contextReader?.nativeId!==event.nativeId){s.contextReader=new ContextUsage({provider:s.provider,nativeId:event.nativeId,cwd:s.cwd,statusFile:path.join(s.runtimeDirectory,`context-${s.sessionId}.jsonl`)});s.compaction=null;s.contextUsage=null;}return;}
+     if(s.contextReader?.nativeId!==event.nativeId){s.contextReader=new ContextUsage({provider:s.provider,nativeId:event.nativeId,cwd:s.cwd,statusFile:path.join(s.runtimeDirectory,`context-${s.sessionId}.jsonl`)});s.compaction=null;s.contextUsage=null;}this.queueFailureCheck(s);return;}
     if(event.event==='output'){
      if(s?.resumeId)s.resumeDiagnostic=((s.resumeDiagnostic??'')+Buffer.from(event.bytes).toString()).slice(-8000);
      event={...event,sequence:(this.sequences.get(key)??0)+1};this.sequences.set(key,event.sequence);
@@ -52,6 +54,10 @@ export class AgentSessions {
     // the same exhausted provider without noticing the cause.
     if(s?.provider==='claude'&&['engine_exit','eof'].includes(event.event)){
      await this.checkUsageLimit(s).catch(()=>{});
+     if(this.engines.get(key)!==instance||this.sessions.get(key)!==s)return;
+    }
+    if(s?.provider==='opencode'&&['engine_exit','eof'].includes(event.event)){
+     await this.checkProviderFailure(s).catch(()=>{});
      if(this.engines.get(key)!==instance||this.sessions.get(key)!==s)return;
     }
     if(event.event==='compaction'&&s)this.compaction.delivery(s,event);
@@ -79,6 +85,19 @@ export class AgentSessions {
   if(JSON.stringify(found)===JSON.stringify(s.usageLimit??null))return;
   s.usageLimit=found;s.onEvent?.({event:'usage_limit',sessionId:s.sessionId,usageLimit:found},s);this.changed(s.candidateId);
  }
+ queueFailureCheck(s,delay=2000){
+  if(s.provider!=='opencode'||s.failureTimer||s.providerFailure||this.sessions.get(workerKey(s.candidateId,s.workerId))!==s)return;
+  s.failureTimer=setTimeout(()=>{s.failureTimer=null;void this.checkProviderFailure(s).catch(()=>{}).finally(()=>this.queueFailureCheck(s));},delay);s.failureTimer.unref?.();
+ }
+ async checkProviderFailure(s){
+  const key=workerKey(s.candidateId,s.workerId),nativeId=this.transcripts.get(key)?.nativeId;
+  if(s.provider!=='opencode'||!nativeId||s.providerFailure||this.sessions.get(key)!==s)return;
+  const failure=await this.readProviderFailure({nativeId,cwd:s.cwd,since:s.startedAt});
+  if(!failure||this.sessions.get(key)!==s||this.transcripts.get(key)?.nativeId!==nativeId||s.providerFailure)return;
+  s.providerFailure=failure;s.state='Error';
+  if(!s.persistent)s.history?.forgetConversation(s.candidateId,s.provider,nativeId);
+  s.onEvent?.({event:'provider_error',sessionId:s.sessionId,summary:failure.summary},s);this.changed(s.candidateId);
+ }
  async start({id,worker=MAIN_WORKER,sessionId,settings,cwd,runtimeDirectory,endpoint,token,prompt,history,approvedTools,taskType,agentProfile,onEvent,onExit,onRetire,onRecord,onSettled,currentSettings=()=>settings,resume=true,reserved=false,rotateAtBoundary=false,persistent=false}){
   settings=withAgentDefaults(settings);
   if(agentProfile){
@@ -90,14 +109,15 @@ export class AgentSessions {
   if(this.sessions.has(key)||this.starting.has(key)&&!reserved||this.closing.has(key)||this.failedStops.has(key))throw Error('Bu worker’ın agent oturumu zaten açık veya kapanıyor.');
   this.starting.add(key);
   const resumeId=resume&&history?selectResume(history,id,settings,{persistent}):undefined;
-  const s={candidateId:id,workerId:worker,sessionId,token,agentProfile,provider:settings.provider,launchSettings:{...settings},cwd,runtimeDirectory,resumeId,history,onEvent,onExit,onRetire,onRecord,onSettled,currentSettings,rotateAtBoundary:rotateAtBoundary&&!persistent,persistent,launchPrompt:typeof prompt==='string'?prompt:''};
+  const s={startedAt:Date.now(),candidateId:id,workerId:worker,sessionId,token,agentProfile,provider:settings.provider,launchSettings:{...settings},cwd,runtimeDirectory,resumeId,history,onEvent,onExit,onRetire,onRecord,onSettled,currentSettings,rotateAtBoundary:rotateAtBoundary&&!persistent,persistent,launchPrompt:typeof prompt==='string'?prompt:''};
   this.sessions.set(key,s);this.clearOutput(key);
   try{
    if(this.instructions){try{this.audit(s,{kind:'files',title:'Oturum talimat dosyaları',status:'available',parts:await launchInstructionParts(cwd)});}catch(error){this.emit({event:'instruction-log-error',candidateId:id,error:error.message});}}
    if(this.sessions.get(key)!==s)throw Error('Agent başlatılırken oturum kapandı.');
    this.audit(s,{kind:'launch',title:'Oturum başlangıç mesajı',status:'requested',resumed:Boolean(resumeId),parts:[...(agentProfile?[instructionPart('agent-profile:'+agentProfile.id,agentProfile.name+' · v'+agentProfile.version,'system',agentProfile.instructions,{when:'Oturum açılırken sağlayıcının sistem/geliştirici talimatı olarak verilir.'}),instructionPart('session-agent-profile','Agent oturum kaydı','system',{session_id:sessionId,agent:agentProfile})]:[]),instructionPart('launch-prompt','Başlangıç mesajı','system',prompt)]});
    const engine=this.ensure(id,worker);
-   const launch=await startWithResumeRepair(engine,{sessionId,cwd,runtimeDirectory,endpoint,token,...settings,...(agentProfile?{agentProfile}:{}),resumeId,prompt,...this.grid(id,worker),...(approvedTools?{approvedTools}:{}),...(taskType?{taskType}:{})},result=>{
+   const compaction=await opencodeCompaction(settings);
+   const launch=await startWithResumeRepair(engine,{sessionId,cwd,runtimeDirectory,endpoint,token,...settings,...(compaction?{opencodeCompaction:compaction}:{}),...(settings.provider==='opencode'&&approvedTools?.includes('read_scoring_profile')?{opencodeDocumentGuard:true}:{}),...(agentProfile?{agentProfile}:{}),resumeId,prompt,...this.grid(id,worker),...(approvedTools?{approvedTools}:{}),...(taskType?{taskType}:{})},result=>{
     if(result.fresh){history?.forgetConversation(id,settings.provider,result.replacedResumeId);s.resumeId=null;s.resumeDiagnostic='';}onRecord?.('history_repaired',result);this.changed(id);
    },{allowFreshFallback:!persistent});
    this.audit(s,{kind:'launch_accepted',title:'Başlatma isteği kabul edildi',status:'accepted',parts:launch?.providerInstructions?[instructionPart('provider-agent-instructions','Sağlayıcıya verilen agent talimatı','system',launch.providerInstructions)]:[]});
@@ -105,7 +125,7 @@ export class AgentSessions {
    await engine.request('resize',this.grid(id,worker));this.changed(id);return {sessionId};
   }catch(error){this.audit(s,{kind:'launch_failed',title:'Başlatma tamamlanamadı',status:'failed',detail:error.message,parts:[]});await this.stop(id,worker).catch(()=>{});throw error;}finally{this.starting.delete(key);}
  }
- retire(id,worker=MAIN_WORKER){const key=workerKey(id,worker),s=this.sessions.get(key);if(s){const threshold=s.currentSettings().contextRestartPercent??0;if(s.rotateAtBoundary&&threshold>0&&s.contextUsage?.peakPercent>=threshold){const nativeId=s.contextReader?.nativeId??s.resumeId;if(nativeId)s.history?.forgetConversation(id,s.provider,nativeId);s.onRecord?.('agent_context_restart',{workerId:worker,provider:s.provider,peakPercent:s.contextUsage.peakPercent,threshold});}clearTimeout(s.limitTimer);this.sessions.delete(key);s.onRetire?.();this.changed(id);}}
+ retire(id,worker=MAIN_WORKER){const key=workerKey(id,worker),s=this.sessions.get(key);if(s){const threshold=s.currentSettings().contextRestartPercent??0;if(s.rotateAtBoundary&&threshold>0&&s.contextUsage?.peakPercent>=threshold){const nativeId=s.contextReader?.nativeId??s.resumeId;if(nativeId)s.history?.forgetConversation(id,s.provider,nativeId);s.onRecord?.('agent_context_restart',{workerId:worker,provider:s.provider,peakPercent:s.contextUsage.peakPercent,threshold});}clearTimeout(s.limitTimer);clearTimeout(s.failureTimer);this.sessions.delete(key);s.onRetire?.();this.changed(id);}}
  stop(id,worker=MAIN_WORKER,{settle=async()=>{}}={}){
   const key=workerKey(id,worker);if(this.closing.has(key))return this.closing.get(key);
   const engine=this.engines.get(key);this.engines.delete(key);this.retire(id,worker);

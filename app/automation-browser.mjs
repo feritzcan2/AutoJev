@@ -1,8 +1,9 @@
+import {askJev} from './jev-policy.mjs';
 // Adapt the existing Jev engine to the scoped automation browser tools.
 // Run ownership and step limits stay in automationWorkflow; the agent assesses authority.
-export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,sourceUrls=[],recordId,resumeContext,isolatedResearch=false}={}){
+export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,sourceUrls=[],recordId,resumeContext,resumeSource=false,isolatedResearch=false}={}){
  if(mode!=='jev')return browser;
- let tabId=recordId?resumeContext?.tabId??null:null,activeSource=sourceUrl,restoreRecord=Boolean(recordId);
+ let tabId=recordId||resumeSource?resumeContext?.tabId??null:null,activeSource=sourceUrl,restoreRecord=Boolean(recordId);
  const sourceFor=url=>{
   if(sourceUrl)return sourceUrl;
   const parsed=new URL(url),host=parsed.hostname.replace(/^www\./,'');
@@ -20,14 +21,17 @@ export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,
   const current=browser.status(id);if(!current.ready)throw Error(current.message||'Jev için Chrome bağlantısını aç ve bağlantı isteğine izin ver.');
  };
  const native=async(id,name,args,session,options)=>{await ready(id);const response=await browser.call(id,name,args,session,{...options,automationWorkspaceId:id,...(readTabKey?{automationTabKey:activeSource?`source:${activeSource}`:readTabKey}:{}),...(activeSource?{automationSourceUrl:activeSource,automationSourceUrls:[...new Set([...sourceUrls,activeSource])]}:{})}),page=value(response);if(page.status==='browser_wait')throw Error('Jev Chrome bağlantısı bekliyor. Tarayıcıyı aç düğmesinden yeniden bağlan.');return {response,page};};
- const observed=({response,page})=>({pageContext:{url:page.url,tabId:page.tabId},siteWait:page.siteWait,readiness:page.reading?.readiness,content:[{type:'text',text:(page.url?`Page URL: ${page.url}\n`:'')+JSON.stringify(page)},...(response.content??[]).filter(p=>p.type!=='text')],action:{status:page.status,executed:page.executed,verified:page.verified,message:page.message}});
+ const observed=({response,page})=>({jevPage:page,pageContext:{url:page.url,tabId:page.tabId},siteWait:page.siteWait,readiness:page.reading?.readiness,content:[{type:'text',text:(page.url?`Page URL: ${page.url}\n`:'')+JSON.stringify(page)},...(response.content??[]).filter(p=>p.type!=='text')],action:{status:page.status,executed:page.executed,verified:page.verified,message:page.message}});
  const document=async(id,result,session)=>{
   // Preserve the original transport error (and the owned tab) instead of
   // masking it with a second observation of Chrome's error document.
   if(result.page.navigationError)throw Error(result.page.navigationError);
   return result.page.siteWait?observed(result):observed(await native(id,'browser_jev_observe',{tabId:result.page.tabId,scope:'document',full:true,fullReason:'context_loss'},session));
  };
- return {waitForOperations:id=>browser.waitForOperations(id),async currentUrl(id){
+ return {hasPage:()=>Boolean(tabId),waitForOperations:id=>browser.waitForOperations(id),async evaluateJev(id,state,questions,signal){
+  await ready(id);const {client}=await browser.connect(id);
+  return askJev(state,questions,{...await client.config(),signal});
+ },async currentUrl(id){
   await ready(id);if(!tabId)throw Error('Önce bir sayfa aç');
   // Reading the URL must not invalidate Jev's one-use pending decision.
   return (await browser.connect(id)).client.tab(tabId).page.url();
@@ -62,6 +66,7 @@ export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,
    tabId=result.page.tabId;restoreRecord=false;if(!tabId)throw Error('Jev sekmesi açılamadı');return document(id,result,session);
   }
   if(!tabId)throw Error('Önce bu tur için browser_open veya research_automation_source ile bir sayfa aç');
+  if(['browser_jev_fill_fields','browser_jev_click','browser_jev_list_options','browser_jev_select_option'].includes(name))return observed(await native(id,name,{...args,tabId},session,options));
   if(name==='browser_jev_inspect_form')return (await native(id,name,{tabId},session,options)).page;
   let tool,parameters={tabId};
  if(name==='browser_snapshot'){tool='browser_jev_observe';Object.assign(parameters,{scope:'document',full:true,fullReason:'context_loss'});}

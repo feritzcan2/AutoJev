@@ -44,6 +44,8 @@ export function automationProgress(snapshot,{dirty=false}={}){
  }else if(!reviewed){
   if(missing.length)set({title:latest?.kind==='interview'?'Kurulum için yanıtın gerekiyor':'Kurulumu tamamlayalım',label:'Bilgi bekliyor',detail:reply?.text??result.detail,next:'Eksik bilgiler: '+missing.join(', '),primary:action('message','Yanıt yaz')});
   else set({title:'Kurulum taslağı hazır',label:'İncelemen gerekiyor',detail:latest?.kind==='interview'?latest.summary:'Agent kriterleri ve kaynakları hazırladı.',next:'Profili ve işlem yetkisini kontrol edip kaydet. Her kaynak ilk işlendiği turda otomatik denenir.',primary:action('profile','Profili incele ve kaydet')});
+ }else if(a.sources?.length===0){
+  set({title:'Kaynak ekle',label:'Kaynak bekliyor',detail:'Profil kaydedildi. Takip için bir kaynak gerekli.',next:'Kaynaklar ekranından adres ekle veya agent’ın önerilerini incele.',primary:action('sources','Kaynakları aç'),secondary:[]});
  }else if(a.status==='enabled'){
   set({stage:2,tone:'success',title:'Düzenli takip açık',label:latest?.status==='completed'?'Son tur tamamlandı':'Sıradaki kontrol bekleniyor',detail:latest?.kind==='run'?latest.summary:'Kaynaklar belirlediğin aralıklarla kontrol edilecek.',next:`Kaynaklar kendi tarama aralıklarında kontrol edilir. Sonraki kontrol: ${a.nextRunAt?new Date(a.nextRunAt).toLocaleString('tr-TR'):'sırada'}. Uygulama açık kalmalı.`,primary:action('results','Sonuçları gör'),secondary:[action('stop','Takibi duraklat')]});
   const sources=snapshot.sources??[],blocked=sources.filter(s=>s.enabled&&s.blocked);

@@ -1,3 +1,4 @@
+import {unknownScorecard} from './helpers/scorecard.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {WorkspaceDatabase} from '../app/workspace-database.mjs';
@@ -14,30 +15,34 @@ function fixture(t){
  db.review(a.id);db.skipTrial(a.id);db.enable(a.id);
  const task=store.workspaces.tasks.enqueue(a.id,{operation:'scan',sourceUrl:source,sources:[source],lockKey:'source:'+source});
  const run=db.begin(a.id,{kind:'run',taskId:task.id});
- const flow=automationWorkflow({root:process.cwd(),db,run,signal:{aborted:false},browser:{call:async()=>({content:[{type:'text',text:`Page URL: ${source}\nLogin required`}]})},report:(id,runId,status,summary)=>db.finish(id,runId,status,summary)});
+ const flow=automationWorkflow({root:process.cwd(),db,run,signal:{aborted:false},browser:{call:async()=>({content:[{type:'text',text:`Page URL: ${source}\nObserved job ${detail}\n${'x'.repeat(20000)}`}]})},report:(id,runId,status,summary)=>db.finish(id,runId,status,summary)});
  return {store,db,id:a.id,run,call:(name,args)=>flow.call(a.id,run.id,name,args)};
 }
 
-test('configured CLI observations checkpoint and resume employer URLs without opening a browser',async t=>{
- const f=fixture(t),a=f.db.get(f.id);
- // Run a local read-only fixture through the real execFile integration.
- f.db.put({...a,sourceSettings:{[source]:{searchMethod:'tool',customTool:{command:process.execPath,args:['-e',`process.stdout.write(JSON.stringify({url:${JSON.stringify(detail)},text:'x'.repeat(20000)}))`]},fallback:'none'}}});
- const output=await f.call('run_workspace_source_tool',{args:[]});
+test('browser observations checkpoint and resume employer URLs',async t=>{
+ const f=fixture(t);
+ const output=await f.call('browser_open',{url:source});
  assert.ok(output.snapshot.nextOffset);assert.equal(output.url,source);
  const page=await f.call('browser_read_part',{snapshotId:output.snapshot.id,offset:output.snapshot.nextOffset});assert.ok(page.content[0].text.length);
- const progress=await f.call('save_scan_progress',{snapshotId:output.snapshot.id,pendingUrls:[detail],reason:'Inspect this detail then page two',cursor:'"args":[]'});
- assert.deepEqual(progress.scanProgress.pendingUrls,[detail]);assert.equal(progress.scanPlan.checkpoint.cursor,'"args":[]');
- assert.equal(f.db.run(f.run.id).browserSteps,0);
+ const progress=await f.call('save_scan_progress',{snapshotId:output.snapshot.id,pendingUrls:[detail],reason:'Inspect this detail then page two',cursor:'page=1'});
+ assert.deepEqual(progress.queue.pendingUrls,[detail]);assert.equal(progress.scanProgress.pendingCount,1);assert.equal(progress.scanPlan.checkpoint.cursor,'page=1');
+ assert.equal(f.db.run(f.run.id).browserSteps,1);
  assert.ok(f.db.run(f.run.id).observedLinks.includes(detail));
- const recorded=f.db.record(f.id,f.run.id,{key:detail,url:detail,title:'Engineer',summary:'Observed job',assessment:{status:'scored',score:80,summary:'Fits criteria',evidenceUrl:source,evidence:'Observed job from source tool',strengths:['Backend'],gaps:[],uncertainties:[]}});
+ const recorded=f.db.record(f.id,f.run.id,{key:detail,url:detail,title:'Engineer',summary:'Observed job',assessment:{status:'scored',scorecard:unknownScorecard(),score:80,summary:'Fits criteria',evidenceUrl:source,evidence:'Observed job from browser',strengths:['Backend'],gaps:[],uncertainties:[]}});
  assert.equal(recorded.sourceUrl,source);
- await assert.rejects(f.call('save_scan_progress',{snapshotId:output.snapshot.id,pendingUrls:['https://boards.example/invented'],reason:'Guess'}),/gözlenen/);
- const context=await f.call('get_automation_context',{});
+ const reported='https://boards.example/reported';
+ await f.call('save_scan_progress',{pendingUrls:[reported],reason:'Additional URL reported by the agent',cursor:'page=1'});
+ let context=await f.call('get_automation_context',{});
+ if(context.context){
+  let text='';
+  for(;;){text+=context.text;if(context.context.nextOffset===null)break;context=await f.call('read_automation_context_part',{contextId:context.context.id,offset:context.context.nextOffset});}
+  context=JSON.parse(text);
+ }
  assert.ok(context.sourceExamples.some(r=>r.url===detail));
  f.db.finish(f.id,f.run.id,'interrupted','Test interruption');
  const task=f.store.workspaces.tasks.enqueue(f.id,{operation:'scan',sourceUrl:source,sources:[source],lockKey:'source:'+source});
  const resumed=f.db.begin(f.id,{kind:'run',taskId:task.id});
- assert.deepEqual(resumed.scan.pendingUrls,[detail]);assert.equal(resumed.scanPlan.checkpoint.cursor,'"args":[]');
+ assert.deepEqual(resumed.scan.pendingUrls,[detail,reported]);assert.equal(resumed.scanPlan.checkpoint.cursor,'page=1');
 });
 
 test('unfinished coverage cannot escape validation by switching completed to failed or blocked',async t=>{
@@ -70,6 +75,6 @@ test('checkpoints permit observed cross-host discovery but never invented or ano
 
 test('table feedback identifies app-owned cells and lists usable keys',t=>{
  const f=fixture(t),table=f.db.get(f.id).table;
- assert.throws(()=>automationCells([{key:'source',value:'LinkedIn'}],table),/source ve title.*company, location, score/);
+ assert.deepEqual(automationCells([{key:'source',value:'LinkedIn'},{key:'title',value:'Ignored'},{key:'company',value:'Employer'}],table),{company:'Employer'});
  assert.deepEqual(automationCells([{key:'company',value:'Employer'},{key:'score',value:'72'}],table),{company:'Employer',score:'72'});
 });

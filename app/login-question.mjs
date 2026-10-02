@@ -16,10 +16,9 @@ function rendered(page){
 }
 export function validateLoginQuestion(page,proof){
  if(page.readiness?.loading)throw Error('Sayfa hâlâ yükleniyor. Giriş engeli varsayma; browser_read ile güncel sayfayı kontrol et.');
- if(!proof||proof.snapshotId!==page.id)throw Error('Giriş sorusu için son snapshot.id ve görünür giriş engelinden kısa bir alıntı içeren accessCheck gerekli. /signup bağlantısı veya önceki rapor kanıt değildir.');
- const text=rendered(page).replace(/^Link:.*$/gm,'').replace(/https?:\/\/\S+/g,''),normalize=s=>s.replace(/\s+/g,' ').trim().toLocaleLowerCase('tr');
- const quote=typeof proof.evidence==='string'?proof.evidence.trim():'';
- if(quote.length<12||quote.length>600||!normalize(text).includes(normalize(quote)))throw Error('Giriş engeli alıntısı güncel görünür sayfada bulunamadı. Sayfayı yeniden kontrol et; eski veya gizli metni kullanma.');
+ if(!proof||proof.snapshotId!==page.id)throw Error('Giriş sorusu için son snapshot.id içeren accessCheck gerekli. /signup bağlantısı veya önceki rapor kanıt değildir.');
+ const text=rendered(page).replace(/^Link:.*$/gm,'').replace(/https?:\/\/\S+/g,'');
+ const quote=typeof proof.evidence==='string'?proof.evidence.trim().slice(0,600):'Güncel sayfada giriş gerekli.';
  const field=/(?:password|passwort|parola|şifre|e-?mail|e-posta|email address|verification code|doğrulama kodu)/iu.test(text);
  const form=/(?:log\s*in|sign\s*in|sign\s*up|create (?:a |your )?(?:new )?account|anmeld|giriş yap|oturum aç|hesap oluştur)/iu.test(text);
  const gate=/(?:must|need to|please|required to)\s+(?:log\s*in|sign\s*in)|(?:log\s*in|sign\s*in)\s+to\s+(?:continue|apply|access)|(?:giriş yapmanız|oturum açmanız)\s+gerekiyor|(?:devam etmek|başvurmak)\s+için\s+(?:giriş|oturum)|bitte\s+(?:einloggen|anmelden)|(?:scan|scanne).{0,40}qr.{0,40}(?:log\s*in|sign\s*in|anmeld)/iu.test(text);

@@ -9,7 +9,7 @@
     "build": "node scripts/build.mjs",
     "engine:build": "node scripts/build-engine.mjs",
     "start": "pnpm build && pnpm engine:build && electron .",
-    "test": "node --test tests/*.test.mjs",
+    "test": "node scripts/build-source-tools.mjs && node --test tests/*.test.mjs",
     "check": "node scripts/check.mjs",
     "bootstrap": "node scripts/bootstrap.mjs",
     "test:ui": "node scripts/smoke-generic-workspace-ui.mjs",
@@ -19,8 +19,8 @@
     "test:agent": "node scripts/smoke-opencode.mjs",
     "demo:jev": "pnpm build && pnpm engine:build && node scripts/jev-demo.mjs",
     "test:jev": "node scripts/smoke-automation-jev.mjs",
+    "test:jev:tasks": "node scripts/smoke-jev-tasks.mjs",
     "test:jev:live": "node scripts/smoke-automation-jev.mjs --live",
-    "sources:install": "node scripts/install-source-tools.mjs",
     "test:jev:existing": "node scripts/smoke-jev-existing.mjs",
     "test:jev:options": "node scripts/smoke-jev-options.mjs",
     "test:jev:autocomplete": "node scripts/smoke-jev-autocomplete.mjs",
@@ -52,13 +52,16 @@
     "@xterm/addon-serialize": "0.14.0",
     "@xterm/headless": "6.0.0",
     "@xterm/xterm": "6.0.0",
+    "electron-updater": "6.8.9",
+    "node-html-parser": "6.1.13",
+    "pdfjs-dist": "6.3.289",
     "ws": "8.22.0",
-    "electron-updater": "6.8.9"
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "electron": "43.3.0",
-    "esbuild": "0.28.1",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "esbuild": "0.28.1"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

@@ -14,6 +14,13 @@
 .telegram-candidate { padding: 20px; border-top: 1px solid var(--border); }
 .telegram-candidate [data-candidate-actions] { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 .telegram-candidate .telegram-hint { margin: 12px 0 0; }
+.telegram-batch { display: block; max-width: none; margin-top: 18px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-app); }
+.telegram-batch[hidden] { display: none; }
+.telegram-batch-controls { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; }
+.telegram-batch-controls label { display: grid; gap: 6px; font-size: 12px; }
+.telegram-batch-controls input { width: 130px; }
+.telegram-batch-controls select { width: 260px; max-width: 100%; }
+.telegram-batch-controls button { flex-shrink: 0; }
 .telegram-candidate [data-pair] { padding: 14px; border: 1px solid var(--border); border-radius: 8px; margin-top: 14px; background: var(--bg-app); }
 .telegram-candidate [data-pair] p { margin: 0 0 10px; }
 .telegram-candidate [data-pair] input { display: block; width: 100%; font: 12px ui-monospace, monospace; margin-bottom: 10px; }
@@ -26,6 +33,7 @@
 .telegram-preferences label b { font-weight: 550; }
 .telegram-preferences label small { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
 .telegram-preferences input { flex-shrink: 0; margin: 0; }
+.telegram-preferences .telegram-auto-score { width: 130px; }
 .telegram-foot { padding: 14px 20px; margin: 0; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 12px; line-height: 1.6; }
 @media(max-width:1000px) { .telegram-token { flex-wrap: wrap; }.telegram-token label { flex-basis: 100%; } }
 .notifications-head { margin-bottom: 24px; }

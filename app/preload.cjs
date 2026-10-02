@@ -1,10 +1,10 @@
 const {contextBridge,ipcRenderer,webUtils}=require('electron');
 const subscribe=(name,callback)=>{const listener=(_,value)=>callback(value);ipcRenderer.on(name,listener);return()=>ipcRenderer.removeListener(name,listener);};
 contextBridge.exposeInMainWorld('jobloop',{
+  workerPreview:(id,worker='main')=>ipcRenderer.invoke('worker-preview',id,worker),
   saveAgentProfile:(id,role,input)=>ipcRenderer.invoke('agent-profile-save',id,role,input),
   instructionSnapshot:(id,options)=>ipcRenderer.invoke('instruction-snapshot',id,options),instructionEvent:(id,seq)=>ipcRenderer.invoke('instruction-event',id,seq),onInstructionsChange:callback=>subscribe('instructions-changed',callback),
  configurationCatalog:id=>ipcRenderer.invoke('configuration-catalog',id),
- workspaceSourceIntegrations:()=>ipcRenderer.invoke('workspace-source-integrations'),workspaceSourceInstructions:(id,url,version)=>ipcRenderer.invoke('workspace-source-instructions',id,url,version),workspaceSourceTest:(id,url)=>ipcRenderer.invoke('workspace-source-test',id,url),
  workspaceAnswer:(id,question,value)=>ipcRenderer.invoke('workspace-answer',id,question,value),
  automationSourceStop:(id,url)=>ipcRenderer.invoke('automation-source-stop',id,url),
  workspaces:()=>ipcRenderer.invoke('workspaces'),
@@ -12,17 +12,26 @@ contextBridge.exposeInMainWorld('jobloop',{
  workspaceStop:id=>ipcRenderer.invoke('workspace-stop',id),
  workspaceRestart:(id,options)=>ipcRenderer.invoke('workspace-restart',id,options),
  workspaceSettings:(id,input)=>ipcRenderer.invoke('workspace-settings',id,input),
+ automationProfileSave:(id,input,options)=>ipcRenderer.invoke('automation-profile-save',id,input,options),
  setupAgentSettings:(id,input)=>ipcRenderer.invoke('setup-agent-settings',id,input),setupAgentRestart:id=>ipcRenderer.invoke('setup-agent-restart',id),
  workspaceSnapshot:id=>ipcRenderer.invoke('workspace-snapshot',id),
  workspaceTabs:id=>ipcRenderer.invoke('workspace-tabs',id),
  focusWorkspaceTab:(id,tabId)=>ipcRenderer.invoke('focus-workspace-tab',id,tabId),
  closeWorkspaceTabs:(id,tabs)=>ipcRenderer.invoke('close-workspace-tabs',id,tabs),
  automationSourceSave:(id,url,input)=>ipcRenderer.invoke('automation-source-save',id,url,input),
+ automationSourceLibrary:url=>ipcRenderer.invoke('automation-source-library',url),
+ automationSourceLibraryFile:()=>ipcRenderer.invoke('automation-source-library-file'),
+ automationSourceExport:id=>ipcRenderer.invoke('automation-source-export',id),
+ automationSourceImport:(id,sources)=>ipcRenderer.invoke('automation-source-import',id,sources),
  automationSourcesInterval:(id,intervalMinutes)=>ipcRenderer.invoke('automation-sources-interval',id,intervalMinutes),
  automationSourceModes:(id,mode)=>ipcRenderer.invoke('automation-source-modes',id,mode),
   automationSourceRun:(id,url)=>ipcRenderer.invoke('automation-source-run',id,url),
+ automationSourceResume:(id,url,runId,response)=>ipcRenderer.invoke('automation-source-resume',id,url,runId,response),
+  automationRecordsScore:(id,itemIds)=>ipcRenderer.invoke('automation-records-score',id,itemIds),
   automationRecordRun:(id,itemId,kind,input={})=>ipcRenderer.invoke('automation-record-run',id,itemId,kind,input),
  automationRetryLater:(id,key,cancel=false)=>ipcRenderer.invoke('automation-retry-later',id,key,cancel),
+ automationAttentionDismiss:(id,key,dismissKey)=>ipcRenderer.invoke('automation-attention-dismiss',id,key,dismissKey),
+ automationSourceDraft:(id,draftId,accept)=>ipcRenderer.invoke('automation-source-draft',id,draftId,accept),
  automationSourceAdd:(id,input)=>ipcRenderer.invoke('automation-source-add',id,input),
  automationSourceRemove:(id,url)=>ipcRenderer.invoke('automation-source-remove',id,url),
  terminalMessage:(id,text,worker='main')=>ipcRenderer.invoke('terminal-message',id,text,worker),
@@ -36,7 +45,7 @@ contextBridge.exposeInMainWorld('jobloop',{
   workspaceTransition:(id,itemId,action)=>ipcRenderer.invoke('workspace-transition',id,itemId,action),
   addWorker:(id,input)=>ipcRenderer.invoke('worker-add',id,input),startWorker:(id,worker)=>ipcRenderer.invoke('worker-start',id,worker),stopWorker:(id,worker)=>ipcRenderer.invoke('worker-stop',id,worker),restartWorker:(id,worker)=>ipcRenderer.invoke('worker-restart',id,worker),removeWorker:(id,worker)=>ipcRenderer.invoke('worker-remove',id,worker),
   saveAccountCredentials:(id,input)=>ipcRenderer.invoke('account-credentials-save',id,input),removeAccountCredentials:id=>ipcRenderer.invoke('account-credentials-remove',id),
-  telegramSendUnsentJobs:id=>ipcRenderer.invoke('telegram-send-unsent-jobs',id),
+  telegramSendUnsentJobs:(id,input)=>ipcRenderer.invoke('telegram-send-unsent-jobs',id,input),
   telegramStatus:id=>ipcRenderer.invoke('telegram-status',id),telegramConfigure:(id,input)=>ipcRenderer.invoke('telegram-configure',id,input),telegramPair:id=>ipcRenderer.invoke('telegram-pair',id),telegramUnlink:id=>ipcRenderer.invoke('telegram-unlink',id),telegramPreferences:(id,input)=>ipcRenderer.invoke('telegram-preferences',id,input),telegramRetry:id=>ipcRenderer.invoke('telegram-retry',id),
   renameWorkspace:(id,name)=>ipcRenderer.invoke('rename-workspace',id,name),deleteWorkspace:id=>ipcRenderer.invoke('delete-workspace',id),
 
@@ -53,5 +62,5 @@ contextBridge.exposeInMainWorld('jobloop',{
   retryJobRank:(id,jobId)=>ipcRenderer.invoke('retry-job-rank',id,jobId),
   saveRankSettings:(id,input)=>ipcRenderer.invoke('save-rank-settings',id,input),
   saveRankThreshold:(id,value)=>ipcRenderer.invoke('save-rank-threshold',id,value),queueRankedJob:(id,jobId)=>ipcRenderer.invoke('queue-ranked-job',id,jobId),
-  sourceIntegrations:()=>ipcRenderer.invoke('source-integrations'),sourceInstructions:(id,sourceId)=>ipcRenderer.invoke('source-instructions',id,sourceId),testSource:(id,sourceId)=>ipcRenderer.invoke('source-test',id,sourceId),openSourceTab:(id,sourceId)=>ipcRenderer.invoke('open-source-tab',id,sourceId),openApplicationTab:(id,jobId)=>ipcRenderer.invoke('open-application-tab',id,jobId),recoverQuestion:(id,questionId)=>ipcRenderer.invoke('recover-question',id,questionId),openQuestionTab:(id,questionId)=>ipcRenderer.invoke('open-question-tab',id,questionId),chromeProfiles:()=>ipcRenderer.invoke('chrome-profiles'),catalog:()=>ipcRenderer.invoke('catalog'),promptCatalog:()=>ipcRenderer.invoke('prompt-catalog'),prompts:id=>ipcRenderer.invoke('prompts',id),candidates:()=>ipcRenderer.invoke('candidates'),saveProfile:p=>ipcRenderer.invoke('save-profile',p),saveSource:(candidate,source)=>ipcRenderer.invoke('save-source',candidate,source),deleteSource:(candidate,id)=>ipcRenderer.invoke('delete-source',candidate,id),saveApplicationPolicy:(candidate,policy)=>ipcRenderer.invoke('save-application-policy',candidate,policy),terminalOutput:(id,worker)=>ipcRenderer.invoke('terminal-output',id,worker),workerTranscript:(id,worker)=>ipcRenderer.invoke('worker-transcript',id,worker),input:(id,text,worker,session)=>ipcRenderer.invoke('terminal-input',id,text,worker,session),resize:(id,rows,cols,worker,session)=>ipcRenderer.invoke('terminal-resize',id,rows,cols,worker,session),answer:(candidate,id,text)=>ipcRenderer.invoke('answer',candidate,id,text),setManualJobStatus:(candidate,id,outcome)=>ipcRenderer.invoke('set-manual-job-status',candidate,id,outcome),queueApplication:(candidate,id)=>ipcRenderer.invoke('queue-application',candidate,id),reclaim:(candidate,id)=>ipcRenderer.invoke('reclaim',candidate,id),openLink:url=>ipcRenderer.invoke('open-link',url),onChange:callback=>subscribe('changed',callback),onAgentEvent:callback=>subscribe('agent-event',callback)
+  openSourceTab:(id,sourceId)=>ipcRenderer.invoke('open-source-tab',id,sourceId),openApplicationTab:(id,jobId)=>ipcRenderer.invoke('open-application-tab',id,jobId),recoverQuestion:(id,questionId)=>ipcRenderer.invoke('recover-question',id,questionId),openQuestionTab:(id,questionId)=>ipcRenderer.invoke('open-question-tab',id,questionId),chromeProfiles:()=>ipcRenderer.invoke('chrome-profiles'),catalog:()=>ipcRenderer.invoke('catalog'),promptCatalog:()=>ipcRenderer.invoke('prompt-catalog'),prompts:id=>ipcRenderer.invoke('prompts',id),candidates:()=>ipcRenderer.invoke('candidates'),saveProfile:p=>ipcRenderer.invoke('save-profile',p),saveSource:(candidate,source)=>ipcRenderer.invoke('save-source',candidate,source),deleteSource:(candidate,id)=>ipcRenderer.invoke('delete-source',candidate,id),saveApplicationPolicy:(candidate,policy)=>ipcRenderer.invoke('save-application-policy',candidate,policy),terminalOutput:(id,worker)=>ipcRenderer.invoke('terminal-output',id,worker),workerTranscript:(id,worker)=>ipcRenderer.invoke('worker-transcript',id,worker),input:(id,text,worker,session)=>ipcRenderer.invoke('terminal-input',id,text,worker,session),resize:(id,rows,cols,worker,session)=>ipcRenderer.invoke('terminal-resize',id,rows,cols,worker,session),answer:(candidate,id,text)=>ipcRenderer.invoke('answer',candidate,id,text),setManualJobStatus:(candidate,id,outcome)=>ipcRenderer.invoke('set-manual-job-status',candidate,id,outcome),queueApplication:(candidate,id)=>ipcRenderer.invoke('queue-application',candidate,id),reclaim:(candidate,id)=>ipcRenderer.invoke('reclaim',candidate,id),openLink:url=>ipcRenderer.invoke('open-link',url),onChange:callback=>subscribe('changed',callback),onAgentEvent:callback=>subscribe('agent-event',callback)
 });

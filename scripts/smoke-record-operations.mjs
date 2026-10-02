@@ -77,7 +77,7 @@ try{
  const {id,directItem}=workspaces[0];await page.selectOption('#candidates',id);await page.locator('[data-view=board]').click();
  const directRow=page.locator(`[data-result-id="${directItem.id}"]`);
  assert.equal(await directRow.locator('[data-record-direct=execute]').textContent(),'Başvur');
- await directRow.locator('[data-record-operation=prepare]').waitFor();
+ await directRow.locator('[data-record-operation=prepare]').waitFor({state:'attached'});
  await directRow.locator('.record-row-menu').click();
  await directRow.locator('[data-record-direct=execute]').click();await waitStart();
  assert.equal(await page.locator('dialog.automation-record-review').isVisible(),false);

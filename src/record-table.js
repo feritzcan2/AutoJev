@@ -1,6 +1,6 @@
 // Shared table structure and typed values. Templates supply record-specific cells
 // and actions, so existing application controls keep their behavior.
-export function recordTable(columns,{className='jobs-table',header,scrollLeft=0,onScroll=()=>{}}={}){
+export function recordTable(columns,{className='jobs-table',header,scrollLeft=0,onScroll=()=>{},onLayout=()=>{}}={}){
  const wrap=document.createElement('div');wrap.className='jobs-table-wrap';
  const table=document.createElement('table');table.className=className;
  const head=document.createElement('thead'),row=document.createElement('tr'),body=document.createElement('tbody');
@@ -18,6 +18,7 @@ export function recordTable(columns,{className='jobs-table',header,scrollLeft=0,
   left.disabled=at<=2;right.disabled=at>=max-2;position.max=String(max);position.value=String(at);position.setAttribute('aria-valuetext',`${Math.round(max?at/max*100:0)}%`);
   const bounds=wrap.getBoundingClientRect(),cells=[...row.cells],before=cells.filter(c=>c.getBoundingClientRect().left<bounds.left-2).length,after=cells.filter(c=>c.getBoundingClientRect().right>bounds.right+2).length;
   hint.textContent=[before?`${before} sütun solda`:'',after?`${after} sütun sağda`:''].filter(Boolean).join(' · ');hint.title='Tüm sütunları görmek için okları veya kaydırma çubuğunu kullan.';
+  onLayout();
  };
  const move=direction=>wrap.scrollBy({left:direction*Math.max(240,wrap.clientWidth*.65),behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
  left.onclick=()=>move(-1);right.onclick=()=>move(1);position.oninput=()=>{wrap.scrollLeft=Number(position.value);};

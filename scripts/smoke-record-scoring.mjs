@@ -39,14 +39,14 @@ try{
  const context=await tool('get_automation_context');assert.equal(context.assignedOperation.kind,'score');assert.equal(context.automation.criteria.ranking,workspace.criteria.ranking);
  const scoreInput={itemId:item.id,status:'scored',score:86,summary:'Yetkinlik 90×%50 + deneyim 70×%30 + tercihler 100×%20 = 86.',evidenceUrl:url,evidence:'Remote work. Five years of JavaScript experience.',strengths:['JavaScript ve uzaktan çalışma uyumu'],gaps:[],uncertainties:['Maaş açıklanmamış']};
  for(let i=1;i<=3;i++){
-  const error=await tool('record_automation_score',scoreInput,true);
+  const error=await tool('record_automation_score',{...scoreInput,score:101},true);
   assert.match(error,i===3?/Puanlama durduruldu.*3 kez/:new RegExp(`${i}/3`));
  }
  await page.waitForFunction(async id=>(await window.jobloop.workspaceSnapshot(id)).activeRuns.length===0,workspace.id);
  await row.locator('[data-column=status]').getByText('İşlem engellendi',{exact:true}).waitFor();
  await page.locator('[data-view=agent]').click();
  const warning=page.locator('[data-issue-id^="tool-failure:"]');await warning.getByText('Tekrarlanan hata · Görev durduruldu',{exact:true}).waitFor();
- assert.match(await warning.textContent(),/gözlemle/);await page.screenshot({path:path.join(data,'repeated-error.png'),fullPage:true});
+ assert.match(await warning.textContent(),/100/);await page.screenshot({path:path.join(data,'repeated-error.png'),fullPage:true});
  await warning.getByRole('button',{name:'Kaydı göster',exact:true}).click();
  await row.locator('[data-record-retry]').click();
  await page.waitForFunction(async id=>(await window.jobloop.workspaceSnapshot(id)).activeRuns.some(run=>run.recordOperation==='score'),workspace.id);

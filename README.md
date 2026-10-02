@@ -14,10 +14,19 @@ bağlantılarını kullanır. Diğer otomasyonlar kendi konuşmasına, kaynaklar
 ayarlarına, yetkilerine ve sonuç geçmişine sahiptir. Tekrar kullanılabilir template’ler
 kaydedilebilir ve JSON dosyasıyla paylaşılabilir. Arayüz Türkçedir.
 
+**Kaynaklar → Listeden ekle** ile yerleşik katalogdan, public JSON adresinden veya
+dosyadan kaynak seçebilirsin. Her kaynak düzenlenebilir çalışma talimatı ve isteğe
+bağlı bir CLI aracı taşır. FreeHire, LinkedIn, Jobindex, Jobnet, Jobdanmark ve Jobbank
+araçları uygulamayla gelir; Bun kurulumu gerekmez. Agent kaynak talimatını okur.
+Bağlı CLI varsa onu kendi terminalinden çalıştırır; diğer kaynaklarda yönetilen
+tarayıcıyı kullanır. Kaynakları
+**Dışa aktar** ile paylaşabilirsin; sorgular ve çalışma geçmişi dışa aktarılmaz.
+[Kaynak listesi ve katkı biçimi](source-library/README.md).
+
 **Başlangıç:** Yeni çalışma alanı → template seç → Agent ile konuş → profili kaydet →
 bir kez veya düzenli çalıştır. Her kaynağın ilk turu otomatik denemedir. Agent arama,
-sayfalama ve detay okuma yöntemlerini test edip kaynak skill’ine kaydeder;
-sonraki turlar bu bilgiyi güncel kriterlerle kullanır. Zamanlama için uygulama ve bilgisayar açık
+sayfalama, detay okuma ve erişimi kaynak aracı veya tarayıcı üzerinden kontrol eder;
+sonraki turlar güncel kriterlerle normal taramayı yapar. Zamanlama için uygulama ve bilgisayar açık
 kalmalıdır. [Otomasyon rehberi](docs/automation-templates.md) çalışma modlarını,
 denemenin kapsamını ve mevcut sınırları açıklar. Uygulamanın eski adı JobLoop’tur; dağıtım kimliği ve veri
 klasörü mevcut JobLoop kurulumlarıyla uyumluluk için korunur.
@@ -57,8 +66,7 @@ yeniden aç. Kayıtlı profil ve CV korunur; hazırlık yeniden denenir.
    Chrome’da `chrome://inspect/#remote-debugging` bağlantısını aç ve bağlantı
    isteğine izin ver. Agent’ın kendi tarayıcı modunda araçları agent içinde etkinleştir.
 3. Jev kullanacaksan **Yapılandırma → Jev** bölümünden TypeSafe API anahtarını
-   kaydet ve bağlantıyı test et. Hazır kaynakların CLI araç modu ayrıca **Bun** ister;
-   web ve tarayıcı aramaları için Bun gerekmez.
+   kaydet ve bağlantıyı test et. Kaynaklar seçili tarayıcı üzerinden taranır.
 4. **Template’ler** bölümünden başla ve çalışma alanı profilini kontrol et. İş arama
    template’inde aday profilini ve CV’yi ekle; başvuru yetkisini ve tercihleri seç.
 
@@ -87,7 +95,7 @@ Telegram kurulumu için [Telegram rehberine](docs/telegram.md) bak.
 
 Gereksinimler: Node.js 22.22.3+, pnpm 10.14.0, Rust 1.90.0, işletim sisteminin
 yerel derleme araçları. Windows’ta MSVC araçları, macOS’ta Xcode Command Line Tools
-gerekir. Paket üretiminde Bun da kullanılır.
+gerekir.
 
 ```sh
 git clone https://github.com/feritzcan2/AutoJev.git
@@ -99,8 +107,7 @@ pnpm start
 
 TermLoop’un gereken Rust modülleri ve terminal paketleri sabit commit ve
 SHA-256 manifestiyle `vendor/termloop` içinde bulunur; komşu bir TermLoop deposu
-gerekmez. Geliştirmede hazır kaynak CLI araçlarını kullanmak için Bun kurup
-`pnpm sources:install` çalıştır. Jev anahtarı uygulamadan kaydedilebilir;
+gerekmez. Jev anahtarı uygulamadan kaydedilebilir;
 geliştirme alternatifi `.env.jev.example` dosyasıdır. Gerçek anahtarları Git’e ekleme.
 
 ```sh

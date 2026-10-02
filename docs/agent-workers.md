@@ -1,5 +1,28 @@
 # Agent workers
 
+## Instruction layers
+
+Every automation session receives the same small set of layers, in this order:
+
+1. **AGENTS.md** (`AUTOMATION_INSTRUCTIONS`, about 6 KB): shared rules for every
+   task — start-of-turn steps, Turkish user-facing language, authority and
+   secrets, browser basics, CAPTCHA handling, recording findings, finishing.
+   It contains no role-, template- or site-specific text.
+2. **Role profile** as the provider system prompt: `web-interview`, `web-trial`
+   or `web-run`. Each describes only its own task. The user can edit it per
+   workspace on Agent → Talimatlar.
+3. **Jev block** (`JEV_TASK_INSTRUCTIONS`): appended once to the role profile,
+   only when the workspace browser mode is Jev. Playwright sessions never see it.
+4. **First message** (`automationPrompt`): the assigned task, continuation state
+   and, for Jev source work, a short delegation reminder.
+5. **Context** from `get_automation_context`: saved criteria, assigned source or
+   record, `scanInstructions`/`scanPlan` for source scans, `scoringPolicy` for
+   templates with a scoring operation. Detailed coverage rules live here, not in
+   the system prompt.
+
+Changing any instruction text changes the protocol hash, so resumed
+conversations start fresh after an update.
+
 ## Workspace conversations
 
 In a configured web workspace, **Agent ile geliştir** opens a conversation that
@@ -40,10 +63,31 @@ Profile or permission changes trigger a context refresh on the next message;
 current records are looked up only when needed for the request.
 
 Questions raised in this conversation do not block source scans or record tasks.
-Profile changes are saved as a draft and shown on **Çalışma alanı profili**. Running
-work continues with the saved profile. After the active tasks finish, review and
-save the draft to apply it. Initial setup uses the same dedicated conversation
+Profile changes are proposed as a draft. Chat shows **Taslağı incele ve kaydet**
+above the timeline, linking to **Çalışma alanı profili**. **Profili kaydet** stays
+visible at the top of the profile and is available while workers run. Saving
+validates the profile, stops the current workers, applies and reviews the profile,
+then resumes enabled tracking with the new criteria. The setup conversation stays
+open. Completed source trials retain their original result, run and timestamp;
+profile edits restart ordinary scans without repeating those trials. New sources
+still receive their own first trial. A durable pending update prevents old work from starting during this switch
+or after an application restart. If stopping fails, the update remains visible for
+retry and the active profile is unchanged. Paused tracking stays paused.
+Initial setup uses the same dedicated conversation
 worker from its first message; Worker 1 remains available for source tasks.
+
+Source addresses are managed on **Kaynaklar**. Adding or removing a source keeps
+the profile review, other source workers, and their scan progress. A source with
+an active task must be stopped before removal. New sources still require their
+own first trial. The profile form contains workflow instructions and criteria;
+its save action cannot change source addresses.
+
+The setup agent saves source suggestions separately from profile changes,
+including during onboarding. Chat links to **Kaynak önerilerini incele**; the
+Sources page lists additions and removals and lets the user apply or discard
+them. Saving either draft preserves the other. Existing combined profile drafts
+are split when loaded. A profile can be saved before sources are chosen; the
+next step then opens Sources.
 
 The setup page has its own provider, model, reasoning and permission settings.
 They are pinned independently of source-worker settings. Saving an unchanged
@@ -81,6 +125,14 @@ all workers. Worker 1 is retained as the first source/task worker.
 Every worker searches, ranks listings and processes applications from the shared
 queue. Existing workers with a saved role are upgraded automatically. Candidate
 authorization and source settings determine which application actions are allowed.
+
+User-requested scoring, preparation, applications and verification take priority
+over queued source searches, even when those searches were queued earlier. Each
+scheduler tick assigns eligible user requests across all workspaces before
+starting background work. Running source trials can share the worker pool with
+record tasks. Active tasks finish normally; the next available compatible worker
+takes the user request. Browser ownership, pending answers and authorization
+checks still apply, and queued background work resumes when capacity is available.
 
 Workers share candidate facts, questions, listings, retries and the application
 target. A persisted task reserves its job or search source before a provider is

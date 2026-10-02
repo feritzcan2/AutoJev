@@ -12,7 +12,7 @@ use termloop_launch::{AgentObservationLaunch, AgentObservationLaunchTransport, L
 use termloop_terminal::{TerminalEvent, TerminalService, TerminalGrid, TerminalGridMemory};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-const TEMPLATE: PromptTemplate = PromptTemplate { id: "jobloop.application-assistant", version: 1, authored_body: "You are JobLoop's job application assistant. Read AGENTS.md and the referenced skills. Read the candidate profile and application history through JobLoop MCP. Work only within the recorded authorization. Report actual work through MCP; never invent submission confirmation." };
+const TEMPLATE: PromptTemplate = PromptTemplate { id: "jobloop.application-assistant", version: 2, authored_body: "You are the assistant for one AutoJev web automation. Read AGENTS.md, call get_automation_context, then complete only the assigned task through the automation tools. Never report a result without evidence." };
 fn emit(value:Value){let mut out=io::stdout().lock();let _=writeln!(out,"{value}");let _=out.flush();}
 fn field<'a>(value:&'a Value,key:&str)->Result<&'a str,String>{value[key].as_str().filter(|s|!s.is_empty()).ok_or_else(||format!("Missing {key}"))}
 fn now()->u64{std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64}
@@ -49,7 +49,9 @@ impl Engine {
                 let mut runtime=ObservedSession::new(id.into(),1,provider.into(),self.terminal.clone());
                 let conversation=v["resumeId"].as_str().map(|identity|ConversationHandle::from_native(provider,identity.into())).transpose().map_err(|e|e.to_string())?;
                 let profile=personal_agent::for_launch(v)?;
-                let instructions=profile.as_ref().map(termloop_launch::personal_agent_provider_instructions).transpose().map_err(|e|e.to_string())?;
+                // The upstream template starts with a metadata header (id, version,
+                // bindings) that means nothing to the model; keep the body only.
+                let instructions=profile.as_ref().map(termloop_launch::personal_agent_provider_instructions).transpose().map_err(|e|e.to_string())?.map(|text|personal_agent::without_template_header(&text));
                 let mut request=LaunchRequest::interactive(provider,cwd,if profile.is_some() { &termloop_launch::PERSONAL_AGENT_TEMPLATE } else { &TEMPLATE });
                 if let Some(ref instructions)=instructions {request.provider_instructions_source=Some(&termloop_launch::PERSONAL_AGENT_TEMPLATE);request.provider_instructions=Some(instructions);}
                 let project_trust=workspace_trust(v);request.codex_project_trust=project_trust;
@@ -85,7 +87,10 @@ impl Engine {
                         if let Some(grid)=TerminalGrid::new(rows as u16,cols as u16){self.terminal.seed_terminal_grids(TerminalGridMemory{latest:Some(grid),sessions:vec![(id.into(),grid)]});}
                     }
                 }
-                spawn_agent_terminal(&self.terminal,id,1,cwd,&launch).map_err(|e|e.to_string())?;
+                if provider=="opencode" {
+                    let document_directory=if v["opencodeDocumentGuard"].as_bool()==Some(true) {Some(Path::new(directory))} else {None};
+                    opencode::spawn(&self.terminal,id,cwd,&launch,v.get("opencodeCompaction"),document_directory)?;
+                } else {spawn_agent_terminal(&self.terminal,id,1,cwd,&launch).map_err(|e|e.to_string())?;}
                 if let Some(prompt)=launch.initial_input_submission(){runtime.enqueue(prompt);}
                 let mut subscription=self.terminal.subscribe(id,1).map_err(|e|e.to_string())?;
                 let output_session=id.to_owned();

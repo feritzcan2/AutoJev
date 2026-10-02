@@ -1,5 +1,5 @@
 import {captureVerificationTargets,clickVerificationCheckbox} from './jev-verification-checkbox.mjs';
-import {privateJevPage} from './jev-page.mjs';
+import {privateJevPage,retryJevRead} from './jev-page.mjs';
 import {accessBarrier,SiteWaitError} from './site-access.mjs';
 import {foreignEmployerCheckpoint} from './jev-job-identity.mjs';
 import {observeFormFrame,actFormFrame,usableFormFrame} from './jev-frame-actions.mjs';
@@ -105,15 +105,16 @@ export class JevBrowser {
           this.abort.signal.throwIfAborted();
           const {targetInfos}=await transport.call('Target.getTargets');
           const live=new Map(targetInfos.filter(t=>t.type==='page').map(t=>[t.targetId,t]));
-          let contextId=saved?.endpoint===endpoint?saved.contextId:null;
           const trusted=[...(saved?.targets??[]),...this.checkpoints.filter(c=>c?.browser==='Jev Chrome').map(c=>c.tabId)];
           // A reconnect may change the address, but a different browser instance
-          // must not inherit old ownership. Legacy checkpoints need profile proof.
+          // must not inherit old ownership. A saved context ID is not proof of
+          // the selected profile: verify it through a window opened in that
+          // profile before restoring any live tabs, including saved home tabs.
           const recoverable=!saved||sameBrowserInstance(saved.endpoint,endpoint);
-          if(recoverable&&!contextId&&trusted.some(id=>live.has(id)))contextId=await this.profileContext(transport);
+          const contextId=recoverable&&trusted.some(id=>live.has(id))?await this.profileContext(transport):null;
           const restored=restoredTargets(saved,this.checkpoints,live,contextId);
           this.homeId=restored.includes(saved?.homeId)?saved.homeId:null;
-          this.windowId=saved?.endpoint===endpoint?saved?.windowId:null;
+          this.windowId=saved?.endpoint===endpoint&&saved.contextId===contextId?saved.windowId:null;
           this.tabJobs=new Map(restored.filter(id=>typeof saved?.jobs?.[id]==='string').map(id=>[id,saved.jobs[id]]));
           this.tabSearches=new Map(restored.filter(id=>typeof saved?.searches?.[id]==='string').map(id=>[id,saved.searches[id]]));
           this.automationTabs=new Map(restored.filter(id=>typeof saved?.automationTabs?.[id]==='string').map(id=>[id,saved.automationTabs[id]]));
@@ -367,14 +368,18 @@ export class JevBrowser {
       return {closed:[...(jobs?.closed??[]),...research.closed],retained:[...(jobs?.retained??[]),...research.retained]};
     }finally{this.busy=false;}
   }
-  async closeFinishedAutomationRunTabs(runId,workspaceId,{sourceScan=false,pendingTabIds=[]}={}){
+  async closeFinishedAutomationRunTabs(runId,workspaceId,{sourceScan=false,pendingTabIds=[],resetSource=null,sourceRunIds=[]}={}){
     if(this.closed||this.busy||!this.opening||this.connection==='existing'&&!this.browser?.isConnected())return {deferred:true};
     this.busy=true;
     try{
       const closed=[],retained=[],pending=new Set(pendingTabIds);
       for(const slot of [...this.tabs.values()]){
-        if(slot.id===this.homeId||slot.page.isClosed()||this.automationRuns.get(slot.id)!==runId||this.automationWorkspaces.get(slot.id)!==workspaceId||this.tabJobs.has(slot.id)||this.tabSearches.has(slot.id))continue;
-        if(pending.has(slot.id)||slot.verification||this.urlHashes.get(slot.id)!==urlHash(slot.page.url())||sourceScan&&!await disposableResearchTab(slot)){retained.push(slot.id);continue;}
+        if(slot.id===this.homeId||slot.page.isClosed()||this.automationWorkspaces.get(slot.id)!==workspaceId||this.tabJobs.has(slot.id)||this.tabSearches.has(slot.id))continue;
+        const owner=this.automationRuns.get(slot.id);
+        if(resetSource){
+          if(this.automationSources.get(slot.id)!==resetSource||!sourceRunIds.includes(owner)||this.automationTabs.get(slot.id)?.startsWith('record:'))continue;
+        }else if(owner!==runId)continue;
+        if(!resetSource&&(pending.has(slot.id)||slot.verification||this.urlHashes.get(slot.id)!==urlHash(slot.page.url())||sourceScan&&!await disposableResearchTab(slot))){retained.push(slot.id);continue;}
         try{await slot.page.close({runBeforeUnload:false});this.forgetTab(slot.id);closed.push(slot.id);}catch{retained.push(slot.id);}
       }
       if(closed.length)await this.onTabsClosed(closed);
@@ -392,6 +397,9 @@ export class JevBrowser {
     }
   }
   async observe(slot){
+    return retryJevRead(slot.page,()=>this.observeOnce(slot));
+  }
+  async observeOnce(slot){
     if(this.siteAccess&&slot.http?.status===429){
       const probe=slot.accessProbe,url=probe?.url??slot.http.url;
       const wait=slot.accessChecked===slot.http&&this.siteAccess.status(url)||this.siteAccess.complete(url,probe?.token,{...slot.http,reason:'rate_limit'});
@@ -404,7 +412,7 @@ export class JevBrowser {
     slot.pending=null;const previousUploads=slot.uploads;slot.uploads=new Map();
     const observed=await slot.page.evaluate(this.reader);if(!observed)throw Error('Sayfa yükleniyor; tekrar gözlemle.');
     if(this.siteAccess&&/^https?:/.test(observed.url)){
-      const reason=accessBarrier({...slot.http,text:observed.text}),probe=slot.accessProbe;
+      const reason=accessBarrier({...slot.http,title:observed.title,text:observed.text}),probe=slot.accessProbe;
       const wait=reason&&slot.accessChecked===slot.http&&this.siteAccess.status(observed.url)||this.siteAccess.complete(probe?.url??observed.url,probe?.token,{...slot.http,reason});slot.accessProbe=null;slot.accessChecked=slot.http;
       if(wait)throw Object.assign(new SiteWaitError(wait),{url:observed.url,tabId:slot.id});
     }
@@ -445,14 +453,7 @@ export class JevBrowser {
     return JSON.stringify((await slot.page.evaluate(this.reader))?.marker)===JSON.stringify(page.marker);
   }
   async observeAfterAction(slot){
-    // Navigation may replace the execution context between a click and read.
-    // Retry only the read, never the action or a closed/disconnected browser.
-    for(let attempt=0;;attempt++){
-      try{return await this.observe(slot);}catch(error){
-        if(attempt>=2||slot.page.isClosed()||!/execution context was destroyed|cannot find context|context.*destroyed|Sayfa yükleniyor/i.test(error.message))throw error;
-        await new Promise(resolve=>setTimeout(resolve,150*(attempt+1)));
-      }
-    }
+    return this.observe(slot);
   }
   async execute(slot,pending,text,state={}){
     const {action,observed,operation}=pending;
@@ -607,6 +608,17 @@ export class JevBrowser {
         const retained=recordScope&&state.automationResumeRecord&&(reusable.find(s=>s.id===state.automationPreferredTabId)??reusable.at(-1));
         let slot=retained||(state.automationFreshTab?null:reusable.find(s=>s.page.url()===args.url)??reusable.find(s=>s.id===state.automationPreferredTabId)??reusable.find(s=>this.automationTabs.get(s.id)===state.automationTabKey)??reusable[0]);
         if(!slot){
+          // Each detail can require a fresh transport retry. Retire this run's
+          // failed Chrome error tabs before allocating another, including an
+          // error document committed after goto rejected. Keep real pages,
+          // drafts, user navigation and other task owners untouched.
+          const closed=[];
+          if(sourceScope&&!recordScope)for(const failed of [...this.tabs.values()]){
+            if(!accessible(failed)||this.automationRuns.get(failed.id)!==owner||this.automationTabs.get(failed.id)!==state.automationTabKey||failed.verification||!failed.navigationFailed||!failed.page.url().startsWith('chrome-error://'))continue;
+            try{await failed.page.close({runBeforeUnload:false});}catch{throw Error('Önceki hata sekmesi kapatılamadı; yeni kontrol sekmesi açılmadı.');}
+            this.forgetTab(failed.id);closed.push(failed.id);
+          }
+          if(closed.length){await this.onTabsClosed(closed);await this.persistTabs();}
           const page=this.connection==='existing'?await this.openTabFrom(await this.home()):await context.newPage();
           slot=await this.track(page.context(),page);this.automationTabs.set(slot.id,state.automationTabKey);if(state.automationWorkspaceId)this.automationWorkspaces.set(slot.id,state.automationWorkspaceId);if(state.automationSourceUrl)this.automationSources.set(slot.id,state.automationSourceUrl);await this.persistTabs();
         }
@@ -801,7 +813,10 @@ export class JevBrowser {
       const slot=this.tabs.get(value?.tabId);
       if(slot){
         value=presentObservation(slot,value,args.scope==='document'?{full:true,standalone:true}:observationPolicy(name,args,value.status));
-        if(name==='browser_jev_observe'&&args.scope==='document')value=await documentObservation(slot,value);
+        if(name==='browser_jev_observe'&&args.scope==='document')value=await retryJevRead(slot.page,async attempt=>{
+          const observed=attempt?presentObservation(slot,await this.observe(slot),{full:true,standalone:true}):value;
+          return documentObservation(slot,observed);
+        });
         if(state.taskKind==='rank')value=await presentRankObservation(slot,value,{restore:name==='browser_jev_open'||args.fullReason==='context_loss'});
         if(name==='browser_jev_observe'&&args.full===true&&!args.fullReason&&value.observationMode==='compact')
           value.observationHint='Current control maps are complete replacements; no baseline is needed to act. Reuse these IDs. Only lost page prose requires fullReason:context_loss.';

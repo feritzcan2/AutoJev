@@ -57,6 +57,8 @@
 .profile-foot { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 24px; border-top: 1px solid var(--border); background: color-mix(in srgb, var(--bg-raised) 92%, transparent); backdrop-filter: blur(8px); }
 .profile-foot small { color: var(--text-muted); font-size: 12px; line-height: 1.45; }
 .profile-foot button { flex-shrink: 0; }
+.profile-head:has(#automation-profile-save){position:sticky;top:0;z-index:3;align-items:center;background:var(--bg-app);padding:12px 0;margin-top:0}.profile-head:has(#automation-profile-save)>div{flex:1}.profile-head>#automation-profile-save{background:var(--accent);color:var(--bg-app);border-color:var(--accent)}
+.profile-save-status{max-width:var(--profile-width);margin:0 0 16px;font-size:13px;line-height:1.6;color:var(--text-secondary)}.profile-save-status[data-pending=true]{padding:12px 16px;border:1px solid var(--border);border-radius:9px;background:var(--accent-wash);box-sizing:border-box}
 
 /* Portal account */
 .account-state { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text-secondary); font-size: 12.5px; }

@@ -10,6 +10,7 @@ import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {seedJevDemo,startJevFixture} from '../scripts/jev-demo.mjs';
 import {compactElements,presentObservation} from '../app/jev-navigation.mjs';
 import {AUTOMATION_INSTRUCTIONS} from '../app/automation-agent-profiles.mjs';
+import {JEV_TASK_INSTRUCTIONS} from '../app/jev-tasks.mjs';
 const page={url:'https://fixture.example',title:'Jobs',text:'Synthetic jobs',actions:[
   {id:'e1',node:1,kind:'fill',role:'textbox',label:'Keywords',value:''},
   {id:'e2',node:1,kind:'click',role:'textbox',label:'Open Keywords',value:''},
@@ -73,7 +74,7 @@ test('Jev selection persists in the shared workspace',()=>{
   const fixture=await startJevFixture(),dir=await mkdtemp(path.join(os.tmpdir(),'jev-seed-'));
   try{
     const {candidateId}=await seedJevDemo(dir,fixture.url),store=new WorkspaceDatabase(path.join(dir,'jobloop.sqlite'));
-    try{const db=new AutomationStore(store);assert.equal(db.get(candidateId).browserMode,'jev');const enabled=db.sources(candidateId).filter(s=>s.enabled);assert.equal(enabled.length,1);assert.equal(enabled[0].url,fixture.url);assert.equal(enabled[0].fallback,'none');}finally{store.close();}
+    try{const db=new AutomationStore(store);assert.equal(db.get(candidateId).browserMode,'jev');const enabled=db.sources(candidateId).filter(s=>s.enabled);assert.equal(enabled.length,1);assert.equal(enabled[0].url,fixture.url);assert.ok(enabled[0].query.length>0);}finally{store.close();}
     assert.equal((await fetch(fixture.url)).status,200);assert.equal((await fetch(fixture.url.replace('/jobs','/.env.jev'))).status,404);
   }finally{await fixture.close();await rm(dir,{recursive:true,force:true});}
 });
@@ -103,8 +104,9 @@ test('compact observations preserve complete IDs while omitting repeated content
   const third=presentObservation(slot,{...value,elements:[]});assert.deepEqual(third.removedElements,['1']);
   assert.equal(presentObservation(slot,{...value,url:'https://other.example'}).observationMode,'full');
 });
-test('shared task instructions describe Jev navigation and current observations',()=>{
- for(const name of ['browser_jev_scroll','browser_jev_options','no_progress'])assert.ok(AUTOMATION_INSTRUCTIONS.includes(name));
+test('Jev task instructions describe Jev navigation and current observations; shared rules stay browser-neutral',()=>{
+ for(const name of ['browser_jev_scroll','browser_jev_options','no_progress'])assert.ok(JEV_TASK_INSTRUCTIONS.includes(name));
+ assert.ok(!AUTOMATION_INSTRUCTIONS.includes('browser_jev_scroll'));
 });
 test('autocomplete requires observed control and exact answer, never accepts selectors or code',()=>{
  const args={tabId:'tab',controlId:'observed',text:'Berlin',option:'Berlin, DEU'};
@@ -119,4 +121,11 @@ test('native option search is bounded and read-only arguments cannot inject targ
  validateJevArgs('browser_jev_list_options',{...args,query:'',offset:0});
  validateJevArgs('browser_jev_list_options',{...args,query:'Bilkent',offset:20,limit:20});
  for(const extra of [{limit:0},{limit:1001},{limit:1.5},{offset:-1},{offset:1.5},{offset:'20'},{offset:10001},{offset:NaN},{query:'x'.repeat(201)},{query:2},{selector:'select'},{option:'auto select'}])assert.throws(()=>validateJevArgs('browser_jev_list_options',{...args,...extra}));
+});
+
+test('malformed Jev choices report the failing invariant without echoing source content',()=>{
+ const valid={choice:'a',confidence:.9,probabilities:{a:.9,b:.1}},choices={a:'first',b:'second'};
+ for(const [patch,pattern] of [[{probabilities:{a:.3,b:.1}},/toplamı 0.4000/],[{confidence:2},/0 ile 1/],[{probabilities:{a:.1,b:.9}},/en yüksek/],[{probabilities:{a:1}},/alanları/],[{choice:'private source text'},/seçenekler arasında/]]){
+  assert.throws(()=>validateChoice({...valid,...patch},choices),error=>{assert.equal(error.code,'JEV_INVALID_RESPONSE');assert.match(error.message,pattern);assert.doesNotMatch(error.message,/private source text/);return true;});
+ }
 });

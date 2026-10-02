@@ -145,3 +145,14 @@ test('workspace removal deletes its encrypted configuration and stops only its o
  assert.equal(service.db.config(p.id),null);assert.equal(service.workers.has('123456789'),false);assert.equal(service.status(other.id).running,true);
  assert.deepEqual(store.db.prepare('PRAGMA foreign_key_check').all(),[]);
 });
+
+test('account service forwards score and resend options only to the selected candidate bot',async t=>{
+ const {service,store,p,other,pair,flush,calls}=await fixture(t);
+ await service.configure(p.id,{token:FIRST,enabled:true});await service.configure(other.id,{token:SECOND,enabled:true});pair(p.id,11);pair(other.id,11);
+ for(const candidate of [p,other])service.preferences(candidate.id,{newJobs:false,notifications:false,questions:false});
+ for(const [name,score,candidate] of [['High',80,p],['Boundary',70,p],['Foreign',99,other]]){const job=store.addRecord(candidate.id,input(name)).job;store.scoreRecord(candidate.id,job.id,score);}
+ assert.equal(service.sendUnsentJobs(p.id,{minScore:70,resend:true}).queued,1);await flush();
+ let sends=calls.filter(call=>call.method==='sendMessage');assert.equal(sends.length,1);assert.equal(sends[0].botId,'123456789');assert.match(sends[0].body.text,/High/);
+ assert.equal(service.sendUnsentJobs(p.id,{minScore:70,resend:true}).queued,1);await flush();
+ sends=calls.filter(call=>call.method==='sendMessage');assert.equal(sends.length,2);assert.equal(sends[1].botId,'123456789');
+});

@@ -71,14 +71,15 @@ test('failed, interrupted and restarted workers preserve the exact cycle and cut
 
 test('missing or relative dates, unreliable ordering and out-of-order cards force full coverage',()=>{
  const plan=beginSourceScan({scopeKey:'scope',lastSuccessfulStartAt:epoch,lastFullScanAt:epoch},'scope',epoch+1).active;
- for(const [change,reason] of [[undefined,'ordering_unverified'],[{...chronology,newestFirst:false},'ordering_unverified'],[{...chronology,allItemsDated:false},'dates_unverified'],[{...chronology,fromStart:false},'start_unverified'],[{...chronology,items:[{publishedAt:date,evidence:'Yesterday'}]},'dates_unverified'],[{...chronology,items:[{publishedAt:'2026-09-24T12:00:00Z',evidence:'2026-09-24T12:00:00Z'},{publishedAt:date,evidence:date}]},'ordering_changed']]){
+ for(const [change,reason] of [[undefined,'ordering_unverified'],[{...chronology,newestFirst:false},'ordering_unverified'],[{...chronology,allItemsDated:false},'dates_unverified'],[{...chronology,fromStart:false},'start_unverified'],[{...chronology,items:[{publishedAt:'Yesterday',evidence:'Yesterday'}]},'dates_unverified'],[{...chronology,items:[{publishedAt:'2026-09-24T12:00:00Z',evidence:'2026-09-24T12:00:00Z'},{publishedAt:date,evidence:date}]},'ordering_changed']]){
   const next=advanceSourceScan(plan,{chronology:change,pendingUrls:[],reason:'Progress'},{...snapshot,text:snapshot.text+'\nYesterday'},'run',epoch);
   assert.equal(next.mode,'full');assert.equal(next.reason,reason);assert.equal(next.boundary,null);
  }
  const incomplete=advanceSourceScan(plan,{chronology:{...chronology,pageComplete:false},pendingUrls:[],reason:'Still processing'},snapshot,'run',epoch);assert.equal(incomplete.boundary,null);
  const pending=advanceSourceScan(plan,{chronology,pendingUrls:[source+'/detail'],reason:'Details remain'},snapshot,'run',epoch);assert.equal(pending.boundary,null);
  const overlapDate='2026-09-29';const overlap=advanceSourceScan(plan,{chronology:{...chronology,items:[{publishedAt:overlapDate,evidence:overlapDate}]},pendingUrls:[],reason:'Date only'},{url:source,text:'Newest first '+overlapDate},'run',epoch);assert.equal(overlap.boundary,null,'Include the entire day, allowing for site timezone');
- assert.throws(()=>advanceSourceScan(plan,{chronology:{...chronology,evidence:'Invented ordering'},pendingUrls:[],reason:'Progress'},snapshot,'run',epoch),/gözleminde/);
+ const unverified=advanceSourceScan(plan,{chronology:{...chronology,evidence:'Unmatched ordering'},pendingUrls:[source+'/detail'],reason:'Progress'},snapshot,'run',epoch);
+ assert.equal(unverified.mode,'incremental');assert.equal(unverified.boundary,null);assert.deepEqual(unverified.checkpoint.pendingUrls,[source+'/detail']);
 });
 
 test('source criteria invalidate only that source; schedule changes preserve history',async t=>{
@@ -98,7 +99,7 @@ test('record actions and user stopping conditions do not advance source coverage
  const stopped=start();await finish(stopped,'user_stop');assert.equal(db.sources(id)[0].scanState.lastSuccessfulStartAt,state.lastSuccessfulStartAt);
 });
 
-test('known identity lookup includes older saved results outside the context sample and rejects foreign snapshots',async t=>{
+test('known identity lookup includes older saved results and progress ignores stale snapshot IDs',async t=>{
  const {db,id,start,flow}=fixture(t),run=start(),worker=flow(run);
  for(let i=0;i<110;i++)db.record(id,run.id,{url:source+'/item/'+i,title:'Match '+i,summary:'Observed'});
  let context=await worker.call(id,run.id,'get_automation_context',{});
@@ -106,5 +107,6 @@ test('known identity lookup includes older saved results outside the context sam
  assert.equal(context.results.length,0);assert.ok(!context.results.some(r=>r.url===source+'/item/0'));
  const [known,unknown]=await worker.call(id,run.id,'lookup_scan_results',{keys:[source+'/item/0',source+'/missing']});assert.equal(known.known,true);assert.equal(unknown.known,false);
  const observed=await worker.call(id,run.id,'browser_open',{url:source});await worker.call(id,run.id,'browser_open',{url:source+'?page=2'});
- await assert.rejects(worker.call(id,run.id,'save_scan_progress',{snapshotId:observed.snapshot.id,pendingUrls:[],reason:'Stale'}),/eski/);
+ const saved=await worker.call(id,run.id,'save_scan_progress',{snapshotId:observed.snapshot.id,pendingUrls:[],reason:'Earlier snapshot'});
+ assert.equal(saved.scanPlan.checkpoint.url,source+'?page=2');
 });

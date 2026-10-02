@@ -5,6 +5,7 @@ import {boundedText,webUrl} from '../app/automation-templates.mjs';
 export function prepareAutomationChat(message,draft){
  const text=boundedText(message,'Mesaj',12000);
  if(!draft)return {message:text,draft:null};
+ if(!Object.hasOwn(draft,'sources'))return {message:text,draft};
  const sources=[],notes=[];
  for(const source of draft.sources){
   try{new URL(source);}catch{notes.push(source);continue;}

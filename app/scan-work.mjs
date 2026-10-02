@@ -1,5 +1,6 @@
 import {webUrl,boundedText} from './automation-templates.mjs';
 import {validateScanCompletion} from './source-scan.mjs';
+import {siteKey} from './site-access.mjs';
 
 export function scanWork(run){
  if(run.scan?.work)return structuredClone(run.scan.work);
@@ -7,6 +8,13 @@ export function scanWork(run){
 }
 export const activeSearch=work=>work.searches.find(s=>s.id===work.activeSearchId);
 export function pendingScanUrls(work){return [...new Set(work.searches.flatMap(s=>s.pendingUrls))];}
+export function hasUnblockedScanWork(run,sites){
+ const blocked=new Set(sites),work=scanWork(run);
+ // Undiscovered searches still use the assigned source. A source-wide gate
+ // must release the worker even when those searches have empty queues.
+ if(run.sourceUrl&&blocked.has(siteKey(run.sourceUrl)))return false;
+ return work.searches.some(s=>s.status!=='completed'&&(s.pendingUrls.some(url=>!blocked.has(siteKey(url)))||s.id!==work.activeSearchId&&!s.pendingUrls.length));
+}
 export function withScanWork(run,work,patch={}){
  return {...run.scan,...patch,complete:false,pendingUrls:pendingScanUrls(work),work};
 }
@@ -55,15 +63,13 @@ export function reportWorkPage(run,pageProgress){
  }
  return {work,pageProgress:search.pageProgress,revisiting};
 }
-export function updateScanQueue(run,input,snapshot){
+export function updateScanQueue(run,input){
  const work=scanWork(run),search=activeSearch(work);
  if(search.status==='completed')throw Error('Tamamlanan aramaya yeni iş eklenemez. Kalan aramayı seç.');
  const processed=input.processedUrls??[];
  if(!Array.isArray(processed)||processed.length>100)throw Error('Bir seferde en fazla 100 işlenmiş adres kaydet.');
  const additions=[...new Set(input.pendingUrls.map(webUrl))],done=[...new Set(processed.map(webUrl))];
  if(done.some(url=>additions.includes(url)))throw Error('Bir adres aynı anda bekleyen ve işlenmiş olamaz.');
- const observed=new Set([snapshot.url,...(run.navigation??[]).map(n=>n.url),...(run.observedLinks??[])]);
- if(done.some(url=>!observed.has(url)))throw Error('İşlenmiş adres bu turda gözlenmeli; eski bekleyen işleri sessizce silme.');
  search.processedUrls=[...new Set([...search.processedUrls,...done])];
  search.pendingUrls=[...new Set([...search.pendingUrls,...additions])].filter(url=>!search.processedUrls.includes(url));
  return work;

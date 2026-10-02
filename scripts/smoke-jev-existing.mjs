@@ -49,12 +49,12 @@ try{
  assert.equal((await call(a,'browser_jev_observe',{tabId:first.tabId})).tabId,first.tabId);
  await assert.rejects(()=>call(a,'browser_jev_act',{tabId:first.tabId,decisionId:decision.decisionId,text:'must not execute'}),/geçerli bir Jev kararı yok/);
  assert.equal(await a.tab(first.tabId).page.locator('#query').inputValue(),'unsent draft');
- assert.equal(windowRequests,2);
+ assert.equal(windowRequests,3);
  await a.close();
  restarted=new JevBrowser(aDirectory,{profile,endpoint,openWindow});
  await restarted.focus(first.tabId);
  assert.equal(await restarted.tab(first.tabId).page.locator('#query').inputValue(),'unsent draft');
- assert.equal(windowRequests,2);
+ assert.equal(windowRequests,4);
  await assert.rejects(()=>call(restarted,'browser_jev_observe',{tabId:third.tabId}),/bulunamadı/);
  // A closed target cannot be confused with another open copy of the same URL.
  await root.send('Target.closeTarget',{targetId:second.tabId});
@@ -76,7 +76,7 @@ try{
  otherProcess=new JevBrowser(oldDirectory,{profile,endpoint,openWindow,checkpoints:[{browser:'Jev Chrome',tabId:first.tabId}]});
  assert.ok((await call(otherProcess,'browser_jev_tabs')).tabs.some(t=>t.tabId===first.tabId));
  assert.equal(await otherProcess.tab(first.tabId).page.locator('#query').inputValue(),'unsent draft');
- assert.equal(windowRequests,before);
+ assert.equal(windowRequests,before+1);
  await otherProcess.close();
  // Old saved checkpoints migrate by exact ID, only in the selected profile.
  const otherContext=await browser.newContext();

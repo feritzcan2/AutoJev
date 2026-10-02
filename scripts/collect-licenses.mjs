@@ -26,7 +26,6 @@ async function visit(directory){
  }
 }
 await visit(root);
-for(const name of ['linkedin','freehire','jobindex','jobnet','jobdanmark','jobbank'])await visit(path.join(root,'vendor/ai-job-search/.agents/skills',name+'-search/cli'));
 const metadata=JSON.parse(execFileSync('cargo',['metadata','--locked','--format-version','1','--manifest-path','engine/Cargo.toml'],{encoding:'utf8',maxBuffer:32*1024*1024}));
 for(const item of metadata.packages)await record(path.dirname(item.manifest_path),{name:`rust-${item.name}`,version:item.version,license:item.license,repository:item.repository,licenseFile:item.license_file});
 const unique=[...new Map(inventory.map(item=>[`${item.name}@${item.version}`,item])).values()].sort((a,b)=>a.name.localeCompare(b.name)||a.version.localeCompare(b.version));
