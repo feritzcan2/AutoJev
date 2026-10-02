@@ -14,10 +14,10 @@ test('OpenCode readiness accepts credentials without exposing account output',as
   assert.equal(result.state,expected);assert.doesNotMatch(JSON.stringify(result),/private-account/);
  }
 });
-test('first-run checks diagnose missing CLI while optional source/runtime tools remain warnings',async()=>{
+test('first-run checks diagnose missing CLI while optional browser runtime checks remain warnings',async()=>{
  let login=0;
  const result=await collectReadiness({provider:'codex'}, {...dependencies,findExecutable:async()=>null,inspectLogin:async()=>{login++;return ready;}});
- assert.equal(result.ready,false);assert.equal(login,0);assert.equal(result.checks.find(check=>check.id==='agent').state,'error');assert.equal(result.checks.find(check=>check.id==='bun').state,'warning');assert.equal(result.checks.find(check=>check.id==='browser').state,'warning');
+ assert.equal(result.ready,false);assert.equal(login,0);assert.equal(result.checks.find(check=>check.id==='agent').state,'error');assert.equal(result.checks.some(check=>check.id==='bun'),false);assert.equal(result.checks.find(check=>check.id==='browser').state,'warning');
 });
 test('Jev readiness verifies the selected profile, debug port and key without browsing or API calls',async()=>{
  assert.equal((await collectReadiness({provider:'claude',browserMode:'jev',chromeProfile:{directory:'Default'}},dependencies)).ready,true);

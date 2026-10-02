@@ -4,11 +4,11 @@ import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {automationTemplate,reusableTemplate} from '../app/automation-templates.mjs';
 function fixture(t){const core=new WorkspaceDatabase(':memory:');t.after(()=>core.close());return new AutomationStore(core);}
-test('job template creates its 14 sources with original schedules and tool settings',t=>{
+test('job template creates its 14 sources with original schedules and browser sources',t=>{
  const db=fixture(t),a=db.create('job-search'),sources=db.sources(a.id);
  assert.equal(sources.length,14);assert.equal(sources.filter(s=>s.enabled).length,10);
- const linked=sources.find(s=>s.name==='LinkedIn');assert.equal(linked.intervalMinutes,15);assert.equal(linked.integrationId,'linkedin');assert.equal(linked.searchMethod,'tool');
- assert.equal(sources.find(s=>s.name==='FreeHire').searchMethod,'tool');assert.equal(sources.find(s=>s.name==='Jobindex').enabled,false);
+ const linked=sources.find(s=>s.name==='LinkedIn');assert.equal(linked.intervalMinutes,15);assert.equal(linked.integrationId,undefined);assert.equal(linked.searchMethod,undefined);
+ assert.ok(sources.some(s=>s.name==='FreeHire'));assert.equal(sources.find(s=>s.name==='Jobindex').enabled,false);
  assert.equal(a.status,'draft');assert.equal(a.mode,'observe');assert.equal(a.nextRunAt,null);
 });
 test('explicit sources, explicit empty sources and removed sources stay under user control',t=>{

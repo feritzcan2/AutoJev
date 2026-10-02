@@ -1,3 +1,4 @@
+import {unknownScorecard} from './helpers/scorecard.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {WorkspaceDatabase} from '../app/workspace-database.mjs';
@@ -6,7 +7,7 @@ import {WebTasks} from '../app/web-template.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
 import {automationBrowser} from '../app/automation-browser.mjs';
 import {automationTemplate,reusableTemplate} from '../app/automation-templates.mjs';
-import {dispatchRecordOperations} from '../app/record-operations.mjs';
+import {enqueueRecordOperation,recordOperationError,dispatchRecordOperations} from '../app/record-operations.mjs';
 
 const source='https://example.test/list',settle=()=>new Promise(r=>setImmediate(r));
 function fixture(t,template='job-search',{onRunFinished}={}){
@@ -247,7 +248,7 @@ test('Jev document upload uses the current record tab and observed upload ID',as
 test('manual preparation takes the next free worker ahead of automatic pending work',async t=>{
  const f=fixture(t);await f.runtime.runOnce(f.id);await settle();const scan=f.launches.at(-1);f.db.put({...f.db.get(f.id),mode:'prepare'});
  f.db.observe(f.id,scan.id,source+'/2','Other finding');
- const other=f.db.record(f.id,scan.id,{url:source+'/2',title:'Other',summary:'Other finding',assessment:{status:'scored',score:80,summary:'Fits the saved criteria',evidenceUrl:source+'/2',evidence:'Other finding',strengths:['Relevant role'],gaps:[],uncertainties:[]}});
+ const other=f.db.record(f.id,scan.id,{url:source+'/2',title:'Other',summary:'Other finding',assessment:{status:'scored',scorecard:unknownScorecard(),score:80,summary:'Fits the saved criteria',evidenceUrl:source+'/2',evidence:'Other finding',strengths:['Relevant role'],gaps:[],uncertainties:[]}});
  const {enqueueRecordOperation}=await import('../app/record-operations.mjs');
  enqueueRecordOperation(f.runtime,f.id,other.id,'prepare',{manual:false});
  const automatic=enqueueRecordOperation(f.runtime,f.id,f.item.id,'prepare',{manual:false});
@@ -467,14 +468,14 @@ test('not-submitted tool rechecks the live page and does not trust an earlier dr
  const args={itemId:f.item.id,status:'not_submitted',url:f.item.url,evidence:quote,notSubmittedProof:{snapshotId:observed.snapshot.id,kind:'draft',quote,recordEvidence:f.item.url}};
  text=`${f.item.url} — Submitted`;
  const rejected=await flow.call(f.id,verify.id,'record_automation_outcome',args);
- assert.equal(rejected.status,'evidence_rejected');assert.equal(rejected.saved,false);assert.match(rejected.error,/kanıt/);
+ assert.equal(rejected.status,'evidence_rejected');assert.equal(rejected.saved,false);assert.match(rejected.error,/taslak/);
  assert.ok(rejected.snapshot.id);assert.notEqual(rejected.snapshot.id,observed.snapshot.id);assert.equal(f.db.result(f.id,f.item.id).status,'uncertain');
  text=quote;args.notSubmittedProof.snapshotId=rejected.snapshot.id;
  assert.equal((await flow.call(f.id,verify.id,'record_automation_outcome',args)).status,'prepared');
  await f.finish(verify);await f.runtime.tick();await settle();assert.equal(f.launches.at(-1).request.direct,true);
 });
 
-test('Jev multiline portal evidence releases uncertainty and a rejected quote returns a usable fresh snapshot',async t=>{
+test('Jev multiline portal status accepts a paraphrased description without another attempt',async t=>{
  const f=fixture(t);await f.prepare();
  const title='Sr. Intelligence Software Engineer (Remote, DEU)',code='R30035';
  f.db.putResult({...f.db.result(f.id,f.item.id),title:`${title} — CrowdStrike ${code}`});
@@ -486,12 +487,54 @@ test('Jev multiline portal evidence releases uncertainty and a rejected quote re
  const flow=automationWorkflow({db:f.db,run:verify,signal:{aborted:false},browser,report:(...args)=>f.runtime.report(...args)});
  const observed=await flow.call(f.id,verify.id,'browser_read',{});
  const args={itemId:f.item.id,status:'not_submitted',url:f.item.url,evidence:quote,notSubmittedProof:{snapshotId:observed.snapshot.id,kind:'draft',quote:quote.replaceAll('\n',' — '),recordEvidence:code}};
- const rejected=await flow.call(f.id,verify.id,'record_automation_outcome',args);
- assert.equal(rejected.status,'evidence_rejected');assert.equal(f.db.result(f.id,f.item.id).status,'uncertain');
- args.notSubmittedProof={...args.notSubmittedProof,quote,snapshotId:rejected.snapshot.id};
  const saved=await flow.call(f.id,verify.id,'record_automation_outcome',args);
- assert.equal(saved.status,'prepared');assert.equal(saved.notSubmitted.quote,quote);
+ assert.equal(saved.status,'prepared');assert.equal(saved.notSubmitted.quote,quote.replaceAll('\n',' — '));
  assert.equal(f.db.run(verify.id).actionId,null);
  await f.finish(verify);await f.runtime.tick();await settle();
  assert.equal(f.launches.at(-1).recordOperation,'execute');assert.equal(f.launches.at(-1).request.direct,true);
+});
+
+
+test('a high fit score cannot authorize automatic execution with unmet or unknown mandatory conditions',async t=>{
+ const f=fixture(t),prepared=await f.prepare();
+ f.db.put({...f.db.get(f.id),mode:'auto'});
+ const a=f.db.get(f.id);
+ for(const eligibility of ['mismatch','unverified']){
+  const assessment={score:95,scoringVersion:4,revision:a.revision,eligibility};
+  const item=f.db.putResult({...prepared,assessment});
+  assert.match(recordOperationError(a,item,'execute'),/Zorunlu şart/);
+  assert.equal(recordOperationError(a,item,'score'),null);
+  assert.equal(recordOperationError(a,item,'execute',{manual:true,digest:item.digest}),null);
+ }
+ const verified={score:95,scoringVersion:4,revision:a.revision,eligibility:'verified'};
+ assert.equal(recordOperationError(a,{...prepared,assessment:verified},'execute'),null);
+ assert.match(recordOperationError(a,{...prepared,assessment:{...verified,scoringVersion:3}},'execute'),/yeniden puanla/);
+ assert.match(recordOperationError(a,{...prepared,assessment:{...verified,revision:a.revision-1}},'execute'),/yeniden puanla/);
+ // Recheck at reservation: eligibility may change after a task was queued.
+ f.db.putResult({...prepared,assessment:verified});
+ enqueueRecordOperation(f.runtime,f.id,prepared.id,'execute',{manual:false});f.db.enable(f.id);await f.runtime.tick();await settle();
+ const run=f.launches.find(r=>r.recordOperation==='execute');assert.ok(run);
+ f.db.putResult({...prepared,assessment:{...verified,eligibility:'mismatch'}});
+ assert.throws(()=>f.db.reserve(f.id,run.id,prepared.id),/Zorunlu şart/);
+ assert.equal(f.db.result(f.id,prepared.id).status,'prepared');
+ await f.finish(run,'blocked');
+});
+
+test('starting workers cannot recreate a cancelled preparation queue; explicit prepare remains available',async t=>{
+ const f=fixture(t);f.db.put({...f.db.get(f.id),mode:'auto'});
+ const task=enqueueRecordOperation(f.runtime,f.id,f.item.id,'prepare',{manual:false});
+ await f.runtime.pause(f.id);assert.equal(f.runtime.queue.get(f.id,task.id).state,'cancelled');assert.equal(f.runtime.queue.get(f.id,task.id).stopRequested,true);
+ f.db.enable(f.id);await dispatchRecordOperations(f.runtime,f.id);await settle();
+ assert.equal(f.launches.length,0);assert.equal(f.runtime.queue.list(f.id,{states:['pending']}).filter(t=>t.recordOperation).length,0);
+ f.db.putResult({...f.item,updatedAt:f.item.updatedAt+1});await dispatchRecordOperations(f.runtime,f.id);await settle();assert.equal(f.launches.length,0,'A later score or cell update cannot revoke the explicit cancellation');
+ await f.runtime.runRecord(f.id,f.item.id,'prepare');await settle();assert.equal(f.launches.at(-1).recordOperation,'prepare');
+});
+
+for(const oldSource of ['https://example.test/list/','https://removed.test/jobs'])test(`stale source ${oldSource} cannot schedule preparation on worker start`,async t=>{
+ const f=fixture(t);f.db.put({...f.db.get(f.id),mode:'auto',sourceSettings:{[source]:{mode:'observe'}}});
+ f.db.putResult({...f.item,sourceUrl:oldSource});f.db.enable(f.id);
+ await dispatchRecordOperations(f.runtime,f.id);await settle();assert.equal(f.launches.length,0);
+ assert.match(recordOperationError(f.db.get(f.id),f.db.result(f.id,f.item.id),'prepare'),/yalnızca bul/);
+ // Explicit manual preparation is still authorized for the selected record.
+ assert.equal(recordOperationError(f.db.get(f.id),f.db.result(f.id,f.item.id),'prepare',{manual:true}),null);
 });

@@ -1,5 +1,7 @@
 # Başvuru hazırlığı
 
+> **Not (2026-10-02):** Bu belgedeki `get_task_context`, `ask_candidate` ve skill dosyası referansları eski mimariye aittir. Güncel akış için [agent-workers.md](agent-workers.md) ve [automation-templates.md](automation-templates.md) belgelerine bak.
+
 İlan satırındaki **Hazırla**, gerçek başvuru formunu inceleyip o ilana bağlı bir paket oluşturur. Kaynak modu veya aday yetkisi **Hazırla** olduğunda yeni uygun işler de aynı göreve atanır.
 
 Paket; zorunlu/isteğe bağlı/bilinmeyen gereksinimleri, form kanıtını, dil ve formatı, dosya/metin sınırlarını, yerel belge yollarını, cevap taslaklarını ve eksikleri içerir. Çok adımlı formun tamamı görülemediyse kısmi kapsam açıkça gösterilir. Hazırlık paneli belgeleri açar, metinleri önizler ve düzenler, dosyalarla cevapları ZIP olarak indirir. **Başvur** kayıtlı paketi normal başvuru akışına aktarır.

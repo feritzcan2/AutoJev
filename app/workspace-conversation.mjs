@@ -27,10 +27,10 @@ export function workspaceHistory(db,id,{kind,query='',itemId,recordId,before,lim
  db.get(id);
  const conditions=['automation_id=?'],args=[id];
  if(itemId){conditions.push('id=?');args.push(itemId);}
- if(recordId){conditions.push("json_extract(data,'$.recordId')=?");args.push(recordId);}
+ if(recordId){conditions.push("(json_extract(data,'$.recordId')=? OR EXISTS (SELECT 1 FROM json_each(json_extract(data,'$.recordIds')) WHERE value=?))");args.push(recordId,recordId);}
  if(before!==undefined){conditions.push('rowid<?');args.push(before);}
  if(query){conditions.push("instr(lower(coalesce(json_extract(data,'$.text'),json_extract(data,'$.summary'),'')),lower(?))>0");args.push(query);}
  const rows=db.db.prepare(`SELECT rowid,data FROM ${table} WHERE ${conditions.join(' AND ')} ORDER BY rowid DESC LIMIT ?`).all(...args,limit+1);
- const page=rows.slice(0,limit),keys=kind==='messages'?['id','role','text','at','runId','conversation']:['id','workerId','kind','operation','recordOperation','recordId','sourceUrl','status','startedAt','finishedAt','summary'];
+ const page=rows.slice(0,limit),keys=kind==='messages'?['id','role','text','at','runId','conversation']:['id','workerId','kind','operation','recordOperation','recordId','recordIds','sourceUrl','status','startedAt','finishedAt','summary'];
  return {kind,order:'newest_first',entries:page.map(row=>{const value=JSON.parse(row.data);return Object.fromEntries(keys.filter(k=>value[k]!==undefined).map(k=>[k,value[k]]));}),nextBefore:rows.length>limit?page.at(-1).rowid:null};
 }

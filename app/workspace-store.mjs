@@ -43,6 +43,7 @@ export class WorkspaceStore {
  table(id){return this.get(id).table;}
  configureTable(id,input){const w=this.get(id);w.table=automationTable(input);this.registry.driver(this.definition(id)).validateTable?.(w.table);this.db.prepare('UPDATE workspaces SET data=? WHERE id=?').run(JSON.stringify(w),id);return w.table;}
  updateCells(id,itemId,input){
+  if(this.records.get(id,itemId).assessment&&input.some(cell=>cell.key==='score'))throw Error('Puan değerlendirmeden hesaplanır; değiştirmek için kaydı yeniden puanla.');
   const w=this.get(id);return this.records.update(id,itemId,item=>({...item,cells:{...item.cells,...automationCells(input,w.table)},tableUpdatedAt:Date.now()}));
  }
  history(id,worker='main',profileId=null){

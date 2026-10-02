@@ -1,5 +1,4 @@
-import {sourceIntegrations} from '../source-catalog.mjs';
-
+import bundledSources from '../../source-library/sources.json' with {type:'json'};
 const sources=[
  ['LinkedIn','https://www.linkedin.com/jobs/',15],
  ['StepStone','https://www.stepstone.de/',30],
@@ -9,12 +8,11 @@ const sources=[
  ['Greenhouse','https://www.greenhouse.com/',45],
  ['Lever','https://www.lever.co/',45],
  ['Ashby','https://www.ashbyhq.com/',45],
- ['Şirket kariyer sayfaları','https://www.google.com/search',60]
-].map(([name,url,intervalMinutes])=>({name,url,intervalMinutes,enabled:true,query:'Kayıtlı hedef rollere, ülke ve çalışma tercihlerine uygun güncel ilanlar'}));
-for(const tool of sourceIntegrations){
- const existing=sources.find(source=>source.url===tool.url);
- const settings={integrationId:tool.id,searchMethod:'tool',fallback:'web'};
- if(existing)Object.assign(existing,settings);
- else sources.push({name:tool.name,url:tool.url,intervalMinutes:30,enabled:tool.market==='global',query:'Kayıtlı hedef rollere, ülke ve çalışma tercihlerine uygun güncel ilanlar',...settings});
-}
+ ['Şirket kariyer sayfaları','https://www.google.com/search',60],
+ ['FreeHire','https://freehire.me/',30],
+ ['Jobindex','https://www.jobindex.dk/',30,false],
+ ['Jobnet','https://jobnet.dk/',30,false],
+ ['Jobdanmark','https://jobdanmark.dk/',30,false],
+ ['Akademikernes Jobbank','https://jobbank.dk/',30,false]
+].map(([name,url,intervalMinutes,enabled=true])=>({...bundledSources.find(source=>source.url===url),name,url,intervalMinutes,enabled,query:'Kayıtlı hedef rollere, ülke ve çalışma tercihlerine uygun güncel ilanlar'}));
 export const jobSearchSources=sources;

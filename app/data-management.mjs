@@ -54,9 +54,6 @@ function sqliteCheck(file){
   for(const table of ['candidates','jobs','workspace_records','workspace_workers','workspace_tasks','agent_workers','background_runs','workspaces','automation_templates','automations','automation_runs','automation_results','automation_messages'])if(tableExists(db,table))for(const row of db.prepare(`SELECT id,data FROM ${table}`).iterate()){
    const value=JSON.parse(row.data);if(!/^[A-Za-z0-9][A-Za-z0-9_-]{0,149}$/.test(row.id)||value.id!==row.id)throw Error('Yedekte geçersiz kayıt kimliği var.');
   }
-  if(tableExists(db,'workspace_source_skills'))for(const row of db.prepare('SELECT source_url,version,data FROM workspace_source_skills').iterate()){
-   const value=JSON.parse(row.data);if(value.sourceUrl!==row.source_url||value.version!==row.version||!Number.isSafeInteger(row.version)||row.version<1)throw Error('Yedekte geçersiz kaynak skill sürümü var.');
-  }
   return {schemaVersion:db.prepare('PRAGMA user_version').get().user_version,candidates:tableExists(db,'candidates')?db.prepare('SELECT count(*) AS n FROM candidates').get().n:0,jobs:!tableExists(db,'candidates')?0:(tableExists(db,'workspace_records')?db.prepare('SELECT count(*) AS n FROM workspace_records WHERE workspace_id IN (SELECT id FROM candidates)'):db.prepare('SELECT count(*) AS n FROM jobs')).get().n};
  }finally{db.close();}
 }
@@ -160,7 +157,7 @@ function prepareRestoredDatabase(file,manifest,dataDirectory){
  const files=new Map(manifest.files.map(entry=>[fileKey(entry.path),entry.path]));
  try{
   db.exec('PRAGMA trusted_schema=OFF; PRAGMA secure_delete=ON; BEGIN');
-  for(const table of ['candidates','jobs','workspace_records','workspace_tasks','sources','setups','campaigns','worker_state','background_tasks','background_runs','mail_signals','automations','automation_runs','automation_results','automation_messages','workspace_source_skills']){
+  for(const table of ['candidates','jobs','workspace_records','workspace_tasks','sources','setups','campaigns','worker_state','background_tasks','background_runs','mail_signals','automations','automation_runs','automation_results','automation_messages','automation_jev_tasks','automation_jev_evidence','automation_browser_evidence']){
    if(!tableExists(db,table))continue;
    for(const row of db.prepare(`SELECT rowid,data FROM ${table}`).all()){
     let value=rewritePath(JSON.parse(row.data),sourceDirectories,dataDirectory);if(!value||typeof value!=='object')continue;
@@ -169,7 +166,7 @@ function prepareRestoredDatabase(file,manifest,dataDirectory){
     if(table==='background_tasks')Object.assign(value,{enabled:false,connection:null,connectorAccess:null});
     if(table==='background_runs'&&value.status==='running')Object.assign(value,{status:'interrupted',finishedAt:Date.now()});
     if(table==='automations'){Object.assign(value,{status:'paused',nextRunAt:null,trial:null,reviewedRevision:null,sourceTrialsVersion:1});for(const state of Object.values(value.sourceState??{}))state.trial=null;}
-    if(table==='workspace_source_skills')value.needsReview=true;
+    if(table==='automation_jev_tasks'&&value.status==='running')value.status='continue';
     if(table==='automation_runs'&&value.status==='running')Object.assign(value,{status:'interrupted',finishedAt:Date.now(),actionId:null});
     if(table==='workspace_tasks'){value.state='interrupted';value.finishedAt=Date.now();}
     const jobRecord=table==='jobs'||table==='workspace_records'&&value.candidateId;

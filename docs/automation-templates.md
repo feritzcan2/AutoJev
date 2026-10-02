@@ -36,10 +36,8 @@ appointment monitoring/booking and custom workflows.
    and can save sample results. It can search, filter, paginate and dismiss cookies
    through `browser_interact`. The agent is instructed not to send external actions
    during a trial; browser tools do not enforce that distinction.
-   The assigned source must have a fresh browser or configured tool observation.
-   The agent tests search/filtering, pagination, detail reading and access, then
-   saves a source skill. Untested methods remain explicitly unverified. Pagination
-   requires different observations before and after a real page transition.
+   The assigned source must have a fresh browser observation.
+   The agent checks search/filtering, pagination, representative details and access.
    A successful trial
    ends that source turn; its next scheduled turn performs the normal workflow.
    Failed trials block only that source. Trial samples cannot trigger actions.
@@ -104,8 +102,9 @@ There is no separate browsing permission tool or button/keyword classifier.
 The agent assesses authorization from user instructions, the saved mode and the
 assigned task. Tool availability does not itself authorize an external action.
 
-`reserve_automation_action` remains optional record bookkeeping for eligible saved
-proposals. It persists an attempt and supports duplicate/outcome tracking. It does not grant browser access.
+`reserve_automation_action` is required in an execute task before any external
+submission or document upload. It persists the attempt durably for duplicate and
+outcome tracking; the upload tool refuses to run without it. It does not grant browser access.
 Daily and total action quotas and workspace expiry dates are not used.
 `record_automation_outcome` verifies the recorded attempt against a fresh observation.
 Session/workspace isolation, cancellation, browser-step limits and timeouts remain
@@ -134,7 +133,9 @@ See [the Amsterdam live test](amsterdam-housing-live-test.md) for the observed l
 
 Managed MCP checks govern tools supplied by the app. Installed CLI providers retain
 their own permission settings and capabilities; the app instructs them to use the
-managed browser exclusively. This is not an OS sandbox for arbitrary provider shell,
+managed browser for website interactions, with packaged source CLIs also available
+through the provider's native terminal tool. Source instructions and the CLI command
+are included in assignedSource. This is not an OS sandbox for arbitrary provider shell,
 connector or browser tools. Use trusted providers and review their permissions.
 The worker explicitly approves its named app tools for the provider session, so
 reading context, saving a draft and reporting a result do not require repeated
@@ -144,10 +145,9 @@ App-created automation directories set Codex folder trust for each launch.
 This avoids a hidden folder-trust prompt without
 changing provider permission modes or the user's global trust configuration.
 
-A successful trial saves learned methods with evidence and explicit unknowns.
-**Skill ve araçlar** shows the learned skill and its version history alongside the
-user's editable instructions. Later scans apply the current criteria using these
-methods and update changed sections after testing them. A trial does not certify a portal's
+A successful trial confirms current access to representative results.
+Later scans use the current workspace criteria, source query and saved progress.
+A trial does not certify a portal's
 booking flow, future availability, message delivery or payment support. Appointment
 automation defaults to observation; automatic booking requires user-selected action
 permission and a working site-specific flow. CAPTCHA and other access barriers are
@@ -165,10 +165,10 @@ An explicit goal-completed report ends scheduling.
 **Template olarak kaydet** opens a review dialog for a title, description and workflow.
 
 Templates may define `defaultSources`: named starting URLs with scan intervals,
-enabled flags and configured source integrations. The shared workspace creation
+enabled flags and source queries. The shared workspace creation
 flow copies these presets once. Explicit source lists (including an empty list)
 take precedence; editing or removing sources never restores the presets. The job
-search template supplies 10 enabled sources and four disabled Denmark integrations.
+search template supplies 10 enabled sources and four disabled Denmark sources.
 Template export/import preserves these presets separately from private workspace
 source lists.
 The template contains question definitions, workflow steps and table columns; it starts each new
@@ -266,7 +266,7 @@ işaretlenir; yeniden puanlama kullanıcı isteğiyle başlar. Eski çalışma a
 puanlama kriterleri yoksa önce profilde belirlenmelidir.
 
 Puanlama, hazırlama, uygulama ve doğrulama görevlerinde aynı işlem aynı hatayla
-**3 kez** başarısız olursa uygulama ilgili agent oturumunu kapatır. Hata hem kayıtta
+**3 kez** başarısız olursa uygulama ilgili agent oturumunu kapatır. Rapor vermeden ve hiç tarayıcı adımı atmadan duran bir kaynak oturumu da **5 kez** üst üste yeniden başlatıldıktan sonra kaynak `blocked` olur; ilerleme korunur ve **Tekrar dene** ile sürer. Hata hem kayıtta
 hem müdahale uyarısında gösterilir; diğer worker'lar çalışmaya devam eder. Araç
 parametrelerinin doğrulama hataları da sayılır. Araya başka araç çağrıları girmesi
 veya gerekçenin değiştirilmesi sayacı sıfırlamaz; yalnızca ilgili işlemin başarılı

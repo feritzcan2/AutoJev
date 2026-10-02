@@ -8,7 +8,7 @@ export async function registerWorkspaceSupport({data,db,runtime,handle,emit,encr
   queueApplication:(id,itemId,token)=>store.queueRecord(id,itemId,token),
   withdrawApplication:(id,itemId)=>runtime.dismissRecord(id,itemId)});
  handle('telegram-status',id=>telegram.status(id));handle('telegram-configure',(id,input)=>telegram.configure(id,input));
- handle('telegram-pair',id=>telegram.pairing(id));handle('telegram-unlink',id=>telegram.unlink(id));handle('telegram-preferences',(id,input)=>telegram.preferences(id,input));handle('telegram-retry',id=>telegram.retry(id));handle('telegram-send-unsent-jobs',id=>telegram.sendUnsentJobs(id));
+ handle('telegram-pair',id=>telegram.pairing(id));handle('telegram-unlink',id=>telegram.unlink(id));handle('telegram-preferences',(id,input)=>telegram.preferences(id,input));handle('telegram-retry',id=>telegram.retry(id));handle('telegram-send-unsent-jobs',(id,input)=>telegram.sendUnsentJobs(id,input));
  await telegram.load();
  return {store,telegram,remove:id=>telegram.removeCandidate(id),close:()=>telegram.stop(),stop:()=>telegram.stop(),resume:()=>telegram.load()};
 }

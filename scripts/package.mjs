@@ -9,7 +9,6 @@ const manifest=JSON.parse(await readFile(path.join(root,'package.json'),'utf8'))
 if(process.env.JOBLOOP_RELEASE_TAG&&process.env.JOBLOOP_RELEASE_TAG!==`v${manifest.version}`)throw Error('Release tag must match package.json version');
 run(process.execPath,['scripts/vendor-termloop.mjs','--verify']);
 run(process.execPath,['scripts/build.mjs']);
-run(process.execPath,['scripts/build-source-tools.mjs']);
 run(process.execPath,['scripts/build-engine.mjs','--release',...(process.platform==='darwin'?['--universal']:[])]);
 run(process.execPath,['scripts/collect-licenses.mjs']);
 if(!ci&&process.platform==='darwin'){

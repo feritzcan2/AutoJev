@@ -89,7 +89,7 @@ export class Telegram{
  unlink(candidate){if(this.configuring)throw Error('Telegram ayarı kaydediliyor.');this.db.unlink(candidate);this.changed(candidate);return this.status(candidate);}
  preferences(candidate,input){const worker=this.worker(candidate);worker.preferences(candidate,input);return this.status(candidate);}
  retry(candidate){this.worker(candidate).retry(candidate);return this.status(candidate);}
- sendUnsentJobs(candidate){return this.worker(candidate,{enabled:true}).sendUnsentJobs(candidate);}
+ sendUnsentJobs(candidate,input){return this.worker(candidate,{enabled:true}).sendUnsentJobs(candidate,input);}
  async removeCandidate(candidate){
   if(this.configuring)throw Error('Telegram ayarı kaydediliyor.');
   const botId=this.db.config(candidate)?.bot_id;if(!botId)return;

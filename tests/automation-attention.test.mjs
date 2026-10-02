@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
 import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
-import {automationAttention} from '../app/automation-attention.mjs';
+import {automationAttention,dismissAutomationAttention} from '../app/automation-attention.mjs';
 import {attentionTabs} from '../src/automation-attention.js';
 
 const source={url:'https://homes.example/list',name:'Homes',enabled:true,blocked:true,lastResult:'CAPTCHA kaldı. Açık sekmede doğrulamayı tamamla.'};
@@ -61,6 +64,37 @@ test('a blocked source stays visible beside working sources, and disappears only
  assert.equal(automationAttention(s)[0].retry,null,'Do not offer to resend an uncertain record action');
 });
 
+test('closing an intervention persists across restart without changing work and a new failure appears again',async t=>{
+ const directory=await mkdtemp(path.join(tmpdir(),'loop-attention-')),file=path.join(directory,'db.sqlite');
+ let store=new WorkspaceDatabase(file),db=new AutomationStore(store);
+ t.after(async()=>{store.close();await rm(directory,{recursive:true,force:true});});
+ const other='https://other.example/list',a=db.create('custom',{goal:'Find records',sources:[source.url,other]});
+ const state={blocked:true,lastRunId:'first',lastRunAt:100,lastStatus:'blocked',lastResult:source.lastResult,nextRunAt:null,blocker:{recordId:'uncertain',tabId:'tab'}};
+ db.put({...db.get(a.id),sourceState:{[source.url]:state,[other]:{...state,lastRunId:'other'}}});
+ const before=db.get(a.id),[issue]=automationAttention(db.snapshot(a.id));assert.equal(issue.retry,null);
+ assert.deepEqual(dismissAutomationAttention(db,a.id,issue.id,issue.dismissKey),{dismissed:true});
+ assert.deepEqual(db.get(a.id).sourceState,before.sourceState);assert.equal(db.get(a.id).status,before.status);
+ assert.deepEqual(automationAttention(db.snapshot(a.id)).map(i=>i.id),[other]);
+ store.close();store=new WorkspaceDatabase(file);db=new AutomationStore(store);
+ assert.deepEqual(automationAttention(db.snapshot(a.id)).map(i=>i.id),[other]);
+ db.put({...db.get(a.id),sourceState:{...before.sourceState,[source.url]:{...state,lastRunId:'second',lastRunAt:200}}});
+ assert.deepEqual(automationAttention(db.snapshot(a.id)).map(i=>i.id),[source.url,other]);
+ assert.throws(()=>dismissAutomationAttention(db,a.id,issue.id,issue.dismissKey),/değişti/);
+});
+
+test('closing a card cannot dismiss a question, a scheduled retry, or another workspace incident',t=>{
+ const store=new WorkspaceDatabase(':memory:');t.after(()=>store.close());const db=new AutomationStore(store);
+ const a=db.create('custom',{goal:'Find records',sources:[source.url]}),other=db.create('custom');
+ db.put({...db.get(a.id),sourceState:{[source.url]:{blocked:true,lastResult:source.lastResult}}});
+ const [issue]=automationAttention(db.snapshot(a.id));
+ assert.throws(()=>dismissAutomationAttention(db,other.id,issue.id,issue.dismissKey),/kapatılamıyor/);
+ const question=db.askQuestion(a.id,{text:'Choose a location'});
+ assert.throws(()=>dismissAutomationAttention(db,a.id,question.id,undefined),/kapatılamıyor/);
+ db.put({...db.get(a.id),retryPlan:{[source.url]:{at:Date.now()+7200000}}});
+ assert.throws(()=>dismissAutomationAttention(db,a.id,issue.id,issue.dismissKey),/kapatılamıyor/);
+ assert.equal(db.get(a.id).dismissedAttention,undefined);assert.equal(db.get(a.id).questions[0].answer,null);
+});
+
 test('tab focus prefers the saved current URL and never guesses among multiple source tabs',()=>{
  const s=snapshot(),issue={...automationAttention(s)[0],tabId:'retained',url:'https://homes.example/detail/2'};
  const retained={tabId:'retained',url:issue.url,sourceUrl:source.url},other={tabId:'other',url:'https://homes.example/detail/3',sourceUrl:source.url};
@@ -82,4 +116,14 @@ test('browser checkpoint survives a blocked report and recent run history prunin
  const s=db.snapshot(a.id),[issue]=automationAttention({...s,runs:[]});
  assert.equal(issue.tabId,'captcha-tab');assert.equal(issue.url,url);assert.equal(issue.workerId,'main');assert.equal(issue.retry,'source');
  assert.equal(db.get(a.id).status,'enabled','Other sources keep running');
+});
+
+test('a repeated scan tool error is technical even when the run was reported blocked',()=>{
+ const s=snapshot();s.sources=[{...source,lastRunId:'failed-tool'}];
+ s.runs=[{id:'failed-tool',sourceUrl:source.url,status:'blocked',toolFailure:{tool:'report_scan_page',message:'arguments.evidence: too long'}}];
+ assert.equal(automationAttention(s)[0].kind,'technical');assert.equal(automationAttention(s)[0].retry,'source');
+ s.sources[0]={...s.sources[0],blocker:{stop:{kind:'technical',evidence:'Too long'}}};s.runs=[];
+ assert.equal(automationAttention(s)[0].kind,'technical','persisted technical stop survives pruned run history');
+ s.sources[0].accessRecovery={state:'waiting',runId:'access',retryAt:123};
+ assert.equal(automationAttention(s)[0].kind,'site_access','real access recovery retains its distinct controls');
 });

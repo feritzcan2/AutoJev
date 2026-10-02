@@ -20,17 +20,21 @@ export function boundedText(value,label,max=12000,{empty=false}={}){
  if(typeof value!=='string'||(!empty&&!value.trim())||value.length>max)throw Error(`${label}: ${empty?'0':'1'}–${max} karakter gerekli`);
  return value.trim();
 }
+export function normalizeSourceUrls(sources){
+ if(!Array.isArray(sources)||sources.length>20)throw Error('En fazla 20 kaynak ekle');
+ return [...new Set(sources.map(webUrl))];
+}
 export function planInput(template,input,previous={}){
  const criteria=input.criteria??previous.criteria??{};
  if(!criteria||typeof criteria!=='object'||Array.isArray(criteria))throw Error('Kriterler geçersiz');
  const allowed=new Set(template.fields.map(f=>f.id));
  for(const key of Object.keys(criteria))if(!allowed.has(key))throw Error('Bilinmeyen kriter: '+key+'. Geçerli alanlar: '+[...allowed].join(', '));
- const sources=input.sources??previous.sources??[];
- if(!Array.isArray(sources)||sources.length>20)throw Error('En fazla 20 kaynak ekle');
+ const sources=normalizeSourceUrls(input.sources??previous.sources??[]);
  for(const f of template.fields){const value=criteria[f.id];if(value==null||value==='')continue;if(['number','money'].includes(f.type)&&(!Number.isFinite(Number(value))||String(value).trim()===''))throw Error(f.label+': sayı gerekli');if(f.type==='boolean'&&!['true','false'].includes(value))throw Error(f.label+': evet/hayır gerekli');if(f.type==='choice'&&!f.options?.includes(value))throw Error(f.label+': geçerli seçenek gerekli');if(f.type==='date'&&(!/^\d{4}-\d{2}-\d{2}$/.test(value)||!Number.isFinite(Date.parse(value))||new Date(value).toISOString().slice(0,10)!==value))throw Error(f.label+': geçerli tarih gerekli');if(f.type==='url')webUrl(value);}
- return {title:boundedText(input.title??previous.title??template.title,'Ad',150),goal:boundedText(input.goal??previous.goal??'','Amaç',6000,{empty:true}),criteria:Object.fromEntries(Object.entries(criteria).map(([key,value])=>[key,boundedText(value,key,6000,{empty:true})])),sources:[...new Set(sources.map(webUrl))],instructions:boundedText(input.instructions??previous.instructions??'','İşleyiş',12000,{empty:true}),facts:boundedText(input.facts??previous.facts??'','Kişisel bilgiler',12000,{empty:true})};
+ return {title:boundedText(input.title??previous.title??template.title,'Ad',150),goal:boundedText(input.goal??previous.goal??'','Amaç',6000,{empty:true}),criteria:Object.fromEntries(Object.entries(criteria).map(([key,value])=>[key,boundedText(value,key,6000,{empty:true})])),sources,instructions:boundedText(input.instructions??previous.instructions??'','İşleyiş',12000,{empty:true}),facts:boundedText(input.facts??previous.facts??'','Kişisel bilgiler',12000,{empty:true})};
 }
-export function missingPlanFields(automation,template=automationTemplate(automation.templateId)){return [...(!automation.goal?['Amaç']:[]),...(!automation.sources.length?['En az bir kaynak adresi']:[]),...template.fields.filter(f=>f.required&&!automation.criteria[f.id]).map(f=>f.label)];}
+export function missingProfileFields(automation,template=automationTemplate(automation.templateId)){return [...(!automation.goal?['Amaç']:[]),...template.fields.filter(f=>f.required&&!automation.criteria[f.id]).map(f=>f.label)];}
+export function missingPlanFields(automation,template=automationTemplate(automation.templateId)){return [...missingProfileFields(automation,template),...(!automation.sources.length?['En az bir kaynak adresi']:[])];}
 export function reusableTemplate(input,normalize=templateContract){
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('Template geçersiz');
  if(!Array.isArray(input.fields)||input.fields.length>20||!Array.isArray(input.steps)||input.steps.length<1||input.steps.length>12)throw Error('Template soruları ve adımları eksik');
@@ -62,6 +66,7 @@ export function automationCells(input,table){
  if(!Array.isArray(input)||input.length>10)throw Error('En fazla 10 hücre güncellenebilir');
  const cells={},columns=new Map(table.columns.map(c=>[c.key,c]));
  for(const entry of input){
+  if(builtins.has(entry?.key))continue;
   const c=columns.get(entry?.key);
   if(!c||builtins.has(c.key)||Object.hasOwn(cells,c.key))throw Error(`Hücre için tanımlı, benzersiz bir özel sütun gerekli. Geçersiz anahtar: ${String(entry?.key)}. source ve title uygulama tarafından doldurulur; cells içine ekleme. Yazılabilir sütunlar: ${table.columns.filter(column=>!builtins.has(column.key)).map(column=>column.key).join(', ')}. Kaydı bu sütunlarla tekrar gönder.`);
   let value=boundedText(entry.value,'Hücre değeri',2000,{empty:true});

@@ -28,6 +28,13 @@ test('source retry waits two hours, survives runtime restart and runs only once'
  assert.equal(f.db.get(f.id).retryPlan[source],undefined);await resumed.tick();assert.equal(f.launches.length,1);
  await resumed.finish(f.id,'blocked','CAPTCHA remains');await resumed.tick();f.setNow(at+twoHours);await resumed.tick();assert.equal(f.launches.length,1);
 });
+test('future retries do not load UI snapshots on scheduler ticks',async t=>{
+ const f=fixture(t),r=f.runtime(),{at}=r.retryLater(f.id,source),snapshot=f.db.snapshot.bind(f.db);
+ f.db.snapshot=()=>{throw Error('A future retry must not read the UI snapshot');};
+ await r.tick();f.setNow(at-1);await r.tick();assert.equal(f.launches.length,0);
+ f.db.snapshot=snapshot;f.setNow(at);await r.tick();await settle();
+ assert.equal(f.launches.length,1);assert.equal(f.launches[0].sourceUrl,source);
+});
 test('a persisted retry still executes after closing and reopening the database',async t=>{
  const directory=await mkdtemp(path.join(tmpdir(),'loop-retry-')),file=path.join(directory,'db.sqlite');
  let now=Date.now(),store=new WorkspaceDatabase(file),db=new AutomationStore(store,{now:()=>now}),runtime;

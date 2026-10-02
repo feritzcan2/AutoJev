@@ -1,5 +1,5 @@
 import {setTimeout as delay} from 'node:timers/promises';
-import {TelegramStore,applicationCompleted} from './telegram-store.mjs';
+import {TelegramStore,applicationCompleted,matchesTelegramScore} from './telegram-store.mjs';
 import {TelegramConversation,clip} from './telegram-conversation.mjs';
 
 const errors={400:'Telegram isteği kabul etmedi.',401:'Bot token’ı geçersiz. Yapılandırmadan güncelle.',403:'Aday botu engellemiş olabilir. Telegram’da botu açıp yeniden dene.',409:'Bu bot başka bir uygulama veya webhook tarafından kullanılıyor.',429:'Telegram gönderim sınırına ulaşıldı; yeniden denenecek.'};
@@ -43,9 +43,9 @@ export class TelegramBot{
  unlink(candidate){this.db.unlink(candidate);this.changed(candidate);return this.status(candidate);}
  preferences(candidate,input){const link=this.db.preferences(candidate,input);this.db.openQuestions(link);this.changed(candidate);return this.status(candidate);}
  retry(candidate){this.store.profile(candidate);this.db.retry(candidate);return this.status(candidate);}
- sendUnsentJobs(candidate){
+ sendUnsentJobs(candidate,input){
   if(!this.api||!this.config.enabled||!this.config.bot)throw Error('Önce Telegram botunu kaydedip aç.');
-  const result=this.db.queueUnsentJobs(candidate,this.config.bot.id);this.changed(candidate);return result;
+  const result=this.db.queueUnsentJobs(candidate,this.config.bot.id,input);this.changed(candidate);return result;
  }
  start(){
   if(this.controller||!this.api)return;
@@ -164,9 +164,11 @@ export class TelegramBot{
   const data=row.data;
   if(data.kind==='new_job'){
    if(!edit&&link.data.newJobs===false&&!data.backfill)return null;
-   if(!edit&&this.db.jobSent(link.candidate_id,this.config.bot?.id??this.db.meta('bot'),data.jobId))return null;
+   if(!edit&&!data.resend&&this.db.jobSent(link.candidate_id,this.config.bot?.id??this.db.meta('bot'),data.jobId))return null;
    let job;try{job=this.store.job(link.candidate_id,data.jobId);}catch{return null;}
-   if(!edit&&data.backfill&&applicationCompleted(job))return null;
+   if(!edit&&data.backfill&&!data.resend&&applicationCompleted(job))return null;
+   if(!edit&&!data.backfill&&!matchesTelegramScore(job,link.data.newJobsMinScore))return {waitingForScore:true};
+   if(!edit&&!matchesTelegramScore(job,data.minScore))return null;
 
    const view=this.store.recordNotification(link.candidate_id,job.id);
    const queue=this.queueApplication?this.store.queueState(link.candidate_id,job):null,buttons=[[{text:'Kaydı aç',style:'primary',url:job.url}]];
@@ -212,7 +214,9 @@ export class TelegramBot{
    if(signal?.aborted)return;
    const link=this.db.link(row.candidate_id);if(!link)continue;
    if((this.nextChatSend.get(link.chat_id)??0)>this.now())continue;
-   const delivery=this.delivery(row,link);if(!delivery){this.db.skipped(row.id);continue;}
+   const delivery=this.delivery(row,link);
+   if(delivery?.waitingForScore){this.db.waitForScore(row.id);continue;}
+   if(!delivery){this.db.skipped(row.id);continue;}
    const body=withDeleteButton(row,delivery);
    try{
     const result=await this.api.call('sendMessage',{chat_id:link.chat_id,...body,link_preview_options:{is_disabled:true}},signal);

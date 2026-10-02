@@ -39,7 +39,7 @@ export function upgradeWorkspaces(db){
    if(!table.columns.some(c=>c.key==='company')&&table.columns.length<10)table.columns.splice(2,0,{key:'company',label:'Şirket',type:'text'});
    for(const source of sources){
     const url=webUrl(source.url);
-    sourceSettings[url]={searchMethod:source.searchMethod??'free',integrationId:source.integrationId??null,fallback:source.fallback??'web',skillText:source.skillText??null,customTool:source.customTool??null,name:source.name,query:source.query,enabled:source.enabled,intervalMinutes:source.intervalMinutes,mode:mode(source.applyMode)};
+    sourceSettings[url]={name:source.name,query:source.query,enabled:source.enabled,intervalMinutes:source.intervalMinutes,mode:mode(source.applyMode)};
     const pending=source.scanProgress,checkpoint=source.resumeContext;
     sourceState[url]={lastRunAt:source.lastRunAt,nextRunAt:source.nextRunAt,lastStatus:source.lastStatus,lastFound:source.lastFound,lastResult:source.lastResult,blocked:source.lastStatus==='blocked',
      ...(pending?{scan:{complete:pending.complete===true,pendingUrls:pending.pendingUrls??[],reason:pending.reason??source.lastResult??'Kayıtlı taramaya devam et',evidenceUrl:pending.evidenceUrl??checkpoint?.url??source.url}}:{}),

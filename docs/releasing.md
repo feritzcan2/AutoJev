@@ -8,7 +8,7 @@ JobLoop, TermLoop’un exact commit doğrulaması ve üç yerel işletim sistemi
 
 1. `ci.yml`, `main` ve `release/**` push’larında veya elle çalışır. Kaynak/vendor
    kontrolü, secret taraması, JavaScript testleri ve build’i doğrular. Ana uygulama
-   üretim bağımlılıkları, altı kaynak aracının Bun lockfile’ları ve Rust engine
+   üretim bağımlılıkları ve Rust engine
    bağımlılıkları ayrıca güvenlik taramasından geçer. Üç platform
    işi Rust testlerini, native paketlemeyi ve paketli uygulamanın açılışını test eder.
    Hatalı bir platform diğerlerinin sonucunu saklamaz (`fail-fast: false`).
@@ -92,9 +92,7 @@ pnpm test:packaged
 
 Linux’ta son komutu `xvfb-run -a pnpm test:packaged` ile çalıştır. Yerel imzasız
 paketleme Apple hesabı gerektirmez. Release paketleri imzalı workflow’dan üretilir.
-Kaynak araçları paketlenirken güvenlik taraması, altı CLI’ın yardım/hata sözleşmeleri
-ve ağ kullanmayan arama/ilan detayı fixture’ları yeniden çalışır.
-Native smoke; ayrı çalışma dizininden açılışı, paketli Rust engine/skills/MCP
+Native smoke; ayrı çalışma dizininden açılışı, paketli Rust engine/MCP
 yardımcısını ve yeniden açılışta verinin korunmasını kontrol eder. Gerçek preload
 IPC üzerinden CV yükler ve profil hazırlamayı başlatır; aday klasörüne kopyalanan
 tüm skill/referans dosyalarının checksum’larını, çalışma talimatlarını ve gerekli
@@ -119,7 +117,7 @@ otomasyon sonucu olarak işaretleme.
 
 Release workflow’u elle başlatılırken `skip_tests=true` seçilebilir. Bu seçenek
 yalnız o elle başlatılan çalıştırma için önceki native CI kanıtı, paketli uygulama
-testi ve kaynak araçlarının testlerini atlar. Varsayılan değer `false` kalır;
+testini atlar. Varsayılan değer `false` kalır;
 tag push ile başlayan normal yayınlar aynı SHA için başarılı CI gerektirir.
 
 Testsiz yayında da sabit tag, main geçmişi, sürüm eşleşmesi, üç native paket,

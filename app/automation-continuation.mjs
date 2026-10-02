@@ -1,11 +1,29 @@
+import {taskRecordIds} from './record-task-scope.mjs';
 import {sourceScanScope} from './source-scan.mjs';
+
+export const SOURCE_RESUME_WINDOW_MS=5*60*1000;
+const unfinishedSourceStatuses=['interrupted','partial','blocked','failed','timeout'];
 
 // A worker may handle many records. Answers belong to the conversation that
 // asked the question, never to whichever conversation that worker used last.
 export function answerContinuation(db,id,task,kind){
  const a=db.get(id),matches=[];
  const sourceScan=kind==='run'&&task.sourceUrl&&!task.recordId&&!task.recordOperation,scopeKey=sourceScan?sourceScanScope(a,task.sourceUrl):null;
- const sameTask=origin=>origin&&origin.automationId===id&&origin.status!=='running'&&origin.kind===kind&&origin.revision===a.revision&&(origin.recordId??null)===(task.recordId??null)&&(origin.recordOperation??null)===(task.recordOperation??null)&&(!task.sourceUrl||origin.sourceUrl===task.sourceUrl)&&(!sourceScan||origin.scanPlan?.scopeKey===scopeKey);
+ const sourceContinuation=(origin,continuation)=>{
+  const elapsed=db.now()-origin.finishedAt;
+  // Checkpoint/tab ownership survives a fresh conversation. Resume history only
+  // for a short, timed interruption of the same unfinished scan cycle.
+  const resumeConversation=unfinishedSourceStatuses.includes(origin.status)&&!origin.recoveredAfterCrash&&Number.isFinite(origin.finishedAt)&&elapsed>=0&&elapsed<=SOURCE_RESUME_WINDOW_MS&&origin.scanPlan?.id===a.sourceState?.[task.sourceUrl]?.scanState?.active?.id;
+  return {...continuation,resumeConversation};
+ };
+ const sameTask=origin=>origin&&origin.automationId===id&&origin.status!=='running'&&origin.kind===kind&&origin.revision===a.revision&&JSON.stringify(taskRecordIds(origin))===JSON.stringify(taskRecordIds(task))&&(origin.recordOperation??null)===(task.recordOperation??null)&&(!task.sourceUrl||origin.sourceUrl===task.sourceUrl)&&(!sourceScan||origin.scanPlan?.scopeKey===scopeKey);
+ const access=!task.recordId&&a.sourceState?.[task.sourceUrl]?.accessRecovery;
+ if(access){
+  if(access.state!=='answered')return null;
+  const origin=db.run(access.runId);
+  if(!sameTask(origin)||origin.taskId!==task.id)return null;
+  return {reason:'site_access_response',runId:origin.id,questionIds:[],browserContext:origin.resumeContext??origin.continuation?.browserContext??null,response:access.response,resumeConversation:!origin.recoveredAfterCrash};
+ }
  for(const question of a.questions??[]){
   if(question.answer==null||question.resolution||question.continuationRunId)continue;
   if((question.recordId??null)!==(task.recordId??null))continue;
@@ -25,15 +43,12 @@ export function answerContinuation(db,id,task,kind){
  const latest=matches[0];
  if(!latest){
   if(sourceScan){
-   // The source owns its conversation, even when a manual retry creates a new
-   // queue task or another worker picks it up. Stop/block/failure ends a turn,
-   // not that identity. Only inspect the latest inserted run: wall-clock changes
-   // must not revive an older conversation after rotation or resume repair.
+   // Look only at the latest inserted run. Completed scans start fresh; older
+   // history must not return after rotation, repair or a change of scan cycle.
    const row=db.db.prepare(`SELECT data FROM automation_runs WHERE automation_id=? AND json_extract(data,'$.sourceUrl')=? AND json_extract(data,'$.kind')='run' AND json_extract(data,'$.recordId') IS NULL AND json_extract(data,'$.recordOperation') IS NULL ORDER BY rowid DESC LIMIT 1`).get(id,task.sourceUrl);
    const previous=row?JSON.parse(row.data):null;
    if(!sameTask(previous)||previous.operation!==task.operation||!previous.conversation||previous.actionId)return null;
-   if(previous.status==='completed')return {reason:'source_scan',runId:previous.id,questionIds:[]};
-   if(['interrupted','partial','blocked','failed'].includes(previous.status))return {reason:previous.taskId===task.id?'task_retry':'source_retry',runId:previous.id,questionIds:[],browserContext:previous.resumeContext??previous.continuation?.browserContext??null};
+   if(unfinishedSourceStatuses.includes(previous.status))return sourceContinuation(previous,{reason:previous.taskId===task.id?'task_retry':'source_retry',runId:previous.id,questionIds:[],browserContext:previous.resumeContext??previous.continuation?.browserContext??null});
    return null;
   }
   // A retry is the same durable task, not the worker's most recent unrelated
@@ -46,23 +61,26 @@ export function answerContinuation(db,id,task,kind){
   if(task.continuation){try{if(sameTask(db.run(task.continuation.runId)))return task.continuation;}catch{}}
   return null;
  }
- return {runId:latest.origin.id,questionIds:matches.map(m=>m.question.id),browserContext:latest.question.browserContext??latest.origin.resumeContext??null};
+ const continuation={runId:latest.origin.id,questionIds:matches.map(m=>m.question.id),browserContext:latest.question.browserContext??latest.origin.resumeContext??null};
+ return sourceScan?sourceContinuation(latest.origin,continuation):continuation;
 }
 
-export function automationRunHistory(db,run,base,profileId=null){
+export function automationRunHistory(db,run,base,profileId=null,protocol=null){
  const scoped=profileId?base.forProfile(profileId):base;
+ const sourceScan=run.kind==='run'&&run.sourceUrl&&!run.recordId&&!run.recordOperation;
  const read=()=>{
-  if(!run.continuation)return null;
+  if(!run.continuation||run.continuation.resumeConversation===false)return null;
   const origin=db.run(run.continuation.runId);
-  return origin.automationId===run.automationId&&origin.conversation?.profileId===profileId?origin.conversation:null;
+  return origin.automationId===run.automationId&&origin.conversation?.profileId===profileId&&(!protocol||origin.conversation.protocol===protocol)?origin.conversation:null;
  };
+ const compatible=(provider,nativeId)=>!protocol||Boolean(nativeId&&db.runs(run.automationId).some(r=>r.conversation?.provider===provider&&r.conversation?.nativeId===nativeId&&r.conversation?.profileId===profileId&&r.conversation?.protocol===protocol&&(!run.evidenceEpoch||r.evidenceEpoch===run.evidenceEpoch)));
  return {
-  forProfile:profile=>automationRunHistory(db,run,base,profile),
-  conversation:(id,provider)=>run.continuation?(read()?.provider===provider?read().nativeId:null):scoped.conversation(id,provider),
-  conversationSettings:(id,provider,nativeId)=>run.continuation?(read()?.provider===provider&&read()?.nativeId===nativeId?read().settings:null):scoped.conversationSettings(id,provider,nativeId),
+  forProfile:profile=>automationRunHistory(db,run,base,profile,protocol),
+  conversation:(id,provider)=>run.continuation||sourceScan?(read()?.provider===provider?read().nativeId:null):compatible(provider,scoped.conversation(id,provider))?scoped.conversation(id,provider):null,
+  conversationSettings:(id,provider,nativeId)=>run.continuation||sourceScan?(read()?.provider===provider&&read()?.nativeId===nativeId?read().settings:null):compatible(provider,nativeId)?scoped.conversationSettings(id,provider,nativeId):null,
   saveConversation:(id,provider,nativeId,settings)=>{
    scoped.saveConversation(id,provider,nativeId,settings);
-   db.putRun({...db.run(run.id),conversation:{provider,nativeId,settings,profileId}});
+   db.putRun({...db.run(run.id),conversation:{provider,nativeId,settings,profileId,...(protocol?{protocol}:{})}});
   },
   forgetConversation:(id,provider,nativeId)=>{
    scoped.forgetConversation(id,provider,nativeId);

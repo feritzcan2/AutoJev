@@ -58,7 +58,7 @@ for(const template of ['housing','appointment','custom'])test(`${template}: page
  assert.equal(view.workers[0].presentation.pageProgress.currentPage,2,'worker UI reads persisted progress, not stale runtime slot data');
  await runtime.stopWorker(id,'main');assert.equal(db.sources(id)[0].blocked,false);assert.equal(db.store.workspaces.tasks.get(id,run.taskId).state,'pending');
  const worker=store.workspaces.workers.add(id);await runtime.tick();await settle();const next=launches[1];assert.equal(next.workerId,worker.id);assert.equal(next.taskId,run.taskId);
- const context=await workflow(next).call(id,next.id,'get_automation_context',{});assert.deepEqual(context.scanProgress.pendingUrls,[second]);assert.equal(context.currentRun.pageProgress.currentPage,2);
+ const context=await workflow(next).call(id,next.id,'get_automation_context',{});assert.deepEqual(context.scanWork.queue.pendingUrls,[second]);assert.equal(context.scanProgress.pendingCount,1);assert.equal(context.currentRun.pageProgress.currentPage,2);
 });
 
 test('an unclean app exit recovers the last page without marking the source blocked',async t=>{
@@ -74,14 +74,15 @@ test('user pause saves progress without restarting until explicitly resumed',asy
  await runtime.runSource(id,source);await settle();assert.deepEqual(launches[1].scan.pendingUrls,[second]);assert.equal(launches[1].pageProgress.currentPage,2);
 });
 
-test('page reports require current owned snapshots and do not fabricate missing totals',async t=>{
+test('page reports accept descriptions while retaining snapshot ownership and numeric bounds',async t=>{
  const {db,id,runtime,launches,workflow}=fixture(t);await runtime.runOnce(id);await settle();const run=launches[0],flow=workflow(run),observed=await flow.call(id,run.id,'browser_open',{url:source}),base={snapshotId:observed.snapshot.id,currentPage:1,totalPages:3,evidence:'Page 1 of 3'};
  const schema=flow.tools.find(t=>t.name==='report_scan_page').inputSchema;
  assert.doesNotThrow(()=>validate(schema,base));assert.doesNotThrow(()=>validate(schema,{snapshotId:base.snapshotId,currentPage:1,evidence:'Page 1'}));
  await assert.rejects(flow.call('foreign',run.id,'report_scan_page',base),/geçersiz/);
- await assert.rejects(flow.call(id,run.id,'report_scan_page',{...base,totalPages:71,evidence:'Page 1 of 71'}),/bulunamadı/);
+ await flow.call(id,run.id,'report_scan_page',{...base,totalPages:71,evidence:'There are 71 pages'});
+ assert.equal(db.sources(id)[0].pageProgress.totalPages,71);
  await flow.call(id,run.id,'browser_open',{url:second});await assert.rejects(flow.call(id,run.id,'report_scan_page',base),/gözlemi eski/);
- assert.equal(db.sources(id)[0].pageProgress,null);
+ assert.equal(db.sources(id)[0].pageProgress.totalPages,71);
  const progress=scanPageReport({url:second,text:'- navigation: Page 2 · Next'},{currentPage:2,totalPages:null,evidence:'Page 2'},1);
  assert.equal(scanPageLabel(progress),'2. sayfa');assert.equal(scanPageLabel({...progress,totalPages:71}),'Sayfa 2 / 71');assert.equal(scanPageLabel(null),'');
  assert.throws(()=>scanPageReport({url:second,text:'Page 2'},{currentPage:2,totalPages:1,evidence:'Page 2'},1),/Geçerli/);
@@ -92,13 +93,24 @@ test('numbered Jev titles save page progress when pagination controls are absent
  const raw={url,title,text:'176 - 200 von 6.708 Mietwohnungen in Berlin',pagination:[],scrollTargets:[]};
  const flow=automationWorkflow({db,run,signal:new AbortController().signal,browser:{async call(){return {content:[{type:'text',text:'Page URL: '+url+'\n'+JSON.stringify(raw)}]};}}});
  const observed=await flow.call(id,run.id,'browser_open',{url}),args={snapshotId:observed.snapshot.id,currentPage:8,evidence:title};
- await assert.rejects(flow.call(id,run.id,'report_scan_page',{...args,evidence:raw.text}),/İlan sayısı/);
- await assert.rejects(flow.call(id,run.id,'report_scan_page',{...args,evidence:url}),/bulunamadı/);
- await assert.rejects(flow.call(id,run.id,'report_scan_page',{...args,totalPages:269}),/Bildirilen sayfa/);
+ assert.equal(observed.pageReport.saved,true);assert.equal(observed.pageReport.currentPage,8);
+ assert.equal((await flow.call(id,run.id,'report_scan_page',{snapshotId:observed.snapshot.id})).pageProgress.currentPage,8);
+ await flow.call(id,run.id,'report_scan_page',{...args,evidence:'The eighth results page',totalPages:269});
+ assert.equal(db.sources(id)[0].pageProgress.totalPages,269);
  await flow.call(id,run.id,'report_scan_page',args);
  const snapshot=db.snapshot(id),view=webWorkspaceView({...snapshot,activeRun:run,activeRuns:[run]},{sessions:new Map()});
  assert.equal(scanPageLabel(snapshot.sources[0].pageProgress),'8. sayfa');assert.equal(scanPageLabel(view.workers[0].presentation.pageProgress),'8. sayfa');
  assert.deepEqual(snapshot.sources[0].scan.pendingUrls,[url]);assert.equal(db.run(run.id).pageProgress.evidence,title);
+});
+
+test('unnumbered observations return a stable receipt without invented pagination or retry errors',async t=>{
+ const {db,id,runtime,launches}=fixture(t);await runtime.runOnce(id);await settle();const run=launches[0];
+ const page={url:source,title:'80 results',text:'1–25 of 80 results',pagination:[{text:'Next',url:second}]};
+ const flow=automationWorkflow({db,run,signal:new AbortController().signal,browser:{async call(){return {content:[{type:'text',text:'Page URL: '+source+'\n'+JSON.stringify(page)}]};}}});
+ const observed=await flow.call(id,run.id,'browser_open',{url:source});assert.equal(observed.pageReport,undefined);
+ const receipt=await flow.call(id,run.id,'report_scan_page',{snapshotId:observed.snapshot.id});assert.equal(receipt.status,'unnumbered');assert.equal(receipt.saved,false);assert.match(receipt.next,/Do not retry/);
+ assert.equal(db.sources(id)[0].pageProgress,null);
+ await assert.rejects(flow.call(id,run.id,'report_scan_page',{snapshotId:'foreign'}),/gözlemi eski/);
 });
 
 test('a long source task remains visible after more than thirty other runs',async t=>{

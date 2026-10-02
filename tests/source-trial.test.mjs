@@ -18,7 +18,6 @@ function fixture(t,{workers=1}={}){
  const finish=async(run,status='completed')=>{
   db.spendStep(a.id,run.id);db.observe(a.id,run.id,run.sourceUrl,'Actual rental listings');
   const flow=automationWorkflow({db,run,signal:{aborted:false},browser:{},report:(...args)=>runtime.report(...args)});
-  if(run.kind==='trial'&&status==='completed')await flow.call(a.id,run.id,'save_workspace_source_skill',{baseVersion:db.sourceSkills.get(a.id,run.sourceUrl)?.version??0,summary:'Only listing access exercised in this scheduling fixture',sections:[{key:'pagination',status:'unverified',instructions:'Pagination was not exercised in this fixture.',evidenceIds:[]}]});
   await flow.call(a.id,run.id,'finish_automation_run',{status,summary:status==='completed'?'Source checked':'Site access denied'});
   await runtime.finish(a.id,status,'Source checked',run.workerId);
  };
@@ -65,9 +64,26 @@ test('one-off source trial completes without scanning or activating other source
 test('adding a source preserves completed trials and only the new source needs its first trial',async t=>{
  const f=fixture(t);await f.runtime.runSource(f.id,urls[0]);await settle();await f.finish(f.launches[0]);await f.runtime.tick();
  const evidence=f.db.sources(f.id)[0].trial,newUrl='https://new.test/search';
- f.db.save(f.id,{sources:[...urls,newUrl],facts:'Updated facts'});f.db.review(f.id);
+ f.db.addSource(f.id,{url:newUrl});
+ await f.runtime.saveProfile(f.id,{facts:'Updated facts'});
  assert.deepEqual(f.db.sources(f.id)[0].trial,evidence);assert.equal(f.db.sources(f.id)[2].trial,undefined);
  await f.runtime.runSource(f.id,newUrl);await settle();assert.equal(f.launches.at(-1).kind,'trial');assert.equal(f.launches.at(-1).sourceUrl,newUrl);
+});
+
+test('saving a profile during scans retains successful trial evidence and restarts scans without repeating trials',async t=>{
+ const f=fixture(t,{workers:2});f.db.enable(f.id);await f.runtime.tick();await settle();
+ const trials=[...f.launches];for(const run of trials)await f.finish(run);
+ const evidence=f.db.sources(f.id).map(source=>source.trial),history=trials.map(run=>f.db.run(run.id));
+ await f.runtime.tick();f.advance();await f.runtime.tick();await settle();
+ assert.equal(f.runtime.slots(f.id).length,2);assert.ok(f.runtime.slots(f.id).every(slot=>slot.run.kind==='run'));
+ const scanIds=f.runtime.slots(f.id).map(slot=>slot.run.id);
+ await f.runtime.saveProfile(f.id,{criteria:{...f.db.get(f.id).criteria,budget:'2500'},instructions:'Use the updated budget.'});await settle();
+ assert.deepEqual(f.db.sources(f.id).map(source=>source.trial),evidence,'Passed status, run IDs and original timestamps survive profile revisions');
+ assert.deepEqual(trials.map(run=>f.db.run(run.id)),history,'Original trial runs stay unchanged');
+ assert.equal(f.launches.filter(run=>run.kind==='trial').length,2);
+ const scans=f.runtime.slots(f.id).map(slot=>slot.run);assert.equal(scans.length,2);
+ assert.ok(scans.every(run=>run.kind==='run'&&!scanIds.includes(run.id)&&run.revision===f.db.get(f.id).revision));
+ const reopened=new AutomationStore(f.store);assert.deepEqual(reopened.sources(f.id).map(source=>source.trial),evidence);
 });
 
 test('trial questions resume their source and leave another source running',async t=>{

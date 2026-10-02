@@ -10,6 +10,21 @@ import {BrowserConnections} from '../app/browser-connection.mjs';
 import {BrowserTools} from '../app/browser.mjs';
 
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
+test('late internal CDP responses never enter the Playwright callback map',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ const sent=[],forwarded=[],socket={readyState:1,send:data=>sent.push(JSON.parse(data))};
+ const transport=new JevCdpTransport(socket);transport.onmessage=message=>forwarded.push(message);
+ const request=transport.call('Target.getTargets'),rejected=assert.rejects(request,/zaman aşımı/);
+ t.mock.timers.tick(15000);await rejected;
+ transport.receive({id:sent[0].id,result:{targetInfos:[]}});
+ transport.receive({id:sent[0].id,error:{code:-32000,message:'Late error'}});
+ assert.equal(forwarded.length,0);assert.equal(transport.pending.size,0);
+ const result={id:12,result:{}};transport.receive(result);
+ const event={method:'Target.attachedToTarget',params:{sessionId:'owned'}};transport.receive(event);
+ assert.deepEqual(forwarded,[result,event]);
+ const next=transport.call('Target.getTargets');transport.receive({id:sent[1].id,result:{targetInfos:[]}});
+ assert.deepEqual(await next,{targetInfos:[]});assert.equal(transport.pending.size,0);
+});
 async function chromeFixture(t){
   const server=createServer(),websockets=new WebSocketServer({noServer:true}),sockets=new Set();
   let requests=0;

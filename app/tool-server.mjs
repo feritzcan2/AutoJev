@@ -31,9 +31,9 @@ export async function startToolServer({resolve,assertOwner,onHook=async()=>({acc
    if(!grants.has(token))throw Error('Worker oturumu kapandı.');
    protocol=resolve(grant);const name=rpc.params?.name,args=rpc.params?.arguments??{};
    if(protocol.callResult){const value=await protocol.callResult(name,args);result(value);observe(grant,{name,result:value});return;}
-   const execute=()=>{const definition=protocol.tools.find(t=>t.name===name);if(!definition)throw Error('Unknown tool');validate(definition.inputSchema,args);return protocol.call(grant.workspaceId,grant.sessionId,name,args);};
+   const execute=()=>{const definition=protocol.tools.find(t=>t.name===name);if(!definition)throw Error('Unknown tool');const input=protocol.normalizeToolArgs?.(name,args)??args;validate(definition.inputSchema,input);return protocol.call(grant.workspaceId,grant.sessionId,name,input);};
    const value=await (protocol.guardToolCall?protocol.guardToolCall(name,args,execute):execute()),response={content:[{type:'text',text:JSON.stringify(value)}]};result(response);observe(grant,{name,result:response});return;
-  }catch(error){const value={isError:true,content:[{type:'text',text:error.message}]};result(value);observe(grant,{name:rpc.params?.name??'',result:value});}
+  }catch(error){const value={isError:true,content:[{type:'text',text:error.message}]};result(value);observe(grant,{name:rpc.params?.name??'',result:value,validationIssues:error.validationIssues});}
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  return {endpoint:`http://127.0.0.1:${server.address().port}/mcp`,grant(workspaceId,sessionId,workerId='main',workflow=defaultWorkflow){if(workflow?.assertOwner)workflow.assertOwner(workspaceId);else assertOwner(workspaceId);const token=randomBytes(32).toString('hex');grants.set(token,{workspaceId,sessionId,workerId,workflow});return token;},revoke(token){grants.delete(token);},close(){server.closeAllConnections();return new Promise(r=>server.close(r));}};

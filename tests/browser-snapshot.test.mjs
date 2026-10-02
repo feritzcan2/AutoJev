@@ -66,7 +66,8 @@ function workflowFixture(t){
  const store=new WorkspaceDatabase(':memory:');t.after(()=>store.close());const db=new AutomationStore(store);
  const a=db.create('custom',{goal:'Find actual listings',sources:[url],criteria:{outcome:'Listings',rules:'Match facts',completion:'One scan'}});
  const run=db.begin(a.id,'interview'),controller=new AbortController();let calls=0,fail=false;
- const browser={async call(){calls++;if(fail)throw Error('Navigation failed');return {content:[{type:'text',text:largePage}]};}};
+ // Each observation differs so the cache treats earlier snapshots as history.
+ const browser={async call(){calls++;if(fail)throw Error('Navigation failed');return {content:[{type:'text',text:largePage+'\nObservation '+calls}]};}};
  const flow=automationWorkflow({db,run,signal:controller.signal,browser,report:()=>{}});
  return {store,db,a,run,controller,flow,call:(name,args={})=>flow.call(a.id,run.id,name,args),calls:()=>calls,fail:()=>{fail=true;}};
 }
@@ -84,17 +85,17 @@ test('MCP returns small readable page parts and searches without spending browse
  const tail=await rpc('browser_read_part',{snapshotId:page.snapshot.id,offset:found.matches[0].contextOffset});
  assert.match(textOf(tail),/https:\/\/homes.example\/last/);assert.equal(f.calls(),browserCalls);
  assert.deepEqual(f.db.run(f.run.id).observations,before.observations);assert.equal(f.db.run(f.run.id).browserSteps,before.browserSteps);
- await f.call('browser_interact',{operation:'click',ref:'final'});assert.equal(f.calls(),browserCalls+3);await assert.rejects(f.call('browser_read_part',{snapshotId:page.snapshot.id}),/eski/);
+ await f.call('browser_interact',{operation:'click',ref:'final'});assert.equal(f.calls(),browserCalls+3);assert.equal((await f.call('browser_read_part',{snapshotId:page.snapshot.id})).historical,true);
  await assert.rejects(f.flow.call('other',f.run.id,'browser_read_part',{snapshotId:page.snapshot.id}),/geçersiz/);
  await assert.rejects(f.flow.call(f.a.id,'other','browser_search',{snapshotId:page.snapshot.id,query:'Wohnung'}),/geçersiz/);
  f.controller.abort();await assert.rejects(f.call('browser_read_part',{snapshotId:page.snapshot.id}),/geçersiz/);
 });
 
-test('new observations and failed navigation invalidate old parts; finished runs cannot read cached pages',async t=>{
+test('old text remains historical after navigation; finished runs cannot read cached pages',async t=>{
  const f=workflowFixture(t),first=await f.call('research_automation_source',{url}),next=await f.call('browser_read');
- await assert.rejects(f.call('browser_search',{snapshotId:first.snapshot.id,query:'Wohnung'}),/eski/);
+ assert.equal((await f.call('browser_search',{snapshotId:first.snapshot.id,query:'Wohnung'})).historical,true);
  f.fail();await assert.rejects(f.call('research_automation_source',{url}),/Navigation failed/);
- await assert.rejects(f.call('browser_read_part',{snapshotId:next.snapshot.id}),/eski/);
+ assert.equal((await f.call('browser_read_part',{snapshotId:next.snapshot.id})).historical,true);
  f.db.finish(f.a.id,f.run.id,'completed','Done');await assert.rejects(f.call('browser_search',{snapshotId:next.snapshot.id,query:'Wohnung'}),/geçersiz/);
 });
 

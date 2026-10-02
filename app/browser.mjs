@@ -106,6 +106,10 @@ export class BrowserTools {
         if(current){const runKey=`${this.clientKey(candidateId)}:${sessionId}`,tabs=this.runTabs.get(runKey)??new Map();tabs.set(current.index,current.url);this.runTabs.set(runKey,tabs);}
       }catch{/* An unverified tab must stay open. */}
     }
+    if(client instanceof JevBrowser&&!result.isError)for(const part of result.content??[]){
+      if(part.type!=='text')continue;
+      try{const slot=client.tabs.get(JSON.parse(part.text).tabId);if(slot)slot.previewAt=Date.now();}catch{}
+    }
     // Newer Playwright versions return snapshot files. Inline only this candidate's
     // bounded browser artifacts, so the agent can act without filesystem access.
     for(const part of [...(result.content??[])]){
@@ -208,9 +212,9 @@ export class BrowserTools {
       return {closed,failed};
     },{checkActive:false});
   }
-  async finishAutomationRun(id,run,{closeTabs=false,pendingTabIds=[],pendingUrls=[]}={}){
+  async finishAutomationRun(id,run,{closeTabs=false,retainForAccess=false,sourceAccessReset=false,sourceRunIds=[],pendingTabIds=[],pendingUrls=[]}={}){
     const scoped=this.forWorker(run.workerId??'main'),key=scoped.clientKey(id),runKey=`${key}:${run.id}`,ownedTabs=this.runTabs.get(runKey);
-    if(!closeTabs){this.runTabs.delete(runKey);return {closed:[]};}
+    if(!closeTabs){if(!retainForAccess)this.runTabs.delete(runKey);return {closed:[]};}
     const connection=this.clients.get(key);
     if(!connection)return {deferred:true};
     return scoped.enqueue(id,async()=>{
@@ -219,7 +223,7 @@ export class BrowserTools {
       if(!client||client.closed)return {deferred:true};
       if(connection.mode==='jev'){
         if(client.profile?.directory!==scoped.options(id).profile?.directory)return {deferred:true};
-        return client.closeFinishedAutomationRunTabs(run.id,id,{sourceScan:!run.recordId,pendingTabIds});
+        return client.closeFinishedAutomationRunTabs(run.id,id,{sourceScan:!run.recordId,pendingTabIds,...(sourceAccessReset?{resetSource:run.sourceUrl,sourceRunIds}:{})});
       }
       if(connection.mode!=='separate'||!connected.tools?.some(tool=>tool.name==='browser_tabs'))return {deferred:true};
       const listing=await client.callTool({name:'browser_tabs',arguments:{action:'list'}});
@@ -227,12 +231,13 @@ export class BrowserTools {
       const available=playwrightTabs(listing),closed=[],retained=[];
       for(const [index,url] of [...(ownedTabs??new Map())].sort((a,b)=>b[0]-a[0])){
         const live=available.find(tab=>tab.index===index);
-        if(!live||live.url!==url||pendingUrls.includes(url)||live.current&&url!==run.resumeContext?.url){retained.push(index);continue;}
+        if(!live){if(!sourceAccessReset)retained.push(index);continue;}
+        if(live.url!==url||pendingUrls.includes(url)||live.current&&!sourceAccessReset&&url!==run.resumeContext?.url){retained.push(index);continue;}
         const result=await client.callTool({name:'browser_tabs',arguments:{action:'close',index}});
         if(result.isError){retained.push(index);continue;}
         closed.push(index);
       }
-      this.runTabs.delete(runKey);
+      if(sourceAccessReset&&retained.length)this.runTabs.set(runKey,new Map([...ownedTabs].filter(([index])=>retained.includes(index))));else this.runTabs.delete(runKey);
       return {closed,retained};
     },{checkActive:false});
   }

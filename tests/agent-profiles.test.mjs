@@ -8,7 +8,7 @@ import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {AgentProfiles,agentProfileId,profileDigest} from '../app/agent-profiles.mjs';
 import {WEB_AGENTS,webAgentProfile,AUTOMATION_INSTRUCTIONS} from '../app/automation-agent-profiles.mjs';
-import {automationWorkflow,launchAutomationWorker} from '../app/automation-worker.mjs';
+import {automationWorkflow,launchAutomationWorker,automationPrompt} from '../app/automation-worker.mjs';
 import {AgentSessions} from '../app/agent-sessions.mjs';
 import {InstructionLog} from '../app/instruction-log.mjs';
 import {selectResume} from '../app/resume.mjs';
@@ -23,6 +23,16 @@ test('saved agent revisions are isolated by workspace and reject stale editor sa
 test('each web role receives only its own task instructions',()=>{
  for(const kind of ['interview','trial','run']){const profile=webAgentProfile(kind,settings);assert.equal(profile.id,agentProfileId('web-'+kind));for(const [other,marker] of [['interview','Interview:'],['trial','Trial:'],['run','Run:']])assert.equal(profile.instructions.includes(marker),kind===other);}
  assert.doesNotMatch(AUTOMATION_INSTRUCTIONS,/Interview:|Trial:|Run:/);
+});
+test('Jev delegation reaches the native role only in Jev mode and every fresh or resumed Jev launch',()=>{
+ for(const kind of ['interview','trial','run']){
+  assert.match(webAgentProfile(kind,settings,{browserMode:'jev'}).instructions,/browser_jev_run/);
+  assert.match(webAgentProfile(kind,settings,{browserMode:'jev'}).instructions,/No prior Jev task ID is required/);
+  assert.doesNotMatch(webAgentProfile(kind,settings,{browserMode:'separate'}).instructions,/browser_jev_run/);
+  assert.doesNotMatch(AUTOMATION_INSTRUCTIONS,/browser_jev_run/);
+  for(const continuation of [undefined,{reason:'task_retry'}])assert.match(automationPrompt({kind,browserMode:'jev',continuation}),/fromTaskId is optional/);
+ }
+ assert.doesNotMatch(automationPrompt({kind:'run',browserMode:'separate'}),/Jev delegation is available in this turn/);
 });
 test('native conversations are scoped to agent and revision; unprofiled legacy history is never resumed',t=>{
  const {core,a}=fixture(t),base=core.workspaces.history(a.id),interview=base.forProfile(agentProfileId('web-interview')),run=base.forProfile(agentProfileId('web-run'));
@@ -43,11 +53,11 @@ test('interviews resume their conversation; trials start fresh and require a cur
  const {db,a}=fixture(t),data=await mkdtemp(path.join(tmpdir(),'loop-trial-context-'));t.after(()=>rm(data,{recursive:true,force:true}));
  const launches=[],agents={start:async input=>launches.push(input),stop:async()=>{},output:()=>({bytes:[]})},mcp={endpoint:'http://localhost/mcp',grant:()=> 'test-token',revoke:()=>{}};
  for(const kind of ['interview','trial','trial']){
-  const run={id:'run-'+launches.length,automationId:a.id,kind};
+  const run=db.putRun({id:'run-'+launches.length,automationId:a.id,kind});
   const worker=await launchAutomationWorker({data,db,run,automation:a,signal:{aborted:false},browser:{},report:()=>{},onEvent:()=>{},agents,mcp});await worker.close();
  }
  assert.equal(launches[0].resume,true);
- for(const launch of launches.slice(1)){assert.equal(launch.resume,false);assert.match(launch.prompt,/run_workspace_source_tool before any browser discovery/);assert.match(launch.prompt,/Previous runs are historical context/);assert.match(launch.prompt,/site_wait response is current application evidence/);assert.match(launch.prompt,/When the selected method or its configured fallback uses the browser/);assert.match(launch.prompt,/actual tool call returns a permission error/);assert.doesNotMatch(launch.prompt,/Do not use other browser tools/);}
+ for(const launch of launches.slice(1)){assert.equal(launch.resume,false);assert.match(launch.prompt,/managed browser to search/);assert.match(launch.prompt,/Previous runs are historical context/);assert.match(launch.prompt,/site_wait response is current application evidence/);assert.match(launch.prompt,/Use browser_interact for cookie overlays/);assert.match(launch.prompt,/actual tool call returns a permission error/);assert.doesNotMatch(launch.prompt,/Do not use other browser tools/);}
 });
 for(const provider of ['claude','codex','opencode'])test(`${provider}: setup launch resumes native history until model or permission changes`,async t=>{
  const {core,db,a}=fixture(t),dir=await mkdtemp(path.join(tmpdir(),'loop-setup-resume-')),launches=[];

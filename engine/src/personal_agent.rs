@@ -13,6 +13,12 @@ pub fn validate(input: &Value) -> Result<Value, String> {
     Ok(json!({"profile":profile,"instructions":instructions}))
 }
 
+/// Drop the vendored prompt template's metadata header; the delivered
+/// instructions begin at the "Saved agent:" line.
+pub fn without_template_header(text: &str) -> String {
+    match text.find("Saved agent:") { Some(index) => text[index..].to_string(), None => text.to_string() }
+}
+
 pub fn for_launch(input: &Value) -> Result<Option<PersonalAgent>, String> {
     if input.get("agentProfile").is_none() { return Ok(None); }
     let profile: PersonalAgent = serde_json::from_value(input["agentProfile"].clone()).map_err(|e|e.to_string())?;
@@ -39,6 +45,12 @@ mod tests {
         }
         let mut invalid=profile("codex");invalid["id"]=json!("random");
         assert!(validate(&json!({"profile":invalid})).is_err());
+    }
+    #[test]
+    fn template_header_is_removed_from_delivered_instructions() {
+        let text="# Personal agent\n\n- id: `x`\n\nSaved agent: a · revision 1\n\nFollow.\n\nBody";
+        assert_eq!(without_template_header(text),"Saved agent: a · revision 1\n\nFollow.\n\nBody");
+        assert_eq!(without_template_header("plain"),"plain");
     }
     #[test]
     fn launch_rejects_profile_setting_mismatch() {

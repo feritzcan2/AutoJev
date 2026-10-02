@@ -1,0 +1,32 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,writeFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
+import {ContextUsage,contextTokens} from '../app/context-usage.mjs';
+import {opencodeCompaction} from '../app/opencode-context.mjs';
+
+test('OpenCode context counts cached input once, tracks completed compaction and isolates the session',async t=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'opencode-context-'));t.after(()=>rm(dir,{recursive:true,force:true}));
+ const file=path.join(dir,'opencode.db'),modelsFile=path.join(dir,'models.json'),id='ses_synthetic0000000000001';
+ await writeFile(modelsFile,JSON.stringify({example:{models:{large:{limit:{context:1000000,output:100000}},small:{limit:{context:200000,output:20000}}}}}));
+ const db=new DatabaseSync(file);t.after(()=>db.close());db.exec('CREATE TABLE session(id TEXT,directory TEXT,parent_id TEXT); CREATE TABLE message(id TEXT,session_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT)');
+ db.prepare('INSERT INTO session VALUES(?,?,NULL)').run(id,dir);
+ const insert=(n,extra={})=>db.prepare('INSERT INTO message VALUES(?,?,?,?,?)').run('msg'+n,id,n,n,JSON.stringify({role:'assistant',providerID:'example',modelID:'large',time:{completed:n},tokens:{input:20000,output:8000,cache:{read:80000,write:10000}},...extra}));
+ insert(1);const reader=new ContextUsage({provider:'opencode',nativeId:id,cwd:dir,opencodeFile:file,modelsFile});
+ let result=await reader.read();assert.equal(result.tokens,110000);assert.equal(result.percent,11);assert.equal(result.caughtUp,true);
+ insert(2,{time:{},tokens:{input:1}});assert.equal((await reader.read()).tokens,110000,'incomplete requests are not measurements');
+ insert(3,{summary:true,finish:'stop'});insert(4,{modelID:'small',tokens:{input:10000,cache:{read:10000,write:0}}});
+ result=await reader.read();assert.equal(result.tokens,20000);assert.equal(result.percent,10);assert.equal(result.peakPercent,11);assert.equal(result.compactionId,'msg3');
+ const foreign=new ContextUsage({provider:'opencode',nativeId:id,cwd:dir+'/other',opencodeFile:file,modelsFile});assert.equal((await foreign.read()).tokens,null);
+ db.prepare('UPDATE session SET parent_id=? WHERE id=?').run('parent',id);assert.equal((await foreign.read()).caughtUp,false);
+ const record={sessionID:id,role:'assistant',time:{completed:1},tokens:{input:10,cache:{read:20,write:30}}};assert.equal(contextTokens('opencode',record,id),60);assert.equal(contextTokens('opencode',record,'other'),null);
+ assert.equal(contextTokens('opencode',{...record,tokens:{input:10,cache:{read:-1}}},id),null);
+ assert.equal(contextTokens('opencode',{...record,error:{name:'abort'}},id),null);
+ assert.equal(contextTokens('opencode',{...record,tokens:{input:0}},id),null);
+ const settings={provider:'opencode',model:'example/large',contextCompactPercent:10};
+ assert.deepEqual(await opencodeCompaction(settings,modelsFile),{providerID:'example',modelID:'large',inputLimit:120000,reserved:20000,contextWindow:1000000,outputLimit:100000});
+ assert.equal(await opencodeCompaction({...settings,contextCompactPercent:0},modelsFile),null);
+ assert.equal(await opencodeCompaction({...settings,model:'missing/model'},modelsFile),null);
+});

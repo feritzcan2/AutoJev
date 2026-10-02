@@ -28,8 +28,8 @@ export function activeRecordOperations(snapshot){
   if(seen.has(run.id)||run.status!=='running'||!run.recordId||!run.recordOperation)continue;
   const worker=snapshot.workers?.find(w=>w.id===(run.workerId??'main'));
   if(!worker?.active||worker.execution?.task?.id!==run.id)continue;
-  if(snapshot.automation?.questions?.some(q=>q.recordId===run.recordId&&q.answer==null))continue;
-  seen.add(run.id);counts.set(run.recordOperation,(counts.get(run.recordOperation)??0)+1);
+  const records=run.recordIds??[run.recordId],count=records.filter(id=>!snapshot.results?.find(r=>r.id===id)?.recordAction?.scoringComplete&&!snapshot.automation?.questions?.some(q=>q.recordId===id&&q.answer==null)).length;
+  if(!count)continue;seen.add(run.id);counts.set(run.recordOperation,(counts.get(run.recordOperation)??0)+count);
  }
  return ['execute','prepare','score','verify'].filter(kind=>counts.has(kind)).map(kind=>({kind,count:counts.get(kind),label:(snapshot.definition?.recordOperations?.[kind]?.runningLabel??running[kind]).toLocaleLowerCase('tr-TR')}));
 }

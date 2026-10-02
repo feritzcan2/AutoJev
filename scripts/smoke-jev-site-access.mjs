@@ -12,6 +12,7 @@ const directory=await mkdtemp(path.join(os.tmpdir(),'jev-site-access-')),db=new 
 let now=Date.now(),blocked=false,limited=false;const hits=new Map();
 const server=createServer((req,res)=>{
  if(req.url==='/favicon.ico'){res.writeHead(204);res.end();return;}
+ if(req.url.startsWith('/broken-transport')){req.socket.destroy();return;}
  const key=req.headers.host+req.url;hits.set(key,(hits.get(key)??0)+1);
  if(limited&&req.url==='/limited'){res.writeHead(429,{'Retry-After':'180'});res.end();return;}
  if(blocked&&req.url==='/blocked'){res.writeHead(403,{'Content-Type':'text/html; charset=utf-8'});res.end('<h1>IP-Bereich vorübergehend gesperrt.</h1>');return;}
@@ -25,7 +26,7 @@ const open=(adapter,id,url)=>adapter.call(id,'browser_navigate',{url},'trial');
 const count=url=>hits.get(new URL(url).host+new URL(url).pathname)??0;
 try{
  const first=await open(browser,'one',a),second=await open(browser,'one',b),back=await open(browser,'one',a);
- assert.notEqual(first.pageContext.tabId,second.pageContext.tabId);assert.equal(back.pageContext.tabId,first.pageContext.tabId);assert.equal(count(a),1);
+ assert.notEqual(first.pageContext.tabId,second.pageContext.tabId);assert.equal(back.pageContext.tabId,first.pageContext.tabId);assert.equal(count(a),1,JSON.stringify({first,second,back,hits:[...hits]}));
  const resumed=adapter('one');assert.equal((await open(resumed,'one',a)).pageContext.tabId,first.pageContext.tabId);assert.equal(count(a),1);
  const client=(await browsers.connect('one')).client,slot=client.tab(first.pageContext.tabId),raw=(await client.context()).pages().find(p=>p.url()===a);
  assert.deepEqual(await raw.evaluate(()=>({cache:typeof window.__jevFast,form:typeof window.__jobloopFieldContext,popup:!!window[Symbol.for('jobloop.tabPopups')],nativeOpen:window.open.toString().includes('[native code]')})),{cache:'undefined',form:'undefined',popup:false,nativeOpen:true});
@@ -46,5 +47,13 @@ try{
  await assert.rejects(open(browser,'one',failedUrl),/net::ERR_HTTP2_PROTOCOL_ERROR/,'Original navigation error survives Jev and the automation adapter');
  client.navigate=navigate;
  assert.ok((await open(browser,'one',b)).pageContext,'The owned source tab remains usable after a navigation failure');
+ const retryBrowser=automationBrowser(browsers,{mode:'jev',sourceUrl:b,readTabKey:'source:'+b});
+ for(let i=0;i<4;i++){
+  await assert.rejects(retryBrowser.call('one','browser_reopen_readonly',{url:b.replace('/list','/broken-transport')+'?detail='+i},'retry-run'),/net::ERR_/);
+  const failed=[...client.tabs.values()].filter(s=>client.automationRuns.get(s.id)==='retry-run');
+  assert.equal(failed.length,1,'Fresh retries must not accumulate Chrome error tabs');
+  await failed[0].page.waitForURL('chrome-error://chromewebdata/',{timeout:3000});
+ }
+ assert.ok(client.tabs.has(first.pageContext.tabId),'Another source tab must survive retry cleanup');
  console.log('JEV_SOURCE_TABS_PRIVATE_STATE_SHARED_WAIT_RECOVERY_PASS');
 }finally{await browsers.close();db.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await rm(directory,{recursive:true,force:true});}

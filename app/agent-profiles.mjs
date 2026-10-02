@@ -2,9 +2,12 @@ import {createHash} from 'node:crypto';
 import {withAgentDefaults} from './agent-settings.mjs';
 
 export const agentProfileId=role=>'builtin.agent-profile.loop-'+role;
-export function personalAgent(definition,settings){
+// Jev steps are appended only for workspaces that use the Jev browser, so a
+// Playwright session never reads tools it does not have.
+export const roleInstructions=(definition,instructions,browserMode)=>browserMode==='jev'&&definition.jevInstructions?instructions+'\n\n'+definition.jevInstructions:instructions;
+export function personalAgent(definition,settings,{browserMode}={}){
  const s=withAgentDefaults(settings);
- return {id:agentProfileId(definition.role),version:1,name:definition.name,description:definition.description,category:definition.category??'Loop',instructions:definition.instructions,agent_id:s.provider,selection:{model:s.model,permission:s.permission,reasoning:s.reasoning}};
+ return {id:agentProfileId(definition.role),version:1,name:definition.name,description:definition.description,category:definition.category??'Loop',instructions:roleInstructions(definition,definition.instructions,browserMode),agent_id:s.provider,selection:{model:s.model,permission:s.permission,reasoning:s.reasoning}};
 }
 export const profileDigest=profile=>createHash('sha256').update(JSON.stringify(profile)).digest('hex');
 
@@ -14,7 +17,7 @@ export class AgentProfiles {
  constructor(workspaces,{validate,changed=()=>{}}){Object.assign(this,{workspaces,validate,changed});this.definitions=new Map();}
  register(definitions){for(const definition of definitions){const id=agentProfileId(definition.role);if(this.definitions.has(id))throw Error('Agent zaten kayıtlı: '+id);this.definitions.set(id,Object.freeze({...definition}));}}
  library(id){return structuredClone(this.workspaces.get(id).agentLibrary??{revision:0,agents:[],favorites:[]});}
- get(id,role,settings){const definition=this.definitions.get(agentProfileId(role));if(!definition)throw Error('Agent tanımı bulunamadı: '+role);const base=personalAgent(definition,settings??this.workspaces.get(id).agentSettings),saved=this.library(id).agents.find(p=>p.id===base.id);return saved?{...base,version:saved.version,instructions:saved.instructions}:base;}
+ get(id,role,settings){const definition=this.definitions.get(agentProfileId(role));if(!definition)throw Error('Agent tanımı bulunamadı: '+role);const workspace=this.workspaces.get(id),base=personalAgent(definition,settings??workspace.agentSettings,{browserMode:workspace.browserMode}),saved=this.library(id).agents.find(p=>p.id===base.id);return saved?{...base,version:saved.version,instructions:roleInstructions(definition,saved.instructions,workspace.browserMode)}:base;}
  list(id,roles,settingsForRole){const library=this.library(id);return {revision:library.revision,agents:roles.map(role=>({...this.get(id,role,settingsForRole?.(role)),role,when:this.definitions.get(agentProfileId(role)).when}))};}
  async update(id,role,{instructions,expectedRevision}){
   const previous=this.library(id);if(previous.revision!==expectedRevision)throw Error('Agent talimatları değişti. Yenileyip tekrar kaydet.');

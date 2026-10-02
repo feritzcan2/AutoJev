@@ -1,6 +1,8 @@
 import {workerTabControls} from './worker-tabs.js';
+import {workerScreenshot} from './worker-screenshot.js';
 import {WorkerTerminalSurface} from './worker-terminal-surface.js';
 import './worker-terminals.css';
+import './worker-screenshot.css';
 import {workerPane} from './worker-pane.js';
 import {terminalConversation} from './terminal-conversation.js';
 import {scanPageLabel} from '../app/scan-page.mjs';
@@ -12,7 +14,7 @@ const states={Working:'Çalışıyor',Idle:'Hazır',AwaitingInput:'Giriş bekliy
 const clear=new TextEncoder().encode('\x1b[2J\x1b[3J\x1b[H');
 const node=(tag,cls,text)=>{const el=document.createElement(tag);el.className=cls;if(text!==undefined)el.textContent=text;return el;};
 const viewKey=(candidate,worker)=>`worker-view:${candidate}:${worker}`;
-const savedView=(candidate,worker)=>{try{return localStorage.getItem(viewKey(candidate,worker))==='chat'?'chat':'terminal';}catch{return 'terminal';}};
+const savedView=(candidate,worker)=>{try{const view=localStorage.getItem(viewKey(candidate,worker));return ['chat','screenshot'].includes(view)?view:'terminal';}catch{return 'terminal';}};
 const saveView=(candidate,worker,view)=>{try{localStorage.setItem(viewKey(candidate,worker),view);}catch{}};
 const roleNames={user:'Sen',agent:'Agent',system:'Kayıt',task:'Görev'};
 const clock=value=>{const at=Date.parse(value??'');return Number.isFinite(at)?new Date(at).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}):'';};
@@ -25,7 +27,7 @@ export function workerTerminals(api,{container,conversationContainer,notice,refr
   const splits=container.querySelector('.worker-splits'),add=container.querySelector('#worker-add');
   const conversationSplits=conversationContainer?node('div','worker-splits'):null;if(conversationSplits){conversationSplits.setAttribute('aria-label','Kurulum agenti terminali');conversationContainer.append(conversationSplits);}
   add.onclick=async()=>{if(!candidate||adding)return;const id=candidate;adding=true;add.disabled=true;try{await api.addWorker(id);await refresh();}catch(error){notice(error.message);}finally{adding=false;add.disabled=!candidate||[...panes.values()].filter(p=>!p.worker.conversation).length>=(snapshot?.capabilities?.maxWorkers??8);}};
-  function dispose(){tabControls.reset();for(const pane of panes.values()){pane.dead=true;pane.surface.dispose();pane.host.remove();pane.card.remove();}panes.clear();splits.replaceChildren();conversationSplits?.replaceChildren();}
+  function dispose(){tabControls.reset();for(const pane of panes.values()){pane.dead=true;pane.preview.dispose();pane.surface.dispose();pane.host.remove();pane.card.remove();}panes.clear();splits.replaceChildren();conversationSplits?.replaceChildren();}
   function syncSize(pane){
     if(!pane.size||pane.dead||pane.loading)return;
     const {rows,cols}=pane.size,session=pane.worker.active?.sessionId,key=`${session??'idle'}:${rows}:${cols}`;
@@ -59,7 +61,8 @@ export function workerTerminals(api,{container,conversationContainer,notice,refr
   }
   function create(worker){
     const pane={id:worker.id,candidate,worker,version:0,sequence:0,pending:[],loading:true,dead:false,busy:false};
-    Object.assign(pane,workerPane({id:worker.id,name:worker.name,terminalId:worker.id==='main'?'terminal':null,showChat:!snapshot?.automation,view:snapshot?.automation?'terminal':savedView(candidate,worker.id),onView:view=>{saveView(pane.candidate,pane.id,view);pane.chatSignature=null;pane.follow=true;if(!pane.dead){render(pane);requestAnimationFrame(()=>{pane.chatLog.scrollTop=pane.chatLog.scrollHeight;});void pollTranscript(pane);}},actions:{tab:()=>tabControls.toggle(pane),start:()=>action(pane,'startWorker'),stop:()=>action(pane,'stopWorker'),restart:()=>action(pane,'restartWorker'),remove:()=>action(pane,'removeWorker')}}));
+    Object.assign(pane,workerPane({id:worker.id,name:worker.name,terminalId:worker.id==='main'?'terminal':null,showChat:!snapshot?.automation,view:savedView(candidate,worker.id),onView:view=>{saveView(pane.candidate,pane.id,view);pane.chatSignature=null;pane.follow=true;if(!pane.dead){render(pane);requestAnimationFrame(()=>{pane.chatLog.scrollTop=pane.chatLog.scrollHeight;pane.surface.fitVisible();void pane.preview.refresh();});void pollTranscript(pane);}},actions:{tab:()=>tabControls.toggle(pane),start:()=>action(pane,'startWorker'),stop:()=>action(pane,'stopWorker'),restart:()=>action(pane,'restartWorker'),remove:()=>action(pane,'removeWorker')}}));
+    pane.preview=workerScreenshot(api,pane);
     const {host}=pane;splits.append(pane.card);pane.local=[];pane.chatSignature=null;pane.follow=true;
     pane.idleHistory.onclick=()=>{pane.showHistory=!pane.showHistory;render(pane);};
     // Follow the newest message until the reader scrolls up; a jump pill brings them back.
@@ -118,6 +121,7 @@ export function workerTerminals(api,{container,conversationContainer,notice,refr
     render(pane);
   }
   function render(pane){
+    pane.preview.update();
     const {worker}=pane,c=worker.execution,active=worker.active,paused=worker.enabled===false&&!active;
     const prompt=pane.dismissedPrompt?null:pane.promptAttention;
     const attention=active?(providerLimitAttention(active.usageLimit)??prompt??terminalAttention('',active.state)):null;
@@ -146,7 +150,7 @@ export function workerTerminals(api,{container,conversationContainer,notice,refr
     pane.idleHistory.textContent=pane.showHistory?'Çıktıyı gizle':'Son terminal çıktısı';
     pane.idleHistory.setAttribute('aria-expanded',String(Boolean(pane.showHistory)));
     pane.task.hidden=web&&!active&&!c?.task;
-    if(web&&worker.id==='main'&&snapshot.progress?.primary?.id==='message')pane.start.hidden=true;
+    if(web&&worker.id==='main'&&!snapshot.progress?.reviewed&&snapshot.progress?.primary?.id==='message')pane.start.hidden=true;
     const outcome=worker.presentation?.outcome;pane.outcome.hidden=web||!outcome;
     if(outcome){pane.outcomeTitle.textContent=outcome.title;pane.outcomeDetail.textContent=outcome.detail;pane.outcome.dataset.tone=outcome.tone;}
     pane.inputHint.hidden=!snapshot?.capabilities?.terminalConversation;pane.inputHint.textContent=active?'Canlı terminal · Giriş ve izin isteklerini burada yanıtlayabilirsin.':web?'Oturum kapalı · Yeni mesajlarını Kurulum agenti sayfasından gönderebilirsin.':'Oturum kapalı · Yukarıdaki çıktı önceki oturuma ait. Yeni mesaj yazıp Enter’a basarak agent ile konuşabilirsin.';
@@ -172,7 +176,7 @@ export function workerTerminals(api,{container,conversationContainer,notice,refr
     if(candidate!==id){dispose();candidate=id;}snapshot=value;
     const workers=value?.workers??(id?[{id:'main',name:'Worker 1',execution:value?.execution,active:value?.active}]:[]);
     let changed=false;
-    for(const [worker,pane] of panes)if(!workers.some(w=>w.id===worker)){pane.dead=true;pane.surface.dispose();pane.host.remove();pane.card.remove();panes.delete(worker);changed=true;}
+    for(const [worker,pane] of panes)if(!workers.some(w=>w.id===worker)){pane.dead=true;pane.preview.dispose();pane.surface.dispose();pane.host.remove();pane.card.remove();panes.delete(worker);changed=true;}
     for(const worker of workers){let pane=panes.get(worker.id);if(!pane){pane=create(worker);changed=true;}else{const ended=pane.worker.active&&!worker.active;pane.worker=worker;if(worker.active?.sessionId&&pane.session!==worker.active.sessionId){pane.session=worker.active.sessionId;pane.transcript=[];pane.chatSignature=null;void replay(pane);void pollTranscript(pane);}if(ended){pane.promptShown=false;pane.promptAttention=null;pane.dismissedPrompt=false;if(snapshot?.capabilities?.terminalConversation)pane.surface.writeln('\r\n── Oturum sona erdi · Sonuç ve sonraki adım yukarıda ──');}render(pane);}}
     if(conversationSplits)for(const pane of panes.values()){
       const interview=value?.automation&&(value.activeRuns??[]).some(run=>run.kind==='interview'&&(run.workerId??'main')===pane.id);
@@ -182,8 +186,8 @@ export function workerTerminals(api,{container,conversationContainer,notice,refr
     if(changed)separators();
     const main=panes.get('main');if(main){const home=value?.setup?.status==='running'?document.getElementById('setup-terminal'):main.card;if(home&&main.host.parentElement!==home)home.append(main.host);}
     const maxWorkers=value?.capabilities?.maxWorkers??8;add.hidden=maxWorkers===1;
-    container.querySelector('.worker-toolbar h2').textContent=value?.automation?'Terminal':'Agent worker’ları';
-    container.querySelector('.worker-toolbar p').textContent=value?.automation?'Asistanın çalışmasını izle; giriş ve izin isteklerini burada yanıtla.':value?.capabilities?.workerDescription??'Worker’lar çalışma alanının görevlerini ortak kuyruktan alır.';
+    container.querySelector('.worker-toolbar h2').textContent='Agent worker’ları';
+    container.querySelector('.worker-toolbar p').textContent=value?.automation?'Her worker’ı terminalden veya tarayıcı ekranından izle.':value?.capabilities?.workerDescription??'Worker’lar çalışma alanının görevlerini ortak kuyruktan alır.';
     add.disabled=adding||!id||workers.filter(w=>!w.conversation).length>=maxWorkers||Boolean(value?.setup&&value.setup.status!=='complete');
   }
   function event(event){

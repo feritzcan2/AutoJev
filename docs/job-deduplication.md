@@ -1,5 +1,7 @@
 # Vacancy identity and duplicate records
 
+> **Not (2026-10-02):** Bu belge eski aday-MCP araçlarını (`check_jobs`, `add_job`, `list_applications`) ve siteye özel URL adaptörlerini anlatır; bunlar artık yok. Güncel kural `app/job-urls.mjs` içindedir: kimlik, hash, sondaki eğik çizgi ve ortak izleme parametreleri atılmış kanonik URL'dir; aynı ilanın `/apply`, `/application`, `/confirmation` gibi adım sayfaları aynı kimliği paylaşır. Siteye özel kural yoktur.
+
 JobLoop owns vacancy identity. Agents pass observed URLs; URL adapters extract
 platform IDs for LinkedIn, StepStone, Personio, Greenhouse, Lever, Ashby, JOIN,
 SmartRecruiters, Indeed and N26. Employer-scoped platforms include the employer

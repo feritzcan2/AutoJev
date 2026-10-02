@@ -47,11 +47,14 @@ export function automationAttentionPanel(api,{navigate,refresh,getConversation=(
   const heading=el('div',null,'automation-help-heading'),copy=el('div');copy.append(el('span',technical?'Tarama tamamlanamadı':'Müdahale gerekiyor','automation-help-label'),el('h3',issue.name));heading.append(el('span','!','attention-icon'),copy);
   const summary=el('p',issue.message.length>300?issue.message.slice(0,297)+'…':issue.message,'automation-help-summary');
   const instructions=el('p',technical&&issue.retry?'Kaydedilen sonuçlar ve devam noktası korunuyor. Taramayı yeniden deneyebilirsin.':issue.retry?'İlgili sekmede engeli giderdikten sonra devam edebilirsin.':'İlgili sekmeyi kontrol et. Sonuç belirsizse agent’a durumu yaz; işlemi yeniden gönderme.','automation-help-instructions');
+  if(issue.kind==='site_access')instructions.textContent=issue.cleanupError??`Diğer kaynaklar çalışmaya devam eder. Yanıt verirsen bu tarama kaldığı yerden sürer. ${new Date(issue.accessRetryAt).toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} tarihine kadar yanıt gelmezse sekmeler kapanır ve tarama sıfırdan başlar. Kartı kapatırsan sekmeler şimdi kapanır; sonraki deneme sıfırdan başlar.`;
   const actions=el('div',null,'automation-help-actions'),open=el('button','Sekmeyi göster ↗','primary'),reply=el('button','Yanıtla','quiet'),resume=issue.retry?el('button',technical?'Taramaya devam et':'Çözdüm, devam et','quiet'):null;
   open.type=reply.type='button';actions.append(open,reply);
   if(resume){resume.type='button';actions.append(resume);}
   const later=issue.retry?el('button','2 saat sonra dene','quiet'):null;
   if(later){later.type='button';later.disabled=Boolean(issue.closing);actions.append(later);}
+  const close=el('button','Kapat','quiet');close.type='button';close.dataset.dismissAttention=issue.id;close.title='Bu müdahale bildirimini kapat';actions.append(close);
+  if(issue.kind==='site_access'){close.title='Bu kaynağın bekleyen sekmelerini kapat; sonraki denemede sıfırdan başla';close.disabled=Boolean(issue.closing);}
   if(issue.closing&&resume){resume.disabled=true;resume.textContent='Oturum kapanıyor…';}
   const feedback=el('p',null,'automation-help-feedback');feedback.hidden=true;feedback.setAttribute('role','status');
   const choices=el('div',null,'automation-help-tabs');choices.hidden=true;
@@ -64,10 +67,12 @@ export function automationAttentionPanel(api,{navigate,refresh,getConversation=(
   const toggleReply=show=>{form.hidden=!show;reply.setAttribute('aria-expanded',String(show));if(show){replyDrafts.set(issue.id,input.value);input.focus();}else{replyDrafts.delete(issue.id);input.value='';send.disabled=true;reply.focus();}};
   reply.onclick=()=>toggleReply(form.hidden);cancel.onclick=()=>toggleReply(false);
   input.oninput=()=>{replyDrafts.set(issue.id,input.value);send.disabled=!input.value.trim()||Boolean(issue.closing);};
-  const run=async(action)=>{if(card.dataset.busy==='true')return;card.dataset.busy='true';open.disabled=reply.disabled=input.disabled=send.disabled=cancel.disabled=true;if(resume)resume.disabled=true;if(later)later.disabled=true;feedback.hidden=true;try{await action();}catch(error){feedback.textContent=error.message;feedback.hidden=false;}finally{card.dataset.busy='false';open.disabled=reply.disabled=input.disabled=cancel.disabled=false;send.disabled=!input.value.trim()||Boolean(issue.closing);if(resume)resume.disabled=Boolean(issue.closing);if(later)later.disabled=Boolean(issue.closing);}};
+  const run=async(action)=>{if(card.dataset.busy==='true')return;card.dataset.busy='true';open.disabled=reply.disabled=close.disabled=input.disabled=send.disabled=cancel.disabled=true;if(resume)resume.disabled=true;if(later)later.disabled=true;feedback.hidden=true;try{await action();}catch(error){feedback.textContent=error.message;feedback.hidden=false;}finally{card.dataset.busy='false';open.disabled=reply.disabled=close.disabled=input.disabled=cancel.disabled=false;send.disabled=!input.value.trim()||Boolean(issue.closing);if(resume)resume.disabled=Boolean(issue.closing);if(later)later.disabled=Boolean(issue.closing);}};
+  close.onclick=()=>run(async()=>{await api.automationAttentionDismiss(workspace,issue.id,issue.dismissKey);if(owner!==workspace)return;replyDrafts.delete(issue.id);await refresh();});
   form.onsubmit=event=>{event.preventDefault();const text=input.value.trim();if(!text||issue.closing)return;void run(async()=>{
    const context=[`Müdahaleye yanıt: ${issue.name}`,issue.sourceUrl&&`Kaynak: ${issue.sourceUrl}`,issue.url&&`Sekme: ${issue.url}`,`Agent’ın açıklaması: ${issue.message}`].filter(Boolean).join('\n').slice(0,1900);
-   await api.terminalMessage(workspace,`${context}\n\nKullanıcının talimatı:\n${text}`,issue.workerId??'main');
+   if(issue.kind==='site_access')await api.automationSourceResume(workspace,issue.sourceUrl,issue.runId,text);
+   else await api.terminalMessage(workspace,`${context}\n\nKullanıcının talimatı:\n${text}`,issue.workerId??'main');
    if(owner!==workspace)return;
    toggleReply(false);feedback.textContent='Yanıtın agente iletildi.';feedback.hidden=false;await refresh();
   });};
@@ -80,7 +85,8 @@ export function automationAttentionPanel(api,{navigate,refresh,getConversation=(
    for(const tab of tabs){const button=el('button',tab.url,'quiet');button.type='button';button.onclick=()=>focus(tab);choices.append(button);}
   });
   if(resume)resume.onclick=()=>run(async()=>{
-   if(issue.retry==='source')await api.automationSourceRun(workspace,issue.sourceUrl);else await api.automationRun(workspace,'trial');
+   if(issue.kind==='site_access')await api.automationSourceResume(workspace,issue.sourceUrl,issue.runId);
+   else if(issue.retry==='source')await api.automationSourceRun(workspace,issue.sourceUrl);else await api.automationRun(workspace,'trial');
    await refresh();
   });
   if(later)later.onclick=()=>run(async()=>{await api.automationRetryLater(workspace,issue.id);await refresh();});

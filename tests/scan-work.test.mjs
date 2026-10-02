@@ -5,6 +5,16 @@ import {AutomationStore} from '../app/automation-store.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
 import {automationTaskContext} from '../app/automation-task-context.mjs';
 import {sourceStop} from '../app/automation-stop.mjs';
+import {validate} from '../app/tool-schema.mjs';
+import {hasUnblockedScanWork} from '../app/scan-work.mjs';
+
+test('site waits retain reachable details and undiscovered searches across search scopes',()=>{
+ const run={scan:{work:{activeSearchId:'one',searches:[{id:'one',status:'pending',pendingUrls:['https://blocked.test/role']},{id:'two',status:'pending',pendingUrls:[]}]}}};
+ assert.equal(hasUnblockedScanWork(run,['blocked.test']),true);
+ run.scan.work.searches[1].pendingUrls=['https://blocked.test/other'];assert.equal(hasUnblockedScanWork(run,['blocked.test']),false);
+ run.scan.work.searches[1].pendingUrls.push('https://reachable.test/role');assert.equal(hasUnblockedScanWork(run,['blocked.test']),true);
+ run.scan.work.searches[1].status='completed';assert.equal(hasUnblockedScanWork(run,['blocked.test']),false);
+});
 
 const source='https://example.test/search',p=n=>source+'?page='+n;
 function fixture(t,template='custom'){
@@ -69,11 +79,46 @@ test('separate searches retain their own page, queue and completed state, and al
  assert.equal(result.status,'completed');assert.equal(f.db.sources(f.id)[0].scanState.active,null);
 });
 
-test('queue removals require current evidence and a local page failure cannot abandon an unstarted search',t=>{
+test('reported queue removals need no fresh evidence and retain other pending searches',t=>{
  const f=fixture(t);f.db.saveScanSearches(f.id,f.run.id,[{id:'default',label:'First search'},{id:'later',label:'Another search'}]);
  const snapshot=f.observe(source,[p(8)]);f.save({pendingUrls:[p(8)]},snapshot);
- assert.throws(()=>f.save({processedUrls:['https://other.test/unseen']},snapshot),/gözlenmeli/);
+ f.save({processedUrls:['https://other.test/unseen']});
+ assert.deepEqual(f.db.scanQueue(f.id,f.run.id).pendingUrls,[p(8)]);
  const run=f.db.run(f.run.id),issue={id:'error',url:p(8),verified:true};
  assert.throws(()=>sourceStop({...run,scanIssues:{[p(8)]:issue}},{status:'blocked',stop:{kind:'technical',evidence:'Failed page',issueIds:['error']}}),/Diğer kayıtlı aramalar/);
  assert.doesNotThrow(()=>sourceStop({...run,scanIssues:{[p(8)]:{...issue,global:true}}},{status:'blocked',stop:{kind:'technical',evidence:'Disconnected',issueIds:['error']}}));
+});
+
+test('progress accepts missing, stale and Jev evidence IDs without another browser read',async t=>{
+ const f=fixture(t);let browserCalls=0;
+ const flow=automationWorkflow({db:f.db,run:f.run,signal:{aborted:false},browser:{call:async()=>{browserCalls++;return {content:[{type:'text',text:`Page URL: ${source}\nCurrent page`}]};}},report:()=>{}});
+ const call=args=>flow.call(f.id,f.run.id,'save_scan_progress',args);
+ const args={pendingUrls:[p(2),p(3)],reason:'Reported pending work',cursor:'opaque-next-token'};
+ validate(flow.tools.find(t=>t.name==='save_scan_progress').inputSchema,args);
+ const first=await call(args);
+ assert.deepEqual(first.queue.pendingUrls,[p(2),p(3)]);assert.equal(first.scanPlan.checkpoint.cursor,'opaque-next-token');
+ assert.equal(browserCalls,0);assert.equal(f.db.run(f.run.id).observations.length,0);
+ const observed=await flow.call(f.id,f.run.id,'browser_read',{});
+ await flow.call(f.id,f.run.id,'browser_read',{}); // The first snapshot is stale.
+ const helper=f.db.jevTasks.create(f.id,f.run.taskId,{operation:'scan_results'});
+ const evidence=f.db.jevTasks.evidence(helper,{url:source,text:'Previous search results'});
+ for(const snapshotId of [observed.snapshot.id,evidence.id,'unknown-reference']){
+  const saved=await call({snapshotId,pendingUrls:[p(3)],processedUrls:[p(2)],reason:'Processed from earlier reading'});
+  assert.deepEqual(saved.queue.pendingUrls,[p(3)]);
+ }
+ assert.equal(browserCalls,2);assert.equal(f.db.run(f.run.id).toolFailure,undefined);
+ assert.deepEqual(f.store.workspaces.tasks.get(f.id,f.run.taskId).scan.pendingUrls,[p(3)]);
+ const resumed=automationWorkflow({db:f.db,run:f.db.run(f.run.id),signal:{aborted:false},browser:{call:async()=>{throw Error('Unnecessary reread');}},report:()=>{}});
+ await resumed.call(f.id,f.run.id,'save_scan_progress',{pendingUrls:[],processedUrls:[p(3)],reason:'Earlier task work completed'});
+ assert.equal(f.db.scanQueue(f.id,f.run.id).total,0);
+});
+
+test('progress without a page preserves the queue while falling back from an unsupported cutoff',t=>{
+ const f=fixture(t),run=f.db.run(f.run.id);
+ f.db.putRun({...run,scanPlan:{...run.scanPlan,mode:'incremental',cutoffAt:f.db.now(),boundary:{url:source,runId:run.id}}});
+ const saved=f.save({pendingUrls:[p(2)],chronology:{newestFirst:true,evidence:'Newest first',fromStart:true,pageComplete:true,allItemsDated:true,items:[{publishedAt:'2020-01-01',evidence:'2020-01-01'}]}});
+ assert.deepEqual(saved.queue.pendingUrls,[p(2)]);assert.equal(saved.scanPlan.mode,'full');assert.equal(saved.scanPlan.boundary,null);
+ assert.throws(()=>f.save({pendingUrls:['javascript:alert(1)']}),/HTTP/);
+ assert.throws(()=>f.save({pendingUrls:[p(2)],processedUrls:[p(2)]}),/aynı anda/);
+ assert.deepEqual(f.db.scanQueue(f.id,f.run.id).pendingUrls,[p(2)]);
 });

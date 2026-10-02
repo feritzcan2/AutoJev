@@ -1,3 +1,4 @@
+import {taskRecordIds,taskHasRecord} from './record-task-scope.mjs';
 import {randomUUID} from 'node:crypto';
 const parse=row=>row?JSON.parse(row.data):null;
 const active=['running','reported','paused'];
@@ -20,7 +21,7 @@ export class WorkspaceTasks {
   const task=this.get(id,taskId);if(active.includes(task.state)){if(task.workerId!==workerId)throw Error('Görev başka bir worker tarafından işleniyor.');return task;}
   if(task.state!=='pending')throw Error('Görev çalıştırılabilir durumda değil');
   if(task.dependsOn.some(parent=>this.get(id,parent).state!=='completed'))throw Error('Görevin önceki adımları tamamlanmadı');
-  if(this.list(id,{states:active}).some(t=>t.workerId===workerId||task.lockKey&&t.lockKey===task.lockKey))throw Error('Görev başka bir worker tarafından işleniyor.');
+  if(this.list(id,{states:active}).some(t=>t.workerId===workerId||task.lockKey&&t.lockKey===task.lockKey||taskRecordIds(task).some(recordId=>taskHasRecord(t,recordId))))throw Error('Görev başka bir worker tarafından işleniyor.');
   return this.put({...task,state:'running',workerId,attempts:task.attempts+1,startedAt:Date.now()});
  });}
  finish(id,taskId,state='completed',summary=''){if(!['completed','partial','blocked','failed','interrupted','cancelled'].includes(state))throw Error('Geçersiz görev sonucu');const task=this.get(id,taskId);return this.put({...task,state,summary,finishedAt:Date.now()});}

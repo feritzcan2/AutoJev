@@ -70,10 +70,13 @@ export class InstructionLog {
   for(const row of rows){const event=JSON.parse(row.data);if(event.status==='failed')continue;if(row.kind==='launch')launches.push(...event.parts.filter(p=>!p.truncated).map(p=>p.text));for(const part of event.parts)if(!latest.has(part.key))latest.set(part.key,{...part,status:event.status});}
   return parts.map(part=>{const match=latest.get(part.key),text=instructionText(part.text);return {...part,hash:hash(text),state:!match?(text&&launches.some(prompt=>prompt.includes(text))?'recorded':'unrecorded'):match.hash!==hash(text)?'changed':match.status==='available'?'available':'recorded'};});
  }
- tool(grant,{name,result,kind='tool_result'}){
+ tool(grant,{name,result,kind='tool_result',validationIssues}){
   const context=/(?:^get_.*context$)/.test(name);
   // Capture context and browser responses, never credential-vault tool results.
   if(kind!=='tool_catalog'&&/(?:credential|password|secret|token)/i.test(name))return;
+  // Write validation can fail before the provider flushes its transcript.
+  // Retain field types and bounds only; never arguments, page text or values.
+  if(result?.isError&&validationIssues?.length)return this.record({workspaceId:grant.workspaceId,workerId:grant.workerId,sessionId:grant.sessionId,agentProfileId:grant.agentProfileId,kind,title:name,status:'failed',parts:[instructionPart(`validation:${name}`,name,'tool',{issues:validationIssues})]});
   if(kind!=='tool_catalog'&&!context&&!name.startsWith('browser_')&&!name.startsWith('research_')&&name!=='report_scan_page')return;
   let value=result;
   if(context&&result?.content?.length===1&&result.content[0].type==='text'){try{value=JSON.parse(result.content[0].text);}catch{}}

@@ -50,8 +50,6 @@ export async function collectReadiness(input={},options={}){
  const executable=await (options.findExecutable??findExecutable)(provider,deps);
  checks.push(item('agent',descriptor.label,executable?'ready':'error',executable?'Agent komutu bulundu.':missingAgentMessage(provider)));
  if(executable)checks.push(await (options.inspectLogin??inspectLogin)(provider,executable,deps));
- const bun=await (options.findExecutable??findExecutable)('bun',deps);
- checks.push(item('bun','İlan kaynakları için Bun',bun?'ready':'warning',bun?'Kaynak araçlarını çalıştıran Bun bulundu.':'CLI ile ilan tarayan kaynaklar için Bun’u kur. Tarayıcı kullanan kaynaklarla devam edebilirsin.'));
  if(browserMode==='existing')checks.push(item('browser','Agent tarayıcısı','warning','Tarayıcı araçlarını seçtiğin agent içinde etkinleştir. Bu bağlantı AutoJev tarafından otomatik doğrulanamaz.'));
  else{
   const chrome=await (options.findChrome??findChrome)(deps);

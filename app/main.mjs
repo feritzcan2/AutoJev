@@ -1,3 +1,4 @@
+import {workerPreviews} from './worker-preview.mjs';
 import {registerWorkspaceSupport} from './workspace-support-services.mjs';
 import {upgradeWorkspaces} from './workspace-upgrade.mjs';
 import {workspaceBrowserDirectory} from './workspace-paths.mjs';
@@ -108,6 +109,8 @@ async function boot(){
  handle('worker-add',(id,input)=>workspaces.addWorker(id,input));handle('worker-start',(id,worker)=>workspaces.startWorker(id,worker));handle('worker-stop',(id,worker)=>workspaces.stopWorker(id,worker));handle('worker-restart',(id,worker)=>workspaces.restartWorker(id,worker));handle('worker-remove',(id,worker)=>workspaces.removeWorker(id,worker));
  handle('terminal-output',(id,worker='main')=>{workspaces.validateWorker(id,worker);return agents.snapshot(id,worker);});
  handle('worker-transcript',(id,worker='main')=>{workspaces.validateWorker(id,worker);return agents.transcript(id,worker);});
+ const preview=workerPreviews({browsers:browser,sessionFor:(id,worker)=>agents.sessions.get(workerKey(id,worker))});
+ handle('worker-preview',(id,worker='main')=>{workspaces.validateWorker(id,worker);return preview(id,worker);});
  handle('terminal-input',(id,text,worker='main',session)=>{workspaces.beforeInput(id,text,worker);return agents.input(id,text,worker,session);});
  handle('terminal-message',(id,text,worker='main')=>workspaces.message(id,text,worker));handle('terminal-resize',(id,rows,cols,worker='main',session)=>{workspaces.validateWorker(id,worker);return agents.resize(id,rows,cols,worker,session);});
  handle('catalog',()=>ensureEngine().request('catalog'));handle('chrome-profiles',()=>listChromeProfiles());

@@ -9,13 +9,17 @@ const timestamp=value=>typeof value==='number'?value:Date.parse(value)||0;
 const clock=value=>new Date(timestamp(value)).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});
 const drafts=new Map();
 
-export function workspaceChat({root,form,log,input,send,attach,intro,api,owner,onSend,onClose,onShow=()=>{}}){
+export function workspaceChat({root,form,log,input,send,attach,intro,api,owner,onSend,onClose,onShow=()=>{},onReviewProfile=()=>{},onReviewSources=()=>{}}){
  let snapshot=null,sending=false,disposed=false,follow=true,native=[],activity=null,polling=false,session=null,pending=[],failures=[],lastSignature='',visible=false;
  root.className='automation-conversation workspace-chat';root.setAttribute('aria-label','Kurulum agenti ile sohbet');
  const header=node('div','workspace-chat-header'),identity=node('div','workspace-chat-identity'),mark=node('span','workspace-chat-avatar','A'),copy=node('div'),title=node('h2','','Kurulum agenti'),status=node('span','workspace-chat-status','Hazır');status.id='automation-chat-state';status.setAttribute('role','status');
  copy.append(title,status);identity.append(mark,copy);
  const controls=node('div','workspace-chat-controls'),questionLink=node('button','quiet workspace-chat-question-link','Formu aç'),close=node('button','quiet','Sohbeti kapat');questionLink.type=close.type='button';questionLink.hidden=true;questionLink.onclick=()=>showQuestion();close.id='automation-chat-stop';close.hidden=true;
  close.onclick=async()=>{close.disabled=true;try{await onClose();}finally{if(!disposed)close.disabled=false;}};controls.append(questionLink,close);header.append(identity,controls);
+ const profileNotice=node('section','workspace-chat-profile'),profileCopy=node('div'),profileTitle=node('b','','Profil değişikliği hazır'),profileDetail=node('p'),reviewProfile=node('button','primary','Taslağı incele ve kaydet');
+ profileNotice.setAttribute('aria-label','Profil değişikliği');profileNotice.hidden=true;reviewProfile.type='button';reviewProfile.onclick=onReviewProfile;profileCopy.append(profileTitle,profileDetail);profileNotice.append(profileCopy,reviewProfile);
+ const sourceNotice=node('section','workspace-chat-profile'),sourceCopy=node('div'),reviewSources=node('button','primary','Kaynak önerilerini incele');
+ sourceNotice.setAttribute('aria-label','Kaynak önerileri');sourceNotice.hidden=true;reviewSources.type='button';reviewSources.onclick=onReviewSources;sourceCopy.append(node('b','','Kaynak önerileri hazır'),node('p','','Agent’ın önerdiği kaynak değişikliklerini Kaynaklar ekranından inceleyip uygula.'));sourceNotice.append(sourceCopy,reviewSources);
  const viewport=node('div','workspace-chat-viewport'),empty=node('div','workspace-chat-empty');
  empty.append(node('span','workspace-chat-eyebrow','BİRLİKTE ÇALIŞALIM'),node('h3','','Neyi konuşalım?'),node('p','','Sonuçları sor, tercihlerini değiştir veya bir sonraki adımı birlikte belirle.'));
  const suggestions=node('div','workspace-chat-suggestions');for(const text of ['Sonuçları kısaca özetle','Bu sonuçlar neden uygun?','Tercihlerimi güncellemek istiyorum']){const b=node('button','quiet',text);b.type='button';b.onclick=()=>{input.value=text;input.dispatchEvent(new Event('input'));input.focus();};suggestions.append(b);}empty.append(suggestions);
@@ -28,7 +32,7 @@ export function workspaceChat({root,form,log,input,send,attach,intro,api,owner,o
  send.removeAttribute('data-idle');send.textContent='Gönder ↑';attach.textContent='＋ Belge';
  const feedback=form.querySelector('#automation-chat-feedback');feedback.setAttribute('role','alert');feedback.hidden=true;
  const hint=form.querySelector('small');hint.textContent='Enter ile gönder · Shift + Enter ile yeni satır';
- root.replaceChildren(header,viewport,jump,form);
+ root.replaceChildren(header,profileNotice,sourceNotice,viewport,jump,form);
  input.value=drafts.get(owner)??'';
  const sizeInput=()=>{input.style.height='auto';input.style.height=Math.min(160,Math.max(52,input.scrollHeight))+'px';};
  input.addEventListener('input',()=>{drafts.set(owner,input.value);sizeInput();renderStatus();});
@@ -57,6 +61,10 @@ export function workspaceChat({root,form,log,input,send,attach,intro,api,owner,o
   const awaiting=snapshot.workers?.find(w=>w.id===(run?.workerId??'main'))?.active?.state==='AwaitingInput';
   const label=sending?'Mesaj iletiliyor…':awaiting?'Terminalde yanıtın gerekiyor':working?'Yanıt hazırlıyor':questions.childElementCount?'Yanıtın bekleniyor':run?'Sohbet açık':'Hazır';
   status.textContent=label;root.dataset.working=String(working||sending);close.hidden=!run;close.disabled=sending;
+  const a=snapshot.automation;sourceNotice.hidden=!a?.sourceDraft;profileNotice.hidden=!a?.planDraft&&!a?.profileUpdate;
+  const savedProfile=a?.profileUpdate&&!a?.planDraft;
+  profileTitle.textContent=a?.profileUpdate?.error?'Profil uygulanamadı':savedProfile?'Profil uygulanıyor':'Profil değişikliği hazır';reviewProfile.textContent=savedProfile?'Profili görüntüle':'Taslağı incele ve kaydet';
+  profileDetail.textContent=a?.profileUpdate?.error?'Değişikliklerin saklandı. Profil sayfasından tekrar kaydet.':savedProfile?'Taramalar durdurulup yeni kriterlerle yeniden başlatılıyor. Sohbet açık kalacak.':'Agent’ın önerdiği değişiklikler henüz uygulanmadı. Profili inceleyip kaydet.';
   send.disabled=sending||!input.value.trim()||working||Boolean(snapshot.activeRun&&!snapshot.capabilities?.concurrentConversation);
   send.textContent=sending?'Gönderiliyor…':'Gönder ↑';
   input.disabled=false;attach.disabled=sending||Boolean(snapshot.activeRun);

@@ -16,6 +16,14 @@ export class TaskRuns {
   try{slot.worker=await slot.ready;return run;}catch(error){if(!slot.finishing)await this.finish(id,'failed',error.message,workerId);throw error;}
  }
  async unreported(slot,reason){
+  if(slot.unreportedPending){if(reason==='exit')slot.unreportedExit=true;return;}
+  slot.unreportedPending=true;
+  try{return await this.handleUnreported(slot,reason);}finally{
+   slot.unreportedPending=false;
+   if(slot.unreportedExit){delete slot.unreportedExit;if(!slot.finishing&&!this.closed)void this.unreported(slot,'exit');}
+  }
+ }
+ async handleUnreported(slot,reason){
   if(slot.finishing||slot.completionRequested||this.closed)return;
   if(slot.run.usageLimit){
    if(reason!=='exit')return;
@@ -23,9 +31,10 @@ export class TaskRuns {
    const issue=providerLimitAttention(slot.run.usageLimit);
    return this.finish(slot.id,'blocked',`${issue.title}. ${issue.detail} Agent oturumu kapandı.`,slot.workerId).catch(()=>{});
   }
-  if(reason==='idle'&&!slot.idleContinuation&&slot.worker?.message){
-   const message=this.policy.continueIdle?.(slot.id,slot.run.id);
-   if(message){
+  if(reason==='idle'&&slot.worker?.message){
+   const continuation=this.policy.continueIdle?.(slot.id,slot.run.id);
+   const message=typeof continuation==='string'?continuation:continuation?.message;
+   if(message&&(!slot.idleContinuation||continuation.repeat===true)){
     slot.idleContinuation=true;
     try{
      await slot.worker.message(message);
@@ -51,6 +60,11 @@ export class TaskRuns {
   },this.policy.idleGraceMs??2000);
  }
  event(id,event,runId){const slot=this.slot(id,runId);if(!slot||slot.finishing)return;
+  if(event.event==='provider_error'&&!slot.completionRequested){
+   const summary=event.summary||'Model sağlayıcısı isteği tamamlayamadı.';
+   slot.run={...this.policy.run(slot.run.id),state:'Error',stop:{kind:'technical',evidence:summary}};this.policy.save(slot.run);
+   void this.finish(id,'failed',summary,slot.workerId).catch(()=>{});return;
+  }
   if(event.event==='usage_limit'){
    slot.run={...this.policy.run(slot.run.id),usageLimit:event.usageLimit??null};clearTimeout(slot.idleTimer);
    this.policy.save(slot.run);this.changed(id);

@@ -1,17 +1,18 @@
 import {operationFor} from './template-contract.mjs';
 import {sourceMode} from './automation-sources.mjs';
+import {SOURCE_PAGE_INSTRUCTIONS} from './source-scan.mjs';
 
-const TECHNICAL_RETRY_LIMIT=3;
+const TECHNICAL_RETRY_LIMIT=3,IDLE_RETRY_LIMIT=5;
 const exhaustedSummary='Erişim sorunu sürüyor. 3 tarama turu teknik hatayla sonuçlandı; otomatik deneme durduruldu. İlerleme korundu. Devam etmek için Tekrar dene’ye bas.';
-
-function exhaustTechnicalRetries(db,run,attempt,summary){
+const idleExhaustedSummary='Agent 5 kez üst üste ilerleme kaydetmeden ve rapor vermeden durdu; otomatik devam durduruldu. İlerleme korundu. Devam etmek için Tekrar dene’ye bas.';
+function exhaustTechnicalRetries(db,run,attempt,summary,finalSummary=exhaustedSummary){
  const id=run.automationId,task=db.store.workspaces.tasks.get(id,run.taskId),a=db.get(id),state=a.sourceState?.[run.sourceUrl]??{};
  const stop={...run.stop,kind:'technical',retryExhausted:true,evidence:summary};
  db.putRun({...run,recovery:null,stop});
  db.store.workspaces.tasks.put({...task,retryAt:null,technicalRecovery:{reason:'technical_page',attempt,readyAt:null,exhausted:true}});
  const retryPlan={...a.retryPlan};delete retryPlan[run.sourceUrl];
  db.put({...a,retryPlan,sourceState:{...a.sourceState,[run.sourceUrl]:{...state,blocked:true,siteBlocked:false,recovery:null,nextRunAt:null,lastStatus:'blocked',lastResult:exhaustedSummary,lastRunId:run.id,blocker:{...run.resumeContext,runId:run.id,workerId:run.workerId,stop}}}});
- return {status:'blocked',summary:exhaustedSummary};
+ return {status:'blocked',summary:finalSummary};
 }
 
 // Apply the limit to retries saved by earlier app versions before dispatch.
@@ -28,6 +29,7 @@ export function recoverExhaustedSourceRetries(db){
 const legacyMessages=new Set(['Agent sonuç bildirmeden durdu. Agent ekranını kontrol et.','Agent oturumu sonuç bildirmeden kapandı.']);
 function resumable(db,run){
  const a=db.get(run.automationId);
+ if(run.toolFailure||run.taskId&&db.store.workspaces.tasks.get(run.automationId,run.taskId).toolFailure)return false;
  if(!['run','trial'].includes(run.kind)||!run.sourceUrl||run.recordId||run.actionId||!run.taskId||a.status!=='enabled'||!a.sources.includes(run.sourceUrl)||a.sourceSettings?.[run.sourceUrl]?.enabled===false)return false;
  if(run.kind==='trial')return true;
  const template=db.template(a.templateId);if(!template.workflow.some(step=>step.id===run.operation))return false;
@@ -38,7 +40,7 @@ function resumable(db,run){
 export function continueSourceRun(db,id,runId){
  const run=db.run(runId);
  if(!resumable(db,run)||Object.keys(run.scanIssues??{}).length||(db.get(id).questions??[]).some(q=>q.answer==null&&q.taskId===run.taskId))return null;
- return 'The same assigned source task is still open; no restart or new task occurred. Continue from the current page and saved checkpoint. Do not reread unchanged context or documents. If your last finish_automation_run was rejected, inspect its error, correct only the missing report or continue the remaining work. For an actual browser failure use recheck_scan_page and report the returned technical issue. Do not repeat an unchanged failed action or submit anything.';
+ return 'The same assigned source task is still open; no restart or new task occurred. Continue from the current page and saved checkpoint. Do not reread unchanged context or documents. If your last finish_automation_run was rejected, inspect its error, correct only the missing report or continue the remaining work. For an actual browser failure use recheck_scan_page and report the returned technical issue. Do not repeat an unchanged failed action or submit anything.'+(run.kind==='run'?' '+SOURCE_PAGE_INSTRUCTIONS:'');
 }
 
 export function unreportedSourceRun(db,id,runId,reason,now){
@@ -50,9 +52,10 @@ export function unreportedSourceRun(db,id,runId,reason,now){
   db.persistScan(id,{...run,scan:{...run.scan,complete:false,pendingUrls,reason:summary,evidenceUrl:run.scan?.evidenceUrl??issues[0].url}});
   return retryTechnicalSource(db,id,runId,summary,now);
  }
- const task=db.store.workspaces.tasks.get(id,run.taskId),attempt=(task.recovery?.attempt??0)+1;
- // This delay only prevents a failing provider from spinning in a launch loop.
- // A running source task still has no duration, step or retry-count budget.
+ // A running source task has no duration or step budget. Relaunches are
+ // bounded only when the agent keeps stopping without a single browser step.
+ const task=db.store.workspaces.tasks.get(id,run.taskId),attempt=(run.browserSteps??0)>0?1:(task.recovery?.attempt??0)+1;
+ if(attempt>=IDLE_RETRY_LIMIT)return exhaustTechnicalRetries(db,run,attempt,run.summary??'Agent oturumu rapor vermeden kesildi.',idleExhaustedSummary);
  const delay=[5000,15000,30000,60000][Math.min(attempt-1,3)],recovery={reason,attempt,readyAt:now+delay};
  const summary=`Agent oturumu kesildi. Kaydedilen noktadan ${delay/1000} saniye sonra otomatik devam edilecek.`;
  db.putRun({...run,recovery});return {status:'interrupted',summary};
@@ -73,6 +76,7 @@ export function retryTechnicalSource(db,id,runId,summary,now){
 
 export function requeueSourceRun(db,run){return db.store.workspaces.tasks.atomic(()=>{
  const q=db.store.workspaces.tasks,task=q.get(run.automationId,run.taskId),a=db.get(run.automationId),state=a.sourceState?.[run.sourceUrl]??{};
+ if(run.toolFailure||task.toolFailure)return q.finish(run.automationId,task.id,'blocked',run.summary);
  if(run.stopRequested||task.stopRequested)return q.finish(run.automationId,task.id,'cancelled','Tarama kullanıcı tarafından durduruldu.');
  q.put({...task,state:'pending',workerId:null,scan:run.scan??task.scan,scanPlan:run.scanPlan??task.scanPlan,completionState:null,summary:run.summary,retryAt:run.recovery?.readyAt??null,...(run.recovery?{recovery:run.recovery}:{})});
  if(run.recovery)db.put({...a,sourceState:{...a.sourceState,[run.sourceUrl]:{...state,batchId:task.batchId,blocked:false,blocker:null,lastStatus:'interrupted',lastResult:run.summary,lastRunId:run.id,nextRunAt:run.recovery.readyAt,recovery:run.recovery}}});

@@ -19,13 +19,12 @@ for(const template of ['job-search','housing','appointment','custom'])test(`${te
  let context=await call('get_automation_context');if(context.context){let text=context.text;while(context.context.nextOffset!==null){context=await call('read_automation_context_part',{contextId:context.context.id,offset:context.context.nextOffset});text+=context.text;}context=JSON.parse(text);}
  assert.deepEqual(context.questions[0].answerValues,answer);assert.equal(db.messages(a.id).at(-1).role,'user');assert.throws(()=>db.answerQuestion(a.id,q.id,answer),/zaten/);
  const free=await call('ask_workspace_question',{text:'Başka bilgi?',fields:[{id:'text',label:'Bilgi',type:'text'}]});assert.equal(db.answerQuestion(a.id,free.id,'Kendi cümlelerim').answerValues,null);
- await assert.rejects(call('run_workspace_source_tool',{args:[]}),/atanmış kaynak/);
 });
 
-test('shared worker launch wires the source tool root and common question tools',async t=>{
+test('shared worker launch wires common question and context tools',async t=>{
  const data=await mkdtemp(path.join(tmpdir(),'workspace-launch-'));t.after(()=>rm(data,{recursive:true,force:true}));const core=new WorkspaceDatabase(':memory:');t.after(()=>core.close());const db=new AutomationStore(core),a=db.create('job-search'),run=db.begin(a.id,'interview');let granted,started;
  const worker=await launchAutomationWorker({root:process.cwd(),data,db,run,automation:a,signal:new AbortController().signal,browser:{},report:()=>{},onEvent:()=>{},agents:{start:async input=>{started=input;},stop:async()=>{},output:()=>({bytes:[]})},mcp:{grant:(id,session,worker,flow)=>{granted=flow;return 'token';},revoke:()=>{},endpoint:'http://localhost/test'}});
- assert.equal(started.resume,true);started.onRecord('history_repaired',{fresh:true});assert.equal(core.db.prepare('SELECT kind FROM workspace_events ORDER BY seq DESC LIMIT 1').get().kind,'history_repaired');assert.ok(started.approvedTools.includes('ask_workspace_question'));assert.ok(granted.tools.some(t=>t.name==='get_workspace_source_instructions'));await worker.close();
+ assert.equal(started.resume,true);started.onRecord('history_repaired',{fresh:true});assert.equal(core.db.prepare('SELECT kind FROM workspace_events ORDER BY seq DESC LIMIT 1').get().kind,'history_repaired');assert.ok(started.approvedTools.includes('ask_workspace_question'));assert.ok(granted.tools.some(t=>t.name==='get_automation_context'));await worker.close();
 });
 
 test('template setup is idempotent, form submission continues with saved answers, and launch failure preserves them',async t=>{

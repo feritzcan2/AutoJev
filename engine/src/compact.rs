@@ -7,7 +7,7 @@ pub fn submit_key(provider: &str, state: AgentState) -> Option<&'static [u8]> {
     match (provider, state) {
         ("codex", AgentState::Working) => Some(b"\t"),
         ("claude", AgentState::Working)
-        | ("codex" | "claude", AgentState::Idle | AgentState::Interrupted) => Some(b"\r"),
+        | ("codex" | "claude" | "opencode", AgentState::Idle | AgentState::Interrupted) => Some(b"\r"),
         _ => None,
     }
 }
@@ -51,6 +51,8 @@ mod tests {
     use super::*;
     #[test]
     fn queues_native_commands_while_working_and_submits_at_idle(){
+        assert_eq!(submit_key("opencode",AgentState::Working),None);
+        assert_eq!(submit_key("opencode",AgentState::Idle),Some(b"\r".as_slice()));
         assert_eq!(submit_key("codex",AgentState::Working),Some(b"\t".as_slice()));
         assert_eq!(submit_key("claude",AgentState::Working),Some(b"\r".as_slice()));
         for provider in ["codex","claude"]{

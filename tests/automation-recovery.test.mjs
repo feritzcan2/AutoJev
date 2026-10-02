@@ -4,6 +4,7 @@ import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {WebTasks} from '../app/web-template.mjs';
 import {unreportedSourceRun,retryTechnicalSource} from '../app/automation-recovery.mjs';
+import {automationAttention} from '../app/automation-attention.mjs';
 
 const source='https://listings.test/results',second=source+'?page=49',settle=()=>new Promise(r=>setImmediate(r));
 function fixture(t){
@@ -17,6 +18,16 @@ function fixture(t){
  const checkpoint=run=>{db.observe(a.id,run.id,second,'Page 49 of 71');db.reportPage(a.id,run.id,{currentPage:49,totalPages:71,url:second,evidence:'Page 49 of 71',at:Date.now()});};
  return {db,store,id:a.id,runtime,launches,options,event,checkpoint,busy:value=>{busy=value;},state:value=>{state=value;},close:fn=>{close=fn;}};
 }
+
+test('a fatal provider error keeps scan progress, shows a technical issue, and never enters automatic retry',async t=>{
+ const f=fixture(t);await f.runtime.runOnce(f.id);await settle();const run=f.launches[0];f.checkpoint(run);f.event('Working');
+ f.runtime.event(f.id,{event:'provider_error',summary:'Model PDF dosya ekini kabul etmedi.'},run.id);await settle();
+ assert.equal(f.db.run(run.id).status,'failed');assert.equal(f.db.run(run.id).stop.kind,'technical');
+ const task=f.store.workspaces.tasks.get(f.id,run.taskId);assert.equal(task.state,'failed');assert.deepEqual(task.scan.pendingUrls,[second]);
+ assert.equal(automationAttention(f.db.snapshot(f.id)).find(x=>x.sourceUrl===source).kind,'technical');
+ t.mock.timers.tick(3600000);await f.runtime.tick();await settle();assert.equal(f.launches.length,1);
+ f.runtime.policy.recover();await f.runtime.tick();await settle();assert.equal(f.launches.length,1,'Restart recovery cannot revive a fatal provider failure');
+});
 
 test('verified technical recovery preserves the task and cutoff and waits before relaunching',async t=>{
  const f=fixture(t);await f.runtime.runOnce(f.id);await settle();const run=f.launches[0];f.checkpoint(run);

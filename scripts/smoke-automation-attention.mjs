@@ -20,6 +20,10 @@ try{
   const vm=process.getBuiltinModule('node:vm'),load=vm.runInThisContext('(url)=>import(url)',{importModuleDynamically:vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER});
   const {WorkspaceDatabase}=await load(args.store),{AutomationStore}=await load(args.automationStore);
   globalThis.attentionActions=[];globalThis.attentionTabs=[{tabId:'captcha-tab',url:args.url,sourceUrl:args.source}];globalThis.failAttentionRetry=true;globalThis.failAttentionReply=true;
+  globalThis.repeatAttentionFailure=()=>{
+   const store=new WorkspaceDatabase(args.file),db=new AutomationStore(store),a=db.get(args.id);
+   db.put({...a,sourceState:{...a.sourceState,[args.source]:{...a.sourceState[args.source],lastRunId:'new-failure'}}});store.close();
+  };
   ipcMain.removeHandler('terminal-message');ipcMain.handle('terminal-message',async(_,id,text,worker)=>{
    globalThis.attentionActions.push({kind:'reply',id,text,worker});await new Promise(resolve=>setTimeout(resolve,200));
    if(globalThis.failAttentionReply)throw Error('Test: yanıt iletilemedi');return {};
@@ -31,7 +35,7 @@ try{
    const store=new WorkspaceDatabase(args.file),db=new AutomationStore(store),a=db.get(id);
    db.put({...a,sourceState:{...a.sourceState,[source]:{...a.sourceState[source],blocked:false,lastStatus:'completed',nextRunAt:Date.now()+3600000}}});store.close();return {};
   });
- },{file,source,url,store:pathToFileURL(path.resolve('app/workspace-database.mjs')).href,automationStore:pathToFileURL(path.resolve('app/automation-store.mjs')).href});
+ },{id:a.id,file,source,url,store:pathToFileURL(path.resolve('app/workspace-database.mjs')).href,automationStore:pathToFileURL(path.resolve('app/automation-store.mjs')).href});
  await page.locator('.automation-attention-banner').waitFor({state:'visible'});
  assert.equal(await page.locator('#agent-nav-status').textContent(),'1 müdahale');
  await page.getByRole('button',{name:'Müdahaleleri göster',exact:true}).click();
@@ -65,6 +69,18 @@ try{
  await reply.fill('Gönderilmeyecek taslak');await card.getByRole('button',{name:'Vazgeç',exact:true}).click();
  assert.equal(await reply.isVisible(),false);assert.equal(await app.evaluate(()=>globalThis.attentionActions.filter(a=>a.kind==='reply').length),2);
  await page.screenshot({path:path.join(data,'attention.png'),fullPage:true});
+ const beforeClose=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),a.id);
+ await card.getByRole('button',{name:'Kapat',exact:true}).click();
+ await card.waitFor({state:'detached'});await page.locator('.automation-attention-banner').waitFor({state:'hidden'});
+ assert.notEqual(await page.locator('#agent-nav-status').textContent(),'1 müdahale');
+ const afterClose=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),a.id);
+ assert.deepEqual(afterClose.automation.sourceState,beforeClose.automation.sourceState);
+ assert.equal(afterClose.automation.status,beforeClose.automation.status);
+ await page.reload();await page.locator('.workspace-switcher-label').filter({hasText:a.title}).waitFor({state:'visible'});
+ assert.equal(await card.count(),0);assert.equal(await page.locator('.automation-attention-banner').isVisible(),false);
+ await app.evaluate(()=>globalThis.repeatAttentionFailure());
+ await page.reload();await card.waitFor({state:'visible'});
+ assert.equal(await page.locator('#agent-nav-status').textContent(),'1 müdahale');
  const scheduledAt=Date.now();
  await card.getByRole('button',{name:'2 saat sonra dene',exact:true}).click();
  await card.waitFor({state:'detached'});
@@ -91,5 +107,5 @@ try{
  const snapshot=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),a.id);
  assert.equal(snapshot.sources.find(s=>s.url===source).blocked,false);assert.equal(snapshot.sources.find(s=>s.url===other).lastRunAt,undefined);
  const retries=await app.evaluate(()=>globalThis.attentionActions.filter(a=>a.kind==='retry'));assert.ok(retries.every(r=>r.id===a.id&&r.source===source));
- assert.deepEqual(errors,[]);console.log('ATTENTION_CARD_EXACT_TAB_CHOOSER_MISSING_TAB_SCOPED_RETRY_PASS',data);
+ assert.deepEqual(errors,[]);console.log('ATTENTION_CARD_DISMISS_PERSISTENCE_NEW_FAILURE_TAB_CHOOSER_SCOPED_RETRY_PASS',data);
 }finally{await app.close();}

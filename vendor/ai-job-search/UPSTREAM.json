@@ -1,26 +1,6 @@
 {
   "repository": "https://github.com/MadsLorentzen/ai-job-search",
-  "commit": "120f476a089358363ceaf2528f52edf2854994bd",
+  "commit": "1cecaec4d3bda24a7243a0a13c814e3da56fc1fb",
   "license": "MIT",
-  "localAdaptations": [
-    {
-      "date": "2026-09-28",
-      "paths": [
-        ".agents/skills/jobindex-search/cli/package.json",
-        ".agents/skills/jobindex-search/cli/bun.lock",
-        ".agents/skills/jobnet-search/cli/package.json",
-        ".agents/skills/jobnet-search/cli/bun.lock",
-        ".agents/skills/jobdanmark-search/cli/package.json",
-        ".agents/skills/jobdanmark-search/cli/bun.lock",
-        ".agents/skills/jobbank-search/cli/package.json",
-        ".agents/skills/jobbank-search/cli/bun.lock"
-      ],
-      "description": "Pin matching @opentui/core and @opentui/react overrides to 0.5.12. This replaces vulnerable diff code embedded in OpenTUI 0.1.97 and removes the old Jimp/file-type dependency graph. Bunli commands and source code are unchanged; validate CLI fixtures and bundled commands with Bun 1.4.2 before release.",
-      "advisories": [
-        "https://github.com/advisories/GHSA-73rr-hh4g-fpgx",
-        "https://github.com/advisories/GHSA-5v7r-6r5c-r473"
-      ],
-      "upstreamRelease": "https://github.com/anomalyco/opentui/releases/tag/v0.5.12"
-    }
-  ]
+  "adaptation": "Upstream source files are unchanged. At build time AutoJev replaces @bunli/core with a small Node CLI adapter, rewrites Bun commands in help/guides, and makes FreeHire/LinkedIn --help exit successfully."
 }

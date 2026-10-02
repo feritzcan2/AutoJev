@@ -20,7 +20,8 @@ test('login proof must come from a current fully rendered page',()=>{
  assert.equal(validateLoginQuestion(page(login),proof).kind,'login');
  assert.throws(()=>validateLoginQuestion({...page(login),readiness:{loading:true}},proof),/yükleniyor/);
  assert.throws(()=>validateLoginQuestion(page(login),{...proof,snapshotId:'old'}),/son snapshot/);
- assert.throws(()=>validateLoginQuestion(page(login),{...proof,evidence:'Please log in to continue'}),/bulunamadı/);
+ assert.equal(validateLoginQuestion(page(login),{...proof,evidence:'Login is required here'}).kind,'login');
+ assert.equal(validateLoginQuestion(page(login),{kind:'login',snapshotId:'current'}).kind,'login');
  assert.equal(validateLoginQuestion(page('Please sign in to continue'),{...proof,evidence:'Please sign in to continue'}).kind,'login');
  assert.equal(asksForLogin({text:'Bu tarayıcıda hesabınıza giriş yaptınız mı?'}),true);
  assert.equal(asksForLogin({text:'Maaş beklentiniz nedir?'}),false);

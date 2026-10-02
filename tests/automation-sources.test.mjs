@@ -100,6 +100,43 @@ test('record preparation does not appear as an active source scan',async t=>{
  await runtime.stopSource(id,urls[0]);assert.equal(db.run(launches.at(-1).id).status,'running');
 });
 
+for(const spareWorker of [false,true])test(`retrying a blocked source while a paused workspace processes a record (spare worker: ${spareWorker})`,async t=>{
+ const {store,db,id,runtime,launches,finish}=fixture(t);db.save(id,{mode:'observe'});
+ await runtime.runSource(id,urls[1]);await settle();
+ const seed=launches.at(-1),item=db.record(id,seed.id,{url:'https://fast.test/home',title:'Home',summary:'Observed'});
+ await finish(seed);await runtime.tick();
+ await runtime.runSource(id,urls[0]);await settle();const failed=launches.at(-1);
+ const scan={complete:false,pendingUrls:['https://blocked.test/next'],reason:'Continue saved listings'};
+ db.putRun({...db.run(failed.id),scan});await finish(failed,'blocked');await runtime.tick();
+ assert.equal(db.get(id).status,'paused');assert.equal(db.sources(id)[0].blocked,true);
+ await runtime.runRecord(id,item.id,'prepare');await settle();const recordRun=launches.at(-1);
+ assert.equal(recordRun.recordId,item.id);assert.equal(db.get(id).status,'paused');
+ if(spareWorker)store.workspaces.workers.add(id);
+ const otherStates=urls.slice(1).map(url=>db.get(id).sourceState[url]);
+ assert.throws(()=>db.enable(id),/Önce çalışan otomasyonu durdur/);
+ await runtime.runSource(id,urls[0]);await settle();
+ assert.equal(db.run(recordRun.id).status,'running');assert.equal(runtime.slot(id,recordRun.id).finishing,false);
+ assert.equal(db.get(id).status,'enabled');assert.equal(db.get(id).once,true);assert.deepEqual(db.get(id).onceSources,[urls[0]]);
+ assert.deepEqual(urls.slice(1).map(url=>db.get(id).sourceState[url]),otherStates);
+ assert.equal(db.sources(id)[0].blocked,false);assert.deepEqual(db.get(id).sourceState[urls[0]].scan,scan);
+ const pending=runtime.queue.list(id,{states:['pending']}).filter(task=>!task.recordOperation);
+ assert.equal(pending.length,spareWorker?0:1);if(!spareWorker)assert.equal(pending[0].sourceUrl,urls[0]);
+ await finish(recordRun,'blocked');await runtime.tick();await settle();
+ const resumed=launches.at(-1);assert.equal(resumed.sourceUrl,urls[0]);assert.equal(resumed.recordId,null);assert.deepEqual(resumed.scan.pendingUrls,scan.pendingUrls);
+ assert.equal(launches.filter(run=>run.sourceUrl===urls[0]&&!run.recordId).length,2);
+ await assert.rejects(runtime.runSource(id,urls[0]),/kaynak zaten çalışıyor/);
+ await finish(resumed);await runtime.tick();assert.equal(db.get(id).status,'paused');
+});
+
+test('source retry still requires reviewed setup and an enabled source',async t=>{
+ const {db,id,runtime,launches}=fixture(t);db.saveSource(id,urls[0],{enabled:false});
+ await assert.rejects(runtime.runSource(id,urls[0]),/Önce kaynağı aç/);
+ await assert.rejects(runtime.runSource(id,'https://unknown.test/'),/ait değil/);
+ db.saveSource(id,urls[0],{enabled:true});db.save(id,{goal:'A changed goal'});
+ const before=db.get(id);await assert.rejects(runtime.runSource(id,urls[0]),/Önce kurulumu kaydet/);
+ assert.deepEqual(db.get(id),before);assert.equal(launches.length,0);
+});
+
 test('one-off scans finish every independent source without scheduling repeats',async t=>{
  const {db,id,runtime,launches,finish,advance}=fixture(t);await runtime.runOnce(id);await settle();await finish(launches[0],'blocked');
  for(let n=1;n<3;n++){await runtime.tick();await settle();await finish(launches[n]);}await runtime.tick();assert.equal(db.get(id).status,'paused');assert.equal(launches.length,3);

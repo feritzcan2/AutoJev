@@ -6,4 +6,3 @@ function run(cmd,args){const p=spawnSync(cmd,args,{cwd:root,stdio:'inherit',shel
 run(process.execPath,['scripts/vendor-termloop.mjs','--verify']);
 run('pnpm',['install','--frozen-lockfile']);
 run('pnpm',['build']);run('pnpm',['engine:build']);
-if(process.argv.includes('--source-tools'))run('pnpm',['sources:install']);
