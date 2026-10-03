@@ -5,7 +5,6 @@ export function workerPreviews({browsers,sessionFor}){
  async function capture(id,worker){
   const session=sessionFor(id,worker),runId=session?.sessionId;
   if(!runId)return empty('idle','Worker’ın aktif tarayıcı işi yok.');
-  if(browsers.modeForCandidate(id)!=='jev')return empty('unsupported','Ekran önizlemesi Jev ile bağlı Chrome’da kullanılabilir.');
   const connection=browsers.clients.get(id),client=connection?.client;
   const connected=()=>!browsers.closed&&browsers.clients.get(id)===connection&&client&&!client.closed&&client.profile?.directory===browsers.options(id).profile?.directory&&(client.connection!=='existing'||client.browser?.isConnected());
   if(!connected())return empty('waiting','Chrome bağlantısı bekleniyor.');
@@ -28,7 +27,7 @@ export function workerPreviews({browsers,sessionFor}){
     new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Chrome görüntüsü zamanında alınamadı. Yeniden deneniyor.')),4000);})
    ]);
    if(!current())return empty('waiting','Worker’ın sekmesi değişti; yeni görüntü bekleniyor.');
-   return {state:'ready',runId,tabId:slot.id,url,title:slot.observed?.title??'',capturedAt:new Date().toISOString(),image:`data:image/jpeg;base64,${data}`};
+   return {state:'ready',runId,tabId:slot.id,url,title:slot.observed?.title??'',...(slot.captchaProgress?{captcha:slot.captchaProgress}:{}),capturedAt:new Date().toISOString(),image:`data:image/jpeg;base64,${data}`};
   }catch(error){return empty('waiting',current()?error.message:'Chrome sekmesi veya bağlantısı değişti.');}
   finally{clearTimeout(timer);}
  }

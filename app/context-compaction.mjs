@@ -1,6 +1,6 @@
-export const DEFAULT_COMPACT_PERCENT=0;
-export function contextCompactPercent(value=DEFAULT_COMPACT_PERCENT){
- if(!Number.isInteger(value)||value<0||value>100)throw Error('Compaction eşiği 0 (kapalı) veya %1–100 olmalı.');
+export const DEFAULT_COMPACT_TOKENS=150000;
+export function contextCompactTokens(value=DEFAULT_COMPACT_TOKENS){
+ if(!Number.isSafeInteger(value)||value<0)throw Error('Compaction eşiği 0 (kapalı) veya pozitif bir tam token sayısı olmalı.');
  return value;
 }
 export const compactionPending=session=>['sending','submitted','running_command','compacting'].includes(session?.compaction?.state);
@@ -40,30 +40,30 @@ export class ContextCompaction {
    this.event(session.candidateId,'agent_context_compact_unconfirmed',{workerId:session.workerId??'main',provider:session.provider,error:result.error});
   }
  }
- async tick(session,usage,threshold=DEFAULT_COMPACT_PERCENT){
+ async tick(session,usage,threshold=DEFAULT_COMPACT_TOKENS){
   let c=session.compaction;
-  const fresh=usage?.caughtUp&&!usage.pending&&Number.isFinite(usage.percent)&&usage.updatedAt!=null;
+  const fresh=usage?.caughtUp&&!usage.pending&&Number.isSafeInteger(usage.tokens)&&usage.tokens>=0&&usage.updatedAt!=null;
   if(c&&usage?.caughtUp&&usage.compactionId&&usage.compactionId!==c.compactionId&&c.state!=='verified'){
    this.update(session,{state:'verified',finishedAt:this.now(),compactionId:usage.compactionId});
    c=session.compaction;
   }
   // Never immediately recompact a summary that still exceeds a low threshold.
-  if(c?.latched&&fresh&&usage.updatedAt>c.sampleAt&&usage.percent<c.threshold){
+  if(c?.latched&&fresh&&usage.updatedAt>c.sampleAt&&usage.tokens<c.threshold){
    c.latched=false;
    if(['submitted','awaiting_usage'].includes(c.state))this.update(session,{state:'completed',finishedAt:this.now()});
   }
   if(c?.state==='submitted'&&c.idleAt!=null&&this.now()-c.idleAt>30000)
    this.update(session,{state:'unconfirmed',error:'Komut gönderildi; compaction başlangıcı doğrulanamadı.'});
-  if(!threshold||!fresh||usage.percent<threshold||compactionPending(session)||c?.latched)return;
+  if(!threshold||!fresh||usage.tokens<threshold||compactionPending(session)||c?.latched)return;
   if(!['Working','Idle','Interrupted'].includes(session.state))return;
   if(c?.retryAt>this.now())return;
-  this.update(session,{state:'sending',threshold,percent:usage.percent,sampleAt:usage.updatedAt,compactionId:usage.compactionId??null,latched:true,error:null,idleAt:null});
+  this.update(session,{state:'sending',threshold,tokens:usage.tokens,sampleAt:usage.updatedAt,compactionId:usage.compactionId??null,latched:true,error:null,idleAt:null});
   try{
    const result=await this.send(session);
    if(result?.deferred){
     this.update(session,{state:'waiting',latched:false,retryAt:this.now()+2000,error:result.reason});return;
    }
-   this.event(session.candidateId,'agent_context_compact_requested',{workerId:session.workerId??'main',provider:session.provider,sessionId:session.sessionId,percent:usage.percent,thresholdPercent:threshold});
+   this.event(session.candidateId,'agent_context_compact_requested',{workerId:session.workerId??'main',provider:session.provider,sessionId:session.sessionId,tokens:usage.tokens,thresholdTokens:threshold});
   }catch(error){
    // The writer may already have accepted the bytes. Never retry an unknown
    // outcome against the same high sample.

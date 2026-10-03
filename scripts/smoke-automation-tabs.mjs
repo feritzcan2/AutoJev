@@ -9,7 +9,7 @@ import {automationBrowser} from '../app/automation-browser.mjs';
 const directory=await mkdtemp(path.join(tmpdir(),'loop-scan-tabs-'));
 const server=createServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end(`<h1>Listing ${req.url}</h1><a href="/next">Next page</a>`);});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const url=`http://127.0.0.1:${server.address().port}`;
-const browsers=new BrowserTools(directory,()=> 'jev',()=>({connection:'separate',headless:true}));
+const browsers=new BrowserTools(directory,()=>({connection:'separate',headless:true}));
 const unpack=r=>JSON.parse(r.content.find(p=>p.type==='text').text.replace(/^Page URL: [^\n]+\n/,''));
 try{
  browsers.prepare('workspace');await browsers.connections.pending.get('workspace');

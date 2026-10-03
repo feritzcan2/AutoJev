@@ -25,7 +25,7 @@ async function fixture(t,provider='codex'){
   runtime=new WebTasks(db,{launch:(run,automation,onEvent,signal)=>launchAutomationWorker({root:process.cwd(),data,db,run,automation,onEvent,signal,agents,browser:{},report:(...args)=>runtime.report(...args),mcp:{endpoint:'http://localhost/mcp',grant:()=> 'test',revoke:()=>{}}})});
  };
  const close=async()=>{await runtime.close();await agents.close();core.close();};
- open();const a=db.create('custom',{title:'Kurulum',agentSettings:{provider,model:'default',reasoning:'default',permission:'default',contextRestartPercent:20}});
+ open();const a=db.create('custom',{title:'Kurulum',agentSettings:{provider,model:'default',reasoning:'default',permission:'default',contextRestartTokens:20}});
  t.after(async()=>{await close();await rm(data,{recursive:true,force:true});});
  return {id:a.id,launches,messages,events,get core(){return core;},get db(){return db;},get runtime(){return runtime;},get agents(){return agents;},reopen:async()=>{await close();open();}};
 }
@@ -57,7 +57,7 @@ test('model/provider changes and explicit restart reset only setup; unchanged sa
  const f=await fixture(t),{id}=f;const run=await f.runtime.message(id,'Başla');
  const original=setupAgentSettings(f.db,id);f.runtime.report(id,run.id,'completed','Hazır');
  await f.runtime.configureConversation(id,{...original});assert.equal(f.launches.length,1);
- await f.runtime.configureConversation(id,{...original,contextCompactPercent:60});assert.equal(f.launches.length,1);
+ await f.runtime.configureConversation(id,{...original,contextCompactTokens:60});assert.equal(f.launches.length,1);
  await assert.rejects(f.runtime.configureConversation(id,{...original,provider:'bad'}),/sağlayıcı/);assert.equal(f.runtime.slots(id)[0].run.id,run.id);
  const workerSettings=f.db.get(id).agentSettings;
  await f.runtime.configureConversation(id,{...original,model:'new-model'});assert.equal(f.launches.at(-1).resumeId,undefined);assert.equal(f.launches.at(-1).model,'new-model');

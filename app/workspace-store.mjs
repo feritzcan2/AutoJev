@@ -3,12 +3,12 @@ import {WorkspaceTasks} from './workspace-tasks.mjs';
 import {WorkspaceWorkers} from './workspace-workers.mjs';
 import {TemplateRegistry} from './template-registry.mjs';
 import {WorkspaceRecords} from './workspace-records.mjs';
-import {contextCompactPercent} from './context-compaction.mjs';
-import {contextRestartPercent} from './context-usage.mjs';
+import {contextCompactTokens} from './context-compaction.mjs';
+import {contextRestartTokens} from './context-usage.mjs';
 import {automationTable,automationCells} from './automation-templates.mjs';
 
 const parse=row=>row?JSON.parse(row.data):null;
-const sharedKeys=['agentSettings','browserMode','chromeProfile'];
+const sharedKeys=['agentSettings','chromeProfile','browserMode'];
 export const domainData=value=>Object.fromEntries(Object.entries(value).filter(([key])=>!sharedKeys.includes(key)&&key!=='table'));
 
 // Canonical identity, provider/browser settings, table schema and conversations.
@@ -30,8 +30,8 @@ export class WorkspaceStore {
   const previous=this.has(id)?this.get(id):{},s=withAgentDefaults(value.agentSettings??previous.agentSettings);
   if(previous.templateId&&previous.templateId!==templateId)throw Error('Çalışma alanı kimliği farklı bir template’e ait');
   const workspace={...previous,id,templateId,title:value.title??value.workspaceName??value.name??previous.title,
-   agentSettings:{...s,contextCompactPercent:contextCompactPercent(s.contextCompactPercent),...(s.contextRestartPercent===undefined?{}:{contextRestartPercent:contextRestartPercent(s.contextRestartPercent)})},
-   browserMode:value.browserMode??previous.browserMode??this.template(templateId).execution.defaultBrowserMode,chromeProfile:value.chromeProfile===undefined?previous.chromeProfile??null:value.chromeProfile,
+   agentSettings:{...s,contextCompactTokens:contextCompactTokens(s.contextCompactTokens),...(s.contextRestartTokens===undefined?{}:{contextRestartTokens:contextRestartTokens(s.contextRestartTokens)})},
+   chromeProfile:value.chromeProfile===undefined?previous.chromeProfile??null:value.chromeProfile,
    table:previous.table??value.table??this.template(templateId).table??{title:'İşlem akışı',columns:[{key:'source',label:'Kaynak',type:'text'},{key:'title',label:'Başlık',type:'text'}]}};
   this.db.prepare('INSERT INTO workspaces VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET template_id=excluded.template_id,data=excluded.data').run(id,templateId,JSON.stringify(workspace));return workspace;
  }

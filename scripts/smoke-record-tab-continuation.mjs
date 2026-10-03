@@ -10,7 +10,7 @@ const directory=await mkdtemp(path.join(os.tmpdir(),'record-tab-resume-'));
 const server=createServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end(`<h1>${req.url}</h1><label>Name<input name="name"></label><a target="_blank" href="/apply">Apply</a>`);});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const url=`http://127.0.0.1:${server.address().port}/listing`;
-const browsers=new BrowserTools(directory,()=> 'jev',()=>({connection:'separate',headless:true}));
+const browsers=new BrowserTools(directory,()=>({connection:'separate',headless:true}));
 const adapter=(resumeContext,recordId='one')=>automationBrowser(browsers,{mode:'jev',recordId,readTabKey:`record:${recordId}`,resumeContext});
 try{
  const first=adapter(),listing=await first.call('workspace','browser_navigate',{url},'first');

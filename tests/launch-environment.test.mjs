@@ -7,9 +7,10 @@ import {launchEnvironment,resolveLaunchEnvironment} from '../app/launch-environm
 import {collectReadiness,findExecutable,readinessEnvironment} from '../app/readiness.mjs';
 import {Engine} from '../app/engine.mjs';
 
+const chrome={findChrome:async()=>'/chrome',listChromeProfiles:async()=>[{directory:'Default',name:'Personal'}],existingChromeEndpoint:async()=> 'ws://127.0.0.1:9222/devtools/browser/example',chromePortAvailable:async()=>true,jevStatus:async()=>({configured:true})};
 test('macOS GUI PATH discovers Homebrew agent CLIs with the same environment used for login checks',async()=>{
  const inherited={HOME:'/Users/fixture',PATH:'/usr/bin:/bin:/usr/sbin:/sbin'},checked=[];
- const result=await collectReadiness({provider:'codex'},{env:inherited,platform:'darwin',home:inherited.HOME,
+ const result=await collectReadiness({provider:'codex'},{...chrome,env:inherited,platform:'darwin',home:inherited.HOME,
   findExecutable:(name,options)=>findExecutable(name,{...options,accessImpl:async file=>{checked.push(file);if(file!=='/opt/homebrew/bin/codex')throw Error('missing');},statImpl:async()=>({isFile:()=>true})}),
   inspectLogin:async(provider,file,{env})=>{assert.equal(provider,'codex');assert.equal(file,'/opt/homebrew/bin/codex');assert.deepEqual(env,launchEnvironment(inherited,'darwin'));return {id:'login',state:'ready',label:'Session',detail:'Fixture'};}
  });
@@ -46,7 +47,7 @@ test('Linux desktop launch discovers terminal-installed CLIs and their Node inte
  }});
  assert.equal(resolved.PATH,`${bin}:/usr/bin:/bin:/home/fixture/.local/bin:/home/fixture/.bun/bin:/home/fixture/.opencode/bin`);
  assert.equal(resolved.KEEP,'desktop');assert.equal(env.PATH,'/usr/bin:/bin');
- const readiness=await collectReadiness({provider:'codex'},{env:resolved,platform:'linux',home:env.HOME,
+ const readiness=await collectReadiness({provider:'codex'},{...chrome,env:resolved,platform:'linux',home:env.HOME,
   findExecutable:(name,options)=>findExecutable(name,{...options,accessImpl:async file=>{if(file!==`${bin}/codex`)throw Error('missing');},statImpl:async()=>({isFile:()=>true})}),
   inspectLogin:async(provider,file,{env})=>{assert.equal(file,`${bin}/codex`);assert.equal(env.PATH,resolved.PATH);return {id:'login',state:'ready'};}
  });

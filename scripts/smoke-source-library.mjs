@@ -22,20 +22,20 @@ try{
  await library.getByRole('button',{name:'Seçilenleri ekle',exact:true}).click();
  await page.waitForFunction(async id=>{const s=(await window.jobloop.workspaceSnapshot(id)).sources;return s.length===14&&s.find(s=>s.name==='LinkedIn').tool==='linkedin-search';},id);
  let snapshot=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),id),linked=snapshot.sources.find(s=>s.name==='LinkedIn');assert.equal(linked.intervalMinutes,87);assert.equal(linked.query,'Private search criteria');
- const row=page.locator('.source-row[data-source-id="https://freehire.me/"]');await row.getByRole('button',{name:'freehire-search · Skill',exact:true}).click();assert.match(await row.locator('textarea[name=skill]').inputValue(),/freehire/i);await row.locator('textarea[name=skill]').fill('My independent FreeHire skill');
+ const row=page.locator('.source-row[data-source-id="https://freehire.me/"]');await row.getByRole('button',{name:'Düzenle',exact:true}).click();assert.equal(await row.locator('select[name=method]').inputValue(),'none');
  await row.locator('textarea[name=instructions]').fill('Use saved filters; inspect all result pages.');await row.getByRole('button',{name:'Kaydet',exact:true}).click();
  await page.waitForFunction(async id=>(await window.jobloop.workspaceSnapshot(id)).sources.find(s=>s.name==='FreeHire').instructions==='Use saved filters; inspect all result pages.',id);
  await page.locator('[data-open-source-library]').click();await library.locator('[data-library-url]').fill(`http://127.0.0.1:${server.address().port}/catalog.json`);await library.getByRole('button',{name:'Listeyi yükle',exact:true}).click();
  await library.locator('.source-library-item').filter({hasText:'Community board'}).locator('input').check();await library.getByRole('button',{name:'Seçilenleri ekle',exact:true}).click();
  await page.waitForFunction(async id=>(await window.jobloop.workspaceSnapshot(id)).sources.some(s=>s.name==='Community board'),id);
  const output=path.join(data,'shared-sources.json');await app.evaluate(({dialog},file)=>{dialog.showSaveDialog=async()=>({canceled:false,filePath:file});},output);
- await page.getByRole('button',{name:'Dışa aktar',exact:true}).click();
- await page.waitForFunction(()=>document.body.textContent.includes('Kaynak tanımları dışa aktarıldı'));
- const exported=JSON.parse(await readFile(output,'utf8'));assert.equal(exported.length,15);assert.ok(exported.some(s=>s.instructions==='Use saved filters; inspect all result pages.'));assert.equal(exported.find(s=>s.name==='FreeHire').skill,'My independent FreeHire skill');assert.ok(exported.every(s=>s.query===''));assert.ok(!JSON.stringify(exported).includes('Private search criteria'));
+ await page.getByRole('button',{name:'Kaynak tanımlarını dışa aktar',exact:true}).click();
+ await page.waitForFunction(()=>document.body.textContent.includes('dışa aktarıldı'));
+ const exported=JSON.parse(await readFile(output,'utf8'));assert.equal(exported.length,15);assert.ok(exported.some(s=>s.instructions==='Use saved filters; inspect all result pages.'));assert.ok(exported.find(s=>s.name==='LinkedIn').recipe?.entry.kind==='url_template','library recipes are exported with the sources');assert.ok(exported.every(s=>s.query===''));assert.ok(!JSON.stringify(exported).includes('Private search criteria'));
  await app.evaluate(({dialog},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},output);
  await page.locator('[data-open-source-library]').click();await library.getByRole('button',{name:'Dosyadan aç',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.source-library-status')?.textContent==='15 kaynak · Dosyadan');
  await library.getByRole('button',{name:'Kapat',exact:true}).click();
- await page.locator('.source-row[data-source-id="https://community.example/jobs/"]').getByRole('button',{name:'Kaynağı sil',exact:true}).click();
+ await page.locator('.source-row[data-source-id="https://community.example/jobs/"]').getByRole('button',{name:'Düzenle',exact:true}).click();await page.locator('.source-row[data-source-id="https://community.example/jobs/"]').getByRole('button',{name:'Kaynağı sil',exact:true}).click();
  await page.waitForFunction(async id=>!(await window.jobloop.workspaceSnapshot(id)).sources.some(s=>s.name==='Community board'),id);
  await page.locator('.source-row[data-source-id="https://community.example/jobs/"]').waitFor({state:'detached'});
  await page.locator('[data-open-source-library]').click();
@@ -44,7 +44,8 @@ try{
  assert.equal(await library.getByRole('checkbox',{name:'FreeHire Yerel kopya var',exact:true}).isDisabled(),true);
  await deletedSource.check();await library.getByRole('button',{name:'Seçilenleri ekle',exact:true}).click();
  await page.waitForFunction(async id=>(await window.jobloop.workspaceSnapshot(id)).sources.some(s=>s.name==='Community board'&&s.skill==='Community source skill'),id);
- await row.getByRole('button',{name:'freehire-search · Skill',exact:true}).click();assert.equal(await row.locator('textarea[name=skill]').inputValue(),'My independent FreeHire skill');
+ await row.getByRole('button',{name:'Düzenle',exact:true}).click();assert.equal(await row.locator('textarea[name=instructions]').inputValue(),'Use saved filters; inspect all result pages.');
+ const linkedinRow=page.locator('.source-row[data-source-id="https://www.linkedin.com/jobs/"]');assert.equal(await linkedinRow.locator('.source-recipe').textContent(),'Reçete bekliyor');
  await row.screenshot({path:path.join(data,'source-library.png')});assert.deepEqual(errors,[]);
  console.log(JSON.stringify({result:'SOURCE_LIBRARY_UI_PASS',screenshot:path.join(data,'source-library.png')}));
 }finally{await app?.close();await new Promise(resolve=>server.close(resolve));}

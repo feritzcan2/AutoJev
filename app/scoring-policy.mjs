@@ -4,23 +4,27 @@ import {SCORING_VERSION} from '../src/scoring-state.js';
 export {SCORING_VERSION};
 export const SCORE_DIMENSIONS=['technical','experience','role','preferences'];
 export const SCORE_LEVELS={direct:100,partial:70,transferable:30,unknown:0,mismatch:0};
-export const SCORING_INSTRUCTIONS='Assign an integer score from 0 to 100 using the saved criteria.ranking, weights and candidate profile. Only score is required when saving; the application accepts your score directly. Reasons, strengths, gaps, uncertainties and quote fields are optional. No quote matching, page proof or scorecard is required. Read the profile and listing for fit, reuse information already read, and do not reread just to match wording. As scoring guidance, direct experience is stronger than partial or transferable skills; employer branding or industry does not by itself make a role match the target field. Score each dimension from the actual evidence and combine the saved weights. Do not cap or force scores below a threshold because of eligibility; eligibility is saved separately. Required experience, seniority, language and location affect their relevant fit dimension. Separately save eligibility=verified when mandatory conditions are established, mismatch for a confirmed unmet mandatory condition, or unverified when information is missing or ambiguous. Use eligibilityReason for a short explanation. A title alone does not prove a seniority mismatch. Missing qualifications remain uncertain. A high fit score never establishes eligibility or authorizes an application; unresolved or unmet mandatory conditions prevent automatic applications. For inaccessible details use status=unavailable and score=null. Do not save a new production listing without its score or unavailable status.';
-const aliases={technical:'(?:teknik(?:/mesleki)?(?: eşleşme)?|mesleki(?: eşleşme)?|yetkinlik|technical(?: skills)?|skills?)',experience:'(?:deneyim|experience)',role:'(?:rol|role)',preferences:'(?:çalışma tercihleri|tercihler|tercih|preferences?)'};
+export const SCORING_INSTRUCTIONS='Assign an integer score from 0 to 100. Use scoringPolicy.weights (technical, experience, role, preferences) and the saved criteria.ranking text as the rubric; the candidate profile comes from read_scoring_profile. Only score is required when saving; reasons, strengths, gaps and uncertainties are optional and no quote matching or page proof is needed. Direct experience is stronger than partial or transferable skills; employer branding or industry does not by itself make a role match the target field. Required experience, seniority, language and location affect their relevant dimension. Do not cap the score because of eligibility; save eligibility separately: verified when mandatory conditions are established, mismatch for a confirmed unmet mandatory condition, unverified when information is missing or ambiguous, with a short eligibilityReason. A title alone does not prove a seniority mismatch. A high score never authorizes an application. For inaccessible details use status=unavailable and score=null. Do not save a new production listing without its score or unavailable status.';
+export const SCORE_WEIGHT_FIELDS={technical:'weight_technical',experience:'weight_experience',role:'weight_role',preferences:'weight_preferences'};
+export const SCORE_THRESHOLD_FIELD='score_threshold';
+const DEFAULT_WEIGHTS={technical:70,experience:10,role:10,preferences:10};
+const integerField=(criteria,key,label)=>{
+ const raw=criteria[key];if(raw==null||String(raw).trim()==='')return null;
+ const value=Number(raw);if(!Number.isInteger(value)||value<0||value>100)throw Error(label+': 0–100 arası tam sayı gerekli.');
+ return value;
+};
+// Weights and the threshold are plain number fields of the setup form. Without
+// explicit weights the defaults apply; a partial set must still add up to 100.
 export function scoringPolicy(automation){
- const rubric=automation.criteria?.ranking??'',weights={};
- for(const [key,label] of Object.entries(aliases)){
-  const pattern=new RegExp(`(?<![\\p{L}])${label}\\s*(?::|=)?\\s*(?:%\\s*(\\d{1,3})|(\\d{1,3})\\s*%)`,'giu');
-  const found=[...rubric.matchAll(pattern)].map(m=>Number(m[1]??m[2]));
-  if(new Set(found).size>1)throw Error('Puanlama ağırlıkları çelişkili; etkin kriterleri düzelt.');
-  if(found.length)weights[key]=found[0];
- }
+ const criteria=automation.criteria??{},weights={};
+ for(const [dimension,key] of Object.entries(SCORE_WEIGHT_FIELDS)){const value=integerField(criteria,key,'Puanlama ağırlığı '+dimension);if(value!==null)weights[dimension]=value;}
  const explicit=Object.keys(weights).length>0;
- if(explicit){for(const key of SCORE_DIMENSIONS)weights[key]??=0;if(Object.values(weights).reduce((a,b)=>a+b,0)!==100)throw Error('Etkin kriterlerdeki puanlama ağırlıkları toplamı %100 olmalı.');}
- else Object.assign(weights,{technical:70,experience:10,role:10,preferences:10});
- const threshold=Number(rubric.match(/(?:eşik|alt sınır|threshold|minimum)\s*:?\s*(\d{1,3})/iu)?.[1]??rubric.match(/\b(\d{1,3})\s*\/\s*100\b/u)?.[1]??60);
- if(threshold<1||threshold>100)throw Error('Puanlama eşiği 1–100 arasında olmalı.');
- const policy={version:SCORING_VERSION,weights,weightSource:explicit?'criteria.ranking':'default',threshold,levels:SCORE_LEVELS};
- return {...policy,digest:createHash('sha256').update(JSON.stringify([policy,automation.revision,rubric])).digest('hex'),instructions:SCORING_INSTRUCTIONS};
+ if(explicit){for(const key of SCORE_DIMENSIONS)weights[key]??=0;if(Object.values(weights).reduce((a,b)=>a+b,0)!==100)throw Error('Puanlama ağırlıkları toplamı %100 olmalı.');}
+ else Object.assign(weights,DEFAULT_WEIGHTS);
+ const threshold=integerField(criteria,SCORE_THRESHOLD_FIELD,'Puanlama eşiği')??60;
+ if(threshold<1)throw Error('Puanlama eşiği 1–100 arasında olmalı.');
+ const policy={version:SCORING_VERSION,weights,weightSource:explicit?'criteria':'default',threshold,levels:SCORE_LEVELS};
+ return {...policy,digest:createHash('sha256').update(JSON.stringify([policy,automation.revision,criteria.ranking??''])).digest('hex'),instructions:SCORING_INSTRUCTIONS};
 }
 export const normalizedQuote=value=>String(value??'').normalize('NFKC').replace(/\s+/gu,' ').trim();
 const sourcesFor=(dimension,kind)=>dimension==='technical'||dimension==='experience'||kind==='qualification'?['cv','facts']:['cv','facts','preferences'];

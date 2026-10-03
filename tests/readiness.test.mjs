@@ -17,21 +17,15 @@ test('OpenCode readiness accepts credentials without exposing account output',as
 test('first-run checks diagnose missing CLI while optional browser runtime checks remain warnings',async()=>{
  let login=0;
  const result=await collectReadiness({provider:'codex'}, {...dependencies,findExecutable:async()=>null,inspectLogin:async()=>{login++;return ready;}});
- assert.equal(result.ready,false);assert.equal(login,0);assert.equal(result.checks.find(check=>check.id==='agent').state,'error');assert.equal(result.checks.some(check=>check.id==='bun'),false);assert.equal(result.checks.find(check=>check.id==='browser').state,'warning');
+ assert.equal(result.ready,false);assert.equal(login,0);assert.equal(result.checks.find(check=>check.id==='agent').state,'error');assert.equal(result.checks.some(check=>check.id==='bun'),false);assert.equal(result.checks.find(check=>check.id==='chrome').state,'ready');
 });
 test('Jev readiness verifies the selected profile, debug port and key without browsing or API calls',async()=>{
- assert.equal((await collectReadiness({provider:'claude',browserMode:'jev',chromeProfile:{directory:'Default'}},dependencies)).ready,true);
- const result=await collectReadiness({browserMode:'jev',chromeProfile:{directory:'Missing'}},{...dependencies,chromePortAvailable:async()=>false,jevStatus:async()=>({configured:false})});
+ assert.equal((await collectReadiness({provider:'claude',chromeProfile:{directory:'Default'}},dependencies)).ready,true);
+ const result=await collectReadiness({chromeProfile:{directory:'Missing'}},{...dependencies,chromePortAvailable:async()=>false,jevStatus:async()=>({configured:false})});
  assert.equal(result.ready,false);assert.deepEqual(result.checks.filter(check=>check.state==='error').map(check=>check.id),['chrome-profile','chrome-debug','jev']);
 });
-test('separate browser and external-agent modes do not require a Jev key or remote debugging',async()=>{
- const unused=async()=>{throw Error('must not be called');};
- for(const browserMode of ['separate','existing']){
-  const result=await collectReadiness({browserMode},{...dependencies,jevStatus:unused,listChromeProfiles:unused,existingChromeEndpoint:unused});assert.equal(result.ready,true);assert.equal(result.checks.some(check=>check.id==='jev'),false);
- }
-});
 test('input validation rejects arbitrary executable names and profile paths',async()=>{
- for(const input of [null,[],{provider:'sh'},{provider:'toString'},{browserMode:'custom'},{chromeProfile:{directory:'../secrets'}},{chromeProfile:{directory:23}}])await assert.rejects(()=>collectReadiness(input,dependencies));
+ for(const input of [null,[],{provider:'sh'},{provider:'toString'},{chromeProfile:{directory:'../secrets'}},{chromeProfile:{directory:23}}])await assert.rejects(()=>collectReadiness(input,dependencies));
 });
 test('login checks use fixed bounded status commands and redact all CLI output',async()=>{
  const checks=[];

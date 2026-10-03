@@ -71,8 +71,8 @@ test('Jev stops a source at its first shared barrier, preserves pending work and
  await f.runtime.finish(id,'blocked','Synthetic other-source stop');
  f.setNow(wait.retryAt);await f.runtime.tick();await settle();await f.runtime.tick();await settle();
  assert.ok(f.launches.some(r=>r.id!==run.id&&r.sourceUrl===source));
- assert.equal(f.db.get(id).sourceState[source].scan,null);
- assert.equal(f.launches.at(-1).freshSource,true);
+ assert.deepEqual(f.db.get(id).sourceState[source].scan.pendingUrls,pending);
+ assert.equal(f.launches.at(-1).taskId,run.taskId);assert.equal(f.launches.at(-1).continuation.reason,'site_access_retry');
 });
 
 test('an external barrier preserves reachable work beyond the first queue page and cannot stop the source early',async t=>{

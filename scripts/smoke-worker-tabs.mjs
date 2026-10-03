@@ -11,7 +11,7 @@ const require=createRequire(import.meta.url),{_electron:electron}=createRequire(
 const directory=await mkdtemp(path.join(tmpdir(),'worker-tabs-'));
 const server=createServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end(req.url==='/form'?'<title>Application form</title><h1>Application form</h1>':'<title>Listing</title><h1>Listing</h1><a href="/form" target="_blank">Open application</a>');});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const url=`http://127.0.0.1:${server.address().port}/`;
-const browsers=new BrowserTools(directory,()=> 'jev',()=>({connection:'separate',headless:true}));
+const browsers=new BrowserTools(directory,()=>({connection:'separate',headless:true}));
 const scope={automationWorkspaceId:'workspace',automationTabKey:'record:item'},decode=result=>JSON.parse(result.content.find(p=>p.type==='text').text);
 let app;
 try{

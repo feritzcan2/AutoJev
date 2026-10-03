@@ -7,7 +7,7 @@ const tabTitle=tab=>{try{return tab.title||new URL(tab.url).hostname;}catch{retu
 export function workerTabControls(api,{notice}){
  let owner=null,snapshot=null,panes=new Map(),tabs=[],version=0,loading=false,runKey='';
  function render(pane){
-  const items=workerTabs(snapshot??{},pane.id,tabs),available=snapshot?.automation?.browserMode==='jev';
+  const items=workerTabs(snapshot??{},pane.id,tabs),available=Boolean(snapshot?.automation);
   const runId=pane.worker.execution?.task?.id,running=pane.worker.active&&snapshot?.runs?.some(r=>r.id===runId&&r.status==='running');
   if(pane.tabsRun!==runId||!running){pane.tabsOpen=false;pane.tabsRun=runId;}
   pane.tab.hidden=!available;pane.tab.disabled=!running||pane.busy;
@@ -41,7 +41,7 @@ export function workerTabControls(api,{notice}){
   pane.tabList.append(list);
  }
  async function refresh(){
-  if(!owner||snapshot?.automation?.browserMode!=='jev'||loading)return;
+  if(!owner||!snapshot?.automation||loading)return;
   const id=owner,request=version;loading=true;
   try{
    const next=await api.workspaceTabs(id);

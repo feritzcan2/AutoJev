@@ -19,12 +19,12 @@ for(const [profile,ctx] of contexts){
  contextIds.set(profile,targetInfo.browserContextId);await page.close();
 }
 let selected='Default';
-const tools=new BrowserTools(directory,()=> 'jev',id=>({
+const tools=new BrowserTools(directory,id=>({
  profile:{directory:id==='other-workspace'?'Default':selected},endpoint:async()=>endpoint,
  openWindow:async(url,profile)=>root.send('Target.createTarget',{url,newWindow:true,browserContextId:contextIds.get(profile.directory)})
 }));
 const open=async(id,worker='main')=>{
- tools.prepare(id);await tools.connections.pending.get(id);assert.equal(tools.status(id).ready,true);
+ tools.prepare(id);await tools.connections.pending.get(id);assert.equal(tools.status(id).ready,true,JSON.stringify(tools.status(id)));
  const response=await tools.forWorker(worker).call(id,'browser_jev_open',{url:fixture.url},worker);
  assert.ok(!response.isError);const result=JSON.parse(response.content[0].text),{client}=await tools.connect(id);
  return client.tab(result.tabId);

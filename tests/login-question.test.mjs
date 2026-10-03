@@ -14,6 +14,26 @@ test('a signup link and hidden login controls cannot establish an authentication
  assert.throws(()=>validateLoginQuestion(listing,{...proof,evidence:'Backend role'}),/giriş formu/);
  const signedIn=page('Complete your profile\nSaved jobs\nNotifications\nSign up',{passwordFields:[]});
  assert.throws(()=>validateLoginQuestion(signedIn,{...proof,evidence:'Complete your profile'}),/giriş formu/);
+ // A public application form: an Email field plus "designing" is not a login form.
+ const form=page('Job Application\nFirst Name*\nLast Name*\nEmail*\nProven experience designing scalable, resilient distributed systems\nSubmit application');
+ assert.throws(()=>validateLoginQuestion(form,{...proof,evidence:'Job Application'}),/giriş formu/);
+});
+
+for(const url of ['https://example.test/careers/42','https://example.org/view?id=42#application','https://example.net/login'])test(`navigation login and unrelated email fields are not a barrier: ${url}`,()=>{
+ for(const text of ['Login\nCareers\nApply\nSubscribe to updates\nEmail','Sign in\nJob Application\nFirst name\nEmail\nSubmit application','Login\nSubscribe\nEmail\nOur password security guidelines']){
+  const observed={...page(text,{passwordFields:[],controls:[{label:'Login',role:'button',visible:true},{label:'Email',role:'textbox',visible:true},{label:'Password',role:'textbox',visible:false}]}),url};
+  assert.throws(()=>validateLoginQuestion(observed,proof),/giriş formu/);
+ }
+ assert.throws(()=>validateLoginQuestion({id:'current',url,text:'- button "Login"\n- heading "Newsletter"\n- textbox "Email"'},proof),/giriş formu/);
+});
+
+test('login needs visible authentication evidence and never uses a truncated structured observation',()=>{
+ assert.equal(validateLoginQuestion(page('Sign in\nEmail\nPassword',{passwordFields:[{label:'Password',fieldId:'password'}]}),proof).kind,'login');
+ assert.equal(validateLoginQuestion(page('Sign in\nVerification code',{passwordFields:[],controls:[{label:'Verification code',role:'textbox',visible:true}]}),proof).kind,'login');
+ assert.throws(()=>validateLoginQuestion(page('Sign in\nVerification code',{passwordFields:[],controls:[{label:'Verification code',role:'textbox',visible:false}]}),proof),/giriş formu/);
+ assert.equal(validateLoginQuestion(page('Please sign in to continue\nEmail',{passwordFields:[]}),proof).kind,'login');
+ const truncated={...page(''),text:'Page URL: https://example.test/\n{"text":"Public page","hiddenLabel":"Login Password"'};
+ assert.throws(()=>validateLoginQuestion(truncated,proof),/giriş formu/);
 });
 
 test('login proof must come from a current fully rendered page',()=>{
@@ -24,7 +44,9 @@ test('login proof must come from a current fully rendered page',()=>{
  assert.equal(validateLoginQuestion(page(login),{kind:'login',snapshotId:'current'}).kind,'login');
  assert.equal(validateLoginQuestion(page('Please sign in to continue'),{...proof,evidence:'Please sign in to continue'}).kind,'login');
  assert.equal(asksForLogin({text:'Bu tarayıcıda hesabınıza giriş yaptınız mı?'}),true);
+ assert.equal(asksForLogin({text:'Devam etmek için giriş yapın.'}),true);
  assert.equal(asksForLogin({text:'Maaş beklentiniz nedir?'}),false);
+ for(const text of ['Kullanıcı LinkedIn\'e giriş yapmış durumda; Easy Apply tıklaması gerçekleşmedi.','Oturum açık, giriş engeli yok; ilan kaldırılmış.','Giriş yapılmış, form yüklenmedi.'])assert.equal(asksForLogin({text}),false,text);
 });
 
 function fixture(t){
@@ -50,10 +72,31 @@ test('a real live login barrier is saved with its evidence and ordinary question
  const fact=await f.call('ask_workspace_question',{text:'Ne zaman başlayabilirsiniz?'});assert.equal(fact.accessCheck,undefined);
 });
 
-test('a login blocker must create an actionable question before closing the run',async t=>{
- const f=fixture(t),read=await f.call('browser_open',{url:'https://portal.test/login'});
- await assert.rejects(f.call('finish_automation_run',{status:'blocked',summary:'Please sign in to continue'}),/ask_workspace_question/);
- const question=await f.call('ask_workspace_question',{text:'Hesabınıza giriş yapın.',accessCheck:{...proof,snapshotId:read.snapshot.id}});
+test('finishing blocked on a login page makes the app ask the login question itself',async t=>{
+ const f=fixture(t);await f.call('browser_open',{url:'https://portal.test/login'});
+ await f.call('finish_automation_run',{status:'blocked',summary:'Başvuru formu giriş istiyor.'});
+ const questions=f.db.get(f.id).questions;assert.equal(questions.length,1);
+ const [question]=questions;assert.equal(question.text,'Başvuru formu giriş istiyor.');assert.equal(question.accessCheck.kind,'login');assert.equal(question.accessCheck.url,'https://portal.test/login');
  assert.equal(question.fields[0].id,'loggedIn');assert.equal(question.fields[0].type,'boolean');
- await f.call('finish_automation_run',{status:'blocked',summary:'Please sign in to continue'});
+});
+
+test('finishing blocked on an ordinary page never adds a login question, whatever the summary says',async t=>{
+ const f=fixture(t);f.setContent('Complete your profile\nNotifications\nSaved jobs\nEasy Apply');
+ await f.call('browser_open',{url:'https://portal.test/login'});
+ await f.call('finish_automation_run',{status:'blocked',summary:'Kullanıcı giriş yapmış durumda; Easy Apply tıklaması gerçekleşmedi.'});
+ assert.equal((f.db.get(f.id).questions??[]).length,0);
+});
+
+test('a blocked public page with a navigation login and newsletter does not ask the user to log in',async t=>{
+ const f=fixture(t);f.setContent('Login\nCareers\nApply now\nSubscribe to updates\nEmail');
+ await f.call('browser_open',{url:'https://portal.test/jobs?id=42'});
+ await f.call('finish_automation_run',{status:'blocked',summary:'Sonuç doğrulanamadı.'});
+ assert.equal((f.db.get(f.id).questions??[]).length,0);
+});
+
+test('an existing open login question is reused when the run closes blocked',async t=>{
+ const f=fixture(t),read=await f.call('browser_open',{url:'https://portal.test/login'});
+ const asked=await f.call('ask_workspace_question',{text:'Hesabınıza giriş yapın.',accessCheck:{...proof,snapshotId:read.snapshot.id}});
+ await f.call('finish_automation_run',{status:'blocked',summary:'Giriş gerekli.'});
+ const questions=f.db.get(f.id).questions;assert.equal(questions.length,1);assert.equal(questions[0].id,asked.id);
 });

@@ -9,10 +9,9 @@ import {enqueueRecordOperation} from '../app/record-operations.mjs';
 
 const source='https://example.test/homes';
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
-function fixture(t,{browserMode='separate'}={}){
+function fixture(t){
  const store=new WorkspaceDatabase(':memory:'),db=new AutomationStore(store);
  const a=db.create('housing',{goal:'Find homes',criteria:{location:'Berlin',budget:'1500',requirements:'Two rooms'},sources:[source]});
- db.save(a.id,{browserMode});
  db.review(a.id);const trial=db.begin(a.id,'trial');db.observe(a.id,trial.id,source,'Observed listings');db.finish(a.id,trial.id,'completed','Checked');
  const second=store.workspaces.workers.add(a.id),seed=db.begin(a.id,'run');
  const items=[1,2,3].map(n=>db.record(a.id,seed.id,{url:source+'/'+n,title:'Home '+n,summary:'Observed listing'}));db.finish(a.id,seed.id,'completed','Saved');
@@ -64,16 +63,15 @@ test('stop waits for every closure after one fails and concurrent starts cannot 
  f.closing.clear();await runtime.pause(id);assert.equal(runtime.slots(id).length,0);
 });
 
-test('technical finish preserves completed searches, pending searches and processed URLs through retry',async t=>{
+test('technical finish preserves the pending queue and processed URLs through retry',async t=>{
  const f=fixture(t),{db,id,runtime}=f;await runtime.runOnce(id);await settle();const run=f.launches[0];
- db.saveScanSearches(id,run.id,[{id:'berlin',label:'Berlin'},{id:'hamburg',label:'Hamburg'}]);
- db.saveScanProgress(id,run.id,{pendingUrls:[],processedUrls:[source+'/done'],reason:'Berlin finished'});
- db.completeScanSearch(id,run.id,'end',{url:source});db.selectScanSearch(id,run.id,'hamburg');
- db.saveScanProgress(id,run.id,{pendingUrls:[source+'/broken'],processedUrls:[source+'/seen'],reason:'Hamburg in progress'});
- const issue=scanIssue(db,id,run.id,{url:source+'/broken',kind:'render_pending',verified:true,evidence:'Still rendering'});
+ db.saveScanProgress(id,run.id,{pendingUrls:[source+'/broken'],processedUrls:[source+'/seen',source+'/done'],reason:'Scan in progress'});
+ scanIssue(db,id,run.id,{url:source+'/broken',kind:'render_pending',verified:true,evidence:'Still rendering'});
  const before=db.run(run.id).scan.work;
  const flow=automationWorkflow({db,run,signal:new AbortController().signal,browser:{},report:(...args)=>runtime.report(...args)});
- await flow.call(id,run.id,'finish_automation_run',{status:'blocked',summary:'Still rendering',stop:{kind:'technical',evidence:'Still rendering',issueIds:[issue.id]}});
+ // The app marks the stop technical from its own verified issue.
+ await flow.call(id,run.id,'finish_automation_run',{status:'blocked',summary:'Still rendering'});
+ assert.equal(db.run(run.id).stop.kind,'technical');
  await runtime.finish(id);
  assert.deepEqual(db.run(run.id).scan.work,before);
  assert.deepEqual(runtime.queue.get(id,run.taskId).scan.work,before);
@@ -95,56 +93,10 @@ async function waitingForm(f){
  return {run,question};
 }
 
-for(const browserMode of ['separate','jev'])test(`${browserMode}: form answers choose a worker that can access the retained browser`,async t=>{
- const f=fixture(t,{browserMode}),{question}=await waitingForm(f);
+test('form answers resume on any free worker because Jev tabs are shared by the workspace',async t=>{
+ const f=fixture(t),{question}=await waitingForm(f);
  await f.runtime.answer(f.id,question.id,'2026-11-01');await settle();
  const resumed=f.launches.at(-1);assert.equal(resumed.recordId,f.items[1].id);
- assert.equal(resumed.workerId,browserMode==='separate'?f.second.id:'main');
+ assert.equal(resumed.workerId,'main');
 });
 
-test('a busy form owner retains its pending task while another worker takes unrelated work',async t=>{
- const f=fixture(t),{question}=await waitingForm(f);
- const busy=enqueueRecordOperation(f.runtime,f.id,f.items[2].id,'prepare');
- await f.runtime.start(f.id,{kind:'run',taskId:busy.id},f.second.id);
- await f.runtime.answer(f.id,question.id,'2026-11-01');await settle();
- const pending=f.runtime.queue.list(f.id,{states:['pending']}).find(task=>task.recordId===f.items[1].id);
- assert.ok(pending,'The form must wait for its own browser');
- await f.runtime.runRecord(f.id,f.items[0].id,'prepare');await settle();
- assert.equal(f.launches.at(-1).workerId,'main');assert.equal(f.launches.at(-1).recordId,f.items[0].id);
- await f.runtime.finish(f.id,'interrupted','Other task ended',f.second.id);await f.runtime.tick();await settle();
- assert.equal(f.launches.at(-1).taskId,pending.id);assert.equal(f.launches.at(-1).workerId,f.second.id);
-});
-
-test('a worker with an unfinished separate-browser form cannot be removed',async t=>{
- const f=fixture(t);await waitingForm(f);
- await assert.rejects(f.runtime.remove(f.id,f.second.id),/yarım|tamamla/i);
- assert.equal(f.runtime.workers.get(f.id,f.second.id).id,f.second.id);
- await f.runtime.dismissRecord(f.id,f.items[1].id);await f.runtime.remove(f.id,f.second.id);
- assert.throws(()=>f.runtime.workers.get(f.id,f.second.id),/kaldırıldı/);
-});
-
-test('legacy form ownership survives history rotation, disabled workers and shutdown recovery',async t=>{
- const f=fixture(t),{run,question}=await waitingForm(f);
- const legacy=f.db.run(run.id);delete legacy.browserMode;f.db.putRun(legacy);
- for(let i=0;i<35;i++){
-  const unrelated=f.db.begin(f.id,'interview');f.db.finish(f.id,unrelated.id,'completed','Unrelated conversation');
- }
- assert.equal(f.db.runs(f.id).some(r=>r.id===run.id),false);
- await f.runtime.stopWorker(f.id,'main');await f.runtime.stopWorker(f.id,f.second.id);
- await f.runtime.answer(f.id,question.id,'2026-11-01');await settle();
- assert.equal(f.launches.at(-1).workerId,f.second.id);assert.equal(f.runtime.workers.get(f.id,'main').enabled,false);
- assert.equal(f.runtime.workers.get(f.id,f.second.id).enabled,true);
- const taskId=f.launches.at(-1).taskId;await f.runtime.close();
- const resumed=f.reopen();await resumed.tick();await settle();
- assert.equal(f.launches.at(-1).taskId,taskId);assert.equal(f.launches.at(-1).workerId,f.second.id);
-});
-
-test('direct task starts cannot claim a form with another worker',async t=>{
- const f=fixture(t),{question}=await waitingForm(f);
- f.db.answerQuestion(f.id,question.id,'2026-11-01');
- const task=enqueueRecordOperation(f.runtime,f.id,f.items[1].id,'prepare');
- await assert.rejects(f.runtime.start(f.id,{kind:'run',taskId:task.id},'main'),/kendi tarayıcı worker/);
- assert.equal(f.runtime.queue.get(f.id,task.id).state,'pending');
- await f.runtime.start(f.id,{kind:'run',taskId:task.id},f.second.id);
- assert.equal(f.launches.at(-1).workerId,f.second.id);
-});

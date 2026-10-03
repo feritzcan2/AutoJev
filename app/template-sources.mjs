@@ -1,5 +1,6 @@
+import {normalizeSourceRecipe} from './source-recipe.mjs';
 
-import {sourceToolId} from './source-tool-ids.mjs';
+
 export function normalizeTemplateSources(input=[]){
  if(!Array.isArray(input)||input.length>20)throw Error('Template en fazla 20 başlangıç kaynağı içerebilir');
  const seen=new Set();
@@ -11,9 +12,10 @@ export function normalizeTemplateSources(input=[]){
   const name=source.name??url.hostname,query=source.query??'',intervalMinutes=source.intervalMinutes??30,enabled=source.enabled??true;
   if(typeof name!=='string'||!name.trim()||name.length>120||typeof query!=='string'||query.length>6000)throw Error('Geçersiz template kaynak açıklaması');
   if(!Number.isInteger(intervalMinutes)||intervalMinutes<1||intervalMinutes>10080||typeof enabled!=='boolean')throw Error('Geçersiz template kaynak zamanlaması');
-  const instructions=source.instructions??'',tool=sourceToolId(source.tool);
+  const instructions=source.instructions??'';
   if(typeof instructions!=='string'||instructions.length>6000)throw Error('Kaynak talimatı en fazla 6000 karakter olmalı');
   if(source.skill!==undefined&&(typeof source.skill!=='string'||source.skill.length>60000))throw Error('Kaynak skilli en fazla 60000 karakter olmalı');
-  return {url:address,name:name.trim(),query,intervalMinutes,enabled,...(instructions?{instructions:instructions.trim()}:{}),...(tool?{tool}:{}),...(source.skill!==undefined?{skill:source.skill}:{})};
+  const recipe=normalizeSourceRecipe(source.recipe);
+  return {url:address,name:name.trim(),query,intervalMinutes,enabled,...(instructions?{instructions:instructions.trim()}:{}),...(source.skill!==undefined?{skill:source.skill}:{}),...(recipe?{recipe}:{})};
  });
 }

@@ -68,13 +68,11 @@ test('settings load only Jev config and do not mutate the process environment',a
     assert.deepEqual(await jevConfig({TYPESAFE_API_KEY:'override'},file),{apiKey:'override',model:'jev-latest'});
   }finally{await rm(dir,{recursive:true,force:true});}
 });
-test('Jev selection persists in the shared workspace',()=>{
- const core=new WorkspaceDatabase(':memory:');try{const db=new AutomationStore(core),a=db.create('job-search');db.save(a.id,{browserMode:'jev'});assert.equal(db.get(a.id).browserMode,'jev');}finally{core.close();}
-});test('demo seeds the real app with only a local synthetic source',async()=>{
+test('demo seeds the real app with only a local synthetic source',async()=>{
   const fixture=await startJevFixture(),dir=await mkdtemp(path.join(os.tmpdir(),'jev-seed-'));
   try{
     const {candidateId}=await seedJevDemo(dir,fixture.url),store=new WorkspaceDatabase(path.join(dir,'jobloop.sqlite'));
-    try{const db=new AutomationStore(store);assert.equal(db.get(candidateId).browserMode,'jev');const enabled=db.sources(candidateId).filter(s=>s.enabled);assert.equal(enabled.length,1);assert.equal(enabled[0].url,fixture.url);assert.ok(enabled[0].query.length>0);}finally{store.close();}
+    try{const db=new AutomationStore(store);const enabled=db.sources(candidateId).filter(s=>s.enabled);assert.equal(enabled.length,1);assert.equal(enabled[0].url,fixture.url);assert.ok(enabled[0].query.length>0);}finally{store.close();}
     assert.equal((await fetch(fixture.url)).status,200);assert.equal((await fetch(fixture.url.replace('/jobs','/.env.jev'))).status,404);
   }finally{await fixture.close();await rm(dir,{recursive:true,force:true});}
 });
@@ -105,8 +103,8 @@ test('compact observations preserve complete IDs while omitting repeated content
   assert.equal(presentObservation(slot,{...value,url:'https://other.example'}).observationMode,'full');
 });
 test('Jev task instructions describe Jev navigation and current observations; shared rules stay browser-neutral',()=>{
- for(const name of ['browser_jev_scroll','browser_jev_options','no_progress'])assert.ok(JEV_TASK_INSTRUCTIONS.includes(name));
- assert.ok(!AUTOMATION_INSTRUCTIONS.includes('browser_jev_scroll'));
+ for(const name of ['browser_interact','scrollTargets.controlId','no_progress'])assert.ok(JEV_TASK_INSTRUCTIONS.includes(name));
+ for(const name of ['browser_jev_scroll','browser_jev_next','save_scan_progress'])assert.ok(!JEV_TASK_INSTRUCTIONS.includes(name)&&!AUTOMATION_INSTRUCTIONS.includes(name));
 });
 test('autocomplete requires observed control and exact answer, never accepts selectors or code',()=>{
  const args={tabId:'tab',controlId:'observed',text:'Berlin',option:'Berlin, DEU'};

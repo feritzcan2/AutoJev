@@ -36,7 +36,7 @@ try{
   source.scan={complete:false,pendingUrls:urls,work:{activeSearchId:'north',searches:[{id:'north',label:'North',status:'pending',pendingUrls:urls,pageProgress:{currentPage:7}},{id:'south',label:'South',status:'completed',pendingUrls:[]}]}};
   source.pageProgress={currentPage:7,totalPages:8,url:source.url+'?page=7',evidence:'7 / 8',at:Date.now()};source.observedPage={currentPage:1};panel.update(snapshot,'owner');
  });
- await page.getByRole('button',{name:'Tarama hafızası',exact:true}).click();
+ await page.getByRole('button',{name:'Detay',exact:true}).click();
  await page.getByText('North · 250 adres bekliyor · 7. sayfa · Seçili arama',{exact:true}).waitFor();
  await page.getByText('1. sayfa. Kayıtlı ilerleme ve kalan adresler korunuyor.',{exact:true}).waitFor();
  await page.locator('.source-progress-pending summary').click();

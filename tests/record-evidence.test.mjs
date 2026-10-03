@@ -75,15 +75,6 @@ test('historical evidence cannot cross workspaces or borrow a foreign evidence I
  f.restart();assert.equal(assessmentEvidence(f.db,f.id,f.db.run(f.run.id),alias),null);
 });
 
-test('old untagged browser observations cannot be reassigned between multiple saved searches',t=>{
- const f=fixture(t);f.db.observe(f.id,f.run.id,detail,text);
- f.db.saveScanSearches(f.id,f.run.id,[{id:'default',label:'Original'},{id:'other',label:'Other'}]);
- f.restart();assert.equal(assessmentEvidence(f.db,f.id,f.db.run(f.run.id),alias),null);
- // Jev retains the original search identity even when browser excerpts cannot.
- f.saved();assert.equal(assessmentEvidence(f.db,f.id,f.db.run(f.run.id),alias).url,detail);
- f.db.selectScanSearch(f.id,f.run.id,'other');assert.equal(assessmentEvidence(f.db,f.id,f.db.run(f.run.id),alias),null);
-});
-
 test('current observations take precedence and a new task still needs its own evidence',t=>{
  const f=fixture(t);f.saved();f.restart();
  const current='https://www.linkedin.com/jobs/view/synthetic-compliance-role-1234567890?trackingId=current';f.db.observe(f.id,f.run.id,current,'Current detail');

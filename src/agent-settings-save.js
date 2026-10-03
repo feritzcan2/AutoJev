@@ -1,8 +1,14 @@
+import {withAgentDefaults} from '../app/agent-settings.mjs';
+
 // Capture the affected workers before saving: browser changes can stop them.
 export async function saveAgentSettings({api,owner,input,confirmRestart,onSaved=()=>{}}){
  const before=await api.workspaceSnapshot(owner);
- const browserChanged=input.browserMode!==undefined||input.chromeProfile!==undefined;
- const workers=(before.workers??[]).filter(worker=>(worker.active||worker.execution?.task)&&(!worker.conversation||browserChanged));
+ const browserChanged=input.chromeProfile!==undefined&&JSON.stringify(input.chromeProfile)!==JSON.stringify(before.workspace?.chromeProfile??null);
+ const previous=withAgentDefaults(before.workspace?.agentSettings),next=withAgentDefaults(input.agentSettings??previous);
+ // Context thresholds are read by live workers. OpenCode's native compaction
+ // config takes effect on its next launch without interrupting current work.
+ const launchChanged=['provider','model','trialModel','permission','reasoning','network'].some(key=>(previous[key]??null)!==(next[key]??null));
+ const workers=(before.workers??[]).filter(worker=>(worker.active||worker.execution?.task)&&(browserChanged||launchChanged&&!worker.conversation));
  await api.workspaceSettings(owner,input);
  await onSaved();
  if(!workers.length)return {restarted:0,failed:[]};

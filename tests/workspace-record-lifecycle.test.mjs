@@ -9,6 +9,7 @@ import {WebTasks} from '../app/web-template.mjs';
 import {registerWorkspaceSupport} from '../app/workspace-support-services.mjs';
 import {TelegramBot} from '../app/telegram.mjs';
 import {enqueueRecordOperation} from '../app/record-operations.mjs';
+import {OUTCOME_FIELD} from '../app/question-forms.mjs';
 
 const source='https://example.test/list';
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
@@ -80,12 +81,27 @@ test('Telegram dismissal stops its worker, resolves its questions and renders re
  assert.equal(f.core.workspaces.tasks.list(f.id,{states:['pending','running','reported','paused']}).length,0);
 });
 
+test('an old Telegram delete button preserves a user-confirmed application and its answers',async t=>{
+ const f=await fixture(t);f.db.putResult({...f.item,status:'uncertain'});
+ const question=f.db.askQuestion(f.id,{recordId:f.item.id,text:'Bu başvuru gönderildi mi?',outcome:true,fields:[OUTCOME_FIELD]});
+ f.db.answerQuestion(f.id,question.id,{[OUTCOME_FIELD.id]:'Gönderildi'});
+ const before=f.db.result(f.id,f.item.id),questions=f.db.get(f.id).questions,tasks=f.core.workspaces.tasks.list(f.id);
+ assert.equal(before.status,'completed');assert.equal(before.evidence,'Kullanıcı başvurunun gönderildiğini onayladı.');
+ const completed=f.bot.delivery({...f.card,data:{kind:'submission',jobId:f.item.id}},f.bot.db.link(f.id));assert.match(completed.text,/✅ İş arama · Başvuruldu/);
+ // Click the original listing card before Telegram has received its status edit.
+ const result=await f.bot.deleteNotification(f.callback('d:'+f.card.id));assert.equal(result.text,'Mesaj silindi.');
+ assert.equal(f.bot.db.delivery(f.card.id).status,'deleted');assert.deepEqual(f.db.result(f.id,f.item.id),before);
+ assert.deepEqual(f.db.get(f.id).questions,questions);assert.deepEqual(f.core.workspaces.tasks.list(f.id),tasks);assert.equal(f.launches.length,0);
+ assert.deepEqual(f.calls,[{method:'deleteMessage',body:{chat_id:'11',message_id:1}}]);
+});
+
 for(const template of ['housing','appointment','custom'])test(`${template}: Telegram uses template columns and status labels`,async t=>{
  const f=await fixture(t,template);f.core.workspaces.configureTable(f.id,{title:'My records',columns:[{key:'source',label:'Portal',type:'text'},{key:'title',label:'Seçenek',type:'text'}]});
  const card=f.bot.delivery(f.card,f.bot.db.link(f.id),{edit:true});assert.match(card.text,/Seçenek/);assert.doesNotMatch(card.text,/Başvuru|Şirket|Henüz puanlanmadı/);
  f.db.putResult({...f.item,status:'completed'});
  const completed=f.bot.delivery({...f.card,data:{kind:'submission',jobId:f.item.id}},f.bot.db.link(f.id));
  assert.match(completed.text,new RegExp(f.db.template(template).title));assert.match(completed.text,/Tamamlandı/);assert.doesNotMatch(completed.text,/Başvurun gönderildi/);
+ const before=f.db.result(f.id,f.item.id);assert.equal((await f.bot.deleteNotification(f.callback('d:'+f.card.id))).text,'Mesaj silindi.');assert.deepEqual(f.db.result(f.id,f.item.id),before);
 });
 
 test('record creation rolls back with its event and a retry emits exactly one finding',async t=>{

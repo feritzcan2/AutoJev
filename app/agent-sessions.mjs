@@ -13,6 +13,7 @@ import {ContextCompaction,compactionPending} from './context-compaction.mjs';
 import {providerLimit} from './provider-limit.mjs';
 import {opencodeCompaction} from './opencode-context.mjs';
 import {readOpenCodeFailure} from './opencode-failure.mjs';
+import {readRunTokenUsage} from './run-token-usage.mjs';
 
 export const publicSession=active=>active?{candidateId:active.candidateId,workerId:active.workerId??MAIN_WORKER,sessionId:active.sessionId,agentProfile:active.agentProfile?{id:active.agentProfile.id,name:active.agentProfile.name,version:active.agentProfile.version}:null,state:active.state??'Unknown',contextUsage:active.contextUsage??null,compaction:active.compaction??null,usageLimit:active.usageLimit??null}:null;
 
@@ -125,7 +126,7 @@ export class AgentSessions {
    await engine.request('resize',this.grid(id,worker));this.changed(id);return {sessionId};
   }catch(error){this.audit(s,{kind:'launch_failed',title:'Başlatma tamamlanamadı',status:'failed',detail:error.message,parts:[]});await this.stop(id,worker).catch(()=>{});throw error;}finally{this.starting.delete(key);}
  }
- retire(id,worker=MAIN_WORKER){const key=workerKey(id,worker),s=this.sessions.get(key);if(s){const threshold=s.currentSettings().contextRestartPercent??0;if(s.rotateAtBoundary&&threshold>0&&s.contextUsage?.peakPercent>=threshold){const nativeId=s.contextReader?.nativeId??s.resumeId;if(nativeId)s.history?.forgetConversation(id,s.provider,nativeId);s.onRecord?.('agent_context_restart',{workerId:worker,provider:s.provider,peakPercent:s.contextUsage.peakPercent,threshold});}clearTimeout(s.limitTimer);clearTimeout(s.failureTimer);this.sessions.delete(key);s.onRetire?.();this.changed(id);}}
+ retire(id,worker=MAIN_WORKER){const key=workerKey(id,worker),s=this.sessions.get(key);if(s){const threshold=s.currentSettings().contextRestartTokens??0;if(s.rotateAtBoundary&&threshold>0&&s.contextUsage?.peakTokens>=threshold){const nativeId=s.contextReader?.nativeId??s.resumeId;if(nativeId)s.history?.forgetConversation(id,s.provider,nativeId);s.onRecord?.('agent_context_restart',{workerId:worker,provider:s.provider,peakTokens:s.contextUsage.peakTokens,thresholdTokens:threshold});}clearTimeout(s.limitTimer);clearTimeout(s.failureTimer);this.sessions.delete(key);s.onRetire?.();this.changed(id);}}
  stop(id,worker=MAIN_WORKER,{settle=async()=>{}}={}){
   const key=workerKey(id,worker);if(this.closing.has(key))return this.closing.get(key);
   const engine=this.engines.get(key);this.engines.delete(key);this.retire(id,worker);
@@ -134,6 +135,7 @@ export class AgentSessions {
  }
  // The latest native conversation for a worker, kept after the session closes until a new one starts.
  async transcript(id,worker=MAIN_WORKER){const reader=this.transcripts.get(workerKey(id,worker));return reader?{nativeId:reader.nativeId,messages:await reader.read(),activity:reader.activity??null}:{nativeId:null,messages:[]};}
+ async tokenUsage(id,worker,{since,until}){const reader=this.transcripts.get(workerKey(id,worker));return reader?readRunTokenUsage({...reader,appSent:[],since,until}):null;}
  output(id,worker=MAIN_WORKER){const key=workerKey(id,worker);return {bytes:[...(this.outputs.get(key)??Buffer.alloc(0))],sequence:this.sequences.get(key)??0,sessionId:this.sessions.get(key)?.sessionId??null};}
  snapshot(id,worker=MAIN_WORKER){const key=workerKey(id,worker),sessionId=this.sessions.get(key)?.sessionId??null;return this.screens.get(key)?.snapshot(sessionId)??Promise.resolve({...this.output(id,worker),...this.grid(id,worker)});}
  clearOutput(key){this.screens.get(key)?.dispose();this.screens.delete(key);this.outputs.delete(key);}
@@ -143,11 +145,11 @@ export class AgentSessions {
  async message(id,text,worker=MAIN_WORKER){const s=this.sessions.get(workerKey(id,worker));if(!s)throw Error('Etkin agent bulunamadı.');this.transcripts.get(workerKey(id,worker))?.appSent.add(String(text).trim());this.audit(s,{kind:'message',title:'Devam mesajı',status:'requested',parts:[instructionPart('message','Mesaj','user',text)]});try{const result=await this.engineFor(s).request('message',{text});this.audit(s,{kind:'message_accepted',title:'Mesaj kuyruğa alındı',status:'accepted',parts:[]});return result;}catch(error){this.audit(s,{kind:'message_failed',title:'Mesaj iletilemedi',status:'failed',detail:error.message,parts:[]});throw error;}}
  readContext(id,s){
   if(s.contextRead)return s.contextRead;
-  s.contextRead=(async()=>{const settings=s.currentSettings();if(!(settings.contextRestartPercent>0||settings.contextCompactPercent>0))return null;
+  s.contextRead=(async()=>{const settings=s.currentSettings();if(!(settings.contextRestartTokens>0||settings.contextCompactTokens>0))return null;
    const previous=s.contextUsage,reader=s.contextReader,usage=await reader?.read()??null;
    if(this.sessions.get(workerKey(id,s.workerId))!==s||s.contextReader!==reader)return null;
-   s.contextUsage=usage;if(previous?.percent!==usage?.percent||previous?.peakPercent!==usage?.peakPercent)this.changed(id);
-   if(!s.usageLimit)await this.compaction.tick(s,usage,settings.contextCompactPercent);return usage;
+   s.contextUsage=usage;if(previous?.tokens!==usage?.tokens||previous?.peakTokens!==usage?.peakTokens)this.changed(id);
+   if(!s.usageLimit)await this.compaction.tick(s,usage,settings.contextCompactTokens);return usage;
   })().finally(()=>{s.contextRead=null;});return s.contextRead;
  }
  contextBusy(id,worker=MAIN_WORKER){const s=this.sessions.get(workerKey(id,worker));return Boolean(s?.usageLimit)||compactionPending(s);}

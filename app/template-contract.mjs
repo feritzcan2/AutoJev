@@ -28,7 +28,7 @@ export function templateContract(input,driver=browserDefinition){
  const identity=records.identity??'key';if(!['url','key'].includes(identity))throw Error('Geçersiz kayıt kimlik kuralı');
  const recordOperations=normalizeRecordOperations(input.recordOperations,driver);
  if(workflow.some(step=>Object.values(recordOperations).some(op=>op.id===step.id)))throw Error('Kayıt işlemi kimliği workflow içinde tekrar edemez');
- return {...input,version:2,kind:driver.kind,mail:normalizeMailContract(input.mail),defaultSources:normalizeTemplateSources(input.defaultSources),execution:{driver:execution.driver,maxWorkers,browserModes:driver.browserModes,defaultBrowserMode:driver.defaultBrowserMode},workflow,recordOperations,records:{states,actions,bindings,identity,initial:records.initial??states[0].id,dismissLabel:text(records.dismissLabel??'Kaydı ele','Eleme düğmesi',100)}};
+ return {...input,version:2,kind:driver.kind,mail:normalizeMailContract(input.mail),defaultSources:normalizeTemplateSources(input.defaultSources),execution:{driver:execution.driver,maxWorkers},workflow,recordOperations,records:{states,actions,bindings,identity,initial:records.initial??states[0].id,dismissLabel:text(records.dismissLabel??'Kaydı ele','Eleme düğmesi',100)}};
 }
 export function findOperation(template,id){return template.workflow.find(s=>s.id===id)??Object.values(template.recordOperations??{}).find(s=>s.id===id);}
 export function operationFor(template,id){const operation=findOperation(template,id);if(!operation)throw Error('Template adımı bulunamadı');return operation;}

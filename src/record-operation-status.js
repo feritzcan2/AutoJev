@@ -9,13 +9,13 @@ export function recordOperationStatus(record){
   if(task.state==='reported')return {id:'finishing',label:'İşlem sonlandırılıyor',tone:'running',detail:'Agent oturumu kapanıyor.',active:true};
   return {id:'working',label:running[task.kind]??'İşlem sürüyor',tone:'running',detail:'Agent bu kayıt üzerinde çalışıyor.',active:true};
  }
- if(lastTask&&lastTask.at>=record.updatedAt&&!['completed','uncertain','executing','dismissed'].includes(record.status)){
+ if(lastTask&&lastTask.kind!=='verify'&&lastTask.at>=Math.max(record.updatedAt,record.verifiedAt??0)&&!['completed','uncertain','executing','dismissed'].includes(record.status)){
   const label={blocked:'İşlem engellendi',failed:'İşlem başarısız',interrupted:'İşlem kesildi',cancelled:'İşlem iptal edildi'}[lastTask.state];
   if(label)return {id:'stopped',label,tone:'blocked',detail:lastTask.summary,active:false};
  }
  return null;
 }
-export const recordActivityAt=record=>Math.max(record.updatedAt,record.recordAction?.task?.at??0,record.recordAction?.lastTask?.at??0);
+export const recordActivityAt=record=>Math.max(record.updatedAt,record.verifiedAt??0,record.recordAction?.task?.at??0,record.recordAction?.lastTask?.at??0);
 export const recordIsWorking=record=>record.status!=='dismissed'&&!record.recordAction?.question&&['running','reported'].includes(record.recordAction?.task?.state);
 
 export const recordNeedsAnswer=record=>record.status!=='dismissed'&&Boolean(record.recordAction?.question);

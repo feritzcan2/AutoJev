@@ -1,6 +1,6 @@
 // Increase this version whenever a release changes the persisted data contract.
 // Startup takes a backup before opening Store when this version or the app changes.
-export const DATA_SCHEMA_VERSION=30;
+export const DATA_SCHEMA_VERSION=34;
 // Raw browsing caches are now process-local. Restoring an old database must
 // not reactivate disk storage for these transient helper tasks and page bodies.
 export function discardPersistentPageCaches(db){

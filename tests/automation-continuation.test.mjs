@@ -142,16 +142,20 @@ test('protocol digest changes with instructions or tool schema but is stable for
  assert.equal(one,automationProtocol(tools,['rules']));assert.notEqual(one,automationProtocol(tools,['new rules']));assert.notEqual(one,automationProtocol([...tools,{name:'write'}],['rules']));
 });
 
-test('app memory expiry starts fresh history without resetting the error budget or pending queue',async t=>{
+test('app memory expiry preserves conversation, error budget and pending queue while discarding Jev evidence',async t=>{
  const f=fixture(t);await f.runtime.runOnce(f.a.id);await settle();let first=f.launches.at(-1);
  first=prepareAutomationProtocol(f.db,first,'current-contract');
  const history=run=>automationRunHistory(f.db,run,f.store.workspaces.history(f.a.id,run.workerId),null,'current-contract').forProfile('web-run');
  history(first).saveConversation(f.a.id,'codex','old-memory-thread',settings);
+ const helper=f.db.jevTasks.create(f.a.id,first.taskId,{operation:'collect_details'}),evidence=f.db.jevTasks.evidence(helper,{url:first.sourceUrl+'pending',text:'Temporary detail'});
  const task=f.store.workspaces.tasks.get(f.a.id,first.taskId);f.store.workspaces.tasks.put({...task,toolFailures:{quotes:{count:2}}});
  f.db.observe(f.a.id,first.id,first.sourceUrl,'Lead',[first.sourceUrl+'pending']);f.db.saveScanProgress(f.a.id,first.id,{pendingUrls:[first.sourceUrl+'pending'],reason:'Keep pending'},{url:first.sourceUrl,text:'Lead'});
  await f.runtime.finish(f.a.id,'interrupted','App closed',first.workerId);
  const reopened=new AutomationStore(f.store);f.db.jevTasks=reopened.jevTasks;f.db.browserEvidence=reopened.browserEvidence;
  await f.runtime.tick();await settle();const next=prepareAutomationProtocol(f.db,f.launches.at(-1),'current-contract');
- assert.equal(next.continuation.resumeConversation,false);assert.equal(next.protocolReset.reason,'temporary_evidence_expired');assert.equal(selectResume(history(next),f.a.id,settings),undefined);
+ assert.equal(next.continuation.resumeConversation,true);assert.equal(next.protocolReset,undefined);assert.equal(selectResume(history(next),f.a.id,settings),'old-memory-thread');
+ assert.notEqual(next.evidenceEpoch,first.evidenceEpoch);
+ assert.throws(()=>f.db.jevTasks.get(f.a.id,next.taskId,helper.id),/süresi doldu/);
+ assert.throws(()=>f.db.jevTasks.fullEvidence(f.a.id,next.taskId,evidence.id),/süresi doldu/);
  assert.deepEqual(f.store.workspaces.tasks.get(f.a.id,next.taskId).toolFailures,{quotes:{count:2}});assert.ok(next.scan.pendingUrls.includes(first.sourceUrl+'pending'));
 });

@@ -1,3 +1,5 @@
+import {formatTokens,parseTokenInput,setupTokenInput} from './token-input.js';
+import {DEFAULT_COMPACT_TOKENS} from '../app/context-compaction.mjs';
 import {defaultPermission} from '../app/agent-settings.mjs';
 import {coalesceRefresh} from './refresh-queue.js';
 import {saveAgentSettings,createAgentRestartDialog} from './agent-settings-save.js';
@@ -70,11 +72,12 @@ function switchView(name,options={}){
 function settingsOptions(saved){
  const current=catalog.find(a=>a.id===$('provider').value);if(!current)return;
  const fields=$('agent-settings-form').elements;fields.network.disabled=current.id!=='codex';
- for(const [name,fallback]of [['contextCompactPercent',0],['contextRestartPercent',0]]){
-  const field=fields[name],value=saved?saved[name]??fallback:field.disabled?field.dataset.configuredValue:field.value;
-  field.dataset.configuredValue=value;field.disabled=false;field.value=value;
+ for(const [name,fallback]of [['contextCompactTokens',DEFAULT_COMPACT_TOKENS],['contextRestartTokens',0]]){
+  const field=fields[name];
+  if(saved){field.value=formatTokens(saved[name]??fallback);field.setCustomValidity('');}
  }
  for(const [key,list]of [['model',current.models],['permission',current.permissions],['reasoning',current.reasoning]]){$(key).replaceChildren(...list.map(value=>new Option(value,value)));$(key).value=list.includes(saved?.[key])?saved[key]:key==='permission'?defaultPermission(current.id):'default';}
+ $('trialModel').replaceChildren(new Option('Ana modelle aynı',''),...current.models.filter(value=>value!=='default').map(value=>new Option(value,value)));$('trialModel').value=current.models.includes(saved?.trialModel)?saved.trialModel:'';
 }
 function chromeProfileOptions(selected=workspaceAgent?.workspace?.chromeProfile){
  const select=$('agent-settings-form').elements.chromeProfile;
@@ -84,17 +87,15 @@ function chromeProfileOptions(selected=workspaceAgent?.workspace?.chromeProfile)
  chromeProfileVisibility();
 }
 function chromeProfileVisibility(){
- $('chrome-profile-field').hidden=!['existing','jev'].includes($('agent-settings-form').elements.browserMode.value);
- $('chrome-profile-hint').textContent=chromeProfilesError||(chromeProfiles.length?($('agent-settings-form').elements.browserMode.value==='jev'?'Jev mevcut girişini kullanır; ilanları tek AutoJev penceresinde sekmeler olarak açar.':'Seçimin agent’a talimat olarak iletilir.'):'Chrome profili bulunamadı.');
+ $('chrome-profile-hint').textContent=chromeProfilesError||(chromeProfiles.length?'Jev mevcut girişini kullanır; ilanları tek AutoJev penceresinde sekmeler olarak açar.':'Chrome profili bulunamadı.');
 }
 function fillAgentSettings(profile,id){
  const changedOwner=agentSettingsOwner!==id;agentSettingsOwner=id;
  if(changedOwner)agentSettingsDirty=false;
  if(agentSettingsDirty&&!changedOwner)return;
- const p=profile??{},key=JSON.stringify([id,p.agentSettings,p.browserMode,p.chromeProfile]);if(agentSettingsSignature===key)return;agentSettingsSignature=key;
- const form=$('agent-settings-form'),modes=workspaceAgent?.workspace.id===id?workspaceAgent.capabilities.browserModes:['existing','separate','jev'];
- for(const option of form.elements.browserMode.options)option.disabled=!modes.includes(option.value);
- form.elements.browserMode.value=p.browserMode??'jev';chromeProfileOptions(p.chromeProfile);$('agent-settings').classList.toggle('is-off',!id);if(!id)$('agent-settings-status').textContent='Önce bir çalışma alanı seç';else if(changedOwner||$('agent-settings-status').textContent==='Önce bir çalışma alanı seç')$('agent-settings-status').textContent='Değişiklikleri Kaydet ile uygula';
+ const p=profile??{},key=JSON.stringify([id,p.agentSettings,p.chromeProfile]);if(agentSettingsSignature===key)return;agentSettingsSignature=key;
+ const form=$('agent-settings-form');
+ chromeProfileOptions(p.chromeProfile);$('agent-settings').classList.toggle('is-off',!id);if(!id)$('agent-settings-status').textContent='Önce bir çalışma alanı seç';else if(changedOwner||$('agent-settings-status').textContent==='Önce bir çalışma alanı seç')$('agent-settings-status').textContent='Değişiklikleri Kaydet ile uygula';
  $('provider').value=p.agentSettings?.provider??'codex';settingsOptions(p.agentSettings??{});form.elements.network.value=p.agentSettings?.network==null?'inherit':String(p.agentSettings.network);
  agentSettingsBaseline=JSON.stringify(readAgentSettings());$('agent-settings-save').disabled=true;
 }
@@ -105,10 +106,10 @@ function syncWorkspaceAgent(value){
  instructionsUI.select(id);terminals.update(id,next);activities.update(next,true);fillAgentSettings(next.workspace,id);renderContext(next);configUI.select(id);notificationsUI.select(id);
 }
 function renderContext(value){
- const usage=value?.active?.contextUsage,threshold=value?.workspace.agentSettings.contextRestartPercent??0,compactThreshold=value?.workspace.agentSettings.contextCompactPercent??0,compact=value?.active?.compaction;
- $('context-compact-status').textContent=({sending:'/compact gönderiliyor…',submitted:'/compact gönderildi; sağlayıcıdan compaction bekleniyor.',running_command:'Sağlayıcı /compact komutunu işliyor…',verified:'Compaction tamamlandı.',compacting:'Context sıkıştırılıyor…',awaiting_usage:'Compaction turu bitti; yeni context ölçümü bekleniyor.',completed:'Context kullanımı eşik altına indi.',waiting:'Terminalin komut almaya hazır olması bekleniyor.',unconfirmed:'Compaction doğrulanamadı. '+(compact?.error??'')})[compact?.state]??(compactThreshold?`Otomatik compaction: %${compactThreshold}.`:'Otomatik compaction kapalı.');
- if(value?.workspace.agentSettings.provider==='opencode'&&!compact?.state)$('context-compact-status').textContent=compactThreshold?`OpenCode otomatik compaction: %${compactThreshold}. Eşik değişikliği sonraki agent oturumunda uygulanır.`:'Uygulamanın compaction eşiği kapalı; OpenCode kendi varsayılanını kullanır.';
- $('context-usage-status').textContent=!threshold&&!compactThreshold?'Otomatik context yönetimi kapalı.':!value?.active?'Sonraki oturumda context izlenecek.':usage?.percent==null?'Context yüzdesi bekleniyor.':`Context kullanımı: %${usage.percent.toLocaleString('tr-TR',{maximumFractionDigits:1})}.${threshold>0&&usage.peakPercent>=threshold?' Eşik aşıldı; görev tamamlanınca yenilenecek.':''}`;
+ const usage=value?.active?.contextUsage,threshold=value?.workspace.agentSettings.contextRestartTokens??0,compactThreshold=value?.workspace.agentSettings.contextCompactTokens??0,compact=value?.active?.compaction;
+ $('context-compact-status').textContent=({sending:'/compact gönderiliyor…',submitted:'/compact gönderildi; sağlayıcıdan compaction bekleniyor.',running_command:'Sağlayıcı /compact komutunu işliyor…',verified:'Compaction tamamlandı.',compacting:'Context sıkıştırılıyor…',awaiting_usage:'Compaction turu bitti; yeni context ölçümü bekleniyor.',completed:'Context kullanımı eşik altına indi.',waiting:'Terminalin komut almaya hazır olması bekleniyor.',unconfirmed:'Compaction doğrulanamadı. '+(compact?.error??'')})[compact?.state]??(compactThreshold?`Otomatik compaction: ${formatTokens(compactThreshold)} token.`:'Otomatik compaction kapalı.');
+ if(value?.workspace.agentSettings.provider==='opencode'&&!compact?.state)$('context-compact-status').textContent=compactThreshold?`OpenCode otomatik compaction: ${formatTokens(compactThreshold)} token. Eşik değişikliği sonraki agent oturumunda uygulanır.`:'Uygulamanın compaction eşiği kapalı; OpenCode kendi varsayılanını kullanır.';
+ $('context-usage-status').textContent=!threshold&&!compactThreshold?'Otomatik context yönetimi kapalı.':!value?.active?'Sonraki oturumda context izlenecek.':usage?.tokens==null?'Context token ölçümü bekleniyor.':`Context kullanımı: ${formatTokens(usage.tokens)} token.${threshold>0&&usage.peakTokens>=threshold?' Eşiğe ulaşıldı; görev bitince yeni agent oturumu açılacak.':''}`;
 }
 async function refreshWorkspace(){
  if(deletingWorkspace)return;const version=++refreshVersion,items=await api.workspaces();if(version!==refreshVersion)return;
@@ -129,10 +130,10 @@ chromeProfiles=await api.chromeProfiles().catch(error=>{chromeProfilesError=erro
 catalog=await api.catalog();$('provider').replaceChildren(...catalog.map(item=>{const option=new Option(item.label+(item.supported?'':' — MCP henüz yok'),item.id);option.disabled=!item.supported;return option;}));$('provider').onchange=()=>settingsOptions();
 function readAgentSettings(){
  const profile=workspaceAgent?.workspace,f=$('agent-settings-form').elements;
- const contextPercent=name=>{const field=f[name],value=field.disabled?field.dataset.configuredValue:field.value;return value===''?NaN:Number(value);};
- const browserMode=f.browserMode.value,chromeProfile=chromeProfiles.find(p=>p.directory===f.chromeProfile.value)??(profile?.chromeProfile?.directory===f.chromeProfile.value?profile.chromeProfile:null);
- const agentSettings={provider:f.provider.value,model:f.model.value,permission:f.permission.value,reasoning:f.reasoning.value,network:f.provider.value!=='codex'||f.network.value==='inherit'?null:f.network.value==='true',contextRestartPercent:contextPercent('contextRestartPercent'),contextCompactPercent:contextPercent('contextCompactPercent')};
- return {agentSettings,browserMode,chromeProfile};
+ const contextTokens=name=>parseTokenInput(f[name].value);
+ const chromeProfile=chromeProfiles.find(p=>p.directory===f.chromeProfile.value)??(profile?.chromeProfile?.directory===f.chromeProfile.value?profile.chromeProfile:null);
+ const agentSettings={provider:f.provider.value,model:f.model.value,trialModel:f.trialModel.value||null,permission:f.permission.value,reasoning:f.reasoning.value,network:f.provider.value!=='codex'||f.network.value==='inherit'?null:f.network.value==='true',contextRestartTokens:contextTokens('contextRestartTokens'),contextCompactTokens:contextTokens('contextCompactTokens')};
+ return {agentSettings,chromeProfile};
 }
 function markAgentSettingsDirty(){
  if(!automationUI.selected||agentSettingsSaving)return;
@@ -140,13 +141,13 @@ function markAgentSettingsDirty(){
  $('agent-settings-save').disabled=!agentSettingsDirty;
  $('agent-settings-status').textContent=agentSettingsDirty?'Kaydedilmemiş değişiklikler var.':'Değişiklik yok.';
 }
+for(const name of ['contextCompactTokens','contextRestartTokens'])setupTokenInput($('agent-settings-form').elements[name]);
 $('agent-settings-form').oninput=markAgentSettingsDirty;
 $('agent-settings-form').onchange=markAgentSettingsDirty;
 $('agent-settings-form').onsubmit=event=>{
  event.preventDefault();const owner=automationUI.selected;
  if(!owner||agentSettingsSaving||!agentSettingsDirty)return;
  const input=readAgentSettings(),baseline=JSON.parse(agentSettingsBaseline);
- if(input.browserMode===baseline.browserMode)delete input.browserMode;
  if(JSON.stringify(input.chromeProfile)===JSON.stringify(baseline.chromeProfile))delete input.chromeProfile;
  const form=$('agent-settings-form'),status=$('agent-settings-status');
  agentSettingsSaving=true;form.inert=true;$('agent-settings-save').disabled=true;status.textContent='Kaydediliyor…';
@@ -157,7 +158,7 @@ $('agent-settings-form').onsubmit=event=>{
   }});
   if(automationUI.selected===owner){
    await automationUI.refresh();
-   status.textContent=result.failed.length?`Ayarlar kaydedildi. Yeniden başlatılamayan agent’ler: ${result.failed.join('; ')}`:result.restarted?`Kaydedildi. ${result.restarted} agent yeniden başlatıldı.`:'Kaydedildi. Context eşikleri hemen, diğer ayarlar sonraki başlatmada uygulanır.';
+   status.textContent=result.failed.length?`Ayarlar kaydedildi. Yeniden başlatılamayan agent’ler: ${result.failed.join('; ')}`:result.restarted?`Kaydedildi. ${result.restarted} agent yeniden başlatıldı.`:input.agentSettings.provider==='opencode'?'Kaydedildi. Yeni oturum eşiği hemen, compaction ve diğer ayarlar sonraki başlatmada uygulanır.':'Kaydedildi. Context eşikleri hemen, diğer ayarlar sonraki başlatmada uygulanır.';
   }
  }).catch(error=>{if(automationUI.selected===owner)status.textContent=(saved?'Ayarlar kaydedildi. ':'Kaydedilemedi: ')+error.message;})
  .finally(()=>{agentSettingsSaving=false;form.inert=false;$('agent-settings-save').disabled=!agentSettingsDirty;});

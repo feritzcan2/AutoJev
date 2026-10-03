@@ -62,7 +62,9 @@ test('a shared Telegram user cannot use pairing, answer or delete callbacks thro
  const q=store.askQuestion(p.id,{question:'Private question'});
  await service.worker(other.id).conversation.handle({callback_query:{...callback,data:'q:'+q.id}});
  assert.equal(service.worker(other.id).db.link(other.id).data.dialog,null);assert.equal(answers.length,0);
- const completed=await service.worker(p.id).deleteNotification(callback);assert.equal(completed.show_alert,true);assert.equal(calls.filter(call=>call.method==='deleteMessage').length,0);
+ const before=store.job(p.id,job.id),completed=await service.worker(p.id).deleteNotification(callback);
+ assert.equal(completed.text,'Mesaj silindi.');assert.deepEqual(store.job(p.id,job.id),before);
+ const deleted=calls.filter(call=>call.method==='deleteMessage');assert.equal(deleted.length,1);assert.equal(deleted[0].botId,'123456789');assert.equal(deleted[0].body.message_id,1);
 });
 
 test('desktop question answers update only that candidate bot when both bots share a Telegram user',async t=>{

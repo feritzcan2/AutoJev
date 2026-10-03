@@ -115,7 +115,7 @@ async function recoverField(slot,entry){
  await entry.input.dispose().catch(()=>{});entry.input=input;return true;
 }
 export async function fillKnownFields(slot,fields,owner,reader){
-  if(fields.some(field=>slot.controls?.has(field.fieldId)))return {status:'invalid_target',results:fields.map(({fieldId})=>({fieldId,status:'not_attempted'})),message:'controlId yazılabilir fieldId değildir. Yalnızca fillFields içindeki fieldId değerlerini kullan; liste boşsa alan yazma desteği yok. Aynı kontrolü tekrar gönderme.'};
+  if(fields.some(field=>slot.controls?.has(field.fieldId)))return {status:'invalid_target',results:fields.map(({fieldId})=>({fieldId,status:'not_attempted'})),message:'controlId yazılabilir fieldId değildir. Dönen controls içinde alanı bul; görünür değilse browser_interact reveal ile görünür yap, ardından güncel fillFields içindeki fieldId değerini kullan. Aynı controlId ile yazmayı tekrar deneme.'};
   // Removed, consumed or foreign-session IDs cannot write.
   if(fields.some(field=>!slot.fillFields?.has(field.fieldId)))return {status:'stale',results:fields.map(({fieldId})=>({fieldId,status:'not_attempted'})),message:'Alan kimlikleri eski; dönen güncel fillFields listesini kullan. Ek observe gerekmez.'};
   // Validate the complete mapping before touching any field, then consume it.

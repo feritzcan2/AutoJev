@@ -26,10 +26,10 @@ const server=createServer((req,res)=>{
  <div id="shadow"></div><script>document.querySelector('#shadow').attachShadow({mode:'open'}).innerHTML='<p>SHADOW_ADDRESS 10115 Berlin</p><a href="/shadow-listing">SHADOW_LISTING</a><div hidden>SHADOW_HIDDEN_MUST_NOT_LEAK</div>';</script>`);
 });
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const url=`http://127.0.0.1:${server.address().port}/`;
-const a=db.create('custom',{goal:'Read all loaded rental listings',sources:[url],criteria:{outcome:'Observed addresses and URLs',rules:'Read only',completion:'One scan'}});db.save(a.id,{browserMode:'jev'});db.review(a.id);
+const a=db.create('custom',{goal:'Read all loaded rental listings',sources:[url],criteria:{outcome:'Observed addresses and URLs',rules:'Read only',completion:'One scan'}});db.review(a.id);
 const run=db.begin(a.id,'trial'),controller=new AbortController();
-const browsers=new BrowserTools(directory,()=> 'jev',()=>({connection:'separate',headless:true,choose:()=>{throw Error('No model should be called');}}));
-const adapter=automationBrowser(browsers,{mode:'jev'}),flow=automationWorkflow({db,run,signal:controller.signal,browser:adapter,report:(id,runId,status,summary)=>db.finish(id,runId,status,summary)});
+const browsers=new BrowserTools(directory,()=>({connection:'separate',headless:true,choose:()=>{throw Error('No model should be called');}}));
+const adapter=automationBrowser(browsers),flow=automationWorkflow({db,run,signal:controller.signal,browser:adapter,report:(id,runId,status,summary)=>db.finish(id,runId,status,summary)});
 let maxBytes=0;
 const call=async(name,args={})=>{const result=await flow.call(a.id,run.id,name,args),bytes=Buffer.byteLength(JSON.stringify(result));maxBytes=Math.max(maxBytes,bytes);assert.ok(bytes<=BROWSER_RESPONSE_BYTES+1000);return result;};
 const pageOf=async first=>{
@@ -47,7 +47,7 @@ try{
  const item=await call('record_automation_result',{key:url+'last',url:url+'last',title:'FINAL_LISTING_1600',summary:'Observed exact address: Invalidenstraße 12, 10115 Berlin. 120 m², 2 rooms, 2100 €.'});assert.equal(item.trial,true);
  await assert.rejects(call('browser_interact',{operation:'click',ref:page.clickTargets.find(c=>c.label==='Send message')?.targetId??'send'}),/taslak ayır/);assert.equal(submits,0);
  const lazyFirst=await call('browser_open',{url:url+'lazy'}),lazy=await pageOf(lazyFirst);assert.ok(!lazy.text.includes('LAZY_TAIL_LISTING'));
- assert.ok(lazy.scrollTargets.length);const scroll=await call('browser_jev_scroll',{controlId:lazy.scrollTargets[0].controlId,direction:'down'});
+ assert.ok(lazy.scrollTargets.length);const scroll=await call('browser_interact',{operation:'scroll',ref:lazy.scrollTargets[0].controlId,direction:'down'});
  assert.equal(scroll.action.executed,true);
  const after=await pageOf(scroll);assert.match(after.text,/LAZY_TAIL_LISTING/);assert.equal(after.links.find(l=>l.text==='LAZY_TAIL_LISTING').url,url+'lazy-detail');
  await assert.rejects(call('browser_read_part',{snapshotId:lazyFirst.snapshot.id}),/eski/);

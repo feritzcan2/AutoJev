@@ -9,7 +9,7 @@ import {AutomationStore} from '../app/automation-store.mjs';
 import {WebTasks} from '../app/web-template.mjs';
 import {templateContract} from '../app/template-contract.mjs';
 import {workspaceTableCall} from '../app/workspace-table-tools.mjs';
-const car=JSON.parse(await readFile(new URL('../docs/examples/car-search.loop-template.json',import.meta.url))).template;
+const car=JSON.parse(await readFile(new URL('./fixtures/car-search.loop-template.json',import.meta.url))).template;
 const settle=()=>new Promise(r=>setTimeout(r,0));
 function fixture(t){const store=new WorkspaceDatabase(':memory:');t.after(()=>store.close());const db=new AutomationStore(store),template=db.saveTemplate(car),a=db.create(template.id,{goal:'Berlin’de uygun araba bul',criteria:{location:'Berlin',budget:'15000',transmission:'Otomatik'},sources:['https://cars.test/a','https://cars.test/b']});db.review(a.id);const trial=db.begin(a.id,'trial');for(const url of a.sources)db.observe(a.id,trial.id,url,'Gerçek ilan örnekleri');db.finish(a.id,trial.id,'completed','Kaynaklar okundu');return {store,db,id:a.id};}
 

@@ -12,18 +12,18 @@ const directory=await mkdtemp(path.join(tmpdir(),'loop-automation-jev-')),store=
 let sent=0;
 const server=createServer((req,res)=>{const route=new URL(req.url,'http://localhost').pathname;if(route==='/sent')sent++;res.setHeader('Content-Type','text/html');res.end(route==='/sent'?'<h1>Confirmed TEST-JEV-1</h1>':'<h1>Berlin apartment</h1><form action="/sent"><label>Message<textarea name="message"></textarea></label><label>Visit<select name="visit"><option value="">Choose</option><option value="morning">Morning</option></select></label><button>Send message</button></form>');});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const url=`http://127.0.0.1:${server.address().port}/`;
-const a=db.create('housing',{goal:'Find an apartment',criteria:{location:'Berlin',budget:'1500',requirements:'2 rooms'},sources:[url]});db.save(a.id,{browserMode:'jev'});db.review(a.id);
-const browsers=new BrowserTools(directory,()=> 'jev',()=>({connection:'separate',headless:true,choose:process.argv.includes('--live')?undefined:page=>({operation:'CLICK',action:page.actions.find(a=>a.kind==='click'&&a.label==='Send message'),confidence:1,latency_ms:0})}));
+const a=db.create('housing',{goal:'Find an apartment',criteria:{location:'Berlin',budget:'1500',requirements:'2 rooms'},sources:[url]});db.review(a.id);
+const browsers=new BrowserTools(directory,()=>({connection:'separate',headless:true,choose:process.argv.includes('--live')?undefined:page=>({operation:'CLICK',action:page.actions.find(a=>a.kind==='click'&&a.label==='Send message'),confidence:1,latency_ms:0})}));
 let run,flow;
-const begin=kind=>{run=db.begin(a.id,kind);flow=automationWorkflow({db,run,signal:new AbortController().signal,browser:automationBrowser(browsers,{mode:'jev'}),report:(id,runId,status,summary)=>db.finish(id,runId,status,summary)});};
+const begin=kind=>{run=db.begin(a.id,kind);flow=automationWorkflow({db,run,signal:new AbortController().signal,browser:automationBrowser(browsers),report:(id,runId,status,summary)=>db.finish(id,runId,status,summary)});};
 const call=(name,args={})=>flow.call(a.id,run.id,name,args);
 const pageOf=result=>JSON.parse(result.content.find(p=>p.type==='text').text.replace(/^Page URL: [^\n]+\n/,''));
 try{
- begin('trial');assert.ok(flow.tools.some(t=>t.name==='browser_jev_next'));
+ begin('trial');assert.ok(!flow.tools.some(t=>t.name==='browser_jev_next'));
  let page=pageOf(await call('browser_open',{url}));assert.match(page.text,/Berlin apartment/);
  const initialField=page.fillFields.find(f=>f.label==='Message');await call('browser_interact',{operation:'type',ref:initialField.fieldId,text:'Local trial draft'});assert.equal(sent,0);
- const unreservedDecision=pageOf(await call('browser_jev_next',{goal:'Send the synthetic local fixture message'}));
- const unreserved=await call('browser_jev_act',{decisionId:unreservedDecision.decisionId});assert.match(pageOf(unreserved).text,/Confirmed TEST-JEV-1/);assert.equal(sent,1);assert.equal(db.run(run.id).actionId,null);
+ const sendTarget=page=>page.clickTargets.find(t=>t.label==='Send message');
+ const unreserved=await call('browser_interact',{operation:'click',ref:sendTarget(pageOf(await call('browser_read'))).targetId});assert.match(pageOf(unreserved).text,/Confirmed TEST-JEV-1/);assert.equal(sent,1);assert.equal(db.run(run.id).actionId,null);
  await call('finish_automation_run',{status:'completed',summary:'Observed actual local source'});assert.equal(db.get(a.id).trial.status,'passed');
  begin('run');page=pageOf(await call('browser_open',{url}));const item=await call('record_automation_result',{key:url,url,title:'Apartment',summary:'Actual test listing',proposal:'Synthetic message'});
  await assert.rejects(call('reserve_automation_action',{itemId:item.id}),/onay/);await call('finish_automation_run',{status:'completed',summary:'Waiting for approval'});db.approve(a.id,item.id);
@@ -31,10 +31,9 @@ try{
  const field=page.fillFields.find(f=>f.label==='Message');assert.ok(field,JSON.stringify(page.fillFields));
  page=pageOf(await call('browser_interact',{operation:'type',ref:field.fieldId,text:'Synthetic message'}));
  const dropdown=page.controls.find(c=>c.label==='Visit');assert.ok(dropdown,JSON.stringify(page.controls));
- const options=pageOf(await call('browser_jev_options',{ref:dropdown.controlId}));assert.match(JSON.stringify(options),/Morning/);
- await call('browser_interact',{operation:'select',ref:dropdown.controlId,text:'morning'});
- const next=pageOf(await call('browser_jev_next',{goal:'Send the approved synthetic message'}));assert.equal(next.operation,'CLICK');
- const acted=await call('browser_jev_act',{decisionId:next.decisionId});assert.match(pageOf(acted).text,/Confirmed TEST-JEV-1/);assert.equal(sent,2);
+ const options=pageOf(await call('browser_interact',{operation:'options',ref:dropdown.controlId}));assert.match(JSON.stringify(options),/Morning/);
+ page=pageOf(await call('browser_interact',{operation:'select',ref:dropdown.controlId,text:'morning'}));
+ const acted=await call('browser_interact',{operation:'click',ref:sendTarget(page).targetId});assert.match(pageOf(acted).text,/Confirmed TEST-JEV-1/);assert.equal(sent,2);
  await call('record_automation_outcome',{itemId:item.id,status:'completed',url:acted.url,evidence:'Confirmed TEST-JEV-1'});
  await assert.rejects(call('reserve_automation_action',{itemId:item.id}));
  await call('finish_automation_run',{status:'completed',summary:'One verified local submission'});assert.equal(db.result(a.id,item.id).status,'completed');

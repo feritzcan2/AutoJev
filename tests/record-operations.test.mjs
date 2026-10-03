@@ -8,6 +8,7 @@ import {automationWorkflow} from '../app/automation-worker.mjs';
 import {automationBrowser} from '../app/automation-browser.mjs';
 import {automationTemplate,reusableTemplate} from '../app/automation-templates.mjs';
 import {enqueueRecordOperation,recordOperationError,dispatchRecordOperations} from '../app/record-operations.mjs';
+import {recordOperationStatus,recordActivityAt} from '../src/record-operation-status.js';
 
 const source='https://example.test/list',settle=()=>new Promise(r=>setImmediate(r));
 function fixture(t,template='job-search',{onRunFinished}={}){
@@ -223,6 +224,7 @@ test('document uploads require a reserved record and a listed file inside this w
  const {mkdtemp,writeFile,rm,symlink}=await import('node:fs/promises'),os=await import('node:os'),path=await import('node:path');
  const workspace=await mkdtemp(path.join(os.tmpdir(),'record-upload-'));t.after(()=>rm(workspace,{recursive:true,force:true}));
  await writeFile(path.join(workspace,'cv.pdf'),'Fixture CV');await writeFile(path.join(workspace,'private.pdf'),'Unlisted');
+ const {mkdir}=await import('node:fs/promises');await mkdir(path.join(workspace,'documents','import'),{recursive:true});await writeFile(path.join(workspace,'documents','import','cv.pdf'),'Imported CV');
  const f=fixture(t);await f.runtime.runRecord(f.id,f.item.id,'prepare');await settle();let run=f.launches.at(-1);
  const calls=[],browser={call:async(id,name,args)=>{calls.push({name,args});return {content:[{type:'text',text:'Page URL: '+f.item.url+'\nCV uploaded'}]};}};
  let flow=automationWorkflow({workspace,db:f.db,run,signal:{aborted:false},browser});
@@ -233,7 +235,34 @@ test('document uploads require a reserved record and a listed file inside this w
  await assert.rejects(flow.call(f.id,run.id,'browser_upload_document',{ref:'file',filePath:'private.pdf'}),/taslakta yok/);
  await symlink(new URL(import.meta.url).pathname,path.join(workspace,'outside.pdf'));
  await assert.rejects(flow.call(f.id,run.id,'browser_upload_document',{ref:'file',filePath:'outside.pdf'}),/çalışma alanındaki/);
- await flow.call(f.id,run.id,'browser_upload_document',{ref:'file',filePath:'cv.pdf'});assert.equal(calls[0].name,'browser_file_upload');assert.equal(calls[0].args.paths[0],await import('node:fs/promises').then(m=>m.realpath(path.join(workspace,'cv.pdf'))));
+ await flow.call(f.id,run.id,'browser_upload_document',{ref:'file',filePath:'cv.pdf'});assert.equal(calls[0].name,'browser_upload_document');assert.equal(calls[0].args.ref,'file');assert.equal(calls[0].args.filePath,await import('node:fs/promises').then(m=>m.realpath(path.join(workspace,'cv.pdf'))));
+ // The draft names the file; the import folder it was stored in is the app's choice.
+ await flow.call(f.id,run.id,'browser_upload_document',{ref:'file',filePath:'documents/import/cv.pdf'});assert.equal(calls.filter(c=>c.name==='browser_upload_document').length,2);
+});
+
+for(const [choice,status] of [['Gönderilmedi, yeniden gönderilebilir','prepared'],['Gönderildi','completed'],['Bilmiyorum, belirsiz kalsın','uncertain']])test(`a verify that ends without portal proof asks the applicant; "${choice}" leaves the record ${status}`,async t=>{
+ const f=fixture(t);await f.prepare();
+ await f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true});await settle();const execute=f.launches.at(-1);
+ f.db.reserve(f.id,execute.id,f.item.id);await f.runtime.finish(f.id,'blocked','Upload rejected',execute.workerId);
+ await f.runtime.runRecord(f.id,f.item.id,'verify');await settle();const verify=f.launches.at(-1);
+ const browser={call:async()=>({content:[{type:'text',text:`Page URL: ${f.item.url}\nLogin\nJob Application\nFirst Name*\nEmail*\nSubmit application\nSubscribe to updates\nEmail`}]})};
+ const flow=automationWorkflow({db:f.db,run:verify,signal:{aborted:false},browser,report:(...args)=>f.runtime.report(...args)});
+ await flow.call(f.id,verify.id,'browser_read',{});
+ await flow.call(f.id,verify.id,'finish_automation_run',{status:'blocked',summary:'Form boş, onay sayfası yok.'});
+ await f.runtime.finish(f.id,'blocked','Form boş, onay sayfası yok.',verify.workerId);await settle();
+ const questions=f.db.get(f.id).questions.filter(q=>q.answer==null);assert.equal(questions.length,1);
+ const [q]=questions;assert.equal(q.recordId,f.item.id);assert.equal(q.outcome,true);assert.equal(q.fields[0].id,'outcome');assert.equal(q.fields[0].type,'select');assert.match(q.text,/doğrulanamadı/);assert.match(q.text,/Form boş/);
+ assert.equal(f.db.result(f.id,f.item.id).status,'uncertain');const launches=f.launches.length;
+ await f.runtime.answer(f.id,q.id,{outcome:choice});await settle();
+ const item=f.db.result(f.id,f.item.id);assert.equal(item.status,status);assert.equal(f.launches.length,launches,'the user picks the next step; no task starts by itself');
+ if(status==='prepared'){
+  assert.equal(item.requiresReview,true);assert.equal(item.notSubmitted.kind,'user');assert.equal(item.updatedAt,item.verifiedAt);
+  const row=f.db.snapshot(f.id).results.find(r=>r.id===item.id);
+  assert.equal(row.recordAction.operation.kind,'execute');assert.equal(row.recordAction.retryOperation,null);assert.equal(recordOperationStatus(row),null);
+  // Existing records may still have the timestamp of the original proposal.
+  const legacy={...row,updatedAt:1};assert.equal(recordOperationStatus(legacy),null);assert.equal(recordActivityAt(legacy),item.verifiedAt);
+ }
+ if(status==='completed')assert.match(item.evidence,/Kullanıcı/);
 });
 
 
@@ -473,6 +502,19 @@ test('not-submitted tool rechecks the live page and does not trust an earlier dr
  text=quote;args.notSubmittedProof.snapshotId=rejected.snapshot.id;
  assert.equal((await flow.call(f.id,verify.id,'record_automation_outcome',args)).status,'prepared');
  await f.finish(verify);await f.runtime.tick();await settle();assert.equal(f.launches.at(-1).request.direct,true);
+});
+
+test('verify outcome defaults itemId and url to the assigned record and the observed page',async t=>{
+ const f=fixture(t);await f.prepare();
+ await f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true});await settle();const execute=f.launches.at(-1);
+ f.db.reserve(f.id,execute.id,f.item.id);await f.runtime.finish(f.id,'blocked','Unknown outcome',execute.workerId);
+ await f.runtime.runRecord(f.id,f.item.id,'verify');await settle();const verify=f.launches.at(-1);
+ const browser={call:async()=>({content:[{type:'text',text:`Page URL: ${f.item.url}\nYour application has been submitted`}]})};
+ const flow=automationWorkflow({db:f.db,run:verify,signal:{aborted:false},browser,report:(...args)=>f.runtime.report(...args)});
+ await assert.rejects(flow.call(f.id,verify.id,'record_automation_outcome',{status:'completed',evidence:'Confirmation shown'}),/gözlemle/);
+ await flow.call(f.id,verify.id,'browser_read',{});
+ const saved=await flow.call(f.id,verify.id,'record_automation_outcome',{status:'completed',evidence:'Confirmation shown'});
+ assert.equal(saved.status,'completed');assert.equal(saved.proofUrl,f.item.url);
 });
 
 test('Jev multiline portal status accepts a paraphrased description without another attempt',async t=>{

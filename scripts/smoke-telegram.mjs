@@ -70,6 +70,10 @@ try{
  for(let i=0;i<60;i++){messages=await app.evaluate(()=>globalThis.telegramTestCalls.filter(c=>c.method==='sendMessage'));if(messages.length>=3)break;await page.waitForTimeout(300);}
  assert.equal(messages.length,3);assert.ok(messages.every(c=>c.body.chat_id==='11'));
  assert.deepEqual(new Set(messages.map(c=>c.body.reply_markup.inline_keyboard[0][0].url)),new Set(['Silinen ilan','Yeni ilan','Tamamlanan başvuru'].map(name=>jobs.get(name).url)));
+ const completedCard=messages.find(c=>c.body.reply_markup.inline_keyboard[0][0].url===jobs.get('Tamamlanan başvuru').url).body;
+ assert.match(completedCard.text,/İş arama · Başvuruldu/);assert.equal(completedCard.reply_markup.inline_keyboard.at(-1)[0].text,'🗑 Mesajı sil');
+ const pendingCard=messages.find(c=>c.body.reply_markup.inline_keyboard[0][0].url===jobs.get('Yeni ilan').url).body;
+ assert.equal(pendingCard.reply_markup.inline_keyboard.at(-1)[0].text,'🗑 Sil · Kaydı ele');
  const verify=new NotificationFixture(file);try{assert.deepEqual(verify.jobs(p.id),originalRecords);}finally{verify.close();}
  const automaticScore=page.getByRole('spinbutton',{name:'Otomatik ilanlar için minimum puan',exact:true});
  await automaticScore.fill('65');await automaticScore.press('Tab');
@@ -106,6 +110,16 @@ try{
  await page.locator('#candidates').selectOption(p.id);await page.waitForFunction(()=>document.querySelector('[data-candidate-state]')?.textContent!=='Grace hesabı bağlı.');
  await page.locator('aside nav [data-view=notifications]').click();await page.waitForFunction(()=>document.querySelector('[name=newJobsMinScore]')?.value==='65');
  assert.deepEqual(errors,[]);console.log('TELEGRAM_SCORE_UI_PASS',path.join(data,'telegram-automatic-score.png'));
+ // Visual preview of actual sendMessage payloads, using only synthetic records.
+ await page.setContent('<html lang="tr"><style>body{margin:0;background:#202b38;color:#fff;font:18px system-ui}main{display:flex;gap:24px;padding:32px}article{width:360px}section{background:#314355;padding:20px;border-radius:12px;line-height:1.6}button{width:100%;margin-top:5px;padding:14px;border:0;border-radius:7px;background:#1478ac;color:white;font:inherit}button[data-style=danger]{background:#aa3d3d}h1{font-size:18px;color:#c7d6e5}</style><main></main></html>');
+ await page.evaluate(cards=>{
+  for(const [title,body] of cards){
+   const article=document.createElement('article'),heading=document.createElement('h1'),message=document.createElement('section');heading.textContent=title;message.innerHTML=body.text.replaceAll('\n','<br>');article.append(heading,message);
+   for(const row of body.reply_markup.inline_keyboard)for(const button of row){const element=document.createElement('button');element.textContent=button.text;element.dataset.style=button.style??'';article.append(element);}
+   document.querySelector('main').append(article);
+  }
+ },[['Başvurusu tamamlanan kayıt',completedCard],['Başvurusu yapılmamış kayıt',pendingCard]]);
+ await page.locator('main').screenshot({path:path.join(data,'telegram-cards.png')});console.log('TELEGRAM_CARDS_UI_PASS',path.join(data,'telegram-cards.png'));
 }catch(error){
  const page=await app.firstWindow();await page.screenshot({path:path.join(data,'failure.png'),fullPage:true});
  console.error('TELEGRAM_UI_FAILURE',data,await page.evaluate(()=>({selected:document.querySelector('#candidates')?.value,state:document.querySelector('[data-candidate-state]')?.textContent,notice:document.querySelector('#notice')?.textContent,notificationsHidden:document.querySelector('#notifications')?.hidden})));

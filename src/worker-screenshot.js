@@ -23,7 +23,7 @@ export function workerScreenshot(api,pane){
    if(result.state==='ready'&&result.runId===run){
     last=result;pane.screenshotImage.src=result.image;pane.screenshotImage.hidden=false;pane.screenshotEmpty.hidden=true;
     pane.screenshotUrl.textContent=result.url;pane.screenshotUrl.title=result.title?`${result.title}\n${result.url}`:result.url;
-    status('Son güncelleme');
+    status(result.captcha?.message??'Son güncelleme');
    }else status((last?'Son görüntü · ':'')+(result.message??'Yeni görüntü bekleniyor…'));
   }catch(error){if(!dead&&request===version)status((last?'Son görüntü · ':'')+error.message);}
   finally{pending=false;}

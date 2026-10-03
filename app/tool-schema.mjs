@@ -25,7 +25,7 @@ function inspect(schema,value,path,errors){
   }else if(schema.type==='object'){
     if(!value||typeof value!=='object'||Array.isArray(value))throw Error('arguments must be an object');
     for(const key of schema.required??[])if(!(key in value)){const property=schema.properties?.[key]??{};invalid(`Missing ${key}${hint(property)}`,issue(property,undefined,`${path}.${key}`));}
-    for(const [key,item]of Object.entries(value)){const property=schema.properties?.[key];if(!property){if(schema.additionalProperties===true)continue;invalid(`Unknown field ${key}`);continue;}inspect(property,item,`${path}.${key}`,errors);}
+    for(const [key,item]of Object.entries(value)){const property=schema.properties?.[key];if(!property){if(schema.additionalProperties===true)continue;invalid(`Unknown field ${key}${schema.properties?`; allowed fields: ${Object.keys(schema.properties).join(', ')}`:''}`);continue;}inspect(property,item,`${path}.${key}`,errors);}
   }else if(schema.type==='array'){
     if(!Array.isArray(value))throw Error(`Expected array; received ${valueType(value)}.${hint(schema)}`);
     if(value.length<(schema.minItems??0))throw Error(`Array too short: received ${value.length} items; minimum ${schema.minItems}.${hint(schema)}`);

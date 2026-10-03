@@ -53,6 +53,35 @@ test('saving while only setup is busy applies immediately and does not start pau
  assert.deepEqual(runtime.slots(id).map(slot=>slot.run.id),[chat.id]);assert.deepEqual(closed,[]);
 });
 
+test('saving an unchanged reviewed profile leaves running workers, revision and later drafts intact',async t=>{
+ const {db,id,runtime,closed}=fixture(t);db.enable(id);await runtime.tick();await settle();
+ const chat=await runtime.message(id,'Yeni bütçe öner.');
+ const before=db.get(id),runs=runtime.slots(id).map(slot=>slot.run.id);
+ db.saveConversationPlan(id,chat.id,{criteria:{...before.criteria,budget:'1700'}});
+ const draft=db.get(id).planDraft;
+ // Form controls include empty optional fields and need not use the stored key order.
+ await runtime.saveProfile(id,{goal:` ${before.goal} `,criteria:{introduction:'',requirements:'2 oda',budget:'1500',location:'Berlin'}},{expectedRevision:before.revision});
+ assert.deepEqual(closed,[]);assert.deepEqual(runtime.slots(id).map(slot=>slot.run.id),runs);
+ assert.equal(db.get(id).revision,before.revision);assert.equal(db.get(id).updatedAt,before.updatedAt);
+ assert.equal(db.get(id).profileUpdate,undefined);assert.deepEqual(db.get(id).planDraft,draft);
+});
+
+test('saving an unchanged initial profile still reviews it',async t=>{
+ const {db,id,runtime}=fixture(t);db.put({...db.get(id),reviewedRevision:null,status:'draft'});
+ await runtime.saveProfile(id,{goal:db.get(id).goal});
+ assert.equal(db.get(id).reviewedRevision,db.get(id).revision);assert.equal(db.get(id).status,'ready');
+});
+
+test('an agent repeating saved criteria without empty fields does not create a new draft',async t=>{
+ const {db,id,runtime}=fixture(t);
+ await runtime.saveProfile(id,{criteria:{...db.get(id).criteria,introduction:''},facts:'Synthetic candidate'});
+ const chat=await runtime.message(id,'Profili kontrol et.');
+ db.saveConversationPlan(id,chat.id,{criteria:{requirements:'2 oda',budget:'1500',location:'Berlin'}});
+ assert.equal(db.get(id).planDraft,undefined);
+ db.saveConversationPlan(id,chat.id,{criteria:{...db.get(id).criteria,budget:'1700'}});
+ assert.equal(db.get(id).planDraft.plan.criteria.budget,'1700');
+});
+
 test('validation and stale revision rejection leave active workers and drafts untouched',async t=>{
  const {db,id,runtime,closed}=fixture(t);db.enable(id);await runtime.tick();await settle();
  const before=db.get(id);

@@ -6,7 +6,7 @@ export function webPromptCatalog(plan){
   id:kind,title,when:kind==='run'?'Kaynak taraması veya kayıt işlemi başladığında.':'İlgili agent oturumu başladığında.',
   text:automationPrompt({kind,...(kind==='run'?{operation:'{{atanmış işlem}}'}:{})})
  }));
- const tools=automationTools.filter(t=>plan.browserMode==='jev'||!t.name.startsWith('browser_jev_')).map(t=>({
+ const tools=automationTools.map(t=>({
   name:t.name,description:t.description,params:Object.entries(t.inputSchema?.properties??{}).map(([name,schema])=>({name,type:schema.enum?schema.enum.join(' | '):schema.type??'object',required:(t.inputSchema.required??[]).includes(name)}))
  }));
  return {instructions:[],tasks,skills:[],tools};

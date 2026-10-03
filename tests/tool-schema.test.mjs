@@ -30,7 +30,7 @@ test('array failures explain type, shape and limits without retaining input cont
 
 test('cell maps normalize losslessly only for cell writes and still obey the schema',()=>{
  const input={summary:'Observed details',cells:{location:'Remote',salary:'1234.50',notes:''}};
- for(const name of ['record_automation_result','update_automation_cells','update_workspace_cells']){
+ for(const name of ['record_automation_result','update_workspace_cells']){
   const result=normalizeCellToolArgs(name,input);
   assert.deepEqual(result,{summary:input.summary,cells:[{key:'location',value:'Remote'},{key:'salary',value:'1234.50'},{key:'notes',value:''}]});
   assert.doesNotThrow(()=>validate(workspaceCellsSchema,result.cells));

@@ -21,7 +21,7 @@ test('legacy conversations migrate beside web data without changing saved author
  const directory=await mkdtemp(path.join(tmpdir(),'loop-workspace-migration-'));t.after(()=>rm(directory,{recursive:true,force:true}));const file=path.join(directory,'db.sqlite');
  const {profile:p,completed:job}=seedLegacyDatabase(file);const store=new WorkspaceDatabase(file);t.after(()=>store.close());const db=new AutomationStore(store);upgradeWorkspaces(db);
  const a=db.create('housing');db.configureTable(a.id,table);db.saveConversation(a.id,'claude','web-native',{...settings,provider:'claude'});
- assert.equal(db.result(p.id,job.id).status,'completed');assert.equal(db.get(p.id).mode,'observe');assert.equal(db.get(p.id).browserMode,'jev');
+ assert.equal(db.result(p.id,job.id).status,'completed');assert.equal(db.get(p.id).mode,'observe');
  assert.equal(store.workspaces.history(p.id).conversation(p.id,'codex'),'main-history');assert.equal(db.conversation(a.id,'claude'),'web-native');
  assert.equal(store.workspaces.exists('agent_conversations'),false);assert.equal(store.workspaces.exists('conversation_launch_settings'),false);
  const registry=new Workspaces(store.workspaces,{templates:{browser:{snapshot:id=>db.get(id)}}});assert.equal(registry.list().length,2);assert.equal(registry.snapshot(p.id).id,p.id);
@@ -71,8 +71,8 @@ test('the workspace scheduler dispatches all template policies without overlappi
 });
 
 test('bounded template tasks retire an over-limit conversation at the same safe task boundary',async t=>{
- const {agents}=sessionFixture();t.after(()=>agents.close());const store=new WorkspaceDatabase(':memory:');t.after(()=>store.close());const db=new AutomationStore(store),a=db.create('housing'),limited={...settings,contextRestartPercent:70};
- db.saveConversation(a.id,'codex','over-limit',limited);await start(agents,a.id,{settings:limited,history:db,rotateAtBoundary:true});agents.sessions.get(a.id).contextUsage={percent:78,peakPercent:78};
+ const {agents}=sessionFixture();t.after(()=>agents.close());const store=new WorkspaceDatabase(':memory:');t.after(()=>store.close());const db=new AutomationStore(store),a=db.create('housing'),limited={...settings,contextRestartTokens:70000};
+ db.saveConversation(a.id,'codex','over-limit',limited);await start(agents,a.id,{settings:limited,history:db,rotateAtBoundary:true});agents.sessions.get(a.id).contextUsage={tokens:12000,peakTokens:78000};
  await agents.stop(a.id);assert.equal(db.conversation(a.id,'codex'),null);assert.equal(db.get(a.id).mode,a.mode);assert.equal(db.get(a.id).revision,a.revision);
 });
 

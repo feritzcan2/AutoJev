@@ -3,6 +3,7 @@ import {recordQuestionDialog} from './record-question-dialog.js';
 import {automationReady} from '../app/automation-trial.mjs';
 import {defaultPermission} from '../app/agent-settings.mjs';
 import {templateFields} from './template-fields.js';
+import {profileChanged} from '../app/profile-updates.mjs';
 import {automationProgress,runKindLabel} from '../app/automation-progress.mjs';
 import {prepareAutomationChat} from './automation-chat.js';
 import {workspaceChat} from './workspace-chat.js';
@@ -47,7 +48,7 @@ export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,
  const find=selector=>host.querySelector(selector)??agentConversation.querySelector(selector);
  let progressSignature='';
  const templateNav=el('button');templateNav.type='button';templateNav.dataset.view='templates';templateNav.innerHTML='<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span>Template’ler</span>';document.querySelector('aside nav button[data-view=config]').before(templateNav);
- let templates=[],selected=null,data=null,pane=null,generation=0,busy=false,dirty=false,formRevision='',resultsTable=null;
+ let templates=[],selected=null,data=null,pane=null,generation=0,busy=false,dirty=false,formRevision='',formBaseline=null,resultsTable=null;
  const questionDialog=recordQuestionDialog(api,{refresh});
  const attention=automationAttentionPanel(api,{navigate,refresh,getConversation:()=>chatPanel,showRecordQuestions:()=>{navigate('board');resultsTable?.showQuestions();}});
  const boardNav=document.querySelector('[data-view=board]'),recordWork=el('span',null,'board-nav-work');recordWork.id='board-nav-work';recordWork.hidden=true;recordWork.setAttribute('aria-hidden','true');boardNav.append(recordWork);
@@ -55,6 +56,15 @@ export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,
  questionBadge.className='agent-nav-status board-nav-status';questionBadge.dataset.tone='waiting';
  questionBadge.onclick=event=>{event.stopPropagation();navigate('board');resultsTable?.showQuestions();};
  const hasUnsaved=()=>dirty;
+ const profileSaveDialog=el('dialog');profileSaveDialog.id='automation-profile-save-dialog';
+ profileSaveDialog.setAttribute('aria-labelledby','automation-profile-save-title');
+ profileSaveDialog.setAttribute('aria-describedby','automation-profile-save-warning');
+ profileSaveDialog.innerHTML='<form method="dialog"><h2 id="automation-profile-save-title">Profili kaydet ve agent’ları yeniden başlat?</h2><p id="automation-profile-save-warning"></p><div class="workspace-dialog-actions"><button class="quiet" value="cancel" autofocus>Vazgeç</button><button class="primary" value="save">Onayla ve kaydet</button></div></form>';
+ document.body.append(profileSaveDialog);
+ function confirmProfileSave(count){return new Promise(resolve=>{
+  profileSaveDialog.querySelector('p').textContent=`Bu çalışma alanındaki ${count} aktif agent durdurulup yeni profille yeniden başlatılacaktır. Onaylıyor musunuz?`;
+  profileSaveDialog.returnValue='cancel';profileSaveDialog.addEventListener('close',()=>resolve(profileSaveDialog.returnValue==='save'),{once:true});profileSaveDialog.showModal();
+ });}
  const attempt=fn=>async(...args)=>{args[0]?.preventDefault?.();if(busy||isDeleting())return;busy=true;setBusy();notice('');try{return await fn(...args);}catch(error){notice(error.message);}finally{busy=false;setBusy();}};
  const button=(label,fn,cls='quiet')=>{const b=el('button',label,cls);b.type='button';b.onclick=attempt(fn);return b;};
  const badge=(status)=>el('span',statusNames[status]??status,'automation-badge '+status);
@@ -100,9 +110,16 @@ export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,
   resultsTable=automationResultsTable($('automation-results'),{button,badge,time,api,refresh,statusNames,onQuestion:id=>questionDialog.open(id)});
   const chatFeedback=el('p',null,'automation-chat-feedback');chatFeedback.id='automation-chat-feedback';chatFeedback.setAttribute('role','status');chatFeedback.setAttribute('aria-live','polite');$('automation-chat').querySelector('.actions').after(chatFeedback);
   const saveTemplate=button('Template olarak kaydet',()=>{const a=data.automation;templateDialog.querySelector('[name=title]').value=a.title+' template';templateDialog.querySelector('[name=description]').value=templates.find(t=>t.id===a.templateId).description;templateDialog.querySelector('[name=guidance]').value=a.instructions;templateDialog.showModal();});find('.automation-bottom-actions').prepend(saveTemplate);
-  form.addEventListener('input',()=>{dirty=true;$('automation-save-state').textContent='Kaydedilmemiş değişiklikler';renderControls();onSnapshot(data);});
+  form.addEventListener('input',()=>{dirty=profileChanged(readForm(),formBaseline??data.automation);notice('');renderControls();onSnapshot(data);});
   form.onsubmit=attempt(async()=>{
-   const owner=selected,input=readForm();await api.automationProfileSave(owner,input,{expectedRevision:Number(form.dataset.revision)});
+   if(!profileNeedsSave())return;
+   const owner=selected,input=readForm(),expectedRevision=Number(form.dataset.revision);
+   const snapshot=await api.workspaceSnapshot(owner);
+   if(owner!==selected||isDeleting())return;
+   const activeCount=(snapshot.activeRuns??[]).filter(run=>run.kind!=='interview').length;
+   if(activeCount&&!await confirmProfileSave(activeCount))return;
+   if(owner!==selected||isDeleting())return;
+   await api.automationProfileSave(owner,input,{expectedRevision});
    if(owner!==selected)return;dirty=false;formRevision='';await refresh();notice('Profil kaydedildi ve uygulandı.');
   });
   $('automation-add-document').onclick=attempt(async()=>{await api.pickDocument(selected);await refresh();});
@@ -172,7 +189,7 @@ export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,
   if(sourceStatus){const names=[...scanning].map(url=>data.sources.find(s=>s.url===url)?.name??new URL(url).hostname);sourceStatus.hidden=!scanning.size;sourceStatus.textContent=scanning.size?`${scanning.size} taranıyor`:'';sourcesNav.title=names.join(', ');sourcesNav.setAttribute('aria-label',scanning.size?`Kaynaklar · ${scanning.size} kaynak taranıyor: ${names.join(', ')}`:'Kaynaklar');}
   document.querySelector('[data-view=profile] span').textContent='Çalışma alanı profili';
   document.querySelector('[data-view=board] span').textContent='Takip tablosu';
-  const chrome=document.querySelector('.chrome-status'),connection=data.browserStatus??{};chrome.hidden=a.browserMode!=='jev';chrome.dataset.state=connection.state??'idle';chrome.querySelector('b').textContent=connection.ready?'Chrome bağlı':connection.state==='connecting'?'Chrome’a bağlanıyor…':'Chrome bağlantısı';chrome.querySelector('small').textContent=connection.ready?(a.chromeProfile?.name??'Seçili Chrome oturumu'):(connection.message??'Chrome’da chrome://inspect/#remote-debugging bağlantısını aç ve bağlantı isteğine izin ver.');chrome.querySelector('.chrome-reconnect').hidden=Boolean(connection.ready);chrome.querySelector('.chrome-reconnect').disabled=locked||connection.state==='connecting';chrome.querySelector('.chrome-profile-change').disabled=locked;
+  const chrome=document.querySelector('.chrome-status'),connection=data.browserStatus??{};chrome.hidden=false;chrome.dataset.state=connection.state??'idle';chrome.querySelector('b').textContent=connection.ready?'Chrome bağlı':connection.state==='connecting'?'Chrome’a bağlanıyor…':'Chrome bağlantısı';chrome.querySelector('small').textContent=connection.ready?(a.chromeProfile?.name??'Seçili Chrome oturumu'):(connection.message??'Chrome’da chrome://inspect/#remote-debugging bağlantısını aç ve bağlantı isteğine izin ver.');chrome.querySelector('.chrome-reconnect').hidden=Boolean(connection.ready);chrome.querySelector('.chrome-reconnect').disabled=locked||connection.state==='connecting';chrome.querySelector('.chrome-profile-change').disabled=locked;
   syncWorkspaceMenu();
  }
  async function performAction(id){
@@ -209,13 +226,14 @@ export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,
  async function restart(){await api.workspaceRestart(selected);await refresh();}
  function agentNavLabel(){const nav=document.querySelector('aside nav button[data-view=agent]');nav.querySelector('span').textContent='Agent';}
  function deselect(){recordWork.hidden=true;recordWork.replaceChildren();boardNav.title='';questionBadge.hidden=true;document.querySelector('[data-view=board]').setAttribute('aria-label','Takip tablosu');const sourceStatus=document.querySelector('#sources-nav-status');if(sourceStatus)sourceStatus.hidden=true;const sourcesNav=document.querySelector('[data-view=sources]');if(sourcesNav){sourcesNav.title='';sourcesNav.setAttribute('aria-label','Kaynaklar');}resultsTable?.dispose();attention.update(null,null);questionDialog.update(null);resultsTable?.dispose();agentNavLabel(false);chatPanel?.dispose();chatPanel=null;agentConversation.replaceChildren();document.body.classList.remove('workspace-fresh');selected=null;data=null;localStorage.removeItem('selected-workspace');host.hidden=true;onSnapshot(null);document.body.classList.remove('automation-workspace');document.querySelector('[data-view=profile] span').textContent='Çalışma alanı profili';document.querySelector('[data-view=board] span').textContent='Takip tablosu';}
- function readForm(){const f=find('#automation-plan-form').elements,t=templates.find(t=>t.id===data.automation.templateId);return {title:f.title.value,goal:f.goal.value,criteria:Object.fromEntries(t.fields.map(field=>[field.id,f['criteria-'+field.id].value])),instructions:f.instructions.value,facts:f.facts.value,mode:f.mode.value};}
+ function readForm(){const f=find('#automation-plan-form').elements,fields=data.definition?.fields??templates.find(t=>t.id===data.automation.templateId).fields;return {title:f.title.value,goal:f.goal.value,criteria:Object.fromEntries(fields.map(field=>[field.id,f['criteria-'+field.id].value])),instructions:f.instructions.value,facts:f.facts.value,mode:f.mode.value};}
+ function profileNeedsSave(){const a=data.automation;return Boolean(a.profileUpdate?.error)||a.reviewedRevision!==a.revision||profileChanged(readForm(),a);}
  function fillForm(){
   const saved=data.automation,base=saved.profileUpdate?{...saved,...saved.profileUpdate.plan}:saved,a=saved.planDraft?.baseRevision===saved.revision?{...base,...saved.planDraft.plan}:base,key=JSON.stringify([a.id,a.revision,a.updatedAt,saved.planDraft,saved.profileUpdate]);if(hasUnsaved()||formRevision===key)return;formRevision=key;
   const form=find('#automation-plan-form'),f=form.elements,criteria=find('#automation-criteria');form.dataset.revision=String(saved.revision);criteria.replaceChildren();
   templateFields(criteria,data.definition?.fields??templates.find(t=>t.id===a.templateId).fields,a.criteria);
   for(const key of ['title','goal','instructions','facts','mode'])f[key].value=a[key];
-
+  formBaseline=readForm();
  }
  function renderControls(){
   if(!data||!find('#automation-controls'))return;const a=data.automation,controls=find('#automation-controls');controls.replaceChildren();
@@ -229,9 +247,9 @@ export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,
  function renderProfileState(){
   if(!data)return;const form=find('#automation-plan-form');if(!form)return;const a=data.automation,pending=Boolean(a.profileUpdate),draft=Boolean(a.planDraft),working=(data.activeRuns??[]).some(run=>run.kind!=='interview');
   const changeNote=working?' Kaydettiğinde taramalar durdurulup yeni kriterlerle yeniden başlayacak. Sohbet açık kalacak.':'';
-  const text=a.profileUpdate?.error?'Profil uygulanamadı: '+a.profileUpdate.error+' Tekrar kaydedebilirsin.':hasUnsaved()?'Kaydedilmemiş değişiklikler.'+changeNote:draft?'Agent’ın profil taslağı hazır. İncele ve Profili kaydet düğmesine bas.'+changeNote:pending?'Profil uygulanıyor. Taramalar durdurulup yeni kriterlerle yeniden başlatılıyor.':a.reviewedRevision===a.revision?'Profil kaydedildi.':data.missing.length?'Eksikler: '+data.missing.join(', '):'Profili kontrol edip kaydet.';
+  const text=a.profileUpdate?.error?'Profil uygulanamadı: '+a.profileUpdate.error+' Tekrar kaydedebilirsin.':pending?'Profil kaydedildi; uygulanıyor. Taramalar durdurulup yeni kriterlerle yeniden başlatılıyor.':hasUnsaved()?'Kaydedilmemiş değişiklikler.'+changeNote:draft&&profileNeedsSave()?'Agent’ın profil taslağı hazır. İncele ve Profili kaydet düğmesine bas.'+changeNote:a.reviewedRevision===a.revision?'Profil kaydedildi.':data.missing.length?'Eksikler: '+data.missing.join(', '):'Profili kontrol edip kaydet.';
   form.inert=busy;for(const status of [find('#automation-save-state'),find('#automation-profile-state')])if(status){status.textContent=text;status.dataset.pending=String(pending||draft||hasUnsaved());}
-  for(const button of [find('#automation-profile-save'),form.querySelector('[type=submit]')])if(button){button.disabled=busy||pending&&!a.profileUpdate.error;button.textContent=busy||pending&&!a.profileUpdate.error?'Kaydediliyor…':a.profileUpdate?.error?'Tekrar kaydet':'Profili kaydet';}
+  for(const button of [find('#automation-profile-save'),form.querySelector('[type=submit]')])if(button){button.disabled=busy||pending&&!a.profileUpdate.error||!profileNeedsSave();button.textContent=pending&&!a.profileUpdate.error?'Profil uygulanıyor…':busy?'Kaydediliyor…':a.profileUpdate?.error?'Tekrar kaydet':'Profili kaydet';}
  }
  function renderDetail(){
   if(!data||host.hidden)return;const a=data.automation,$=id=>find('#'+id);
@@ -270,6 +288,11 @@ export function automationsPage(api,{notice,getCatalog,navigate,deleteWorkspace,
     const results=el('div',null,'run-results'),sourceUrl=run.sourceUrl??(run.sources?.length===1?run.sources[0]:null);
     if(sourceUrl){const source=data.sources.find(item=>item.url===sourceUrl),name=el('span',source?.name??new URL(sourceUrl).hostname.replace(/^www\./,''),'run-source');name.title=sourceUrl;results.append(name);}
     const count=el('span',`Bu turda ${run.foundCount??0} yeni kayıt`,'run-found');count.dataset.empty=String(!run.foundCount);count.title='Bu turda ilk kez kaydedilen sonuçlar. Tekrar görülen kayıtlar ve deneme örnekleri dahil değildir.';results.append(count);row.append(results);
+   }
+   if(run.status!=='running'){
+    const usage=run.tokenUsage,known=Number.isSafeInteger(usage?.totalTokens)&&usage.totalTokens>=0;
+    const tokens=el('span',known?`Toplam ${usage.totalTokens.toLocaleString('tr-TR')} token`:'Token kullanımı bilinmiyor','run-tokens');
+    tokens.title=known?`Agent: ${usage.agentTokens.toLocaleString('tr-TR')} · Jev: ${usage.jevTokens.toLocaleString('tr-TR')}`:'Bu tur için toplam token kullanımı kaydedilemedi.';row.append(tokens);
    }
    row.append(el('span',run.summary||({interview:'Kurulum sohbeti',trial:'Deneme',run:'Çalışma'})[run.kind],'run-summary'));root.append(row);
   }

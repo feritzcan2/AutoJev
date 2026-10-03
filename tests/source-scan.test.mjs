@@ -7,7 +7,7 @@ import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
 import {beginSourceScan,sourceScanScope,advanceSourceScan,validateScanCompletion,FULL_SCAN_INTERVAL_MS,SCAN_OVERLAP_MS} from '../app/source-scan.mjs';
-import {validate} from '../app/tool-schema.mjs';
+import {scanPageReport} from '../app/scan-page.mjs';
 
 const source='https://listings.test/results',other='https://other.test/results';
 const date='2026-09-25T12:00:00Z',snapshot={url:source,text:`Newest first\n${date}\n2026-09-24T12:00:00Z\nPage 1 of 20`};
@@ -39,17 +39,17 @@ test('first scan covers all pages, subsequent scan uses start watermark with ove
 test('incremental finish needs current full-page chronology, not known results or a claimed cutoff',async t=>{
  const {db,id,start,finish,flow,setNow}=fixture(t);await finish(start());setNow(epoch+3600000);
  const run=start(),worker=flow(run),call=(name,args)=>worker.call(id,run.id,name,args);
- const observed=await call('browser_open',{url:source});
- await call('report_scan_page',{snapshotId:observed.snapshot.id,currentPage:1,totalPages:20,evidence:'Page 1 of 20'});
+ await call('browser_open',{url:source});
+ db.reportPage(id,run.id,scanPageReport({url:source},{currentPage:1,totalPages:20,evidence:'Page 1 of 20'},epoch));
  const done={status:'completed',summary:'Done',scan:{complete:true,pendingUrls:[],reason:'Old items',evidenceUrl:source,completion:'cutoff'}};
  await assert.rejects(call('finish_automation_run',done),/Tarih sınırı/);
  await assert.rejects(call('finish_automation_run',{...done,scan:{...done.scan,completion:'end'}}),/Son sayfaya/);
- const args={snapshotId:observed.snapshot.id,pendingUrls:[],processedUrls:[source],reason:'Every card on this page was checked',chronology};
- validate(worker.tools.find(t=>t.name==='save_scan_progress').inputSchema,args);
- const saved=await call('save_scan_progress',args);assert.ok(saved.scanPlan.boundary);
+ // Chronology is app-level checkpoint data, never an agent report.
+ const args={pendingUrls:[],processedUrls:[source],reason:'Every card on this page was checked',chronology};
+ const saved=db.saveScanProgress(id,run.id,args,{url:source,text:snapshot.text});assert.ok(saved.scanPlan.boundary);
  await call('browser_read',{});await assert.rejects(call('finish_automation_run',done),/Tarih sınırı/);
  assert.equal(db.sources(id)[0].scanState.active.boundary,null);
- const refreshed=await call('browser_read',{});await call('save_scan_progress',{...args,snapshotId:refreshed.snapshot.id});
+ await call('browser_read',{});db.saveScanProgress(id,run.id,args,{url:source,text:snapshot.text});
  await assert.rejects(call('finish_automation_run',{...done,goalReached:true}),/hedefinin bittiği/);
  await call('finish_automation_run',done);
  const state=db.sources(id)[0].scanState;assert.equal(state.lastSuccessfulStartAt,epoch+3600000);assert.equal(state.lastFullScanAt,epoch);assert.equal(state.active,null);
@@ -58,8 +58,8 @@ test('incremental finish needs current full-page chronology, not known results o
 test('failed, interrupted and restarted workers preserve the exact cycle and cutoff in the database',async t=>{
  const dir=mkdtempSync(path.join(tmpdir(),'source-scan-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
  const file=path.join(dir,'state.sqlite'),{store,db,id,start,finish,flow,setNow}=fixture(t,file);await finish(start());setNow(epoch+3600000);
- const run=start(),worker=flow(run),observed=await worker.call(id,run.id,'browser_open',{url:source});
- await worker.call(id,run.id,'save_scan_progress',{snapshotId:observed.snapshot.id,pendingUrls:[source+'?page=2'],reason:'Continue page two',chronology});
+ const run=start(),worker=flow(run);await worker.call(id,run.id,'browser_open',{url:source});
+ db.saveScanProgress(id,run.id,{pendingUrls:[source+'?page=2'],reason:'Continue page two',chronology},{url:source,text:snapshot.text});
  const active=db.run(run.id).scanPlan;db.finish(id,run.id,'interrupted','App closed');store.close();
  const reopened=new WorkspaceDatabase(file),restored=new AutomationStore(reopened,{now:()=>epoch+5*86400000});t.after(()=>reopened.close());
  const task=reopened.workspaces.tasks.enqueue(id,{operation:'scan',sourceUrl:source,sources:[source],lockKey:'source:'+source}),resumed=restored.begin(id,{kind:'run',taskId:task.id});
@@ -99,14 +99,14 @@ test('record actions and user stopping conditions do not advance source coverage
  const stopped=start();await finish(stopped,'user_stop');assert.equal(db.sources(id)[0].scanState.lastSuccessfulStartAt,state.lastSuccessfulStartAt);
 });
 
-test('known identity lookup includes older saved results and progress ignores stale snapshot IDs',async t=>{
+test('known identity lookup includes older saved results; the queue checkpoint follows the current page',async t=>{
  const {db,id,start,flow}=fixture(t),run=start(),worker=flow(run);
  for(let i=0;i<110;i++)db.record(id,run.id,{url:source+'/item/'+i,title:'Match '+i,summary:'Observed'});
  let context=await worker.call(id,run.id,'get_automation_context',{});
  if(context.context){let fragment=context,text=fragment.text;while(fragment.context.nextOffset!==null){fragment=await worker.call(id,run.id,'read_automation_context_part',{contextId:fragment.context.id,offset:fragment.context.nextOffset});text+=fragment.text;}context=JSON.parse(text);}
  assert.equal(context.results.length,0);assert.ok(!context.results.some(r=>r.url===source+'/item/0'));
- const [known,unknown]=await worker.call(id,run.id,'lookup_scan_results',{keys:[source+'/item/0',source+'/missing']});assert.equal(known.known,true);assert.equal(unknown.known,false);
- const observed=await worker.call(id,run.id,'browser_open',{url:source});await worker.call(id,run.id,'browser_open',{url:source+'?page=2'});
- const saved=await worker.call(id,run.id,'save_scan_progress',{snapshotId:observed.snapshot.id,pendingUrls:[],reason:'Earlier snapshot'});
+ const [known,unknown]=db.knownResults(id,run.id,[source+'/item/0',source+'/missing']);assert.equal(known.known,true);assert.equal(unknown.known,false);
+ await worker.call(id,run.id,'browser_open',{url:source});await worker.call(id,run.id,'browser_open',{url:source+'?page=2'});
+ const saved=db.saveScanProgress(id,run.id,{pendingUrls:[],reason:'Current page'},{url:source+'?page=2',text:''});
  assert.equal(saved.scanPlan.checkpoint.url,source+'?page=2');
 });

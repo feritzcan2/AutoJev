@@ -1,6 +1,6 @@
 # Katkı geliştirme
 
-Kurulum için [README](README.md), dağıtım için [release rehberi](docs/releasing.md).
+Kurulum için [README](README.md).
 
 Değişikliğin davranışını ve ilgili doğrulamayı PR açıklamasına yaz. Testlerde
 sentetik aday, iş ilanı ve anahtar kullan; gerçek sitelere başvuru gönderen testleri

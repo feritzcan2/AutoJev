@@ -16,7 +16,7 @@ const settings={provider:'codex',model:'default',permission:'default',reasoning:
 function fixture(t){const core=new WorkspaceDatabase(':memory:');t.after(()=>core.close());const db=new AutomationStore(core),a=db.create('custom',{title:'Profiles'}),profiles=new AgentProfiles(core.workspaces,{validate:async()=>{}});profiles.register(WEB_AGENTS);return {core,db,a,profiles};}
 test('saved agent revisions are isolated by workspace and reject stale editor saves',async t=>{
  const {db,a,profiles}=fixture(t),b=db.create('custom',{title:'Other'}),original=profiles.get(a.id,'web-run');
- const saved=await profiles.update(a.id,'web-run',{instructions:'Work only this task.',expectedRevision:0});assert.equal(saved.version,2);assert.equal(profiles.get(a.id,'web-run').instructions,saved.instructions);assert.equal(profiles.get(b.id,'web-run').instructions,original.instructions);
+ const saved=await profiles.update(a.id,'web-run',{instructions:'Work only this task.',expectedRevision:0});assert.equal(saved.version,2);assert.ok(profiles.get(a.id,'web-run').instructions.startsWith(saved.instructions+'\n\n## Jev managed browser'),'user overrides keep the Jev block');assert.equal(profiles.get(b.id,'web-run').instructions,original.instructions);
  await assert.rejects(profiles.update(a.id,'web-run',{instructions:'stale',expectedRevision:0}),/değişti/);
  assert.equal(profiles.get(a.id,'web-interview').version,1);
 });
@@ -24,15 +24,14 @@ test('each web role receives only its own task instructions',()=>{
  for(const kind of ['interview','trial','run']){const profile=webAgentProfile(kind,settings);assert.equal(profile.id,agentProfileId('web-'+kind));for(const [other,marker] of [['interview','Interview:'],['trial','Trial:'],['run','Run:']])assert.equal(profile.instructions.includes(marker),kind===other);}
  assert.doesNotMatch(AUTOMATION_INSTRUCTIONS,/Interview:|Trial:|Run:/);
 });
-test('Jev delegation reaches the native role only in Jev mode and every fresh or resumed Jev launch',()=>{
+test('Jev delegation reaches every role once and every fresh or resumed launch',()=>{
  for(const kind of ['interview','trial','run']){
-  assert.match(webAgentProfile(kind,settings,{browserMode:'jev'}).instructions,/browser_jev_run/);
-  assert.match(webAgentProfile(kind,settings,{browserMode:'jev'}).instructions,/No prior Jev task ID is required/);
-  assert.doesNotMatch(webAgentProfile(kind,settings,{browserMode:'separate'}).instructions,/browser_jev_run/);
+  const instructions=webAgentProfile(kind,settings).instructions;
+  assert.match(instructions,/browser_jev_run/);assert.match(instructions,/No prior Jev task ID is required/);
+  assert.equal(instructions.split('## Jev managed browser').length,2,'the Jev block appears exactly once');
   assert.doesNotMatch(AUTOMATION_INSTRUCTIONS,/browser_jev_run/);
-  for(const continuation of [undefined,{reason:'task_retry'}])assert.match(automationPrompt({kind,browserMode:'jev',continuation}),/fromTaskId is optional/);
+  for(const continuation of [undefined,{reason:'task_retry'}])assert.match(automationPrompt({kind,continuation}),/fromTaskId is optional/);
  }
- assert.doesNotMatch(automationPrompt({kind:'run',browserMode:'separate'}),/Jev delegation is available in this turn/);
 });
 test('native conversations are scoped to agent and revision; unprofiled legacy history is never resumed',t=>{
  const {core,a}=fixture(t),base=core.workspaces.history(a.id),interview=base.forProfile(agentProfileId('web-interview')),run=base.forProfile(agentProfileId('web-run'));
@@ -45,7 +44,7 @@ test('native conversations are scoped to agent and revision; unprofiled legacy h
 test('run and trial contexts exclude raw setup messages but preserve the saved plan',async t=>{
  const {a,db}=fixture(t);db.message(a.id,'user','Private interview message');
  for(const kind of ['interview','trial','run']){
-  const run={id:kind,automationId:a.id,kind,observations:[]};const flow=automationWorkflow({db:{get:id=>db.get(id),template:id=>db.template(id),messages:id=>db.messages(id),activeRun:()=>run,runs:()=>[],results:()=>[]},run,signal:{aborted:false},browser:{},report:()=>{}});
+  const run={id:kind,automationId:a.id,kind,observations:[]};const flow=automationWorkflow({db:{get:id=>db.get(id),template:id=>db.template(id),messages:id=>db.messages(id),activeRun:()=>run,runs:()=>[],results:()=>[],jevTasks:{list:()=>[]}},run,signal:{aborted:false},browser:{},report:()=>{}});
   const context=await flow.call(a.id,kind,'get_automation_context',{});assert.equal(context.messages.length,kind==='interview'?db.messages(a.id).length:0);assert.equal(context.automation.title,'Profiles');
  }
 });
@@ -68,7 +67,7 @@ for(const provider of ['claude','codex','opencode'])test(`${provider}: setup lau
  const mcp={endpoint:'http://localhost/mcp',grant:()=> 'test-token',revoke:()=>{}};
  const initial={...settings,provider},runtime=new WebTasks(db,{launch:async()=>({close:async()=>{}})});
  t.after(()=>runtime.close());
- for(const agentSettings of [initial,{...initial,contextCompactPercent:60},{...initial,model:'new-model'},{...initial,model:'new-model',permission:'bypassPermissions'}]){
+ for(const agentSettings of [initial,{...initial,contextCompactTokens:60},{...initial,model:'new-model'},{...initial,model:'new-model',permission:'bypassPermissions'}]){
   await runtime.configureConversation(a.id,agentSettings);
   const run=db.putRun({id:'setup-'+launches.length,automationId:a.id,kind:'interview'});
   const worker=await launchAutomationWorker({root:process.cwd(),data:dir,db,run,automation:{...a,agentSettings},signal:{aborted:false},browser:{},report:()=>{},onEvent:()=>{},agents,mcp});

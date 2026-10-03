@@ -1,6 +1,6 @@
 export function browserWaitView(snapshot){
  const {profile,browserStatus:status,campaign,setup,active}=snapshot??{};
- if(profile?.browserMode!=='jev'||status?.ready||!(campaign?.status==='running'&&campaign.browserWait||setup?.status==='running'&&setup.browserWait))return null;
+ if(!profile||status?.ready||!(campaign?.status==='running'&&campaign.browserWait||setup?.status==='running'&&setup.browserWait))return null;
  const starting=!active,connecting=status?.state==='connecting';
  return {
   starting,

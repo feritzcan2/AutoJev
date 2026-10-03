@@ -42,7 +42,7 @@ test('submission and question events enqueue once; prior submissions are not bac
  store.saveRecord({...job,status:'submitted'},'submission_recorded');pair();await flush();assert.equal(calls.length,0);
  const q=store.askQuestion(p.id,{question:'Başlangıç tarihi?'});await flush();assert.match(calls.at(-1).body.text,/Başlangıç/);
  bot.db.collect();assert.equal(store.db.prepare("SELECT count(*) AS n FROM telegram_outbox WHERE event_key=?").get('question:'+q.id).n,1);
- store.saveRecord({...job,status:'submitted'},'candidate_submission_recorded');await flush();assert.match(calls.at(-1).body.text,/Tamamlandı/);
+ store.saveRecord({...job,status:'submitted'},'candidate_submission_recorded');await flush();assert.match(calls.at(-1).body.text,/✅ İş arama · Başvuruldu/);
  store.saveRecord({...job,status:'submitted'},'submission_recorded');await flush();assert.equal(calls.filter(c=>c.method==='sendMessage').length,2);
 });
 
@@ -342,6 +342,32 @@ test('delete button withdraws the application, resolves its questions and preven
  assert.equal(calls.filter(call=>call.method==='sendMessage').length,1);assert.equal(calls.filter(call=>call.method==='deleteMessage').length,1);
 });
 
+for(const kind of ['new_job','submission'])test(`${kind}: completed cards delete only the message and retain application history through errors and retry`,async t=>{
+ const {bot,store,p,pair,flush,calls,api,advance}=await fixture(t);
+ const job=store.addRecord(p.id,{url:'https://example.test/completed',company:'Synthetic company',role:'Engineer',location:'Remote',fit:'Match'}).job;
+ store.saveRecord({...job,status:'submitted',evidence:'Submission confirmed',verifiedAt:123});pair();
+ const row=bot.db.enqueue(p.id,'completed-card',{kind,jobId:job.id,backfill:true,resend:true});await flush();
+ const sent=bot.db.delivery(row.id),button=calls[0].body.reply_markup.inline_keyboard.at(-1)[0];
+ assert.match(calls[0].body.text,/İş arama · Başvuruldu/);assert.equal(button.text,'🗑 Mesajı sil');
+ const q=store.askQuestion(p.id,{jobId:job.id,question:'Follow-up question'}),before=store.job(p.id,job.id),questions=store.questions(p.id);
+ let withdrawals=0,changes=0;bot.withdrawApplication=()=>{withdrawals++;throw Error('Completed records must remain unchanged');};bot.changed=()=>changes++;
+ const original=api.call;
+ for(const code of [0,400,403,429]){
+  api.call=async()=>{throw Object.assign(Error('Synthetic failure'),{code});};
+  const failed=await bot.deleteNotification(deleteCallback(sent));assert.equal(failed.show_alert,true);assert.match(failed.text,/Mesaj silinemedi/);assert.doesNotMatch(failed.text,/elendi|elenemedi/);
+  assert.equal(bot.db.delivery(row.id).status,'sent');assert.deepEqual(store.job(p.id,job.id),before);
+ }
+ api.call=original;const expired=deleteCallback(sent);expired.message.date=1000;advance(48*60*60*1000);
+ assert.match((await bot.deleteNotification(expired)).text,/^Telegram botları 48 saat/);assert.equal(calls.filter(c=>c.method==='deleteMessage').length,0);
+ // Message-only deletion must also work without a desktop dismissal handler.
+ bot.withdrawApplication=undefined;
+ assert.equal((await bot.deleteNotification(deleteCallback(sent))).text,'Mesaj silindi.');
+ assert.equal(bot.db.delivery(row.id).status,'deleted');assert.deepEqual(store.job(p.id,job.id),before);assert.deepEqual(store.questions(p.id),questions);
+ assert.equal(store.questions(p.id).find(item=>item.id===q.id).answer,null);assert.equal(withdrawals,0);assert.equal(changes,0);
+ assert.equal((await bot.deleteNotification(deleteCallback(sent))).text,'Mesaj zaten silindi.');assert.equal(calls.filter(c=>c.method==='deleteMessage').length,1);
+ if(kind==='new_job')assert.equal(bot.db.jobSent(p.id,bot.config.bot.id,job.id),true);
+});
+
 test('delete checks candidate, sender, private chat and exact message; form prompts cannot be deleted',async t=>{
  const {bot,store,p,other,pair,flush,calls}=await fixture(t);pair();pair(other.id,22);
  const job=store.addRecord(p.id,{url:'https://example.com/guard-delete',company:'Keep',role:'Engineer',location:'Remote',fit:'Match'}).job;await flush();const row=bot.db.delivery(calls[0].body.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2));
@@ -540,18 +566,20 @@ test('a batch of 500 jobs survives restart and sends each job in its own message
  assert.equal(restarted.status(p.id).candidate.pending,0);assert.equal(restarted.sendUnsentJobs(p.id).alreadySent,500);
 });
 
-test('job cards show each application state in the same message and preserve both buttons',async t=>{
+test('job cards show each application state and change the delete label on completion',async t=>{
  const {bot,store,p,other,pair,flush,calls}=await fixture(t);pair();pair(other.id,22);bot.preferences(p.id,{notifications:false,questions:true});
  const job=store.addRecord(p.id,{url:'https://example.com/status',company:'Status',role:'Engineer',location:'Remote',fit:'Match'}).job;
  store.addRecord(other.id,{url:'https://example.com/foreign-status',company:'Foreign',role:'Engineer',location:'Remote',fit:'Match'});
  await flush();const original=calls.find(call=>call.body.chat_id==='11').body;
  const row=bot.db.delivery(original.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2));
  assert.match(original.text,/^<b>İş arama · Bulundu<\/b>/);
- const cases=[[{status:'prepared'},'Taslak hazır'],[{status:'executing'},'İşlem sürüyor'],[{status:'uncertain'},'Doğrulama bekliyor'],[{status:'completed'},'Tamamlandı'],[{status:'dismissed'},'Atlandı']];
+ const cases=[[{status:'prepared'},'Taslak hazır'],[{status:'executing'},'İşlem sürüyor'],[{status:'uncertain'},'Doğrulama bekliyor'],[{status:'completed'},'Başvuruldu'],[{status:'dismissed'},'Atlandı']];
  for(const [changes,label] of cases){
   store.saveRecord({...job,...changes},'job_updated');await flush();const edit=calls.at(-1);
   assert.equal(edit.method,'editMessageText');assert.equal(edit.body.chat_id,'11');assert.equal(edit.body.message_id,row.message_id);
-  assert.ok(edit.body.text.includes(label),edit.body.text);assert.deepEqual(edit.body.reply_markup,original.reply_markup);
+  assert.ok(edit.body.text.includes(label),edit.body.text);
+  const expected=structuredClone(original.reply_markup);if(changes.status==='completed')expected.inline_keyboard.at(-1)[0].text='🗑 Mesajı sil';
+  assert.deepEqual(edit.body.reply_markup,expected);
  }
  const count=calls.length;store.saveRecord({...store.job(p.id,job.id),note:'Only an internal note changed'},'application_checkpoint_saved');await flush();await flush();assert.equal(calls.length,count);
  assert.equal(calls.filter(call=>call.method==='sendMessage').length,2);assert.equal(bot.db.delivery(row.id).status,'sent');
@@ -575,7 +603,7 @@ test('manually sent backlog cards stay current after completion even with new no
  const job=store.addRecord(p.id,{url:'https://example.com/backlog-status',company:'Backlog',role:'Engineer',location:'Remote',fit:'Match'}).job;pair();
  bot.preferences(p.id,{newJobs:false,notifications:false,questions:false});bot.sendUnsentJobs(p.id);await flush();
  store.setRecordState(p.id,job.id,'completed');await flush();
- assert.equal(calls.length,2);assert.equal(calls[1].method,'editMessageText');assert.match(calls[1].body.text,/Tamamlandı/);
+ assert.equal(calls.length,2);assert.equal(calls[1].method,'editMessageText');assert.match(calls[1].body.text,/Başvuruldu/);
  assert.ok(!calls[1].body.text.includes('tamamlanmamış'));assert.equal(bot.sendUnsentJobs(p.id).queued,0);
 });
 

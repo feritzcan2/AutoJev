@@ -34,10 +34,10 @@ export function automationAttention(snapshot,{includeDismissed=false}={}){
   issues.push({id:source.url,sourceUrl:source.url,name:source.name,workerId:saved.workerId??run?.workerId,
    dismissKey:JSON.stringify([source.lastRunId??saved.runId,source.lastRunAt,source.lastStatus,source.lastResult,saved.tabId,saved.url]),
    kind:access&&['waiting','resetting'].includes(access.state)?'site_access':run?.toolFailure||(saved.stop??run?.stop)?.kind==='technical'||(source.lastStatus??run?.status)==='failed'?'technical':undefined,
-   ...(access?{runId:access.runId,accessRetryAt:access.retryAt,cleanupError:access.cleanupError}:{}),
+   ...(access?{runId:access.runId,accessRetryAt:source.siteWait?.exhausted?null:access.retryAt,accessExhausted:Boolean(source.siteWait?.exhausted||access.retryAt===null),cleanupError:access.cleanupError}:{}),
    retryAt:automation.retryPlan?.[source.url]?.at??null,
    closing:access?.state==='resetting'||activeRuns.some(r=>r.sourceUrl===source.url||r.id===run?.id),
-   message:source.lastResult??run?.summary??'Bu kaynakta devam etmek için müdahale gerekiyor.',
+   message:source.siteWait?.message??source.lastResult??run?.summary??'Bu kaynakta devam etmek için müdahale gerekiyor.',
    url:saved.url??run?.observations?.at(-1)?.url??source.scan?.evidenceUrl??source.url,tabId:saved.tabId,
    retry:!uncertain&&automationReady(automation)?'source':null});
  }

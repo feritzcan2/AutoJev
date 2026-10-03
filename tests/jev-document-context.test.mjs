@@ -90,6 +90,33 @@ test('document observation preserves new busy state and refuses readiness from a
  await assert.rejects(documentObservation(f.slot,f.value),/yönlendi/);
 });
 
+test('background rendering is scoped to the pending document and restored on timeout, failure or cancellation',async()=>{
+ for(const outcome of ['ready','timeout','failure','abort']){
+  const commands=[],controller=new AbortController();let reads=0;
+  const slot={page:{evaluate:async()=>{
+   if(++reads===2&&outcome==='failure')throw Error('Read failed');
+   return {url:'https://example.test/task',loading:outcome!=='ready'||reads===1,reason:'stream_pending',hidden:true};
+  }},cdp:{send:async(method,args)=>{commands.push([method,args.enabled]);}}};
+  const waiting=waitForDocument(slot,{signal:controller.signal,attempts:3,delay:1,wait:async()=>{if(outcome==='abort')controller.abort();}});
+  if(outcome==='failure')await assert.rejects(waiting,/Read failed/);
+  else if(outcome==='abort')await assert.rejects(waiting,{name:'AbortError'});
+  else assert.equal((await waiting).loading,outcome==='timeout');
+  assert.deepEqual(commands,[['Emulation.setFocusEmulationEnabled',true],['Emulation.setFocusEmulationEnabled',false]]);
+ }
+});
+
+test('ready or foreground documents need no emulation, and abort interrupts a long polling delay',async()=>{
+ for(const state of [{loading:false,hidden:true},{loading:true,hidden:false}]){
+  const slot={page:{evaluate:async()=>({url:'https://example.test',...state})},cdp:{send:async()=>assert.fail('No emulation needed')}};
+  await waitForDocument(slot,{attempts:1});
+ }
+ const controller=new AbortController();let release;
+ const started=new Promise(resolve=>release=resolve);
+ const slot={page:{evaluate:async()=>{release();return {url:'https://example.test',loading:true,hidden:false};}}};
+ const pending=waitForDocument(slot,{signal:controller.signal,delay:60000});
+ await started;controller.abort();await assert.rejects(pending,{name:'AbortError'});
+});
+
 test('offscreen pagination uses only its current owner-bound scroll ancestor',async()=>{
  const f=fixture('Page 1/40','Page 1/40');f.slot.owner='worker';
  f.document.pagination=[{text:'Sonraki sayfayı görüntüle',scrollNode:7},{text:'Other',scrollNode:8},{text:'Expired',scrollNode:9}];

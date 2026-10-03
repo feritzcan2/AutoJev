@@ -99,13 +99,3 @@ test('old text remains historical after navigation; finished runs cannot read ca
  f.db.finish(f.a.id,f.run.id,'completed','Done');await assert.rejects(f.call('browser_search',{snapshotId:next.snapshot.id,query:'Wohnung'}),/geçersiz/);
 });
 
-test('paged callers get complete approved snapshot artifacts; legacy limits and directory isolation remain',async t=>{
- const directory=await mkdtemp(path.join(tmpdir(),'loop-snapshot-artifact-'));t.after(()=>rm(directory,{recursive:true,force:true}));
- const artifacts=path.join(directory,'artifacts'),file=path.join(artifacts,'snapshot.yml'),foreign=path.join(directory,'foreign.yml');
- await mkdir(artifacts);await writeFile(file,largePage);await writeFile(foreign,'PRIVATE_OTHER_WORKSPACE');
- const browser=new BrowserTools(directory,()=> 'separate');t.after(()=>browser.close());
- browser.connect=async()=>({directory,workspace:directory,tools:[{name:'browser_snapshot'}],client:{callTool:async()=>({content:[{type:'text',text:`Page URL: ${url}\n[Snapshot](${file})\n[Snapshot](${foreign})`}]})}});
- const legacy=await browser.call('workspace','browser_snapshot',{},'run');assert.equal(legacy.content.length,2);assert.equal(legacy.content[1].text.length,100000);
- const complete=await browser.call('workspace','browser_snapshot',{},'run',{completeSnapshot:true});assert.equal(complete.content.length,2);assert.equal(complete.content[1].text,largePage);
- assert.ok(!complete.content.some(p=>p.text.includes('PRIVATE_OTHER_WORKSPACE')));
-});

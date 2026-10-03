@@ -17,7 +17,7 @@ const personal=context.pages()[0];await personal.goto(base+'/personal');
 const root=await context.browser().newBrowserCDPSession(),cdp=await context.newCDPSession(personal),{targetInfo}=await cdp.send('Target.getTargetInfo');
 const [port,route]=(await readFile(path.join(chromeDir,'DevToolsActivePort'),'utf8')).trim().split('\n');
 const options=()=>({profile:{directory:'Test'},endpoint:async()=>`ws://127.0.0.1:${port}${route}`,openWindow:url=>root.send('Target.createTarget',{url,newWindow:true,browserContextId:targetInfo.browserContextId}),lifecycle:{multiWorker:true}});
-let browsers=new BrowserTools(directory,()=> 'jev',options);
+let browsers=new BrowserTools(directory,options);
 const unpack=result=>JSON.parse(result.content.find(p=>p.type==='text').text.replace(/^Page URL: [^\n]+\n/,''));
 const adapter=(worker,source)=>automationBrowser(browsers.forWorker(worker),{mode:'jev',readTabKey:`source:${source}`,sourceUrl:source,sourceUrls:sources});
 const call=(browser,session,name,args={})=>browser.call('workspace',name,args,session);
@@ -49,7 +49,7 @@ try{
  const legacy=unpack(await browsers.call('workspace','browser_jev_open',{url:legacySource+'?page=7'},'legacy-run',{automationTabKey:'read:legacy'}));
  const ambiguous=unpack(await browsers.call('workspace','browser_jev_open',{url:base+'/unassigned'},'legacy-other',{automationTabKey:'read:unassigned'}));
  // Simulate an app restart, preserving Chrome and its exact owned targets.
- await browsers.close();browsers=new BrowserTools(directory,()=> 'jev',options);
+ await browsers.close();browsers=new BrowserTools(directory,options);
  const restarted=adapter('fourth',sources[0]);
  const restored=await call(restarted,'restart-run','browser_jev_tabs');
  assert.deepEqual(restored.tabs.map(t=>t.tabId),[opened.tabId]);

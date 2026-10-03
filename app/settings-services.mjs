@@ -8,13 +8,19 @@ import {createUpdateManager} from './update-manager.mjs';
 import {createBackup,inspectBackup,stageRestore,pruneLogs,dataManagementStatus} from './data-management.mjs';
 import {requestDataLocation,requestExistingDataLocation} from './data-location.mjs';
 
-export async function registerSettingsServices({app,root,data,bootstrapDirectory=data,store,jevSettings,handle,window,maintenance,emit,clearTerminalOutputs,activeRunIds}){
+export async function registerSettingsServices({app,root,data,bootstrapDirectory=data,store,jevSettings,captchaSettings,handle,window,maintenance,emit,clearTerminalOutputs,activeRunIds}){
  const params={dataDirectory:data,db:store.db,appVersion:app.getVersion()};
  handle('readiness',input=>collectReadiness(input,{enginePath:engineBinaryPath({root}),jevStatus:()=>jevSettings.status()}));
  handle('jev-settings-status',()=>jevSettings.status());
  handle('jev-settings-save',input=>jevSettings.save(input));
  handle('jev-settings-remove',()=>jevSettings.remove());
  handle('jev-settings-test',()=>jevSettings.testConnection());
+ if(captchaSettings){
+  handle('captcha-settings-status',()=>captchaSettings.status());
+  handle('captcha-settings-save',input=>captchaSettings.save(input));
+  handle('captcha-settings-remove',()=>captchaSettings.remove());
+  handle('captcha-settings-test',()=>captchaSettings.testConnection());
+ }
  handle('data-status',async()=>({...await dataManagementStatus(params),directory:data}));
  handle('data-open-directory',async()=>{const error=await shell.openPath(data);if(error)throw Error(error);return {opened:true};});
  let choosingDirectory=false;

@@ -13,7 +13,7 @@ const server=createServer((req,res)=>{
 });
 await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const url=`http://127.0.0.1:${server.address().port}/`,broken=url+'broken';
-const browsers=new BrowserTools(directory,()=> 'jev',()=>({connection:'separate',headless:true}));
+const browsers=new BrowserTools(directory,()=>({connection:'separate',headless:true}));
 const adapter=automationBrowser(browsers,{mode:'jev',readTabKey:'source:'+url,sourceUrl:url});
 try{
  const first=await adapter.call('workspace','browser_navigate',{url},'run');

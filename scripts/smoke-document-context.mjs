@@ -18,7 +18,7 @@ const server=createServer((req,res)=>{
  res.end('<!doctype html><title>Exact document context</title><h1>Senior Engineer</h1><p>Salary €100,000</p><p>Consent: No</p><button>Inspect role</button><div style="height:1600px">Full role description remains available.</div><p>BELOW_FOLD_REQUIREMENT: German B2</p><a href="/detail">Exact detail link</a><div hidden>HIDDEN_MUST_NOT_APPEAR</div>');
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const url=`http://127.0.0.1:${server.address().port}/`;
-const browser=new BrowserTools(directory,()=> 'jev',()=>({connection:'separate',headless:true,choose:()=>{throw Error('This test must not call a model');}}));
+const browser=new BrowserTools(directory,()=>({connection:'separate',headless:true,choose:()=>{throw Error('This test must not call a model');}}));
 const adapter=automationBrowser(browser,{mode:'jev'});
 try{
  const response=await adapter.call('context-smoke','browser_navigate',{url},'context-smoke');

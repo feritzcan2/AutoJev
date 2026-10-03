@@ -1,8 +1,7 @@
 import {askJev} from './jev-policy.mjs';
 // Adapt the existing Jev engine to the scoped automation browser tools.
 // Run ownership and step limits stay in automationWorkflow; the agent assesses authority.
-export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,sourceUrls=[],recordId,resumeContext,resumeSource=false,isolatedResearch=false}={}){
- if(mode!=='jev')return browser;
+export function automationBrowser(browser,{readTabKey,sourceUrl,sourceUrls=[],recordId,resumeContext,resumeSource=false,isolatedResearch=false}={}){
  let tabId=recordId||resumeSource?resumeContext?.tabId??null:null,activeSource=sourceUrl,restoreRecord=Boolean(recordId);
  const sourceFor=url=>{
   if(sourceUrl)return sourceUrl;
@@ -74,14 +73,12 @@ export function automationBrowser(browser,{mode='separate',readTabKey,sourceUrl,
   else if(name==='browser_type'){tool='browser_jev_fill_fields';parameters.fields=[{fieldId:args.target,text:args.text}];}
   else if(name==='browser_select_option'){tool='browser_jev_select_option';Object.assign(parameters,{controlId:args.target,option:args.values[0]});}
   else if(name==='browser_upload_document'){tool='browser_jev_upload';Object.assign(parameters,{uploadId:args.ref,filePath:args.filePath});}
-  else if(name==='browser_jev_next'){tool=name;parameters.goal=args.goal;}
-  else if(name==='browser_jev_act'){tool=name;Object.assign(parameters,args);}
   else if(name==='browser_jev_options'){tool='browser_jev_list_options';parameters.controlId=args.ref;}
   else if(name==='browser_jev_scroll'){tool=name;Object.assign(parameters,{controlId:args.controlId,direction:args.direction});}
   else if(name==='browser_jev_reveal'){tool=name;parameters.controlId=args.controlId;}
   else if(name==='browser_target_press'){tool=name;Object.assign(parameters,{ref:args.ref,key:args.key});}
   else if(['browser_jev_list_suggestions','browser_jev_autocomplete'].includes(name)){tool=name;parameters.controlId=args.controlId;if(args.text!==undefined)parameters.text=args.text;if(args.option!==undefined)parameters.option=args.option;}
-  else throw Error('Jev için gözlenen hedefi kullan veya browser_jev_next ile bir adım önerisi al');
+  else throw Error('Desteklenmeyen tarayıcı işlemi: '+name);
   const result=await native(id,tool,parameters,session,options);tabId=result.page.tabId??tabId;restoreRecord=false;return observed(result);
  }};
 }

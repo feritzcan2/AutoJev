@@ -1,4 +1,5 @@
 import {blockedRepeat,rememberProgress,progressKey,stalled} from './jev-navigation.mjs';
+import {revealInView} from './jev-rendering.mjs';
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const normalize=value=>value.replace(/\s+/g,' ').trim();
 const stale={status:'stale',executed:false,message:'Kontrol kimliği eski; dönen güncel controls listesini kullan. Ek observe gerekmez.'};
@@ -34,7 +35,7 @@ export async function selectAutocomplete(slot,args,owner,reader){
   };
   try{
     const initial=await read();if(initial?.editable===false&&args.text!==undefined)return {status:'unsupported',executed:false,message:'Bu liste yazı alanı değil; text göndermeden seçenekleri listele veya option ile seç.'};if(!initial)return {status:'unsupported',executed:false,message:'Bu kontrol için ilişkilendirilmiş autocomplete bulunamadı; native select veya normal gözlenen hedefi kullan.'};
-    await input.scrollIntoViewIfNeeded({timeout:2000});
+    await revealInView(slot,input);
     let current=await read();
     if(!current?.point||!same(current.identity,initial.identity))return stale;
     if(!current.expanded){opened=true;await slot.page.mouse.click(current.point.x,current.point.y);}
@@ -57,7 +58,7 @@ export async function selectAutocomplete(slot,args,owner,reader){
     if(!match)return await stop('needs_selection','Tam eşleşen seçenek bulunamadı; dönen seçeneklerden kanıtlanan yanıtı kullan. Aynı sorguyu tekrarlama.',{suggestions:current.options.map(o=>o.label).slice(0,20)});
     if(current.editable===false){
       const optionHandle=await slot.page.evaluateHandle(node=>window.__jevFast.nodes.get(node),match.node);
-      try{await optionHandle.asElement().scrollIntoViewIfNeeded({timeout:2000});}finally{await optionHandle.dispose();}
+      try{await revealInView(slot,optionHandle.asElement());}finally{await optionHandle.dispose();}
       const fresh=await read();
       if(!fresh||!same(fresh.identity,initial.identity))return await stop('stale','Liste değişti; seçim yapılmadı.');
     }

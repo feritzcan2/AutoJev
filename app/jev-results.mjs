@@ -1,6 +1,43 @@
 // Source text and observed URLs only. These rules identify generic site
 // chrome, not fit: an unfamiliar listing URL must remain available for Jev to
 // classify. No host, path or label specific to one website belongs here.
+// Structural shape of an address: origin, parent path and depth. Two
+// addresses with the same shape are siblings (/jobs/a and /jobs/b). Root-level
+// paths have no shape; they are too broad to compare.
+export function urlShape(value){
+ try{
+  const url=new URL(value),parts=url.pathname.replace(/\/$/,'').split('/').filter(Boolean);
+  return parts.length>=2?`${url.origin}/${parts.slice(0,-1).join('/')}#${parts.length}`:null;
+ }catch{return null;}
+}
+
+// Opaque identifiers inside an address: long tokens with a digit, taken from
+// query values and path segments. Session tokens shared by every link on a
+// page never identify one listing, so only values unique to one listing count.
+const ID_VALUE=/^[A-Za-z0-9_-]{8,}$/;
+function urlIds(raw){
+ try{const url=new URL(raw);return new Set([...url.searchParams.values(),...url.pathname.split('/')].filter(v=>ID_VALUE.test(v)&&/\d/.test(v)));}
+ catch{return new Set();}
+}
+const decoded=raw=>{try{return decodeURIComponent(raw);}catch{return raw;}};
+// An uncertain link that carries the identifier of exactly one confirmed
+// listing on the same page is that listing's action (apply, save, share),
+// not a separate lead. Returns [{item,into}] pairs to collapse.
+export function collapseActionLinks(items){
+ const listings=items.filter(i=>i.discovery?.decision==='listing'),counts=new Map();
+ for(const item of listings)for(const v of urlIds(item.url))counts.set(v,(counts.get(v)??0)+1);
+ const owners=new Map();
+ for(const item of listings)for(const v of urlIds(item.url))if(counts.get(v)===1)owners.set(v,item);
+ if(!owners.size)return [];
+ const collapsed=[];
+ for(const item of items){
+  if(item.discovery?.decision!=='uncertain')continue;
+  const text=decoded(item.url),into=[...owners].find(([v])=>text.includes(v))?.[1];
+  if(into)collapsed.push({item,into});
+ }
+ return collapsed;
+}
+
 export function navigationLink(link,source){
  try{
   const url=new URL(link.url),page=new URL(source??link.url),label=(link.text??'').trim();

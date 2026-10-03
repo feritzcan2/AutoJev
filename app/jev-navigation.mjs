@@ -1,4 +1,5 @@
 import {observedId} from './jev-ids.mjs';
+import {acquireTabRendering,revealInView} from './jev-rendering.mjs';
 import {randomUUID,createHash} from 'node:crypto';
 
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
@@ -10,7 +11,8 @@ export function captureControls(slot,owner){
     const controlId=saved?.[0]??observedId(kind==='scroll'?'s':'c');slot.controls.set(controlId,{node,kind,guard,owner});
     const read=slot.optionLists?.get(node);
     const field=kind==='control'?[...(slot.fillFields??[])].find(([,f])=>f.owner===owner&&f.action.node===node):null;
-    const recommendedTool=field?'browser_jev_fill_fields':item.nativeSelect?'browser_jev_select_option':item.choice?'browser_jev_select_choice':item.autocomplete?'browser_jev_autocomplete':null;
+    // Agent-facing names: the agent only has browser_interact operations.
+    const recommendedTool=field?'browser_interact type':item.nativeSelect?'browser_interact select':item.choice?'browser_interact click':item.autocomplete?'browser_interact autocomplete':null;
     return {controlId,...item,...(field?{fieldId:field[0]}:{}),...(recommendedTool?{recommendedTool}:{}),...(read?.owner===owner&&same(read.guard,guard)&&read.completeReturned?{optionsRead:{complete:true,count:read.options.length,listId:read.id,nextAction:'Use the previously returned full list; select its exact label/value without another list query.'}}:{})};
   });
   return {controls:capture(slot.observed.controls??[],'control',slot.observed.control_guards),
@@ -47,7 +49,7 @@ export async function navigateObserved(slot,name,args,owner,reader){
         if(e?.tagName!=='SELECT')return null;
         return [...e.options].map(o=>({index:o.index,label:o.label,value:o.value,selected:o.selected,disabled:o.disabled||!!o.closest('optgroup[disabled]'),group:o.closest('optgroup')?.label??null}));
       },saved.node);
-      if(!result)return {status:'unsupported',executed:false,message:'Native SELECT gerekli; autocomplete için browser_jev_autocomplete kullan.'};
+      if(!result)return {status:'unsupported',executed:false,message:'Native SELECT gerekli; bu kontrol için browser_interact operation=autocomplete kullan: text önerileri okur, option seçer.'};
       list={id:observedId('o'),owner,guard:saved.guard,options:result,completeReturned:false};slot.optionLists.set(saved.node,list);
       if(slot.optionLists.size>80)slot.optionLists.delete(slot.optionLists.keys().next().value);
     }
@@ -75,7 +77,7 @@ export async function navigateObserved(slot,name,args,owner,reader){
       if(match.error)throw Error(match.error);
       if(match.needsSelection){const list=slot.optionLists?.get(saved.node),known=list?.owner===owner&&same(list.guard,saved.guard)&&list.completeReturned;return {status:'needs_selection',executed:false,optionCount:match.optionCount,reason:match.reason,message:known?'Tam ve etkin seçenek eşleşmedi. Tam liste zaten döndü; o listedeki gerçek etiket/değeri kullan. Listeyi tekrar isteme veya başka yazım tahmin etme.':'Tam ve etkin seçenek eşleşmedi. browser_jev_list_options ile tüm seçenekleri oku; gerçek etiket/değeri kullan. Başka yazım tahmin etme; observe veya screenshot gerekmez.'};}
       if(match.unchanged)return {status:'ready',executed:false,selection:{...match,verified:true}};
-      const handle=await slot.page.evaluateHandle(node=>window.__jevFast.nodes.get(node),saved.node);
+      const handle=await slot.page.evaluateHandle(node=>window.__jevFast.nodes.get(node),saved.node),releaseRendering=await acquireTabRendering(slot,{timeoutMs:2000});
       try{
         await handle.asElement().scrollIntoViewIfNeeded({timeout:2000});
         const actionable=await slot.page.evaluate(({node,guard})=>{
@@ -87,12 +89,12 @@ export async function navigateObserved(slot,name,args,owner,reader){
         const actual=await handle.evaluate(e=>e.isConnected?{value:e.value,index:e.selectedIndex}:null),verified=actual?.value===match.value&&actual?.index===match.index;
         if(!verified){const state=progressKey(await slot.page.evaluate(reader));rememberProgress(slot,key,state,state);}
         return {status:verified?'ready':'uncertain',executed:true,selection:{value:match.value,label:match.label,actual:actual?.value??null,verified}};
-      }finally{await handle.dispose();}
+      }finally{await handle.dispose();await releaseRendering();}
     }
     if(name==='browser_jev_reveal'){
       const handle=await slot.page.evaluateHandle(node=>window.__jevFast.nodes.get(node),saved.node);
       try{
-        began=true;await handle.asElement().scrollIntoViewIfNeeded({timeout:2000});
+        began=true;await revealInView(slot,handle.asElement());
       }finally{await handle.dispose();}
     }else{
       began=true;await slot.page.evaluate(({node,direction})=>{

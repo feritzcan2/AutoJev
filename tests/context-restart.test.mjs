@@ -54,7 +54,7 @@ for(const provider of ['codex','claude'])test(`${provider}: exact conversation r
   const line=JSON.stringify(sample(130000));await appendFile(file,line.slice(0,60));
   assert.equal((await reader.read()).tokens,100000,'partial records are not measurements');
   await appendFile(file,line.slice(60)+'\n'+jsonl([sample(95000)]));
-  const usage=await reader.read();assert.equal(usage.tokens,95000);assert.equal(usage.peakPercent,13);assert.equal(usage.caughtUp,true);
+  const usage=await reader.read();assert.equal(usage.tokens,95000);assert.equal(usage.peakPercent,13);assert.equal(usage.peakTokens,130000);assert.equal(usage.caughtUp,true);
   assert.equal((await reader.read()).peakPercent,13,'unchanged file keeps the threshold latched');
   const other=new ContextUsage({provider,nativeId,cwd:'/other-candidate',root,statusFile:provider==='claude'?file:undefined});assert.equal((await other.read()).tokens,null);
  }finally{await rm(root,{recursive:true,force:true});}
@@ -67,9 +67,9 @@ test('incremental reads stay bounded and finish a backlog before dispatch',async
   await writeFile(file,jsonl([{type:'session_meta',payload:{id:nativeId,cwd:'/candidate'}},codex(100)]));
   const reader=new ContextUsage({provider:'codex',nativeId,cwd:'/candidate',root,chunkBytes:1024});await reader.read();
   await appendFile(file,jsonl([codex(150000),{type:'tool',data:'x'.repeat(5000)},codex(40000)]));
-  let usage=await reader.read();assert.equal(usage.pending,true);assert.equal(usage.peakPercent,15);
+  let usage=await reader.read();assert.equal(usage.pending,true);assert.equal(usage.peakPercent,15);assert.equal(usage.peakTokens,150000);
   for(let i=0;i<10&&usage.pending;i++)usage=await reader.read();
-  assert.equal(usage.pending,false);assert.equal(usage.tokens,40000);assert.equal(usage.peakPercent,15);
+  assert.equal(usage.pending,false);assert.equal(usage.tokens,40000);assert.equal(usage.peakPercent,15);assert.equal(usage.peakTokens,150000);
  }finally{await rm(root,{recursive:true,force:true});}
 });
 

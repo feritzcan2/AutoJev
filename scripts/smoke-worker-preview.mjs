@@ -13,7 +13,7 @@ const require=createRequire(import.meta.url),{_electron:electron}=createRequire(
 const directory=await mkdtemp(path.join(tmpdir(),'worker-preview-')),root=process.cwd();
 const server=createServer((req,res)=>{res.setHeader('Content-Type','text/html; charset=utf-8');res.end(`<html><title>Worker ${req.url.slice(1)}</title><body style="background:${req.url==='/one'?'#d9eaff':'#e3f4df'};font:24px system-ui;padding:55px"><h1>Worker ${req.url.slice(1)}</h1><p>Bu sayfa yalnızca önizleme testi içindir.</p><input value="Korunan form taslağı"><p id="tick"></p><script>setInterval(()=>document.querySelector('#tick').textContent=new Date().toLocaleTimeString(),500)</script></body></html>`);});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${server.address().port}`;
-const browsers=new BrowserTools(directory,()=> 'jev',()=>({connection:'separate',headless:true})),sessions=new Map([['main',{sessionId:'run-one'}],['second',{sessionId:'run-two'}]]);
+const browsers=new BrowserTools(directory,()=>({connection:'separate',headless:true})),sessions=new Map([['main',{sessionId:'run-one'}],['second',{sessionId:'run-two'}]]);
 const preview=workerPreviews({browsers,sessionFor:(id,worker)=>sessions.get(worker)}),counts={main:0,second:0};
 let app;
 try{

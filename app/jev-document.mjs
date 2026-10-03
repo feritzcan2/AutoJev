@@ -1,3 +1,6 @@
+import {setTimeout as sleep} from 'node:timers/promises';
+import {acquireTabRendering} from './jev-rendering.mjs';
+
 // Executed in the page. Read rendered DOM content without scrolling, clicking,
 // form values or hidden application state. Unlike the action snapshot, reading
 // is not limited to the viewport. The automation layer paginates this result.
@@ -103,7 +106,7 @@ export async function documentObservation(slot,value){
  const result={...value,observationMode:'document',controlMaps:'replace',mapDeltas:false,
   viewportText:documentViewportText(document.text,value.text??slot.presented?.text??''),text:document.text,links:document.links,pagination,
   reading:{scope:'rendered_document',truncated:false,readiness:document.readiness?.loading?document.readiness:typeof readiness.loading==='boolean'?readiness:document.readiness,unreadFrames,
-   guidance:'Includes currently rendered main-document text and actual links below the fold, including open shadow roots. Hidden content, form values and iframe contents are excluded. Lazy or virtualized listings may require browser_jev_scroll with a current scrollTargets.controlId, then another read. No guessed URLs. Read details through observed links when list cards omit addresses. An absent address remains unknown.'}};
+   guidance:'Includes currently rendered main-document text and actual links below the fold, including open shadow roots. Hidden content, form values and iframe contents are excluded. Lazy or virtualized listings may require browser_interact scroll with a current scrollTargets.controlId, then another read. No guessed URLs. Read details through observed links when list cards omit addresses. An absent address remains unknown.'}};
  delete result.textUnchanged;
  // These complete current maps already represent the actionable elements.
  // The browser retains its original snapshot for guarded next/act decisions.
@@ -118,21 +121,35 @@ export async function documentObservation(slot,value){
 export function documentReadiness(){
  const visible=e=>!e.closest('[hidden],[aria-hidden="true"],[inert]')&&e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
  const url=location.href,body=document.body;
- const result=reason=>({url,loading:Boolean(reason),reason});
+ const result=reason=>({url,loading:Boolean(reason),reason,hidden:document.visibilityState==='hidden'});
  if(!body||document.readyState==='loading')return result('document_loading');
  if(body.querySelector('[hidden][id^="S:"]'))return result('stream_pending');
  if([...body.querySelectorAll('[aria-busy="true"]')].some(visible))return result('aria_busy');
  return result(null);
 }
 
-export async function waitForDocument(slot,{attempts=81,delay=250,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms)),now=Date.now}={}){
- for(let i=0;i<attempts;i++){
-  const state=await slot.page.evaluate(documentReadiness);
-  if(!state.loading){slot.documentWait=null;return state;}
-  // Open + document observation share one bounded wait; neither reloads the
-  // page. A later independent read can try again in the same tab.
-  if(slot.documentWait?.url===state.url&&slot.documentWait.until>now())return {...state,timedOut:true};
-  if(i+1===attempts){slot.documentWait={url:state.url,until:now()+1000};return {...state,timedOut:true};}
-  await wait(delay);
+export async function waitForDocument(slot,{signal,attempts=81,delay=250,wait=ms=>sleep(ms,undefined,{signal}),now=Date.now}={}){
+ let releaseRendering;
+ try{
+  for(let i=0;i<attempts;i++){
+   signal?.throwIfAborted();
+   const state=await slot.page.evaluate(documentReadiness);
+   signal?.throwIfAborted();
+   if(!state.loading){slot.documentWait=null;return state;}
+   if(slot.documentWait?.url===state.url&&slot.documentWait.until>now())return {...state,timedOut:true};
+   // Existing Chrome connections use noDefaults:true. A background tab can
+   // otherwise pause requestAnimationFrame forever, leaving streamed content
+   // hidden even after the response finishes. Enable Chrome's own rendering
+   // only for this owned tab during the wait; never reveal DOM or focus a window.
+   if(state.hidden&&slot.cdp&&!releaseRendering){
+    releaseRendering=await acquireTabRendering(slot,{signal,hidden:true});
+   }
+   // Open + document observation share one bounded wait; neither reloads the
+   // page. A later independent read can try again in the same tab.
+   if(i+1===attempts){slot.documentWait={url:state.url,until:now()+1000};return {...state,timedOut:true};}
+   await wait(delay);
+  }
+ }finally{
+  await releaseRendering?.();
  }
 }

@@ -1,7 +1,6 @@
 import {taskRecordIds} from './record-task-scope.mjs';
 import {sourceScanScope} from './source-scan.mjs';
 
-export const SOURCE_RESUME_WINDOW_MS=5*60*1000;
 const unfinishedSourceStatuses=['interrupted','partial','blocked','failed','timeout'];
 
 // A worker may handle many records. Answers belong to the conversation that
@@ -10,10 +9,9 @@ export function answerContinuation(db,id,task,kind){
  const a=db.get(id),matches=[];
  const sourceScan=kind==='run'&&task.sourceUrl&&!task.recordId&&!task.recordOperation,scopeKey=sourceScan?sourceScanScope(a,task.sourceUrl):null;
  const sourceContinuation=(origin,continuation)=>{
-  const elapsed=db.now()-origin.finishedAt;
-  // Checkpoint/tab ownership survives a fresh conversation. Resume history only
-  // for a short, timed interruption of the same unfinished scan cycle.
-  const resumeConversation=unfinishedSourceStatuses.includes(origin.status)&&!origin.recoveredAfterCrash&&Number.isFinite(origin.finishedAt)&&elapsed>=0&&elapsed<=SOURCE_RESUME_WINDOW_MS&&origin.scanPlan?.id===a.sourceState?.[task.sourceUrl]?.scanState?.active?.id;
+  // The unfinished scan cycle defines continuity, including after an app restart
+  // or a long wait for an answer. Live browser evidence is refreshed separately.
+  const resumeConversation=unfinishedSourceStatuses.includes(origin.status)&&Boolean(origin.scanPlan?.id)&&origin.scanPlan.id===a.sourceState?.[task.sourceUrl]?.scanState?.active?.id;
   return {...continuation,resumeConversation};
  };
  const sameTask=origin=>origin&&origin.automationId===id&&origin.status!=='running'&&origin.kind===kind&&origin.revision===a.revision&&JSON.stringify(taskRecordIds(origin))===JSON.stringify(taskRecordIds(task))&&(origin.recordOperation??null)===(task.recordOperation??null)&&(!task.sourceUrl||origin.sourceUrl===task.sourceUrl)&&(!sourceScan||origin.scanPlan?.scopeKey===scopeKey);
@@ -22,7 +20,8 @@ export function answerContinuation(db,id,task,kind){
   if(access.state!=='answered')return null;
   const origin=db.run(access.runId);
   if(!sameTask(origin)||origin.taskId!==task.id)return null;
-  return {reason:'site_access_response',runId:origin.id,questionIds:[],browserContext:origin.resumeContext??origin.continuation?.browserContext??null,response:access.response,resumeConversation:!origin.recoveredAfterCrash};
+  const continuation={reason:access.automatic?'site_access_retry':'site_access_response',runId:origin.id,questionIds:[],browserContext:origin.resumeContext??origin.continuation?.browserContext??null,response:access.response,resumeConversation:true};
+  return sourceScan?sourceContinuation(origin,continuation):continuation;
  }
  for(const question of a.questions??[]){
   if(question.answer==null||question.resolution||question.continuationRunId)continue;

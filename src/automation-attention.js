@@ -44,14 +44,14 @@ export function automationAttentionPanel(api,{navigate,refresh,getConversation=(
   if(issue.kind==='repeated_tool_error')return createToolFailure(issue);
   const workspace=owner,card=el('article',null,'automation-help-card');card.dataset.issueId=issue.id;
   const technical=issue.kind==='technical';
-  const heading=el('div',null,'automation-help-heading'),copy=el('div');copy.append(el('span',technical?'Tarama tamamlanamadı':'Müdahale gerekiyor','automation-help-label'),el('h3',issue.name));heading.append(el('span','!','attention-icon'),copy);
+  const heading=el('div',null,'automation-help-heading'),copy=el('div');copy.append(el('span',technical?'Tarama tamamlanamadı':issue.kind==='site_access'?(issue.accessExhausted?'Otomatik deneme durduruldu':'Otomatik devam bekleniyor'):'Müdahale gerekiyor','automation-help-label'),el('h3',issue.name));heading.append(el('span','!','attention-icon'),copy);
   const summary=el('p',issue.message.length>300?issue.message.slice(0,297)+'…':issue.message,'automation-help-summary');
   const instructions=el('p',technical&&issue.retry?'Kaydedilen sonuçlar ve devam noktası korunuyor. Taramayı yeniden deneyebilirsin.':issue.retry?'İlgili sekmede engeli giderdikten sonra devam edebilirsin.':'İlgili sekmeyi kontrol et. Sonuç belirsizse agent’a durumu yaz; işlemi yeniden gönderme.','automation-help-instructions');
-  if(issue.kind==='site_access')instructions.textContent=issue.cleanupError??`Diğer kaynaklar çalışmaya devam eder. Yanıt verirsen bu tarama kaldığı yerden sürer. ${new Date(issue.accessRetryAt).toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} tarihine kadar yanıt gelmezse sekmeler kapanır ve tarama sıfırdan başlar. Kartı kapatırsan sekmeler şimdi kapanır; sonraki deneme sıfırdan başlar.`;
+  if(issue.kind==='site_access')instructions.textContent=issue.cleanupError??(issue.accessExhausted?'Üçüncü erişim hatasında otomatik denemeler durduruldu. Devam noktası korunuyor. Engeli giderdikten sonra “Çözdüm, devam et” ile yeniden başlatabilirsin. Diğer kaynaklar çalışmaya devam eder.':`İlk hatada 5, ikinci hatada 10 dakika beklenir. Bu tarama ${new Date(issue.accessRetryAt).toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} tarihinde kaldığı yerden otomatik devam edecek. Üçüncü hatada durur. Diğer kaynaklar çalışmaya devam eder. Kartı kapatırsan sekmeler şimdi kapanır; sonraki deneme sıfırdan başlar.`);
   const actions=el('div',null,'automation-help-actions'),open=el('button','Sekmeyi göster ↗','primary'),reply=el('button','Yanıtla','quiet'),resume=issue.retry?el('button',technical?'Taramaya devam et':'Çözdüm, devam et','quiet'):null;
   open.type=reply.type='button';actions.append(open,reply);
   if(resume){resume.type='button';actions.append(resume);}
-  const later=issue.retry?el('button','2 saat sonra dene','quiet'):null;
+  const later=issue.retry&&!issue.accessExhausted?el('button','2 saat sonra dene','quiet'):null;
   if(later){later.type='button';later.disabled=Boolean(issue.closing);actions.append(later);}
   const close=el('button','Kapat','quiet');close.type='button';close.dataset.dismissAttention=issue.id;close.title='Bu müdahale bildirimini kapat';actions.append(close);
   if(issue.kind==='site_access'){close.title='Bu kaynağın bekleyen sekmelerini kapat; sonraki denemede sıfırdan başla';close.disabled=Boolean(issue.closing);}

@@ -52,11 +52,11 @@
 .agent-settings-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
 .agent-settings-head h2 { font-size: 14px; font-weight: 550; }
 .agent-settings-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
-#agent-settings-restart-dialog { width: min(480px, calc(100vw - 32px)); padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); color: var(--text); }
-#agent-settings-restart-dialog::backdrop { background: #0009; }
-#agent-settings-restart-dialog form { display: block; max-width: none; margin: 0; padding: 0; border: 0; }
-#agent-settings-restart-dialog h2 { margin: 0 0 16px; font-size: 20px; }
-#agent-settings-restart-dialog p { margin: 0 0 18px; font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
+:is(#agent-settings-restart-dialog,#automation-profile-save-dialog) { width: min(480px, calc(100vw - 32px)); padding: 24px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-raised); color: var(--text); }
+:is(#agent-settings-restart-dialog,#automation-profile-save-dialog)::backdrop { background: #0009; }
+:is(#agent-settings-restart-dialog,#automation-profile-save-dialog) form { display: block; max-width: none; margin: 0; padding: 0; border: 0; }
+:is(#agent-settings-restart-dialog,#automation-profile-save-dialog) h2 { margin: 0 0 16px; font-size: 20px; }
+:is(#agent-settings-restart-dialog,#automation-profile-save-dialog) p { margin: 0 0 18px; font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
 :is(#agent-settings-status,.workspace-agent-settings-status) { color: var(--text-muted); font-size: 12px; text-align: right; }
 :is(#agent-settings-form,.workspace-agent-settings-form) { display: block; max-width: none; margin: 0; padding: 0; border: 0; background: transparent; }
 :is(#agent-settings-form,.workspace-agent-settings-form) .settings-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; align-items: start; }

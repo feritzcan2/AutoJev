@@ -15,14 +15,22 @@ export class JevTaskStore {
  }
  detailWait(owner,taskId,url){
   for(const [map,key] of [[this.hostWaits,JSON.stringify([owner,taskId,siteKey(url)])],[this.detailWaits,JSON.stringify([owner,taskId,jevDetailKey(url)])]]){
-   const wait=map.get(key);if(wait?.retryAt>this.now())return wait;map.delete(key);
+   // Three deferrals of one detail end its reads for this task scope.
+   const wait=map.get(key);if(wait?.siteWait?.exhausted||wait?.retryAt>this.now()||wait?.attempts>=3&&!wait.blockedSite)return wait;
   }
   return null;
  }
+ // Expired waits stay until the task is released so deferrals can be counted.
  deferDetail(owner,taskId,url,{error,retryAt,blockedSite,siteWait}){
-  const wait={owner,taskId,error,retryAt,blockedSite,...(siteWait?{siteWait}: {})};this.detailWaits.set(JSON.stringify([owner,taskId,jevDetailKey(url)]),wait);
+  const key=JSON.stringify([owner,taskId,jevDetailKey(url)]),attempts=(this.detailWaits.get(key)?.attempts??0)+1;
+  const wait={owner,taskId,error,retryAt,blockedSite,attempts,...(siteWait?{siteWait}: {})};this.detailWaits.set(key,wait);
   if(blockedSite)this.hostWaits.set(JSON.stringify([owner,taskId,blockedSite]),wait);
  }
+ // A page read once as a results/category page stays known for the scope:
+ // later detail tasks inherit the kind instead of opening it again.
+ markPageKind(owner,taskId,url,reason){(this.pageKinds??=new Map()).set(JSON.stringify([owner,taskId,jevDetailKey(url)]),{kind:'results',reason});}
+ knownPageKind(owner,taskId,url){return this.pageKinds?.get(JSON.stringify([owner,taskId,jevDetailKey(url)]))??null;}
+ detailDeferrals(owner,taskId,url){return this.detailWaits.get(JSON.stringify([owner,taskId,jevDetailKey(url)]))?.attempts??0;}
  create(owner,taskId,input){return this.save({id:randomUUID(),automationId:owner,taskId,input,status:'pending',createdAt:this.now(),steps:0,usage:{input_tokens:0,output_tokens:0,calls:0},items:[],visited:[],answers:{}});}
  get(owner,taskId,id){
   const task=this.tasks.get(id);

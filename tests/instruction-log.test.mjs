@@ -54,10 +54,10 @@ test('tool exchange logging captures the actual returned context and tools witho
 });
 test('page report validation errors and successful checkpoints remain inspectable',t=>{
  const {a,log}=fixture(t),grant={workspaceId:a.id,sessionId:'scan'};
- log.tool(grant,{name:'report_scan_page',result:{isError:true,content:[{type:'text',text:'Sayfalama kanıtı bu tarayıcı gözleminde bulunamadı.'}]}});
- log.tool(grant,{name:'report_scan_page',result:{content:[{type:'text',text:JSON.stringify({pageProgress:{currentPage:8,totalPages:null,evidence:'Seite 8'}})}]}});
+ log.tool(grant,{name:'browser_read',result:{isError:true,content:[{type:'text',text:'Sayfalama kanıtı bu tarayıcı gözleminde bulunamadı.'}]}});
+ log.tool(grant,{name:'browser_read',result:{content:[{type:'text',text:JSON.stringify({pageReport:{currentPage:8,totalPages:null,evidence:'Seite 8'}})}]}});
  const events=log.history(a.id,{session:'scan'}).events;
- assert.deepEqual(events.map(e=>({title:e.title,status:e.status})),[{title:'report_scan_page',status:'returned'},{title:'report_scan_page',status:'failed'}]);
+ assert.deepEqual(events.map(e=>({title:e.title,status:e.status})),[{title:'browser_read',status:'returned'},{title:'browser_read',status:'failed'}]);
  assert.match(log.detail(a.id,events[0].seq).parts[0].text,/Seite 8/);
 });
 

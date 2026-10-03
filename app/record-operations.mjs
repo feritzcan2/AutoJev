@@ -40,11 +40,9 @@ export function enqueueRecordOperation(runtime,id,itemId,kind,{manual=true,diges
   // Explicit record requests use the existing worker pool. Background
   // ticks still respect workers the user stopped; no new workers are created.
   if(manual&&task.state==='pending'){
-   const owner=db.recordBrowserWorker(id,itemId);
-   if(owner){if(runtime.workers.get(id,owner).enabled===false){runtime.workers.setEnabled(id,owner,true);runtime.changed(id);}return task;}
    const workers=runtime.workers.list(id);
    if(['score','prepare'].includes(kind)||kind==='execute'&&direct===true){
-    const pending=queue.list(id,{states:['pending']}).filter(t=>(['score','prepare'].includes(t.recordOperation)||t.recordOperation==='execute'&&t.request?.direct===true)&&(t.request?.manual||db.get(id).status==='enabled')).filter(t=>{try{validateRecordTask(db,id,t,runtime.now());return !db.recordBrowserWorker(id,t.recordId);}catch{return false;}});
+    const pending=queue.list(id,{states:['pending']}).filter(t=>(['score','prepare'].includes(t.recordOperation)||t.recordOperation==='execute'&&t.request?.direct===true)&&(t.request?.manual||db.get(id).status==='enabled')).filter(t=>{try{validateRecordTask(db,id,t,runtime.now());return true;}catch{return false;}});
     let needed=pending.length-workers.filter(w=>w.enabled!==false&&!runtime.active.has(workerKey(id,w.id))).length;
     for(const worker of workers){if(needed<=0)break;if(worker.enabled===false&&!runtime.active.has(workerKey(id,worker.id))){runtime.workers.setEnabled(id,worker.id,true);needed--;runtime.changed(id);}}
    }else if(!workers.some(w=>w.enabled!==false)){runtime.workers.setEnabled(id,'main',true);runtime.changed(id);}
@@ -164,14 +162,11 @@ export async function dispatchRecordOperations(runtime,id,{manualOnly=false}={})
   }
  }
  const pending=queue.list(id,{states:['pending']}).filter(t=>t.recordOperation&&(!t.retryAt||t.retryAt<=runtime.now())&&(t.request?.manual||!manualOnly&&a.status==='enabled')).sort((x,y)=>Number(Boolean(y.request?.manual))-Number(Boolean(x.request?.manual)));
- const owners=new Map(pending.map(task=>[task.id,batchScoring(task)?null:db.recordBrowserWorker(id,task.recordId)]));
  for(const worker of runtime.workers.list(id)){
   if(worker.enabled===false||runtime.active.has(workerKey(id,worker.id))||runtime.capacityUsed>=runtime.concurrency)continue;
   let task;
-  for(;;){
-   const index=pending.findIndex(task=>!owners.get(task.id)||owners.get(task.id)===worker.id);
-   if(index<0)break;
-   [task]=pending.splice(index,1);
+  while(pending.length){
+   task=pending.shift();
    try{validateRecordTask(db,id,task,runtime.now());break;}catch(error){if(error.code!=='RECORD_QUESTION_PENDING'){queue.finish(id,task.id,'cancelled',error.message);runtime.changed(id);}task=null;}
   }
   if(!task)continue;
@@ -192,7 +187,7 @@ export function recordOperationState(db,id,item,{a=db.get(id),definition=db.temp
  const scoringComplete=recordScoredInTask(db,task??last,item);
  const scoreOperation=scoreOp?{kind:'score',label:item.assessment?'Yeniden puanla':scoreOp.label,disabled:Boolean(scoreError||task),reason:scoreError}:null;
  let retryOperation=null;
- if(!scoringComplete&&!task&&last&&['blocked','failed','interrupted'].includes(last.state)&&!item.trial&&!['completed','executing','dismissed'].includes(item.status)){
+ if(!scoringComplete&&!task&&last&&(last.recordOperation!=='verify'||item.status==='uncertain')&&['blocked','failed','interrupted'].includes(last.state)&&!item.trial&&!['completed','executing','dismissed'].includes(item.status)){
   const retryKind=item.status==='uncertain'?'verify':last.recordOperation,direct=retryKind==='execute'&&last.request?.direct===true;
   if(definition.recordOperations?.[retryKind]){
    const reason=recordOperationError(a,item,retryKind,{manual:true,direct,digest:item.digest,now:db.now()});

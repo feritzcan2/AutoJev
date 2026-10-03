@@ -1,7 +1,20 @@
 import {scanVerificationCheckboxes} from './jev-verification-checkbox.mjs';
+import {detectCaptcha,captchaEvidence} from './captcha-detection.mjs';
 // Evidence-only detection. Never treats a CAPTCHA widget's mere presence as a
 // challenge, never retries Submit, and never solves/bypasses site verification.
-export async function verificationEvidence(page){
+export async function verificationEvidence(page,slot){
+ if(slot){
+  const detection=await detectCaptcha(page);slot.captchaDetection=detection;
+  if(detection.state==='active')slot.captchaDocument={id:detection.documentId,url:detection.pageUrl};
+  if(detection.state==='cleared'||detection.documentId&&slot.captchaDocument&&(slot.captchaDocument.id!==detection.documentId||slot.captchaDocument.url!==detection.pageUrl))delete slot.captchaDocument;
+  if(detection.state==='none'&&slot.captchaDocument)return {state:'checking',capability:'pending',evidence:'Önceki CAPTCHA artık görünmüyor; doğrulama sonucu henüz kanıtlanmadı. Mevcut sekmeyi kontrol et.'};
+  if(detection.state==='active'&&detection.target.provider==='turnstile'&&!slot.verificationCheckboxAttempt)return {state:'required',capability:'supported',checkbox:true,evidence:'Turnstile içinde görünür doğrulama kutusu. Önce tek tık ile doğrula.'};
+  if(slot.captchaAnswer&&detection.target?.identity===slot.captchaAnswer.identity&&detection.target.token)return {state:'answer_applied',capability:'supported',evidence:slot.captchaAnswer.message};
+  if(slot.captchaAnswer&&detection.target?.identity!==slot.captchaAnswer.identity)delete slot.captchaAnswer;
+  const evidence=captchaEvidence(detection);
+  if(evidence)return evidence;
+  if(detection.state==='none'&&slot.verification&&await page.evaluate(()=>document.readyState!=='complete'))return {state:'checking',capability:'pending',evidence:'Önceki doğrulama henüz yeniden okunamadı; sayfa yükleniyor.'};
+ }
  const evidence=await page.evaluate(()=>{
   const text=document.body?.innerText??'';
   const error=text.match(/There was an error verifying your application[^\n]*|(?:captcha|human verification) (?:failed|error|expired)[^\n]*/i)?.[0];
@@ -22,8 +35,10 @@ export function updateVerification(slot,evidence,now=Date.now()){
  if(!evidence||evidence.state==='cleared'){delete slot.verification;return evidence??null;}
  const old=slot.verification;
  const state={...evidence,startedAt:old?.startedAt??now,attempts:old?.attempts??0,screenshots:old?.screenshots??0};
+ if(state.state==='answer_applied'){state.handoff=false;state.message=state.evidence;slot.verification=state;return state;}
  state.deadlineAt=state.startedAt+60000;
- state.handoff=state.capability==='not_exposed'||state.checkbox&&!!slot.verificationCheckboxAttempt||state.attempts>=2||now>=state.deadlineAt;
+ state.handoff=state.capability==='not_exposed'||state.capability==='solver'||state.checkbox&&!!slot.verificationCheckboxAttempt||state.attempts>=2||now>=state.deadlineAt;
+ if(state.capability==='pending'&&!state.handoff){state.nextAction='wait_for_verification';state.message='Doğrulama yükleniyor; çözüldüğü veya CAPTCHA olmadığı varsayılamaz. Mevcut sekmeyi yeniden gözlemle.';slot.verification=state;return state;}
  state.nextAction=state.handoff?'ask_candidate_once':state.state==='verification_error'?'inspect_one_screenshot':'try_supported_visible_control';
  state.message=state.state==='verification_error'&&state.handoff?'Verification error remains, but that alone does not prove a CAPTCHA is required. Stop browser retries and never resubmit. If a fresh screenshot confirms a remaining challenge, ask one technical question; otherwise keep uncertain and report the observed technical blocker without inventing a CAPTCHA.':state.handoff?'Do not request another Jev decision or repeat the submission. Ask only for the observed remaining verification step. ask_candidate with recovery.kind=captcha saves the question, preserves uncertain submission state and reports the task in one call; then end the turn.':'At most two supported visible verification attempts within 60 seconds. A visible verification checkbox target may be clicked once when the executing provider permits it (obtain at-action confirmation when required). Image/audio/drag challenges are unavailable. One screenshot only if needed; do not inspect/refill the whole form or repeat Submit.';
  slot.verification=state;return state;

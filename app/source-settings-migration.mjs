@@ -1,6 +1,5 @@
 import {createHash} from 'node:crypto';
 import {sourceScanScope} from './source-scan.mjs';
-import {copySourceSkill} from './source-copy.mjs';
 
 const removedSettings=['searchMethod','integrationId','fallback','skillText','customTool','guideOverrides','guideBaseVersion'];
 const removedRunFields=['sourceSkillEvidence','sourceSkillVersion','sourceToolAttempts','sourceToolCheck'];
@@ -62,10 +61,6 @@ export function copyExistingSourceSkills(db){
    const key=table==='workspace_imports'?'workspace_id':'id';
    for(const row of db.prepare(`SELECT ${key} AS id,data FROM ${table}`).all()){
     const value=JSON.parse(row.data),before=table==='automations'?new Map((value.sources??[]).map(url=>[url,sourceScanScope(value,url)])):null;
-    for(const source of Object.values(value.sourceSettings??{}))Object.assign(source,copySourceSkill(source));
-    for(const source of value.defaultSources??[])Object.assign(source,copySourceSkill(source));
-    for(const source of value.sources??[])if(source&&typeof source==='object')Object.assign(source,copySourceSkill(source));
-    if(table==='sources')Object.assign(value,copySourceSkill(value));
     if(before)scopesByOwner.set(row.id,new Map([...before].map(([url,scope])=>[scope,sourceScanScope(value,url)])));
     const scopes=scopesByOwner.get(table==='automation_runs'?value.automationId:row.id);if(scopes)updateScopes(value,scopes);
     const data=JSON.stringify(value);if(data!==row.data)db.prepare(`UPDATE ${table} SET data=? WHERE ${key}=?`).run(data,row.id);

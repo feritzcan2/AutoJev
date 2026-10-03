@@ -1,4 +1,4 @@
-import bundledSources from '../../source-library/sources.json' with {type:'json'};
+import {bundledSources} from '../source-library.mjs';
 const sources=[
  ['LinkedIn','https://www.linkedin.com/jobs/',15],
  ['StepStone','https://www.stepstone.de/',30],

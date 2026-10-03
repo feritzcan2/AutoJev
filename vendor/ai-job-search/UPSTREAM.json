@@ -1,6 +1,0 @@
-{
-  "repository": "https://github.com/MadsLorentzen/ai-job-search",
-  "commit": "1cecaec4d3bda24a7243a0a13c814e3da56fc1fb",
-  "license": "MIT",
-  "adaptation": "Upstream source files are unchanged. At build time AutoJev replaces @bunli/core with a small Node CLI adapter, rewrites Bun commands in help/guides, and makes FreeHire/LinkedIn --help exit successfully."
-}
