@@ -39,7 +39,7 @@ const server=createServer((req,res)=>{
  res.end(shell('<form action="/results"><label>Location<input name="q"></label><label>Property type<select name="type"><option value="">Choose</option><option value="flat">Apartment</option></select></label><button>Search</button></form>'));
 });
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${server.address().port}`;
-const a=db.create('housing',{goal:'Berlin homes',criteria:{location:'Berlin',budget:'2000',requirements:'2 rooms'},sources:[base+'/']});db.save(a.id,{browserMode:'jev'});db.review(a.id);
+const a=db.create('housing',{goal:'Berlin homes',criteria:{location:'Berlin',budget:'2000',requirements:'2 rooms'},sources:[base+'/']});db.review(a.id);
 const fetchImpl=async(_,args)=>{
  modelCalls++;const {state,questions}=JSON.parse(args.body),answers={};
  for(const [key,q] of Object.entries(questions)){
@@ -59,8 +59,8 @@ const fetchImpl=async(_,args)=>{
  }
  return {ok:true,json:async()=>({answers,usage:{input_tokens:100,output_tokens:20}})};
 };
-const browsers=new BrowserTools(directory,()=> 'jev',()=>({connection:'separate',headless:true,config:async()=>({apiKey:'synthetic',fetchImpl})}));
-const run=db.begin(a.id,'trial'),adapter=automationBrowser(browsers,{mode:'jev'}),controller=new AbortController();
+const browsers=new BrowserTools(directory,()=>({connection:'separate',headless:true,config:async()=>({apiKey:'synthetic',fetchImpl})}));
+const run=db.begin(a.id,'trial'),adapter=automationBrowser(browsers),controller=new AbortController();
 let flow=automationWorkflow({db,run,signal:controller.signal,browser:adapter,report:()=>{}}),toolCalls=0;
 const call=async(name,args={})=>{toolCalls++;return flow.call(a.id,run.id,name,args);};
 const complete=async input=>{let result=await call('browser_jev_run',input);for(let i=0;i<10&&result.status==='continue';i++)result=await call('browser_jev_run',{taskId:result.taskId});assert.equal(result.status,'completed',JSON.stringify(result));return result;};
@@ -93,7 +93,7 @@ try{
  const form=await complete({operation:'fill_form',url:base+'/form',answers:[{key:'name',label:'Name',value:'Ada'},{key:'message',label:'Message',value:'Synthetic draft'},{key:'visit',label:'Visit',value:'Morning'},{key:'city',label:'City',value:'Berlin'}]});assert.equal(Object.keys(form.answers).length,4);assert.equal(submitted,0);
  // Reconstruct the workflow as on a worker restart: evidence and task IDs
  // remain readable without reopening pages or repeating model calls.
- flow=automationWorkflow({db,run,signal:controller.signal,browser:automationBrowser(browsers,{mode:'jev'}),report:()=>{}});
+ flow=automationWorkflow({db,run,signal:controller.signal,browser:automationBrowser(browsers),report:()=>{}});
  const before=modelCalls,restored=await call('read_jev_task',{taskId:scan.taskId});assert.equal(restored.total,2);assert.equal(modelCalls,before);
  console.log('JEV_TASKS_PASS',JSON.stringify({operations:5,toolCalls,modelCalls,requests,submissions:submitted}));
 }finally{await browsers.close();core.close();server.closeAllConnections();await new Promise(r=>server.close(r));await rm(directory,{recursive:true,force:true});}

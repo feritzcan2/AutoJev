@@ -25,10 +25,10 @@ const server=createServer((req,res)=>{
  res.end(shell+'<a href="/delayed">Delayed</a><a href="/recover">Recover</a><a href="/stuck">Stuck</a><article>ACTUAL_DETAIL</article>');
 });
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const source=`http://127.0.0.1:${server.address().port}/`;
-const a=db.create('custom',{goal:'Read listings',criteria:{outcome:'Listings',rules:'Read only',completion:'All'},sources:[source]});db.save(a.id,{browserMode:'jev'});db.review(a.id);db.skipTrial(a.id);db.enable(a.id);
+const a=db.create('custom',{goal:'Read listings',criteria:{outcome:'Listings',rules:'Read only',completion:'All'},sources:[source]});db.review(a.id);db.skipTrial(a.id);db.enable(a.id);
 const task=core.workspaces.tasks.enqueue(a.id,{operation:'scan',sourceUrl:source,sources:[source],lockKey:'source:'+source}),run=db.begin(a.id,{kind:'run',taskId:task.id}),controller=new AbortController();
-const browsers=new BrowserTools(directory,()=> 'jev',()=>({connection:'separate',headless:true,choose:()=>{throw Error('No model needed');}}));
-const adapter=automationBrowser(browsers,{mode:'jev',sourceUrl:source,readTabKey:'read:main'}),flow=automationWorkflow({db,run,signal:controller.signal,browser:adapter,report:(id,runId,status,summary)=>db.finish(id,runId,status,summary)});
+const browsers=new BrowserTools(directory,()=>({connection:'separate',headless:true,choose:()=>{throw Error('No model needed');}}));
+const adapter=automationBrowser(browsers,{sourceUrl:source,readTabKey:'read:main'}),flow=automationWorkflow({db,run,signal:controller.signal,browser:adapter,report:(id,runId,status,summary)=>db.finish(id,runId,status,summary)});
 const call=(name,args={})=>flow.call(a.id,run.id,name,args);
 async function document(result){let text='';for(;;){text+=result.content.filter(c=>c.type==='text').map(c=>c.text).join('\n');if(result.snapshot.nextOffset===null)break;result=await call('browser_read_part',{snapshotId:result.snapshot.id,offset:result.snapshot.nextOffset});}return JSON.parse(text.replace(/^Page URL: [^\n]+\n/,''));}
 try{
@@ -43,8 +43,8 @@ try{
  assert.equal(await client.tab(oldId).page.locator('[id="S:2"]').getAttribute('hidden'),'');
  const stuck=await call('browser_open',{url:source+'stuck'}),incomplete=await document(stuck);
  assert.equal(stuck.readiness.loading,true);assert.equal(stuck.technicalIssue.verified,true);assert.doesNotMatch(incomplete.text,/NOT_VISIBLE_LISTING/);
- await call('save_scan_progress',{snapshotId:stuck.snapshot.id,pendingUrls:[source+'stuck'],reason:'Retry rendering'});
- await call('finish_automation_run',{status:'blocked',summary:'Rendering still pending',stop:{kind:'technical',evidence:'Fresh tab still pending',issueIds:[stuck.technicalIssue.id]}});
+ db.saveScanProgress(a.id,run.id,{pendingUrls:[source+'stuck'],reason:'Retry rendering'},{url:source+'stuck',text:''});
+ await call('finish_automation_run',{status:'blocked',summary:'Rendering still pending'});
  assert.equal(db.run(run.id).status,'interrupted');assert.equal(db.run(run.id).recovery.reason,'technical_page');assert.equal(submits,0);
  console.log('SCAN_PAGE_RECOVERY_BROWSER_PASS',JSON.stringify({directory,freshRequests,originalDraftPreserved:true,hiddenContentExcluded:true,automaticRetry:true,submits}));
 }finally{controller.abort();await browsers.close();core.close();server.closeAllConnections();await new Promise(r=>server.close(r));}

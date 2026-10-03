@@ -43,7 +43,7 @@ try{
  await page.keyboard.down('Space');await refresh();await page.keyboard.up('Space');
  assert.deepEqual(await page.evaluate(()=>window.fixture.calls.map(c=>c.kind)),['stop']);await finish(1);
  // A different panel action must not silently swallow either scan control.
- await reset();await page.getByRole('button',{name:'Dışa aktar',exact:true}).click();
+ await reset();await page.getByRole('button',{name:'Kaynak tanımlarını dışa aktar',exact:true}).click();
  await row(0).getByRole('button',{name:'Şimdi tara',exact:true}).click();await row(1).getByRole('button',{name:'Taramayı durdur',exact:true}).click();
  assert.deepEqual(await page.evaluate(()=>window.fixture.calls.map(c=>c.kind)),['start','stop']);
  await finish(0);await finish(1);await page.evaluate(()=>window.fixture.finishExport());

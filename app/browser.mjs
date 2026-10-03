@@ -1,43 +1,28 @@
 import {checkSourceBrowser} from './source-browser-check.mjs';
 import {BrowserConnections,browserWaitResult} from './browser-connection.mjs';
-import {Client} from '@modelcontextprotocol/sdk/client/index.js';
-import {StdioClientTransport} from '@modelcontextprotocol/sdk/client/stdio.js';
-import {createRequire} from 'node:module';
 import path from 'node:path';
-import {mkdir,readFile,realpath,stat} from 'node:fs/promises';
+import {mkdir} from 'node:fs/promises';
 import {JevBrowser,jevTools} from './jev-browser.mjs';
 import {pressBrowserTarget} from './browser-target.mjs';
-const require=createRequire(import.meta.url);
-const playwrightTabs=result=>{
-  const output=(result.content??[]).filter(part=>part.type==='text').map(part=>part.text).join('\n');
-  return [...output.matchAll(/^- (\d+): (\(current\) )?\[.*\]\((.*)\)$/gm)].map(match=>({index:Number(match[1]),current:Boolean(match[2]),url:match[3]}));
-};
+import {resolveBrowserCaptcha} from './captcha-automation.mjs';
 
-export function browserArguments(mode,directory){
-  if(mode==='existing')throw Error('Mevcut Chrome, Codex’in kendi tarayıcı araçlarıyla kullanılır.');
-  if(mode==='separate')return ['--browser','chrome','--user-data-dir',path.join(directory,'profile')];
-  throw Error('Unknown browser mode');
-}
+// Every workspace uses one Jev-managed Chrome connection shared by its workers.
 export class BrowserTools {
-  constructor(directory,modeForCandidate=()=> 'existing',jevOptionsForCandidate=()=>({})){this.directory=directory;this.modeForCandidate=modeForCandidate;this.jevOptionsForCandidate=jevOptionsForCandidate;this.clients=new Map();this.operations=new Map();this.connectionKeys=new Map();this.runTabs=new Map();this.connections=new BrowserConnections({connect:async id=>{const {client}=await this.connect(id);await client.context();},changed:(id,state)=>this.onStatus?.(id,state)});}
-  forWorker(workerId='main',isActive=()=>true){const scoped=Object.create(this);scoped.workerId=workerId;scoped.isActive=isActive;return scoped;}
-  clientKey(id){return this.modeForCandidate(id)==='separate'&&this.workerId&&this.workerId!=='main'?`${id}/workers/${this.workerId}`:id;}
+  constructor(directory,jevOptionsForCandidate=()=>({})){this.directory=directory;this.jevOptionsForCandidate=jevOptionsForCandidate;this.clients=new Map();this.operations=new Map();this.connectionKeys=new Map();this.connections=new BrowserConnections({connect:async id=>{const {client}=await this.connect(id);await client.context();},changed:(id,state)=>this.onStatus?.(id,state)});}
+  forWorker(workerId='main',isActive=()=>true,{signal,captchaMaySubmit}={}){const scoped=Object.create(this);scoped.workerId=workerId;scoped.isActive=isActive;scoped.signal=signal;scoped.captchaMaySubmit=captchaMaySubmit;return scoped;}
   options(id){return this.jevOptionsForCandidate(id,this.workerId??'main');}
   status(id){
-    if(this.modeForCandidate(id)!=='jev')return {state:'unmanaged',ready:true};
     const options=this.options(id),key=JSON.stringify([options.profile?.directory,options.connection]);
     if(this.connectionKeys.get(id)!==key){this.connectionKeys.set(id,key);this.connections.reset(id);}
     return this.connections.status(id);
   }
-  prepare(id,options){if(this.status(id).state==='unmanaged')return this.status(id);return this.connections.prepare(id,options);}
+  prepare(id,options){this.status(id);return this.connections.prepare(id,options);}
   waiting(id){const state=this.status(id);return !state.ready&&state.state!=='idle';}
   async resetCandidate(id){
     this.connections.reset(id);
-    const keys=[...this.clients.keys()].filter(key=>key===id||key.startsWith(id+'/workers/'));
-    const previous=keys.map(key=>this.clients.get(key));for(const key of keys)this.clients.delete(key);
-    for(const runKey of this.runTabs.keys())if(keys.some(key=>runKey.startsWith(key+':')))this.runTabs.delete(runKey);
+    const previous=this.clients.get(id);this.clients.delete(id);
     this.connectionKeys.delete(id);
-    for(const connection of previous){const connected=await connection.pending.catch(()=>null);if(connected)await connected.client.close();}
+    if(previous){const connected=await previous.pending.catch(()=>null);if(connected)await connected.client.close();}
   }
   async resumeApplication(id,jobId,sessionId){
     const options=this.options(id),state=options.lifecycle??{};
@@ -54,85 +39,66 @@ export class BrowserTools {
     return result;
   }
   async connect(candidateId){
-    const mode=this.modeForCandidate(candidateId)??'existing';
-    const options=this.options(candidateId),key=JSON.stringify({mode,profile:options.profile?.directory,connection:options.connection});
-    const clientKey=this.clientKey(candidateId),previous=this.clients.get(clientKey);
+    const options=this.options(candidateId),key=JSON.stringify({profile:options.profile?.directory,connection:options.connection});
+    const previous=this.clients.get(candidateId);
     if(previous?.key===key)return previous.pending;
-    if(previous)for(const runKey of this.runTabs.keys())if(runKey.startsWith(clientKey+':'))this.runTabs.delete(runKey);
     if(previous)try{await(await previous.pending).client.close();}catch{}
-    const connection={mode,key};
-    const pending=this.open(candidateId,mode,options).then(value=>{connection.client=value.client;return value;}).catch(error=>{if(this.clients.get(clientKey)===connection)this.clients.delete(clientKey);throw error;});
-    connection.pending=pending;this.clients.set(clientKey,connection);return pending;
+    const connection={key};
+    const pending=this.open(candidateId,options).then(value=>{connection.client=value.client;return value;}).catch(error=>{if(this.clients.get(candidateId)===connection)this.clients.delete(candidateId);throw error;});
+    connection.pending=pending;this.clients.set(candidateId,connection);return pending;
   }
-  async open(candidateId,mode,options={}){
+  async open(candidateId,options={}){
     const base=this.directoryFor?.(candidateId)??this.directory;
-    const directory=path.join(base,'browsers',this.clientKey(candidateId));
+    const directory=path.join(base,'browsers',candidateId);
     const workspace=this.workspaceFor?.(candidateId)??path.join(base,'candidates',candidateId);
     await mkdir(workspace,{recursive:true,mode:0o700});
     await mkdir(directory,{recursive:true,mode:0o700});
-    if(mode==='jev')return {client:new JevBrowser(path.join(directory,'jev-profile'),{...options,siteAccess:this.siteAccess,workspace,onDisconnect:()=>this.connections.disconnected(candidateId),onTabsClosed:ids=>{if(!this.closed)return this.onTabsClosed?.(candidateId,ids);},onProgress:(jobId,progress,owner)=>this.onProgress?.(candidateId,jobId,progress,owner),beforeSubmit:(jobId,url,owner,verificationContinuation)=>this.beforeSubmit?.(candidateId,jobId,url,owner,{verificationContinuation})}),tools:jevTools,directory,workspace};
-    const cli=path.join(path.dirname(require.resolve('@playwright/mcp/package.json')),'cli.js').replace(/([/\\])(app(?:-(?:x64|arm64))?\.asar)([/\\])/,'$1$2.unpacked$3');
-    const transport=new StdioClientTransport({command:process.execPath,args:[cli,...browserArguments(mode,directory),'--output-dir',path.join(directory,'artifacts')],cwd:workspace,env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},stderr:'pipe'});
-    const client=new Client({name:'jobloop-browser',version:'0.1.0'});
-    try{await client.connect(transport);const {tools}=await client.listTools();return{client,tools,directory,workspace};}
-    catch(error){await transport.close();throw error;}
+    return {client:new JevBrowser(path.join(directory,'jev-profile'),{...options,siteAccess:this.siteAccess,autoVerify:()=>this.captcha?.settings.status().enabled===true,workspace,onDisconnect:()=>this.connections.disconnected(candidateId),onTabsClosed:ids=>{if(!this.closed)return this.onTabsClosed?.(candidateId,ids);},onProgress:(jobId,progress,owner)=>this.onProgress?.(candidateId,jobId,progress,owner),beforeSubmit:(jobId,url,owner,verificationContinuation)=>this.beforeSubmit?.(candidateId,jobId,url,owner,{verificationContinuation})}),tools:jevTools,directory,workspace};
   }
-  async tools(candidateId){const mode=this.modeForCandidate(candidateId)??'existing';if(mode==='existing')return [];if(mode==='jev')return jevTools;return(await this.connect(candidateId)).tools;}
-  call(candidateId,name,args,sessionId,options){return this.enqueue(candidateId,()=>this.performCall(candidateId,name,args,sessionId,options));}
+  async tools(){return jevTools;}
+  async call(candidateId,name,args,sessionId,options){
+    const slot=this.clients.get(candidateId)?.client?.tabs.get(args.tabId);
+    if(slot&&slot.owner===sessionId)await this.captcha?.wait(slot);
+    const result=await this.enqueue(candidateId,()=>this.performCall(candidateId,name,args,sessionId,options));
+    return resolveBrowserCaptcha(this,candidateId,result,sessionId,options);
+  }
   async enqueue(candidateId,run,{checkActive=true}={}){
-    const key=this.clientKey(candidateId),previous=this.operations.get(key)??Promise.resolve();
+    const previous=this.operations.get(candidateId)??Promise.resolve();
     const operation=previous.catch(()=>{}).then(()=>{if(checkActive&&this.isActive&&!this.isActive())throw Error('Worker oturumu kapandı.');return run();});
-    this.operations.set(key,operation);
-    try{return await operation;}finally{if(this.operations.get(key)===operation)this.operations.delete(key);}
+    this.operations.set(candidateId,operation);
+    try{return await operation;}finally{if(this.operations.get(candidateId)===operation)this.operations.delete(candidateId);}
   }
-  async waitForOperations(candidateId){await this.operations.get(this.clientKey(candidateId))?.catch(()=>{});}
-  async performCall(candidateId,name,args,sessionId,{completeSnapshot=false,automationTabKey,automationWorkspaceId,automationSourceUrl,automationSourceUrls,automationPreferredTabId,automationFreshTab,automationResumeRecord}={}){
-    if(this.modeForCandidate(candidateId)==='jev'&&!this.prepare(candidateId).ready)return {content:[{type:'text',text:JSON.stringify(browserWaitResult())}]};
-    const {client,tools,directory,workspace}=await this.connect(candidateId);
+  async waitForOperations(candidateId){await this.operations.get(candidateId)?.catch(()=>{});}
+  async performCall(candidateId,name,args,sessionId,{automationTabKey,automationWorkspaceId,automationSourceUrl,automationSourceUrls,automationPreferredTabId,automationFreshTab,automationResumeRecord}={}){
+    if(!this.prepare(candidateId).ready)return {content:[{type:'text',text:JSON.stringify(browserWaitResult())}]};
+    const {client}=await this.connect(candidateId);
     if(this.isActive&&!this.isActive())throw Error('Worker oturumu kapandı.');
     if(name==='browser_target_press'){
-      if(client instanceof JevBrowser){
-        const url=client.tab(args.tabId).page.url();
-        try{if(/^https?:/.test(url))this.siteAccess?.assertAction(url);}
-        catch(error){if(error.code!=='SITE_WAIT')throw error;return {content:[{type:'text',text:JSON.stringify({status:'site_wait',url,tabId:args.tabId,siteWait:error.wait,text:error.message,message:error.message,executed:false})}]};}
-      }
-      return pressBrowserTarget(client,client instanceof JevBrowser,args,sessionId);
+      const url=client.tab(args.tabId).page.url();
+      try{if(/^https?:/.test(url))this.siteAccess?.assertAction(url);}
+      catch(error){if(error.code!=='SITE_WAIT')throw error;return {content:[{type:'text',text:JSON.stringify({status:'site_wait',url,tabId:args.tabId,siteWait:error.wait,text:error.message,message:error.message,executed:false})}]};}
+      return pressBrowserTarget(client,true,args,sessionId);
     }
-    if(!tools.some(t=>t.name===name))throw Error('Unknown browser tool');
-    let result;try{result=await (client instanceof JevBrowser?client.callTool({name,arguments:args},sessionId,{...this.options(candidateId).lifecycle,...(automationTabKey?{automationTabKey}:{}),...(automationWorkspaceId?{automationWorkspaceId:candidateId}:{}),...(automationSourceUrl?{automationSourceUrl,automationSourceUrls}:{}),...(automationPreferredTabId?{automationPreferredTabId}:{}),...(automationFreshTab?{automationFreshTab:true}:{}),...(automationResumeRecord?{automationResumeRecord:true}:{})}):client.callTool({name,arguments:args}));}catch(error){if(client instanceof JevBrowser&&(!client.browser&&client.connection==='existing'||error.code==='BROWSER_DISCONNECTED')){this.connections.disconnected(candidateId);return {content:[{type:'text',text:JSON.stringify(browserWaitResult())}]};}throw error;}
-    if(!(client instanceof JevBrowser)&&sessionId&&!result.isError&&(['browser_navigate','browser_click'].includes(name)||name==='browser_tabs'&&args.action==='select')&&tools.some(tool=>tool.name==='browser_tabs')){
-      try{
-        const listing=await client.callTool({name:'browser_tabs',arguments:{action:'list'}}),current=!listing.isError&&playwrightTabs(listing).find(tab=>tab.current);
-        if(current){const runKey=`${this.clientKey(candidateId)}:${sessionId}`,tabs=this.runTabs.get(runKey)??new Map();tabs.set(current.index,current.url);this.runTabs.set(runKey,tabs);}
-      }catch{/* An unverified tab must stay open. */}
-    }
-    if(client instanceof JevBrowser&&!result.isError)for(const part of result.content??[]){
+    if(!jevTools.some(t=>t.name===name))throw Error('Unknown browser tool');
+    let result;try{result=await client.callTool({name,arguments:args},sessionId,{...this.options(candidateId).lifecycle,signal:this.signal,...(automationTabKey?{automationTabKey}:{}),...(automationWorkspaceId?{automationWorkspaceId:candidateId}:{}),...(automationSourceUrl?{automationSourceUrl,automationSourceUrls}:{}),...(automationPreferredTabId?{automationPreferredTabId}:{}),...(automationFreshTab?{automationFreshTab:true}:{}),...(automationResumeRecord?{automationResumeRecord:true}:{})});}catch(error){if(!client.browser&&client.connection==='existing'||error.code==='BROWSER_DISCONNECTED'){this.connections.disconnected(candidateId);return {content:[{type:'text',text:JSON.stringify(browserWaitResult())}]};}throw error;}
+    if(!result.isError)for(const part of result.content??[]){
       if(part.type!=='text')continue;
       try{const slot=client.tabs.get(JSON.parse(part.text).tabId);if(slot)slot.previewAt=Date.now();}catch{}
     }
-    // Newer Playwright versions return snapshot files. Inline only this candidate's
-    // bounded browser artifacts, so the agent can act without filesystem access.
-    for(const part of [...(result.content??[])]){
-      if(part.type!=='text')continue;
-      for(const match of part.text.matchAll(/\[Snapshot\]\(([^)]+\.yml)\)/g)){
-        try{
-          const file=await realpath(path.resolve(workspace,match[1]));
-          const artifacts=await realpath(path.join(directory,'artifacts'));
-          if(!file.startsWith(artifacts+path.sep)||(await stat(file)).size>512000)continue;
-          const snapshot=await readFile(file,'utf8');
-          // The automation workflow pages the complete snapshot itself. Keep
-          // the existing limit for callers without that reader.
-          result.content.push({type:'text',text:completeSnapshot?snapshot:snapshot.slice(0,100000)});
-        }catch{/* Keep the original artifact reference if it was removed. */}
-      }
-    }
     return result;
+  }
+  // The connected client for a workspace, or null when nothing is connected or
+  // the profile changed. UI reads must never start Chrome or prompt for permission.
+  async connectedClient(candidateId){
+    const connection=this.clients.get(candidateId);if(!connection)return null;
+    const connected=await connection.pending.catch(()=>null),client=connected?.client;
+    if(!client||client.closed||this.clients.get(candidateId)!==connection||client.profile?.directory!==this.options(candidateId).profile?.directory)return null;
+    return client;
   }
   cleanupSearch(candidateId,taskId){return this.enqueue(candidateId,()=>this.performCleanupSearch(candidateId,taskId),{checkActive:false});}
   async performCleanupSearch(candidateId,taskId){
-    if(this.modeForCandidate(candidateId)!=='jev')return {deferred:true};
     const connection=this.clients.get(candidateId);
-    if(connection?.mode!=='jev')return {deferred:true};
+    if(!connection)return {deferred:true};
     const options=this.options(candidateId),{client}=await connection.pending;
     if(client.profile?.directory!==options.profile?.directory)return {deferred:true};
     return client.cleanupSearch(taskId,options.lifecycle??{});
@@ -140,7 +106,7 @@ export class BrowserTools {
   cleanup(candidateId){return this.enqueue(candidateId,()=>this.performCleanup(candidateId),{checkActive:false});}
   async performCleanup(candidateId){
     const connection=this.clients.get(candidateId),options=this.options(candidateId);
-    if(connection?.mode!=='jev'||this.modeForCandidate(candidateId)!=='jev')return {deferred:true};
+    if(!connection)return {deferred:true};
     const {client}=await connection.pending;
     if(client.profile?.directory!==options.profile?.directory)return {deferred:true};
     return client.cleanupCompleted(options.lifecycle??{});
@@ -149,7 +115,7 @@ export class BrowserTools {
     const connection=this.clients.get(candidateId),client=connection?.client;
     // Maintenance never starts Chrome, requests permission or queues behind a
     // running agent operation. The next tick retries disconnected/busy clients.
-    if(this.closed||this.modeForCandidate(candidateId)!=='jev'||connection?.mode!=='jev'||!client||client.closed||client.busy||!client.opening||client.connection==='existing'&&!client.browser?.isConnected()||this.operations.has(candidateId))return Promise.resolve({deferred:true});
+    if(this.closed||!client||client.closed||client.busy||!client.opening||client.connection==='existing'&&!client.browser?.isConnected()||this.operations.has(candidateId))return Promise.resolve({deferred:true});
     return this.enqueue(candidateId,async()=>{
       if(this.clients.get(candidateId)!==connection)return {deferred:true};
       const options=this.options(candidateId);
@@ -158,12 +124,9 @@ export class BrowserTools {
     });
   }
   async focus(candidateId,context){
-    if(this.modeForCandidate(candidateId)!=='jev')throw Object.assign(Error('Bu aday için Jev tarayıcı modu seçili değil.'),{code:'BROWSER_MODE_CHANGED'});
     return (await this.connect(candidateId)).client.focus(context.tabId);
   }
   probeAutomationSource(id,task){
-    // Separate-browser providers retain their existing delayed retry policy.
-    if(this.modeForCandidate(id)!=='jev')return Promise.resolve({ready:true,unsupported:true});
     const connection=this.clients.get(id),client=connection?.client;
     if(this.closed||!client||client.closed||client.busy||this.operations.has(id)||!this.status(id).ready)return Promise.resolve({ready:false,deferred:true});
     return this.enqueue(id,()=>{
@@ -172,12 +135,8 @@ export class BrowserTools {
     },{checkActive:false});
   }
   async workspaceTabs(id){
-    if(this.modeForCandidate(id)!=='jev')return [];
-    // Reading the Sources page must not connect to Chrome or show a permission prompt.
-    const connection=this.clients.get(id);
-    if(connection?.mode!=='jev')return [];
-    const connected=await connection.pending.catch(()=>null),client=connected?.client,options=this.options(id);
-    if(!client||client.closed||this.clients.get(id)!==connection||client.profile?.directory!==options.profile?.directory||client.connection==='existing'&&!client.browser?.isConnected())return [];
+    const client=await this.connectedClient(id),options=this.options(id);
+    if(!client||client.connection==='existing'&&!client.browser?.isConnected())return [];
     const jobs=Array.isArray(options.lifecycle?.jobs),checkpoints=new Set((options.checkpoints??[]).filter(c=>c?.browser==='Jev Chrome').map(c=>c.tabId));
     const webTab=slot=>{
       const owner=client.automationWorkspaces.get(slot.id);
@@ -212,43 +171,19 @@ export class BrowserTools {
       return {closed,failed};
     },{checkActive:false});
   }
-  async finishAutomationRun(id,run,{closeTabs=false,retainForAccess=false,sourceAccessReset=false,sourceRunIds=[],pendingTabIds=[],pendingUrls=[]}={}){
-    const scoped=this.forWorker(run.workerId??'main'),key=scoped.clientKey(id),runKey=`${key}:${run.id}`,ownedTabs=this.runTabs.get(runKey);
-    if(!closeTabs){if(!retainForAccess)this.runTabs.delete(runKey);return {closed:[]};}
-    const connection=this.clients.get(key);
+  async finishAutomationRun(id,run,{closeTabs=false,sourceAccessReset=false,sourceRunIds=[],pendingTabIds=[]}={}){
+    if(!closeTabs)return {closed:[]};
+    const connection=this.clients.get(id);
     if(!connection)return {deferred:true};
-    return scoped.enqueue(id,async()=>{
-      if(this.clients.get(key)!==connection)return {deferred:true};
-      const connected=await connection.pending.catch(()=>null),client=connected?.client;
-      if(!client||client.closed)return {deferred:true};
-      if(connection.mode==='jev'){
-        if(client.profile?.directory!==scoped.options(id).profile?.directory)return {deferred:true};
-        return client.closeFinishedAutomationRunTabs(run.id,id,{sourceScan:!run.recordId,pendingTabIds,...(sourceAccessReset?{resetSource:run.sourceUrl,sourceRunIds}:{})});
-      }
-      if(connection.mode!=='separate'||!connected.tools?.some(tool=>tool.name==='browser_tabs'))return {deferred:true};
-      const listing=await client.callTool({name:'browser_tabs',arguments:{action:'list'}});
-      if(listing.isError)throw Error('Görev sekmeleri listelenemedi.');
-      const available=playwrightTabs(listing),closed=[],retained=[];
-      for(const [index,url] of [...(ownedTabs??new Map())].sort((a,b)=>b[0]-a[0])){
-        const live=available.find(tab=>tab.index===index);
-        if(!live){if(!sourceAccessReset)retained.push(index);continue;}
-        if(live.url!==url||pendingUrls.includes(url)||live.current&&!sourceAccessReset&&url!==run.resumeContext?.url){retained.push(index);continue;}
-        const result=await client.callTool({name:'browser_tabs',arguments:{action:'close',index}});
-        if(result.isError){retained.push(index);continue;}
-        closed.push(index);
-      }
-      if(sourceAccessReset&&retained.length)this.runTabs.set(runKey,new Map([...ownedTabs].filter(([index])=>retained.includes(index))));else this.runTabs.delete(runKey);
-      return {closed,retained};
+    return this.forWorker(run.workerId??'main').enqueue(id,async()=>{
+      const client=await this.connectedClient(id);
+      if(!client||this.clients.get(id)!==connection)return {deferred:true};
+      return client.closeFinishedAutomationRunTabs(run.id,id,{sourceScan:!run.recordId,pendingTabIds,...(sourceAccessReset?{resetSource:run.sourceUrl,sourceRunIds}:{})});
     },{checkActive:false});
   }
   async sourceTabs(candidateId,sources,task){
-    const mode=this.modeForCandidate(candidateId),result={};
-    if(mode!=='jev')return Object.fromEntries(sources.filter(s=>s.resumeContext&&s.resumeContext.browser!=='Jev Chrome').map(s=>[s.id,s.resumeContext]));
-    // UI reads must never start a connection or create a Chrome permission prompt.
-    const connection=this.clients.get(candidateId);
-    if(connection?.mode!=='jev')return result;
-    const connected=await connection.pending.catch(()=>null),client=connected?.client;
-    if(!client||client.closed||this.modeForCandidate(candidateId)!==mode||this.clients.get(candidateId)!==connection||client.profile?.directory!==this.options(candidateId).profile?.directory||client.connection==='existing'&&!client.browser?.isConnected())return result;
+    const result={},connection=this.clients.get(candidateId),client=await this.connectedClient(candidateId);
+    if(!client||this.clients.get(candidateId)!==connection||client.connection==='existing'&&!client.browser?.isConnected())return result;
     const usable=slot=>slot&&slot.id!==client.homeId&&!slot.page.isClosed()&&!client.tabJobs.has(slot.id);
     for(const source of sources){
       const checkpoint=source.resumeContext?.browser==='Jev Chrome'?client.tabs.get(source.resumeContext.tabId):null;
@@ -259,7 +194,7 @@ export class BrowserTools {
   }
   async focusSource(candidateId,source,task){
     const connection=this.clients.get(candidateId),context=(await this.sourceTabs(candidateId,[source],task))[source.id];
-    if(!context||this.modeForCandidate(candidateId)!=='jev'||this.clients.get(candidateId)!==connection)throw Object.assign(Error('Bu kaynağın açık arama sekmesi bulunamadı.'),{code:'TAB_MISSING'});
+    if(!context||this.clients.get(candidateId)!==connection)throw Object.assign(Error('Bu kaynağın açık arama sekmesi bulunamadı.'),{code:'TAB_MISSING'});
     const connected=await connection?.pending;
     if(!connected||connected.client.closed)throw Object.assign(Error('Chrome bağlantısı kapandı.'),{code:'TAB_MISSING'});
     // Focus the live page directly; never reconnect or open a replacement here.
@@ -267,15 +202,15 @@ export class BrowserTools {
   }
   async close({closeTabs=false}={}){
     this.closed=true;this.connections.close();
-    for(const [key,{pending}] of this.clients){
+    // Cancel all queued connections before an active one releases its turn.
+    await Promise.all([...this.clients].map(async([key,{pending}])=>{
       try{
         const {client}=await pending;
-        const result=await client.close(client instanceof JevBrowser?{closeTabs}:undefined);
-        if(closeTabs&&result?.closed?.length)this.onTabsClosed?.(key.split('/workers/')[0],result.closed);
+        const result=await client.close({closeTabs});
+        if(closeTabs&&result?.closed?.length)this.onTabsClosed?.(key,result.closed);
         if(result?.failed?.length)console.warn(`Chrome sekmeleri kapatılamadı: ${result.failed.join(', ')}`);
       }catch(error){console.warn('Tarayıcı bağlantısı kapatılamadı:',error);}
-    }
+    }));
     this.clients.clear();
-    this.runTabs.clear();
   }
 }

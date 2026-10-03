@@ -40,7 +40,7 @@ function resumable(db,run){
 export function continueSourceRun(db,id,runId){
  const run=db.run(runId);
  if(!resumable(db,run)||Object.keys(run.scanIssues??{}).length||(db.get(id).questions??[]).some(q=>q.answer==null&&q.taskId===run.taskId))return null;
- return 'The same assigned source task is still open; no restart or new task occurred. Continue from the current page and saved checkpoint. Do not reread unchanged context or documents. If your last finish_automation_run was rejected, inspect its error, correct only the missing report or continue the remaining work. For an actual browser failure use recheck_scan_page and report the returned technical issue. Do not repeat an unchanged failed action or submit anything.'+(run.kind==='run'?' '+SOURCE_PAGE_INSTRUCTIONS:'');
+ return 'The same assigned source task is still open; no restart or new task occurred. Continue from the current page and saved checkpoint. Do not reread unchanged context or documents. If your last finish_automation_run was rejected, inspect its error, correct only the missing report or continue the remaining work. Page loading failures are verified and retried by the app. Do not repeat an unchanged failed action or submit anything.'+(run.kind==='run'?' '+SOURCE_PAGE_INSTRUCTIONS:'');
 }
 
 export function unreportedSourceRun(db,id,runId,reason,now){

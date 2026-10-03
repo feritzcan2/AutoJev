@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {CaptchaSettings} from '../app/captcha-settings.mjs';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,readFile,rm,readdir,symlink,rename,utimes,stat,realpath} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -14,7 +15,6 @@ import {calculateScorecard,scoringPolicy} from '../app/scoring-policy.mjs';
 import {unknownScorecard} from './helpers/scorecard.mjs';
 import {rememberSourceAccess} from '../app/source-access-recovery.mjs';
 import {sourceScanScope} from '../app/source-scan.mjs';
-import {recordSourceRead} from '../app/source-read.mjs';
 
 // Backup compatibility uses frozen legacy rows, not a second execution engine.
 const row=(core,table,id,column='candidate_id')=>JSON.parse(core.db.prepare(`SELECT data FROM ${table} WHERE ${column}=?`).get(id).data);
@@ -43,6 +43,7 @@ async function fixture(t){
  new AutomationStore(store);
  const telegram=new TelegramStore({db:store.db,generic:true,profile:id=>profileRow(store,id)});telegram.saveConfig(profile.id,{bot:{id:123456,username:'test'},enabled:true,secret:'TELEGRAM-CIPHERTEXT'});
  store.db.exec('CREATE TABLE jev_settings(id INTEGER PRIMARY KEY,ciphertext TEXT NOT NULL,model TEXT NOT NULL)');store.db.prepare('INSERT INTO jev_settings VALUES(1,?,?)').run('JEV-CIPHERTEXT','model');
+ new CaptchaSettings(store.db,{encrypt:()=> 'CAPTCHA-CIPHERTEXT',decrypt:()=> 'synthetic-captcha-key'}).save({apiKey:'synthetic-captcha-key',enabled:true});
  store.db.prepare('INSERT INTO prompts(candidate_id,kind,text,at) VALUES(?,?,?,?)').run(profile.id,'start','Prompt private content',new Date().toISOString());
  t.after(async()=>{try{store.close();}catch{}await rm(base,{recursive:true,force:true});});
  return {base,data,store,profile,candidate,job,backup:path.join(base,'export'),create:destination=>createBackup({dataDirectory:data,db:store.db,destination:destination??path.join(base,'export'),appVersion:'0.1.0'})};
@@ -53,8 +54,8 @@ test('portable backup includes committed WAL data and documents while removing c
  const f=await fixture(t),result=await f.create();assert.equal(result.candidates,1);assert.equal(result.jobs,1);assert.equal(result.secrets,'excluded');
  const summary=await inspectBackup(f.backup);assert.equal(summary.files,3);
  const db=new DatabaseSync(path.join(f.backup,'jobloop.sqlite'),{readOnly:true});
- try{assert.equal(db.prepare('SELECT count(*) AS n FROM candidates').get().n,1);assert.equal(db.prepare('SELECT ciphertext,email FROM account_credentials').get().ciphertext,null);assert.equal(db.prepare('SELECT email FROM account_credentials').get().email,'ada@example.test');for(const table of ['telegram_configs','jev_settings','prompts'])assert.equal(db.prepare(`SELECT count(*) AS n FROM ${table}`).get().n,0);}finally{db.close();}
- const bytes=await readFile(path.join(f.backup,'jobloop.sqlite'));assert.ok(!bytes.includes('PORTAL-SECRET'));assert.ok(!bytes.includes('TELEGRAM-CIPHERTEXT'));assert.ok(!bytes.includes('JEV-CIPHERTEXT'));
+ try{assert.equal(db.prepare('SELECT count(*) AS n FROM candidates').get().n,1);assert.equal(db.prepare('SELECT ciphertext,email FROM account_credentials').get().ciphertext,null);assert.equal(db.prepare('SELECT email FROM account_credentials').get().email,'ada@example.test');for(const table of ['telegram_configs','jev_settings','captcha_settings','prompts'])assert.equal(db.prepare(`SELECT count(*) AS n FROM ${table}`).get().n,0);}finally{db.close();}
+ const bytes=await readFile(path.join(f.backup,'jobloop.sqlite'));assert.ok(!bytes.includes('PORTAL-SECRET'));assert.ok(!bytes.includes('TELEGRAM-CIPHERTEXT'));assert.ok(!bytes.includes('JEV-CIPHERTEXT'));assert.ok(!bytes.includes('CAPTCHA-CIPHERTEXT'));
  assert.equal(profileRow(f.store,f.profile.id).name,'Ada Lovelace');assert.equal(f.store.db.prepare('SELECT ciphertext FROM account_credentials').get().ciphertext,'CIPHERTEXT-PORTAL-SECRET');
  assert.deepEqual((await readdir(path.join(f.backup,'candidates',f.profile.id))).sort(),['CV.pdf','documents']);
 });
@@ -110,10 +111,48 @@ test('legacy data receives a recoverable backup before schema adoption and every
  const old=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));assert.equal(profileRow(old,f.profile.id).name,'Ada Lovelace');assert.equal(old.db.prepare('SELECT ciphertext FROM account_credentials').get().ciphertext,'CIPHERTEXT-PORTAL-SECRET');assert.equal(JSON.parse(old.db.prepare('SELECT data FROM telegram_configs').get().data).enabled,false);old.close();
 });
 
+test('schema 33 upgrades CAPTCHA storage only after backup; same-user recovery preserves encrypted settings',async t=>{
+ const f=await fixture(t);f.store.db.exec('PRAGMA user_version=33');f.store.close();
+ const upgrade=await prepareDataUpgrade({dataDirectory:f.data,appVersion:'0.2.0'});
+ assert.equal((await inspectBackup(upgrade.backup)).schemaVersion,33);
+ const upgraded=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));
+ assert.equal(upgraded.db.prepare('PRAGMA user_version').get().user_version,DATA_SCHEMA_VERSION);
+ const settings=new CaptchaSettings(upgraded.db,{encrypt:x=>x,decrypt:()=> 'synthetic-key'});assert.equal(settings.status().enabled,true);
+ settings.remove();await stageRestore({dataDirectory:f.data,directory:upgrade.backup,db:upgraded.db,appVersion:'0.2.0'});upgraded.close();await applyPendingRestore({dataDirectory:f.data});
+ const restored=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));
+ try{assert.equal(restored.db.prepare('SELECT ciphertext FROM captcha_settings').get().ciphertext,'CAPTCHA-CIPHERTEXT');}
+ finally{restored.close();}
+});
+test('a schema 33 database without CAPTCHA tables upgrades with automation disabled',async t=>{
+ const f=await fixture(t);f.store.db.exec('DROP TABLE captcha_settings; DROP TABLE captcha_usage; PRAGMA user_version=33');f.store.close();
+ const upgrade=await prepareDataUpgrade({dataDirectory:f.data,appVersion:'0.2.0'});assert.equal((await inspectBackup(upgrade.backup)).schemaVersion,33);
+ const upgraded=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));
+ try{const settings=new CaptchaSettings(upgraded.db,{encrypt:x=>x,decrypt:x=>x});assert.equal(settings.status().configured,false);assert.equal(settings.status().enabled,false);assert.equal(settings.used(),0);assert.equal(profileRow(upgraded,f.profile.id).name,'Ada Lovelace');}
+ finally{upgraded.close();}
+});
+
 test('newer schema is refused before Store modifies data',async t=>{
  const directory=await mkdtemp(path.join(tmpdir(),'jobloop-future-schema-'));t.after(()=>rm(directory,{recursive:true,force:true}));const file=path.join(directory,'jobloop.sqlite'),db=new DatabaseSync(file);db.exec(`CREATE TABLE sentinel(value TEXT); PRAGMA user_version=${DATA_SCHEMA_VERSION+1}`);db.close();
  assert.throws(()=>new WorkspaceDatabase(file),/daha yeni/);await assert.rejects(()=>prepareDataUpgrade({dataDirectory:directory,appVersion:'0.1.0'}),/daha yeni/);
  const check=new DatabaseSync(file,{readOnly:true});assert.deepEqual(check.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row=>row.name),['sentinel']);check.close();
+});
+
+test('schema 32 run history upgrades without inventing tokens and new totals survive backup restore',async t=>{
+ const f=await fixture(t),db=new AutomationStore(f.store),a=db.create('custom');
+ const legacy={id:'legacy-run',automationId:a.id,kind:'run',status:'completed',summary:'Legacy history',startedAt:1,finishedAt:2};db.putRun(legacy);
+ f.store.db.exec('PRAGMA user_version=32');f.store.close();
+ const upgrade=await prepareDataUpgrade({dataDirectory:f.data,appVersion:'0.2.0'});assert.equal((await inspectBackup(upgrade.backup)).schemaVersion,32);
+ let core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite')),upgraded=new AutomationStore(core);
+ assert.equal(upgraded.run(legacy.id).tokenUsage,undefined);assert.equal(core.db.prepare('PRAGMA user_version').get().user_version,DATA_SCHEMA_VERSION);
+ await stageRestore({dataDirectory:f.data,directory:upgrade.backup,db:core.db,appVersion:'0.2.0'});core.close();await applyPendingRestore({dataDirectory:f.data});
+ core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));upgraded=new AutomationStore(core);
+ assert.equal(upgraded.run(legacy.id).tokenUsage,undefined);
+ const tokenUsage={agentTokens:12000,jevTokens:1500,totalTokens:13500};upgraded.putRun({...legacy,id:'new-run',tokenUsage});
+ const destination=path.join(f.base,'token-backup');await createBackup({dataDirectory:f.data,db:core.db,destination,appVersion:'0.2.0'});
+ await stageRestore({dataDirectory:f.data,directory:destination,db:core.db,appVersion:'0.2.0'});core.close();await applyPendingRestore({dataDirectory:f.data});
+ core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));try{
+  const restored=new AutomationStore(core);assert.equal(restored.run(legacy.id).tokenUsage,undefined);assert.deepEqual(restored.run('new-run').tokenUsage,tokenUsage);
+ }finally{core.close();}
 });
 
 test('schema 28 Telegram receipts survive upgrade and restoring its backup',async t=>{
@@ -128,6 +167,27 @@ test('schema 28 Telegram receipts survive upgrade and restoring its backup',asyn
  assert.equal(core.db.prepare('PRAGMA user_version').get().user_version,DATA_SCHEMA_VERSION);
  await stageRestore({dataDirectory:f.data,directory:upgrade.backup,db:core.db,appVersion:'0.2.0'});core.close();await applyPendingRestore({dataDirectory:f.data});
  const restored=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));try{assert.deepEqual(read(restored.db),preserved);}finally{restored.close();}
+});
+
+test('schema 30 access waits are backed up, upgraded to bounded retries and preserved on restore',async t=>{
+ const f=await fixture(t),db=new AutomationStore(f.store),url='https://catalog.example/list?category=homes';
+ const a=db.create('housing',{goal:'Find homes',criteria:{location:'Berlin',budget:'2000',requirements:'2 rooms'},sources:[url]});
+ db.review(a.id);const run=db.begin(a.id,'trial'),blockedAt=Date.now(),legacy={site:'catalog.example',reason:'rate_limit',attempts:1,blockedAt,retryAt:blockedAt+30*60000,token:null,leaseUntil:0};
+ db.siteAccess.save(legacy);db.putRun({...run,sourceUrl:url,siteWait:legacy,status:'blocked'});rememberSourceAccess(db,db.run(run.id));
+ const stopped={...legacy,site:'stopped.example',attempts:9};db.siteAccess.save(stopped);
+ f.store.db.exec('PRAGMA user_version=30');f.store.close();
+ const upgrade=await prepareDataUpgrade({dataDirectory:f.data,appVersion:'0.2.0'});assert.equal((await inspectBackup(upgrade.backup)).schemaVersion,30);
+ let core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite')),upgraded=new AutomationStore(core);
+ const check=()=>{
+  assert.equal(upgraded.siteAccess.status(url).retryAt,blockedAt+5*60000);
+  assert.equal(upgraded.get(a.id).sourceState[url].accessRecovery.retryAt,blockedAt+5*60000);
+  assert.equal(upgraded.siteAccess.status('https://stopped.example').retryAt,null);
+  assert.equal(upgraded.siteAccess.status('https://stopped.example').exhausted,true);
+  assert.equal(core.db.prepare('PRAGMA user_version').get().user_version,DATA_SCHEMA_VERSION);
+ };
+ check();await stageRestore({dataDirectory:f.data,directory:upgrade.backup,db:core.db,appVersion:'0.2.0'});core.close();await applyPendingRestore({dataDirectory:f.data});
+ core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));upgraded=new AutomationStore(core);
+ try{check();assert.notEqual(upgraded.get(a.id).status,'enabled');}finally{core.close();}
 });
 
 test('schema 29 upgrade preserves Telegram preferences and later backups restore automatic score waiting state',async t=>{
@@ -320,27 +380,27 @@ test('schema 24 upgrade preserves browser sources and new source methods survive
  const upgrade=await prepareDataUpgrade({dataDirectory:f.data,appVersion:'0.2.0'});assert.equal((await inspectBackup(upgrade.backup)).schemaVersion,24);
  const core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite')),upgraded=new AutomationStore(core);
  assert.equal(core.db.prepare('PRAGMA user_version').get().user_version,DATA_SCHEMA_VERSION);assert.equal(sourceScanScope(upgraded.get(a.id),url),scope);
- assert.ok(!upgraded.sources(a.id)[0].tool);upgraded.saveSource(a.id,url,{tool:'freehire-search',instructions:'Search using current criteria'});upgraded.review(a.id);
+ upgraded.saveSource(a.id,url,{instructions:'Search using current criteria'});upgraded.review(a.id);
  const task=core.workspaces.tasks.enqueue(a.id,{operation:'trial',sourceUrl:url,sources:[url],lockKey:'source:'+url}),run=upgraded.begin(a.id,{kind:'trial',taskId:task.id});
- recordSourceRead(upgraded,a.id,run.id,{url,command:'source search',summary:'Synthetic current JSON result'});upgraded.finish(a.id,run.id,'completed','Checked');
+ upgraded.finish(a.id,run.id,'completed','Checked');
  const destination=path.join(f.base,'sources-export');await createBackup({dataDirectory:f.data,db:core.db,destination,appVersion:'0.2.0'});
  await stageRestore({dataDirectory:f.data,directory:destination,db:core.db,appVersion:'0.2.0'});core.close();await applyPendingRestore({dataDirectory:f.data});
  const restored=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));try{
-  const restoredDb=new AutomationStore(restored),source=restoredDb.sources(a.id)[0];assert.equal(source.tool,'freehire-search');assert.equal(source.instructions,'Search using current criteria');assert.equal(source.trial,null,'Restored sources require a fresh access check');
-  assert.equal(restoredDb.run(run.id).sourceReads[0].reportedBy,'agent');assert.deepEqual(restoredDb.run(run.id).observations,[]);
+  const restoredDb=new AutomationStore(restored),source=restoredDb.sources(a.id)[0];assert.equal(source.instructions,'Search using current criteria');assert.equal(source.trial,null,'Restored sources require a fresh access check');
+  assert.deepEqual(restoredDb.run(run.id).observations,[]);
  }finally{restored.close();}
 });
 
-test('schema 25 copies existing source skills once and preserves scan memory through upgrade and restore',async t=>{
+test('schema 25 upgrade preserves local source settings and scan memory through upgrade and restore',async t=>{
  const f=await fixture(t),db=new AutomationStore(f.store),url='https://example.test/jobs',plain='https://plain.test/list';
  const a=db.create('job-search',{goal:'Synthetic jobs',criteria:{preferences:'Remote',ranking:'Relevant experience'},sources:[url,plain]});
- db.put({...a,sourceSettings:{[url]:{tool:'freehire-search',instructions:'Keep this method',query:'My search',intervalMinutes:87}}});db.review(a.id);db.skipTrial(a.id);
+ db.put({...a,sourceSettings:{[url]:{instructions:'Keep this method',query:'My search',intervalMinutes:87}}});db.review(a.id);db.skipTrial(a.id);
  const task=f.store.workspaces.tasks.enqueue(a.id,{operation:'scan',sourceUrl:url,sources:[url],lockKey:'source:'+url}),run=db.begin(a.id,{kind:'run',taskId:task.id});
  const pending=url+'/pending';db.saveScanProgress(a.id,run.id,{pendingUrls:[pending],reason:'Read next detail',cursor:'page=2'},{url,text:'Synthetic response'});db.finish(a.id,run.id,'interrupted','Resume later');
  f.store.db.exec('PRAGMA user_version=25');f.store.close();
  const upgrade=await prepareDataUpgrade({dataDirectory:f.data,appVersion:'0.2.0'});assert.equal((await inspectBackup(upgrade.backup)).schemaVersion,25);
  let core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite')),upgraded=new AutomationStore(core),source=upgraded.get(a.id).sourceSettings[url];
- assert.match(source.skill,/freehire/i);assert.equal(source.instructions,'Keep this method');assert.equal(source.query,'My search');assert.equal(source.intervalMinutes,87);assert.equal(upgraded.get(a.id).sourceSettings[plain]?.skill,undefined);
+ assert.equal(source.skill,undefined);assert.equal(source.instructions,'Keep this method');assert.equal(source.query,'My search');assert.equal(source.intervalMinutes,87);assert.equal(upgraded.get(a.id).sourceSettings[plain]?.skill,undefined);
  const scope=sourceScanScope(upgraded.get(a.id),url);assert.equal(upgraded.run(run.id).scanPlan.scopeKey,scope);assert.deepEqual(upgraded.run(run.id).scan.pendingUrls,[pending]);
  const nextTask=core.workspaces.tasks.enqueue(a.id,{operation:'scan',sourceUrl:url,sources:[url],lockKey:'source:'+url}),next=upgraded.begin(a.id,{kind:'run',taskId:nextTask.id});
  assert.equal(next.scanPlan.id,run.scanPlan.id);assert.deepEqual(next.scan.pendingUrls,[pending]);upgraded.finish(a.id,next.id,'interrupted','Keep memory');
@@ -349,4 +409,30 @@ test('schema 25 copies existing source skills once and preserves scan memory thr
  const destination=path.join(f.base,'local-skills-export');await createBackup({dataDirectory:f.data,db:core.db,destination,appVersion:'0.2.0'});
  await stageRestore({dataDirectory:f.data,directory:destination,db:core.db,appVersion:'0.2.0'});core.close();await applyPendingRestore({dataDirectory:f.data});
  const restored=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));try{assert.equal(new AutomationStore(restored).get(a.id).sourceSettings[url].skill,'My independent skill');}finally{restored.close();}
+});
+
+test('schema 31 percentage thresholds are backed up and disabled on upgrade and restore',async t=>{
+ const f=await fixture(t),workspace=f.store.workspaces.get(f.profile.id);
+ delete workspace.agentSettings.contextCompactTokens;delete workspace.agentSettings.contextRestartTokens;
+ Object.assign(workspace.agentSettings,{contextCompactPercent:60,contextRestartPercent:16});
+ f.store.db.prepare('UPDATE workspaces SET data=? WHERE id=?').run(JSON.stringify(workspace),workspace.id);
+ const db=new AutomationStore(f.store),a=db.create('custom',{title:'Threshold migration'});
+ const legacy=db.get(a.id);legacy.setupAgentSettings={provider:'claude',contextCompactPercent:50,contextRestartPercent:0};
+ f.store.db.prepare('UPDATE automations SET data=? WHERE id=?').run(JSON.stringify(legacy),a.id);
+ f.store.workspaces.history(a.id).saveConversation(a.id,'codex','saved-conversation',{contextCompactPercent:80,contextRestartPercent:20,contextCompactTokens:125000});
+ f.store.db.exec('PRAGMA user_version=31');f.store.close();
+ const upgrade=await prepareDataUpgrade({dataDirectory:f.data,appVersion:'0.2.0'});assert.equal((await inspectBackup(upgrade.backup)).schemaVersion,31);
+ const backup=new DatabaseSync(path.join(upgrade.backup,'jobloop.sqlite'),{readOnly:true});
+ assert.equal(JSON.parse(backup.prepare('SELECT data FROM workspaces WHERE id=?').get(workspace.id).data).agentSettings.contextRestartPercent,16);backup.close();
+ const check=(core,restored=false)=>{
+  const settings=core.workspaces.get(workspace.id).agentSettings;
+  assert.equal(settings.contextCompactTokens,0);assert.equal(settings.contextRestartTokens,0);assert.equal(Object.hasOwn(settings,'contextCompactPercent'),false);assert.equal(Object.hasOwn(settings,'contextRestartPercent'),false);
+  const setup=new AutomationStore(core).get(a.id).setupAgentSettings;assert.equal(setup.contextCompactTokens,0);assert.equal(setup.contextRestartTokens,0);
+  const history=core.workspaces.history(a.id);assert.equal(history.conversation(a.id,'codex'),restored?null:'saved-conversation');
+  if(!restored)assert.deepEqual(history.conversationSettings(a.id,'codex','saved-conversation'),{contextCompactTokens:125000,contextRestartTokens:0});
+ };
+ const core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));check(core);
+ await stageRestore({dataDirectory:f.data,directory:upgrade.backup,db:core.db,appVersion:'0.2.0'});core.close();await applyPendingRestore({dataDirectory:f.data});
+ const restored=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));try{check(restored,true);}finally{restored.close();}
+ const reopened=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));try{check(reopened,true);}finally{reopened.close();}
 });

@@ -28,7 +28,7 @@ export async function seedJevDemo(data,url,{linkedin=false,chromeProfile,agentSe
     const a=db.create('custom',{title:linkedin?'LinkedIn · Jev':'Jev demo',goal,criteria:{outcome:goal,rules:'Search only. Do not apply or contact employers.',completion:'Stop after the matching results are visible.'},sources:[url],browserMode:'jev',chromeProfile,agentSettings,
       facts:linkedin?'No candidate qualifications supplied.':'Synthetic local browser integration demo.',
       instructions:'Use the managed Jev browser. Inspect actual results and observed links, preserve access blockers and report the observed outcome through finish_automation_run.'});
-    db.save(a.id,{browserMode:'jev',chromeProfile});
+    db.save(a.id,{chromeProfile});
     db.saveSource(a.id,url,{name:linkedin?'LinkedIn · Jev araması':'Jev · yerel demo',enabled:true,intervalMinutes:1440,mode:'observe',query:goal});db.review(a.id);
     return {candidateId:a.id,sourceId:url};
   }finally{core.close();}

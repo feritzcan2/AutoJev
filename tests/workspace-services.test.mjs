@@ -43,7 +43,7 @@ for(const template of ['custom','housing','appointment','job-search'])for(const 
  await runtime.setup(a.id);const first=launches[0];
  const question=db.askQuestion(a.id,{text:'Nerede?'});
  let confirmed=0;
- const result=await saveAgentSettings({owner:a.id,input:{agentSettings:{...db.get(a.id).agentSettings,contextCompactPercent:60},...(browserChange?{browserMode:'jev'}:{})},confirmRestart:async count=>{confirmed++;assert.equal(count,1);return true;},api:{
+ const result=await saveAgentSettings({owner:a.id,input:{agentSettings:{...db.get(a.id).agentSettings,contextCompactTokens:60},...(browserChange?{chromeProfile:{directory:'Other',name:'Other profile'}}:{})},confirmRestart:async count=>{confirmed++;assert.equal(count,1);return true;},api:{
   workspaceSnapshot:async()=>({workers:[{id:first.workerId,conversation:true,active:{sessionId:first.id},execution:{task:{id:first.id,kind:'interview'}}}]}),
   workspaceSettings:async(id,input)=>{if(browserChange)await runtime.pause(id);db.save(id,input);},
   restartWorker:(...args)=>workspaces.restartWorker(...args)

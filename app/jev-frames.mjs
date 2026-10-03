@@ -13,7 +13,7 @@ export async function captureEmbeddedForms(slot){
    const kind=await frame.evaluate(()=>({form:!!document.querySelector('input:not([type="hidden"]):not([type="password"]),select,textarea,form'),links:!!document.querySelector('a[href]'),password:!!document.querySelector('input[type="password"]')}));
    if(kind.password||!kind.form&&!kind.links)continue;
    const id=[...previous].find(([,s])=>s.frame===frame&&s.url===url&&s.owner===slot.owner)?.[0]??observedId('frame');
-   slot.embeddedFrames.set(id,{frame,url,rawUrl,owner:slot.owner});frames.push({frameId:id,url,inPlace:true,hasForm:kind.form,nextAction:'browser_jev_frame_observe'});
+   slot.embeddedFrames.set(id,{frame,url,rawUrl,owner:slot.owner});frames.push({frameId:id,url,inPlace:true,hasForm:kind.form,nextAction:'browser_open url'});
   }catch{}finally{await element?.dispose().catch(()=>{});}
  }
  return frames;

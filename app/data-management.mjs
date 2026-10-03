@@ -60,7 +60,7 @@ function sqliteCheck(file){
 function sanitizeExport(db){
  db.exec('PRAGMA secure_delete=ON');
  if(tableExists(db,'account_credentials'))db.exec('UPDATE account_credentials SET ciphertext=NULL,pending=NULL');
- for(const table of ['jev_settings','gmail_accounts','telegram_job_messages','telegram_outbox','telegram_pairs','telegram_links','telegram_configs','telegram_meta','prompts','workspace_instruction_events','workspace_conversations','agent_conversations','conversation_launch_settings','task_context_reviews'])if(tableExists(db,table))db.exec(`DELETE FROM ${table}`);
+ for(const table of ['captcha_settings','jev_settings','gmail_accounts','telegram_job_messages','telegram_outbox','telegram_pairs','telegram_links','telegram_configs','telegram_meta','prompts','workspace_instruction_events','workspace_conversations','agent_conversations','conversation_launch_settings','task_context_reviews'])if(tableExists(db,table))db.exec(`DELETE FROM ${table}`);
  if(tableExists(db,'worker_state'))db.exec("DELETE FROM worker_state WHERE kind LIKE 'conversation:%' OR kind IN ('review','task_context_review')");
  if(tableExists(db,'automations'))db.exec("UPDATE automations SET data=json_remove(data,'$.conversations')");
  // Remove deleted secrets from SQLite free pages in the exported copy.

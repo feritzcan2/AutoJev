@@ -95,7 +95,7 @@ test('a repeated research open reuses the same task tab without opening a page',
 test('maintenance retries independently of the ended worker and clears source checkpoints',async()=>{
   const {browser,add}=fixture();add('finished','old',{fail:true});
   let state={activeSearchTaskIds:[],completedSearchTaskIds:['old']};
-  const tools=new BrowserTools('/unused',()=> 'jev',()=>({lifecycle:state})),cleared=[];
+  const tools=new BrowserTools('/unused',()=>({lifecycle:state})),cleared=[];
   tools.clients.set('candidate',{mode:'jev',client:browser,pending:Promise.resolve({client:browser})});
   tools.onTabsClosed=(id,tabs)=>cleared.push([id,tabs]);
   browser.onTabsClosed=tabs=>tools.onTabsClosed('candidate',tabs);
@@ -107,7 +107,7 @@ test('maintenance retries independently of the ended worker and clears source ch
 });
 
 test('maintenance does not connect, accumulate behind operations, or cross a profile switch',async()=>{
-  const tools=new BrowserTools('/unused',()=> 'jev',()=>({profile:{directory:'new'}}));
+  const tools=new BrowserTools('/unused',()=>({profile:{directory:'new'}}));
   tools.open=async()=>assert.fail('Must not create a connection');
   assert.equal((await tools.maintain('candidate')).deferred,true);
   const {browser}=fixture();browser.profile={directory:'old'};

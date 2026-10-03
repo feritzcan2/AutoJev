@@ -77,12 +77,6 @@ try{
  const engine=path.join(resources,'engine',platform==='win32'?'jobloop-engine.exe':'jobloop-engine');
  const reply=execFileSync(engine,[path.join(data,'engine-smoke')],{input:'{"id":"ci","op":"catalog"}\n',timeout:20000,encoding:'utf8'});assert.ok(JSON.parse(reply.trim().split('\n').find(line=>line.includes('"ci"'))).result.length>0);
  const packageBytes=await readFile(path.join(resources,archiveName));assert.ok(packageBytes.length>10000);
- const mcp=path.join(resources,archiveName+'.unpacked/node_modules/@playwright/mcp/cli.js');
- const mcpVersion=execFileSync(executable,[mcp,'--version'],{cwd:working,env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},encoding:'utf8',timeout:20000});assert.match(mcpVersion,/0\.0\.82/);
- for(const id of ['freehire-search','linkedin-search','jobindex-search','jobnet-search','jobdanmark-search','jobbank-search']){
-  const tool=path.join(resources,archiveName+'.unpacked/dist/source-tools',id+'.mjs');
-  const help=execFileSync(executable,[tool,'--help'],{cwd:working,env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},encoding:'utf8',timeout:20000});assert.match(help,/search/i);assert.match(help,/detail/i);
- }
  if(platform==='darwin')execFileSync('lipo',[engine,'-verify_arch','arm64','x86_64']);
  console.log('PACKAGED_SMOKE_PASS: independent working directory, bundled engine, shared setup workspace, database restart');
 }finally{await closeApplication().catch(error=>console.error(error.message));await rm(data,{recursive:true,force:true});await rm(working,{recursive:true,force:true});}

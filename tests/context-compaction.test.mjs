@@ -1,33 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ContextCompaction,contextCompactPercent,compactionPending} from '../app/context-compaction.mjs';
+import {ContextCompaction,contextCompactTokens,compactionPending} from '../app/context-compaction.mjs';
 import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 
-const usage=(percent,updatedAt=1)=>({percent,peakPercent:90,updatedAt,caughtUp:true,pending:false});
+const usage=(tokens,updatedAt=1)=>({tokens,peakTokens:90,updatedAt,caughtUp:true,pending:false});
 function fixture(provider='codex',send){
  let now=100;const calls=[];
  const session={candidateId:'candidate',sessionId:'session',provider,state:'Working'};
  const controller=new ContextCompaction({send:send??(async session=>{calls.push(session.sessionId);return{accepted:true};}),now:()=>now});
  return{session,controller,calls,time:n=>now=n};
 }
-test('compaction defaults to disabled; legacy profiles get the default without changing restart',()=>{
- assert.equal(contextCompactPercent(),0);
- for(const bad of [-1,101,null,'50',0.5,NaN])assert.throws(()=>contextCompactPercent(bad));
+test('compaction defaults to 150k tokens and preserves explicit disabling and restart settings',()=>{
+ assert.equal(contextCompactTokens(),150000);
+ for(const bad of [-1,Number.MAX_SAFE_INTEGER+1,null,'50',0.5,NaN,Infinity])assert.throws(()=>contextCompactTokens(bad));
  const store=new WorkspaceDatabase(':memory:');try{
-  const p=store.workspaces.save('local','job-search',{title:'Local',agentSettings:{provider:'claude',contextRestartPercent:40}});
-  assert.equal(p.agentSettings.contextCompactPercent,0);
-  delete p.agentSettings.contextCompactPercent;
+  const p=store.workspaces.save('local','job-search',{title:'Local',agentSettings:{provider:'claude',contextRestartTokens:40}});
+  assert.equal(p.agentSettings.contextCompactTokens,150000);
+  delete p.agentSettings.contextCompactTokens;
   store.db.prepare('UPDATE workspaces SET data=? WHERE id=?').run(JSON.stringify(p),p.id);
-  assert.equal(store.workspaces.get(p.id).agentSettings.contextCompactPercent,0);
-  assert.equal(store.workspaces.get(p.id).agentSettings.contextRestartPercent,40);
-  assert.equal(store.workspaces.save(p.id,p.templateId,{...p,agentSettings:{...p.agentSettings,contextCompactPercent:0}}).agentSettings.contextCompactPercent,0);
-  assert.throws(()=>store.workspaces.save(p.id,p.templateId,{...p,agentSettings:{...p.agentSettings,contextCompactPercent:101}}));
-  assert.equal(store.workspaces.get(p.id).agentSettings.contextCompactPercent,0);
+  assert.equal(store.workspaces.get(p.id).agentSettings.contextCompactTokens,150000);
+  assert.equal(store.workspaces.get(p.id).agentSettings.contextRestartTokens,40);
+  assert.equal(store.workspaces.save(p.id,p.templateId,{...p,agentSettings:{...p.agentSettings,contextCompactTokens:0}}).agentSettings.contextCompactTokens,0);
+  assert.throws(()=>store.workspaces.save(p.id,p.templateId,{...p,agentSettings:{...p.agentSettings,contextCompactTokens:Number.MAX_SAFE_INTEGER+1}}));
+  assert.equal(store.workspaces.get(p.id).agentSettings.contextCompactTokens,0);
  }finally{store.close();}
 });
 for(const provider of ['codex','claude'])test(`${provider}: threshold sends during Working without a completed task and only once`,async()=>{
  const f=fixture(provider);
- await f.controller.tick(f.session,usage(79.9),80);assert.equal(f.calls.length,0);
+ await f.controller.tick(f.session,usage(79),80);assert.equal(f.calls.length,0);
  await Promise.all([f.controller.tick(f.session,usage(80),80),f.controller.tick(f.session,usage(95),80)]);
  assert.deepEqual(f.calls,['session']);assert.equal(compactionPending(f.session),true);
  f.controller.delivery(f.session,{state:'submitted'});
@@ -42,13 +42,13 @@ for(const provider of ['codex','claude'])test(`${provider}: threshold sends duri
 });
 test('disabled, unknown, pending backlog and permission prompts do not send',async()=>{
  const f=fixture();
- for(const sample of [null,{...usage(80),caughtUp:false},{...usage(80),pending:true},{...usage(80),percent:null}])await f.controller.tick(f.session,sample,80);
+ for(const sample of [null,{...usage(80),caughtUp:false},{...usage(80),pending:true},{...usage(80),tokens:null}])await f.controller.tick(f.session,sample,80);
  await f.controller.tick(f.session,usage(100));
  await f.controller.tick(f.session,usage(80),0);
  for(const state of ['Compacting','AwaitingInput','Unknown','Exited','Failed']){f.session.state=state;await f.controller.tick(f.session,usage(80),80);}
  assert.equal(f.calls.length,0);
 });
-test('live threshold changes use current percentage, never the lifetime peak',async()=>{
+test('live threshold changes use current token count, never the lifetime peak',async()=>{
  const f=fixture();await f.controller.tick(f.session,usage(30),50);assert.equal(f.calls.length,0);
  await f.controller.tick(f.session,usage(30),30);assert.equal(f.calls.length,1);
 });
@@ -83,4 +83,14 @@ test('Codex command lifecycle does not count as another failed campaign turn; ro
 test('another candidate/session has an independent crossing',async()=>{
  const f=fixture();await f.controller.tick(f.session,usage(85),80);
  await f.controller.tick({...f.session,sessionId:'replacement',compaction:null},usage(85),80);assert.deepEqual(f.calls,['session','replacement']);
+});
+
+test('token thresholds work independently of reported model capacity or percentage',async()=>{
+ for(const contextWindow of [200000,1000000,null]){
+  const f=fixture();
+  await f.controller.tick(f.session,{...usage(119999),contextWindow,percent:99},120000);
+  assert.equal(f.calls.length,0);
+  await f.controller.tick(f.session,{...usage(120000,2),contextWindow,percent:null},120000);
+  assert.equal(f.calls.length,1);
+ }
 });

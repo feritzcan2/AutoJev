@@ -11,6 +11,7 @@
 .run-head time { margin-left: auto; color: var(--text-muted); font-weight: 400; font-variant-numeric: tabular-nums; }
 .run-results { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
 .run-source { overflow-wrap: anywhere; }
+.run-tokens { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .run-found { padding: 2px 8px; border-radius: 6px; background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); font-weight: 600; font-variant-numeric: tabular-nums; }
 .run-found[data-empty="true"] { background: var(--bg-hover); color: var(--text-secondary); }
 .run-summary { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }

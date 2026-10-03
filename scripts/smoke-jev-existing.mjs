@@ -23,7 +23,7 @@ let restarted,wrongProfile,coldTools,otherProcess;
 const call=async(client,name,args={},state={})=>JSON.parse((await client.callTool({name,arguments:args},'local',state)).content[0].text);
 try{
  await assert.rejects(()=>call(a,'browser_jev_tabs'),/Chrome bağlantısı/);
- assert.deepEqual((await call(a,'browser_jev_tabs')).tabs,[]);assert.equal(windowRequests,0);
+ assert.deepEqual((await call(a,'browser_jev_tabs')).tabs,[]);assert.equal(windowRequests,1);
  const first=await call(a,'browser_jev_open',{url:fixture.url});
  assert.equal(windowRequests,1);
  assert.equal(await a.tab(first.tabId).page.evaluate(()=>document.cookie),'test_login=existing-session');
@@ -60,7 +60,7 @@ try{
  await root.send('Target.closeTarget',{targetId:second.tabId});
  await assert.rejects(()=>call(restarted,'browser_jev_observe',{tabId:second.tabId}),/bulunamadı|closed/);
  const {BrowserTools}=await import('../app/browser.mjs');
- coldTools=new BrowserTools(directory,()=> 'jev',()=>({profile,endpoint,openWindow,checkpoints:[{browser:'Jev Chrome',tabId:first.tabId}]}));
+ coldTools=new BrowserTools(directory,()=>({profile,endpoint,openWindow,checkpoints:[{browser:'Jev Chrome',tabId:first.tabId}]}));
  await coldTools.focus('legacy-candidate',{browser:'Jev Chrome',tabId:first.tabId});
  assert.equal((await coldTools.connect('legacy-candidate')).client.tab(first.tabId).page.url(),fixture.url);
  // An old browser process cannot transfer ownership, even with a matching ID.
@@ -69,14 +69,14 @@ try{
  otherProcess=new JevBrowser(oldDirectory,{profile,endpoint,openWindow,checkpoints:[{browser:'Jev Chrome',tabId:first.tabId}]});
  const before=windowRequests;
  assert.deepEqual((await call(otherProcess,'browser_jev_tabs')).tabs,[]);
- assert.equal(windowRequests,before);
+ assert.equal(windowRequests,before+1);
  await otherProcess.close();
  // A registry that missed a live checkpoint must not make the saved draft vanish.
  await new JevTabs(oldDirectory,profile.directory).save(await endpoint(),targetInfo.browserContextId,[]);
  otherProcess=new JevBrowser(oldDirectory,{profile,endpoint,openWindow,checkpoints:[{browser:'Jev Chrome',tabId:first.tabId}]});
  assert.ok((await call(otherProcess,'browser_jev_tabs')).tabs.some(t=>t.tabId===first.tabId));
  assert.equal(await otherProcess.tab(first.tabId).page.locator('#query').inputValue(),'unsent draft');
- assert.equal(windowRequests,before+1);
+ assert.equal(windowRequests,before+2);
  await otherProcess.close();
  // Old saved checkpoints migrate by exact ID, only in the selected profile.
  const otherContext=await browser.newContext();
@@ -122,10 +122,10 @@ try{
  assert.ok(!restored.tabs.some(t=>t.tabId===waiting.tabId));assert.ok(restored.tabs.some(t=>t.tabId===uncertain.tabId));
  const next=await call(restarted,'browser_jev_open',{url:fixture.url},state('next-job'));
  assert.equal((await root.send('Browser.getWindowForTarget',{targetId:next.tabId})).windowId,windows[1].windowId);
- assert.equal(windowRequests,beforeJobWindowRequests);
+ assert.equal(windowRequests,beforeJobWindowRequests+1);
  console.log('JEV_SINGLE_WINDOW_POPUP_REUSE_TERMINAL_CLEANUP_RESTART_PASS');
  // Source-search tabs retain task ownership and the current page/filter after
- // the Jobloop client closes. Recovery discovers them without a new tab/window.
+ // the Jobloop client closes. Recovery keeps them after the profile focus check.
  const searchState={...state(null),taskKind:'search',activeSearchTaskId:'saved-source-search'};
  const search=await call(restarted,'browser_jev_open',{url:fixture.url+'#search-page-3'},searchState);
  const listing=await call(restarted,'browser_jev_open',{url:fixture.url+'#search-listing'},searchState);
@@ -141,7 +141,7 @@ try{
  assert.equal(current.url,fixture.url+'#search-page-3');
  assert.equal(await restarted.tab(search.tabId).page.locator('#query').inputValue(),'Senior backend');
  assert.deepEqual((await root.send('Target.getTargets')).targetInfos.map(t=>t.targetId).sort(),targetsBefore);
- assert.equal(windowRequests,beforeJobWindowRequests);
+ assert.equal(windowRequests,beforeJobWindowRequests+2);
  console.log('JEV_SOURCE_SEARCH_RESTART_SAME_TABS_FILTERS_TASK_PASS');
  // A busy cleanup survives disconnect/restart and core retries it without an
  // agent report. Active source work and all saved application drafts survive.

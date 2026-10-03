@@ -370,9 +370,8 @@ test('collection after redirect can retire the requested queue URL and report ot
  const flow=automationWorkflow({db:f.db,run,signal:f.controller.signal,browser,report:()=>{}});
  const result=await flow.call(f.a.id,run.id,'browser_jev_run',{operation:'collect_details'});assert.equal(result.issue.reason,'batch_ready');assert.equal(result.batch.total,1);assert.equal(result.items[0].url,undefined);assert.equal(result.items[0].item,1);
  assert.equal(f.db.jevTasks.readEvidence(f.a.id,run.taskId,result.items[0].evidenceId).url,destination);
- await flow.call(f.a.id,run.id,'save_scan_progress',{snapshotId:result.snapshot.id,pendingUrls:[],processedUrls:[original],reason:'Read and assessed original listing'});
- assert.equal(f.db.scanQueue(f.a.id,run.id).total,0);
- await flow.call(f.a.id,run.id,'save_scan_progress',{pendingUrls:[],processedUrls:[url+'/unseen'],reason:'Agent reports this URL as processed'});
+ // Saving the finding under its original queue URL retires it; no progress tool is needed.
+ await flow.call(f.a.id,run.id,'record_automation_result',{key:original,url:original,title:'Canonical listing',summary:'Read and assessed original listing'});
  assert.equal(f.db.scanQueue(f.a.id,run.id).total,0);
 });
 
@@ -389,15 +388,12 @@ test('restart reuses discovered Jev links only in their task/search without inve
  const browser={evaluateJev:(_,state,questions)=>f.ports.evaluate(state,questions),call:async(_,name,args)=>{browserCalls.push(args.url);const page={url:args.url,title:'Current page',text:'Current original content',links:[]};return {jevPage:page,pageContext:{url:page.url,tabId:'owned'},content:[{type:'text',text:'Page URL: '+page.url+'\n'+JSON.stringify(page)}]};}};
  const flow=automationWorkflow({db:f.db,run,signal:f.controller.signal,browser,report:()=>{}}),call=(name,args)=>flow.call(f.a.id,run.id,name,args);
  await call('read_jev_evidence',{evidenceId:evidence.id});assert.equal(f.db.run(run.id).observations.length,0);
- const fresh=await call('browser_open',{url});
- await call('save_scan_progress',{snapshotId:fresh.snapshot.id,pendingUrls:[child],reason:'Follow the saved discovery'});
+ await call('browser_open',{url});
+ f.db.saveScanProgress(f.a.id,run.id,{pendingUrls:[child],reason:'Follow the saved discovery'},{url,text:''});
  assert.ok(!f.db.run(run.id).observedLinks.includes(child));
- await call('save_scan_progress',{pendingUrls:[],processedUrls:[child],reason:'Agent reports earlier work complete'});
+ f.db.saveScanProgress(f.a.id,run.id,{pendingUrls:[],processedUrls:[child],reason:'Earlier work complete'},{url,text:''});
  assert.equal(f.db.scanQueue(f.a.id,run.id).total,0);
  await assert.rejects(call('browser_jev_run',{operation:'collect_details',url:foreign}),/gözlenen/);
- await call('save_scan_searches',{searches:[{id:'default',label:'Original'},{id:'other',label:'Other'}]});await call('select_scan_search',{searchId:'other'});
- await assert.rejects(call('browser_jev_run',{operation:'collect_details',url:child}),/gözlenen/);
- await call('select_scan_search',{searchId:'default'});
  const result=await call('browser_jev_run',{operation:'collect_details',url:child});assert.equal(result.issue.reason,'batch_ready');assert.deepEqual(browserCalls,[url,child]);
  assert.ok(f.db.run(run.id).observations.some(o=>o.url===child));
  assert.deepEqual(f.db.jevTasks.observedUrls('foreign-workspace',task.id,'default'),[]);
@@ -428,6 +424,54 @@ test('long detail classification resumes exact fragments without reopening or re
  assert.equal(fragments.join(''),text);assert.equal(opens,1);assert.ok(fragments.every(s=>s.length<=30000));
  assert.equal((await f.run({operation:'classify_results',fromTaskId:result.taskId})).usage.calls,0);
  assert.equal(fragments.join(''),text);assert.ok(!JSON.stringify(result).includes('EXACT_END'));
+});
+
+test('a confirmed category page defers its sibling-shaped links without opening them',async t=>{
+ const f=fixture(t),board='https://example.test/jobs/governance',cats=[board.replace('governance','finance'),board.replace('governance','field-engineering')],listing='https://example.test/companies/acme/jobs/privacy-officer',opens=[];
+ f.ports.browser=async(_,args)=>{opens.push(args.url);return args.url===board?{url:board,title:'Governance jobs',text:'Open roles',links:[{url:cats[0],text:'Finanzanalyse'},{url:listing,text:'Privacy Officer'},{url:cats[1],text:'Field Engineering'}],pagination:[]}:cats.includes(args.url)?{url:args.url,title:'Category',text:'Many roles in this category',links:[],pagination:[]}:{url:args.url,title:'Privacy Officer',text:'Full individual listing',links:[],pagination:[]};};
+ f.ports.evaluate=async(state,questions)=>({answers:Object.fromEntries(Object.entries(questions).map(([key,q])=>[key,answer(key==='fit'?cats.includes(state.listing.url)?'results':'possible':key==='next'?'end':'uncertain',q.criteria)]))});
+ const scan=await f.run({operation:'scan_results',url:board});assert.equal(scan.total,3);
+ let details=await f.run({operation:'collect_details',fromTaskId:scan.taskId});while(details.status==='continue')details=await f.run({taskId:details.taskId});
+ assert.equal(details.resultsPages,2);assert.equal(details.classified,1);
+ const byUrl=Object.fromEntries(details.items.map(i=>[i.url,i]));
+ assert.equal(byUrl[cats[0]].assessment.reason,'results_page');assert.equal(byUrl[cats[1]].assessment.reason,'results_page_shape');assert.equal(byUrl[listing].assessment.decision,'possible');
+ assert.ok(!opens.includes(cats[1]),'the sibling category page is never opened');assert.ok(opens.includes(listing));
+ const before=opens.length,again=await f.run({operation:'collect_details',fromTaskId:scan.taskId});
+ assert.equal(again.status,'completed','known category pages do not reopen the discovery question');assert.equal(again.resultsPages,2);
+ assert.deepEqual(opens.slice(before),[listing],'a later detail round reads only the listing, never the known category pages');
+ const root=await f.run({operation:'scan_results',url});
+ assert.ok(root.items.every(i=>i.resultsUrl===url||i.resultsUrl===undefined),'root-level boards keep reading every lead');
+});
+
+test('two queued leads read as results pages prove their shape; later siblings are deferred unopened',async t=>{
+ const f=fixture(t),cats=['https://example.test/jobs/finance','https://example.test/jobs/sales','https://example.test/jobs/legal','https://example.test/jobs/ops'],listing='https://example.test/companies/acme/jobs/officer',opens=[];
+ f.ports.resolveDetails=()=>[cats[0],listing,cats[1],cats[2],cats[3]].map(url=>({url}));
+ f.ports.browser=async(_,args)=>{opens.push(args.url);return cats.includes(args.url)?{url:args.url,title:'Category',text:'Many roles in this category',links:[],pagination:[]}:{url:args.url,title:'Officer',text:'Full individual listing',links:[],pagination:[]};};
+ f.ports.evaluate=async(state,questions)=>({answers:Object.fromEntries(Object.entries(questions).map(([key,q])=>[key,answer(key==='fit'?cats.includes(state.listing.url)?'results':'possible':key==='next'?'end':'listing',q.criteria)]))});
+ let result=await f.run({operation:'collect_details'});while(result.status==='continue')result=await f.run({taskId:result.taskId});
+ assert.deepEqual(opens,[cats[0],listing,cats[1]],'the first two category pages are read; the third and fourth are deferred by shape');
+ assert.equal(result.resultsPages,4);assert.equal(result.classified,1);
+ const byUrl=Object.fromEntries(result.items.map(i=>[i.url,i]));
+ assert.equal(byUrl[cats[2]].assessment.reason,'results_page_shape');assert.equal(byUrl[cats[3]].assessment.reason,'results_page_shape');
+});
+
+test('apply and save links of a confirmed listing collapse into it instead of becoming leads',async t=>{
+ const f=fixture(t),board='https://example.test/jobs?q=compliance',one='https://example.test/viewjob?jk=abc1234567&tk=session1234567',two='https://example.test/viewjob?jk=def7654321&tk=session1234567';
+ const apply='https://example.test/applystart?jk=abc1234567&from=vj&tk=session1234567',external='https://apply.example.net/form?job=5aebe5a9-7e40&pingback=https%3A%2F%2Fexample.test%2Fconv%3Fjk%3Ddef7654321',unrelated='https://example.test/viewjob?jk=zzz0000001';
+ f.ports.browser=async(_,args)=>({url:board,title:'Results',text:'Jobs',links:[{url:one,text:'Compliance Officer'},{url:apply,text:'Bewerben'},{url:two,text:'Compliance Analyst'},{url:external,text:'Apply now'},{url:unrelated,text:'Something'}],pagination:[]});
+ f.ports.evaluate=async(state,questions)=>({answers:Object.fromEntries(Object.entries(questions).map(([key,q])=>[key,answer(key==='next'?'end':key.startsWith('link')?[one,two].includes(state.links[key].url)?'listing':'uncertain':'possible',q.criteria)]))});
+ const scan=await f.run({operation:'scan_results',url:board});
+ assert.deepEqual(scan.items.map(i=>i.url).sort(),[one,two,unrelated].sort(),'action links sharing a listing identifier vanish; an uncertain link with its own identifier stays');
+ assert.equal(scan.confirmedListings,2);assert.equal(scan.uncertainLinks,1);
+});
+
+test('a detail deferred three times is not read again within the task scope',t=>{
+ const f=fixture(t),url='https://slow.example/job/1';
+ for(let n=0;n<2;n++)f.db.jevTasks.deferDetail(f.a.id,'assigned',url,{error:'page_not_ready',retryAt:0});
+ assert.equal(f.db.jevTasks.detailWait(f.a.id,'assigned',url),null,'two deferrals with an expired wait allow another read');
+ f.db.jevTasks.deferDetail(f.a.id,'assigned',url,{error:'page_not_ready',retryAt:0});
+ assert.equal(f.db.jevTasks.detailWait(f.a.id,'assigned',url)?.attempts,3,'the third deferral ends reads for this scope');
+ assert.equal(f.db.jevTasks.detailWait(f.a.id,'other-scope',url),null,'another task scope starts fresh');
 });
 
 test('a results page is deferred until discovery is explicitly requested',async t=>{
@@ -511,7 +555,7 @@ test('exclusion verification resumes after a transport checkpoint without repeat
 test('collection stops before opening listing 21 and resumes only after its durable batch is reviewed',async t=>{
  const f=fixture(t);f.ports.resolveDetails=()=>Array.from({length:25},(_,i)=>({url:url+'/'+i}));
  let result=await f.run({operation:'collect_details'});while(result.status==='continue')result=await f.run({taskId:result.taskId});
- assert.equal(result.issue.reason,'batch_ready');assert.equal(result.batch.total,20);assert.equal(result.taskTotal,25);assert.equal(result.items.length,5);assert.equal(f.calls.length,20);
+ assert.equal(result.issue.reason,'batch_ready');assert.equal(result.batch.total,20);assert.equal(result.taskTotal,25);assert.equal(result.items.length,20,'the pause lists the whole batch; no second read is needed');assert.equal(f.calls.length,20);
  const batch=result.batch.id,calls=result.usage.calls;
  assert.equal((await f.run({operation:'collect_details'})).batch.id,batch);
  for(let i=0;i<2;i++){const unchanged=await f.run({taskId:result.taskId});assert.equal(unchanged.batch.id,batch);assert.equal(unchanged.usage.calls,calls);}

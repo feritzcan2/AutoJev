@@ -6,7 +6,7 @@ import {automationBrowser} from '../app/automation-browser.mjs';
 import {groupWorkspaceTabs,recordTabs,workerTab,workerTabs} from '../src/workspace-tabs.js';
 
 function fixture(kind='web'){
- const profile={directory:'Default'},browser=new BrowserTools('/unused',()=> 'jev',()=>({profile,...(kind==='jobs'?{lifecycle:{jobs:[]},checkpoints:[{browser:'Jev Chrome',tabId:'saved'}]}:{lifecycle:{multiWorker:true}})}));
+ const profile={directory:'Default'},browser=new BrowserTools('/unused',()=>({profile,...(kind==='jobs'?{lifecycle:{jobs:[]},checkpoints:[{browser:'Jev Chrome',tabId:'saved'}]}:{lifecycle:{multiWorker:true}})}));
  const client=new JevBrowser('/unused',{profile}),focused=[],closedTabs=[];
  client.browser={isConnected:()=>true};client.homeId='home';
  browser.clients.set('workspace',{mode:'jev',pending:Promise.resolve({client})});

@@ -1,4 +1,5 @@
 import {blockedRepeat,rememberProgress,progressKey,stalled} from './jev-navigation.mjs';
+import {revealInView} from './jev-rendering.mjs';
 
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 export const choiceKey=node=>JSON.stringify(['choice',node]);
@@ -41,7 +42,7 @@ export async function selectChoice(slot,args,owner,reader){
     const target=await handle.evaluateHandle(e=>window.__jevFast.scrollTarget(e));
     try{
       if(!target.asElement())return notActionable('target_not_visible');
-      try{await target.asElement().scrollIntoViewIfNeeded({timeout:2000});}
+      try{await revealInView(slot,target.asElement());}
       catch{return notActionable('reveal_failed');}
     }finally{await target.dispose();}
     const point=await slot.page.evaluate(({node,guard})=>{

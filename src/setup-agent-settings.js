@@ -18,7 +18,7 @@ export function setupAgentSettingsPanel({api,getCatalog,refresh}){
   }
   fields.network.disabled=fields.provider.value!=='codex';fields.network.value=saved.network==null?'inherit':String(saved.network);
  }
- function read(){return {...settings,provider:fields.provider.value,model:fields.model.value,reasoning:fields.reasoning.value,permission:fields.permission.value,network:fields.provider.value!=='codex'||fields.network.value==='inherit'?null:fields.network.value==='true',contextRestartPercent:0};}
+ function read(){return {...settings,provider:fields.provider.value,model:fields.model.value,reasoning:fields.reasoning.value,permission:fields.permission.value,network:fields.provider.value!=='codex'||fields.network.value==='inherit'?null:fields.network.value==='true',contextRestartTokens:0};}
  function mark(){dirty=JSON.stringify(read())!==baseline;save.disabled=busy||!dirty;restart.disabled=busy||dirty;status.hidden=false;status.textContent=dirty?'Kaydettiğinde kurulum agenti bu ayarlarla yeni bir sohbet oturumu açar.':'Değişiklik yok.';}
  fields.provider.onchange=()=>{options();mark();};root.onchange=mark;
  async function apply(reset){
@@ -34,7 +34,7 @@ export function setupAgentSettingsPanel({api,getCatalog,refresh}){
   const next=snapshot?.setupAgent?.settings??snapshot?.automation?.setupAgentSettings??snapshot?.automation?.agentSettings??{};
   if(owner!==id){owner=id;dirty=false;signature='';status.hidden=true;}
   if(dirty)return;const key=JSON.stringify([id,next,getCatalog()]);if(key===signature)return;signature=key;
-  settings={...next,contextRestartPercent:0};fields.provider.replaceChildren(...providers().map(p=>new Option(p.label,p.id)));
+  settings={...next,contextRestartTokens:0};fields.provider.replaceChildren(...providers().map(p=>new Option(p.label,p.id)));
   if(![...fields.provider.options].some(p=>p.value===settings.provider))fields.provider.add(new Option(settings.provider,settings.provider));
   fields.provider.value=settings.provider;options(settings);baseline=JSON.stringify(read());save.disabled=true;restart.disabled=busy;
  }};

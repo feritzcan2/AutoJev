@@ -17,7 +17,6 @@ files:
 asar: true
 asarUnpack:
   - node_modules/**
-  - dist/source-tools/**
 extraResources:
   - from: engine/target/release
     to: engine

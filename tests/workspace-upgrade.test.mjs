@@ -19,7 +19,6 @@ test('application workspace upgrades once to the browser template with records a
  assert.ok(core.workspaces.workers.list(p.id).some(w=>w.id===worker.id));
  assert.equal(core.workspaces.history(p.id).conversation(p.id,'codex'),'main-history');
  assert.equal(core.workspaces.history(p.id,worker.id).conversation(p.id,'claude'),'helper-history');
- assert.equal(core.workspaces.get(p.id).browserMode,'jev');
  assert.deepEqual(db.result(p.id,completed.id).documents,completed.documents);
  assert.equal(core.db.prepare('PRAGMA foreign_key_check').get(),undefined);
  db.saveSourcesInterval(p.id,777);assert.deepEqual(upgradeWorkspaces(db),[]);core.close();

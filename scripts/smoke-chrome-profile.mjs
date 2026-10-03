@@ -39,7 +39,7 @@ try{
  const calls=await application.evaluate(()=>({resets:globalThis.resets,reconnects:globalThis.reconnects}));
  assert.deepEqual(calls.resets,[candidate.id]);assert.equal(calls.reconnects.at(-1).profile.directory,'Profile 2');
  const web=await page.evaluate(()=>window.jobloop.workspaceCreate('custom',{title:'Web test'}));
- await page.evaluate(id=>window.jobloop.workspaceSettings(id,{browserMode:'jev',chromeProfile:{directory:'Default',name:'Personal'}}),web.id);
+ await page.evaluate(id=>window.jobloop.workspaceSettings(id,{chromeProfile:{directory:'Default',name:'Personal'}}),web.id);
  await page.reload();await page.locator('.workspace-switcher-trigger').click();
  await page.locator(`[data-workspace-id="${web.id}"]`).click();
  await page.waitForFunction(()=>document.querySelector('.chrome-status small').textContent==='Personal');

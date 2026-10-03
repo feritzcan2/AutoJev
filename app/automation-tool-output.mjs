@@ -1,20 +1,4 @@
-import {createHash} from 'node:crypto';
-
 const pick=(value,keys)=>Object.fromEntries(keys.filter(key=>value[key]!==undefined).map(key=>[key,value[key]]));
-export const TASK_CONTEXT_KEYS=['automation','assignedSource','assignedOperation','template','questions','referenceData','recordAuthorization','scanInstructions','scoringPolicy','documentsDirectory'];
-
-// The caller acknowledges exact sections it still has in its conversation.
-// No acknowledgement (including after compaction) always restores full rules.
-// Run state, records, queues and browser handles are never reused this way.
-export function taskContextOutput(value,knownVersions={}){
- const result={...value},versions={},unchanged=[];
- for(const key of TASK_CONTEXT_KEYS){
-  if(value[key]===undefined)continue;
-  versions[key]=createHash('sha256').update(JSON.stringify([value.automation?.id,key,value[key]])).digest('hex');
-  if(knownVersions[key]===versions[key]){delete result[key];unchanged.push(key);}
- }
- return {...result,contextReuse:{versions,unchanged,instructions:'Retain the exact omitted sections from your conversation. Merge returned sections over them. On later get_automation_context calls pass knownVersions only for sections fully read and still present in your context. After context loss/compaction omit knownVersions to restore all rules. Current run, authorization changes and queue state remain authoritative.'}};
-}
 
 // A write receipt is not another copy of the listing, proposal and audit trail.
 // The saved record remains authoritative, including when a protected existing
@@ -32,7 +16,7 @@ const checkpointView=checkpoint=>{
 };
 const planView=plan=>plan?{...plan,...(plan.checkpoint?{checkpoint:checkpointView(plan.checkpoint)}:{})}:plan;
 function queueView(queue,limit,summary){
- if(summary){const {pendingUrls,nextOffset,...rest}=queue;return {...rest,checkpoint:checkpointView(queue.checkpoint),entriesAvailable:queue.total,delegation:'Use browser_jev_run operation=collect_details with no URLs for this selected search. Jev reads the durable queue internally. Resume existing continue taskId first; use get_scan_queue view=entries only for a specific queue investigation.'};}
+ if(summary){const {pendingUrls,nextOffset,...rest}=queue;return {...rest,checkpoint:checkpointView(queue.checkpoint),entriesAvailable:queue.total,delegation:'Use browser_jev_run operation=collect_details with no URLs; Jev reads this queue internally. Resume an existing continue taskId first.'};}
  const pendingUrls=queue.pendingUrls.slice(0,limit),end=queue.offset+pendingUrls.length;
  return {...queue,checkpoint:checkpointView(queue.checkpoint),pendingUrls,nextOffset:end<queue.total?end:null};
 }
@@ -53,7 +37,7 @@ export function scanToolOutput(value,{limit=25,summary=false}={}){
   const {pendingUrls,nextOffset,...progress}=value.scanProgress;
   result.scanProgress={...progress,pendingCount:progress.pendingCount??pendingUrls?.length??0};
  }
- if(!summary&&(result.queue??result.scanWork.queue).nextOffset!==null)result.queueReading='Read remaining URLs with get_scan_queue(searchId, offset: nextOffset). Each search has its own queue.';
+ if(!summary&&(result.queue??result.scanWork.queue).nextOffset!==null)result.queueReading='Read remaining URLs with get_scan_queue(offset: nextOffset).';
  return result;
 }
 
@@ -71,4 +55,21 @@ export function documentToolContent(content){
   const {links,...projected}=page;
   return {...part,text:prefix+JSON.stringify({...projected,linksInText:true})};
  });
+}
+
+// renderedDocument writes every link as its own "Link: label — url" line. A
+// listing brief is read for facts, not navigation, so those lines leave the
+// sections while offsets keep pointing at the original evidence text.
+const linkLine=/^Link: .*$/;
+function briefSections(sections){
+ return sections.map(section=>{
+  if(typeof section.text!=='string'||!section.text.includes('Link: '))return section;
+  const lines=section.text.split('\n'),kept=lines.filter(line=>!linkLine.test(line)),omitted=lines.length-kept.length;
+  return omitted?{...section,text:kept.join('\n'),linksOmitted:omitted}:section;
+ }).filter(section=>typeof section.text!=='string'||section.text.trim()||!section.linksOmitted);
+}
+export function briefToolOutput(value){
+ if(!value||typeof value!=='object')return value;
+ if(Array.isArray(value.briefs))return {...value,briefs:value.briefs.map(briefToolOutput)};
+ return Array.isArray(value.sections)?{...value,sections:briefSections(value.sections)}:value;
 }

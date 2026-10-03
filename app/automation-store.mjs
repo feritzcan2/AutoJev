@@ -7,24 +7,24 @@ import {BrowserEvidenceStore} from './browser-evidence-store.mjs';
 import {CONVERSATION_WORKER,isConversation,conversationWaiting} from './workspace-conversation.mjs';
 import {setupAgentOnboarding} from './setup-agent.mjs';
 import {validateNotSubmitted} from './record-outcome.mjs';
-import {scanWork,activeSearch,withScanWork,scanQueue,scanWorkSummary,declareScanSearches,selectScanSearch,reportWorkPage,updateScanQueue,completeScanSearch,validateWorkCompletion,scanPlanView,scanProgressView} from './scan-work.mjs';
+import {scanWork,activeSearch,withScanWork,scanQueue,scanWorkSummary,reportWorkPage,updateScanQueue,completeScanSearch,validateWorkCompletion,scanPlanView,scanProgressView} from './scan-work.mjs';
 import {answerContinuation} from './automation-continuation.mjs';
 import {validateRecordTask,recordOperationState,pendingRecordQuestion,recordSource} from './record-operations.mjs';
 import {recordAssessment,assessmentCells} from './record-scoring.mjs';
-import {SiteAccess} from './site-access.mjs';
+import {SiteAccess,sameSite} from './site-access.mjs';
 import {automationTrialReady,migrateSourceTrials} from './automation-trial.mjs';
-import {normalizeFields,validateAnswers} from './question-forms.mjs';
+import {normalizeFields,validateAnswers,OUTCOME_FIELD} from './question-forms.mjs';
 import {removeImportedWorkspace} from './workspace-upgrade.mjs';
 import {withAgentDefaults} from './agent-settings.mjs';
+import {recipeValues,recipeReplay,replayUrls,replayMatches,recipeRunOutcome,advanceRecipeState,recipeStatus} from './source-recipe.mjs';
 import {findOperation,operationFor} from './template-contract.mjs';
 import {domainData} from './workspace-store.mjs';
-import {contextCompactPercent} from './context-compaction.mjs';
-import {contextRestartPercent} from './context-usage.mjs';
+import {contextCompactTokens} from './context-compaction.mjs';
+import {contextRestartTokens} from './context-usage.mjs';
 import {randomUUID,createHash} from 'node:crypto';
 import {reusableTemplate,planInput,normalizeSourceUrls,missingPlanFields,missingProfileFields,defaultAutomationSettings,boundedText,webUrl} from './automation-templates.mjs';
 import {automationTable,automationCells,defaultAutomationTable} from './automation-templates.mjs';
 import {automationSources,sourceInput,sourceMode} from './automation-sources.mjs';
-import {copySourceSkill} from './source-copy.mjs';
 import {beginSourceScan,sourceScanScope,advanceSourceScan,completeSourceScan} from './source-scan.mjs';
 
 const json=row=>row?JSON.parse(row.data):null;
@@ -35,7 +35,8 @@ function agentSettings(input){
  input=withAgentDefaults(input);
  for(const key of ['model','permission','reasoning'])boundedText(input[key],key,120);
  if(![true,false,null].includes(input.network))throw Error('Geçersiz ağ ayarı');
- return {provider:input.provider,model:input.model,permission:input.permission,reasoning:input.reasoning,network:input.provider==='codex'?input.network:null,contextCompactPercent:contextCompactPercent(input.contextCompactPercent),...(input.contextRestartPercent===undefined?{}:{contextRestartPercent:contextRestartPercent(input.contextRestartPercent)})};
+ const trialModel=input.trialModel?boundedText(input.trialModel,'trialModel',120):null;
+ return {provider:input.provider,model:input.model,permission:input.permission,reasoning:input.reasoning,network:input.provider==='codex'?input.network:null,...(trialModel?{trialModel}:{}),contextCompactTokens:contextCompactTokens(input.contextCompactTokens),...(input.contextRestartTokens===undefined?{}:{contextRestartTokens:contextRestartTokens(input.contextRestartTokens)})};
 }
 export class AutomationStore {
  constructor(store,{now=()=>Date.now()}={}){
@@ -67,7 +68,7 @@ export class AutomationStore {
   const template=this.template(templateId);if(template.kind!=='web')throw Error('İş arama için aday kurulumunu kullan');
   const defaults=template.defaultSources??[],plan=planInput(template,{...input,sources:input.sources??defaults.map(source=>source.url)});
   const sourceSettings=Object.fromEntries(defaults.filter(source=>plan.sources.includes(source.url)).map(({url,...settings})=>[url,settings]));
-  const a={id:randomUUID(),templateId,templateVersion:template.version,...plan,sourceSettings,mode:template.defaultMode,browserMode:'separate',chromeProfile:null,intervalMinutes:30,agentSettings:agentSettings(input.agentSettings??defaultAutomationSettings),revision:1,reviewedRevision:null,trial:null,sourceTrialsVersion:1,status:'draft',nextRunAt:null,createdAt:this.now(),updatedAt:this.now()};
+  const a={id:randomUUID(),templateId,templateVersion:template.version,...plan,sourceSettings,mode:template.defaultMode,chromeProfile:null,intervalMinutes:30,agentSettings:agentSettings(input.agentSettings??defaultAutomationSettings),revision:1,reviewedRevision:null,trial:null,sourceTrialsVersion:1,status:'draft',nextRunAt:null,createdAt:this.now(),updatedAt:this.now()};
   a.table=template.table?automationTable(template.table):defaultAutomationTable(templateId);this.put(a);this.message(a.id,'assistant',`Ne yapmak istediğini anlat. ${template.fields[0].question}`,{conversation:true});return a;
  }
  assertIdle(id,{allowConversation=false,allowWaitingConversation=false}={}){if(this.runs(id).some(run=>run.status==='running'&&!(allowConversation&&isConversation(run))&&!(allowWaitingConversation&&conversationWaiting(run))))throw Error('Önce çalışan otomasyonu durdur');}
@@ -81,7 +82,6 @@ export class AutomationStore {
   else{
    const mode=input.mode??previous.mode;if(!['observe','prepare','auto'].includes(mode))throw Error('Geçersiz işlem yetkisi');a.mode=mode;
    for(const [key,label,min,max]of [['intervalMinutes','Tarama aralığı',1,10080]])a[key]=integer(input[key]??previous[key],label,min,max);
-   if(input.browserMode!==undefined){if(!['separate','jev'].includes(input.browserMode))throw Error('Geçersiz tarayıcı seçimi');a.browserMode=input.browserMode;}
    if(input.chromeProfile!==undefined){const profile=input.chromeProfile;if(profile!==null&&(!profile||typeof profile!=='object'||!/^[-\w ]{1,100}$/.test(profile.directory??'')))throw Error('Geçersiz Chrome profili');a.chromeProfile=profile===null?null:{directory:profile.directory,name:boundedText(profile.name,'Chrome profili',300)};}
    if(input.agentSettings)a.agentSettings=agentSettings(input.agentSettings);
   }
@@ -92,8 +92,7 @@ export class AutomationStore {
    a.trial=automationTrialReady(previous)?{...previous.trial,revision:a.revision}:null;
    a.status='draft';a.nextRunAt=null;this.clearApprovals(id);
   }
-  if(a.browserMode!==previous.browserMode){a.trial=null;for(const state of Object.values(a.sourceState??{}))state.trial=null;}
-  if(a.browserMode!==previous.browserMode||JSON.stringify(a.chromeProfile)!==JSON.stringify(previous.chromeProfile)){a.status='paused';a.nextRunAt=null;}
+  if(JSON.stringify(a.chromeProfile)!==JSON.stringify(previous.chromeProfile)){a.status='paused';a.nextRunAt=null;}
   // Saving settings never resumes a paused automation or grants a trial.
   if(!agent&&['title','goal','criteria','sources','instructions','facts','mode'].some(key=>Object.hasOwn(input,key))){delete a.planDraft;delete a.profileUpdate;}
   return this.put(a);
@@ -109,7 +108,7 @@ export class AutomationStore {
   this.put(a);
   return {saved:true,draft:true,plan,applied:false,message:'Taslak kaydedildi. Profil değişiklikleri Çalışma alanı profili, kaynak önerileri Kaynaklar ekranından ayrı ayrı incelenip kaydedilir. Çalışan işler mevcut ayarlarla devam ediyor.'};
  }
- normalizeSetupAgentSettings(input){return {...agentSettings(input),contextRestartPercent:0};}
+ normalizeSetupAgentSettings(input){return {...agentSettings(input),contextRestartTokens:0};}
  saveSetupAgentSettings(id,input){return this.put({...this.get(id),setupAgentSettings:this.normalizeSetupAgentSettings(input)});}
  review(id,{allowConversation=false}={}){this.assertIdle(id,{allowWaitingConversation:true,allowConversation});const a=this.get(id),missing=missingProfileFields(a,this.template(a.templateId));if(missing.length)throw Error('Eksik bilgiler: '+missing.join(', '));return this.put({...a,reviewedRevision:a.revision,status:'ready',nextRunAt:null});}
  enable(id,{sourceUrl=null}={}){
@@ -141,7 +140,7 @@ export class AutomationStore {
   const row=state.siteBlocked?this.db.prepare("SELECT json_extract(data,'$.siteWait.site') AS site FROM automation_runs WHERE automation_id=? AND json_extract(data,'$.sourceUrl')=? AND json_extract(data,'$.siteWait.site') IS NOT NULL ORDER BY rowid DESC LIMIT 1").get(id,source.url):this.db.prepare("SELECT json_extract(data,'$.siteWait.site') AS site FROM automation_runs WHERE id=? AND automation_id=? AND json_extract(data,'$.sourceUrl')=?").get(state.lastRunId,id,source.url);
   let observed=row?.site?this.siteAccess.status('https://'+row.site):null;
   if(!state.siteBlocked&&!observed?.waiting)observed=null;
-  return [direct,observed].filter(Boolean).sort((a,b)=>b.retryAt-a.retryAt)[0]??null;
+  return [direct,observed].filter(Boolean).sort((a,b)=>Number(b.exhausted)-Number(a.exhausted)||b.retryAt-a.retryAt)[0]??null;
  }
  sources(id){
   const a=this.get(id),runs=this.runs(id,{summary:true});
@@ -181,7 +180,7 @@ export class AutomationStore {
  }
  addSource(id,input){
   const a=this.get(id),url=webUrl(input.url);if(a.sources.includes(url))throw Error('Bu kaynak zaten kayıtlı');
-  const settings=sourceInput({...a,sources:[...a.sources,url]},url,copySourceSkill(input));
+  const settings=sourceInput({...a,sources:[...a.sources,url]},url,input);
   return this.store.workspaces.tasks.atomic(()=>{const next=this.saveSources(id,[...a.sources,url]);return this.put({...next,sourceSettings:{...next.sourceSettings,[url]:settings}});});
  }
  removeSource(id,url){const a=this.get(id);if(!a.sources.includes(url))throw Error('Kaynak bu çalışma alanına ait değil');return this.saveSources(id,a.sources.filter(source=>source!==url));}
@@ -199,7 +198,7 @@ export class AutomationStore {
   });
  }
  saveSource(id,url,input){
-  const a=this.get(id),settings=sourceInput(a,url,input.tool!==undefined&&input.tool!==a.sourceSettings?.[url]?.tool?copySourceSkill(input):input);
+  const a=this.get(id),settings=sourceInput(a,url,input);
   const intervalOnly=Object.keys(input).length===1&&input.intervalMinutes!==undefined;
   if(!intervalOnly&&this.runs(id).some(r=>!isConversation(r)&&r.status==='running'&&(r.sourceUrl===url||r.kind==='interview'||!r.sourceUrl)))throw Error('Önce bu kaynağın çalışan görevini durdur');
   const old=a.sourceSettings?.[url]??{};
@@ -209,8 +208,33 @@ export class AutomationStore {
   const scopeChanged=sourceScanScope({...a,sourceSettings:{...a.sourceSettings,[url]:old}},url)!==sourceScanScope(a,url);
   const state=scopeChanged?{trial:methodChanged?null:a.sourceState?.[url]?.trial??null,nextRunAt:this.now(),blocked:false,lastRunAt:null,lastStatus:null,lastFound:0,lastResult:methodChanged?'Kaynak yöntemi değişti. Yeniden denenecek.':'Arama kapsamı değişti. Yeni tam tarama bekleniyor.'}:a.sourceState?.[url]??{};
   if(scopeChanged)for(const task of this.store.workspaces.tasks.list(id,{states:['pending']}))if(task.sourceUrl===url)this.store.workspaces.tasks.finish(id,task.id,'cancelled','Kaynak arama kapsamı değişti');
-  a.sourceState={...a.sourceState,[url]:{...state,...(settings.intervalMinutes!==old.intervalMinutes&&!state.blocked?{nextRunAt:state.lastRunAt?state.lastRunAt+(settings.intervalMinutes??a.intervalMinutes)*60000:this.now()}:{})}};
+  // An edited recipe is a new candidate; the next scan verifies it.
+  // Only a different search method invalidates verification; notes, the
+  // pagination hint and login flag are advisory.
+  const recipeKey=r=>r?JSON.stringify({entry:r.entry,terms:r.terms??null}):null,recipeChanged=recipeKey(old.recipe)!==recipeKey(settings.recipe);
+  a.sourceState={...a.sourceState,[url]:{...state,...(recipeChanged?{recipeState:settings.recipe?{status:'candidate',successCount:0,failCount:0}:null}:{}),...(settings.intervalMinutes!==old.intervalMinutes&&!state.blocked?{nextRunAt:state.lastRunAt?state.lastRunAt+(settings.intervalMinutes??a.intervalMinutes)*60000:this.now()}:{})}};
   return this.put(a);
+ }
+ // Called from a running source task: the agent proposed a recipe and the app
+ // already checked it. Never resets the trial or the scan scope.
+ learnSourceRecipe(id,url,recipe,{runId,verified,listings=0,pages=0}){
+  const a=this.get(id);if(!a.sources.includes(url))throw Error('Kaynak bu çalışma alanına ait değil');
+  const settings=sourceInput(a,url,{recipe});
+  const previous=a.sourceState?.[url]?.recipeState??{};
+  const recipeState=recipe.entry.kind==='discovery'?{status:'discovery',successCount:0,failCount:0,learnedRunId:runId,learnedAt:this.now()}:verified?{status:'verified',successCount:(previous.successCount??0)+1,failCount:0,verifiedAt:this.now(),learnedRunId:runId,lastRunId:runId,lastFailure:null,evidence:{listings,pages}}:{status:'candidate',successCount:0,failCount:0,learnedRunId:runId};
+  return this.put({...a,sourceSettings:{...a.sourceSettings,[url]:settings},sourceState:{...a.sourceState,[url]:{...a.sourceState?.[url],recipeState}}});
+ }
+ // Forget that the source was ever checked so its next turn is a trial with
+ // the trial agent. The saved recipe stays as a candidate for comparison.
+ relearnSource(id,url){
+  const a=this.get(id);if(!a.sources.includes(url))throw Error('Kaynak bu çalışma alanına ait değil');
+  if(this.runs(id).some(r=>!isConversation(r)&&r.status==='running'&&r.sourceUrl===url))throw Error('Önce bu kaynağın çalışan görevini durdur');
+  const state=a.sourceState?.[url]??{},recipe=a.sourceSettings?.[url]?.recipe;
+  return this.put({...a,sourceState:{...a.sourceState,[url]:{...state,trial:null,blocked:false,nextRunAt:this.now(),recipeState:recipe?{...state.recipeState,status:'candidate',failCount:0}:null,lastResult:'Kaynak yeniden öğrenilecek. Sıradaki tur deneme olacak.'}}});
+ }
+ sourceRecipe(id,url){
+  const a=this.get(id),recipe=a.sourceSettings?.[url]?.recipe??null,state=a.sourceState?.[url]?.recipeState??null;
+  return {recipe,state,status:recipeStatus(recipe,state),replay:recipeStatus(recipe,state)==='stale'?null:recipeReplay(recipe,recipeValues(a,url))};
  }
  event(id,kind,data){this.get(id);this.db.prepare('INSERT INTO workspace_events(workspace_id,kind,data,at) VALUES(?,?,?,?)').run(id,kind,JSON.stringify(data),this.now());}
  questionScope(id,question){
@@ -220,11 +244,11 @@ export class AutomationStore {
   const task=question.taskId?json(this.db.prepare('SELECT data FROM workspace_tasks WHERE workspace_id=? AND id=?').get(id,question.taskId)):null;
   return {...question,sourceUrl:task&&!task.recordId?task.sourceUrl??null:null};
  }
- askQuestion(id,{text,recordId=null,fields=null,accessCheck=null},{runId}={}){
+ askQuestion(id,{text,recordId=null,fields=null,accessCheck=null,outcome=false},{runId}={}){
   text=boundedText(text,'Soru',6000);fields=normalizeFields(fields);if(recordId&&this.result(id,recordId).status==='dismissed')throw Error('Elenen kayıt için soru sorulamaz');
   const run=runId?this.activeRun(id,runId):null,sourceUrl=!recordId&&['run','trial'].includes(run?.kind)?run.sourceUrl??null:null;
   const a=this.get(id),previous=(a.questions??[]).find(q=>Boolean(q.conversation)===isConversation(run)&&q.answer==null&&q.text===text&&q.recordId===recordId&&(q.sourceUrl??null)===sourceUrl&&JSON.stringify(q.fields??null)===JSON.stringify(fields));if(previous)return previous;
-  const question={id:randomUUID(),text,recordId,sourceUrl,fields,...(isConversation(run)?{conversation:true}:{}),...(accessCheck?{accessCheck}:{}),answer:null,createdAt:this.now(),...(run?{runId:run.id}:{}),...(run?.taskId?{taskId:run.taskId}:{}),...(run?.resumeContext?{browserContext:{...run.resumeContext,runId:run.id,workerId:run.workerId,sourceUrl:run.sourceUrl}}:{})};
+  const question={id:randomUUID(),text,recordId,sourceUrl,fields,...(isConversation(run)?{conversation:true}:{}),...(accessCheck?{accessCheck}:{}),...(outcome?{outcome:true}:{}),answer:null,createdAt:this.now(),...(run?{runId:run.id}:{}),...(run?.taskId?{taskId:run.taskId}:{}),...(run?.resumeContext?{browserContext:{...run.resumeContext,runId:run.id,workerId:run.workerId,sourceUrl:run.sourceUrl}}:{})};
   this.store.workspaces.tasks.atomic(()=>{this.put({...a,questions:[...(a.questions??[]),question]});this.event(id,'question_asked',{id:question.id});});return question;
  }
  answerQuestion(id,questionId,value){
@@ -234,7 +258,15 @@ export class AutomationStore {
   const updated={...question,answer,answerValues:result.values,answeredAt:this.now()};
   const runId=question.runId??question.browserContext?.runId,origin=runId?json(this.db.prepare('SELECT data FROM automation_runs WHERE automation_id=? AND id=?').get(id,runId)):null;
   const conversation=!question.recordId&&!question.sourceUrl&&!question.browserContext?.sourceUrl&&(question.conversation===true||origin?.kind==='interview');
-  this.store.workspaces.tasks.atomic(()=>{this.put({...a,questions:a.questions.map(q=>q.id===questionId?updated:q)});this.message(id,'user',question.text+'\nYanıt: '+answer,{questionId,conversation,...(runId?{runId}:{})});this.event(id,'question_answered',{id:questionId});});return updated;
+  // The applicant's answer to the app's outcome question resolves the held
+  // record: submitted completes it, not submitted makes it sendable again.
+  let resolved=null;
+  if(question.outcome&&question.recordId){
+   const item=this.result(id,question.recordId),choice=result.values?.[OUTCOME_FIELD.id],at=this.now();
+   if(item.status==='uncertain'&&choice===OUTCOME_FIELD.options[0])resolved={...item,status:'completed',evidence:'Kullanıcı başvurunun gönderildiğini onayladı.',verifiedAt:at,updatedAt:at};
+   if(item.status==='uncertain'&&choice===OUTCOME_FIELD.options[1])resolved={...item,status:item.proposal?'prepared':'found',approvedDigest:null,requiresReview:true,evidence:'Kullanıcı başvurunun gönderilmediğini bildirdi; yeniden gönderilebilir.',verifiedAt:at,updatedAt:at,notSubmitted:{kind:'user',at,digest:item.digest,attemptRunId:item.attemptRunId}};
+  }
+  this.store.workspaces.tasks.atomic(()=>{this.put({...a,questions:a.questions.map(q=>q.id===questionId?updated:q)});if(resolved)this.putResult(resolved);this.message(id,'user',question.text+'\nYanıt: '+answer,{questionId,conversation,...(runId?{runId}:{})});this.event(id,'question_answered',{id:questionId});});return updated;
  }
  questionContext(id,question){
   if(question.answer==null&&question.recordId)question={...question,canDismissRecord:['found','prepared'].includes(this.result(id,question.recordId).status)};
@@ -273,8 +305,6 @@ export class AutomationStore {
   if(kind!=='interview'&&!(taskId&&this.store.workspaces.tasks.get(id,taskId).recordOperation==='verify')&&a.reviewedRevision!==a.revision)throw Error('Önce kurulum kartını kontrol edip kaydet');
   if(!taskId&&!conversation&&['interview','trial'].includes(kind)&&a.status==='enabled')this.pause(id);
   const queue=this.store.workspaces.tasks,task=taskId?queue.get(id,taskId):queue.enqueue(id,{operation:kind,lockKey:conversation?'conversation':'workspace',capability:'browser.observe'});
-  const browserWorker=task.recordId&&!batchScoring(task)?this.recordBrowserWorker(id,task.recordId):null;
-  if(browserWorker&&browserWorker!==workerId)throw Error('Yarım kalan kayıt kendi tarayıcı worker’ında sürdürülmeli.');
   validateRecordTask(this,id,task,this.now());queue.claim(id,task.id,workerId);
   if(!taskId&&!conversation&&['interview','trial'].includes(kind)&&Object.keys(a.retryPlan??{}).length)this.put({...this.get(id),retryPlan:{}});
   const state=a.sourceState?.[task.sourceUrl]??{},scopeKey=task.sourceUrl?sourceScanScope(a,task.sourceUrl):null;
@@ -284,7 +314,7 @@ export class AutomationStore {
   if(scanState){this.put({...a,sourceState:{...a.sourceState,[task.sourceUrl]:{...state,scanState}}});queue.put({...queue.get(id,task.id),scanPlan:scanState.active});}
   const continuation=answerContinuation(this,id,task,kind),runId=randomUUID();
   if(continuation){queue.put({...queue.get(id,task.id),continuation});const current=this.get(id);this.put({...current,questions:(current.questions??[]).map(q=>continuation.questionIds.includes(q.id)?{...q,continuationRunId:runId}:q)});}
-  return this.putRun({id:runId,...(!task.recordId&&state.accessRecovery?.state==='fresh'?{freshSource:true}:{}),...(conversation?{interactive:true,awaitingMessage:false,...(messageId?{messageId}:{}),...(inputQuestionIds?{inputQuestionIds}:{})}:{}),...(continuation?{continuation}:{}),automationId:id,workerId,browserMode:a.browserMode,taskId:task.id,operation:task.operation,...(task.recordOperation?{recordOperation:task.recordOperation,request:task.request}:{}),sources:task.sources??a.sources,sourceUrl:task.sourceUrl??null,recordId:task.recordId??null,...(task.recordIds?{recordIds:task.recordIds}:{}),batchId:task.batchId??null,...(scanState?{scanPlan:scanState.active}:{}),...(kind==='run'&&savedScan&&!savedScan.complete?{scan:savedScan,...(pageProgress?{pageProgress}:{})}:{}),kind,revision:a.revision,status:'running',state:'Starting',startedAt:this.now(),finishedAt:null,browserSteps:0,observations:[],summary:'Başlatılıyor',actionId:null});
+  return this.putRun({id:runId,...(!task.recordId&&state.accessRecovery?.state==='fresh'?{freshSource:true}:{}),...(conversation?{interactive:true,awaitingMessage:false,...(messageId?{messageId}:{}),...(inputQuestionIds?{inputQuestionIds}:{})}:{}),...(continuation?{continuation}:{}),automationId:id,workerId,taskId:task.id,operation:task.operation,...(task.recordOperation?{recordOperation:task.recordOperation,request:task.request}:{}),sources:task.sources??a.sources,sourceUrl:task.sourceUrl??null,recordId:task.recordId??null,...(task.recordIds?{recordIds:task.recordIds}:{}),batchId:task.batchId??null,...(scanState?{scanPlan:scanState.active}:{}),...(kind==='run'&&savedScan&&!savedScan.complete?{scan:savedScan,...(pageProgress?{pageProgress}:{})}:{}),kind,revision:a.revision,status:'running',state:'Starting',startedAt:this.now(),finishedAt:null,browserSteps:0,observations:[],summary:'Başlatılıyor',actionId:null});
  });}
  activeRun(automationId,runId){const run=this.run(runId);if(run.automationId!==automationId||run.status!=='running')throw Error('Çalışma oturumu geçersiz');return run;}
  spendStep(id,runId,{research=false}={}){const run=this.activeRun(id,runId);if(run.kind==='interview'&&!research)throw Error('Kurulum sırasında yalnızca kaynak araştırması yapılabilir');if(research&&run.kind!=='interview')throw Error('Kaynak araştırması yalnızca kurulum sırasında yapılabilir');run.browserSteps++;this.putRun(run);}
@@ -312,15 +342,6 @@ export class AutomationStore {
  scanProgressView(run){return scanProgressView(run);}
  scanWorkRun(id,runId){const run=this.activeRun(id,runId);if(run.kind!=='run'||!run.sourceUrl||run.recordId)throw Error('Tarama kuyruğu yalnızca kaynak görevine aittir.');return run;}
  scanQueue(id,runId,input){return scanQueue(this.scanWorkRun(id,runId),input);}
- saveScanSearches(id,runId,searches){return this.store.workspaces.tasks.atomic(()=>{
-  const run=this.scanWorkRun(id,runId),work=declareScanSearches(run,searches);
-  this.persistScan(id,{...run,scan:withScanWork(run,work)});return scanWorkSummary(this.run(runId));
- });}
- selectScanSearch(id,runId,searchId){return this.store.workspaces.tasks.atomic(()=>{
-  const run=this.scanWorkRun(id,runId),selected=selectScanSearch(run,searchId);
-  this.persistScan(id,{...run,scan:withScanWork(run,selected.work),scanPlan:selected.plan,pageProgress:selected.pageProgress,observedPage:null});
-  return {scanWork:scanWorkSummary(this.run(runId)),scanPlan:scanPlanView(selected.plan)};
- });}
  completeScanSearch(id,runId,completion,snapshot){return this.store.workspaces.tasks.atomic(()=>{
   const run=this.scanWorkRun(id,runId),work=completeScanSearch(run,completion,snapshot.url);
   this.persistScan(id,{...run,scan:withScanWork(run,work)});return scanWorkSummary(this.run(runId));
@@ -369,15 +390,6 @@ export class AutomationStore {
   count(CASE WHEN NOT json_extract(data,'$.trial') AND json_extract(data,'$.status')='uncertain' THEN 1 END) AS uncertainCount
   FROM workspace_records WHERE workspace_id=?`).get(id);}
  result(id,itemId){this.get(id);const item=json(this.db.prepare('SELECT data FROM workspace_records WHERE id=? AND workspace_id=?').get(itemId,id));if(!item)throw Error('Sonuç bu otomasyona ait değil');return item;}
- recordBrowserWorker(id,itemId){
-  if(this.get(id).browserMode!=='separate'||['completed','dismissed'].includes(this.result(id,itemId).status))return null;
-  // Forms and login sessions live in a worker's separate Chrome profile. Use
-  // durable history, including older runs and records predating this guard.
-  const run=json(this.db.prepare(`SELECT data FROM automation_runs WHERE automation_id=? AND json_extract(data,'$.recordId')=?
-   AND json_extract(data,'$.resumeContext.url') IS NOT NULL AND coalesce(json_extract(data,'$.recordOperation'),'')!='score'
-   ORDER BY rowid DESC LIMIT 1`).get(id,itemId));
-  return run&&(run.browserMode??'separate')==='separate'?run.workerId??'main':null;
- }
  putResult(item,{run}={}){return this.store.workspaces.tasks.atomic(()=>{
   const previous=this.store.workspaces.records.find(item.automationId,item.key),saved=this.store.workspaces.records.put(item.automationId,item.key,item);
   if(run){if(run.automationId!==item.automationId)throw Error('Çalışma bu otomasyona ait değil');this.putRun(run);}
@@ -393,6 +405,8 @@ export class AutomationStore {
   const observedUrl=webUrl(input.url),inputKey=boundedText(input.key??observedUrl,'Sonuç anahtarı',2000);
   let url=observedUrl,key=this.template(this.get(id).templateId).records.identity==='url'?url:inputKey;
   let previous=this.store.workspaces.records.find(id,key),actionUrl=previous?.actionUrl;
+  // The same listing observed with extra tracking/ad parameters is one record.
+  if(!previous&&!run.recordId&&!research){const variant=this.parameterVariant(id,url);if(variant){previous=variant;key=variant.key;url=variant.url;actionUrl=variant.actionUrl;}}
   if(run.recordId){
    // A redirect to an application/booking form does not create a new record.
    // The durable assignment owns identity; URLs only describe its destination.
@@ -431,6 +445,21 @@ export class AutomationStore {
   if(run.sourceUrl)item.sourceUrl=run.sourceUrl;
   if(assessment){item.assessment=assessment;item.cells=assessmentCells(this.get(id).table,item.cells,assessment);}
   return this.putResult(item);
+ }
+ // Two addresses on the same origin and path whose shared query parameters
+ // agree, one carrying only extra parameters, describe the same page. Routes
+ // and differing values stay distinct; the rule names no site or parameter.
+ parameterVariant(id,url){
+  let target;try{target=new URL(url);}catch{return null;}
+  const base=target.origin+target.pathname,params=[...target.searchParams];
+  const rows=this.db.prepare("SELECT data FROM workspace_records WHERE workspace_id=? AND NOT coalesce(json_extract(data,'$.trial'),0) AND substr(json_extract(data,'$.url'),1,?)=?").all(id,base.length+1,base+'?');
+  for(const row of rows){
+   const item=json(row);let other;try{other=new URL(item.url);}catch{continue;}
+   if(other.origin+other.pathname!==base)continue;
+   const otherParams=[...other.searchParams],[small,large]=params.length<=otherParams.length?[params,otherParams]:[otherParams,params];
+   if(small.length&&small.every(([k,v])=>large.some(([ok,ov])=>ok===k&&ov===v)))return item;
+  }
+  return null;
  }
  assertRecordIdle(id,itemId){if(this.store.workspaces.tasks.list(id,{states:['pending','running','reported','paused']}).some(t=>taskHasRecord(t,itemId)))throw Error('Bu kayıt için işlem sırada veya çalışıyor');}
  star(id,itemId,starred){if(typeof starred!=='boolean')throw Error('Geçersiz yıldız durumu');const item=this.result(id,itemId);return this.putResult({...item,starred});}
@@ -490,9 +519,8 @@ export class AutomationStore {
   if(status==='partial'&&(!run.sourceUrl||run.recordId||!run.scan?.pendingUrls.length))throw Error('Kısmi çalışma için kaydedilmiş kaynak devam noktası gerekli');
   if(run.actionId){const item=this.result(id,run.actionId);if(item.status==='executing')this.putResult({...item,status:'uncertain',evidence:'İşlem sonucu doğrulanamadı; tekrar gönderilmeden kontrol edilmeli.'});if(['completed','partial'].includes(status))status='blocked';}
   const a=this.get(id);if(run.kind==='trial'&&status==='completed'){
-   const hosts=new Set(run.observations.filter(o=>o.evidence.trim()).map(o=>new URL(o.url).origin));
-   const latestRead=run.sourceReads?.at(-1),cliChecked=run.sourceUrl&&latestRead&&!latestRead.error&&latestRead.tool===a.sourceSettings?.[run.sourceUrl]?.tool;
-   if(!(run.sources??a.sources).every(url=>hosts.has(new URL(url).origin)||url===run.sourceUrl&&cliChecked)||!a.sources.length||a.revision!==run.revision){status='failed';summary='Deneme tamamlanamadı: her kaynakta güncel sayfa gözlemi veya CLI yanıtı gerekli.';}
+   const observed=run.observations.filter(o=>o.evidence.trim()).map(o=>o.url);
+   if(!(run.sources??a.sources).every(url=>observed.some(o=>sameSite(o,url)))||!a.sources.length||a.revision!==run.revision){status='failed';summary='Deneme tamamlanamadı: her kaynakta güncel sayfa gözlemi veya CLI yanıtı gerekli.';}
   }
   let scanCompletion=null;
   if(status==='completed'&&run.kind==='run'&&run.sourceUrl&&!run.recordId&&run.scan?.complete){scanCompletion=validateWorkCompletion(run,run.scan);}
@@ -504,6 +532,21 @@ export class AutomationStore {
    const trial={status:status==='completed'?'passed':'failed',runId,at:this.now()};
    for(const url of run.sources??[])if(a.sources.includes(url))a.sourceState={...a.sourceState,[url]:{...a.sourceState?.[url],trial}};
    if(!run.sourceUrl)a.trial={...trial,revision:run.revision};
+   // A passed trial without a saved recipe leaves the source in discovery mode.
+   if(run.sourceUrl&&status==='completed'&&!run.recipeSaved&&!a.sourceSettings?.[run.sourceUrl]?.recipe){
+    a.sourceSettings={...a.sourceSettings,[run.sourceUrl]:{...a.sourceSettings?.[run.sourceUrl],recipe:{entry:{kind:'discovery'},pagination:'auto',notes:'Deneme turu reçete kaydetmedi.'}}};
+    a.sourceState={...a.sourceState,[run.sourceUrl]:{...a.sourceState?.[run.sourceUrl],recipeState:{status:'discovery',successCount:0,failCount:0,learnedRunId:runId,learnedAt:this.now()}}};
+   }
+  }
+  if(run.kind==='run'&&run.sourceUrl&&!run.recordId&&!run.recordOperation&&['completed','partial','failed'].includes(status)){
+   const recipe=a.sourceSettings?.[run.sourceUrl]?.recipe,state=a.sourceState?.[run.sourceUrl]??{};
+   if(recipe&&recipe.entry.kind!=='discovery'){
+    const replay=recipeReplay(recipe,recipeValues(a,run.sourceUrl)),tasks=this.jevTasks.list(id,run.taskId??run.id);
+    const urls=replayUrls(replay),outcome=recipeRunOutcome(replay,tasks),failed=tasks.find(t=>replayMatches(replay,t.input?.url)&&t.issue);
+    const recipeState=advanceRecipeState(state.recipeState,outcome,{runId,now:this.now(),reason:failed?.issue?.reason??(outcome==='failure'?'no_listings':null),url:failed?.input?.url??urls[0]??null});
+    // A stale recipe sends the source back to a trial so it can be relearned.
+    a.sourceState={...a.sourceState,[run.sourceUrl]:{...state,recipeState,...(recipeState.status==='stale'&&state.recipeState?.status!=='stale'?{trial:null}:{})}};
+   }
   }
   if(['run','trial'].includes(run.kind)&&a.status==='enabled'){
    if(run.sourceUrl&&!run.recordOperation){

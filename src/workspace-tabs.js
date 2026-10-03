@@ -37,9 +37,9 @@ export function groupWorkspaceTabs(tabs,sources,sourceForTab=()=>null){
 
 // Mount a compact tab menu in each source row; polling updates only these menus.
 export function workspaceSourceTabs(api,{notice,sourceForTab}={}){
- let owner=null,mode=null,sources=[],hosts=new Map(),otherHost=null,root=null,tabs=[],openKey=null,closingKey=null,loading=false,version=0;
+ let owner=null,sources=[],hosts=new Map(),otherHost=null,root=null,tabs=[],openKey=null,closingKey=null,loading=false,version=0;
  function control(target,key,label,items){
-  target.replaceChildren();target.hidden=mode!=='jev'||!items.length;if(target.hidden)return;
+  target.replaceChildren();target.hidden=!items.length;if(target.hidden)return;
   target.className=key==='other'?'source-tabs-other':'source-tabs-control';target.dataset.open=String(openKey===key);
   const toggle=el('button',`${label} (${items.length})`,'quiet source-tabs-toggle');toggle.type='button';toggle.disabled=closingKey===key;toggle.setAttribute('aria-expanded',String(openKey===key));
   toggle.onclick=()=>{openKey=openKey===key?null:key;render();};target.append(toggle);
@@ -72,14 +72,14 @@ export function workspaceSourceTabs(api,{notice,sourceForTab}={}){
   if(otherHost)control(otherHost,'other','Diğer sekmeler',other);
  }
  async function refresh(){
-  if(!owner||mode!=='jev'||loading)return;
+  if(!owner||loading)return;
   const id=owner,request=version;loading=true;
   try{const next=await api.workspaceTabs(id);if(owner===id&&request===version&&JSON.stringify(tabs)!==JSON.stringify(next)){tabs=next;render();}}
   finally{loading=false;}
  }
  setInterval(()=>{if(root?.isConnected&&root.getClientRects().length)refresh().catch(()=>{});},3000);
- return {update(id,browserMode,nextSources,nextHosts,nextOtherHost,nextRoot){
-  const changed=owner!==id||mode!==browserMode;owner=id;mode=browserMode;sources=nextSources;hosts=nextHosts;otherHost=nextOtherHost;root=nextRoot;
+ return {update(id,nextSources,nextHosts,nextOtherHost,nextRoot){
+  const changed=owner!==id;owner=id;sources=nextSources;hosts=nextHosts;otherHost=nextOtherHost;root=nextRoot;
   if(changed){tabs=[];openKey=null;closingKey=null;version++;}
   render();if(changed)refresh().catch(error=>notice(error.message));
  },refresh};

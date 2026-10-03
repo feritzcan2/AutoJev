@@ -6,7 +6,7 @@ const errors={400:'Telegram isteği kabul etmedi.',401:'Bot token’ı geçersiz
 const deletable=data=>['new_job','submission','question'].includes(data.kind)||data.kind==='message'&&Boolean(data.questionId)&&!data.promptId;
 const jobCard=data=>['new_job','submission'].includes(data.kind);
 const html=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
-const withDeleteButton=(row,body)=>deletable(row.data)&&body.reply_markup?.inline_keyboard?{...body,reply_markup:{inline_keyboard:[...body.reply_markup.inline_keyboard,[{text:jobCard(row.data)?'🗑 Sil · Kaydı ele':'🗑 Sil',style:'danger',callback_data:`d:${row.id}`}]]}}:body;
+const withDeleteButton=(row,body,dismissRecord)=>deletable(row.data)&&body.reply_markup?.inline_keyboard?{...body,reply_markup:{inline_keyboard:[...body.reply_markup.inline_keyboard,[{text:dismissRecord?'🗑 Sil · Kaydı ele':jobCard(row.data)?'🗑 Mesajı sil':'🗑 Sil',style:'danger',callback_data:`d:${row.id}`}]]}}:body;
 const recordHeading=view=>view.heading.slice(0,6).map(field=>`<b>${html(clip(field.label,100))}:</b> ${html(clip(String(field.value),300))}`).join('\n');
 export class TelegramApi{
  constructor(token,{fetcher=fetch}={}){this.token=token;this.fetcher=fetcher;}
@@ -132,6 +132,7 @@ export class TelegramBot{
    return {text:clip(result?.message||'İlan başvuru sırasına alındı.',200)};
   }catch(error){return {text:clip('Sıraya alınamadı: '+error.message,200),show_alert:true};}
  }
+ dismissesRecord(row){return row.data.kind==='new_job'&&!applicationCompleted(this.store.job(row.candidate_id,row.data.jobId));}
  async deleteNotification(callback,signal){
   const notification=this.notification(callback,'d'),denied={text:'Bu mesaj bu bağlantı üzerinden silinemiyor.',show_alert:true};
   if(!notification||!deletable(notification.row.data))return denied;
@@ -141,13 +142,16 @@ export class TelegramBot{
   let withdrawn=false;
   if(jobCard(row.data)){
    try{
-    const job=this.store.job(link.candidate_id,row.data.jobId);
-    if(job.status!=='skipped'&&job.manualOutcome!=='withdrawn'){
-     if(!this.withdrawApplication)throw Error('AutoJev’i yeniden başlat.');
-     // Use the desktop action so an active application is stopped before withdrawal.
-     await this.withdrawApplication(link.candidate_id,job.id);
+    // Recheck current completion even for old cards still labelled "Kaydı ele".
+    if(this.dismissesRecord(row)){
+     const job=this.store.job(link.candidate_id,row.data.jobId);
+     if(job.status!=='skipped'&&job.manualOutcome!=='withdrawn'){
+      if(!this.withdrawApplication)throw Error('AutoJev’i yeniden başlat.');
+      // Use the desktop action so an active application is stopped before withdrawal.
+      await this.withdrawApplication(link.candidate_id,job.id);
+     }
+     withdrawn=true;this.db.refreshJobMessages(link.candidate_id,job.id);this.changed(link.candidate_id);
     }
-    withdrawn=true;this.db.refreshJobMessages(link.candidate_id,job.id);this.changed(link.candidate_id);
    }catch{return {text:'Kayıt elenemedi; mesaj silinmedi. AutoJev’den kontrol edip yeniden dene.',show_alert:true};}
   }
   const prefix=withdrawn?'Kayıt elendi. ':'';
@@ -217,7 +221,7 @@ export class TelegramBot{
    const delivery=this.delivery(row,link);
    if(delivery?.waitingForScore){this.db.waitForScore(row.id);continue;}
    if(!delivery){this.db.skipped(row.id);continue;}
-   const body=withDeleteButton(row,delivery);
+   const body=withDeleteButton(row,delivery,this.dismissesRecord(row));
    try{
     const result=await this.api.call('sendMessage',{chat_id:link.chat_id,...body,link_preview_options:{is_disabled:true}},signal);
     this.db.sent(row.id,result.message_id,this.config.bot?.id??this.db.meta('bot'),body);
@@ -255,7 +259,7 @@ export class TelegramBot{
    if(!link||row.status!=='sent')continue;
    const delivery=this.delivery(row,link,{edit:true});
    if(!delivery){this.db.edited(row.id,null);continue;}
-   const body=withDeleteButton(row,delivery);
+   const body=withDeleteButton(row,delivery,this.dismissesRecord(row));
    if(JSON.stringify(body)===pending.rendered_body){this.db.edited(row.id,body);continue;}
    if((this.nextChatSend.get(link.chat_id)??0)>this.now())continue;
    try{

@@ -1,5 +1,10 @@
 import {captureVerificationTargets,clickVerificationCheckbox} from './jev-verification-checkbox.mjs';
+import {prepareCloudflareCheckbox} from './cloudflare-checkbox.mjs';
+import {captchaProvider} from './captcha-provider.mjs';
+import {installTurnstileRegistration} from './turnstile-registration.mjs';
+import {prepareTurnstileBarrier,turnstileBarrierResult} from './captcha-barrier.mjs';
 import {privateJevPage,retryJevRead} from './jev-page.mjs';
+import {acquireTabRendering} from './jev-rendering.mjs';
 import {accessBarrier,SiteWaitError} from './site-access.mjs';
 import {foreignEmployerCheckpoint} from './jev-job-identity.mjs';
 import {observeFormFrame,actFormFrame,usableFormFrame} from './jev-frame-actions.mjs';
@@ -14,12 +19,14 @@ import {assertTaskTool,assertRankAction,rankActionAllowed} from './task-scope.mj
 import {installFormSemantics} from './form-semantics.mjs';
 import {verificationEvidence,updateVerification,verificationHandoff} from './jev-verification.mjs';
 import {readFile,mkdir} from 'node:fs/promises';
+import {setTimeout as pause} from 'node:timers/promises';
 import {createRequire} from 'node:module';
 import {randomUUID,createHash} from 'node:crypto';
 import path from 'node:path';
 import {actionSpace,chooseJev,jevConfig} from './jev-policy.mjs';
 import {existingChromeEndpoint,openChromeWindow,chromeWindowMarker,resolveChromeProfile} from './jev-chrome.mjs';
 import {JevCdpTransport} from './jev-cdp.mjs';
+import {acquireChromeConnection} from './jev-connection-queue.mjs';
 import {JevTabs,restoredTargets,sameBrowserInstance} from './jev-tabs.mjs';
 import {RESEARCH_TAB_LIMIT,protectedResearchTabs,disposableResearchTab} from './jev-tab-lifecycle.mjs';
 import {selectAutocomplete} from './jev-autocomplete.mjs';
@@ -83,8 +90,8 @@ const homeUrl='data:text/html;charset=utf-8,'+encodeURIComponent('<!doctype html
 const checkedUrl=value=>{const url=new URL(value);if(!['http:','https:'].includes(url.protocol)||url.username||url.password)throw Error('Only HTTP(S) URLs without credentials are supported');return url.toString();};
 
 export class JevBrowser {
-  constructor(directory,{config=jevConfig,choose=chooseJev,launch,headless=false,workspace,siteAccess,connection='existing',profile,endpoint=existingChromeEndpoint,openWindow=openChromeWindow,checkpoints=[],accountVault=null,onDisconnect=()=>{},onProgress=()=>{},onTabsClosed=()=>{},beforeSubmit=()=>{}}={}){
-    this.siteAccess=siteAccess;this.accountVault=accountVault;this.directory=directory;this.config=config;this.choose=choose;this.launch=launch;this.headless=headless;this.workspace=workspace;
+  constructor(directory,{config=jevConfig,choose=chooseJev,launch,headless=false,workspace,siteAccess,autoVerify=()=>false,connection='existing',profile,endpoint=existingChromeEndpoint,openWindow=openChromeWindow,checkpoints=[],accountVault=null,onDisconnect=()=>{},onProgress=()=>{},onTabsClosed=()=>{},beforeSubmit=()=>{}}={}){
+    this.siteAccess=siteAccess;this.autoVerify=autoVerify;this.accountVault=accountVault;this.directory=directory;this.config=config;this.choose=choose;this.launch=launch;this.headless=headless;this.workspace=workspace;
     this.onDisconnect=onDisconnect;this.onProgress=onProgress;this.onTabsClosed=onTabsClosed;this.beforeSubmit=beforeSubmit;this.checkpoints=checkpoints;this.connection=connection;this.profile=profile;this.endpoint=endpoint;this.openWindow=openWindow;
     this.tabs=new Map();this.automationTabs=new Map();this.automationRuns=new Map();this.automationWorkspaces=new Map();this.automationSources=new Map();this.tabSearches=new Map();this.tabJobs=new Map();this.urlHashes=new Map();this.cleanupTasks=new Set();this.busy=false;this.closed=false;this.abort=new AbortController();this.startedAt=Date.now();this.usedContinuations=new Set();
   }
@@ -96,25 +103,34 @@ export class JevBrowser {
       if(this.connection==='existing'){
         this.profileDirectory??=await resolveChromeProfile(this.profile);
         this.registry??=new JevTabs(this.directory,this.profileDirectory);
-        const endpoint=await this.endpoint(),saved=await this.registry.read();
-        let transport,browser;
+        let transport,browser,release;
         try{
+          release=await acquireChromeConnection({signal:this.abort.signal});
+          // Chrome chooses the approval dialog's profile before CDP connects.
+          // Open and focus our selected profile first, even when it was closed.
+          const marker=await this.prepareProfileWindow();
+          const endpoint=await this.endpoint(),saved=await this.registry.read();
+          await marker.waitForReady({signal:this.abort.signal});
           transport=await JevCdpTransport.connect(endpoint,{signal:this.abort.signal});
           this.transport=transport;
           transport.onTargetDestroyed=id=>{this.forgetTab(id);this.persistTabs().catch(()=>{});};
           this.abort.signal.throwIfAborted();
+          const markerId=await transport.ownWindow(marker.url);
+          const {targetInfo}=await transport.call('Target.getTargetInfo',{targetId:markerId});
+          const contextId=targetInfo.browserContextId;
+          if(!contextId)throw Error('Seçili Chrome profilinin tarayıcı bağlamı doğrulanamadı.');
           const {targetInfos}=await transport.call('Target.getTargets');
           const live=new Map(targetInfos.filter(t=>t.type==='page').map(t=>[t.targetId,t]));
-          const trusted=[...(saved?.targets??[]),...this.checkpoints.filter(c=>c?.browser==='Jev Chrome').map(c=>c.tabId)];
           // A reconnect may change the address, but a different browser instance
           // must not inherit old ownership. A saved context ID is not proof of
           // the selected profile: verify it through a window opened in that
           // profile before restoring any live tabs, including saved home tabs.
           const recoverable=!saved||sameBrowserInstance(saved.endpoint,endpoint);
-          const contextId=recoverable&&trusted.some(id=>live.has(id))?await this.profileContext(transport):null;
-          const restored=restoredTargets(saved,this.checkpoints,live,contextId);
+          const restored=recoverable?restoredTargets(saved,this.checkpoints,live,contextId):[];
           this.homeId=restored.includes(saved?.homeId)?saved.homeId:null;
           this.windowId=saved?.endpoint===endpoint&&saved.contextId===contextId?saved.windowId:null;
+          if(restored.length){transport.owned.delete(markerId);await transport.call('Target.closeTarget',{targetId:markerId});marker.close();this.profileWindow=null;}
+          else{this.homeId=markerId;this.windowId=(await transport.call('Browser.getWindowForTarget',{targetId:markerId})).windowId;}
           this.tabJobs=new Map(restored.filter(id=>typeof saved?.jobs?.[id]==='string').map(id=>[id,saved.jobs[id]]));
           this.tabSearches=new Map(restored.filter(id=>typeof saved?.searches?.[id]==='string').map(id=>[id,saved.searches[id]]));
           this.automationTabs=new Map(restored.filter(id=>typeof saved?.automationTabs?.[id]==='string').map(id=>[id,saved.automationTabs[id]]));
@@ -137,14 +153,17 @@ export class JevBrowser {
           });
           for(const page of context.pages())await this.track(context,page);
           context.on('page',page=>this.track(context,page).catch(()=>{}));
+          if(this.homeId===markerId)await this.tab(markerId).page.goto(homeUrl);
+          marker.close();this.profileWindow=null;
           if(contextId)await this.persistTabs();
           return context;
         }catch(error){
           await browser?.close().catch(()=>{});transport?.close();
           if(this.transport===transport)this.transport=null;
           if(this.browser===browser){this.browser=null;this.tabs.clear();}
+          if(this.abort.signal.aborted){this.profileWindow?.close();this.profileWindow=null;}
           throw Object.assign(Error(`Chrome bağlantısı kurulamadı: ${error.message.split('\n')[0]}`),{code:'BROWSER_DISCONNECTED'});
-        }
+        }finally{release?.();}
       }
       await mkdir(this.directory,{recursive:true,mode:0o700});
       const launch=this.launch??((dir,options)=>createRequire(require.resolve('@playwright/mcp/package.json'))('playwright').chromium.launchPersistentContext(dir,options));
@@ -155,16 +174,17 @@ export class JevBrowser {
     })().catch(error=>{this.opening=null;throw error;});
     return this.opening;
   }
-  async profileContext(transport){
-    const marker=await chromeWindowMarker();let id;
-    try{
-      await this.openWindow(marker.url,{directory:this.profileDirectory});
-      id=await transport.ownWindow(marker.url);
-      return (await transport.call('Target.getTargetInfo',{targetId:id})).targetInfo.browserContextId;
-    }finally{
-      marker.close();
-      if(id){transport.owned.delete(id);await transport.call('Target.closeTarget',{targetId:id}).catch(()=>{});}
+  async prepareProfileWindow(){
+    this.abort.signal.throwIfAborted();
+    if(!this.profileWindow){
+      const marker=await chromeWindowMarker({observeFocus:true});this.profileWindow=marker;
+      try{await this.openWindow(marker.url,{directory:this.profileDirectory},{signal:this.abort.signal});}
+      catch(error){marker.close();this.profileWindow=null;throw error;}
     }
+    // A slow load or a denied connection reuses this window on retry.
+    this.abort.signal.throwIfAborted();
+    await this.profileWindow.waitForReady({signal:this.abort.signal});
+    return this.profileWindow;
   }
   async findOwnedPage(id){
     for(let i=0;i<100;i++){
@@ -181,6 +201,7 @@ export class JevBrowser {
     const pending=(async()=>{
       const cdp=await context.newCDPSession(page),{targetInfo}=await cdp.send('Target.getTargetInfo');
       const slot={page:privateJevPage(page),cdp,id:targetInfo.targetId,openerId:targetInfo.openerId,history:[],pending:null,uploads:new Map()};
+      if(this.autoVerify())await installTurnstileRegistration(slot.page);
       if(this.connection==='existing'){
         this.contextId=targetInfo.browserContextId;
         await this.persistTabs();
@@ -388,6 +409,9 @@ export class JevBrowser {
   }
   tab(id){if(/^\d+$/.test(id))throw Object.assign(Error('Bu sayısal sekme kimliği mevcut Chrome aracına ait, Jev CDP kimliği değil. Kayıtlı taslağı orijinal Chrome aracıyla ve doğrulanmış aday profilinde sürdür; Jev bağlantısını yenileme veya yeni başvuru açma.'),{code:'TAB_BACKEND_MISMATCH'});const slot=this.tabs.get(id);if(!slot||slot.page.isClosed())throw Object.assign(Error('Jev sekmesi bulunamadı: kayıtlı sekme kapatılmış veya seçili Chrome oturumunda artık mevcut değil. browser_jev_tabs ile kurtarılan sekmeleri kontrol et. Başvuruyu yeniden açmadan önce kayıtlı gönderim/sonuç durumunu doğrula; gönderildiği belirsiz bir başvuruyu tekrar gönderme.'),{code:'TAB_MISSING'});return slot;}
   async navigate(slot,url){
+    if(this.autoVerify())await installTurnstileRegistration(slot.page);
+    // Paced sites wait their turn before the request leaves; cancellable.
+    const gap=this.siteAccess?.pace?.(url)??0;if(gap>0)await pause(gap,undefined,{signal:this.abort.signal});
     const token=this.siteAccess?.begin(url);slot.accessProbe={url,token};slot.http=null;
     try{return await slot.page.goto(url,{waitUntil:'domcontentloaded',timeout:20000});}
     catch(error){
@@ -397,26 +421,57 @@ export class JevBrowser {
     }
   }
   async observe(slot){
-    return retryJevRead(slot.page,()=>this.observeOnce(slot));
+    return retryJevRead(slot.page,async()=>{
+      const release=await acquireTabRendering(slot,{signal:this.readSignal??this.abort.signal});
+      try{return await this.observeOnce(slot);}finally{await release();}
+    });
   }
   async observeOnce(slot){
-    if(this.siteAccess&&slot.http?.status===429){
+    // HTTP 429 can accompany a real interactive verification page. A provider
+    // frame plus the actual verification document must both be present before
+    // inspecting that exception; ordinary rate limits still return immediately.
+    const rateVerification=this.siteAccess&&slot.http?.status===429&&this.autoVerify()&&!slot.http.retryAfter&&slot.page.frames().some(f=>captchaProvider(f.url())?.provider==='turnstile')&&await slot.page.evaluate(()=>({title:document.title,text:document.body?.innerText??''})).then(document=>accessBarrier(document)==='verification').catch(()=>false);
+    if(this.siteAccess&&slot.http?.status===429&&!rateVerification){
       const probe=slot.accessProbe,url=probe?.url??slot.http.url;
       const wait=slot.accessChecked===slot.http&&this.siteAccess.status(url)||this.siteAccess.complete(url,probe?.token,{...slot.http,reason:'rate_limit'});
       slot.accessProbe=null;slot.accessChecked=slot.http;slot.pending=null;
       throw Object.assign(new SiteWaitError(wait),{url:slot.http.url,tabId:slot.id});
     }
-    await waitForDocument(slot);
+    await waitForDocument(slot,{signal:this.readSignal??this.abort.signal});
     const previousFields=slot.fillFields;
     await clearFillFields(slot);
     slot.pending=null;const previousUploads=slot.uploads;slot.uploads=new Map();
     const observed=await slot.page.evaluate(this.reader);if(!observed)throw Error('Sayfa yükleniyor; tekrar gözlemle.');
     if(this.siteAccess&&/^https?:/.test(observed.url)){
       const reason=accessBarrier({...slot.http,title:observed.title,text:observed.text}),probe=slot.accessProbe;
+      const verificationPage=accessBarrier({title:observed.title,text:observed.text})==='verification';
+      const mayVerify=this.autoVerify()&&(!this.siteAccess.status(observed.url)?.waiting||probe?.token&&this.siteAccess.row(observed.url)?.token===probe.token)&&!this.tabJobs.has(slot.id)&&!this.automationTabs.get(slot.id)?.startsWith('record:');
+      if(verificationPage&&mayVerify&&await prepareTurnstileBarrier(slot)){
+        slot.observed=observed;this.urlHashes.set(slot.id,urlHash(observed.url));await this.persistTabs();
+        return turnstileBarrierResult(slot,observed);
+      }
+      if(!verificationPage&&slot.turnstileBarrier?.phase==='checking'&&!reason&&slot.http?.status>=200&&slot.http.status<400){
+        slot.turnstileBarrier.phase='cleared';delete slot.verification;delete slot.captchaDocument;
+      }
+      // A visible Cloudflare checkbox gets one native attempt before cooldown.
+      // Record/application tabs retain their submission checkpoints. The
+      // coordinator performs the click and waiting outside this observation.
+      if(reason==='verification'&&mayVerify&&!slot.turnstileBarrier&&await prepareCloudflareCheckbox(slot)){
+        slot.observed=observed;this.urlHashes.set(slot.id,urlHash(observed.url));await this.persistTabs();
+        slot.verification={state:'checking',capability:'pending',handoff:false,message:'Cloudflare doğrulama kutusu kontrol ediliyor…'};
+        return {browser:'Jev Chrome',tabId:slot.id,url:observed.url,title:observed.title,text:'',status:'verification_pending',verification:slot.verification,captcha:{kind:'cloudflare_checkbox',state:'checking',message:slot.verification.message}};
+      }
+      if(!reason&&slot.http?.status>=200&&slot.http.status<400){delete slot.cloudflareAttempt;delete slot.cloudflareDiscovery;delete slot.cloudflareDiagnostic;delete slot.cloudflareDocument;delete slot.turnstileDiagnostic;await slot.cloudflareCheckbox?.dispose();delete slot.cloudflareCheckbox;}
       const wait=reason&&slot.accessChecked===slot.http&&this.siteAccess.status(observed.url)||this.siteAccess.complete(probe?.url??observed.url,probe?.token,{...slot.http,reason});slot.accessProbe=null;slot.accessChecked=slot.http;
-      if(wait)throw Object.assign(new SiteWaitError(wait),{url:observed.url,tabId:slot.id});
+      if(wait){
+        const diagnostic=slot.cloudflareDiagnostic;
+        if(diagnostic){diagnostic.phase='handoff';if(diagnostic.clicked&&diagnostic.reason!=='document_changed')diagnostic.reason='barrier_after_click';diagnostic.elapsedMs=Date.now()-(slot.cloudflareDiscovery?.startedAt??Date.now());}
+        const captcha=slot.turnstileBarrier?slot.turnstileDiagnostic:diagnostic?{...diagnostic,...(slot.turnstileDiagnostic?{api:slot.turnstileDiagnostic}:{})}:slot.turnstileDiagnostic;
+        const detail=captcha?.message??captcha?.api?.message,reported=detail?{...wait,message:wait.message+' '+detail}:wait;
+        throw Object.assign(new SiteWaitError(reported),{url:observed.url,tabId:slot.id,...(captcha?{captcha}:{})});
+      }
     }
-    const verification=updateVerification(slot,await verificationEvidence(slot.page));
+    const verification=updateVerification(slot,await verificationEvidence(slot.page,slot));
     slot.observed=observed;this.urlHashes.set(slot.id,urlHash(observed.url));await this.persistTabs();
     const fillFields=await captureFillFields(slot,slot.owner,previousFields);
     const uploadFrames=[slot.page.mainFrame()];
@@ -459,7 +514,7 @@ export class JevBrowser {
     const {action,observed,operation}=pending;
     const continuation=slot.allowVerificationContinuation;slot.allowVerificationContinuation=null;
     if(continuation)this.usedContinuations.add(continuation);
-    if(slot.verification&&!continuation&&action?.kind==='click'&&/submit|send application|apply now|başvur|gönder/i.test(action.label??''))return {...verificationHandoff(slot),message:'Site doğrulaması çözümlenmedi. Başvuruyu tekrar gönderme; mevcut doğrulama adımını veya belirsiz sonucu işle.'};
+    if(slot.verification&&slot.verification.state!=='answer_applied'&&!continuation&&action?.kind==='click'&&/submit|send application|apply now|başvur|gönder/i.test(action.label??''))return {...verificationHandoff(slot),message:'Site doğrulaması çözümlenmedi. Başvuruyu tekrar gönderme; mevcut doğrulama adımını veya belirsiz sonucu işle.'};
     if(!await this.fresh(slot,observed,action))return {...await this.observe(slot),status:'stale',executed:false,message:'Sayfa değişti. Yeni bir Jev kararı al.'};
     if(!action)return {...await this.observe(slot),status:operation.toLowerCase(),executed:false,verified:false};
     if(action.kind==='click')for(const upload of slot.uploads?.values()??[]){
@@ -548,8 +603,10 @@ export class JevBrowser {
   async callTool({name,arguments:args},owner='local',state={}){
     assertTaskTool({kind:state.taskKind},name);
     validateJevArgs(name,args);if(this.busy)throw Error('Jev işlem yapıyor; mevcut çağrının sonucunu bekle.');
-    this.busy=true;
+    this.busy=true;let releaseRendering;
     try{
+      this.readSignal=state.signal?AbortSignal.any([this.abort.signal,state.signal]):this.abort.signal;
+      this.readSignal.throwIfAborted();
       if(name==='browser_jev_open'){
         checkedUrl(args.url);const wait=this.siteAccess?.status(args.url);if(wait?.waiting)throw Object.assign(new SiteWaitError(wait),{url:args.url});
       }else if(args.tabId&&!['browser_jev_observe','browser_jev_screenshot','browser_jev_close_tab'].includes(name)){
@@ -675,9 +732,10 @@ export class JevBrowser {
         const continuation=reserved&&Date.parse(reserved.reservedAt)>=this.startedAt&&!this.usedContinuations.has(continuationKey);
         const proposed=name==='browser_jev_click'?slot.clickTargets?.get(args.targetId)?.action:name==='browser_jev_act'?slot.pending?.action:null;
         assertRankAction(state.taskKind,proposed);
+        releaseRendering=await acquireTabRendering(slot,{signal:this.readSignal});
         slot.allowVerificationContinuation=continuation&&proposed?.kind==='click'&&proposed.label===reserved.actionLabel?continuationKey:null;
         if(slot.verification){
-          updateVerification(slot,await verificationEvidence(slot.page));
+          updateVerification(slot,await verificationEvidence(slot.page,slot));
           if(slot.verification&&['browser_jev_act','browser_jev_click','browser_jev_select_choice','browser_jev_fill_fields','browser_jev_select_option','browser_jev_autocomplete','browser_jev_list_suggestions','browser_jev_upload'].includes(name)){
             if(slot.verification.handoff&&!slot.allowVerificationContinuation)return {content:[{type:'text',text:JSON.stringify(verificationHandoff(slot))}]};
             slot.verification.attempts++;
@@ -726,7 +784,15 @@ export class JevBrowser {
           try{await this.navigate(child,checkedUrl(url));return {content:[{type:'text',text:JSON.stringify({...presentObservation(child,await this.observe(child),{full:true}),parentTabId:slot.id})}]};}
           catch(error){if(error.code==='SITE_WAIT')throw error;return {content:[{type:'text',text:JSON.stringify({status:'loading',tabId:child.id,parentTabId:slot.id,message:'Gömülü sayfa açılıyor; aynı yeni sekmeyi gözlemle, tekrar açma.'})}]};}
         }
-        if(name==='browser_jev_observe')value=await this.observe(slot);
+        if(name==='browser_jev_observe'){
+          // Only an assigned read-only source tab may probe an expired gate.
+          // Reuse that tab once; record drafts and other workers stay untouched.
+          if(sourceScope&&!recordScope&&/^https?:/.test(slot.page.url())){
+            const wait=this.siteAccess?.status(slot.page.url());
+            if(wait&&!wait.waiting||!wait&&slot.http?.status===429&&slot.accessChecked===slot.http)await this.navigate(slot,checkedUrl(slot.page.url()));
+          }
+          value=await this.observe(slot);
+        }
         if(name==='browser_jev_fill_account_password'){
           if(!this.accountVault||state.taskKind!=='application'||!job||job.id!==state.activeJobId||!['working','prepared','blocked'].includes(job.status))throw Error('Yalnızca etkin başvuruya ait portal hesabı desteklenir.');
           const result=await fillAccountPassword(slot,args,owner,{vault:this.accountVault,jobId:job.id});
@@ -780,7 +846,7 @@ export class JevBrowser {
           const decisionId=repeated?undefined:randomUUID();slot.pending=repeated?null:{...decision,decisionId,observed:slot.observed,owner};
           value={browser:page.browser,tabId:slot.id,url:page.url,title:page.title,textExcerpt:page.text.slice(0,2000),observationMode:'decision',status:'proposed',...(slot.verification?{verification:slot.verification}:{}),decisionId,operation:decision.operation,action:decision.action?{label:decision.action.label,kind:decision.action.kind,role:decision.action.role,value:decision.action.value,checked:decision.action.checked,pressed:decision.action.pressed,choice:decision.action.choice}:null,needsText:decision.operation==='TYPE_TEXT',confidence:decision.confidence,latency_ms:decision.latency_ms};
           if(repeated)value={...value,...stalled,operation:'BLOCKED',action:null,needsText:false};
-          if(value.operation==='BLOCKED')value={...value,clickTargets:page.clickTargets,controls:page.controls,scrollTargets:page.scrollTargets,recovery:'Inspect current targets and any overlay before reporting a blocker. Use browser_jev_click for an authorized observed target, reveal an offscreen control, or screenshot to diagnose occlusion. Verify the resulting form; never repeat an uncertain submission.'};
+          if(value.operation==='BLOCKED')value={...value,clickTargets:page.clickTargets,controls:page.controls,scrollTargets:page.scrollTargets,recovery:'Inspect current targets and any overlay before reporting a blocker. Use browser_interact click for an authorized observed target, reveal an offscreen control, or screenshot to diagnose occlusion. Verify the resulting form; never repeat an uncertain submission.'};
         }
         if(name==='browser_jev_act'){
           const pending=slot.pending;
@@ -825,12 +891,13 @@ export class JevBrowser {
     }catch(error){
       if(error.code!=='SITE_WAIT')throw error;
       const url=error.url??args.url??this.tabs.get(args.tabId)?.page.url();
-      return {content:[{type:'text',text:JSON.stringify({browser:'Jev Chrome',status:'site_wait',url,tabId:error.tabId??args.tabId,siteWait:error.wait,text:error.message,message:error.message,executed:error.executed??false})}]};
-    }finally{this.busy=false;}
+      return {content:[{type:'text',text:JSON.stringify({browser:'Jev Chrome',status:'site_wait',url,tabId:error.tabId??args.tabId,siteWait:error.wait,...(error.captcha?{captcha:error.captcha}:{}),text:error.message,message:error.message,executed:error.executed??false})}]};
+    }finally{await releaseRendering?.();this.readSignal=null;this.busy=false;}
   }
   async focus(id){await this.context();await this.tab(id).page.bringToFront();return {focused:true};}
   async close({closeTabs=false}={}){
     this.closed=true;this.abort.abort();
+    this.profileWindow?.close();this.profileWindow=null;
     const closed=[],failed=[];
     if(closeTabs&&this.connection==='existing'&&this.transport){
       // The CDP ownership set includes restored tabs and tabs opened by pages.

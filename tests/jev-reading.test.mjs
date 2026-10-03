@@ -37,24 +37,24 @@ function fixture(t,kind='trial',mode='jev'){
 }
 
 test('trial scrolling needs an observed container and continues without a step budget',async t=>{
- const f=fixture(t),tool=f.flow.tools.find(t=>t.name==='browser_jev_scroll');
- validate(tool.inputSchema,{controlId:'s1',direction:'down'});
- for(const args of [{direction:'down'},{controlId:'s1',direction:'click'},{controlId:'s1',direction:'down',selector:'body'}])assert.throws(()=>validate(tool.inputSchema,args));
- const first=await f.call('browser_read'),scrolled=await f.call('browser_jev_scroll',{controlId:'s1',direction:'down'});assert.equal(scrolled.action.executed,true);
+ const f=fixture(t),tool=f.flow.tools.find(t=>t.name==='browser_interact');
+ validate(tool.inputSchema,{operation:'scroll',ref:'s1',direction:'down'});
+ for(const args of [{operation:'scroll',direction:'down'},{operation:'scroll',ref:'s1',direction:'click'},{operation:'scroll',ref:'s1',direction:'down',selector:'body'}])assert.throws(()=>validate(tool.inputSchema,args));
+ const scroll=()=>f.call('browser_interact',{operation:'scroll',ref:'s1',direction:'down'});
+ const first=await f.call('browser_read'),scrolled=await scroll();assert.equal(scrolled.action.executed,true);
  assert.equal(f.db.run(f.run.id).browserSteps,2);assert.equal(f.db.run(f.run.id).observations.length,2);
  assert.equal((await f.call('browser_read_part',{snapshotId:first.snapshot.id})).historical,true);
  await f.call('browser_interact',{operation:'click',ref:'any-target'});assert.ok(f.calls.includes('browser_click'));
- f.redirect('https://other.example/');await f.call('browser_jev_scroll',{controlId:'s1',direction:'down'});
- f.redirect('https://example.com/list');while(f.db.run(f.run.id).browserSteps<5)await f.call('browser_jev_scroll',{controlId:'s1',direction:'down'});
- await f.call('browser_jev_scroll',{controlId:'s1',direction:'down'});assert.equal(f.db.run(f.run.id).browserSteps,6);
+ f.redirect('https://other.example/');await scroll();
+ f.redirect('https://example.com/list');while(f.db.run(f.run.id).browserSteps<5)await scroll();
+ await scroll();assert.equal(f.db.run(f.run.id).browserSteps,6);
 });
 
-test('research scrolling stays public, requires an active run, and is absent from separate browser tools',async t=>{
- const f=fixture(t,'interview');await f.call('browser_jev_scroll',{controlId:'s1',direction:'down'});assert.equal(f.db.run(f.run.id).browserSteps,1);
- f.redirect('http://localhost/private');await assert.rejects(f.call('browser_jev_scroll',{controlId:'s1',direction:'down'}),/herkese açık/);
- f.controller.abort();await assert.rejects(f.call('browser_jev_scroll',{controlId:'s1',direction:'down'}),/geçersiz/);
- const other=fixture(t,'trial','separate');assert.ok(!other.flow.tools.some(t=>t.name==='browser_jev_scroll'));
- await assert.rejects(other.call('browser_jev_scroll',{controlId:'s1',direction:'down'}),/Jev/);
+test('research scrolling stays public and requires an active run',async t=>{
+ const f=fixture(t,'interview'),scroll=()=>f.call('browser_interact',{operation:'scroll',ref:'s1',direction:'down'});
+ await scroll();assert.equal(f.db.run(f.run.id).browserSteps,1);
+ f.redirect('http://localhost/private');await assert.rejects(scroll(),/herkese açık/);
+ f.controller.abort();await assert.rejects(scroll(),/geçersiz/);
 });
 
 

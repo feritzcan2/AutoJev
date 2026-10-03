@@ -6,8 +6,6 @@ tablosu, Kaynaklar, Agent, Arka plan işleri ve Dosyalar sayfaları korunur. İ�
 ev arama ve randevu takibi bu ortak düzeni kullanır. Agent ihtiyacını sorularla
 öğrenir; profili ve tablo sütunlarını otomasyona göre düzenler. Bütün template’ler
 aynı kayıt deposunu, görev kuyruğunu, 1–8 worker altyapısını, Agent terminalini ve tarayıcı yönetimini kullanır. Template soruları, sütunları, durumları ve işlem adımlarını tanımlar.
-[Ortak çalışma alanı mimarisi](docs/workspace-architecture.md) geçişi ve template’e
-ait kuralları açıklar.
 
 İş arama template’i mevcut JobLoop aday profillerini, CV’leri, başvuruları ve Telegram
 bağlantılarını kullanır. Diğer otomasyonlar kendi konuşmasına, kaynaklarına, tarayıcı
@@ -15,20 +13,17 @@ ayarlarına, yetkilerine ve sonuç geçmişine sahiptir. Tekrar kullanılabilir 
 kaydedilebilir ve JSON dosyasıyla paylaşılabilir. Arayüz Türkçedir.
 
 **Kaynaklar → Listeden ekle** ile yerleşik katalogdan, public JSON adresinden veya
-dosyadan kaynak seçebilirsin. Her kaynak düzenlenebilir çalışma talimatı ve isteğe
-bağlı bir CLI aracı taşır. FreeHire, LinkedIn, Jobindex, Jobnet, Jobdanmark ve Jobbank
-araçları uygulamayla gelir; Bun kurulumu gerekmez. Agent kaynak talimatını okur.
-Bağlı CLI varsa onu kendi terminalinden çalıştırır; diğer kaynaklarda yönetilen
-tarayıcıyı kullanır. Kaynakları
+dosyadan kaynak seçebilirsin. Her kaynak düzenlenebilir bir çalışma talimatı ve
+isteğe bağlı bir skill metni taşır. Agent kaynak talimatını okur ve kaynağı Jev ile
+yönetilen Chrome üzerinden tarar. Kaynakları
 **Dışa aktar** ile paylaşabilirsin; sorgular ve çalışma geçmişi dışa aktarılmaz.
 [Kaynak listesi ve katkı biçimi](source-library/README.md).
 
 **Başlangıç:** Yeni çalışma alanı → template seç → Agent ile konuş → profili kaydet →
 bir kez veya düzenli çalıştır. Her kaynağın ilk turu otomatik denemedir. Agent arama,
-sayfalama, detay okuma ve erişimi kaynak aracı veya tarayıcı üzerinden kontrol eder;
+sayfalama, detay okuma ve erişimi Jev ile yönetilen Chrome üzerinden kontrol eder;
 sonraki turlar güncel kriterlerle normal taramayı yapar. Zamanlama için uygulama ve bilgisayar açık
-kalmalıdır. [Otomasyon rehberi](docs/automation-templates.md) çalışma modlarını,
-denemenin kapsamını ve mevcut sınırları açıklar. Uygulamanın eski adı JobLoop’tur; dağıtım kimliği ve veri
+kalmalıdır. Uygulamanın eski adı JobLoop’tur; dağıtım kimliği ve veri
 klasörü mevcut JobLoop kurulumlarıyla uyumluluk için korunur.
 
 ## Kurulum
@@ -46,9 +41,7 @@ Güncel sürüm [v0.1.2](https://github.com/feritzcan2/AutoJev/releases/tag/v0.1
 yayımlandı. Ortak çalışma alanları, otomasyon şablonları ve yayın hazırlığında
 toplanan yerel değişiklikleri (`1320b7e`) içerir.
 macOS paketi Developer ID imzalı ve notarize edilmiştir; Windows EXE
-bu sürümde kod imzası taşımaz. Platform kontrolleri ve kalan beta çalışmaları
-[yayın kontrol listesinde](docs/public-release-checklist.md) izlenir.
-Bu yayında istek üzerine testler çalıştırılmadı; native derleme, imzalama ve
+bu sürümde kod imzası taşımaz. Bu yayında istek üzerine testler çalıştırılmadı; native derleme, imzalama ve
 paket bütünlüğü kontrolleri uygulandı.
 
 0.1.0 sürümünde profil hazırlığında kaldıysan uygulamayı kapat, yeni paketi kur ve
@@ -72,7 +65,39 @@ yeniden aç. Kayıtlı profil ve CV korunur; hazırlık yeniden denenir.
 
 Portal üyelik şifresi, o aday adına **yeni iş sitesi hesapları oluşturmak** için
 saklanır. Her adayın kaydı ayrıdır. Mevcut bir hesabın şifresi olduğunu varsaymaz.
-Telegram kurulumu için [Telegram rehberine](docs/telegram.md) bak.
+
+## Otomatik CAPTCHA çözümü
+
+**Yapılandırma → CAPTCHA** bölümünde CapSolver API anahtarını kaydet, bağlantı ve
+bakiyeyi kontrol et, otomatik çözümü aç. Günlük çözüm isteği sınırı bütün çalışma
+alanları için ortaktır; UTC gününde yenilenir ve uygulama yeniden açıldığında korunur.
+Görsel CAPTCHA’nın her yeni turu ayrı bir istek sayılır.
+
+Uygulama görünür ve aktif doğrulamayı kontrol eder; yalnızca script, gizli widget
+veya eski hata metni için ücretli istek göndermez. reCAPTCHA v2 görsel seçimi,
+uygun reCAPTCHA v2/Turnstile token akışları ve cevap alanıyla açıkça ilişkilendirilmiş
+CAPTCHA yazı görselleri desteklenir. Çözüm aynı sekmede sürer; diğer worker’lar
+çalışmaya devam eder. Görev durdurulursa veya sayfa değişirse eski cevap uygulanmaz.
+
+Otomatik çözüm açıkken, okuma sekmelerindeki tam sayfa doğrulama da incelenir.
+Görünür, aktif Turnstile widget’ının sitekey’i ve sonuç callback’i doğrulanırsa
+CapSolver token API’si kullanılır. Explicit render parametreleri sayfa yüklenirken
+yakalanır; mevcut bir sayfanın kaçırılmış parametreleri tahmin edilmez ve otomatik
+yenileme yapılmaz. Cevap yalnızca form içermeyen okuma sekmesinin doğrulama
+callback’ine bir kez verilir. API cevabından sonra engelin kalkması ve sayfa
+içeriğinin okunması ayrıca doğrulanır. Beklerken diğer worker’lar kuyrukta tutulmaz.
+
+API bilgisi eksikse görünür Cloudflare kutusu bir kez denenebilir; bu yerel deneme
+ücretli API isteği göndermez. Cloudflare’ın `chlPageData` gerektiren managed
+Challenge akışı Turnstile API’sine gönderilmez; proxy/clearance entegrasyonu
+desteklenmiyorsa nedeni bildirilir. Gerçek istek sınırlarında ortak bekleme korunur.
+
+Gönderim yapabilecek formlar mevcut işlem yetkisini gerektirir. API cevabı tek
+başına sitenin doğrulamayı kabul ettiğini göstermez. Desteklenmeyen bulmacalar,
+devam eden tam sayfa erişim engelleri ve kabul edilmeyen cevaplar için mevcut sekmede müdahale
+istenir. Anahtar şifreli saklanır ve taşınabilir yedeklere alınmaz. CAPTCHA görselleri
+ve geçici çözüm bilgileri RAM’de tutulur; çözüm sırasında ilgili bilgiler CapSolver’a
+gönderilir.
 
 ## Veriler ve güncellemeler
 
@@ -82,7 +107,6 @@ Telegram kurulumu için [Telegram rehberine](docs/telegram.md) bak.
   yedekler için **Yedekten geri yükle** seçeneğini kullan.
 - Profiller, CV’ler ve başvuru geçmişi uygulamanın yerel veri klasöründedir.
   Agent, Jev ve Telegram kullanıldığında ilgili bilgiler dış hizmetlere gönderilir.
-  Ayrıntılar: [veri paylaşımı](docs/privacy.md).
 - **Yapılandırma → Veriler ve yedekler** ile adayları ve belgeleri dışa aktarabilir,
   yedekten geri yükleyebilirsin. Uygulamanın kaydettiği şifreler ve API anahtarları
   taşınabilir yedekten çıkarılır; metinlere elle yazılmış sırlar ayıklanmaz.
@@ -121,7 +145,6 @@ pnpm test:automations
 pnpm test:automations:jev
 ```
 
-Paketleme, native CI ve yayın adımları: [release rehberi](docs/releasing.md).
 Katkılar: [CONTRIBUTING](CONTRIBUTING.md).
 
 ## Destek ve lisans

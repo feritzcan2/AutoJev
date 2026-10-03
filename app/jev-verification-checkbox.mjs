@@ -1,9 +1,10 @@
 import {observedId} from './jev-ids.mjs';
+import {captchaProvider} from './captcha-detection.mjs';
 const anchor=/https:\/\/(?:www\.)?(?:google\.com|recaptcha\.net)\/recaptcha\/(?:api2|enterprise)\/anchor(?:\?|$)|https:\/\/[^/]*hcaptcha\.com\/.*(?:checkbox|frame=checkbox)/i;
 export async function scanVerificationCheckboxes(page){
  const found=[];found.diagnostics=[];
  for(const frame of page.frames()){
-  if(!anchor.test(frame.url()))continue;
+  if(!anchor.test(frame.url())&&captchaProvider(frame.url())?.provider!=='turnstile')continue;
   let host,stage='frame_host';
   try{
    host=await frame.frameElement();stage='frame_visibility';
@@ -45,7 +46,7 @@ export async function clickVerificationCheckbox(slot,targetId,owner){
  slot.verificationTargets.delete(targetId);
  try{
   if(slot.verificationCheckboxAttempt===t.frame.url())return {status:'verification_handoff',executed:false,message:'Bu doğrulama kutusu bir kez denendi. Tekrarlama; mevcut challenge veya kullanıcı doğrulamasını bekle.'};
-  if(t.url!==slot.page.url()||!anchor.test(t.frame.url())||!await t.handle.evaluate((e,origin)=>e.isConnected&&performance.timeOrigin===origin,t.meta.origin))return {status:'stale',executed:false};
+  if(t.url!==slot.page.url()||!anchor.test(t.frame.url())&&captchaProvider(t.frame.url())?.provider!=='turnstile'||!await t.handle.evaluate((e,origin)=>e.isConnected&&performance.timeOrigin===origin,t.meta.origin))return {status:'stale',executed:false};
   const checked=await t.handle.evaluate(e=>e.getAttribute('aria-checked')==='true'||e.checked===true);
   if(checked)return {status:'ready',executed:false,verificationChecked:true};
   slot.verificationCheckboxAttempt=t.frame.url();

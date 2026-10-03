@@ -23,7 +23,7 @@ export function setupAgentSettings(db,id){
  }
  saved??=a.agentSettings;
  const {agentProfileDigest,...settings}=withAgentDefaults(saved);
- return {...settings,contextRestartPercent:0};
+ return {...settings,contextRestartTokens:0};
 }
 export const setupAgentSettingsKey=settings=>JSON.stringify(['provider','model','reasoning','permission','network'].map(key=>settings[key]??null));
 

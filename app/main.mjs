@@ -16,6 +16,8 @@ import {registerAutomationServices} from './automation-services.mjs';
 import {AutomationStore} from './automation-store.mjs';
 import {registerSettingsServices} from './settings-services.mjs';
 import {JevSettings} from './jev-settings.mjs';
+import {CaptchaSettings} from './captcha-settings.mjs';
+import {CaptchaCoordinator} from './captcha-coordinator.mjs';
 import {applyPendingRestore,prepareDataUpgrade,completeDataUpgrade} from './data-management.mjs';
 import {currentDataDirectory,resolveDataDirectory,cancelDataLocation} from './data-location.mjs';
 import {AgentSessions} from './agent-sessions.mjs';
@@ -51,6 +53,7 @@ async function boot(){
  const encryptSecret=value=>{if(!safeStorage.isEncryptionAvailable()||safeStorage.getSelectedStorageBackend?.()==='basic_text')throw Error('Güvenli saklama için sistem anahtarlığını aç.');return safeStorage.encryptString(value).toString('base64');};
  const decryptSecret=value=>safeStorage.decryptString(Buffer.from(value,'base64'));
  const jevSettings=new JevSettings(core.db,{encrypt:encryptSecret,decrypt:decryptSecret});
+ const captchaSettings=new CaptchaSettings(core.db,{encrypt:encryptSecret,decrypt:decryptSecret});
  let window,quitting=false;
  const emit=(channel,value)=>{if(window&&!window.isDestroyed())window.webContents.send(channel,value);};
  const changed=id=>{emit('changed',{candidateId:id});emit('automation-changed',{automationId:id});};
@@ -60,7 +63,9 @@ async function boot(){
  const profiles=new AgentProfiles(core.workspaces,{validate:library=>ensureEngine().request('validate-profile',{library}),changed:id=>emit('instructions-changed',{workspaceId:id})});profiles.register(WEB_AGENTS);agents.profiles=profiles;
  const workspaces=new Workspaces(core.workspaces,{templates:{},changing,changed,validateSettings:settings=>ensureEngine().request('validate',settings),workerRemoved:(id,worker)=>agents.clear(id,worker)});
  const documents=new WorkspaceDocuments(workspaces,{dialog,shell,window:()=>window});
- const browser=new BrowserTools(data,id=>core.workspaces.get(id).browserMode,(id,worker)=>workspaces.template(id).browserOptions(id,worker));
+ const browser=new BrowserTools(data,(id,worker)=>workspaces.template(id).browserOptions(id,worker));
+ browser.captcha=new CaptchaCoordinator(captchaSettings);
+ browser.onCaptchaProgress=changed;
  browser.directoryFor=id=>workspaces.template(id).browserDirectory(id);
  browser.onStatus=(id,state)=>{workspaces.template(id).onBrowserStatus?.(id,state);changed(id);};
  browser.onTabsClosed=(id,ids)=>{workspaces.template(id).onTabsClosed?.(id,ids);changed(id);};
@@ -117,7 +122,7 @@ async function boot(){
  handle('open-link',async url=>{const u=new URL(url);if(!['https:','http:'].includes(u.protocol))throw Error('Geçersiz bağlantı');await shell.openExternal(u.toString());});
  scheduler.register('agents',async()=>{for(const session of agents.sessions.values())await agents.readContext(session.candidateId,session);});
  scheduler.register('browsers',()=>{for(const workspace of workspaces.list())if(browser.status(workspace.id).state==='waiting')browser.prepare(workspace.id);});scheduler.register('web-templates',()=>web.runtime.tick());scheduler.start();
- const settingsServices=await registerSettingsServices({app,root,data,bootstrapDirectory,store:core,jevSettings,handle,window:()=>window,maintenance,emit,clearTerminalOutputs:()=>{agents.clearOutputs();for(const service of services)service.clearOutputs?.();emit('logs-cleared',{});},activeRunIds:()=>services.flatMap(service=>service.activeRunIds?.()??[])});
+ const settingsServices=await registerSettingsServices({app,root,data,bootstrapDirectory,store:core,jevSettings,captchaSettings,handle,window:()=>window,maintenance,emit,clearTerminalOutputs:()=>{agents.clearOutputs();for(const service of services)service.clearOutputs?.();emit('logs-cleared',{});},activeRunIds:()=>services.flatMap(service=>service.activeRunIds?.()??[])});
  window=new BrowserWindow({width:1440,height:950,minWidth:1040,minHeight:720,title:'AutoJev · Web otomasyonları',backgroundColor:'#11151b',webPreferences:{preload:path.join(root,'app/preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
  window.webContents.setWindowOpenHandler(()=>({action:'deny'}));window.webContents.on('will-navigate',event=>event.preventDefault());await window.loadFile(path.join(root,'dist/index.html'));
  await completeDataUpgrade({dataDirectory:data,appVersion:app.getVersion()});app.on('second-instance',()=>{window?.show();window?.focus();});app.on('window-all-closed',()=>app.quit());

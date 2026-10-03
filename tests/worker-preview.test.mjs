@@ -5,7 +5,7 @@ import {workerPreviews} from '../app/worker-preview.mjs';
 function fixture(){
  const sessions=new Map([['main',{sessionId:'run-1'}],['worker-2',{sessionId:'run-2'}]]),calls=[];
  const client={connection:'existing',profile:{directory:'Default'},browser:{isConnected:()=>true},tabs:new Map(),automationWorkspaces:new Map(),automationRuns:new Map()};
- const connection={client},browsers={clients:new Map([['workspace',connection]]),modeForCandidate:()=> 'jev',options:()=>({profile:{directory:'Default'}})};
+ const connection={client},browsers={clients:new Map([['workspace',connection]]),options:()=>({profile:{directory:'Default'}})};
  const add=(id,run='run-1',workspace='workspace',previewAt=0)=>{
   const slot={id,previewAt,pending:{decisionId:'keep'},observed:{title:id},page:{isClosed:()=>false,url:()=>`https://example.test/${id}`},cdp:{send:async(method,params)=>{calls.push({id,method,params});return {data:Buffer.from(id).toString('base64')};}}};
   client.tabs.set(id,slot);client.automationWorkspaces.set(id,workspace);client.automationRuns.set(id,run);return slot;
@@ -25,8 +25,7 @@ test('each worker receives only its latest owned tab, without invalidating agent
 test('preview never starts a browser and explains idle, unsupported and disconnected states',async()=>{
  const f=fixture();f.add('page');
  f.sessions.delete('main');assert.equal((await f.preview('workspace','main')).state,'idle');
- f.sessions.set('main',{sessionId:'run-1'});f.browsers.modeForCandidate=()=> 'existing';assert.equal((await f.preview('workspace','main')).state,'unsupported');
- f.browsers.modeForCandidate=()=> 'jev';f.browsers.clients.clear();assert.equal((await f.preview('workspace','main')).state,'waiting');
+ f.sessions.set('main',{sessionId:'run-1'});f.browsers.clients.clear();assert.equal((await f.preview('workspace','main')).state,'waiting');
  assert.equal(f.calls.length,0);
 });
 

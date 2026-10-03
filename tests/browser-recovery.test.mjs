@@ -14,7 +14,7 @@ test('one connection handshake, backoff, disconnect and retry without agent call
 });
 test('resume uses the database URL and returns historical progress separately',async()=>{
  const job={id:'job',url:'https://jobs.example/correct-id',status:'working',sessionId:'s',browserProgress:{fields:[{label:'Name',value:'Known'}]}};
- const browser=new BrowserTools('/unused',()=> 'jev',()=>({lifecycle:{activeJobId:'job',jobs:[job]}}));let requested;
+ const browser=new BrowserTools('/unused',()=>({lifecycle:{activeJobId:'job',jobs:[job]}}));let requested;
  browser.call=async(...args)=>{requested=args;return{content:[{type:'text',text:JSON.stringify({tabId:'live',reused:true,fillFields:[{label:'Name',value:''}]})}]};};
  const result=JSON.parse((await browser.resumeApplication('c','job','s')).content[0].text);
  assert.equal(requested[2].url,job.url);assert.equal(result.resume.reopened,false);assert.equal(result.fillFields[0].value,'');assert.equal(result.resume.previousProgress.fields[0].value,'Known');
@@ -28,4 +28,16 @@ test('a late handshake cannot mark a newly selected Chrome profile ready',async(
  let resolve;const c=new BrowserConnections({connect:()=>new Promise(r=>resolve=r)});
  c.prepare('candidate');await flush();c.reset('candidate');resolve();await flush();assert.equal(c.status('candidate').state,'idle');
  c.prepare('candidate');await flush();resolve();await flush();assert.equal(c.status('candidate').ready,true);
+});
+
+test('preparing initializes the selected profile before publishing a ready connection',async()=>{
+ let profile='Default',connects=0;
+ const browser=new BrowserTools('/unused',()=>({profile:{directory:profile}}));
+ browser.connect=async()=>({client:{context:async()=>{connects++;}}});
+ for(const selected of ['Default','Profile 2']){
+  profile=selected;browser.prepare('candidate');await browser.connections.pending.get('candidate');
+  assert.equal(browser.status('candidate').ready,true);
+  browser.prepare('candidate');await flush();
+ }
+ assert.equal(connects,2);
 });

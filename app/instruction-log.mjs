@@ -77,7 +77,7 @@ export class InstructionLog {
   // Write validation can fail before the provider flushes its transcript.
   // Retain field types and bounds only; never arguments, page text or values.
   if(result?.isError&&validationIssues?.length)return this.record({workspaceId:grant.workspaceId,workerId:grant.workerId,sessionId:grant.sessionId,agentProfileId:grant.agentProfileId,kind,title:name,status:'failed',parts:[instructionPart(`validation:${name}`,name,'tool',{issues:validationIssues})]});
-  if(kind!=='tool_catalog'&&!context&&!name.startsWith('browser_')&&!name.startsWith('research_')&&name!=='report_scan_page')return;
+  if(kind!=='tool_catalog'&&!context&&!name.startsWith('browser_')&&!name.startsWith('research_'))return;
   let value=result;
   if(context&&result?.content?.length===1&&result.content[0].type==='text'){try{value=JSON.parse(result.content[0].text);}catch{}}
   const parts=kind==='tool_catalog'?result.tools.map(t=>instructionPart(`tool-definition:${t.name}`,t.name,'tool',t)):

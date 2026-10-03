@@ -21,12 +21,12 @@ try{
   safeStorage.encryptString=value=>Buffer.from(value).reverse();safeStorage.decryptString=value=>Buffer.from(value).reverse().toString();
  });
  const workspace=await page.evaluate(()=>window.jobloop.workspaceCreate('custom',{title:'Readiness Fixture',goal:'Synthetic UI fixture'}));
- const blocked=await page.evaluate(()=>window.jobloop.readiness({provider:'codex',browserMode:'separate'}));assert.equal(blocked.ready,false);
+ const blocked=await page.evaluate(()=>window.jobloop.readiness({provider:'codex'}));assert.equal(blocked.ready,false);
  assert.equal((await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id)).activeRun,null);
  await app.evaluate(()=>{globalThis.readinessFixtureReady=true;});await page.reload();
  await page.locator('[data-view=config]').click();
  await page.locator('a[href="#config-readiness"]').click();await page.locator('#config-readiness li[data-state=ready]').waitFor({state:'visible'});
- assert.ok((await app.evaluate(()=>globalThis.readinessFixtureInputs)).some(input=>input.provider==='codex'&&input.browserMode==='separate'));
+ assert.ok((await app.evaluate(()=>globalThis.readinessFixtureInputs)).some(input=>input.provider==='codex'));
  await page.locator('a[href="#config-jev"]').click();
  await page.locator('#config-jev input[name=apiKey]').fill('synthetic-ui-test-key');
  await page.locator('#config-jev input[name=model]').fill('jev-latest');

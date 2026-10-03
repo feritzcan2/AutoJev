@@ -2,7 +2,10 @@ import {planInput,missingProfileFields} from './automation-templates.mjs';
 
 const fields=['title','goal','criteria','instructions','facts','mode'];
 export const profilePlan=plan=>Object.fromEntries(fields.filter(key=>Object.hasOwn(plan,key)).map(key=>[key,plan[key]]));
-export const profileChanged=(plan,base)=>Object.entries(profilePlan(plan)).some(([key,value])=>JSON.stringify(value)!==JSON.stringify(base[key]));
+const fieldValue=value=>typeof value==='string'?value.trim():value??'';
+export const profileChanged=(plan,base)=>Object.entries(profilePlan(plan)).some(([key,value])=>key==='criteria'
+ ?[...new Set([...Object.keys(value??{}),...Object.keys(base.criteria??{})])].some(field=>fieldValue(value?.[field])!==fieldValue(base.criteria?.[field]))
+ :fieldValue(value)!==fieldValue(base[key]));
 
 // Older conversations stored source suggestions inside the profile draft.
 export function splitPlanDraft(a){
@@ -22,6 +25,7 @@ export function queueProfileUpdate(db,id,input,{expectedRevision}={}){
  const plan=profilePlan({...planInput(template,input,a),mode:input.mode??a.mode});
  if(!['observe','prepare','auto'].includes(plan.mode))throw Error('Geçersiz işlem yetkisi');
  const missing=missingProfileFields(plan,template);if(missing.length)throw Error('Eksik bilgiler: '+missing.join(', '));
+ if(!a.profileUpdate&&a.reviewedRevision===a.revision&&!profileChanged(plan,a))return a;
  const {planDraft,...current}=a;
  return db.put({...current,profileUpdate:{plan,baseRevision:a.revision,savedAt:db.now()}});
 }

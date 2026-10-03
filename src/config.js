@@ -1,5 +1,6 @@
 import './config.css';
 import {jevSettingsPanel,dataDisclosure} from './jev-settings.js';
+import {captchaSettingsPanel} from './captcha-settings.js';
 import {readinessPanel} from './readiness.js';
 import {createDataManagement} from './data-management.js';
 import {updatesPanel} from './updates.js';
@@ -12,10 +13,11 @@ function card({title,when,path,text,open=false}){const details=node('details','p
 export function configPage(api,{notice,relativeTime,openNotifications}){
  const root=document.getElementById('config');
  root.innerHTML=`<div class="config-head"><div><h2>Yapılandırma</h2><p>Kurulum, yedekler, güncellemeler, bildirimler ve agent’a giden metinler: talimatlar, görev promptları, beceriler ve MCP araçları.</p></div><label class="config-search"><input id="config-search" type="search" placeholder="Metinlerde ara" aria-label="Metinlerde ara"><small id="config-search-note"></small></label></div>
-<div class="config-body"><nav class="config-nav" aria-label="Bölümler"><a href="#config-telegram">Bildirimler<b></b></a><a href="#config-readiness">Kurulum kontrolü<b></b></a><a href="#config-jev">Jev<b></b></a><a href="#config-data">Veriler ve yedekler<b></b></a><a href="#config-updates">Güncellemeler<b></b></a><a href="#config-privacy">Veri paylaşımı<b></b></a><a href="#config-instructions">Talimatlar<b></b></a><a href="#config-tasks">Görev promptları<b></b></a><a href="#config-skills">Beceriler<b></b></a><a href="#config-tools">MCP araçları<b></b></a></nav>
+<div class="config-body"><nav class="config-nav" aria-label="Bölümler"><a href="#config-telegram">Bildirimler<b></b></a><a href="#config-readiness">Kurulum kontrolü<b></b></a><a href="#config-jev">Jev<b></b></a><a href="#config-captcha">CAPTCHA<b></b></a><a href="#config-data">Veriler ve yedekler<b></b></a><a href="#config-updates">Güncellemeler<b></b></a><a href="#config-privacy">Veri paylaşımı<b></b></a><a href="#config-instructions">Talimatlar<b></b></a><a href="#config-tasks">Görev promptları<b></b></a><a href="#config-skills">Beceriler<b></b></a><a href="#config-tools">MCP araçları<b></b></a></nav>
 <div class="config-sections">
 <section id="config-telegram" class="config-section"><h3>Bildirimler</h3><p>Telegram bot bağlantısı ve adaya özel bildirim tercihleri Bildirimler sayfasında.</p><button id="open-notifications" class="primary" type="button">Bildirim ayarlarını aç</button></section>
 <section id="config-readiness" class="config-section"><h3>Kurulum kontrolü</h3><div id="config-readiness-panel"></div></section>
+<section id="config-captcha" class="config-section"><h3>CAPTCHA</h3><div id="config-captcha-panel"></div></section>
 <section id="config-jev" class="config-section"><h3>Jev</h3><div id="config-jev-panel"></div></section>
 <section id="config-updates" class="config-section"><div id="config-updates-panel"></div></section>
 <section id="config-privacy" class="config-section"><h3>Veri paylaşımı</h3><div id="config-privacy-panel"></div></section>
@@ -47,14 +49,15 @@ export function configPage(api,{notice,relativeTime,openNotifications}){
   lists.tools.replaceChildren(...catalog.tools.map(t=>{const el=node('details','tool-card');el.dataset.search=(t.name+' '+t.description+' '+t.params.map(p=>p.name).join(' ')).toLowerCase();const summary=node('summary'),head=node('span');head.append(node('code','',t.name),node('span','tool-brief',t.description));const required=t.params.filter(p=>p.required).length;summary.append(head,node('span','tool-count',t.params.length?`${t.params.length} parametre${required?`, ${required} zorunlu`:''}`:'parametresiz'));el.append(summary);const body=node('div','tool-body');body.append(node('p','',t.description));if(t.params.length){const params=node('div','tool-params');for(const p of t.params){const chip=node('span');chip.dataset.required=String(p.required);chip.append(p.name,node('i','',': '+p.type));params.append(chip);}body.append(params);}el.append(body);return el;}));
   for(const [key,list]of Object.entries(lists))if(!list.children.length)list.append(node('p','config-empty',key==='skills'?'Bu çalışma alanı için ayrı bir beceri dosyası tanımlı değil.':'Bu çalışma alanında bu bölüm için içerik tanımlı değil.'));
  }
+ const captcha=captchaSettingsPanel(api,$('config-captcha-panel'),{notice});
  const jev=jevSettingsPanel(api,$('config-jev-panel'),{notice});
- const readiness=readinessPanel(api,$('config-readiness-panel'),{getSettings:async()=>{if(!candidate)return {};const snapshot=await api.workspaceSnapshot(candidate),profile=snapshot.workspace;return {provider:profile.agentSettings.provider,browserMode:profile.browserMode,chromeProfile:profile.chromeProfile};}});
+ const readiness=readinessPanel(api,$('config-readiness-panel'),{getSettings:async()=>{if(!candidate)return {};const snapshot=await api.workspaceSnapshot(candidate),profile=snapshot.workspace;return {provider:profile.agentSettings.provider,chromeProfile:profile.chromeProfile};}});
  const dataPanel=api.dataStatus?createDataManagement(api,{notice}):null;
  if(dataPanel)root.querySelector('.config-sections').append(dataPanel.element);else root.querySelector('a[href="#config-data"]').hidden=true;
  const updates=api.updateStatus?updatesPanel(api,$('config-updates-panel'),{notice}):null;
  if(!updates){$('config-updates').hidden=true;root.querySelector('a[href="#config-updates"]').hidden=true;}
  dataDisclosure($('config-privacy-panel'));
- function loadSettings(){jev.load();readiness.load();dataPanel?.load();updates?.load();}
+ function loadSettings(){captcha.load();jev.load();readiness.load();dataPanel?.load();updates?.load();}
  $('open-notifications').onclick=openNotifications;
  if(!openNotifications){$('config-telegram').hidden=true;root.querySelector('a[href="#config-telegram"]').hidden=true;}
  function clearCatalog(message='İçerikler yükleniyor…'){

@@ -13,6 +13,11 @@ for(let n=0;n<16;n++){
  const item=db.record(a.id,run.id,{url,title:n===0?'Zulu question':n===1?'Alpha question':'Idle '+n,summary:'Observed'});records.push(db.putResult({...item,trial:false,updatedAt:1000+n}));
 }
 const questions=records.slice(0,2).map((item,n)=>db.askQuestion(a.id,{recordId:item.id,text:'Required answer '+n,fields:[{id:'answer',label:'Your answer',type:'text',required:true}]}));
+// A resolved outcome from older data keeps its proposal timestamp. Its old
+// verification failure must not hide the now-prepared record or offer retry.
+const resolved=records[2],task=core.workspaces.tasks.enqueue(a.id,{recordId:resolved.id,recordOperation:'verify',operation:'record-verify'});
+core.workspaces.tasks.put({...task,state:'blocked',summary:'Old verification could not determine the outcome',finishedAt:2000});
+db.putResult({...resolved,status:'prepared',proposal:'Prepared local action',verifiedAt:3000,notSubmitted:{kind:'user',at:3000,digest:resolved.digest}});
 db.finish(a.id,run.id,'completed','Waiting');db.put({...db.get(a.id),status:'paused'});core.close();
 const env={...process.env,JOBLOOP_DATA_DIR:data};delete env.ELECTRON_RUN_AS_NODE;
 const app=await electron.launch({executablePath:require('electron'),args:[process.cwd()],env});
@@ -21,6 +26,11 @@ try{
  await page.locator('[data-view=board]').click();
  const ids=()=>page.locator('tr[data-result-id]').evaluateAll(rows=>rows.map(r=>r.dataset.resultId));
  await page.locator('[data-record-question]').first().waitFor();
+ const resolvedRow=page.locator(`[data-result-id="${resolved.id}"]`);
+ assert.equal(await resolvedRow.locator('.automation-badge.blocked').count(),0);
+ assert.equal(await resolvedRow.locator('[data-record-retry]').count(),0);
+ assert.equal(await resolvedRow.locator('time').getAttribute('datetime'),new Date(3000).toISOString());
+ await page.screenshot({path:path.join(data,'resolved-verification.png')});
  assert.equal(await page.locator('#question-badge').innerText(),'2 yanıt');assert.equal(await page.locator('#agent-nav-status').isVisible(),false);
  await page.locator('#question-badge').click();assert.equal(await page.locator('#automation-result-filter').inputValue(),'waiting');await page.selectOption('#automation-result-filter','all');
  assert.deepEqual((await ids()).slice(0,2),[records[1].id,records[0].id]);

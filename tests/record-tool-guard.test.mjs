@@ -64,7 +64,7 @@ test('source saves recover from missing summaries and cell maps without losing f
  assert.deepEqual(f.failures(entry),[]);assert.equal(f.db.run(entry.run.id).status,'running');
  const duplicate=await f.call(entry,'record_automation_result',corrected);assert.equal(JSON.parse(duplicate.result.content[0].text).id,receipt.id);
  assert.equal(f.db.results(f.id).length,before+1);
- for(const name of ['update_automation_cells','update_workspace_cells']){
+ for(const name of ['update_workspace_cells']){
   const update=await f.call(entry,name,{itemId:receipt.id,cells:{location:'Berlin'}});
   assert.equal(update.result.isError,undefined,errorText(update));assert.equal(f.db.result(f.id,receipt.id).cells.location,'Berlin');
  }

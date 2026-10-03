@@ -24,14 +24,14 @@ test('browser observations checkpoint and resume employer URLs',async t=>{
  const output=await f.call('browser_open',{url:source});
  assert.ok(output.snapshot.nextOffset);assert.equal(output.url,source);
  const page=await f.call('browser_read_part',{snapshotId:output.snapshot.id,offset:output.snapshot.nextOffset});assert.ok(page.content[0].text.length);
- const progress=await f.call('save_scan_progress',{snapshotId:output.snapshot.id,pendingUrls:[detail],reason:'Inspect this detail then page two',cursor:'page=1'});
- assert.deepEqual(progress.queue.pendingUrls,[detail]);assert.equal(progress.scanProgress.pendingCount,1);assert.equal(progress.scanPlan.checkpoint.cursor,'page=1');
+ const progress=f.db.saveScanProgress(f.id,f.run.id,{pendingUrls:[detail],reason:'Inspect this detail then page two',cursor:'page=1'},{url:source,text:''});
+ assert.deepEqual(progress.queue.pendingUrls,[detail]);assert.equal(progress.scanProgress.pendingUrls.length,1);assert.equal(progress.scanPlan.checkpoint.cursor,'page=1');
  assert.equal(f.db.run(f.run.id).browserSteps,1);
  assert.ok(f.db.run(f.run.id).observedLinks.includes(detail));
  const recorded=f.db.record(f.id,f.run.id,{key:detail,url:detail,title:'Engineer',summary:'Observed job',assessment:{status:'scored',scorecard:unknownScorecard(),score:80,summary:'Fits criteria',evidenceUrl:source,evidence:'Observed job from browser',strengths:['Backend'],gaps:[],uncertainties:[]}});
  assert.equal(recorded.sourceUrl,source);
  const reported='https://boards.example/reported';
- await f.call('save_scan_progress',{pendingUrls:[reported],reason:'Additional URL reported by the agent',cursor:'page=1'});
+ f.db.saveScanProgress(f.id,f.run.id,{pendingUrls:[reported],reason:'Additional URL found by Jev',cursor:'page=1'});
  let context=await f.call('get_automation_context',{});
  if(context.context){
   let text='';
@@ -60,7 +60,7 @@ test('unfinished coverage cannot escape validation by switching completed to fai
 
 test('technical failures retain their reason when run history is not in the snapshot',async t=>{
  const f=fixture(t);
- await assert.rejects(f.call('finish_automation_run',{status:'failed',summary:'Browser disconnected',stop:{kind:'technical',evidence:'Connection closed after reconnect'}}),/issueIds/);
+ await assert.rejects(f.call('finish_automation_run',{status:'failed',summary:'Browser disconnected',stop:{kind:'technical',evidence:'Connection closed after reconnect'}}),/Doğrulanmış/);
  // App-generated failures remain visible; an agent cannot invent technical proof.
  f.db.finish(f.id,f.run.id,'failed','Browser disconnected');
  const issue=automationAttention({...f.db.snapshot(f.id),runs:[],activeRuns:[]})[0];

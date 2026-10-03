@@ -40,8 +40,8 @@ export async function chromePortAvailable(endpoint){
 }
 export async function collectReadiness(input={},options={}){
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('Geçersiz kurulum seçimi.');
- const provider=input.provider??'codex',browserMode=input.browserMode??'existing';
- if(!Object.hasOwn(providers,provider)||!['existing','separate','jev'].includes(browserMode))throw Error('Geçersiz kurulum seçimi.');
+ const provider=input.provider??'codex';
+ if(!Object.hasOwn(providers,provider))throw Error('Geçersiz kurulum seçimi.');
  const profile=input.chromeProfile?.directory;
  if(profile!==undefined&&(typeof profile!=='string'||!/^[\w -]{1,100}$/.test(profile)))throw Error('Geçersiz Chrome profili.');
  const platform=options.platform??process.platform,home=options.home??homedir(),env=readinessEnvironment(options.env??process.env,platform,home);
@@ -50,11 +50,9 @@ export async function collectReadiness(input={},options={}){
  const executable=await (options.findExecutable??findExecutable)(provider,deps);
  checks.push(item('agent',descriptor.label,executable?'ready':'error',executable?'Agent komutu bulundu.':missingAgentMessage(provider)));
  if(executable)checks.push(await (options.inspectLogin??inspectLogin)(provider,executable,deps));
- if(browserMode==='existing')checks.push(item('browser','Agent tarayıcısı','warning','Tarayıcı araçlarını seçtiğin agent içinde etkinleştir. Bu bağlantı AutoJev tarafından otomatik doğrulanamaz.'));
- else{
-  const chrome=await (options.findChrome??findChrome)(deps);
-  checks.push(item('chrome','Google Chrome',chrome?'ready':'error',chrome?'Chrome kurulumu bulundu.':'Google Chrome’u kur ve en az bir kez aç.'));
-  if(browserMode==='jev'){
+ const chrome=await (options.findChrome??findChrome)(deps);
+ checks.push(item('chrome','Google Chrome',chrome?'ready':'error',chrome?'Chrome kurulumu bulundu.':'Google Chrome’u kur ve en az bir kez aç.'));
+ {
    let profiles=[];try{profiles=await (options.listChromeProfiles??listChromeProfiles)();}catch{}
    const hasProfile=profile?profiles.some(p=>p.directory===profile):profiles.length>0;
    checks.push(item('chrome-profile','Chrome profili',hasProfile?'ready':'error',hasProfile?'Mevcut Chrome profili bulundu.':'Chrome’da profil oluştur veya Agent ayarlarından mevcut bir profil seç.'));
@@ -62,7 +60,6 @@ export async function collectReadiness(input={},options={}){
    checks.push(item('chrome-debug','Chrome bağlantısı',listening?'ready':'error',listening?'Yerel hata ayıklama bağlantısı açık. Agent başlarken Chrome’un bağlantı isteğine izin ver.':'Chrome’da chrome://inspect/#remote-debugging sayfasından uzaktan hata ayıklamayı aç. Agent başlarken bağlantı isteğine izin ver.'));
    let jev;try{jev=await options.jevStatus?.();}catch{}
    checks.push(item('jev','Jev anahtarı',jev?.configured?'ready':'error',jev?.configured?'Jev anahtarı yapılandırıldı. Yapılandırma → Jev bölümünden bağlantıyı test edebilirsin.':jev?.error??'Yapılandırma → Jev bölümünden TypeSafe API anahtarını kaydet.'));
-  }
  }
- return {ready:checks.every(check=>check.state!=='error'),checkedAt:Date.now(),provider,browserMode,checks};
+ return {ready:checks.every(check=>check.state!=='error'),checkedAt:Date.now(),provider,checks};
 }

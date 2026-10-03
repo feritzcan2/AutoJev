@@ -135,3 +135,15 @@ test('legacy successful scans migrate only their assigned source, including afte
  f.db.put({...f.db.get(f.id),sourceTrialsVersion:undefined,sourceState:{}});
  const migrated=new AutomationStore(f.store);assert.equal(migrated.sources(f.id)[0].trial.runId,run.id);assert.equal(migrated.sources(f.id)[1].trial,undefined);
 });
+
+test('trial evidence counts from a www redirect or a subdomain of the source, not from another site',async t=>{
+ const f=fixture(t);const source='https://www.homes.test/berlin';
+ f.db.save(f.id,{sources:[source]});f.db.review(f.id);await f.runtime.runSource(f.id,source);await settle();
+ const other=f.launches.at(-1);f.db.spendStep(f.id,other.id);f.db.observe(f.id,other.id,'https://elsewhere.test/jobs','Listings');
+ f.runtime.report(f.id,other.id,'completed','Done');await f.runtime.finish(f.id,'completed','Done',other.workerId);
+ assert.equal(f.db.run(other.id).status,'failed');
+ await f.runtime.runSource(f.id,source);await settle();
+ const run=f.launches.at(-1);f.db.spendStep(f.id,run.id);f.db.observe(f.id,run.id,'https://homes.test/berlin','Not found page');f.db.observe(f.id,run.id,'https://jobs.homes.test/list','Actual listings');
+ f.runtime.report(f.id,run.id,'completed','Board read');await f.runtime.finish(f.id,'completed','Board read',run.workerId);
+ assert.equal(f.db.run(run.id).status,'completed');assert.equal(f.db.sources(f.id)[0].trial.status,'passed');
+});

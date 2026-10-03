@@ -13,7 +13,7 @@ export const scorecardSchema=object({dimensions:{type:'array',minItems:4,maxItem
 const optionalText={...text,minLength:0};
 export const assessmentSchema={type:'object',additionalProperties:false,required:['score'],properties:{status:{type:'string',enum:['scored','unavailable']},score:{type:['integer','null'],minimum:0,maximum:100},eligibility:{type:'string',enum:['verified','unverified','mismatch'],description:'Mandatory conditions only, independent of fit score. Omitted means unverified; missing information is not mismatch.'},eligibilityReason:optionalText,summary:optionalText,evidenceUrl:optionalText,evidence:optionalText,strengths:notes,gaps:notes,uncertainties:notes,scorecard:{type:['object','null'],properties:{},additionalProperties:true,description:'Optional legacy breakdown. The submitted score is saved directly.'}}};
 export const resultScoreFields={score:assessmentSchema.properties.score,scoreReason:optionalText,eligibility:assessmentSchema.properties.eligibility,eligibilityReason:optionalText};
-export const recordScoreTool={name:'record_automation_score',description:'Save the assigned record score. Only score is required: an integer from 0 to 100 using current criteria.ranking. itemId defaults to the assigned record. Explanations and notes are optional; no quote, evidence URL, snapshot or scorecard is required. The supplied fit score is saved directly without fixed eligibility caps. Save eligibility and a short eligibilityReason separately; missing information is unverified, not mismatch. For an inaccessible listing use status=unavailable and score=null. Preserves status, proposal, approvals and submission evidence. Finish the scoring task after saving.',inputSchema:{...assessmentSchema,properties:{itemId:text,...assessmentSchema.properties}}};
+export const recordScoreTool={name:'record_automation_score',description:'Save the assigned record score: a 0–100 integer per current criteria.ranking; itemId defaults to the assigned record. Notes are optional; no quote or snapshot is needed. Save eligibility and a short eligibilityReason separately; missing information is unverified, not mismatch. Inaccessible listing: status=unavailable, score=null. Keeps status, proposal and evidence. Finish the scoring task after saving.',inputSchema:{...assessmentSchema,properties:{itemId:text,...assessmentSchema.properties}}};
 
 export function normalizeAssessment(input){
  if(typeof input?.score!=='string')return input;
@@ -25,6 +25,7 @@ export function normalizeAssessment(input){
  return input;
 }
 export function normalizeRecordToolArgs(name,args){
+ if(name==='record_automation_results'&&Array.isArray(args?.records))return {...args,records:args.records.map(entry=>normalizeRecordToolArgs('record_automation_result',entry))};
  args=normalizeCellToolArgs(name,args);
  if(name==='record_automation_score')return normalizeAssessment(args);
  if(name==='record_automation_result'&&Object.hasOwn(args??{},'score'))return normalizeAssessment(args);

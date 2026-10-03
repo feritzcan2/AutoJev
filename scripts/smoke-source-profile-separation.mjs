@@ -48,12 +48,12 @@ try{
  await page.getByRole('button',{name:'Kaynak önerilerini incele',exact:true}).click();
  await sources.locator('.source-proposal').waitFor();
  await page.screenshot({path:path.join(data,'sources.png'),fullPage:true});
- await sources.getByRole('button',{name:'Kaynak önerilerini uygula',exact:true}).click();
+ await sources.getByRole('button',{name:'Önerileri uygula',exact:true}).click();
  await sources.locator('.source-proposal').waitFor({state:'hidden'});
  state=await snapshot();assert.deepEqual(state.automation.sources,[first,third,manual]);assert.equal(state.automation.criteria.budget,'1700');assert.equal(state.automation.reviewedRevision,state.automation.revision);
  const revision=state.automation.revision;
  const manualRow=sources.locator(`.source-row[data-source-id="${manual}"]`);
- await manualRow.getByRole('button',{name:'Düzenle',exact:true}).click();await manualRow.getByRole('button',{name:'Kaynağı kaldır',exact:true}).click();
+ await manualRow.getByRole('button',{name:'Düzenle',exact:true}).click();await manualRow.getByRole('button',{name:'Kaynağı sil',exact:true}).click();
  await manualRow.waitFor({state:'detached'});
  state=await snapshot();assert.deepEqual(state.automation.sources,[first,third]);assert.equal(state.automation.revision,revision);assert.equal(state.automation.reviewedRevision,revision);
  assert.deepEqual(errors,[]);console.log('SOURCE_PROFILE_SEPARATION_PASS',data);

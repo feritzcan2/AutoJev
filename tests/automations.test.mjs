@@ -62,12 +62,12 @@ test('agent table edits persist without changing plan review, action authority o
  const before=db.get(id),saved=db.result(id,item.id),interview=db.begin(id,'interview');
  const flow=automationWorkflow({db,run:interview,signal:new AbortController().signal,browser:{call(){throw Error('No browser work needed');}},report:()=>{}});
  const table={title:'Kiralık evler',columns:[{key:'source',label:'Site',type:'text'},{key:'title',label:'Ev',type:'text'},{key:'rent',label:'Warmmiete (€)',type:'money'},{key:'rooms',label:'Oda',type:'number'},{key:'available',label:'Taşınma',type:'date'}]};
- await flow.call(id,interview.id,'configure_automation_table',table);
- const updated=await flow.call(id,interview.id,'update_automation_cells',{itemId:item.id,cells:[{key:'rent',value:'1400.50'},{key:'rooms',value:'2'},{key:'available',value:'2026-11-01'}]});
+ await flow.call(id,interview.id,'configure_workspace_table',table);
+ const updated=await flow.call(id,interview.id,'update_workspace_cells',{itemId:item.id,cells:[{key:'rent',value:'1400.50'},{key:'rooms',value:'2'},{key:'available',value:'2026-11-01'}]});
  assert.deepEqual(updated.cells,{rent:'1400.5',rooms:'2',available:'2026-11-01'});
  for(const field of ['status','digest','approvedDigest','proposal','revision','url','updatedAt','starred'])assert.equal(updated[field],saved[field]);
  for(const field of ['mode','revision','reviewedRevision','intervalMinutes'])assert.equal(db.get(id)[field],before[field]);assert.deepEqual(db.get(id).trial,before.trial);assert.equal(db.results(id).length,1);
- const other=db.create('housing',setup),otherRun=db.begin(other.id,'interview');await assert.rejects(flow.call(other.id,otherRun.id,'configure_automation_table',table),/geçersiz/);assert.throws(()=>db.updateCells(other.id,item.id,[]),/bu çalışma alanına/);
+ const other=db.create('housing',setup),otherRun=db.begin(other.id,'interview');await assert.rejects(flow.call(other.id,otherRun.id,'configure_workspace_table',table),/geçersiz/);assert.throws(()=>db.updateCells(other.id,item.id,[]),/bu çalışma alanına/);
  const template=db.saveTemplate({...automationTemplate('housing'),table});assert.deepEqual(reusableTemplate(template).table,table);
  db.finish(id,interview.id,'completed','Table updated');const next=db.begin(id,'run');const rerecorded=record(db,id,next);assert.deepEqual(rerecorded.cells,updated.cells);assert.equal(rerecorded.starred,true);
 });
@@ -100,15 +100,14 @@ test('Agent settings can be saved during a run without changing its plan or acti
  assert.throws(()=>db.save(id,{agentSettings:{...settings,provider:'unknown'}}),/sağlayıcı/);
 });
 
-test('browser engine selection persists and requires a new trial while keeping the plan and records',t=>{
+test('Chrome profile selection persists, pauses the workspace and keeps the plan, trial and records',t=>{
  const {db,id}=fixture(t);trial(db,id);const before=db.get(id);
- const selected=db.save(id,{browserMode:'jev',chromeProfile:{directory:'Profile 1',name:'Work'}});
- assert.equal(selected.browserMode,'jev');assert.equal(db.get(id).chromeProfile.directory,'Profile 1');
- assert.equal(selected.revision,before.revision);assert.equal(selected.reviewedRevision,before.reviewedRevision);assert.equal(selected.trial,null);assert.equal(selected.status,'paused');
- assert.equal(db.get(id).sourceState[setup.sources[0]].trial,null);assert.equal(db.enable(id).status,'enabled');assert.throws(()=>db.save(id,{browserMode:'unknown'}),/tarayıcı/);
+ const selected=db.save(id,{chromeProfile:{directory:'Profile 1',name:'Work'}});
+ assert.equal(db.get(id).chromeProfile.directory,'Profile 1');assert.equal(db.get(id).browserMode,undefined);
+ assert.equal(selected.revision,before.revision);assert.equal(selected.reviewedRevision,before.reviewedRevision);assert.deepEqual(selected.trial,before.trial);assert.equal(selected.status,'paused');
+ assert.equal(db.enable(id).status,'enabled');
  assert.throws(()=>db.save(id,{chromeProfile:{directory:'../other',name:'Other'}}),/profil/);
- const run=db.begin(id,'trial');assert.throws(()=>db.save(id,{browserMode:'separate'}),/durdur/);db.finish(id,run.id,'interrupted','Stopped');
- assert.equal(db.get(id).browserMode,'jev');
+ const run=db.begin(id,'trial');assert.throws(()=>db.save(id,{chromeProfile:null}),/durdur/);db.finish(id,run.id,'interrupted','Stopped');
 });
 
 test('Chrome profile changes preserve the successful trial and allow restarting without another trial',t=>{

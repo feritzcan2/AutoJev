@@ -45,7 +45,7 @@ for(const trigger of ['monitor','exit'])test(`fatal error via ${trigger} ends on
  const f=await fixture(t),deliveries=new Map(),launches=[],forgot=[],runs=new Map();
  const agents=new AgentSessions({root:process.cwd(),data:f.root,readProviderFailure:args=>readOpenCodeFailure({...args,file:f.file}),createEngine:(_bin,_dir,event)=>({request:async(op,args)=>{if(op==='start'){launches.push(args);deliveries.set(args.sessionId,event);}return {};},close:async()=>{}})});
  const runtime=new TaskRuns({recover(){},config:()=>({}),begin:(id,input,workerId)=>{const run={id:workerId,workerId,status:'running'};runs.set(run.id,run);return run;},run:id=>runs.get(id),save:run=>runs.set(run.id,run),finish:(id,runId,status,summary)=>runs.set(runId,{...runs.get(runId),status,summary})},{launch:async(run,task,onEvent)=>{
-  await agents.start({id:'workspace',worker:run.workerId,sessionId:run.id,settings:{provider:'opencode',model:'default',contextCompactPercent:0},cwd:f.root,runtimeDirectory:f.root,prompt:'Scan',approvedTools:['read_scoring_profile'],history:{conversation:()=>null,saveConversation(){},forgetConversation:(...args)=>forgot.push(args)},onEvent});
+  await agents.start({id:'workspace',worker:run.workerId,sessionId:run.id,settings:{provider:'opencode',model:'default',contextCompactTokens:0},cwd:f.root,runtimeDirectory:f.root,prompt:'Scan',approvedTools:['read_scoring_profile'],history:{conversation:()=>null,saveConversation(){},forgetConversation:(...args)=>forgot.push(args)},onEvent});
   await deliveries.get(run.id)({event:'identity',sessionId:run.id,nativeId:run.workerId==='main'?nativeId:'ses_98765432109876543210'});
   return {close:()=>agents.stop('workspace',run.workerId)};
  }});
@@ -63,7 +63,7 @@ for(const trigger of ['monitor','exit'])test(`fatal error via ${trigger} ends on
 test('late error reads from a retired session cannot fail its replacement',async t=>{
  const f=await fixture(t);let resolve,deliver;const events=[];
  const agents=new AgentSessions({root:process.cwd(),data:f.root,readProviderFailure:()=>new Promise(done=>{resolve=done;}),createEngine:(_b,_d,callback)=>{deliver=callback;return {request:async()=>({}),close:async()=>{}};}});t.after(()=>agents.close());
- const start=sessionId=>agents.start({id:'workspace',sessionId,settings:{provider:'opencode',model:'default',contextCompactPercent:0},cwd:f.root,runtimeDirectory:f.root,prompt:'Scan',onEvent:event=>events.push(event)});
+ const start=sessionId=>agents.start({id:'workspace',sessionId,settings:{provider:'opencode',model:'default',contextCompactTokens:0},cwd:f.root,runtimeDirectory:f.root,prompt:'Scan',onEvent:event=>events.push(event)});
  await start('old');await deliver({event:'identity',sessionId:'old',nativeId});const checking=agents.checkProviderFailure(agents.sessions.get('workspace'));
  await agents.stop('workspace');await start('new');resolve({summary:'stale failure'});await checking;
  assert.equal(events.filter(x=>x.event==='provider_error').length,0);assert.equal(agents.sessions.get('workspace').sessionId,'new');

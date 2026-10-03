@@ -35,7 +35,7 @@ export class Workspaces {
  beforeInput(id,text,worker='main'){this.validateWorker(id,worker);return this.template(id).beforeInput?.(id,text,worker);}
  message(id,text,worker='main'){this.validateWorker(id,worker);if(typeof text!=='string'||!text.trim()||text.length>12000)throw Error('1–12000 karakter arasında mesaj yaz');return this.template(id).message(id,text,worker);}
  async settings(id,input){
-  this.assertMutable(id);const fields=['agentSettings','browserMode','chromeProfile'];if(!input||Object.keys(input).some(key=>!fields.includes(key)))throw Error('Geçersiz agent ayarı');
+  this.assertMutable(id);const fields=['agentSettings','chromeProfile'];if(!input||Object.keys(input).some(key=>!fields.includes(key)))throw Error('Geçersiz agent ayarı');
   if(input.agentSettings){
    const s=withAgentDefaults(input.agentSettings);input={...input,agentSettings:s};if(!['codex','claude','opencode'].includes(s.provider)||![true,false,null].includes(s.network))throw Error('Geçersiz agent ayarları');
    await this.validateSettings(s);

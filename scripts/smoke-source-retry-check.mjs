@@ -12,7 +12,7 @@ const server=createServer((req,res)=>{
  res.setHeader('Content-Type','text/html');res.end('<title>Results</title><h1>Results</h1><p>Current listings</p>');
 });
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const url=`http://127.0.0.1:${server.address().port}/`;
-const browsers=new BrowserTools(directory,()=> 'jev',()=>({connection:'separate',headless:true}));
+const browsers=new BrowserTools(directory,()=>({connection:'separate',headless:true}));
 try{
  browsers.prepare('workspace');await browsers.connections.pending.get('workspace');assert.equal(browsers.status('workspace').ready,true);
  const page=JSON.parse((await browsers.call('workspace','browser_jev_open',{url},'active-record',{automationWorkspaceId:'workspace',automationTabKey:'record:item'})).content[0].text);

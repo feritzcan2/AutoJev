@@ -6,6 +6,7 @@ import {WebTasks} from '../app/web-template.mjs';
 import {automationAttention} from '../app/automation-attention.mjs';
 import {automationTaskContext} from '../app/automation-task-context.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
+import {finishSourceAccess} from '../app/source-access-recovery.mjs';
 
 const source='https://source.example/list',other='https://other.example/list';
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
@@ -37,7 +38,7 @@ function fixture(t,{cleanup=async()=>({closed:['source-tab']})}={}){
 test('the primary source gate releases the worker despite empty searches and reachable external detail URLs',async t=>{
  const f=fixture(t),run=await f.start(),pending=[source+'/one',other+'/one'];
  f.db.observe(f.id,run.id,source,'Listings',pending);f.db.saveScanProgress(f.id,run.id,{pendingUrls:pending,reason:'Details'},{url:source,text:'Listings'});
- f.db.saveScanSearches(f.id,run.id,[{id:'later',label:'Another query on this same source'}]);let calls=0;
+ let calls=0;
  const flow=automationWorkflow({db:f.db,run,signal:new AbortController().signal,browser:{evaluateJev:()=>{throw Error('No model call needed');},call:async(_id,_name,args)=>{
   calls++;const wait=f.db.siteAccess.block(args.url,'verification'),page={url:args.url,status:'site_wait',siteWait:wait,text:wait.message};
   return {jevPage:page,siteWait:wait,pageContext:{url:page.url,tabId:'source-tab'},content:[{type:'text',text:'Page URL: '+page.url+'\n'+JSON.stringify(page)}]};
@@ -50,7 +51,7 @@ test('the primary source gate releases the worker despite empty searches and rea
 
 test('a reply resumes the same durable task, tab, queue and RAM on a free worker without interrupting another source',async t=>{
  const f=fixture(t),blocked=await f.block();f.runtime.sourceState(f.id,other,{nextRunAt:f.now()});await f.runtime.tick();await settle();
- const otherRun=f.launches.at(-1);assert.equal(otherRun.sourceUrl,other);f.setNow(f.now()+10*60000);
+ const otherRun=f.launches.at(-1);assert.equal(otherRun.sourceUrl,other);f.setNow(f.now()+2*60000);
  assert.equal(f.issue().kind,'site_access');assert.equal(f.issue().accessRetryAt,blocked.wait.retryAt);
  await f.runtime.sourceAccess.resume(f.id,source,blocked.run.id,'Captcha çözüldü, devam.');
  assert.equal(f.launches.length,2,'Busy worker must keep its current assignment');assert.equal(f.db.run(otherRun.id).status,'running');
@@ -65,15 +66,18 @@ test('a reply resumes the same durable task, tab, queue and RAM on a free worker
  assert.equal(automationTaskContext(f.db,f.id,resumed).sourceRecovery.response,'Captcha çözüldü, devam.');assert.equal(f.cleanups.length,0);
 });
 
-test('an unanswered deadline closes old tabs before a fresh task; pending coverage and native history are reset',async t=>{
- let release;const f=fixture(t,{cleanup:()=>new Promise(resolve=>{release=resolve;})}),blocked=await f.block();
- f.setNow(blocked.wait.retryAt);await f.runtime.tick();await settle();assert.equal(f.cleanups.length,1);assert.equal(f.launches.length,1);
+test('the deadline resumes the same task, retained tab, queue and RAM automatically',async t=>{
+ const f=fixture(t),blocked=await f.block();assert.equal(blocked.wait.retryAt,f.now()+5*60000);
+ f.setNow(blocked.wait.retryAt-1);await f.runtime.tick();await settle();assert.equal(f.launches.length,1);
+ f.setNow(blocked.wait.retryAt);await f.runtime.tick();await settle();
+ const resumed=f.launches.at(-1);assert.equal(f.launches.length,2);assert.equal(resumed.taskId,blocked.run.taskId);
+ assert.equal(resumed.continuation.reason,'site_access_retry');assert.equal(resumed.continuation.browserContext.tabId,'source-tab');
+ assert.equal(resumed.scanPlan.id,blocked.run.scanPlan.id);assert.deepEqual(resumed.scan.pendingUrls,[blocked.pending]);
+ assert.equal(f.cleanups.length,0);assert.equal(f.db.jevTasks.fullEvidence(f.id,resumed.taskId,blocked.evidence.id).text,'RAM ONLY BODY');
+ assert.equal(f.db.jevTasks.detailWait(f.id,resumed.taskId,blocked.pending),null);
+ assert.equal(f.db.siteAccess.status(source).attempts,1,'Only a verified page probe may clear the gate');
+ assert.match(automationTaskContext(f.db,f.id,resumed).sourceRecovery.instructions,/scheduled access wait expired/);
  await assert.rejects(f.runtime.sourceAccess.resume(f.id,source,blocked.run.id),/devam ettirilemiyor/);
- f.runtime.sourceState(f.id,other,{nextRunAt:f.now()});await f.runtime.tick();await settle();assert.equal(f.launches.at(-1).sourceUrl,other,'Cleanup must not block scheduling unrelated work');
- release({closed:['source-tab']});await settle();f.store.workspaces.workers.add(f.id);await f.runtime.tick();await settle();
- const fresh=f.launches.at(-1);assert.equal(fresh.sourceUrl,source);assert.equal(fresh.freshSource,true);assert.notEqual(fresh.taskId,blocked.run.taskId);assert.notEqual(fresh.scanPlan.id,blocked.run.scanPlan.id);
- assert.equal(fresh.continuation,undefined);assert.equal(fresh.scan,undefined);assert.deepEqual(automationTaskContext(f.db,f.id,fresh).previousRuns,[]);
- assert.equal(f.db.jevTasks.list(f.id,blocked.run.taskId).length,0);assert.deepEqual(f.cleanups[0].options.sourceRunIds,[blocked.run.id]);
 });
 
 test('closing the intervention closes its tabs now and starts fresh only at the existing retry time',async t=>{
@@ -84,11 +88,13 @@ test('closing the intervention closes its tabs now and starts fresh only at the 
  f.setNow(blocked.wait.retryAt);await f.runtime.tick();await settle();assert.equal(f.launches.at(-1).freshSource,true);assert.equal(f.cleanups.length,1);
 });
 
-test('failed tab cleanup remains pending and does not launch a new scan or close other tabs',async t=>{
- let ready=false;const f=fixture(t,{cleanup:async()=>ready?{closed:['source-tab']}:{deferred:true}}),blocked=await f.block();f.setNow(blocked.wait.retryAt);
- await f.runtime.tick();await settle();assert.equal(f.launches.length,1);assert.match(f.issue().cleanupError,/kapatılamadı/);
+test('failed explicit tab cleanup remains pending without interrupting other sources',async t=>{
+ let ready=false;const f=fixture(t,{cleanup:async()=>ready?{closed:['source-tab']}:{deferred:true}}),blocked=await f.block();
+ await assert.rejects(f.runtime.sourceAccess.reset(f.id,source,blocked.run.id,{dismissed:true}),/kapatılamadı/);
+ assert.equal(f.launches.length,1);assert.match(f.issue().cleanupError,/kapatılamadı/);
  await f.runtime.tick();await settle();assert.equal(f.cleanups.length,1);
- ready=true;f.setNow(f.now()+5000);await f.runtime.tick();await settle();await f.runtime.tick();await settle();assert.equal(f.launches.length,2);
+ ready=true;f.setNow(f.now()+5000);await f.runtime.tick();await settle();assert.equal(f.launches.length,1);
+ f.setNow(blocked.wait.retryAt);await f.runtime.tick();await settle();assert.equal(f.launches.length,2);
 });
 
 test('due turns never accumulate or interrupt an active search with several idle workers',async t=>{
@@ -111,4 +117,59 @@ test('pausing an answered source waiting for a worker does not strand it on late
  await f.runtime.sourceAccess.resume(f.id,source,blocked.run.id);assert.equal(f.launches.length,2);
  await f.runtime.pause(f.id);await f.runtime.runSource(f.id,source);await settle();
  assert.equal(f.launches.at(-1).sourceUrl,source);assert.equal(f.launches.at(-1).taskId,blocked.run.taskId);assert.equal(f.launches.at(-1).continuation.reason,'site_access_response');
+});
+
+
+test('a scan retries after five and ten minutes, stops on the third incident, and resumes only by user action',async t=>{
+ const f=fixture(t),blocked=await f.block();
+ for(const attempt of [2,3]){
+  const due=f.db.siteAccess.status(source).retryAt;f.setNow(due);await f.runtime.tick();await settle();
+  const run=f.launches.at(-1);assert.equal(run.taskId,blocked.run.taskId);
+  const token=f.db.siteAccess.begin(source);f.db.siteAccess.complete(source,token,{status:200});
+  const wait=f.db.siteAccess.block(source+'?page='+attempt,'rate_limit');assert.equal(wait.attempts,attempt);
+  f.db.putRun({...f.db.run(run.id),siteWait:wait,stop:{kind:'access',evidence:wait.message}});
+  f.runtime.report(f.id,run.id,'blocked',wait.message);await f.runtime.finish(f.id,'blocked',wait.message);
+  assert.equal(wait.retryAt,attempt===2?f.now()+10*60000:null);
+ }
+ assert.equal(f.launches.length,3);assert.equal(f.issue().accessExhausted,true);assert.equal(f.issue().accessRetryAt,null);
+ f.setNow(f.now()+86400000);await f.runtime.tick();await settle();assert.equal(f.launches.filter(r=>r.sourceUrl===source).length,3);
+ f.runtime.sourceState(f.id,other,{nextRunAt:f.now()});await f.runtime.tick();await settle();assert.equal(f.launches.at(-1).sourceUrl,other);
+ await f.runtime.sourceAccess.resume(f.id,source,f.issue().runId);assert.equal(f.db.siteAccess.status(source),null);
+ f.store.workspaces.workers.add(f.id);await f.runtime.tick();await settle();assert.equal(f.launches.at(-1).taskId,blocked.run.taskId);
+});
+
+test('pause and source disable cancel automatic access resumption until enabled again',async t=>{
+ for(const pause of [true,false]){
+  const f=fixture(t),blocked=await f.block();
+  if(pause)await f.runtime.pause(f.id);else await f.runtime.saveSource(f.id,source,{enabled:false});
+  f.setNow(blocked.wait.retryAt);await f.runtime.tick();await settle();assert.equal(f.launches.length,1);
+  if(pause)await f.runtime.runSource(f.id,source);else await f.runtime.saveSource(f.id,source,{enabled:true});
+  await f.runtime.tick();await settle();assert.equal(f.launches.length,2);assert.equal(f.launches.at(-1).taskId,blocked.run.taskId);
+ }
+});
+
+test('stopping a source cancels its pending access continuation and releases only its RAM',async t=>{
+ const f=fixture(t),blocked=await f.block();
+ await f.runtime.stopSource(f.id,source);f.setNow(blocked.wait.retryAt);await f.runtime.tick();await settle();
+ assert.equal(f.launches.length,1);assert.equal(f.store.workspaces.tasks.get(f.id,blocked.run.taskId).state,'cancelled');
+ assert.equal(f.db.get(f.id).sourceState[source].accessRecovery,null);assert.deepEqual(f.db.jevTasks.list(f.id,blocked.run.taskId),[]);
+});
+
+test('closing a stopped intervention never restarts it; explicit source retry starts a new budget',async t=>{
+ const f=fixture(t),blocked=await f.block();
+ f.db.siteAccess.save({...f.db.siteAccess.row(source),attempts:3,retryAt:null});
+ const a=f.db.get(f.id),state=a.sourceState[source];f.db.put({...a,sourceState:{...a.sourceState,[source]:{...state,accessRecovery:{...state.accessRecovery,retryAt:null}}}});
+ const issue=f.issue();await f.runtime.dismissAttention(f.id,issue.id,issue.dismissKey);
+ f.setNow(f.now()+3600000);await f.runtime.tick();await settle();assert.equal(f.launches.length,1);assert.equal(f.issue(),undefined);
+ await f.runtime.runSource(f.id,source);await settle();assert.equal(f.launches.length,2);assert.equal(f.db.siteAccess.status(source),null);
+ assert.equal(f.db.siteAccess.block(source,'rate_limit').attempts,1);
+});
+
+
+test('successful scan completion retires its recovered access budget, including a fresh task after dismissal',async t=>{
+ const f=fixture(t),blocked=await f.block(),issue=f.issue();
+ await f.runtime.dismissAttention(f.id,issue.id,issue.dismissKey);f.setNow(blocked.wait.retryAt);await f.runtime.tick();await settle();
+ const run=f.launches.at(-1);assert.notEqual(run.taskId,blocked.run.taskId);
+ f.db.siteAccess.complete(source,f.db.siteAccess.begin(source),{status:200});assert.equal(f.db.siteAccess.row(source).attempts,1);
+ finishSourceAccess(f.db,{...run,status:'completed'});assert.equal(f.db.siteAccess.row(source),null);
 });

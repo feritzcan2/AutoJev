@@ -5,8 +5,8 @@ import {DatabaseSync} from 'node:sqlite';
 import {opencodeDatabase,opencodeModel} from './opencode-context.mjs';
 
 const validCount=n=>Number.isSafeInteger(n)&&n>=0;
-export function contextRestartPercent(value=0){
- if(!Number.isInteger(value)||value<0||value>100)throw Error('Context eşiği 0 (kapalı) veya %1–100 olmalı.');
+export function contextRestartTokens(value=0){
+ if(!Number.isSafeInteger(value)||value<0)throw Error('Yeni oturum eşiği 0 (kapalı) veya pozitif bir tam token sayısı olmalı.');
  return value;
 }
 
@@ -57,7 +57,7 @@ export class ContextUsage {
   Object.assign(this,{provider,nativeId,cwd,statusFile,now,chunkBytes});
   Object.assign(this,{opencodeFile,modelsFile});
   this.root=root??path.join(process.env.CODEX_HOME||path.join(homedir(),'.codex'),'sessions');
-  this.file=null;this.nextLookup=0;this.offset=null;this.partial='';this.discard=false;this.tokens=null;this.percent=null;this.peakPercent=0;this.contextWindow=null;this.updatedAt=null;this.compactionId=null;
+  this.file=null;this.nextLookup=0;this.offset=null;this.partial='';this.discard=false;this.tokens=null;this.percent=null;this.peakPercent=0;this.peakTokens=0;this.contextWindow=null;this.updatedAt=null;this.compactionId=null;
  }
  async read(){
   try{
@@ -94,7 +94,7 @@ export class ContextUsage {
      let record;try{record=JSON.parse(line);}catch{continue;}
      if(this.provider==='codex'&&record?.type==='compacted'&&typeof record.timestamp==='string')this.compactionId=record.timestamp;
      const sample=contextSample(this.provider,record,this.nativeId);if(sample.tokens===null)continue;
-     Object.assign(this,sample);if(sample.percent!==null)this.peakPercent=Math.max(this.peakPercent,sample.percent);this.updatedAt=this.now();
+     Object.assign(this,sample);this.peakTokens=Math.max(this.peakTokens,sample.tokens);if(sample.percent!==null)this.peakPercent=Math.max(this.peakPercent,sample.percent);this.updatedAt=this.now();
     }
     return this.value(this.offset===stat.size,this.offset<stat.size);
    }finally{await file.close();}
@@ -115,11 +115,11 @@ export class ContextUsage {
     const record={sessionID:this.nativeId,...JSON.parse(row.data)},tokens=contextTokens('opencode',record,this.nativeId);if(tokens===null)continue;
     const limit=await opencodeModel(record.providerID,record.modelID,this.modelsFile);
     const sample=contextSample('opencode',{...record,contextWindow:limit?.context},this.nativeId);
-    Object.assign(this,sample);if(sample.percent!==null)this.peakPercent=Math.max(this.peakPercent,sample.percent);
+    Object.assign(this,sample);this.peakTokens=Math.max(this.peakTokens,sample.tokens);if(sample.percent!==null)this.peakPercent=Math.max(this.peakPercent,sample.percent);
     this.updatedAt=row.time_updated;return this.value(true);
    }
    return this.value(false);
   }catch{return this.value(false);}finally{db?.close();}
  }
- value(caughtUp,pending=false){return{tokens:this.tokens,contextWindow:this.contextWindow,percent:this.percent,peakPercent:this.peakPercent,updatedAt:this.updatedAt,compactionId:this.compactionId,caughtUp,pending};}
+ value(caughtUp,pending=false){return{tokens:this.tokens,contextWindow:this.contextWindow,percent:this.percent,peakPercent:this.peakPercent,peakTokens:this.peakTokens,updatedAt:this.updatedAt,compactionId:this.compactionId,caughtUp,pending};}
 }

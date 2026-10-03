@@ -1,6 +1,7 @@
 const {contextBridge,ipcRenderer,webUtils}=require('electron');
 const subscribe=(name,callback)=>{const listener=(_,value)=>callback(value);ipcRenderer.on(name,listener);return()=>ipcRenderer.removeListener(name,listener);};
 contextBridge.exposeInMainWorld('jobloop',{
+  captchaSettingsStatus:()=>ipcRenderer.invoke('captcha-settings-status'),saveCaptchaSettings:input=>ipcRenderer.invoke('captcha-settings-save',input),removeCaptchaSettings:()=>ipcRenderer.invoke('captcha-settings-remove'),testCaptchaConnection:()=>ipcRenderer.invoke('captcha-settings-test'),
   workerPreview:(id,worker='main')=>ipcRenderer.invoke('worker-preview',id,worker),
   saveAgentProfile:(id,role,input)=>ipcRenderer.invoke('agent-profile-save',id,role,input),
   instructionSnapshot:(id,options)=>ipcRenderer.invoke('instruction-snapshot',id,options),instructionEvent:(id,seq)=>ipcRenderer.invoke('instruction-event',id,seq),onInstructionsChange:callback=>subscribe('instructions-changed',callback),
@@ -26,6 +27,7 @@ contextBridge.exposeInMainWorld('jobloop',{
  automationSourcesInterval:(id,intervalMinutes)=>ipcRenderer.invoke('automation-sources-interval',id,intervalMinutes),
  automationSourceModes:(id,mode)=>ipcRenderer.invoke('automation-source-modes',id,mode),
   automationSourceRun:(id,url)=>ipcRenderer.invoke('automation-source-run',id,url),
+ automationSourceRelearn:(id,url)=>ipcRenderer.invoke('automation-source-relearn',id,url),
  automationSourceResume:(id,url,runId,response)=>ipcRenderer.invoke('automation-source-resume',id,url,runId,response),
   automationRecordsScore:(id,itemIds)=>ipcRenderer.invoke('automation-records-score',id,itemIds),
   automationRecordRun:(id,itemId,kind,input={})=>ipcRenderer.invoke('automation-record-run',id,itemId,kind,input),

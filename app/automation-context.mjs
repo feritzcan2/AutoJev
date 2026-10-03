@@ -4,7 +4,7 @@ export const AUTOMATION_CONTEXT_BYTES=16000;
 const size=value=>Buffer.byteLength(JSON.stringify(value),'utf8');
 export const automationContextTools=[{
  name:'read_automation_context_part',
- description:'Read the next exact JSON fragment of the saved automation context using context.id and context.nextOffset. Read every part before browser work or decisions. No shell or file access is needed. This cache is separate from browser snapshots; fragments may end inside a JSON value.',
+ description:'Read the next exact JSON fragment of the saved context by context.id and nextOffset. Read every part before browser work or decisions. Fragments may end inside a JSON value.',
  inputSchema:{type:'object',properties:{contextId:{type:'string',minLength:1,maxLength:64},offset:{type:'integer',minimum:0}},required:['contextId','offset'],additionalProperties:false}
 }];
 

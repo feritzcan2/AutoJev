@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {scoringPolicy,calculateScorecard,SCORE_DIMENSIONS} from '../app/scoring-policy.mjs';
 import {scoringSources} from '../app/scoring-profile.mjs';
 import {recordAssessment} from '../app/record-scoring.mjs';
-const profile={revision:5,criteria:{ranking:'Teknik %70, deneyim %10, rol %10, tercihler %10. Eşik 60/100.',preferences:'Remote in Germany'},facts:'Five years owning ISO 27001 and SOC 2 programs. Principal information security manager. Fluent English.'};
+const profile={revision:5,criteria:{ranking:'Direct security program ownership matters most.',weight_technical:'70',weight_experience:'10',weight_role:'10',weight_preferences:'10',score_threshold:'60',preferences:'Remote in Germany'},facts:'Five years owning ISO 27001 and SOC 2 programs. Principal information security manager. Fluent English.'};
 const listing='Principal information security manager. Five years owning ISO 27001 and SOC 2 programs. Fluent English. Remote in Germany. AI-native company.';
 const proof={listingQuote:'Five years owning ISO 27001 and SOC 2 programs.',candidateSource:'facts',candidateQuote:'Five years owning ISO 27001 and SOC 2 programs.',reason:'The same program ownership is documented.'};
 const card=()=>({dimensions:SCORE_DIMENSIONS.map(key=>({key,level:'direct',...proof,...(key==='preferences'?{listingQuote:'Remote in Germany',candidateSource:'preferences',candidateQuote:'Remote in Germany'}:{})})),requirements:[{kind:'qualification',match:'met',...proof}]});
@@ -32,11 +32,12 @@ test('missing optional salary does not invalidate otherwise verified fit',()=>{
  const input=card();input.dimensions[3]={...input.dimensions[3],level:'unknown',candidateQuote:'',listingQuote:'',reason:'Optional salary is not published.'};
  assert.equal(calculate(input).score,90);assert.equal(calculate(input).cap,null);
 });
-test('active rubric wins over a pending draft and old profile weights; invalid explicit weights fail clearly',()=>{
- const p=scoringPolicy({...profile,referenceData:{profile:{rankWeights:{technical:60,experience:20,role:10,preferences:10}}},planDraft:{plan:{criteria:{ranking:'Yetkinlik %100'}}}});
+test('weight fields win over old profile weights and free text; invalid explicit weights fail clearly',()=>{
+ const p=scoringPolicy({...profile,referenceData:{profile:{rankWeights:{technical:60,experience:20,role:10,preferences:10}}},planDraft:{plan:{criteria:{weight_technical:'100'}}}});
  assert.deepEqual(p.weights,{technical:70,experience:10,role:10,preferences:10});
- assert.deepEqual(scoringPolicy({criteria:{ranking:'Yetkinlik %70, deneyim %30'}}).weights,{technical:70,experience:30,role:0,preferences:0});
- for(const ranking of ['Technical 70%, experience 20%','Teknik %70 teknik %60 deneyim %30','Eşik 101'])assert.throws(()=>scoringPolicy({criteria:{ranking}}));
+ assert.deepEqual(scoringPolicy({criteria:{ranking:'Yetkinlik %70, deneyim %30',weight_technical:'70',weight_experience:'30'}}).weights,{technical:70,experience:30,role:0,preferences:0});
+ assert.deepEqual(scoringPolicy({criteria:{ranking:'Yetkinlik %100'}}).weights,{technical:70,experience:10,role:10,preferences:10});
+ for(const criteria of [{weight_technical:'70',weight_experience:'20'},{weight_technical:'70.5',weight_experience:'29.5'},{score_threshold:'101'},{score_threshold:'0'}])assert.throws(()=>scoringPolicy({criteria}));
  assert.notEqual(scoringPolicy(profile).digest,scoringPolicy({...profile,revision:6}).digest);
 });
 test('optional breakdown accepts paraphrases and omitted quotes but retains dimension and source checks',()=>{

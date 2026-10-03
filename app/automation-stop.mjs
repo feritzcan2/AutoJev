@@ -1,22 +1,15 @@
-import {otherScanSearchesPending} from './scan-work.mjs';
 import {boundedText} from './automation-templates.mjs';
 
-// A partial scan is unfinished work, not a request for human intervention.
-// Keep a structured reason so the UI need not infer this from a prose summary.
+// A partial scan is unfinished work, not a request for human intervention. The
+// agent only names an access barrier or a missing user fact; loading failures
+// are verified by the app itself and become a technical stop with a retry.
 export function sourceStop(run,input){
  if(run.kind!=='run'||!run.sourceUrl||run.recordId||!['failed','blocked'].includes(input.status))return null;
- const stop=input.stop;
- if(!stop||!['access','technical','user_input','incomplete'].includes(stop.kind))throw Error('Kaynak duruşu için stop.kind ve stop.evidence gerekli. Kalan sayfa, sorgu veya detay varsa incomplete kullan; bu durumda aynı görevde devam et.');
- if(stop.kind==='incomplete')throw Error('Eksik kapsam hata veya erişim engeli değildir. Devam noktasını kaydet ve kalan sayfa, sorgu ve detayları aynı görevde işle.');
- const evidence=boundedText(stop.evidence,'Gerçek engelin kanıtı',2000);
- if(stop.kind==='technical'){
-  const issues=Object.values(run.scanIssues??{}),ids=stop.issueIds;
-  if(!Array.isArray(ids)||!ids.length||ids.some(id=>!issues.some(issue=>issue.id===id&&issue.verified)))throw Error('Teknik duruş için bu turda araçla doğrulanmış issueIds gerekli. Yükleme sorunu için recheck_scan_page kullan; gerçek tarayıcı hatasını bir kez yeniden kontrol et. Açıklama tek başına kanıt değildir.');
-  const selected=issues.filter(issue=>ids.includes(issue.id));
-  if(otherScanSearchesPending(run)&&!selected.some(issue=>issue.global))throw Error('Diğer kayıtlı aramalar henüz bitmedi. Önce erişilebilir aramaları select_scan_search ile işle.');
-  const remaining=(run.scan?.pendingUrls??[]).filter(url=>!selected.some(issue=>issue.global||issue.url===url));
-  if(remaining.length)throw Error(`Sorun tüm kaynağı durdurmuyor. Önce erişilebilir ${remaining.length} bekleyen adresi işle: ${remaining.slice(0,3).join(', ')}. Yalnızca doğrulanmış sorunlu adresleri sona bırak.`);
-  return {kind:stop.kind,evidence,issueIds:ids};
- }
- return {kind:stop.kind,evidence};
+ const stop=input.stop,verified=Object.values(run.scanIssues??{}).filter(issue=>issue.verified);
+ if(stop&&['access','user_input'].includes(stop.kind))return {kind:stop.kind,evidence:boundedText(stop.evidence,'Gerçek engelin kanıtı',2000)};
+ if(stop&&stop.kind!=='technical')throw Error('Kaynak duruşu için stop.kind access veya user_input gerekli. Eksik kapsam engel değildir; kalan sayfa ve detayları aynı görevde işle.');
+ if(!verified.length)throw Error('Doğrulanmış bir yükleme hatası yok. Erişim engeli için stop.kind=access, eksik kullanıcı bilgisi için user_input bildir; aksi halde kalan işe devam et.');
+ const remaining=(run.scan?.pendingUrls??[]).filter(url=>!verified.some(issue=>issue.global||issue.url===url));
+ if(remaining.length)throw Error(`Sorun tüm kaynağı durdurmuyor. Önce erişilebilir ${remaining.length} bekleyen adresi işle: ${remaining.slice(0,3).join(', ')}.`);
+ return {kind:'technical',evidence:boundedText(stop?.evidence??verified[0].evidence,'Gerçek engelin kanıtı',2000),issueIds:verified.map(issue=>issue.id)};
 }

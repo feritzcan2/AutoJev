@@ -6,8 +6,11 @@ use termloop_terminal::TerminalService;
 pub fn submit_key(provider: &str, state: AgentState) -> Option<&'static [u8]> {
     match (provider, state) {
         ("codex", AgentState::Working) => Some(b"\t"),
-        ("claude", AgentState::Working)
-        | ("codex" | "claude" | "opencode", AgentState::Idle | AgentState::Interrupted) => Some(b"\r"),
+        // Enter only queues during a Claude turn. Send-now includes the draft
+        // and interrupts the turn without closing its native conversation.
+        // Ctrl+X Ctrl+S works without extended terminal key reporting.
+        ("claude", AgentState::Working) => Some(b"\x18\x13"),
+        ("codex" | "claude" | "opencode", AgentState::Idle | AgentState::Interrupted) => Some(b"\r"),
         _ => None,
     }
 }
@@ -16,8 +19,8 @@ pub struct Delivery { ready: Receiver<Result<(), String>>, sequence: u64 }
 impl Delivery {
     pub fn begin(terminal: &TerminalService, id: &str) -> Result<Self, String> {
         let sequence=terminal.user_input_activity(id,1).map_err(|e|e.to_string())?.sequence;
-        // Trailing space closes slash completion so Codex Tab means queue.
-        let submission=termloop_launch::generated_submission(&super::TEMPLATE,"/compact ").map_err(|e|e.to_string())?;
+        // The argument closes slash completion so Codex Tab means queue.
+        let submission=termloop_launch::generated_submission(&super::TEMPLATE,"/compact Continue the current task from where you left off.").map_err(|e|e.to_string())?;
         let write=terminal.input_atomic_receipted_if_protocol_settled(id,1,submission.paste_input()).map_err(|e|e.to_string())?;
         let (send,ready)=mpsc::channel();
         std::thread::spawn(move||{
@@ -50,11 +53,11 @@ impl Delivery {
 mod tests {
     use super::*;
     #[test]
-    fn queues_native_commands_while_working_and_submits_at_idle(){
+    fn compact_delivery_uses_each_providers_working_and_idle_controls(){
         assert_eq!(submit_key("opencode",AgentState::Working),None);
         assert_eq!(submit_key("opencode",AgentState::Idle),Some(b"\r".as_slice()));
         assert_eq!(submit_key("codex",AgentState::Working),Some(b"\t".as_slice()));
-        assert_eq!(submit_key("claude",AgentState::Working),Some(b"\r".as_slice()));
+        assert_eq!(submit_key("claude",AgentState::Working),Some(b"\x18\x13".as_slice()));
         for provider in ["codex","claude"]{
             assert_eq!(submit_key(provider,AgentState::Idle),Some(b"\r".as_slice()));
             for state in [AgentState::Compacting,AgentState::AwaitingInput,AgentState::Unknown,AgentState::Exited,AgentState::Failed]{assert_eq!(submit_key(provider,state),None);}

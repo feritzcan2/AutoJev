@@ -17,11 +17,11 @@ export async function opencodeModel(provider,model,file=opencodeModelsFile()){
 // OpenCode's reserved buffer applies to limit.input. Pin that input budget in
 // this launch's config, leaving the provider's real context/output limits intact.
 export async function opencodeCompaction(settings,modelsFile){
- if(settings.provider!=='opencode'||!settings.contextCompactPercent)return null;
+ if(settings.provider!=='opencode'||!settings.contextCompactTokens)return null;
  const slash=settings.model.indexOf('/');if(slash<1)return null;
  const providerID=settings.model.slice(0,slash),modelID=settings.model.slice(slash+1),limit=await opencodeModel(providerID,modelID,modelsFile);
  if(!limit||!Number.isSafeInteger(limit.output)||limit.output<0)return null;
  const ceiling=Number.isSafeInteger(limit.input)&&limit.input>0?Math.min(limit.context,limit.input):limit.context;
- const reserved=Math.min(20000,Math.floor(ceiling*.1)),trigger=Math.min(Math.floor(limit.context*settings.contextCompactPercent/100),ceiling-reserved);
+ const reserved=Math.min(20000,Math.floor(ceiling*.1)),trigger=Math.min(settings.contextCompactTokens,ceiling-reserved);
  return {providerID,modelID,inputLimit:trigger+reserved,reserved,contextWindow:limit.context,outputLimit:limit.output};
 }

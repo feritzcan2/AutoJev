@@ -4,7 +4,7 @@ import {BrowserTools} from '../app/browser.mjs';
 import {JevBrowser} from '../app/jev-browser.mjs';
 
 function fixture(){
- const profile={directory:'Default'},browser=new BrowserTools('/unused',()=> 'jev',()=>({profile}));
+ const profile={directory:'Default'},browser=new BrowserTools('/unused',()=>({profile}));
  const client=new JevBrowser('/unused',{profile}),focused=[];
  client.browser={isConnected:()=>true};client.homeId='home';
  browser.clients.set('candidate',{mode:'jev',pending:Promise.resolve({client})});

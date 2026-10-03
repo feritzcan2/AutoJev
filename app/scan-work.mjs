@@ -28,30 +28,6 @@ export function scanWorkSummary(run){
  const work=scanWork(run);
  return {activeSearchId:work.activeSearchId,searches:work.searches.map(({id,label,status,pendingUrls,processedUrls,pageProgress,completion})=>({id,label,status,pendingCount:pendingUrls.length,processedCount:processedUrls.length,pageProgress,completion})),queue:scanQueue(run)};
 }
-export function declareScanSearches(run,searches){
- if(!Array.isArray(searches)||!searches.length||searches.length>100)throw Error('Bir seferde 1–100 arama tanımla.');
- const work=scanWork(run);
- for(const input of searches){
-  if(!/^[a-zA-Z0-9_-]{1,80}$/.test(input.id))throw Error('Arama kimliği geçersiz.');
-  const label=boundedText(input.label,'Arama kapsamı',500),existing=work.searches.find(s=>s.id===input.id);
-  if(existing){existing.label=label;continue;}
-  work.searches.push({id:input.id,label,status:'pending',pendingUrls:[],processedUrls:[],pageProgress:null,plan:null});
- }
- const initial=work.searches.find(s=>s.id==='default');
- if(initial&&!searches.some(s=>s.id==='default')&&!initial.pendingUrls.length&&!initial.processedUrls.length&&!initial.pageProgress){
-  work.searches=work.searches.filter(s=>s!==initial);if(work.activeSearchId==='default')work.activeSearchId=work.searches[0].id;
- }
- return work;
-}
-export function selectScanSearch(run,searchId){
- const work=scanWork(run),previous=activeSearch(work),search=work.searches.find(s=>s.id===searchId);
- if(!search)throw Error('Önce aramayı save_scan_searches ile kaydet.');
- if(search.status==='completed')throw Error('Bu arama tamamlandı; kalan aramalara devam et.');
- if(previous)previous.plan=run.scanPlan??previous.plan;
- work.activeSearchId=searchId;
- const plan=search.plan??{...run.scanPlan,order:null,boundary:null,checkpoint:null};
- return {work,plan,pageProgress:search.pageProgress};
-}
 export function reportWorkPage(run,pageProgress){
  const work=scanWork(run),search=activeSearch(work),previous=search.pageProgress;
  // A lower page can be visited to recover access. It is not a new checkpoint.
@@ -85,7 +61,7 @@ export function assertScanWorkFinished(run){
  if(!run.scan?.work)return;
  const work=scanWork(run);
  if(pendingScanUrls(work).length)throw Error('Bekleyen sayfa veya kayıtlar var. İşlenen adresleri processedUrls ile kaydet.');
- if(work.searches.length>1&&work.searches.some(s=>s.status!=='completed'))throw Error('Tüm kayıtlı aramalar bitmedi. Kalan aramaları select_scan_search ile seç ve complete_scan_search ile tamamla.');
+ if(work.searches.length>1&&work.searches.some(s=>s.status!=='completed'))throw Error('Kayıtlı aramaların tamamı bitmedi; kalan aramayı complete_scan_search ile tamamla.');
 }
 export function otherScanSearchesPending(run){
  return Boolean(run.scan?.work?.searches.some(s=>s.id!==run.scan.work.activeSearchId&&s.status!=='completed'));
