@@ -2,18 +2,23 @@
 // It contains synthetic data only and cannot submit applications.
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
-import {calculateScorecard,scoringPolicy,SCORE_DIMENSIONS} from '../app/scoring-policy.mjs';
 const proof={listingQuote:'Required program ownership',candidateSource:'facts',candidateQuote:'Verified compliance experience',reason:'Related experience; required program ownership is not verified.'};
-const card={dimensions:SCORE_DIMENSIONS.map(key=>({key,level:'direct',...proof})),requirements:[{kind:'qualification',match:'unknown',...proof,candidateQuote:''}]};
-const calculation=calculateScorecard(card,scoringPolicy({criteria:{ranking:'Eşik 60/100'}}),{listing:proof.listingQuote,sources:{facts:{text:proof.candidateQuote,digest:'synthetic'}}});
-const files=new Map(['/src/score-breakdown.js','/src/scoring-state.js','/src/automation-results.js','/src/record-table.js','/src/record-operation-status.js','/src/workspace-tabs.js','/src/automations.css','/src/style.css'].map(p=>[p,new URL('..'+p,import.meta.url)]));
+// Records saved before scoring became one rubric text still carry this breakdown.
+const weights={technical:70,experience:10,role:10,preferences:10};
+const calculation={version:4,score:100,rawScore:100,cap:null,eligibility:'unverified',dimensions:Object.entries(weights).map(([key,weight])=>({key,level:'direct',...proof,points:100,weight,contribution:weight})),requirements:[{kind:'qualification',match:'unknown',...proof,candidateQuote:''}]};
+const files=new Map(['/src/template-fields.js','/app/record-operation-definitions.mjs','/src/score-breakdown.js','/src/scoring-state.js','/src/automation-results.js','/src/record-table.js','/src/record-operation-status.js','/src/workspace-tabs.js','/src/automations.css','/src/style.css'].map(p=>[p,new URL('..'+p,import.meta.url)]));
 const server=createServer(async(req,res)=>{
  try{
-  if(files.has(req.url)){res.setHeader('Content-Type',req.url.endsWith('.js')?'text/javascript':'text/css');res.end(await readFile(files.get(req.url)));return;}
+  if(files.has(req.url)){res.setHeader('Content-Type',/\.m?js$/.test(req.url)?'text/javascript':'text/css');res.end(await readFile(files.get(req.url)));return;}
   if(req.url!=='/'){res.writeHead(404).end();return;}
-  res.setHeader('Content-Type','text/html; charset=utf-8');res.end(`<!doctype html><html lang="tr"><meta charset="utf-8"><title>Puanlama arayüz kontrolü</title><link rel="stylesheet" href="/src/style.css"><link rel="stylesheet" href="/src/automations.css"><body style="display:block;padding:24px;max-width:1000px;margin:auto;overflow:auto;height:auto"><h1>Puanlama arayüz kontrolü</h1><p id="status" role="status">Kontrol ediliyor…</p><main></main><h2>Kayıt puanları</h2><section id="records"></section><script type="module">
+  res.setHeader('Content-Type','text/html; charset=utf-8');res.end(`<!doctype html><html lang="tr"><meta charset="utf-8"><title>Puanlama arayüz kontrolü</title><link rel="stylesheet" href="/src/style.css"><link rel="stylesheet" href="/src/automations.css"><body style="display:block;padding:24px;max-width:1000px;margin:auto;overflow:auto;height:auto"><h1>Puanlama arayüz kontrolü</h1><p id="status" role="status">Kontrol ediliyor…</p><h2>Puanlama ayarları</h2><form id="settings"></form><main></main><h2>Kayıt puanları</h2><section id="records"></section><script type="module">
+  import {templateFields,templateValues} from '/src/template-fields.js';
+  import {scoringFields} from '/app/record-operation-definitions.mjs';
   import {scoreBreakdown} from '/src/score-breakdown.js';
   import {automationResultsTable} from '/src/automation-results.js';
+  const settings=document.querySelector('#settings');
+  templateFields(settings,scoringFields,{ranking:'Tercihlerime göre değerlendir.',score_threshold:'80',save_score_threshold:'60'});
+  if(templateValues(settings,scoringFields).save_score_threshold!=='60'||!settings.textContent.includes('Minimum kayıt puanı'))throw Error('Minimum kayıt puanı alanı eksik');
   const root=document.querySelector('main'),c=${JSON.stringify(calculation)};
   root.append(scoreBreakdown({score:c.score,calculation:c}),scoreBreakdown({score:88}));
   const rows=root.querySelectorAll('tbody tr');

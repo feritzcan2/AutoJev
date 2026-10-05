@@ -87,7 +87,7 @@ async function boot(){
   agentRoles:()=>WEB_AGENT_ROLES,
   instructions:(id,role)=>webInstructionCatalog(automationDb,id,role),
   configuration:id=>webPromptCatalog(automationDb.get(id)),
-  create:(templateId,input)=>automationDb.create(templateId,input),directory:web.workspace,documentPurposes:['attachment'],beforeDocument:id=>automationDb.assertIdle(id),documentAdded:(id,document)=>automationDb.message(id,'system',`Kullanıcı bir belge ekledi: ${document.relative} (${document.name}). Yalnızca bu otomasyon kapsamında kullan.`),
+  create:(templateId,input)=>automationDb.create(templateId,input),directory:web.workspace,documentPurposes:['attachment'],beforeDocument:id=>automationDb.assertIdle(id,{allowConversation:true}),documentAdded:(id,document)=>automationDb.message(id,'system',`Kullanıcı bir belge ekledi: ${document.relative} (${document.name}). Yalnızca bu otomasyon kapsamında kullan.`,{document:document.relative}),
   rename:(id,name)=>automationDb.rename(id,name),remove:web.remove,browserDirectory:id=>workspaceBrowserDirectory(data,core.workspaces.get(id)),browserOptions:id=>({config:()=>jevSettings.config(),profile:core.workspaces.get(id).chromeProfile,lifecycle:{multiWorker:true}}),
   workers:{add:(id,input)=>web.runtime.add(id,input),start:(id,worker,state)=>web.runtime.startWorker(id,worker,state),restartState:(id,worker)=>web.runtime.restartState(id,worker),stop:(id,worker)=>web.runtime.stopWorker(id,worker),remove:(id,worker)=>web.runtime.remove(id,worker)},
   message:(id,text,worker)=>web.runtime.message(id,text,worker),snapshot:id=>web.snapshot(id),
@@ -112,12 +112,12 @@ async function boot(){
  handle('rename-workspace',(id,name)=>workspaces.rename(id,name));handle('delete-workspace',id=>workspaces.remove(id));
  handle('documents',id=>documents.list(id));handle('pick-document',(id,options)=>documents.pick(id,options));handle('read-document',(id,file)=>documents.read(id,file));handle('open-document',(id,file)=>documents.open(id,file));
  handle('worker-add',(id,input)=>workspaces.addWorker(id,input));handle('worker-start',(id,worker)=>workspaces.startWorker(id,worker));handle('worker-stop',(id,worker)=>workspaces.stopWorker(id,worker));handle('worker-restart',(id,worker)=>workspaces.restartWorker(id,worker));handle('worker-remove',(id,worker)=>workspaces.removeWorker(id,worker));
- handle('terminal-output',(id,worker='main')=>{workspaces.validateWorker(id,worker);return agents.snapshot(id,worker);});
- handle('worker-transcript',(id,worker='main')=>{workspaces.validateWorker(id,worker);return agents.transcript(id,worker);});
+ handle('terminal-output',(id,worker='main')=>{workspaces.validateWorker(id,worker,{mutable:false});return agents.snapshot(id,worker);});
+ handle('worker-transcript',(id,worker='main')=>{workspaces.validateWorker(id,worker,{mutable:false});return worker==='conversation'?web.conversationTranscript(id):agents.transcript(id,worker);});
  const preview=workerPreviews({browsers:browser,sessionFor:(id,worker)=>agents.sessions.get(workerKey(id,worker))});
- handle('worker-preview',(id,worker='main')=>{workspaces.validateWorker(id,worker);return preview(id,worker);});
+ handle('worker-preview',(id,worker='main')=>{workspaces.validateWorker(id,worker,{mutable:false});return preview(id,worker);});
  handle('terminal-input',(id,text,worker='main',session)=>{workspaces.beforeInput(id,text,worker);return agents.input(id,text,worker,session);});
- handle('terminal-message',(id,text,worker='main')=>workspaces.message(id,text,worker));handle('terminal-resize',(id,rows,cols,worker='main',session)=>{workspaces.validateWorker(id,worker);return agents.resize(id,rows,cols,worker,session);});
+ handle('terminal-message',(id,text,worker='main')=>workspaces.message(id,text,worker));handle('terminal-resize',(id,rows,cols,worker='main',session)=>{workspaces.validateWorker(id,worker,{mutable:false});return agents.resize(id,rows,cols,worker,session);});
  handle('catalog',()=>ensureEngine().request('catalog'));handle('chrome-profiles',()=>listChromeProfiles());
  handle('open-link',async url=>{const u=new URL(url);if(!['https:','http:'].includes(u.protocol))throw Error('Geçersiz bağlantı');await shell.openExternal(u.toString());});
  scheduler.register('agents',async()=>{for(const session of agents.sessions.values())await agents.readContext(session.candidateId,session);});

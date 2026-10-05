@@ -2,19 +2,44 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {findTurnstileCheckbox} from './turnstile-checkbox.mjs';
 import {captchaProvider} from './captcha-provider.mjs';
 
+// The site-wait card is the only place a user sees why the one native attempt
+// ended. Keep the reason code too; it names the exact discovery/click step.
+const outcomes={
+ barrier_after_click:'Doğrulama kutusuna bir kez tıklandı; Cloudflare erişimi açmadı.',
+ document_changed:'Doğrulama sayfası deneme sırasında yenilendi; kutuya yeniden tıklanmadı.',
+ paint_pending:'Sekme arka planda çizilemediği için kutuya tıklanamadı.',
+ target_changed:'Doğrulama kutusu tıklamadan hemen önce değişti; tıklanmadı.',
+ frame_obscured:'Doğrulama kutusunun üstü kapalıydı; tıklanmadı.',
+ multiple_checkboxes:'Birden fazla doğrulama kutusu bulundu; tıklanmadı.'
+};
+export function cloudflareCheckboxMessage(diagnostic){
+ if(!diagnostic)return null;
+ const reason=diagnostic.reason??'unknown';
+ return `${outcomes[reason]??`Doğrulama kutusu ${Math.round((diagnostic.elapsedMs??0)/1000)} sn içinde tıklanabilir hale gelmedi.`} (${reason})`;
+}
+
+// A real challenge can run its own checks for 10+ seconds before it renders a
+// checkbox or passes, and needs time to verify after the click. Both bounded.
+const DISCOVERY_MS=30000,ATTEMPT_MS=20000;
+
 export async function prepareCloudflareCheckbox(slot){
  const document=await slot.page.evaluate(()=>performance.timeOrigin);
  if(slot.cloudflareDocument!==undefined&&slot.cloudflareDocument!==document){
-  // Never carry a captured target into a replacement document. An in-flight
-  // attempt stops; a later authorized site probe starts from fresh evidence.
-  if(pending.has(slot)){
+  // Never carry a captured target into a replacement document. A challenge
+  // may reload itself before showing a checkbox: discovery continues within
+  // the same deadline. After a click the attempt stops; a later authorized
+  // site probe starts from fresh evidence.
+  if(pending.has(slot)&&!slot.cloudflareAttempt&&slot.cloudflareDiscovery&&!slot.cloudflareDiscovery.finished){
+   await slot.cloudflareCheckbox?.dispose();delete slot.cloudflareCheckbox;
+  }else if(pending.has(slot)){
    if(slot.cloudflareDiagnostic)slot.cloudflareDiagnostic.reason='document_changed';
    if(slot.cloudflareDiscovery)slot.cloudflareDiscovery.finished=true;
    if(slot.cloudflareAttempt)slot.cloudflareAttempt.finished=true;
    return false;
+  }else{
+   await slot.cloudflareCheckbox?.dispose();delete slot.cloudflareCheckbox;
+   delete slot.cloudflareAttempt;delete slot.cloudflareDiscovery;delete slot.cloudflareDiagnostic;
   }
-  await slot.cloudflareCheckbox?.dispose();delete slot.cloudflareCheckbox;
-  delete slot.cloudflareAttempt;delete slot.cloudflareDiscovery;delete slot.cloudflareDiagnostic;
  }
  slot.cloudflareDocument=document;
  const attempt=slot.cloudflareAttempt;
@@ -24,16 +49,17 @@ export async function prepareCloudflareCheckbox(slot){
  // Do not complete verification for a page with user form fields.
  const form=await slot.page.locator('input:not([type="hidden"]),textarea,select').evaluateAll(es=>es.some(e=>e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})));
  if(form)return false;
- slot.cloudflareDiscovery??={startedAt:Date.now(),until:Date.now()+8000};
+ slot.cloudflareDiscovery??={startedAt:Date.now(),until:Date.now()+DISCOVERY_MS};
  if(slot.cloudflareDiscovery.finished||Date.now()>=slot.cloudflareDiscovery.until)return false;
  slot.cloudflareDiagnostic??={kind:'cloudflare_checkbox',phase:'discovering',checks:0,clicked:false};
  slot.cloudflareDiagnostic.checks++;
  slot.cloudflareCheckbox=await findTurnstileCheckbox(slot.page,reason=>{slot.cloudflareDiagnostic.reason=reason;});
  // The provider often spends several seconds checking before it renders a
  // checkbox. Keep discovery pending; only the verified target permits a click.
- // A provider may already have a hidden input while its initial check runs.
- // Re-read it within the deadline; hidden controls still never permit a click.
- return !!slot.cloudflareCheckbox||['provider_not_ready','frame_loading','frame_unavailable','checkbox_not_ready','checkbox_not_actionable'].includes(slot.cloudflareDiagnostic.reason);
+ // A provider may already have a hidden input, or keep its whole frame hidden,
+ // while its initial check runs; the page may then pass on its own or show the
+ // checkbox. Re-read within the deadline; hidden controls never permit a click.
+ return !!slot.cloudflareCheckbox||['provider_not_ready','frame_loading','frame_unavailable','frame_hidden','checkbox_not_ready','checkbox_not_actionable'].includes(slot.cloudflareDiagnostic.reason);
 }
 
 export async function clickCloudflareCheckbox(slot,check){
@@ -64,7 +90,7 @@ export async function clickCloudflareCheckbox(slot,check){
   // The host bounding box is in the main viewport; checkbox geometry is in
   // its own frame. This also handles a bordered or scaled iframe.
   const x=box.x+(metrics.left+fresh.x)*metrics.sx,y=box.y+(metrics.top+fresh.y)*metrics.sy;
-  check();slot.cloudflareAttempt={until:Date.now()+8000,finished:false};
+  check();slot.cloudflareAttempt={until:Date.now()+ATTEMPT_MS,finished:false};
   if(slot.cloudflareDiagnostic)Object.assign(slot.cloudflareDiagnostic,{phase:'checking',reason:'click_dispatched',clicked:true});
   await slot.page.mouse.click(x,y);
   return true;
@@ -88,7 +114,7 @@ export async function resolveCloudflareCheckbox(browser,id,result,owner,options)
    slot.captchaProgress={state:'checking',message:'Cloudflare doğrulama kutusu kontrol ediliyor…'};browser.onCaptchaProgress?.(id);
    // Discovery and post-click waiting are outside the workspace queue. A late
    // checkbox gets its one attempt; a disappeared/replaced widget is re-read.
-   for(let n=0;n<32;n++){
+   for(const deadline=Date.now()+DISCOVERY_MS+ATTEMPT_MS+10000;Date.now()<deadline;){
     check();
     if(!slot.cloudflareAttempt&&slot.cloudflareCheckbox){
      const clicked=await browser.enqueue(id,()=>{check();return clickCloudflareCheckbox(slot,check);});

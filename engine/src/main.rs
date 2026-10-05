@@ -44,7 +44,8 @@ impl Engine {
                 }
                 let id=field(v,"sessionId")?;let cwd=field(v,"cwd")?;let directory=field(v,"runtimeDirectory")?;
                 let config_path=Path::new(directory).join("mcp.json");
-                if provider=="claude"{std::fs::write(&config_path,json!({"mcpServers":{"jobloop":{"type":"http","url":field(v,"endpoint")?,"headers":{"Authorization":format!("Bearer {}",field(v,"token")?)}}}}).to_string()).map_err(|e|e.to_string())?;}
+                // Jev tool calls legitimately wait minutes; ask the client for a long per-call limit.
+                if provider=="claude"{std::fs::write(&config_path,json!({"mcpServers":{"jobloop":{"type":"http","url":field(v,"endpoint")?,"headers":{"Authorization":format!("Bearer {}",field(v,"token")?)},"timeout":600000}}}).to_string()).map_err(|e|e.to_string())?;}
                 let mcp=McpConnection{endpoint:field(v,"endpoint")?,token:field(v,"token")?,claude_config_path:config_path.to_str().ok_or("Invalid config path")?,server_name:"jobloop",instructions:None};
                 let mut runtime=ObservedSession::new(id.into(),1,provider.into(),self.terminal.clone());
                 let conversation=v["resumeId"].as_str().map(|identity|ConversationHandle::from_native(provider,identity.into())).transpose().map_err(|e|e.to_string())?;

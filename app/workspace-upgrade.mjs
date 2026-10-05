@@ -72,6 +72,7 @@ export function upgradeWorkspaces(db){
    for(const q of migratedQuestions)db.message(id,q.answer==null?'assistant':'system',q.text+(q.answer==null?'':'\nKayıtlı yanıt: '+q.answer));
    if(core.exists('telegram_links'))sql.prepare('UPDATE telegram_links SET cursor=0 WHERE candidate_id=?').run(id);
    sql.prepare('INSERT INTO workspace_imports VALUES(?,?)').run(id,JSON.stringify({profile:p,sources,campaign,questions,tasks,at:now}));
+   core.records.identities.rebuild(id);
    migrated.push(id);
   }
   return migrated;

@@ -11,10 +11,11 @@ import {AutomationStore} from '../app/automation-store.mjs';
 import {TelegramStore} from '../app/telegram-store.mjs';
 import {createBackup,inspectBackup,stageRestore,applyPendingRestore,prepareDataUpgrade,completeDataUpgrade,pruneLogs,dataManagementStatus,DATA_SCHEMA_VERSION} from '../app/data-management.mjs';
 import {prunePromptLogs} from '../app/data-management-schema.mjs';
-import {calculateScorecard,scoringPolicy} from '../app/scoring-policy.mjs';
-import {unknownScorecard} from './helpers/scorecard.mjs';
 import {rememberSourceAccess} from '../app/source-access-recovery.mjs';
 import {sourceScanScope} from '../app/source-scan.mjs';
+import {prepareCollection,saveCollectionPage,collectSourcePage} from '../app/source-collector-worker.mjs';
+import {parseHimalayasPage} from '../app/himalayas-collector.mjs';
+import {scoringPolicy} from '../app/scoring-policy.mjs';
 
 // Backup compatibility uses frozen legacy rows, not a second execution engine.
 const row=(core,table,id,column='candidate_id')=>JSON.parse(core.db.prepare(`SELECT data FROM ${table} WHERE ${column}=?`).get(id).data);
@@ -49,6 +50,53 @@ async function fixture(t){
  return {base,data,store,profile,candidate,job,backup:path.join(base,'export'),create:destination=>createBackup({dataDirectory:data,db:store.db,destination:destination??path.join(base,'export'),appVersion:'0.1.0'})};
 }
 async function manifest(directory,edit){const file=path.join(directory,'manifest.json'),value=JSON.parse(await readFile(file,'utf8'));await edit(value);await writeFile(file,JSON.stringify(value));}
+
+test('schema 39 collector checkpoints upgrade and restore pending details after result pages end',async t=>{
+ const f=await fixture(t),db=new AutomationStore(f.store),source='https://himalayas.app/',detail='https://himalayas.app/companies/synthetic/jobs/moved';
+ const a=db.create('job-search',{goal:'backend',criteria:{preferences:'Remote'},sources:[source]});db.review(a.id);
+ const task=f.store.workspaces.tasks.enqueue(a.id,{sourceUrl:source,operation:'scan',sources:[source],lockKey:'source:'+source}),run=db.begin(a.id,{kind:'run',taskId:task.id});
+ const input=prepareCollection(db,run,db.get(a.id)),url=input.searches[0].url;
+ saveCollectionPage(db,run.id,{...parseHimalayasPage(url,{jobs:[{guid:detail,title:'Synthetic',description:'<p>TRANSIENT_RECOVERY_BODY_981</p>'}],offset:0,limit:20,totalCount:1}),searchId:input.searches[0].id});
+ f.store.db.exec('PRAGMA user_version=39');f.store.close();
+ const upgrade=await prepareDataUpgrade({dataDirectory:f.data,appVersion:'0.1.2'});assert.equal((await inspectBackup(upgrade.backup)).schemaVersion,39);
+ let core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite')),store=new AutomationStore(core);
+ const options={readPage:async value=>parseHimalayasPage(value,{jobs:[],offset:0,limit:20,totalCount:0}),readDetail:async()=>{throw Error('Synthetic unavailable');}};
+ await collectSourcePage(store,run.id,options);const end=await collectSourcePage(store,run.id,options);assert.equal(end.complete,false);assert.deepEqual(end.issue.urls,[detail]);
+ const backup=path.join(f.base,'pending-detail');await createBackup({dataDirectory:f.data,db:core.db,destination:backup,appVersion:'0.1.2'});
+ assert.ok(!(await readFile(path.join(backup,'jobloop.sqlite'))).includes('TRANSIENT_RECOVERY_BODY_981'));
+ await stageRestore({dataDirectory:f.data,directory:backup,db:core.db,appVersion:'0.1.2'});core.close();await applyPendingRestore({dataDirectory:f.data});
+ core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));store=new AutomationStore(core);
+ try{
+  assert.equal(core.db.prepare('PRAGMA user_version').get().user_version,DATA_SCHEMA_VERSION);assert.equal(store.jevTasks.bodies.size,0);
+  assert.equal(store.run(run.id).scan.work.searches[0].collector.nextUrl,null);assert.deepEqual(store.run(run.id).scan.pendingUrls,[detail]);
+  store.review(a.id);core.workspaces.tasks.put({...core.workspaces.tasks.get(a.id,task.id),state:'pending',workerId:null});
+  const resumed=store.begin(a.id,{kind:'run',taskId:task.id});prepareCollection(store,resumed,store.get(a.id));
+  const recovered=await collectSourcePage(store,resumed.id,{readPage:async()=>{throw Error('Finished result pages must not be rescanned');},readDetail:async value=>({url:value,title:'Synthetic',description:'Fresh RAM detail',company:'',location:''})});
+  assert.equal(store.jevTasks.get(a.id,task.id,recovered.taskId).items[0].url,detail);assert.equal(store.run(resumed.id).scan.reviewStats.collected,1);
+ }finally{core.close();}
+});
+
+test('schema 38 upgrade and restore keep minimum save filtering opt-in and preserve existing records',async t=>{
+ const f=await fixture(t),db=new AutomationStore(f.store),a=db.create('custom',{goal:'Synthetic scan',sources:['https://example.test/search']});
+ const record=db.putResult({id:'minimum-save-legacy',automationId:a.id,key:'https://example.test/one',url:'https://example.test/one',title:'Existing low score',summary:'Saved',status:'found',trial:false,cells:{},assessment:{score:10},createdAt:1});
+ f.store.db.exec('PRAGMA user_version=38');f.store.close();
+ const upgrade=await prepareDataUpgrade({dataDirectory:f.data,appVersion:'0.2.0'});
+ assert.equal((await inspectBackup(upgrade.backup)).schemaVersion,38);
+ let core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite')),upgraded=new AutomationStore(core);
+ assert.equal(scoringPolicy(upgraded.get(a.id)).saveThreshold,null);assert.equal(upgraded.result(a.id,record.id).assessment.score,10);
+ upgraded.save(a.id,{criteria:{save_score_threshold:'60'}});
+ const backup=path.join(f.base,'with-minimum');await createBackup({dataDirectory:f.data,db:core.db,destination:backup,appVersion:'0.2.0'});
+ assert.equal((await inspectBackup(backup)).schemaVersion,DATA_SCHEMA_VERSION);
+ upgraded.save(a.id,{criteria:{save_score_threshold:'80'}});
+ await stageRestore({dataDirectory:f.data,directory:backup,db:core.db,appVersion:'0.2.0'});core.close();await applyPendingRestore({dataDirectory:f.data});
+ core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));upgraded=new AutomationStore(core);
+ try{
+  assert.equal(scoringPolicy(upgraded.get(a.id)).saveThreshold,60);assert.equal(upgraded.result(a.id,record.id).assessment.score,10);
+  await stageRestore({dataDirectory:f.data,directory:upgrade.backup,db:core.db,appVersion:'0.2.0'});
+ }finally{core.close();}
+ await applyPendingRestore({dataDirectory:f.data});core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));
+ try{assert.equal(scoringPolicy(new AutomationStore(core).get(a.id)).saveThreshold,null);assert.equal(core.db.prepare('PRAGMA user_version').get().user_version,DATA_SCHEMA_VERSION);}finally{core.close();}
+});
 
 test('portable backup includes committed WAL data and documents while removing credentials and transient files',async t=>{
  const f=await fixture(t),result=await f.create();assert.equal(result.candidates,1);assert.equal(result.jobs,1);assert.equal(result.secrets,'excluded');
@@ -135,6 +183,51 @@ test('newer schema is refused before Store modifies data',async t=>{
  const directory=await mkdtemp(path.join(tmpdir(),'jobloop-future-schema-'));t.after(()=>rm(directory,{recursive:true,force:true}));const file=path.join(directory,'jobloop.sqlite'),db=new DatabaseSync(file);db.exec(`CREATE TABLE sentinel(value TEXT); PRAGMA user_version=${DATA_SCHEMA_VERSION+1}`);db.close();
  assert.throws(()=>new WorkspaceDatabase(file),/daha yeni/);await assert.rejects(()=>prepareDataUpgrade({dataDirectory:directory,appVersion:'0.1.0'}),/daha yeni/);
  const check=new DatabaseSync(file,{readOnly:true});assert.deepEqual(check.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row=>row.name),['sentinel']);check.close();
+});
+
+test('schema 35 duplicates upgrade after backup and restore without losing original rows or receipts',async t=>{
+ const f=await fixture(t),db=new AutomationStore(f.store),a=db.create('housing');
+ const first={id:'identity-first',automationId:a.id,key:'https://example.test/item/1',url:'https://example.test/item/1',title:'Synthetic home',status:'found',trial:false};
+ const done={...first,id:'identity-done',key:first.url+'/?utm_source=mail',url:first.url+'/?utm_source=mail',status:'completed',evidence:'Synthetic confirmation',documents:[{path:'documents/letter.md'}]};
+ for(const item of [first,done])f.store.db.prepare('INSERT INTO workspace_records(id,workspace_id,record_key,data) VALUES(?,?,?,?)').run(item.id,a.id,item.key,JSON.stringify(item));
+ f.store.db.exec('PRAGMA user_version=35');f.store.close();
+ const upgrade=await prepareDataUpgrade({dataDirectory:f.data,appVersion:'0.1.2'});assert.equal((await inspectBackup(upgrade.backup)).schemaVersion,35);
+ let core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite')),store=new AutomationStore(core);
+ assert.equal(store.results(a.id).length,1);assert.equal(store.result(a.id,first.id).id,done.id);assert.equal(store.result(a.id,first.id).evidence,done.evidence);
+ assert.equal(core.db.prepare('SELECT count(*) AS n FROM workspace_records WHERE workspace_id=?').get(a.id).n,2);
+ await stageRestore({dataDirectory:f.data,directory:upgrade.backup,db:core.db,appVersion:'0.1.2'});core.close();await applyPendingRestore({dataDirectory:f.data});
+ core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));store=new AutomationStore(core);
+ try{assert.equal(store.results(a.id).length,1);assert.deepEqual(store.result(a.id,first.id).documents,done.documents);assert.equal(core.db.prepare('PRAGMA foreign_key_check').get(),undefined);}
+ finally{core.close();}
+});
+
+test('schema 37 unscored imports survive upgrade; review checkpoints restore without raw descriptions',async t=>{
+ const f=await fixture(t),db=new AutomationStore(f.store),source='https://himalayas.app/';
+ const a=db.create('job-search',{goal:'backend',criteria:{preferences:'Germany'},sources:[source]});
+ const recipe={entry:{kind:'url_template',template:'https://himalayas.app/jobs/countries/germany?q={query}'},pagination:'url_param'};
+ db.saveSource(a.id,source,{recipe});db.review(a.id);const savedRecipe=db.get(a.id).sourceSettings[source].recipe;
+ db.putResult({id:'legacy-cli',automationId:a.id,key:'https://himalayas.app/companies/synthetic/jobs/legacy',url:'https://himalayas.app/companies/synthetic/jobs/legacy',title:'Legacy',summary:'Old import',status:'found',collectedBy:'himalayas',trial:false,cells:{}});
+ f.store.db.exec('PRAGMA user_version=37');f.store.close();
+ const upgrade=await prepareDataUpgrade({dataDirectory:f.data,appVersion:'0.1.2'});assert.equal((await inspectBackup(upgrade.backup)).schemaVersion,37);
+ let core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite')),store=new AutomationStore(core);
+ assert.deepEqual(store.get(a.id).sourceSettings[source].recipe,savedRecipe);
+ const task=core.workspaces.tasks.enqueue(a.id,{sourceUrl:source,operation:'scan',sources:[source],lockKey:'source:'+source}),run=store.begin(a.id,{kind:'run',taskId:task.id});
+ const input=prepareCollection(store,run,store.get(a.id)),url=input.searches[0].url;
+ saveCollectionPage(store,run.id,{...parseHimalayasPage(url,{jobs:[{guid:'https://himalayas.app/companies/synthetic/jobs/test',title:'Synthetic',description:'<p>TRANSIENT_COLLECTOR_BODY_8732</p>',excerpt:'Durable summary'}],offset:0,limit:20,totalCount:21}),searchId:input.searches[0].id});
+ store.finish(a.id,run.id,'interrupted','Saved checkpoint');
+ const currentBackup=path.join(f.base,'collector-backup');await createBackup({dataDirectory:f.data,db:core.db,destination:currentBackup,appVersion:'0.1.2'});
+ assert.ok(!(await readFile(path.join(currentBackup,'jobloop.sqlite'))).includes('TRANSIENT_COLLECTOR_BODY_8732'));
+ await stageRestore({dataDirectory:f.data,directory:upgrade.backup,db:core.db,appVersion:'0.1.2'});core.close();await applyPendingRestore({dataDirectory:f.data});
+ core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));store=new AutomationStore(core);
+ assert.deepEqual(store.get(a.id).sourceSettings[source].recipe,savedRecipe);assert.equal(store.results(a.id).length,1);
+ await stageRestore({dataDirectory:f.data,directory:currentBackup,db:core.db,appVersion:'0.1.2'});core.close();await applyPendingRestore({dataDirectory:f.data});
+ core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));store=new AutomationStore(core);
+ try{
+  assert.equal(core.db.prepare('PRAGMA user_version').get().user_version,DATA_SCHEMA_VERSION);
+  assert.equal(store.results(a.id).length,1);assert.equal(store.results(a.id)[0].assessment,undefined);
+  assert.equal(store.run(run.id).scan.pendingUrls[0],'https://himalayas.app/companies/synthetic/jobs/test');
+  assert.equal(new URL(store.run(run.id).scan.work.searches[0].collector.page.nextUrl).searchParams.get('page'),'2');assert.equal(store.browserEvidence.pages.size,0);assert.equal(store.jevTasks.bodies.size,0);
+ }finally{core.close();}
 });
 
 test('schema 32 run history upgrades without inventing tokens and new totals survive backup restore',async t=>{
@@ -306,7 +399,7 @@ test('schema 17 upgrades preserve legacy scores and new score calculations survi
  const upgrade=await prepareDataUpgrade({dataDirectory:f.data,appVersion:'0.2.0'});assert.equal((await inspectBackup(upgrade.backup)).schemaVersion,17);
  const core=new WorkspaceDatabase(path.join(f.data,'jobloop.sqlite'));assert.equal(core.db.prepare('PRAGMA user_version').get().user_version,DATA_SCHEMA_VERSION);
  assert.deepEqual(core.workspaces.records.get(f.profile.id,f.job.id).assessment,legacy);
- const calculation=calculateScorecard(unknownScorecard(),scoringPolicy({criteria:{ranking:'Eşik 60'}}),{listing:'',sources:{}}),assessment={...legacy,score:82,scoringVersion:4,eligibility:'mismatch',eligibilityReason:'Mandatory license absent',calculation};
+ const calculation={version:4,score:82,rawScore:82,eligibility:'mismatch',cap:null,dimensions:[],requirements:[],policy:{threshold:60}},assessment={...legacy,score:82,scoringVersion:4,eligibility:'mismatch',eligibilityReason:'Mandatory license absent',calculation};
  core.workspaces.records.update(f.profile.id,f.job.id,item=>({...item,assessment}));
  const scoreRecovery={attempt:2,runId:'synthetic-run',reason:'idle',requeue:false};
  const scoreTask=core.workspaces.tasks.enqueue(f.profile.id,{recordOperation:'score',recordId:f.job.id,scoreRecovery});

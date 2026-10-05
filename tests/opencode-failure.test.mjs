@@ -21,13 +21,13 @@ async function fixture(t){
  return {root,file,db,set,read};
 }
 
-test('native PDF reads are redirected to local CV text, including uppercase names and symlink aliases; text, images and MCP remain available',async t=>{
+test('native PDF reads are redirected to local document text, including uppercase names and symlink aliases; text, images and MCP remain available',async t=>{
  const {root}=await fixture(t),hook=(await documentPlugin({directory:root}))['tool.execute.before'];
  await writeFile(path.join(root,'CV.PDF'),'%PDF-1.4\nprivate document');await symlink(path.join(root,'CV.PDF'),path.join(root,'alias'));
  await writeFile(path.join(root,'facts.txt'),'Profile facts');await writeFile(path.join(root,'image.png'),Buffer.from([137,80,78,71]));
  for(const filePath of ['CV.PDF','alias',path.join(root,'CV.PDF')])await assert.rejects(hook({tool:'read'},{args:{filePath}}),/jobloop_read_scoring_profile.*nextOffset/);
  for(const filePath of ['facts.txt','image.png','missing.txt'])await hook({tool:'read'},{args:{filePath}});
- await hook({tool:'jobloop_read_scoring_profile'},{args:{source:'cv'}});
+ await hook({tool:'jobloop_read_scoring_profile'},{args:{source:'documents'}});
 });
 
 test('only the current workspace’s latest completed fatal message is reported, with no provider bodies or headers',async t=>{

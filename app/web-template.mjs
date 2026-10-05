@@ -1,17 +1,19 @@
 import {continueScoringRun,unreportedScoringRun,requeueScoringRun} from './scoring-recovery.mjs';
-import {taskHasRecord} from './record-task-scope.mjs';
+import {taskHasRecord,batchScoring} from './record-task-scope.mjs';
 import {SourceRetryChecks} from './source-retry-check.mjs';
 import {CONVERSATION_WORKER,isConversation,conversationWaiting} from './workspace-conversation.mjs';
 import {conversationContextVersion} from './automation-task-context.mjs';
 import {queueProfileUpdate,applyProfileUpdate} from './profile-updates.mjs';
 import {automationRunHistory} from './automation-continuation.mjs';
 import {setupAgentHistory,setupAgentSettings,setupAgentSettingsKey,resetSetupAgentHistory} from './setup-agent.mjs';
-import {enqueueScoreBatch,enqueueRecordOperation,dispatchRecordOperations,recordTask,resumeRecordOperation,pendingRecordQuestion} from './record-operations.mjs';
+import {enqueueScoreBatch,enqueueRecordOperation,dispatchRecordOperations,recordTask,resumeRecordOperation,pendingRecordQuestion,recordOperationError} from './record-operations.mjs';
 import {sourceTrialReady} from './automation-trial.mjs';
 import {TaskRuns} from './task-runs.mjs';
 import {recoverRecordOperations} from './record-recovery.mjs';
 import {workerKey} from './worker-key.mjs';
 import {randomUUID} from 'node:crypto';
+import {sourceCollector,collectorRun} from './source-collectors.mjs';
+import {prepareCollection} from './source-collector-worker.mjs';
 import {sourceInput} from './automation-sources.mjs';
 import {automationAttention,dismissAutomationAttention} from './automation-attention.mjs';
 import {SourceAccessRecovery,rememberSourceAccess,finishSourceAccess} from './source-access-recovery.mjs';
@@ -61,17 +63,33 @@ export class WebTasks extends TaskRuns {
   },
   closeFailed:(id,runId,error)=>{const run=db.run(runId),summary='Oturum kapatılamadı: '+error.message;if(run.status==='running')db.finish(id,runId,'failed',summary);else db.putRun({...run,status:'failed',summary});if(run.taskId){const q=db.store.workspaces.tasks;q.put({...q.get(id,run.taskId),state:'paused'});}if(!isConversation(run))db.pause(id,'blocked');},
   afterFinish:async(id,runId)=>{
-   const run=db.run(runId),pending=(db.get(id).questions??[]).some(q=>q.answer==null&&q.taskId===run.taskId);
-   const completeSource=run.kind==='run'&&!run.recordId&&run.sourceUrl&&run.scan?.complete&&run.scan.completion!=='user_stop';
-   const completeRecord=run.recordId&&db.result(id,run.recordId).status==='completed';
-   const pendingContexts=(db.get(id).questions??[]).filter(q=>q.answer==null).map(q=>q.browserContext).filter(Boolean);
-   await options?.onRunFinished?.(id,run,{retainForAccess:db.get(id).sourceState?.[run.sourceUrl]?.accessRecovery?.runId===run.id,closeTabs:run.status==='completed'&&!pending&&Boolean(completeSource||completeRecord),pendingTabIds:pendingContexts.map(context=>context.tabId).filter(Boolean),pendingUrls:pendingContexts.map(context=>context.url).filter(Boolean)});
+   if(db.run(runId).collector)return;
+   const run=db.run(runId),unanswered=(db.get(id).questions??[]).filter(q=>q.answer==null),pending=unanswered.some(q=>q.taskId===run.taskId);
+   // Finished work closes its tabs: a trial, a complete scan, a scoring batch,
+   // or a record that is not waiting with a prepared, sending or unverified form.
+   const record=run.recordId?db.result(id,run.recordId):null;
+   const finished=record?!['prepared','executing','uncertain'].includes(record.status):run.kind==='trial'||batchScoring(run)||Boolean(run.sourceUrl&&run.scan?.complete&&run.scan.completion!=='user_stop');
+   const closeTabs=run.status==='completed'&&!pending&&finished,scope=run.recordId??(batchScoring(run)?null:run.sourceUrl);
+   // Earlier interrupted or blocked turns of the same record/source may have
+   // left their own tabs; runs still waiting for an answer keep theirs.
+   const waiting=new Set(unanswered.map(q=>q.runId??q.browserContext?.runId));
+   const runIds=closeTabs&&scope?db.db.prepare(`SELECT id FROM automation_runs WHERE automation_id=? AND json_extract(data,'$.status')<>'running' AND ${run.recordId?"json_extract(data,'$.recordId')=?":"json_extract(data,'$.sourceUrl')=? AND json_extract(data,'$.recordId') IS NULL"}`).all(id,scope).map(row=>row.id).filter(other=>!waiting.has(other)):[run.id];
+   const pendingContexts=unanswered.map(q=>q.browserContext).filter(Boolean);
+   await options?.onRunFinished?.(id,run,{retainForAccess:db.get(id).sourceState?.[run.sourceUrl]?.accessRecovery?.runId===run.id,closeTabs,keepForms:record?.status!=='completed',runIds,pendingTabIds:pendingContexts.map(context=>context.tabId).filter(Boolean),pendingUrls:pendingContexts.map(context=>context.url).filter(Boolean)});
   }
- },options);this.db=db;this.queue=db.store.workspaces.tasks;this.workers=db.store.workspaces.workers;this.dispatching=false;this.restarting=new Set();this.pausing=new Map();this.browserReady=options?.browserReady??(()=>true);this.sourceChecks=new SourceRetryChecks(db,{probe:options?.probeSource,now:this.now,changed:this.changed,isClosed:()=>this.closed});this.sourceAccess=new SourceAccessRecovery(this,{closeTabs:options?.onRunFinished});}
+ },options);this.db=db;this.queue=db.store.workspaces.tasks;this.workers=db.store.workspaces.workers;this.dispatching=false;this.restarting=new Set();this.pausing=new Map();this.browserReady=options?.browserReady??(()=>true);this.sourceChecks=new SourceRetryChecks(db,{probe:options?.probeSource,now:this.now,changed:this.changed,isClosed:()=>this.closed});this.sourceAccess=new SourceAccessRecovery(this,{closeTabs:options?.onRunFinished});
+ const launchAgent=this.launch;
+ this.launch=(run,automation,onEvent,signal)=>{if(collectorRun(automation,run)){prepareCollection(db,run,automation);run=db.run(run.id);}return launchAgent(run,automation,onEvent,signal);};
+ }
  assertNotStopping(id){if(this.pausing.has(id))throw Error('Çalışma alanı durduruluyor. Kapanış tamamlanınca yeniden başlat.');}
  async start(id,input,workerId='main'){this.assertNotStopping(id);return super.start(id,input,workerId);}
  plan(id,batchId,source){
   const a=this.db.get(id),template=this.db.template(a.templateId),tasks=this.queue.list(id,{batchId});
+  if(sourceCollector(a,source.url)){
+   for(const task of tasks)if(task.operation==='trial'&&task.state==='pending')this.queue.finish(id,task.id,'cancelled','Bu kaynak özel toplayıcıyla taranacak.');
+   const scan=tasks.find(t=>t.operation==='scan');
+   return scan?[scan]:[this.queue.enqueue(id,{batchId,sourceUrl:source.url,operation:'scan',capability:'browser.observe',subject:source.url,sources:[source.url],lockKey:'source:'+source.url})];
+  }
   if(tasks.some(t=>t.operation==='trial'))return tasks.filter(t=>t.operation==='trial');
   if(!sourceTrialReady(a,source.url)){
    for(const task of tasks)if(task.state==='pending')this.queue.finish(id,task.id,'cancelled','Kaynağın ilk turu deneme olacak');
@@ -110,7 +128,7 @@ export class WebTasks extends TaskRuns {
  }
  async tick({workspaceId,workerId}={}){
   if(this.closed||this.dispatching)return;this.dispatching=true;
-  try{recoverUnreportedSources(this.db,this.now());recoverExhaustedSourceRetries(this.db);const ready=[];for(const saved of this.db.list()){
+  try{recoverUnreportedSources(this.db,this.now());recoverExhaustedSourceRetries(this.db);const ready=[],canBrowse=new Set();for(const saved of this.db.list()){
    if(this.restarting.has(saved.id)||this.pausing.has(saved.id))continue;
    if(saved.profileUpdate){
     if(saved.profileUpdate.error)continue;
@@ -118,11 +136,16 @@ export class WebTasks extends TaskRuns {
     this.changed(saved.id);
    }
    this.sourceAccess.tick(saved.id);
-   if(!this.browserReady(saved.id))continue;
+   const native=saved.sources.some(url=>saved.sourceSettings?.[url]?.enabled!==false&&sourceCollector(saved,url));
+   const automaticRecords=native&&saved.status==='enabled'&&saved.mode!=='observe'&&this.db.results(saved.id,{all:true}).some(item=>{const kind=item.status==='found'?'prepare':item.status==='prepared'?'execute':null;return kind&&!recordOperationError(saved,item,kind,{now:this.now()});});
+   const needsBrowser=!native||automaticRecords||saved.sources.some(url=>saved.sourceSettings?.[url]?.enabled!==false&&!sourceCollector(saved,url))||this.queue.list(saved.id,{states:['pending']}).some(t=>t.recordOperation);
+   const browserReady=needsBrowser&&this.browserReady(saved.id);
+   if(browserReady)canBrowse.add(saved.id);
+   if(!browserReady&&!native)continue;
    ready.push(saved.id);
    // Give explicit requests every available worker before any workspace can
    // spend shared capacity on older source tasks or automatic record work.
-   await dispatchRecordOperations(this,saved.id,{manualOnly:true});
+   if(browserReady)await dispatchRecordOperations(this,saved.id,{manualOnly:true});
   }
   for(const id of ready){
    if(this.closed||this.pausing.has(id)||this.restarting.has(id))continue;
@@ -139,12 +162,12 @@ export class WebTasks extends TaskRuns {
     try{if(issue.retry==='source')await this.runSource(a.id,issue.sourceUrl);else void this.start(a.id,'trial',worker.id).catch(()=>{});}
     catch(error){this.db.message(a.id,'system','Planlanan deneme başlatılamadı: '+error.message);this.changed(a.id);}
    }
-   for(const task of this.queue.list(a.id).filter(t=>t.resumeSourceAfterAnswer&&!['running','reported','paused'].includes(t.state))){
+   for(const task of this.queue.resumptions(a.id).filter(t=>t.resumeSourceAfterAnswer&&!['running','reported','paused'].includes(t.state))){
     this.queue.put({...task,resumeSourceAfterAnswer:false});
     if(a.status==='enabled'&&!task.stopRequested&&['blocked','failed'].includes(task.state)&&a.sources.includes(task.sourceUrl)&&a.sourceSettings?.[task.sourceUrl]?.enabled!==false){this.resetSources(a.id,[task.sourceUrl]);this.sourceState(a.id,task.sourceUrl,{onceCompleted:false});this.changed(a.id);}
    }
    a=this.db.get(a.id);
-   await dispatchRecordOperations(this,a.id);
+   if(canBrowse.has(a.id))await dispatchRecordOperations(this,a.id);
    if(this.closed||this.pausing.has(a.id)||this.restarting.has(a.id))continue;
    a=this.db.get(a.id);
    if(a.status!=='enabled')continue;
@@ -152,6 +175,7 @@ export class WebTasks extends TaskRuns {
    const pending=[];
    for(const source of this.db.schedulingSources(a.id,a)){
     if(!source.enabled||source.stopping||a.onceSources&&!a.onceSources.includes(source.url))continue;
+    if(!canBrowse.has(a.id)&&!sourceCollector(a,source.url))continue;
     // Skip due turns during an existing search instead of queuing a duplicate.
     if(this.slots(a.id).some(s=>s.run.sourceUrl===source.url))continue;
     if(['waiting','resetting'].includes(source.accessRecovery?.state))continue;
@@ -185,7 +209,7 @@ export class WebTasks extends TaskRuns {
    pending.sort((x,y)=>x.createdAt-y.createdAt);
    for(const worker of this.workers.list(a.id).sort((x,y)=>a.id===workspaceId?Number(y.id===workerId)-Number(x.id===workerId):0)){
     if(worker.enabled===false||this.active.has(workerKey(a.id,worker.id))||this.capacityUsed>=this.concurrency)continue;
-    const index=pending.findIndex(task=>this.sourceChecks.ready(a.id,task));if(index<0)continue;
+    const index=pending.findIndex(task=>sourceCollector(a,task.sourceUrl)||canBrowse.has(a.id)&&this.sourceChecks.ready(a.id,task));if(index<0)continue;
     const [task]=pending.splice(index,1);
     // Reservation occurs synchronously inside start before provider awaits.
     void this.start(a.id,{kind:task.operation==='trial'?'trial':'run',taskId:task.id},worker.id).catch(()=>{});
@@ -201,7 +225,7 @@ export class WebTasks extends TaskRuns {
   this.changed(id);return item;
  }
  async runOnce(id){this.assertNotStopping(id);this.db.enable(id);const urls=this.db.sources(id).filter(s=>s.enabled).map(s=>s.url);this.resetSources(id,urls);for(const url of urls)this.sourceState(id,url,{onceCompleted:false});this.db.put({...this.db.get(id),once:true,onceSources:urls});await this.tick();return this.slots(id)[0]?.run??null;}
- async runSource(id,url){
+ async runSource(id,url,{fresh=false}={}){
   this.assertNotStopping(id);
   const source=this.db.sources(id).find(s=>s.url===url);if(!source)throw Error('Kaynak bu çalışma alanına ait değil');if(!source.enabled)throw Error('Önce kaynağı aç');
   if(this.slots(id).some(s=>s.run.sourceUrl===url))throw Error('Bu kaynak zaten çalışıyor');
@@ -212,6 +236,8 @@ export class WebTasks extends TaskRuns {
   }
   const a=this.db.get(id);if(a.status!=='enabled')this.db.enable(id,{sourceUrl:url});
   else if(a.once)this.db.put({...a,onceSources:[...new Set([...(a.onceSources??a.sources),url])]});
+  // resetSources cancels the pending task that carries the saved queue.
+  if(fresh)this.db.forgetSourceScan(id,url);
   this.resetSources(id,[url]);this.sourceState(id,url,{onceCompleted:false});await this.tick();return this.db.sources(id).find(s=>s.url===url);
  }
  // Relearn: the next turn of this source is a trial again, run by the trial agent.
@@ -290,7 +316,7 @@ export class WebTasks extends TaskRuns {
   if(answer.conversation){
    if(!(this.db.get(id).questions??[]).some(q=>q.conversation&&q.answer==null)){
     const active=this.slots(id).find(s=>isConversation(s.run));
-    if(active?.run.interactive)await this.sendConversation(id,active,'Kayıtlı sorunun yanıtı: '+JSON.stringify({question:answer.text,answer:answer.answer,values:answer.answerValues}),{messageId:null,inputQuestionIds:[questionId]});
+    if(active?.run.interactive)await this.sendConversation(id,active,'Kayıtlı sorunun yanıtı: '+JSON.stringify({question:answer.text,answer:answer.answer,values:answer.answerValues,...(answer.documents?{documents:answer.documents}:{})}),{messageId:null,inputQuestionIds:[questionId]});
     else{if(active)await this.finish(id,'interrupted','Sohbet yanıtla devam ediyor.',active.workerId);await this.start(id,{kind:'interview',inputQuestionIds:[questionId]},CONVERSATION_WORKER);}
    }return answer;
   }

@@ -10,7 +10,15 @@ function boundedText(value,label,max){
 export const RECIPE_ENTRY_KINDS=['url_template','search_form','discovery'];
 export const RECIPE_PAGINATION_KINDS=['auto','url_param','next_link','next_click','load_more','infinite_scroll','none'];
 export const RECIPE_FIELD_KEYS=['query','location'];
+// newest_first lets repeat scans stop once consecutive pages hold only known listings.
+export const RECIPE_ORDERING_KINDS=['unknown','newest_first'];
 export const RECIPE_STALE_FAILURES=2;
+// User rule (2026-10-05), for every source scan: all searches of a scan
+// together read at most SCAN_PAGE_BUDGET result pages, shared evenly, and each
+// search reads at least SCAN_MIN_SEARCH_PAGES.
+export const SCAN_PAGE_BUDGET=15;
+export const SCAN_MIN_SEARCH_PAGES=2;
+export const scanPageCap=searches=>Math.max(SCAN_MIN_SEARCH_PAGES,Math.floor(SCAN_PAGE_BUDGET/Math.max(1,searches)));
 export const RECIPE_TERM_LIMIT=5;
 const placeholderPattern=/\{([a-z_][a-z0-9_]*)\}/g;
 
@@ -45,6 +53,7 @@ export function normalizeSourceRecipe(input){
  const pagination=input.pagination??'auto';
  if(!RECIPE_PAGINATION_KINDS.includes(pagination))throw Error('Geçersiz sayfalama türü');
  recipe.pagination=pagination;
+ if(input.ordering!==undefined&&input.ordering!==null&&input.ordering!=='unknown'){if(!RECIPE_ORDERING_KINDS.includes(input.ordering))throw Error('Sıralama unknown veya newest_first olmalı');if(recipe.entry.kind!=='discovery')recipe.ordering=input.ordering;}
  if(input.loginRequired!==undefined&&input.loginRequired!==null){if(typeof input.loginRequired!=='boolean')throw Error('loginRequired doğru/yanlış olmalı');recipe.loginRequired=input.loginRequired;}
  if(input.notes!==undefined&&input.notes!==null&&input.notes!==''){recipe.notes=boundedText(input.notes,'Reçete notu',1000);}
  // Search terms replace {query} when the source query is a description rather
@@ -101,6 +110,10 @@ export function replayMatches(replay,url){
  });
 }
 
+// How many result pages a scan reads per search when the board's order is unknown.
+// Each recipe term is one search; a scan without terms or recipe is one search.
+export const recipePageCap=recipe=>scanPageCap(recipe?.entry?.kind!=='discovery'&&recipe?.terms?.length?recipe.terms.length:1);
+
 export const recipeStatus=(recipe,state)=>!recipe?'none':recipe.entry.kind==='discovery'?'discovery':state?.status==='verified'?'verified':state?.status==='stale'?'stale':'candidate';
 
 export const RECIPE_FAILURE_REASONS=new Set(['no_listing_links','search_control_missing','search_control_uncertain','search_not_verified','no_progress','page_changed','unmatched_answers','fill_not_verified','pagination_uncertain','pagination_action_unconfirmed','task_error']);
@@ -112,12 +125,16 @@ export const jevListingItem=item=>item.discovery?.decision==='listing'||Boolean(
 
 // Judge one finished scan from its Jev tasks. Access barriers and loading
 // pages are neutral: they say nothing about whether the recipe still works.
+// Details prove the replay when read from its scan, either by task or from
+// the saved queue holding that scan's links.
 export function recipeRunOutcome(replay,tasks){
  if(!replay)return 'neutral';
  const relevant=tasks.filter(t=>['scan_results','prepare_search'].includes(t.input?.operation)&&replayMatches(replay,t.input?.url));
  if(!relevant.length)return 'neutral';
- const ids=new Set(relevant.map(t=>t.id)),details=tasks.filter(t=>t.input?.operation==='collect_details'&&ids.has(t.input?.fromTaskId));
- if([...relevant,...details].some(t=>(t.items??[]).some(jevListingItem)))return 'success';
+ const ids=new Set(relevant.map(t=>t.id)),leads=new Set(relevant.flatMap(t=>(t.items??[]).flatMap(i=>[i.url,...(i.aliases??[])])));
+ const fromScan=item=>[item.url,...(item.aliases??[])].some(url=>leads.has(url));
+ const details=tasks.filter(t=>t.input?.operation==='collect_details').flatMap(t=>t.input?.fromTaskId&&ids.has(t.input.fromTaskId)?t.items??[]:(t.items??[]).filter(fromScan));
+ if(relevant.some(t=>(t.items??[]).some(jevListingItem))||details.some(jevListingItem))return 'success';
  if(relevant.some(t=>t.issue?.reason==='access_barrier'||t.status==='running'||t.status==='continue'||t.status==='pending'))return 'neutral';
  if(relevant.every(t=>t.status==='completed'&&!(t.items??[]).length||RECIPE_FAILURE_REASONS.has(t.issue?.reason)))return 'failure';
  return 'neutral';
@@ -135,7 +152,7 @@ export function recipeSummary(recipe,state){
  const status=recipeStatus(recipe,state);
  if(status==='none')return {status,label:'Reçete yok',detail:'İlk deneme turunda öğrenilecek.'};
  if(status==='discovery')return {status,label:'Keşif modu',detail:recipe.notes??'Agent her turda aramayı kendisi yapar.'};
- if(status==='verified')return {status,label:'Reçete doğrulandı',detail:`${state.successCount} başarılı tur${state.failCount?`, ${state.failCount} başarısız`:''}${recipe.terms?.length?` · ${recipe.terms.length} arama terimi`:''}`};
+ if(status==='verified')return {status,label:'Reçete doğrulandı',detail:`${state.successCount} başarılı tur${state.failCount?`, ${state.failCount} başarısız`:''}${recipe.terms?.length?` · ${recipe.terms.length} arama terimi`:''}${recipe.ordering==='newest_first'?' · yalnızca yeniler':''} · arama başına ilk ${recipePageCap(recipe)} sayfa`};
  if(status==='stale')return {status,label:'Reçete bozuldu',detail:state.lastFailure?.reason?`Son hata: ${state.lastFailure.reason}. Yeniden öğrenilecek.`:'Yeniden öğrenilecek.'};
  return {status,label:'Reçete bekliyor',detail:state?.lastFailure?.reason?`Doğrulanamadı: ${state.lastFailure.reason}`:'İlk taramada doğrulanacak.'};
 }

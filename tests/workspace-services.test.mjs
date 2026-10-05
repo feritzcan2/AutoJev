@@ -83,6 +83,26 @@ test('a failed stop keeps conversation history and never starts a replacement wo
  await assert.rejects(workspaces.restartWorker(web.id,'main'),/Still alive/);assert.equal(starts,0);assert.equal(workspaces.changing.size,0);assert.equal(store.workspaces.history(web.id).conversation(web.id,'codex'),'keep');
 });
 
+test('worker reads and terminal sizing remain scoped during a restart while commands stay locked',async t=>{
+ const {store,web,job}=fixture(t),worker=store.workspaces.workers.add(web.id),foreign=store.workspaces.workers.add(job.id);
+ let finish;const stopped=new Promise(resolve=>finish=resolve);
+ const workspaces=new Workspaces(store.workspaces,{templates:{browser:{workers:{stop:()=>stopped,start:async()=>({})}}}});
+ const restarting=workspaces.restartWorker(web.id,worker.id);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(workspaces.changing.has(web.id),true);
+ assert.equal(workspaces.validateWorker(web.id,worker.id,{mutable:false}).id,worker.id);
+ assert.equal(workspaces.validateWorker(web.id,'main',{mutable:false}).id,'main');
+ assert.throws(()=>workspaces.validateWorker(web.id,foreign.id,{mutable:false}),/ait değil/);
+ assert.throws(()=>workspaces.validateWorker('missing','main',{mutable:false}),/bulunamadı/);
+ assert.throws(()=>workspaces.validateWorker(web.id,worker.id),/güncelleniyor/);
+ assert.throws(()=>workspaces.beforeInput(web.id,'input',worker.id),/güncelleniyor/);
+ assert.throws(()=>workspaces.message(web.id,'message',worker.id),/güncelleniyor/);
+ assert.equal(workspaces.validateWorker(job.id,foreign.id).id,foreign.id);
+ finish();await restarting;
+ assert.equal(workspaces.validateWorker(web.id,worker.id).id,worker.id);
+ store.workspaces.workers.remove(web.id,worker.id);
+ assert.throws(()=>workspaces.validateWorker(web.id,worker.id,{mutable:false}),/kaldırıldı/);
+});
+
 test('the same workspace APIs rename, delete, import, preview and open documents for both templates',async t=>{
  const {store,db,job,web}=fixture(t),dir=await mkdtemp(path.join(tmpdir(),'loop-documents-'));t.after(()=>rm(dir,{recursive:true,force:true}));
  const source=path.join(dir,'source.txt');await writeFile(source,'Document text');let picked=source;const opened=[],added=[],removed=[];

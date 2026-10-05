@@ -42,14 +42,18 @@ export function automationAttentionPanel(api,{navigate,refresh,getConversation=(
   if(['setup','conversation'].includes(issue.kind))return createSetup(issue);
   if(issue.kind==='usage_limit')return createLimit(issue);
   if(issue.kind==='repeated_tool_error')return createToolFailure(issue);
-  const workspace=owner,card=el('article',null,'automation-help-card');card.dataset.issueId=issue.id;
+  const workspace=owner,card=el('article',null,'automation-help-card');card.dataset.issueId=issue.id;card.dataset.kind=issue.kind??'';
   const technical=issue.kind==='technical';
-  const heading=el('div',null,'automation-help-heading'),copy=el('div');copy.append(el('span',technical?'Tarama tamamlanamadı':issue.kind==='site_access'?(issue.accessExhausted?'Otomatik deneme durduruldu':'Otomatik devam bekleniyor'):'Müdahale gerekiyor','automation-help-label'),el('h3',issue.name));heading.append(el('span','!','attention-icon'),copy);
+  // A shared site wait is a timer, not a request for the user: it gets its own look.
+  const waiting=issue.kind==='site_access'&&!issue.accessExhausted;if(waiting)card.dataset.waiting='';
+  const clock=at=>at?new Date(at).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}):null;
+  const heading=el('div',null,'automation-help-heading'),copy=el('div');copy.append(el('span',technical?'Tarama tamamlanamadı':issue.kind==='site_access'?(issue.accessExhausted?'Otomatik deneme durduruldu':clock(issue.accessRetryAt)?`Bekleniyor · ${clock(issue.accessRetryAt)} saatinde otomatik devam`:'Erişim kontrolü sürüyor'):'Müdahale gerekiyor','automation-help-label'),el('h3',issue.name));heading.append(el('span',waiting?'⏱':'!','attention-icon'),copy);
   const summary=el('p',issue.message.length>300?issue.message.slice(0,297)+'…':issue.message,'automation-help-summary');
   const instructions=el('p',technical&&issue.retry?'Kaydedilen sonuçlar ve devam noktası korunuyor. Taramayı yeniden deneyebilirsin.':issue.retry?'İlgili sekmede engeli giderdikten sonra devam edebilirsin.':'İlgili sekmeyi kontrol et. Sonuç belirsizse agent’a durumu yaz; işlemi yeniden gönderme.','automation-help-instructions');
   if(issue.kind==='site_access')instructions.textContent=issue.cleanupError??(issue.accessExhausted?'Üçüncü erişim hatasında otomatik denemeler durduruldu. Devam noktası korunuyor. Engeli giderdikten sonra “Çözdüm, devam et” ile yeniden başlatabilirsin. Diğer kaynaklar çalışmaya devam eder.':`İlk hatada 5, ikinci hatada 10 dakika beklenir. Bu tarama ${new Date(issue.accessRetryAt).toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} tarihinde kaldığı yerden otomatik devam edecek. Üçüncü hatada durur. Diğer kaynaklar çalışmaya devam eder. Kartı kapatırsan sekmeler şimdi kapanır; sonraki deneme sıfırdan başlar.`);
   const actions=el('div',null,'automation-help-actions'),open=el('button','Sekmeyi göster ↗','primary'),reply=el('button','Yanıtla','quiet'),resume=issue.retry?el('button',technical?'Taramaya devam et':'Çözdüm, devam et','quiet'):null;
   open.type=reply.type='button';actions.append(open,reply);
+  if(issue.browserRequired===false){open.hidden=true;instructions.textContent='Kaydedilen sonuçlar ve bekleyen adresler korunuyor. Taramaya kaldığı yerden devam edebilirsin.';}
   if(resume){resume.type='button';actions.append(resume);}
   const later=issue.retry&&!issue.accessExhausted?el('button','2 saat sonra dene','quiet'):null;
   if(later){later.type='button';later.disabled=Boolean(issue.closing);actions.append(later);}
@@ -135,9 +139,9 @@ export function automationAttentionPanel(api,{navigate,refresh,getConversation=(
   snapshot=value;const all=id?automationAttention(value):[],issues=all.filter(issue=>!issue.retryAt),plans=all.filter(issue=>issue.retryAt),chat=getConversation();
   const panelIssues=issues.filter(i=>i.kind!=='question'||!i.recordId);
   const inline=panelIssues.filter(i=>chat&&i.kind==='question'&&i.conversation),chatIssues=panelIssues.filter(i=>chatAttention&&isChatIssue(i)&&!inline.includes(i)),outside=panelIssues.filter(i=>!inline.includes(i)&&!chatIssues.includes(i));conversationCount=inline.length+chatIssues.length;if(chatAttention)chatAttention.hidden=!chatIssues.length;
-  banner.hidden=!issues.length;panel.hidden=!outside.length;
+  banner.hidden=!issues.length;panel.hidden=!outside.length;banner.toggleAttribute('data-waiting',Boolean(issues.length&&issues.every(i=>i.kind==='site_access'&&!i.accessExhausted)));
   const onlyRecordQuestions=issues.length&&!panelIssues.length,onlyChatQuestions=issues.length&&inline.length===issues.length;review.textContent=onlyRecordQuestions?'Yanıt bekleyenleri göster':onlyChatQuestions?'Formu aç':'Müdahaleleri göster';
-  bannerText.textContent=onlyChatQuestions?`${inline.length} soru yanıtını bekliyor`:issues.length&&issues.every(i=>i.kind==='usage_limit')?`${issues.length} agent kullanım limitini bekliyor`:`${issues.length} müdahale bekleniyor`;
+  bannerText.textContent=onlyChatQuestions?`${inline.length} soru yanıtını bekliyor`:issues.length&&issues.every(i=>i.kind==='usage_limit')?`${issues.length} agent kullanım limitini bekliyor`:issues.length&&issues.every(i=>i.kind==='site_access'&&!i.accessExhausted)?`${issues.length} kaynak erişim beklemesinde · otomatik devam edecek`:`${issues.length} müdahale bekleniyor`;
   for(const [key,item] of cards)if(!panelIssues.some(i=>i.id===key)){item.card.remove();cards.delete(key);}
   for(const issue of panelIssues){const next=JSON.stringify(issue),old=cards.get(issue.id);if(old?.signature===next)continue;old?.card.remove();cards.set(issue.id,{...create(issue),signature:next});}
   chat?.setQuestions(inline.map(issue=>cards.get(issue.id).card));

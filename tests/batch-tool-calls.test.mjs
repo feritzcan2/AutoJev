@@ -5,7 +5,10 @@ import {AutomationStore} from '../app/automation-store.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
 
 const url='https://example.test/list',one=url+'/one',two=url+'/two';
-const answer=(choice,criteria,confidence=1)=>({choice,confidence,probabilities:Object.fromEntries(Object.keys(criteria).map(k=>[k,k===choice?1:0]))});
+// A card is asked what it opens (listing/other/uncertain) and whether it fits
+// (keep or an exclusion). One-answer mocks map onto whichever question it is.
+const pick=(choice,criteria)=>Object.hasOwn(criteria,choice)?choice:Object.hasOwn(criteria,'keep')?'keep':Object.hasOwn(criteria,'listing')&&['hard_constraint','qualification','unrelated_role'].includes(choice)?'listing':choice;
+const answer=(choice,criteria,confidence=1)=>(choice=pick(choice,criteria),{choice,confidence,probabilities:Object.fromEntries(Object.keys(criteria).map(k=>[k,k===choice?1:0]))});
 function fixture(t){
  const core=new WorkspaceDatabase(':memory:'),db=new AutomationStore(core);t.after(()=>core.close());
  const a=db.create('housing',{goal:'Berlin homes',criteria:{location:'Berlin',budget:'2000',requirements:'2 rooms'},sources:[url]});db.save(a.id,{browserMode:'jev'});db.review(a.id);
@@ -24,7 +27,7 @@ test('a source scan saves several findings in one call and reports failed entrie
  await f.call('browser_jev_run',{operation:'collect_details',fromTaskId:scan.taskId});
  assert.deepEqual(new Set(f.db.scanQueue(f.a.id,f.run.id).pendingUrls),new Set([one,two]));
  const result=await f.call('record_automation_results',{records:[
-  {url:one,title:'Home one',summary:'Observed'},
+  {url:one,title:'Home one',summary:'Observed',score:70},
   {url:two,title:'Home two',summary:'Observed',score:70,assessment:{score:70}}
  ]});
  assert.equal(result.saved,1);assert.equal(result.records[0].url,one);assert.ok(result.records[0].detail,'entries are receipts, not full records');

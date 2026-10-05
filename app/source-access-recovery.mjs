@@ -24,7 +24,7 @@ export class SourceAccessRecovery {
  tick(id){
   const a=this.db.get(id);
   for(const url of a.sources){
-   let recovery=this.current(id,url);
+   let recovery=a.sourceState?.[url]?.accessRecovery;
    // Adopt an existing persisted wait after upgrading; never revive a reset.
    if(!recovery&&a.sourceState?.[url]?.blocked&&a.sourceState[url].lastRunId){const row=this.db.db.prepare('SELECT data FROM automation_runs WHERE id=? AND automation_id=?').get(a.sourceState[url].lastRunId,id);if(row)rememberSourceAccess(this.db,JSON.parse(row.data));recovery=this.current(id,url);}
    if(recovery?.state==='answered'&&a.status==='enabled'&&a.sourceSettings?.[url]?.enabled!==false&&!this.busy(id,url)){
@@ -78,7 +78,7 @@ export class SourceAccessRecovery {
   this.db.jevTasks.release(id,origin.taskId);this.db.browserEvidence.release(id,origin.taskId);this.db.scoringListingTexts?.delete(runId);
   const work=Promise.resolve().then(async()=>{
    const run=this.db.run(runId),sourceRunIds=this.db.db.prepare("SELECT id FROM automation_runs WHERE automation_id=? AND json_extract(data,'$.sourceUrl')=? AND json_extract(data,'$.recordId') IS NULL AND json_extract(data,'$.startedAt')<=?").all(id,url,run.startedAt).map(row=>row.id);
-   const result=await this.closeTabs?.(id,run,{closeTabs:true,sourceAccessReset:true,sourceRunIds});
+   const result=await this.closeTabs?.(id,run,{closeTabs:true,sourceAccessReset:true,runIds:sourceRunIds});
    if(result?.deferred||result?.retained?.length||result?.failed?.length)throw Error('Kaynağın bekleyen sekmeleri henüz kapatılamadı; yeniden kontrol edilecek.');
    if(r.closed)return;
    const a=this.db.get(id),current=this.current(id,url);

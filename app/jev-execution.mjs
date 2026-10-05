@@ -1,7 +1,29 @@
 // Keep one browser helper alive across short MCP requests. Polling never
 // starts a second helper and finishing the request never cancels the first.
+//
+// Each poll costs the agent a full-context model turn, so a tool call waits in
+// place as long as the provider's MCP transport allows. Claude Code documents
+// a 5 minute idle limit for HTTP tool calls; Codex gets tool_timeout_sec=300 at
+// launch. Unknown providers keep a conservative window.
+export const JEV_WAIT_MS={claude:240000,codex:240000,default:30000};
+// The client's real limit is only known from behavior: when a provider drops
+// a tool call before the app answers, later waits stay under the time it
+// tolerated, for this app session. The dropped call itself loses nothing; the
+// helper keeps running and the next poll collects it.
+const WAIT_MARGIN_MS=5000,MIN_WAIT_MS=15000,clientLimits=new Map();
+export function observeClientAbort(provider,elapsedMs){
+ if(!Number.isFinite(elapsedMs)||elapsedMs<=0)return;
+ clientLimits.set(provider,Math.min(clientLimits.get(provider)??Infinity,elapsedMs));
+}
+export function jevWaitMsFor(provider){
+ const configured=JEV_WAIT_MS[provider]??JEV_WAIT_MS.default,limit=clientLimits.get(provider);
+ return limit===undefined?configured:Math.max(MIN_WAIT_MS,Math.min(configured,limit-WAIT_MARGIN_MS));
+}
+export const resetClientLimits=()=>clientLimits.clear();
 export class JevExecution {
+ // waitMs may be a function so a session learns a shorter client limit mid-run.
  constructor({waitMs=15000}={}){this.waitMs=waitMs;this.current=null;}
+ get waitWindow(){return typeof this.waitMs==='function'?this.waitMs():this.waitMs;}
  get busy(){return Boolean(this.current&&!this.current.settled);}
  receipt(){
   const task=this.current;
@@ -10,7 +32,7 @@ export class JevExecution {
  }
  async wait(){
   const task=this.current;let timer;
-  try{await Promise.race([task.promise,new Promise(resolve=>{timer=setTimeout(resolve,this.waitMs);})]);}finally{clearTimeout(timer);}
+  try{await Promise.race([task.promise,new Promise(resolve=>{timer=setTimeout(resolve,this.waitWindow);})]);}finally{clearTimeout(timer);}
   if(!task.settled)return this.receipt();
   task.delivered=true;
   if(task.error)throw task.error;

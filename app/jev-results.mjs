@@ -43,6 +43,9 @@ export function navigationLink(link,source){
   const url=new URL(link.url),page=new URL(source??link.url),label=(link.text??'').trim();
   const path=url.pathname.replace(/\/$/,'');
   if(/^(?:privacy(?: policy)?|security|terms(?: of (?:service|use))?|cookie(?: policy)?|learn more about .+)$/i.test(label)&&/^(?:|\/(?:privacy(?:-policy)?|security|terms(?:-of-(?:service|use))?|cookies?))$/i.test(path))return true;
+  // An account call to action (sign up / log in / register) whose address is
+  // an account route leads to a form, not to an opportunity, on any site.
+  if(/^(?:sign\s*up|sign\s*in|log\s*in|register|create (?:an? |your )?(?:free )?account|anmelden|registrieren|einloggen|giriş yap|kayıt ol|üye ol)\b/i.test(label)&&/(?:^|\/)(?:sign-?up|sign-?in|log-?in|register|registration|auth|account|anmelden|registrieren|kayit|giris)(?:$|[\/?#.])/i.test(path+url.search))return true;
   if(url.origin!==page.origin)return false;
   if((url.href.endsWith('#')||page.href.endsWith('#'))&&url.href.replace(/#$/,'')===page.href.replace(/#$/,''))return true;
   if(/^(?:|\/[a-z]{2}(?:-[a-z]{2})?)$/i.test(path)&&/(?:^|[-_\s])logo$|^(?:home|homepage|startseite|ana sayfa)$/i.test(label))return true;
@@ -109,12 +112,19 @@ export function paginationScrollTarget(page,position){
  return (page.scrollTargets??[]).find(t=>ids.has(t.controlId)&&(t.atBottom===false||t.remainingDown>0))??null;
 }
 
-export function resultPageSummary(page,evidence,items,{excluded=0,rejected=0}={}){
+// Dropdowns of a results page (sort order, region, date range) with the names
+// they offer; an agent that delegates the scan still sees a newest-first option.
+export function resultPageControls(page){
+ return (page.controls??[]).filter(c=>c.nativeSelect||c.role==='combobox').filter(c=>c.options?.length||c.suggestions?.length).slice(0,8)
+  .map(c=>({label:c.label??'',...(c.selectedLabel?{selected:c.selectedLabel}:{}),options:(c.options??c.suggestions).slice(0,12),...(c.nativeSelect?{nativeSelect:true}:{})}));
+}
+export function resultPageSummary(page,evidence,items,{excluded=0,rejected=0,known=0}={}){
+ const controls=resultPageControls(page);
  const pagination=(page.pagination??[]).map(p=>({text:p.text,url:p.url??null,current:!!p.current,disabled:!!p.disabled,...(p.targetId?{targetId:p.targetId}:{}),...(p.controlId?{controlId:p.controlId}:{}),...(p.scrollControlId?{scrollControlId:p.scrollControlId}:{}),...(p.rel?{rel:p.rel}:{})}));
  return {url:page.url,title:page.title??'',evidenceId:evidence.id,at:evidence.at,
-  position:observedPagePosition(page),pagination:pagination.slice(0,12),paginationCount:pagination.length,
+  position:observedPagePosition(page),pagination:pagination.slice(0,12),paginationCount:pagination.length,...(controls.length?{controls}:{}),
   candidates:items.length,confirmedListings:items.filter(i=>i.discovery?.decision==='listing').length,
-  uncertainLinks:items.filter(i=>i.discovery?.decision!=='listing').length,excludedNavigation:excluded,rejectedListings:rejected,
+  uncertainLinks:items.filter(i=>i.discovery?.decision!=='listing').length,excludedNavigation:excluded,rejectedListings:rejected,knownListings:known,
   chronology:{status:'unverified',next:'No date cutoff is certified. Follow the full scan to the observed end; do not reread the board just to infer ordering or dates.'},
   checkpointSaved:false};
 }

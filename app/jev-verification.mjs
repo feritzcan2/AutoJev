@@ -33,8 +33,10 @@ export async function verificationEvidence(page,slot){
 }
 export function updateVerification(slot,evidence,now=Date.now()){
  if(!evidence||evidence.state==='cleared'){delete slot.verification;return evidence??null;}
- const old=slot.verification;
- const state={...evidence,startedAt:old?.startedAt??now,attempts:old?.attempts??0,screenshots:old?.screenshots??0};
+ // The attempt budget belongs to one page. A widget seen on an earlier page in
+ // this tab must not hand a later page off as blocked.
+ const url=slot.page?.url?.()??null,old=slot.verification&&(slot.verification.url??null)===url?slot.verification:null;
+ const state={...evidence,url,startedAt:old?.startedAt??now,attempts:old?.attempts??0,screenshots:old?.screenshots??0};
  if(state.state==='answer_applied'){state.handoff=false;state.message=state.evidence;slot.verification=state;return state;}
  state.deadlineAt=state.startedAt+60000;
  state.handoff=state.capability==='not_exposed'||state.capability==='solver'||state.checkbox&&!!slot.verificationCheckboxAttempt||state.attempts>=2||now>=state.deadlineAt;

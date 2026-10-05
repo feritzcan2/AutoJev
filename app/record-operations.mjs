@@ -21,6 +21,7 @@ export function recordOperationError(a,item,kind,{manual=false,digest,direct=fal
  if(!automationReady(a))return 'Önce kurulumu kontrol edip kaydet';
  if(pendingRecordQuestion(a,item))return waitingForAnswer;
  if(kind==='score')return null;
+ if(!manual&&item.collectedBy&&!Number.isInteger(item.assessment?.score))return 'Toplanan ilanı otomatik işlemeden önce puanla';
  const source=recordSource(a,item),mode=source?sourceMode(a,source):'observe';
  if(!manual&&mode==='observe')return 'Kaynak yalnızca bul modunda';
  if(kind==='prepare')return null;
@@ -124,7 +125,7 @@ export async function dispatchRecordOperations(runtime,id,{manualOnly=false}={})
  if(runtime.closed||runtime.pausing.has(id)||runtime.restarting.has(id))return;
  const {db,queue}=runtime,a=db.get(id),ops=db.template(a.templateId).recordOperations;
  if(!ops||a.profileUpdate||runtime.slots(id).some(s=>!isConversation(s.run)&&(s.run.kind==='interview'||s.run.kind==='trial'&&!s.run.sourceUrl)))return;
- const savedTasks=queue.list(id);
+ const savedTasks=queue.resumptions(id);
  for(const task of savedTasks.filter(t=>t.resumeRecordAfterVerification&&!live.includes(t.state))){
   queue.put({...task,resumeRecordAfterVerification:false});
   const item=db.result(id,task.recordId),proof=item.notSubmitted;
@@ -147,7 +148,7 @@ export async function dispatchRecordOperations(runtime,id,{manualOnly=false}={})
  }
  const customRecordWorkflow=db.template(a.templateId).workflow.some(s=>s.scope==='record');
  if(!manualOnly&&a.status==='enabled'&&a.mode!=='observe'&&!customRecordWorkflow){
-  const previous=queue.list(id),activeRecords=new Set(previous.filter(t=>live.includes(t.state)).flatMap(taskRecordIds));
+  const previous=queue.list(id,{summary:true}),activeRecords=new Set(previous.filter(t=>live.includes(t.state)).flatMap(taskRecordIds));
   for(const item of db.results(id,{all:true})){
    // Scheduling needs source permissions, not the UI projection that loads
    // every result and run. Read those settings once with the workspace.

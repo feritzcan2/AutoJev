@@ -17,7 +17,9 @@ export class Workspaces {
   try{await this.template(id).remove(id);for(const worker of workers)await this.workerRemoved(id,worker.id);this.changed(id);return {deleted:true};}
   finally{this.changing.delete(id);}
  }
- validateWorker(id,worker='main'){this.assertMutable(id);return this.store.workers.get(id,worker);}
+ // Reading a terminal or fitting its grid is safe while documents or workers
+ // change. Commands still require the mutation lock and every call checks ownership.
+ validateWorker(id,worker='main',{mutable=true}={}){if(mutable)this.assertMutable(id);else{this.store.get(id);this.assertAvailable(id);}return this.store.workers.get(id,worker);}
  async addWorker(id,input){this.validateWorker(id);const result=await this.template(id).workers.add(id,input);this.changed(id);return result;}
  async startWorker(id,worker){this.validateWorker(id,worker);const result=await this.template(id).workers.start(id,worker);this.changed(id);return result;}
  async stopWorker(id,worker){this.validateWorker(id,worker);const result=await this.template(id).workers.stop(id,worker);this.changed(id);return result;}

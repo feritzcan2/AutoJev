@@ -11,6 +11,11 @@ const minute=60000;
 // growing with its incidents. Sites without incidents are never slowed.
 const PACE_WINDOW=6*60*minute,PACE_STEP=4000,PACE_MAX=12000;
 export const siteRetryDelay=attempt=>[5*minute,10*minute][attempt-1]??null;
+// Repeated transport failures across a site's pages are an outage, not one bad
+// address: three within ten minutes on at least two addresses start the same
+// bounded shared wait as a rate limit. One success clears the count.
+const UNREACHABLE_WINDOW=10*minute,UNREACHABLE_FAILURES=3;
+export const networkFailure=error=>/\bnet::ERR_(?!ABORTED\b)[A-Z0-9_]+/.test(String(error?.message??error??''));
 export function migrateSiteAccessRetries(db){
  if(db.prepare('PRAGMA user_version').get().user_version>=31||!db.prepare("SELECT 1 FROM sqlite_master WHERE name='browser_site_waits'").get())return;
  const waits=new Map();
@@ -61,7 +66,7 @@ export class SiteWaitError extends Error{
 }
 export class SiteAccess{
  constructor(db,{now=Date.now,changed=()=>{}}={}){
-  Object.assign(this,{db,now,changed});this.incidents=new Map();this.paced=new Map();
+  Object.assign(this,{db,now,changed});this.incidents=new Map();this.paced=new Map();this.failures=new Map();
   db.exec('CREATE TABLE IF NOT EXISTS browser_site_waits(site TEXT PRIMARY KEY,data TEXT NOT NULL)');
  }
  row(url){return JSON.parse(this.db.prepare('SELECT data FROM browser_site_waits WHERE site=?').get(siteKey(url))?.data??'null');}
@@ -69,7 +74,7 @@ export class SiteAccess{
  status(url){
   const row=this.row(url);if(!row||row.recovered)return null;
   const {token,leaseUntil=0,...state}=row,exhausted=row.attempts>=3,retryAt=exhausted?null:Math.max(row.retryAt,leaseUntil),probing=!exhausted&&leaseUntil>this.now();
-  return {...state,retryAt,exhausted,probing,waiting:exhausted||retryAt>this.now(),message:`${row.site}: ${row.reason==='ip_block'?'IP engeli':row.reason==='verification'?'Erişim doğrulaması':'İstek sınırı'} nedeniyle ortak bekleme. ${exhausted?'Üçüncü erişim hatası; otomatik deneme durduruldu. Devam etmek için müdahale gerekiyor.':probing?'Tek bir erişim kontrolü sürüyor.':`Otomatik devam: ${new Date(retryAt).toLocaleString('tr-TR')}.`} Diğer siteler çalışmaya devam edebilir.`};
+  return {...state,retryAt,exhausted,probing,waiting:exhausted||retryAt>this.now(),message:`${row.site}: ${row.reason==='ip_block'?'IP engeli':row.reason==='verification'?'Erişim doğrulaması':row.reason==='unreachable'?'siteye ulaşılamaması':'İstek sınırı'} nedeniyle ortak bekleme. ${exhausted?'Üçüncü erişim hatası; otomatik deneme durduruldu. Devam etmek için müdahale gerekiyor.':probing?'Tek bir erişim kontrolü sürüyor.':`Otomatik devam: ${new Date(retryAt).toLocaleString('tr-TR')}.`} Diğer siteler çalışmaya devam edebilir.`};
  }
  begin(url){
   const wait=this.status(url);if(!wait)return null;
@@ -110,7 +115,15 @@ export class SiteAccess{
   const gap=Math.min(PACE_STEP*incident.count,PACE_MAX),next=Math.max(now,(this.paced.get(site)??0)+gap);
   this.paced.set(site,next);return next-now;
  }
+ unreachable(url,error){
+  if(!networkFailure(error))return null;
+  const site=siteKey(url),now=this.now(),failures=[...(this.failures.get(site)??[]).filter(f=>now-f.at<=UNREACHABLE_WINDOW),{at:now,url}];
+  this.failures.set(site,failures);
+  if(failures.length<UNREACHABLE_FAILURES||new Set(failures.map(f=>f.url)).size<2)return null;
+  this.failures.delete(site);return this.block(url,'unreachable');
+ }
  complete(url,token,{status,reason,retryAfter}={}){
+  if(!reason&&status>=200&&status<400)this.failures.delete(siteKey(url));
   if(reason)return this.block(url,reason,retryAfter,token);
   const previous=this.row(url);if(!previous||!token||previous.token!==token)return null;
   if(status>=200&&status<400){this.save({...previous,recovered:true,token:null,leaseUntil:0,retryAt:null});return null;}

@@ -124,6 +124,9 @@ fn codex_developer_instructions_args(instructions: &str) -> Result<[String; 2], 
     ])
 }
 
+/// Codex per-tool MCP timeout; tool waits stay below it.
+pub const CODEX_TOOL_TIMEOUT_SEC: u64 = 300;
+
 fn mcp_args(
     agent_id: &str,
     mcp: &McpConnection<'_>,
@@ -152,6 +155,10 @@ fn mcp_args(
                 format!("mcp_servers.{server}.url={endpoint}"),
                 "-c".into(),
                 format!("mcp_servers.{server}.bearer_token_env_var=\"TERMLOOP_MCP_TOKEN\""),
+                // Long-waiting tools (e.g. a helper that finishes work in the
+                // background) must outlive Codex's default 60s tool timeout.
+                "-c".into(),
+                format!("mcp_servers.{server}.tool_timeout_sec={CODEX_TOOL_TIMEOUT_SEC}"),
             ];
             if include_interactive_instructions && mcp.instructions.is_some() {
                 args.extend(codex_developer_instructions_args(

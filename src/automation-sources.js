@@ -1,7 +1,6 @@
 import {scanPageLabel} from '../app/scan-page.mjs';
-import {recipeSummary,RECIPE_PAGINATION_KINDS} from '../app/source-recipe.mjs';
+import {recipeSummary,recipePageCap,RECIPE_PAGINATION_KINDS} from '../app/source-recipe.mjs';
 import {workspaceSourceTabs} from './workspace-tabs.js';
-import {sourceLibraryPanel} from './source-library.js';
 
 const modes={observe:'Sadece bul',prepare:'Hazırla, onayımı bekle',auto:'Otomatik gönder'};
 const paginationLabels={auto:'Otomatik tespit',url_param:'Sayfa parametresi (page=2)',next_link:'Sonraki bağlantısı',next_click:'Sonraki düğmesi',load_more:'Daha fazla yükle',infinite_scroll:'Sonsuz kaydırma',none:'Tek sayfa'};
@@ -20,30 +19,27 @@ const updateNextRun=node=>{node.textContent=node.dataset.sourceNextLabel+' '+tim
 // lets the next scan skip discovery. Everything else opens on demand.
 export function automationSourcesPanel(host,api,{refresh,notice,ask}){
  let data,owner,editing=null,memory=null,adding=false,saving=false,bulkSaving=false;
- host.innerHTML='<div class="sources-head"><div><h2>Kaynaklar</h2><p></p></div><div class="sources-head-actions"></div></div><div data-add></div><ul class="source-list"></ul><div class="sources-foot"></div>';
- const head=host.querySelector('.sources-head'),headActions=head.querySelector('.sources-head-actions'),list=host.querySelector('.source-list'),addHost=host.querySelector('[data-add]'),foot=host.querySelector('.sources-foot');
+ host.innerHTML='<div class="sources-head"><div><h2>Kaynaklar</h2><p></p></div><div class="sources-head-actions"></div></div><div data-add></div><ul class="source-list"></ul>';
+ const head=host.querySelector('.sources-head'),headActions=head.querySelector('.sources-head-actions'),list=host.querySelector('.source-list'),addHost=host.querySelector('[data-add]');
  const rows=new Map(),otherHost=el('li',null,'source-tabs-other'),empty=el('li',null,'source-empty');
- empty.append(el('strong','Henüz kaynak yok'),document.createTextNode('Bir ilan sitesi ekle, listeden seç veya agent’tan bulmasını iste. İlk turda agent siteyi bir kez çözer ve arama reçetesini kaydeder.'));
+ empty.append(el('strong','Henüz kaynak yok'),document.createTextNode('Bir ilan sitesi ekle veya agent’tan bulmasını iste. İlk turda agent siteyi bir kez çözer ve arama reçetesini kaydeder.'));
  list.append(otherHost);
  const countdown=setInterval(()=>{if(!host.isConnected){clearInterval(countdown);return;}if(host.getClientRects().length)for(const node of host.querySelectorAll('[data-source-next-at]'))updateNextRun(node);},30000);
  const tabsControl=workspaceSourceTabs(api,{notice});
- const library=sourceLibraryPanel(api,{refresh,notice});head.after(library.host);
  const action=fn=>async event=>{event?.preventDefault();if(saving)return;saving=true;notice('');try{await fn();}catch(error){notice(error.message);}finally{saving=false;}};
  const button=(label,fn,cls='quiet')=>{const b=el('button',label,cls);b.type='button';b.onclick=action(fn);return b;};
  const busySource=url=>(data.activeRuns??[]).some(run=>run.kind!=='interview'&&(run.sourceUrl?run.sourceUrl===url:(run.sources??data.automation.sources).includes(url)));
 
- // Header actions: add, pick from the library, ask the agent. Export lives in the footer.
+ // Header actions: add a source or ask the agent to find one.
  const add=button('＋ Kaynak ekle',()=>{adding=!adding;render();},'primary');headActions.append(add);
- const fromLibrary=button('Listeden ekle',()=>library.toggle());fromLibrary.dataset.openSourceLibrary='';headActions.append(fromLibrary);
  if(ask){const discover=button('Agent ile bul',ask);discover.dataset.sourceDiscover='';headActions.append(discover);}
- const exportButton=button('Kaynak tanımlarını dışa aktar',async()=>{const file=await api.automationSourceExport(owner);if(file)notice('Kaynak tanımları ve reçeteleri dışa aktarıldı. Arama kriterleri ve geçmiş dahil edilmedi.');});
 
  // Bulk settings fold away; a single form applies mode and interval to every source.
  const bulk=el('details',null,'source-bulk');bulk.innerHTML='<summary>Tüm kaynaklara uygula</summary>';
  const bulkForm=el('form',null,'source-bulk-form');
  bulkForm.innerHTML='<label>İşlem modu<select name="mode"><option value="">Değiştirme</option></select></label><label for="automation-sources-interval">Tarama aralığı (dk)<input id="automation-sources-interval" name="intervalMinutes" type="number" min="1" max="10080" step="1" placeholder="Değiştirme"></label><button type="submit" class="quiet">Tümüne uygula</button><small role="status"></small>';
  for(const [mode,label] of Object.entries(modes))bulkForm.elements.mode.append(new Option(label,mode));
- bulk.append(bulkForm);foot.before(bulk);foot.append(exportButton);
+ bulk.append(bulkForm);host.append(bulk);
  bulkForm.onsubmit=action(async()=>{
   if(!owner||!data?.sources?.length||!bulkForm.reportValidity())return;
   const scope=owner,mode=bulkForm.elements.mode.value,interval=bulkForm.elements.intervalMinutes.value;
@@ -69,19 +65,19 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
  }
 
  function sourceRow(url){
-  const view={row:el('li',null,'source-row'),toggle:el('input',null,'switch'),main:el('div',null,'source-main'),actions:el('div',null,'source-actions'),tabHost:el('div',null,'source-tabs-control'),run:button('',()=>{}),edit:button('',()=>{},'quiet source-edit'),memoryButton:button('',()=>{},'quiet source-memory-toggle'),pending:null};
+  const view={row:el('li',null,'source-row'),toggle:el('input',null,'switch'),main:el('div',null,'source-main'),actions:el('div',null,'source-actions'),tabHost:el('div',null,'source-tabs-control'),run:button('',()=>{}),restart:button('Sıfırdan başla',()=>{},'quiet source-restart'),edit:button('',()=>{},'quiet source-edit'),memoryButton:button('',()=>{},'quiet source-memory-toggle'),pending:null};
   view.toggle.type='checkbox';view.row.dataset.sourceId=url;
-  view.actions.append(view.run,view.edit,view.memoryButton,view.tabHost);
+  view.actions.append(view.run,view.restart,view.edit,view.memoryButton,view.tabHost);
   view.row.append(view.toggle,view.main,view.actions);
   rows.set(url,view);return view;
  }
- async function scanAction(view,scope,url,stop){
+ async function scanAction(view,scope,url,stop,fresh=false){
   if(view.pending)return;
   const current=()=>owner===scope&&rows.get(url)===view&&host.isConnected;
   view.pending=stop?'stop':'start';notice('');render();
   try{
-   await (stop?api.automationSourceStop(scope,url):api.automationSourceRun(scope,url));
-   if(current()){await refresh();if(current())notice(stop?'Tarama durduruldu. Kaydedilen ilerleme korundu.':'Tarama isteği alındı. Kaynak hazır olduğunda başlayacak.');}
+   await (stop?api.automationSourceStop(scope,url):api.automationSourceRun(scope,url,{fresh}));
+   if(current()){await refresh();if(current())notice(stop?'Tarama durduruldu. Kaydedilen ilerleme korundu.':fresh?'Tarama ilk sayfadan başlayacak. Kayıtlı ilanlar yeniden okunmaz.':'Tarama isteği alındı. Kaynak hazır olduğunda başlayacak.');}
   }catch(error){if(current())notice(error.message);}
   finally{view.pending=null;if(current())render();}
  }
@@ -89,7 +85,8 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
  // Status: one bold state, one supporting line. The recipe chip stands alone.
  function statusLine(source){
   const status=el('div',null,'source-status');
-  const state=source.blocker?.stop?.retryExhausted?'Erişim sorunu sürüyor':source.siteWait?.exhausted?'Otomatik deneme durduruldu':source.siteWait?'Site için ortak bekleme':source.scanning?(source.trialRunning?'Deneme sürüyor':source.scanIssue?'Sayfa yüklenemedi':'Taranıyor'):source.recovery&&data.automation.status==='enabled'?'Otomatik devam bekleniyor':source.blocked?(source.lastStatus==='failed'||source.blocker?.stop?.kind==='technical'?'Tarama tamamlanamadı':'Kaynak engelli'):source.lastStatus==='partial'?`Kısmi tarama · ${source.scan?.pendingUrls.length??0} adres kaldı`:(source.lastRun?.finishedAt??source.lastRunAt)?`Toplam ${source.resultCount??source.lastFound??0} kayıt`:'Henüz taranmadı';
+  const state=source.blocker?.stop?.retryExhausted?'Erişim sorunu sürüyor':source.siteWait?.exhausted?'Otomatik deneme durduruldu':source.siteWait?'Erişim beklemesi · otomatik devam':source.scanning?(source.trialRunning?'Deneme sürüyor':source.scanIssue?'Sayfa yüklenemedi':'Taranıyor'):source.recovery&&data.automation.status==='enabled'?'Otomatik devam bekleniyor':source.blocked?(source.lastStatus==='failed'||source.blocker?.stop?.kind==='technical'?'Tarama tamamlanamadı':'Kaynak engelli'):source.lastStatus==='partial'?`Kısmi tarama · ${source.scan?.pendingUrls.length??0} adres kaldı`:(source.lastRun?.finishedAt??source.lastRunAt)?`Toplam ${source.resultCount??source.lastFound??0} kayıt`:'Henüz taranmadı';
+  if(source.siteWait&&!source.siteWait.exhausted)status.dataset.state='waiting';
   status.append(el('b',state));
   const outcome=source.lastRun??{status:source.lastStatus,summary:source.lastResult,finishedAt:source.lastRunAt};
   const detail=source.scanning?(source.scanIssue?`${source.scanIssue.url} · ${source.scanIssue.attempts}. deneme`:scanPageLabel(source.pageProgress)?'Son doğrulanan: '+scanPageLabel(source.pageProgress):null):source.siteWait?.message??outcome.summary??null;
@@ -108,6 +105,12 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
   if(!source.trial||source.trial.status==='failed'){const trial=el('small',source.trialRunning?'Denemede işlem gönderilmez':source.trial?.status==='failed'?'Deneme tamamlanamadı':'İlk turda denenecek','source-trial-status');trial.dataset.status=source.trialRunning?'running':source.trial?.status??'pending';meta.append(trial);}
   return meta;
  }
+ // Sources a site extension reads carry its kind; the rest use the generic reader.
+ const extensionKinds={api:['API','Site eklentisi: ilanlar sitenin API\'sinden tam metinle alınır, tarayıcı açılmaz.'],http:['HTTP','Site eklentisi: sayfalar tarayıcı açılmadan HTTP ile okunur.'],browser:['Otomasyon','Site eklentisi: Chrome\'da açılan sayfadan ilanlar ve sayfalama doğrudan okunur.']};
+ function extensionChip(source){
+  const [label,detail]=extensionKinds[source.extension?.kind]??[];if(!label)return null;
+  const chip=el('span',label,'source-extension');chip.dataset.kind=source.extension.kind;chip.title=detail;return chip;
+ }
  function recipeChip(source){
   const summary=recipeSummary(source.recipe??null,source.recipeState??null);
   const chip=button(summary.label,()=>{editing=source.url;render();list.querySelector('.source-editor .source-recipe-editor')?.scrollIntoView({block:'nearest'});},'source-recipe');
@@ -116,6 +119,7 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
  }
 
  // Memory: scan facts, recipe history and the pending queue. Rules fold away.
+ const exclusionLabels={hard_constraint:'Kesin kısıt',qualification:'Nitelik çelişkisi',unrelated_role:'Alakasız rol',not_listing:'İlan değil'};
  function progressDetails(source){
   const section=el('section',null,'source-progress-details source-memory'),page=source.pageProgress,scan=source.scan,state=source.scanState,cycle=state?.active??state?.lastCompleted,pending=scan?.complete===false?scan.pendingUrls??[]:[];
   section.dataset.sourceId=source.url;section.setAttribute('aria-label','Tarama hafızası');section.append(el('h3','Tarama hafızası'));
@@ -130,7 +134,7 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
   if(source.recipe?.entry.kind==='url_template')lines.push('Şablon: '+source.recipe.entry.template);
   if(source.recipe?.entry.kind==='search_form')lines.push('Form: '+source.recipe.entry.url+' · '+source.recipe.entry.fields.map(f=>`${f.key}=“${f.label}”`).join(', '));
   if(source.recipe?.terms?.length)lines.push('Arama terimleri: '+source.recipe.terms.join(', '));
-  if(source.recipe&&source.recipe.entry.kind!=='discovery')lines.push('Sayfalama: '+paginationLabels[source.recipe.pagination??'auto']);
+  if(source.recipe&&source.recipe.entry.kind!=='discovery')lines.push('Sayfalama: '+paginationLabels[source.recipe.pagination??'auto']+(source.recipe.ordering==='newest_first'?' · En yeniden eskiye, tekrar taramalar bilinen ilanlarda durur':'')+` · Her arama ilk ${recipePageCap(source.recipe)} sayfayı okur (taramada toplam en fazla 15 sayfa)`);
   if(rs?.verifiedAt)lines.push(`Son doğrulama ${time(rs.verifiedAt)} · ${rs.successCount} başarılı, ${rs.failCount} başarısız`);
   if(rs?.lastFailure)lines.push(`Son hata ${time(rs.lastFailure.at)}: ${rs.lastFailure.reason}${rs.lastFailure.url?' · '+rs.lastFailure.url:''}`);
   recipe.append(el('p',lines.join('\n')));section.append(recipe);
@@ -148,10 +152,15 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
    for(const search of scan.work.searches)searches.append(el('p',`${search.label} · ${search.status==='completed'?'Tamamlandı':`${search.pendingUrls.length} adres bekliyor`}${search.pageProgress?` · ${search.pageProgress.currentPage}. sayfa`:''}${search.id===scan.work.activeSearchId?' · Seçili arama':''}`));
    section.append(searches);
   }
-  if(pending.length){
-   const details=el('details',null,'source-progress-pending'),urls=el('ol');details.open=pending.length===1;details.append(el('summary',`Devam edilecek adresler (${pending.length})`));
+  // Waiting addresses first, then what Jev eliminated (card or detail) in red.
+  const excluded=(scan?.work?.searches??[]).flatMap(s=>s.excluded??[]).reverse();
+  const cards=Object.assign({},...(scan?.work?.searches??[]).map(s=>s.cards??{})),pct=p=>`%${Math.round(p*100)}`;
+  if(pending.length||excluded.length){
+   const details=el('details',null,'source-progress-pending'),urls=el('ol');details.open=pending.length===1;
+   details.append(el('summary',`Devam edilecek adresler (${pending.length}${excluded.length?` · ${excluded.length} elendi`:''})`));
+   const rows=[...pending.map(url=>({url})),...excluded];
    let shown=0;const more=button('Sonraki 100 adresi göster',()=>append());
-   const append=()=>{for(const url of pending.slice(shown,shown+100)){const item=el('li');item.append(address(url));urls.append(item);}shown=Math.min(shown+100,pending.length);more.hidden=shown>=pending.length;};
+   const append=()=>{for(const row of rows.slice(shown,shown+100)){const item=el('li');if(row.stage){item.className='source-progress-excluded';item.append(el('b',`Elendi · ${row.stage==='detail'?'Detayda':'Kartta'} · ${exclusionLabels[row.reason]??row.reason}${row.confidence!=null?` · Jev ${pct(row.confidence)}`:''}`));if(row.title)item.append(el('span',row.title));}else if(cards[row.url]){const card=cards[row.url];item.className='source-progress-card';if(card.title)item.append(el('span',card.title));if(card.keep!=null)item.append(el('small',`Jev kartı: tut ${pct(card.keep)}${card.risk?.p>=.1?` · en yakın eleme ${exclusionLabels[card.risk.reason]} ${pct(card.risk.p)}`:''}`));}item.append(address(row.url));urls.append(item);}shown=Math.min(shown+100,rows.length);more.hidden=shown>=rows.length;};
    append();details.append(urls,more);section.append(details);
   }
   if(source.lastResult)note('Son çalışma sonucu',source.lastResult);
@@ -168,14 +177,14 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
   f.queryLabel.value=recipe?.entry.kind==='search_form'?recipe.entry.fields.find(x=>x.key==='query')?.label??'':'';
   f.locationLabel.value=recipe?.entry.kind==='search_form'?recipe.entry.fields.find(x=>x.key==='location')?.label??'':'';
   f.terms.value=recipe?.terms?.join(', ')??'';
-  f.pagination.value=recipe?.pagination??'auto';f.notes.value=recipe?.notes??'';
+  f.pagination.value=recipe?.pagination??'auto';f.ordering.value=recipe?.ordering??'unknown';f.notes.value=recipe?.notes??'';
   syncRecipeFields(form);
  }
  function syncRecipeFields(form){
   const method=form.elements.method.value;
   form.querySelector('[data-recipe-template]').hidden=method!=='url_template';
   form.querySelector('[data-recipe-form]').hidden=method!=='search_form';
-  form.querySelector('[data-recipe-terms]').hidden=form.querySelector('[data-recipe-pagination]').hidden=!['url_template','search_form'].includes(method);
+  form.querySelector('[data-recipe-terms]').hidden=form.querySelector('[data-recipe-pagination]').hidden=form.querySelector('[data-recipe-ordering]').hidden=!['url_template','search_form'].includes(method);
   form.querySelector('[data-recipe-notes]').hidden=method==='none';
   form.elements.template.required=method==='url_template';form.elements.formUrl.required=form.elements.queryLabel.required=method==='search_form';
  }
@@ -185,7 +194,7 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
   const keep=existing&&existing.entry.kind===method&&existing.loginRequired!==undefined?{loginRequired:existing.loginRequired}:{};
   if(method==='discovery')return {entry:{kind:'discovery'},pagination:'auto',...keep,...(f.notes.value.trim()?{notes:f.notes.value.trim()}:{})};
   const terms=f.terms.value.split(',').map(t=>t.trim()).filter(Boolean);
-  const base={pagination:f.pagination.value,...keep,...(terms.length?{terms}:{}),...(f.notes.value.trim()?{notes:f.notes.value.trim()}:{})};
+  const base={pagination:f.pagination.value,...keep,...(f.ordering.value==='newest_first'?{ordering:'newest_first'}:{}),...(terms.length?{terms}:{}),...(f.notes.value.trim()?{notes:f.notes.value.trim()}:{})};
   if(method==='url_template')return {...base,entry:{kind:'url_template',template:f.template.value.trim()}};
   return {...base,entry:{kind:'search_form',url:f.formUrl.value.trim(),fields:[{key:'query',label:f.queryLabel.value.trim()},...(f.locationLabel.value.trim()?[{key:'location',label:f.locationLabel.value.trim()}]:[])]}};
  }
@@ -201,6 +210,7 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
 <div class="source-editor-wide source-recipe-form" data-recipe-form><label>Arama formu sayfası<input name="formUrl" type="url" placeholder="https://site/jobs"></label><label>Arama alanı etiketi<input name="queryLabel" maxlength="120" placeholder="Stichwort"></label><label>Konum alanı etiketi (isteğe bağlı)<input name="locationLabel" maxlength="120" placeholder="Ort"></label></div>
 <label class="source-editor-wide" data-recipe-terms>Arama terimleri<input name="terms" maxlength="500" placeholder="Compliance, AI Governance, Data Protection" spellcheck="false"><small>Arama kapsamı anahtar kelime değilse virgülle en fazla 5 terim yaz; her terim ayrı arama olur.</small></label>
 <label data-recipe-pagination>Sayfalama<select name="pagination"></select></label>
+<label data-recipe-ordering>Sıralama<select name="ordering"><option value="unknown">Bilinmiyor</option><option value="newest_first">En yeniden eskiye · bilinen ilanlarda durur</option></select></label>
 <label class="source-editor-wide" data-recipe-notes>Agent’a not<textarea name="notes" maxlength="1000" placeholder="Filtreler, sıralama, dikkat edilecekler…"></textarea></label>
 <label class="source-editor-wide">Çalışma talimatı<textarea name="instructions" maxlength="6000" placeholder="Bu kaynak için ek kurallar (isteğe bağlı)"></textarea></label></fieldset>
 <div class="source-editor-foot"></div>`;
@@ -209,7 +219,7 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
   for(const [value,label] of Object.entries(methodLabels))f.method.append(new Option(label,value));
   for(const value of RECIPE_PAGINATION_KINDS)f.pagination.append(new Option(paginationLabels[value],value));
   f.name.value=source?.name??'';f.url.value=source?.url??'';f.url.disabled=Boolean(source);f.query.value=source?.query??data.automation.goal;f.intervalMinutes.value=source?.intervalMinutes??data.automation.intervalMinutes;f.mode.value=source?.mode??data.automation.mode;
-  f.instructions.value=source?.instructions??'';recipeFields(form,source?.recipe??null);f.method.onchange=()=>syncRecipeFields(form);
+  f.instructions.value=source?.instructions??'';recipeFields(form,source?.recipe??null);f.method.onchange=f.ordering.onchange=()=>syncRecipeFields(form);
   if(source){
    const relearn=button('Yeniden öğren',async()=>{await api.automationSourceRelearn(scope,source.url);editing=null;await refresh();notice('Kaynağın sıradaki turu deneme olacak; agent reçeteyi yeniden çıkaracak.');});relearn.title='Deneme turunu yeniden çalıştırır ve reçeteyi güçlü agentle yeniden öğrenir.';relearn.dataset.sourceRelearn='';
    const remove=button('Kaynağı sil',async()=>{await api.automationSourceRemove(scope,source.url);if(owner===scope){if(editing===source.url)editing=null;if(memory===source.url)memory=null;await refresh();notice('Kaynak silindi. Bulunan kayıtlar korundu.');}},'quiet source-remove');remove.title='Kaynağı ve reçetesini sil; bulunan kayıtlar korunur.';
@@ -244,20 +254,20 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
   for(const control of bulkForm.querySelectorAll('input,select,button'))control.disabled=bulkSaving||active&&control.name==='mode'||!sources.length;
   bulkForm.setAttribute('aria-busy',String(bulkSaving));bulkForm.querySelector('[role=status]').textContent=bulkSaving?'Kaydediliyor…':active&&sources.length?'İşlem modu çalışan tur bitince değiştirilebilir.':'';
   bulk.hidden=!sources.length;list.inert=bulkSaving;addHost.inert=bulkSaving;
-  library.update(owner,sources);fromLibrary.disabled=bulkSaving;library.host.inert=bulkSaving;renderProposal();add.disabled=bulkSaving;add.setAttribute('aria-expanded',String(adding));exportButton.hidden=!sources.length;
+  renderProposal();add.disabled=bulkSaving;add.setAttribute('aria-expanded',String(adding));
   if(adding){if(!addHost.firstChild)addHost.append(editor(null));}else addHost.replaceChildren();
   const kept=list.querySelector('.source-editor'),keptMemory=list.querySelector('.source-memory'),tabHosts=new Map(),urls=new Set(sources.map(source=>source.url));
   for(const [url,view] of rows)if(!urls.has(url)){view.row.remove();rows.delete(url);}
   let previous=null;
   for(const source of sources){
-   const view=rows.get(source.url)??sourceRow(source.url),{row,toggle,main,run,edit,memoryButton,tabHost}=view,open=editing===source.url,memoryOpen=memory===source.url,scope=owner;
+   const view=rows.get(source.url)??sourceRow(source.url),{row,toggle,main,run,restart,edit,memoryButton,tabHost}=view,open=editing===source.url,memoryOpen=memory===source.url,scope=owner;
    const next=previous?previous.nextElementSibling:list.firstElementChild;if(next!==row)list.insertBefore(row,next);previous=row;
    row.dataset.open=String(open||memoryOpen);row.dataset.tone=source.scanning?'scanning':!source.enabled?'off':source.blocked?'blocked':source.lastFound?'found':'none';
    toggle.checked=source.enabled;toggle.disabled=Boolean(source.stopping||view.pending);toggle.setAttribute('aria-label',source.name+' aktif');
    toggle.onchange=action(async()=>{const enabled=toggle.checked;toggle.disabled=true;let saved=false;try{await api.automationSourceSave(scope,source.url,{enabled});saved=true;await refresh();}catch(error){if(!saved)toggle.checked=source.enabled;throw error;}finally{toggle.disabled=false;}});
    const name=el('div',source.name,'source-name'),link=button(new URL(source.url).hostname.replace(/^www\./,''),()=>api.openLink(source.url),'source-url');link.title=source.url;name.append(link);
    const query=el('p',source.query,'source-scope');query.title=source.query;
-   const {status,outcome}=statusLine(source),meta=metaLine(source,outcome);meta.append(recipeChip(source));
+   const {status,outcome}=statusLine(source),meta=metaLine(source,outcome);meta.append(recipeChip(source));const extension=extensionChip(source);if(extension)meta.append(extension);
    main.replaceChildren(name,query,status,meta);
    const closing=(data.activeRuns??[]).some(r=>r.sourceUrl===source.url&&!r.recordId&&!r.recordOperation)&&!source.scanning;
    let runLabel=closing?'Oturum kapanıyor…':source.blocked||source.siteWait?.exhausted?'Tekrar dene':'Şimdi tara',runDisabled=closing||source.siteWait?.waiting&&!source.siteWait?.exhausted||!source.enabled||!data.progress?.reviewed;
@@ -266,6 +276,12 @@ export function automationSourcesPanel(host,api,{refresh,notice,ask}){
    if(view.pending){runLabel=view.pending==='stop'?'Durduruluyor…':'Başlatılıyor…';runDisabled=true;}
    if(run.textContent!==runLabel)run.textContent=runLabel;run.disabled=Boolean(runDisabled);run.setAttribute('aria-busy',String(Boolean(view.pending||source.stopping)));
    run.onclick=event=>{event.preventDefault();if(!run.disabled)void scanAction(view,scope,source.url,Boolean(source.scanning));};
+   // A scan left unfinished resumes where it stopped; this starts it over.
+   const resumable=!source.scanning&&!source.stopping&&(source.scan?.complete===false||Boolean(source.scanState?.active));
+   if(resumable)run.title='Kaldığı sayfadan ve kalan adreslerden devam eder.';
+   restart.hidden=!resumable||runDisabled||Boolean(source.siteWait);restart.disabled=Boolean(view.pending);
+   restart.title='Kayıtlı sayfa konumunu ve kalan adresleri siler, taramayı ilk sonuç sayfasından başlatır. Kayıtlı ilanlar yeniden okunmaz.';
+   restart.onclick=event=>{event.preventDefault();if(!restart.disabled)void scanAction(view,scope,source.url,false,true);};
    edit.textContent=open?'Kapat':'Düzenle';edit.onclick=action(()=>{editing=open?null:source.url;render();});edit.setAttribute('aria-expanded',String(open));
    memoryButton.textContent=memoryOpen?'Detayı kapat':'Detay';memoryButton.onclick=action(()=>{memory=memoryOpen?null:source.url;render();});memoryButton.setAttribute('aria-expanded',String(memoryOpen));
    tabHosts.set(source.url,tabHost);

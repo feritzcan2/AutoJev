@@ -5,6 +5,8 @@ const installed=new WeakMap();
 
 export function captureTurnstileRegistration(key){
  if(globalThis[key])return;
+ // Provider frames never call render. Leave their globals untouched.
+ if(location.hostname==='challenges.cloudflare.com')return;
  const entries=new Map();let sequence=0;
  const contains=(parent,child)=>{for(let e=child;e;e=e.parentNode??e.host)if(e===parent)return true;return false;};
  const descriptor=entry=>({registration:entry.id,sitekey:entry.sitekey,action:entry.action,cdata:entry.cdata,managed:entry.managed,callback:!!entry.callback,answered:entry.answered});
@@ -58,12 +60,13 @@ export function captureTurnstileRegistration(key){
   }catch{} // A frozen/provider-owned API must continue working unchanged.
   return api;
  };
- const previous=Object.getOwnPropertyDescriptor(globalThis,'turnstile');
- if(previous&&!previous.configurable){wrap(globalThis.turnstile);return;}
- // Preserve an existing accessor; do not replace another integration's setter.
- if(previous?.get||previous?.set){wrap(globalThis.turnstile);return;}
- let api=wrap(globalThis.turnstile);
- Object.defineProperty(globalThis,'turnstile',{configurable:true,enumerable:previous?.enumerable??true,get:()=>api,set:value=>{api=wrap(value);}});
+ // Never predefine window.turnstile: api.js treats any "turnstile" key as an
+ // earlier load and then renders nothing. Wrap the real API when its script's
+ // load event fires, which precedes api.js's deferred onload/render. A
+ // Cloudflare challenge page is never sent to the token API; leave it untouched.
+ const current=()=>{if(!globalThis._cf_chl_opt)wrap(globalThis.turnstile);};
+ document.addEventListener('load',event=>{if(event.target instanceof HTMLScriptElement)current();},true);
+ current();
 }
 
 export async function installTurnstileRegistration(page){

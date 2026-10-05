@@ -22,7 +22,9 @@ await context.route('https://**/*',async route=>{
  if(url.pathname==='/done')return route.fulfill({contentType:'text/html',body:'<h1>Visible results</h1><article>Real content is now available.</article>'});
  const hidden=url.pathname==='/hidden',fake=url.pathname==='/fake',status=url.pathname==='/limited'?429:403;
  const iframe=`<iframe src="${fake?'https://unrelated.test/widget':widget+(url.pathname==='/delayed-checkbox'?'?late=1':'')}" style="position:absolute;left:250px;top:140px;width:300px;height:65px;${hidden?'display:none':''}"></iframe>`;
- const frameMarkup=url.pathname==='/delayed-frame'?`<div id="later"></div><script>setTimeout(()=>document.getElementById('later').attachShadow({mode:'closed'}).innerHTML=${JSON.stringify(iframe)},1500);</script>`:iframe;
+ // A real challenge may check for 10+ seconds or reload itself before it shows a checkbox.
+ const later=`document.getElementById('later').attachShadow({mode:'closed'}).innerHTML=${JSON.stringify(iframe)}`;
+ const frameMarkup=['/delayed-frame','/slow-frame'].includes(url.pathname)?`<div id="later"></div><script>setTimeout(()=>{${later}},${url.pathname==='/slow-frame'?9000:1500});</script>`:url.pathname==='/reloading'?`<div id="later"></div><script>if(sessionStorage.getItem('reloaded')){${later}}else{sessionStorage.setItem('reloaded','1');setTimeout(()=>location.reload(),1000);}</script>`:iframe;
  return route.fulfill({status,contentType:'text/html',body:`<title>Just a moment...</title><h1>Additional Verification Required</h1><p>Cloudflare — Your Ray ID: synthetic</p>${frameMarkup}<script>addEventListener('message',async e=>{if(e.origin!=='https://challenges.cloudflare.com'||e.data!=='verified')return;await fetch('/count');${url.pathname==='/never'?'':url.pathname==='/replaced'?"location.href='/never';":"location.href='/done';"}});</script>`});
 });
 const adapter=(source,worker=browsers,extra={})=>automationBrowser(worker,{sourceUrl:source,readTabKey:'source:'+source,...extra});
@@ -38,7 +40,7 @@ try{
  // before counting another access failure; a still-active cooldown may not.
  const retry='https://retry.test/check';browsers.siteAccess.block(retry,'verification');now+=5*60000;
  assert.equal((await open(adapter(retry),retry)).siteWait,undefined);assert.equal(clicks,5);
- for(const url of ['https://hidden.test/hidden','https://limited.test/limited']){
+ for(const url of ['https://hidden.test/hidden']){
   const page=await open(adapter(url),url);assert.ok(page.siteWait);assert.equal(clicks,5);
  }
  enabled=false;const off='https://disabled.test/check';assert.ok((await open(adapter(off),off)).siteWait);assert.equal(clicks,5);enabled=true;
@@ -54,8 +56,9 @@ try{
  const never='https://never.test/never',a=adapter(never);const blocked=await open(a,never);
  assert.equal(blocked.siteWait.reason,'verification');assert.equal(clicks,7);assert.equal(hits.get(never),1);
  assert.equal(blocked.jevPage.captcha.clicked,true);assert.equal(blocked.jevPage.captcha.reason,'barrier_after_click');
+ assert.match(blocked.siteWait.message,/bir kez tıklandı.*\(barrier_after_click\)/,'The wait card names the checkbox outcome');
  assert.ok((await a.call('workspace','browser_snapshot',{},'run')).siteWait);assert.equal(clicks,7);assert.equal(paid,0);
- for(const url of ['https://late-widget.test/delayed-checkbox','https://late-frame.test/delayed-frame']){
+ for(const url of ['https://late-widget.test/delayed-checkbox','https://late-frame.test/delayed-frame','https://slow-frame.test/slow-frame','https://reloading.test/reloading']){
   const before=clicks,pending=open(adapter(url),url);
   await new Promise(r=>setTimeout(r,500));
   assert.equal(clicks,before,'A loading widget is not treated as an active checkbox');
@@ -68,5 +71,8 @@ try{
  const beforeProbe=clicks;now+=5*60000;
  const retried=await a.call('workspace','browser_snapshot',{},'run');
  assert.ok(retried.siteWait);assert.equal(clicks,beforeProbe+1,'A later site probe uses the new document rather than the expired target');
- console.log('CLOUDFLARE_CHECKBOX_PASS: closed shadow root, late checkbox/frame, one click, document replacement, diagnostic evidence, cancellation, queue isolation, cooldown and record guard');
+ // HTTP 429 can carry the same interactive challenge: the document decides, not the status.
+ const limited='https://limited.test/limited',beforeLimited=clicks,limitedPage=await open(adapter(limited),limited);
+ assert.equal(limitedPage.siteWait,undefined);assert.match(limitedPage.jevPage.text,/Real content is now available/);assert.equal(clicks,beforeLimited+1);
+ console.log('CLOUDFLARE_CHECKBOX_PASS: closed shadow root, late checkbox/frame, one click, document replacement, HTTP 429 challenge, diagnostic evidence, cancellation, queue isolation, cooldown and record guard');
 }finally{await browsers.close();db.close();await rm(directory,{recursive:true,force:true});}

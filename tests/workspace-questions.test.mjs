@@ -36,3 +36,13 @@ test('template setup is idempotent, form submission continues with saved answers
  await runtime.answer(a.id,q.id,{budget:1500});assert.equal(starts.length,2);assert.notEqual(starts[1].id,first.id);assert.equal(db.get(a.id).questions[0].answerValues.budget,1500);assert.equal(unreportedInterviewRun(db,a.id,starts[1].id),null);
  const next=db.askQuestion(a.id,{text:'Nerede?'});fail=true;await runtime.answer(a.id,next.id,'Berlin');assert.equal(db.get(a.id).questions[1].answer,'Berlin');assert.match(db.messages(a.id).at(-1).text,/Yanıtın kaydedildi.*Provider unavailable/);
 });
+
+test('documents attached while a setup question is open travel with its answer',t=>{
+ const core=new WorkspaceDatabase(':memory:');t.after(()=>core.close());let clock=1000;const db=new AutomationStore(core,{now:()=>++clock}),a=db.create('custom');
+ db.message(a.id,'system','Eski belge',{document:'documents/old.pdf'});
+ const run=db.begin(a.id,'interview','conversation');
+ assert.throws(()=>db.assertIdle(a.id),/durdur/);assert.doesNotThrow(()=>db.assertIdle(a.id,{allowConversation:true}));
+ const q=db.askQuestion(a.id,{text:'CV’ni ekler misin?'},{runId:run.id});
+ db.message(a.id,'system','Yeni belge',{document:'documents/cv.pdf'});
+ assert.deepEqual(db.answerQuestion(a.id,q.id,'Ekledim').documents,['documents/cv.pdf']);
+});

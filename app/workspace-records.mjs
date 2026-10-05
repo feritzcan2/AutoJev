@@ -1,10 +1,11 @@
 import {randomUUID} from 'node:crypto';
+import {RecordIdentity,activeRecordSql} from './record-identity.mjs';
 
 const parse=row=>row?JSON.parse(row.data):null;
 // One durable record table. Domain extensions keep their own fields in data;
 // bindings in the template expose those fields through the same record contract.
 export class WorkspaceRecords {
- constructor(workspaces){this.workspaces=workspaces;this.db=workspaces.db;this.migrate();}
+ constructor(workspaces){this.workspaces=workspaces;this.db=workspaces.db;this.migrate();this.identities=new RecordIdentity(this);}
  migrate(){
   const db=this.db,legacy=[...this.workspaces.registry.drivers.values()].flatMap(driver=>driver.legacyRecords??[]).filter(({table})=>db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table));
   db.exec('PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE');
@@ -28,28 +29,31 @@ export class WorkspaceRecords {
    db.exec('COMMIT');
   }catch(error){db.exec('ROLLBACK');throw error;}finally{db.exec('PRAGMA foreign_keys=ON');}
  }
- get(id,recordId){this.workspaces.get(id);const record=parse(this.db.prepare('SELECT data FROM workspace_records WHERE workspace_id=? AND id=?').get(id,recordId));if(!record)throw Error('Kayıt bu çalışma alanına ait değil');return record;}
- find(id,key){this.workspaces.get(id);return parse(this.db.prepare('SELECT data FROM workspace_records WHERE workspace_id=? AND record_key=?').get(id,key));}
- list(id,{offset=0,limit=500,descending=true}={}){this.workspaces.get(id);return this.db.prepare(`SELECT data FROM workspace_records WHERE workspace_id=? ORDER BY rowid ${descending?'DESC':'ASC'} LIMIT ? OFFSET ?`).all(id,limit,offset).map(parse);}
- count(id){this.workspaces.get(id);return this.db.prepare('SELECT count(*) AS n FROM workspace_records WHERE workspace_id=?').get(id).n;}
+ get(id,recordId){this.workspaces.get(id);const record=this.identities.resolve(id,recordId);if(!record)throw Error('Kayıt bu çalışma alanına ait değil');return record;}
+ usesUrl(id){return this.workspaces.definition(id).records.identity==='url';}
+ find(id,key){this.workspaces.get(id);const exact=parse(this.db.prepare('SELECT data FROM workspace_records WHERE workspace_id=? AND record_key=?').get(id,key));return exact?this.get(id,exact.id):this.usesUrl(id)?this.identities.find(id,key):null;}
+ list(id,{offset=0,limit=500,descending=true}={}){this.workspaces.get(id);return this.db.prepare(`SELECT data FROM workspace_records WHERE workspace_id=? AND ${activeRecordSql} ORDER BY rowid ${descending?'DESC':'ASC'} LIMIT ? OFFSET ?`).all(id,limit,offset).map(parse);}
+ count(id){this.workspaces.get(id);return this.db.prepare(`SELECT count(*) AS n FROM workspace_records WHERE workspace_id=? AND ${activeRecordSql}`).get(id).n;}
  search(id,{query,offset=0,limit=25}){
   this.workspaces.get(id);
   const fold=value=>value.normalize('NFKC').toLowerCase(),needle=fold(query),records=[];let total=0;
   // Search locally so agents need not load every record to find one listing.
   // JS case folding also covers non-ASCII company names, unlike SQLite lower.
-  for(const row of this.db.prepare('SELECT data FROM workspace_records WHERE workspace_id=? ORDER BY rowid ASC').iterate(id)){
+  for(const row of this.db.prepare(`SELECT data FROM workspace_records WHERE workspace_id=? AND ${activeRecordSql} ORDER BY rowid ASC`).iterate(id)){
    const record=parse(row),text=JSON.stringify([record.title,record.role,record.company,record.location,record.url,record.key,record.sourceUrl,record.summary,record.cells]);
    if(!fold(text).includes(needle))continue;
    if(total>=offset&&records.length<limit)records.push(record);total++;
   }
   return {records,total};
  }
- put(id,key,value){
+ put(id,key,value){return this.identities.atomic(()=>{
   this.workspaces.get(id);const record={...value,id:value.id??randomUUID()},existing=this.db.prepare('SELECT workspace_id FROM workspace_records WHERE id=?').get(record.id);
   if(existing&&existing.workspace_id!==id)throw Error('Kayıt bu çalışma alanına ait değil');
-  this.db.prepare('INSERT INTO workspace_records(id,workspace_id,record_key,data) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(record.id,id,key,JSON.stringify(record));return record;
- }
- update(id,recordId,change){const value=change(this.get(id,recordId));if(value.id!==recordId)throw Error('Kayıt kimliği değiştirilemez');this.db.prepare('UPDATE workspace_records SET data=? WHERE workspace_id=? AND id=?').run(JSON.stringify(value),id,recordId);return value;}
+  if(existing&&this.get(id,record.id).id!==record.id)throw Error('Bu kayıt birleştirildi; güncel ana kaydı yeniden oku');
+  if(this.usesUrl(id))for(const url of this.identities.urls(record)){const other=this.identities.find(id,url);if(other&&other.id!==record.id)throw Error('Bu ilan zaten kayıtlı; mevcut kaydı kullan');}
+  this.db.prepare('INSERT INTO workspace_records(id,workspace_id,record_key,data) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(record.id,id,key,JSON.stringify(record));if(this.usesUrl(id))this.identities.bind(id,record);return record;
+ });}
+ update(id,recordId,change){return this.identities.atomic(()=>{const before=this.get(id,recordId),value=change(before);if(value.id!==before.id)throw Error('Kayıt kimliği değiştirilemez');return this.put(id,value.key??this.db.prepare('SELECT record_key FROM workspace_records WHERE id=?').get(value.id).record_key,value);});}
  project(id,record,definition){
   const fields={...record.cells};for(const [key,source]of Object.entries(definition.records.bindings))if(record[source]!==undefined)fields[key]=record[source];
   if(!fields.source&&record.url)try{fields.source=new URL(record.url).hostname;}catch{}

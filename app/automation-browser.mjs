@@ -28,6 +28,9 @@ export function automationBrowser(browser,{readTabKey,sourceUrl,sourceUrls=[],re
   return result.page.siteWait?observed(result):observed(await native(id,'browser_jev_observe',{tabId:result.page.tabId,scope:'document',full:true,fullReason:'context_loss'},session));
  };
  return {hasPage:()=>Boolean(tabId),waitForOperations:id=>browser.waitForOperations(id),async evaluateJev(id,state,questions,signal){
+  // Classification of extension/API evidence needs model configuration only.
+  const config=browser.options?.(id)?.config;
+  if(config)return askJev(state,questions,{...await config(),signal});
   await ready(id);const {client}=await browser.connect(id);
   return askJev(state,questions,{...await client.config(),signal});
  },async currentUrl(id){

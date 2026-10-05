@@ -12,13 +12,13 @@ function fixture(t){
 
 test('the same listing with extra tracking parameters updates one record instead of creating a second',t=>{
  const {db,id,run}=fixture(t);
- const plain='https://board.test/view?jk=abc123&from=serp',tracked='https://board.test/view?jk=abc123&from=serp&advn=59680&adid=4225&ad=opaque-token-9';
+ const plain='https://board.test/view?item=abc123',tracked='https://board.test/view?item=abc123&utm_source=mail&gclid=synthetic';
  const first=db.record(id,run.id,{url:plain,title:'Officer',summary:'Facts'});
  const second=db.record(id,run.id,{url:tracked,title:'Officer (sponsored)',summary:'Facts again'});
  assert.equal(second.id,first.id);assert.equal(second.url,plain,'the first observed address stays the record address');
  assert.equal(db.results(id).filter(r=>!r.trial).length,1);
- const reversed=db.record(id,run.id,{url:'https://board.test/view?jk=abc123',title:'Officer',summary:'Fewer parameters'});
- assert.equal(reversed.id,first.id,'a subset of the saved parameters is the same page');
+ const reversed=db.record(id,run.id,{url:'https://board.test/view?utm_source=other&item=abc123',title:'Officer',summary:'Different provenance'});
+ assert.equal(reversed.id,first.id,'only known tracking parameters can be discarded');
 });
 
 test('different values, different routes and parameter-free addresses stay separate records',t=>{

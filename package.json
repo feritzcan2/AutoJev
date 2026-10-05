@@ -6,6 +6,7 @@
   "main": "app/main.mjs",
   "packageManager": "pnpm@10.14.0",
   "scripts": {
+    "collect": "node app/collect-cli.mjs",
     "build": "node scripts/build.mjs",
     "engine:build": "node scripts/build-engine.mjs",
     "start": "pnpm build && pnpm engine:build && electron .",
@@ -23,6 +24,8 @@
     "test:jev:live": "node scripts/smoke-automation-jev.mjs --live",
     "test:jev:existing": "node scripts/smoke-jev-existing.mjs",
     "test:jev:options": "node scripts/smoke-jev-options.mjs",
+    "test:jev:hidden-select": "node scripts/smoke-jev-hidden-select.mjs",
+    "test:jev:stuck-busy": "node scripts/smoke-jev-stuck-busy.mjs",
     "test:jev:autocomplete": "node scripts/smoke-jev-autocomplete.mjs",
     "test:jev:choice": "node scripts/smoke-jev-choice.mjs",
     "test:jev:recovery": "node scripts/smoke-jev-recovery.mjs",

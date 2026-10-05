@@ -18,7 +18,7 @@ const positionMenu=(panel,toggle)=>{
 
 export function automationResultsTable(root,{button,badge,time,api,refresh,statusNames,onQuestion=()=>{}}){
  let data,busy=false,page=1,sort='updatedAt',direction=-1,scrollLeft=0,disposeTable=()=>{};
- let batchSubmitting=false,selectionOwner=null;
+ let batchSubmitting=null,selectionOwner=null;
  let tabOwner=null,liveTabs=[],liveTabIdentity='[]',tabVersion=0;
  const selectedIds=new Set(),expanded=new Set(),requests=new Set(),visibleTabButtons=new Map(),pageSize=10;
  const review=el('dialog',null,'automation-record-review'),reviewTitle=el('h2'),reviewSummary=el('p'),proposal=el('pre'),reviewError=el('p'),reviewActions=el('div',null,'actions');
@@ -39,25 +39,43 @@ export function automationResultsTable(root,{button,badge,time,api,refresh,statu
  const toolbar=el('div',null,'automation-results-toolbar'),search=el('input'),filter=el('select'),pagination=el('div',null,'jobs-pagination'),content=el('div'),activity=el('div',null,'record-activity-summary');activity.setAttribute('role','status');
  search.type='search';search.id='automation-result-search';search.placeholder='Sonuçlarda ara…';search.setAttribute('aria-label','Sonuçlarda ara');
  filter.id='automation-result-filter';filter.setAttribute('aria-label','Sonuç durumunu filtrele');
+ const scoreFilter=el('div',null,'record-score-filter'),scoreComparison=el('select'),scoreMinimum=el('input');
+ scoreComparison.id='automation-result-score-comparison';scoreComparison.setAttribute('aria-label','Puan karşılaştırması');scoreComparison.append(new Option('>','gt'),new Option('<','lt'));
+ scoreMinimum.type='number';scoreMinimum.id='automation-result-score-minimum';scoreMinimum.min='0';scoreMinimum.max='100';scoreMinimum.step='any';scoreMinimum.placeholder='Tümü';scoreMinimum.setAttribute('aria-label','Puan sınırı');
+ scoreFilter.append(el('span','Puan'),scoreComparison,scoreMinimum);
  for(const [value,label] of [['all','Tüm kayıtlar'],['starred','★ Yıldızlılar'],['found','Bulunanlar'],['prepared','İşlem taslakları'],['completed','Tamamlananlar'],['uncertain','Doğrulama bekleyenler'],['dismissed','Atlananlar'],['trial','Araştırma ve deneme örnekleri']])filter.add(new Option(label,value));
- toolbar.append(search,filter);root.previousElementSibling.append(toolbar);root.replaceChildren(activity,pagination,content,review);
- search.oninput=filter.onchange=()=>{page=1;render();};
+ toolbar.append(search,filter,scoreFilter);root.previousElementSibling.append(toolbar);root.replaceChildren(activity,pagination,content,review);
+ search.oninput=scoreMinimum.oninput=scoreComparison.onchange=filter.onchange=()=>{page=1;render();};
  const selection=el('div',null,'record-selection-toolbar'),selectionCount=el('span'),selectionError=el('span',null,'record-selection-error');
  selectionCount.setAttribute('role','status');selectionError.setAttribute('role','alert');
  const eligible=result=>Boolean(result.recordAction?.scoreOperation&&!result.recordAction.scoreOperation.disabled&&!requests.has(data.automation.id+':'+result.id));
+ const deletable=result=>Boolean(api.automationRecordsDelete&&!result.recordAction?.task&&result.status!=='executing'&&!requests.has(data.automation.id+':'+result.id));
+ const selectableRecord=result=>eligible(result)||deletable(result);
  const clearSelection=button('Seçimi temizle',()=>{selectedIds.clear();selectionError.textContent='';render();});
  const scoreSelected=button('Seçilenleri puanla',async()=>{
-  if(batchSubmitting||busy||!selectedIds.size||selectedIds.size>100)return;
-  const workspace=data.automation.id,ids=[...selectedIds];batchSubmitting=true;selectionError.textContent='';
+  if(batchSubmitting||busy||!selectedIds.size||selectedIds.size>100||data.results.some(result=>selectedIds.has(result.id)&&!eligible(result)))return;
+  const workspace=data.automation.id,ids=[...selectedIds];batchSubmitting='score';selectionError.textContent='';
   for(const id of ids)requests.add(workspace+':'+id);render();
   try{
    await api.automationRecordsScore(workspace,ids);
    if(selectionOwner===workspace)for(const id of ids)selectedIds.delete(id);
    await refresh();
   }catch(error){if(selectionOwner===workspace)selectionError.textContent=error.message;}
-  finally{for(const id of ids)requests.delete(workspace+':'+id);batchSubmitting=false;render();}
+  finally{for(const id of ids)requests.delete(workspace+':'+id);batchSubmitting=null;render();}
  },'primary');scoreSelected.dataset.recordsScore='';
- selection.append(selectionCount,scoreSelected,clearSelection,selectionError);root.insertBefore(selection,pagination);
+ const deleteSelected=button('Seçilenleri sil',async()=>{
+  if(batchSubmitting||busy||!selectedIds.size||data.results.some(result=>selectedIds.has(result.id)&&!deletable(result)))return;
+  const workspace=data.automation.id,ids=[...selectedIds];
+  if(!window.confirm(`${ids.length} seçili kayıt kalıcı olarak silinsin mi?`))return;
+  batchSubmitting='delete';selectionError.textContent='';for(const id of ids)requests.add(workspace+':'+id);render();
+  try{
+   await api.automationRecordsDelete(workspace,ids);
+   if(selectionOwner===workspace){for(const id of ids){selectedIds.delete(id);expanded.delete(id);}if(ids.includes(reviewed?.id)){review.close();reviewed=null;}}
+   await refresh();
+  }catch(error){if(selectionOwner===workspace)selectionError.textContent=error.message;}
+  finally{for(const id of ids)requests.delete(workspace+':'+id);batchSubmitting=null;render();}
+ },'danger');deleteSelected.dataset.recordsDelete='';
+ selection.append(selectionCount,scoreSelected,deleteSelected,clearSelection,selectionError);root.insertBefore(selection,pagination);
 
 
  function syncTabButtons(){
@@ -88,7 +106,11 @@ export function automationResultsTable(root,{button,badge,time,api,refresh,statu
   const active=data.results.filter(r=>recordOperationStatus(r)?.active),queued=active.filter(r=>r.recordAction?.task?.state==='pending').length,waiting=data.results.filter(recordNeedsAnswer).length;
   activity.replaceChildren();activity.hidden=!active.length;if(active.length){activity.append(el('span',`${active.length} kayıt işlemde · ${queued} sırada${waiting?` · ${waiting} yanıt bekliyor`:""}`),button(filter.value==='active'?'Tüm kayıtları göster':'İşlemdeki kayıtları göster',()=>{filter.value=filter.value==='active'?'all':'active';page=1;render();}));}
   const query=search.value.trim().toLocaleLowerCase('tr-TR').split(/\s+/).filter(Boolean);
-  const results=data.results.filter(r=>(filter.value==='all'||(filter.value==='waiting'?recordNeedsAnswer(r):filter.value==='active'?recordOperationStatus(r)?.active:filter.value==='trial'?r.trial:filter.value==='starred'?r.starred:!r.trial&&recordState(r,data.definition).id===filter.value))&&query.every(q=>[r.title,r.summary,r.url,...Object.values(r.cells??{}),recordState(r,data.definition).label,recordOperationStatus(r)?.label??''].join(' ').toLocaleLowerCase('tr-TR').includes(q)));
+  const hasScore=Boolean(data.definition.recordOperations?.score||data.automation.table?.columns?.some(column=>column.key==='score'));
+  scoreFilter.hidden=!hasScore;
+  const threshold=hasScore&&Number.isFinite(scoreMinimum.valueAsNumber)?scoreMinimum.valueAsNumber:null;
+  const matchesScore=result=>{const score=result.assessment?result.assessment.score:result.cells?.score;return threshold===null||score!=null&&String(score).trim()!==''&&Number.isFinite(Number(score))&&(scoreComparison.value==='lt'?Number(score)<threshold:Number(score)>threshold);};
+  const results=data.results.filter(r=>matchesScore(r)&&(filter.value==='all'||(filter.value==='waiting'?recordNeedsAnswer(r):filter.value==='active'?recordOperationStatus(r)?.active:filter.value==='trial'?r.trial:filter.value==='starred'?r.starred:!r.trial&&recordState(r,data.definition).id===filter.value))&&query.every(q=>[r.title,r.summary,r.url,...Object.values(r.cells??{}),recordState(r,data.definition).label,recordOperationStatus(r)?.label??''].join(' ').toLocaleLowerCase('tr-TR').includes(q)));
   const openIds=new Set(liveTabs.length?results.filter(result=>recordTabs(result,liveTabs,data).length).map(result=>result.id):[]);
   const columns=data.automation.table?.columns??[{key:'source',label:'Kaynak',type:'text'},{key:'title',label:'Kayıt',type:'text'}];
   if(!['status','updatedAt',...columns.map(c=>c.key)].includes(sort)){sort='updatedAt';direction=-1;}
@@ -98,12 +120,17 @@ export function automationResultsTable(root,{button,badge,time,api,refresh,statu
   results.sort((a,b)=>{const rank=priority(a)-priority(b);if(rank)return rank;const av=value(a),bv=value(b);if(av===''||bv==='')return av===bv?0:av===''?1:-1;return direction*(numeric?Number(av)-Number(bv):collator.compare(av,bv))||collator.compare(a.id,b.id);});
   const pages=Math.max(1,Math.ceil(results.length/pageSize));page=Math.min(page,pages);
   const start=(page-1)*pageSize,visible=results.slice(start,start+pageSize);
-  const selectable=Boolean(data.definition.recordOperations?.score),visibleEligible=visible.filter(eligible);
+  const selectable=Boolean(data.definition.recordOperations?.score||api.automationRecordsDelete),visibleEligible=visible.filter(selectableRecord);
   selection.hidden=!selectable||!selectedIds.size;
   selectionCount.textContent=selectedIds.size+' kayıt seçildi';
-  scoreSelected.textContent=batchSubmitting?'Sıraya ekleniyor…':`Seçilenleri puanla (${selectedIds.size})`;
-  scoreSelected.disabled=busy||batchSubmitting||!selectedIds.size||selectedIds.size>100;
-  scoreSelected.title=selectedIds.size>100?'Bir seferde en fazla 100 kayıt puanlanabilir.':'';clearSelection.disabled=batchSubmitting;
+  const selectedResults=data.results.filter(result=>selectedIds.has(result.id)),allScorable=selectedResults.every(eligible),allDeletable=selectedResults.every(deletable);
+  scoreSelected.hidden=!data.definition.recordOperations?.score;deleteSelected.hidden=!api.automationRecordsDelete;
+  scoreSelected.textContent=batchSubmitting==='score'?'Sıraya ekleniyor…':`Seçilenleri puanla (${selectedIds.size})`;
+  scoreSelected.disabled=busy||Boolean(batchSubmitting)||!selectedIds.size||selectedIds.size>100||!allScorable;
+  scoreSelected.title=selectedIds.size>100?'Bir seferde en fazla 100 kayıt puanlanabilir.':!allScorable?'Seçili kayıtların bazıları şu anda puanlanamaz.':'';
+  deleteSelected.textContent=batchSubmitting==='delete'?'Siliniyor…':`Seçilenleri sil (${selectedIds.size})`;
+  deleteSelected.disabled=busy||Boolean(batchSubmitting)||!selectedIds.size||!allDeletable;
+  deleteSelected.title=!allDeletable?'Silmeden önce seçili kayıtların sıradaki veya çalışan işlemlerini durdur.':'';clearSelection.disabled=Boolean(batchSubmitting);
   const selectCheckbox=(label,checked,change)=>{const input=el('input');input.type='checkbox';input.checked=checked;input.setAttribute('aria-label',label);input.disabled=busy||batchSubmitting;input.onchange=change;return input;};
 
   pagination.replaceChildren(el('span',results.length?`${start+1}–${start+visible.length} / ${results.length} kayıt`:'0 kayıt','pagination-count'));
@@ -112,7 +139,7 @@ export function automationResultsTable(root,{button,badge,time,api,refresh,statu
   const {element,table,body,dispose}=recordTable([...(selectable?[{key:'selection',label:'Seç'}]:[]),{key:'updatedAt',label:'Son aktivite'},...columns,{key:'status',label:'Durum'}],{className:'jobs-table automation-results-table',scrollLeft,onScroll:value=>{scrollLeft=value;},onLayout:positionOpenMenu,header:(th,{key,label})=>{
    if(key==='selection'){
     const count=visibleEligible.filter(result=>selectedIds.has(result.id)).length;
-    const selectPage=selectCheckbox('Bu sayfadaki puanlanabilir kayıtları seç',visibleEligible.length>0&&count===visibleEligible.length,()=>{for(const result of visibleEligible)selectPage.checked?selectedIds.add(result.id):selectedIds.delete(result.id);selectionError.textContent='';render();});
+    const selectPage=selectCheckbox('Bu sayfadaki kayıtları seç',visibleEligible.length>0&&count===visibleEligible.length,()=>{for(const result of visibleEligible)selectPage.checked?selectedIds.add(result.id):selectedIds.delete(result.id);selectionError.textContent='';render();});
     selectPage.indeterminate=count>0&&count<visibleEligible.length;selectPage.disabled||=!visibleEligible.length;selectPage.dataset.recordsSelectPage='';th.replaceChildren(selectPage);
    }else if(key){th.setAttribute('aria-sort',sort===key?(direction===1?'ascending':'descending'):'none');const control=button(label+(sort===key?(direction===1?' ↑':' ↓'):''),()=>{direction=sort===key?-direction:key==='updatedAt'?-1:1;sort=key;page=1;render();},'sort-button');control.dataset.resultSort=key;th.replaceChildren(control);}
   }});
@@ -129,7 +156,7 @@ export function automationResultsTable(root,{button,badge,time,api,refresh,statu
    if(selectable){
     const cell=el('td');cell.dataset.column='selection';
     const checkbox=selectCheckbox(result.title+' · Seç',selectedIds.has(result.id),()=>{checkbox.checked?selectedIds.add(result.id):selectedIds.delete(result.id);selectionError.textContent='';render();root.querySelector(`[data-record-select="${result.id}"]`)?.focus();});
-    checkbox.dataset.recordSelect=result.id;checkbox.disabled||=!eligible(result);checkbox.title=result.recordAction?.scoreOperation?.reason??(!eligible(result)?'Bu kayıt şu anda puanlanamaz':'');cell.append(checkbox);row.append(cell);
+    checkbox.dataset.recordSelect=result.id;checkbox.disabled||=!selectableRecord(result);checkbox.title=!selectableRecord(result)?'Bu kayıt için işlem sırada veya çalışıyor':'';cell.append(checkbox);row.append(cell);
    }
    row.append(updated);
    for(const column of columns){const cell=el('td');cell.dataset.column=column.key;
@@ -144,7 +171,7 @@ export function automationResultsTable(root,{button,badge,time,api,refresh,statu
     else{row.append(recordCell(column,result.cells?.[column.key],{openLink:url=>api.openLink(url)}));continue;}
     row.append(cell);
    }
-   state.dataset.column='status';updated.dataset.column='updatedAt';state.append(el('span',requesting?'Sıraya ekleniyor':progress?.label??recordState(result,data.definition).label,'automation-badge '+(requesting?'queued':progress?.tone??result.status)));if(progress?.detail){const detail=el('span',progress.detail,'record-operation-detail');detail.title=progress.detail;state.append(detail);}if(result.workflowState&&result.workflowState!==result.status)state.append(badge(result.status));if(result.trial)state.append(el('span',result.sampleKind==='interview'?'Araştırma örneği':'Deneme örneği','automation-trial-label'));
+   state.dataset.column='status';updated.dataset.column='updatedAt';state.append(el('span',requesting?(batchSubmitting==='delete'?'Siliniyor':'Sıraya ekleniyor'):progress?.label??recordState(result,data.definition).label,'automation-badge '+(requesting?'queued':progress?.tone??result.status)));if(progress?.detail){const detail=el('span',progress.detail,'record-operation-detail');detail.title=progress.detail;state.append(detail);}if(result.workflowState&&result.workflowState!==result.status)state.append(badge(result.status));if(result.trial)state.append(el('span',result.sampleKind==='interview'?'Araştırma örneği':'Deneme örneği','automation-trial-label'));
    const activityDate=new Date(recordActivityAt(result)),date=el('time');date.dateTime=activityDate.toISOString();date.title=time(recordActivityAt(result));date.append(el('span',activityDate.toLocaleDateString('tr-TR')),el('span',activityDate.toLocaleTimeString('tr-TR'),'automation-result-clock'));updated.append(date);
    const detailsId='automation-result-detail-'+result.id,detail=button(expanded.has(result.id)?'Kapat':'Detay',()=>{expanded.has(result.id)?expanded.delete(result.id):expanded.add(result.id);render();root.querySelector(`[data-result-detail="${result.id}"]`)?.focus();});detail.dataset.resultDetail=result.id;detail.dataset.recordMenuAction='detail';detail.setAttribute('aria-expanded',String(expanded.has(result.id)));detail.setAttribute('aria-controls',detailsId);
    const open=button('Aç ↗',()=>{if(actionsPanel.matches(':popover-open'))actionsPanel.hidePopover();api.openLink(result.url);});open.dataset.recordMenuAction='open';open.setAttribute('aria-label',result.title+' · Kaynağı aç');
@@ -216,5 +243,5 @@ export function automationResultsTable(root,{button,badge,time,api,refresh,statu
   previousTable?.remove();
   if(openMenu?.isConnected){element.querySelector('.jobs-table-wrap').scrollLeft=scrollLeft;positionOpenMenu();}
  }
- return {showQuestions(){search.value='';filter.value='waiting';page=1;render();root.scrollIntoView({block:'start',behavior:'smooth'});},dispose:()=>{content.querySelector('.record-row-actions:popover-open')?.hidePopover();clearInterval(tabTimer);tabOwner=null;tabVersion++;disposeTable();},update(snapshot,isBusy){if(data?.automation.id!==snapshot.automation.id){content.querySelector('.record-row-actions:popover-open')?.hidePopover();review.close();reviewed=null;scrollLeft=0;page=1;selectedIds.clear();selectionError.textContent='';}if(tabOwner!==snapshot.automation.id){liveTabs=[];liveTabIdentity='[]';tabVersion++;}tabOwner=snapshot.automation.id;data=snapshot;busy=isBusy;selectionOwner=snapshot.automation.id;const currentIds=new Set(data.results.filter(eligible).map(result=>result.id));for(const id of selectedIds)if(!currentIds.has(id)&&!requests.has(selectionOwner+':'+id))selectedIds.delete(id);const selected=filter.value;filter.replaceChildren(new Option('Tüm kayıtlar','all'),new Option('★ Yıldızlılar','starred'),new Option('İşlemdeki kayıtlar','active'),new Option('Yanıt bekleyenler','waiting'),...(data.definition?.records.states??[]).map(s=>new Option(s.label,s.id)),new Option('Araştırma ve deneme örnekleri','trial'));if([...filter.options].some(o=>o.value===selected))filter.value=selected;render();void refreshTabs();}};
+ return {showQuestions(){search.value='';scoreMinimum.value='';scoreComparison.value='gt';filter.value='waiting';page=1;render();root.scrollIntoView({block:'start',behavior:'smooth'});},dispose:()=>{content.querySelector('.record-row-actions:popover-open')?.hidePopover();clearInterval(tabTimer);tabOwner=null;tabVersion++;disposeTable();},update(snapshot,isBusy){if(data?.automation.id!==snapshot.automation.id){content.querySelector('.record-row-actions:popover-open')?.hidePopover();review.close();reviewed=null;scrollLeft=0;page=1;scoreMinimum.value='';scoreComparison.value='gt';selectedIds.clear();selectionError.textContent='';}if(tabOwner!==snapshot.automation.id){liveTabs=[];liveTabIdentity='[]';tabVersion++;}tabOwner=snapshot.automation.id;data=snapshot;busy=isBusy;selectionOwner=snapshot.automation.id;const currentIds=new Set(data.results.filter(selectableRecord).map(result=>result.id));for(const id of selectedIds)if(!currentIds.has(id)&&!requests.has(selectionOwner+':'+id))selectedIds.delete(id);const selected=filter.value;filter.replaceChildren(new Option('Tüm kayıtlar','all'),new Option('★ Yıldızlılar','starred'),new Option('İşlemdeki kayıtlar','active'),new Option('Yanıt bekleyenler','waiting'),...(data.definition?.records.states??[]).map(s=>new Option(s.label,s.id)),new Option('Araştırma ve deneme örnekleri','trial'));if([...filter.options].some(o=>o.value===selected))filter.value=selected;render();void refreshTabs();}};
 }

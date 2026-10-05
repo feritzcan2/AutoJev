@@ -12,6 +12,13 @@ import {attentionTabs} from '../src/automation-attention.js';
 const source={url:'https://homes.example/list',name:'Homes',enabled:true,blocked:true,lastResult:'CAPTCHA kaldı. Açık sekmede doğrulamayı tamamla.'};
 const snapshot=()=>({automation:{revision:1,reviewedRevision:1,trial:{status:'passed',revision:1}},sources:[source],runs:[],activeRuns:[]});
 
+test('collector failures do not ask for browser tabs, including after run history is pruned',()=>{
+ const s=snapshot();s.runs=[{id:'collector',sourceUrl:source.url,collector:'synthetic',status:'failed'}];
+ assert.equal(automationAttention(s)[0].browserRequired,false);
+ s.runs=[];s.sources=[{...source,scan:{collector:'site-collector-review-v1'}}];assert.equal(automationAttention(s)[0].browserRequired,false);
+ s.sources=[source];assert.equal(automationAttention(s)[0].browserRequired,true);
+});
+
 test('conversation forms stay distinct from source and record questions during concurrent work',()=>{
  const s=snapshot();s.sources=[];s.runs=[{id:'chat',kind:'interview',startedAt:100},{id:'scan',kind:'run',startedAt:100,sourceUrl:'https://source.example'}];
  s.automation.questions=[

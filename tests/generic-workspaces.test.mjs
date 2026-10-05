@@ -21,7 +21,7 @@ test('a new car template defines fields, states and executable operations withou
 
 test('job and web records have one physical store and shared table/state tools preserve evidence',t=>{
  const {store,db,id}=fixture(t),p=db.create('job-search',{title:'Test'}),job=db.putResult({id:'job',automationId:p.id,key:'job',url:'https://jobs.test/1',title:'Engineer',status:'found'});
- const run=db.begin(id,'run'),record=db.record(id,run.id,{url:'https://cars.test/car/1',title:'Car',summary:'Observed',cells:[{key:'price',value:'12000'}]});
+ const run=db.begin(id,'run'),record=db.record(id,run.id,{url:'https://cars.test/car/1',title:'Car',summary:'Observed',cells:[{key:'price',value:'12000'}],assessment:{score:70}});
  assert.equal(store.db.prepare('SELECT count(*) AS n FROM workspace_records').get().n,2);assert.equal(store.db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name IN ('jobs','automation_results','agent_workers','agent_conversations','conversation_launch_settings')").get().n,0);
  const changed=workspaceTableCall(store,id,'transition_workspace_record',{itemId:record.id,actionId:'shortlist'});assert.equal(changed.workflowState,'shortlisted');assert.equal(changed.status,'found');assert.equal(changed.digest,record.digest);
  assert.throws(()=>workspaceTableCall(store,id,'update_workspace_cells',{itemId:job.id,cells:[]}),/ait/);assert.equal(db.result(p.id,job.id).status,'found');
@@ -32,7 +32,7 @@ test('two workers execute one declarative graph, wait for closure, and never exe
  const runtime=new WebTasks(db,{launch:async(run)=>{launched.push(run);return {close:async()=>{}};}});t.after(()=>runtime.close());
  await runtime.runOnce(id);await settle();assert.equal(launched.length,2);assert.deepEqual(new Set(launched.map(r=>r.workerId)),new Set(['main',worker.id]));
  const finish=async run=>{runtime.report(id,run.id,'completed','Adım tamamlandı');await runtime.finish(id,'completed','Adım tamamlandı',run.workerId);};
- for(const [index,run]of launched.slice().entries()){db.record(id,run.id,{url:'https://cars.test/car/'+index,title:'Car '+index,summary:'Observed details',cells:[{key:'price',value:'12000'}]});runtime.report(id,run.id,'completed','Bulundu');}
+ for(const [index,run]of launched.slice().entries()){db.record(id,run.id,{url:'https://cars.test/car/'+index,title:'Car '+index,summary:'Observed details',cells:[{key:'price',value:'12000'}],assessment:{score:70}});runtime.report(id,run.id,'completed','Bulundu');}
  await runtime.tick();assert.equal(launched.length,2,'downstream steps must wait for provider closure');
  for(const run of launched.slice())await runtime.finish(id,'completed','Bulundu',run.workerId);
  await runtime.tick();await settle();assert.equal(launched.length,4);assert.deepEqual(launched.slice(2).map(r=>r.operation),['evaluate','evaluate']);assert.notEqual(launched[2].recordId,launched[3].recordId);
