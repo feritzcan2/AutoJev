@@ -22,16 +22,25 @@ function jevFixture(){
 
 test('completed source scan closes only its known disposable tabs',async()=>{
   const f=jevFixture();f.add('home');f.add('results');f.add('detail');f.add('draft',{draft:true});f.add('changed',{changed:true});f.add('question');f.add('other-run',{run:'other'});f.add('other-workspace',{workspace:'other'});
-  const result=await f.browser.closeFinishedAutomationRunTabs('finished','workspace',{sourceScan:true,pendingTabIds:['question']});
+  const result=await f.browser.closeFinishedAutomationRunTabs(['finished'],'workspace',{keepForms:true,pendingTabIds:['question']});
   assert.deepEqual(result.closed,['results','detail']);
   assert.deepEqual(result.retained,['draft','changed','question']);
   assert.deepEqual(f.reported,['results','detail']);
   for(const id of ['home','draft','changed','question','other-run','other-workspace'])assert.ok(f.browser.tabs.has(id),id);
 });
 
+test('finished work closes same-site URL rewrites and earlier turn tabs, keeping pages moved to another site',async()=>{
+  const f=jevFixture();f.add('rewritten',{changed:true});f.add('earlier',{run:'previous'});f.add('elsewhere');f.add('running',{run:'active'});
+  f.browser.tabs.get('rewritten').observed={url:'https://example.test/rewritten'};
+  const elsewhere=f.browser.tabs.get('elsewhere');elsewhere.observed={url:'https://example.test/elsewhere'};elsewhere.page.url=()=>'https://personal.test/inbox';
+  const result=await f.browser.closeFinishedAutomationRunTabs(['finished','previous'],'workspace',{keepForms:true});
+  assert.deepEqual(result,{closed:['rewritten','earlier'],retained:['elsewhere']});
+  assert.ok(f.browser.tabs.has('running'));
+});
+
 test('verified record completion closes its exact form tab, preserving other tasks',async()=>{
   const f=jevFixture();f.add('home');f.add('confirmation',{draft:true});f.add('other-run',{run:'other'});
-  assert.deepEqual(await f.browser.closeFinishedAutomationRunTabs('finished','workspace'),{closed:['confirmation'],retained:[]});
+  assert.deepEqual(await f.browser.closeFinishedAutomationRunTabs(['finished'],'workspace'),{closed:['confirmation'],retained:[]});
   assert.deepEqual(f.closed,['confirmation']);assert.ok(f.browser.tabs.has('other-run'));
 });
 
@@ -43,7 +52,7 @@ test('access reset closes retained source tabs including solved challenges, pres
   f.browser.automationTabs.set(id,id==='record'?'record:known-record':'source:'+source);
  }
  f.browser.tabs.get('challenge').verification={state:'required'};
- const result=await f.browser.closeFinishedAutomationRunTabs('finished','workspace',{resetSource:source,sourceRunIds:['finished','previous']});
+ const result=await f.browser.closeFinishedAutomationRunTabs(['finished','previous'],'workspace',{resetSource:source});
  assert.deepEqual(result.closed,['challenge','form','changed','previous']);assert.deepEqual(result.retained,[]);
  for(const id of ['home','personal','record','other-source','new-run','other-workspace'])assert.ok(f.browser.tabs.has(id),id);
 });
@@ -51,8 +60,8 @@ test('access reset closes retained source tabs including solved challenges, pres
 test('source reset retries failed tab closes without falsely reporting cleanup complete',async()=>{
  const f=jevFixture(),source='https://source.test/';f.add('challenge');f.browser.automationSources.set('challenge',source);
  const slot=f.browser.tabs.get('challenge'),close=slot.page.close;slot.page.close=async()=>{throw Error('Disconnected');};
- const options={resetSource:source,sourceRunIds:['finished']};
- assert.deepEqual(await f.browser.closeFinishedAutomationRunTabs('finished','workspace',options),{closed:[],retained:['challenge']});
- slot.page.close=close;assert.deepEqual(await f.browser.closeFinishedAutomationRunTabs('finished','workspace',options),{closed:['challenge'],retained:[]});
+ const options={resetSource:source};
+ assert.deepEqual(await f.browser.closeFinishedAutomationRunTabs(['finished'],'workspace',options),{closed:[],retained:['challenge']});
+ slot.page.close=close;assert.deepEqual(await f.browser.closeFinishedAutomationRunTabs(['finished'],'workspace',options),{closed:['challenge'],retained:[]});
 });
 

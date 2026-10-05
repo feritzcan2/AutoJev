@@ -40,7 +40,7 @@ test('a failed results page cannot abandon 17 reachable details, then retries on
  // The agent only reports the failure; the app decides it is technical.
  await assert.rejects(f.call('finish_automation_run',{status:'blocked',summary:'Page empty'}),/17 bekleyen/);
  await assert.rejects(f.call('finish_automation_run',{status:'completed',summary:'Done',scan:{complete:true,pendingUrls:[],reason:'Done',evidenceUrl:next}}),/Çözümlenmemiş/);
- for(const url of details){await f.call('browser_open',{url});await f.call('record_automation_result',{key:url,url,title:'Listing',summary:'Observed details'});}
+ for(const url of details){await f.call('browser_open',{url});await f.call('record_automation_result',{key:url,url,title:'Listing',summary:'Observed details',score:70});}
  assert.deepEqual(f.db.scanQueue(f.id,f.run.id).pendingUrls,[next],'saved findings leave the queue');
  const result=await f.call('finish_automation_run',{status:'blocked',summary:'Only results page remains'});
  assert.equal(f.db.run(f.run.id).stop.kind,'technical');
@@ -93,7 +93,7 @@ test('repeated page errors block further attempts to that URL but preserve reach
  assert.equal(f.db.run(f.run.id).status,'running');
  const count=f.calls.length;await assert.rejects(f.call('browser_open',{url:next}),/diğer bekleyen/i);assert.equal(f.calls.length,count);
  f.error(null);await f.call('browser_open',{url:details[0]});
- await f.call('record_automation_result',{key:details[0],url:details[0],title:'Listing',summary:'Observed details'});
+ await f.call('record_automation_result',{key:details[0],url:details[0],title:'Listing',summary:'Observed details',score:70});
  const result=await f.call('finish_automation_run',{status:'blocked',summary:'Last page unavailable'});
  assert.equal(result.status,'interrupted');assert.deepEqual(result.scan.pendingUrls,[next]);
 });

@@ -134,7 +134,11 @@ export class AgentSessions {
   this.closing.set(key,pending);return pending;
  }
  // The latest native conversation for a worker, kept after the session closes until a new one starts.
- async transcript(id,worker=MAIN_WORKER){const reader=this.transcripts.get(workerKey(id,worker));return reader?{nativeId:reader.nativeId,messages:await reader.read(),activity:reader.activity??null}:{nativeId:null,messages:[]};}
+ async transcript(id,worker=MAIN_WORKER,fallback){
+  const key=workerKey(id,worker);let reader=this.transcripts.get(key);
+  if(!reader&&fallback?.nativeId){reader=new TranscriptReader(fallback);this.transcripts.set(key,reader);}
+  return reader?{nativeId:reader.nativeId,messages:await reader.read(),activity:reader.activity??null}:{nativeId:null,messages:[]};
+ }
  async tokenUsage(id,worker,{since,until}){const reader=this.transcripts.get(workerKey(id,worker));return reader?readRunTokenUsage({...reader,appSent:[],since,until}):null;}
  output(id,worker=MAIN_WORKER){const key=workerKey(id,worker);return {bytes:[...(this.outputs.get(key)??Buffer.alloc(0))],sequence:this.sequences.get(key)??0,sessionId:this.sessions.get(key)?.sessionId??null};}
  snapshot(id,worker=MAIN_WORKER){const key=workerKey(id,worker),sessionId=this.sessions.get(key)?.sessionId??null;return this.screens.get(key)?.snapshot(sessionId)??Promise.resolve({...this.output(id,worker),...this.grid(id,worker)});}

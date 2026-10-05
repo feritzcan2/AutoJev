@@ -1,6 +1,7 @@
 import {operationFor} from './template-contract.mjs';
 import {sourceMode} from './automation-sources.mjs';
 import {SOURCE_PAGE_INSTRUCTIONS} from './source-scan.mjs';
+import {COLLECTOR_INSTRUCTIONS} from './source-collector-worker.mjs';
 
 const TECHNICAL_RETRY_LIMIT=3,IDLE_RETRY_LIMIT=5;
 const exhaustedSummary='Erişim sorunu sürüyor. 3 tarama turu teknik hatayla sonuçlandı; otomatik deneme durduruldu. İlerleme korundu. Devam etmek için Tekrar dene’ye bas.';
@@ -40,7 +41,7 @@ function resumable(db,run){
 export function continueSourceRun(db,id,runId){
  const run=db.run(runId);
  if(!resumable(db,run)||Object.keys(run.scanIssues??{}).length||(db.get(id).questions??[]).some(q=>q.answer==null&&q.taskId===run.taskId))return null;
- return 'The same assigned source task is still open; no restart or new task occurred. Continue from the current page and saved checkpoint. Do not reread unchanged context or documents. If your last finish_automation_run was rejected, inspect its error, correct only the missing report or continue the remaining work. Page loading failures are verified and retried by the app. Do not repeat an unchanged failed action or submit anything.'+(run.kind==='run'?' '+SOURCE_PAGE_INSTRUCTIONS:'');
+ return 'The same assigned source task is still open; no restart or new task occurred. Continue from the current page and saved checkpoint. Do not reread unchanged context or documents. If your last finish_automation_run was rejected, inspect its error, correct only the missing report or continue the remaining work. Page loading failures are verified and retried by the app. Do not repeat an unchanged failed action or submit anything.'+(run.kind==='run'?' '+(run.collector?COLLECTOR_INSTRUCTIONS:SOURCE_PAGE_INSTRUCTIONS):'');
 }
 
 export function unreportedSourceRun(db,id,runId,reason,now){

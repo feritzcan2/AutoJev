@@ -84,7 +84,7 @@ test('table schema and cells reject authority fields, unsafe URLs and ambiguous 
 
 test('incomplete interview drafts preserve source requests without granting them browser access',()=>{
  const pending=prepareAutomationChat('Randevu bul',{goal:'',criteria:{},sources:['sen bul','https://example.com/results#top']});
- assert.deepEqual(pending.draft.sources,['https://example.com/results']);assert.equal(pending.draft.goal,'');assert.match(pending.message,/sen bul/);
+ assert.deepEqual(pending.draft.sources,['https://example.com/results#top']);assert.equal(pending.draft.goal,'');assert.match(pending.message,/sen bul/);
  assert.throws(()=>prepareAutomationChat('Randevu bul',{sources:['https://user:secret@example.com']}),/Kullanıcı/);
  assert.throws(()=>prepareAutomationChat('Randevu bul',{sources:['file:///etc/passwd']}),/HTTP/);
  assert.throws(()=>prepareAutomationChat('x'.repeat(12000),{sources:['sen bul']}),/12000/);
@@ -226,7 +226,7 @@ test('interviews can research and interact without activating sources or schedul
  const browser={async call(owner,name,args){calls++;if(name==='browser_navigate')current=args.url;return {content:[{type:'text',text:'### Page\n- Page URL: '+current+'\n- Official appointment instructions'}]};}};
  const flow=automationWorkflow({db,run,signal:controller.signal,browser,report:()=>{}});
  const schema=flow.tools.find(t=>t.name==='save_automation_plan').inputSchema;
- assert.deepEqual(schema.properties.criteria.items.properties.key.enum,['location','budget','requirements','introduction']);
+ assert.deepEqual(schema.properties.criteria.items.properties.key.enum,['location','budget','requirements','introduction','ranking','score_threshold','save_score_threshold']);
  assert.doesNotThrow(()=>validate(flow.tools.find(t=>t.name==='research_automation_source').inputSchema,{url:'https://official.example/appointments'}));assert.doesNotThrow(()=>validate(flow.tools.find(t=>t.name==='reply_to_user').inputSchema,{message:'Kaynakları inceliyorum'}));
  await flow.call(id,run.id,'research_automation_source',{url:'https://official.example/appointments'});assert.equal(db.run(run.id).observations.length,1);assert.deepEqual(db.get(id).sources,setup.sources);assert.equal(db.get(id).reviewedRevision,null);
  const previous=calls;await flow.call(id,run.id,'browser_interact',{operation:'click',ref:'e1'});assert.equal(calls,previous+3);

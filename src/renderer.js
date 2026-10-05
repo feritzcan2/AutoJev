@@ -56,6 +56,7 @@ const activities=activityPanels($('now-panel'),{openLink:url=>api.openLink(url),
 const chromeStatus=element('div','chrome-status');chromeStatus.setAttribute('role','status');chromeStatus.setAttribute('aria-live','polite');
 const chromeTitle=element('b'),chromeDetail=element('small'),chromeReconnect=element('button','quiet chrome-reconnect','Yeniden bağlan');chromeReconnect.type='button';chromeStatus.append(chromeTitle,chromeDetail,chromeReconnect);document.querySelector('.sidebar-bottom').before(chromeStatus);
 const chromeProfileChange=element('button','quiet chrome-profile-change','Profili değiştir');chromeProfileChange.type='button';chromeStatus.append(chromeProfileChange);
+const jevStatus=element('div','jev-status');jevStatus.setAttribute('role','alert');jevStatus.hidden=true;jevStatus.append(element('b'),element('small'));chromeStatus.before(jevStatus);
 const chromeProfileDialog=createChromeProfileDialog({loadProfiles:async()=>{chromeProfiles=await api.chromeProfiles();chromeProfilesError='';return chromeProfiles;},save:async(owner,chromeProfile)=>{await settingsQueue;await api.workspaceSettings(owner.id,{chromeProfile});await api.browserReconnect(owner.id);await refresh();notice('Chrome profili kaydedildi.');}});document.body.append(chromeProfileDialog.element);
 chromeProfileChange.onclick=()=>{const a=automationUI.data?.automation;if(a)chromeProfileDialog.show({id:a.id,chromeProfile:a.chromeProfile,web:true});};
 chromeReconnect.onclick=attempt(()=>automationUI.reconnectBrowser());
@@ -118,7 +119,7 @@ async function refreshWorkspace(){
  if(automationUI.selected){$('candidates').value=automationUI.selected;await automationUI.refresh();}
  workspaceMenu.sync();
 }
-$('new').textContent='Yeni çalışma alanı';$('new').onclick=attempt(()=>automationUI.createBlank());
+$('new').textContent='Yeni çalışma alanı';$('new').onclick=()=>switchView('templates');
 $('candidates').onchange=attempt(async()=>{const id=$('candidates').value;notice('');if(id){await automationUI.select(id);await refresh();}});
 $('start').onclick=attempt(async()=>{await settingsQueue;await automationUI.start();});
 $('stop').onclick=attempt(()=>automationUI.stop());$('restart-agent').onclick=attempt(async()=>{await settingsQueue;await automationUI.restart();});

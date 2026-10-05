@@ -19,8 +19,8 @@ try{
   const snapshot={automation:{id:'owner',mode:'observe',status:'enabled',browserMode:'separate',sources:sources.map(s=>s.url)},sources,progress:{reviewed:true}};
   const calls=[],pending=new Map();let owner='owner';
   const request=async(kind,id,url)=>{calls.push({kind,id,url});await new Promise((resolve,reject)=>pending.set(`${id}:${url}`,{resolve,reject}));sources.find(s=>s.url===url).scanning=kind==='start';};
-  const api={automationSourceRun:(id,url)=>request('start',id,url),automationSourceStop:(id,url)=>request('stop',id,url),automationSourceExport:()=>new Promise(resolve=>{window.fixture.finishExport=resolve;})};
-  const panel=automationSourcesPanel(host,api,{notice:text=>{window.lastNotice=text;},refresh:async()=>panel.update(snapshot,owner)});
+  const api={automationSourceRun:(id,url)=>request('start',id,url),automationSourceStop:(id,url)=>request('stop',id,url)};
+  const panel=automationSourcesPanel(host,api,{notice:text=>{window.lastNotice=text;},refresh:async()=>panel.update(snapshot,owner),ask:()=>new Promise(resolve=>{window.fixture.finishDiscovery=resolve;})});
   window.fixture={snapshot,panel,calls,pending,update:()=>panel.update(snapshot,owner),select:id=>{owner=id;panel.update(snapshot,id);}};panel.update(snapshot,owner);
  },pathToFileURL(fixtureModule).href);
  const row=index=>page.locator('.source-row').nth(index);
@@ -43,10 +43,10 @@ try{
  await page.keyboard.down('Space');await refresh();await page.keyboard.up('Space');
  assert.deepEqual(await page.evaluate(()=>window.fixture.calls.map(c=>c.kind)),['stop']);await finish(1);
  // A different panel action must not silently swallow either scan control.
- await reset();await page.getByRole('button',{name:'Kaynak tanımlarını dışa aktar',exact:true}).click();
+ await reset();await page.getByRole('button',{name:'Agent ile bul',exact:true}).click();
  await row(0).getByRole('button',{name:'Şimdi tara',exact:true}).click();await row(1).getByRole('button',{name:'Taramayı durdur',exact:true}).click();
  assert.deepEqual(await page.evaluate(()=>window.fixture.calls.map(c=>c.kind)),['start','stop']);
- await finish(0);await finish(1);await page.evaluate(()=>window.fixture.finishExport());
+ await finish(0);await finish(1);await page.evaluate(()=>window.fixture.finishDiscovery());
  await reset();
  await row(0).getByRole('button',{name:'Şimdi tara',exact:true}).click();
  await refresh();

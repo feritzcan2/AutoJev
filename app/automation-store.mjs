@@ -2,21 +2,30 @@ import {automaticAssessmentError} from '../src/scoring-state.js';
 import {taskRecordIds,taskHasRecord,batchScoring,recordScoredInTask} from './record-task-scope.mjs';
 import {profilePlan,profileChanged,splitPlanDraft} from './profile-updates.mjs';
 import {taskSnapshot} from './automation-snapshot.mjs';
+import {automationSnapshotReader} from './automation-snapshot-reader.mjs';
 import {JevTaskStore} from './jev-task-store.mjs';
 import {BrowserEvidenceStore} from './browser-evidence-store.mjs';
 import {CONVERSATION_WORKER,isConversation,conversationWaiting} from './workspace-conversation.mjs';
 import {setupAgentOnboarding} from './setup-agent.mjs';
 import {validateNotSubmitted} from './record-outcome.mjs';
-import {scanWork,activeSearch,withScanWork,scanQueue,scanWorkSummary,reportWorkPage,updateScanQueue,completeScanSearch,validateWorkCompletion,scanPlanView,scanProgressView} from './scan-work.mjs';
+import {scanWork,activeSearch,withScanWork,replayScanWork,scanQueue,scanWorkSummary,reportWorkPage,updateScanQueue,completeScanSearch,validateWorkCompletion,scanPlanView,scanProgressView,forgetScanPosition,forgetPlanPosition} from './scan-work.mjs';
 import {answerContinuation} from './automation-continuation.mjs';
 import {validateRecordTask,recordOperationState,pendingRecordQuestion,recordSource} from './record-operations.mjs';
 import {recordAssessment,assessmentCells} from './record-scoring.mjs';
+import {saveScoreThreshold} from './score-thresholds.mjs';
 import {SiteAccess,sameSite} from './site-access.mjs';
+import {jevDetailKey} from './jev-detail-urls.mjs';
+import {activeRecordSql} from './record-identity.mjs';
+import {observedRecordAliases} from './record-aliases.mjs';
 import {automationTrialReady,migrateSourceTrials} from './automation-trial.mjs';
 import {normalizeFields,validateAnswers,OUTCOME_FIELD} from './question-forms.mjs';
 import {removeImportedWorkspace} from './workspace-upgrade.mjs';
 import {withAgentDefaults} from './agent-settings.mjs';
-import {recipeValues,recipeReplay,replayUrls,replayMatches,recipeRunOutcome,advanceRecipeState,recipeStatus} from './source-recipe.mjs';
+import {recipeValues,recipeReplay,replayUrls,replayMatches,recipeRunOutcome,advanceRecipeState,recipeStatus,recipePageCap} from './source-recipe.mjs';
+import {collectorRun} from './source-collectors.mjs';
+import {siteExtensionKind} from './site-extensions/index.mjs';
+import {collectorFindingInput} from './source-collector-worker.mjs';
+import {globalTemplateSource,templateSourceSettings} from './template-sources.mjs';
 import {findOperation,operationFor} from './template-contract.mjs';
 import {domainData} from './workspace-store.mjs';
 import {contextCompactTokens} from './context-compaction.mjs';
@@ -25,9 +34,14 @@ import {randomUUID,createHash} from 'node:crypto';
 import {reusableTemplate,planInput,normalizeSourceUrls,missingPlanFields,missingProfileFields,defaultAutomationSettings,boundedText,webUrl} from './automation-templates.mjs';
 import {automationTable,automationCells,defaultAutomationTable} from './automation-templates.mjs';
 import {automationSources,sourceInput,sourceMode} from './automation-sources.mjs';
-import {beginSourceScan,sourceScanScope,advanceSourceScan,completeSourceScan} from './source-scan.mjs';
+import {beginSourceScan,sourceScanScope,advanceSourceScan,completeSourceScan,markKnownBoundary,markPageCap} from './source-scan.mjs';
+// Only a different search method changes a recipe; notes, the pagination
+// hint, the page cap and the login flag are advisory.
+const recipeKey=r=>r?JSON.stringify({entry:r.entry,terms:r.terms??null}):null;
 
 const json=row=>row?JSON.parse(row.data):null;
+const finishedSourceRun="json_extract(data,'$.kind') IN ('run','trial') AND json_extract(data,'$.status')<>'running' AND json_extract(data,'$.recordId') IS NULL AND json_extract(data,'$.recordOperation') IS NULL";
+const runSource="coalesce(json_extract(data,'$.sourceUrl'),CASE WHEN json_array_length(data,'$.sources')=1 THEN json_extract(data,'$.sources[0]') END)";
 const integer=(value,label,min,max)=>{if(!Number.isInteger(value)||value<min||value>max)throw Error(`${label}: ${min}–${max} arasında tam sayı gerekli`);return value;};
 const planKey=value=>JSON.stringify([value.title,value.goal,value.criteria,value.sources,value.instructions,value.facts]);
 function agentSettings(input){
@@ -47,11 +61,15 @@ export class AutomationStore {
    CREATE TABLE IF NOT EXISTS automation_runs(id TEXT PRIMARY KEY,automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,data TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS automation_messages(id TEXT PRIMARY KEY,automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,data TEXT NOT NULL);
    CREATE INDEX IF NOT EXISTS automation_runs_owner ON automation_runs(automation_id);
+   CREATE INDEX IF NOT EXISTS automation_runs_status ON automation_runs(automation_id,json_extract(data,'$.status'));
+   CREATE INDEX IF NOT EXISTS automation_runs_source_history ON automation_runs(automation_id,${runSource}) WHERE ${finishedSourceRun};
    CREATE INDEX IF NOT EXISTS automation_runs_record ON automation_runs(automation_id,json_extract(data,'$.recordId'));
-   CREATE INDEX IF NOT EXISTS automation_messages_owner ON automation_messages(automation_id);`);
+   CREATE INDEX IF NOT EXISTS automation_messages_owner ON automation_messages(automation_id);
+   CREATE TABLE IF NOT EXISTS scan_seen_listings(workspace_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,url_key TEXT NOT NULL,scope_key TEXT NOT NULL,reason TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(workspace_id,url_key));`);
   this.jevTasks=new JevTaskStore(this.db,now);
   this.browserEvidence=new BrowserEvidenceStore(now);
   migrateSourceTrials(this);
+  for(const {id} of this.list())if(this.store.workspaces.records.usesUrl(id))this.store.workspaces.records.identities.rebuild(id);
  }
  has(id){return Boolean(this.db.prepare('SELECT 1 FROM automations WHERE id=?').get(id));}
  conversation(id,provider){return this.store.workspaces.history(id).conversation(id,provider);}
@@ -66,8 +84,8 @@ export class AutomationStore {
  put(a){a={...a};delete a.maxActionsTotal;delete a.maxActionsPerDay;delete a.endAt;this.db.exec('SAVEPOINT save_workspace_plan');try{this.store.workspaces.save(a.id,a.templateId,a);this.db.prepare('INSERT INTO automations VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(a.id,JSON.stringify(domainData(a)));this.db.exec('RELEASE save_workspace_plan');return this.get(a.id);}catch(error){this.db.exec('ROLLBACK TO save_workspace_plan; RELEASE save_workspace_plan');throw error;}}
  create(templateId,input={}){
   const template=this.template(templateId);if(template.kind!=='web')throw Error('İş arama için aday kurulumunu kullan');
-  const defaults=template.defaultSources??[],plan=planInput(template,{...input,sources:input.sources??defaults.map(source=>source.url)});
-  const sourceSettings=Object.fromEntries(defaults.filter(source=>plan.sources.includes(source.url)).map(({url,...settings})=>[url,settings]));
+  const defaults=template.defaultSources??[],plan=planInput(template,{...input,sources:input.sources??defaults.filter(globalTemplateSource).map(source=>source.url)});
+  const sourceSettings=Object.fromEntries(defaults.filter(source=>plan.sources.includes(source.url)).map(source=>[source.url,templateSourceSettings(source)]));
   const a={id:randomUUID(),templateId,templateVersion:template.version,...plan,sourceSettings,mode:template.defaultMode,chromeProfile:null,intervalMinutes:30,agentSettings:agentSettings(input.agentSettings??defaultAutomationSettings),revision:1,reviewedRevision:null,trial:null,sourceTrialsVersion:1,status:'draft',nextRunAt:null,createdAt:this.now(),updatedAt:this.now()};
   a.table=template.table?automationTable(template.table):defaultAutomationTable(templateId);this.put(a);this.message(a.id,'assistant',`Ne yapmak istediğini anlat. ${template.fields[0].question}`,{conversation:true});return a;
  }
@@ -144,18 +162,16 @@ export class AutomationStore {
  }
  sources(id){
   const a=this.get(id),runs=this.runs(id,{summary:true});
-  const records=this.db.prepare("SELECT json_extract(data,'$.url') AS url,json_extract(data,'$.sourceUrl') AS sourceUrl,json_extract(data,'$.trial') AS trial,json_extract(data,'$.runId') AS runId,json_extract(data,'$.discoveredRunId') AS discoveredRunId FROM workspace_records WHERE workspace_id=?").all(id);
+  const records=this.db.prepare("SELECT json_extract(data,'$.url') AS url,json_extract(data,'$.sourceUrl') AS sourceUrl,json_extract(data,'$.trial') AS trial,json_extract(data,'$.runId') AS runId,json_extract(data,'$.discoveredRunId') AS discoveredRunId FROM workspace_records WHERE workspace_id=? AND json_extract(data,'$.mergedInto') IS NULL").all(id);
   // A new active run or unrelated record work must not hide the last source outcome.
   const lastRuns=new Map(this.db.prepare(`SELECT json_object('id',id,'kind',json_extract(data,'$.kind'),'status',json_extract(data,'$.status'),'summary',json_extract(data,'$.summary'),'finishedAt',json_extract(data,'$.finishedAt'),'sourceUrl',json_extract(data,'$.sourceUrl'),'sources',json_extract(data,'$.sources')) AS data FROM automation_runs WHERE rowid IN (
-   SELECT max(rowid) FROM automation_runs WHERE automation_id=? AND json_extract(data,'$.kind') IN ('run','trial')
-    AND json_extract(data,'$.status')<>'running' AND json_extract(data,'$.recordId') IS NULL AND json_extract(data,'$.recordOperation') IS NULL
-   GROUP BY coalesce(json_extract(data,'$.sourceUrl'),CASE WHEN json_array_length(data,'$.sources')=1 THEN json_extract(data,'$.sources[0]') END)
+   SELECT max(rowid) FROM automation_runs WHERE automation_id=? AND ${finishedSourceRun} GROUP BY ${runSource}
   )`).all(id).map(json).map(run=>[run.sourceUrl??(run.sources?.length===1?run.sources[0]:null),{id:run.id,kind:run.kind,status:run.status,summary:run.summary,finishedAt:run.finishedAt}]));
   return automationSources(a).map(source=>{
    const last=runs.find(r=>!r.recordId&&!r.recordOperation&&['run','trial'].includes(r.kind)&&(r.sourceUrl===source.url||!r.sourceUrl&&r.sources?.length===1&&r.sources[0]===source.url));
    const active=runs.find(r=>!r.recordId&&!r.recordOperation&&r.status==='running'&&['run','trial'].includes(r.kind)&&(r.sourceUrl===source.url||r.sources?.length===1&&r.sources[0]===source.url));
    const resultCount=records.filter(r=>!r.trial&&(r.sourceUrl?r.sourceUrl===source.url:new URL(r.url).origin===new URL(source.url).origin&&a.sources.filter(url=>new URL(url).origin===new URL(source.url).origin).length===1)).length;
-   return {...(last?{lastRunAt:last.finishedAt,lastStatus:last.status,lastResult:last.summary,blocked:['blocked','failed','timeout'].includes(last.status),lastFound:records.filter(r=>!r.trial&&(r.discoveredRunId??r.runId)===last.id).length}:{}),...source,lastRun:lastRuns.get(source.url)??null,siteWait:this.sourceWait(id,source,a),pageProgress:active&&!active.recordId?active.pageProgress??null:source.pageProgress??null,observedPage:active?.observedPage??source.observedPage??null,resultCount,scanning:Boolean(active),trialRunning:active?.kind==='trial',scanIssue:active?Object.values(active.scanIssues??{}).sort((a,b)=>b.at-a.at)[0]??null:null,workerId:active?.workerId??null};
+   return {...(last?{lastRunAt:last.finishedAt,lastStatus:last.status,lastResult:last.summary,blocked:['blocked','failed','timeout'].includes(last.status),lastFound:records.filter(r=>!r.trial&&(r.discoveredRunId??r.runId)===last.id).length}:{}),...source,lastRun:lastRuns.get(source.url)??null,siteWait:this.sourceWait(id,source,a),pageProgress:active&&!active.recordId?active.pageProgress??null:source.pageProgress??null,observedPage:active?.observedPage??source.observedPage??null,resultCount,extension:siteExtensionKind(source.url,a.templateId),scanning:Boolean(active),trialRunning:active?.kind==='trial',scanIssue:active?Object.values(active.scanIssues??{}).sort((a,b)=>b.at-a.at)[0]??null:null,workerId:active?.workerId??null};
   });
  }
  saveSources(id,sources,{acceptDraft=false}={}){
@@ -166,7 +182,11 @@ export class AutomationStore {
   return this.store.workspaces.tasks.atomic(()=>{
    for(const task of this.store.workspaces.tasks.list(id,{states:['pending','paused']}))if(removed.includes(task.sourceUrl))this.store.workspaces.tasks.finish(id,task.id,'cancelled','Kaynak kaldırıldı');
    const keep=values=>Object.fromEntries(Object.entries(values??{}).filter(([url])=>urls.includes(url)));
-   const next={...a,sources:urls,sourceSettings:keep(a.sourceSettings),sourceState:keep(a.sourceState),updatedAt:this.now()};
+   // A starting source added later (for example a country source proposed in
+   // setup) keeps its template name, recipe and instructions.
+   const defaults=new Map((this.template(a.templateId).defaultSources??[]).map(source=>[source.url,templateSourceSettings(source)]));
+   const seeded=Object.fromEntries(added.filter(url=>!a.sourceSettings?.[url]&&defaults.has(url)).map(url=>[url,defaults.get(url)]));
+   const next={...a,sources:urls,sourceSettings:{...keep(a.sourceSettings),...seeded},sourceState:keep(a.sourceState),updatedAt:this.now()};
    if(a.onceSources)next.onceSources=a.onceSources.filter(url=>urls.includes(url));
    if(a.status==='enabled'&&added.length)next.nextRunAt=this.now();
    if(acceptDraft)delete next.sourceDraft;
@@ -211,8 +231,9 @@ export class AutomationStore {
   // An edited recipe is a new candidate; the next scan verifies it.
   // Only a different search method invalidates verification; notes, the
   // pagination hint and login flag are advisory.
-  const recipeKey=r=>r?JSON.stringify({entry:r.entry,terms:r.terms??null}):null,recipeChanged=recipeKey(old.recipe)!==recipeKey(settings.recipe);
-  a.sourceState={...a.sourceState,[url]:{...state,...(recipeChanged?{recipeState:settings.recipe?{status:'candidate',successCount:0,failCount:0}:null}:{}),...(settings.intervalMinutes!==old.intervalMinutes&&!state.blocked?{nextRunAt:state.lastRunAt?state.lastRunAt+(settings.intervalMinutes??a.intervalMinutes)*60000:this.now()}:{})}};
+  const recipeChanged=recipeKey(old.recipe)!==recipeKey(settings.recipe);
+  const position=recipeChanged&&!scopeChanged?this.forgetRecipePosition(id,a,url,old.recipe,state):state;
+  a.sourceState={...a.sourceState,[url]:{...position,...(recipeChanged?{recipeState:settings.recipe?{status:'candidate',successCount:0,failCount:0}:null}:{}),...(settings.intervalMinutes!==old.intervalMinutes&&!state.blocked?{nextRunAt:state.lastRunAt?state.lastRunAt+(settings.intervalMinutes??a.intervalMinutes)*60000:this.now()}:{})}};
   return this.put(a);
  }
  // Called from a running source task: the agent proposed a recipe and the app
@@ -222,7 +243,18 @@ export class AutomationStore {
   const settings=sourceInput(a,url,{recipe});
   const previous=a.sourceState?.[url]?.recipeState??{};
   const recipeState=recipe.entry.kind==='discovery'?{status:'discovery',successCount:0,failCount:0,learnedRunId:runId,learnedAt:this.now()}:verified?{status:'verified',successCount:(previous.successCount??0)+1,failCount:0,verifiedAt:this.now(),learnedRunId:runId,lastRunId:runId,lastFailure:null,evidence:{listings,pages}}:{status:'candidate',successCount:0,failCount:0,learnedRunId:runId};
-  return this.put({...a,sourceSettings:{...a.sourceSettings,[url]:settings},sourceState:{...a.sourceState,[url]:{...a.sourceState?.[url],recipeState}}});
+  const old=a.sourceSettings?.[url]?.recipe??null,state=a.sourceState?.[url]??{};
+  const position=recipeKey(old)!==recipeKey(settings.recipe)?this.forgetRecipePosition(id,a,url,old,state):state;
+  return this.put({...a,sourceSettings:{...a.sourceSettings,[url]:settings},sourceState:{...a.sourceState,[url]:{...position,recipeState}}});
+ }
+ // A new search method restarts the results pages of the saved scan while
+ // queued listings stay: they are the same opportunities whichever page listed
+ // them. Addresses the old recipe produced are results pages, not listings.
+ forgetRecipePosition(id,a,url,oldRecipe,state){
+  const replay=recipeReplay(oldRecipe,recipeValues(a,url)),oldResults=candidate=>replayMatches(replay,candidate);
+  const queue=this.store.workspaces.tasks;
+  for(const task of queue.list(id,{states:['pending']}))if(task.sourceUrl===url&&(task.scan||task.scanPlan))queue.put({...task,...(task.scan?{scan:forgetScanPosition({scan:task.scan},oldResults).scan}:{}),...(task.scanPlan?{scanPlan:forgetPlanPosition(task.scanPlan)}:{})});
+  return forgetScanPosition(state,oldResults);
  }
  // Forget that the source was ever checked so its next turn is a trial with
  // the trial agent. The saved recipe stays as a candidate for comparison.
@@ -231,6 +263,12 @@ export class AutomationStore {
   if(this.runs(id).some(r=>!isConversation(r)&&r.status==='running'&&r.sourceUrl===url))throw Error('Önce bu kaynağın çalışan görevini durdur');
   const state=a.sourceState?.[url]??{},recipe=a.sourceSettings?.[url]?.recipe;
   return this.put({...a,sourceState:{...a.sourceState,[url]:{...state,trial:null,blocked:false,nextRunAt:this.now(),recipeState:recipe?{...state.recipeState,status:'candidate',failCount:0}:null,lastResult:'Kaynak yeniden öğrenilecek. Sıradaki tur deneme olacak.'}}});
+ }
+ // Start the next scan of this source from its first results page. Recorded
+ // and rejected listings stay known, so they are not read again.
+ forgetSourceScan(id,url){
+  const a=this.get(id),state=a.sourceState?.[url]??{};
+  return this.put({...a,sourceState:{...a.sourceState,[url]:{...state,scan:null,pageProgress:null,observedPage:null,...(state.scanState?{scanState:{...state.scanState,active:null}}:{})}}});
  }
  sourceRecipe(id,url){
   const a=this.get(id),recipe=a.sourceSettings?.[url]?.recipe??null,state=a.sourceState?.[url]?.recipeState??null;
@@ -255,7 +293,9 @@ export class AutomationStore {
   const a=this.get(id),question=(a.questions??[]).find(q=>q.id===questionId);
   if(!question)throw Error('Soru bu çalışma alanına ait değil');if(question.answer!==null)throw Error('Bu soru zaten yanıtlandı');
   const result=question.fields&&typeof value!=='string'?validateAnswers(question.fields,value):{summary:boundedText(value,'Yanıt',10000),values:null},answer=result.summary;
-  const updated={...question,answer,answerValues:result.values,answeredAt:this.now()};
+  // Documents attached while the question was open belong to this answer.
+  const documents=this.messages(id).filter(m=>m.document&&m.at>=question.createdAt).map(m=>m.document);
+  const updated={...question,answer,answerValues:result.values,...(documents.length?{documents}:{}),answeredAt:this.now()};
   const runId=question.runId??question.browserContext?.runId,origin=runId?json(this.db.prepare('SELECT data FROM automation_runs WHERE automation_id=? AND id=?').get(id,runId)):null;
   const conversation=!question.recordId&&!question.sourceUrl&&!question.browserContext?.sourceUrl&&(question.conversation===true||origin?.kind==='interview');
   // The applicant's answer to the app's outcome question resolves the held
@@ -281,6 +321,8 @@ export class AutomationStore {
  }
  clearApprovals(id){this.db.prepare("UPDATE workspace_records SET data=json_remove(data,'$.approvedDigest') WHERE workspace_id=?").run(id);}
  message(id,role,text,context={}){this.get(id);if(!['user','assistant','system'].includes(role))throw Error('Geçersiz mesaj');const m={id:randomUUID(),automationId:id,role,text:boundedText(text,'Mesaj',12000),at:this.now(),...context};this.db.prepare('INSERT INTO automation_messages VALUES(?,?,?)').run(m.id,id,JSON.stringify(m));return m;}
+ // Documents the user added with "Belge ekle"; files agents prepared are not listed.
+ userDocuments(id){return this.db.prepare("SELECT json_extract(data,'$.document') AS document FROM automation_messages WHERE automation_id=? AND json_extract(data,'$.document') IS NOT NULL ORDER BY rowid").all(id).map(row=>row.document);}
  messages(id){
   this.get(id);
   return this.db.prepare(`SELECT m.data,json_extract(r.data,'$.kind') AS run_kind FROM
@@ -292,7 +334,12 @@ export class AutomationStore {
  runs(id,{summary=false}={}){
   this.get(id);
   const select=summary?"json_remove(data,'$.scan','$.scanPlan','$.navigation','$.observedLinks','$.observations','$.jevTask') AS data,json_extract(data,'$.observations[#-1].url') AS observedUrl":"data";
-  return this.db.prepare(`SELECT ${select} FROM automation_runs WHERE automation_id=? AND (json_extract(data,'$.status')='running' OR rowid IN (SELECT rowid FROM automation_runs WHERE automation_id=? ORDER BY rowid DESC LIMIT 30)) ORDER BY rowid DESC`).all(id,id).map(row=>summary?{...json(row),observations:row.observedUrl?[{url:row.observedUrl}]:[]}:json(row));
+  // Select row identities through indexes before reading the large run bodies.
+  // A long-running worker must remain visible even outside recent history.
+  return this.db.prepare(`SELECT ${select} FROM automation_runs WHERE rowid IN (
+   SELECT rowid FROM automation_runs WHERE automation_id=? AND json_extract(data,'$.status')='running'
+   UNION SELECT rowid FROM (SELECT rowid FROM automation_runs WHERE automation_id=? ORDER BY rowid DESC LIMIT 30)
+  ) ORDER BY rowid DESC`).all(id,id).map(row=>summary?{...json(row),observations:row.observedUrl?[{url:row.observedUrl}]:[]}:json(row));
  }
  run(id){const r=json(this.db.prepare('SELECT data FROM automation_runs WHERE id=?').get(id));if(!r)throw Error('Çalışma bulunamadı');return r;}
  putRun(run){this.db.prepare('INSERT INTO automation_runs VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data').run(run.id,run.automationId,JSON.stringify(run));return run;}
@@ -304,13 +351,16 @@ export class AutomationStore {
   if(kind!=='interview'&&a.profileUpdate)throw Error('Profil güncellemesi tamamlanmadan yeni görev başlatılamaz.');
   if(kind!=='interview'&&!(taskId&&this.store.workspaces.tasks.get(id,taskId).recordOperation==='verify')&&a.reviewedRevision!==a.revision)throw Error('Önce kurulum kartını kontrol edip kaydet');
   if(!taskId&&!conversation&&['interview','trial'].includes(kind)&&a.status==='enabled')this.pause(id);
-  const queue=this.store.workspaces.tasks,task=taskId?queue.get(id,taskId):queue.enqueue(id,{operation:kind,lockKey:conversation?'conversation':'workspace',capability:'browser.observe'});
-  validateRecordTask(this,id,task,this.now());queue.claim(id,task.id,workerId);
+  const queue=this.store.workspaces.tasks;let task=taskId?queue.get(id,taskId):queue.enqueue(id,{operation:kind,lockKey:conversation?'conversation':'workspace',capability:'browser.observe'});
+  validateRecordTask(this,id,task,this.now());task=queue.claim(id,task.id,workerId);
   if(!taskId&&!conversation&&['interview','trial'].includes(kind)&&Object.keys(a.retryPlan??{}).length)this.put({...this.get(id),retryPlan:{}});
   const state=a.sourceState?.[task.sourceUrl]??{},scopeKey=task.sourceUrl?sourceScanScope(a,task.sourceUrl):null;
   const scopeMatches=!state.scanState||state.scanState.scopeKey===scopeKey;
-  const savedScan=!task.recordId&&scopeMatches&&(task.scan??state.scan),pageProgress=scopeMatches?state.pageProgress:null;
-  const scanState=kind==='run'&&task.sourceUrl&&!task.recordId?beginSourceScan(state.scanState,scopeKey,this.now()):null;
+  const resumable=!task.recordId&&scopeMatches&&(task.scan??state.scan),replaySearches=kind==='run'&&task.sourceUrl&&!task.recordId?this.sourceRecipe(id,task.sourceUrl).replay?.searches:null;
+  const savedScan=kind==='run'&&task.sourceUrl&&!task.recordId&&!collectorRun(a,{...task,kind})?replayScanWork(resumable&&!resumable.complete?resumable:null,replaySearches)??resumable:resumable;
+  const pageProgress=savedScan?.work&&savedScan!==resumable?activeSearch(savedScan.work)?.pageProgress??null:scopeMatches?state.pageProgress:null;
+  const recipe=a.sourceSettings?.[task.sourceUrl]?.recipe,ordering=state.recipeState?.status==='verified'?recipe?.ordering??null:null;
+  const scanState=kind==='run'&&task.sourceUrl&&!task.recordId?beginSourceScan(state.scanState,scopeKey,this.now(),{ordering,pageCap:recipePageCap(recipe)}):null;
   if(scanState){this.put({...a,sourceState:{...a.sourceState,[task.sourceUrl]:{...state,scanState}}});queue.put({...queue.get(id,task.id),scanPlan:scanState.active});}
   const continuation=answerContinuation(this,id,task,kind),runId=randomUUID();
   if(continuation){queue.put({...queue.get(id,task.id),continuation});const current=this.get(id);this.put({...current,questions:(current.questions??[]).map(q=>continuation.questionIds.includes(q.id)?{...q,continuationRunId:runId}:q)});}
@@ -333,7 +383,7 @@ export class AutomationStore {
   if(run.scan?.work){
    const work=scanWork(run),known=new Set(work.searches.flatMap(s=>s.pendingUrls));
    const extra=(run.scan.pendingUrls??[]).filter(url=>!known.has(url));
-   activeSearch(work).pendingUrls.push(...extra);run={...run,scan:withScanWork(run,work)};
+   activeSearch(work).pendingUrls.push(...extra);const complete=run.scan.complete===true&&!work.searches.some(s=>s.pendingUrls.length||s.status!=='completed');run={...run,scan:{...withScanWork(run,work),complete}};
   }
   this.putRun(run);const a=this.get(id),state=a.sourceState?.[run.sourceUrl]??{};
   this.put({...a,sourceState:{...a.sourceState,[run.sourceUrl]:{...state,pageProgress:run.pageProgress??null,observedPage:run.observedPage??null,scan:run.scan,...(run.scanPlan?{scanState:{...state.scanState,active:run.scanPlan}}:{})}}});
@@ -343,8 +393,24 @@ export class AutomationStore {
  scanWorkRun(id,runId){const run=this.activeRun(id,runId);if(run.kind!=='run'||!run.sourceUrl||run.recordId)throw Error('Tarama kuyruğu yalnızca kaynak görevine aittir.');return run;}
  scanQueue(id,runId,input){return scanQueue(this.scanWorkRun(id,runId),input);}
  completeScanSearch(id,runId,completion,snapshot){return this.store.workspaces.tasks.atomic(()=>{
-  const run=this.scanWorkRun(id,runId),work=completeScanSearch(run,completion,snapshot.url);
-  this.persistScan(id,{...run,scan:withScanWork(run,work)});return scanWorkSummary(this.run(runId));
+  const run=this.scanWorkRun(id,runId),before=scanWork(run).activeSearchId,work=completeScanSearch(run,completion,snapshot.url),next=activeSearch(work);
+  if(next.id===before){this.persistScan(id,{...run,scan:withScanWork(run,work)});return scanWorkSummary(this.run(runId));}
+  // Page caps, known boundaries and checkpoints belong to the finished search.
+  const scanPlan=next.plan??(run.scanPlan?forgetPlanPosition(run.scanPlan):null);
+  this.persistScan(id,{...run,scan:withScanWork(run,work),pageProgress:next.pageProgress??null,observedPage:null,...(scanPlan?{scanPlan}:{})});
+  return {...scanWorkSummary(this.run(runId)),next:next.url?`Search "${next.label}" is now active. Call browser_jev_run scan_results with url ${next.url}, then complete_scan_search for it as well.`:`Search "${next.label}" is now active; continue its queue and complete it as well.`};
+ });}
+ markKnownBoundary(id,runId,url){return this.store.workspaces.tasks.atomic(()=>{
+  const run=this.scanWorkRun(id,runId),scanPlan=markKnownBoundary(run.scanPlan,url,runId,this.now());
+  if(scanPlan===run.scanPlan)return false;
+  const work=scanWork(run);activeSearch(work).plan=scanPlan;
+  this.persistScan(id,{...run,scanPlan,scan:withScanWork(run,work,{reason:'Reçeteye göre en yeniden eskiye sıralı panoda art arda bilinen sayfalar; daha eski ilanlar zaten kayıtlı.',evidenceUrl:url})});return true;
+ });}
+ markPageCap(id,runId,url){return this.store.workspaces.tasks.atomic(()=>{
+  const run=this.scanWorkRun(id,runId),scanPlan=markPageCap(run.scanPlan,url,runId,this.now());
+  if(scanPlan===run.scanPlan)return false;
+  const work=scanWork(run);activeSearch(work).plan=scanPlan;
+  this.persistScan(id,{...run,scanPlan,scan:withScanWork(run,work,{reason:`Reçetede sıralama bilinmediği için arama ilk ${scanPlan.pageCap} sayfayla sınırlı.`,evidenceUrl:url})});return true;
  });}
  saveScanProgress(id,runId,input,snapshot){return this.store.workspaces.tasks.atomic(()=>{
   const run=this.scanWorkRun(id,runId);
@@ -358,17 +424,35 @@ export class AutomationStore {
   const scan=withScanWork(run,work,{reason,evidenceUrl:page.url});
   this.persistScan(id,{...run,scan,scanPlan});return {scanProgress:this.scanProgressView(this.run(runId)),scanPlan:scanPlanView(scanPlan),queue:scanQueue(this.run(runId))};
  });}
+ // Listings already recorded in this workspace, or rejected in a review under
+ // the current search scope, are not read again. Keys are the Jev detail keys
+ // of every alias, so tracking parameters and slashes do not disguise a repeat.
+ knownListingUrls(id,runId,urls){
+  const run=this.activeRun(id,runId);if(!run.sourceUrl||run.recordId)return [];
+  const seen=new Set(this.seenListingUrls(id,run.sourceUrl,urls));
+  return urls.filter(url=>{try{const record=this.store.workspaces.records.find(id,url);return Boolean(record&&!record.trial||seen.has(url));}catch{return false;}});
+ }
+ seenListingUrls(id,sourceUrl,urls){
+  const scopeKey=sourceScanScope(this.get(id),sourceUrl);
+  const seen=this.db.prepare('SELECT 1 FROM scan_seen_listings WHERE workspace_id=? AND url_key=? AND scope_key=?');
+  return urls.filter(url=>{try{return Boolean(seen.get(id,jevDetailKey(url),scopeKey));}catch{return false;}});
+ }
+ rememberSeenListings(id,sourceUrl,urls,reason){
+  const scopeKey=sourceScanScope(this.get(id),sourceUrl),insert=this.db.prepare('INSERT OR REPLACE INTO scan_seen_listings(workspace_id,url_key,scope_key,reason,at) VALUES(?,?,?,?,?)'),now=this.now();
+  for(const url of urls){try{insert.run(id,jevDetailKey(url),scopeKey,String(reason).slice(0,200),now);}catch{}}
+ }
  knownResults(id,runId,keys){
   const run=this.activeRun(id,runId);if(!run.sourceUrl||run.recordId||!Array.isArray(keys)||keys.length>100)throw Error('Kaynak taraması için en fazla 100 ilan anahtarı gerekli.');
-  const lookup=this.db.prepare("SELECT data FROM workspace_records WHERE workspace_id=? AND record_key=? AND NOT coalesce(json_extract(data,'$.trial'),0)"),byUrl=this.db.prepare("SELECT data FROM workspace_records WHERE workspace_id=? AND json_extract(data,'$.url')=? AND NOT coalesce(json_extract(data,'$.trial'),0) LIMIT 1");
-  return keys.map(key=>{boundedText(key,'İlan anahtarı',3000);const item=json(lookup.get(id,key)??byUrl.get(id,key));return {key,known:Boolean(item),...(item?{id:item.id,status:item.status,updatedAt:item.updatedAt,revision:item.revision}:{})};});
+  return keys.map(key=>{boundedText(key,'İlan anahtarı',3000);const record=this.store.workspaces.records.find(id,key),item=record&&!record.trial?record:null;return {key,known:Boolean(item),...(item?{id:item.id,status:item.status,updatedAt:item.updatedAt,revision:item.revision}:{})};});
  }
  observe(id,runId,url,evidence,links=[],pageContext={}){
   const run=this.activeRun(id,runId),observation={url:webUrl(url),evidence:String(evidence).slice(0,2000),at:this.now()};
   run.observations=[...run.observations,observation].slice(-20);
   // A cutoff proof belongs to the last observed page version. Recheck it after
   // any fresh browser observation rather than completing from stale content.
-  const invalidated=Boolean(run.scanPlan?.boundary);if(invalidated)run.scanPlan={...run.scanPlan,boundary:null};
+  // A known-listing boundary rests on Jev's page reads and a page cap on the
+  // pages already read, not on this snapshot.
+  const invalidated=Boolean(run.scanPlan?.boundary)&&!run.scanPlan.boundary.known&&!run.scanPlan.boundary.pageCap;if(invalidated)run.scanPlan={...run.scanPlan,boundary:null};
   run.resumeContext={url:observation.url,...(typeof pageContext?.tabId==='string'?{tabId:pageContext.tabId}:{})};
   // Keep the full route separately from the bounded page excerpts.
   run.navigation=[...(run.navigation??[]),{url:observation.url,at:observation.at,step:run.browserSteps}];
@@ -376,20 +460,20 @@ export class AutomationStore {
   if(invalidated){this.store.workspaces.tasks.atomic(()=>this.persistScan(id,run));return run;}
   return this.putRun(run);
  }
- results(id,{all=false}={}){this.get(id);return this.db.prepare('SELECT data FROM workspace_records WHERE workspace_id=? ORDER BY rowid DESC LIMIT ?').all(id,all?-1:500).map(json);}
+ results(id,{all=false}={}){this.get(id);return this.store.workspaces.records.list(id,{limit:all?-1:500});}
  runFoundCounts(id){
   this.get(id);
   // Count the full table, including records outside the recent-results window.
   return new Map(this.db.prepare(`SELECT coalesce(json_extract(data,'$.discoveredRunId'),json_extract(data,'$.runId')) AS runId,count(*) AS foundCount
-   FROM workspace_records WHERE workspace_id=? AND NOT coalesce(json_extract(data,'$.trial'),0) GROUP BY runId`).all(id).map(row=>[row.runId,row.foundCount]));
+   FROM workspace_records WHERE workspace_id=? AND ${activeRecordSql} AND NOT coalesce(json_extract(data,'$.trial'),0) GROUP BY runId`).all(id).map(row=>[row.runId,row.foundCount]));
  }
  resultCounts(id){this.get(id);return this.db.prepare(`SELECT count(*) AS storedCount,
   count(CASE WHEN NOT json_extract(data,'$.trial') THEN 1 END) AS resultCount,
   count(CASE WHEN NOT json_extract(data,'$.trial') AND json_extract(data,'$.status')='prepared' AND NOT coalesce(json_extract(data,'$.approvedDigest')=json_extract(data,'$.digest'),0) THEN 1 END) AS pendingCount,
   count(CASE WHEN NOT json_extract(data,'$.trial') AND json_extract(data,'$.status')='completed' THEN 1 END) AS completedCount,
   count(CASE WHEN NOT json_extract(data,'$.trial') AND json_extract(data,'$.status')='uncertain' THEN 1 END) AS uncertainCount
-  FROM workspace_records WHERE workspace_id=?`).get(id);}
- result(id,itemId){this.get(id);const item=json(this.db.prepare('SELECT data FROM workspace_records WHERE id=? AND workspace_id=?').get(itemId,id));if(!item)throw Error('Sonuç bu otomasyona ait değil');return item;}
+  FROM workspace_records WHERE workspace_id=? AND ${activeRecordSql}`).get(id);}
+ result(id,itemId){this.get(id);const item=this.store.workspaces.records.identities.resolve(id,itemId);if(!item)throw Error('Sonuç bu otomasyona ait değil');return item;}
  putResult(item,{run}={}){return this.store.workspaces.tasks.atomic(()=>{
   const previous=this.store.workspaces.records.find(item.automationId,item.key),saved=this.store.workspaces.records.put(item.automationId,item.key,item);
   if(run){if(run.automationId!==item.automationId)throw Error('Çalışma bu otomasyona ait değil');this.putRun(run);}
@@ -397,16 +481,37 @@ export class AutomationStore {
   return saved;
  });}
  configureTable(id,input){this.get(id);this.store.workspaces.configureTable(id,input);return this.get(id);}
+ setSaveScoreThreshold(id,value,{expectedValue}={}){return this.store.workspaces.tasks.atomic(()=>{
+  if(value!=null&&!['string','number'].includes(typeof value))throw Error('Minimum kayıt puanı: 0–100 arası tam sayı gerekli.');
+  const a=this.get(id),threshold=saveScoreThreshold({save_score_threshold:value}),next=threshold===null?'':String(threshold),current=String(a.criteria.save_score_threshold??'');
+  if(expectedValue!==undefined&&String(expectedValue??'')!==current)throw Error('Minimum kayıt puanı değişti. Güncel değeri inceleyip yeniden kaydet.');
+  if(next===current)return a;
+  const updated={...a,criteria:{...a.criteria,save_score_threshold:next},updatedAt:this.now()};
+  // A pending profile or conversation draft must not undo this newer choice.
+  for(const key of ['planDraft','profileUpdate'])if(updated[key]?.plan)updated[key]={...updated[key],plan:{...updated[key].plan,criteria:{...a.criteria,...updated[key].plan.criteria,save_score_threshold:next}}};
+  // This is a write-time filter, not a new scoring rubric or worker assignment.
+  const saved=this.put(updated);this.event(id,'save_score_threshold_changed',{value:threshold});return saved;
+ });}
  rename(id,title){this.assertIdle(id);return this.put({...this.get(id),title:boundedText(title,'Ad',150)});}
  updateCells(id,itemId,input){return this.store.workspaces.updateCells(id,itemId,input);}
- record(id,runId,input){
+ record(id,runId,input){return this.store.workspaces.tasks.atomic(()=>this.recordAtomic(id,runId,input));}
+ recordAtomic(id,runId,input){
   const run=this.activeRun(id,runId),research=run.kind==='interview';
+  if(collectorRun(this.get(id),run))input=collectorFindingInput(this,run,input);
   if(run.recordOperation==='score')throw Error('Puanlama sonucunu record_automation_score ile kaydet');
   const observedUrl=webUrl(input.url),inputKey=boundedText(input.key??observedUrl,'Sonuç anahtarı',2000);
   let url=observedUrl,key=this.template(this.get(id).templateId).records.identity==='url'?url:inputKey;
   let previous=this.store.workspaces.records.find(id,key),actionUrl=previous?.actionUrl;
-  // The same listing observed with extra tracking/ad parameters is one record.
-  if(!previous&&!run.recordId&&!research){const variant=this.parameterVariant(id,url);if(variant){previous=variant;key=variant.key;url=variant.url;actionUrl=variant.actionUrl;}}
+  const records=this.store.workspaces.records,urlIdentity=records.usesUrl(id),aliases=urlIdentity&&!run.recordId?observedRecordAliases(this,id,run,url):[];
+  if(urlIdentity&&!run.recordId){
+   const matches=[...new Set([previous?.id,...aliases.map(alias=>records.find(id,alias)?.id)].filter(Boolean))];
+   if(matches.length>1)previous=records.identities.merge(id,matches,{reason:'observed_canonical'});
+   else if(matches.length)previous=records.get(id,matches[0]);
+   if(previous){key=previous.key;url=previous.url;actionUrl=previous.actionUrl;
+    const urlAliases=[...new Set([...(previous.urlAliases??[]),...aliases])].filter(alias=>alias!==previous.url);
+    if(JSON.stringify(urlAliases)!==JSON.stringify(previous.urlAliases??[]))previous=records.put(id,key,{...previous,urlAliases});
+   }
+  }
   if(run.recordId){
    // A redirect to an application/booking form does not create a new record.
    // The durable assignment owns identity; URLs only describe its destination.
@@ -437,35 +542,27 @@ export class AutomationStore {
   if(scoring&&run.kind==='run'&&run.sourceUrl&&!run.recordId&&(!previous||previous.trial)&&!input.assessment)throw Error('Yeni ilanı kaydetmeden önce puanla ve kayıt çağrısında score alanını gönder');
   if(input.assessment&&(run.kind!=='run'||!scoring))throw Error('Bu görevde uygunluk puanı kaydedilemez');
   const assessment=input.assessment?recordAssessment(this,id,run,input.assessment,url):previous?.assessment;
+  const saveThreshold=saveScoreThreshold(this.get(id).criteria);
+  if(run.kind==='run'&&run.sourceUrl&&!run.recordId&&!previous&&saveThreshold!==null&&assessment?.status==='scored'&&assessment.score<saveThreshold){
+   const message=`Puan ${assessment.score}/100, minimum kayıt puanı ${saveThreshold}; kaydedilmeden elendi.`;
+   this.rememberSeenListings(id,run.sourceUrl,[observedUrl,url,...aliases],message);
+   return {saved:false,skipped:true,reason:'below_save_threshold',key,url,score:assessment.score,saveThreshold,message};
+  }
   const initial=this.template(this.get(id).templateId).records.initial;
-  const item={...previous,...(!previous?.workflowState&&initial&&initial!=='found'?{workflowState:initial}:{}),id:previous?.id??randomUUID(),automationId:id,key,url,...(actionUrl||previous?.actionUrl?{actionUrl}:{}),title,summary,proposal,digest,status:proposal?'prepared':'found',approvedDigest:previous?.digest===digest?previous.approvedDigest:null,createdAt:previous?.createdAt??this.now(),updatedAt:this.now(),runId,revision:proposal&&input.proposal===undefined&&previous?previous.revision:run.revision,trial:run.kind!=='run',sampleKind:research?'interview':null,cells:{...previous?.cells,...cells},starred:previous?.starred??false};
+  const item={...previous,...(urlIdentity&&aliases.some(alias=>alias!==url)?{urlAliases:[...new Set([...(previous?.urlAliases??[]),...aliases])].filter(alias=>alias!==url)}:{}),...(!previous?.workflowState&&initial&&initial!=='found'?{workflowState:initial}:{}),id:previous?.id??randomUUID(),automationId:id,key,url,...(actionUrl||previous?.actionUrl?{actionUrl}:{}),title,summary,proposal,digest,status:proposal?'prepared':'found',approvedDigest:previous?.digest===digest?previous.approvedDigest:null,createdAt:previous?.createdAt??this.now(),updatedAt:this.now(),runId,revision:proposal&&input.proposal===undefined&&previous?previous.revision:run.revision,trial:run.kind!=='run',sampleKind:research?'interview':null,cells:{...previous?.cells,...cells},starred:previous?.starred??false};
   if(run.recordOperation==='execute'&&run.request?.manual&&run.request.direct!==true&&digest!==run.request.digest)item.requiresReview=true;
   // Rediscovery and later record operations must retain the original scan's credit.
   if(run.kind==='run')item.discoveredRunId=previous&&!previous.trial?(previous.discoveredRunId??previous.runId??runId):runId;
   if(run.sourceUrl)item.sourceUrl=run.sourceUrl;
+  if(run.collector)item.collectedBy=run.collector;
   if(assessment){item.assessment=assessment;item.cells=assessmentCells(this.get(id).table,item.cells,assessment);}
   return this.putResult(item);
  }
- // Two addresses on the same origin and path whose shared query parameters
- // agree, one carrying only extra parameters, describe the same page. Routes
- // and differing values stay distinct; the rule names no site or parameter.
- parameterVariant(id,url){
-  let target;try{target=new URL(url);}catch{return null;}
-  const base=target.origin+target.pathname,params=[...target.searchParams];
-  const rows=this.db.prepare("SELECT data FROM workspace_records WHERE workspace_id=? AND NOT coalesce(json_extract(data,'$.trial'),0) AND substr(json_extract(data,'$.url'),1,?)=?").all(id,base.length+1,base+'?');
-  for(const row of rows){
-   const item=json(row);let other;try{other=new URL(item.url);}catch{continue;}
-   if(other.origin+other.pathname!==base)continue;
-   const otherParams=[...other.searchParams],[small,large]=params.length<=otherParams.length?[params,otherParams]:[otherParams,params];
-   if(small.length&&small.every(([k,v])=>large.some(([ok,ov])=>ok===k&&ov===v)))return item;
-  }
-  return null;
- }
- assertRecordIdle(id,itemId){if(this.store.workspaces.tasks.list(id,{states:['pending','running','reported','paused']}).some(t=>taskHasRecord(t,itemId)))throw Error('Bu kayıt için işlem sırada veya çalışıyor');}
+ assertRecordIdle(id,itemId){const resolved=this.result(id,itemId).id;if(this.store.workspaces.tasks.list(id,{states:['pending','running','reported','paused']}).some(t=>taskRecordIds(t).some(recordId=>this.result(id,recordId).id===resolved)))throw Error('Bu kayıt için işlem sırada veya çalışıyor');}
  star(id,itemId,starred){if(typeof starred!=='boolean')throw Error('Geçersiz yıldız durumu');const item=this.result(id,itemId);return this.putResult({...item,starred});}
  approve(id,itemId){this.assertRecordIdle(id,itemId);const a=this.get(id),item=this.result(id,itemId);if(!['prepared'].includes(item.status)||!item.proposal||item.trial||item.revision!==a.revision)throw Error('Güncel bir çalışma sonucundaki işlem taslağı gerekli');return this.putResult({...item,approvedDigest:item.digest});}
  dismiss(id,itemId,{stopActive=false}={}){return this.store.workspaces.tasks.atomic(()=>{
-  const item=this.result(id,itemId);if(['executing','completed','uncertain'].includes(item.status))throw Error('İşlem geçmişi değiştirilemez');
+  const item=this.result(id,itemId);itemId=item.id;if(['executing','completed','uncertain'].includes(item.status))throw Error('İşlem geçmişi değiştirilemez');
   if(!stopActive)this.assertRecordIdle(id,itemId);
   const summary='Kullanıcı bu kaydı eledi. Bu kayıt için işleme devam etme.',a=this.get(id),at=this.now(),queue=this.store.workspaces.tasks;
   // Persist exclusion before closing a worker; late proposals and reservations
@@ -564,9 +661,9 @@ export class AutomationStore {
  recover(){for(const row of this.db.prepare("SELECT data FROM automation_runs WHERE json_extract(data,'$.status')='running'").all()){const run=json(row);this.putRun({...run,recoveredAfterCrash:true});this.finish(run.automationId,run.id,'interrupted','Uygulama kapandı. Kaydedilen sonuçlar korunuyor.');}}
  remove(id){this.assertIdle(id);this.get(id);this.db.exec('SAVEPOINT automation_delete');try{for(const t of ['automation_messages','automation_runs'])this.db.prepare(`DELETE FROM ${t} WHERE automation_id=?`).run(id);this.db.prepare('DELETE FROM automations WHERE id=?').run(id);removeImportedWorkspace(this.db,id);this.store.workspaces.remove(id);this.db.exec('RELEASE automation_delete');this.jevTasks.release(id);this.browserEvidence.release(id);}catch(e){this.db.exec('ROLLBACK TO automation_delete; RELEASE automation_delete');throw e;}}
  snapshot(id){
-  const a=this.get(id),definition=this.template(a.templateId),tasks=this.store.workspaces.tasks.list(id),results=this.results(id),included=new Set(results.map(item=>item.id)),foundCounts=this.runFoundCounts(id);
+  const db=automationSnapshotReader(this),a=db.get(id),definition=db.template(a.templateId),tasks=db.store.workspaces.tasks.list(id,{summary:true}),results=db.results(id),included=new Set(results.map(item=>item.id)),foundCounts=db.runFoundCounts(id);
   // A worker may prepare an older record outside the recent-results window.
-  for(const task of tasks)if(['running','reported'].includes(task.state))for(const itemId of taskRecordIds(task))if(!included.has(itemId)){results.push(this.result(id,itemId));included.add(itemId);}
-  return {automation:{...a,questions:(a.questions??[]).map(q=>this.questionContext(id,q))},definition,sources:this.sources(id),workers:this.store.workspaces.workers.list(id),tasks:tasks.slice(-100).reverse().map(taskSnapshot),messages:this.messages(id),runs:this.runs(id,{summary:true}).map(run=>({...run,foundCount:foundCounts.get(run.id)??0})),results:results.map(item=>({...item,recordAction:recordOperationState(this,id,item,{a,definition,tasks})})),resultCounts:this.resultCounts(id),missing:missingPlanFields(a,definition)};
+  for(const task of tasks)if(['running','reported'].includes(task.state))for(const itemId of taskRecordIds(task))if(!included.has(itemId)){results.push(db.result(id,itemId));included.add(itemId);}
+  return {automation:{...a,questions:(a.questions??[]).map(q=>db.questionContext(id,q))},definition,sources:db.sources(id),workers:db.store.workspaces.workers.list(id),tasks:tasks.slice(-100).reverse().map(taskSnapshot),messages:db.messages(id),runs:db.runs(id,{summary:true}).map(run=>({...run,foundCount:foundCounts.get(run.id)??0})),results:results.map(item=>({...item,recordAction:recordOperationState(db,id,item,{a,definition,tasks})})),resultCounts:db.resultCounts(id),missing:missingPlanFields(a,definition)};
  }
 }

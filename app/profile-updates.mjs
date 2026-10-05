@@ -22,6 +22,9 @@ export function queueProfileUpdate(db,id,input,{expectedRevision}={}){
  const a=db.get(id),template=db.template(a.templateId);
  if(expectedRevision!==undefined&&expectedRevision!==a.revision)throw Error('Profil değişti. Güncel profili inceleyip yeniden kaydet.');
  if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>!fields.includes(key)))throw Error('Geçersiz profil alanı.');
+ // The board owns this live setting. Profile forms omit it, so preserve the
+ // latest saved value even if the profile was opened before it changed.
+ if(input.criteria&&typeof input.criteria==='object'&&!Array.isArray(input.criteria)&&!Object.hasOwn(input.criteria,'save_score_threshold')&&Object.hasOwn(a.criteria,'save_score_threshold'))input={...input,criteria:{...input.criteria,save_score_threshold:a.criteria.save_score_threshold}};
  const plan=profilePlan({...planInput(template,input,a),mode:input.mode??a.mode});
  if(!['observe','prepare','auto'].includes(plan.mode))throw Error('Geçersiz işlem yetkisi');
  const missing=missingProfileFields(plan,template);if(missing.length)throw Error('Eksik bilgiler: '+missing.join(', '));

@@ -112,6 +112,9 @@ try{
  await tool('finish_automation_run',{status:'completed',summary:'Profil taslağı hazır.'});
  await page.locator('#automation-messages .workspace-chat-message[data-role=assistant]').filter({hasText:'Uzaktan çalışma tercihini'}).waitFor({state:'visible'});
  assert.match(await page.locator('#automation-messages').textContent(),/taslak olarak kaydettim/);
+ assert.equal(await page.locator('.workspace-chat-body').filter({hasText:'Tercihini inceliyorum.'}).count(),1,'A saved final answer retains distinct provider commentary');
+ await app.evaluate(()=>{globalThis.chatStream.push({id:'final-copy',role:'agent',text:'Uzaktan çalışma tercihini taslak olarak kaydettim. Kaynaklar taranmaya devam ediyor.',at:new Date().toISOString()});});
+ assert.equal(await page.locator('.workspace-chat-body').filter({hasText:'Uzaktan çalışma tercihini taslak olarak kaydettim.'}).count(),1,'The native copy does not duplicate the saved answer');
  const after=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id);
  assert.equal(after.automation.criteria.rules,'Berlin');assert.equal(after.automation.planDraft.plan.criteria.rules,'Tam uzaktan');
  const chatId=snapshot.activeRuns.find(run=>run.workerId==='conversation').id;
@@ -234,11 +237,15 @@ try{
  await page.locator('[data-view=setup-agent]').click();await reviewProfile.waitFor({state:'hidden'});
  await page.screenshot({path:path.join(data,'profile-applied-chat-open.png')});
  await page.locator('#automation-message').fill('');
+ await app.evaluate(()=>{globalThis.chatStream.push({id:'native-only',role:'agent',text:'Bu yanıt yalnızca sağlayıcının sohbet kaydında.',at:new Date().toISOString()});});
+ const nativeOnly=page.locator('.workspace-chat-body').filter({hasText:'Bu yanıt yalnızca sağlayıcının sohbet kaydında.'});await nativeOnly.waitFor({state:'visible'});
  await page.locator('#automation-chat-stop').click();await page.waitForFunction(()=>document.querySelector('#automation-chat-state').textContent==='Hazır');
+ assert.equal(await nativeOnly.count(),1,'Closing setup preserves replies not saved through reply_to_user');
  assert.deepEqual((await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id)).activeRuns.map(run=>run.id),scanIds,'Stopping chat leaves both original runs active');
  await page.locator('[data-view=agent]').click();await page.locator('[data-view=setup-agent]').click();assert.equal(await page.locator('#automation-message').isVisible(),true,'Setup chat remains accessible after closing its session');
  await page.locator('#setup-agent-tab-terminal').click();
  await page.reload();await page.locator('#setup-agent').waitFor({state:'visible'});await page.locator('#setup-agent-terminal').waitFor({state:'visible'});assert.equal(await page.locator('#automation-message').isVisible(),false,'The selected terminal tab survives reload');await page.locator('#setup-agent-tab-chat').click();assert.equal(await page.locator('[data-view=setup-agent]').evaluate(el=>el.classList.contains('selected')),true,'The dedicated chat page is restored after reload');
+ await nativeOnly.waitFor({state:'visible'});await page.screenshot({path:path.join(data,'closed-chat-transcript.png')});
  await page.evaluate(id=>window.jobloop.workspaceStop(id),workspace.id);
  await page.evaluate(id=>window.jobloop.automationMessage(id,'Profil bilgilerini kontrol et.'),workspace.id);
  const conversationOnly=(await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id)).activeRuns;
@@ -249,7 +256,7 @@ try{
  assert.equal(await saveDialog.isVisible(),false,'The setup conversation alone does not need restart confirmation');
  assert.deepEqual((await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id)).activeRuns.map(run=>run.id),conversationOnly.map(run=>run.id));
  await page.evaluate(id=>window.jobloop.workspaceStop(id),workspace.id);
- await page.locator('#new').click();await page.locator('#setup-agent').waitFor({state:'visible'});
+ await page.locator('#new').click();await page.locator('[data-template=custom]').click();await page.locator('#setup-agent').waitFor({state:'visible'});
  const freshId=await page.locator('#candidates').inputValue();assert.notEqual(freshId,workspace.id);
  await page.locator('#automation-message').fill('Berlin için bir araştırma çalışma alanı kur.');await page.locator('#automation-message').press('Enter');
  await page.locator('#setup-agent .worker-pane[data-worker-id=conversation]').waitFor({state:'attached'});

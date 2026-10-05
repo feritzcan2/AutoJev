@@ -42,9 +42,24 @@ test('welcome messages and form answers record their origin when written',t=>{
  db.answerQuestion(a.id,'record-question','No');assert.equal(db.messages(a.id).at(-1).conversation,false);
 });
 
-test('live replies update in chat and disappear when the saved final reply arrives',()=>{
+test('a saved final reply keeps distinct native commentary and only replaces its matching copy',()=>{
  const run={id:'chat',kind:'interview',startedAt:100},snapshot={activeRuns:[run],runs:[run],messages:[]},native=[message('stream',{role:'agent',at:200,text:'Live reply'})];
  assert.equal(conversationMessages(snapshot,native)[0].text,'Live reply');
  snapshot.messages=[message('final',{conversation:true,at:300,text:'Final reply'})];
- assert.deepEqual(conversationMessages(snapshot,native).map(m=>m.id),['final']);
+ assert.deepEqual(conversationMessages(snapshot,native).map(m=>m.id),['native:stream','final']);
+ native.push(message('copy',{role:'agent',at:350,text:'Final reply'}));
+ assert.deepEqual(conversationMessages(snapshot,native).map(m=>m.id),['native:stream','final']);
+});
+
+test('verified setup messages remain visible after closing or resuming the provider session',()=>{
+ const native=[message('earlier',{role:'agent',at:200,text:'An unsaved provider reply'})];
+ for(const activeRuns of [[],[{id:'resumed',kind:'interview',startedAt:900}]]){
+  assert.deepEqual(conversationMessages({activeRuns,messages:[message('later',{at:1000,conversation:true})]},native).map(m=>m.id),['native:earlier','later']);
+ }
+});
+
+test('an identical answer in a different user turn is not hidden as a duplicate',()=>{
+ const messages=[message('first-question',{role:'user',at:100,conversation:true}),message('answer',{text:'Tamam',at:200,conversation:true}),message('next-question',{role:'user',at:300,conversation:true})];
+ const native=[message('first-copy',{role:'agent',text:'Tamam',at:210}),message('next-answer',{role:'agent',text:'Tamam',at:400})];
+ assert.deepEqual(conversationMessages({messages},native).map(m=>m.id),['first-question','answer','next-question','native:next-answer']);
 });

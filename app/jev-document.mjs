@@ -1,3 +1,4 @@
+import {readSiteExtension} from './site-extensions/index.mjs';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {acquireTabRendering} from './jev-rendering.mjs';
 
@@ -70,11 +71,14 @@ export function renderedDocument(){
  // Streaming render fragments are not listings until the site reveals them.
  // Report only readiness metadata; never expose the hidden fragment contents.
  const pendingFragments=body.querySelectorAll('[hidden][id^="S:"]').length;
- const busy=[...body.querySelectorAll('[aria-busy="true"]')].some(e=>e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}));
+ const busyRegions=[...body.querySelectorAll('[aria-busy="true"]')].filter(e=>!e.closest('[hidden],[aria-hidden="true"],[inert]')&&e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})),busy=busyRegions.length>0;
  const loading=document.readyState==='loading'||pendingFragments>0||busy;
  const offsets=[0];for(const word of words)offsets.push(offsets.at(-1)+word.length+1);
  for(const card of cards.values())for(const link of card.links)if(card.end>card.start)link.contextRange={offset:offsets[card.start],length:offsets[card.end]-offsets[card.start]-1};
- return {url:location.href,text:words.join('\n'),links,pagination,readiness:{loading,reason:pendingFragments?'stream_pending':busy?'aria_busy':loading?'document_loading':null}};
+ let canonicalUrl;
+ const canonicals=[...document.querySelectorAll('head link[rel~="canonical"][href]')];
+ if(!loading&&canonicals.length===1)try{const u=new URL(canonicals[0].href,location.href);if(['http:','https:'].includes(u.protocol)&&!u.username&&!u.password&&!location.hash)canonicalUrl=u.href;}catch{}
+ return {url:location.href,text:words.join('\n'),links,pagination,canonicalUrl,readiness:{loading,reason:pendingFragments?'stream_pending':busy?'aria_busy':loading?'document_loading':null,...(busy&&!pendingFragments&&document.readyState!=='loading'?{busyKey:[busyRegions.length,body.textContent?.length??0,document.links?.length??0,globalThis.performance?.getEntriesByType?.('resource').length??0].join(':')}:{})}};
 }
 
 // Keep the full viewport when it contains anything absent from document text
@@ -86,8 +90,9 @@ export function documentViewportText(documentText,viewportText=''){
 }
 
 export async function documentObservation(slot,value){
- const readiness=await slot.page.evaluate(documentReadiness);
- const document=await slot.page.evaluate(renderedDocument);
+ const readiness=settledBusy(slot,await slot.page.evaluate(documentReadiness));
+ const document=await readSiteExtension(slot,await slot.page.evaluate(renderedDocument));
+ if(document.readiness)document.readiness=settledBusy(slot,{url:document.url,...document.readiness});
  if(document.url!==value.url||readiness.url&&readiness.url!==document.url)throw Error('Sayfa okuma sırasında yönlendi; browser_read ile güncel sayfayı tekrar oku.');
  // Join by the observed DOM node, never a repeated label such as "Next".
  // Offscreen buttons may only have a reveal control; no target is invented.
@@ -104,7 +109,7 @@ export async function documentObservation(slot,value){
   }catch{unreadFrames++;}finally{await element?.dispose().catch(()=>{});}
  }
  const result={...value,observationMode:'document',controlMaps:'replace',mapDeltas:false,
-  viewportText:documentViewportText(document.text,value.text??slot.presented?.text??''),text:document.text,links:document.links,pagination,
+  viewportText:documentViewportText(document.text,value.text??slot.presented?.text??''),text:document.text,links:document.links,pagination,canonicalUrl:document.canonicalUrl,...(document.siteExtension?{siteExtension:document.siteExtension}:{}),
   reading:{scope:'rendered_document',truncated:false,readiness:document.readiness?.loading?document.readiness:typeof readiness.loading==='boolean'?readiness:document.readiness,unreadFrames,
    guidance:'Includes currently rendered main-document text and actual links below the fold, including open shadow roots. Hidden content, form values and iframe contents are excluded. Lazy or virtualized listings may require browser_interact scroll with a current scrollTargets.controlId, then another read. No guessed URLs. Read details through observed links when list cards omit addresses. An absent address remains unknown.'}};
  delete result.textUnchanged;
@@ -124,18 +129,34 @@ export function documentReadiness(){
  const result=reason=>({url,loading:Boolean(reason),reason,hidden:document.visibilityState==='hidden'});
  if(!body||document.readyState==='loading')return result('document_loading');
  if(body.querySelector('[hidden][id^="S:"]'))return result('stream_pending');
- if([...body.querySelectorAll('[aria-busy="true"]')].some(visible))return result('aria_busy');
+ const busy=[...body.querySelectorAll('[aria-busy="true"]')].filter(visible);
+ // The key changes while text, links or network requests still change.
+ if(busy.length)return {...result('aria_busy'),busyKey:[busy.length,body.textContent?.length??0,document.links?.length??0,globalThis.performance?.getEntriesByType?.('resource').length??0].join(':')};
  return result(null);
+}
+
+// A busy marker that stays set while the page around it stops changing belongs
+// to a stuck widget, not to content still loading. Only that exact unchanged
+// state is read; any new text, link or request makes the page busy again.
+export const SETTLED_BUSY_MS=5000;
+function settledBusy(slot,state){
+ const settled=slot.settledBusy;
+ return state?.reason==='aria_busy'&&state.busyKey&&settled?.url===state.url&&settled.key===state.busyKey?{...state,loading:false,reason:null,settledBusy:true}:state;
 }
 
 export async function waitForDocument(slot,{signal,attempts=81,delay=250,wait=ms=>sleep(ms,undefined,{signal}),now=Date.now}={}){
  let releaseRendering;
  try{
+  let busy=null;
   for(let i=0;i<attempts;i++){
    signal?.throwIfAborted();
-   const state=await slot.page.evaluate(documentReadiness);
+   const state=settledBusy(slot,await slot.page.evaluate(documentReadiness));
    signal?.throwIfAborted();
    if(!state.loading){slot.documentWait=null;return state;}
+   if(state.reason==='aria_busy'&&state.busyKey){
+    if(busy?.url!==state.url||busy.key!==state.busyKey)busy={url:state.url,key:state.busyKey,since:now()};
+    else if(now()-busy.since>=SETTLED_BUSY_MS){slot.settledBusy={url:busy.url,key:busy.key};slot.documentWait=null;return settledBusy(slot,state);}
+   }else busy=null;
    if(slot.documentWait?.url===state.url&&slot.documentWait.until>now())return {...state,timedOut:true};
    // Existing Chrome connections use noDefaults:true. A background tab can
    // otherwise pause requestAnimationFrame forever, leaving streamed content

@@ -95,43 +95,24 @@ body:not(.automation-workspace) [data-web-only]{display:none!important}
 
 .source-status .source-page-progress{color:var(--accent,#72b9f3);font-weight:600}
 
-/* A new workspace starts with the introduction and an open terminal. */
+/* A new workspace starts with the introduction inside the setup chat. */
 .workspace-fresh .workspace-conversation .automation-conversation{border-color:var(--border-strong);background:var(--bg-raised)}
-.workspace-intro{padding:32px 24px 4px}
-.workspace-intro h2{font-size:28px;letter-spacing:-.6px;margin:0 0 10px;line-height:1.2}
+.workspace-intro{padding:clamp(8px,4vh,40px) 0 4px}
+.workspace-intro-eyebrow{font-size:10px;font-weight:650;letter-spacing:1.6px;color:var(--text-muted)}
+.workspace-intro h2{font-size:28px;letter-spacing:-.6px;margin:10px 0;line-height:1.2}
 .workspace-intro>p{margin:0;font-size:14px;line-height:1.7;color:var(--text-secondary);max-width:60ch}
-.workspace-intro-examples{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 16px}
+.workspace-intro-examples{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}
 .workspace-intro-examples button{background:transparent;border:1px solid var(--border-strong);color:var(--text-secondary);font-size:12px;line-height:1.5;padding:8px 12px;border-radius:999px;text-align:left;white-space:normal}
 .workspace-intro-examples button:hover{border-color:var(--accent);color:var(--text)}
-.workspace-intro-agent{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;font-size:12px;color:var(--text-muted);padding-bottom:16px;border-bottom:1px solid var(--border)}
-.workspace-intro-agent select{width:auto;min-width:0;padding:6px 28px 6px 10px;font-size:12px}
-.workspace-intro-agent small{flex-basis:100%;font-size:11px}
-.workspace-fresh .workspace-conversation .workspace-chat-form{padding:20px 24px 24px}
 .workspace-fresh #automation-message{min-height:120px;font-size:15px}
-.workspace-intro-steps{display:flex;gap:18px;list-style:none;margin:0 0 18px;padding:0;font-size:12px;color:var(--text-muted)}
+.workspace-intro-steps{display:flex;flex-wrap:wrap;gap:8px 18px;list-style:none;margin:22px 0 22px;padding:0;font-size:12px;color:var(--text-muted)}
 .workspace-intro-steps li{display:flex;align-items:center;gap:6px}
 .workspace-intro-steps span{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;border:1px solid var(--border-strong);font-size:10.5px;font-weight:650}
 .workspace-intro-steps .current{color:var(--text);font-weight:600}
 .workspace-intro-steps .current span{border-color:var(--accent);background:var(--accent);color:var(--bg-app)}
 /* While setup is the only thing to do, point the sidebar at it and quiet the empty pages. */
-#automation-chat.composer-closed>:is(label,textarea,.actions,small){display:none}
-#automation-chat:not(.composer-closed) .automation-compose{display:none}
-#automation-chat.composer-closed .automation-compose{justify-self:start}
-.workspace-intro-templates{margin:4px 0 18px}
-.workspace-intro-templates h3{margin:0 0 10px;font-size:12px;font-weight:600;color:var(--text-secondary)}
-.workspace-intro-templates>div{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}
-.workspace-template{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:10px;row-gap:3px;align-items:center;padding:11px 12px;border:1px solid var(--border-strong);border-radius:10px;background:transparent;text-align:left;white-space:normal}
-.workspace-template:hover{border-color:var(--accent);background:var(--accent-wash);filter:none}
-.workspace-template .automation-icon{grid-row:span 2;width:32px;height:32px;font-size:17px;border-radius:8px}
-.workspace-template b{font-size:13px;font-weight:600;color:var(--text)}
-.workspace-template small{font-size:11px;line-height:1.45;color:var(--text-muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-/* Job search is the app's main flow, so it leads the gallery as a full-width card. */
-.workspace-template.featured{grid-column:1/-1;grid-template-columns:auto 1fr auto;padding:14px 16px;border-color:var(--accent);background:var(--accent-wash)}
-.workspace-template.featured .automation-icon{width:40px;height:40px;font-size:20px;background:var(--accent);color:var(--bg-app)}
-.workspace-template.featured b{font-size:15px}
-.workspace-template.featured small{font-size:12px;color:var(--text-secondary)}
-.workspace-template-go{grid-row:1/span 2;grid-column:3;padding:7px 12px;border-radius:8px;background:var(--accent);color:var(--bg-app);font-size:12px;font-weight:650;white-space:nowrap}
-.workspace-template.featured:hover{background:rgba(102,179,255,.2)}
+.workspace-fresh aside nav button:not(.selected,[data-view=setup-agent],[data-view=templates],[data-view=config]){opacity:.45}
+.workspace-fresh :is(.setup-agent-tabs,#setup-agent-settings [data-restart],#setup-agent-settings [data-hint]){display:none}
 
 /* One place to read the latest question and answer it; the live terminal stays below. */
 .automation-workspace #now-panel>.workspace-conversation{margin:18px 0 0}
@@ -147,7 +128,6 @@ body:not(.automation-workspace) [data-web-only]{display:none!important}
 .automation-workspace #now-panel #automation-chat label{font-size:13px;color:var(--text-secondary)}
 .automation-workspace #now-panel #automation-message{min-height:90px}
 .automation-workspace #now-panel .automation-message strong,.automation-workspace #now-detail strong{font-weight:650}
-.workspace-fresh #now-panel .workspace-intro{padding:28px 0 20px}
 
 /* The tracking board is available from the first message, with or without a template. */
 .workspace-overview{margin:0 0 24px;border:1px solid var(--border);border-radius:12px;background:var(--bg-raised);overflow:hidden}
@@ -170,14 +150,12 @@ body:not(.automation-workspace) [data-web-only]{display:none!important}
 .automation-results-table .empty{height:180px;text-align:center}
 .automation-results-table .empty strong{display:block;font-size:15px;color:var(--text)}
 .automation-results-table .empty p{margin:8px auto 0;max-width:60ch;line-height:1.7;color:var(--text-muted)}
-.workspace-intro-templates summary{margin-bottom:12px;font-size:12px;cursor:pointer;color:var(--text-secondary)}
 @media(max-width:1100px){.workspace-overview-head{align-items:flex-start;flex-direction:column;gap:16px}.workspace-overview-section{padding:16px 14px}}
 @media(max-width:760px){.workspace-overview-sections{grid-template-columns:1fr}.workspace-overview-section+.workspace-overview-section{border-left:0;border-top:1px solid var(--border)}.automation-results-toolbar{flex-wrap:wrap;justify-content:flex-start}.automation-results-toolbar input{width:100%}.workspace-overview-head{padding:20px}}
 
 .automations-page .section-title>div:first-child{flex:1 0 150px}
 .automations-page .section-title .automation-results-toolbar{flex-wrap:wrap}
 .workspace-fresh #now-history{display:none}
-.workspace-fresh #now-panel .workspace-intro{padding:0 0 16px}
 
 .record-table-scroller{min-width:0;max-width:100%}
 .record-table-scroll-controls{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 14px;margin-bottom:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg-raised)}
@@ -264,9 +242,20 @@ body:not(.automation-workspace) [data-web-only]{display:none!important}
 .record-selection-toolbar [role="status"] { margin-right:auto; font-weight:600; }
 .record-selection-error { flex-basis:100%; color:var(--danger); }
 .record-selection-error:empty { display:none; }
+.record-selection-toolbar .danger { color:var(--danger); border:1px solid var(--danger); background:transparent; }
+.record-selection-toolbar .danger:hover:not(:disabled) { background:color-mix(in srgb,var(--danger) 12%,transparent); }
+.record-score-filter { display:flex; align-items:center; gap:8px; white-space:nowrap; margin:0; }
+.record-score-filter[hidden] { display:none; }
+.automation-results-toolbar .record-score-filter input { width:85px; min-width:0; }
+.automation-results-toolbar .record-score-filter select { width:62px; min-width:0; }
 .automation-results-table [data-column="selection"] { width:42px; min-width:42px; text-align:center; }
 .automation-results-table [data-column="selection"] input { width:16px; height:16px; margin:0; accent-color:var(--accent); cursor:pointer; }
 .automation-results-table [data-column="selection"] input:disabled { cursor:default; }
 .automation-results-table tr[data-selected="true"] > td { background:color-mix(in srgb,var(--accent) 10%,var(--bg-raised)); }
 
 .record-score-eligibility{display:block;font-size:11px;line-height:1.4;margin-top:4px;white-space:normal;color:var(--muted);}
+.automation-save-score-settings{display:flex;align-items:flex-end;flex-wrap:wrap;gap:10px 14px;margin:0 0 18px;padding:12px 16px;border:1px solid var(--border);border-radius:8px;background:var(--bg-raised);max-width:none}
+.automation-save-score-settings label{margin:0;display:grid;gap:7px;font-size:12px}
+.automation-save-score-settings input{width:150px;min-width:0}
+.automation-save-score-settings>small{flex:1 1 260px;align-self:center;max-width:65ch}
+.minimum-save-score-status{font-size:12px;color:var(--text-muted);align-self:center}

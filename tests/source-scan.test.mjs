@@ -6,7 +6,7 @@ import path from 'node:path';
 import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
-import {beginSourceScan,sourceScanScope,advanceSourceScan,validateScanCompletion,FULL_SCAN_INTERVAL_MS,SCAN_OVERLAP_MS} from '../app/source-scan.mjs';
+import {beginSourceScan,sourceScanScope,advanceSourceScan,validateScanCompletion,markKnownBoundary,markPageCap,FULL_SCAN_INTERVAL_MS,SCAN_OVERLAP_MS} from '../app/source-scan.mjs';
 import {scanPageReport} from '../app/scan-page.mjs';
 
 const source='https://listings.test/results',other='https://other.test/results';
@@ -93,7 +93,7 @@ test('source criteria invalidate only that source; schedule changes preserve his
 });
 
 test('record actions and user stopping conditions do not advance source coverage',async t=>{
- const {db,id,start,finish}=fixture(t);const scan=start();db.record(id,scan.id,{url:source+'/item',title:'Match',summary:'Observed'});await finish(scan);
+ const {db,id,start,finish}=fixture(t);const scan=start();db.record(id,scan.id,{url:source+'/item',title:'Match',summary:'Observed',assessment:{score:70}});await finish(scan);
  const state=db.sources(id)[0].scanState,record=db.results(id)[0],action=start(source,record.id);
  assert.equal(action.scanPlan,undefined);db.finish(id,action.id,'completed','Application handled');assert.deepEqual(db.sources(id)[0].scanState,state);
  const stopped=start();await finish(stopped,'user_stop');assert.equal(db.sources(id)[0].scanState.lastSuccessfulStartAt,state.lastSuccessfulStartAt);
@@ -101,7 +101,7 @@ test('record actions and user stopping conditions do not advance source coverage
 
 test('known identity lookup includes older saved results; the queue checkpoint follows the current page',async t=>{
  const {db,id,start,flow}=fixture(t),run=start(),worker=flow(run);
- for(let i=0;i<110;i++)db.record(id,run.id,{url:source+'/item/'+i,title:'Match '+i,summary:'Observed'});
+ for(let i=0;i<110;i++)db.record(id,run.id,{url:source+'/item/'+i,title:'Match '+i,summary:'Observed',assessment:{score:70}});
  let context=await worker.call(id,run.id,'get_automation_context',{});
  if(context.context){let fragment=context,text=fragment.text;while(fragment.context.nextOffset!==null){fragment=await worker.call(id,run.id,'read_automation_context_part',{contextId:fragment.context.id,offset:fragment.context.nextOffset});text+=fragment.text;}context=JSON.parse(text);}
  assert.equal(context.results.length,0);assert.ok(!context.results.some(r=>r.url===source+'/item/0'));
@@ -109,4 +109,50 @@ test('known identity lookup includes older saved results; the queue checkpoint f
  await worker.call(id,run.id,'browser_open',{url:source});await worker.call(id,run.id,'browser_open',{url:source+'?page=2'});
  const saved=db.saveScanProgress(id,run.id,{pendingUrls:[],reason:'Current page'},{url:source+'?page=2',text:''});
  assert.equal(saved.scanPlan.checkpoint.url,source+'?page=2');
+});
+
+test('a recipe ordered newest-first keeps the incremental plan and ends at a known-listing boundary',()=>{
+ const scopeKey='scope',start=1_700_000_000_000,saved={scopeKey,lastSuccessfulStartAt:start,lastFullScanAt:start,lastSuccessfulAt:start+1000};
+ const plan=beginSourceScan(saved,scopeKey,start+3600_000,{ordering:'newest_first'}).active;
+ assert.equal(plan.mode,'incremental');assert.equal(plan.ordering,'recipe');
+ assert.equal(beginSourceScan(saved,scopeKey,start+3600_000,{ordering:null}).active.ordering,undefined,'without the recipe flag nothing changes');
+ assert.equal(beginSourceScan(saved,scopeKey,start+FULL_SCAN_INTERVAL_MS+1,{ordering:'newest_first'}).active.ordering,undefined,'the periodic full scan still covers the board');
+ const page={url:'https://board.test/jobs?page=2',text:''};
+ const advanced=advanceSourceScan(plan,{pendingUrls:[],reason:'known page'},page,'run-1',start+3700_000);
+ assert.equal(advanced.mode,'incremental','missing chronology no longer downgrades a recipe-ordered plan');
+ const fullPlan={...advanced,mode:'full'};assert.equal(markKnownBoundary(fullPlan,page.url,'run-1',1),fullPlan,'a full scan never gets a known boundary');
+ const bounded=markKnownBoundary(advanced,page.url,'run-1',start+3700_001);
+ assert.deepEqual(bounded.boundary,{url:page.url,runId:'run-1',known:true,at:start+3700_001});
+ assert.equal(validateScanCompletion(bounded,{complete:true,pendingUrls:[],completion:'cutoff',evidenceUrl:'https://board.test/anywhere'},null,'run-1'),'cutoff');
+ assert.throws(()=>validateScanCompletion(bounded,{complete:true,pendingUrls:[],completion:'cutoff',evidenceUrl:page.url},null,'run-2'),/doğrulanmadı/);
+ assert.throws(()=>validateScanCompletion({...bounded,checkpoint:{...bounded.checkpoint,pendingUrls:['https://board.test/view/1']}},{complete:true,pendingUrls:[],completion:'cutoff',evidenceUrl:page.url},null,'run-1'),/bekleyen/);
+});
+
+test('a resumed scan takes the page cap of the current recipe',()=>{
+ const started=beginSourceScan(null,'scope',1000,{pageCap:25});assert.equal(started.active.pageCap,25);
+ const capped={...started,active:markPageCap(started.active,'https://board.test/p25','run-1',1100)};
+ const resumed=beginSourceScan(capped,'scope',2000,{pageCap:10});
+ assert.equal(resumed.active.pageCap,10);assert.equal(resumed.active.boundary,null,'an old cap boundary no longer applies');
+ assert.equal(resumed.active.id,started.active.id);assert.equal(resumed.active.startedAt,1000);
+ assert.equal(beginSourceScan(resumed,'scope',3000,{pageCap:10}),resumed,'an unchanged cap keeps the plan');
+ assert.equal('pageCap' in beginSourceScan(resumed,'scope',3000,{pageCap:null}).active,false,'a newest-first recipe drops the cap');
+});
+
+test('a recipe without a known ordering caps every search at its first pages',()=>{
+ const scopeKey='scope',start=1_700_000_000_000;
+ const plan=beginSourceScan(null,scopeKey,start,{pageCap:10}).active;
+ assert.equal(plan.mode,'full');assert.equal(plan.pageCap,10);
+ assert.equal(beginSourceScan(null,scopeKey,start,{pageCap:null}).active.pageCap,undefined);
+ const page={url:'https://board.test/jobs?page=10',text:''};
+ assert.equal(markPageCap({...plan,pageCap:undefined},page.url,'run-1',1).boundary,null,'no cap, no boundary');
+ const capped=markPageCap(plan,page.url,'run-1',start+1);
+ assert.deepEqual(capped.boundary,{url:page.url,runId:'run-1',pageCap:true,at:start+1});
+ const advanced=advanceSourceScan(capped,{pendingUrls:[],reason:'reviewed'},page,'run-1',start+2);
+ assert.equal(advanced.boundary.pageCap,true,'queue updates keep the cap boundary');
+ assert.equal(advanceSourceScan({...capped,mode:'incremental',cutoffAt:start-1},{pendingUrls:[],reason:'reviewed'},page,'run-1',start+2).boundary.pageCap,true,'the full-coverage fallback keeps it too');
+ const progress={url:page.url,currentPage:10,totalPages:48};
+ assert.equal(validateScanCompletion(advanced,{complete:true,pendingUrls:[],completion:'end',evidenceUrl:page.url},progress,'run-1'),'end');
+ assert.throws(()=>validateScanCompletion(plan,{complete:true,pendingUrls:[],completion:'end',evidenceUrl:page.url},progress,'run-1'),/Son sayfaya/,'without the boundary the board must be covered');
+ assert.throws(()=>validateScanCompletion(advanced,{complete:true,pendingUrls:[],completion:'end',evidenceUrl:page.url},progress,'run-2'),/doğrulanmadı/);
+ assert.throws(()=>validateScanCompletion({...advanced,checkpoint:{...advanced.checkpoint,pendingUrls:['https://board.test/view/1']}},{complete:true,pendingUrls:[],completion:'end',evidenceUrl:page.url},progress,'run-1'),/bekleyen/);
 });

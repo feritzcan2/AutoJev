@@ -81,6 +81,27 @@ test('document waits are bounded, poll without reopening and avoid a second imme
  assert.equal((await waitForDocument(slot,options)).loading,false);assert.equal(time,1250);
 });
 
+test('a busy marker on a page that stopped changing is read; a changing page keeps waiting',async()=>{
+ let time=0,key='1:5000:40:30';
+ const url='https://board.test/results',slot={page:{evaluate:async()=>({url,loading:true,reason:'aria_busy',busyKey:key})}};
+ const options={attempts:81,delay:250,now:()=>time,wait:async ms=>{time+=ms;}};
+ const ready=await waitForDocument(slot,options);
+ assert.equal(ready.loading,false);assert.equal(ready.settledBusy,true);assert.equal(time,5000,'settles after the bounded stable period, not the whole wait');
+ const again=time;assert.equal((await waitForDocument(slot,options)).loading,false);assert.equal(time,again,'the same unchanged state is not waited for twice');
+ let n=0;slot.page.evaluate=async()=>({url,loading:true,reason:'aria_busy',busyKey:`1:${7000+n++}:40:30`});time=0;
+ const changing=await waitForDocument({page:slot.page},options);
+ assert.equal(changing.loading,true);assert.equal(changing.timedOut,true,'text that keeps changing is still loading');
+ slot.page.evaluate=async()=>({url:'https://board.test/other',loading:true,reason:'aria_busy',busyKey:key});time=0;
+ assert.equal((await waitForDocument({page:slot.page},{...options,attempts:4})).timedOut,true,'another page starts its own stable period');
+ const f=fixture('Original text','Original text');
+ f.slot.settledBusy={url:f.value.url,key};
+ f.document.readiness={loading:true,reason:'aria_busy',busyKey:key};
+ f.slot.page.evaluate=async fn=>fn===documentReadiness?{url:f.value.url,loading:true,reason:'aria_busy',busyKey:key}:f.document;
+ assert.equal((await documentObservation(f.slot,f.value)).reading.readiness.loading,false,'the observation reads the settled state');
+ f.document.readiness={loading:true,reason:'aria_busy',busyKey:'2:6000:41:31'};
+ assert.equal((await documentObservation(f.slot,f.value)).reading.readiness.loading,true,'new busy content after settling is loading again');
+});
+
 test('document observation preserves new busy state and refuses readiness from a different page',async()=>{
  const f=fixture('Original text','Original text');
  f.document.readiness={loading:true,reason:'aria_busy'};

@@ -59,6 +59,19 @@ test('confirmed scan completion cleans tabs before the worker becomes available'
  release();await finishing;assert.equal(runtime.slots(id).length,0);
 });
 
+test('a completed source trial closes its tabs and those left by earlier turns of the source',async t=>{
+ const calls=[],{db,id,runtime,launches}=fixture(t,{onRunFinished:(owner,run,options)=>calls.push(options)});
+ await runtime.relearnSource(id,urls[0]);await runtime.runSource(id,urls[0]);await settle();
+ const blocked=launches.at(-1);assert.equal(blocked.kind,'trial');
+ runtime.report(id,blocked.id,'blocked','Verification');await runtime.finish(id,'blocked','Verification',blocked.workerId);
+ assert.equal(calls.at(-1).closeTabs,false);
+ await runtime.runSource(id,urls[0]);await settle();const trial=launches.at(-1);assert.equal(trial.kind,'trial');assert.notEqual(trial.id,blocked.id);
+ db.observe(id,trial.id,urls[0],'Listings');runtime.report(id,trial.id,'completed','Source checked');await runtime.finish(id,'completed','Source checked',trial.workerId);
+ assert.equal(db.run(trial.id).status,'completed');
+ assert.equal(calls.at(-1).closeTabs,true);assert.equal(calls.at(-1).keepForms,true);
+ assert.deepEqual(calls.at(-1).runIds.toSorted(),[blocked.id,trial.id].toSorted());
+});
+
 test('a source waiting for an answer keeps its task tabs open',async t=>{
  const calls=[],{db,id,runtime,launches}=fixture(t,{onRunFinished:(owner,run,options)=>calls.push(options)});
  db.enable(id);await runtime.tick();await settle();const scan=launches[0];
@@ -72,7 +85,7 @@ test('a source waiting for an answer keeps its task tabs open',async t=>{
 test('stop source preserves progress, other workers and record operations, then waits for its interval',async t=>{
  const {store,db,id,runtime,launches,advance}=fixture(t);db.save(id,{mode:'observe'});store.workspaces.workers.add(id);db.enable(id);await runtime.tick();await settle();
  const scan=launches.find(r=>r.sourceUrl===urls[0]),other=launches.find(r=>r.sourceUrl===urls[1]);
- const item=db.record(id,scan.id,{url:'https://blocked.test/home',title:'Home',summary:'Saved before stop'});
+ const item=db.record(id,scan.id,{url:'https://blocked.test/home',title:'Home',summary:'Saved before stop',assessment:{score:70}});
  const a=db.get(id);runtime.sourceState(id,urls[0],{pageProgress:{page:2,evidence:'Page two',at:db.now()},scan:{complete:false,pendingUrls:['https://blocked.test/next']}});
  const worker=store.workspaces.workers.add(id),recordTask=runtime.queue.enqueue(id,{recordId:item.id,recordOperation:'prepare',sourceUrl:urls[0],operation:'prepare'});runtime.queue.claim(id,recordTask.id,worker.id);
  const before={...db.sources(id)[0],pageProgress:db.get(id).sourceState[urls[0]].pageProgress};await runtime.stopSource(id,urls[0]);
@@ -95,7 +108,7 @@ test('stop scan cannot restart during closure and persists across app recovery',
 
 test('record preparation does not appear as an active source scan',async t=>{
  const {db,id,runtime,launches,finish}=fixture(t);db.save(id,{mode:'observe'});await runtime.runSource(id,urls[0]);await settle();const scan=launches[0];
- const item=db.record(id,scan.id,{url:'https://blocked.test/home',title:'Home',summary:'Observed'});await finish(scan);await runtime.runRecord(id,item.id,'prepare');await settle();
+ const item=db.record(id,scan.id,{url:'https://blocked.test/home',title:'Home',summary:'Observed',assessment:{score:70}});await finish(scan);await runtime.runRecord(id,item.id,'prepare');await settle();
  assert.equal(launches.at(-1).recordId,item.id);assert.equal(db.sources(id)[0].scanning,false);
  await runtime.stopSource(id,urls[0]);assert.equal(db.run(launches.at(-1).id).status,'running');
 });
@@ -103,7 +116,7 @@ test('record preparation does not appear as an active source scan',async t=>{
 for(const spareWorker of [false,true])test(`retrying a blocked source while a paused workspace processes a record (spare worker: ${spareWorker})`,async t=>{
  const {store,db,id,runtime,launches,finish}=fixture(t);db.save(id,{mode:'observe'});
  await runtime.runSource(id,urls[1]);await settle();
- const seed=launches.at(-1),item=db.record(id,seed.id,{url:'https://fast.test/home',title:'Home',summary:'Observed'});
+ const seed=launches.at(-1),item=db.record(id,seed.id,{url:'https://fast.test/home',title:'Home',summary:'Observed',assessment:{score:70}});
  await finish(seed);await runtime.tick();
  await runtime.runSource(id,urls[0]);await settle();const failed=launches.at(-1);
  const scan={complete:false,pendingUrls:['https://blocked.test/next'],reason:'Continue saved listings'};
@@ -147,13 +160,13 @@ test('source scope and permission reach the agent, cannot exceed profile authori
  const {db,id,runtime,launches}=fixture(t);db.save(id,{mode:'auto'});db.saveSource(id,urls[0],{name:'First',query:'Only two-room apartments',mode:'observe'});db.enable(id);await runtime.tick();await settle();
  const run=launches[0],flow=automationWorkflow({db,run,signal:new AbortController().signal,browser:{},report:()=>{}}),context=await flow.call(id,run.id,'get_automation_context',{});
  assert.equal(context.assignedSource.query,'Only two-room apartments');assert.equal(context.automation.mode,'observe');assert.deepEqual(context.automation.sources,[urls[0]]);
- const record=db.record(id,run.id,{url:'https://blocked.test/home',title:'Home',summary:'Observed'});assert.equal(record.sourceUrl,urls[0]);assert.throws(()=>db.reserve(id,run.id,record.id),/gönderim/);
+ const record=db.record(id,run.id,{url:'https://blocked.test/home',title:'Home',summary:'Observed',assessment:{score:70}});assert.equal(record.sourceUrl,urls[0]);assert.throws(()=>db.reserve(id,run.id,record.id),/gönderim/);
  assert.throws(()=>db.saveSource(id,urls[0],{mode:'auto'}),/durdur/);await runtime.pause(id);db.save(id,{mode:'observe'});assert.throws(()=>db.saveSource(id,urls[0],{mode:'auto'}),/aşamaz/);assert.throws(()=>db.saveSource(id,'https://other.test/',{enabled:true}),/ait/);
 });
 
 test('an uncertain record action leaves the workspace enabled without changing its source result',async t=>{
  const {db,id,runtime,launches,finish}=fixture(t);db.save(id,{mode:'auto'});await runtime.runSource(id,urls[0]);await settle();const scan=launches[0];
- const record=db.record(id,scan.id,{url:'https://blocked.test/home',title:'Home',summary:'Observed'});await finish(scan);
+ const record=db.record(id,scan.id,{url:'https://blocked.test/home',title:'Home',summary:'Observed',assessment:{score:70}});await finish(scan);
  await runtime.runRecord(id,record.id,'prepare');await settle();const prepare=launches.at(-1);
  const draft=db.record(id,prepare.id,{url:record.url,title:record.title,summary:record.summary,proposal:'Hello'});await finish(prepare);
  const before=db.get(id).sourceState;await runtime.runRecord(id,record.id,'execute',{digest:draft.digest});await settle();const run=launches.at(-1);
@@ -165,4 +178,17 @@ test('an uncertain record action leaves the workspace enabled without changing i
 test('source blocking is visible without claiming the whole schedule stopped or promising retries',async t=>{
  const {db,id,runtime,launches,finish}=fixture(t);db.enable(id);await runtime.tick();await settle();await finish(launches[0],'blocked');const snapshot=db.snapshot(id),p=automationProgress(snapshot);
  assert.equal(p.title,'Diğer kaynakların takibi sürüyor');assert.match(p.next,/otomatik tekrar denenmez/);assert.equal(snapshot.sources[0].lastResult,'IP range blocked');
+});
+
+test('starting a source over drops its saved results page and queue but keeps other sources',async t=>{
+ const {db,id,runtime,launches,finish}=fixture(t);
+ await runtime.runSource(id,urls[0]);await settle();const first=launches.at(-1);assert.ok(first.scanPlan);
+ db.putRun({...db.run(first.id),pageProgress:{currentPage:4},scan:{complete:false,pendingUrls:['https://blocked.test/next'],reason:'Continue saved listings'}});await finish(first,'blocked');await runtime.tick();
+ runtime.sourceState(id,urls[1],{scan:{complete:false,pendingUrls:['https://fast.test/next']}});
+ assert.equal(db.sources(id)[0].scan.complete,false);assert.equal(db.sources(id)[0].scanState.active.id,first.scanPlan.id);
+ await runtime.runSource(id,urls[0],{fresh:true});await settle();const next=launches.at(-1);
+ assert.notEqual(next.id,first.id);assert.equal(next.sourceUrl,urls[0]);
+ assert.equal(next.scan?.pendingUrls?.length??0,0,'the old queue is not resumed');assert.equal(next.pageProgress??null,null);
+ assert.notEqual(next.scanPlan.id,first.scanPlan.id,'a new scan cycle starts from the first page');
+ assert.deepEqual(db.get(id).sourceState[urls[1]].scan.pendingUrls,['https://fast.test/next']);
 });

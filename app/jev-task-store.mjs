@@ -44,6 +44,12 @@ export class JevTaskStore {
   task.updatedAt=this.now();this.tasks.set(task.id,copy(task));return task;
  }
  list(owner,taskId){return [...this.tasks.values()].filter(t=>t.automationId===owner&&t.taskId===taskId).reverse().map(copy);}
+ releaseEvidence(owner,taskId,id){
+  const task=this.get(owner,taskId,id);
+  for(const [key,body] of this.bodies)if(body.jevTaskId===id){this.bodies.delete(key);this.briefs.delete(key);this.briefJobs.delete(key);}
+  // Keep usage accounting while completed page bodies leave RAM.
+  task.items=[];task.status='completed';this.save(task);
+ }
  atomic(fn){
   const tasks=new Map(this.tasks),bodies=new Map(this.bodies),detailWaits=new Map(this.detailWaits),hostWaits=new Map(this.hostWaits);
   try{return fn();}catch(error){this.tasks=tasks;this.bodies=bodies;this.detailWaits=detailWaits;this.hostWaits=hostWaits;throw error;}
@@ -79,7 +85,7 @@ export class JevTaskStore {
   // SPA pagination can change every listing while keeping the same URL.
   // Discovery checkpoints must retain the page each link was observed on.
   const old=task.input.operation==='scan_results'?undefined:[...this.bodies.values()].find(body=>body.jevTaskId===task.id&&body.value.url===page.url),id=old?.value.id??randomUUID();
-  const value={id,url:page.url,title:page.title??'',text:page.text??'',links:page.links??[],pagination:page.pagination??[],at:this.now(),unreadFrames:page.reading?.unreadFrames??0};
+  const value={id,url:page.url,title:page.title??'',text:page.text??'',links:page.links??[],pagination:page.pagination??[],canonicalUrl:page.canonicalUrl,at:this.now(),unreadFrames:page.reading?.unreadFrames??0};
   this.briefs.delete(id);
   this.bodies.set(id,{jevTaskId:task.id,value:copy(value)});return value;
  }

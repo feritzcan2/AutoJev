@@ -12,15 +12,49 @@ bağlantılarını kullanır. Diğer otomasyonlar kendi konuşmasına, kaynaklar
 ayarlarına, yetkilerine ve sonuç geçmişine sahiptir. Tekrar kullanılabilir template’ler
 kaydedilebilir ve JSON dosyasıyla paylaşılabilir. Arayüz Türkçedir.
 
-**Kaynaklar → Listeden ekle** ile yerleşik katalogdan, public JSON adresinden veya
-dosyadan kaynak seçebilirsin. Her kaynak düzenlenebilir bir çalışma talimatı ve
-isteğe bağlı bir skill metni taşır. Agent kaynak talimatını okur ve kaynağı Jev ile
-yönetilen Chrome üzerinden tarar. Kaynakları
-**Dışa aktar** ile paylaşabilirsin; sorgular ve çalışma geçmişi dışa aktarılmaz.
-[Kaynak listesi ve katkı biçimi](source-library/README.md).
+**Kaynaklar → Kaynak ekle** ile site adresi ekleyebilir veya **Agent ile bul** ile
+kaynak araştırabilirsin. Her kaynak düzenlenebilir bir çalışma talimatı, isteğe
+bağlı bir skill metni ve arama reçetesi taşır. Agent kaynak talimatını okur ve
+kaynağı Jev ile yönetilen Chrome üzerinden tarar.
+
+İş arama kaynaklarından **Himalayas**, StepStone ile aynı site-extension kaydını
+kullanır. StepStone açık sayfadaki ilanları okur; Himalayas extension'ı özel CLI
+ile resmî API'den arama reçetesindeki ülke ve sorguya ait ilanları ve tam
+açıklamalarını alır. Kaynak agent'ı `collect_source_page` ile bir sayfa getirir;
+ortak Jev elemesinden kalan ilanları puanlayıp tabloya kaydeder. İnceleme grubu
+onaylanmadan sonraki sayfaya geçilmez. Tarama için ilan sekmeleri açılmaz.
+Eski puansız CLI kayıtları yeniden karşılaşıldığında aynı kimlikle değerlendirilir;
+elenenler gerekçeleriyle saklanır. Kaynak detayındaki devam notu toplanan, elenen,
+bekleyen ve kaydedilen sayıları gösterir. Eski
+`/jobs/countries/germany?q=...` reçeteleri aynı filtrelerle API aramasına çevrilir.
+Özel filtreler API tarafından desteklenmiyorsa açık hata gösterilir.
+
+Toplayıcı kaynak koddan bağımsız olarak da çalıştırılabilir:
+
+```sh
+pnpm collect --source himalayas --query backend --country DE
+pnpm collect --source himalayas --all
+```
+
+Çıktı NDJSON sayfaları ve son tamamlanma bildirimidir. `--max-pages 1000` bir CLI
+çağrısının varsayılan sınırıdır; sınıra ulaşılırsa çıkış kodu 2 ve `complete:false`
+döner. Uygulama CLI'yi her inceleme grubu için bir sayfalık çağrılarla kullanır.
+İstekler zaman aşımına tabidir, geçici hatalar en fazla iki kez yeniden denenir ve
+durdurma isteği alt süreci kapatır. Kalıcı hatada kaynak eksik olarak bildirilir;
+yeniden çalıştırma kaydedilen sayfadan sürer. Ham API içeriği ve tam açıklamalar
+RAM'de kalır; yeniden başlatılan uygulama bunları tekrar alır. Kaynak adı ve özgün
+ilan bağlantısı kayıtta korunur. [Himalayas API](https://himalayas.app/docs/remote-jobs-api)
+önbelleklidir; sonuçlar anlık güncellik garantisi taşımaz.
+
+Yeniden okumada sonuç sayfasından kaybolan ilanlar, CLI içinden resmî
+[tekil detay servisi](https://himalayas.app/docs/remote-jobs-mcp) ile kimlikleri
+üzerinden alınır (`--detail-url İLAN_ADRESİ`). Bu işlem model kullanmaz.
+Okunamayan adresler kuyrukta kalırken diğer ilanlar, sayfalar ve aramalar ilerler.
+Eksikler çözülmeden tam tarama başarısı bildirilmez; aynı çalışmada başarısız
+tekil sorgu tekrarlanmaz. Kolektör hata kartları tarayıcı sekmesi istemez.
 
 **Başlangıç:** Yeni çalışma alanı → template seç → Agent ile konuş → profili kaydet →
-bir kez veya düzenli çalıştır. Her kaynağın ilk turu otomatik denemedir. Agent arama,
+bir kez veya düzenli çalıştır. Agent ile taranan kaynakların ilk turu otomatik denemedir. Agent arama,
 sayfalama, detay okuma ve erişimi Jev ile yönetilen Chrome üzerinden kontrol eder;
 sonraki turlar güncel kriterlerle normal taramayı yapar. Zamanlama için uygulama ve bilgisayar açık
 kalmalıdır. Uygulamanın eski adı JobLoop’tur; dağıtım kimliği ve veri

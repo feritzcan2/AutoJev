@@ -80,6 +80,15 @@ test('unsupported challenges stop immediately; supported challenges stop at two 
  updateVerification(slot,evidence,70000);slot.verification.attempts=2;assert.equal(updateVerification(slot,evidence,70001).handoff,true);
  updateVerification(slot,null);assert.equal(updateVerification(slot,{...evidence,capability:'not_exposed',limitation:'No drag support'},80000).handoff,true);
 });
+test('the verification budget belongs to one page; a widget seen on an earlier page never hands a later page off',()=>{
+ let url='https://example.test/signup';const slot={page:{url:()=>url}},evidence={state:'required',capability:'supported',evidence:'Verify you are human'};
+ updateVerification(slot,evidence,0);
+ url='https://example.test/jobs/1';
+ const next=updateVerification(slot,{state:'checking',capability:'pending',evidence:'Loading'},90000);
+ assert.equal(next.handoff,false);assert.equal(next.startedAt,90000);assert.equal(next.url,url);
+ assert.equal(updateVerification(slot,evidence,149999).handoff,false,'the same page keeps its own 60 second window');
+ assert.equal(updateVerification(slot,evidence,150000).handoff,true);
+});
 
 import {observationPolicy} from '../app/jev-navigation.mjs';
 test('routine full requests produce compact maps; lost context and recovery retain full reconstruction',()=>{

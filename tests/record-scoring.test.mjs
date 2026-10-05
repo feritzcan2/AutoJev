@@ -22,11 +22,11 @@ test('MCP validates numeric and unavailable scores at both recording endpoints',
  assert.throws(()=>validate(assessmentSchema,{score:75,unexpected:true}),/Unknown field/);
  for(const score of ['80',true,{},81.5,101,-1,NaN])assert.throws(()=>validate(assessmentSchema,assessment({score})),/arguments.score/);
 });
-function fixture(t){
+function fixture(t,{onRunFinished}={}){
  const core=new WorkspaceDatabase(':memory:'),db=new AutomationStore(core);
  const a=db.create('job-search',{goal:'Find jobs',criteria:{preferences:'Remote JavaScript',ranking:rubric},sources:[source]});db.review(a.id);
  const seed=db.begin(a.id,'run'),item=db.record(a.id,seed.id,{url,title:'Developer',summary:'Saved listing'});db.finish(a.id,seed.id,'completed','Saved');
- const launches=[],runtime=new WebTasks(db,{launch:async run=>{launches.push(run);return {close:async()=>{}};}});
+ const launches=[],runtime=new WebTasks(db,{onRunFinished,launch:async run=>{launches.push(run);return {close:async()=>{}};}});
  t.after(async()=>{await runtime.close();core.close();});
  const flow=run=>automationWorkflow({db,run,signal:{aborted:false},browser:{},report:(...args)=>runtime.report(...args)});
  const finish=async(run,status='completed')=>{runtime.report(a.id,run.id,status,'Done');await runtime.finish(a.id,status,'Done',run.workerId);};
@@ -35,14 +35,14 @@ function fixture(t){
  return {core,db,id:a.id,item,runtime,launches,finish,start,scan};
 }
 
-test('job setup requires a scoring rubric and reusable templates preserve the operation',t=>{
- const f=fixture(t),a=f.db.create('job-search',{goal:'Find work',criteria:{preferences:'Remote'},sources:[source]});
- assert.throws(()=>f.db.review(a.id),/Puanlama kriterleri/);
- const template=reusableTemplate(JSON.parse(JSON.stringify(automationTemplate('job-search'))));
- assert.equal(template.recordOperations.score.capability,'browser.evaluate');
- assert.equal(template.recordOperations.score.effect,'read');
- assert.match(template.guidance,/scoringPolicy/);
- assert.equal(automationTemplate('housing').recordOperations.score,false);
+test('every template scores records and reusable templates cannot switch scoring off',()=>{
+ for(const id of ['job-search','housing']){
+  const template=reusableTemplate(JSON.parse(JSON.stringify(automationTemplate(id))));
+  assert.equal(template.recordOperations.score.capability,'browser.evaluate');
+  assert.equal(template.recordOperations.score.effect,'read');
+  assert.ok(template.fields.some(f=>f.id==='ranking'));
+ }
+ assert.ok(reusableTemplate({...automationTemplate('custom'),recordOperations:{score:false}}).recordOperations.score);
 });
 
 test('the discovering agent must save the assessment with each new production listing',t=>{
@@ -80,6 +80,13 @@ test('manual scoring preserves an approved draft and only exposes assessment wri
  assert.equal(f.db.snapshot(f.id).results[0].recordAction.operation.kind,'execute');
 });
 
+test('completed scoring closes its listing tab while keeping any filled form',async t=>{
+ const calls=[],f=fixture(t,{onRunFinished:(id,run,options)=>calls.push(options)}),{run,call}=await f.start();
+ f.db.observe(f.id,run.id,url,assessment().evidence);await call('record_automation_score',{itemId:f.item.id,...assessment()});await f.finish(run);
+ assert.equal(f.db.result(f.id,f.item.id).status,'found');
+ assert.equal(calls.at(-1).closeTabs,true);assert.equal(calls.at(-1).keepForms,true);assert.deepEqual(calls.at(-1).runIds,[run.id]);
+});
+
 test('the real scoring workflow saves only a score without reading a page or CV',async t=>{
  const f=fixture(t),{run,call}=await f.start();
  await call('record_automation_score',{score:75});
@@ -108,10 +115,10 @@ test('the submitted score determines status even when optional status disagrees'
 });
 
 const linkedInDetail='https://www.linkedin.com/jobs/view/junior-spezialist-f%C3%BCr-datenschutz-4473093841/';
-test('scoring accepts URL variants of the observed listing (slash, tracking, application step) and saves the actual evidence URL',async t=>{
+test('scoring accepts URL variants of the observed listing (slash and tracking) and saves the actual evidence URL',async t=>{
  const f=fixture(t);f.db.putResult({...f.item,url:linkedInDetail});
  const {run,call}=await f.start();f.db.observe(f.id,run.id,linkedInDetail,'Full listing detail');
- for(const evidenceUrl of [linkedInDetail.replace(/\/$/,''),linkedInDetail.replace(/\/$/,'')+'/apply',linkedInDetail+'?trackingId=abc']){
+ for(const evidenceUrl of [linkedInDetail.replace(/\/$/,''),linkedInDetail+'?trackingId=abc']){
   await call('record_automation_score',{itemId:f.item.id,...assessment({evidenceUrl})});
   assert.equal(f.db.result(f.id,f.item.id).assessment.evidenceUrl,linkedInDetail);
  }

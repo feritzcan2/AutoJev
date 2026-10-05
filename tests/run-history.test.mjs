@@ -9,7 +9,7 @@ function fixture(t){
  const workspace=db.create('custom',{goal:'Find listings',criteria:Object.fromEntries(db.template('custom').fields.filter(f=>f.required).map(f=>[f.id,'Test'])),sources});db.review(workspace.id);
  const id=workspace.id;
  const start=(sourceUrl=sources[0],recordId)=>{const task=core.workspaces.tasks.enqueue(id,{operation:recordId?'prepare':'scan',sourceUrl,sources:[sourceUrl],recordId,lockKey:recordId?'record:'+recordId:'source:'+sourceUrl});return db.begin(id,{kind:'run',taskId:task.id});};
- const save=(run,key)=>db.record(id,run.id,{url:`https://first.test/listing/${key}`,title:`Listing ${key}`,summary:'Observed listing'});
+ const save=(run,key)=>db.record(id,run.id,{url:`https://first.test/listing/${key}`,title:`Listing ${key}`,summary:'Observed listing',...(run.kind==='run'?{assessment:{score:70}}:{})});
  const count=run=>db.snapshot(id).runs.find(row=>row.id===run.id).foundCount;
  return {core,db,id,start,save,count};
 }

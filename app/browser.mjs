@@ -171,14 +171,14 @@ export class BrowserTools {
       return {closed,failed};
     },{checkActive:false});
   }
-  async finishAutomationRun(id,run,{closeTabs=false,sourceAccessReset=false,sourceRunIds=[],pendingTabIds=[]}={}){
+  async finishAutomationRun(id,run,{closeTabs=false,sourceAccessReset=false,runIds=[run.id],keepForms=true,pendingTabIds=[]}={}){
     if(!closeTabs)return {closed:[]};
     const connection=this.clients.get(id);
     if(!connection)return {deferred:true};
     return this.forWorker(run.workerId??'main').enqueue(id,async()=>{
       const client=await this.connectedClient(id);
       if(!client||this.clients.get(id)!==connection)return {deferred:true};
-      return client.closeFinishedAutomationRunTabs(run.id,id,{sourceScan:!run.recordId,pendingTabIds,...(sourceAccessReset?{resetSource:run.sourceUrl,sourceRunIds}:{})});
+      return client.closeFinishedAutomationRunTabs(runIds,id,{keepForms,pendingTabIds,...(sourceAccessReset?{resetSource:run.sourceUrl}:{})});
     },{checkActive:false});
   }
   async sourceTabs(candidateId,sources,task){

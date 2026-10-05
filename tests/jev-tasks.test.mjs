@@ -15,12 +15,15 @@ test('oversized index requests remain bounded and keep their next offset',()=>{
  const page=jevTaskSummary(task,{limit:100});assert.equal(page.items.length,20);assert.equal(page.nextOffset,20);
  assert.throws(()=>jevTaskSummary(task,{limit:-1}),/Geçersiz/);
 });
-import {askJev} from '../app/jev-policy.mjs';
+import {askJev,jevProvider} from '../app/jev-policy.mjs';
 import {automationWorkflow} from '../app/automation-worker.mjs';
 import {jevDetailKey} from '../app/jev-detail-urls.mjs';
 
 const url='https://example.test/list';
-const answer=(choice,criteria,confidence=1)=>({choice,confidence,probabilities:Object.fromEntries(Object.keys(criteria).map(k=>[k,k===choice?1:0]))});
+// A card is asked what it opens (listing/other/uncertain) and whether it fits
+// (keep or an exclusion). One-answer mocks map onto whichever question it is.
+const pick=(choice,criteria)=>Object.hasOwn(criteria,choice)?choice:Object.hasOwn(criteria,'keep')?'keep':Object.hasOwn(criteria,'listing')&&['hard_constraint','qualification','unrelated_role'].includes(choice)?'listing':choice;
+const answer=(choice,criteria,confidence=1)=>(choice=pick(choice,criteria),{choice,confidence,probabilities:Object.fromEntries(Object.keys(criteria).map(k=>[k,k===choice?1:0]))});
 function fixture(t){
  const core=new WorkspaceDatabase(':memory:'),db=new AutomationStore(core);t.after(()=>core.close());
  const a=db.create('housing',{goal:'Berlin homes',criteria:{location:'Berlin',budget:'2000',requirements:'2 rooms'},sources:[url]});db.save(a.id,{browserMode:'jev'});db.review(a.id);
@@ -176,8 +179,10 @@ test('search preparation verifies applied results after its observed search butt
 test('unknown detail text stays uncertain, and low-confidence mismatch cannot reject',async t=>{
  const f=fixture(t),source=f.db.jevTasks.create(f.a.id,'assigned',{operation:'collect_details'});
  const evidence=f.db.jevTasks.evidence(source,{url,text:'Missing salary',title:'Home'});source.items=[{url,evidenceId:evidence.id},{url:url+'/missing'}];f.db.jevTasks.save(source);
- f.ports.evaluate=async(state,questions)=>({answers:{fit:answer('mismatch',questions.fit.criteria,.8)}});
+ // The weak mismatch is rechecked once on the brief; an unsupported exclusion keeps it uncertain.
+ f.ports.evaluate=async(state,questions)=>({answers:questions.fit?{fit:answer('mismatch',questions.fit.criteria,.8)}:{support:answer('uncertain',questions.support.criteria,.9),exclusion:answer('none',questions.exclusion.criteria,.9)}});
  const result=await f.run({operation:'classify_results',fromTaskId:source.id});assert.deepEqual(result.items.map(i=>i.assessment.decision),['uncertain','uncertain']);
+ assert.equal(result.items[0].assessment.reason,'exclusion_unverified');assert.equal(result.items[0].assessment.exclusion,undefined);
 });
 
 test('85 percent page and link classification excludes navigation but retains weaker decisions',async t=>{
@@ -218,6 +223,38 @@ test('access barriers stop the first detail without classification or unchanged-
   const scan=await f.run({operation:'scan_results',url});assert.equal(scan.issue.reason,'access_barrier');assert.equal(scan.usage.calls,0);
   blocked=false;f.db.jevTasks.detailWaits.clear();f.db.jevTasks.hostWaits.clear();const recovered=await f.run({operation:'collect_details',url:urls[0]});assert.ok(recovered.classified>0);
  }
+});
+
+test('a verification widget inside a page form is read like any page and never blocks the site',async t=>{
+ const forms=[{fillFields:[{fieldId:'f1',label:'First name'}],passwordFields:[{fieldId:'p1',label:'Password'}]},{passwordFields:[{fieldId:'p1',label:'Password'}]},{fillFields:[{fieldId:'f1',label:'Email'}]}];
+ const widgets=[{state:'required',capability:'supported',checkbox:true},{state:'required',capability:'not_exposed',handoff:true},{state:'checking',capability:'pending'},{state:'verification_error'}];
+ for(const form of forms)for(const verification of widgets){
+  const f=fixture(t),signup=url+'/signup?action=save-job:1',listing=url+'/listing/1';f.ports.recoverDetails=true;f.ports.resolveDetails=()=>[{url:signup},{url:listing}];
+  f.ports.browser=async(name,args)=>{f.calls.push({name,args});return args.url===signup?{url:args.url,title:'Sign up',text:'Create a new account\nFirst name\nLast name\nEmail\nPassword\nSign up',verification,...form}:{url:args.url,text:'Actual listing'};};
+  const details=await f.run({operation:'collect_details'});
+  assert.notEqual(details.issue?.reason,'access_barrier',JSON.stringify({form,verification}));
+  assert.equal(details.classified,2);assert.deepEqual(f.calls.map(c=>c.args.url),[signup,listing],'the sign-up page is read once; the listing is still read');
+  assert.ok(details.items.every(item=>item.evidenceId&&!item.error));
+ }
+});
+
+test('a verification widget on a page that renders the site navigation is read like any page',async t=>{
+ // The sign-up form sits in a frame Jev cannot read: no fields, one unread frame.
+ const nav=Array.from({length:12},(_,i)=>({url:url+'/nav/'+i,text:'Nav '+i}));
+ for(const verification of [{state:'required',capability:'supported',checkbox:true},{state:'required',capability:'not_exposed',handoff:true},{state:'checking',capability:'pending'}]){
+  const f=fixture(t),signup=url+'/signup?action=save-job:1',listing=url+'/listing/1';f.ports.recoverDetails=true;f.ports.resolveDetails=()=>[{url:signup},{url:listing}];
+  f.ports.browser=async(name,args)=>{f.calls.push({name,args});return args.url===signup?{url:args.url,title:'Job Seeker Sign Up',text:'Sign up to save this job',links:nav,unreadFrames:1,verification}:{url:args.url,text:'Actual listing',links:nav};};
+  const details=await f.run({operation:'collect_details'});
+  assert.notEqual(details.issue?.reason,'access_barrier',JSON.stringify(verification));
+  assert.deepEqual(f.calls.map(c=>c.args.url),[signup,listing],'the sign-up page is read once and the listing still opens');
+  assert.equal(details.classified,2);
+ }
+ // A wall that links only to its provider still stops the site.
+ const f=fixture(t),urls=[url+'/1',url+'/2'];f.ports.resolveDetails=()=>urls.map(url=>({url}));
+ const provider=Array.from({length:12},(_,i)=>({url:'https://challenge.example.net/help/'+i,text:'Help '+i}));
+ f.ports.browser=async(name,args)=>{f.calls.push({name,args});return {url:args.url,text:'Verify you are human',links:provider,verification:{state:'required'}};};
+ const walled=await f.run({operation:'collect_details'});
+ assert.equal(walled.issue?.reason,'access_barrier');assert.equal(f.calls.length,1);
 });
 
 test('a site-wait exception stops the queue and preserves earlier successful details',async t=>{
@@ -371,7 +408,7 @@ test('collection after redirect can retire the requested queue URL and report ot
  const result=await flow.call(f.a.id,run.id,'browser_jev_run',{operation:'collect_details'});assert.equal(result.issue.reason,'batch_ready');assert.equal(result.batch.total,1);assert.equal(result.items[0].url,undefined);assert.equal(result.items[0].item,1);
  assert.equal(f.db.jevTasks.readEvidence(f.a.id,run.taskId,result.items[0].evidenceId).url,destination);
  // Saving the finding under its original queue URL retires it; no progress tool is needed.
- await flow.call(f.a.id,run.id,'record_automation_result',{key:original,url:original,title:'Canonical listing',summary:'Read and assessed original listing'});
+ await flow.call(f.a.id,run.id,'record_automation_result',{key:original,url:original,title:'Canonical listing',summary:'Read and assessed original listing',score:70});
  assert.equal(f.db.scanQueue(f.a.id,run.id).total,0);
 });
 
@@ -528,17 +565,21 @@ test('resume tolerates identical operation arguments without permitting changed 
  assert.equal(f.calls.length,before);
 });
 
-test('exclusions use 85 percent confidence in both stages without requiring quotes',async t=>{
+test('exclusions use 85 percent confidence in both stages without requiring quotes; a weak mismatch is rechecked on the brief',async t=>{
  for(const [fitConfidence,confidence] of [[.85,.85],[.99,.9],[.849,.99],[.99,.849]]){
-  const f=fixture(t),text='This property is in Paris. Viewings and tenancy require local residence.';
+  const f=fixture(t),text='This property is in Paris. Viewings and tenancy require local residence.',proofs=[];
   f.ports.resolveDetails=()=>[{url}];f.ports.browser=async()=>({url,text,reading:{unreadFrames:3}});
-  f.ports.evaluate=async(state,q)=>({answers:q.fit?{fit:answer('mismatch',q.fit.criteria,fitConfidence)}:{support:answer('supported',q.support.criteria,confidence),exclusion:answer('hard_constraint',q.exclusion.criteria,.6)}});
+  f.ports.evaluate=async(state,q)=>{if(!q.fit)proofs.push(state.listing);return {answers:q.fit?{fit:answer('mismatch',q.fit.criteria,fitConfidence)}:{support:answer('supported',q.support.criteria,confidence),exclusion:answer('hard_constraint',q.exclusion.criteria,.6)}};};
   const result=await f.run({operation:'collect_details'}),item=result.items[0];
-  assert.equal(item.unreadFrames,3);assert.equal(result.usage.calls,fitConfidence>=.85?2:1);
-  const excluded=fitConfidence>=.85&&confidence>=.85;
+  assert.equal(item.unreadFrames,3);
+  // A confident fit is proven on the raw fragment; a weak or unproven one gets exactly one more proof on the brief sections.
+  assert.equal(result.usage.calls,fitConfidence>=.85&&confidence<.85?3:2);
+  assert.equal(proofs.at(-1).selectedSections!==undefined,fitConfidence<.85||confidence<.85);
+  const excluded=confidence>=.85;
   assert.equal(item.assessment.decision,excluded?'mismatch':'uncertain');
-  if(excluded){assert.equal(item.assessment.exclusion.quote,undefined);assert.equal(item.assessment.exclusion.evidenceId,item.evidenceId);assert.equal(item.assessment.reason,'hard_constraint');}
-  else assert.equal(item.assessment.exclusion,undefined);
+  if(excluded){assert.equal(item.assessment.exclusion.quote,undefined);assert.equal(item.assessment.exclusion.evidenceId,item.evidenceId);assert.equal(item.assessment.reason,'hard_constraint');
+   assert.equal(item.assessment.exclusion.basis,fitConfidence<.85?'brief':undefined);assert.equal(item.assessment.confidence>=.85,true,'a brief-proven exclusion counts as confirmed in the review batch');}
+  else {assert.equal(item.assessment.exclusion,undefined);assert.equal(item.assessment.reason,'exclusion_unverified');}
  }
 });
 
@@ -626,26 +667,30 @@ test('failed source import rolls back temporary helper data along with the paren
 });
 
 test('discovery retires explicit card conflicts at 85 percent without opening details or creating records',async t=>{
- const f=fixture(t),irrelevant=url+'/surgeon',alias=irrelevant+'#:~:text=Surgeon',borderline=url+'/adjacent',relevant=url+'/legal',navigation=url+'/directory';
+ const f=fixture(t),irrelevant=url+'/surgeon',alias=irrelevant+'#:~:text=Surgeon',borderline=url+'/adjacent',relevant=url+'/legal',navigation=url+'/directory',unlikely=url+'/driver';
  const queued=f.core.workspaces.tasks.enqueue(f.a.id,{operation:'scan',capability:'browser.observe',sourceUrl:url,sources:[url],lockKey:'source:'+url}),run=f.db.begin(f.a.id,{kind:'run',taskId:queued.id});
  f.db.observe(f.a.id,run.id,url,'Previous queue',[irrelevant,alias,borderline,relevant]);
  f.db.saveScanProgress(f.a.id,run.id,{pendingUrls:[irrelevant,alias,borderline,relevant],reason:'Earlier scan'},{url,text:'Previous queue'});
  const opened=[];
  const browser={call:async(_,name,args)=>{
-  opened.push(args.url);const page={url,title:'Careers',text:'Final page',links:[{url:irrelevant,text:'Surgeon - AI Trainer'},{url:alias,text:'Surgeon - AI Trainer'},{url:borderline,text:'Compliance advisor'},{url:relevant,text:'Legal counsel'},{url:navigation,text:'All companies'}]};
+  opened.push(args.url);const page={url,title:'Careers',text:'Final page',links:[{url:irrelevant,text:'Surgeon - AI Trainer'},{url:alias,text:'Surgeon - AI Trainer'},{url:borderline,text:'Compliance advisor'},{url:relevant,text:'Legal counsel'},{url:navigation,text:'All companies'},{url:unlikely,text:'Truck driver'}]};
   return {jevPage:page,pageContext:{url,tabId:'owned'},content:[{type:'text',text:'Page URL: '+url+'\n'+JSON.stringify(page)}]};
  },evaluateJev:async(_,state,questions)=>{
-  if(state.links){assert.deepEqual(state.criteria.criteria,f.a.criteria);assert.match(state.discoveryRules,/neighboring cards/);}
+  if(state.links){assert.deepEqual(state.criteria.criteria,f.a.criteria);assert.match(state.discoveryRules,/neighboring cards/);for(const q of Object.values(questions).filter(q=>q.criteria?.listing)){assert.equal(q.criteria.unrelated_role,undefined,'what a link opens and how it fits are separate questions');assert.doesNotMatch(q.criteria.uncertain,/relevant/,'uncertain is about the link, so real listings do not split between two keep answers');}for(const q of Object.values(questions).filter(q=>q.criteria?.keep))assert.ok(q.criteria.unrelated_role&&!q.criteria.listing,'fit offers keep or an exclusion, never "listing"');}
   return {answers:Object.fromEntries(Object.entries(questions).map(([key,q])=>{
-   const link=state.links?.[key],decision=key==='next'?'end':link.url===irrelevant||link.url===borderline?'unrelated_role':link.url===navigation?'other':'listing';
+   const link=state.links?.[key.replace(/^fit/,'link')],decision=key==='next'?'end':link.url===irrelevant||link.url===borderline?'unrelated_role':link.url===navigation?'other':'listing';
+   // Below 85% for one reason: a 35% keep stays, a 20% keep is eliminated by its total exclusion.
+   if(key.startsWith('fit')&&[borderline,unlikely].includes(link.url)){const keep=link.url===borderline?.35:.2,probabilities={keep,unrelated_role:.45,hard_constraint:.55-keep,qualification:0};return [key,{choice:'unrelated_role',confidence:.45,probabilities}];}
    return [key,answer(decision,q.criteria,link?.url===borderline ? .849 : .85)];
   }))};
  }};
  // Pagination still requires 90%; leave coverage pending even after filtering.
  const flow=automationWorkflow({db:f.db,run,signal:f.controller.signal,browser,report:()=>{}});
  const result=await flow.call(f.a.id,run.id,'browser_jev_run',{operation:'scan_results',url});
- assert.equal(result.issue.reason,'pagination_uncertain');assert.equal(result.lastPage.rejectedListings,1);assert.equal(result.lastPage.excludedNavigation,1);
+ assert.equal(result.issue.reason,'pagination_uncertain');assert.equal(result.lastPage.rejectedListings,2);assert.equal(result.lastPage.excludedNavigation,1);
  assert.deepEqual(new Set(f.db.scanQueue(f.a.id,run.id).pendingUrls),new Set([borderline,relevant]));
+ assert.deepEqual(f.db.run(run.id).scan.work.searches[0].cards[relevant],{title:'Legal counsel',keep:1,risk:{reason:'hard_constraint',p:0}},'a waiting listing shows Jev\'s card probabilities');
+ assert.deepEqual(f.db.run(run.id).scan.work.searches[0].excluded,[{url:irrelevant,title:'Surgeon - AI Trainer',reason:'unrelated_role',stage:'card',confidence:.85},{url:unlikely,title:'Truck driver',reason:'unrelated_role',stage:'card',confidence:.8}],'the source memory lists what the card stage eliminated');
  assert.equal(f.db.results(f.a.id).length,0);assert.deepEqual(opened,[url]);
  const index=await flow.call(f.a.id,run.id,'read_jev_task',{taskId:result.taskId});
  assert.equal(index.items.find(i=>i.url===borderline).discovery.decision,'uncertain');
@@ -656,7 +701,7 @@ test('source result schema omits record-only identity and proposal while assigne
  const f=fixture(t),run=f.db.begin(f.a.id,'run');
  const schema=assigned=>automationWorkflow({db:f.db,run:{...run,...assigned},signal:f.controller.signal,browser:{},report:()=>{}}).tools.find(tool=>tool.name==='record_automation_result').inputSchema;
  for(const key of ['recordId','actionUrl','proposal']){assert.equal(schema({}).properties[key],undefined);assert.ok(schema({recordId:'assigned'}).properties[key]);}
- assert.ok(schema({}).properties.assessment);assert.ok(schema({}).properties.url);
+ assert.ok(schema({}).properties.score);assert.ok(schema({}).properties.url);
 });
 
 test('invalid provider answers retry only the failing question once and account for both calls',async()=>{
@@ -754,7 +799,7 @@ test('pagination scrolls its observed container without repeating card classific
   f.calls.push({name,args});if(name==='scroll'){assert.equal(args.controlId,'results');scrolled++;}if(name==='click'){assert.equal(args.targetId,'next');current=2;}
   return {url,text:'Results '+current,links:[{url:url+'/job-'+current,text:'Role'}],scrollTargets:[{controlId:'wrong-detail',atBottom:false},{controlId:'results',atBottom:false}],pagination:[{text:`Sayfa ${current}/2`,current:true},{text:'Sonraki sayfayı görüntüle',disabled:current===2,...(scrolled>=2?{targetId:'next'}:{scrollControlId:'results'})}]};
  };
- f.ports.evaluate=async(state,qs)=>({answers:Object.fromEntries(Object.entries(qs).map(([key,q])=>{if(key!=='next')classified++;else assert.equal(current,2);return [key,answer(key==='next'?'end':'listing',q.criteria)];}))});
+ f.ports.evaluate=async(state,qs)=>({answers:Object.fromEntries(Object.entries(qs).map(([key,q])=>{if(key.startsWith('link'))classified++;else if(key==='next')assert.equal(current,2);return [key,answer(key==='next'?'end':'listing',q.criteria)];}))});
  let result=await f.run({operation:'scan_results',url});while(result.status==='continue')result=await f.run({taskId:result.taskId});
  assert.equal(result.status,'completed');assert.equal(scrolled,2);assert.equal(classified,2);assert.equal(checkpoints,2);
  assert.equal(result.pageCount,2);
@@ -825,4 +870,48 @@ test('a changing shell has a bounded number of semantic checks and an elapsed-ti
   let result=await f.run({operation:'collect_details'},{now:()=>time});while(result.status==='continue')result=await f.run({taskId:result.taskId},{now:()=>time});
   assert.equal(result.issue.reason,'detail_unavailable');assert.ok(result.usage.calls<=3);assert.ok(reads<=3);
  }
+});
+
+test('LinkedIn guest searches and postings are read over HTTP; marked listings survive triage but not an explicit conflict',async t=>{
+ const core=new WorkspaceDatabase(':memory:'),db=new AutomationStore(core);t.after(()=>core.close());
+ const search='https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=backend&location=Germany&sortBy=DD';
+ const a=db.create('housing',{goal:'Backend jobs',criteria:{location:'Germany',budget:'2000',requirements:'backend'},sources:[search]});db.save(a.id,{browserMode:'jev'});db.review(a.id);
+ const controller=new AbortController(),task=core.workspaces.tasks.enqueue(a.id,{operation:'scan',capability:'browser.observe',sourceUrl:search,sources:[search],lockKey:'source:'+search}),run=db.begin(a.id,{kind:'run',taskId:task.id});
+ const card=(id,title)=>`<li><div data-entity-urn="urn:li:jobPosting:${id}"><a class="base-card__full-link" href="https://de.linkedin.com/jobs/view/${title.toLowerCase().replaceAll(' ','-')}-${id}?trackingId=t"></a><h3 class="base-search-card__title">${title}</h3><h4 class="base-search-card__subtitle">Acme</h4><span class="job-search-card__location">Berlin, Germany</span></div></li>`;
+ const ids=Array.from({length:12},(_,n)=>String(4100000000+n)),titles=ids.map((_,n)=>n===3?'Truck Driver':`Backend Engineer ${n}`);
+ const fetched=[],realFetch=globalThis.fetch;t.after(()=>{globalThis.fetch=realFetch;});
+ globalThis.fetch=async target=>{
+  fetched.push(target);const u=new URL(target);
+  if(u.pathname.includes('jobPosting'))return new Response(`<h2 class="top-card-layout__title">Backend Engineer</h2><div class="show-more-less-html__markup"><p>Go services, Berlin hybrid.</p></div>`);
+  const start=Number(u.searchParams.get('start')??0);return new Response(ids.slice(start,start+10).map((id,n)=>card(id,titles[start+n])).join(''));
+ };
+ const asked=[];
+ const browser={call:async()=>{throw Error('LinkedIn guest pages must not open a browser tab');},evaluateJev:async(_,state,questions)=>{
+  asked.push(Object.keys(questions));
+  return {answers:Object.fromEntries(Object.entries(questions).map(([key,q])=>{
+   const ref=q.instructions.match(/`links\.(link\d+)`/)?.[1],link=state.links?.[ref];
+   // The model calls every card navigation; only the truck driver is an explicit conflict.
+   return [key,answer(key==='next'?'end':link?link.text==='Truck Driver'?'unrelated_role':'other':'possible',q.criteria,link?.text==='Truck Driver'?.95:1)];
+  }))};
+ }};
+ const flow=automationWorkflow({db,run,signal:controller.signal,browser,report:()=>{}}),call=(name,args)=>flow.call(a.id,run.id,name,args);
+ const scan=await call('browser_jev_run',{operation:'scan_results',url:search});
+ assert.equal(scan.status,'completed');assert.equal(scan.confirmedListings,11);assert.equal(scan.uncertainLinks,0);
+ assert.deepEqual(fetched.map(u=>new URL(u).searchParams.get('start')),[null,'10'],'the next offset is followed without a model choice; the short page ends the search');
+ const queue=db.scanQueue(a.id,run.id).pendingUrls;
+ assert.equal(queue.length,11);assert.ok(queue.every(u=>/^https:\/\/de\.linkedin\.com\/jobs\/view\/[a-z0-9-]+-41000000\d\d$/.test(u)),'card addresses without tracking parameters');
+ assert.ok(!queue.some(u=>u.includes('truck-driver')),'an explicit card conflict is still retired');
+ const details=await call('browser_jev_run',{operation:'collect_details',fromTaskId:scan.taskId});
+ assert.ok(details.classified>0);
+ assert.ok(fetched.slice(2).every(u=>u.startsWith('https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/')),'postings come from the guest endpoint');
+});
+test('TypeSafe HTTP failures are kept for the sidebar until Jev answers again',async()=>{
+ const questions={fit:{type:'noul',instructions:{}}};let changes=0;const before=jevProvider.changed;jevProvider.changed=()=>changes++;
+ try{
+  await assert.rejects(askJev({},questions,{apiKey:'test',fetchImpl:async()=>({ok:false,status:402})}),/HTTP 402/);
+  await assert.rejects(askJev({},questions,{apiKey:'test',fetchImpl:async()=>({ok:false,status:402})}),/HTTP 402/);
+  assert.equal(jevProvider.issue.status,402);assert.equal(changes,1,'a repeated failure does not refresh every workspace again');
+  await askJev({},questions,{apiKey:'test',fetchImpl:async()=>({ok:true,json:async()=>({answers:{fit:{noul:.5}}})})});
+  assert.equal(jevProvider.issue,null);assert.equal(changes,2);
+ }finally{jevProvider.changed=before;jevProvider.issue=null;}
 });

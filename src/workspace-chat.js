@@ -10,7 +10,7 @@ const clock=value=>new Date(timestamp(value)).toLocaleTimeString('tr-TR',{hour:'
 const drafts=new Map();
 
 export function workspaceChat({root,form,log,input,send,attach,intro,api,owner,onSend,onClose,onShow=()=>{},onReviewProfile=()=>{},onReviewSources=()=>{}}){
- let snapshot=null,sending=false,disposed=false,follow=true,native=[],activity=null,polling=false,session=null,pending=[],failures=[],lastSignature='',visible=false;
+ let snapshot=null,sending=false,disposed=false,follow=true,native=[],activity=null,polling=false,pending=[],failures=[],lastSignature='',visible=false;
  root.className='automation-conversation workspace-chat';root.setAttribute('aria-label','Kurulum agenti ile sohbet');
  const header=node('div','workspace-chat-header'),identity=node('div','workspace-chat-identity'),mark=node('span','workspace-chat-avatar','A'),copy=node('div'),title=node('h2','','Kurulum agenti'),status=node('span','workspace-chat-status','Hazır');status.id='automation-chat-state';status.setAttribute('role','status');
  copy.append(title,status);identity.append(mark,copy);
@@ -93,9 +93,9 @@ export function workspaceChat({root,form,log,input,send,attach,intro,api,owner,o
   finally{sending=false;if(!disposed){renderMessages();renderStatus();}}
  };
  async function poll(){
-  const run=snapshot&&interviewRun(snapshot);if(disposed||polling||!run||!root.checkVisibility()||!api.workerTranscript)return;polling=true;const runId=run.id;
-  try{const result=await api.workerTranscript(owner,run.workerId??'main');if(disposed||interviewRun(snapshot)?.id!==runId)return;native=result.messages??[];activity=result.activity?{...result.activity,label:conversationToolLabel(result.activity.tool)}:null;renderMessages();renderStatus();}catch{/* Saved messages remain available when native output is unavailable. */}finally{polling=false;}
+  const run=snapshot&&interviewRun(snapshot);if(disposed||polling||!snapshot||!root.checkVisibility()||!api.workerTranscript)return;polling=true;const runId=run?.id;
+  try{const result=await api.workerTranscript(owner,run?.workerId??'conversation');if(disposed||runId&&interviewRun(snapshot)&&interviewRun(snapshot).id!==runId)return;native=result.messages??[];activity=result.activity?{...result.activity,label:conversationToolLabel(result.activity.tool)}:null;renderMessages();renderStatus();}catch{/* Saved messages remain available when native output is unavailable. */}finally{polling=false;}
  }
  const timer=setInterval(()=>{if(!disposed){layout();renderStatus();void poll();}},800);
- return {setQuestions,showQuestion,update(value){snapshot=value;const id=interviewRun(value)?.id??null;if(id!==session){session=id;native=[];activity=null;}renderMessages();renderStatus();layout();void poll();},focus(){input.focus();sizeInput();},dispose(){disposed=true;clearInterval(timer);resize.disconnect();window.removeEventListener('resize',layout);drafts.set(owner,input.value);}};
+ return {setQuestions,showQuestion,update(value){snapshot=value;renderMessages();renderStatus();layout();void poll();},focus(){input.focus();sizeInput();},dispose(){disposed=true;clearInterval(timer);resize.disconnect();window.removeEventListener('resize',layout);drafts.set(owner,input.value);}};
 }

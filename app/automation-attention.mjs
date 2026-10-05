@@ -31,7 +31,7 @@ export function automationAttention(snapshot,{includeDismissed=false}={}){
   const saved=source.blocker??run?.resumeContext??{};
   const access=source.accessRecovery;
   const uncertain=Boolean(saved.recordId??run?.recordId)||snapshot.results?.some(r=>r.sourceUrl===source.url&&['executing','uncertain'].includes(r.status));
-  issues.push({id:source.url,sourceUrl:source.url,name:source.name,workerId:saved.workerId??run?.workerId,
+  issues.push({id:source.url,sourceUrl:source.url,name:source.name,workerId:saved.workerId??run?.workerId,browserRequired:!(run?.collector||source.scan?.collector),
    dismissKey:JSON.stringify([source.lastRunId??saved.runId,source.lastRunAt,source.lastStatus,source.lastResult,saved.tabId,saved.url]),
    kind:access&&['waiting','resetting'].includes(access.state)?'site_access':run?.toolFailure||(saved.stop??run?.stop)?.kind==='technical'||(source.lastStatus??run?.status)==='failed'?'technical':undefined,
    ...(access?{runId:access.runId,accessRetryAt:source.siteWait?.exhausted?null:access.retryAt,accessExhausted:Boolean(source.siteWait?.exhausted||access.retryAt===null),cleanupError:access.cleanupError}:{}),

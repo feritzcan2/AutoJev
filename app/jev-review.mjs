@@ -1,6 +1,8 @@
-import {scanWork,activeSearch,withScanWork} from './scan-work.mjs';
+import {scanWork,activeSearch,withScanWork,noteExcluded} from './scan-work.mjs';
 import {JEV_CLASSIFICATION_VERSION,JEV_TRIAGE_CONFIDENCE,EXCLUSION_REASONS} from './jev-triage.mjs';
 import {jevDetailKey} from './jev-detail-urls.mjs';
+import {needsCollectorReview} from './source-collectors.mjs';
+import {collectorReviewed} from './source-collector-worker.mjs';
 
 export const jevReviewRequired=message=>Object.assign(Error(message),{code:'JEV_REVIEW_REQUIRED'});
 
@@ -37,18 +39,19 @@ export function reviewJevBatch(db,owner,runId,taskId,batchId,decisions=[]){
   if(task.searchId!==(run.scan?.work?.activeSearchId??'default')||task.batch?.id!==batchId||task.classificationVersion!==JEV_CLASSIFICATION_VERSION)throw Error('İnceleme grubu güncel göreve ve aramaya ait olmalı.');
   const items=task.batch.urls.map(url=>task.items.find(i=>i.url===url));
   const review=resolveJevReview(items,decisions),choices=new Map(review.map(decision=>[jevDetailKey(decision.url),decision]));
-  const known=db.db.prepare("SELECT 1 FROM workspace_records WHERE workspace_id=? AND json_extract(data,'$.url') IN (?,?) AND NOT coalesce(json_extract(data,'$.trial'),0) LIMIT 1");
+  const known=url=>{const record=db.store.workspaces.records.find(owner,url);return record&&!record.trial&&!needsCollectorReview(record);};
+  const seen=new Set(run.kind==='run'&&run.sourceUrl&&!run.recordId?db.seenListingUrls(owner,run.sourceUrl,items.flatMap(item=>[item.url,...(item.aliases??[])])):[]);
   const missing=[],deferred=new Set();
   for(const [index,item] of items.entries()){
    const key=jevDetailKey(item.url),decision=choices.get(key);
    if(decision?.decision==='defer'){deferred.add(key);continue;}
    if(!item?.collected||!item.assessment||item.pageKind==='results'||item.error)throw Error('Eksik ilan inceleme grubundan çıkarılamaz.');
    const evidence=db.jevTasks.fullEvidence(owner,scope,item.evidenceId);
-   if(decision?.decision==='reject')continue;
+   if(decision?.decision==='reject'){if(run.kind==='run'&&run.sourceUrl&&!run.recordId)db.rememberSeenListings(owner,run.sourceUrl,[item.url,...(item.aliases??[])],decision.reason??'İncelemede reddedildi.');continue;}
    if(item.assessment.decision==='mismatch'){
     const proof=item.assessment.exclusion;
     if(!(item.assessment.confidence>=JEV_TRIAGE_CONFIDENCE)||!proof||!(proof.confidence>=JEV_TRIAGE_CONFIDENCE)||!Object.hasOwn(EXCLUSION_REASONS,proof.reason)||proof.reason==='none'||proof.evidenceId!==item.evidenceId)throw Error('Uyumsuz ilan için bu ilana ait en az %85 güvenli eleme değerlendirmesi gerekli.');
-   }else if(![item.url,...(item.aliases??[])].some(url=>known.get(owner,url,evidence.url)))missing.push(index+1);
+   }else if(![item.url,...(item.aliases??[])].some(url=>seen.has(url)||known(url)||known(evidence.url)))missing.push(index+1);
   }
   if(missing.length)throw jevReviewRequired('İnceleme tamamlanmadı: uygun ilanları önce record_automation_result ile kaydet; uygun olmayanlar için review=[{item,decision:"reject",reason}], okunamayanlar için decision:"defer" gönder. Karar bekleyen item numaraları: '+missing.join(', ')+'. %85 güvenli Jev mismatch kararlarını tekrar yazma; grup onayı yeterli.');
   if(run.kind==='run'&&run.sourceUrl&&!run.recordId){
@@ -56,9 +59,14 @@ export function reviewJevBatch(db,owner,runId,taskId,batchId,decisions=[]){
    const done=new Set([...items.filter(i=>doneKeys.has(jevDetailKey(i.url))).flatMap(i=>[i.url,...(i.aliases??[])]),...search.pendingUrls.filter(url=>doneKeys.has(jevDetailKey(url)))]);
    search.pendingUrls=search.pendingUrls.filter(url=>!doneKeys.has(jevDetailKey(url)));
    search.processedUrls=[...new Set([...search.processedUrls,...done])];
-   const scanPlan=run.scanPlan?{...run.scanPlan,boundary:null,...(run.scanPlan.checkpoint?{checkpoint:{...run.scanPlan.checkpoint,pendingUrls:[...search.pendingUrls]}}:{})}:run.scanPlan;search.plan=scanPlan??search.plan;
+   if(search.cards)search.cards=Object.fromEntries(Object.entries(search.cards).filter(([url])=>search.pendingUrls.includes(url)));
+   noteExcluded(search,items.filter(i=>doneKeys.has(jevDetailKey(i.url))).flatMap(i=>{const d=choices.get(jevDetailKey(i.url));return d?.decision==='reject'?[{url:i.url,title:i.title,reason:d.reason,stage:'detail'}]:i.assessment?.decision==='mismatch'&&!known(i.url)?[{url:i.url,title:i.title,reason:i.assessment.exclusion?.reason??i.assessment.reason,confidence:i.assessment.exclusion?.confidence??i.assessment.confidence,stage:'detail'}]:[];}));
+   // A reviewed batch changes the queue, not the pages already read.
+   const kept=run.scanPlan?.boundary?.pageCap||run.scanPlan?.boundary?.known?run.scanPlan.boundary:null;
+   const scanPlan=run.scanPlan?{...run.scanPlan,boundary:kept,...(run.scanPlan.checkpoint?{checkpoint:{...run.scanPlan.checkpoint,pendingUrls:[...search.pendingUrls]}}:{})}:run.scanPlan;search.plan=scanPlan??search.plan;
    db.persistScan(owner,{...run,scanPlan,scan:withScanWork(run,work,{reason:'Jev grubu incelendi; kayıtlı ilanlar ve kanıtlı elemeler işlendi.'})});
   }
+  collectorReviewed(db,run,items,review);
   return review;
  });
 }

@@ -6,6 +6,12 @@ body:not(.automation-workspace) .automation-attention-banner { display: none; }
 .attention-announcement { color: var(--text-muted); margin: 0 0 10px; font-size: 13px; }
 .attention-list { display: grid; gap: 14px; }
 .automation-help-card { border: 1px solid var(--warning); border-left: 4px solid var(--warning); border-radius: 12px; padding: 20px 22px; background: color-mix(in srgb, var(--warning) 6%, var(--bg-raised)); }
+/* Shared site wait: cool accent and a timer glyph, distinct from amber interventions. */
+.automation-help-card[data-waiting] { border-color: color-mix(in srgb, var(--accent) 55%, transparent); border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--bg-raised)); }
+.automation-help-card[data-waiting] .automation-help-label, .automation-help-card[data-waiting] .automation-help-feedback { color: var(--accent-strong); }
+.automation-help-card[data-waiting] .attention-icon { background: var(--accent-wash); color: var(--accent-strong); font-size: 15px; }
+.automation-attention-banner[data-waiting] { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 7%, var(--bg-raised)); }
+.automation-attention-banner[data-waiting] .attention-icon { background: var(--accent-wash); color: var(--accent-strong); }
 .automation-help-heading { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
 .automation-help-label { color: var(--warning); font-size: 12px; font-weight: 650; }
 .automation-help-heading h3 { font-size: 17px; margin: 3px 0 0; }

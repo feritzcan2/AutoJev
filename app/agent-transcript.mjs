@@ -21,6 +21,13 @@ export function transcriptMessage(provider,record,nativeId,appSent=new Set()){
   return {id:String(record.uuid??record.timestamp),role:role(record.type==='assistant'?'agent':'user',body),text:body,at:record.timestamp??null};
  }
  if(provider==='codex'){
+  if(record.type==='response_item'){
+   const item=record.payload;
+   if(item?.type!=='message'||!['assistant','user'].includes(item.role)||item.channel&&!['commentary','final'].includes(item.channel)||item.phase&&!['commentary','final_answer','final'].includes(item.phase))return null;
+   const body=(Array.isArray(item.content)?item.content:[]).filter(part=>part?.type===(item.role==='assistant'?'output_text':'input_text')&&typeof part.text==='string').map(part=>part.text).join('\n').trim();
+   if(!body||item.role==='user'&&injected.test(body))return null;
+   return {id:String(item.id??`${record.timestamp}:${item.role}`),role:role(item.role==='assistant'?'agent':'user',body),text:body,at:record.timestamp??null};
+  }
   if(record.type!=='event_msg'||!['agent_message','user_message'].includes(record.payload?.type))return null;
   const body=String(record.payload.message??'').trim();if(!body)return null;
   return {id:`${record.timestamp}:${record.payload.type}`,role:role(record.payload.type==='agent_message'?'agent':'user',body),text:body,at:record.timestamp??null};
@@ -43,7 +50,7 @@ export class TranscriptReader {
   this.claudeRoot=claudeRoot??path.join(process.env.CLAUDE_CONFIG_DIR||path.join(homedir(),'.claude'),'projects');
   this.codexRoot=codexRoot??path.join(process.env.CODEX_HOME||path.join(homedir(),'.codex'),'sessions');
   this.opencodeFile=opencodeFile??path.join(process.env.XDG_DATA_HOME||path.join(homedir(),'.local','share'),'opencode','opencode.db');this.activity=null;
-  this.file=null;this.nextLookup=0;this.offset=null;this.partial='';this.discard=false;this.messages=[];this.verified=false;
+  this.file=null;this.nextLookup=0;this.offset=null;this.partial='';this.discard=false;this.messages=[];this.verified=false;this.formats=new Map();this.reading=null;
  }
  async locate(){
   if(this.provider==='codex')return locateCodex(this.codexRoot,this.nativeId);
@@ -54,7 +61,19 @@ export class TranscriptReader {
   }
   return null;
  }
- async read(){
+ read(){
+  if(!this.reading)this.reading=this.readNext().finally(()=>{this.reading=null;});
+  return this.reading;
+ }
+ append(message,format){
+  const existing=this.messages.findIndex(m=>m.id===message.id);
+  if(existing>=0){this.messages[existing]=message;return;}
+  // Older Codex versions emit both representations of the same public message.
+  const last=this.messages.at(-1),formats=last&&this.formats.get(last.id);
+  if(this.provider==='codex'&&last?.role===message.role&&last.text===message.text&&formats&&!formats.has(format)&&Math.abs(Date.parse(last.at)-Date.parse(message.at))<2000){formats.add(format);return;}
+  this.messages.push(message);this.formats.set(message.id,new Set([format]));
+ }
+ async readNext(){
   try{
    if(this.provider==='opencode')return await this.readOpenCode();
    if(!['codex','claude'].includes(this.provider))return this.messages;
@@ -73,15 +92,15 @@ export class TranscriptReader {
      if(await normalize(cwd)!==await normalize(this.cwd)){this.file=null;this.nextLookup=Number.MAX_SAFE_INTEGER;return this.messages;}
      this.verified=true;this.offset=Math.max(0,stat.size-this.chunkBytes);this.discard=this.offset>0;
     }
-    if(stat.size<this.offset){this.offset=0;this.partial='';this.messages=[];}
+    if(stat.size<this.offset){this.offset=0;this.partial='';this.messages=[];this.formats.clear();}
     const buffer=Buffer.alloc(Math.min(this.chunkBytes,stat.size-this.offset));
     const {bytesRead}=await file.read(buffer,0,buffer.length,this.offset);this.offset+=bytesRead;
     let chunk=this.partial+buffer.subarray(0,bytesRead).toString();this.partial='';
     if(this.discard){const end=chunk.indexOf('\n');if(end<0)return this.messages;chunk=chunk.slice(end+1);this.discard=false;}
     const lines=chunk.split('\n');this.partial=lines.pop();
     if(this.partial.length>this.chunkBytes){this.partial='';this.discard=true;}
-    for(const line of lines){let record;try{record=JSON.parse(line);}catch{continue;}const message=transcriptMessage(this.provider,record,this.nativeId,this.appSent);if(message)this.messages.push(message);}
-    if(this.messages.length>this.limit)this.messages=this.messages.slice(-this.limit);
+    for(const line of lines){let record;try{record=JSON.parse(line);}catch{continue;}const message=transcriptMessage(this.provider,record,this.nativeId,this.appSent);if(message)this.append(message,record.type);}
+    if(this.messages.length>this.limit){const removed=this.messages.splice(0,this.messages.length-this.limit);for(const message of removed)this.formats.delete(message.id);}
     return this.messages;
    }finally{await file.close();}
   }catch{this.file=null;this.verified=false;this.offset=null;this.partial='';return this.messages;}

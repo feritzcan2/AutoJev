@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,writeFile,appendFile,mkdir} from 'node:fs/promises';
+import {mkdtemp,writeFile,appendFile,mkdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {transcriptMessage,TranscriptReader,claudeProjectDirectory} from '../app/agent-transcript.mjs';
 import {DatabaseSync} from 'node:sqlite';
+import {AgentSessions} from '../app/agent-sessions.mjs';
 
 test('Claude assistant and user text records become chat messages; tools and sidechains do not',()=>{
  const id='11111111-1111-1111-1111-111111111111';
@@ -21,6 +22,28 @@ test('Codex agent and user messages become chat messages',()=>{
  assert.deepEqual(transcriptMessage('codex',{timestamp:'t',type:'event_msg',payload:{type:'agent_message',message:'Sırayla açıyorum.'}},'x'),{id:'t:agent_message',role:'agent',text:'Sırayla açıyorum.',at:'t'});
  assert.deepEqual(transcriptMessage('codex',{timestamp:'t2',type:'event_msg',payload:{type:'user_message',message:'devam'}},'x'),{id:'t2:user_message',role:'user',text:'devam',at:'t2'});
  assert.equal(transcriptMessage('codex',{timestamp:'t',type:'event_msg',payload:{type:'token_count'}},'x'),null);
+});
+
+test('Codex response items expose public replies without reasoning, tool output or internal channels',()=>{
+ const record={timestamp:'2026-10-05T08:00:00Z',type:'response_item',payload:{type:'message',id:'msg_reply',role:'assistant',phase:'commentary',content:[{type:'output_text',text:'Profilini inceliyorum.'}]}};
+ assert.deepEqual(transcriptMessage('codex',record,'x'),{id:'msg_reply',role:'agent',text:'Profilini inceliyorum.',at:record.timestamp});
+ for(const phase of ['final_answer',undefined])assert.equal(transcriptMessage('codex',{...record,payload:{...record.payload,phase}},'x').text,'Profilini inceliyorum.');
+ for(const patch of [{type:'reasoning'},{type:'function_call'},{role:'developer'},{channel:'analysis'},{phase:'analysis'},{content:[{type:'reasoning_text',text:'PRIVATE'}]}])assert.equal(transcriptMessage('codex',{...record,payload:{...record.payload,...patch}},'x'),null);
+});
+
+test('Codex native replies are read after app reopening, mirrored formats deduplicate and concurrent polls do not lose messages',async t=>{
+ const root=await mkdtemp(path.join(tmpdir(),'codex-chat-')),id='33333333-3333-3333-3333-333333333333',file=path.join(root,`rollout-test-${id}.jsonl`);
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ const at='2026-10-05T08:00:00.000Z',native={type:'response_item',timestamp:at,payload:{type:'message',id:'one',role:'assistant',phase:'final_answer',content:[{type:'output_text',text:'Yanıt burada.'}]}},mirror={type:'event_msg',timestamp:at,payload:{type:'agent_message',message:'Yanıt burada.'}};
+ await writeFile(file,[{type:'session_meta',payload:{id,cwd:root}},native,mirror].map(JSON.stringify).join('\n')+'\n');
+ const fallback={provider:'codex',nativeId:id,cwd:root,codexRoot:root},agents=new AgentSessions({root,data:root,createEngine:()=>{throw Error('Reading chat must not start a provider');}});
+ t.after(()=>agents.close());
+ const [a,b]=await Promise.all([agents.transcript('workspace','conversation',fallback),agents.transcript('workspace','conversation',fallback)]);
+ assert.deepEqual(a.messages,b.messages);assert.equal(a.messages.length,1);assert.equal(a.messages[0].text,'Yanıt burada.');assert.equal(agents.sessions.size,0);
+ assert.deepEqual((await agents.transcript('workspace','main')).messages,[],'The source worker has a different transcript');
+ const nextAt='2026-10-05T08:00:01.000Z';await appendFile(file,[{...mirror,timestamp:nextAt},{...native,timestamp:nextAt,payload:{...native.payload,id:'two'}}].map(JSON.stringify).join('\n')+'\n');
+ const next=await agents.transcript('workspace','conversation');assert.equal(next.messages.length,2,'A repeated answer is retained; only its opposite-format copy is hidden');
+ const other=await agents.transcript('other','conversation',{...fallback,cwd:path.join(root,'other')});assert.deepEqual(other.messages,[],'Workspace verification also applies to restored transcripts');
 });
 
 test('Claude project directories encode the workspace path the way Claude Code does',()=>{

@@ -133,6 +133,10 @@ aside nav button:hover .nav-icon { color: var(--text-secondary); }
 /* Chrome status, when shown, sits just above the footer. */
 .chrome-status { margin: auto 0 12px; font-size: 12px; background: var(--bg-raised); }
 .chrome-status:not([hidden]) + .sidebar-bottom { margin-top: 0; }
+.jev-status { margin: auto 0 8px; padding: 12px; display: grid; gap: 6px; font-size: 12px; border: 1px solid var(--danger); border-radius: 10px; background: rgba(225, 117, 126, .1); color: var(--danger); }
+.jev-status b:before { content: '●'; margin-right: 7px; }
+.jev-status small { color: var(--text-secondary); line-height: 1.5; }
+.jev-status:not([hidden]) + .chrome-status { margin-top: 0; }
 .chrome-status .chrome-profile-change{color:var(--accent);border-color:var(--border);}
 .chrome-profile-dialog{width:min(440px,calc(100vw - 32px));padding:24px;border:1px solid var(--border);border-radius:16px;background:var(--bg-raised);color:var(--text);}
 .chrome-profile-dialog form{display:block;margin:0;padding:0;border:0;max-width:none;}

@@ -27,6 +27,10 @@ export async function startToolServer({resolve,assertOwner,onHook=async()=>({acc
   if(rpc.method==='ping')return result({});
   if(rpc.method==='tools/list'){try{const value={tools:protocol.listTools?await protocol.listTools():protocol.tools};result(value);observe(grant,{kind:'tool_catalog',name:'tools/list',result:value});return;}catch(error){return reply(200,{jsonrpc:'2.0',id:rpc.id,error:{code:-32603,message:error.message}});}}
   if(rpc.method!=='tools/call')return reply(200,{jsonrpc:'2.0',id:rpc.id,error:{code:-32601,message:'Method not found'}});
+  // The client's tool timeout is only visible when it drops the connection
+  // before the answer. The workflow learns the tolerated time; the tool call
+  // itself keeps running so the next poll can collect its result.
+  const started=Date.now();res.on('close',()=>{if(!res.writableFinished)try{grant.workflow?.clientAborted?.(Date.now()-started);}catch{}});
   try{
    if(!grants.has(token))throw Error('Worker oturumu kapandı.');
    protocol=resolve(grant);const name=rpc.params?.name,args=rpc.params?.arguments??{};

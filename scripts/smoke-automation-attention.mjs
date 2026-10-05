@@ -24,6 +24,10 @@ try{
    const store=new WorkspaceDatabase(args.file),db=new AutomationStore(store),a=db.get(args.id);
    db.put({...a,sourceState:{...a.sourceState,[args.source]:{...a.sourceState[args.source],lastRunId:'new-failure'}}});store.close();
   };
+  globalThis.collectorAttentionFailure=()=>{
+   const store=new WorkspaceDatabase(args.file),db=new AutomationStore(store),a=db.get(args.id);
+   db.put({...a,sourceState:{...a.sourceState,[args.source]:{...a.sourceState[args.source],blocked:true,lastRunId:'collector-failure',lastStatus:'failed',lastResult:'Bir ilan yeniden okunamadı. Bekleyen adres korunuyor.',scan:{collector:'site-collector-review-v1'}}}});store.close();
+  };
   ipcMain.removeHandler('terminal-message');ipcMain.handle('terminal-message',async(_,id,text,worker)=>{
    globalThis.attentionActions.push({kind:'reply',id,text,worker});await new Promise(resolve=>setTimeout(resolve,200));
    if(globalThis.failAttentionReply)throw Error('Test: yanıt iletilemedi');return {};
@@ -107,5 +111,11 @@ try{
  const snapshot=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),a.id);
  assert.equal(snapshot.sources.find(s=>s.url===source).blocked,false);assert.equal(snapshot.sources.find(s=>s.url===other).lastRunAt,undefined);
  const retries=await app.evaluate(()=>globalThis.attentionActions.filter(a=>a.kind==='retry'));assert.ok(retries.every(r=>r.id===a.id&&r.source===source));
+ await app.evaluate(()=>globalThis.collectorAttentionFailure());await page.reload();
+ await page.getByRole('button',{name:'Müdahaleleri göster',exact:true}).click();await card.waitFor({state:'visible'});
+ assert.equal(await card.getByRole('button',{name:'Sekmeyi göster ↗',exact:true}).count(),0);
+ assert.equal(await card.getByRole('button',{name:'Taramaya devam et',exact:true}).isVisible(),true);
+ assert.doesNotMatch(await card.textContent(),/Chrome|İlgili sekme/);
+ await page.screenshot({path:path.join(data,'collector-attention.png'),fullPage:true});
  assert.deepEqual(errors,[]);console.log('ATTENTION_CARD_DISMISS_PERSISTENCE_NEW_FAILURE_TAB_CHOOSER_SCOPED_RETRY_PASS',data);
 }finally{await app.close();}

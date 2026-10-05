@@ -58,7 +58,9 @@ test('template labels, operation instructions and success criteria round-trip th
   assert.equal(copy.recordOperations.execute.label,label);assert.equal(copy.recordOperations.prepare.effect,'prepare');assert.equal(copy.recordOperations.verify.effect,'read');
   assert.deepEqual(copy.recordOperations,template.recordOperations);assert.equal(template.workflow[0].effect,'read');
  }
- assert.equal(reusableTemplate({...automationTemplate('custom'),recordOperations:false}).recordOperations,false);
+ const readOnly=reusableTemplate({...automationTemplate('custom'),recordOperations:false}).recordOperations;
+ for(const kind of ['prepare','execute','verify'])assert.equal(readOnly[kind],false);
+ assert.equal(readOnly.score.kind,'score','scoring stays available without outgoing operations');
  assert.equal(reusableTemplate({...automationTemplate('custom'),recordOperations:{execute:false}}).recordOperations.execute,false);
  assert.throws(()=>reusableTemplate({...automationTemplate('custom'),recordOperations:{erase:{label:'Erase'}}}),/Bilinmeyen/);
 });
@@ -92,6 +94,8 @@ test('draft preparation keeps its tab; verified submission closes the completed 
  await f.runtime.runRecord(f.id,f.item.id,'execute',{digest:prepared.digest});await settle();const run=f.launches.at(-1);
  f.db.reserve(f.id,run.id,f.item.id);f.db.observe(f.id,run.id,f.item.url,'Submitted');f.db.resolve(f.id,run.id,f.item.id,{status:'completed',evidence:'Submitted',url:f.item.url});
  await f.finish(run);assert.equal(calls.at(-1).run.id,run.id);assert.equal(calls.at(-1).options.closeTabs,true);
+ // The application is done: the earlier draft turn's tab closes too, even with filled fields.
+ assert.equal(calls.at(-1).options.keepForms,false);assert.deepEqual(calls.at(-1).options.runIds.toSorted(),[calls[0].run.id,run.id].toSorted());
 });
 
 test('exact manual approval permits only the selected draft without changing observe permissions; duplicate submission is rejected',async t=>{
@@ -169,7 +173,7 @@ test('dismissal cancels queued work and rejects foreign or already attempted rec
 test('working records and question dismissal remain available outside the latest 500 records',async t=>{
  const f=fixture(t);await f.runtime.runRecord(f.id,f.item.id,'prepare');await settle();
  const q=f.db.askQuestion(f.id,{recordId:f.item.id,text:'Old record details?'});
- for(let i=0;i<501;i++)f.db.putResult({...f.item,id:'recent-'+i,key:'recent-'+i});
+ for(let i=0;i<501;i++)f.db.putResult({...f.item,id:'recent-'+i,key:'recent-'+i,url:source+'/recent-'+i});
  const snapshot=f.db.snapshot(f.id);assert.ok(snapshot.results.some(item=>item.id===f.item.id&&item.recordAction.task.state==='running'));assert.equal(snapshot.automation.questions.find(item=>item.id===q.id).canDismissRecord,true);
 });
 
@@ -365,7 +369,7 @@ test('direct execution is explicit, record-scoped, and still requires the curren
  f.db.put({...f.db.get(f.id),mode:'auto'});
  assert.throws(()=>enqueueRecordOperation(f.runtime,f.id,f.item.id,'execute',{manual:false,direct:true}),/kullanıcı isteği/);
  await f.runtime.runRecord(f.id,f.item.id,'execute',{direct:true});await settle();const run=f.launches.at(-1);
- const other=f.db.putResult({...f.item,id:'not-assigned',key:'not-assigned'});assert.throws(()=>f.db.reserve(f.id,run.id,other.id),/ait değil/);
+ const other=f.db.putResult({...f.item,id:'not-assigned',key:'not-assigned',url:source+'/not-assigned'});assert.throws(()=>f.db.reserve(f.id,run.id,other.id),/ait değil/);
  f.db.record(f.id,run.id,{key:f.item.key,url:f.item.url,title:f.item.title,summary:'Checked',proposal:'Verified form'});
  f.db.put({...f.db.get(f.id),maxActionsPerDay:10,revision:f.db.get(f.id).revision+1});assert.throws(()=>f.db.reserve(f.id,run.id,f.item.id),/yeniden onay/);
 });

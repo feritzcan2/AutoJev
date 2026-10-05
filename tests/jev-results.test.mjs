@@ -1,6 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {navigationLink,observedPagePosition,resultLinkContext,observedNextPage,paginationScrollTarget} from '../app/jev-results.mjs';
+import {navigationLink,observedPagePosition,resultLinkContext,observedNextPage,paginationScrollTarget,resultPageControls} from '../app/jev-results.mjs';
+
+test('a results page receipt lists its dropdowns with the names they offer',()=>{
+ const page={controls:[
+  {controlId:'c1',label:'',role:'combobox',nativeSelect:true,selectedLabel:'Most relevant',options:['Most relevant','Most recent','Salary (low - high)']},
+  {controlId:'c2',label:'Region',role:'combobox',autocomplete:true,suggestions:['Berlin','Hamburg']},
+  {controlId:'c3',label:'Search',role:'button'},
+  {controlId:'c4',label:'Empty',role:'combobox',nativeSelect:true,options:[]},
+ ]};
+ assert.deepEqual(resultPageControls(page),[
+  {label:'',selected:'Most relevant',options:['Most relevant','Most recent','Salary (low - high)'],nativeSelect:true},
+  {label:'Region',options:['Berlin','Hamburg']},
+ ]);
+ assert.deepEqual(resultPageControls({}),[]);
+});
 
 const source='https://example.test/jobs/compliance?age=7';
 test('generic site chrome is navigation; filters and unusual listing routes stay candidates for Jev',()=>{
@@ -10,6 +24,8 @@ test('generic site chrome is navigation; filters and unusual listing routes stay
  assert.equal(navigationLink({url:'https://example.test/de',text:'Logo Designer'},source),false);
  assert.equal(navigationLink({url:source+'#',text:'Expand'},source),true);
  assert.equal(navigationLink({url:source+'#job/123',text:'A role'},source),false);
+ for(const link of [{url:'https://example.test/signup/talent?action=save-job:acme:role',text:'Sign up to save this job'},{url:'https://example.test/login?next=/jobs/1',text:'Log in'},{url:'https://auth.example.test/register',text:'Create a free account'},{url:'https://example.test/anmelden',text:'Anmelden'}])assert.equal(navigationLink(link,source),true,link.url);
+ for(const link of [{url:'https://example.test/jobs/signup-specialist',text:'Sign up specialist'},{url:'https://example.test/jobs/login-engineer-123',text:'Login Engineer'},{url:'https://example.test/account-manager-berlin',text:'Account Manager'}])assert.equal(navigationLink(link,source),false,link.url);
  for(const link of [{url:source+'&id=123',text:'Compliance role'},{url:'https://other.test/de',text:'Logo designer'},{url:'https://example.test/jobs/logo',text:'Logo designer'},{url:'https://example.test/jobs/123?action=facet_selected',text:'Listing'},{url:source+'&action=facet_selected%3Bage%3Bage_1',text:'A filter'},{url:'https://www.linkedin.com/jobs/view/123',text:'Bewerberformular'}])assert.equal(navigationLink(link,source),false,link.url);
 });
 test('only exact pagination controls establish page numbers; result counts are not totals',()=>{

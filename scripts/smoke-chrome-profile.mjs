@@ -19,10 +19,10 @@ try{
  await application.evaluate(async({ipcMain},url)=>{
   ipcMain.removeHandler('chrome-profiles');ipcMain.handle('chrome-profiles',()=>[{directory:'Default',name:'Personal'},{directory:'Profile 2',name:'Work'}]);
   const vm=process.getBuiltinModule('node:vm'),load=vm.runInThisContext('(url)=>import(url)',{importModuleDynamically:vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER});
-  const {BrowserTools}=await load(url);globalThis.reconnects=[];globalThis.resets=[];
-  BrowserTools.prototype.prepare=function(id){globalThis.reconnects.push({id,profile:this.options(id).profile});return {state:'ready',ready:true};};
+  const {BrowserTools}=await load(url);globalThis.reconnects=[];globalThis.resets=[];globalThis.chromeState={state:'ready',ready:true};
+  BrowserTools.prototype.prepare=function(id){globalThis.reconnects.push({id,profile:this.options(id).profile});return globalThis.chromeState;};
   BrowserTools.prototype.resetCandidate=async id=>{globalThis.resets.push(id);};
-  BrowserTools.prototype.status=()=>({state:'ready',ready:true});
+  BrowserTools.prototype.status=()=>globalThis.chromeState;
  },pathToFileURL(path.join(root,'app/browser.mjs')).href);
  await page.reload();await page.locator('.chrome-profile-change').waitFor();
  assert.equal(await page.locator('.chrome-status small').textContent(),'Personal');
@@ -47,5 +47,12 @@ try{
  await dialog.locator('select').selectOption('Profile 2');await dialog.locator('[type=submit]').click();await dialog.waitFor({state:'hidden'});
  await page.waitForFunction(()=>document.querySelector('.chrome-status small').textContent==='Work');
  assert.equal((await application.evaluate(()=>globalThis.reconnects)).at(-1).id,web.id);
- assert.deepEqual(errors,[]);console.log(`Chrome profile switch OK (jobs + web); screenshot: ${path.join(data,'profile-picker.png')}`);
+ await application.evaluate(()=>{globalThis.chromeState={state:'waiting',ready:false,message:'Seçili Chrome profili hazır değil. Açılan AutoJev penceresini öne getirip yeniden bağlan.'};});
+ const waiting=await page.evaluate(id=>window.jobloop.automationBrowser(id),web.id);
+ assert.equal(waiting.state,'waiting');assert.equal(waiting.ready,false);
+ await page.waitForFunction(()=>document.querySelector('.chrome-status small').textContent.includes('profili hazır değil'));
+ await page.screenshot({path:path.join(data,'chrome-waiting.png')});
+ await application.evaluate(()=>{globalThis.chromeState={state:'idle',ready:false};});
+ assert.equal((await page.evaluate(id=>window.jobloop.automationBrowser(id),web.id)).state,'idle');
+ assert.deepEqual(errors,[]);console.log(`Chrome profile switch and connection waiting OK (jobs + web); screenshots: ${data}`);
 }finally{await application.close();}

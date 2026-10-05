@@ -8,6 +8,7 @@ licensing option does not remove third-party license obligations.
 | --- | --- | --- |
 | TermLoop Rust engine modules, terminal-wire and terminal-surface | [feritzcan2/termloop](https://github.com/feritzcan2/termloop), `652b54d7decc84e9e380ca0f247ad6b7dd1ffe0b` | GPL-3.0-or-later; upstream also offers commercial licensing. `vendor/termloop/LICENSE` and `UPSTREAM.json` |
 | jev-ultrafast snapshot and adapted browser code | [browser-use/jev-ultrafast](https://github.com/browser-use/jev-ultrafast), `1231850a0bf1a0c0341fe408ef1668dbbfdfac46` | MIT, Copyright 2026 Browser Use. `vendor/jev-ultrafast/LICENSE` |
+| LinkedIn guest job card and posting parsing (adapted in `app/linkedin-guest-reader.mjs`) | [MadsLorentzen/ai-job-search](https://github.com/MadsLorentzen/ai-job-search), `linkedin-search` CLI | MIT, Copyright (c) 2026 Mads Lorentzen |
 | JetBrains Mono terminal font | Included through TermLoop terminal-surface | SIL Open Font License 1.1, `vendor/termloop/clients/terminal-surface/src/assets/fonts/OFL.txt` |
 
 Electron, Chromium, Node.js, xterm.js, Playwright, Model Context Protocol SDK,

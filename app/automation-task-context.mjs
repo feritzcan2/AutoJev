@@ -1,5 +1,6 @@
 import {taskHasRecord,batchScoring,recordScoredInTask} from './record-task-scope.mjs';
 import {scoringPolicy} from './scoring-policy.mjs';
+import {COLLECTOR_INSTRUCTIONS,collectorProgress} from './source-collector-worker.mjs';
 import {jevContextTasks} from './jev-tasks.mjs';
 import {scanWorkSummary,scanPlanView,scanProgressView} from './scan-work.mjs';
 import {isConversation,conversationRequest} from './workspace-conversation.mjs';
@@ -16,7 +17,7 @@ function contextRun(run){
 }
 // An answered form no longer needs its options and help texts; the answer
 // carries the facts. Open questions keep the full definition for follow-ups.
-const questionContext=q=>({...pick(q,['id','text','fields','answer','answerValues','createdAt','answeredAt','recordId','sourceUrl','taskId','resolution']),...(q.answer!=null&&Array.isArray(q.fields)?{fields:q.fields.map(f=>pick(f,['id','label','type','factKey']))}:{})});
+const questionContext=q=>({...pick(q,['id','text','fields','answer','answerValues','documents','createdAt','answeredAt','recordId','sourceUrl','taskId','resolution']),...(q.answer!=null&&Array.isArray(q.fields)?{fields:q.fields.map(f=>pick(f,['id','label','type','factKey']))}:{})});
 const previousRunContext=run=>pick(run,['id','taskId','kind','operation','recordOperation','sourceUrl','recordId','status','startedAt','finishedAt','summary','protocolReset']);
 export const conversationContextVersion=a=>createHash('sha256').update(JSON.stringify(pick(a,['revision','title','goal','criteria','instructions','facts','mode','sources','sourceSettings','referenceData','planDraft','sourceDraft','profileUpdate']))).digest('hex');
 
@@ -48,7 +49,7 @@ export function automationTaskContext(db,id,active,{section}={}){
  const savedPage=assignedRecord?db.browserEvidence.latest(active,assignedRecord.url):null;
  const source=active.sourceUrl?db.sources(id).find(s=>s.url===active.sourceUrl):null;
  const recipeInfo=source?db.sourceRecipe(id,source.url):null;
- const assignedSource=source?{...pick(source,['url','name','query','enabled','mode','intervalMinutes','trial','instructions','skill','recipe']),recipeStatus:recipeInfo.status,recipeReplay:recipeInfo.replay,...(recipeInfo.replay?{recipeGuidance:'A saved recipe reaches the results page for the current query. Start with recipeReplay.searches instead of discovering the board and run every search. If a search yields no listings, report the observed page; the app tracks recipe failures.'}:recipeInfo.status==='stale'?{recipeGuidance:'The saved recipe failed repeatedly and is stale. Discover the results page yourself and save a corrected recipe with save_source_recipe.'}:{})}:null;
+ const assignedSource=source?{...pick(source,['url','name','query','enabled','mode','intervalMinutes','trial','instructions','skill','recipe']),recipeStatus:recipeInfo.status,recipeReplay:recipeInfo.replay,...(recipeInfo.replay?{recipeGuidance:'A saved recipe reaches the results page for the current query. Start with recipeReplay.searches instead of discovering the board and run every search. If a search yields no listings, report the observed page; the app tracks recipe failures.'}:recipeInfo.status==='stale'?{recipeGuidance:'The saved recipe failed repeatedly and is stale. Discover the results page yourself and save a corrected recipe with save_source_recipe.'}:{}),...((recipeInfo.status==='candidate'||active.kind==='trial'&&recipeInfo.status!=='verified')&&recipeInfo.recipe?.notes?{recipeNotesUnverified:true,recipeNotesGuidance:'recipe.notes come from an earlier trial and are unverified. Check each claim on the page before repeating it, especially claims that a control or ordering does not exist.'}:{})}:null;
  const questions=(a.questions??[]).filter(q=>{
   if(interview)return !q.recordId&&(conversation?Boolean(q.conversation)||!q.sourceUrl:!q.conversation);
   if(q.conversation)return false;
@@ -61,18 +62,19 @@ export function automationTaskContext(db,id,active,{section}={}){
  const results=interview?db.results(id).slice(0,10).map(r=>pick(r,['id','url','title','status','trial'])):[];
  const referenceData=a.referenceData?pick(a.referenceData,['profile','applicationPolicy','ranking']):null;
  let operation=active.kind==='run'&&active.operation&&findOperation(definition,active.operation)?operationFor(definition,active.operation):null;
+ if(active.collector)operation={...operation,instructions:COLLECTOR_INSTRUCTIONS,successCriteria:'Every API page has been read and every queued listing reviewed by Jev and the agent.'};
  if(batch)operation={...operation,instructions:'Batch scoring: skip assignedRecords with scoredInThisTask=true. Score every remaining record with the current criteria.ranking and scoringPolicy, reading each listing or its Jev brief. Save record_automation_score with its itemId; use score=null for inaccessible listings. Ask missing facts with the relevant recordId and continue the other records. Use a separate read-only tab; do not alter proposals, fill or submit forms. Finish only after every assigned record has a saved score or a record-scoped question.',successCriteria:'Every assigned record has an assessment saved in this task or a record-scoped question.'};
  return {
   automation:{...pick(a,['id','templateId','title','goal','criteria','instructions','facts','status','revision','reviewedRevision','table']),mode:active.kind==='trial'?'observe':sourceMode(a,active.sourceUrl),sources:active.sources??a.sources},
   assignedSource,assignedRecord,...(batch?{assignedRecords}:{}),assignedOperation:operation,
   ...(savedPage?{savedListing:{snapshotId:savedPage.id,url:savedPage.url,observedAt:savedPage.at,totalCharacters:savedPage.text.length,instructions:'Use browser_read_part or browser_search to reuse this exact listing text for scoring. It is historical evidence; actions and availability require a current observation.'}}:{}),
   ...(definition.recordOperations?.score?{scoringPolicy:scoringPolicy(saved)}:{}),
-  jevTasks:jevContextTasks(db.jevTasks.list(id,active.taskId??active.id),active.scan?.work?.activeSearchId??'default'),jevGuidance:'Resume saved pending details with browser_jev_run collect_details before any new search; use scan_results for discovery. jevTasks lists the RAM-only helper tasks of this task; assessmentRefreshRequired means resume that task first. Final assessments and source completion remain yours.',
+  jevTasks:jevContextTasks(db.jevTasks.list(id,active.taskId??active.id),active.scan?.work?.activeSearchId??'default'),jevGuidance:active.collector?'Use collect_source_page for fresh CLI evidence and Jev triage; resume only its returned Jev task IDs for review. Final scoring belongs to the agent.':'Resume saved pending details with browser_jev_run collect_details before any new search; use scan_results for discovery. jevTasks lists the RAM-only helper tasks of this task; assessmentRefreshRequired means resume that task first. Final assessments and source completion remain yours.',
   sourceExamples:!active.recordId&&active.sourceUrl?db.results(id,{all:true}).filter(r=>r.sourceUrl===active.sourceUrl).slice(0,3).map(r=>pick(r,['url','title','status'])):[],
   template:interview?definition:{...pick(definition,['id','version','title','guidance','records','table']),recordOperations:active.recordOperation?{[active.recordOperation]:operation}:{},workflow:operation?[operation]:[]},
   questions,referenceData,messages,results,
   ...(conversation?{conversation:{independent:true,profileChanges:'draft',draftPending:Boolean(draft),instructions:'Answer the user’s current request. Other workers continue their assigned tasks. Do not restart onboarding, stop workers or change their instructions. save_automation_plan saves a proposed profile for review; it does not apply it or alter running work. Explain when a change is a draft. Only ask questions needed for the current request.'}}:{}),
-  scanProgress:scanProgressView(active),...(active.kind==='run'&&active.sourceUrl&&!active.recordId?{scanWork:scanWorkSummary(active)}:{}),...(active.scanPlan?{scanPlan:scanPlanView(active.scanPlan),scanInstructions:SOURCE_SCAN_INSTRUCTIONS}:{}),
+  scanProgress:scanProgressView(active),...(active.kind==='run'&&active.sourceUrl&&!active.recordId?{scanWork:scanWorkSummary(active)}:{}),...(active.scanPlan?{scanPlan:scanPlanView(active.scanPlan),scanInstructions:active.collector?COLLECTOR_INSTRUCTIONS:SOURCE_SCAN_INSTRUCTIONS}:{}),...(active.collector?{collector:{id:active.collector,progress:collectorProgress(active)}}:{}),
   currentRun:contextRun(active),
   ...(['site_access_response','site_access_retry'].includes(active.continuation?.reason)?{sourceRecovery:{response:active.continuation.response,instructions:(active.continuation.reason==='site_access_retry'?'The scheduled access wait expired.':'The user responded to this source access intervention.')+' Resume its retained tab and pending work. Verify the current page normally; if access is still blocked, release the source again.'}}:{}),
   ...(active.freshSource?{sourceRecovery:{instructions:'The previous access intervention expired or was dismissed. Its tabs were closed. Start a new scan at the assigned source entry; do not revive old helper IDs, pending URLs or browser history. Saved results remain available for duplicate checks.'}}:{}),

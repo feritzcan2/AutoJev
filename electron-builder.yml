@@ -5,7 +5,6 @@ directories:
   buildResources: build
 files:
   - app/**
-  - source-library/**
   - dist/**
   - vendor/jev-ultrafast/**
   - package.json

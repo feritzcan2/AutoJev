@@ -8,23 +8,33 @@ export const jobSearchTemplate={
  defaultSources:jobSearchSources,
  id:'job-search',version:2,kind:'web',title:'İş arama',icon:'↗',description:'Uygun ilanları bul, değerlendir, başvuruları hazırla ve sonuçlarını takip et.',defaultMode:'observe',
  records:{identity:'url',dismissLabel:'Başvuruyu ele',states:browserDefinition.records.states.map(state=>state.id==='completed'?{...state,label:'Başvuruldu'}:state)},
- recordOperations:{score:{label:'Puanla'},prepare:{label:'Başvuruyu hazırla',instructions:'Read the full vacancy, candidate CV and saved application rules. Inspect the actual application form. Prepare exact answers and document paths, explaining eligibility and any missing facts through record-scoped questions. Save the complete application as a proposal. Do not submit an application during preparation.'},execute:{label:'Başvur',runningLabel:'Başvuruluyor',reviewLabel:'Onayla ve başvur',successCriteria:'The employer or portal shows confirmation for this exact vacancy and candidate, or its application history lists this application. Save the observed confirmation; an Apply button click is insufficient.'}},
+ recordOperations:{prepare:{label:'Başvuruyu hazırla',instructions:'Read the full vacancy, candidate CV and saved application rules. Inspect the actual application form. Prepare exact answers and document paths, explaining eligibility and any missing facts through record-scoped questions. Save the complete application as a proposal. Do not submit an application during preparation.'},execute:{label:'Başvur',runningLabel:'Başvuruluyor',reviewLabel:'Onayla ve başvur',successCriteria:'The employer or portal shows confirmation for this exact vacancy and candidate, or its application history lists this application. Save the observed confirmation; an Apply button click is insufficient.'}},
  fields:[
   {id:'preferences',label:'İş tercihleri',question:'Hangi roller, ülkeler ve çalışma şekilleri uygun?',required:true,type:'text'},
+  {id:'location',label:'Arama konumu',question:'İlanlar hangi şehir veya ülkede aransın? (ör. Berlin, Germany)',required:false,type:'text'},
   {id:'experience',label:'Deneyim ve yetkinlikler',question:'CV ve belgelerine göre hangi deneyim ve yetkinliklerin var?',required:false,type:'text'},
   {id:'constraints',label:'Kesin şartlar',question:'Maaş, çalışma izni, dil ve başlangıç tarihi şartların neler?',required:false,type:'text'},
-  {id:'ranking',label:'Puanlama kriterleri',question:'Hangi nitelikler puanı artırır, hangi şartlar kesin? Serbest metin.',required:true,type:'text'},
-  {id:'weight_technical',label:'Teknik ağırlık (%)',question:'Teknik yetkinlik eşleşmesinin puandaki payı (varsayılan 70)',required:false,type:'number'},
-  {id:'weight_experience',label:'Deneyim ağırlığı (%)',question:'Deneyim süresi ve kıdemin payı (varsayılan 10)',required:false,type:'number'},
-  {id:'weight_role',label:'Rol ağırlığı (%)',question:'Rol ve sorumluluk eşleşmesinin payı (varsayılan 10)',required:false,type:'number'},
-  {id:'weight_preferences',label:'Tercih ağırlığı (%)',question:'Konum, çalışma şekli ve diğer tercihlerin payı (varsayılan 10)',required:false,type:'number'},
-  {id:'score_threshold',label:'Başvuru alt puanı',question:'Otomatik başvuru için en düşük puan, 1–100 (varsayılan 60)',required:false,type:'number'},
   {id:'application_policy',label:'Başvuru kuralları',question:'Başvurularda hangi şartlara ve onay tercihlerine uyulmalı?',required:false,type:'text'}
  ],
  table:{title:'Başvuru akışı',columns:[{key:'source',label:'Kaynak',type:'text'},{key:'title',label:'Pozisyon',type:'text'},{key:'company',label:'Şirket',type:'text'},{key:'location',label:'Konum',type:'text'},{key:'score',label:'Uygunluk puanı',type:'number'}]},
  steps:['Profili ve CV belgelerini incele','Güncel ilanları bul ve uygunluğunu değerlendir','Başvuru belgelerini ve cevaplarını hazırla','Yetki kapsamında başvur ve sonucu doğrula'],
- guidance:`Setup: agree on scoring criteria with the user before setup review. Read the CV and preferences, propose the qualitative rubric for criteria.ranking, the four weight fields (weight_technical, weight_experience, weight_role, weight_preferences; integers adding up to 100) and score_threshold (1–100) with save_automation_plan. Explain the 0–100 scale and ask about hard constraints. Recommendations stay drafts until the user confirms. Later criteria changes go through save_automation_plan while preserving the other fields; existing records need manual rescoring.
-Scoring: before saving each new production listing, read its detail (read_jev_brief first) and send score (integer 0–100 following criteria.ranking and scoringPolicy.instructions) and optional scoreReason in record_automation_result. Preserve mandatory skills; distinguish possible home office from confirmed full remote, and site salary estimates from employer offers. If details are inaccessible, save score=null with the reason. Research and trial samples get no score. Never save an unassessed listing for another worker to score. If the workspace has no saved rubric, ask the user to define criteria.ranking first.
-Search and records: use the saved preferences and documents, including the CV, to find current listings. Record exact listing URLs, company, role, location, verified requirements and the explained score. Follow criteria.ranking and criteria.application_policy, including thresholds and consent decisions; below-threshold or missing scores never qualify for automatic applications. Current saved criteria take precedence over archived referenceData. Never invent experience, qualifications, language skills, immigration status, salary, consent or personal facts. Read the application form and required documents before preparing a complete proposal; ask the user through workspace questions when a fact or document is missing. Save prepared documents under documents/ and link them to the record. Check existing records and submission evidence before acting; never repeat a completed or uncertain submission, and verify an uncertain result without resubmitting. Record the attempt before submitting and save fresh confirmation afterwards. Report inaccessible or expired listings honestly. Resume saved scan progress and do not skip result pages. Save in-scope low-fit and uncertain findings with their scores; thresholds control qualification, not whether a finding is recorded.
-Source discovery: applicant-tracking vendor homepages are not job boards; the actual listings live on employer boards hosted by the vendor. Use managed-browser web searches limited to the relevant host plus the saved role and location preferences, and existing result URLs as seeds. Follow observed employer boards and inspect current vacancies. A redirecting vendor root is neither a completed search nor a reason to remove the source. Run browser_jev_run scan_results for each query; the pending queue tracks the remaining work. Document the actual coverage.`,
+ guidance:`## Setup
+1. Ask for the CV and explain the "Belge ekle" control. Ask for target roles, countries and work modes. Save the main search place in criteria.location as job sites spell it (for example "Berlin, Germany"); recipes fill {location} with it.
+2. Build the criteria.ranking proposal from technical skills, experience, role fit and work preferences, with weights that add up to 100. Ask about hard constraints such as salary, work permit, language and start date.
+
+## Assessing listings
+- Record the exact listing URL, company, role, location and verified requirements.
+- Direct experience counts more than partial or transferable skills. The employer's branding or industry alone does not make a role match the target field. A title alone does not prove a seniority mismatch.
+- Required skills, language and work permit are mandatory conditions only when the listing says so.
+- Possible home office is not confirmed full remote. A site salary estimate is not an employer offer.
+- Never invent experience, qualifications, language skills, immigration status, salary, consent or personal facts.
+- Current saved criteria take precedence over archived referenceData.
+
+## Applications
+- Follow criteria.application_policy for consent and approval decisions.
+- Save prepared documents such as cover letters under documents/ and list them in the proposal.
+
+## Source discovery
+- template.defaultSources lists the starting sources. Sources without countries are already in the workspace. Sources with countries serve only those countries (ISO codes): propose the ones matching the user's target countries with save_automation_plan, keeping the existing sources. Adding one keeps its saved recipe and instructions.
+`,
 };

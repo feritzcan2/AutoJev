@@ -187,7 +187,7 @@ test('an answer after app reopening resumes the source conversation with searche
  f.db.observe(f.id,first.run.id,url,text,[nextUrl,detail],{tabId:'retained'});
  f.db.reportPage(f.id,first.run.id,{url,currentPage:7,totalPages:8,evidence:'Page 7 of 8',at:f.db.now()});
  f.db.saveScanProgress(f.id,first.run.id,{pendingUrls:[nextUrl,detail],processedUrls:[url],reason:'Read remaining details and page 8',cursor:'EXACT+cursor/7='},{url,text});
- const item=f.db.record(f.id,first.run.id,{url:url+'/saved',title:'Already checked',summary:'Verified listing'});
+ const item=f.db.record(f.id,first.run.id,{url:url+'/saved',title:'Already checked',summary:'Verified listing',assessment:{score:70}});
  const question=f.db.askQuestion(f.id,{text:'Which category next?'},{runId:first.run.id});
  const saved=f.db.run(first.run.id);
  await f.finish(first,'blocked');f.advance(24*60*60000);f.reopen();
@@ -229,7 +229,7 @@ for(const provider of ['claude','codex','opencode'])for(const crash of [false,tr
 
 for(const provider of ['claude','codex','opencode'])test(`${provider}: a record answer after restart resumes the asking conversation and preserves its form`,async t=>{
  const f=await fixture(t,provider),source=await f.start();
- const item=f.db.record(f.id,source.run.id,{url:sources[0]+'/one',title:'Observed item',summary:'Saved facts'});await f.finish(source);
+ const item=f.db.record(f.id,source.run.id,{url:sources[0]+'/one',title:'Observed item',summary:'Saved facts',assessment:{score:70}});await f.finish(source);
  const queueRecord=()=>f.store.workspaces.tasks.enqueue(f.id,{operation:'record-prepare',recordOperation:'prepare',recordId:item.id,sourceUrl:sources[0],lockKey:'record:'+item.id,request:{manual:true,revision:f.db.get(f.id).revision}});
  const first=await f.start(sources[0],'main',queueRecord().id),tab={tabId:'retained-form',url:'https://forms.example/apply?id=one#details'};
  f.db.putRun({...f.db.run(first.run.id),resumeContext:tab});

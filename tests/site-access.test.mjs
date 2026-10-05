@@ -4,7 +4,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {mkdtemp,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {SiteAccess,accessBarrier,retryAfterTime} from '../app/site-access.mjs';
+import {SiteAccess,accessBarrier,retryAfterTime,networkFailure} from '../app/site-access.mjs';
 import {JevBrowser} from '../app/jev-browser.mjs';
 const url='https://www.kleinanzeigen.de/list',minute=60000;
 
@@ -99,5 +99,25 @@ test('a site that rate-limited recently is paced between navigations; other site
   gate.acknowledge([gate.status(url)]);assert.equal(gate.status(url),null);assert.equal(gate.pace(url),4000,'a user answer clears the wait, not the pacing');
   now+=7*60*minute;assert.equal(gate.pace(url),0,'pacing expires hours after the last incident');
   const fresh=new SiteAccess(db,{now:()=>now});gate.block(url,'verification');assert.ok(fresh.pace(url)>=0,'a new process derives pacing from the saved incident');
+ }finally{db.close();}
+});
+
+test('repeated transport failures across a site start a shared wait; one address or a success does not',()=>{
+ const db=new DatabaseSync(':memory:');let now=100000;const gate=new SiteAccess(db,{now:()=>now});
+ const h2=Object.assign(Error('net::ERR_HTTP2_PROTOCOL_ERROR at https://www.stepstone.de/x'),{});
+ try{
+  assert.equal(gate.unreachable(url,Error('Timeout 20000ms exceeded')),null,'a timeout alone is not a transport failure');
+  assert.equal(gate.unreachable(url,Error('net::ERR_ABORTED')),null,'an interrupted navigation is not an outage');
+  for(let i=0;i<4;i++)assert.equal(gate.unreachable(url,h2),null,'the same address never blocks the site');
+  gate.failures.clear();
+  assert.equal(gate.unreachable(url,h2),null);now+=1000;assert.equal(gate.unreachable(url+'?page=2',h2),null);
+  now+=1000;gate.complete(url+'?page=3',null,{status:200});
+  assert.equal(gate.unreachable(url+'?page=4',h2),null,'a success in between resets the count');
+  now+=1000;assert.equal(gate.unreachable(url+'?page=5',h2),null);
+  now+=1000;const wait=gate.unreachable(url+'?page=6',h2);
+  assert.equal(wait.reason,'unreachable');assert.equal(wait.attempts,1);assert.equal(wait.retryAt,now+5*minute);assert.match(wait.message,/ulaşılamaması/);
+  assert.throws(()=>gate.begin(url),error=>error.code==='SITE_WAIT');
+  now=wait.retryAt;const token=gate.begin(url);assert.equal(gate.complete(url,token,{status:200}),null);assert.equal(gate.status(url),null,'a successful probe recovers the site');
+  assert.ok(networkFailure(h2));assert.equal(networkFailure(Error('Navigation failed')),false);
  }finally{db.close();}
 });

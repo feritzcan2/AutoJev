@@ -18,6 +18,6 @@ export async function readOpenCodeFailure({nativeId,cwd,since=0,file=path.join(p
   if(message.role!=='assistant'||!message.time?.completed||!error||error.name==='MessageAbortedError'||error.data?.isRetryable===true)return null;
   const code=Number(error.data?.statusCode),unsupported=/content part type ["']file["'] is not supported/i.test(error.data?.message??'');
   return {messageId:row.id,at:message.time.completed,kind:unsupported?'unsupported_file':'provider_error',
-   summary:unsupported?'Model PDF dosya ekini kabul etmedi. CV, read_scoring_profile aracıyla metin olarak okunmalı. Görev durduruldu; yeniden deneme yeni bir oturum açacak.':`Model sağlayıcısı isteği tamamlayamadı${Number.isInteger(code)&&code>=400&&code<=599?` (HTTP ${code})`:''}. Görev durduruldu; agent terminalindeki hatayı kontrol et.`};
+   summary:unsupported?'Model PDF dosya ekini kabul etmedi. Belgeler read_scoring_profile aracıyla metin olarak okunmalı. Görev durduruldu; yeniden deneme yeni bir oturum açacak.':`Model sağlayıcısı isteği tamamlayamadı${Number.isInteger(code)&&code>=400&&code<=599?` (HTTP ${code})`:''}. Görev durduruldu; agent terminalindeki hatayı kontrol et.`};
  }catch{return null;}finally{db?.close();}
 }

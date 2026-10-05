@@ -4,6 +4,7 @@ const pick=(value,keys)=>Object.fromEntries(keys.filter(key=>value[key]!==undefi
 // The saved record remains authoritative, including when a protected existing
 // record was returned unchanged. Full reads and action guards are unchanged.
 export function recordReceipt(record){
+ if(record.skipped)return {...pick(record,['saved','skipped','reason','key','url','score','saveThreshold','message']),next:'This finding was processed without creating a record. Do not retry saving it. Acknowledge its Jev batch and continue.'};
  return {...pick(record,['id','automationId','key','url','actionUrl','sourceUrl','title','status','state','workflowState','operationState','duplicate','trial','sampleKind','revision','digest','approvedDigest','requiresReview','attemptedAt','completedAt','updatedAt']),
   ...(record.assessment?{assessment:pick(record.assessment,['status','score','scoringVersion','eligibility','eligibilityReason','revision','scoredAt','gaps','uncertainties'])}:{}),
   hasProposal:Boolean(record.proposal),hasEvidence:Boolean(record.evidence||record.proof),

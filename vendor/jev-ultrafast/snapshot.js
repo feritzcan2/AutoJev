@@ -24,6 +24,16 @@
   const safe = e => !['password','file','hidden'].includes(e.type);
   const visible = e => !closest(e,'[aria-hidden="true"],[inert]') &&
     e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+  // A transparent native select laid over a styled caption still receives the
+  // pointer and is operated by value, never by a click on its pixels. Treat it
+  // as a control when it is not hidden by CSS and, while in view, a hit at its
+  // center lands on the select itself rather than on a widget covering it.
+  const operableSelect = e => {
+    if (e.tagName!=='SELECT' || closest(e,'[aria-hidden="true"],[inert]') || !e.checkVisibility({checkVisibilityCSS:true}) || getComputedStyle(e).pointerEvents==='none') return false;
+    const r=e.getBoundingClientRect();if (r.width<=1 || r.height<=1) return false;
+    if (r.bottom<=0 || r.right<=0 || r.top>=innerHeight || r.left>=innerWidth) return true;
+    return hitAt(Math.max(0,r.left)+(Math.min(innerWidth,r.right)-Math.max(0,r.left))/2,Math.max(0,r.top)+(Math.min(innerHeight,r.bottom)-Math.max(0,r.top))/2)===e;
+  };
   const inView = e => {
     const r=e.getBoundingClientRect();
     return visible(e) && r.width>1 && r.height>1 && r.bottom>0 && r.right>0 && r.top<innerHeight && r.left<innerWidth;
@@ -53,7 +63,7 @@
     if (e.tagName==='INPUT' && ['checkbox','radio'].includes(e.type))
       return labelsFor(e)[0] || (visible(e)?e:null);
     if(!visible(e)){const combo=cache.combo(e);if(combo&&visible(combo.control))return combo.control;}
-    return visible(e)?e:null;
+    return visible(e)||operableSelect(e)?e:null;
   };
   cache.target=e=>{
     if (!cache.scrollTarget(e)) return null;
@@ -232,7 +242,7 @@
     }
   }
   cache.controlGuard=e=>{
-    if (!e?.isConnected || !safe(e) || (!visible(e)&&!cache.scrollTarget(e))) return null;
+    if (!e?.isConnected || !safe(e) || (!visible(e)&&!cache.scrollTarget(e)&&!operableSelect(e))) return null;
     return [performance.timeOrigin,location.href,identity(e),e.tagName,e.type,role(e),choiceLabel(e,cache.choice(e)),
       e.value??null,e.checked??null,e.matches(':disabled'),!!closest(e,'[aria-disabled="true"],[inert]'),e.readOnly??null,
       e.required??null,e.form?identity(e.form):null,e.form?.action??null,
@@ -247,6 +257,9 @@
     const node=identity(e);control_guards[node]=guard;
     controls.push({node,...fieldContext(e),label:choiceLabel(e,choice),role:rname,value:e.value??'',required:fieldContext(e)?.required??(e.required?true:null),...(choice?{choice}:{}),
       visible:!!cache.clickPoint(e),nativeSelect:e.tagName==='SELECT',optionCount:e.options?.length,
+      // Option names let the agent find a select by what it offers (a date
+      // order, a region) even when the select has no label of its own.
+      ...(e.tagName==='SELECT'?{selectedLabel:e.selectedOptions[0]?.label??'',options:[...e.options].slice(0,12).map(o=>o.label)}:{}),
       ...(cache.autocomplete(e)?{autocomplete:true,selectedLabels:cache.autocomplete(e).selectedLabels,suggestions:cache.autocomplete(e).options.map(o=>o.label).slice(0,20)}:{})});
     if(controls.length>=80)break;
   }

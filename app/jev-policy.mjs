@@ -50,6 +50,13 @@ export function validateChoice(answer,choices){
   if(probabilities[answer.choice]<Math.max(...values)-1e-6)invalid('seçilen seçenek en yüksek olasılığa sahip değil');
   return answer;
 }
+// Last TypeSafe HTTP failure. The key is app-wide, so every workspace shows it.
+export const jevProvider={issue:null,changed:()=>{}};
+function providerResponse(response){
+  const issue=response.ok?null:{status:response.status,at:Date.now()};
+  if(issue?.status===jevProvider.issue?.status)return;
+  jevProvider.issue=issue;jevProvider.changed();
+}
 export async function askJev(state,questions,{apiKey,model='jev-latest',fetchImpl=fetch,signal}={}){
   if(!apiKey?.trim())throw Error('Jev için TypeSafe API anahtarı gerekli.');
   const started=Date.now(),answers={},usage={input_tokens:0,output_tokens:0};let pending=questions;
@@ -58,6 +65,7 @@ export async function askJev(state,questions,{apiKey,model='jev-latest',fetchImp
   for(let attempt=0;attempt<2;attempt++){
     signal?.throwIfAborted();
     const response=await fetchImpl('https://api.typesafe.ai/v1/systemone',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiKey}`},body:JSON.stringify({model,state,questions:pending}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(15000)]):AbortSignal.timeout(15000)});
+    providerResponse(response);
     if(!response.ok)throw Error(`TypeSafe HTTP ${response.status}; Jev görevi ilerletilmedi.`);
     let result;try{result=await response.json();}catch{throw Error('Jev yanıtı JSON olarak okunamadı; işlem yapılmadı.');}
     for(const key of Object.keys(usage))usage[key]+=Number.isSafeInteger(result.usage?.[key])&&result.usage[key]>=0?result.usage[key]:0;
@@ -84,6 +92,7 @@ export async function chooseJev(page,goal,history,{apiKey,model='jev-latest',fet
   for(const [operation,candidates] of Object.entries(targets))questions[operation.toLowerCase()+'_target']={type:'choice',criteria:Object.fromEntries(Object.entries(candidates).map(([index,a])=>[index,{element:`[${index}] ${a.label}`,current_value:a.current_value??a.value??'',...fields(a,['role','checked','selected','expanded','pressed','choice'])}])),instructions:{goal,operation,rules:[NEXT_ACTION,TARGET]}};
   const started=Date.now();let response;
   try{response=await fetchImpl('https://api.typesafe.ai/v1/systemone',{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${apiKey}`},body:JSON.stringify({model,state:{page:fields(page,['url','title','text']),elements,recent_actions:history.slice(-10).map(h=>fields(h,['action','kind','text','page_changed']))},questions}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(25000)]):AbortSignal.timeout(25000)});}catch{throw Error('Jev bağlantısı tamamlanamadı; tarayıcıda işlem yapılmadı.');}
+  providerResponse(response);
   if(!response.ok)throw Error(`TypeSafe HTTP ${response.status}; tarayıcıda işlem yapılmadı.`);
   let result;try{result=await response.json();}catch{throw Error('Jev yanıtı okunamadı; işlem yapılmadı.');}
   const operation=validateChoice(result.answers?.operation,operations),group=targets[operation.choice];

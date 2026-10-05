@@ -28,7 +28,7 @@ test('template-free custom automations enforce source coverage too',async t=>{
 test('source coverage is required and partial work cannot voluntarily rotate agents',async t=>{
  const {db,id,runtime,launches,workflow}=fixture(t);await runtime.runOnce(id);await settle();const run=launches[0],flow=workflow(run);
  await reportPage(flow,id,run,1);
- for(let n=0;n<2;n++)db.record(id,run.id,{url:'https://homes.test/listing/'+n,title:'Result',summary:'Observed'});
+ for(let n=0;n<2;n++)db.record(id,run.id,{url:'https://homes.test/listing/'+n,title:'Result',summary:'Observed',assessment:{score:70}});
  await assert.rejects(flow.call(id,run.id,'finish_automation_run',{status:'completed',summary:'Two found'}),/Tarama kapsamı gerekli/);
  await assert.rejects(flow.call(id,run.id,'finish_automation_run',{status:'completed',summary:'Done',scan:{complete:true,pendingUrls:[second],reason:'Page two remains',evidenceUrl:source}}),/Bekleyen/);
  await assert.rejects(flow.call(id,run.id,'finish_automation_run',{status:'completed',summary:'Stop here',scan:{complete:false,pendingUrls:[second],reason:'More remain',evidenceUrl:source}}),/Süre veya adım sınırı yok/);

@@ -40,7 +40,7 @@ test('write receipts preserve protected state and review requirements without ec
 });
 
 test('actual writes return a receipt; exact large records remain readable and protected rediscovery preserves proof',async t=>{
- const f=fixture(t),input={key:f.urls[0],url:f.urls[0],title:'Role',summary:'Full requirements. '.repeat(300).trim()};
+ const f=fixture(t),input={key:f.urls[0],url:f.urls[0],title:'Role',summary:'Full requirements. '.repeat(300).trim(),score:70};
  const receipt=await f.call('record_automation_result',input),saved=f.db.result(f.id,receipt.id);
  assert.equal(receipt.status,'found');assert.equal(receipt.hasProposal,false);assert.equal(receipt.summary,undefined);
  assert.deepEqual(await full(f,'get_automation_result',{itemId:receipt.id}),saved);
