@@ -6,116 +6,289 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
-const require=createRequire(import.meta.url),{_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
-const data=await mkdtemp(path.join(tmpdir(),'loop-attention-ui-')),file=path.join(data,'jobloop.sqlite'),store=new WorkspaceDatabase(file),db=new AutomationStore(store);
-const source='https://homes.example/list',other='https://other.example/list',url='https://homes.example/detail/2';
-const a=db.create('housing',{title:'Berlin ev arama',goal:'Berlin’de uygun evleri bul',criteria:{location:'Berlin',budget:'2000',requirements:'2 oda'},sources:[source,other],browserMode:'jev'});
-db.review(a.id);const trial=db.begin(a.id,'trial');for(const address of [source,other])db.observe(a.id,trial.id,address,'Actual listings');db.finish(a.id,trial.id,'completed','Ready');db.enable(a.id);
-db.put({...db.get(a.id),sourceState:{[source]:{blocked:true,lastStatus:'blocked',lastResult:'CAPTCHA doğrulaması gerekiyor. Açık sekmede “Ben robot değilim” doğrulamasını tamamla, ardından devam et.',blocker:{url,tabId:'captcha-tab',workerId:'main'},nextRunAt:null},[other]:{blocked:false,nextRunAt:Date.now()+3600000}}});store.close();
-const env={...process.env,JOBLOOP_DATA_DIR:data};delete env.ELECTRON_RUN_AS_NODE;
-const app=await electron.launch({executablePath:require('electron'),args:[process.cwd()],env});
-try{
- const page=await app.firstWindow(),errors=[];page.on('pageerror',error=>errors.push(error.message));
- await app.evaluate(async({ipcMain},args)=>{
-  const vm=process.getBuiltinModule('node:vm'),load=vm.runInThisContext('(url)=>import(url)',{importModuleDynamically:vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER});
-  const {WorkspaceDatabase}=await load(args.store),{AutomationStore}=await load(args.automationStore);
-  globalThis.attentionActions=[];globalThis.attentionTabs=[{tabId:'captcha-tab',url:args.url,sourceUrl:args.source}];globalThis.failAttentionRetry=true;globalThis.failAttentionReply=true;
-  globalThis.repeatAttentionFailure=()=>{
-   const store=new WorkspaceDatabase(args.file),db=new AutomationStore(store),a=db.get(args.id);
-   db.put({...a,sourceState:{...a.sourceState,[args.source]:{...a.sourceState[args.source],lastRunId:'new-failure'}}});store.close();
-  };
-  globalThis.collectorAttentionFailure=()=>{
-   const store=new WorkspaceDatabase(args.file),db=new AutomationStore(store),a=db.get(args.id);
-   db.put({...a,sourceState:{...a.sourceState,[args.source]:{...a.sourceState[args.source],blocked:true,lastRunId:'collector-failure',lastStatus:'failed',lastResult:'Bir ilan yeniden okunamadı. Bekleyen adres korunuyor.',scan:{collector:'site-collector-review-v1'}}}});store.close();
-  };
-  ipcMain.removeHandler('terminal-message');ipcMain.handle('terminal-message',async(_,id,text,worker)=>{
-   globalThis.attentionActions.push({kind:'reply',id,text,worker});await new Promise(resolve=>setTimeout(resolve,200));
-   if(globalThis.failAttentionReply)throw Error('Test: yanıt iletilemedi');return {};
+const require = createRequire(import.meta.url),
+  {_electron: electron} = createRequire(require.resolve('@playwright/mcp/package.json'))(
+    'playwright',
+  );
+const data = await mkdtemp(path.join(tmpdir(), 'loop-attention-ui-')),
+  file = path.join(data, 'jobloop.sqlite'),
+  store = new WorkspaceDatabase(file),
+  db = new AutomationStore(store);
+const source = 'https://homes.example/list',
+  other = 'https://other.example/list',
+  url = 'https://homes.example/detail/2';
+const a = db.create('housing', {
+  title: 'Berlin ev arama',
+  goal: 'Berlin’de uygun evleri bul',
+  criteria: {location: 'Berlin', budget: '2000', requirements: '2 oda'},
+  sources: [source, other],
+  browserMode: 'jev',
+});
+db.review(a.id);
+const trial = db.begin(a.id, 'trial');
+for (const address of [source, other]) db.observe(a.id, trial.id, address, 'Actual listings');
+db.finish(a.id, trial.id, 'completed', 'Ready');
+db.enable(a.id);
+db.put({
+  ...db.get(a.id),
+  sourceState: {
+    [source]: {
+      blocked: true,
+      lastStatus: 'blocked',
+      lastResult:
+        'CAPTCHA doğrulaması gerekiyor. Açık sekmede “Ben robot değilim” doğrulamasını tamamla, ardından devam et.',
+      blocker: {url, tabId: 'captcha-tab', workerId: 'main'},
+      nextRunAt: null,
+    },
+    [other]: {blocked: false, nextRunAt: Date.now() + 3600000},
+  },
+});
+store.close();
+const env = {...process.env, JOBLOOP_DATA_DIR: data};
+delete env.ELECTRON_RUN_AS_NODE;
+const app = await electron.launch({
+  executablePath: require('electron'),
+  args: [process.cwd()],
+  env,
+});
+try {
+  const page = await app.firstWindow(),
+    errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await app.evaluate(
+    async ({ipcMain}, args) => {
+      const vm = process.getBuiltinModule('node:vm'),
+        load = vm.runInThisContext('(url)=>import(url)', {
+          importModuleDynamically: vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER,
+        });
+      const {WorkspaceDatabase} = await load(args.store),
+        {AutomationStore} = await load(args.automationStore);
+      globalThis.attentionActions = [];
+      globalThis.attentionTabs = [{tabId: 'captcha-tab', url: args.url, sourceUrl: args.source}];
+      globalThis.failAttentionRetry = true;
+      globalThis.failAttentionReply = true;
+      globalThis.repeatAttentionFailure = () => {
+        const store = new WorkspaceDatabase(args.file),
+          db = new AutomationStore(store),
+          a = db.get(args.id);
+        db.put({
+          ...a,
+          sourceState: {
+            ...a.sourceState,
+            [args.source]: {...a.sourceState[args.source], lastRunId: 'new-failure'},
+          },
+        });
+        store.close();
+      };
+      globalThis.collectorAttentionFailure = () => {
+        const store = new WorkspaceDatabase(args.file),
+          db = new AutomationStore(store),
+          a = db.get(args.id);
+        db.put({
+          ...a,
+          sourceState: {
+            ...a.sourceState,
+            [args.source]: {
+              ...a.sourceState[args.source],
+              blocked: true,
+              lastRunId: 'collector-failure',
+              lastStatus: 'failed',
+              lastResult: 'Bir ilan yeniden okunamadı. Bekleyen adres korunuyor.',
+              scan: {collector: 'site-collector-review-v1'},
+            },
+          },
+        });
+        store.close();
+      };
+      ipcMain.removeHandler('terminal-message');
+      ipcMain.handle('terminal-message', async (_, id, text, worker) => {
+        globalThis.attentionActions.push({kind: 'reply', id, text, worker});
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        if (globalThis.failAttentionReply) throw Error('Test: yanıt iletilemedi');
+        return {};
+      });
+      ipcMain.removeHandler('workspace-tabs');
+      ipcMain.handle('workspace-tabs', () => globalThis.attentionTabs);
+      ipcMain.removeHandler('focus-workspace-tab');
+      ipcMain.handle('focus-workspace-tab', (_, id, tabId) => {
+        globalThis.attentionActions.push({kind: 'focus', id, tabId});
+        return {focused: true};
+      });
+      ipcMain.removeHandler('automation-source-run');
+      ipcMain.handle('automation-source-run', (_, id, source) => {
+        globalThis.attentionActions.push({kind: 'retry', id, source});
+        if (globalThis.failAttentionRetry) throw Error('Test: kaynak yeniden başlatılamadı');
+        const store = new WorkspaceDatabase(args.file),
+          db = new AutomationStore(store),
+          a = db.get(id);
+        db.put({
+          ...a,
+          sourceState: {
+            ...a.sourceState,
+            [source]: {
+              ...a.sourceState[source],
+              blocked: false,
+              lastStatus: 'completed',
+              nextRunAt: Date.now() + 3600000,
+            },
+          },
+        });
+        store.close();
+        return {};
+      });
+    },
+    {
+      id: a.id,
+      file,
+      source,
+      url,
+      store: pathToFileURL(path.resolve('app/workspace-database.mjs')).href,
+      automationStore: pathToFileURL(path.resolve('app/automation-store.mjs')).href,
+    },
+  );
+  await page.locator('.automation-attention-banner').waitFor({state: 'visible'});
+  assert.equal(await page.locator('#agent-nav-status').textContent(), '1 müdahale');
+  await page.getByRole('button', {name: 'Müdahaleleri göster', exact: true}).click();
+  const card = page.locator('.automation-help-card');
+  await card.waitFor({state: 'visible'});
+  assert.match(await card.textContent(), /CAPTCHA/);
+  await card.getByRole('button', {name: 'Sekmeyi göster ↗', exact: true}).click();
+  assert.deepEqual(await app.evaluate(() => globalThis.attentionActions[0]), {
+    kind: 'focus',
+    id: a.id,
+    tabId: 'captcha-tab',
   });
-  ipcMain.removeHandler('workspace-tabs');ipcMain.handle('workspace-tabs',()=>globalThis.attentionTabs);
-  ipcMain.removeHandler('focus-workspace-tab');ipcMain.handle('focus-workspace-tab',(_,id,tabId)=>{globalThis.attentionActions.push({kind:'focus',id,tabId});return {focused:true};});
-  ipcMain.removeHandler('automation-source-run');ipcMain.handle('automation-source-run',(_,id,source)=>{
-   globalThis.attentionActions.push({kind:'retry',id,source});if(globalThis.failAttentionRetry)throw Error('Test: kaynak yeniden başlatılamadı');
-   const store=new WorkspaceDatabase(args.file),db=new AutomationStore(store),a=db.get(id);
-   db.put({...a,sourceState:{...a.sourceState,[source]:{...a.sourceState[source],blocked:false,lastStatus:'completed',nextRunAt:Date.now()+3600000}}});store.close();return {};
+  await app.evaluate(() => {
+    globalThis.attentionTabs = [];
   });
- },{id:a.id,file,source,url,store:pathToFileURL(path.resolve('app/workspace-database.mjs')).href,automationStore:pathToFileURL(path.resolve('app/automation-store.mjs')).href});
- await page.locator('.automation-attention-banner').waitFor({state:'visible'});
- assert.equal(await page.locator('#agent-nav-status').textContent(),'1 müdahale');
- await page.getByRole('button',{name:'Müdahaleleri göster',exact:true}).click();
- const card=page.locator('.automation-help-card');await card.waitFor({state:'visible'});assert.match(await card.textContent(),/CAPTCHA/);
- await card.getByRole('button',{name:'Sekmeyi göster ↗',exact:true}).click();
- assert.deepEqual(await app.evaluate(()=>globalThis.attentionActions[0]),{kind:'focus',id:a.id,tabId:'captcha-tab'});
- await app.evaluate(()=>{globalThis.attentionTabs=[];});
- await card.getByRole('button',{name:'Sekmeyi göster ↗',exact:true}).click();
- await card.getByText(/İlgili açık sekme bulunamadı/).waitFor();
- await app.evaluate((_,source)=>{globalThis.attentionTabs=[{tabId:'one',url:'https://auth.example/login',sourceUrl:source},{tabId:'two',url:'https://homes.example/detail/3',sourceUrl:source}];},source);
- await card.getByRole('button',{name:'Sekmeyi göster ↗',exact:true}).click();
- await card.getByRole('button',{name:'https://auth.example/login',exact:true}).click();
- assert.equal(await app.evaluate(()=>globalThis.attentionActions.at(-1).tabId),'one');
- await card.getByRole('button',{name:'Yanıtla',exact:true}).click();
- const reply=card.getByRole('textbox',{name:'Agent’a ne yapması gerektiğini yaz'}),send=card.getByRole('button',{name:'Gönder',exact:true});
- assert.equal(await send.isDisabled(),true);
- await reply.fill('   ');assert.equal(await send.isDisabled(),true);
- await reply.fill('Bu kaynağı şimdilik atla, diğer kaynaklarla devam et.');
- await send.click();assert.equal(await send.isDisabled(),true);
- await card.getByText(/yanıt iletilemedi/).waitFor();
- assert.equal(await reply.inputValue(),'Bu kaynağı şimdilik atla, diğer kaynaklarla devam et.');
- await app.evaluate(()=>{globalThis.failAttentionReply=false;});
- await page.screenshot({path:path.join(data,'attention-reply.png'),fullPage:true});
- await send.click();await card.getByText('Yanıtın agente iletildi.',{exact:true}).waitFor();
- assert.equal(await reply.isVisible(),false);
- const replies=await app.evaluate(()=>globalThis.attentionActions.filter(a=>a.kind==='reply'));
- assert.equal(replies.length,2);assert.equal(replies[1].id,a.id);assert.equal(replies[1].worker,'main');
- assert.ok(replies[1].text.includes(source));assert.ok(replies[1].text.includes('CAPTCHA'));
- assert.ok(replies[1].text.endsWith('Kullanıcının talimatı:\nBu kaynağı şimdilik atla, diğer kaynaklarla devam et.'));
- await card.getByRole('button',{name:'Yanıtla',exact:true}).click();assert.equal(await reply.inputValue(),'');
- await reply.fill('Gönderilmeyecek taslak');await card.getByRole('button',{name:'Vazgeç',exact:true}).click();
- assert.equal(await reply.isVisible(),false);assert.equal(await app.evaluate(()=>globalThis.attentionActions.filter(a=>a.kind==='reply').length),2);
- await page.screenshot({path:path.join(data,'attention.png'),fullPage:true});
- const beforeClose=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),a.id);
- await card.getByRole('button',{name:'Kapat',exact:true}).click();
- await card.waitFor({state:'detached'});await page.locator('.automation-attention-banner').waitFor({state:'hidden'});
- assert.notEqual(await page.locator('#agent-nav-status').textContent(),'1 müdahale');
- const afterClose=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),a.id);
- assert.deepEqual(afterClose.automation.sourceState,beforeClose.automation.sourceState);
- assert.equal(afterClose.automation.status,beforeClose.automation.status);
- await page.reload();await page.locator('.workspace-switcher-label').filter({hasText:a.title}).waitFor({state:'visible'});
- assert.equal(await card.count(),0);assert.equal(await page.locator('.automation-attention-banner').isVisible(),false);
- await app.evaluate(()=>globalThis.repeatAttentionFailure());
- await page.reload();await card.waitFor({state:'visible'});
- assert.equal(await page.locator('#agent-nav-status').textContent(),'1 müdahale');
- const scheduledAt=Date.now();
- await card.getByRole('button',{name:'2 saat sonra dene',exact:true}).click();
- await card.waitFor({state:'detached'});
- await page.locator('.automation-attention-banner').waitFor({state:'hidden'});
- assert.notEqual(await page.locator('#agent-nav-status').textContent(),'1 müdahale');
- await page.locator('.automation-retry-plans').waitFor({state:'visible'});
- assert.equal(await page.locator('.automation-retry-plans').getAttribute('open'),null);
- const scheduled=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),a.id),retryAt=scheduled.automation.retryPlan[source].at;
- assert.ok(retryAt>=scheduledAt+7200000&&retryAt<Date.now()+7200000);
- assert.equal(scheduled.sources.find(s=>s.url===source).blocked,true);
- assert.equal(scheduled.sources.find(s=>s.url===other).nextRunAt>scheduledAt,true);
- await page.reload();await page.locator('.automation-retry-plans').waitFor({state:'visible'});
- assert.equal(await card.count(),0);assert.equal(await page.locator('.automation-attention-banner').isVisible(),false);
- await page.locator('.automation-retry-plans summary').click();
- await page.locator('.automation-retry-plans').getByRole('button',{name:'Ertelemeyi iptal et',exact:true}).click();
- await card.waitFor({state:'visible'});
- await page.locator('.automation-retry-plans').waitFor({state:'hidden'});
- assert.equal((await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),a.id)).automation.retryPlan[source],undefined);
- await card.getByRole('button',{name:'Çözdüm, devam et',exact:true}).click();
- await card.getByText(/kaynak yeniden başlatılamadı/).waitFor();assert.equal(await card.isVisible(),true);
- await app.evaluate(()=>{globalThis.failAttentionRetry=false;});
- await card.getByRole('button',{name:'Çözdüm, devam et',exact:true}).click();
- await page.locator('.automation-attention-banner').waitFor({state:'hidden'});
- const snapshot=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),a.id);
- assert.equal(snapshot.sources.find(s=>s.url===source).blocked,false);assert.equal(snapshot.sources.find(s=>s.url===other).lastRunAt,undefined);
- const retries=await app.evaluate(()=>globalThis.attentionActions.filter(a=>a.kind==='retry'));assert.ok(retries.every(r=>r.id===a.id&&r.source===source));
- await app.evaluate(()=>globalThis.collectorAttentionFailure());await page.reload();
- await page.getByRole('button',{name:'Müdahaleleri göster',exact:true}).click();await card.waitFor({state:'visible'});
- assert.equal(await card.getByRole('button',{name:'Sekmeyi göster ↗',exact:true}).count(),0);
- assert.equal(await card.getByRole('button',{name:'Taramaya devam et',exact:true}).isVisible(),true);
- assert.doesNotMatch(await card.textContent(),/Chrome|İlgili sekme/);
- await page.screenshot({path:path.join(data,'collector-attention.png'),fullPage:true});
- assert.deepEqual(errors,[]);console.log('ATTENTION_CARD_DISMISS_PERSISTENCE_NEW_FAILURE_TAB_CHOOSER_SCOPED_RETRY_PASS',data);
-}finally{await app.close();}
+  await card.getByRole('button', {name: 'Sekmeyi göster ↗', exact: true}).click();
+  await card.getByText(/İlgili açık sekme bulunamadı/).waitFor();
+  await app.evaluate((_, source) => {
+    globalThis.attentionTabs = [
+      {tabId: 'one', url: 'https://auth.example/login', sourceUrl: source},
+      {tabId: 'two', url: 'https://homes.example/detail/3', sourceUrl: source},
+    ];
+  }, source);
+  await card.getByRole('button', {name: 'Sekmeyi göster ↗', exact: true}).click();
+  await card.getByRole('button', {name: 'https://auth.example/login', exact: true}).click();
+  assert.equal(await app.evaluate(() => globalThis.attentionActions.at(-1).tabId), 'one');
+  await card.getByRole('button', {name: 'Yanıtla', exact: true}).click();
+  const reply = card.getByRole('textbox', {name: 'Agent’a ne yapması gerektiğini yaz'}),
+    send = card.getByRole('button', {name: 'Gönder', exact: true});
+  assert.equal(await send.isDisabled(), true);
+  await reply.fill('   ');
+  assert.equal(await send.isDisabled(), true);
+  await reply.fill('Bu kaynağı şimdilik atla, diğer kaynaklarla devam et.');
+  await send.click();
+  assert.equal(await send.isDisabled(), true);
+  await card.getByText(/yanıt iletilemedi/).waitFor();
+  assert.equal(await reply.inputValue(), 'Bu kaynağı şimdilik atla, diğer kaynaklarla devam et.');
+  await app.evaluate(() => {
+    globalThis.failAttentionReply = false;
+  });
+  await page.screenshot({path: path.join(data, 'attention-reply.png'), fullPage: true});
+  await send.click();
+  await card.getByText('Yanıtın agente iletildi.', {exact: true}).waitFor();
+  assert.equal(await reply.isVisible(), false);
+  const replies = await app.evaluate(() =>
+    globalThis.attentionActions.filter((a) => a.kind === 'reply'),
+  );
+  assert.equal(replies.length, 2);
+  assert.equal(replies[1].id, a.id);
+  assert.equal(replies[1].worker, 'main');
+  assert.ok(replies[1].text.includes(source));
+  assert.ok(replies[1].text.includes('CAPTCHA'));
+  assert.ok(
+    replies[1].text.endsWith(
+      'Kullanıcının talimatı:\nBu kaynağı şimdilik atla, diğer kaynaklarla devam et.',
+    ),
+  );
+  await card.getByRole('button', {name: 'Yanıtla', exact: true}).click();
+  assert.equal(await reply.inputValue(), '');
+  await reply.fill('Gönderilmeyecek taslak');
+  await card.getByRole('button', {name: 'Vazgeç', exact: true}).click();
+  assert.equal(await reply.isVisible(), false);
+  assert.equal(
+    await app.evaluate(() => globalThis.attentionActions.filter((a) => a.kind === 'reply').length),
+    2,
+  );
+  await page.screenshot({path: path.join(data, 'attention.png'), fullPage: true});
+  const beforeClose = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), a.id);
+  await card.getByRole('button', {name: 'Kapat', exact: true}).click();
+  await card.waitFor({state: 'detached'});
+  await page.locator('.automation-attention-banner').waitFor({state: 'hidden'});
+  assert.notEqual(await page.locator('#agent-nav-status').textContent(), '1 müdahale');
+  const afterClose = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), a.id);
+  assert.deepEqual(afterClose.automation.sourceState, beforeClose.automation.sourceState);
+  assert.equal(afterClose.automation.status, beforeClose.automation.status);
+  await page.reload();
+  await page
+    .locator('.workspace-switcher-label')
+    .filter({hasText: a.title})
+    .waitFor({state: 'visible'});
+  assert.equal(await card.count(), 0);
+  assert.equal(await page.locator('.automation-attention-banner').isVisible(), false);
+  await app.evaluate(() => globalThis.repeatAttentionFailure());
+  await page.reload();
+  await card.waitFor({state: 'visible'});
+  assert.equal(await page.locator('#agent-nav-status').textContent(), '1 müdahale');
+  const scheduledAt = Date.now();
+  await card.getByRole('button', {name: '2 saat sonra dene', exact: true}).click();
+  await card.waitFor({state: 'detached'});
+  await page.locator('.automation-attention-banner').waitFor({state: 'hidden'});
+  assert.notEqual(await page.locator('#agent-nav-status').textContent(), '1 müdahale');
+  await page.locator('.automation-retry-plans').waitFor({state: 'visible'});
+  assert.equal(await page.locator('.automation-retry-plans').getAttribute('open'), null);
+  const scheduled = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), a.id),
+    retryAt = scheduled.automation.retryPlan[source].at;
+  assert.ok(retryAt >= scheduledAt + 7200000 && retryAt < Date.now() + 7200000);
+  assert.equal(scheduled.sources.find((s) => s.url === source).blocked, true);
+  assert.equal(scheduled.sources.find((s) => s.url === other).nextRunAt > scheduledAt, true);
+  await page.reload();
+  await page.locator('.automation-retry-plans').waitFor({state: 'visible'});
+  assert.equal(await card.count(), 0);
+  assert.equal(await page.locator('.automation-attention-banner').isVisible(), false);
+  await page.locator('.automation-retry-plans summary').click();
+  await page
+    .locator('.automation-retry-plans')
+    .getByRole('button', {name: 'Ertelemeyi iptal et', exact: true})
+    .click();
+  await card.waitFor({state: 'visible'});
+  await page.locator('.automation-retry-plans').waitFor({state: 'hidden'});
+  assert.equal(
+    (await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), a.id)).automation.retryPlan[
+      source
+    ],
+    undefined,
+  );
+  await card.getByRole('button', {name: 'Çözdüm, devam et', exact: true}).click();
+  await card.getByText(/kaynak yeniden başlatılamadı/).waitFor();
+  assert.equal(await card.isVisible(), true);
+  await app.evaluate(() => {
+    globalThis.failAttentionRetry = false;
+  });
+  await card.getByRole('button', {name: 'Çözdüm, devam et', exact: true}).click();
+  await page.locator('.automation-attention-banner').waitFor({state: 'hidden'});
+  const snapshot = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), a.id);
+  assert.equal(snapshot.sources.find((s) => s.url === source).blocked, false);
+  assert.equal(snapshot.sources.find((s) => s.url === other).lastRunAt, undefined);
+  const retries = await app.evaluate(() =>
+    globalThis.attentionActions.filter((a) => a.kind === 'retry'),
+  );
+  assert.ok(retries.every((r) => r.id === a.id && r.source === source));
+  await app.evaluate(() => globalThis.collectorAttentionFailure());
+  await page.reload();
+  await page.getByRole('button', {name: 'Müdahaleleri göster', exact: true}).click();
+  await card.waitFor({state: 'visible'});
+  assert.equal(await card.getByRole('button', {name: 'Sekmeyi göster ↗', exact: true}).count(), 0);
+  assert.equal(
+    await card.getByRole('button', {name: 'Taramaya devam et', exact: true}).isVisible(),
+    true,
+  );
+  assert.doesNotMatch(await card.textContent(), /Chrome|İlgili sekme/);
+  await page.screenshot({path: path.join(data, 'collector-attention.png'), fullPage: true});
+  assert.deepEqual(errors, []);
+  console.log('ATTENTION_CARD_DISMISS_PERSISTENCE_NEW_FAILURE_TAB_CHOOSER_SCOPED_RETRY_PASS', data);
+} finally {
+  await app.close();
+}

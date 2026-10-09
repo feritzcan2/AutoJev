@@ -4,55 +4,145 @@ import {createRequire} from 'node:module';
 import {mkdtemp} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import {fileURLToPath,pathToFileURL} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import assert from 'node:assert/strict';
-const require=createRequire(import.meta.url);
-const {_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
-const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-const data=await mkdtemp(path.join(os.tmpdir(),'jobloop-chrome-profile-'));
-const store=new WorkspaceDatabase(path.join(data,'jobloop.sqlite'));
-const candidate=new AutomationStore(store).create('job-search',{title:'Test candidate',goal:'Remote',browserMode:'jev',chromeProfile:{directory:'Default',name:'Personal'}});new AutomationStore(store).save(candidate.id,{browserMode:'jev',chromeProfile:{directory:'Default',name:'Personal'}});store.close();
-const application=await electron.launch({executablePath:require('electron'),args:[root],env:{...process.env,JOBLOOP_DATA_DIR:data}});
-try{
- const page=await application.firstWindow(),errors=[];page.on('pageerror',error=>errors.push(error.message));
- await page.waitForFunction(()=>Boolean(document.querySelector('#candidates').value));
- await application.evaluate(async({ipcMain},url)=>{
-  ipcMain.removeHandler('chrome-profiles');ipcMain.handle('chrome-profiles',()=>[{directory:'Default',name:'Personal'},{directory:'Profile 2',name:'Work'}]);
-  const vm=process.getBuiltinModule('node:vm'),load=vm.runInThisContext('(url)=>import(url)',{importModuleDynamically:vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER});
-  const {BrowserTools}=await load(url);globalThis.reconnects=[];globalThis.resets=[];globalThis.chromeState={state:'ready',ready:true};
-  BrowserTools.prototype.prepare=function(id){globalThis.reconnects.push({id,profile:this.options(id).profile});return globalThis.chromeState;};
-  BrowserTools.prototype.resetCandidate=async id=>{globalThis.resets.push(id);};
-  BrowserTools.prototype.status=()=>globalThis.chromeState;
- },pathToFileURL(path.join(root,'app/browser.mjs')).href);
- await page.reload();await page.locator('.chrome-profile-change').waitFor();
- assert.equal(await page.locator('.chrome-status small').textContent(),'Personal');
- await page.locator('.chrome-profile-change').click();
- const dialog=page.locator('.chrome-profile-dialog');await dialog.locator('select:not([disabled])').waitFor();
- assert.equal(await dialog.locator('select').inputValue(),'Default');
- await dialog.locator('select').selectOption('Profile 2');await dialog.locator('[data-cancel]').click();
- assert.equal((await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),candidate.id)).workspace.chromeProfile.directory,'Default');
- await page.locator('.chrome-profile-change').click();await dialog.locator('select:not([disabled])').waitFor();
- await dialog.locator('select').selectOption('Profile 2');await page.screenshot({path:path.join(data,'profile-picker.png')});
- await dialog.locator('[type=submit]').click();await dialog.waitFor({state:'hidden'});
- await page.waitForFunction(()=>document.querySelector('.chrome-status small').textContent==='Work');
- assert.equal((await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),candidate.id)).workspace.chromeProfile.directory,'Profile 2');
- const calls=await application.evaluate(()=>({resets:globalThis.resets,reconnects:globalThis.reconnects}));
- assert.deepEqual(calls.resets,[candidate.id]);assert.equal(calls.reconnects.at(-1).profile.directory,'Profile 2');
- const web=await page.evaluate(()=>window.jobloop.workspaceCreate('custom',{title:'Web test'}));
- await page.evaluate(id=>window.jobloop.workspaceSettings(id,{chromeProfile:{directory:'Default',name:'Personal'}}),web.id);
- await page.reload();await page.locator('.workspace-switcher-trigger').click();
- await page.locator(`[data-workspace-id="${web.id}"]`).click();
- await page.waitForFunction(()=>document.querySelector('.chrome-status small').textContent==='Personal');
- await page.locator('.chrome-profile-change').click();await dialog.locator('select:not([disabled])').waitFor();
- await dialog.locator('select').selectOption('Profile 2');await dialog.locator('[type=submit]').click();await dialog.waitFor({state:'hidden'});
- await page.waitForFunction(()=>document.querySelector('.chrome-status small').textContent==='Work');
- assert.equal((await application.evaluate(()=>globalThis.reconnects)).at(-1).id,web.id);
- await application.evaluate(()=>{globalThis.chromeState={state:'waiting',ready:false,message:'Seçili Chrome profili hazır değil. Açılan AutoJev penceresini öne getirip yeniden bağlan.'};});
- const waiting=await page.evaluate(id=>window.jobloop.automationBrowser(id),web.id);
- assert.equal(waiting.state,'waiting');assert.equal(waiting.ready,false);
- await page.waitForFunction(()=>document.querySelector('.chrome-status small').textContent.includes('profili hazır değil'));
- await page.screenshot({path:path.join(data,'chrome-waiting.png')});
- await application.evaluate(()=>{globalThis.chromeState={state:'idle',ready:false};});
- assert.equal((await page.evaluate(id=>window.jobloop.automationBrowser(id),web.id)).state,'idle');
- assert.deepEqual(errors,[]);console.log(`Chrome profile switch and connection waiting OK (jobs + web); screenshots: ${data}`);
-}finally{await application.close();}
+const require = createRequire(import.meta.url);
+const {_electron: electron} = createRequire(require.resolve('@playwright/mcp/package.json'))(
+  'playwright',
+);
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const data = await mkdtemp(path.join(os.tmpdir(), 'jobloop-chrome-profile-'));
+const store = new WorkspaceDatabase(path.join(data, 'jobloop.sqlite'));
+const candidate = new AutomationStore(store).create('job-search', {
+  title: 'Test candidate',
+  goal: 'Remote',
+  browserMode: 'jev',
+  chromeProfile: {directory: 'Default', name: 'Personal'},
+});
+new AutomationStore(store).save(candidate.id, {
+  browserMode: 'jev',
+  chromeProfile: {directory: 'Default', name: 'Personal'},
+});
+store.close();
+const application = await electron.launch({
+  executablePath: require('electron'),
+  args: [root],
+  env: {...process.env, JOBLOOP_DATA_DIR: data},
+});
+try {
+  const page = await application.firstWindow(),
+    errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.waitForFunction(() => Boolean(document.querySelector('#candidates').value));
+  await application.evaluate(
+    async ({ipcMain}, url) => {
+      ipcMain.removeHandler('chrome-profiles');
+      ipcMain.handle('chrome-profiles', () => [
+        {directory: 'Default', name: 'Personal'},
+        {directory: 'Profile 2', name: 'Work'},
+      ]);
+      const vm = process.getBuiltinModule('node:vm'),
+        load = vm.runInThisContext('(url)=>import(url)', {
+          importModuleDynamically: vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER,
+        });
+      const {BrowserTools} = await load(url);
+      globalThis.reconnects = [];
+      globalThis.resets = [];
+      globalThis.chromeState = {state: 'ready', ready: true};
+      BrowserTools.prototype.prepare = function (id) {
+        globalThis.reconnects.push({id, profile: this.options(id).profile});
+        return globalThis.chromeState;
+      };
+      BrowserTools.prototype.resetCandidate = async (id) => {
+        globalThis.resets.push(id);
+      };
+      BrowserTools.prototype.status = () => globalThis.chromeState;
+    },
+    pathToFileURL(path.join(root, 'app/browser.mjs')).href,
+  );
+  await page.reload();
+  await page.locator('.chrome-profile-change').waitFor();
+  assert.equal(await page.locator('.chrome-status small').textContent(), 'Personal');
+  await page.locator('.chrome-profile-change').click();
+  const dialog = page.locator('.chrome-profile-dialog');
+  await dialog.locator('select:not([disabled])').waitFor();
+  assert.equal(await dialog.locator('select').inputValue(), 'Default');
+  await dialog.locator('select').selectOption('Profile 2');
+  await dialog.locator('[data-cancel]').click();
+  assert.equal(
+    (await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), candidate.id)).workspace
+      .chromeProfile.directory,
+    'Default',
+  );
+  await page.locator('.chrome-profile-change').click();
+  await dialog.locator('select:not([disabled])').waitFor();
+  await dialog.locator('select').selectOption('Profile 2');
+  await page.screenshot({path: path.join(data, 'profile-picker.png')});
+  await dialog.locator('[type=submit]').click();
+  await dialog.waitFor({state: 'hidden'});
+  await page.waitForFunction(
+    () => document.querySelector('.chrome-status small').textContent === 'Work',
+  );
+  assert.equal(
+    (await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), candidate.id)).workspace
+      .chromeProfile.directory,
+    'Profile 2',
+  );
+  const calls = await application.evaluate(() => ({
+    resets: globalThis.resets,
+    reconnects: globalThis.reconnects,
+  }));
+  assert.deepEqual(calls.resets, [candidate.id]);
+  assert.equal(calls.reconnects.at(-1).profile.directory, 'Profile 2');
+  const web = await page.evaluate(() =>
+    window.jobloop.workspaceCreate('custom', {title: 'Web test'}),
+  );
+  await page.evaluate(
+    (id) =>
+      window.jobloop.workspaceSettings(id, {
+        chromeProfile: {directory: 'Default', name: 'Personal'},
+      }),
+    web.id,
+  );
+  await page.reload();
+  await page.locator('.workspace-switcher-trigger').click();
+  await page.locator(`[data-workspace-id="${web.id}"]`).click();
+  await page.waitForFunction(
+    () => document.querySelector('.chrome-status small').textContent === 'Personal',
+  );
+  await page.locator('.chrome-profile-change').click();
+  await dialog.locator('select:not([disabled])').waitFor();
+  await dialog.locator('select').selectOption('Profile 2');
+  await dialog.locator('[type=submit]').click();
+  await dialog.waitFor({state: 'hidden'});
+  await page.waitForFunction(
+    () => document.querySelector('.chrome-status small').textContent === 'Work',
+  );
+  assert.equal((await application.evaluate(() => globalThis.reconnects)).at(-1).id, web.id);
+  await application.evaluate(() => {
+    globalThis.chromeState = {
+      state: 'waiting',
+      ready: false,
+      message:
+        'Seçili Chrome profili hazır değil. Açılan AutoJev penceresini öne getirip yeniden bağlan.',
+    };
+  });
+  const waiting = await page.evaluate((id) => window.jobloop.automationBrowser(id), web.id);
+  assert.equal(waiting.state, 'waiting');
+  assert.equal(waiting.ready, false);
+  await page.waitForFunction(() =>
+    document.querySelector('.chrome-status small').textContent.includes('profili hazır değil'),
+  );
+  await page.screenshot({path: path.join(data, 'chrome-waiting.png')});
+  await application.evaluate(() => {
+    globalThis.chromeState = {state: 'idle', ready: false};
+  });
+  assert.equal(
+    (await page.evaluate((id) => window.jobloop.automationBrowser(id), web.id)).state,
+    'idle',
+  );
+  assert.deepEqual(errors, []);
+  console.log(`Chrome profile switch and connection waiting OK (jobs + web); screenshots: ${data}`);
+} finally {
+  await application.close();
+}

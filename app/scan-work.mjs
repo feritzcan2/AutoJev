@@ -1,145 +1,301 @@
-import {webUrl,boundedText} from './automation-templates.mjs';
+import {webUrl, boundedText} from './automation-templates.mjs';
 import {validateScanCompletion} from './source-scan.mjs';
 import {siteKey} from './site-access.mjs';
 
-export function scanWork(run){
- if(run.scan?.work)return structuredClone(run.scan.work);
- return {activeSearchId:'default',searches:[{id:'default',label:'Kaynak taraması',status:'pending',pendingUrls:[...(run.scan?.pendingUrls??[])],processedUrls:[],pageProgress:run.pageProgress??null,plan:run.scanPlan??null}]};
+export function scanWork(run) {
+  if (run.scan?.work) return structuredClone(run.scan.work);
+  return {
+    activeSearchId: 'default',
+    searches: [
+      {
+        id: 'default',
+        label: 'Kaynak taraması',
+        status: 'pending',
+        pendingUrls: [...(run.scan?.pendingUrls ?? [])],
+        processedUrls: [],
+        pageProgress: run.pageProgress ?? null,
+        plan: run.scanPlan ?? null,
+      },
+    ],
+  };
 }
-export const activeSearch=work=>work.searches.find(s=>s.id===work.activeSearchId);
+export const activeSearch = (work) => work.searches.find((s) => s.id === work.activeSearchId);
 // A recipe replay with several searches (one per term) scans each as its own
 // search. Saved work keeps its searches and progress; replay searches it does
 // not hold yet are added as pending. A scan never ends after only one term.
-export function replayScanWork(scan,searches){
- if(!searches||searches.length<2)return scan;
- const fresh=(s,index)=>({id:`replay-${index+1}`,label:s.term??s.url,url:s.url,status:'pending',pendingUrls:[],processedUrls:[],pageProgress:null,plan:null});
- const work=scan?.work?structuredClone(scan.work):{activeSearchId:'replay-1',searches:[]};
- const held=new Set(work.searches.map(s=>s.url).filter(Boolean)),ids=new Set(work.searches.map(s=>s.id));
- for(const [index,search] of searches.entries())if(!held.has(search.url)){let item=fresh(search,index);while(ids.has(item.id))item={...item,id:item.id+'b'};ids.add(item.id);work.searches.push(item);}
- // A queue saved before the scan had separate searches stays with the first one.
- if(scan&&!scan.work)work.searches[0].pendingUrls=[...new Set(scan.pendingUrls??[])];
- if(activeSearch(work)?.status==='completed')work.activeSearchId=work.searches.find(s=>s.status!=='completed')?.id??work.activeSearchId;
- return {...scan,complete:false,pendingUrls:pendingScanUrls(work),work};
+export function replayScanWork(scan, searches) {
+  if (!searches || searches.length < 2) return scan;
+  const fresh = (s, index) => ({
+    id: `replay-${index + 1}`,
+    label: s.term ?? s.url,
+    url: s.url,
+    status: 'pending',
+    pendingUrls: [],
+    processedUrls: [],
+    pageProgress: null,
+    plan: null,
+  });
+  const work = scan?.work ? structuredClone(scan.work) : {activeSearchId: 'replay-1', searches: []};
+  const held = new Set(work.searches.map((s) => s.url).filter(Boolean)),
+    ids = new Set(work.searches.map((s) => s.id));
+  for (const [index, search] of searches.entries())
+    if (!held.has(search.url)) {
+      let item = fresh(search, index);
+      while (ids.has(item.id)) item = {...item, id: item.id + 'b'};
+      ids.add(item.id);
+      work.searches.push(item);
+    }
+  // A queue saved before the scan had separate searches stays with the first one.
+  if (scan && !scan.work) work.searches[0].pendingUrls = [...new Set(scan.pendingUrls ?? [])];
+  if (activeSearch(work)?.status === 'completed')
+    work.activeSearchId =
+      work.searches.find((s) => s.status !== 'completed')?.id ?? work.activeSearchId;
+  return {...scan, complete: false, pendingUrls: pendingScanUrls(work), work};
 }
-export function pendingScanUrls(work){return [...new Set(work.searches.flatMap(s=>s.pendingUrls))];}
-export function hasUnblockedScanWork(run,sites){
- const blocked=new Set(sites),work=scanWork(run);
- // Undiscovered searches still use the assigned source. A source-wide gate
- // must release the worker even when those searches have empty queues.
- if(run.sourceUrl&&blocked.has(siteKey(run.sourceUrl)))return false;
- return work.searches.some(s=>s.status!=='completed'&&(s.pendingUrls.some(url=>!blocked.has(siteKey(url)))||s.id!==work.activeSearchId&&!s.pendingUrls.length));
+export function pendingScanUrls(work) {
+  return [...new Set(work.searches.flatMap((s) => s.pendingUrls))];
 }
-export function withScanWork(run,work,patch={}){
- return {...run.scan,...patch,complete:false,pendingUrls:pendingScanUrls(work),work};
+export function hasUnblockedScanWork(run, sites) {
+  const blocked = new Set(sites),
+    work = scanWork(run);
+  // Undiscovered searches still use the assigned source. A source-wide gate
+  // must release the worker even when those searches have empty queues.
+  if (run.sourceUrl && blocked.has(siteKey(run.sourceUrl))) return false;
+  return work.searches.some(
+    (s) =>
+      s.status !== 'completed' &&
+      (s.pendingUrls.some((url) => !blocked.has(siteKey(url))) ||
+        (s.id !== work.activeSearchId && !s.pendingUrls.length)),
+  );
 }
-export function scanQueue(run,{searchId,offset=0,limit=100}={}){
- const work=scanWork(run),search=work.searches.find(s=>s.id===(searchId??work.activeSearchId));
- if(!search)throw Error('Tarama araması bulunamadı.');
- if(!Number.isInteger(offset)||offset<0||!Number.isInteger(limit)||limit<1||limit>100)throw Error('Kuyruk aralığı geçersiz; en fazla 100 adres oku.');
- return {searchId:search.id,label:search.label,status:search.status,pageProgress:search.pageProgress,checkpoint:scanPlanView(search.plan)?.checkpoint??null,total:search.pendingUrls.length,offset,pendingUrls:search.pendingUrls.slice(offset,offset+limit),nextOffset:offset+limit<search.pendingUrls.length?offset+limit:null,processedCount:search.processedUrls.length};
+export function withScanWork(run, work, patch = {}) {
+  return {...run.scan, ...patch, complete: false, pendingUrls: pendingScanUrls(work), work};
 }
-export function scanWorkSummary(run){
- const work=scanWork(run);
- return {activeSearchId:work.activeSearchId,searches:work.searches.map(({id,label,url,status,pendingUrls,processedUrls,pageProgress,completion})=>({id,label,...(url?{url}:{}),status,pendingCount:pendingUrls.length,processedCount:processedUrls.length,pageProgress,completion})),queue:scanQueue(run)};
+export function scanQueue(run, {searchId, offset = 0, limit = 100} = {}) {
+  const work = scanWork(run),
+    search = work.searches.find((s) => s.id === (searchId ?? work.activeSearchId));
+  if (!search) throw Error('Tarama araması bulunamadı.');
+  if (
+    !Number.isInteger(offset) ||
+    offset < 0 ||
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > 100
+  )
+    throw Error('Kuyruk aralığı geçersiz; en fazla 100 adres oku.');
+  return {
+    searchId: search.id,
+    label: search.label,
+    status: search.status,
+    pageProgress: search.pageProgress,
+    checkpoint: scanPlanView(search.plan)?.checkpoint ?? null,
+    total: search.pendingUrls.length,
+    offset,
+    pendingUrls: search.pendingUrls.slice(offset, offset + limit),
+    nextOffset: offset + limit < search.pendingUrls.length ? offset + limit : null,
+    processedCount: search.processedUrls.length,
+  };
 }
-export function reportWorkPage(run,pageProgress){
- const work=scanWork(run),search=activeSearch(work),previous=search.pageProgress;
- // A lower page can be visited to recover access. It is not a new checkpoint.
- if(search.status==='completed')throw Error('Bu arama tamamlandı; kalan aramayı seç.');
- const revisiting=Boolean(previous&&pageProgress.currentPage<previous.currentPage);
- if(!revisiting){
-  search.pageProgress=pageProgress;
-  if(!search.processedUrls.includes(pageProgress.url)&&!search.pendingUrls.includes(pageProgress.url))search.pendingUrls.push(pageProgress.url);
- }
- return {work,pageProgress:search.pageProgress,revisiting};
+export function scanWorkSummary(run) {
+  const work = scanWork(run);
+  return {
+    activeSearchId: work.activeSearchId,
+    searches: work.searches.map(
+      ({id, label, url, status, pendingUrls, processedUrls, pageProgress, completion}) => ({
+        id,
+        label,
+        ...(url ? {url} : {}),
+        status,
+        pendingCount: pendingUrls.length,
+        processedCount: processedUrls.length,
+        pageProgress,
+        completion,
+      }),
+    ),
+    queue: scanQueue(run),
+  };
 }
-export function updateScanQueue(run,input){
- const work=scanWork(run),search=activeSearch(work);
- if(search.status==='completed')throw Error('Tamamlanan aramaya yeni iş eklenemez. Kalan aramayı seç.');
- const processed=input.processedUrls??[];
- if(!Array.isArray(processed)||processed.length>100)throw Error('Bir seferde en fazla 100 işlenmiş adres kaydet.');
- const additions=[...new Set(input.pendingUrls.map(webUrl))],done=[...new Set(processed.map(webUrl))];
- if(done.some(url=>additions.includes(url)))throw Error('Bir adres aynı anda bekleyen ve işlenmiş olamaz.');
- search.processedUrls=[...new Set([...search.processedUrls,...done])];
- search.pendingUrls=[...new Set([...search.pendingUrls,...additions])].filter(url=>!search.processedUrls.includes(url));
- if(input.excluded?.length)noteExcluded(search,input.excluded);
- if(input.cards?.length)noteCards(search,input.cards);
- return work;
+export function reportWorkPage(run, pageProgress) {
+  const work = scanWork(run),
+    search = activeSearch(work),
+    previous = search.pageProgress;
+  // A lower page can be visited to recover access. It is not a new checkpoint.
+  if (search.status === 'completed') throw Error('Bu arama tamamlandı; kalan aramayı seç.');
+  const revisiting = Boolean(previous && pageProgress.currentPage < previous.currentPage);
+  if (!revisiting) {
+    search.pageProgress = pageProgress;
+    if (
+      !search.processedUrls.includes(pageProgress.url) &&
+      !search.pendingUrls.includes(pageProgress.url)
+    )
+      search.pendingUrls.push(pageProgress.url);
+  }
+  return {work, pageProgress: search.pageProgress, revisiting};
+}
+export function updateScanQueue(run, input) {
+  const work = scanWork(run),
+    search = activeSearch(work);
+  if (search.status === 'completed')
+    throw Error('Tamamlanan aramaya yeni iş eklenemez. Kalan aramayı seç.');
+  const processed = input.processedUrls ?? [];
+  if (!Array.isArray(processed) || processed.length > 100)
+    throw Error('Bir seferde en fazla 100 işlenmiş adres kaydet.');
+  const additions = [...new Set(input.pendingUrls.map(webUrl))],
+    done = [...new Set(processed.map(webUrl))];
+  if (done.some((url) => additions.includes(url)))
+    throw Error('Bir adres aynı anda bekleyen ve işlenmiş olamaz.');
+  search.processedUrls = [...new Set([...search.processedUrls, ...done])];
+  search.pendingUrls = [...new Set([...search.pendingUrls, ...additions])].filter(
+    (url) => !search.processedUrls.includes(url),
+  );
+  if (input.excluded?.length) noteExcluded(search, input.excluded);
+  if (input.cards?.length) noteCards(search, input.cards);
+  return work;
 }
 // Jev's card reading of a waiting listing: its title, the probability it is
 // kept, and the closest exclusion. Only waiting listings keep a note.
-const EXCLUSIONS=['hard_constraint','qualification','unrelated_role'];
-export function noteCards(search,cards){
- const notes={};
- for(const c of cards){const s=c.scores??{},risk=EXCLUSIONS.map(reason=>({reason,p:s[reason]??0})).sort((a,b)=>b.p-a.p)[0];notes[webUrl(c.url)]={title:String(c.title??'').slice(0,200),...(typeof s.keep==='number'?{keep:s.keep,risk}:{})};}
- const pending=new Set(search.pendingUrls);
- search.cards=Object.fromEntries(Object.entries({...search.cards,...notes}).filter(([url])=>pending.has(url)));
+const EXCLUSIONS = ['hard_constraint', 'qualification', 'unrelated_role'];
+export function noteCards(search, cards) {
+  const notes = {};
+  for (const c of cards) {
+    const s = c.scores ?? {},
+      risk = EXCLUSIONS.map((reason) => ({reason, p: s[reason] ?? 0})).sort((a, b) => b.p - a.p)[0];
+    notes[webUrl(c.url)] = {
+      title: String(c.title ?? '').slice(0, 200),
+      ...(typeof s.keep === 'number' ? {keep: s.keep, risk} : {}),
+    };
+  }
+  const pending = new Set(search.pendingUrls);
+  search.cards = Object.fromEntries(
+    Object.entries({...search.cards, ...notes}).filter(([url]) => pending.has(url)),
+  );
 }
 // Listings Jev eliminated (on the card or after reading the detail), kept so
 // the source memory shows what was dropped and why. Bounded per search.
-export function noteExcluded(search,entries){
- const fresh=entries.map(e=>({url:webUrl(e.url),title:String(e.title??'').slice(0,200),reason:String(e.reason??'').slice(0,200),stage:e.stage==='detail'?'detail':'card',...(typeof e.confidence==='number'?{confidence:e.confidence}:{})}));
- const urls=new Set(fresh.map(e=>e.url));
- search.excluded=[...(search.excluded??[]).filter(e=>!urls.has(e.url)),...fresh].slice(-300);
- if(search.cards)search.cards=Object.fromEntries(Object.entries(search.cards).filter(([url])=>!urls.has(url)));
+export function noteExcluded(search, entries) {
+  const fresh = entries.map((e) => ({
+    url: webUrl(e.url),
+    title: String(e.title ?? '').slice(0, 200),
+    reason: String(e.reason ?? '').slice(0, 200),
+    stage: e.stage === 'detail' ? 'detail' : 'card',
+    ...(typeof e.confidence === 'number' ? {confidence: e.confidence} : {}),
+  }));
+  const urls = new Set(fresh.map((e) => e.url));
+  search.excluded = [...(search.excluded ?? []).filter((e) => !urls.has(e.url)), ...fresh].slice(
+    -300,
+  );
+  if (search.cards)
+    search.cards = Object.fromEntries(
+      Object.entries(search.cards).filter(([url]) => !urls.has(url)),
+    );
 }
-export function completeScanSearch(run,completion,evidenceUrl){
- const work=scanWork(run),search=activeSearch(work);
- if(search.pendingUrls.length)throw Error(`${search.pendingUrls.length} bekleyen adres var; arama tamamlanamaz.`);
- validateScanCompletion(run.scanPlan,{complete:true,pendingUrls:[],completion,evidenceUrl},search.pageProgress,run.id);
- search.status='completed';search.completion=completion;search.plan=run.scanPlan;
- // The next unfinished search becomes active with its own page position.
- const next=work.searches.find(s=>s.status!=='completed');if(next)work.activeSearchId=next.id;
- return work;
+export function completeScanSearch(run, completion, evidenceUrl) {
+  const work = scanWork(run),
+    search = activeSearch(work);
+  if (search.pendingUrls.length)
+    throw Error(`${search.pendingUrls.length} bekleyen adres var; arama tamamlanamaz.`);
+  validateScanCompletion(
+    run.scanPlan,
+    {complete: true, pendingUrls: [], completion, evidenceUrl},
+    search.pageProgress,
+    run.id,
+  );
+  search.status = 'completed';
+  search.completion = completion;
+  search.plan = run.scanPlan;
+  // The next unfinished search becomes active with its own page position.
+  const next = work.searches.find((s) => s.status !== 'completed');
+  if (next) work.activeSearchId = next.id;
+  return work;
 }
-export function assertScanWorkFinished(run){
- if(!run.scan?.work)return;
- const work=scanWork(run);
- if(pendingScanUrls(work).length)throw Error('Bekleyen sayfa veya kayıtlar var. İşlenen adresleri processedUrls ile kaydet.');
- if(work.searches.length>1&&work.searches.some(s=>s.status!=='completed'))throw Error('Kayıtlı aramaların tamamı bitmedi; kalan aramayı complete_scan_search ile tamamla.');
+export function assertScanWorkFinished(run) {
+  if (!run.scan?.work) return;
+  const work = scanWork(run);
+  if (pendingScanUrls(work).length)
+    throw Error('Bekleyen sayfa veya kayıtlar var. İşlenen adresleri processedUrls ile kaydet.');
+  if (work.searches.length > 1 && work.searches.some((s) => s.status !== 'completed'))
+    throw Error(
+      'Kayıtlı aramaların tamamı bitmedi; kalan aramayı complete_scan_search ile tamamla.',
+    );
 }
-export function otherScanSearchesPending(run){
- return Boolean(run.scan?.work?.searches.some(s=>s.id!==run.scan.work.activeSearchId&&s.status!=='completed'));
+export function otherScanSearchesPending(run) {
+  return Boolean(
+    run.scan?.work?.searches.some(
+      (s) => s.id !== run.scan.work.activeSearchId && s.status !== 'completed',
+    ),
+  );
 }
 
 // A changed search recipe keeps queued listings but forgets where the old
 // results pages left off: the next turn opens the new recipe's first page.
 // Old results pages (addresses the previous recipe produced) leave the queue.
-export function forgetPlanPosition(plan){
- if(!plan)return plan;
- const {checkpoint,...rest}=plan;
- return {...rest,order:null,boundary:null};
+export function forgetPlanPosition(plan) {
+  if (!plan) return plan;
+  const {checkpoint, ...rest} = plan;
+  return {...rest, order: null, boundary: null};
 }
-export function forgetScanPosition(state,isOldResultsPage=()=>false){
- if(!state)return state;
- const keep=urls=>(urls??[]).filter(url=>!isOldResultsPage(url));
- const next={...state,pageProgress:null,observedPage:null};
- if(state.scan){
-  const work=state.scan.work?{...state.scan.work,searches:state.scan.work.searches.map(s=>({...s,pageProgress:null,pendingUrls:keep(s.pendingUrls),plan:forgetPlanPosition(s.plan)}))}:undefined;
-  next.scan={...state.scan,pendingUrls:keep(state.scan.pendingUrls),...(work?{work}:{})};
- }
- if(state.scanState?.active)next.scanState={...state.scanState,active:forgetPlanPosition(state.scanState.active)};
- return next;
-}
-
-export function scanPlanView(plan){
- if(!plan||!plan.checkpoint?.pendingUrls||plan.checkpoint.pendingUrls.length<=100)return plan;
- return {...plan,checkpoint:{...plan.checkpoint,pendingUrls:plan.checkpoint.pendingUrls.slice(0,100),pendingCount:plan.checkpoint.pendingUrls.length,nextOffset:100}};
-}
-export function validateWorkCompletion(run,scan){
- if((run.scan?.work?.searches.length??0)<=1){
-  const completion=validateScanCompletion(run.scanPlan,scan,run.pageProgress,run.id);assertScanWorkFinished(run);return completion;
- }
- assertScanWorkFinished(run);
- const completions=run.scan.work.searches.map(s=>s.completion);
- const expected=completions.includes('user_stop')?'user_stop':completions.includes('cutoff')?'cutoff':'end';
- if((scan.completion??'end')!==expected)throw Error(`Aramaların doğrulanan ortak bitişi: ${expected}.`);
- return expected;
+export function forgetScanPosition(state, isOldResultsPage = () => false) {
+  if (!state) return state;
+  const keep = (urls) => (urls ?? []).filter((url) => !isOldResultsPage(url));
+  const next = {...state, pageProgress: null, observedPage: null};
+  if (state.scan) {
+    const work = state.scan.work
+      ? {
+          ...state.scan.work,
+          searches: state.scan.work.searches.map((s) => ({
+            ...s,
+            pageProgress: null,
+            pendingUrls: keep(s.pendingUrls),
+            plan: forgetPlanPosition(s.plan),
+          })),
+        }
+      : undefined;
+    next.scan = {...state.scan, pendingUrls: keep(state.scan.pendingUrls), ...(work ? {work} : {})};
+  }
+  if (state.scanState?.active)
+    next.scanState = {...state.scanState, active: forgetPlanPosition(state.scanState.active)};
+  return next;
 }
 
-export function scanProgressView(run){
- if(!run.scan)return null;
- const {work,...scan}=run.scan;
- if(!work&&scan.pendingUrls.length<=100)return scan;
- return {...scan,pendingUrls:scan.pendingUrls.slice(0,100),pendingCount:scan.pendingUrls.length,nextOffset:scan.pendingUrls.length>100?100:null};
+export function scanPlanView(plan) {
+  if (!plan || !plan.checkpoint?.pendingUrls || plan.checkpoint.pendingUrls.length <= 100)
+    return plan;
+  return {
+    ...plan,
+    checkpoint: {
+      ...plan.checkpoint,
+      pendingUrls: plan.checkpoint.pendingUrls.slice(0, 100),
+      pendingCount: plan.checkpoint.pendingUrls.length,
+      nextOffset: 100,
+    },
+  };
+}
+export function validateWorkCompletion(run, scan) {
+  if ((run.scan?.work?.searches.length ?? 0) <= 1) {
+    const completion = validateScanCompletion(run.scanPlan, scan, run.pageProgress, run.id);
+    assertScanWorkFinished(run);
+    return completion;
+  }
+  assertScanWorkFinished(run);
+  const completions = run.scan.work.searches.map((s) => s.completion);
+  const expected = completions.includes('user_stop')
+    ? 'user_stop'
+    : completions.includes('cutoff')
+      ? 'cutoff'
+      : 'end';
+  if ((scan.completion ?? 'end') !== expected)
+    throw Error(`Aramaların doğrulanan ortak bitişi: ${expected}.`);
+  return expected;
+}
+
+export function scanProgressView(run) {
+  if (!run.scan) return null;
+  const {work, ...scan} = run.scan;
+  if (!work && scan.pendingUrls.length <= 100) return scan;
+  return {
+    ...scan,
+    pendingUrls: scan.pendingUrls.slice(0, 100),
+    pendingCount: scan.pendingUrls.length,
+    nextOffset: scan.pendingUrls.length > 100 ? 100 : null,
+  };
 }

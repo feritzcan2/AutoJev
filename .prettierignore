@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+release/
+target/
+engine/
+vendor/
+demos/
+docs/
+.termloop-runtime/
+pnpm-lock.yaml
+*.html
+*.json
+*.md
+*.yml

@@ -4,7 +4,7 @@ import {personalAgent} from './agent-profiles.mjs';
 // Shared rules for every automation session (written to AGENTS.md).
 // Keep this file short and structured: the agents reading it are not experts.
 // Role-specific steps live in WEB_AGENTS; the Jev block is appended to each.
-export const AUTOMATION_INSTRUCTIONS=`# AutoJev automation agent
+export const AUTOMATION_INSTRUCTIONS = `# AutoJev automation agent
 
 You run one assigned task for one personal web automation inside the AutoJev app. The app owns scheduling, the task queue and all durable state. You own the browser work and the decisions.
 
@@ -51,9 +51,14 @@ Everything the user sees is Turkish: reply_to_user, questions, summaries. Tool a
 - Finish with finish_automation_run and a short factual Turkish summary: what you found, what you did, what blocked you.
 - Never report a task complete without evidence. An attempted click, an unchanged page or a timeout is not proof.`;
 
-export const WEB_AGENT_ROLES=['web-interview','web-trial','web-run'];
-export const WEB_AGENTS=[
- {role:'web-interview',name:'Kurulum',description:'Hedefi, kriterleri ve kaynakları kullanıcıyla netleştirir.',when:'Kurulum sohbetine mesaj gönderdiğinde seçilir. Sohbet geçmişini ve kayıtlı planı alır.',instructions:`# Interview: setup and workspace conversation
+export const WEB_AGENT_ROLES = ['web-interview', 'web-trial', 'web-run'];
+export const WEB_AGENTS = [
+  {
+    role: 'web-interview',
+    name: 'Kurulum',
+    description: 'Hedefi, kriterleri ve kaynakları kullanıcıyla netleştirir.',
+    when: 'Kurulum sohbetine mesaj gönderdiğinde seçilir. Sohbet geçmişini ve kayıtlı planı alır.',
+    instructions: `# Interview: setup and workspace conversation
 
 ## Ongoing conversation (conversation.independent=true)
 - Answer the current user request. Do not preload old messages, summaries or worker reports. Use get_workspace_history only when the request needs earlier history; request the profile, template or questions sections only when needed.
@@ -97,8 +102,14 @@ Every workspace scores its records from 0 to 100. You define the scoring for thi
 5. Save these settings with save_automation_plan. They stay drafts until the user confirms. After a later rubric change, existing records keep their old scores until the user rescores them.
 
 ## Ending a turn
-Before finish_automation_run always send a useful reply_to_user: what you found or saved, your concrete recommendation, and the next unresolved question. When enough is known, summarize the proposed workflow and direct the user to review the card, naming the remaining approval or setting. Never end an incomplete setup with only a status summary. finish_automation_run does not close the conversation; the next answer arrives in this same session. Do not poll or loop.`},
- {role:'web-trial',name:'Deneme',description:'Kaynaklara erişimi ve sonuçların okunabildiğini kontrol eder.',when:'Her kaynağın ilk işleme alındığı turda seçilir. Kayıtlı planı alır; kurulum sohbetinin ham geçmişini almaz.',instructions:`# Trial: first access check of one source
+Before finish_automation_run always send a useful reply_to_user: what you found or saved, your concrete recommendation, and the next unresolved question. When enough is known, summarize the proposed workflow and direct the user to review the card, naming the remaining approval or setting. Never end an incomplete setup with only a status summary. finish_automation_run does not close the conversation; the next answer arrives in this same session. Do not poll or loop.`,
+  },
+  {
+    role: 'web-trial',
+    name: 'Deneme',
+    description: 'Kaynaklara erişimi ve sonuçların okunabildiğini kontrol eder.',
+    when: 'Her kaynağın ilk işleme alındığı turda seçilir. Kayıtlı planı alır; kurulum sohbetinin ham geçmişini almaz.',
+    instructions: `# Trial: first access check of one source
 
 Check only the assigned source, using the current workspace criteria and the source query.
 1. Open the source and handle cookie dialogs, search, filters, scrolling and pagination with browser_interact.
@@ -110,8 +121,14 @@ Check only the assigned source, using the current workspace criteria and the sou
 Rules:
 - Never enter personal or contact data, and never send applications, messages, account registrations, payments or bookings.
 - Login walls, inaccessible pages or a search that needs unsupported interactions are blockers: ask the user to open the browser, log in or give the direct results URL, and finish blocked.
-- Report blocked when the intended data cannot be read. Do not repeat an earlier blocker without checking it in this turn.`},
- {role:'web-run',name:'Çalışma',description:'Kuyruktaki kaynak taramasını veya atanmış kayıt işlemini tamamlar.',when:'Zamanı gelen kaynak veya kayıt görevi için seçilir. Planı, atanmış işi ve ilerlemeyi alır; kurulum sohbetini almaz.',instructions:`# Run: one source scan or one record operation
+- Report blocked when the intended data cannot be read. Do not repeat an earlier blocker without checking it in this turn.`,
+  },
+  {
+    role: 'web-run',
+    name: 'Çalışma',
+    description: 'Kuyruktaki kaynak taramasını veya atanmış kayıt işlemini tamamlar.',
+    when: 'Zamanı gelen kaynak veya kayıt görevi için seçilir. Planı, atanmış işi ve ilerlemeyi alır; kurulum sohbetini almaz.',
+    instructions: `# Run: one source scan or one record operation
 
 One source scan is one task. Each record operation (score, prepare, execute, verify) is a separate task. Every turn, read the saved task context, criteria, scanPlan and scanProgress from get_automation_context; they are authoritative over the conversation history. Earlier completion or blocker reports are history, not evidence for this turn.
 
@@ -138,6 +155,11 @@ recordAuthorization and assignedOperation define the scope. Read assignedRecord,
 - execute: execute only the saved proposal (or, when recordAuthorization.directExecution is true, inspect, save the complete proposal and submit in this same task). If the destination, answers, documents or commitments must change, save a revised proposal and stop for review. Before any submission or upload call reserve_automation_action; stop if it fails. Upload only documents listed in the proposal with browser_upload_document and the current uploads.uploadId; never click "Select files". After submitting, read the fresh page and call record_automation_outcome with the observed confirmation. If the result is ambiguous, record uncertain and never submit again.
 - verify: inspect only whether the earlier action succeeded, using the retained page, confirmation or the site's history. Never resubmit or change the proposal. Record completed, uncertain, or not_submitted when the portal explicitly shows this exact record as a draft or rejected before submission.
 - Forms: browser_jev_inspect_form lists rendered fields and uploads. For an offscreen control use browser_interact reveal with its controlId, then browser_interact type with the fresh fillFields fieldId.
-- Never act on records marked completed, uncertain, executing or dismissed. Never invent personal facts.`},
-].map(definition=>({...definition,jevInstructions:JEV_TASK_INSTRUCTIONS}));
-export function webAgentProfile(kind,settings){const definition=WEB_AGENTS.find(a=>a.role==='web-'+kind);if(!definition)throw Error('Bilinmeyen agent görevi');return personalAgent(definition,settings);}
+- Never act on records marked completed, uncertain, executing or dismissed. Never invent personal facts.`,
+  },
+].map((definition) => ({...definition, jevInstructions: JEV_TASK_INSTRUCTIONS}));
+export function webAgentProfile(kind, settings) {
+  const definition = WEB_AGENTS.find((a) => a.role === 'web-' + kind);
+  if (!definition) throw Error('Bilinmeyen agent görevi');
+  return personalAgent(definition, settings);
+}

@@ -1,14 +1,33 @@
 // Synthetic table fixture; no agent or external website is contacted.
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
-const assets=['automation-results.js','record-table.js','record-operation-status.js','workspace-tabs.js','score-breakdown.js','scoring-state.js','style.css','board.css','automations.css','termloop-theme.css'];
-const server=createServer(async(req,res)=>{
- try{
-  const name=req.url?.replace('/src/','');
-  if(req.url?.startsWith('/src/')&&assets.includes(name)){res.setHeader('Content-Type',name.endsWith('.js')?'text/javascript':'text/css');res.end(await readFile(new URL('../src/'+name,import.meta.url)));return;}
-  if(req.url!=='/'){res.writeHead(404).end();return;}
-  res.setHeader('Content-Type','text/html; charset=utf-8');res.end(`<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Toplu puanlama kontrolü</title>
-  ${['style.css','board.css','automations.css','termloop-theme.css'].map(file=>'<link rel="stylesheet" href="/src/'+file+'">').join('')}
+const assets = [
+  'automation-results.js',
+  'record-table.js',
+  'record-operation-status.js',
+  'workspace-tabs.js',
+  'score-breakdown.js',
+  'scoring-state.js',
+  'style.css',
+  'board.css',
+  'automations.css',
+  'termloop-theme.css',
+];
+const server = createServer(async (req, res) => {
+  try {
+    const name = req.url?.replace('/src/', '');
+    if (req.url?.startsWith('/src/') && assets.includes(name)) {
+      res.setHeader('Content-Type', name.endsWith('.js') ? 'text/javascript' : 'text/css');
+      res.end(await readFile(new URL('../src/' + name, import.meta.url)));
+      return;
+    }
+    if (req.url !== '/') {
+      res.writeHead(404).end();
+      return;
+    }
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.end(`<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Toplu puanlama kontrolü</title>
+  ${['style.css', 'board.css', 'automations.css', 'termloop-theme.css'].map((file) => '<link rel="stylesheet" href="/src/' + file + '">').join('')}
   <body style="display:block;overflow:auto;height:auto;padding:24px"><main class="automations-page" style="max-width:1150px;margin:auto"><h1>Toplu puanlama</h1><p id="status" role="status">Testler çalışıyor…</p><header class="section-title"><h2>Takip kayıtları ve sonuçlar</h2></header><section id="records"></section><p id="request" role="status"></p></main>
   <script type="module">
   import {automationResultsTable} from '/src/automation-results.js';
@@ -89,6 +108,8 @@ const server=createServer(async(req,res)=>{
    status.textContent='PASS · Toplu silme, onay, hata, sayfalama, puan > / < filtresi, seçim ve çalışma alanı kapsamı doğrulandı.';
   }catch(error){status.textContent='FAIL · '+error.message;console.error(error);}
   </script></body></html>`);
- }catch(error){res.writeHead(500).end(error.message);}
+  } catch (error) {
+    res.writeHead(500).end(error.message);
+  }
 });
-server.listen(0,'127.0.0.1',()=>console.log('http://127.0.0.1:'+server.address().port));
+server.listen(0, '127.0.0.1', () => console.log('http://127.0.0.1:' + server.address().port));
