@@ -519,7 +519,7 @@ export function automationsPage(
         'Hazırla, onayımı bekle',
         'İşlem taslağını hazırla; göndermeden önce onayımı al.',
       ],
-      ['auto', 'Otomatik uygula', 'Kaydettiğim kurallara ve günlük sınıra göre işlemleri uygula.'],
+      ['auto', 'Otomatik uygula', 'Kaydettiğim kurallara göre işlemleri uygula.'],
     ]) {
       const choice = el('label', null, 'choice'),
         input = el('input'),
