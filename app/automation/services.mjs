@@ -15,6 +15,8 @@ import {setupAgentSettings} from '../agents/setup-agent.mjs';
 import {listDocuments} from './artifacts.mjs';
 import {runSnapshot} from '../browser/automation-snapshot.mjs';
 import {jevProvider} from '../jev/policy.mjs';
+import {saveJevProfile, jevProfileView} from '../jev/qualification-profile.mjs';
+import {loadScoringDocuments} from '../scoring/profile.mjs';
 
 export function registerAutomationServices({
   root,
@@ -198,6 +200,10 @@ export function registerAutomationServices({
         documents: await listDocuments(workspace(id)),
         browserStatus: browsers.status(id),
         jevIssue: jevProvider.issue,
+        jevProfile: jevProfileView(
+          db.get(id),
+          await loadScoringDocuments(db, id).catch(() => null),
+        ),
       },
       agents,
     );
@@ -227,6 +233,11 @@ export function registerAutomationServices({
     const a = db.setSaveScoreThreshold(id, value, options);
     changed(id);
     return a;
+  });
+  handle('automation-jev-profile-save', async (id, text) => {
+    const result = saveJevProfile(db, id, text, 'user', await loadScoringDocuments(db, id));
+    changed(id);
+    return result;
   });
   handle('workspace-answer', (id, question, value) => runtime.answer(id, question, value));
   handle('automation-setup', (id) => runtime.setup(id));

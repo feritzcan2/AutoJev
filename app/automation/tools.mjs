@@ -125,6 +125,12 @@ export const automationTools = [
     ['entry'],
   ),
   tool(
+    'save_jev_profile',
+    'Source trial or scan: when get_automation_context shows jevProfile.status missing or stale, write the short qualification profile Jev compares every listing with, in place of the full documents and facts. Read read_scoring_profile facts and documents first. Plain text up to 3000 characters, only facts stated there: languages and levels, total and per-field experience and seniority, core skills and field, degrees and certificates, citizenship, work permit and sponsorship, where the user can work (location, relocation, remote) and the user hard rules. Leave out contact details and achievements. Never guess a missing fact. When jevProfile.by is user, keep the user statements in jevProfile.text unless the current facts or documents contradict them; a current profile the user edited is kept.',
+    {profile: str},
+    ['profile'],
+  ),
+  tool(
     'get_scan_queue',
     'Source scan: the pending queue Jev maintains. Counts by default; view=entries lists URLs (25 by default, up to 100, paged with offset). browser_jev_run collect_details without URLs consumes this queue.',
     {
@@ -324,7 +330,7 @@ export function scopedAutomationTools({run, template, collecting}) {
               !['save_automation_plan', 'research_automation_source'].includes(t.name)) &&
             (!['get_scan_queue', 'complete_scan_search'].includes(t.name) ||
               (run.kind === 'run' && run.sourceUrl && !run.recordId)) &&
-            (t.name !== 'save_source_recipe' ||
+            (!['save_source_recipe', 'save_jev_profile'].includes(t.name) ||
               (['trial', 'run'].includes(run.kind) &&
                 run.sourceUrl &&
                 !run.recordId &&

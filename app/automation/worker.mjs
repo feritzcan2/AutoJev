@@ -79,6 +79,7 @@ import {pageObservation, researchUrl, unchangedPageContent} from './page-content
 import {automationPrompt} from './prompts.mjs';
 import {finishAutomationRun} from './finish.mjs';
 import {saveJevCheckpoint, settleJevDetails, releaseBlockedSource} from './jev-scan.mjs';
+import {saveJevProfile, jevProfileView} from '../jev/qualification-profile.mjs';
 // A recipe check reads this many uncertain leads when discovery confirms none.
 const RECIPE_CHECK_DETAILS = 3;
 // A trial checks access and learns the recipe; it never scans a whole board.
@@ -779,7 +780,12 @@ export function automationWorkflow({
     if (owner !== id || session !== run.id || signal.aborted)
       throw Error('Otomasyon oturumu geçersiz');
     let active = db.activeRun(id, run.id);
-    const a = db.get(id);
+    const a = db.get(id),
+      sourceTask =
+        ['trial', 'run'].includes(active.kind) &&
+        Boolean(active.sourceUrl) &&
+        !active.recordId &&
+        !active.recordOperation;
     let result;
     if (collecting && collectorHidden.has(name))
       throw Error('Bu kaynakta veriyi collect_source_page üzerinden al ve Jev grubunu incele.');
@@ -1017,6 +1023,12 @@ export function automationWorkflow({
         result = db.completeScanSearch(id, run.id, args.completion, page);
         break;
       }
+      case 'save_jev_profile': {
+        if (!sourceTask) throw Error('Jev profili yalnızca kaynak görevinde yazılır.');
+        result = saveJevProfile(db, id, args.profile, 'agent', await scoringDocuments());
+        changed(id);
+        break;
+      }
       case 'save_source_recipe': {
         if (!active.sourceUrl || active.recordId || !['trial', 'run'].includes(active.kind))
           throw Error('Reçete yalnızca atanmış kaynak görevinde kaydedilir.');
@@ -1079,6 +1091,14 @@ export function automationWorkflow({
       }
       case 'get_automation_context': {
         const value = scanToolOutput(automationTaskContext(db, id, active, args), {summary: true});
+        // Source tasks keep the short Jev profile current (save_jev_profile).
+        if (sourceTask && !args.section) {
+          const documents = await scoringDocuments().catch(() => null);
+          if (documents) {
+            const {status, by, text} = jevProfileView(a, documents);
+            value.jevProfile = {status, ...(by === 'user' ? {by, text} : {})};
+          }
+        }
         if (isConversation(active) && !args.section)
           db.putRun({...active, contextVersion: conversationContextVersion(a)});
         return context.capture(value);

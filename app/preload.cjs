@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('jobloop', {
     invoke('automation-profile-save', id, input, options),
   automationSaveScoreThreshold: (id, value, options) =>
     invoke('automation-save-score-threshold', id, value, options),
+  saveJevProfile: (id, text) => invoke('automation-jev-profile-save', id, text),
   setupAgentSettings: (id, input) => invoke('setup-agent-settings', id, input),
   setupAgentRestart: (id) => invoke('setup-agent-restart', id),
   workspaceSnapshot: (id) => invoke('workspace-snapshot', id),
