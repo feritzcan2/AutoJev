@@ -237,7 +237,13 @@ export function recipeRunOutcome(replay, tasks) {
         ? (t.items ?? [])
         : (t.items ?? []).filter(fromScan),
     );
-  if (relevant.some((t) => (t.items ?? []).some(jevListingItem)) || details.some(jevListingItem))
+  // Listings this workspace already holds are retired without becoming items,
+  // so a quiet repeat scan proves the replay through its page summaries.
+  if (
+    relevant.some((t) => (t.items ?? []).some(jevListingItem)) ||
+    details.some(jevListingItem) ||
+    relevant.some((t) => (t.pages ?? []).some((p) => p.knownListings > 0))
+  )
     return 'success';
   if (
     relevant.some(

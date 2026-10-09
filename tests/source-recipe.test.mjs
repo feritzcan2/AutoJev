@@ -226,6 +226,18 @@ test('scan outcomes verify, tolerate barriers and mark a recipe stale after two 
     },
   ];
   assert.equal(recipeRunOutcome(replay, failed), 'failure');
+  assert.equal(
+    recipeRunOutcome(replay, [
+      {
+        input: {operation: 'scan_results', url},
+        status: 'completed',
+        items: [],
+        pages: [{url, candidates: 0, knownListings: 20}],
+      },
+    ]),
+    'success',
+    'a repeat scan whose listings were all already known still proves the replay',
+  );
   const lead = 'https://redirect.test/l?to=job-1',
     unsure = [
       {
