@@ -72,6 +72,10 @@ impl Engine {
                         let output=Path::new(directory).join(format!("context-{id}.jsonl"));
                         settings.content=context_status::settings(&settings.content,&executable,&output)?;
                         settings.inspectable_content=context_status::settings(&settings.inspectable_content,Path::new("jobloop-engine"),Path::new("<session-context>"))?;
+                        if v["taskType"].as_str()==Some("automation") {
+                            settings.content=automation_claude_settings(&settings.content)?;
+                            settings.inspectable_content=automation_claude_settings(&settings.inspectable_content)?;
+                        }
                     }
                 }
                 let observation_path=Path::new(directory).join("opencode-tui.json");
@@ -162,6 +166,19 @@ fn workspace_trust(input: &Value) -> CodexProjectTrust {
     }
 }
 
+// Automation workers call the model every few seconds and need only JobLoop
+// tools: a 5-minute cache write costs less than a 1-hour one, and unrelated
+// connectors and skill descriptions would be re-read on every turn.
+fn automation_claude_settings(content: &str) -> Result<String, String> {
+    let mut settings: Value = serde_json::from_str(content).map_err(|e| e.to_string())?;
+    if !settings["env"].is_object() { settings["env"] = json!({}); }
+    settings["env"]["FORCE_PROMPT_CACHING_5M"] = json!("1");
+    settings["env"]["ENABLE_CLAUDEAI_MCP_SERVERS"] = json!("false");
+    settings["allowedMcpServers"] = json!([{"serverName":"jobloop"}]);
+    settings["skillListingBudgetFraction"] = json!(0);
+    Ok(settings.to_string())
+}
+
 #[cfg(test)]
 mod workspace_trust_tests {
     use super::*;
@@ -171,5 +188,12 @@ mod workspace_trust_tests {
         for value in [json!({}), json!({"taskType":"application"}), json!({"taskType":"unknown"}), json!({"taskType":"background"})] {
             assert_eq!(workspace_trust(&value), CodexProjectTrust::Inherit);
         }
+    }
+    #[test]
+    fn automation_workers_keep_hooks_and_only_allow_jobloop_tools() {
+        let value:Value=serde_json::from_str(&automation_claude_settings(r#"{"hooks":{"Stop":[]}}"#).unwrap()).unwrap();
+        assert_eq!(value["hooks"],json!({"Stop":[]}));
+        assert_eq!(value["env"]["FORCE_PROMPT_CACHING_5M"],"1");
+        assert_eq!(value["allowedMcpServers"],json!([{"serverName":"jobloop"}]));
     }
 }

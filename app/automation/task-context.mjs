@@ -311,7 +311,7 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
   if (active.collector)
     operation = {
       ...operation,
-      instructions: COLLECTOR_INSTRUCTIONS,
+      instructions: 'Follow scanInstructions.',
       successCriteria:
         'Every API page has been read and every queued listing reviewed by Jev and the agent.',
     };
@@ -340,6 +340,10 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
       ]),
       mode: active.kind === 'trial' ? 'observe' : sourceMode(a, active.sourceUrl),
       sources: active.sources ?? a.sources,
+      // Setup often saves the same text as goal and preferences; send it once.
+      ...(a.criteria?.preferences && a.criteria.preferences.trim() === a.goal?.trim()
+        ? {criteria: {...a.criteria, preferences: 'Same as automation.goal.'}}
+        : {}),
     },
     assignedSource,
     assignedRecord,
@@ -394,7 +398,7 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
       : {
           ...pick(definition, ['id', 'version', 'title', 'guidance', 'records', 'table']),
           recordOperations: active.recordOperation ? {[active.recordOperation]: operation} : {},
-          workflow: operation ? [operation] : [],
+          workflow: operation ? [operation.id] : [],
         },
     questions,
     referenceData,

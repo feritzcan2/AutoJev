@@ -237,8 +237,11 @@ test('CLI pages enter Jev triage, the agent scores retained items, and review ga
   );
   await assert.rejects(review(f, first), /İnceleme tamamlanmadı/);
   await save(f, helper(f, first).items[2]);
-  await review(f, first);
-  const second = await f.call('collect_source_page');
+  const acknowledged = await review(f, first);
+  assert.equal(acknowledged.acknowledged.status, 'completed');
+  const second = acknowledged.next;
+  assert.equal(f.reads(), 2, 'the finished review fetched the next page in the same call');
+  assert.equal(helper(f, second).id, (await f.call('collect_source_page')).taskId);
   assert.equal(f.reads(), 2);
   await handle(f, second);
   assert.throws(
@@ -320,11 +323,11 @@ test('minimum save score excludes CLI findings, allows batch review, and survive
   assert.equal(f.db.run(f.run.id).scan.reviewStats.saved, 1);
   const db = new AutomationStore(f.core);
   prepareCollection(db, db.run(f.run.id), db.get(f.id));
+  // The acknowledgement already fetched page two; restart refetches that page.
   const flow = f.makeFlow(db),
-    resumed = await flow.call(f.id, f.run.id, 'collect_source_page', {});
-  assert.equal(db.jevTasks.get(f.id, f.run.taskId, resumed.taskId).items.length, 0);
-  const second = await flow.call(f.id, f.run.id, 'collect_source_page', {}),
+    second = await flow.call(f.id, f.run.id, 'collect_source_page', {}),
     task = db.jevTasks.get(f.id, f.run.taskId, second.taskId);
+  assert.equal(task.items.length, 1);
   await flow.call(f.id, f.run.id, 'record_automation_result', {
     url: task.items[0].url,
     title: 'Synthetic',

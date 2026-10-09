@@ -4,6 +4,7 @@ import {
   recordReceipt,
   scanToolOutput,
   documentToolContent,
+  briefToolOutput,
 } from '../app/automation/tool-output.mjs';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
@@ -262,4 +263,17 @@ test('browser output removes only an exact duplicate link index and preserves al
     const original = [{type: 'text', text: JSON.stringify({...page, ...patch})}];
     assert.deepEqual(documentToolContent(original), original);
   }
+});
+
+test('brief output keeps a coverage note only for a partial selection', () => {
+  const brief = (coverage) => ({status: 'ready', sections: [{text: 'Requirements'}], coverage});
+  const full = briefToolOutput(
+    brief({sourceCharacters: 12, selectedCharacters: 12, unreadFrames: 0}),
+  );
+  assert.equal(full.coverage, undefined);
+  for (const coverage of [
+    {sourceCharacters: 40, selectedCharacters: 12, unreadFrames: 0},
+    {sourceCharacters: 12, selectedCharacters: 12, unreadFrames: 1},
+  ])
+    assert.deepEqual(briefToolOutput({briefs: [brief(coverage)]}).briefs[0].coverage, coverage);
 });
