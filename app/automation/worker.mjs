@@ -6,12 +6,7 @@ import {reviewJevBatch} from '../jev/review.mjs';
 import {readJevBrief} from '../jev/brief.mjs';
 import {jevWaitMsFor, observeClientAbort} from '../jev/execution.mjs';
 import {withAgentDefaults} from '../agents/settings.mjs';
-import {
-  validateWorkCompletion,
-  otherScanSearchesPending,
-  scanWork,
-  hasUnblockedScanWork,
-} from '../sources/scan-work.mjs';
+import {otherScanSearchesPending, scanWork} from '../sources/scan-work.mjs';
 import {siteKey} from '../browser/site-access.mjs';
 import {collectorRun} from '../sources/collectors.mjs';
 import {
@@ -39,7 +34,6 @@ import {SCORING_INSTRUCTIONS} from '../scoring/policy.mjs';
 import {readBrowserEvidence} from '../browser/evidence-read.mjs';
 import {JevExecution} from '../jev/execution.mjs';
 import {asksForLogin, validateLoginQuestion, LOGGED_IN_FIELD} from './login-question.mjs';
-import {OUTCOME_FIELD} from './question-forms.mjs';
 import {workspaceDirectory} from '../workspaces/paths.mjs';
 import {AUTOMATION_INSTRUCTIONS, webAgentProfile} from '../agents/automation-profiles.mjs';
 import {
@@ -65,10 +59,9 @@ import path from 'node:path';
 import {writeWorkspaceInstructions} from '../workspaces/instructions.mjs';
 import {webUrl} from '../templates/catalog.mjs';
 import {SOURCE_SCAN_INSTRUCTIONS, KNOWN_BOUNDARY_PAGES} from '../sources/scan.mjs';
-import {observedLinks, scanCheckpoint} from '../sources/automation-scan.mjs';
-import {scanPageReport, observedScanPage} from '../sources/scan-page.mjs';
+import {observedLinks} from '../sources/automation-scan.mjs';
+import {observedScanPage} from '../sources/scan-page.mjs';
 import {workerKey} from './worker-key.mjs';
-import {sourceStop} from './stop.mjs';
 import {sourceScan, scanIssue, clearScanIssue, browserFailure} from '../sources/scan-issues.mjs';
 import {retryTechnicalSource} from './recovery.mjs';
 import {
@@ -88,6 +81,8 @@ import {
 import {scopedAutomationTools, collectorHidden, scoreWrites} from './tools.mjs';
 import {pageObservation, researchUrl, unchangedPageContent} from './page-content.mjs';
 import {automationPrompt} from './prompts.mjs';
+import {finishAutomationRun} from './finish.mjs';
+import {saveJevCheckpoint, settleJevDetails, releaseBlockedSource} from './jev-scan.mjs';
 // A recipe check reads this many uncertain leads when discovery confirms none.
 const RECIPE_CHECK_DETAILS = 3;
 // A trial checks access and learns the recipe; it never scans a whole board.
@@ -544,91 +539,15 @@ export function automationWorkflow({
             if (!sourceScan(current) || active.kind !== 'run') return [];
             return db.knownListingUrls(id, run.id, urls);
           },
-          checkpoint: async (
-            page,
-            urls,
-            {
-              navigationUrls = [],
-              rejectedUrls = [],
-              rejected = [],
-              cards = [],
-              knownUrls = [],
-              position,
-            } = {},
-          ) => {
+          checkpoint: async (page, urls, options) => {
             if (!sourceScan(db.run(run.id)) || active.kind !== 'run') return;
-            // Leave discovered details pending until the parent has assessed and
-            // recorded them. A helper finishing cannot complete a source queue.
-            const pageReport = position
-              ? scanPageReport(snapshots.current, position, db.now())
-              : null;
-            if (pageReport) db.reportPage(id, run.id, pageReport);
-            for (let offset = 0; offset < urls.length; offset += 100)
-              db.saveScanProgress(
-                id,
-                run.id,
-                {
-                  pendingUrls: urls.slice(offset, offset + 100),
-                  processedUrls: [],
-                  cards,
-                  reason: 'Jev tarafından bulunan ilanlar değerlendirme bekliyor.',
-                },
-                snapshots.current,
-              );
-            db.saveScanProgress(
-              id,
-              run.id,
-              {
-                pendingUrls: [],
-                processedUrls: [page.url],
-                reason:
-                  'Sonuç sayfasındaki bağlantılar kaydedildi; ilanların değerlendirmesi bekliyor.',
-              },
-              snapshots.current,
+            return saveJevCheckpoint(
+              {db, id, runId: run.id, snapshot: snapshots.current},
+              {sourceUrl: run.sourceUrl, now: db.now()},
+              page,
+              urls,
+              options,
             );
-            for (let offset = 0; offset < navigationUrls.length; offset += 100)
-              db.saveScanProgress(
-                id,
-                run.id,
-                {
-                  pendingUrls: [],
-                  processedUrls: navigationUrls.slice(offset, offset + 100),
-                  reason: 'Gözlenen gezinme ve filtre bağlantıları ilan değil.',
-                },
-                snapshots.current,
-              );
-            for (let offset = 0; offset < rejectedUrls.length; offset += 100)
-              db.saveScanProgress(
-                id,
-                run.id,
-                {
-                  pendingUrls: [],
-                  processedUrls: rejectedUrls.slice(offset, offset + 100),
-                  ...(offset ? {} : {excluded: rejected}),
-                  reason:
-                    'Jev ilan kartında açık uyumsuzluğu en az %85 güvenle belirledi; kayıt oluşturmadan elendi.',
-                },
-                snapshots.current,
-              );
-            if (rejectedUrls.length)
-              db.rememberSeenListings(
-                id,
-                run.sourceUrl,
-                rejectedUrls,
-                'Jev ilan kartında açık uyumsuzluk belirledi.',
-              );
-            for (let offset = 0; offset < knownUrls.length; offset += 100)
-              db.saveScanProgress(
-                id,
-                run.id,
-                {
-                  pendingUrls: [],
-                  processedUrls: knownUrls.slice(offset, offset + 100),
-                  reason: 'Daha önce kaydedilmiş veya elenmiş ilanlar; yeniden okunmadı.',
-                },
-                snapshots.current,
-              );
-            return {saved: true, pageReport};
           },
           reviewBatch: (task, items, decisions) =>
             reviewJevBatch(db, id, run.id, task.id, task.batch.id, decisions),
@@ -669,127 +588,28 @@ export function automationWorkflow({
         },
       });
       result = jevTaskReceipt(result);
-      // A detail that stays unreadable after Jev's bounded read recovery is not
-      // the agent's problem: the app retires it from the queue with the reason.
-      // Access barriers keep their site wait; slow pages get three deferrals.
       if (
         !collecting &&
         sourceScan(active) &&
         active.kind === 'run' &&
         ['collect_details', 'classify_results'].includes(operation) &&
         result.taskId
-      ) {
-        const pending = new Map(
-          (
-            scanWork(db.activeRun(id, run.id)).searches.find((s) => s.id === searchId)
-              ?.pendingUrls ?? []
-          ).map((url) => [jevDetailKey(url), url]),
+      )
+        result = settleJevDetails(
+          {db, id, runId: run.id, snapshot: snapshots.current},
+          {scope, searchId},
+          result,
         );
-        const items = db.jevTasks.get(id, scope, result.taskId).items,
-          queued = (item) => pending.get(jevDetailKey(item.url));
-        const unreadable = [
-          ...new Set(
-            items
-              .filter(
-                (i) =>
-                  i.error &&
-                  i.error !== 'access_barrier' &&
-                  (i.error !== 'page_not_ready' ||
-                    db.jevTasks.detailDeferrals(id, scope, i.url) >= 3),
-              )
-              .map(queued)
-              .filter(Boolean),
-          ),
-        ];
-        if (unreadable.length) {
-          const reason = `${unreadable.length} detay adresi sınırlı yeniden okumadan sonra da okunamadı; kuyruktan çıkarıldı.`;
-          for (let offset = 0; offset < unreadable.length; offset += 100)
-            db.saveScanProgress(
-              id,
-              run.id,
-              {pendingUrls: [], processedUrls: unreadable.slice(offset, offset + 100), reason},
-              snapshots.current,
-            );
-          for (const url of unreadable) clearScanIssue(db, id, run.id, url);
-          result = {
-            ...result,
-            retired: {count: unreadable.length, urls: unreadable.slice(0, 20)},
-            next:
-              (result.next ?? '') +
-              ` The app retired ${unreadable.length} unreadable detail URL(s) from the queue; they need no further reading. Continue with the remaining queue or complete the search.`,
-          };
-        }
-        // A detail still unrendered after Jev's bounded wait is a verified loading
-        // issue of this scan: the agent cannot complete the source over it and the
-        // app retries the source itself at the saved checkpoint instead of asking
-        // the user. A later successful read clears it.
-        for (const item of items) {
-          const url = queued(item);
-          if (!url) continue;
-          if (item.error === 'page_not_ready') {
-            if (!db.activeRun(id, run.id).scanIssues?.[url]?.verified)
-              scanIssue(db, id, run.id, {
-                url,
-                kind: 'render_pending',
-                evidence: `Jev: ${item.readUrl ?? url} sınırlı bekleme ve yeniden okumadan sonra da yüklenmedi.`,
-                verified: true,
-              });
-          } else if (item.collected) clearScanIssue(db, id, run.id, url);
-        }
-        // A lead that turned out to be a results/category page is not a listing to
-        // read; the queue drops it so later detail rounds do not open it again.
-        const boards = [
-          ...new Set(
-            db.jevTasks
-              .get(id, scope, result.taskId)
-              .items.filter((i) => i.pageKind === 'results')
-              .map((i) => pending.get(jevDetailKey(i.url)))
-              .filter(Boolean),
-          ),
-        ];
-        if (boards.length) {
-          const reason = `${boards.length} adres ilan değil sonuç/kategori sayfası; kuyruktan çıkarıldı.`;
-          for (let offset = 0; offset < boards.length; offset += 100)
-            db.saveScanProgress(
-              id,
-              run.id,
-              {pendingUrls: [], processedUrls: boards.slice(offset, offset + 100), reason},
-              snapshots.current,
-            );
-          result = {
-            ...result,
-            retiredBoards: {count: boards.length, urls: boards.slice(0, 20)},
-            next:
-              (result.next ?? '') +
-              ` ${boards.length} queued URL(s) were results/category pages, not listings; the app removed them from the queue.`,
-          };
-        }
-      }
       if (snapshots.current)
         result = {...result, snapshot: {id: snapshots.current.id, url: snapshots.current.url}};
-      // The assigned source's own barrier releases its worker immediately. An
-      // unrelated detail host may still leave reachable work within this source.
-      const wait = result.issue?.reason === 'access_barrier' && result.issue.siteWait;
-      if (wait && active.sourceUrl && !active.recordId && ['run', 'trial'].includes(active.kind)) {
-        const current = db.activeRun(id, run.id),
-          reachable = hasUnblockedScanWork(current, result.issue.sites ?? [wait.site]);
-        if (!reachable) {
-          const saved = db.get(id);
-          db.put({
-            ...saved,
-            sourceState: {
-              ...saved.sourceState,
-              [active.sourceUrl]: {...saved.sourceState?.[active.sourceUrl], siteBlocked: true},
-            },
-          });
-          db.putRun({...current, siteWait: wait, stop: {kind: 'access', evidence: wait.message}});
-          result = {
-            ...result,
-            parent: report(id, run.id, 'blocked', wait.message, false),
-            next: 'The source is waiting for user intervention or its retry deadline. Its worker is released for other work. A user response resumes this scan; an unanswered deadline closes its tabs and starts a fresh scan. Do not call more tools in this turn.',
-          };
-        }
-      }
+      if (
+        result.issue?.reason === 'access_barrier' &&
+        result.issue.siteWait &&
+        active.sourceUrl &&
+        !active.recordId &&
+        ['run', 'trial'].includes(active.kind)
+      )
+        result = releaseBlockedSource({db, id, runId: run.id, report}, active.sourceUrl, result);
       return result;
     });
   const scoringDocuments = async () => {
@@ -1537,161 +1357,18 @@ export function automationWorkflow({
         };
         break;
       }
-      case 'finish_automation_run': {
-        let status = args.status;
-        if (collecting && status === 'completed' && !active.scan?.complete)
-          throw Error(
-            'CLI sayfaları ve Jev/agent incelemesi bitmedi; collect_source_page ile devam et.',
-          );
-        if (
-          sourceScan(active) &&
-          args.stop?.kind === 'access' &&
-          ['blocked', 'failed'].includes(status)
-        ) {
-          const sites = new Set(
-            db.jevTasks.list(id, active.taskId ?? run.id).flatMap((t) =>
-              t.items
-                .filter((i) => i.error === 'access_barrier')
-                .map((i) => i.blockedSite)
-                .filter(Boolean),
-            ),
-          );
-          if (active.siteWait) sites.add(active.siteWait.site);
-          if (sites.size && hasUnblockedScanWork(active, sites))
-            throw Object.assign(
-              Error(
-                'Erişim engeli yalnızca bildirilen sitelerde. Diğer sitelerde bekleyen ilanlar veya aramalar var; onları işle, engelli adresleri bekleyen kuyrukta bırak.',
-              ),
-              {code: 'JEV_WORK_REMAINS'},
-            );
-        }
-        const stop =
-          collecting && active.collectorError && ['failed', 'blocked'].includes(status)
-            ? {kind: 'technical', evidence: active.collectorError, issueIds: []}
-            : sourceStop(active, args);
-        // A login form on the last observed page is an app-verified barrier: the
-        // app asks the user itself instead of judging the agent's summary text.
-        let loginAsked = false;
-        if (
-          ['blocked', 'failed'].includes(status) &&
-          active.kind !== 'interview' &&
-          snapshots.current &&
-          !(a.questions ?? []).some(
-            (q) =>
-              q.answer == null &&
-              q.accessCheck?.kind === 'login' &&
-              (active.recordId
-                ? taskHasRecord(active, q.recordId)
-                : !q.recordId && q.sourceUrl === active.sourceUrl),
-          )
-        ) {
-          let accessCheck = null;
-          try {
-            accessCheck = validateLoginQuestion(snapshots.current, {
-              kind: 'login',
-              snapshotId: snapshots.current.id,
-              evidence: stop?.evidence,
-            });
-          } catch {}
-          if (accessCheck) {
-            db.askQuestion(
-              id,
-              {
-                text: args.summary,
-                accessCheck: {...accessCheck, checkedAt: db.now()},
-                fields: [LOGGED_IN_FIELD],
-                ...(active.recordId ? {recordId: active.recordId} : {}),
-              },
-              {runId: run.id},
-            );
-            loginAsked = true;
-          }
-        }
-        // A verify task that ends without portal proof has no next step for the
-        // agent. The applicant knows the outcome; the app asks and applies it.
-        if (
-          ['blocked', 'failed'].includes(status) &&
-          active.recordOperation === 'verify' &&
-          active.recordId &&
-          !loginAsked
-        ) {
-          const item = db.result(id, active.recordId);
-          if (
-            item.status === 'uncertain' &&
-            !(a.questions ?? []).some((q) => q.recordId === item.id && q.answer == null)
-          )
-            db.askQuestion(
-              id,
-              {
-                text: `${item.title ?? item.url} başvurusunun sonucu doğrulanamadı.\nAgent notu: ${String(args.summary ?? '').slice(0, 1500)}`,
-                recordId: item.id,
-                fields: [OUTCOME_FIELD],
-                outcome: true,
-              },
-              {runId: run.id},
-            );
-        }
-        if (
-          status === 'completed' &&
-          active.siteWait &&
-          db.siteAccess.status('https://' + active.siteWait.site)
-        )
-          throw Error('Site için ortak bekleme sürüyor; bu turu blocked olarak bildir.');
-        if (active.kind === 'trial' && !active.browserSteps)
-          throw Error(
-            'Bu denemede henüz kaynak kontrolü yapılmadı. Önce browser_open ile güncel erişimi kontrol et. Önceki denemenin engel raporu bu tur için kanıt değildir.',
-          );
-        if (
-          status === 'completed' &&
-          active.kind === 'run' &&
-          active.sourceUrl &&
-          !active.recordId
-        ) {
-          if (Object.keys(active.scanIssues ?? {}).length)
-            throw Error(
-              'Çözümlenmemiş sayfa sorunları var. Bu adresleri browser_open ile yeniden aç; yüklenmiyorsa failed bildir, uygulama sonra yeniden dener.',
-            );
-          const scan = scanCheckpoint(active, args.scan);
-          if (!scan.complete && args.goalReached)
-            throw Error('Eksik taramada hedefe ulaşıldı denemez');
-          if (collecting) scan.reason = active.scan.reason;
-          if (!scan.complete)
-            throw Error(
-              'Kaynak taraması bitmedi. Süre veya adım sınırı yok; aynı görevde kalan sayfaları işlemeye devam et ve complete_scan_search ile kapat. Gerçek erişim engelini blocked olarak bildir.',
-            );
-          validateWorkCompletion(active, scan);
-          if (scan.completion === 'cutoff' && args.goalReached)
-            throw Error(
-              'Yeni ilan kontrolünün tarih sınırına ulaşması otomasyonun hedefinin bittiği anlamına gelmez.',
-            );
-          db.putRun({...active, scan});
-        }
-        if (stop) db.putRun({...db.run(run.id), stop});
-        if (stop?.kind === 'technical') {
-          const current = db.run(run.id),
-            pendingUrls = [
-              ...new Set([
-                ...(current.scan?.pendingUrls ?? []),
-                ...Object.values(current.scanIssues ?? {})
-                  .filter((i) => stop.issueIds.includes(i.id))
-                  .map((i) => i.url),
-              ]),
-            ];
-          db.persistScan(id, {
-            ...current,
-            scan: {
-              ...current.scan,
-              complete: false,
-              pendingUrls,
-              reason: args.summary,
-              evidenceUrl: current.scan?.evidenceUrl ?? pendingUrls[0],
-            },
-          });
-          const retry = retryTechnicalSource(db, id, run.id, args.summary, db.now());
-          if (retry) return report(id, run.id, retry.status, retry.summary, false);
-        }
-        return report(id, run.id, status, args.summary, args.goalReached === true);
-      }
+      case 'finish_automation_run':
+        return finishAutomationRun({
+          db,
+          id,
+          run,
+          active,
+          automation: a,
+          args,
+          collecting,
+          snapshot: snapshots.current,
+          report,
+        });
       default:
         throw Error('Bilinmeyen otomasyon aracı');
     }
