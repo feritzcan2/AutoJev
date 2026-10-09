@@ -115,7 +115,7 @@ Before finish_automation_run always send a useful reply_to_user: what you found 
 Check only the assigned source, using the current workspace criteria and the source query.
 1. Open the source and handle cookie dialogs, search, filters, scrolling and pagination with browser_interact.
 2. Confirm that results are readable and that pagination works. Full coverage is not required.
-3. Save the search recipe with save_source_recipe: the results URL as a template with {query} (and {location} when the site has it), or the search form page with its field labels. The app verifies it by finding listings; fix and retry on failure. Only when no stable method exists save entry.kind=discovery with a short note.
+3. Save the search recipe with save_source_recipe: the results URL as a template with {query} (and {location} when the site has it), or the search form page with its field labels. Include the board's own filters for anything the criteria or profile make decisive, such as a listing language the user cannot work in. The app verifies it by finding listings; fix and retry on failure. Only when no stable method exists save entry.kind=discovery with a short note.
 4. Read one representative detail.
 5. Report what you observed. A trial validates reading and matching, not future sending or booking.
 
