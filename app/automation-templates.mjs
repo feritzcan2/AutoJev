@@ -141,6 +141,9 @@ export function reusableTemplate(input, normalize = templateContract) {
     fields,
     steps: input.steps.map((step) => boundedText(step, 'Adım', 500)),
     guidance: boundedText(input.guidance ?? '', 'İşleyiş', 12000, {empty: true}),
+    ...(input.assessmentHints
+      ? {assessmentHints: boundedText(input.assessmentHints, 'Değerlendirme ipuçları', 2000)}
+      : {}),
     defaultMode: 'observe',
     ...(input.table ? {table: automationTable(input.table)} : {}),
   });

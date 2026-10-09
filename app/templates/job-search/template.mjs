@@ -88,6 +88,9 @@ export const jobSearchTemplate = {
     'Başvuru belgelerini ve cevaplarını hazırla',
     'Yetki kapsamında başvur ve sonucu doğrula',
   ],
+  // Sent to Jev with every listing triage; keep it short.
+  assessmentHints:
+    'Listings are jobs. An unrelated listing is a different profession, judged by its actual responsibilities and professional field. A title naming another specialization is unrelated even when it shares a generic word such as engineer, developer or architect. Salary is a soft preference unless the user makes it mandatory; an omitted salary is not a mismatch. A qualification missing from the CV is unknown, not lacking. Possible home office or hybrid is not full remote. A site salary estimate is not the employer offer.',
   guidance: `## Setup
 1. Ask for the CV and explain the "Belge ekle" control. Ask for target roles, countries and work modes. Save the main search place in criteria.location as job sites spell it (for example "Berlin, Germany"); recipes fill {location} with it.
 2. Build the criteria.ranking proposal from technical skills, experience, role fit and work preferences, with weights that add up to 100. Ask about hard constraints such as salary, work permit, language and start date.
