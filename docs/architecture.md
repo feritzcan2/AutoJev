@@ -1,6 +1,6 @@
 # JobLoop rewrite architecture
 
-Status: proposed implementation blueprint. The confirmed product is a desktop application that finds jobs, evaluates fit, applies automatically under the user's configured rules, and tracks applications. Data stays local and automation uses the user's browser. Product code, interface copy, documentation, tests, and authored model instructions are English.
+Status: superseded on 2026-10-09. This application is simplified in place instead of rewritten: job search only, a generic core with job-specific behavior in `app/templates/job-search/`, Telegram kept. The findings below still describe the code being split. Original status: proposed implementation blueprint. The confirmed product is a desktop application that finds jobs, evaluates fit, applies automatically under the user's configured rules, and tracks applications. Data stays local and automation uses the user's browser. Product code, interface copy, documentation, tests, and authored model instructions are English.
 
 Build a modular monolith with five business modules, a first-class site extension system, explicit dependency boundaries, and one central prompt package. The application controls workflow, authorization, persistence, and recovery. Site extensions supply website-specific knowledge through a common SDK. Models interpret documents, listings, and forms through bounded tasks.
 
@@ -12,7 +12,7 @@ The existing implementation provides useful behavior to preserve, including task
 
 - [automation-store.mjs](../app/automation-store.mjs) combines persistence, scanning, scoring, questions, source recovery, and record operations. It also imports scoring behavior from the renderer directory.
 - [automation-worker.mjs](../app/automation-worker.mjs) combines tool definitions, prompts, browser operations, scoring, and execution coordination.
-- [job-search.mjs](../app/templates/job-search.mjs) represents job search through the generic automation template and record model.
+- [templates/job-search](../app/templates/job-search/template.mjs) represents job search through the generic automation template and record model.
 - [configuration-catalog.mjs](../app/configuration-catalog.mjs) displays a prompt catalog assembled from other modules. Instructions are still authored in scanning, scoring, browser helpers, agent setup, and the Rust launcher.
 - [check.mjs](../scripts/check.mjs) currently checks JavaScript syntax. It does not enforce architectural import boundaries.
 - [site-extensions/index.mjs](../app/site-extensions/index.mjs) registers DOM readers, HTTP readers, and CLI/API collectors with different contracts. Site knowledge also remains in files outside extension folders. The rewrite gives these integrations one capability contract and one extension boundary.

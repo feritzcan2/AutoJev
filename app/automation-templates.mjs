@@ -1,4 +1,4 @@
-import {jobSearchTemplate} from './templates/job-search.mjs';
+import {jobSearchTemplate} from './templates/job-search/template.mjs';
 import {exampleTemplates} from './templates/examples.mjs';
 import {saveScoreThreshold} from './score-thresholds.mjs';
 import {withAgentDefaults} from './agent-settings.mjs';

@@ -1,6 +1,6 @@
-import {applicationMailContract} from '../mail-contract.mjs';
-import {jobSearchSources} from './job-search-sources.mjs';
-import {browserDefinition} from '../browser-definition.mjs';
+import {applicationMailContract} from '../../mail-contract.mjs';
+import {jobSearchSources} from './sources.mjs';
+import {browserDefinition} from '../../browser-definition.mjs';
 // Domain instructions and fields only. Execution, sources and UI use the same
 // browser automation contract as every other template.
 export const jobSearchTemplate = {

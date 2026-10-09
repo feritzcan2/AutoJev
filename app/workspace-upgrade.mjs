@@ -1,6 +1,6 @@
 import {webUrl} from './automation-templates.mjs';
 import {createHash} from 'node:crypto';
-import {jobSearchTemplate} from './templates/job-search.mjs';
+import {jobSearchTemplate} from './templates/job-search/template.mjs';
 
 const parse = (row) => (row ? JSON.parse(row.data) : null);
 const mode = (value) =>

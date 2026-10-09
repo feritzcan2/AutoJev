@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
-import {jobSearchSources} from '../app/templates/job-search-sources.mjs';
+import {jobSearchSources} from '../app/templates/job-search/sources.mjs';
 import {sourceScanScope} from '../app/source-scan.mjs';
 import {automationTaskContext} from '../app/automation-task-context.mjs';
 import {automationPrompt} from '../app/automation-worker.mjs';
