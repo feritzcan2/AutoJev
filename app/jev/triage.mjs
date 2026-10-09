@@ -1,4 +1,5 @@
 // @ts-check
+import {jevProfileStatus, JEV_PROFILE_LIMIT} from './qualification-profile.mjs';
 export const JEV_CLASSIFICATION_VERSION = 9;
 export const JEV_TRIAGE_CONFIDENCE = 0.85;
 // A card whose keep probability falls below this is eliminated before its
@@ -24,6 +25,15 @@ export function jevCriteria(automation, documents, assessmentHints) {
   };
   // A user profile is sent only when the caller supplies a document reading.
   if (documents === undefined) return context;
+  if (jevProfileStatus(automation, documents) === 'current') {
+    context.userProfile = {
+      currentFacts: excerpt(automation.facts, 4000),
+      qualifications: excerpt(automation.jevProfile.text, JEV_PROFILE_LIMIT),
+      precedence:
+        'qualifications summarizes the user documents and saved facts. Current user facts and instructions override it. A fact it does not state is unknown, not a proven missing qualification.',
+    };
+    return context;
+  }
   const profile = automation.referenceData?.profile ?? {};
   context.userProfile = {
     currentFacts: excerpt(automation.facts, 4000),
