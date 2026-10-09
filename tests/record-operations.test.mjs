@@ -5,6 +5,7 @@ import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
 import {WebTasks} from '../app/automation/web-template.mjs';
 import {automationWorkflow} from '../app/automation/worker.mjs';
+import {LOGGED_IN_FIELD} from '../app/automation/login-question.mjs';
 import {automationBrowser} from '../app/browser/automation-browser.mjs';
 import {automationTemplate, reusableTemplate} from '../app/templates/catalog.mjs';
 import {
@@ -320,6 +321,35 @@ test('an interrupted send becomes uncertain; verification is read-only and survi
   });
   await f.finish(verify);
   assert.equal(f.db.result(f.id, f.item.id).status, 'completed');
+});
+
+test('one sign-in answer releases every open login question for the same site', async (t) => {
+  const f = fixture(t),
+    seed = f.db.begin(f.id, 'run');
+  const records = [2, 3].map((n) =>
+    f.db.record(f.id, seed.id, {
+      key: `${source}/${n}`,
+      url: `${source}/${n}`,
+      title: `R${n}`,
+      summary: 'Observed facts',
+    }),
+  );
+  f.db.finish(f.id, seed.id, 'completed', 'Saved');
+  const login = (item, url) =>
+    f.db.askQuestion(f.id, {
+      text: 'Log in',
+      recordId: item.id,
+      fields: [LOGGED_IN_FIELD],
+      accessCheck: {kind: 'login', url, evidence: 'Sign in to apply', snapshotId: 's'},
+    });
+  const first = login(f.item, 'https://www.portal.test/apply/1'),
+    same = login(records[0], 'https://portal.test/apply/2'),
+    other = login(records[1], 'https://other.test/apply/3');
+  await f.runtime.answer(f.id, first.id, {[LOGGED_IN_FIELD.id]: true});
+  await settle();
+  const answered = (q) => f.db.get(f.id).questions.find((x) => x.id === q.id).answer != null;
+  assert.equal(answered(same), true);
+  assert.equal(answered(other), false);
 });
 
 test('record questions resume preparation without pausing other scans or starting setup', async (t) => {
