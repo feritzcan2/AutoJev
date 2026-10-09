@@ -27,12 +27,14 @@ export function jevCriteria(automation, documents, assessmentHints) {
   const profile = automation.referenceData?.profile ?? {};
   context.userProfile = {
     currentFacts: excerpt(automation.facts, 4000),
+    // The user's short answers (languages, work permit) go first: the long
+    // saved summary repeats the documents and is the part a cut may lose.
     savedFacts: excerpt(
       [
-        profile.facts,
         ...Object.entries(profile.learnedFacts ?? {}).map(([key, fact]) =>
           typeof fact.value === 'string' ? `${key}: ${fact.value}` : '',
         ),
+        profile.facts,
       ]
         .filter(Boolean)
         .join('\n'),
