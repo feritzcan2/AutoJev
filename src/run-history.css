@@ -87,6 +87,19 @@
   overflow: hidden;
 }
 
+/* Current work: the running and waiting rows above the history. */
+.run-row[data-status='waiting'] .run-head::before {
+  background: var(--accent);
+}
+.current-work-stop {
+  margin-left: auto;
+  padding: 2px 10px;
+  font-size: 12px;
+}
+.run-history-empty.current-work-empty {
+  padding: 18px 24px;
+}
+
 .run-history-empty {
   margin: 0;
   padding: 36px 24px;
