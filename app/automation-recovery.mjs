@@ -1,3 +1,4 @@
+// @ts-check
 import {operationFor} from './template-contract.mjs';
 import {sourceMode} from './automation-sources.mjs';
 import {SOURCE_PAGE_INSTRUCTIONS} from './source-scan.mjs';

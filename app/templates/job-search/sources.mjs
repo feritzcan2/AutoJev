@@ -1,3 +1,4 @@
+// @ts-check
 // Starting sources for the job-search template. Workspace copies remain editable.
 // Sources without countries join every workspace; country sources are added
 // in setup for users searching in those countries (ISO 3166 alpha-2).

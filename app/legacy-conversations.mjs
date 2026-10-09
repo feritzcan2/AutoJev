@@ -1,3 +1,4 @@
+// @ts-check
 const parse = (row) => (row ? JSON.parse(row.data) : null);
 export function migrateApplicationConversations(workspaces) {
   if (workspaces.exists('agent_conversations'))

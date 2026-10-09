@@ -1,3 +1,4 @@
+// @ts-check
 import {siteExtensionFor} from './site-extensions/index.mjs';
 import {recipeReplay, recipeValues} from './source-recipe.mjs';
 

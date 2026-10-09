@@ -1,3 +1,4 @@
+// @ts-check
 import {migrateApplicationConversations} from './legacy-conversations.mjs';
 import {templateContract} from './template-contract.mjs';
 import {browserDefinition} from './browser-definition.mjs';

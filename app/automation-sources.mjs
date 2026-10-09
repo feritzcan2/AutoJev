@@ -1,3 +1,4 @@
+// @ts-check
 import {boundedText, webUrl} from './automation-templates.mjs';
 import {normalizeSourceRecipe} from './source-recipe.mjs';
 

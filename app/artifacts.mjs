@@ -1,3 +1,4 @@
+// @ts-check
 import {readdir, realpath, stat, readFile} from 'node:fs/promises';
 import path from 'node:path';
 const extensions = new Set(['.pdf', '.docx', '.txt', '.md', '.png', '.jpg', '.jpeg']);

@@ -1,3 +1,4 @@
+// @ts-check
 import {listingIdentity} from './job-urls.mjs';
 
 // Scoring can reuse text held by this app process. After the app closes, a

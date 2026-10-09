@@ -1,3 +1,4 @@
+// @ts-check
 import {normalizeSourceRecipe} from './source-recipe.mjs';
 
 // countries (ISO 3166 alpha-2) marks a source that serves only those

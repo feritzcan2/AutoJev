@@ -1,3 +1,4 @@
+// @ts-check
 import path from 'node:path';
 import {existsSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';

@@ -1,3 +1,4 @@
+// @ts-check
 import {sourceTrialReady} from './automation-trial.mjs';
 import {providerLimitAttention} from './provider-limit.mjs';
 import {isConversation, conversationWaiting} from './workspace-conversation.mjs';

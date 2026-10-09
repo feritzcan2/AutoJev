@@ -1,3 +1,4 @@
+// @ts-check
 import {jevDetailKey} from './jev-detail-urls.mjs';
 
 // Navigation keeps the observed address. Only universally known provenance is

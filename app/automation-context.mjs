@@ -1,3 +1,4 @@
+// @ts-check
 import {randomUUID} from 'node:crypto';
 
 export const AUTOMATION_CONTEXT_BYTES = 16000;

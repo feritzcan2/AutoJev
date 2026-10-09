@@ -1,3 +1,4 @@
+// @ts-check
 import {access, stat} from 'node:fs/promises';
 import {constants} from 'node:fs';
 import {homedir} from 'node:os';

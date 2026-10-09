@@ -1,3 +1,4 @@
+// @ts-check
 import {taskRecordIds, recordScoredInTask} from './record-task-scope.mjs';
 
 const MAX_CONTINUATIONS = 3;

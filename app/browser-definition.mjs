@@ -1,3 +1,4 @@
+// @ts-check
 const states = [
   ['found', 'Bulundu'],
   ['prepared', 'Taslak hazır'],

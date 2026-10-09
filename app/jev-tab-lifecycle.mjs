@@ -1,3 +1,4 @@
+// @ts-check
 export const RESEARCH_TAB_LIMIT = 12;
 
 export function protectedResearchTabs(browser, state, {keepSources = true} = {}) {

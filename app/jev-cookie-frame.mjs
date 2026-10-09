@@ -1,3 +1,4 @@
+// @ts-check
 import {observedId} from './jev-ids.mjs';
 const consentLabel =
   /^(accept(?: all(?: cookies)?)?|decline|reject(?: all(?: cookies)?)?|customi[sz]e|allow all|only necessary|save preferences|alle akzeptieren|alle ablehnen|nur notwendige|einstellungen|kabul et|tümünü kabul et|reddet)$/i;

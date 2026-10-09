@@ -1,3 +1,4 @@
+// @ts-check
 import {createHash} from 'node:crypto';
 // Change the revision when workflow semantics change without a schema change.
 export const AUTOMATION_PROTOCOL_VERSION = 5;

@@ -1,3 +1,4 @@
+// @ts-check
 const timestamp = (value) => (typeof value === 'number' ? value : Date.parse(value) || 0);
 
 export function conversationQuestion(question, runs = []) {

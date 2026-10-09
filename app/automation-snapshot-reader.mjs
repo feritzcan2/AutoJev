@@ -1,3 +1,4 @@
+// @ts-check
 // One synchronous UI read shares repeated lookups. Nothing survives the
 // snapshot, so writes, rollbacks and other workers cannot leave stale state.
 export function automationSnapshotReader(store) {

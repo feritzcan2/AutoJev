@@ -1,3 +1,4 @@
+// @ts-check
 import {createHash} from 'node:crypto';
 import {jobUrlKey} from './job-urls.mjs';
 

@@ -1,3 +1,4 @@
+// @ts-check
 // Jev wraps rendered text and control metadata in JSON; Playwright returns
 // accessible text directly. Evidence must use page prose, not hidden metadata.
 export function browserRenderedText(page) {

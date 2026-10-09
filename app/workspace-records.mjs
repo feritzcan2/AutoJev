@@ -1,3 +1,4 @@
+// @ts-check
 import {randomUUID} from 'node:crypto';
 import {RecordIdentity, activeRecordSql} from './record-identity.mjs';
 

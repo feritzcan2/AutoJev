@@ -1,3 +1,4 @@
+// @ts-check
 const value = (result) => {
   if (result?.isError) throw Error('Sayfa kontrolü başarısız.');
   const text = result?.content?.find((p) => p.type === 'text')?.text;

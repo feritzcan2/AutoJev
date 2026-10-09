@@ -1,3 +1,4 @@
+// @ts-check
 const applicationTools = new Set([
   'resume_application',
   'update_application',

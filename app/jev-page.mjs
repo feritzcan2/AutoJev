@@ -1,3 +1,4 @@
+// @ts-check
 const transientRead = (error) =>
   /execution context was destroyed|cannot find context|context.*destroyed|Target page, context or browser has been closed|JSHandle.*disposed|Sayfa yükleniyor|Sayfa okuma sırasında yönlendi/i.test(
     error.message,

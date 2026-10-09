@@ -1,3 +1,4 @@
+// @ts-check
 // Retained for importing and exporting historical template metadata.
 const outcome = (id, label) => ({id, label});
 export const defaultMailContract = {

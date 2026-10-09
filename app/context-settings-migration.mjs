@@ -1,3 +1,4 @@
+// @ts-check
 // Percentages cannot be converted without knowing the active model's capacity.
 // Retire legacy thresholds as disabled; preserve explicitly saved token values.
 export function withoutContextPercentages(settings) {

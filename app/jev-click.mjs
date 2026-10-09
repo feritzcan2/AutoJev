@@ -1,3 +1,4 @@
+// @ts-check
 import {observedId, actionIdentity} from './jev-ids.mjs';
 
 // The caller selects an observed target, never a selector or guessed coordinate.

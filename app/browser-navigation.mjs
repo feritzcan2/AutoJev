@@ -1,3 +1,4 @@
+// @ts-check
 // Keep navigation evidence outside the paged document text so an agent does
 // not have to search escaped JSON just to find the current scroll position.
 export function browserNavigation(response) {

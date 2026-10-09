@@ -1,3 +1,4 @@
+// @ts-check
 import {applicationMailContract} from '../../mail-contract.mjs';
 import {jobSearchSources} from './sources.mjs';
 import {browserDefinition} from '../../browser-definition.mjs';

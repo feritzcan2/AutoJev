@@ -1,3 +1,4 @@
+// @ts-check
 import {webUrl, boundedText} from './automation-templates.mjs';
 
 // URLs come from the browser response, never from an agent-created page number.

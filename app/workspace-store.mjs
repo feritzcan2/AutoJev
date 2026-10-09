@@ -1,3 +1,4 @@
+// @ts-check
 import {withAgentDefaults} from './agent-settings.mjs';
 import {WorkspaceTasks} from './workspace-tasks.mjs';
 import {WorkspaceWorkers} from './workspace-workers.mjs';

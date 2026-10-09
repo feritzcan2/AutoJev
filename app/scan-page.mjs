@@ -1,3 +1,4 @@
+// @ts-check
 import {observedPagePosition} from './jev-results.mjs';
 
 const normalize = (value) =>

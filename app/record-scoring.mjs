@@ -1,3 +1,4 @@
+// @ts-check
 import {taskHasRecord, batchScoring} from './record-task-scope.mjs';
 import {SCORING_VERSION} from './scoring-policy.mjs';
 import {boundedText, webUrl} from './automation-templates.mjs';

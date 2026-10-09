@@ -1,3 +1,4 @@
+// @ts-check
 import {sourceScanScope} from './source-scan.mjs';
 
 // Job-search workspaces used to save four fixed scoring weights as criteria

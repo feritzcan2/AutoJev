@@ -1,3 +1,4 @@
+// @ts-check
 import {createHash} from 'node:crypto';
 import {scoreThresholdValue, saveScoreThreshold} from './score-thresholds.mjs';
 

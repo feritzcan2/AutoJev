@@ -1,3 +1,4 @@
+// @ts-check
 import {homedir, userInfo} from 'node:os';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';

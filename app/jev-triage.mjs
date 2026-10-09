@@ -1,3 +1,4 @@
+// @ts-check
 export const JEV_CLASSIFICATION_VERSION = 8;
 export const JEV_TRIAGE_CONFIDENCE = 0.85;
 // A card whose keep probability falls below this is eliminated before its

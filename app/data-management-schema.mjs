@@ -1,3 +1,4 @@
+// @ts-check
 // Increase this version whenever a release changes the persisted data contract.
 // Startup takes a backup before opening Store when this version or the app changes.
 export const DATA_SCHEMA_VERSION = 40;

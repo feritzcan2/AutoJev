@@ -1,3 +1,4 @@
+// @ts-check
 // Source text and observed URLs only. These rules identify generic site
 // chrome, not fit: an unfamiliar listing URL must remain available for Jev to
 // classify. No host, path or label specific to one website belongs here.

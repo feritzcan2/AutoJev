@@ -1,3 +1,4 @@
+// @ts-check
 import {createHash} from 'node:crypto';
 import {recordOperationState} from './record-operations.mjs';
 // Compatibility projection for Telegram transports. All data and actions
