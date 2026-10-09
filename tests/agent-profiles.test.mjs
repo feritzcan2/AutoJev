@@ -1,25 +1,25 @@
-import {WebTasks} from '../app/web-template.mjs';
+import {WebTasks} from '../app/automation/web-template.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {AgentProfiles, agentProfileId, profileDigest} from '../app/agent-profiles.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {AgentProfiles, agentProfileId, profileDigest} from '../app/agents/profiles.mjs';
 import {
   WEB_AGENTS,
   webAgentProfile,
   AUTOMATION_INSTRUCTIONS,
-} from '../app/automation-agent-profiles.mjs';
+} from '../app/agents/automation-profiles.mjs';
 import {
   automationWorkflow,
   launchAutomationWorker,
   automationPrompt,
-} from '../app/automation-worker.mjs';
-import {AgentSessions} from '../app/agent-sessions.mjs';
-import {InstructionLog} from '../app/instruction-log.mjs';
-import {selectResume} from '../app/resume.mjs';
+} from '../app/automation/worker.mjs';
+import {AgentSessions} from '../app/agents/sessions.mjs';
+import {InstructionLog} from '../app/system/instruction-log.mjs';
+import {selectResume} from '../app/agents/resume.mjs';
 const settings = {
   provider: 'codex',
   model: 'default',

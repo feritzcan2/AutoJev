@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BrowserConnections} from '../app/browser-connection.mjs';
-import {BrowserTools} from '../app/browser.mjs';
+import {BrowserConnections} from '../app/browser/connection.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 test('one connection handshake, backoff, disconnect and retry without agent calls', async () => {
   let count = 0,

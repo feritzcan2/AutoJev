@@ -3,7 +3,7 @@
 import {readFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import {isDeepStrictEqual} from 'node:util';
-import {presentObservation} from '../app/jev-navigation.mjs';
+import {presentObservation} from '../app/jev/navigation.mjs';
 const file = process.argv[2];
 if (!file) throw Error('Usage: node scripts/audit-jev-context.mjs /path/to/conversation.jsonl');
 const slots = new Map();

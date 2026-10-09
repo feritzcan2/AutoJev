@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
-import {Engine} from '../app/engine.mjs';
+import {Engine} from '../app/agents/engine.mjs';
 test('PTY stop error is recovered only after the engine exits', async () => {
   const engine = Object.create(Engine.prototype),
     child = new EventEmitter();

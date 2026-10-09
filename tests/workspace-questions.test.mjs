@@ -1,10 +1,10 @@
 import test from 'node:test';
-import {WebTasks} from '../app/web-template.mjs';
-import {unreportedInterviewRun} from '../app/automation-recovery.mjs';
+import {WebTasks} from '../app/automation/web-template.mjs';
+import {unreportedInterviewRun} from '../app/automation/recovery.mjs';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {automationWorkflow, launchAutomationWorker} from '../app/automation-worker.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {automationWorkflow, launchAutomationWorker} from '../app/automation/worker.mjs';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';

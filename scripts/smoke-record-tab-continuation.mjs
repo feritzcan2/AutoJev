@@ -3,8 +3,8 @@ import {createServer} from 'node:http';
 import {mkdtemp, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {BrowserTools} from '../app/browser.mjs';
-import {automationBrowser} from '../app/automation-browser.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
+import {automationBrowser} from '../app/browser/automation-browser.mjs';
 
 const directory = await mkdtemp(path.join(os.tmpdir(), 'record-tab-resume-'));
 const server = createServer((req, res) => {

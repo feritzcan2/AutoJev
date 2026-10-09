@@ -1,11 +1,11 @@
-import {AutomationStore} from '../app/automation-store.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {mkdtemp, mkdir, writeFile, stat, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 
 const require = createRequire(import.meta.url);
 const {_electron: electron} = createRequire(require.resolve('@playwright/mcp/package.json'))(
@@ -64,8 +64,8 @@ try {
       };
     },
     {
-      workspaces: pathToFileURL(path.join(root, 'app/workspaces.mjs')).href,
-      browser: pathToFileURL(path.join(root, 'app/browser.mjs')).href,
+      workspaces: pathToFileURL(path.join(root, 'app/workspaces/workspaces.mjs')).href,
+      browser: pathToFileURL(path.join(root, 'app/browser/tools.mjs')).href,
     },
   );
   for (const button of ['#delete-workspace', '#automation-delete']) {

@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import {mkdtemp, writeFile, rm} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import {actionSpace, chooseJev, jevConfig, validateChoice} from '../app/jev-policy.mjs';
-import {validateJevArgs} from '../app/jev-browser.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
+import {actionSpace, chooseJev, jevConfig, validateChoice} from '../app/jev/policy.mjs';
+import {validateJevArgs} from '../app/jev/browser.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {seedJevDemo, startJevFixture} from '../scripts/jev-demo.mjs';
-import {compactElements, presentObservation} from '../app/jev-navigation.mjs';
-import {AUTOMATION_INSTRUCTIONS} from '../app/automation-agent-profiles.mjs';
-import {JEV_TASK_INSTRUCTIONS} from '../app/jev-tasks.mjs';
+import {compactElements, presentObservation} from '../app/jev/navigation.mjs';
+import {AUTOMATION_INSTRUCTIONS} from '../app/agents/automation-profiles.mjs';
+import {JEV_TASK_INSTRUCTIONS} from '../app/jev/tasks.mjs';
 const page = {
   url: 'https://fixture.example',
   title: 'Jobs',

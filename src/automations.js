@@ -1,13 +1,13 @@
 import {activeRecordOperations} from './record-operation-status.js';
 import {recordQuestionDialog} from './record-question-dialog.js';
-import {automationReady} from '../app/automation-trial.mjs';
+import {automationReady} from '../app/sources/trial.mjs';
 import {templateFields} from './template-fields.js';
-import {profileChanged} from '../app/profile-updates.mjs';
-import {automationProgress, runKindLabel} from '../app/automation-progress.mjs';
+import {profileChanged} from '../app/automation/profile-updates.mjs';
+import {automationProgress, runKindLabel} from '../app/automation/progress.mjs';
 import {prepareAutomationChat} from './automation-chat.js';
 import {workspaceChat} from './workspace-chat.js';
 import {setupAgentSettingsPanel} from './setup-agent-settings.js';
-import {interviewRun, interviewBusy, hasBlockingRun} from '../app/workspace-conversation.mjs';
+import {interviewRun, interviewBusy, hasBlockingRun} from '../app/workspaces/conversation.mjs';
 import {automationResultsTable} from './automation-results.js';
 import {minimumSaveScoreSettings} from './minimum-save-score.js';
 import {automationSourcesPanel} from './automation-sources.js';

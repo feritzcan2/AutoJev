@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 
 test('workspace rename and deletion preserve the other workspace and its records', (t) => {
   const core = new WorkspaceDatabase(':memory:');
@@ -36,8 +36,8 @@ test('workspace rename and deletion preserve the other workspace and its records
 import {mkdtemp, readFile, writeFile, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {writeWorkspaceInstructions} from '../app/workspace-instructions.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
+import {writeWorkspaceInstructions} from '../app/workspaces/instructions.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
 test('Claude imports one shared instruction source and preserves user additions across launches', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'jobloop-instructions-'));
   try {

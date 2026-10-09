@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
-import {privateJevPage, retryJevRead} from '../app/jev-page.mjs';
+import {privateJevPage, retryJevRead} from '../app/jev/page.mjs';
 
 test('a stale cached document handle is invalidated without repeating an evaluation that could be an action', async () => {
   const page = new EventEmitter();

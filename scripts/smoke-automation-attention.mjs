@@ -4,8 +4,8 @@ import {mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
 const require = createRequire(import.meta.url),
   {_electron: electron} = createRequire(require.resolve('@playwright/mcp/package.json'))(
     'playwright',
@@ -142,8 +142,8 @@ try {
       file,
       source,
       url,
-      store: pathToFileURL(path.resolve('app/workspace-database.mjs')).href,
-      automationStore: pathToFileURL(path.resolve('app/automation-store.mjs')).href,
+      store: pathToFileURL(path.resolve('app/workspaces/database.mjs')).href,
+      automationStore: pathToFileURL(path.resolve('app/automation/store.mjs')).href,
     },
   );
   await page.locator('.automation-attention-banner').waitFor({state: 'visible'});

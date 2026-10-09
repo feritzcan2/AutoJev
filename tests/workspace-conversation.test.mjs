@@ -1,21 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {WebTasks} from '../app/web-template.mjs';
-import {automationTaskContext} from '../app/automation-task-context.mjs';
-import {automationWorkflow, automationPrompt} from '../app/automation-worker.mjs';
-import {automationBrowser} from '../app/automation-browser.mjs';
-import {pendingRecordQuestion} from '../app/record-operations.mjs';
-import {webWorkspaceView} from '../app/workspace-view.mjs';
-import {automationAttention} from '../app/automation-attention.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {WebTasks} from '../app/automation/web-template.mjs';
+import {automationTaskContext} from '../app/automation/task-context.mjs';
+import {automationWorkflow, automationPrompt} from '../app/automation/worker.mjs';
+import {automationBrowser} from '../app/browser/automation-browser.mjs';
+import {pendingRecordQuestion} from '../app/records/operations.mjs';
+import {webWorkspaceView} from '../app/workspaces/view.mjs';
+import {automationAttention} from '../app/automation/attention.mjs';
 import {
   CONVERSATION_WORKER,
   isConversation,
   conversationWaiting,
   interviewBusy,
-} from '../app/workspace-conversation.mjs';
-import {automationProgress} from '../app/automation-progress.mjs';
+} from '../app/workspaces/conversation.mjs';
+import {automationProgress} from '../app/automation/progress.mjs';
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 function fixture(t, {launch, message} = {}) {

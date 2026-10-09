@@ -1,12 +1,12 @@
-import {workerPreviews} from './worker-preview.mjs';
-import {registerWorkspaceSupport} from './workspace-support-services.mjs';
-import {upgradeWorkspaces} from './workspace-upgrade.mjs';
-import {workspaceBrowserDirectory} from './workspace-paths.mjs';
-import {AgentProfiles} from './agent-profiles.mjs';
-import {WEB_AGENTS, WEB_AGENT_ROLES} from './automation-agent-profiles.mjs';
-import {InstructionLog} from './instruction-log.mjs';
-import {webInstructionCatalog, instructionSnapshot} from './instruction-catalog.mjs';
-import {configurationCatalog, webPromptCatalog} from './configuration-catalog.mjs';
+import {workerPreviews} from './agents/worker-preview.mjs';
+import {registerWorkspaceSupport} from './workspaces/support-services.mjs';
+import {upgradeWorkspaces} from './workspaces/upgrade.mjs';
+import {workspaceBrowserDirectory} from './workspaces/paths.mjs';
+import {AgentProfiles} from './agents/profiles.mjs';
+import {WEB_AGENTS, WEB_AGENT_ROLES} from './agents/automation-profiles.mjs';
+import {InstructionLog} from './system/instruction-log.mjs';
+import {webInstructionCatalog, instructionSnapshot} from './system/instruction-catalog.mjs';
+import {configurationCatalog, webPromptCatalog} from './system/configuration-catalog.mjs';
 import {
   app,
   BrowserWindow,
@@ -20,28 +20,36 @@ import {
 import {mkdir, rm} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {Maintenance} from './maintenance.mjs';
-import {registerAutomationServices} from './automation-services.mjs';
-import {AutomationStore} from './automation-store.mjs';
-import {registerSettingsServices} from './settings-services.mjs';
-import {JevSettings} from './jev-settings.mjs';
-import {CaptchaSettings} from './captcha-settings.mjs';
-import {CaptchaCoordinator} from './captcha-coordinator.mjs';
-import {applyPendingRestore, prepareDataUpgrade, completeDataUpgrade} from './data-management.mjs';
-import {currentDataDirectory, resolveDataDirectory, cancelDataLocation} from './data-location.mjs';
-import {AgentSessions} from './agent-sessions.mjs';
-import {WorkspaceScheduler} from './workspace-scheduler.mjs';
-import {Workspaces} from './workspaces.mjs';
-import {WorkspaceDocuments} from './workspace-documents.mjs';
-import {WorkspaceDatabase} from './workspace-database.mjs';
-import {TemplateRegistry} from './template-registry.mjs';
-import {loadExtensions} from './extensions.mjs';
-import {startToolServer} from './tool-server.mjs';
-import {workerKey} from './worker-key.mjs';
-import {BrowserTools} from './browser.mjs';
-import {listChromeProfiles} from './chrome-profiles.mjs';
-import {browserDefinition} from './browser-definition.mjs';
-import {resolveLaunchEnvironment} from './launch-environment.mjs';
+import {Maintenance} from './system/maintenance.mjs';
+import {registerAutomationServices} from './automation/services.mjs';
+import {AutomationStore} from './automation/store.mjs';
+import {registerSettingsServices} from './system/settings-services.mjs';
+import {JevSettings} from './jev/settings.mjs';
+import {CaptchaSettings} from './captcha/settings.mjs';
+import {CaptchaCoordinator} from './captcha/coordinator.mjs';
+import {
+  applyPendingRestore,
+  prepareDataUpgrade,
+  completeDataUpgrade,
+} from './system/data-management.mjs';
+import {
+  currentDataDirectory,
+  resolveDataDirectory,
+  cancelDataLocation,
+} from './system/data-location.mjs';
+import {AgentSessions} from './agents/sessions.mjs';
+import {WorkspaceScheduler} from './workspaces/scheduler.mjs';
+import {Workspaces} from './workspaces/workspaces.mjs';
+import {WorkspaceDocuments} from './workspaces/documents.mjs';
+import {WorkspaceDatabase} from './workspaces/database.mjs';
+import {TemplateRegistry} from './templates/registry.mjs';
+import {loadExtensions} from './templates/extensions.mjs';
+import {startToolServer} from './agents/tool-server.mjs';
+import {workerKey} from './automation/worker-key.mjs';
+import {BrowserTools} from './browser/tools.mjs';
+import {listChromeProfiles} from './browser/chrome-profiles.mjs';
+import {browserDefinition} from './templates/browser-definition.mjs';
+import {resolveLaunchEnvironment} from './agents/launch-environment.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 async function boot() {

@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {WebTasks} from '../app/web-template.mjs';
-import {AgentSessions} from '../app/agent-sessions.mjs';
-import {automationWorkflow, launchAutomationWorker} from '../app/automation-worker.mjs';
-import {setupAgentHistory, setupAgentSettings} from '../app/setup-agent.mjs';
-import {CONVERSATION_WORKER} from '../app/workspace-conversation.mjs';
-import {startWithResumeRepair} from '../app/resume.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {WebTasks} from '../app/automation/web-template.mjs';
+import {AgentSessions} from '../app/agents/sessions.mjs';
+import {automationWorkflow, launchAutomationWorker} from '../app/automation/worker.mjs';
+import {setupAgentHistory, setupAgentSettings} from '../app/agents/setup-agent.mjs';
+import {CONVERSATION_WORKER} from '../app/workspaces/conversation.mjs';
+import {startWithResumeRepair} from '../app/agents/resume.mjs';
 
 const profile = 'builtin.agent-profile.loop-web-interview';
 async function fixture(t, provider = 'codex') {

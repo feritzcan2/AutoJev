@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {jevCriteria, FIT_RULES, DISCOVERY_FIT_RULES} from '../app/jev-triage.mjs';
-import {automationTemplate} from '../app/automation-templates.mjs';
+import {jevCriteria, FIT_RULES, DISCOVERY_FIT_RULES} from '../app/jev/triage.mjs';
+import {automationTemplate} from '../app/templates/catalog.mjs';
 
 test('the user profile contains current language facts and user documents without unrelated history or file paths', () => {
   const automation = {

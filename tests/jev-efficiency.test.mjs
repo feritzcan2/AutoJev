@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {captureControls, presentObservation} from '../app/jev-navigation.mjs';
-import {updateVerification} from '../app/jev-verification.mjs';
+import {captureControls, presentObservation} from '../app/jev/navigation.mjs';
+import {updateVerification} from '../app/jev/verification.mjs';
 import {controlState} from '../scripts/jev-control-state.mjs';
 
 test('control deltas reconstruct full state across edits, removals and full refreshes', () => {
@@ -227,7 +227,7 @@ test('the verification budget belongs to one page; a widget seen on an earlier p
   assert.equal(updateVerification(slot, evidence, 150000).handoff, true);
 });
 
-import {observationPolicy} from '../app/jev-navigation.mjs';
+import {observationPolicy} from '../app/jev/navigation.mjs';
 test('routine full requests produce compact maps; lost context and recovery retain full reconstruction', () => {
   const page = {
       url: 'https://example.test',

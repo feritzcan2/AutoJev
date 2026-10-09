@@ -4,8 +4,8 @@ import {
   ContextCompaction,
   contextCompactTokens,
   compactionPending,
-} from '../app/context-compaction.mjs';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
+} from '../app/agents/context-compaction.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 
 const usage = (tokens, updatedAt = 1) => ({
   tokens,

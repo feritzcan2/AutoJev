@@ -1,7 +1,7 @@
 import {renderMessageText} from './message-text.js';
-import {interviewRun, interviewBusy} from '../app/workspace-conversation.mjs';
-import {conversationToolLabel} from '../app/conversation-activity.mjs';
-import {conversationMessages} from '../app/conversation-messages.mjs';
+import {interviewRun, interviewBusy} from '../app/workspaces/conversation.mjs';
+import {conversationToolLabel} from '../app/agents/conversation-activity.mjs';
+import {conversationMessages} from '../app/agents/conversation-messages.mjs';
 import './workspace-chat.css';
 
 const node = (tag, cls, text) => {

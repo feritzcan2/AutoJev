@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {WebTasks} from '../app/web-template.mjs';
-import {automationRunHistory} from '../app/automation-continuation.mjs';
-import {selectResume} from '../app/resume.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
-import {automationProtocol, prepareAutomationProtocol} from '../app/automation-protocol.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {WebTasks} from '../app/automation/web-template.mjs';
+import {automationRunHistory} from '../app/automation/continuation.mjs';
+import {selectResume} from '../app/agents/resume.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {automationProtocol, prepareAutomationProtocol} from '../app/automation/protocol.mjs';
 
 const settings = {
   provider: 'codex',

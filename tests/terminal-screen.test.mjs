@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import headless from '@xterm/headless';
-import {TerminalScreen} from '../app/terminal-screen.mjs';
+import {TerminalScreen} from '../app/agents/terminal-screen.mjs';
 
 const write = (terminal, text) => new Promise((resolve) => terminal.write(text, resolve));
 const contents = (terminal) => {

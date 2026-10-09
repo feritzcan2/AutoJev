@@ -1,6 +1,6 @@
 // Inspect the rendered terminal screen: interactive prompts are often redrawn
 // in place and can be split across PTY output events.
-import {providerLimit, providerLimitAttention} from '../app/provider-limit.mjs';
+import {providerLimit, providerLimitAttention} from '../app/agents/provider-limit.mjs';
 export function terminalAttention(screen, state, provider = 'claude') {
   const limit = providerLimit(screen, provider);
   if (limit) return providerLimitAttention(limit);

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {JevBrowser} from '../app/jev-browser.mjs';
-import {JevCdpTransport} from '../app/jev-cdp.mjs';
+import {JevBrowser} from '../app/jev/browser.mjs';
+import {JevCdpTransport} from '../app/jev/cdp.mjs';
 
 test('destroyed CDP targets retire ownership, attachments and per-tab metadata', () => {
   const browser = new JevBrowser('/unused', {connection: 'test'});

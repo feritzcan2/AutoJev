@@ -4,11 +4,11 @@ import {
   recordReceipt,
   scanToolOutput,
   documentToolContent,
-} from '../app/automation-tool-output.mjs';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
-import {AUTOMATION_CONTEXT_BYTES} from '../app/automation-context.mjs';
+} from '../app/automation/tool-output.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {AUTOMATION_CONTEXT_BYTES} from '../app/automation/context.mjs';
 
 const source = 'https://jobs.example/results';
 function fixture(t) {

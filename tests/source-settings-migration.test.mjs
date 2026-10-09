@@ -4,10 +4,10 @@ import {createHash} from 'node:crypto';
 import {mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {automationTools} from '../app/automation-worker.mjs';
-import {sourceScanScope} from '../app/source-scan.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {automationTools} from '../app/automation/worker.mjs';
+import {sourceScanScope} from '../app/sources/scan.mjs';
 
 test('opening old data removes source extensions and resumes the saved browser queue', (t) => {
   const directory = mkdtempSync(path.join(tmpdir(), 'source-settings-upgrade-'));

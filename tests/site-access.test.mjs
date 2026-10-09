@@ -4,8 +4,13 @@ import {DatabaseSync} from 'node:sqlite';
 import {mkdtemp, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {SiteAccess, accessBarrier, retryAfterTime, networkFailure} from '../app/site-access.mjs';
-import {JevBrowser} from '../app/jev-browser.mjs';
+import {
+  SiteAccess,
+  accessBarrier,
+  retryAfterTime,
+  networkFailure,
+} from '../app/browser/site-access.mjs';
+import {JevBrowser} from '../app/jev/browser.mjs';
 const url = 'https://www.kleinanzeigen.de/list',
   minute = 60000;
 

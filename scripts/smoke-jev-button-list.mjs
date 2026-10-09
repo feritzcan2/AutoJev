@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {JevBrowser} from '../app/jev-browser.mjs';
+import {JevBrowser} from '../app/jev/browser.mjs';
 import {controlState} from './jev-control-state.mjs';
 const dir = await mkdtemp(path.join(os.tmpdir(), 'jev-button-list-'));
 const client = new JevBrowser(dir, {

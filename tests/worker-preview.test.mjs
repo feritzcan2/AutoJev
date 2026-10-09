@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {workerPreviews} from '../app/worker-preview.mjs';
+import {workerPreviews} from '../app/agents/worker-preview.mjs';
 
 function fixture() {
   const sessions = new Map([

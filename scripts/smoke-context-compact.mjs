@@ -6,12 +6,12 @@ import {mkdtemp, mkdir, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {ContextUsage} from '../app/context-usage.mjs';
-import {Engine} from '../app/engine.mjs';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {automationTools} from '../app/automation-worker.mjs';
-import {startToolServer} from '../app/tool-server.mjs';
+import {ContextUsage} from '../app/agents/context-usage.mjs';
+import {Engine} from '../app/agents/engine.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {automationTools} from '../app/automation/worker.mjs';
+import {startToolServer} from '../app/agents/tool-server.mjs';
 const require = createRequire(import.meta.url),
   {chromium} = createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
 const xterm = createRequire(require.resolve('@termloop/terminal-surface/xterm')).resolve(

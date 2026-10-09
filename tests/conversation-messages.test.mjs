@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {conversationMessages} from '../app/conversation-messages.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {conversationMessages} from '../app/agents/conversation-messages.mjs';
 
 const message = (id, extra = {}) => ({id, role: 'assistant', text: id, at: 100, ...extra});
 

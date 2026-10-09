@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdtemp, writeFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {Engine} from '../app/engine.mjs';
-import {collectReadiness} from '../app/readiness.mjs';
+import {Engine} from '../app/agents/engine.mjs';
+import {collectReadiness} from '../app/system/readiness.mjs';
 
 test(
   'missing CLI errors give the same recovery steps through readiness and engine requests',

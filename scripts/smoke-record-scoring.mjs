@@ -5,8 +5,8 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createServer} from 'node:http';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
 
 const require = createRequire(import.meta.url),
   {_electron: electron} = createRequire(require.resolve('@playwright/mcp/package.json'))(
@@ -74,7 +74,7 @@ try {
         return original.call(this, op, args);
       };
     },
-    pathToFileURL(path.resolve('app/engine.mjs')).href,
+    pathToFileURL(path.resolve('app/agents/engine.mjs')).href,
   );
   await page.waitForFunction(
     (id) => document.querySelector('#candidates').value === id,

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp, mkdir, writeFile, symlink, rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {listDocuments, readDocument, documentPath} from '../app/artifacts.mjs';
+import {listDocuments, readDocument, documentPath} from '../app/automation/artifacts.mjs';
 test('documents appear without registration and technical files stay hidden', async () => {
   const root = await mkdtemp(join(tmpdir(), 'jobloop-files-'));
   try {

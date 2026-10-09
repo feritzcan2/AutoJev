@@ -4,7 +4,7 @@
 // of a browser tab and returned as ordinary Jev page objects. Everything after
 // the read (known listings, assessment, evidence, queue) stays generic.
 // Card and posting parsing follows github.com/MadsLorentzen/ai-job-search (MIT).
-import {SiteWaitError} from '../site-access.mjs';
+import {SiteWaitError} from '../browser/site-access.mjs';
 
 const SEARCH_PATH = '/jobs-guest/jobs/api/seeMoreJobPostings/search';
 const DETAIL_URL = 'https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/';

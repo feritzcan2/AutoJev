@@ -9,7 +9,7 @@ import {
   findChrome,
   inspectLogin,
   readinessEnvironment,
-} from '../app/readiness.mjs';
+} from '../app/system/readiness.mjs';
 
 const ready = {state: 'ready', id: 'login', label: 'Agent oturumu', detail: 'Ready'};
 const dependencies = {

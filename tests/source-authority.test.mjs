@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {sourceMode} from '../app/automation-sources.mjs';
-import {recordSource} from '../app/record-operations.mjs';
+import {sourceMode} from '../app/sources/automation-sources.mjs';
+import {recordSource} from '../app/records/operations.mjs';
 
 test('unknown source URLs never inherit automatic workspace authority', () => {
   for (const source of [

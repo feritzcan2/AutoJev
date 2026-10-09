@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {activeRecordOperations} from '../src/record-operation-status.js';
-import {TemplateRegistry} from '../app/template-registry.mjs';
+import {TemplateRegistry} from '../app/templates/registry.mjs';
 
 function snapshot() {
   const runs = [

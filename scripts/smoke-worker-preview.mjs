@@ -6,8 +6,8 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createServer} from 'node:http';
 import {build} from 'esbuild';
-import {BrowserTools} from '../app/browser.mjs';
-import {workerPreviews} from '../app/worker-preview.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
+import {workerPreviews} from '../app/agents/worker-preview.mjs';
 
 const require = createRequire(import.meta.url),
   {_electron: electron} = createRequire(require.resolve('@playwright/mcp/package.json'))(

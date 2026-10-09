@@ -3,8 +3,8 @@ import {createRequire} from 'node:module';
 import {mkdtemp, readFile, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {BrowserTools} from '../app/browser.mjs';
-import {JevTabs} from '../app/jev-tabs.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
+import {JevTabs} from '../app/jev/tabs.mjs';
 import {startJevFixture} from './jev-demo.mjs';
 
 const require = createRequire(import.meta.url),

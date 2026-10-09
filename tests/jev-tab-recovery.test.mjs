@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {restoredTargets, sameBrowserInstance} from '../app/jev-tabs.mjs';
+import {restoredTargets, sameBrowserInstance} from '../app/jev/tabs.mjs';
 test('restore exact saved/checkpoint targets in a verified browser profile, never same-URL personal tabs', () => {
   const a = 'A'.repeat(32),
     b = 'B'.repeat(32),

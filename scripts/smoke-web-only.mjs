@@ -58,7 +58,7 @@ try {
         return original.call(this, op, args);
       };
     },
-    pathToFileURL(path.join(process.cwd(), 'app/engine.mjs')).href,
+    pathToFileURL(path.join(process.cwd(), 'app/agents/engine.mjs')).href,
   );
   const workspace = await page.evaluate(
     (url) =>

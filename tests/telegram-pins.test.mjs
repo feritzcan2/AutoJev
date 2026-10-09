@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {NotificationFixture} from './helpers/notifications.mjs';
-import {TelegramStore} from '../app/telegram-store.mjs';
+import {TelegramStore} from '../app/channels/telegram-store.mjs';
 
 test('pin collection reads the queue once and follows live task changes across many cards', (t) => {
   const store = new NotificationFixture(':memory:'),

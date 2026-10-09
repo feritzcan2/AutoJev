@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {seedLegacyDatabase} from '../tests/helpers/legacy-database.mjs';
-import {inspectBackup} from '../app/data-management.mjs';
+import {inspectBackup} from '../app/system/data-management.mjs';
 
 const require = createRequire(import.meta.url),
   {_electron: electron} = createRequire(require.resolve('@playwright/mcp/package.json'))(

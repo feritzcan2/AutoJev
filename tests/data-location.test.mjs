@@ -21,7 +21,7 @@ import {
   requestExistingDataLocation,
   resolveDataDirectory,
   cancelDataLocation,
-} from '../app/data-location.mjs';
+} from '../app/system/data-location.mjs';
 
 async function fixture(t) {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), 'loop-location-'))),

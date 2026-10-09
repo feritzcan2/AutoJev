@@ -80,7 +80,7 @@ async function onboarding(page) {
       const require = process
         .getBuiltinModule('node:module')
         .createRequire(path.join(app.getAppPath(), 'package.json'));
-      const {Engine} = require('./app/engine.mjs'),
+      const {Engine} = require('./app/agents/engine.mjs'),
         request = Engine.prototype.request,
         started = new WeakSet();
       const fixture = (globalThis.packagedSetupFixture = {

@@ -5,10 +5,10 @@ import './worker-terminals.css';
 import './worker-screenshot.css';
 import {workerPane} from './worker-pane.js';
 import {terminalConversation} from './terminal-conversation.js';
-import {scanPageLabel} from '../app/scan-page.mjs';
+import {scanPageLabel} from '../app/sources/scan-page.mjs';
 import {workerConversation, conversationSignature} from './worker-conversation.js';
 import {terminalAttention} from './agent-attention.js';
-import {providerLimitAttention} from '../app/provider-limit.mjs';
+import {providerLimitAttention} from '../app/agents/provider-limit.mjs';
 
 const states = {
   Working: 'Çalışıyor',

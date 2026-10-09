@@ -5,11 +5,11 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createServer} from 'node:http';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
-import {automationBrowser} from '../app/automation-browser.mjs';
-import {BrowserTools} from '../app/browser.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {automationBrowser} from '../app/browser/automation-browser.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
 
 const directory = await mkdtemp(path.join(tmpdir(), 'jev-tasks-')),
   core = new WorkspaceDatabase(':memory:'),

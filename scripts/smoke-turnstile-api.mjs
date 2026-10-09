@@ -4,14 +4,14 @@ import {DatabaseSync} from 'node:sqlite';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
-import {BrowserTools} from '../app/browser.mjs';
-import {automationBrowser} from '../app/automation-browser.mjs';
-import {CaptchaSettings} from '../app/captcha-settings.mjs';
-import {CaptchaCoordinator} from '../app/captcha-coordinator.mjs';
-import {CapsolverClient} from '../app/capsolver-client.mjs';
-import {SiteAccess} from '../app/site-access.mjs';
-import {detectCaptcha} from '../app/captcha-detection.mjs';
-import {captureCaptcha, applyCaptcha} from '../app/captcha-browser.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
+import {automationBrowser} from '../app/browser/automation-browser.mjs';
+import {CaptchaSettings} from '../app/captcha/settings.mjs';
+import {CaptchaCoordinator} from '../app/captcha/coordinator.mjs';
+import {CapsolverClient} from '../app/captcha/capsolver-client.mjs';
+import {SiteAccess} from '../app/browser/site-access.mjs';
+import {detectCaptcha} from '../app/captcha/detection.mjs';
+import {captureCaptcha, applyCaptcha} from '../app/captcha/browser.mjs';
 
 const directory = await mkdtemp(path.join(tmpdir(), 'turnstile-api-')),
   db = new DatabaseSync(':memory:');

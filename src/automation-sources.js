@@ -1,5 +1,5 @@
-import {scanPageLabel} from '../app/scan-page.mjs';
-import {recipeSummary, recipePageCap, RECIPE_PAGINATION_KINDS} from '../app/source-recipe.mjs';
+import {scanPageLabel} from '../app/sources/scan-page.mjs';
+import {recipeSummary, recipePageCap, RECIPE_PAGINATION_KINDS} from '../app/sources/recipe.mjs';
 import {workspaceSourceTabs} from './workspace-tabs.js';
 
 const modes = {observe: 'Sadece bul', prepare: 'Hazırla, onayımı bekle', auto: 'Otomatik gönder'};

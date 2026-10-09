@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BrowserTools} from '../app/browser.mjs';
-import {JevBrowser} from '../app/jev-browser.mjs';
-import {automationBrowser} from '../app/automation-browser.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
+import {JevBrowser} from '../app/jev/browser.mjs';
+import {automationBrowser} from '../app/browser/automation-browser.mjs';
 import {groupWorkspaceTabs, recordTabs, workerTab, workerTabs} from '../src/workspace-tabs.js';
 
 function fixture() {

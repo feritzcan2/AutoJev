@@ -1,4 +1,4 @@
-import {defaultPermission} from '../app/agent-settings.mjs';
+import {defaultPermission} from '../app/agents/settings.mjs';
 import './setup-agent-settings.css';
 
 export function setupAgentSettingsPanel({api, getCatalog, refresh}) {

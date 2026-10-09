@@ -7,9 +7,9 @@ import {
   transcriptMessage,
   TranscriptReader,
   claudeProjectDirectory,
-} from '../app/agent-transcript.mjs';
+} from '../app/agents/transcript.mjs';
 import {DatabaseSync} from 'node:sqlite';
-import {AgentSessions} from '../app/agent-sessions.mjs';
+import {AgentSessions} from '../app/agents/sessions.mjs';
 
 test('Claude assistant and user text records become chat messages; tools and sidechains do not', () => {
   const id = '11111111-1111-1111-1111-111111111111';

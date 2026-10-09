@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {WebTasks} from '../app/web-template.mjs';
-import {unreportedSourceRun, retryTechnicalSource} from '../app/automation-recovery.mjs';
-import {automationAttention} from '../app/automation-attention.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {WebTasks} from '../app/automation/web-template.mjs';
+import {unreportedSourceRun, retryTechnicalSource} from '../app/automation/recovery.mjs';
+import {automationAttention} from '../app/automation/attention.mjs';
 
 const source = 'https://listings.test/results',
   second = source + '?page=49',

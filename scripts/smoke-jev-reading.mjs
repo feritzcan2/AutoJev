@@ -3,12 +3,12 @@ import {mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createServer} from 'node:http';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {BrowserTools} from '../app/browser.mjs';
-import {automationBrowser} from '../app/automation-browser.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
-import {BROWSER_RESPONSE_BYTES} from '../app/browser-snapshot.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
+import {automationBrowser} from '../app/browser/automation-browser.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {BROWSER_RESPONSE_BYTES} from '../app/browser/snapshot.mjs';
 
 const directory = await mkdtemp(path.join(tmpdir(), 'loop-jev-reading-')),
   store = new WorkspaceDatabase(':memory:'),

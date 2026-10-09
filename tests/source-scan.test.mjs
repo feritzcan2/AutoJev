@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
 import {
   beginSourceScan,
   sourceScanScope,
@@ -15,8 +15,8 @@ import {
   markPageCap,
   FULL_SCAN_INTERVAL_MS,
   SCAN_OVERLAP_MS,
-} from '../app/source-scan.mjs';
-import {scanPageReport} from '../app/scan-page.mjs';
+} from '../app/sources/scan.mjs';
+import {scanPageReport} from '../app/sources/scan-page.mjs';
 
 const source = 'https://listings.test/results',
   other = 'https://other.test/results';

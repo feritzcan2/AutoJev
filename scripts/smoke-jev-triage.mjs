@@ -1,11 +1,11 @@
 // Opt-in model check using synthetic profiles and listings. No browser, real
 // candidate data, application submission or persistent page cache is involved.
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {runJevTask} from '../app/jev-tasks.mjs';
-import {jevCriteria} from '../app/jev-triage.mjs';
-import {askJev, jevConfig} from '../app/jev-policy.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {runJevTask} from '../app/jev/tasks.mjs';
+import {jevCriteria} from '../app/jev/triage.mjs';
+import {askJev, jevConfig} from '../app/jev/policy.mjs';
 
 if (!process.argv.includes('--live'))
   throw Error('Use --live to run the synthetic cases against the configured Jev model.');

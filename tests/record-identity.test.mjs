@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {recordUrlKey} from '../app/record-identity.mjs';
-import {listingIdentity} from '../app/job-urls.mjs';
-import {assessmentEvidence} from '../app/record-evidence.mjs';
-import {recordOperationError} from '../app/record-operations.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {recordUrlKey} from '../app/records/identity.mjs';
+import {listingIdentity} from '../app/records/job-urls.mjs';
+import {assessmentEvidence} from '../app/records/evidence.mjs';
+import {recordOperationError} from '../app/records/operations.mjs';
 
 const source = 'https://board.test/search',
   base = 'https://board.test/item/123';

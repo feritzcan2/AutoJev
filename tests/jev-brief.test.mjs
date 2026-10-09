@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {briefBlocks, readJevBrief} from '../app/jev-brief.mjs';
-import {jevTaskSummary} from '../app/jev-tasks.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {briefBlocks, readJevBrief} from '../app/jev/brief.mjs';
+import {jevTaskSummary} from '../app/jev/tasks.mjs';
 
 function fixture(t, text) {
   const core = new WorkspaceDatabase(':memory:');

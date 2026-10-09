@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {WorkspaceSupport, rebindWorkspaceOwners} from '../app/workspace-support.mjs';
-import {TelegramStore} from '../app/telegram-store.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {WorkspaceSupport, rebindWorkspaceOwners} from '../app/workspaces/support.mjs';
+import {TelegramStore} from '../app/channels/telegram-store.mjs';
 
 for (const template of ['job-search', 'housing'])
   test(`${template}: Telegram uses shared workspace data`, async (t) => {

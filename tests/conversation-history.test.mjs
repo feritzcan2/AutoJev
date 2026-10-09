@@ -3,21 +3,21 @@ import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {AgentSessions} from '../app/agent-sessions.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {AgentSessions} from '../app/agents/sessions.mjs';
 import {startTestServer} from './helpers/tool-server.mjs';
-import {automationTaskContext} from '../app/automation-task-context.mjs';
+import {automationTaskContext} from '../app/automation/task-context.mjs';
 import {
   automationWorkflow,
   automationPrompt,
   launchAutomationWorker,
-} from '../app/automation-worker.mjs';
+} from '../app/automation/worker.mjs';
 import {
   conversationRequest,
   workspaceHistory,
   CONVERSATION_WORKER,
-} from '../app/workspace-conversation.mjs';
+} from '../app/workspaces/conversation.mjs';
 
 function fixture(t) {
   const core = new WorkspaceDatabase(':memory:'),

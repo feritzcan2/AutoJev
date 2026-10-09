@@ -12,10 +12,10 @@ import {
   siteReaderFor,
   siteExtensionKind,
 } from '../app/site-extensions/index.mjs';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {runJevTask} from '../app/jev-tasks.mjs';
-import {updateScanQueue, noteExcluded, noteCards} from '../app/scan-work.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {runJevTask} from '../app/jev/tasks.mjs';
+import {updateScanQueue, noteExcluded, noteCards} from '../app/sources/scan-work.mjs';
 
 const results =
   'https://www.stepstone.de/jobs/staff-software-engineer/in-berlin?radius=30&sort=2&action=sort_publish';

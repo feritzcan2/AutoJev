@@ -1,5 +1,5 @@
 import {questionForm} from './question-form.js';
-import {automationAttention} from '../app/automation-attention.mjs';
+import {automationAttention} from '../app/automation/attention.mjs';
 import {attentionTabs} from './automation-attention.js';
 import './record-question-dialog.css';
 const el = (tag, text, cls) => {

@@ -1,7 +1,7 @@
 // @ts-check
 import {jobSearchMail} from './mail.mjs';
 import {jobSearchSources} from './sources.mjs';
-import {browserDefinition} from '../../browser-definition.mjs';
+import {browserDefinition} from '../browser-definition.mjs';
 // Domain instructions and fields only. Execution, sources and UI use the same
 // browser automation contract as every other template.
 export const jobSearchTemplate = {

@@ -28,7 +28,7 @@ store state, or throw. Triage, scoring and records stay in the generic Jev
 pipeline. Any failure returns `null` so the generic reader handles the page.
 
 Flow: Chrome loads the page → generic reader (`renderedDocument`) →
-`readSiteExtension` (`app/jev-document.mjs`) runs `collect` in the page →
+`readSiteExtension` (`app/jev/document.mjs`) runs `collect` in the page →
 `results(raw)` → `applySiteExtension` marks listing links `listing:true` and
 every other link `listing:false` → card triage asks only "does it fit" for
 marked listings → remaining listings get detail reads.
@@ -37,7 +37,7 @@ marked listings → remaining listings get detail reads.
 
 - **API collector** if the site has a public JSON API with full listing text
   (like Himalayas). Cheaper and sturdier; no card stage. Follow the Himalayas
-  files and `app/source-collector-worker.mjs`.
+  files and `app/sources/collector-worker.mjs`.
 - **HTTP reader** if the site serves plain HTML result/detail pages without
   login or scripts (like LinkedIn's guest endpoints). Export
   `reader:{handles(url),read(url,{fetch,signal,siteAccess,wait})}`; `read`

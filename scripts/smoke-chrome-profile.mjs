@@ -1,5 +1,5 @@
-import {AutomationStore} from '../app/automation-store.mjs';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {createRequire} from 'node:module';
 import {mkdtemp} from 'node:fs/promises';
 import path from 'node:path';
@@ -58,7 +58,7 @@ try {
       };
       BrowserTools.prototype.status = () => globalThis.chromeState;
     },
-    pathToFileURL(path.join(root, 'app/browser.mjs')).href,
+    pathToFileURL(path.join(root, 'app/browser/tools.mjs')).href,
   );
   await page.reload();
   await page.locator('.chrome-profile-change').waitFor();

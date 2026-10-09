@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {browserNavigation} from '../app/browser-navigation.mjs';
-import {BrowserSnapshot, BROWSER_RESPONSE_BYTES} from '../app/browser-snapshot.mjs';
+import {browserNavigation} from '../app/browser/navigation.mjs';
+import {BrowserSnapshot, BROWSER_RESPONSE_BYTES} from '../app/browser/snapshot.mjs';
 const url = 'https://homes.example/search?selected_area=amsterdam';
 const response = (page) => ({
   content: [{type: 'text', text: 'Page URL: ' + url + '\n' + JSON.stringify(page)}],

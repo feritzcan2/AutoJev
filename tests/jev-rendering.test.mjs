@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {acquireTabRendering} from '../app/jev-rendering.mjs';
-import {waitForDocument} from '../app/jev-document.mjs';
-import {JevBrowser} from '../app/jev-browser.mjs';
+import {acquireTabRendering} from '../app/jev/rendering.mjs';
+import {waitForDocument} from '../app/jev/document.mjs';
+import {JevBrowser} from '../app/jev/browser.mjs';
 
 test('nested observations cannot suspend rendering before the parent form operation finishes', async () => {
   const commands = [];
@@ -238,7 +238,7 @@ test('navigation during rendering preparation retries only the read in the new d
 });
 
 test('revealing a control in a background tab runs with rendering enabled and restores it afterwards', async () => {
-  const {revealInView} = await import('../app/jev-rendering.mjs');
+  const {revealInView} = await import('../app/jev/rendering.mjs');
   for (const hidden of [true, false]) {
     const commands = [],
       scrolled = [];

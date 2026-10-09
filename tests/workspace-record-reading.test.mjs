@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {workspaceTableCall, workspaceTableTools} from '../app/workspace-table-tools.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
-import {AUTOMATION_CONTEXT_BYTES} from '../app/automation-context.mjs';
-import {validate} from '../app/tool-schema.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {workspaceTableCall, workspaceTableTools} from '../app/workspaces/table-tools.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {AUTOMATION_CONTEXT_BYTES} from '../app/automation/context.mjs';
+import {validate} from '../app/agents/tool-schema.mjs';
 
 function fixture(t) {
   const store = new WorkspaceDatabase(':memory:');

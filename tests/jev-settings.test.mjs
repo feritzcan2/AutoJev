@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {JevSettings} from '../app/jev-settings.mjs';
+import {JevSettings} from '../app/jev/settings.mjs';
 
 function fixture(options = {}) {
   const db = new DatabaseSync(':memory:');

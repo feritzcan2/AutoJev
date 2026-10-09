@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {JevBrowser} from '../app/jev-browser.mjs';
+import {JevBrowser} from '../app/jev/browser.mjs';
 
 const directory = await mkdtemp(path.join(tmpdir(), 'jev-search-field-'));
 const client = new JevBrowser(directory, {

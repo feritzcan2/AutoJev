@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
-import {reviewJevBatch} from '../app/jev-review.mjs';
-import {JEV_CLASSIFICATION_VERSION} from '../app/jev-triage.mjs';
-import {saveRecordScore} from '../app/record-scoring.mjs';
-import {queueProfileUpdate} from '../app/profile-updates.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {reviewJevBatch} from '../app/jev/review.mjs';
+import {JEV_CLASSIFICATION_VERSION} from '../app/jev/triage.mjs';
+import {saveRecordScore} from '../app/scoring/record-scoring.mjs';
+import {queueProfileUpdate} from '../app/automation/profile-updates.mjs';
 
 const source = 'https://catalog.test/search?query=example';
 const finding = (url, score) => ({

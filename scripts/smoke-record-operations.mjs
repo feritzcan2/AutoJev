@@ -5,9 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {createServer} from 'node:http';
-import {workspaceDirectory} from '../app/workspace-paths.mjs';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
+import {workspaceDirectory} from '../app/workspaces/paths.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
 const require = createRequire(import.meta.url),
   {_electron: electron} = createRequire(require.resolve('@playwright/mcp/package.json'))(
     'playwright',
@@ -92,7 +92,7 @@ try {
         return request.call(this, op, args);
       };
     },
-    pathToFileURL(path.join(root, 'app/engine.mjs')).href,
+    pathToFileURL(path.join(root, 'app/agents/engine.mjs')).href,
   );
   let rpcId = 0,
     startCount = 0;

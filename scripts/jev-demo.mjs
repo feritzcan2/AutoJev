@@ -55,8 +55,8 @@ export async function seedJevDemo(
   url,
   {linkedin = false, chromeProfile, agentSettings} = {},
 ) {
-  const {WorkspaceDatabase} = await import('../app/workspace-database.mjs'),
-    {AutomationStore} = await import('../app/automation-store.mjs');
+  const {WorkspaceDatabase} = await import('../app/workspaces/database.mjs'),
+    {AutomationStore} = await import('../app/automation/store.mjs');
   const core = new WorkspaceDatabase(path.join(data, 'jobloop.sqlite'));
   try {
     const db = new AutomationStore(core),

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {JevBrowser} from '../app/jev-browser.mjs';
+import {JevBrowser} from '../app/jev/browser.mjs';
 
 function fixture() {
   const browser = new JevBrowser('/unused', {connection: 'test'}),

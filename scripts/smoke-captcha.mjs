@@ -5,12 +5,12 @@ import {tmpdir} from 'node:os';
 import {setTimeout as delay} from 'node:timers/promises';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import {detectCaptcha} from '../app/captcha-detection.mjs';
-import {captureCaptcha, applyCaptcha, verifyCaptchaGrid} from '../app/captcha-browser.mjs';
-import {CaptchaSettings} from '../app/captcha-settings.mjs';
-import {CaptchaCoordinator} from '../app/captcha-coordinator.mjs';
-import {BrowserTools} from '../app/browser.mjs';
-import {JevBrowser} from '../app/jev-browser.mjs';
+import {detectCaptcha} from '../app/captcha/detection.mjs';
+import {captureCaptcha, applyCaptcha, verifyCaptchaGrid} from '../app/captcha/browser.mjs';
+import {CaptchaSettings} from '../app/captcha/settings.mjs';
+import {CaptchaCoordinator} from '../app/captcha/coordinator.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
+import {JevBrowser} from '../app/jev/browser.mjs';
 
 const require = createRequire(import.meta.url),
   {chromium} = createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');

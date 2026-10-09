@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AutomationContext, AUTOMATION_CONTEXT_BYTES} from '../app/automation-context.mjs';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
+import {AutomationContext, AUTOMATION_CONTEXT_BYTES} from '../app/automation/context.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
 import {startTestServer} from './helpers/tool-server.mjs';
 
 const size = (value) => Buffer.byteLength(JSON.stringify(value));
@@ -167,7 +167,7 @@ test('automation context can be fully read through MCP without file or browser a
 });
 
 test('task context excludes unrelated questions and history while keeping exact answers, limits and assigned proposal', async (t) => {
-  const {automationTaskContext} = await import('../app/automation-task-context.mjs');
+  const {automationTaskContext} = await import('../app/automation/task-context.mjs');
   const store = new WorkspaceDatabase(':memory:');
   t.after(() => store.close());
   const db = new AutomationStore(store),

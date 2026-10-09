@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {mkdtemp, writeFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {chromeUserDataDirectory, listChromeProfiles} from '../app/chrome-profiles.mjs';
-import {findChrome} from '../app/chrome-installation.mjs';
-import {existingChromeEndpoint, openChromeWindow} from '../app/jev-chrome.mjs';
+import {chromeUserDataDirectory, listChromeProfiles} from '../app/browser/chrome-profiles.mjs';
+import {findChrome} from '../app/browser/chrome-installation.mjs';
+import {existingChromeEndpoint, openChromeWindow} from '../app/jev/chrome.mjs';
 
 test('Chrome profile storage resolves the native per-user directory on each platform', () => {
   assert.equal(

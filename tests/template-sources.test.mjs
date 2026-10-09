@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {automationTemplate, reusableTemplate} from '../app/automation-templates.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {automationTemplate, reusableTemplate} from '../app/templates/catalog.mjs';
 function fixture(t) {
   const core = new WorkspaceDatabase(':memory:');
   t.after(() => core.close());

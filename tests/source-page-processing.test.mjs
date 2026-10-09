@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {automationWorkflow, automationPrompt} from '../app/automation-worker.mjs';
-import {continueSourceRun} from '../app/automation-recovery.mjs';
-import {SOURCE_PAGE_INSTRUCTIONS, SOURCE_SCAN_INSTRUCTIONS} from '../app/source-scan.mjs';
-import {webAgentProfile} from '../app/automation-agent-profiles.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {automationWorkflow, automationPrompt} from '../app/automation/worker.mjs';
+import {continueSourceRun} from '../app/automation/recovery.mjs';
+import {SOURCE_PAGE_INSTRUCTIONS, SOURCE_SCAN_INSTRUCTIONS} from '../app/sources/scan.mjs';
+import {webAgentProfile} from '../app/agents/automation-profiles.mjs';
 
 const source = 'https://listings.example/search';
 test('production launches and continuations require processing each page; trials and record tasks keep their scope', () => {

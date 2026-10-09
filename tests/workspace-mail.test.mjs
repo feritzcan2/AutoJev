@@ -3,18 +3,18 @@ import assert from 'node:assert/strict';
 import {mkdtemp, mkdir, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {reusableTemplate} from '../app/automation-templates.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {reusableTemplate} from '../app/templates/catalog.mjs';
 import {
   prepareDataUpgrade,
   inspectBackup,
   stageRestore,
   applyPendingRestore,
-} from '../app/data-management.mjs';
-import {DATA_SCHEMA_VERSION} from '../app/data-management-schema.mjs';
+} from '../app/system/data-management.mjs';
+import {DATA_SCHEMA_VERSION} from '../app/system/data-management-schema.mjs';
 import {seedLegacyDatabase} from './helpers/legacy-database.mjs';
-import {upgradeWorkspaces} from '../app/workspace-upgrade.mjs';
+import {upgradeWorkspaces} from '../app/workspaces/upgrade.mjs';
 
 test('legacy mail metadata remains portable in saved templates', (t) => {
   const core = new WorkspaceDatabase(':memory:');

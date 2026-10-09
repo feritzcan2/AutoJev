@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {scoringPolicy, SCORING_INSTRUCTIONS} from '../app/scoring-policy.mjs';
-import {scoringSources} from '../app/scoring-profile.mjs';
-import {recordAssessment} from '../app/record-scoring.mjs';
-import {automationTemplates, automationTemplate, planInput} from '../app/automation-templates.mjs';
+import {scoringPolicy, SCORING_INSTRUCTIONS} from '../app/scoring/policy.mjs';
+import {scoringSources} from '../app/scoring/profile.mjs';
+import {recordAssessment} from '../app/scoring/record-scoring.mjs';
+import {automationTemplates, automationTemplate, planInput} from '../app/templates/catalog.mjs';
 const profile = {
   revision: 5,
   goal: 'Find a quiet flat',

@@ -5,10 +5,10 @@ import {mkdtemp, mkdir, writeFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {Engine} from '../app/engine.mjs';
-import {TerminalScreen} from '../app/terminal-screen.mjs';
-import {ContextUsage} from '../app/context-usage.mjs';
-import {startToolServer} from '../app/tool-server.mjs';
+import {Engine} from '../app/agents/engine.mjs';
+import {TerminalScreen} from '../app/agents/terminal-screen.mjs';
+import {ContextUsage} from '../app/agents/context-usage.mjs';
+import {startToolServer} from '../app/agents/tool-server.mjs';
 
 const directory = await mkdtemp(path.join(tmpdir(), 'jobloop-opencode-context-')),
   steps = [],

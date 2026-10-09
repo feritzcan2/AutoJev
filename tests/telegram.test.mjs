@@ -4,7 +4,7 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {NotificationFixture} from './helpers/notifications.mjs';
-import {TelegramBot as Telegram, TelegramApi} from '../app/telegram.mjs';
+import {TelegramBot as Telegram, TelegramApi} from '../app/channels/telegram.mjs';
 
 const TOKEN = '123456789:abcdefghijklmnopqrstuvwxyz_123456789';
 const message = (text, chat = 11, reply = null) => ({

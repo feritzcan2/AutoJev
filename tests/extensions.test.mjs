@@ -4,13 +4,13 @@ import {readFile, mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {TemplateRegistry} from '../app/template-registry.mjs';
-import {Workspaces} from '../app/workspaces.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {TemplateRegistry} from '../app/templates/registry.mjs';
+import {Workspaces} from '../app/workspaces/workspaces.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
 import {seedLegacyDatabase} from './helpers/legacy-database.mjs';
-import {loadExtensions} from '../app/extensions.mjs';
-import {upgradeWorkspaces} from '../app/workspace-upgrade.mjs';
+import {loadExtensions} from '../app/templates/extensions.mjs';
+import {upgradeWorkspaces} from '../app/workspaces/upgrade.mjs';
 
 test('the default web database and catalog do not create application state', async (t) => {
   const core = new WorkspaceDatabase(':memory:');

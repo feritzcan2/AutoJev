@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BrowserTools} from '../app/browser.mjs';
-import {JevBrowser} from '../app/jev-browser.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
+import {JevBrowser} from '../app/jev/browser.mjs';
 
 test('app shutdown closes every owned Chrome target and retains failed targets for recovery', async () => {
   const client = new JevBrowser('/unused'),

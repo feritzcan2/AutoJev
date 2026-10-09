@@ -3,25 +3,25 @@ import assert from 'node:assert/strict';
 import {mkdtemp, mkdir, writeFile, readFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {WebTasks} from '../app/web-template.mjs';
-import {automationWorkflow, researchUrl} from '../app/automation-worker.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {WebTasks} from '../app/automation/web-template.mjs';
+import {automationWorkflow, researchUrl} from '../app/automation/worker.mjs';
 import {
   automationTemplate,
   reusableTemplate,
   webUrl,
   automationTable,
   automationCells,
-} from '../app/automation-templates.mjs';
-import {validate} from '../app/tool-schema.mjs';
+} from '../app/templates/catalog.mjs';
+import {validate} from '../app/agents/tool-schema.mjs';
 import {startTestServer} from './helpers/tool-server.mjs';
 import {
   createBackup,
   stageRestore,
   applyPendingRestore,
   pruneLogs,
-} from '../app/data-management.mjs';
+} from '../app/system/data-management.mjs';
 import {prepareAutomationChat} from '../src/automation-chat.js';
 
 const setup = {
