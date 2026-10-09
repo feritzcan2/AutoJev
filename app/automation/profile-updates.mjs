@@ -1,3 +1,4 @@
+// @ts-check
 import {planInput, missingProfileFields} from '../templates/catalog.mjs';
 
 const fields = ['title', 'goal', 'criteria', 'instructions', 'facts', 'mode'];
@@ -40,7 +41,7 @@ export function splitPlanDraft(a) {
   }
   return next;
 }
-export function queueProfileUpdate(db, id, input, {expectedRevision} = {}) {
+export function queueProfileUpdate(db, id, input, {expectedRevision = undefined} = {}) {
   const a = db.get(id),
     template = db.template(a.templateId);
   if (expectedRevision !== undefined && expectedRevision !== a.revision)

@@ -1,3 +1,4 @@
+// @ts-check
 import {
   collectorRun,
   collectorSearches,
@@ -229,7 +230,11 @@ async function recoverDetails(db, run, search, page, {signal, readDetail}) {
   return {...page, jobs, unavailable};
 }
 
-export async function collectSourcePage(db, runId, {signal, readPage, readDetail} = {}) {
+export async function collectSourcePage(
+  db,
+  runId,
+  {signal = undefined, readPage = undefined, readDetail = undefined} = {},
+) {
   signal?.throwIfAborted();
   let run = currentRun(db, runId),
     work = scanWork(run),

@@ -1,3 +1,4 @@
+// @ts-check
 import {isConversation} from '../../workspaces/conversation.mjs';
 import {normalizeFields, validateAnswers, OUTCOME_FIELD} from '../question-forms.mjs';
 import {randomUUID} from 'node:crypto';
@@ -21,7 +22,7 @@ export const questionMethods = {
   askQuestion(
     id,
     {text, recordId = null, fields = null, accessCheck = null, outcome = false},
-    {runId} = {},
+    {runId = undefined} = {},
   ) {
     text = boundedText(text, 'Soru', 6000);
     fields = normalizeFields(fields);

@@ -1,3 +1,4 @@
+// @ts-check
 import {isConversation} from '../../workspaces/conversation.mjs';
 import {forgetScanPosition, forgetPlanPosition} from '../../sources/scan-work.mjs';
 import {recipeValues, recipeReplay, replayMatches, recipeStatus} from '../../sources/recipe.mjs';

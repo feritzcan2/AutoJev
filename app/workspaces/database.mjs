@@ -1,10 +1,11 @@
+// @ts-check
 import {DatabaseSync} from 'node:sqlite';
 import {dirname} from 'node:path';
 import {WorkspaceStore} from './store.mjs';
 import {assertDataSchemaVersion, markDataSchemaVersion} from '../system/data-management-schema.mjs';
 
 export class WorkspaceDatabase {
-  constructor(file, {registry} = {}) {
+  constructor(file, {registry = undefined} = {}) {
     this.directory = dirname(file);
     this.db = new DatabaseSync(file);
     try {

@@ -1,3 +1,4 @@
+// @ts-check
 // SQLite row helpers shared by the automation store modules.
 export const json = (row) => (row ? JSON.parse(row.data) : null);
 export const finishedSourceRun =

@@ -1,3 +1,4 @@
+// @ts-check
 // LinkedIn site extension (HTTP reader): a site exception the user explicitly
 // requested (2026-10-05). LinkedIn's public jobs-guest endpoints return plain job cards
 // and posting markup, so search pages and postings are read over HTTP instead
@@ -219,8 +220,8 @@ export async function readLinkedInGuest(
   url,
   {
     fetch = globalThis.fetch,
-    signal,
-    siteAccess,
+    signal = undefined,
+    siteAccess = undefined,
     wait = (ms) => new Promise((r) => setTimeout(r, ms)),
   } = {},
 ) {
