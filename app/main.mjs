@@ -1,6 +1,5 @@
 import {workerPreviews} from './agents/worker-preview.mjs';
 import {registerWorkspaceSupport} from './workspaces/support-services.mjs';
-import {upgradeWorkspaces} from './workspaces/upgrade.mjs';
 import {workspaceBrowserDirectory} from './workspaces/paths.mjs';
 import {AgentProfiles} from './agents/profiles.mjs';
 import {WEB_AGENTS, WEB_AGENT_ROLES} from './agents/automation-profiles.mjs';
@@ -224,7 +223,6 @@ async function boot() {
     });
   }
   const automationDb = new AutomationStore(core);
-  upgradeWorkspaces(automationDb);
   const web = registerAutomationServices({
     root,
     data,

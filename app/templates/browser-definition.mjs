@@ -9,8 +9,6 @@ const states = [
 ];
 export const browserDefinition = {
   id: 'browser',
-  legacyWorkspaces: [{table: 'automations'}],
-  legacyRecords: [{table: 'automation_results', owner: 'automation_id', key: 'item_key'}],
   kind: 'web',
   capabilities: {
     'browser.observe': {effect: 'read'},

@@ -519,7 +519,6 @@ function prepareRestoredDatabase(file, manifest, dataDirectory) {
             nextRunAt: null,
             trial: null,
             reviewedRevision: null,
-            sourceTrialsVersion: 1,
           });
           for (const state of Object.values(value.sourceState ?? {})) state.trial = null;
         }

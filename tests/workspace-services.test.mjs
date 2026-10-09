@@ -42,40 +42,6 @@ test('plan mutations keep provider, browser and table settings only in workspace
     assert.deepEqual(p.table, canonical.table);
   }
 });
-test('migration removes stale copies without overwriting canonical settings and is repeatable', async (t) => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'loop-settings-migration-'));
-  t.after(() => rm(dir, {recursive: true, force: true}));
-  const file = path.join(dir, 'db.sqlite');
-  let store = new WorkspaceDatabase(file);
-  const db = new AutomationStore(store),
-    job = db.create('job-search', {title: 'Test', browserMode: 'jev'}),
-    web = db.create('custom');
-  for (const [table, id] of [
-    ['automations', job.id],
-    ['automations', web.id],
-  ])
-    store.db.prepare(`UPDATE ${table} SET data=? WHERE id=?`).run(
-      JSON.stringify({
-        ...raw(store, table, id),
-        browserMode: 'existing',
-        agentSettings: {provider: 'stale'},
-        chromeProfile: {directory: 'Old'},
-        table: {title: 'Stale', columns: []},
-      }),
-      id,
-    );
-  const before = store.workspaces.list();
-  store.close();
-  store = new WorkspaceDatabase(file);
-  t.after(() => store.close());
-  assert.deepEqual(store.workspaces.list(), before);
-  assertDomain(raw(store, 'automations', job.id));
-  assertDomain(raw(store, 'automations', web.id));
-  const changes = () => store.db.prepare('SELECT total_changes() AS n').get().n,
-    prior = changes();
-  store.workspaces.migrate();
-  assert.equal(changes(), prior);
-});
 
 function drivers(store, db, pool, runtime) {
   return {

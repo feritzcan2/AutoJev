@@ -276,32 +276,6 @@ test('a trial requires fresh observation and its successful state survives reope
   assert.equal(reopened.sources(f.id)[1].trial, undefined);
 });
 
-test('migration uses exact historical source coverage and never treats a legacy skip as evidence', (t) => {
-  const f = fixture(t);
-  const run = f.db.begin(f.id, 'trial');
-  for (const url of urls) f.db.observe(f.id, run.id, url, 'Actual listings');
-  f.db.finish(f.id, run.id, 'completed', 'Checked');
-  const a = f.db.get(f.id);
-  f.db.put({
-    ...a,
-    sourceTrialsVersion: undefined,
-    sourceState: {},
-    sources: [...urls, 'https://homes.test/new'],
-  });
-  const migrated = new AutomationStore(f.store);
-  assert.equal(migrated.sources(f.id)[0].trial.runId, run.id);
-  assert.equal(migrated.sources(f.id)[1].trial.status, 'passed');
-  assert.equal(migrated.sources(f.id)[2].trial, undefined);
-  migrated.put({
-    ...migrated.get(f.id),
-    sourceTrialsVersion: undefined,
-    sourceState: {},
-    trial: {status: 'skipped', revision: a.revision},
-  });
-  const skipped = new AutomationStore(f.store);
-  assert.ok(skipped.sources(f.id).every((source) => !source.trial));
-});
-
 test('disabled sources wait for their own first turn and interrupted trials resume after app restart', async (t) => {
   const f = fixture(t);
   f.db.saveSource(f.id, urls[1], {enabled: false});
@@ -332,23 +306,6 @@ test('disabled sources wait for their own first turn and interrupted trials resu
   } finally {
     await runtime.close();
   }
-});
-
-test('legacy successful scans migrate only their assigned source, including after an old trial skip', (t) => {
-  const f = fixture(t);
-  f.db.skipTrial(f.id);
-  const task = f.store.workspaces.tasks.enqueue(f.id, {
-    operation: 'scan',
-    sourceUrl: urls[0],
-    sources: [urls[0]],
-    lockKey: 'source:' + urls[0],
-  });
-  const run = f.db.begin(f.id, {kind: 'run', taskId: task.id});
-  f.db.finish(f.id, run.id, 'completed', 'Previously scanned');
-  f.db.put({...f.db.get(f.id), sourceTrialsVersion: undefined, sourceState: {}});
-  const migrated = new AutomationStore(f.store);
-  assert.equal(migrated.sources(f.id)[0].trial.runId, run.id);
-  assert.equal(migrated.sources(f.id)[1].trial, undefined);
 });
 
 test('trial evidence counts from a www redirect or a subdomain of the source, not from another site', async (t) => {

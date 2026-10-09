@@ -988,5 +988,4 @@ test('backup includes automation documents, pauses schedules and clears approval
   assert.equal(db2.get(a.id).trial, null);
   assert.equal(db2.get(a.id).reviewedRevision, null);
   assert.equal(db2.get(a.id).sourceState[setup.sources[0]].trial, null);
-  assert.equal(db2.get(a.id).sourceTrialsVersion, 1);
 });

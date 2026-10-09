@@ -472,30 +472,6 @@ test('three technical failures stop automatic retries across ticks and restarts;
   await restarted.close();
 });
 
-test('older pending retries already beyond the limit are blocked before another worker launches', async (t) => {
-  const f = fixture(t);
-  await f.runtime.runOnce(f.id);
-  await settle();
-  const run = f.launches[0];
-  f.checkpoint(run);
-  const outcome = retryTechnicalSource(f.db, f.id, run.id, 'Old HTTP2 error', Date.now());
-  f.runtime.report(f.id, run.id, outcome.status, outcome.summary);
-  t.mock.timers.tick(150);
-  await settle();
-  const q = f.store.workspaces.tasks,
-    task = q.get(f.id, run.taskId);
-  q.put({...task, technicalRecovery: {...task.technicalRecovery, attempt: 5}});
-  const restarted = new WebTasks(f.db, f.options);
-  t.after(() => restarted.close());
-  t.mock.timers.tick(3600000);
-  await restarted.tick();
-  await settle();
-  assert.equal(f.launches.length, 1);
-  assert.equal(q.get(f.id, task.id).state, 'blocked');
-  assert.equal(f.db.sources(f.id)[0].blocker.stop.retryExhausted, true);
-  assert.deepEqual(f.db.sources(f.id)[0].scan.pendingUrls, [second]);
-});
-
 test('an unreported idle continues in the same provider once, without a new launch or infinite nudges', async (t) => {
   const f = fixture(t),
     messages = [];

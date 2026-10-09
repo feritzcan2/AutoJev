@@ -1,15 +1,7 @@
 import {DatabaseSync} from 'node:sqlite';
-import {migrateContextThresholds} from '../agents/context-settings-migration.mjs';
-import {removeSourceExtensions, copyExistingSourceSkills} from '../sources/settings-migration.mjs';
-import {foldScoringWeights} from '../scoring/criteria-migration.mjs';
 import {dirname} from 'node:path';
 import {WorkspaceStore} from './store.mjs';
-import {migrateSiteAccessRetries} from '../browser/site-access.mjs';
-import {
-  assertDataSchemaVersion,
-  markDataSchemaVersion,
-  discardPersistentPageCaches,
-} from '../system/data-management-schema.mjs';
+import {assertDataSchemaVersion, markDataSchemaVersion} from '../system/data-management-schema.mjs';
 
 export class WorkspaceDatabase {
   constructor(file, {registry} = {}) {
@@ -20,12 +12,6 @@ export class WorkspaceDatabase {
         'PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON',
       );
       assertDataSchemaVersion(this.db);
-      discardPersistentPageCaches(this.db);
-      removeSourceExtensions(this.db);
-      copyExistingSourceSkills(this.db);
-      migrateSiteAccessRetries(this.db);
-      migrateContextThresholds(this.db);
-      foldScoringWeights(this.db);
       this.workspaces = new WorkspaceStore(this.db, {registry});
       markDataSchemaVersion(this.db);
     } catch (error) {
