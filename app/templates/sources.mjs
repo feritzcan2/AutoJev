@@ -1,6 +1,6 @@
 // @ts-check
 import {normalizeSourceRecipe} from '../sources/recipe.mjs';
-import {siteKey} from '../browser/site-access.mjs';
+import {siteKey} from '../browser/site-key.mjs';
 
 // countries (ISO 3166 alpha-2) marks a source that serves only those
 // countries; it joins a workspace when setup adds it. Untagged sources serve
