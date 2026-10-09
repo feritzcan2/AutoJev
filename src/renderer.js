@@ -13,7 +13,6 @@ import {configPage} from './config.js';
 import {notificationsPage} from './notifications.js';
 import './style.css';
 import './question-form.css';
-import './browser-status.css';
 import './termloop-theme.css';
 import './sidebar.css';
 import './activity.css';

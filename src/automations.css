@@ -779,9 +779,6 @@
 }
 
 /* Keep the original Agent page, with a clear handoff between setup, trial and tracking. */
-body:not(.automation-workspace) [data-web-only] {
-  display: none !important;
-}
 .automation-workspace #now-panel {
   scroll-margin-top: 20px;
 }

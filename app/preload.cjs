@@ -1,4 +1,4 @@
-const {contextBridge, ipcRenderer, webUtils} = require('electron');
+const {contextBridge, ipcRenderer} = require('electron');
 // Electron prefixes main-process errors with the IPC channel; show the user only the message.
 const invoke = (...args) =>
   ipcRenderer.invoke(...args).catch((error) => {
@@ -122,9 +122,7 @@ contextBridge.exposeInMainWorld('jobloop', {
   createSetup: (settings) => invoke('create-setup', settings),
   beginSetup: (id, source) => invoke('begin-setup', id, source),
   completeSetup: (id, fields) => invoke('complete-setup', id, fields),
-  importSetupCv: (id, file) => invoke('import-setup-cv', id, webUtils.getPathForFile(file)),
   browserReconnect: (id) => invoke('browser-reconnect', id),
-  sourceTabs: (id) => invoke('source-tabs', id),
   saveSourcesApplyMode: (id, applyMode) => invoke('save-sources-apply-mode', id, applyMode),
   saveSourcesInterval: (id, intervalMinutes) =>
     invoke('save-sources-interval', id, intervalMinutes),
