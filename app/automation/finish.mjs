@@ -89,7 +89,7 @@ export function finishAutomationRun({
     }
   }
   // A verify task that ends without portal proof has no next step for the
-  // agent. The applicant knows the outcome; the app asks and applies it.
+  // agent. The user knows the outcome; the app asks and applies it.
   if (
     ['blocked', 'failed'].includes(status) &&
     active.recordOperation === 'verify' &&
@@ -104,7 +104,7 @@ export function finishAutomationRun({
       db.askQuestion(
         id,
         {
-          text: `${item.title ?? item.url} başvurusunun sonucu doğrulanamadı.\nAgent notu: ${String(args.summary ?? '').slice(0, 1500)}`,
+          text: `${item.title ?? item.url} için gönderim sonucu doğrulanamadı.\nAgent notu: ${String(args.summary ?? '').slice(0, 1500)}`,
           recordId: item.id,
           fields: [OUTCOME_FIELD],
           outcome: true,

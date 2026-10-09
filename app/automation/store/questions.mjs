@@ -106,7 +106,7 @@ export const questionMethods = {
       !question.sourceUrl &&
       !question.browserContext?.sourceUrl &&
       (question.conversation === true || origin?.kind === 'interview');
-    // The applicant's answer to the app's outcome question resolves the held
+    // The user's answer to the app's outcome question resolves the held
     // record: submitted completes it, not submitted makes it sendable again.
     let resolved = null;
     if (question.outcome && question.recordId) {
@@ -117,7 +117,7 @@ export const questionMethods = {
         resolved = {
           ...item,
           status: 'completed',
-          evidence: 'Kullanıcı başvurunun gönderildiğini onayladı.',
+          evidence: 'Kullanıcı kaydın gönderildiğini onayladı.',
           verifiedAt: at,
           updatedAt: at,
         };
@@ -127,7 +127,7 @@ export const questionMethods = {
           status: item.proposal ? 'prepared' : 'found',
           approvedDigest: null,
           requiresReview: true,
-          evidence: 'Kullanıcı başvurunun gönderilmediğini bildirdi; yeniden gönderilebilir.',
+          evidence: 'Kullanıcı kaydın gönderilmediğini bildirdi; yeniden gönderilebilir.',
           verifiedAt: at,
           updatedAt: at,
           notSubmitted: {kind: 'user', at, digest: item.digest, attemptRunId: item.attemptRunId},

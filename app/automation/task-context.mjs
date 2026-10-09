@@ -62,7 +62,7 @@ const questionContext = (q) => ({
     'resolution',
   ]),
   ...(q.answer != null && Array.isArray(q.fields)
-    ? {fields: q.fields.map((f) => pick(f, ['id', 'label', 'type', 'factKey']))}
+    ? {fields: q.fields.map((f) => pick(f, ['id', 'label', 'type']))}
     : {}),
 });
 const previousRunContext = (run) =>
