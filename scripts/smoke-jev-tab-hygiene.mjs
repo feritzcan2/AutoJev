@@ -1,46 +1,99 @@
 import assert from 'node:assert/strict';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {mkdtemp, rm} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {JevBrowser} from '../app/jev-browser.mjs';
-const dir=await mkdtemp(path.join(os.tmpdir(),'jev-hygiene-'));
-const client=new JevBrowser(dir,{connection:'separate',headless:true});
-try{
- const context=await client.context();
- const make=async html=>{const page=await context.newPage();await page.setContent(html);const slot=await client.track(context,page);slot.owner="test";await client.observe(slot);return slot;};
- const listing=await make('<h1>Listing</h1>'),form=await make('<input value="Saved draft">'),personal=await make('<p>User tab</p>'),other=await make('<input value="Other draft">');
- form.openerId=listing.id;client.tabJobs.set(listing.id,'job');client.tabJobs.set(form.id,'job');client.tabJobs.set(other.id,'other');
- const job={id:'job',status:'blocked',resumeContext:{browser:'Jev Chrome',tabId:form.id,url:form.page.url()}};
- const cleaned=await client.cleanupCompleted({jobs:[job]});assert.ok(cleaned.closed.includes(listing.id));assert.equal(form.page.isClosed(),false);assert.equal(personal.page.isClosed(),false);assert.equal(other.page.isClosed(),false);
- const draft=await make('<input value="Unsent text">');form.openerId=draft.id;client.tabJobs.set(draft.id,'job');
- await client.cleanupCompleted({jobs:[job]});assert.equal(draft.page.isClosed(),false);
- const shared=await make('<p>Shared source</p>');form.openerId=shared.id;client.tabJobs.set(shared.id,'job');
- await client.cleanupCompleted({jobs:[job],sourceTabIds:[shared.id]});assert.equal(shared.page.isClosed(),false);
- const uncertain=await make('<p>Uncertain opener</p>');form.openerId=uncertain.id;client.tabJobs.set(uncertain.id,'job');job.status='uncertain';
- await client.cleanupCompleted({jobs:[job]});assert.equal(uncertain.page.isClosed(),false);
- const rank=await make('<h1>Ranked listing</h1>');client.tabSearches.set(rank.id,'rank-task');
- const rankClean=await client.cleanupSearch('rank-task',{jobs:[job]});assert.ok(rankClean.closed.includes(rank.id));assert.equal(form.page.isClosed(),false);
- const research=await make('<input type="search" value="backend"><h1>Finished research</h1>');
- const typed=await make('<input value="Unsent application answer">');
- const login=await make('<input type="password"><p>Sign in</p>');
- const challenge=await make('<h1>Verify you are human</h1>');
- const framed=await make('<iframe srcdoc="&lt;input value=&quot;Embedded draft&quot;&gt;"></iframe>');
- await framed.page.frameLocator('iframe').locator('input').waitFor();
- for(const slot of [research,typed,login,challenge,framed])client.tabSearches.set(slot.id,'completed-research');
- const collected=await client.cleanupSearch('completed-research',{jobs:[job]});
- assert.deepEqual(collected.closed,[research.id]);
- for(const slot of [typed,login,challenge,framed])assert.equal(slot.page.isClosed(),false);
- console.log('TAB_HYGIENE_RESEARCH_QUERY_DRAFT_LOGIN_VERIFICATION_IFRAME_PASS');
- const searchBar=await make('<section><input role="combobox" placeholder="(Jobtitel, Kompetenz oder Firmenname)" value="backend"><input role="combobox" placeholder="(Ort oder 5-stellige PLZ)" value="Berlin"><button>Jobs finden</button></section>');
- const alert=await make('<form id="jobAlert-signup"><label>Email<input type="email" value="candidate@example.test"></label><button>Activate</button></form>');
- const editedAlert=await make('<form id="jobAlert-signup"><input type="email" value="candidate@example.test"><button>Activate</button></form>');await editedAlert.page.locator('input').fill('edited@example.test');
- const application=await make('<form id="application"><input type="email" value="candidate@example.test"><input placeholder="Job title" value="Engineer"><button>Apply</button></form>');
- const personalTitle=await make('<input placeholder="Job title" value="Engineer">');
- for(const slot of [searchBar,alert,editedAlert,application,personalTitle])client.tabSearches.set(slot.id,'finished-filters');
- const filters=await client.cleanupSearch('finished-filters',{jobs:[job]});
- assert.deepEqual(filters.closed.sort(),[searchBar.id,alert.id].sort());
- for(const slot of [editedAlert,application,personalTitle])assert.equal(slot.page.isClosed(),false);
- console.log('TAB_HYGIENE_UNNAMED_SEARCH_DEFAULT_ALERT_EDITED_EMAIL_APPLICATION_PASS');
- await form.page.close();assert.equal(client.tabs.has(form.id),false);assert.equal(client.tabJobs.has(form.id),false);
- console.log('TAB_HYGIENE_LISTING_RANK_DRAFT_USER_UNCERTAIN_MANUAL_CLOSE_PASS');
-}finally{await client.close();await rm(dir,{recursive:true,force:true});}
+const dir = await mkdtemp(path.join(os.tmpdir(), 'jev-hygiene-'));
+const client = new JevBrowser(dir, {connection: 'separate', headless: true});
+try {
+  const context = await client.context();
+  const make = async (html) => {
+    const page = await context.newPage();
+    await page.setContent(html);
+    const slot = await client.track(context, page);
+    slot.owner = 'test';
+    await client.observe(slot);
+    return slot;
+  };
+  const listing = await make('<h1>Listing</h1>'),
+    form = await make('<input value="Saved draft">'),
+    personal = await make('<p>User tab</p>'),
+    other = await make('<input value="Other draft">');
+  form.openerId = listing.id;
+  client.tabJobs.set(listing.id, 'job');
+  client.tabJobs.set(form.id, 'job');
+  client.tabJobs.set(other.id, 'other');
+  const job = {
+    id: 'job',
+    status: 'blocked',
+    resumeContext: {browser: 'Jev Chrome', tabId: form.id, url: form.page.url()},
+  };
+  const cleaned = await client.cleanupCompleted({jobs: [job]});
+  assert.ok(cleaned.closed.includes(listing.id));
+  assert.equal(form.page.isClosed(), false);
+  assert.equal(personal.page.isClosed(), false);
+  assert.equal(other.page.isClosed(), false);
+  const draft = await make('<input value="Unsent text">');
+  form.openerId = draft.id;
+  client.tabJobs.set(draft.id, 'job');
+  await client.cleanupCompleted({jobs: [job]});
+  assert.equal(draft.page.isClosed(), false);
+  const shared = await make('<p>Shared source</p>');
+  form.openerId = shared.id;
+  client.tabJobs.set(shared.id, 'job');
+  await client.cleanupCompleted({jobs: [job], sourceTabIds: [shared.id]});
+  assert.equal(shared.page.isClosed(), false);
+  const uncertain = await make('<p>Uncertain opener</p>');
+  form.openerId = uncertain.id;
+  client.tabJobs.set(uncertain.id, 'job');
+  job.status = 'uncertain';
+  await client.cleanupCompleted({jobs: [job]});
+  assert.equal(uncertain.page.isClosed(), false);
+  const rank = await make('<h1>Ranked listing</h1>');
+  client.tabSearches.set(rank.id, 'rank-task');
+  const rankClean = await client.cleanupSearch('rank-task', {jobs: [job]});
+  assert.ok(rankClean.closed.includes(rank.id));
+  assert.equal(form.page.isClosed(), false);
+  const research = await make('<input type="search" value="backend"><h1>Finished research</h1>');
+  const typed = await make('<input value="Unsent application answer">');
+  const login = await make('<input type="password"><p>Sign in</p>');
+  const challenge = await make('<h1>Verify you are human</h1>');
+  const framed = await make(
+    '<iframe srcdoc="&lt;input value=&quot;Embedded draft&quot;&gt;"></iframe>',
+  );
+  await framed.page.frameLocator('iframe').locator('input').waitFor();
+  for (const slot of [research, typed, login, challenge, framed])
+    client.tabSearches.set(slot.id, 'completed-research');
+  const collected = await client.cleanupSearch('completed-research', {jobs: [job]});
+  assert.deepEqual(collected.closed, [research.id]);
+  for (const slot of [typed, login, challenge, framed]) assert.equal(slot.page.isClosed(), false);
+  console.log('TAB_HYGIENE_RESEARCH_QUERY_DRAFT_LOGIN_VERIFICATION_IFRAME_PASS');
+  const searchBar = await make(
+    '<section><input role="combobox" placeholder="(Jobtitel, Kompetenz oder Firmenname)" value="backend"><input role="combobox" placeholder="(Ort oder 5-stellige PLZ)" value="Berlin"><button>Jobs finden</button></section>',
+  );
+  const alert = await make(
+    '<form id="jobAlert-signup"><label>Email<input type="email" value="candidate@example.test"></label><button>Activate</button></form>',
+  );
+  const editedAlert = await make(
+    '<form id="jobAlert-signup"><input type="email" value="candidate@example.test"><button>Activate</button></form>',
+  );
+  await editedAlert.page.locator('input').fill('edited@example.test');
+  const application = await make(
+    '<form id="application"><input type="email" value="candidate@example.test"><input placeholder="Job title" value="Engineer"><button>Apply</button></form>',
+  );
+  const personalTitle = await make('<input placeholder="Job title" value="Engineer">');
+  for (const slot of [searchBar, alert, editedAlert, application, personalTitle])
+    client.tabSearches.set(slot.id, 'finished-filters');
+  const filters = await client.cleanupSearch('finished-filters', {jobs: [job]});
+  assert.deepEqual(filters.closed.sort(), [searchBar.id, alert.id].sort());
+  for (const slot of [editedAlert, application, personalTitle])
+    assert.equal(slot.page.isClosed(), false);
+  console.log('TAB_HYGIENE_UNNAMED_SEARCH_DEFAULT_ALERT_EDITED_EMAIL_APPLICATION_PASS');
+  await form.page.close();
+  assert.equal(client.tabs.has(form.id), false);
+  assert.equal(client.tabJobs.has(form.id), false);
+  console.log('TAB_HYGIENE_LISTING_RANK_DRAFT_USER_UNCERTAIN_MANUAL_CLOSE_PASS');
+} finally {
+  await client.close();
+  await rm(dir, {recursive: true, force: true});
+}

@@ -2,16 +2,57 @@
 // It contains synthetic data only and cannot submit applications.
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
-const proof={listingQuote:'Required program ownership',candidateSource:'facts',candidateQuote:'Verified compliance experience',reason:'Related experience; required program ownership is not verified.'};
+const proof = {
+  listingQuote: 'Required program ownership',
+  candidateSource: 'facts',
+  candidateQuote: 'Verified compliance experience',
+  reason: 'Related experience; required program ownership is not verified.',
+};
 // Records saved before scoring became one rubric text still carry this breakdown.
-const weights={technical:70,experience:10,role:10,preferences:10};
-const calculation={version:4,score:100,rawScore:100,cap:null,eligibility:'unverified',dimensions:Object.entries(weights).map(([key,weight])=>({key,level:'direct',...proof,points:100,weight,contribution:weight})),requirements:[{kind:'qualification',match:'unknown',...proof,candidateQuote:''}]};
-const files=new Map(['/src/template-fields.js','/app/record-operation-definitions.mjs','/src/score-breakdown.js','/src/scoring-state.js','/src/automation-results.js','/src/record-table.js','/src/record-operation-status.js','/src/workspace-tabs.js','/src/automations.css','/src/style.css'].map(p=>[p,new URL('..'+p,import.meta.url)]));
-const server=createServer(async(req,res)=>{
- try{
-  if(files.has(req.url)){res.setHeader('Content-Type',/\.m?js$/.test(req.url)?'text/javascript':'text/css');res.end(await readFile(files.get(req.url)));return;}
-  if(req.url!=='/'){res.writeHead(404).end();return;}
-  res.setHeader('Content-Type','text/html; charset=utf-8');res.end(`<!doctype html><html lang="tr"><meta charset="utf-8"><title>Puanlama arayüz kontrolü</title><link rel="stylesheet" href="/src/style.css"><link rel="stylesheet" href="/src/automations.css"><body style="display:block;padding:24px;max-width:1000px;margin:auto;overflow:auto;height:auto"><h1>Puanlama arayüz kontrolü</h1><p id="status" role="status">Kontrol ediliyor…</p><h2>Puanlama ayarları</h2><form id="settings"></form><main></main><h2>Kayıt puanları</h2><section id="records"></section><script type="module">
+const weights = {technical: 70, experience: 10, role: 10, preferences: 10};
+const calculation = {
+  version: 4,
+  score: 100,
+  rawScore: 100,
+  cap: null,
+  eligibility: 'unverified',
+  dimensions: Object.entries(weights).map(([key, weight]) => ({
+    key,
+    level: 'direct',
+    ...proof,
+    points: 100,
+    weight,
+    contribution: weight,
+  })),
+  requirements: [{kind: 'qualification', match: 'unknown', ...proof, candidateQuote: ''}],
+};
+const files = new Map(
+  [
+    '/src/template-fields.js',
+    '/app/record-operation-definitions.mjs',
+    '/src/score-breakdown.js',
+    '/src/scoring-state.js',
+    '/src/automation-results.js',
+    '/src/record-table.js',
+    '/src/record-operation-status.js',
+    '/src/workspace-tabs.js',
+    '/src/automations.css',
+    '/src/style.css',
+  ].map((p) => [p, new URL('..' + p, import.meta.url)]),
+);
+const server = createServer(async (req, res) => {
+  try {
+    if (files.has(req.url)) {
+      res.setHeader('Content-Type', /\.m?js$/.test(req.url) ? 'text/javascript' : 'text/css');
+      res.end(await readFile(files.get(req.url)));
+      return;
+    }
+    if (req.url !== '/') {
+      res.writeHead(404).end();
+      return;
+    }
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.end(`<!doctype html><html lang="tr"><meta charset="utf-8"><title>Puanlama arayüz kontrolü</title><link rel="stylesheet" href="/src/style.css"><link rel="stylesheet" href="/src/automations.css"><body style="display:block;padding:24px;max-width:1000px;margin:auto;overflow:auto;height:auto"><h1>Puanlama arayüz kontrolü</h1><p id="status" role="status">Kontrol ediliyor…</p><h2>Puanlama ayarları</h2><form id="settings"></form><main></main><h2>Kayıt puanları</h2><section id="records"></section><script type="module">
   import {templateFields,templateValues} from '/src/template-fields.js';
   import {scoringFields} from '/app/record-operation-definitions.mjs';
   import {scoreBreakdown} from '/src/score-breakdown.js';
@@ -36,6 +77,8 @@ const server=createServer(async(req,res)=>{
   table.dispose();
   document.querySelector('#status').textContent='PASS · Puan dökümü, doğrudan agent puanı ve profil değişikliği uyarısı doğrulandı.';
   </script></body></html>`);
- }catch(error){res.writeHead(500).end(error.message);}
+  } catch (error) {
+    res.writeHead(500).end(error.message);
+  }
 });
-server.listen(0,'127.0.0.1',()=>console.log('http://127.0.0.1:'+server.address().port));
+server.listen(0, '127.0.0.1', () => console.log('http://127.0.0.1:' + server.address().port));

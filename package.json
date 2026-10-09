@@ -12,6 +12,8 @@
     "start": "pnpm build && pnpm engine:build && electron .",
     "test": "node --test tests/*.test.mjs",
     "check": "node scripts/check.mjs",
+    "format": "prettier --write app src tests scripts",
+    "format:check": "prettier --check app src tests scripts",
     "bootstrap": "node scripts/bootstrap.mjs",
     "test:ui": "node scripts/smoke-generic-workspace-ui.mjs",
     "test:instructions": "node scripts/smoke-instructions.mjs",
@@ -66,7 +68,8 @@
   "devDependencies": {
     "electron": "43.3.0",
     "electron-builder": "26.15.3",
-    "esbuild": "0.28.1"
+    "esbuild": "0.28.1",
+    "prettier": "3.6.2"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

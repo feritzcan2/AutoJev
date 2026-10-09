@@ -2,100 +2,291 @@ import {workerKey} from './worker-key.mjs';
 import {providerLimitAttention} from './provider-limit.mjs';
 // Shared provider task lifecycle; policies validate durable domain outcomes.
 export class TaskRuns {
- constructor(policy,{launch,changed=()=>{},now=()=>Date.now(),concurrency=Infinity}={}){Object.assign(this,{policy,launch,changed,now,concurrency});this.active=new Map();this.closed=false;policy.recover();}
- slots(id){return [...this.active.values()].filter(s=>s.id===id);}
- get capacityUsed(){return [...this.active.values()].filter(s=>!this.policy.separateCapacity?.(s.workerId)).length;}
- slot(id,runId){return runId?this.slots(id).find(s=>s.run.id===runId):this.active.get(id);}
- async tick(){if(this.closed)return;for(const id of this.policy.due(this.now())){if(this.capacityUsed>=this.concurrency)break;if(!this.active.has(id))void this.start(id).catch(()=>{});}}
- async start(id,input,workerId='main'){
-  const key=workerKey(id,workerId);if(this.closed)throw Error('Uygulama kapanıyor');if(this.active.has(key))throw Error('Bu worker’ın görevi zaten çalışıyor');
-  if(!this.policy.separateCapacity?.(workerId)&&this.capacityUsed>=this.concurrency)throw Error(`Aynı anda en fazla ${this.concurrency} görev çalışabilir`);
-  const run=this.policy.begin(id,input,workerId),task=this.policy.config(id),slot={id,key,workerId,run,worker:null,controller:new AbortController(),finishing:false,ready:null};this.active.set(key,slot);this.changed(id);
-  if(!run.interactive&&Number.isFinite(task.timeoutMinutes)&&task.timeoutMinutes>0)slot.timer=setTimeout(()=>{void this.finish(id,'timeout','Tur süresi doldu. Devam etmek için sonucu kontrol et.',workerId).catch(()=>{});},task.timeoutMinutes*60000);
-  slot.ready=Promise.resolve().then(()=>this.launch(run,task,event=>this.event(id,event,run.id),slot.controller.signal));
-  try{slot.worker=await slot.ready;return run;}catch(error){if(!slot.finishing)await this.finish(id,'failed',error.message,workerId);throw error;}
- }
- async unreported(slot,reason){
-  if(slot.unreportedPending){if(reason==='exit')slot.unreportedExit=true;return;}
-  slot.unreportedPending=true;
-  try{return await this.handleUnreported(slot,reason);}finally{
-   slot.unreportedPending=false;
-   if(slot.unreportedExit){delete slot.unreportedExit;if(!slot.finishing&&!this.closed)void this.unreported(slot,'exit');}
+  constructor(
+    policy,
+    {launch, changed = () => {}, now = () => Date.now(), concurrency = Infinity} = {},
+  ) {
+    Object.assign(this, {policy, launch, changed, now, concurrency});
+    this.active = new Map();
+    this.closed = false;
+    policy.recover();
   }
- }
- async handleUnreported(slot,reason){
-  if(slot.finishing||slot.completionRequested||this.closed)return;
-  if(slot.run.usageLimit){
-   if(reason!=='exit')return;
-   slot.run={...this.policy.run(slot.run.id),usageLimit:{...slot.run.usageLimit,automaticResume:false}};this.policy.save(slot.run);
-   const issue=providerLimitAttention(slot.run.usageLimit);
-   return this.finish(slot.id,'blocked',`${issue.title}. ${issue.detail} Agent oturumu kapandı.`,slot.workerId).catch(()=>{});
+  slots(id) {
+    return [...this.active.values()].filter((s) => s.id === id);
   }
-  if(reason==='idle'&&slot.worker?.message){
-   const continuation=this.policy.continueIdle?.(slot.id,slot.run.id);
-   const message=typeof continuation==='string'?continuation:continuation?.message;
-   if(message&&(!slot.idleContinuation||continuation.repeat===true)){
-    slot.idleContinuation=true;
-    try{
-     await slot.worker.message(message);
-     if(!slot.finishing&&!slot.completionRequested&&this.active.get(slot.key)===slot&&!this.closed)this.watchIdle(slot);
-     return;
-    }catch{/* A failed delivery follows the ordinary durable recovery path. */}
-    if(slot.finishing||slot.completionRequested||this.active.get(slot.key)!==slot||this.closed)return;
-   }
+  get capacityUsed() {
+    return [...this.active.values()].filter((s) => !this.policy.separateCapacity?.(s.workerId))
+      .length;
   }
-  const outcome=this.policy.unreported?.(slot.id,slot.run.id,reason)??{status:'failed',summary:reason==='idle'?'Agent sonuç bildirmeden durdu. Agent ekranını kontrol et.':'Agent oturumu sonuç bildirmeden kapandı.'};
-  return this.finish(slot.id,outcome.status,outcome.summary,slot.workerId).catch(()=>{});
- }
- watchIdle(slot){
-  clearTimeout(slot.idleTimer);
-  slot.idleTimer=setTimeout(()=>{
-   if(slot.finishing||slot.completionRequested||slot.run.interactive||slot.run.usageLimit||this.closed)return;
-   // Compaction events may be consumed by the provider session layer. Check
-   // the live session as well as the last state delivered to this task.
-   if(slot.worker?.isBusy?.()){this.watchIdle(slot);return;}
-   const state=slot.worker?.state?.()??slot.run.state;
-   if(state!=='Idle')return;
-   void this.unreported(slot,'idle');
-  },this.policy.idleGraceMs??2000);
- }
- event(id,event,runId){const slot=this.slot(id,runId);if(!slot||slot.finishing)return;
-  if(event.event==='provider_error'&&!slot.completionRequested){
-   const summary=event.summary||'Model sağlayıcısı isteği tamamlayamadı.';
-   slot.run={...this.policy.run(slot.run.id),state:'Error',stop:{kind:'technical',evidence:summary}};this.policy.save(slot.run);
-   void this.finish(id,'failed',summary,slot.workerId).catch(()=>{});return;
+  slot(id, runId) {
+    return runId ? this.slots(id).find((s) => s.run.id === runId) : this.active.get(id);
   }
-  if(event.event==='usage_limit'){
-   slot.run={...this.policy.run(slot.run.id),usageLimit:event.usageLimit??null};clearTimeout(slot.idleTimer);
-   this.policy.save(slot.run);this.changed(id);
-   if(!slot.run.usageLimit&&slot.run.state==='Idle'&&slot.seenWorking&&!slot.completionRequested&&!slot.run.interactive)this.watchIdle(slot);
+  async tick() {
+    if (this.closed) return;
+    for (const id of this.policy.due(this.now())) {
+      if (this.capacityUsed >= this.concurrency) break;
+      if (!this.active.has(id)) void this.start(id).catch(() => {});
+    }
   }
-  if(event.event==='state'){
-   const state=String(event.state).replace(/^Some\((.*)\)$/,'$1');slot.run={...this.policy.run(slot.run.id),state};if(['Working','Compacting'].includes(state))slot.seenWorking=true;clearTimeout(slot.idleTimer);
-   if(slot.run.interactive&&slot.seenWorking&&['Working','Idle'].includes(state))slot.run.awaitingMessage=state==='Idle';
-   if(state==='Idle'&&slot.seenWorking&&!slot.completionRequested&&!slot.run.interactive&&!slot.run.usageLimit)this.watchIdle(slot);
-   this.policy.save(slot.run);this.changed(id);
+  async start(id, input, workerId = 'main') {
+    const key = workerKey(id, workerId);
+    if (this.closed) throw Error('Uygulama kapanıyor');
+    if (this.active.has(key)) throw Error('Bu worker’ın görevi zaten çalışıyor');
+    if (!this.policy.separateCapacity?.(workerId) && this.capacityUsed >= this.concurrency)
+      throw Error(`Aynı anda en fazla ${this.concurrency} görev çalışabilir`);
+    const run = this.policy.begin(id, input, workerId),
+      task = this.policy.config(id),
+      slot = {
+        id,
+        key,
+        workerId,
+        run,
+        worker: null,
+        controller: new AbortController(),
+        finishing: false,
+        ready: null,
+      };
+    this.active.set(key, slot);
+    this.changed(id);
+    if (!run.interactive && Number.isFinite(task.timeoutMinutes) && task.timeoutMinutes > 0)
+      slot.timer = setTimeout(() => {
+        void this.finish(
+          id,
+          'timeout',
+          'Tur süresi doldu. Devam etmek için sonucu kontrol et.',
+          workerId,
+        ).catch(() => {});
+      }, task.timeoutMinutes * 60000);
+    slot.ready = Promise.resolve().then(() =>
+      this.launch(run, task, (event) => this.event(id, event, run.id), slot.controller.signal),
+    );
+    try {
+      slot.worker = await slot.ready;
+      return run;
+    } catch (error) {
+      if (!slot.finishing) await this.finish(id, 'failed', error.message, workerId);
+      throw error;
+    }
   }
-  if(['eof','engine_exit'].includes(event.event)&&!slot.completionRequested)void this.unreported(slot,'exit');
- }
- interactive(id){const slot=this.active.get(id);if(!slot||slot.finishing)throw Error('Etkin görev bulunamadı');slot.run={...this.policy.run(slot.run.id),interactive:true};slot.completionRequested=false;clearTimeout(slot.timer);clearTimeout(slot.idleTimer);clearTimeout(slot.completionTimer);this.policy.save(slot.run);this.changed(id);return slot;}
- complete(id,runId,status,summary,{goalReached=false}={}){
-  const slot=this.slot(id,runId);if(!slot||slot.finishing||slot.completionRequested)throw Error('Etkin çalışma bulunamadı');
-  if(slot.run.interactive){slot.run={...this.policy.run(runId),summary,lastResult:status,awaitingMessage:true};clearTimeout(slot.idleTimer);this.policy.save(slot.run);this.changed(id);return {saved:true,conversationOpen:true,awaitingMessage:true};}
-  const result=this.policy.report?.(id,runId,status,summary,goalReached);slot.completionRequested=true;clearTimeout(slot.idleTimer);
-  if(result)slot.run=result;else{slot.run.summary=summary;this.policy.save(slot.run);}
-  this.changed(id);slot.completionTimer=setTimeout(()=>{if(!slot.run.interactive)void this.finish(id,result?.status??status,result?.summary??summary,slot.workerId).catch(()=>{});},150);
-  return {saved:true,status:result?.status??status,stop:true};
- }
- finish(id,status='interrupted',summary='Kullanıcı durdurdu.',workerId='main'){
-  const slot=this.active.get(workerKey(id,workerId));if(!slot)return Promise.resolve();if(slot.finishing)return slot.finishPromise;
-  slot.finishing=true;clearTimeout(slot.timer);clearTimeout(slot.idleTimer);clearTimeout(slot.completionTimer);slot.controller.abort();
-  slot.finishPromise=(async()=>{
-   try{const worker=slot.worker??await slot.ready?.catch(()=>null);await worker?.close();}catch(error){this.policy.closeFailed?.(id,slot.run.id,error);slot.finishing=false;this.changed(id);throw error;}
-   this.policy.finish(id,slot.run.id,status,summary);
-   try{await this.policy.afterFinish?.(id,slot.run.id);}catch(error){console.warn('Görev sekmeleri temizlenemedi:',error);}
-   this.active.delete(slot.key);this.changed(id);
-  })();return slot.finishPromise;
- }
- async close(){this.closed=true;await Promise.all([...this.active.values()].map(s=>this.finish(s.id,'interrupted','Uygulama kapatıldı.',s.workerId)));}
+  async unreported(slot, reason) {
+    if (slot.unreportedPending) {
+      if (reason === 'exit') slot.unreportedExit = true;
+      return;
+    }
+    slot.unreportedPending = true;
+    try {
+      return await this.handleUnreported(slot, reason);
+    } finally {
+      slot.unreportedPending = false;
+      if (slot.unreportedExit) {
+        delete slot.unreportedExit;
+        if (!slot.finishing && !this.closed) void this.unreported(slot, 'exit');
+      }
+    }
+  }
+  async handleUnreported(slot, reason) {
+    if (slot.finishing || slot.completionRequested || this.closed) return;
+    if (slot.run.usageLimit) {
+      if (reason !== 'exit') return;
+      slot.run = {
+        ...this.policy.run(slot.run.id),
+        usageLimit: {...slot.run.usageLimit, automaticResume: false},
+      };
+      this.policy.save(slot.run);
+      const issue = providerLimitAttention(slot.run.usageLimit);
+      return this.finish(
+        slot.id,
+        'blocked',
+        `${issue.title}. ${issue.detail} Agent oturumu kapandı.`,
+        slot.workerId,
+      ).catch(() => {});
+    }
+    if (reason === 'idle' && slot.worker?.message) {
+      const continuation = this.policy.continueIdle?.(slot.id, slot.run.id);
+      const message = typeof continuation === 'string' ? continuation : continuation?.message;
+      if (message && (!slot.idleContinuation || continuation.repeat === true)) {
+        slot.idleContinuation = true;
+        try {
+          await slot.worker.message(message);
+          if (
+            !slot.finishing &&
+            !slot.completionRequested &&
+            this.active.get(slot.key) === slot &&
+            !this.closed
+          )
+            this.watchIdle(slot);
+          return;
+        } catch {
+          /* A failed delivery follows the ordinary durable recovery path. */
+        }
+        if (
+          slot.finishing ||
+          slot.completionRequested ||
+          this.active.get(slot.key) !== slot ||
+          this.closed
+        )
+          return;
+      }
+    }
+    const outcome = this.policy.unreported?.(slot.id, slot.run.id, reason) ?? {
+      status: 'failed',
+      summary:
+        reason === 'idle'
+          ? 'Agent sonuç bildirmeden durdu. Agent ekranını kontrol et.'
+          : 'Agent oturumu sonuç bildirmeden kapandı.',
+    };
+    return this.finish(slot.id, outcome.status, outcome.summary, slot.workerId).catch(() => {});
+  }
+  watchIdle(slot) {
+    clearTimeout(slot.idleTimer);
+    slot.idleTimer = setTimeout(() => {
+      if (
+        slot.finishing ||
+        slot.completionRequested ||
+        slot.run.interactive ||
+        slot.run.usageLimit ||
+        this.closed
+      )
+        return;
+      // Compaction events may be consumed by the provider session layer. Check
+      // the live session as well as the last state delivered to this task.
+      if (slot.worker?.isBusy?.()) {
+        this.watchIdle(slot);
+        return;
+      }
+      const state = slot.worker?.state?.() ?? slot.run.state;
+      if (state !== 'Idle') return;
+      void this.unreported(slot, 'idle');
+    }, this.policy.idleGraceMs ?? 2000);
+  }
+  event(id, event, runId) {
+    const slot = this.slot(id, runId);
+    if (!slot || slot.finishing) return;
+    if (event.event === 'provider_error' && !slot.completionRequested) {
+      const summary = event.summary || 'Model sağlayıcısı isteği tamamlayamadı.';
+      slot.run = {
+        ...this.policy.run(slot.run.id),
+        state: 'Error',
+        stop: {kind: 'technical', evidence: summary},
+      };
+      this.policy.save(slot.run);
+      void this.finish(id, 'failed', summary, slot.workerId).catch(() => {});
+      return;
+    }
+    if (event.event === 'usage_limit') {
+      slot.run = {...this.policy.run(slot.run.id), usageLimit: event.usageLimit ?? null};
+      clearTimeout(slot.idleTimer);
+      this.policy.save(slot.run);
+      this.changed(id);
+      if (
+        !slot.run.usageLimit &&
+        slot.run.state === 'Idle' &&
+        slot.seenWorking &&
+        !slot.completionRequested &&
+        !slot.run.interactive
+      )
+        this.watchIdle(slot);
+    }
+    if (event.event === 'state') {
+      const state = String(event.state).replace(/^Some\((.*)\)$/, '$1');
+      slot.run = {...this.policy.run(slot.run.id), state};
+      if (['Working', 'Compacting'].includes(state)) slot.seenWorking = true;
+      clearTimeout(slot.idleTimer);
+      if (slot.run.interactive && slot.seenWorking && ['Working', 'Idle'].includes(state))
+        slot.run.awaitingMessage = state === 'Idle';
+      if (
+        state === 'Idle' &&
+        slot.seenWorking &&
+        !slot.completionRequested &&
+        !slot.run.interactive &&
+        !slot.run.usageLimit
+      )
+        this.watchIdle(slot);
+      this.policy.save(slot.run);
+      this.changed(id);
+    }
+    if (['eof', 'engine_exit'].includes(event.event) && !slot.completionRequested)
+      void this.unreported(slot, 'exit');
+  }
+  interactive(id) {
+    const slot = this.active.get(id);
+    if (!slot || slot.finishing) throw Error('Etkin görev bulunamadı');
+    slot.run = {...this.policy.run(slot.run.id), interactive: true};
+    slot.completionRequested = false;
+    clearTimeout(slot.timer);
+    clearTimeout(slot.idleTimer);
+    clearTimeout(slot.completionTimer);
+    this.policy.save(slot.run);
+    this.changed(id);
+    return slot;
+  }
+  complete(id, runId, status, summary, {goalReached = false} = {}) {
+    const slot = this.slot(id, runId);
+    if (!slot || slot.finishing || slot.completionRequested)
+      throw Error('Etkin çalışma bulunamadı');
+    if (slot.run.interactive) {
+      slot.run = {...this.policy.run(runId), summary, lastResult: status, awaitingMessage: true};
+      clearTimeout(slot.idleTimer);
+      this.policy.save(slot.run);
+      this.changed(id);
+      return {saved: true, conversationOpen: true, awaitingMessage: true};
+    }
+    const result = this.policy.report?.(id, runId, status, summary, goalReached);
+    slot.completionRequested = true;
+    clearTimeout(slot.idleTimer);
+    if (result) slot.run = result;
+    else {
+      slot.run.summary = summary;
+      this.policy.save(slot.run);
+    }
+    this.changed(id);
+    slot.completionTimer = setTimeout(() => {
+      if (!slot.run.interactive)
+        void this.finish(
+          id,
+          result?.status ?? status,
+          result?.summary ?? summary,
+          slot.workerId,
+        ).catch(() => {});
+    }, 150);
+    return {saved: true, status: result?.status ?? status, stop: true};
+  }
+  finish(id, status = 'interrupted', summary = 'Kullanıcı durdurdu.', workerId = 'main') {
+    const slot = this.active.get(workerKey(id, workerId));
+    if (!slot) return Promise.resolve();
+    if (slot.finishing) return slot.finishPromise;
+    slot.finishing = true;
+    clearTimeout(slot.timer);
+    clearTimeout(slot.idleTimer);
+    clearTimeout(slot.completionTimer);
+    slot.controller.abort();
+    slot.finishPromise = (async () => {
+      try {
+        const worker = slot.worker ?? (await slot.ready?.catch(() => null));
+        await worker?.close();
+      } catch (error) {
+        this.policy.closeFailed?.(id, slot.run.id, error);
+        slot.finishing = false;
+        this.changed(id);
+        throw error;
+      }
+      this.policy.finish(id, slot.run.id, status, summary);
+      try {
+        await this.policy.afterFinish?.(id, slot.run.id);
+      } catch (error) {
+        console.warn('Görev sekmeleri temizlenemedi:', error);
+      }
+      this.active.delete(slot.key);
+      this.changed(id);
+    })();
+    return slot.finishPromise;
+  }
+  async close() {
+    this.closed = true;
+    await Promise.all(
+      [...this.active.values()].map((s) =>
+        this.finish(s.id, 'interrupted', 'Uygulama kapatıldı.', s.workerId),
+      ),
+    );
+  }
 }

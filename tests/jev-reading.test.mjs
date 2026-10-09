@@ -7,81 +7,260 @@ import {automationBrowser} from '../app/automation-browser.mjs';
 import {validateJevArgs} from '../app/jev-browser.mjs';
 import {validate} from '../app/tool-schema.mjs';
 
-test('Jev full document reading is explicit; automation scopes scroll to its current tab',async()=>{
- const calls=[],browser={prepare:()=>({ready:true}),async call(id,name,args){calls.push({id,name,args});return {content:[{type:'text',text:JSON.stringify({tabId:'owned-tab',url:'https://example.com/list',tabs:[]})}]};}};
- const adapter=automationBrowser(browser,{mode:'jev'});
- await adapter.call('workspace','browser_navigate',{url:'https://example.com/list'},'run');
- await adapter.call('workspace','browser_snapshot',{},'run');assert.deepEqual(calls.at(-1).args,{tabId:'owned-tab',scope:'document',full:true,fullReason:'context_loss'});
- await adapter.call('workspace','browser_jev_scroll',{controlId:'observed-scroll',direction:'down',tabId:'foreign-tab'},'run');assert.deepEqual(calls.at(-1).args,{tabId:'owned-tab',controlId:'observed-scroll',direction:'down'});
- await adapter.call('workspace','browser_jev_reveal',{controlId:'date',tabId:'foreign'},'run');assert.deepEqual(calls.at(-1).args,{tabId:'owned-tab',controlId:'date'});
- await adapter.call('workspace','browser_jev_inspect_form',{tabId:'foreign'},'run');assert.deepEqual(calls.at(-1).args,{tabId:'owned-tab'});
- validateJevArgs('browser_jev_observe',{tabId:'owned-tab',scope:'document'});validateJevArgs('browser_jev_observe',{tabId:'owned-tab'});
- assert.throws(()=>validateJevArgs('browser_jev_observe',{tabId:'owned-tab',scope:'hidden_state'}));
+test('Jev full document reading is explicit; automation scopes scroll to its current tab', async () => {
+  const calls = [],
+    browser = {
+      prepare: () => ({ready: true}),
+      async call(id, name, args) {
+        calls.push({id, name, args});
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({tabId: 'owned-tab', url: 'https://example.com/list', tabs: []}),
+            },
+          ],
+        };
+      },
+    };
+  const adapter = automationBrowser(browser, {mode: 'jev'});
+  await adapter.call('workspace', 'browser_navigate', {url: 'https://example.com/list'}, 'run');
+  await adapter.call('workspace', 'browser_snapshot', {}, 'run');
+  assert.deepEqual(calls.at(-1).args, {
+    tabId: 'owned-tab',
+    scope: 'document',
+    full: true,
+    fullReason: 'context_loss',
+  });
+  await adapter.call(
+    'workspace',
+    'browser_jev_scroll',
+    {controlId: 'observed-scroll', direction: 'down', tabId: 'foreign-tab'},
+    'run',
+  );
+  assert.deepEqual(calls.at(-1).args, {
+    tabId: 'owned-tab',
+    controlId: 'observed-scroll',
+    direction: 'down',
+  });
+  await adapter.call(
+    'workspace',
+    'browser_jev_reveal',
+    {controlId: 'date', tabId: 'foreign'},
+    'run',
+  );
+  assert.deepEqual(calls.at(-1).args, {tabId: 'owned-tab', controlId: 'date'});
+  await adapter.call('workspace', 'browser_jev_inspect_form', {tabId: 'foreign'}, 'run');
+  assert.deepEqual(calls.at(-1).args, {tabId: 'owned-tab'});
+  validateJevArgs('browser_jev_observe', {tabId: 'owned-tab', scope: 'document'});
+  validateJevArgs('browser_jev_observe', {tabId: 'owned-tab'});
+  assert.throws(() =>
+    validateJevArgs('browser_jev_observe', {tabId: 'owned-tab', scope: 'hidden_state'}),
+  );
 });
 
-test('a user access response can observe its retained source tab before any new navigation',async()=>{
- const calls=[],source='https://source.example/',browser={prepare:()=>({ready:true}),async call(id,name,args,session,options){calls.push({name,args,options});return {content:[{type:'text',text:JSON.stringify({tabId:args.tabId,url:source,text:'Verification solved'})}]};}};
- const adapter=automationBrowser(browser,{mode:'jev',readTabKey:'source:'+source,sourceUrl:source,resumeContext:{tabId:'retained-source',url:source},resumeSource:true});
- assert.equal(adapter.hasPage(),true);await adapter.call('workspace','browser_snapshot',{},'resumed-run');
- assert.equal(calls.length,1);assert.equal(calls[0].name,'browser_jev_observe');assert.equal(calls[0].args.tabId,'retained-source');assert.equal(calls[0].options.automationSourceUrl,source);
- const fresh=automationBrowser(browser,{mode:'jev',sourceUrl:source,resumeContext:{tabId:'retained-source'}});assert.equal(fresh.hasPage(),false);
+test('a user access response can observe its retained source tab before any new navigation', async () => {
+  const calls = [],
+    source = 'https://source.example/',
+    browser = {
+      prepare: () => ({ready: true}),
+      async call(id, name, args, session, options) {
+        calls.push({name, args, options});
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({tabId: args.tabId, url: source, text: 'Verification solved'}),
+            },
+          ],
+        };
+      },
+    };
+  const adapter = automationBrowser(browser, {
+    mode: 'jev',
+    readTabKey: 'source:' + source,
+    sourceUrl: source,
+    resumeContext: {tabId: 'retained-source', url: source},
+    resumeSource: true,
+  });
+  assert.equal(adapter.hasPage(), true);
+  await adapter.call('workspace', 'browser_snapshot', {}, 'resumed-run');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'browser_jev_observe');
+  assert.equal(calls[0].args.tabId, 'retained-source');
+  assert.equal(calls[0].options.automationSourceUrl, source);
+  const fresh = automationBrowser(browser, {
+    mode: 'jev',
+    sourceUrl: source,
+    resumeContext: {tabId: 'retained-source'},
+  });
+  assert.equal(fresh.hasPage(), false);
 });
 
-function fixture(t,kind='trial',mode='jev'){
- const store=new WorkspaceDatabase(':memory:');t.after(()=>store.close());const db=new AutomationStore(store),url='https://example.com/list';
- const a=db.create('custom',{goal:'Read listings',sources:[url],criteria:{outcome:'Listings',rules:'Read only',completion:'One scan'}});db.save(a.id,{browserMode:mode,maxBrowserSteps:5});if(kind!=='interview')db.review(a.id);
- const run=db.begin(a.id,kind),controller=new AbortController();let current=url,calls=[];
- const browser={async currentUrl(){return current;},async call(id,name,args){calls.push(name);return {content:[{type:'text',text:`Page URL: ${current}\nCurrent listings ${calls.length}`}],action:{status:'ready',executed:true}};}};
- const flow=automationWorkflow({db,run,signal:controller.signal,browser,report:()=>{}});
- return {db,a,run,flow,controller,calls,redirect:url=>{current=url;},call:(name,args={})=>flow.call(a.id,run.id,name,args)};
+function fixture(t, kind = 'trial', mode = 'jev') {
+  const store = new WorkspaceDatabase(':memory:');
+  t.after(() => store.close());
+  const db = new AutomationStore(store),
+    url = 'https://example.com/list';
+  const a = db.create('custom', {
+    goal: 'Read listings',
+    sources: [url],
+    criteria: {outcome: 'Listings', rules: 'Read only', completion: 'One scan'},
+  });
+  db.save(a.id, {browserMode: mode, maxBrowserSteps: 5});
+  if (kind !== 'interview') db.review(a.id);
+  const run = db.begin(a.id, kind),
+    controller = new AbortController();
+  let current = url,
+    calls = [];
+  const browser = {
+    async currentUrl() {
+      return current;
+    },
+    async call(id, name, args) {
+      calls.push(name);
+      return {
+        content: [{type: 'text', text: `Page URL: ${current}\nCurrent listings ${calls.length}`}],
+        action: {status: 'ready', executed: true},
+      };
+    },
+  };
+  const flow = automationWorkflow({db, run, signal: controller.signal, browser, report: () => {}});
+  return {
+    db,
+    a,
+    run,
+    flow,
+    controller,
+    calls,
+    redirect: (url) => {
+      current = url;
+    },
+    call: (name, args = {}) => flow.call(a.id, run.id, name, args),
+  };
 }
 
-test('trial scrolling needs an observed container and continues without a step budget',async t=>{
- const f=fixture(t),tool=f.flow.tools.find(t=>t.name==='browser_interact');
- validate(tool.inputSchema,{operation:'scroll',ref:'s1',direction:'down'});
- for(const args of [{operation:'scroll',direction:'down'},{operation:'scroll',ref:'s1',direction:'click'},{operation:'scroll',ref:'s1',direction:'down',selector:'body'}])assert.throws(()=>validate(tool.inputSchema,args));
- const scroll=()=>f.call('browser_interact',{operation:'scroll',ref:'s1',direction:'down'});
- const first=await f.call('browser_read'),scrolled=await scroll();assert.equal(scrolled.action.executed,true);
- assert.equal(f.db.run(f.run.id).browserSteps,2);assert.equal(f.db.run(f.run.id).observations.length,2);
- assert.equal((await f.call('browser_read_part',{snapshotId:first.snapshot.id})).historical,true);
- await f.call('browser_interact',{operation:'click',ref:'any-target'});assert.ok(f.calls.includes('browser_click'));
- f.redirect('https://other.example/');await scroll();
- f.redirect('https://example.com/list');while(f.db.run(f.run.id).browserSteps<5)await scroll();
- await scroll();assert.equal(f.db.run(f.run.id).browserSteps,6);
+test('trial scrolling needs an observed container and continues without a step budget', async (t) => {
+  const f = fixture(t),
+    tool = f.flow.tools.find((t) => t.name === 'browser_interact');
+  validate(tool.inputSchema, {operation: 'scroll', ref: 's1', direction: 'down'});
+  for (const args of [
+    {operation: 'scroll', direction: 'down'},
+    {operation: 'scroll', ref: 's1', direction: 'click'},
+    {operation: 'scroll', ref: 's1', direction: 'down', selector: 'body'},
+  ])
+    assert.throws(() => validate(tool.inputSchema, args));
+  const scroll = () =>
+    f.call('browser_interact', {operation: 'scroll', ref: 's1', direction: 'down'});
+  const first = await f.call('browser_read'),
+    scrolled = await scroll();
+  assert.equal(scrolled.action.executed, true);
+  assert.equal(f.db.run(f.run.id).browserSteps, 2);
+  assert.equal(f.db.run(f.run.id).observations.length, 2);
+  assert.equal(
+    (await f.call('browser_read_part', {snapshotId: first.snapshot.id})).historical,
+    true,
+  );
+  await f.call('browser_interact', {operation: 'click', ref: 'any-target'});
+  assert.ok(f.calls.includes('browser_click'));
+  f.redirect('https://other.example/');
+  await scroll();
+  f.redirect('https://example.com/list');
+  while (f.db.run(f.run.id).browserSteps < 5) await scroll();
+  await scroll();
+  assert.equal(f.db.run(f.run.id).browserSteps, 6);
 });
 
-test('research scrolling stays public and requires an active run',async t=>{
- const f=fixture(t,'interview'),scroll=()=>f.call('browser_interact',{operation:'scroll',ref:'s1',direction:'down'});
- await scroll();assert.equal(f.db.run(f.run.id).browserSteps,1);
- f.redirect('http://localhost/private');await assert.rejects(scroll(),/herkese açık/);
- f.controller.abort();await assert.rejects(scroll(),/geçersiz/);
+test('research scrolling stays public and requires an active run', async (t) => {
+  const f = fixture(t, 'interview'),
+    scroll = () => f.call('browser_interact', {operation: 'scroll', ref: 's1', direction: 'down'});
+  await scroll();
+  assert.equal(f.db.run(f.run.id).browserSteps, 1);
+  f.redirect('http://localhost/private');
+  await assert.rejects(scroll(), /herkese açık/);
+  f.controller.abort();
+  await assert.rejects(scroll(), /geçersiz/);
 });
 
-
-test('read navigation uses an app-owned stable scope, never URL-matched foreign tabs',async()=>{
- const calls=[],browser={prepare:()=>({ready:true}),async call(id,name,args,session,options){calls.push({name,args,options});return {content:[{type:'text',text:JSON.stringify({tabId:'reading',url:args.url})}]};}};
- for(const session of ['turn-one','turn-two']){
-  const adapter=automationBrowser(browser,{mode:'jev',readTabKey:'read:main'});
-  for(const url of ['https://example.com/page','https://example.com/detail'])await adapter.call('workspace','browser_navigate',{url},session);
- }
- const opens=calls.filter(c=>c.name==='browser_jev_open'),reads=calls.filter(c=>c.name==='browser_jev_observe');assert.equal(opens.length,4);assert.equal(reads.length,4);assert.ok(opens.every(c=>c.options.automationTabKey==='source:https://example.com'&&c.options.automationSourceUrl==='https://example.com'&&!c.args.tabId));assert.ok(reads.every(c=>c.args.tabId==='reading'&&c.args.scope==='document'));
+test('read navigation uses an app-owned stable scope, never URL-matched foreign tabs', async () => {
+  const calls = [],
+    browser = {
+      prepare: () => ({ready: true}),
+      async call(id, name, args, session, options) {
+        calls.push({name, args, options});
+        return {content: [{type: 'text', text: JSON.stringify({tabId: 'reading', url: args.url})}]};
+      },
+    };
+  for (const session of ['turn-one', 'turn-two']) {
+    const adapter = automationBrowser(browser, {mode: 'jev', readTabKey: 'read:main'});
+    for (const url of ['https://example.com/page', 'https://example.com/detail'])
+      await adapter.call('workspace', 'browser_navigate', {url}, session);
+  }
+  const opens = calls.filter((c) => c.name === 'browser_jev_open'),
+    reads = calls.filter((c) => c.name === 'browser_jev_observe');
+  assert.equal(opens.length, 4);
+  assert.equal(reads.length, 4);
+  assert.ok(
+    opens.every(
+      (c) =>
+        c.options.automationTabKey === 'source:https://example.com' &&
+        c.options.automationSourceUrl === 'https://example.com' &&
+        !c.args.tabId,
+    ),
+  );
+  assert.ok(reads.every((c) => c.args.tabId === 'reading' && c.args.scope === 'document'));
 });
 
-test('source tab changes preserve historical text and remain unavailable to other task kinds',async t=>{
- const f=fixture(t),run=f.db.putRun({...f.run,kind:'run',sourceUrl:'https://example.com/list'});
- const calls=[],browser={async call(id,name){calls.push(name);return name==='browser_jev_tabs'?{tabs:[{tabId:'retained',url:run.sourceUrl}]}:{content:[{type:'text',text:`Page URL: ${run.sourceUrl}\nRetained results ${calls.length}`} ]};}};
- const flow=automationWorkflow({db:f.db,run,signal:f.controller.signal,browser,report:()=>{}}),call=(name,args={})=>flow.call(f.a.id,run.id,name,args);
- const first=await call('browser_read');
- assert.equal((await call('browser_jev_tabs')).tabs[0].tabId,'retained');
- await call('browser_read_part',{snapshotId:first.snapshot.id});
- const selected=await call('browser_jev_use_tab',{tabId:'retained'});
- assert.deepEqual(calls,['browser_snapshot','browser_jev_tabs','browser_jev_use_tab']);
- assert.equal((await call('browser_read_part',{snapshotId:first.snapshot.id})).historical,true);
- await call('browser_jev_close_tab',{tabId:'retained'});
- assert.equal((await call('browser_read_part',{snapshotId:selected.snapshot.id})).historical,true);
- assert.ok(!f.flow.tools.some(tool=>tool.name==='browser_jev_tabs'));
- const recordRun=f.db.putRun({...run,recordId:'record'});
- const recordFlow=automationWorkflow({db:f.db,run:recordRun,signal:f.controller.signal,browser,report:()=>{}});
- assert.ok(!recordFlow.tools.some(tool=>tool.name==='browser_jev_close_tab'));
- await assert.rejects(recordFlow.call(f.a.id,run.id,'browser_jev_close_tab',{tabId:'retained'}),/kaynak taraması/);
+test('source tab changes preserve historical text and remain unavailable to other task kinds', async (t) => {
+  const f = fixture(t),
+    run = f.db.putRun({...f.run, kind: 'run', sourceUrl: 'https://example.com/list'});
+  const calls = [],
+    browser = {
+      async call(id, name) {
+        calls.push(name);
+        return name === 'browser_jev_tabs'
+          ? {tabs: [{tabId: 'retained', url: run.sourceUrl}]}
+          : {
+              content: [
+                {
+                  type: 'text',
+                  text: `Page URL: ${run.sourceUrl}\nRetained results ${calls.length}`,
+                },
+              ],
+            };
+      },
+    };
+  const flow = automationWorkflow({
+      db: f.db,
+      run,
+      signal: f.controller.signal,
+      browser,
+      report: () => {},
+    }),
+    call = (name, args = {}) => flow.call(f.a.id, run.id, name, args);
+  const first = await call('browser_read');
+  assert.equal((await call('browser_jev_tabs')).tabs[0].tabId, 'retained');
+  await call('browser_read_part', {snapshotId: first.snapshot.id});
+  const selected = await call('browser_jev_use_tab', {tabId: 'retained'});
+  assert.deepEqual(calls, ['browser_snapshot', 'browser_jev_tabs', 'browser_jev_use_tab']);
+  assert.equal((await call('browser_read_part', {snapshotId: first.snapshot.id})).historical, true);
+  await call('browser_jev_close_tab', {tabId: 'retained'});
+  assert.equal(
+    (await call('browser_read_part', {snapshotId: selected.snapshot.id})).historical,
+    true,
+  );
+  assert.ok(!f.flow.tools.some((tool) => tool.name === 'browser_jev_tabs'));
+  const recordRun = f.db.putRun({...run, recordId: 'record'});
+  const recordFlow = automationWorkflow({
+    db: f.db,
+    run: recordRun,
+    signal: f.controller.signal,
+    browser,
+    report: () => {},
+  });
+  assert.ok(!recordFlow.tools.some((tool) => tool.name === 'browser_jev_close_tab'));
+  await assert.rejects(
+    recordFlow.call(f.a.id, run.id, 'browser_jev_close_tab', {tabId: 'retained'}),
+    /kaynak taraması/,
+  );
 });

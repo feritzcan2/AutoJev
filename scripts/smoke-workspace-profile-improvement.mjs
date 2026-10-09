@@ -7,261 +7,874 @@ import {pathToFileURL} from 'node:url';
 import {WorkspaceDatabase} from '../app/workspace-database.mjs';
 import {AutomationStore} from '../app/automation-store.mjs';
 
-const require=createRequire(import.meta.url),{_electron:electron}=createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
-const data=await mkdtemp(path.join(tmpdir(),'workspace-profile-improvement-'));
-const core=new WorkspaceDatabase(path.join(data,'jobloop.sqlite')),db=new AutomationStore(core);
-const workspace=db.create('custom',{title:'Profil düzenleme',goal:'Uygun ilanları takip et',criteria:{outcome:'İlanları listele',rules:'Berlin',completion:'Kullanıcı durdurunca'},sources:['https://example.com/jobs','https://example.org/jobs']});
-core.workspaces.workers.add(workspace.id);db.review(workspace.id);db.message(workspace.id,'assistant','SOURCE WORKER REPORT MUST STAY OUT OF CHAT',{conversation:false});
-db.message(workspace.id,'assistant','LEGACY STEPSTONE REPORT MUST STAY OUT OF CHAT');db.message(workspace.id,'user','LEGACY APPLICATION ANSWER MUST STAY OUT OF CHAT');
-for(let i=0;i<12;i++)db.message(workspace.id,i%2?'assistant':'user',`Önceki sohbet mesajı ${i+1}.\n${'Profil ve kaynak tercihlerini birlikte gözden geçiriyoruz. '.repeat(3)}`,{conversation:true});
+const require = createRequire(import.meta.url),
+  {_electron: electron} = createRequire(require.resolve('@playwright/mcp/package.json'))(
+    'playwright',
+  );
+const data = await mkdtemp(path.join(tmpdir(), 'workspace-profile-improvement-'));
+const core = new WorkspaceDatabase(path.join(data, 'jobloop.sqlite')),
+  db = new AutomationStore(core);
+const workspace = db.create('custom', {
+  title: 'Profil düzenleme',
+  goal: 'Uygun ilanları takip et',
+  criteria: {outcome: 'İlanları listele', rules: 'Berlin', completion: 'Kullanıcı durdurunca'},
+  sources: ['https://example.com/jobs', 'https://example.org/jobs'],
+});
+core.workspaces.workers.add(workspace.id);
+db.review(workspace.id);
+db.message(workspace.id, 'assistant', 'SOURCE WORKER REPORT MUST STAY OUT OF CHAT', {
+  conversation: false,
+});
+db.message(workspace.id, 'assistant', 'LEGACY STEPSTONE REPORT MUST STAY OUT OF CHAT');
+db.message(workspace.id, 'user', 'LEGACY APPLICATION ANSWER MUST STAY OUT OF CHAT');
+for (let i = 0; i < 12; i++)
+  db.message(
+    workspace.id,
+    i % 2 ? 'assistant' : 'user',
+    `Önceki sohbet mesajı ${i + 1}.\n${'Profil ve kaynak tercihlerini birlikte gözden geçiriyoruz. '.repeat(3)}`,
+    {conversation: true},
+  );
 core.close();
-const env={...process.env,JOBLOOP_DATA_DIR:data};delete env.ELECTRON_RUN_AS_NODE;
-const app=await electron.launch({executablePath:require('electron'),args:[process.cwd()],env});
+const env = {...process.env, JOBLOOP_DATA_DIR: data};
+delete env.ELECTRON_RUN_AS_NODE;
+const app = await electron.launch({
+  executablePath: require('electron'),
+  args: [process.cwd()],
+  env,
+});
 let page;
-try{
- page=await app.firstWindow();page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await app.evaluate(async(_,url)=>{
-  const vm=process.getBuiltinModule('node:vm'),load=vm.runInThisContext('(url)=>import(url)',{importModuleDynamically:vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER});
-  const {Engine}=await load(url),original=Engine.prototype.request;globalThis.profileStarts=[];globalThis.profileMessages=[];
-  Engine.prototype.request=function(op,args={}){
-   if(op==='start'){globalThis.profileStarts.push(args);return Promise.resolve({});}
-   if(op==='message'){globalThis.profileMessages.push(args);if(globalThis.failChatMessage){globalThis.failChatMessage=false;return Promise.reject(Error('Mesaj bağlantısı kesildi'));}return Promise.resolve({});}
-   if(op==='resize')return Promise.resolve({});
-   return original.call(this,op,args);
-  };
- },pathToFileURL(path.resolve('app/engine.mjs')).href);
- // This scenario exercises profile/session coordination without opening Chrome.
- await app.evaluate(async(_,url)=>{const vm=process.getBuiltinModule('node:vm'),load=vm.runInThisContext('(url)=>import(url)',{importModuleDynamically:vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER}),{BrowserTools}=await load(url);BrowserTools.prototype.status=()=>({ready:true,state:'ready'});},pathToFileURL(path.resolve('app/browser.mjs')).href);
- await app.evaluate(async(_,url)=>{const vm=process.getBuiltinModule('node:vm'),load=vm.runInThisContext('(url)=>import(url)',{importModuleDynamically:vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER}),{AgentSessions}=await load(url),original=AgentSessions.prototype.transcript;globalThis.chatStream=[];AgentSessions.prototype.transcript=function(id,worker){return worker==='conversation'?Promise.resolve({messages:globalThis.chatStream,activity:globalThis.chatActivity}):original.call(this,id,worker);};},pathToFileURL(path.resolve('app/agent-sessions.mjs')).href);
- await page.waitForFunction(id=>document.querySelector('#candidates').value===id,workspace.id);
- const improve=()=>page.locator('[data-automation-pane=profile]').getByRole('button',{name:'Agent ile geliştir',exact:true});
- await page.locator('[data-view=profile]').click();
- assert.equal(await page.locator('#automation-profile-save').isEnabled(),false,'An unchanged reviewed profile cannot be saved again');
- assert.equal(await page.locator('#automation-plan-form .profile-foot [type=submit]').isEnabled(),false,'Both save buttons reflect the saved state');
- await page.locator('[name=criteria-rules]').fill('Hamburg');
- assert.equal(await page.locator('#automation-profile-save').isEnabled(),true,'Editing enables saving');
- await page.locator('[name=criteria-rules]').fill('Berlin');
- assert.equal(await page.locator('#automation-profile-save').isEnabled(),false,'Reverting an edit clears the unsaved state');
- await improve().click();
- assert.equal(await page.locator('#setup-agent').isVisible(),true,'Improvement opens the dedicated setup page');
- assert.equal(await page.locator('#automation-message').isVisible(),true,'Idle improvement shows the composer');
- assert.equal(await page.locator('#automation-message').evaluate(el=>el===document.activeElement),true);
- await page.waitForFunction(()=>{const viewport=document.querySelector('.workspace-chat-viewport');return viewport.scrollHeight-viewport.scrollTop-viewport.clientHeight<4;});
- assert.ok(await page.locator('#automation-chat').evaluate(el=>el.getBoundingClientRect().bottom<=innerHeight),'The whole composer fits on screen');
- await page.locator('.workspace-chat-viewport').evaluate(el=>{el.scrollTop=0;});
- await page.locator('[data-view=board]').click();await page.locator('[data-view=setup-agent]').click();
- assert.equal(await page.locator('.workspace-chat-viewport').evaluate(el=>el.scrollTop),0,'Reading earlier messages survives navigation');
- await page.locator('.workspace-chat-viewport').evaluate(el=>{el.scrollTop=el.scrollHeight;});
- assert.equal(await app.evaluate(()=>globalThis.profileStarts.length),0,'Opening the composer does not launch work');
- assert.doesNotMatch(await page.locator('#automation-messages').textContent(),/LEGACY STEPSTONE|LEGACY APPLICATION|SOURCE WORKER REPORT/,'Unscoped old work never appears in setup chat');
+try {
+  page = await app.firstWindow();
+  page.setDefaultTimeout(10000);
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await app.evaluate(
+    async (_, url) => {
+      const vm = process.getBuiltinModule('node:vm'),
+        load = vm.runInThisContext('(url)=>import(url)', {
+          importModuleDynamically: vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER,
+        });
+      const {Engine} = await load(url),
+        original = Engine.prototype.request;
+      globalThis.profileStarts = [];
+      globalThis.profileMessages = [];
+      Engine.prototype.request = function (op, args = {}) {
+        if (op === 'start') {
+          globalThis.profileStarts.push(args);
+          return Promise.resolve({});
+        }
+        if (op === 'message') {
+          globalThis.profileMessages.push(args);
+          if (globalThis.failChatMessage) {
+            globalThis.failChatMessage = false;
+            return Promise.reject(Error('Mesaj bağlantısı kesildi'));
+          }
+          return Promise.resolve({});
+        }
+        if (op === 'resize') return Promise.resolve({});
+        return original.call(this, op, args);
+      };
+    },
+    pathToFileURL(path.resolve('app/engine.mjs')).href,
+  );
+  // This scenario exercises profile/session coordination without opening Chrome.
+  await app.evaluate(
+    async (_, url) => {
+      const vm = process.getBuiltinModule('node:vm'),
+        load = vm.runInThisContext('(url)=>import(url)', {
+          importModuleDynamically: vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER,
+        }),
+        {BrowserTools} = await load(url);
+      BrowserTools.prototype.status = () => ({ready: true, state: 'ready'});
+    },
+    pathToFileURL(path.resolve('app/browser.mjs')).href,
+  );
+  await app.evaluate(
+    async (_, url) => {
+      const vm = process.getBuiltinModule('node:vm'),
+        load = vm.runInThisContext('(url)=>import(url)', {
+          importModuleDynamically: vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER,
+        }),
+        {AgentSessions} = await load(url),
+        original = AgentSessions.prototype.transcript;
+      globalThis.chatStream = [];
+      AgentSessions.prototype.transcript = function (id, worker) {
+        return worker === 'conversation'
+          ? Promise.resolve({messages: globalThis.chatStream, activity: globalThis.chatActivity})
+          : original.call(this, id, worker);
+      };
+    },
+    pathToFileURL(path.resolve('app/agent-sessions.mjs')).href,
+  );
+  await page.waitForFunction(
+    (id) => document.querySelector('#candidates').value === id,
+    workspace.id,
+  );
+  const improve = () =>
+    page
+      .locator('[data-automation-pane=profile]')
+      .getByRole('button', {name: 'Agent ile geliştir', exact: true});
+  await page.locator('[data-view=profile]').click();
+  assert.equal(
+    await page.locator('#automation-profile-save').isEnabled(),
+    false,
+    'An unchanged reviewed profile cannot be saved again',
+  );
+  assert.equal(
+    await page.locator('#automation-plan-form .profile-foot [type=submit]').isEnabled(),
+    false,
+    'Both save buttons reflect the saved state',
+  );
+  await page.locator('[name=criteria-rules]').fill('Hamburg');
+  assert.equal(
+    await page.locator('#automation-profile-save').isEnabled(),
+    true,
+    'Editing enables saving',
+  );
+  await page.locator('[name=criteria-rules]').fill('Berlin');
+  assert.equal(
+    await page.locator('#automation-profile-save').isEnabled(),
+    false,
+    'Reverting an edit clears the unsaved state',
+  );
+  await improve().click();
+  assert.equal(
+    await page.locator('#setup-agent').isVisible(),
+    true,
+    'Improvement opens the dedicated setup page',
+  );
+  assert.equal(
+    await page.locator('#automation-message').isVisible(),
+    true,
+    'Idle improvement shows the composer',
+  );
+  assert.equal(
+    await page.locator('#automation-message').evaluate((el) => el === document.activeElement),
+    true,
+  );
+  await page.waitForFunction(() => {
+    const viewport = document.querySelector('.workspace-chat-viewport');
+    return viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 4;
+  });
+  assert.ok(
+    await page
+      .locator('#automation-chat')
+      .evaluate((el) => el.getBoundingClientRect().bottom <= innerHeight),
+    'The whole composer fits on screen',
+  );
+  await page.locator('.workspace-chat-viewport').evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await page.locator('[data-view=board]').click();
+  await page.locator('[data-view=setup-agent]').click();
+  assert.equal(
+    await page.locator('.workspace-chat-viewport').evaluate((el) => el.scrollTop),
+    0,
+    'Reading earlier messages survives navigation',
+  );
+  await page.locator('.workspace-chat-viewport').evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  assert.equal(
+    await app.evaluate(() => globalThis.profileStarts.length),
+    0,
+    'Opening the composer does not launch work',
+  );
+  assert.doesNotMatch(
+    await page.locator('#automation-messages').textContent(),
+    /LEGACY STEPSTONE|LEGACY APPLICATION|SOURCE WORKER REPORT/,
+    'Unscoped old work never appears in setup chat',
+  );
 
- await page.evaluate(id=>window.jobloop.workspaceStart(id),workspace.id);
- await page.waitForFunction(async id=>(await window.jobloop.workspaceSnapshot(id)).activeRuns.length===2,workspace.id);
- await page.locator('[data-view=profile]').click();await improve().click();
- assert.equal(await page.locator('#setup-agent').isVisible(),true,'Running improvement opens the dedicated setup page');
- assert.equal(await page.locator('#automation-message').isVisible(),true,'Running improvement still shows the composer');
- assert.equal(await page.locator('#automation-message').isEnabled(),true,'A change can be drafted while work runs');
- const scanning=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id);let scanIds=scanning.activeRuns.map(run=>run.id);
- assert.equal(scanIds.length,2,'Opening the editor leaves both workers running');
- await page.locator('#automation-message').fill('Yalnızca uzaktan çalışılan ilanları değerlendir.');
- assert.equal(await page.locator('#automation-send').isEnabled(),true,'Messaging is available while both workers run');
- await page.screenshot({path:path.join(data,'edit-while-running.png')});
- await page.locator('#automation-send').click();
- await page.waitForFunction(async id=>(await window.jobloop.workspaceSnapshot(id)).activeRuns.some(run=>run.kind==='interview'),workspace.id);
- const snapshot=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id);
- assert.equal(snapshot.automation.status,'enabled');assert.equal(snapshot.activeRuns.length,3);
- for(const id of scanIds)assert.ok(snapshot.activeRuns.some(run=>run.id===id));
- assert.equal(snapshot.messages.at(-1).text,'Yalnızca uzaktan çalışılan ilanları değerlendir.');
- assert.equal(await page.locator('#automation-message').isVisible(),true,'The persistent chat keeps the composer visible');
- assert.equal(await page.locator('#automation-send').isEnabled(),false,'Sending waits for the current reply');
- assert.equal((await app.evaluate(()=>globalThis.profileStarts.at(-1))).agentProfile.id,'builtin.agent-profile.loop-web-interview');
- await page.locator('#setup-agent .worker-pane[data-worker-id=conversation]').waitFor({state:'attached'});
- assert.equal(await page.locator('#agent .worker-pane[data-worker-id=conversation]').count(),0,'The conversation terminal is separate from workers');
- assert.equal(await page.locator('#agent .worker-pane').count(),2,'Both source worker terminals stay on the worker page');
- await page.locator('[data-view=agent]').click();assert.equal(await page.locator('#automation-message').isVisible(),false);assert.equal(await page.locator('#worker-add').isVisible(),true);
- await page.locator('[data-view=setup-agent]').click();assert.equal(await page.locator('#worker-add').isVisible(),false);assert.equal(await page.locator('#stop').isVisible(),false,'The setup page does not offer a workspace-wide stop');
- await page.locator('#automation-message').focus();
- assert.equal(await page.locator('#setup-agent-terminal').isVisible(),false,'Sending stays on the chat tab');
- assert.equal(await page.locator('#automation-message').isEnabled(),true,'The next message can be drafted during the reply');
- await page.locator('#automation-message').fill('Başka hangi kaynaklar işime yarar?');
- await page.locator('#setup-agent .worker-pane[data-worker-id=conversation]').evaluate(el=>{window.originalChatTerminal=el;});
- await page.locator('#setup-agent-tab-terminal').click();
- assert.equal(await page.locator('#setup-agent-terminal').isVisible(),true);assert.equal(await page.locator('#automation-message').isVisible(),false,'Only the terminal is shown on its tab');
- await page.screenshot({path:path.join(data,'terminal-tab.png')});
- await page.locator('#setup-agent-tab-terminal').press('ArrowLeft');
- assert.equal(await page.locator('#setup-agent-tab-chat').getAttribute('aria-selected'),'true');
- assert.equal(await page.locator('#setup-agent-terminal').isVisible(),false);assert.equal(await page.locator('#automation-message').inputValue(),'Başka hangi kaynaklar işime yarar?');
- assert.equal(await page.locator('#setup-agent .worker-pane[data-worker-id=conversation]').evaluate(el=>el===window.originalChatTerminal),true,'Tab changes keep the same terminal surface');
- await page.locator('#automation-message').focus();
- let rpcId=0;
- const tool=async(name,args)=>{
-  const run=await app.evaluate(()=>globalThis.profileStarts.at(-1)),response=await fetch(run.endpoint,{method:'POST',headers:{Authorization:'Bearer '+run.token,'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:++rpcId,method:'tools/call',params:{name,arguments:args}})}),body=await response.json();
-  assert.ok(!body.error&&!body.result?.isError,JSON.stringify(body));
- };
- await tool('get_automation_context',{});
- assert.ok(!(await page.locator('#automation-messages').textContent()).includes('SOURCE WORKER REPORT'));
- assert.equal(await page.locator('#automation-message').evaluate(el=>el===document.activeElement),true,'Sending keeps focus in chat');
- await app.evaluate(()=>{globalThis.chatStream=[{id:'streaming',role:'agent',text:'Tercihini inceliyorum.',at:new Date().toISOString()}];globalThis.chatActivity={tool:'jobloop_get_workspace_records',status:'running',at:Date.now()};});
- await page.locator('.workspace-chat-body').filter({hasText:'Tercihini inceliyorum.'}).waitFor();
- await page.waitForFunction(()=>document.querySelector('.workspace-chat-thinking').textContent.includes('Kayıtlı sonuçları inceliyor'));
- await app.evaluate(()=>{globalThis.chatStream[0].text='Tercihini inceliyorum. Uzaktan çalışmaya odaklanabiliriz.';});
- await page.locator('.workspace-chat-body').filter({hasText:'Uzaktan çalışmaya odaklanabiliriz.'}).waitFor();
- assert.equal(await page.locator('.workspace-chat-body').filter({hasText:'Tercihini inceliyorum.'}).count(),1,'Streaming updates the same bubble');
- await tool('save_automation_plan',{title:workspace.title,goal:workspace.goal,criteria:Object.entries({...workspace.criteria,rules:'Tam uzaktan'}).map(([key,value])=>({key,value})),sources:workspace.sources,instructions:'Uzaktan çalışılan ilanları değerlendir.',facts:''});
- await tool('reply_to_user',{message:'Uzaktan çalışma tercihini taslak olarak kaydettim. Kaynaklar taranmaya devam ediyor.'});
- await tool('finish_automation_run',{status:'completed',summary:'Profil taslağı hazır.'});
- await page.locator('#automation-messages .workspace-chat-message[data-role=assistant]').filter({hasText:'Uzaktan çalışma tercihini'}).waitFor({state:'visible'});
- assert.match(await page.locator('#automation-messages').textContent(),/taslak olarak kaydettim/);
- assert.equal(await page.locator('.workspace-chat-body').filter({hasText:'Tercihini inceliyorum.'}).count(),1,'A saved final answer retains distinct provider commentary');
- await app.evaluate(()=>{globalThis.chatStream.push({id:'final-copy',role:'agent',text:'Uzaktan çalışma tercihini taslak olarak kaydettim. Kaynaklar taranmaya devam ediyor.',at:new Date().toISOString()});});
- assert.equal(await page.locator('.workspace-chat-body').filter({hasText:'Uzaktan çalışma tercihini taslak olarak kaydettim.'}).count(),1,'The native copy does not duplicate the saved answer');
- const after=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id);
- assert.equal(after.automation.criteria.rules,'Berlin');assert.equal(after.automation.planDraft.plan.criteria.rules,'Tam uzaktan');
- const chatId=snapshot.activeRuns.find(run=>run.workerId==='conversation').id;
- assert.deepEqual(after.activeRuns.map(run=>run.id),[...scanIds,chatId]);
- assert.equal(after.activeRuns.find(run=>run.id===chatId).awaitingMessage,true);
- assert.equal(after.workers.find(worker=>worker.id==='conversation').presentation.status,'Mesaj bekliyor');
- assert.equal(await page.locator('#automation-message').isVisible(),true);
- assert.equal(await page.locator('#automation-send').isEnabled(),true);
- assert.equal(await page.locator('#automation-message').inputValue(),'Başka hangi kaynaklar işime yarar?','Incoming replies preserve the next draft');
- const reviewProfile=page.getByRole('button',{name:'Taslağı incele ve kaydet',exact:true});
- await reviewProfile.waitFor({state:'visible'});
- assert.ok(await reviewProfile.evaluate(el=>{const box=el.getBoundingClientRect();return box.top>=0&&box.bottom<=innerHeight;}),'The review action stays visible outside the scrolled chat timeline');
- await reviewProfile.click();
- const profileSave=page.locator('#automation-profile-save');await profileSave.waitFor({state:'visible'});
- assert.equal(await profileSave.isEnabled(),true,'Profile saving is available while source workers run');
- assert.equal(await page.locator('#automation-plan-form').evaluate(el=>el.inert),false);
- assert.ok(await profileSave.evaluate(el=>{const box=el.getBoundingClientRect();return box.top>=0&&box.bottom<=innerHeight;}),'Save is visible at the top of the profile');
- assert.equal(await page.locator('[name=criteria-rules]').inputValue(),'Tam uzaktan');
- await page.screenshot({path:path.join(data,'profile-save-visible.png')});
- await page.locator('[data-view=setup-agent]').click();
- await page.screenshot({path:path.join(data,'conversation-waiting.png')});
- await page.locator('#automation-message').fill('Başka hangi kaynaklar işime yarar?');
- await page.locator('#automation-message').press('Enter');await page.locator('#automation-chat-stop').waitFor({state:'visible'});
- await page.waitForFunction(()=>document.querySelector('#automation-message').value==='');
- assert.equal(await app.evaluate(()=>globalThis.profileStarts.length),3,'A follow-up does not launch another provider');
- assert.equal(await app.evaluate(()=>globalThis.profileMessages.length),1);
- assert.equal((await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id)).activeRuns.find(run=>run.workerId==='conversation').id,chatId);
- await tool('reply_to_user',{message:'Aynı sohbetten devam ediyorum.'});
- await tool('finish_automation_run',{status:'completed',summary:'İkinci yanıt hazır.'});
- await page.waitForFunction(()=>document.querySelector('#automation-chat-state').textContent==='Sohbet açık');
- await page.screenshot({path:path.join(data,'independent-conversation.png')});
- await tool('ask_workspace_question',{text:'Puanlama kriterlerinde hangi değerleri değiştirmek istiyorsun?',fields:[{id:'threshold',label:'Eşik puanı',type:'number'},{id:'notes',label:'Ek puanlama notu',type:'text',required:false}]});
- const question=page.locator('.workspace-chat-questions .automation-help-card').first(),threshold=question.getByRole('spinbutton',{name:'Eşik puanı'});
- await threshold.waitFor({state:'visible'});
- assert.equal(await page.locator('#setup-agent-terminal').isVisible(),false,'Conversation forms appear on the chat tab');
- assert.equal(await page.locator('#agent .automation-attention').isVisible(),false,'Conversation forms have a single home in chat');
- await threshold.fill('65');await threshold.evaluate(el=>{window.questionInput=el;});
- await tool('ask_workspace_question',{text:'Kaynak notun var mı?',fields:[{id:'note',label:'Kaynak notu',type:'text'}]});
- await page.waitForFunction(()=>document.querySelectorAll('.workspace-chat-questions .automation-help-card').length===2);
- assert.equal(await threshold.evaluate(el=>el===window.questionInput&&el===document.activeElement),true,'New questions preserve the existing form and input focus');
- await page.locator('#setup-agent-tab-terminal').click();
- await page.locator('[data-view=agent]').click();await page.locator('#agent-tab-instructions').click();await page.locator('[data-view=board]').click();await page.locator('.automation-attention-banner').getByRole('button',{name:'Formu aç',exact:true}).click();
- assert.equal(await threshold.inputValue(),'65','Form drafts survive navigation');
- assert.ok(await question.evaluate(el=>{const box=el.getBoundingClientRect(),view=el.closest('.workspace-chat-viewport').getBoundingClientRect();return box.top>=view.top&&box.top<view.bottom;}),'The form button reveals the question heading inside chat');
- await page.screenshot({path:path.join(data,'inline-questions.png')});
- await question.getByRole('button',{name:'Yanıtları gönder',exact:true}).click();
- await threshold.waitFor({state:'detached'});
- assert.match(await page.locator('#automation-messages').textContent(),/Eşik puanı: 65/,'Submitted answers stay in the conversation');
- const remaining=page.locator('.workspace-chat-questions .automation-help-card');await remaining.getByRole('textbox',{name:'Kaynak notu',exact:true}).fill('Yalnızca resmi ilan kaynakları.');await remaining.getByRole('button',{name:'Yanıtları gönder',exact:true}).click();
- await page.locator('.workspace-chat-questions').waitFor({state:'hidden'});
- await tool('finish_automation_run',{status:'completed',summary:'Form yanıtları alındı.'});
- await page.waitForFunction(()=>document.querySelector('#automation-chat-state').textContent==='Sohbet açık');
- assert.deepEqual((await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id)).activeRuns.map(run=>run.id),[...scanIds,chatId],'Form answers keep the conversation and source sessions');
- await page.locator('#automation-message').fill('İki satır');await page.locator('#automation-message').press('Shift+Enter');await page.locator('#automation-message').press('x');assert.equal(await page.locator('#automation-message').inputValue(),'İki satır\nx');
- await app.evaluate(()=>{globalThis.failChatMessage=true;});await page.locator('#automation-message').fill('Tekrar deneyelim');await page.locator('#automation-send').click();
- await page.locator('#automation-chat-feedback').waitFor({state:'visible'});assert.equal(await page.locator('#automation-message').inputValue(),'Tekrar deneyelim','Failed sends preserve the draft');
- assert.match(await page.locator('#automation-chat-feedback').textContent(),/Tekrar gönderebilirsin/);
- await page.locator('#automation-send').click();await tool('finish_automation_run',{status:'completed',summary:'Tekrar yanıtlandı.'});
- await page.waitForFunction(()=>document.querySelector('#automation-chat-state').textContent==='Sohbet açık');
- const setupSettings=page.locator('#setup-agent-settings');
- assert.equal(await setupSettings.isVisible(),true);
- await page.locator('#automation-message').fill('Ayarlar değişirken taslağım kalsın');
- const originalSettings=(await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id)).setupAgent.settings;
- const models=await setupSettings.locator('[name=model] option').evaluateAll(options=>options.map(option=>option.value));
- const nextModel=models.find(model=>model!==originalSettings.model);assert.ok(nextModel);
- await setupSettings.locator('[name=model]').selectOption(nextModel);
- const settingsStartCount=await app.evaluate(()=>globalThis.profileStarts.length);
- assert.equal(await setupSettings.locator('[data-save]').isEnabled(),true);
- await setupSettings.locator('[data-save]').click();
- await page.waitForFunction(async({id,model})=>(await window.jobloop.workspaceSnapshot(id)).setupAgent.settings.model===model,{id:workspace.id,model:nextModel});
- await page.waitForFunction(()=>document.querySelector('#setup-agent-settings [data-status]').textContent==='Kurulum agenti ayarları kaydedildi.');
- assert.equal(await app.evaluate(()=>globalThis.profileStarts.length),settingsStartCount+1,'Changing the setup model restarts just that conversation');
- assert.equal((await app.evaluate(()=>globalThis.profileStarts.at(-1))).model,nextModel);
- assert.equal(await page.locator('#automation-message').inputValue(),'Ayarlar değişirken taslağım kalsın');
- let current=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id);
- for(const id of scanIds)assert.ok(current.activeRuns.some(run=>run.id===id),'Source sessions survive setup settings');
- assert.notEqual(current.automation.agentSettings.model,nextModel,'Setup model is independent of worker model');
- await setupSettings.locator('[data-restart]').click();
- await page.waitForFunction(()=>document.querySelector('#setup-agent-settings [data-status]').textContent==='Yeni sohbet oturumu açıldı.');
- assert.equal(await app.evaluate(()=>globalThis.profileStarts.length),settingsStartCount+2);
- assert.equal((await app.evaluate(()=>globalThis.profileStarts.at(-1))).resumeId,undefined,'Explicit restart opens a fresh provider conversation');
- const setupBeforeSave=(await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id)).activeRuns.find(run=>run.kind==='interview');
- const beforeConfirm=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id);
- await reviewProfile.click();await profileSave.click();
- const saveDialog=page.locator('#automation-profile-save-dialog');await saveDialog.waitFor({state:'visible'});
- assert.match(await saveDialog.textContent(),/2 aktif agent.*yeniden başlatılacaktır.*Onaylıyor musunuz/);
- assert.equal(await saveDialog.locator('[value=cancel]').evaluate(el=>el===document.activeElement),true,'Cancel is focused by default');
- let awaitingConfirm=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id);
- assert.equal(awaitingConfirm.automation.profileUpdate,undefined,'The profile is not queued before consent');
- assert.deepEqual(awaitingConfirm.activeRuns.map(run=>run.id),beforeConfirm.activeRuns.map(run=>run.id),'Workers keep running while confirmation is open');
- await page.screenshot({path:path.join(data,'profile-save-confirmation.png')});
- await saveDialog.getByRole('button',{name:'Vazgeç',exact:true}).click();await saveDialog.waitFor({state:'hidden'});
- await page.waitForFunction(()=>!document.querySelector('#automation-profile-save').disabled);
- awaitingConfirm=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id);
- assert.equal(awaitingConfirm.automation.revision,beforeConfirm.automation.revision);
- assert.equal(awaitingConfirm.automation.criteria.rules,'Berlin');
- assert.deepEqual(awaitingConfirm.activeRuns.map(run=>run.id),beforeConfirm.activeRuns.map(run=>run.id));
- assert.equal(await page.locator('[name=criteria-rules]').inputValue(),'Tam uzaktan','Cancel preserves the editable draft');
- await page.locator('#automation-plan-form .profile-foot [type=submit]').click();await saveDialog.waitFor({state:'visible'});
- await saveDialog.press('Escape');await saveDialog.waitFor({state:'hidden'});
- await page.waitForFunction(()=>!document.querySelector('#automation-profile-save').disabled);
- await profileSave.click();await saveDialog.waitFor({state:'visible'});
- await saveDialog.getByRole('button',{name:'Onayla ve kaydet',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('#notice').textContent==='Profil kaydedildi ve uygulandı.'&&document.querySelector('#automations').getAttribute('aria-busy')==='false');
- await page.waitForFunction(async id=>{const state=await window.jobloop.workspaceSnapshot(id);return state.automation.criteria.rules==='Tam uzaktan'&&!state.automation.profileUpdate;},workspace.id);
- await page.waitForFunction(async id=>(await window.jobloop.workspaceSnapshot(id)).activeRuns.filter(run=>run.kind!=='interview').length===2,workspace.id);
- const savedProfile=await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id);
- assert.equal(savedProfile.automation.reviewedRevision,savedProfile.automation.revision);
- assert.equal(savedProfile.automation.planDraft,undefined);
- assert.equal(savedProfile.activeRuns.find(run=>run.kind==='interview').id,setupBeforeSave.id,'Saving preserves the busy setup conversation');
- assert.ok(savedProfile.activeRuns.filter(run=>run.kind!=='interview').every(run=>!scanIds.includes(run.id)&&run.revision===savedProfile.automation.revision),'Both scans restart under the new profile');
- await page.waitForFunction(()=>document.querySelector('#automation-profile-save').disabled&&document.querySelector('#automation-profile-state').textContent==='Profil kaydedildi.');
- assert.equal(await page.locator('#automation-plan-form .profile-foot [type=submit]').isEnabled(),false,'Saving disables both buttons after the profile is applied');
- await page.locator('[name=criteria-rules]').fill('Hibrit');
- assert.equal(await profileSave.isEnabled(),true);
- assert.equal(await page.locator('#notice').textContent(),'','Editing clears the previous saved notification');
- await page.locator('[name=criteria-rules]').fill('Tam uzaktan');
- assert.equal(await profileSave.isEnabled(),false);
- scanIds=savedProfile.activeRuns.filter(run=>run.kind!=='interview').map(run=>run.id);
- await page.locator('[data-view=setup-agent]').click();await reviewProfile.waitFor({state:'hidden'});
- await page.screenshot({path:path.join(data,'profile-applied-chat-open.png')});
- await page.locator('#automation-message').fill('');
- await app.evaluate(()=>{globalThis.chatStream.push({id:'native-only',role:'agent',text:'Bu yanıt yalnızca sağlayıcının sohbet kaydında.',at:new Date().toISOString()});});
- const nativeOnly=page.locator('.workspace-chat-body').filter({hasText:'Bu yanıt yalnızca sağlayıcının sohbet kaydında.'});await nativeOnly.waitFor({state:'visible'});
- await page.locator('#automation-chat-stop').click();await page.waitForFunction(()=>document.querySelector('#automation-chat-state').textContent==='Hazır');
- assert.equal(await nativeOnly.count(),1,'Closing setup preserves replies not saved through reply_to_user');
- assert.deepEqual((await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id)).activeRuns.map(run=>run.id),scanIds,'Stopping chat leaves both original runs active');
- await page.locator('[data-view=agent]').click();await page.locator('[data-view=setup-agent]').click();assert.equal(await page.locator('#automation-message').isVisible(),true,'Setup chat remains accessible after closing its session');
- await page.locator('#setup-agent-tab-terminal').click();
- await page.reload();await page.locator('#setup-agent').waitFor({state:'visible'});await page.locator('#setup-agent-terminal').waitFor({state:'visible'});assert.equal(await page.locator('#automation-message').isVisible(),false,'The selected terminal tab survives reload');await page.locator('#setup-agent-tab-chat').click();assert.equal(await page.locator('[data-view=setup-agent]').evaluate(el=>el.classList.contains('selected')),true,'The dedicated chat page is restored after reload');
- await nativeOnly.waitFor({state:'visible'});await page.screenshot({path:path.join(data,'closed-chat-transcript.png')});
- await page.evaluate(id=>window.jobloop.workspaceStop(id),workspace.id);
- await page.evaluate(id=>window.jobloop.automationMessage(id,'Profil bilgilerini kontrol et.'),workspace.id);
- const conversationOnly=(await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id)).activeRuns;
- assert.equal(conversationOnly.length,1);assert.equal(conversationOnly[0].kind,'interview');
- await page.locator('[data-view=profile]').click();await page.locator('#automation-plan-form [name=facts]').fill('Synthetic profile update with only the setup conversation open');
- await profileSave.click();
- await page.waitForFunction(()=>document.querySelector('#automation-profile-state').textContent==='Profil kaydedildi.'&&!document.querySelector('#automations').matches('[aria-busy=true]'));
- assert.equal(await saveDialog.isVisible(),false,'The setup conversation alone does not need restart confirmation');
- assert.deepEqual((await page.evaluate(id=>window.jobloop.workspaceSnapshot(id),workspace.id)).activeRuns.map(run=>run.id),conversationOnly.map(run=>run.id));
- await page.evaluate(id=>window.jobloop.workspaceStop(id),workspace.id);
- await page.locator('#new').click();await page.locator('[data-template=custom]').click();await page.locator('#setup-agent').waitFor({state:'visible'});
- const freshId=await page.locator('#candidates').inputValue();assert.notEqual(freshId,workspace.id);
- await page.locator('#automation-message').fill('Berlin için bir araştırma çalışma alanı kur.');await page.locator('#automation-message').press('Enter');
- await page.locator('#setup-agent .worker-pane[data-worker-id=conversation]').waitFor({state:'attached'});
- assert.equal(await page.locator('#agent .worker-pane[data-worker-id=conversation]').count(),0,'Initial setup also has its terminal on the setup page');
- await page.evaluate(id=>window.jobloop.workspaceStop(id),freshId);
- assert.deepEqual(errors,[]);console.log('WORKSPACE_PROFILE_IMPROVEMENT_PASS',data);
-}catch(error){if(page){console.error('UI_STATE',await page.evaluate(()=>({view:localStorage.getItem('selected-view'),notice:document.querySelector('#notice').textContent,chat:document.querySelector('#automation-chat')?.className,disabled:document.querySelector('#automation-message')?.disabled,focused:document.activeElement?.outerHTML.slice(0,500)})));await page.screenshot({path:path.join(data,'failure.png'),fullPage:true}).catch(()=>{});}console.error('ARTIFACTS',data);throw error;}
-finally{await app.close();}
+  await page.evaluate((id) => window.jobloop.workspaceStart(id), workspace.id);
+  await page.waitForFunction(
+    async (id) => (await window.jobloop.workspaceSnapshot(id)).activeRuns.length === 2,
+    workspace.id,
+  );
+  await page.locator('[data-view=profile]').click();
+  await improve().click();
+  assert.equal(
+    await page.locator('#setup-agent').isVisible(),
+    true,
+    'Running improvement opens the dedicated setup page',
+  );
+  assert.equal(
+    await page.locator('#automation-message').isVisible(),
+    true,
+    'Running improvement still shows the composer',
+  );
+  assert.equal(
+    await page.locator('#automation-message').isEnabled(),
+    true,
+    'A change can be drafted while work runs',
+  );
+  const scanning = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), workspace.id);
+  let scanIds = scanning.activeRuns.map((run) => run.id);
+  assert.equal(scanIds.length, 2, 'Opening the editor leaves both workers running');
+  await page
+    .locator('#automation-message')
+    .fill('Yalnızca uzaktan çalışılan ilanları değerlendir.');
+  assert.equal(
+    await page.locator('#automation-send').isEnabled(),
+    true,
+    'Messaging is available while both workers run',
+  );
+  await page.screenshot({path: path.join(data, 'edit-while-running.png')});
+  await page.locator('#automation-send').click();
+  await page.waitForFunction(
+    async (id) =>
+      (await window.jobloop.workspaceSnapshot(id)).activeRuns.some(
+        (run) => run.kind === 'interview',
+      ),
+    workspace.id,
+  );
+  const snapshot = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), workspace.id);
+  assert.equal(snapshot.automation.status, 'enabled');
+  assert.equal(snapshot.activeRuns.length, 3);
+  for (const id of scanIds) assert.ok(snapshot.activeRuns.some((run) => run.id === id));
+  assert.equal(snapshot.messages.at(-1).text, 'Yalnızca uzaktan çalışılan ilanları değerlendir.');
+  assert.equal(
+    await page.locator('#automation-message').isVisible(),
+    true,
+    'The persistent chat keeps the composer visible',
+  );
+  assert.equal(
+    await page.locator('#automation-send').isEnabled(),
+    false,
+    'Sending waits for the current reply',
+  );
+  assert.equal(
+    (await app.evaluate(() => globalThis.profileStarts.at(-1))).agentProfile.id,
+    'builtin.agent-profile.loop-web-interview',
+  );
+  await page
+    .locator('#setup-agent .worker-pane[data-worker-id=conversation]')
+    .waitFor({state: 'attached'});
+  assert.equal(
+    await page.locator('#agent .worker-pane[data-worker-id=conversation]').count(),
+    0,
+    'The conversation terminal is separate from workers',
+  );
+  assert.equal(
+    await page.locator('#agent .worker-pane').count(),
+    2,
+    'Both source worker terminals stay on the worker page',
+  );
+  await page.locator('[data-view=agent]').click();
+  assert.equal(await page.locator('#automation-message').isVisible(), false);
+  assert.equal(await page.locator('#worker-add').isVisible(), true);
+  await page.locator('[data-view=setup-agent]').click();
+  assert.equal(await page.locator('#worker-add').isVisible(), false);
+  assert.equal(
+    await page.locator('#stop').isVisible(),
+    false,
+    'The setup page does not offer a workspace-wide stop',
+  );
+  await page.locator('#automation-message').focus();
+  assert.equal(
+    await page.locator('#setup-agent-terminal').isVisible(),
+    false,
+    'Sending stays on the chat tab',
+  );
+  assert.equal(
+    await page.locator('#automation-message').isEnabled(),
+    true,
+    'The next message can be drafted during the reply',
+  );
+  await page.locator('#automation-message').fill('Başka hangi kaynaklar işime yarar?');
+  await page.locator('#setup-agent .worker-pane[data-worker-id=conversation]').evaluate((el) => {
+    window.originalChatTerminal = el;
+  });
+  await page.locator('#setup-agent-tab-terminal').click();
+  assert.equal(await page.locator('#setup-agent-terminal').isVisible(), true);
+  assert.equal(
+    await page.locator('#automation-message').isVisible(),
+    false,
+    'Only the terminal is shown on its tab',
+  );
+  await page.screenshot({path: path.join(data, 'terminal-tab.png')});
+  await page.locator('#setup-agent-tab-terminal').press('ArrowLeft');
+  assert.equal(await page.locator('#setup-agent-tab-chat').getAttribute('aria-selected'), 'true');
+  assert.equal(await page.locator('#setup-agent-terminal').isVisible(), false);
+  assert.equal(
+    await page.locator('#automation-message').inputValue(),
+    'Başka hangi kaynaklar işime yarar?',
+  );
+  assert.equal(
+    await page
+      .locator('#setup-agent .worker-pane[data-worker-id=conversation]')
+      .evaluate((el) => el === window.originalChatTerminal),
+    true,
+    'Tab changes keep the same terminal surface',
+  );
+  await page.locator('#automation-message').focus();
+  let rpcId = 0;
+  const tool = async (name, args) => {
+    const run = await app.evaluate(() => globalThis.profileStarts.at(-1)),
+      response = await fetch(run.endpoint, {
+        method: 'POST',
+        headers: {Authorization: 'Bearer ' + run.token, 'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: ++rpcId,
+          method: 'tools/call',
+          params: {name, arguments: args},
+        }),
+      }),
+      body = await response.json();
+    assert.ok(!body.error && !body.result?.isError, JSON.stringify(body));
+  };
+  await tool('get_automation_context', {});
+  assert.ok(
+    !(await page.locator('#automation-messages').textContent()).includes('SOURCE WORKER REPORT'),
+  );
+  assert.equal(
+    await page.locator('#automation-message').evaluate((el) => el === document.activeElement),
+    true,
+    'Sending keeps focus in chat',
+  );
+  await app.evaluate(() => {
+    globalThis.chatStream = [
+      {
+        id: 'streaming',
+        role: 'agent',
+        text: 'Tercihini inceliyorum.',
+        at: new Date().toISOString(),
+      },
+    ];
+    globalThis.chatActivity = {
+      tool: 'jobloop_get_workspace_records',
+      status: 'running',
+      at: Date.now(),
+    };
+  });
+  await page.locator('.workspace-chat-body').filter({hasText: 'Tercihini inceliyorum.'}).waitFor();
+  await page.waitForFunction(() =>
+    document
+      .querySelector('.workspace-chat-thinking')
+      .textContent.includes('Kayıtlı sonuçları inceliyor'),
+  );
+  await app.evaluate(() => {
+    globalThis.chatStream[0].text = 'Tercihini inceliyorum. Uzaktan çalışmaya odaklanabiliriz.';
+  });
+  await page
+    .locator('.workspace-chat-body')
+    .filter({hasText: 'Uzaktan çalışmaya odaklanabiliriz.'})
+    .waitFor();
+  assert.equal(
+    await page.locator('.workspace-chat-body').filter({hasText: 'Tercihini inceliyorum.'}).count(),
+    1,
+    'Streaming updates the same bubble',
+  );
+  await tool('save_automation_plan', {
+    title: workspace.title,
+    goal: workspace.goal,
+    criteria: Object.entries({...workspace.criteria, rules: 'Tam uzaktan'}).map(([key, value]) => ({
+      key,
+      value,
+    })),
+    sources: workspace.sources,
+    instructions: 'Uzaktan çalışılan ilanları değerlendir.',
+    facts: '',
+  });
+  await tool('reply_to_user', {
+    message: 'Uzaktan çalışma tercihini taslak olarak kaydettim. Kaynaklar taranmaya devam ediyor.',
+  });
+  await tool('finish_automation_run', {status: 'completed', summary: 'Profil taslağı hazır.'});
+  await page
+    .locator('#automation-messages .workspace-chat-message[data-role=assistant]')
+    .filter({hasText: 'Uzaktan çalışma tercihini'})
+    .waitFor({state: 'visible'});
+  assert.match(await page.locator('#automation-messages').textContent(), /taslak olarak kaydettim/);
+  assert.equal(
+    await page.locator('.workspace-chat-body').filter({hasText: 'Tercihini inceliyorum.'}).count(),
+    1,
+    'A saved final answer retains distinct provider commentary',
+  );
+  await app.evaluate(() => {
+    globalThis.chatStream.push({
+      id: 'final-copy',
+      role: 'agent',
+      text: 'Uzaktan çalışma tercihini taslak olarak kaydettim. Kaynaklar taranmaya devam ediyor.',
+      at: new Date().toISOString(),
+    });
+  });
+  assert.equal(
+    await page
+      .locator('.workspace-chat-body')
+      .filter({hasText: 'Uzaktan çalışma tercihini taslak olarak kaydettim.'})
+      .count(),
+    1,
+    'The native copy does not duplicate the saved answer',
+  );
+  const after = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), workspace.id);
+  assert.equal(after.automation.criteria.rules, 'Berlin');
+  assert.equal(after.automation.planDraft.plan.criteria.rules, 'Tam uzaktan');
+  const chatId = snapshot.activeRuns.find((run) => run.workerId === 'conversation').id;
+  assert.deepEqual(
+    after.activeRuns.map((run) => run.id),
+    [...scanIds, chatId],
+  );
+  assert.equal(after.activeRuns.find((run) => run.id === chatId).awaitingMessage, true);
+  assert.equal(
+    after.workers.find((worker) => worker.id === 'conversation').presentation.status,
+    'Mesaj bekliyor',
+  );
+  assert.equal(await page.locator('#automation-message').isVisible(), true);
+  assert.equal(await page.locator('#automation-send').isEnabled(), true);
+  assert.equal(
+    await page.locator('#automation-message').inputValue(),
+    'Başka hangi kaynaklar işime yarar?',
+    'Incoming replies preserve the next draft',
+  );
+  const reviewProfile = page.getByRole('button', {name: 'Taslağı incele ve kaydet', exact: true});
+  await reviewProfile.waitFor({state: 'visible'});
+  assert.ok(
+    await reviewProfile.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      return box.top >= 0 && box.bottom <= innerHeight;
+    }),
+    'The review action stays visible outside the scrolled chat timeline',
+  );
+  await reviewProfile.click();
+  const profileSave = page.locator('#automation-profile-save');
+  await profileSave.waitFor({state: 'visible'});
+  assert.equal(
+    await profileSave.isEnabled(),
+    true,
+    'Profile saving is available while source workers run',
+  );
+  assert.equal(await page.locator('#automation-plan-form').evaluate((el) => el.inert), false);
+  assert.ok(
+    await profileSave.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      return box.top >= 0 && box.bottom <= innerHeight;
+    }),
+    'Save is visible at the top of the profile',
+  );
+  assert.equal(await page.locator('[name=criteria-rules]').inputValue(), 'Tam uzaktan');
+  await page.screenshot({path: path.join(data, 'profile-save-visible.png')});
+  await page.locator('[data-view=setup-agent]').click();
+  await page.screenshot({path: path.join(data, 'conversation-waiting.png')});
+  await page.locator('#automation-message').fill('Başka hangi kaynaklar işime yarar?');
+  await page.locator('#automation-message').press('Enter');
+  await page.locator('#automation-chat-stop').waitFor({state: 'visible'});
+  await page.waitForFunction(() => document.querySelector('#automation-message').value === '');
+  assert.equal(
+    await app.evaluate(() => globalThis.profileStarts.length),
+    3,
+    'A follow-up does not launch another provider',
+  );
+  assert.equal(await app.evaluate(() => globalThis.profileMessages.length), 1);
+  assert.equal(
+    (
+      await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), workspace.id)
+    ).activeRuns.find((run) => run.workerId === 'conversation').id,
+    chatId,
+  );
+  await tool('reply_to_user', {message: 'Aynı sohbetten devam ediyorum.'});
+  await tool('finish_automation_run', {status: 'completed', summary: 'İkinci yanıt hazır.'});
+  await page.waitForFunction(
+    () => document.querySelector('#automation-chat-state').textContent === 'Sohbet açık',
+  );
+  await page.screenshot({path: path.join(data, 'independent-conversation.png')});
+  await tool('ask_workspace_question', {
+    text: 'Puanlama kriterlerinde hangi değerleri değiştirmek istiyorsun?',
+    fields: [
+      {id: 'threshold', label: 'Eşik puanı', type: 'number'},
+      {id: 'notes', label: 'Ek puanlama notu', type: 'text', required: false},
+    ],
+  });
+  const question = page.locator('.workspace-chat-questions .automation-help-card').first(),
+    threshold = question.getByRole('spinbutton', {name: 'Eşik puanı'});
+  await threshold.waitFor({state: 'visible'});
+  assert.equal(
+    await page.locator('#setup-agent-terminal').isVisible(),
+    false,
+    'Conversation forms appear on the chat tab',
+  );
+  assert.equal(
+    await page.locator('#agent .automation-attention').isVisible(),
+    false,
+    'Conversation forms have a single home in chat',
+  );
+  await threshold.fill('65');
+  await threshold.evaluate((el) => {
+    window.questionInput = el;
+  });
+  await tool('ask_workspace_question', {
+    text: 'Kaynak notun var mı?',
+    fields: [{id: 'note', label: 'Kaynak notu', type: 'text'}],
+  });
+  await page.waitForFunction(
+    () => document.querySelectorAll('.workspace-chat-questions .automation-help-card').length === 2,
+  );
+  assert.equal(
+    await threshold.evaluate((el) => el === window.questionInput && el === document.activeElement),
+    true,
+    'New questions preserve the existing form and input focus',
+  );
+  await page.locator('#setup-agent-tab-terminal').click();
+  await page.locator('[data-view=agent]').click();
+  await page.locator('#agent-tab-instructions').click();
+  await page.locator('[data-view=board]').click();
+  await page
+    .locator('.automation-attention-banner')
+    .getByRole('button', {name: 'Formu aç', exact: true})
+    .click();
+  assert.equal(await threshold.inputValue(), '65', 'Form drafts survive navigation');
+  assert.ok(
+    await question.evaluate((el) => {
+      const box = el.getBoundingClientRect(),
+        view = el.closest('.workspace-chat-viewport').getBoundingClientRect();
+      return box.top >= view.top && box.top < view.bottom;
+    }),
+    'The form button reveals the question heading inside chat',
+  );
+  await page.screenshot({path: path.join(data, 'inline-questions.png')});
+  await question.getByRole('button', {name: 'Yanıtları gönder', exact: true}).click();
+  await threshold.waitFor({state: 'detached'});
+  assert.match(
+    await page.locator('#automation-messages').textContent(),
+    /Eşik puanı: 65/,
+    'Submitted answers stay in the conversation',
+  );
+  const remaining = page.locator('.workspace-chat-questions .automation-help-card');
+  await remaining
+    .getByRole('textbox', {name: 'Kaynak notu', exact: true})
+    .fill('Yalnızca resmi ilan kaynakları.');
+  await remaining.getByRole('button', {name: 'Yanıtları gönder', exact: true}).click();
+  await page.locator('.workspace-chat-questions').waitFor({state: 'hidden'});
+  await tool('finish_automation_run', {status: 'completed', summary: 'Form yanıtları alındı.'});
+  await page.waitForFunction(
+    () => document.querySelector('#automation-chat-state').textContent === 'Sohbet açık',
+  );
+  assert.deepEqual(
+    (
+      await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), workspace.id)
+    ).activeRuns.map((run) => run.id),
+    [...scanIds, chatId],
+    'Form answers keep the conversation and source sessions',
+  );
+  await page.locator('#automation-message').fill('İki satır');
+  await page.locator('#automation-message').press('Shift+Enter');
+  await page.locator('#automation-message').press('x');
+  assert.equal(await page.locator('#automation-message').inputValue(), 'İki satır\nx');
+  await app.evaluate(() => {
+    globalThis.failChatMessage = true;
+  });
+  await page.locator('#automation-message').fill('Tekrar deneyelim');
+  await page.locator('#automation-send').click();
+  await page.locator('#automation-chat-feedback').waitFor({state: 'visible'});
+  assert.equal(
+    await page.locator('#automation-message').inputValue(),
+    'Tekrar deneyelim',
+    'Failed sends preserve the draft',
+  );
+  assert.match(
+    await page.locator('#automation-chat-feedback').textContent(),
+    /Tekrar gönderebilirsin/,
+  );
+  await page.locator('#automation-send').click();
+  await tool('finish_automation_run', {status: 'completed', summary: 'Tekrar yanıtlandı.'});
+  await page.waitForFunction(
+    () => document.querySelector('#automation-chat-state').textContent === 'Sohbet açık',
+  );
+  const setupSettings = page.locator('#setup-agent-settings');
+  assert.equal(await setupSettings.isVisible(), true);
+  await page.locator('#automation-message').fill('Ayarlar değişirken taslağım kalsın');
+  const originalSettings = (
+    await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), workspace.id)
+  ).setupAgent.settings;
+  const models = await setupSettings
+    .locator('[name=model] option')
+    .evaluateAll((options) => options.map((option) => option.value));
+  const nextModel = models.find((model) => model !== originalSettings.model);
+  assert.ok(nextModel);
+  await setupSettings.locator('[name=model]').selectOption(nextModel);
+  const settingsStartCount = await app.evaluate(() => globalThis.profileStarts.length);
+  assert.equal(await setupSettings.locator('[data-save]').isEnabled(), true);
+  await setupSettings.locator('[data-save]').click();
+  await page.waitForFunction(
+    async ({id, model}) =>
+      (await window.jobloop.workspaceSnapshot(id)).setupAgent.settings.model === model,
+    {id: workspace.id, model: nextModel},
+  );
+  await page.waitForFunction(
+    () =>
+      document.querySelector('#setup-agent-settings [data-status]').textContent ===
+      'Kurulum agenti ayarları kaydedildi.',
+  );
+  assert.equal(
+    await app.evaluate(() => globalThis.profileStarts.length),
+    settingsStartCount + 1,
+    'Changing the setup model restarts just that conversation',
+  );
+  assert.equal((await app.evaluate(() => globalThis.profileStarts.at(-1))).model, nextModel);
+  assert.equal(
+    await page.locator('#automation-message').inputValue(),
+    'Ayarlar değişirken taslağım kalsın',
+  );
+  let current = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), workspace.id);
+  for (const id of scanIds)
+    assert.ok(
+      current.activeRuns.some((run) => run.id === id),
+      'Source sessions survive setup settings',
+    );
+  assert.notEqual(
+    current.automation.agentSettings.model,
+    nextModel,
+    'Setup model is independent of worker model',
+  );
+  await setupSettings.locator('[data-restart]').click();
+  await page.waitForFunction(
+    () =>
+      document.querySelector('#setup-agent-settings [data-status]').textContent ===
+      'Yeni sohbet oturumu açıldı.',
+  );
+  assert.equal(await app.evaluate(() => globalThis.profileStarts.length), settingsStartCount + 2);
+  assert.equal(
+    (await app.evaluate(() => globalThis.profileStarts.at(-1))).resumeId,
+    undefined,
+    'Explicit restart opens a fresh provider conversation',
+  );
+  const setupBeforeSave = (
+    await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), workspace.id)
+  ).activeRuns.find((run) => run.kind === 'interview');
+  const beforeConfirm = await page.evaluate(
+    (id) => window.jobloop.workspaceSnapshot(id),
+    workspace.id,
+  );
+  await reviewProfile.click();
+  await profileSave.click();
+  const saveDialog = page.locator('#automation-profile-save-dialog');
+  await saveDialog.waitFor({state: 'visible'});
+  assert.match(
+    await saveDialog.textContent(),
+    /2 aktif agent.*yeniden başlatılacaktır.*Onaylıyor musunuz/,
+  );
+  assert.equal(
+    await saveDialog.locator('[value=cancel]').evaluate((el) => el === document.activeElement),
+    true,
+    'Cancel is focused by default',
+  );
+  let awaitingConfirm = await page.evaluate(
+    (id) => window.jobloop.workspaceSnapshot(id),
+    workspace.id,
+  );
+  assert.equal(
+    awaitingConfirm.automation.profileUpdate,
+    undefined,
+    'The profile is not queued before consent',
+  );
+  assert.deepEqual(
+    awaitingConfirm.activeRuns.map((run) => run.id),
+    beforeConfirm.activeRuns.map((run) => run.id),
+    'Workers keep running while confirmation is open',
+  );
+  await page.screenshot({path: path.join(data, 'profile-save-confirmation.png')});
+  await saveDialog.getByRole('button', {name: 'Vazgeç', exact: true}).click();
+  await saveDialog.waitFor({state: 'hidden'});
+  await page.waitForFunction(() => !document.querySelector('#automation-profile-save').disabled);
+  awaitingConfirm = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), workspace.id);
+  assert.equal(awaitingConfirm.automation.revision, beforeConfirm.automation.revision);
+  assert.equal(awaitingConfirm.automation.criteria.rules, 'Berlin');
+  assert.deepEqual(
+    awaitingConfirm.activeRuns.map((run) => run.id),
+    beforeConfirm.activeRuns.map((run) => run.id),
+  );
+  assert.equal(
+    await page.locator('[name=criteria-rules]').inputValue(),
+    'Tam uzaktan',
+    'Cancel preserves the editable draft',
+  );
+  await page.locator('#automation-plan-form .profile-foot [type=submit]').click();
+  await saveDialog.waitFor({state: 'visible'});
+  await saveDialog.press('Escape');
+  await saveDialog.waitFor({state: 'hidden'});
+  await page.waitForFunction(() => !document.querySelector('#automation-profile-save').disabled);
+  await profileSave.click();
+  await saveDialog.waitFor({state: 'visible'});
+  await saveDialog.getByRole('button', {name: 'Onayla ve kaydet', exact: true}).click();
+  await page.waitForFunction(
+    () =>
+      document.querySelector('#notice').textContent === 'Profil kaydedildi ve uygulandı.' &&
+      document.querySelector('#automations').getAttribute('aria-busy') === 'false',
+  );
+  await page.waitForFunction(async (id) => {
+    const state = await window.jobloop.workspaceSnapshot(id);
+    return state.automation.criteria.rules === 'Tam uzaktan' && !state.automation.profileUpdate;
+  }, workspace.id);
+  await page.waitForFunction(
+    async (id) =>
+      (await window.jobloop.workspaceSnapshot(id)).activeRuns.filter(
+        (run) => run.kind !== 'interview',
+      ).length === 2,
+    workspace.id,
+  );
+  const savedProfile = await page.evaluate(
+    (id) => window.jobloop.workspaceSnapshot(id),
+    workspace.id,
+  );
+  assert.equal(savedProfile.automation.reviewedRevision, savedProfile.automation.revision);
+  assert.equal(savedProfile.automation.planDraft, undefined);
+  assert.equal(
+    savedProfile.activeRuns.find((run) => run.kind === 'interview').id,
+    setupBeforeSave.id,
+    'Saving preserves the busy setup conversation',
+  );
+  assert.ok(
+    savedProfile.activeRuns
+      .filter((run) => run.kind !== 'interview')
+      .every(
+        (run) => !scanIds.includes(run.id) && run.revision === savedProfile.automation.revision,
+      ),
+    'Both scans restart under the new profile',
+  );
+  await page.waitForFunction(
+    () =>
+      document.querySelector('#automation-profile-save').disabled &&
+      document.querySelector('#automation-profile-state').textContent === 'Profil kaydedildi.',
+  );
+  assert.equal(
+    await page.locator('#automation-plan-form .profile-foot [type=submit]').isEnabled(),
+    false,
+    'Saving disables both buttons after the profile is applied',
+  );
+  await page.locator('[name=criteria-rules]').fill('Hibrit');
+  assert.equal(await profileSave.isEnabled(), true);
+  assert.equal(
+    await page.locator('#notice').textContent(),
+    '',
+    'Editing clears the previous saved notification',
+  );
+  await page.locator('[name=criteria-rules]').fill('Tam uzaktan');
+  assert.equal(await profileSave.isEnabled(), false);
+  scanIds = savedProfile.activeRuns.filter((run) => run.kind !== 'interview').map((run) => run.id);
+  await page.locator('[data-view=setup-agent]').click();
+  await reviewProfile.waitFor({state: 'hidden'});
+  await page.screenshot({path: path.join(data, 'profile-applied-chat-open.png')});
+  await page.locator('#automation-message').fill('');
+  await app.evaluate(() => {
+    globalThis.chatStream.push({
+      id: 'native-only',
+      role: 'agent',
+      text: 'Bu yanıt yalnızca sağlayıcının sohbet kaydında.',
+      at: new Date().toISOString(),
+    });
+  });
+  const nativeOnly = page
+    .locator('.workspace-chat-body')
+    .filter({hasText: 'Bu yanıt yalnızca sağlayıcının sohbet kaydında.'});
+  await nativeOnly.waitFor({state: 'visible'});
+  await page.locator('#automation-chat-stop').click();
+  await page.waitForFunction(
+    () => document.querySelector('#automation-chat-state').textContent === 'Hazır',
+  );
+  assert.equal(
+    await nativeOnly.count(),
+    1,
+    'Closing setup preserves replies not saved through reply_to_user',
+  );
+  assert.deepEqual(
+    (
+      await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), workspace.id)
+    ).activeRuns.map((run) => run.id),
+    scanIds,
+    'Stopping chat leaves both original runs active',
+  );
+  await page.locator('[data-view=agent]').click();
+  await page.locator('[data-view=setup-agent]').click();
+  assert.equal(
+    await page.locator('#automation-message').isVisible(),
+    true,
+    'Setup chat remains accessible after closing its session',
+  );
+  await page.locator('#setup-agent-tab-terminal').click();
+  await page.reload();
+  await page.locator('#setup-agent').waitFor({state: 'visible'});
+  await page.locator('#setup-agent-terminal').waitFor({state: 'visible'});
+  assert.equal(
+    await page.locator('#automation-message').isVisible(),
+    false,
+    'The selected terminal tab survives reload',
+  );
+  await page.locator('#setup-agent-tab-chat').click();
+  assert.equal(
+    await page
+      .locator('[data-view=setup-agent]')
+      .evaluate((el) => el.classList.contains('selected')),
+    true,
+    'The dedicated chat page is restored after reload',
+  );
+  await nativeOnly.waitFor({state: 'visible'});
+  await page.screenshot({path: path.join(data, 'closed-chat-transcript.png')});
+  await page.evaluate((id) => window.jobloop.workspaceStop(id), workspace.id);
+  await page.evaluate(
+    (id) => window.jobloop.automationMessage(id, 'Profil bilgilerini kontrol et.'),
+    workspace.id,
+  );
+  const conversationOnly = (
+    await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), workspace.id)
+  ).activeRuns;
+  assert.equal(conversationOnly.length, 1);
+  assert.equal(conversationOnly[0].kind, 'interview');
+  await page.locator('[data-view=profile]').click();
+  await page
+    .locator('#automation-plan-form [name=facts]')
+    .fill('Synthetic profile update with only the setup conversation open');
+  await profileSave.click();
+  await page.waitForFunction(
+    () =>
+      document.querySelector('#automation-profile-state').textContent === 'Profil kaydedildi.' &&
+      !document.querySelector('#automations').matches('[aria-busy=true]'),
+  );
+  assert.equal(
+    await saveDialog.isVisible(),
+    false,
+    'The setup conversation alone does not need restart confirmation',
+  );
+  assert.deepEqual(
+    (
+      await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), workspace.id)
+    ).activeRuns.map((run) => run.id),
+    conversationOnly.map((run) => run.id),
+  );
+  await page.evaluate((id) => window.jobloop.workspaceStop(id), workspace.id);
+  await page.locator('#new').click();
+  await page.locator('[data-template=custom]').click();
+  await page.locator('#setup-agent').waitFor({state: 'visible'});
+  const freshId = await page.locator('#candidates').inputValue();
+  assert.notEqual(freshId, workspace.id);
+  await page.locator('#automation-message').fill('Berlin için bir araştırma çalışma alanı kur.');
+  await page.locator('#automation-message').press('Enter');
+  await page
+    .locator('#setup-agent .worker-pane[data-worker-id=conversation]')
+    .waitFor({state: 'attached'});
+  assert.equal(
+    await page.locator('#agent .worker-pane[data-worker-id=conversation]').count(),
+    0,
+    'Initial setup also has its terminal on the setup page',
+  );
+  await page.evaluate((id) => window.jobloop.workspaceStop(id), freshId);
+  assert.deepEqual(errors, []);
+  console.log('WORKSPACE_PROFILE_IMPROVEMENT_PASS', data);
+} catch (error) {
+  if (page) {
+    console.error(
+      'UI_STATE',
+      await page.evaluate(() => ({
+        view: localStorage.getItem('selected-view'),
+        notice: document.querySelector('#notice').textContent,
+        chat: document.querySelector('#automation-chat')?.className,
+        disabled: document.querySelector('#automation-message')?.disabled,
+        focused: document.activeElement?.outerHTML.slice(0, 500),
+      })),
+    );
+    await page.screenshot({path: path.join(data, 'failure.png'), fullPage: true}).catch(() => {});
+  }
+  console.error('ARTIFACTS', data);
+  throw error;
+} finally {
+  await app.close();
+}
