@@ -6,6 +6,7 @@ import {AutomationStore} from '../app/automation/store.mjs';
 import {WebTasks} from '../app/automation/web-template.mjs';
 import {automationWorkflow} from '../app/automation/worker.mjs';
 import {LOGGED_IN_FIELD} from '../app/automation/login-question.mjs';
+import {automationTaskContext} from '../app/automation/task-context.mjs';
 import {automationBrowser} from '../app/browser/automation-browser.mjs';
 import {automationTemplate, reusableTemplate} from '../app/templates/catalog.mjs';
 import {
@@ -321,6 +322,23 @@ test('an interrupted send becomes uncertain; verification is read-only and survi
   });
   await f.finish(verify);
   assert.equal(f.db.result(f.id, f.item.id).status, 'completed');
+});
+
+test('requested changes to a reviewed draft reach the next preparation', async (t) => {
+  const f = fixture(t),
+    prepared = await f.prepare();
+  assert.equal(prepared.status, 'prepared');
+  await assert.rejects(
+    f.runtime.runRecord(f.id, f.item.id, 'prepare', {changes: '  '}),
+    /Değişiklik isteği/,
+  );
+  await f.runtime.runRecord(f.id, f.item.id, 'prepare', {changes: 'Use the shorter cover letter'});
+  await settle();
+  const run = f.launches.at(-1);
+  assert.equal(run.recordOperation, 'prepare');
+  const context = automationTaskContext(f.db, f.id, f.db.run(run.id));
+  assert.equal(context.requestedChanges.text, 'Use the shorter cover letter');
+  assert.equal(context.assignedRecord.proposal, prepared.proposal);
 });
 
 test('one sign-in answer releases every open login question for the same site', async (t) => {

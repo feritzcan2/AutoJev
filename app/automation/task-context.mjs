@@ -323,6 +323,14 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
     assignedRecord,
     ...(batch ? {assignedRecords} : {}),
     assignedOperation: operation,
+    ...(active.request?.changes
+      ? {
+          requestedChanges: {
+            text: active.request.changes,
+            rule: 'The user reviewed the saved proposal of assignedRecord and asked for these changes. Revise that proposal accordingly and save it in full; keep everything else that still applies.',
+          },
+        }
+      : {}),
     ...(savedPage
       ? {
           savedListing: {

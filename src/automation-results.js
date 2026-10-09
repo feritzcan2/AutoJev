@@ -75,13 +75,17 @@ export function automationResultsTable(
     reviewTitle = el('h2'),
     reviewSummary = el('p'),
     proposal = el('pre'),
+    changes = el('textarea'),
     reviewError = el('p'),
     reviewActions = el('div', null, 'actions');
   const cancel = button('Vazgeç', () => review.close()),
+    requestChanges = button('Değişiklik iste', () => {}),
     confirm = button('Onayla ve uygula', () => {}, 'primary');
+  changes.placeholder = 'Taslakta neyin değişmesini istiyorsun? (isteğe bağlı)';
+  changes.maxLength = 2000;
   reviewError.setAttribute('role', 'alert');
-  reviewActions.append(cancel, confirm);
-  review.append(reviewTitle, reviewSummary, proposal, reviewError, reviewActions);
+  reviewActions.append(cancel, requestChanges, confirm);
+  review.append(reviewTitle, reviewSummary, proposal, changes, reviewError, reviewActions);
   root.append(review);
   let reviewed = null,
     submitting = false;
@@ -99,23 +103,30 @@ export function automationResultsTable(
       render();
     }
   };
-  confirm.onclick = async () => {
+  const submitReview = async (kind, input) => {
     if (!reviewed || submitting) return;
     submitting = true;
-    confirm.disabled = true;
+    confirm.disabled = requestChanges.disabled = true;
     reviewError.textContent = '';
     try {
-      await api.automationRecordRun(reviewed.workspace, reviewed.id, 'execute', {
-        digest: reviewed.digest,
-      });
+      await api.automationRecordRun(reviewed.workspace, reviewed.id, kind, input);
       review.close();
       await refresh();
     } catch (error) {
       reviewError.textContent = error.message;
     } finally {
       submitting = false;
-      confirm.disabled = false;
+      confirm.disabled = requestChanges.disabled = false;
     }
+  };
+  confirm.onclick = () => submitReview('execute', {digest: reviewed?.digest});
+  // The draft goes back to preparation with the note; it needs approval again.
+  requestChanges.onclick = () => {
+    if (!changes.value.trim()) {
+      reviewError.textContent = 'Önce neyin değişmesini istediğini yaz.';
+      return changes.focus();
+    }
+    submitReview('prepare', {changes: changes.value.trim()});
   };
   const showReview = (result) => {
     reviewed = {workspace: data.automation.id, id: result.id, digest: result.digest};
@@ -124,6 +135,7 @@ export function automationResultsTable(
     reviewSummary.textContent =
       'Bu içerik yalnızca seçtiğin kayıt için uygulanacak. Hedefi, yanıtları ve kullanılacak belgeleri kontrol et.';
     confirm.textContent = data.definition.recordOperations.execute.reviewLabel;
+    changes.value = '';
     reviewError.textContent = '';
     review.showModal();
   };

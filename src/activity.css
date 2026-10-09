@@ -345,6 +345,12 @@
   border: 1px solid var(--border);
   border-radius: 8px;
 }
+.automation-record-review textarea {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 16px;
+  resize: vertical;
+}
 .automation-record-review .actions {
   display: flex;
   justify-content: flex-end;
