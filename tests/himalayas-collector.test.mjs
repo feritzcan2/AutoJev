@@ -5,9 +5,9 @@ import {
   parseHimalayasPage,
   readHimalayasPage,
   collectHimalayas,
-} from '../app/himalayas-collector.mjs';
+} from '../app/site-extensions/himalayas/api.mjs';
 import {collectorSearches, sourceCollector} from '../app/source-collectors.mjs';
-import {collectionArguments} from '../app/collect-cli.mjs';
+import {collectionArguments} from '../app/site-extensions/himalayas/cli.mjs';
 
 const base = 'https://himalayas.app/jobs/api/search?country=DE&q=backend';
 const job = (n) => ({

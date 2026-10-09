@@ -1,7 +1,7 @@
 // @ts-check
 // Site extensions: per-site readers the user explicitly asked for (2026-10-05).
 // DOM extensions read the page already loaded in Chrome. CLI extensions provide
-// collector {templateId,searchUrl,readPage,detail}; the shared source worker puts
+// collector {templateId,searchUrl,acceptsQuery,readPage,detail}; the shared source worker puts
 // their evidence into Jev's queue. HTTP readers provide reader {handles,read}
 // and replace the browser tab for the addresses they handle. All keep triage,
 // scoring and records generic. Unknown DOM pages retain the generic reader result.
@@ -10,7 +10,7 @@
 // this folder and list it below. collect runs inside the page and must be
 // self-contained; results(raw) returns {listings:[{url,text}],pagination} or null.
 import stepstone from './stepstone.mjs';
-import himalayas from './himalayas.mjs';
+import himalayas from './himalayas/index.mjs';
 import linkedin from './linkedin.mjs';
 
 export const SITE_EXTENSIONS = [stepstone, himalayas, linkedin];

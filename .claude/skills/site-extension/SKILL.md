@@ -12,7 +12,7 @@ domain, selector or title check anywhere else.
 
 Reference implementations — read them first:
 - `app/site-extensions/stepstone.mjs` — DOM extension (reads the open Chrome page)
-- `app/site-extensions/himalayas.mjs` + `app/himalayas-collector.mjs` — API collector (no browser)
+- `app/site-extensions/himalayas/` — API collector (no browser): `index.mjs` adapter, `api.mjs`, `detail.mjs`, `cli.mjs` worker process
 - `app/site-extensions/linkedin.mjs` — HTTP reader (public guest pages over HTTP, no browser tab)
 - `app/site-extensions/index.mjs` — registry, `applySiteExtension`, `readSiteExtension`
 - `tests/site-extensions.test.mjs` — test patterns

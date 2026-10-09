@@ -16,15 +16,11 @@ export async function readCollectorCliDetail(url, options = {}) {
 }
 async function readCollectorCliRequest(input, {signal, forkProcess = fork} = {}) {
   signal?.throwIfAborted();
-  const child = forkProcess(
-    fileURLToPath(new URL('./collect-cli.mjs', import.meta.url)),
-    ['--worker'],
-    {
-      env: {...process.env, ELECTRON_RUN_AS_NODE: '1'},
-      stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
-      execArgv: [],
-    },
-  );
+  const child = forkProcess(fileURLToPath(new URL('./cli.mjs', import.meta.url)), ['--worker'], {
+    env: {...process.env, ELECTRON_RUN_AS_NODE: '1'},
+    stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+    execArgv: [],
+  });
   return new Promise((resolve, reject) => {
     let page,
       done = false,

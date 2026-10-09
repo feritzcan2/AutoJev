@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readHimalayasDetail, himalayasJobIdentity} from '../app/himalayas-detail.mjs';
-import {collectionArguments} from '../app/collect-cli.mjs';
+import {
+  readHimalayasDetail,
+  himalayasJobIdentity,
+} from '../app/site-extensions/himalayas/detail.mjs';
+import {collectionArguments} from '../app/site-extensions/himalayas/cli.mjs';
 
 const url = 'https://himalayas.app/companies/synthetic/jobs/backend-engineer-123';
 function transport(result, requests = []) {

@@ -1,7 +1,7 @@
 import {once} from 'node:events';
 import {fileURLToPath} from 'node:url';
-import {collectHimalayas, himalayasApiUrl} from './himalayas-collector.mjs';
-import {readHimalayasDetail, himalayasJobIdentity} from './himalayas-detail.mjs';
+import {collectHimalayas, himalayasApiUrl} from './api.mjs';
+import {readHimalayasDetail, himalayasJobIdentity} from './detail.mjs';
 
 export function collectionArguments(args) {
   const flags = new Map();
@@ -89,7 +89,7 @@ async function main() {
       const input = collectionArguments(process.argv.slice(2));
       if (!input) {
         process.stdout.write(
-          'Usage: node app/collect-cli.mjs --source himalayas [--query backend --country DE | --all | --url URL] [--max-pages 1000]\nSingle detail: --detail-url URL\nOutputs NDJSON page records and a final completion receipt; exit 2 means more pages remain.\n',
+          'Usage: node app/site-extensions/himalayas/cli.mjs --source himalayas [--query backend --country DE | --all | --url URL] [--max-pages 1000]\nSingle detail: --detail-url URL\nOutputs NDJSON page records and a final completion receipt; exit 2 means more pages remain.\n',
         );
         return;
       }

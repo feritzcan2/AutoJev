@@ -1,6 +1,6 @@
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import {isHimalayasUrl} from './himalayas-collector.mjs';
+import {isHimalayasUrl} from './api.mjs';
 
 export function himalayasJobIdentity(value) {
   if (!isHimalayasUrl(value)) throw Error('Geçersiz Himalayas ilan adresi.');

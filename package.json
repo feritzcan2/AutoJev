@@ -6,7 +6,7 @@
   "main": "app/main.mjs",
   "packageManager": "pnpm@10.14.0",
   "scripts": {
-    "collect": "node app/collect-cli.mjs",
+    "collect": "node app/site-extensions/himalayas/cli.mjs",
     "build": "node scripts/build.mjs",
     "engine:build": "node scripts/build-engine.mjs",
     "start": "pnpm build && pnpm engine:build && electron .",
