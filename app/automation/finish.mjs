@@ -6,7 +6,7 @@ import {sourceScan} from '../sources/scan-issues.mjs';
 import {validateLoginQuestion, LOGGED_IN_FIELD} from './login-question.mjs';
 import {OUTCOME_FIELD} from './question-forms.mjs';
 import {sourceStop} from './stop.mjs';
-import {retryTechnicalSource} from './recovery.mjs';
+import {holdForTechnicalRetry} from './recovery.mjs';
 
 // finish_automation_run: check that the reported status is backed by the saved
 // task state, ask the user what only they can answer, then report the run.
@@ -141,29 +141,15 @@ export function finishAutomationRun({
       );
     db.putRun({...active, scan});
   }
-  if (stop) db.putRun({...db.run(run.id), stop});
   if (stop?.kind === 'technical') {
-    const current = db.run(run.id),
-      pendingUrls = [
-        ...new Set([
-          ...(current.scan?.pendingUrls ?? []),
-          ...Object.values(current.scanIssues ?? {})
-            .filter((i) => stop.issueIds.includes(i.id))
-            .map((i) => i.url),
-        ]),
-      ];
-    db.persistScan(id, {
-      ...current,
-      scan: {
-        ...current.scan,
-        complete: false,
-        pendingUrls,
-        reason: args.summary,
-        evidenceUrl: current.scan?.evidenceUrl ?? pendingUrls[0],
-      },
+    const retry = holdForTechnicalRetry(db, id, run.id, {
+      stop,
+      urls: Object.values(db.run(run.id).scanIssues ?? {})
+        .filter((i) => stop.issueIds.includes(i.id))
+        .map((i) => i.url),
+      summary: args.summary,
     });
-    const retry = retryTechnicalSource(db, id, run.id, args.summary, db.now());
     if (retry) return report(id, run.id, retry.status, retry.summary, false);
-  }
+  } else if (stop) db.putRun({...db.run(run.id), stop});
   return report(id, run.id, status, args.summary, args.goalReached === true);
 }

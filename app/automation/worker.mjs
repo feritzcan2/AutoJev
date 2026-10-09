@@ -63,7 +63,7 @@ import {observedLinks} from '../sources/automation-scan.mjs';
 import {observedScanPage} from '../sources/scan-page.mjs';
 import {workerKey} from './worker-key.mjs';
 import {sourceScan, scanIssue, clearScanIssue, browserFailure} from '../sources/scan-issues.mjs';
-import {retryTechnicalSource} from './recovery.mjs';
+import {holdForTechnicalRetry} from './recovery.mjs';
 import {runJevTask, jevDetailItems} from '../jev/tasks.mjs';
 import {jevTaskSummary, jevTaskReceipt} from '../jev/task-summary.mjs';
 import {JEV_LAUNCH_INSTRUCTIONS} from '../jev/task-tools.mjs';
@@ -128,22 +128,16 @@ export function automationWorkflow({
             pendingUrls.every((url) => issues.some((i) => i.url === url && i.verified)))
         ) {
           const summary = `Sayfa yüklenemedi; yeniden denenecek: ${url}`;
-          db.persistScan(id, {
-            ...current,
+          const retry = holdForTechnicalRetry(db, id, run.id, {
             stop: {
               kind: 'technical',
               evidence: issue.evidence,
               issueIds: issues.filter((i) => i.verified).map((i) => i.id),
             },
-            scan: {
-              ...current.scan,
-              complete: false,
-              pendingUrls,
-              reason: summary,
-              evidenceUrl: current.scan?.evidenceUrl ?? url,
-            },
+            urls: issues.map((i) => i.url),
+            summary,
+            evidenceUrl: url,
           });
-          const retry = retryTechnicalSource(db, id, run.id, summary, db.now());
           if (retry) {
             report(id, run.id, retry.status, retry.summary, false);
             error.message +=
