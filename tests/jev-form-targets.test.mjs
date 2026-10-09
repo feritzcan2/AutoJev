@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validateJevArgs} from '../app/jev/browser.mjs';
+import {validateJevArgs} from '../app/jev/tools.mjs';
 import {fillKnownFields} from '../app/jev/form.mjs';
 test('text value alias is normalized but conflicting text is rejected before writing', () => {
   const args = {tabId: 'tab', fields: [{fieldId: 'field', value: 'known answer'}]};

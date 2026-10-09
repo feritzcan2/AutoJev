@@ -2,7 +2,8 @@ import {checkSourceBrowser} from '../sources/browser-check.mjs';
 import {BrowserConnections, browserWaitResult} from './connection.mjs';
 import path from 'node:path';
 import {mkdir} from 'node:fs/promises';
-import {JevBrowser, jevTools} from '../jev/browser.mjs';
+import {JevBrowser} from '../jev/browser.mjs';
+import {jevTools} from '../jev/tools.mjs';
 import {pressBrowserTarget} from './target.mjs';
 import {resolveBrowserCaptcha} from '../captcha/automation.mjs';
 
