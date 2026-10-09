@@ -4,7 +4,7 @@ import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
 import {automationWorkflow} from '../app/automation/worker.mjs';
 import {automationBrowser} from '../app/browser/automation-browser.mjs';
-import {validateJevArgs} from '../app/jev/browser.mjs';
+import {validateJevArgs} from '../app/jev/tools.mjs';
 import {validate} from '../app/agents/tool-schema.mjs';
 
 test('Jev full document reading is explicit; automation scopes scroll to its current tab', async () => {

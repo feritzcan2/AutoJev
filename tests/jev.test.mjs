@@ -4,7 +4,7 @@ import {mkdtemp, writeFile, rm} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {actionSpace, chooseJev, jevConfig, validateChoice} from '../app/jev/policy.mjs';
-import {validateJevArgs} from '../app/jev/browser.mjs';
+import {validateJevArgs} from '../app/jev/tools.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {seedJevDemo, startJevFixture} from '../scripts/jev-demo.mjs';
