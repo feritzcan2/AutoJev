@@ -328,7 +328,9 @@ export async function runJevTask({
   if (input.reviewedBatchId) {
     if (input.reviewedBatchId !== task.batch?.id)
       throw jevReviewRequired(
-        'İnceleme grubu eski veya başka göreve ait. read_jev_task(taskId) ile güncel grubu ve item numaralarını oku.',
+        task.batch
+          ? `İnceleme grubu eski veya yanlış yazılmış. Güncel reviewedBatchId: ${task.batch.id}. Item numaraları bu gruba göredir; emin değilsen read_jev_task(taskId) ile oku.`
+          : 'İnceleme grubu eski veya başka göreve ait. read_jev_task(taskId) ile güncel grubu ve item numaralarını oku.',
       );
     const items = task.batch.urls.map((url) => task.items.find((i) => i.url === url));
     if (!ports.reviewBatch)
@@ -632,7 +634,8 @@ export async function runJevTask({
       (i) => i.collected && i.assessment && i.pageKind !== 'results' && !i.reviewed,
     );
     if (!ready.length || (ready.length < 20 && !final)) return false;
-    task.batch = {id: randomUUID(), urls: ready.slice(0, 20).map((i) => i.url)};
+    // A short id: weak agents miscopied a full UUID and retried the same wrong id.
+    task.batch = {id: randomUUID().slice(0, 8), urls: ready.slice(0, 20).map((i) => i.url)};
     issue('batch_ready');
     return true;
   };

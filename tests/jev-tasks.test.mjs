@@ -227,6 +227,11 @@ test('a barrier skips its host and final small groups still require review befor
   assert.equal(result.batch.total, 1);
   assert.equal(result.usage.calls, 1);
   assert.deepEqual(opened, [blocked[0], good]);
+  assert.equal(result.batch.id.length, 8, 'a short id a weak agent copies correctly');
+  await assert.rejects(
+    f.run({taskId: result.taskId, reviewedBatchId: 'wrong-id', review: []}),
+    (e) => e.message.includes(`reviewedBatchId: ${result.batch.id}`),
+  );
   const next = await f.run({
     taskId: result.taskId,
     reviewedBatchId: result.batch.id,
