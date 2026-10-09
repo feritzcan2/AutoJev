@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {jevCriteria} from '../app/jev-triage.mjs';
+import {jevCriteria, FIT_RULES, DISCOVERY_FIT_RULES} from '../app/jev-triage.mjs';
+import {automationTemplate} from '../app/automation-templates.mjs';
 
 test('the user profile contains current language facts and user documents without unrelated history or file paths', () => {
   const automation = {
@@ -54,4 +55,13 @@ test('large and unreadable profile sources stay bounded with explicit unknown co
     undefined,
     'no document reading sends no user profile',
   );
+});
+
+test('job examples come from the template, not the shared triage rules', () => {
+  const hints = automationTemplate('job-search').assessmentHints;
+  assert.match(hints, /engineer, developer or architect/);
+  assert.equal(jevCriteria({goal: 'g'}, undefined, hints).assessmentHints, hints);
+  assert.equal('assessmentHints' in jevCriteria({goal: 'g'}), false);
+  for (const rules of [FIT_RULES, DISCOVERY_FIT_RULES])
+    assert.doesNotMatch(rules, /for jobs|salary|\bCV\b|engineer/i);
 });

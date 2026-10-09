@@ -866,7 +866,7 @@ export function automationWorkflow({
         taskId: scope,
         input: args,
         signal,
-        criteria: jevCriteria(a, documents),
+        criteria: jevCriteria(a, documents, db.template(a.templateId).assessmentHints),
         ports: {
           onTask,
           sourceUrl: sourceScan(active) ? active.sourceUrl : null,
@@ -1547,7 +1547,8 @@ export function automationWorkflow({
               'The user documents could not be read; facts they would prove remain unknown.',
           };
         }
-        const deadline = Date.now() + jevExecution.waitWindow;
+        const deadline = Date.now() + jevExecution.waitWindow,
+          criteria = jevCriteria(a, documents, db.template(a.templateId).assessmentHints);
         const briefFor = (evidenceId, offset, waitMs) => {
           const evidence = db.jevTasks.fullEvidence(id, scope, evidenceId);
           const task = db.jevTasks
@@ -1562,7 +1563,7 @@ export function automationWorkflow({
             evidenceId,
             offset,
             waitMs,
-            criteria: jevCriteria(a, documents),
+            criteria,
             signal,
             assertActive: () => {
               const current = db.activeRun(id, run.id);
