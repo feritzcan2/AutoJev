@@ -112,7 +112,7 @@ try {
     fields: [{fieldId: notice.fieldId, text: 'Two months after agreement'}],
   });
   assert.equal(filled.status, 'ready');
-  // Both the direct click and model-proposed action paths enforce rank scope.
+  // The final button stays reachable after filling.
   const submit = filled.clickTargets.find((t) => t.label === 'Submit application');
   // Submit is below the viewport; reveal it using its observed control first.
   let current = filled;
@@ -123,60 +123,6 @@ try {
     });
   const target = current.clickTargets.find((t) => t.label === 'Submit application');
   assert.ok(target);
-  await assert.rejects(
-    () =>
-      client.callTool(
-        {name: 'browser_jev_click', arguments: {tabId, targetId: target.targetId}},
-        'test',
-        {taskKind: 'rank'},
-      ),
-    /Puanlama/,
-  );
-  await assert.rejects(
-    () =>
-      client.callTool(
-        {
-          name: 'browser_jev_upload',
-          arguments: {tabId, uploadId: 'irrelevant', filePath: '/tmp/fake.pdf'},
-        },
-        'test',
-        {taskKind: 'rank'},
-      ),
-    /Puanlama/,
-  );
-  const action = slot.observed.actions.find(
-    (a) => a.kind === 'click' && a.label === 'Submit application',
-  );
-  slot.pending = {
-    decisionId: 'rank-decision',
-    owner: 'test',
-    observed: slot.observed,
-    operation: 'CLICK',
-    action,
-  };
-  await assert.rejects(
-    () =>
-      client.callTool(
-        {name: 'browser_jev_act', arguments: {tabId, decisionId: 'rank-decision'}},
-        'test',
-        {taskKind: 'rank'},
-      ),
-    /Puanlama/,
-  );
-  client.choose = async (observed) => {
-    assert.ok(
-      observed.actions.every(
-        (a) => !['fill', 'select'].includes(a.kind) && !(a.kind === 'click' && a.role === 'button'),
-      ),
-    );
-    return {operation: 'BLOCKED', action: null, confidence: 1, latency_ms: 0};
-  };
-  await client.callTool(
-    {name: 'browser_jev_next', arguments: {tabId, goal: 'Read the role'}},
-    'test',
-    {taskKind: 'rank'},
-  );
-  assert.equal(await page.evaluate(() => window.submits), 0);
   // A modal's background fields are not actionable application questions.
   await page.setContent(
     '<label>Background<input required></label><div role="dialog" aria-modal="true"><label>Modal field<input required></label></div>',
@@ -186,8 +132,7 @@ try {
     result.fields.map((f) => f.label),
     ['Modal field'],
   );
-  // Preparation discovers native attachment/text constraints and cannot dispatch
-  // the final button, even if a stale job record says submitting.
+  // Inspection reports native attachment and text constraints.
   await page.setContent(
     '<form lang="en" onsubmit="event.preventDefault();window.submits++"><label>CV<input type="file" accept=".pdf,.docx" required></label><label>Cover letter<textarea maxlength="500"></textarea></label><button type="submit">Submit application</button></form>',
   );
@@ -199,24 +144,6 @@ try {
   assert.equal(field('CV').multiple, false);
   assert.equal(field('Cover letter').maxLength, 500);
   assert.equal(field('Cover letter').language, 'en');
-  const preparationPage = await call('browser_jev_observe', {tabId}),
-    send = preparationPage.clickTargets.find((t) => t.label === 'Submit application');
-  const held = JSON.parse(
-    (
-      await client.callTool(
-        {name: 'browser_jev_click', arguments: {tabId, targetId: send.targetId}},
-        'test',
-        {
-          taskKind: 'preparation',
-          activeJobId: 'prep-job',
-          jobs: [{id: 'prep-job', status: 'submitting', preparation: {hold: true}}],
-        },
-      )
-    ).content[0].text,
-  );
-  assert.equal(held.blockerOrigin, 'jobloop_preparation_hold');
-  assert.equal(held.executed, false);
-  assert.equal(await page.evaluate(() => window.submits), 0);
   console.log(
     'APPLICATION_PREFLIGHT_PASS: native/ARIA/label requirements, offscreen and iframe fields, privacy, password redaction, zero side effects',
   );

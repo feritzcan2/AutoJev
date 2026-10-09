@@ -28,7 +28,6 @@ try {
     await browsers.call('workspace', 'browser_jev_open', {url: url + '/0'}, 'draft'),
   );
   assert.ok(draft.tabId);
-  client.tabJobs.set(draft.tabId, 'saved-application');
   const initial = client.tabs.size,
     ids = new Set();
   for (let turn = 0; turn < 3; turn++) {

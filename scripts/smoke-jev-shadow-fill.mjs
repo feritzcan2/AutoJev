@@ -117,38 +117,7 @@ try {
   assert.equal(batch.verifiedCount, 1);
   assert.equal(await page.locator('#start').inputValue(), '2026-11-28');
   console.log('NATIVE_DATE_VALIDATION_FILL_PASS');
-  await context.route('https://fixture.test/**', (route) =>
-    route.fulfill({contentType: 'text/html', body: '<label>Email<input type="email"></label>'}),
-  );
-  const job = {
-    id: 'resume-job',
-    status: 'blocked',
-    url: 'https://fixture.test/listing',
-    resumeContext: {
-      browser: 'Jev Chrome',
-      tabId: 'closed-tab',
-      url: 'https://fixture.test/application',
-    },
-  };
-  const resume = async () =>
-    JSON.parse(
-      (
-        await client.callTool({name: 'browser_jev_open', arguments: {url: job.url}}, 'test', {
-          activeJobId: job.id,
-          jobs: [job],
-        })
-      ).content[0].text,
-    );
-  const reopened = await resume();
-  assert.equal(reopened.url, job.resumeContext.url, 'Recover exact form URL');
-  const reused = await resume();
-  assert.equal(reused.tabId, reopened.tabId);
-  assert.equal(reused.reused, true);
-  await client.tabs.get(reopened.tabId).page.close();
-  job.status = 'uncertain';
-  const uncertain = await resume();
-  assert.equal(uncertain.status, 'verification_required', 'Never reopen an uncertain submission');
-  console.log('SHADOW_FILL_AND_RESUME_PASS');
+  console.log('SHADOW_FILL_PASS');
 } finally {
   await client.close();
   await rm(dir, {recursive: true, force: true});

@@ -9,8 +9,7 @@ const client = new JevBrowser(dir, {
   headless: true,
   config: async () => ({}),
 });
-const state = {taskKind: 'application', activeJobId: 'job', jobs: [{id: 'job', status: 'working'}]};
-const call = async (name, args, owner = 'test', s = state) =>
+const call = async (name, args, owner = 'test', s = {}) =>
   JSON.parse((await client.callTool({name, arguments: args}, owner, s)).content[0].text);
 try {
   const context = await client.context();
@@ -27,7 +26,6 @@ try {
   const page = await context.newPage(),
     slot = await client.track(context, page),
     tabId = slot.id;
-  client.tabJobs.set(tabId, 'job');
   await page.goto('https://frames.test/outer');
   await page.waitForFunction(() =>
     document
@@ -77,16 +75,6 @@ try {
   });
   assert.ok(o.text.includes('Next step'));
   assert.equal(context.pages().length, count);
-  await assert.rejects(
-    () =>
-      call('browser_jev_frame_act', {
-        tabId,
-        frameId,
-        targetId: o.controls.find((c) => c.label === 'Submit application').targetId,
-        action: 'click',
-      }),
-    /submission_not_started/,
-  );
   // Non-native ARIA comboboxes in nested forms expose visible options after opening.
   const inner = page.frames().find((f) => f.url().endsWith('/inner'));
   await inner

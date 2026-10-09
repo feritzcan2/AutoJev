@@ -60,34 +60,6 @@ try {
   assert.equal(result.status, 'verification_handoff');
   assert.match(result.message, /does not prove/);
   assert.equal(modelCalls, 0);
-  // Preserve the separately authorized one-step continuation flow after a reply.
-  await page.setContent(
-    '<iframe title="hCaptcha challenge" style="width:300px;height:250px"></iframe><button onclick="window.continued=(window.continued||0)+1">Continue verification</button>',
-  );
-  const job = {
-    id: 'job',
-    status: 'uncertain',
-    verificationContinuation: {
-      reservedAt: new Date().toISOString(),
-      actionLabel: 'Continue verification',
-    },
-  };
-  client.tabJobs.set(tabId, job.id);
-  const reservedCall = async (name, args) =>
-    JSON.parse(
-      (await client.callTool({name, arguments: args}, 'test', {jobs: [job]})).content[0].text,
-    );
-  result = await reservedCall('browser_jev_next', {tabId, goal: 'Complete the reserved step once'});
-  assert.equal(result.status, 'verification_continuation_reserved');
-  result = await reservedCall('browser_jev_click', {
-    tabId,
-    targetId: result.clickTargets[0].targetId,
-  });
-  assert.equal(result.executed, true);
-  assert.equal(await page.evaluate(() => window.continued), 1);
-  result = await reservedCall('browser_jev_next', {tabId, goal: 'Try again'});
-  assert.equal(result.status, 'verification_handoff');
-  assert.equal(await page.evaluate(() => window.continued), 1);
   console.log(
     'PASS: unsupported iframe stops without model call, no resubmit, screenshot bounded, passive widget ignored, generic error not asserted as CAPTCHA, 60-second budget enforced',
   );

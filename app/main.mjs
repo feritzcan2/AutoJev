@@ -162,8 +162,6 @@ async function boot() {
     workspaces.template(id).onTabsClosed?.(id, ids);
     changed(id);
   };
-  browser.onProgress = (id, ...args) => workspaces.template(id).onBrowserProgress?.(id, ...args);
-  browser.beforeSubmit = (id, ...args) => workspaces.template(id).beforeSubmit?.(id, ...args);
   const mcp = await startToolServer({
     onExchange: (grant, event) =>
       instructionLog.tool(

@@ -34,7 +34,6 @@
     "test:jev:recovery": "node scripts/smoke-jev-recovery.mjs",
     "test:jev:performance": "node scripts/smoke-jev-performance.mjs",
     "test:application:preflight": "node scripts/smoke-application-preflight.mjs",
-    "test:jev:credentials": "node scripts/smoke-jev-credentials.mjs",
     "test:jev:button-list": "node scripts/smoke-jev-button-list.mjs",
     "test:jev:blockers": "node scripts/smoke-jev-blockers.mjs",
     "test:captcha": "node scripts/smoke-captcha.mjs",

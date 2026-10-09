@@ -71,7 +71,6 @@ export async function resolveBrowserCaptcha(browser, id, result, owner, options)
   const allowed = (target) => {
     if (
       !target.requiresSubmissionPermission &&
-      !client.tabJobs.has(slot.id) &&
       !client.automationTabs.get(slot.id)?.startsWith('record:')
     )
       return true;
