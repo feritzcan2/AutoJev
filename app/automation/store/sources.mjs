@@ -194,7 +194,23 @@ export const sourceMethods = {
     const a = this.get(id),
       url = webUrl(input.url);
     if (a.sources.includes(url)) throw Error('Bu kaynak zaten kayıtlı');
-    const settings = sourceInput({...a, sources: [...a.sources, url]}, url, input);
+    // A template starting source keeps its recipe and instructions when the
+    // add form leaves them empty, so removing and re-adding it restores them.
+    const starting = (this.template(a.templateId).defaultSources ?? []).find((s) => s.url === url);
+    if (starting) {
+      input = {...input};
+      if (!input.instructions?.trim()) delete input.instructions;
+      if (!input.recipe) delete input.recipe;
+    }
+    const settings = sourceInput(
+      {
+        ...a,
+        sources: [...a.sources, url],
+        sourceSettings: starting ? {[url]: templateSourceSettings(starting)} : {},
+      },
+      url,
+      input,
+    );
     return this.store.workspaces.tasks.atomic(() => {
       const next = this.saveSources(id, [...a.sources, url]);
       return this.put({...next, sourceSettings: {...next.sourceSettings, [url]: settings}});

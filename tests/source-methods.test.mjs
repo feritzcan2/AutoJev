@@ -122,3 +122,23 @@ test('method changes invalidate only the source trial and scope', (t) => {
   assert.equal(context.assignedSource.instructions, 'Use a different query strategy');
   assert.equal(context.assignedSource.skill, 'Read this local skill');
 });
+test('re-adding a starting source from an empty form restores its template recipe and instructions', (t) => {
+  const {db, id} = fixture(t),
+    linkedin = jobSearchSources.find((s) => s.url === 'https://www.linkedin.com/jobs/');
+  db.addSource(id, {
+    url: linkedin.url,
+    name: 'LinkedIn',
+    query: 'Senior Backend Engineer',
+    instructions: '',
+    recipe: null,
+    mode: 'observe',
+    intervalMinutes: 60,
+  });
+  const source = db.sources(id).find((s) => s.url === linkedin.url);
+  assert.deepEqual(source.recipe, linkedin.recipe);
+  assert.equal(source.instructions, linkedin.instructions);
+  assert.equal(source.query, 'Senior Backend Engineer');
+  db.removeSource(id, linkedin.url);
+  db.addSource(id, {url: linkedin.url, name: 'LinkedIn', instructions: 'Mine', recipe: null});
+  assert.equal(db.sources(id).find((s) => s.url === linkedin.url).instructions, 'Mine');
+});
