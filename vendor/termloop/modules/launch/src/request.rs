@@ -21,6 +21,8 @@ pub struct LaunchRequest<'a> {
     /// Explicit policy for the provider workspace-write sandbox; None inherits its configuration.
     pub workspace_network: Option<bool>,
     pub approved_tools: &'a [&'a str],
+    /// Claude only: the complete built-in tool set (`--tools`); None keeps the CLI default.
+    pub builtin_tools: Option<&'a [&'a str]>,
 }
 
 impl<'a> LaunchRequest<'a> {
@@ -45,6 +47,7 @@ impl<'a> LaunchRequest<'a> {
             execution: None,
             workspace_network: None,
             approved_tools: &[],
+            builtin_tools: None,
         }
     }
 }

@@ -19,6 +19,7 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
         execution,
         workspace_network,
         approved_tools,
+        builtin_tools,
     } = request;
     if let Some(instructions) = provider_instructions
         && (instructions.trim().is_empty() || instructions.len() > 64 * 1024)
@@ -225,6 +226,18 @@ pub fn resolve(request: LaunchRequest<'_>) -> Result<ResolvedLaunchManifest, Inv
     }
     if let Some(policy) = execution {
         apply_execution_policy(agent_id, &mut arguments, policy)?;
+    }
+    if let Some(tools) = builtin_tools {
+        if agent_id != "claude" {
+            return Err(InvocationError::UnsupportedAgent(agent_id.into()));
+        }
+        for tool in tools {
+            validate_config_name(tool)?;
+        }
+        arguments.extend([
+            ResolvedArgument::exact("--tools", "built-in tool set"),
+            ResolvedArgument::exact(tools.join(","), "built-in tool set"),
+        ]);
     }
     if let Some(mcp) = mcp.as_ref() {
         apply_tool_approvals(agent_id, &mut arguments, mcp.server_name, approved_tools)?;

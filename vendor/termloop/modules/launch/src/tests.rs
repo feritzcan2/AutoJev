@@ -452,6 +452,21 @@ fn claude_approval_is_scoped_to_the_products_named_tools() {
     assert!(apply_tool_approvals("claude", &mut Vec::new(), "example", &["*"]).is_err());
 }
 #[test]
+fn claude_builtin_tool_set_is_explicit_and_claude_only() {
+    let template = PromptTemplate {
+        id: "example",
+        version: 1,
+        authored_body: "Example",
+    };
+    let mut request = LaunchRequest::interactive("claude", "/tmp/example", &template);
+    request.builtin_tools = Some(&["ToolSearch"]);
+    let payload = resolve(request).unwrap().into_payload();
+    assert!(payload.args().windows(2).any(|a| a == ["--tools", "ToolSearch"]));
+    let mut request = LaunchRequest::interactive("codex", "/tmp/example", &template);
+    request.builtin_tools = Some(&["ToolSearch"]);
+    assert!(resolve(request).is_err());
+}
+#[test]
 fn workspace_network_policy_is_explicit_without_widening_filesystem_permissions() {
     let template = PromptTemplate {
         id: "example",

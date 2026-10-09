@@ -64,6 +64,8 @@ impl Engine {
                     _=>return Err("Invalid approved tools".into()),
                 };
                 request.approved_tools=&approved_tools;
+                // Workers need only JobLoop's MCP tools; ToolSearch loads them.
+                if provider=="claude" && v["taskType"].as_str()==Some("automation") {request.builtin_tools=Some(&["ToolSearch"]);}
                 request.model=field(v,"model")?;request.permission=field(v,"permission")?;request.reasoning=field(v,"reasoning")?;request.explicit_configuration=true;request.workspace_network=v["network"].as_bool();
                 let executable=std::env::current_exe().map_err(|e|e.to_string())?;
                 let mut settings=termloop_agents::provider_hook_settings(provider,&executable).map_err(|e|e.to_string())?;
