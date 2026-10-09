@@ -1,3 +1,4 @@
+// @ts-check
 const text = {type: 'string', minLength: 1, maxLength: 2000};
 const object = (properties, required = Object.keys(properties)) => ({
   type: 'object',

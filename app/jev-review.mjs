@@ -1,3 +1,4 @@
+// @ts-check
 import {scanWork, activeSearch, withScanWork, noteExcluded} from './scan-work.mjs';
 import {
   JEV_CLASSIFICATION_VERSION,

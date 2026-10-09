@@ -1,3 +1,4 @@
+// @ts-check
 import {isHimalayasUrl, himalayasApiUrl} from '../himalayas-collector.mjs';
 import {readCollectorCliPage, readCollectorCliDetail} from '../collector-cli.mjs';
 

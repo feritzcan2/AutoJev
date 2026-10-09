@@ -1,3 +1,4 @@
+// @ts-check
 import {browserDefinition} from './browser-definition.mjs';
 import {normalizeTemplateSources} from './template-sources.mjs';
 import {normalizeRecordOperations, withScoringFields} from './record-operation-definitions.mjs';

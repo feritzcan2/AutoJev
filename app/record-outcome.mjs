@@ -1,3 +1,4 @@
+// @ts-check
 import {browserRenderedText} from './browser-rendered-text.mjs';
 const normalize = (value) =>
   String(value ?? '')

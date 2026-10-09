@@ -1,3 +1,4 @@
+// @ts-check
 // Saved browser checkpoints can be copied to the wrong job by a prior agent.
 // An employer-branded host belonging to another saved company is strong
 // evidence that this is not the current job's form. Neutral ATS hosts pass.

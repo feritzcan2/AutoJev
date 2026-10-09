@@ -1,3 +1,4 @@
+// @ts-check
 // Batch scoring keeps a primary recordId for existing record-task routing.
 // Ownership and score writes always use the complete assignment.
 export const taskRecordIds = (task) => task?.recordIds ?? (task?.recordId ? [task.recordId] : []);

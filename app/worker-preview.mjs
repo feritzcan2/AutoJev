@@ -1,3 +1,4 @@
+// @ts-check
 // UI-only captures: no agent tool call, focus change, navigation or model input.
 export function workerPreviews({browsers, sessionFor}) {
   const pending = new Map(),

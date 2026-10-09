@@ -1,3 +1,4 @@
+// @ts-check
 import {listingIdentity} from './job-urls.mjs';
 const sameUrl = (a, b) =>
   a === b ||

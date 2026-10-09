@@ -1,3 +1,4 @@
+// @ts-check
 const pick = (value, keys) =>
   Object.fromEntries(
     keys.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]),

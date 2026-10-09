@@ -1,3 +1,4 @@
+// @ts-check
 import {createHash, randomUUID} from 'node:crypto';
 import {boundedText} from './automation-templates.mjs';
 

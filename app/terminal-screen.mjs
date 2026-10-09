@@ -1,3 +1,4 @@
+// @ts-check
 import headless from '@xterm/headless';
 import serialize from '@xterm/addon-serialize';
 

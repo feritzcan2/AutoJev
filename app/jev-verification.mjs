@@ -1,3 +1,4 @@
+// @ts-check
 import {scanVerificationCheckboxes} from './jev-verification-checkbox.mjs';
 import {detectCaptcha, captchaEvidence} from './captcha-detection.mjs';
 // Evidence-only detection. Never treats a CAPTCHA widget's mere presence as a

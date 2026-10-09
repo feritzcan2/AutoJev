@@ -1,3 +1,4 @@
+// @ts-check
 import {automationTrialReady, automationReady} from './automation-trial.mjs';
 // Durable source failures remain visible even while other workers are running.
 import {providerLimitAttention} from './provider-limit.mjs';

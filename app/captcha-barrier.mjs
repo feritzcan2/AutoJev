@@ -1,3 +1,4 @@
+// @ts-check
 import {setTimeout as delay} from 'node:timers/promises';
 import {detectCaptcha, captchaProvider} from './captcha-detection.mjs';
 import {captureCaptcha, applyCaptcha} from './captcha-browser.mjs';

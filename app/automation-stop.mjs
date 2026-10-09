@@ -1,3 +1,4 @@
+// @ts-check
 import {boundedText} from './automation-templates.mjs';
 
 // A partial scan is unfinished work, not a request for human intervention. The

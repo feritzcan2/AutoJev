@@ -1,3 +1,4 @@
+// @ts-check
 // Non-job templates. They are not offered for new workspaces; they keep the
 // core honest by exercising the template contract with other domains.
 const field = (id, label, question, required = true) => ({id, label, question, required});

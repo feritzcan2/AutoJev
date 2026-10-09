@@ -1,3 +1,4 @@
+// @ts-check
 // Shared by browser-rendered templates and the server-side scoring policy.
 export function scoreThresholdValue(criteria, key, label) {
   const raw = criteria[key];

@@ -1,3 +1,4 @@
+// @ts-check
 import {usableFormFrame} from './jev-frame-actions.mjs';
 import {observedId} from './jev-ids.mjs';
 export async function captureEmbeddedForms(slot) {

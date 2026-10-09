@@ -1,3 +1,4 @@
+// @ts-check
 export const MAIN_WORKER = 'main';
 export const MAX_WORKERS = 8;
 export const workerKey = (candidate, worker = MAIN_WORKER) =>

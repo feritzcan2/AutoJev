@@ -1,3 +1,4 @@
+// @ts-check
 import {rankActionAllowed} from './task-scope.mjs';
 
 // Read rendered text, including below the fold. Never inspect hidden app state,

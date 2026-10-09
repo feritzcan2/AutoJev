@@ -1,3 +1,4 @@
+// @ts-check
 // Keep the observed navigation URL. Only the comparison key removes browser
 // text highlights, a trailing slash and common tracking parameters; routes and
 // IDs stay. The list is cross-site analytics/ads provenance, not site rules.

@@ -1,3 +1,4 @@
+// @ts-check
 const compact = (value) => value.replace(/\s+/g, ' ').trim();
 const clock = (value) =>
   value.replace(

@@ -1,3 +1,4 @@
+// @ts-check
 import {webUrl} from './automation-templates.mjs';
 import {createHash} from 'node:crypto';
 import {jobSearchTemplate} from './templates/job-search/template.mjs';

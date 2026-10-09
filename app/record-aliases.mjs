@@ -1,3 +1,4 @@
+// @ts-check
 import {recordUrlKey} from './record-identity.mjs';
 
 // Only task-owned, completed detail reads can establish an alternate address.

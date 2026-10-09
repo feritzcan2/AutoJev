@@ -1,3 +1,4 @@
+// @ts-check
 // A source recipe records how a results page for the current query is reached
 // and how it pages. It is data learned per source, never code tied to a site.
 // The app verifies every recipe by actually finding listings with it.

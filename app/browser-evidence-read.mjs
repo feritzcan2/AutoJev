@@ -1,3 +1,4 @@
+// @ts-check
 import {BrowserSnapshot} from './browser-snapshot.mjs';
 
 // Recovery is read-only. Never install historical text as the current action

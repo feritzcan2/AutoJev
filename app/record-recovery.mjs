@@ -1,3 +1,4 @@
+// @ts-check
 import {taskRecordIds, recordScoredInTask} from './record-task-scope.mjs';
 // Reconnect shutdowns and the former app-generated unreported scoring failure.
 // User stops and actual tool/provider failures are never revived.

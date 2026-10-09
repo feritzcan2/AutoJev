@@ -1,3 +1,4 @@
+// @ts-check
 import {createHash} from 'node:crypto';
 import {sourceScanScope} from './source-scan.mjs';
 

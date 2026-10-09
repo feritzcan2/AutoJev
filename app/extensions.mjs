@@ -1,3 +1,4 @@
+// @ts-check
 export async function loadExtensions(value = process.env.LOOP_EXTENSIONS) {
   const ids =
     value === undefined

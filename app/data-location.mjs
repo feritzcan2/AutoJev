@@ -1,3 +1,4 @@
+// @ts-check
 import {randomUUID, createHash} from 'node:crypto';
 import {createReadStream} from 'node:fs';
 import {

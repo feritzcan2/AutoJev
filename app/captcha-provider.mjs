@@ -1,3 +1,4 @@
+// @ts-check
 // These are CAPTCHA provider protocols, never rules for the website being read.
 export function captchaProvider(url) {
   try {

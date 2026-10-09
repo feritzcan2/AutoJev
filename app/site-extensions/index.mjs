@@ -1,3 +1,4 @@
+// @ts-check
 // Site extensions: per-site readers the user explicitly asked for (2026-10-05).
 // DOM extensions read the page already loaded in Chrome. CLI extensions provide
 // collector {templateId,searchUrl,readPage,detail}; the shared source worker puts

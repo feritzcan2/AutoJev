@@ -1,3 +1,4 @@
+// @ts-check
 import {taskRecordIds} from './record-task-scope.mjs';
 
 // Validate the whole selection before deleting anything. Other records and

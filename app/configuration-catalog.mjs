@@ -1,3 +1,4 @@
+// @ts-check
 import {instructionPart} from './instruction-log.mjs';
 import {automationTools, automationPrompt} from './automation-worker.mjs';
 

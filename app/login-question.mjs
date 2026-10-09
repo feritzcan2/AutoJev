@@ -1,3 +1,4 @@
+// @ts-check
 // A sign-in link is not an authentication barrier. Check rendered content,
 // excluding hidden controls and URLs, before asking the user to log in.
 import {browserRenderedText} from './browser-rendered-text.mjs';

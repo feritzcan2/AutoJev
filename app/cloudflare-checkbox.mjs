@@ -1,3 +1,4 @@
+// @ts-check
 import {setTimeout as delay} from 'node:timers/promises';
 import {findTurnstileCheckbox} from './turnstile-checkbox.mjs';
 import {captchaProvider} from './captcha-provider.mjs';

@@ -1,3 +1,4 @@
+// @ts-check
 import {recordUrlKey} from './record-identity.mjs';
 // Comparison removes tracking parameters and a trailing slash while keeping
 // entity query parameters and SPA routes significant.

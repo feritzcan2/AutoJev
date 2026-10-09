@@ -1,3 +1,4 @@
+// @ts-check
 import {DEFAULT_COMPACT_TOKENS} from './context-compaction.mjs';
 import {withoutContextPercentages} from './context-settings-migration.mjs';
 

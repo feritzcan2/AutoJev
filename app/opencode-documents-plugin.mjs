@@ -1,3 +1,4 @@
+// @ts-check
 import {open, stat} from 'node:fs/promises';
 import path from 'node:path';
 

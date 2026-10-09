@@ -1,3 +1,4 @@
+// @ts-check
 import {Telegram} from './telegram-accounts.mjs';
 import {WorkspaceSupport, rebindWorkspaceOwners} from './workspace-support.mjs';
 export async function registerWorkspaceSupport({

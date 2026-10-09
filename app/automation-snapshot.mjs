@@ -1,3 +1,4 @@
+// @ts-check
 // Browser text and queue internals belong to execution, not UI refreshes.
 // Keep the last observed URL for blocked-source navigation.
 export function runSnapshot(run) {

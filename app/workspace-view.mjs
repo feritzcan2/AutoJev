@@ -1,3 +1,4 @@
+// @ts-check
 import {automationReady} from './automation-trial.mjs';
 import {publicSession} from './agent-sessions.mjs';
 import {workerKey} from './worker-key.mjs';

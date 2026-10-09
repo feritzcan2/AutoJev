@@ -1,3 +1,4 @@
+// @ts-check
 export function conversationToolLabel(tool = '') {
   const name = tool.replace(/^jobloop_/, '');
   if (/automation_context|context_part/.test(name)) return 'Çalışma alanındaki bilgileri inceliyor';

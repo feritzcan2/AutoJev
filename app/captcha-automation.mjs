@@ -1,3 +1,4 @@
+// @ts-check
 import {detectCaptcha, captchaProvider} from './captcha-detection.mjs';
 import {captureCaptcha, applyCaptcha, verifyCaptchaGrid} from './captcha-browser.mjs';
 import {resolveCloudflareCheckbox} from './cloudflare-checkbox.mjs';

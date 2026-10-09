@@ -1,3 +1,4 @@
+// @ts-check
 import {JEV_TASK_INSTRUCTIONS} from './jev-tasks.mjs';
 import {personalAgent} from './agent-profiles.mjs';
 

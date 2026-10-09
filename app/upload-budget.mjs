@@ -1,3 +1,4 @@
+// @ts-check
 // Per-tab file/field budget survives fresh observation IDs. No submission retry.
 export function takeUploadAttempt(slot, key, now = Date.now()) {
   slot.uploadAttempts ??= new Map();

@@ -1,3 +1,4 @@
+// @ts-check
 export function missingAgentMessage(provider) {
   const label =
     provider === 'opencode' ? 'OpenCode' : provider === 'codex' ? 'Codex CLI' : 'Claude Code';

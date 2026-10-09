@@ -1,3 +1,4 @@
+// @ts-check
 import {taskRecordIds} from './record-task-scope.mjs';
 import {sourceScanScope} from './source-scan.mjs';
 

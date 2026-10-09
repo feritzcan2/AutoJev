@@ -1,3 +1,4 @@
+// @ts-check
 import {randomBytes} from 'node:crypto';
 // Short handles, still scoped by the caller's tab/session and live DOM guards.
 // The process nonce prevents old handles from aliasing new ones after restart.

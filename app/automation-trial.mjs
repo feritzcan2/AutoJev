@@ -1,3 +1,4 @@
+// @ts-check
 // Legacy workspace metadata is retained for history; a skip never validates a source.
 export const automationTrialReady = (a) =>
   a.trial?.revision === a.revision && ['passed', 'skipped'].includes(a.trial?.status);

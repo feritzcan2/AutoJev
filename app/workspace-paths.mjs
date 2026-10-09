@@ -1,3 +1,4 @@
+// @ts-check
 import path from 'node:path';
 function scoped(root, relative) {
   const target = path.resolve(root, relative),
