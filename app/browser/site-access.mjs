@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
+import {siteKey} from './site-key.mjs';
 
-export const siteKey = (url) => new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+export {siteKey};
 // Two addresses belong to the same site when their registrable domains match,
 // so a www redirect or a job board on a subdomain still counts as the source.
 const siteDomain = (host) => {
