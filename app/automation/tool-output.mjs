@@ -184,7 +184,9 @@ function briefSections(sections) {
 export function briefToolOutput(value) {
   if (!value || typeof value !== 'object') return value;
   if (Array.isArray(value.briefs)) return {...value, briefs: value.briefs.map(briefToolOutput)};
-  return Array.isArray(value.sections)
-    ? {...value, sections: briefSections(value.sections)}
-    : value;
+  if (!Array.isArray(value.sections)) return value;
+  // Full coverage is the normal case; only a partial selection is worth a note.
+  const {coverage, ...brief} = value,
+    full = coverage?.selectedCharacters === coverage?.sourceCharacters && !coverage?.unreadFrames;
+  return {...brief, ...(full ? {} : {coverage}), sections: briefSections(value.sections)};
 }

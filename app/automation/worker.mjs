@@ -776,6 +776,30 @@ export function automationWorkflow({
     }
     return recordReceipt(saved);
   };
+  const collectNextPage = async () => {
+    let collected;
+    try {
+      collected = await collectSourcePage(db, run.id, {
+        signal,
+        readPage: collectorReadPage,
+        readDetail: collectorReadDetail,
+      });
+    } catch (error) {
+      signal.throwIfAborted();
+      const current = db.activeRun(id, run.id);
+      db.putRun({...current, collectorError: String(error.message).slice(0, 2000)});
+      throw error;
+    }
+    if (!collected.issue && db.run(run.id).collectorError)
+      db.putRun({...db.run(run.id), collectorError: null});
+    changed(id);
+    if (collected.complete || !collected.taskId) return collected;
+    return {
+      ...(await executeJev({taskId: collected.taskId})),
+      collector: db.activeRun(id, run.id).collector,
+      progress: collectorProgress(db.run(run.id)),
+    };
+  };
   const performCall = async (owner, session, name, args) => {
     if (owner !== id || session !== run.id || signal.aborted)
       throw Error('Otomasyon oturumu geçersiz');
@@ -828,28 +852,7 @@ export function automationWorkflow({
     switch (name) {
       case 'collect_source_page': {
         if (!collecting) throw Error('Bu kaynak için CLI extension atanmadı.');
-        let collected;
-        try {
-          collected = await collectSourcePage(db, run.id, {
-            signal,
-            readPage: collectorReadPage,
-            readDetail: collectorReadDetail,
-          });
-        } catch (error) {
-          signal.throwIfAborted();
-          const current = db.activeRun(id, run.id);
-          db.putRun({...current, collectorError: String(error.message).slice(0, 2000)});
-          throw error;
-        }
-        if (!collected.issue && db.run(run.id).collectorError)
-          db.putRun({...db.run(run.id), collectorError: null});
-        changed(id);
-        if (collected.complete || !collected.taskId) return collected;
-        result = {
-          ...(await executeJev({taskId: collected.taskId})),
-          collector: active.collector,
-          progress: collectorProgress(db.run(run.id)),
-        };
+        result = await collectNextPage();
         break;
       }
       case 'read_scoring_profile': {
@@ -968,6 +971,17 @@ export function automationWorkflow({
       }
       case 'browser_jev_run':
         result = await executeJev(args);
+        // A finished collector review continues with the next page in the same
+        // call, saving the agent one model turn per page.
+        if (collecting && args.reviewedBatchId && result.status === 'completed') {
+          const acknowledged = {taskId: result.taskId, status: result.status};
+          try {
+            result = {acknowledged, next: await collectNextPage()};
+          } catch (error) {
+            signal.throwIfAborted();
+            result = {acknowledged, collectorError: error.message};
+          }
+        }
         break;
       case 'ask_workspace_question': {
         if (batchScoring(active) && !args.recordId)
