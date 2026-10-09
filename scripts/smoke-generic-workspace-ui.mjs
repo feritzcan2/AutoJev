@@ -179,7 +179,7 @@ try {
   await page.waitForFunction(
     () => document.querySelector('#automation-sources-interval')?.value === '555',
   );
-  for (const template of ['job-search', 'housing', 'appointment', 'custom']) {
+  for (const template of ['job-search']) {
     const previous = (await current())?.sessionId;
     await page.locator('[data-view=templates]').click();
     await page.locator(`[data-template="${template}"]`).click();
@@ -189,11 +189,6 @@ try {
         .evaluate((n) => n.classList.contains('selected')),
       true,
     );
-    if (template === 'custom') {
-      await page.locator('#automation-message').waitFor({state: 'visible'});
-      assert.equal((await current()).sessionId, previous);
-      continue;
-    }
     const first = await waitStart(previous),
       context = await tool('get_automation_context');
     assert.equal(context.template.id, template);
@@ -233,7 +228,7 @@ try {
         document.querySelector('#automation-run') &&
         !document.querySelector('#automation-run').disabled,
     );
-    if (template === 'housing') {
+    {
       const owner = await page.locator('#candidates').inputValue(),
         before = (await current()).sessionId;
       await page.locator('[data-view=board]').click();
@@ -243,7 +238,7 @@ try {
       await finish('Yerel kaynak okunabiliyor');
       const snapshot = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), owner);
       assert.equal(snapshot.sources[0].trial.status, 'passed');
-      assert.equal(snapshot.automation.mode, 'prepare');
+      assert.equal(snapshot.automation.mode, 'observe');
       assert.equal(snapshot.automation.status, 'enabled');
       await page.evaluate((id) => window.jobloop.workspaceStop(id), owner);
     }

@@ -1,7 +1,6 @@
 import {activeRecordOperations} from './record-operation-status.js';
 import {recordQuestionDialog} from './record-question-dialog.js';
 import {automationReady} from '../app/automation-trial.mjs';
-import {defaultPermission} from '../app/agent-settings.mjs';
 import {templateFields} from './template-fields.js';
 import {profileChanged} from '../app/profile-updates.mjs';
 import {automationProgress, runKindLabel} from '../app/automation-progress.mjs';
@@ -276,7 +275,7 @@ export function automationsPage(
     heading.append(
       sectionTitle(
         'Nasıl başlamak istersin?',
-        'Hazır bir template seç ya da ne istediğini kendin anlat. Agent sorularla çalışma alanını sana göre düzenler.',
+        'Hazır bir template seç. Agent sorularla çalışma alanını sana göre düzenler.',
       ),
     );
     heading.append(
@@ -291,17 +290,13 @@ export function automationsPage(
     );
     host.append(heading);
     const grid = el('div', null, 'automation-grid template-grid');
-    for (const t of templates) {
+    for (const t of templates.filter((template) => !template.example)) {
       const card = el('article', null, 'automation-card template-card');
       card.append(el('span', t.icon, 'automation-icon'), el('h3', t.title), el('p', t.description));
       const steps = el('ol');
       for (const step of t.steps) steps.append(el('li', step));
       card.append(steps);
-      const choose = button(
-        t.id === 'custom' ? 'Ne istediğini anlat →' : 'Bu template ile başla →',
-        () => (t.id === 'custom' ? createBlank() : create(t)),
-        'primary',
-      );
+      const choose = button('Bu template ile başla →', () => create(t), 'primary');
       choose.dataset.template = t.id;
       card.append(choose);
       card.append(
@@ -348,33 +343,6 @@ export function automationsPage(
         if (selected === id) await refresh();
       }
     }
-  }
-  const setupProviders = () =>
-    getCatalog().filter(
-      (provider) => provider.supported && ['codex', 'claude', 'opencode'].includes(provider.id),
-    );
-  const defaultModel = (provider, saved) => {
-    const models = provider?.models ?? [];
-    return models.includes(saved)
-      ? saved
-      : models.includes('default')
-        ? 'default'
-        : (models[0] ?? '');
-  };
-  async function createBlank() {
-    const providers = setupProviders();
-    if (!providers.length)
-      throw Error('Kurulum agent’ı için kullanılabilir bir sağlayıcı bulunamadı.');
-    const provider = providers.find((item) => item.id === 'codex') ?? providers[0];
-    const agentSettings = {
-      provider: provider.id,
-      model: defaultModel(provider),
-      permission: defaultPermission(provider.id),
-      reasoning: 'default',
-      network: null,
-    };
-    const a = await api.workspaceCreate('custom', {title: 'Yeni çalışma alanı', agentSettings});
-    await select(a.id);
   }
   function buildDetail() {
     resultsTable?.dispose();
@@ -1345,7 +1313,6 @@ export function automationsPage(
     element: host,
     show,
     select,
-    createBlank,
     refresh,
     start,
     stop,
