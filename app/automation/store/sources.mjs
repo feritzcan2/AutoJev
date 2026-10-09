@@ -3,7 +3,7 @@ import {isConversation} from '../../workspaces/conversation.mjs';
 import {forgetScanPosition, forgetPlanPosition} from '../../sources/scan-work.mjs';
 import {recipeValues, recipeReplay, replayMatches, recipeStatus} from '../../sources/recipe.mjs';
 import {siteExtensionKind} from '../../site-extensions/index.mjs';
-import {templateSourceSettings} from '../../templates/sources.mjs';
+import {templateSourceSettings, startingSource} from '../../templates/sources.mjs';
 import {randomUUID} from 'node:crypto';
 import {normalizeSourceUrls, webUrl} from '../../templates/catalog.mjs';
 import {automationSources, sourceInput} from '../../sources/automation-sources.mjs';
@@ -158,17 +158,14 @@ export const sourceMethods = {
       const keep = (values) =>
         Object.fromEntries(Object.entries(values ?? {}).filter(([url]) => urls.includes(url)));
       // A starting source added later (for example a country source proposed in
-      // setup) keeps its template name, recipe and instructions.
-      const defaults = new Map(
-        (this.template(a.templateId).defaultSources ?? []).map((source) => [
-          source.url,
-          templateSourceSettings(source),
-        ]),
-      );
+      // setup), or another address on its site, keeps its template name, recipe
+      // and instructions.
+      const defaults = this.template(a.templateId).defaultSources ?? [];
       const seeded = Object.fromEntries(
-        added
-          .filter((url) => !a.sourceSettings?.[url] && defaults.has(url))
-          .map((url) => [url, defaults.get(url)]),
+        added.flatMap((url) => {
+          const source = !a.sourceSettings?.[url] && startingSource(defaults, url);
+          return source ? [[url, templateSourceSettings(source)]] : [];
+        }),
       );
       const next = {
         ...a,
@@ -194,9 +191,9 @@ export const sourceMethods = {
     const a = this.get(id),
       url = webUrl(input.url);
     if (a.sources.includes(url)) throw Error('Bu kaynak zaten kayıtlı');
-    // A template starting source keeps its recipe and instructions when the
-    // add form leaves them empty, so removing and re-adding it restores them.
-    const starting = (this.template(a.templateId).defaultSources ?? []).find((s) => s.url === url);
+    // An address of a template starting source's site gets its recipe and
+    // instructions when the add form leaves them empty.
+    const starting = startingSource(this.template(a.templateId).defaultSources, url);
     if (starting) {
       input = {...input};
       if (!input.instructions?.trim()) delete input.instructions;

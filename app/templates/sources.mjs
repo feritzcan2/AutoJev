@@ -1,5 +1,6 @@
 // @ts-check
 import {normalizeSourceRecipe} from '../sources/recipe.mjs';
+import {siteKey} from '../browser/site-access.mjs';
 
 // countries (ISO 3166 alpha-2) marks a source that serves only those
 // countries; it joins a workspace when setup adds it. Untagged sources serve
@@ -8,6 +9,12 @@ export const TEMPLATE_SOURCE_LIMIT = 100;
 export const globalTemplateSource = (source) => !source.countries?.length;
 export function templateSourceSettings({url: _url, countries: _countries, ...settings}) {
   return settings;
+}
+// The starting source a workspace address belongs to: the same address, or
+// else the same site (host without www), so any LinkedIn or StepStone address
+// gets that board's ready recipe and instructions.
+export function startingSource(sources = [], url) {
+  return sources.find((s) => s.url === url) ?? sources.find((s) => siteKey(s.url) === siteKey(url));
 }
 export function normalizeTemplateSources(input = []) {
   if (!Array.isArray(input) || input.length > TEMPLATE_SOURCE_LIMIT)
