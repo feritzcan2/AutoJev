@@ -73,6 +73,24 @@ test('stepstone results use the page result list, drop tracking and expose the n
   );
 });
 
+test('the next stepstone page keeps the sort and filters its template drops', () => {
+  const read = stepstoneResults(
+    raw({
+      url: results + '&fdl=en&page=2',
+      paging: {
+        page: 2,
+        pageCount: 4,
+        template:
+          'https://www.stepstone.de/jobs/staff-software-engineer/in-berlin?siteId=250&radius=30&page=%7bpage%7d',
+      },
+    }),
+  );
+  assert.equal(
+    read.pagination[1].url,
+    'https://www.stepstone.de/jobs/staff-software-engineer/in-berlin?siteId=250&radius=30&page=3&sort=2&action=sort_publish&fdl=en',
+  );
+});
+
 test('a stale stepstone result list falls back to the rendered cards without paging', () => {
   for (const stale of [
     raw({items: [item(7), item(8)]}),
