@@ -1,5 +1,5 @@
 // @ts-check
-import {JEV_TASK_INSTRUCTIONS} from '../jev/tasks.mjs';
+import {JEV_TASK_INSTRUCTIONS} from '../jev/task-tools.mjs';
 import {personalAgent} from './profiles.mjs';
 
 // Shared rules for every automation session (written to AGENTS.md).

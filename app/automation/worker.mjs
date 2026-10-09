@@ -64,13 +64,9 @@ import {observedScanPage} from '../sources/scan-page.mjs';
 import {workerKey} from './worker-key.mjs';
 import {sourceScan, scanIssue, clearScanIssue, browserFailure} from '../sources/scan-issues.mjs';
 import {retryTechnicalSource} from './recovery.mjs';
-import {
-  runJevTask,
-  jevTaskSummary,
-  jevTaskReceipt,
-  jevDetailItems,
-  JEV_LAUNCH_INSTRUCTIONS,
-} from '../jev/tasks.mjs';
+import {runJevTask, jevDetailItems} from '../jev/tasks.mjs';
+import {jevTaskSummary, jevTaskReceipt} from '../jev/task-summary.mjs';
+import {JEV_LAUNCH_INSTRUCTIONS} from '../jev/task-tools.mjs';
 import {
   normalizeSourceRecipe,
   recipeReplay,
