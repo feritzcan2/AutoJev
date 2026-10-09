@@ -4,6 +4,7 @@ import {isConversation} from '../workspaces/conversation.mjs';
 import {sourceMode} from '../sources/automation-sources.mjs';
 import {automationReady} from '../sources/trial.mjs';
 import {workerKey} from '../automation/worker-key.mjs';
+import {boundedText} from '../templates/catalog.mjs';
 
 const live = ['pending', 'running', 'reported', 'paused'];
 const waitingForAnswer = 'Önce bu kayıt için bekleyen soruları yanıtla';
@@ -63,9 +64,12 @@ export function enqueueRecordOperation(
   id,
   itemId,
   kind,
-  {manual = true, digest, direct = false} = {},
+  {manual = true, digest, direct = false, changes = undefined} = {},
 ) {
   runtime.assertNotStopping(id);
+  // The user's requested changes to a reviewed draft go to a new preparation.
+  if (changes !== undefined)
+    changes = kind === 'prepare' ? boundedText(changes, 'Değişiklik isteği', 2000) : undefined;
   const {db, queue} = runtime;
   const wake = (task) => {
     // Explicit record requests use the existing worker pool. Background
@@ -119,6 +123,7 @@ export function enqueueRecordOperation(
     if (existing) {
       if (
         !batchScoring(existing) &&
+        !changes &&
         existing.recordOperation === kind &&
         (existing.request?.direct === true) === (direct === true) &&
         (!digest || existing.request?.digest === digest)
@@ -137,6 +142,7 @@ export function enqueueRecordOperation(
         manual,
         revision: a.revision,
         ...(kind === 'execute' ? (direct === true ? {direct: true} : {digest: item.digest}) : {}),
+        ...(changes ? {changes} : {}),
         at: runtime.now(),
       };
     const task = queue.enqueue(id, {
