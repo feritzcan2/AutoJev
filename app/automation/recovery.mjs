@@ -186,6 +186,30 @@ export function retryTechnicalSource(db, id, runId, summary, now) {
   };
 }
 
+// A technical stop keeps its failed addresses in the scan queue and schedules
+// the source retry. Returns the retry outcome, or null when no retry applies.
+export function holdForTechnicalRetry(
+  db,
+  id,
+  runId,
+  {stop, urls, summary, evidenceUrl = undefined},
+) {
+  const current = db.run(runId),
+    pendingUrls = [...new Set([...(current.scan?.pendingUrls ?? []), ...urls])];
+  db.persistScan(id, {
+    ...current,
+    stop,
+    scan: {
+      ...current.scan,
+      complete: false,
+      pendingUrls,
+      reason: summary,
+      evidenceUrl: current.scan?.evidenceUrl ?? evidenceUrl ?? pendingUrls[0],
+    },
+  });
+  return retryTechnicalSource(db, id, runId, summary, db.now());
+}
+
 export function requeueSourceRun(db, run) {
   return db.store.workspaces.tasks.atomic(() => {
     const q = db.store.workspaces.tasks,
