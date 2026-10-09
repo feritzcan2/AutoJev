@@ -142,3 +142,22 @@ test('re-adding a starting source from an empty form restores its template recip
   db.addSource(id, {url: linkedin.url, name: 'LinkedIn', instructions: 'Mine', recipe: null});
   assert.equal(db.sources(id).find((s) => s.url === linkedin.url).instructions, 'Mine');
 });
+test('another address on a starting source site gets that source template settings', (t) => {
+  const {db, id} = fixture(t),
+    linkedin = jobSearchSources.find((s) => s.url === 'https://www.linkedin.com/jobs/'),
+    search = 'https://linkedin.com/jobs/search?keywords=engineer&location=Berlin';
+  db.addSource(id, {url: search, name: 'LinkedIn search', instructions: '', recipe: null});
+  const added = db.sources(id).find((s) => s.url === search);
+  assert.deepEqual(added.recipe, linkedin.recipe);
+  assert.equal(added.instructions, linkedin.instructions);
+  assert.equal(added.name, 'LinkedIn search');
+  // Country hosts stay distinct; an unknown site gets nothing.
+  db.saveSources(id, [
+    ...db.get(id).sources,
+    'https://uk.indeed.com/',
+    'https://jobs.example.test/',
+  ]);
+  const sources = db.sources(id);
+  assert.equal(sources.find((s) => s.url === 'https://uk.indeed.com/').recipe, undefined);
+  assert.equal(sources.find((s) => s.url === 'https://jobs.example.test/').recipe, undefined);
+});
