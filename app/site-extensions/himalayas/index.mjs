@@ -1,6 +1,6 @@
 // @ts-check
-import {isHimalayasUrl, himalayasApiUrl} from '../himalayas-collector.mjs';
-import {readCollectorCliPage, readCollectorCliDetail} from '../collector-cli.mjs';
+import {isHimalayasUrl, himalayasApiUrl} from './api.mjs';
+import {readCollectorCliPage, readCollectorCliDetail} from './cli-client.mjs';
 
 // Like the DOM extensions, this adapter only supplies observed listings.
 // The common queue, Jev classifier and agent own every assessment and write.
@@ -10,6 +10,8 @@ export default {
   collector: {
     templateId: 'job-search',
     searchUrl: himalayasApiUrl,
+    // The browse-all endpoint rejects a search query.
+    acceptsQuery: (url) => new URL(url).pathname.replace(/\/$/, '') !== '/jobs/api',
     readPage: readCollectorCliPage,
     readDetail: readCollectorCliDetail,
     detail: (job) => ({

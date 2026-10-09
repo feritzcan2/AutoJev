@@ -40,7 +40,7 @@ import {
   saveCollectionPage,
   collectSourcePage,
 } from '../app/source-collector-worker.mjs';
-import {parseHimalayasPage} from '../app/himalayas-collector.mjs';
+import {parseHimalayasPage} from '../app/site-extensions/himalayas/api.mjs';
 import {scoringPolicy} from '../app/scoring-policy.mjs';
 
 // Backup compatibility uses frozen legacy rows, not a second execution engine.

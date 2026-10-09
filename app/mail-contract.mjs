@@ -11,17 +11,6 @@ export const defaultMailContract = {
     outcome('rejection', 'Olumsuz dönüş'),
   ],
 };
-export const applicationMailContract = {
-  instructions:
-    'Read application-related messages from the last 90 days. Search for tracked companies, roles, application, interview, assessment, offer and rejection terms, including German equivalents. Match by application identifiers, employer/ATS URLs and saved submission evidence. An offer does not mean acceptance or hiring; a job recommendation is not application confirmation.',
-  outcomes: [
-    outcome('confirmation', 'Başvuru alındı'),
-    outcome('interview', 'Mülakat daveti'),
-    outcome('assessment', 'Değerlendirme / test'),
-    outcome('offer', 'Teklif'),
-    outcome('rejection', 'Olumsuz dönüş'),
-  ],
-};
 export function normalizeMailContract(input = defaultMailContract) {
   if (
     !input ||

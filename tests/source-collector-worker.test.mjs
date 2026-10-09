@@ -12,8 +12,11 @@ import {
   saveCollectionPage,
   collectSourcePage,
 } from '../app/source-collector-worker.mjs';
-import {parseHimalayasPage} from '../app/himalayas-collector.mjs';
-import {readCollectorCliPage, readCollectorCliDetail} from '../app/collector-cli.mjs';
+import {parseHimalayasPage} from '../app/site-extensions/himalayas/api.mjs';
+import {
+  readCollectorCliPage,
+  readCollectorCliDetail,
+} from '../app/site-extensions/himalayas/cli-client.mjs';
 
 const source = 'https://himalayas.app/',
   fixtureModule = fileURLToPath(new URL('./fixtures/himalayas-cli-fetch.mjs', import.meta.url));
@@ -680,7 +683,7 @@ test('standalone CLI still emits NDJSON and exit 2 for an incomplete page budget
     [
       '--import',
       fixtureModule,
-      'app/collect-cli.mjs',
+      'app/site-extensions/himalayas/cli.mjs',
       '--source',
       'himalayas',
       '--query',

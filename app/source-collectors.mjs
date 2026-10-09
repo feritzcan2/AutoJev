@@ -19,18 +19,20 @@ export function collectorSearches(a, url) {
   if (!sourceCollector(a, url)) throw Error('Bu kaynak için özel toplayıcı yok.');
   const recipe = a.sourceSettings?.[url]?.recipe;
   if (recipe && recipe.entry.kind !== 'url_template')
-    throw Error('Himalayas toplayıcısı için URL arama reçetesi gerekli.');
-  const values = recipeValues(a, url),
+    throw Error('Bu toplayıcı için URL arama reçetesi gerekli.');
+  const adapter = collectorExtension(a, url).collector,
+    values = recipeValues(a, url),
     fallback = new URL(url);
+  // Without a recipe the saved query narrows the source, unless the address
+  // lists everything and the collector rejects a query there.
   if (
     !recipe &&
-    fallback.pathname.replace(/\/$/, '') !== '/jobs/api' &&
+    adapter.acceptsQuery(fallback.href) &&
     !fallback.searchParams.has('q') &&
     values.query
   )
     fallback.searchParams.set('q', values.query);
   const searches = recipeReplay(recipe, values)?.searches ?? [{url: fallback.href}];
-  const adapter = collectorExtension(a, url).collector;
   const unique = new Map(
     searches.map((s) => {
       const url = adapter.searchUrl(s.url);
