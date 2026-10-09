@@ -10,7 +10,7 @@ import {ContextUsage} from '../app/agents/context-usage.mjs';
 import {Engine} from '../app/agents/engine.mjs';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
-import {automationTools} from '../app/automation/worker.mjs';
+import {automationTools} from '../app/automation/tools.mjs';
 import {startToolServer} from '../app/agents/tool-server.mjs';
 const require = createRequire(import.meta.url),
   {chromium} = createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');

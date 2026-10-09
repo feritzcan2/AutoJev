@@ -6,7 +6,8 @@ import {fileURLToPath} from 'node:url';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
 import {WebTasks} from '../app/automation/web-template.mjs';
-import {automationWorkflow, automationPrompt} from '../app/automation/worker.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {automationPrompt} from '../app/automation/prompts.mjs';
 import {
   prepareCollection,
   saveCollectionPage,

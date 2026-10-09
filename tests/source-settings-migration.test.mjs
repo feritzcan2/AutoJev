@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
-import {automationTools} from '../app/automation/worker.mjs';
+import {automationTools} from '../app/automation/tools.mjs';
 import {sourceScanScope} from '../app/sources/scan.mjs';
 
 test('opening old data removes source extensions and resumes the saved browser queue', (t) => {

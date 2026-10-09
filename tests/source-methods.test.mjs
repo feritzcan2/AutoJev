@@ -5,7 +5,7 @@ import {AutomationStore} from '../app/automation/store.mjs';
 import {jobSearchSources} from '../app/templates/job-search/sources.mjs';
 import {sourceScanScope} from '../app/sources/scan.mjs';
 import {automationTaskContext} from '../app/automation/task-context.mjs';
-import {automationPrompt} from '../app/automation/worker.mjs';
+import {automationPrompt} from '../app/automation/prompts.mjs';
 import {reusableTemplate, automationTemplate} from '../app/templates/catalog.mjs';
 
 function fixture(t) {

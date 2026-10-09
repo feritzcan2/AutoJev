@@ -1,6 +1,7 @@
 // @ts-check
 import {instructionPart} from './instruction-log.mjs';
-import {automationTools, automationPrompt} from '../automation/worker.mjs';
+import {automationTools} from '../automation/tools.mjs';
+import {automationPrompt} from '../automation/prompts.mjs';
 
 export function webPromptCatalog(plan) {
   const tasks = [

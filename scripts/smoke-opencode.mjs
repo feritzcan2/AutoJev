@@ -10,7 +10,7 @@ import {Engine} from '../app/agents/engine.mjs';
 import {TerminalScreen} from '../app/agents/terminal-screen.mjs';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
-import {automationTools} from '../app/automation/worker.mjs';
+import {automationTools} from '../app/automation/tools.mjs';
 import {startToolServer} from '../app/agents/tool-server.mjs';
 
 const directory = await mkdtemp(path.join(tmpdir(), 'autojev-opencode-'));
