@@ -41,6 +41,8 @@ ve `pnpm test:packaged` çalıştır. Linux’ta arayüz testleri için Xvfb ger
 İş aramaya özgü yeni metin ve kurallar çekirdek klasörlere değil
 `templates/job-search/` altına eklenir. Biçim `pnpm format` ile korunur; başında
 `// @ts-check` olan dosyalar `pnpm check` içinde tip denetiminden geçer.
+Büyük sınıfların yöntem grupları (`automation/store/`, `automation/web-template/`)
+ayrı dosyalarda tutulur ve `Object.assign(Sinif.prototype, ...)` ile bağlanır.
 
 Veri biçimi değişiyorsa `app/system/data-management-schema.mjs` sürümünü artır;
 eski verinin yedeklenmesi, yükseltilmesi ve geri yüklenmesi için test ekle.
