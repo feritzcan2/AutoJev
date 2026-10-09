@@ -2,13 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
-import {
-  runJevTask,
-  jevDetailItems,
-  jevTaskSummary,
-  jevTaskReceipt,
-  jevContextTasks,
-} from '../app/jev/tasks.mjs';
+import {runJevTask, jevDetailItems} from '../app/jev/tasks.mjs';
+import {jevTaskSummary, jevTaskReceipt, jevContextTasks} from '../app/jev/task-summary.mjs';
 
 test('continuation receipts keep progress and errors without replaying collected listings', () => {
   const summary = {

@@ -10,7 +10,7 @@ import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {seedJevDemo, startJevFixture} from '../scripts/jev-demo.mjs';
 import {compactElements, presentObservation} from '../app/jev/navigation.mjs';
 import {AUTOMATION_INSTRUCTIONS} from '../app/agents/automation-profiles.mjs';
-import {JEV_TASK_INSTRUCTIONS} from '../app/jev/tasks.mjs';
+import {JEV_TASK_INSTRUCTIONS} from '../app/jev/task-tools.mjs';
 const page = {
   url: 'https://fixture.example',
   title: 'Jobs',

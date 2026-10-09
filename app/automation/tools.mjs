@@ -5,7 +5,7 @@ import {questionFieldsSchema} from './question-forms.mjs';
 import {workspaceTableTools, workspaceCellsSchema} from '../workspaces/table-tools.mjs';
 import {browserSnapshotTools} from '../browser/snapshot.mjs';
 import {automationContextTools} from './context.mjs';
-import {jevTaskTools} from '../jev/tasks.mjs';
+import {jevTaskTools} from '../jev/task-tools.mjs';
 import {
   RECIPE_PAGINATION_KINDS,
   RECIPE_TERM_LIMIT,

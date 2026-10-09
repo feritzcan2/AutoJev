@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
 import {briefBlocks, readJevBrief} from '../app/jev/brief.mjs';
-import {jevTaskSummary} from '../app/jev/tasks.mjs';
+import {jevTaskSummary} from '../app/jev/task-summary.mjs';
 
 function fixture(t, text) {
   const core = new WorkspaceDatabase(':memory:');

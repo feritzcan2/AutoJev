@@ -2,7 +2,7 @@
 import {batchScoring} from '../records/task-scope.mjs';
 import {COLLECTOR_INSTRUCTIONS} from '../sources/collector-worker.mjs';
 import {isConversation} from '../workspaces/conversation.mjs';
-import {JEV_LAUNCH_INSTRUCTIONS} from '../jev/tasks.mjs';
+import {JEV_LAUNCH_INSTRUCTIONS} from '../jev/task-tools.mjs';
 import {SOURCE_PAGE_INSTRUCTIONS} from '../sources/scan.mjs';
 
 export function automationPrompt(run, request = null, {evidenceExpired = false} = {}) {

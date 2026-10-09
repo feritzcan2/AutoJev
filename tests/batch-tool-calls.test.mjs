@@ -196,7 +196,7 @@ test('source scans do not list tools that only record operations can use', (t) =
   assert.ok(!recordNames.includes('record_automation_results'));
 });
 
-import {jevTaskSummary} from '../app/jev/tasks.mjs';
+import {jevTaskSummary} from '../app/jev/task-summary.mjs';
 import {JEV_CLASSIFICATION_VERSION} from '../app/jev/triage.mjs';
 test('a review pause lists its whole batch in one read', () => {
   const urls = Array.from({length: 20}, (_, n) => 'https://example.test/' + n);

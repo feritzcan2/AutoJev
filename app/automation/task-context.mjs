@@ -1,7 +1,7 @@
 import {taskHasRecord, batchScoring, recordScoredInTask} from '../records/task-scope.mjs';
 import {scoringPolicy} from '../scoring/policy.mjs';
 import {COLLECTOR_INSTRUCTIONS, collectorProgress} from '../sources/collector-worker.mjs';
-import {jevContextTasks} from '../jev/tasks.mjs';
+import {jevContextTasks} from '../jev/task-summary.mjs';
 import {scanWorkSummary, scanPlanView, scanProgressView} from '../sources/scan-work.mjs';
 import {isConversation, conversationRequest} from '../workspaces/conversation.mjs';
 import {setupAgentOnboarding} from '../agents/setup-agent.mjs';
