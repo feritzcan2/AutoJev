@@ -217,7 +217,7 @@ test('an old Telegram delete button preserves a user-confirmed application and i
   f.db.putResult({...f.item, status: 'uncertain'});
   const question = f.db.askQuestion(f.id, {
     recordId: f.item.id,
-    text: 'Bu başvuru gönderildi mi?',
+    text: 'Bu kayıt gönderildi mi?',
     outcome: true,
     fields: [OUTCOME_FIELD],
   });
@@ -226,7 +226,7 @@ test('an old Telegram delete button preserves a user-confirmed application and i
     questions = f.db.get(f.id).questions,
     tasks = f.core.workspaces.tasks.list(f.id);
   assert.equal(before.status, 'completed');
-  assert.equal(before.evidence, 'Kullanıcı başvurunun gönderildiğini onayladı.');
+  assert.equal(before.evidence, 'Kullanıcı kaydın gönderildiğini onayladı.');
   const completed = f.bot.delivery(
     {...f.card, data: {kind: 'submission', jobId: f.item.id}},
     f.bot.db.link(f.id),

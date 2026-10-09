@@ -676,7 +676,6 @@ test('full consent help and long options are preserved across bounded messages',
         type: 'select',
         options,
         help,
-        consentScope: 'other',
       },
     ],
   });
