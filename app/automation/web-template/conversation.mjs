@@ -16,6 +16,8 @@ import {
   resumeRecordOperation,
   pendingRecordQuestion,
 } from '../../records/operations.mjs';
+import {siteKey} from '../../browser/site-access.mjs';
+import {LOGGED_IN_FIELD} from '../login-question.mjs';
 // WebTasks methods: the workspace conversation worker, setup and answers.
 export const conversationMethods = {
   conversationWorker(id) {
@@ -72,6 +74,26 @@ export const conversationMethods = {
     return this.start(id, 'interview', worker);
   },
   async answer(id, questionId, value) {
+    const answer = await this.answerOne(id, questionId, value);
+    // One sign-in serves every task waiting on the same site in this
+    // workspace; each resumed task still checks its live page.
+    const loginSite = (q) =>
+      q.accessCheck?.kind === 'login' &&
+      q.accessCheck.url &&
+      q.fields?.length === 1 &&
+      q.fields[0].id === LOGGED_IN_FIELD.id
+        ? siteKey(q.accessCheck.url)
+        : null;
+    const site = answer.answerValues?.[LOGGED_IN_FIELD.id] === true ? loginSite(answer) : null;
+    if (site)
+      for (const q of this.db.get(id).questions ?? [])
+        if (q.answer == null && loginSite(q) === site)
+          await this.answerOne(id, q.id, {[LOGGED_IN_FIELD.id]: true}).catch((error) =>
+            this.db.message(id, 'system', 'Giriş yanıtı aktarılamadı: ' + error.message),
+          );
+    return answer;
+  },
+  async answerOne(id, questionId, value) {
     this.assertConversationAvailable(id);
     const answer = this.db.answerQuestion(id, questionId, value);
     this.changed(id);
