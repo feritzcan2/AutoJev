@@ -661,9 +661,7 @@ export function workerTerminals(
     if (changed) separators();
     const main = panes.get('main');
     if (main) {
-      const home =
-        value?.setup?.status === 'running' ? document.getElementById('setup-terminal') : main.card;
-      if (home && main.host.parentElement !== home) home.append(main.host);
+      if (main.host.parentElement !== main.card) main.card.append(main.host);
     }
     const maxWorkers = value?.capabilities?.maxWorkers ?? 8;
     add.hidden = maxWorkers === 1;
@@ -672,11 +670,7 @@ export function workerTerminals(
       ? 'Her worker’ı terminalden veya tarayıcı ekranından izle.'
       : (value?.capabilities?.workerDescription ??
         'Worker’lar çalışma alanının görevlerini ortak kuyruktan alır.');
-    add.disabled =
-      adding ||
-      !id ||
-      workers.filter((w) => !w.conversation).length >= maxWorkers ||
-      Boolean(value?.setup && value.setup.status !== 'complete');
+    add.disabled = adding || !id || workers.filter((w) => !w.conversation).length >= maxWorkers;
   }
   function event(event) {
     if (event.candidateId !== candidate) return;

@@ -83,9 +83,7 @@ try {
     errors = [];
   page.setDefaultTimeout(15000);
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.waitForFunction(
-    () => Boolean(window.jobloop) && document.querySelector('#setup-provider').options.length > 0,
-  );
+  await page.waitForFunction(() => Boolean(window.jobloop));
   await page.waitForFunction(
     (id) => [...document.querySelector('#candidates').options].some((o) => o.value === id),
     a.id,

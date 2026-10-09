@@ -35,9 +35,7 @@ try {
     errors = [];
   page.setDefaultTimeout(20000);
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.waitForFunction(
-    () => Boolean(window.jobloop) && document.querySelector('#setup-provider').options.length > 0,
-  );
+  await page.waitForFunction(() => Boolean(window.jobloop));
   const catalog = await page.evaluate(() => window.jobloop.automationTemplates());
   assert.ok(catalog.some((t) => t.id === 'housing'));
   assert.ok(catalog.every((t) => t.execution.driver !== 'applications'));

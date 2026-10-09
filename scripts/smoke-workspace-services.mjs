@@ -21,9 +21,7 @@ try {
     errors = [];
   page.setDefaultTimeout(20000);
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.waitForFunction(
-    () => Boolean(window.jobloop) && document.querySelector('#setup-provider').options.length > 0,
-  );
+  await page.waitForFunction(() => Boolean(window.jobloop));
   await app.evaluate(({dialog, shell}, source) => {
     dialog.showOpenDialog = async () => ({canceled: false, filePaths: [source]});
     shell.openPath = async (file) => {
