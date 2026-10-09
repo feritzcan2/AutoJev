@@ -213,6 +213,28 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
       })
     : null;
   const savedPage = assignedRecord ? db.browserEvidence.latest(active, assignedRecord.url) : null;
+  // Answers the user gave for other records. General facts about the user
+  // carry over; decisions about one record do not.
+  const earlierAnswers =
+    assignedRecord && ['prepare', 'execute'].includes(active.recordOperation)
+      ? (a.questions ?? [])
+          .filter(
+            (q) =>
+              q.answer != null &&
+              q.recordId &&
+              q.recordId !== assignedRecord.id &&
+              !q.accessCheck &&
+              !q.outcome &&
+              !q.resolution,
+          )
+          .sort((x, y) => y.answeredAt - x.answeredAt)
+          .slice(0, 20)
+          .map((q) => ({
+            question: q.text.slice(0, 300),
+            answer: q.answer.slice(0, 500),
+            answeredAt: q.answeredAt,
+          }))
+      : [];
   const source = active.sourceUrl ? db.sources(id).find((s) => s.url === active.sourceUrl) : null;
   const recipeInfo = source ? db.sourceRecipe(id, source.url) : null;
   const assignedSource = source
@@ -328,6 +350,14 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
           requestedChanges: {
             text: active.request.changes,
             rule: 'The user reviewed the saved proposal of assignedRecord and asked for these changes. Revise that proposal accordingly and save it in full; keep everything else that still applies.',
+          },
+        }
+      : {}),
+    ...(earlierAnswers.length
+      ? {
+          earlierAnswers: {
+            answers: earlierAnswers,
+            rule: 'Answers the user gave while preparing other records, newest first. Reuse one only for a general fact about the user (such as contact details, location, permits or languages) that this task asks the same way; prefer the newest. Never carry over a decision or an answer that is specific to another record. Ask when unsure or when the fact may have changed.',
           },
         }
       : {}),
