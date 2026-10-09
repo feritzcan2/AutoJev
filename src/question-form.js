@@ -1,4 +1,4 @@
-import {asksForLogin} from '../app/login-question.mjs';
+import {asksForLogin} from '../app/automation/login-question.mjs';
 const node = (tag, value) => {
   const e = document.createElement(tag);
   if (value !== undefined) e.textContent = value;

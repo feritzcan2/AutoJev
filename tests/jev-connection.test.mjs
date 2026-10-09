@@ -5,9 +5,9 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {WebSocketServer} from 'ws';
-import {JevCdpTransport} from '../app/jev-cdp.mjs';
-import {BrowserConnections} from '../app/browser-connection.mjs';
-import {BrowserTools} from '../app/browser.mjs';
+import {JevCdpTransport} from '../app/jev/cdp.mjs';
+import {BrowserConnections} from '../app/browser/connection.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 const windowFocus = (url, focused = true) =>

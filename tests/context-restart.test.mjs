@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp, mkdir, writeFile, appendFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {ContextUsage, contextTokens, contextSample} from '../app/context-usage.mjs';
+import {ContextUsage, contextTokens, contextSample} from '../app/agents/context-usage.mjs';
 
 const nativeId = '11111111-1111-4111-8111-111111111111';
 const codex = (tokens) => ({

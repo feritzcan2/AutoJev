@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {captureEmbeddedForms} from '../app/jev-frames.mjs';
+import {captureEmbeddedForms} from '../app/jev/frames.mjs';
 
 test('a visible application iframe remains actionable when Chrome reports an empty frame URL', async () => {
   const main = {parentFrame: () => null};

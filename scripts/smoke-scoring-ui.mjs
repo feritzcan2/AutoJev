@@ -29,7 +29,7 @@ const calculation = {
 const files = new Map(
   [
     '/src/template-fields.js',
-    '/app/record-operation-definitions.mjs',
+    '/app/records/operation-definitions.mjs',
     '/src/score-breakdown.js',
     '/src/scoring-state.js',
     '/src/automation-results.js',
@@ -54,7 +54,7 @@ const server = createServer(async (req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.end(`<!doctype html><html lang="tr"><meta charset="utf-8"><title>Puanlama arayüz kontrolü</title><link rel="stylesheet" href="/src/style.css"><link rel="stylesheet" href="/src/automations.css"><body style="display:block;padding:24px;max-width:1000px;margin:auto;overflow:auto;height:auto"><h1>Puanlama arayüz kontrolü</h1><p id="status" role="status">Kontrol ediliyor…</p><h2>Puanlama ayarları</h2><form id="settings"></form><main></main><h2>Kayıt puanları</h2><section id="records"></section><script type="module">
   import {templateFields,templateValues} from '/src/template-fields.js';
-  import {scoringFields} from '/app/record-operation-definitions.mjs';
+  import {scoringFields} from '/app/records/operation-definitions.mjs';
   import {scoreBreakdown} from '/src/score-breakdown.js';
   import {automationResultsTable} from '/src/automation-results.js';
   const settings=document.querySelector('#settings');

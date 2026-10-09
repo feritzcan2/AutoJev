@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {BrowserTools} from '../app/browser.mjs';
-import {registerAutomationServices} from '../app/automation-services.mjs';
-import {automationBrowser} from '../app/automation-browser.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
+import {registerAutomationServices} from '../app/automation/services.mjs';
+import {automationBrowser} from '../app/browser/automation-browser.mjs';
 
 test('Jev evaluates API evidence using configured model access without connecting to Chrome', async () => {
   let requests = 0;

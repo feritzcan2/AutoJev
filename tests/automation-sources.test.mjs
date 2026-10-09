@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {WebTasks} from '../app/web-template.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
-import {automationProgress} from '../app/automation-progress.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {WebTasks} from '../app/automation/web-template.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {automationProgress} from '../app/automation/progress.mjs';
 
 const urls = [
   'https://blocked.test/search',

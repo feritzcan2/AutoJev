@@ -1,12 +1,12 @@
 import {unknownScorecard} from './helpers/scorecard.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
-import {automationAttention} from '../app/automation-attention.mjs';
-import {scanCheckpoint} from '../app/automation-scan.mjs';
-import {automationCells} from '../app/automation-templates.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {automationAttention} from '../app/automation/attention.mjs';
+import {scanCheckpoint} from '../app/sources/automation-scan.mjs';
+import {automationCells} from '../app/templates/catalog.mjs';
 
 const source = 'https://vendor.example/',
   detail = 'https://boards.example/employer/123';

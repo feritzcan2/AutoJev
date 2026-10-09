@@ -4,9 +4,9 @@ import {mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {seedLegacyDatabase} from './helpers/legacy-database.mjs';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {upgradeWorkspaces} from '../app/workspace-upgrade.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {upgradeWorkspaces} from '../app/workspaces/upgrade.mjs';
 
 test('application workspace upgrades once to the browser template with records and schedules intact', (t) => {
   const dir = mkdtempSync(path.join(tmpdir(), 'workspace-upgrade-'));

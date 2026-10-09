@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {registerAutomationServices} from '../app/automation-services.mjs';
-import {workspaceDirectory} from '../app/workspace-paths.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {registerAutomationServices} from '../app/automation/services.mjs';
+import {workspaceDirectory} from '../app/workspaces/paths.mjs';
 
 test('restoring setup text uses its exact interview identity, never the latest source worker or another workspace', async (t) => {
   const core = new WorkspaceDatabase(':memory:'),

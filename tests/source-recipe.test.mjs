@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {WebTasks} from '../app/web-template.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {WebTasks} from '../app/automation/web-template.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
 import {
   normalizeSourceRecipe,
   replayUrl,
@@ -16,9 +16,9 @@ import {
   recipePageCap,
   scanPageCap,
   jevListingItem,
-} from '../app/source-recipe.mjs';
-import {sourceScanScope} from '../app/source-scan.mjs';
-import {replayScanWork} from '../app/scan-work.mjs';
+} from '../app/sources/recipe.mjs';
+import {sourceScanScope} from '../app/sources/scan.mjs';
+import {replayScanWork} from '../app/sources/scan-work.mjs';
 
 const source = 'https://board.test/jobs';
 const template = 'https://board.test/jobs/search?q={query}&l={location}&sort=date';

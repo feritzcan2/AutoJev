@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {automationProgress} from '../app/automation-progress.mjs';
-import {webWorkspaceView} from '../app/workspace-view.mjs';
+import {automationProgress} from '../app/automation/progress.mjs';
+import {webWorkspaceView} from '../app/workspaces/view.mjs';
 
 const snapshot = (automation = {}, rest = {}) => ({
   automation: {

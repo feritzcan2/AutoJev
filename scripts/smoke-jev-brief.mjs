@@ -1,10 +1,10 @@
 // Synthetic listings only. Raw text and briefs are held in an in-memory store.
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {askJev, jevConfig} from '../app/jev-policy.mjs';
-import {readJevBrief} from '../app/jev-brief.mjs';
-import {FIT_INSTRUCTIONS, jevCriteria} from '../app/jev-triage.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {askJev, jevConfig} from '../app/jev/policy.mjs';
+import {readJevBrief} from '../app/jev/brief.mjs';
+import {FIT_INSTRUCTIONS, jevCriteria} from '../app/jev/triage.mjs';
 
 if (!process.argv.includes('--live')) throw Error('Pass --live for synthetic Jev API checks.');
 const config = await jevConfig();

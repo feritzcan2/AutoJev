@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Worker} from 'node:worker_threads';
 import {once} from 'node:events';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 
 test('WorkspaceDatabase waits for a brief independent writer lock before startup migrations', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'jobloop-store-lock-')),

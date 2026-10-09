@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {WebTasks} from '../app/web-template.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
-import {observedLinks, scanCheckpoint} from '../app/automation-scan.mjs';
-import {scanPageReport, scanPageLabel} from '../app/scan-page.mjs';
-import {webWorkspaceView} from '../app/workspace-view.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {WebTasks} from '../app/automation/web-template.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {observedLinks, scanCheckpoint} from '../app/sources/automation-scan.mjs';
+import {scanPageReport, scanPageLabel} from '../app/sources/scan-page.mjs';
+import {webWorkspaceView} from '../app/workspaces/view.mjs';
 const source = 'https://homes.test/results',
   second = source + '?page=2',
   third = source + '?page=3';

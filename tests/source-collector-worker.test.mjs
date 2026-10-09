@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 import {fork, spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {fileURLToPath} from 'node:url';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {WebTasks} from '../app/web-template.mjs';
-import {automationWorkflow, automationPrompt} from '../app/automation-worker.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {WebTasks} from '../app/automation/web-template.mjs';
+import {automationWorkflow, automationPrompt} from '../app/automation/worker.mjs';
 import {
   prepareCollection,
   saveCollectionPage,
   collectSourcePage,
-} from '../app/source-collector-worker.mjs';
+} from '../app/sources/collector-worker.mjs';
 import {parseHimalayasPage} from '../app/site-extensions/himalayas/api.mjs';
 import {
   readCollectorCliPage,

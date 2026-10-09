@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {BrowserTools} from '../app/browser.mjs';
-import {JevBrowser} from '../app/jev-browser.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
+import {JevBrowser} from '../app/jev/browser.mjs';
 
 const hash = (url) => createHash('sha256').update(url).digest('hex');
 

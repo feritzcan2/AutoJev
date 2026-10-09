@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validateUploadPurpose} from '../app/jev-upload.mjs';
+import {validateUploadPurpose} from '../app/jev/upload.mjs';
 
 test('a CV cannot be uploaded as a cover letter', () => {
   assert.throws(() => validateUploadPurpose('Cover Letter — Attach', 'CV.pdf'), /ön yazı alanına/);

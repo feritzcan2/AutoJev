@@ -6,9 +6,9 @@ import {mkdtemp, readFile, realpath, rm} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import {findChrome} from '../app/chrome-installation.mjs';
-import {JevCdpTransport} from '../app/jev-cdp.mjs';
-import {JevBrowser} from '../app/jev-browser.mjs';
+import {findChrome} from '../app/browser/chrome-installation.mjs';
+import {JevCdpTransport} from '../app/jev/cdp.mjs';
+import {JevBrowser} from '../app/jev/browser.mjs';
 
 async function until(read) {
   for (let i = 0; i < 100; i++) {

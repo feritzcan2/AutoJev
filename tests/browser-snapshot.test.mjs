@@ -4,16 +4,16 @@ import {
   BrowserSnapshot,
   BROWSER_RESPONSE_BYTES,
   browserSnapshotTools,
-} from '../app/browser-snapshot.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {validate} from '../app/tool-schema.mjs';
+} from '../app/browser/snapshot.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {validate} from '../app/agents/tool-schema.mjs';
 import {startTestServer} from './helpers/tool-server.mjs';
 import {mkdtemp, mkdir, writeFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {BrowserTools} from '../app/browser.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
 
 const url = 'https://homes.example/search';
 const wireSize = (result) => Buffer.byteLength(JSON.stringify(result), 'utf8');

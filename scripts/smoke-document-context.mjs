@@ -3,9 +3,9 @@ import {createServer} from 'node:http';
 import {mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {BrowserTools} from '../app/browser.mjs';
-import {automationBrowser} from '../app/automation-browser.mjs';
-import {documentToolContent} from '../app/automation-tool-output.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
+import {automationBrowser} from '../app/browser/automation-browser.mjs';
+import {documentToolContent} from '../app/automation/tool-output.mjs';
 
 const directory = await mkdtemp(path.join(tmpdir(), 'loop-document-context-'));
 let submissions = 0;

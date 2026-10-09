@@ -1,9 +1,9 @@
 import {unknownScorecard} from './helpers/scorecard.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {assessmentEvidence} from '../app/record-evidence.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {assessmentEvidence} from '../app/records/evidence.mjs';
 
 const source = 'https://www.linkedin.com/jobs';
 const detail = 'https://www.linkedin.com/jobs/view/synthetic-compliance-role-1234567890/';

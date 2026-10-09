@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 import {mkdtemp, rm, realpath} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {AgentSessions} from '../app/agent-sessions.mjs';
-import {WorkspaceScheduler} from '../app/workspace-scheduler.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {AgentSessions} from '../app/agents/sessions.mjs';
+import {WorkspaceScheduler} from '../app/workspaces/scheduler.mjs';
 import {seedLegacyDatabase} from './helpers/legacy-database.mjs';
-import {upgradeWorkspaces} from '../app/workspace-upgrade.mjs';
+import {upgradeWorkspaces} from '../app/workspaces/upgrade.mjs';
 import {startTestServer} from './helpers/tool-server.mjs';
-import {automationWorkflow, launchAutomationWorker} from '../app/automation-worker.mjs';
-import {Workspaces} from '../app/workspaces.mjs';
+import {automationWorkflow, launchAutomationWorker} from '../app/automation/worker.mjs';
+import {Workspaces} from '../app/workspaces/workspaces.mjs';
 
 const settings = {
   provider: 'codex',

@@ -3,7 +3,7 @@ import {createServer} from 'node:http';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {BrowserTools} from '../app/browser.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
 const directory = await mkdtemp(path.join(tmpdir(), 'source-check-'));
 let broken = true,
   requests = 0;

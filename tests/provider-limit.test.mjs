@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {providerLimit, providerLimitAttention} from '../app/provider-limit.mjs';
-import {TerminalScreen} from '../app/terminal-screen.mjs';
-import {AgentSessions, publicSession} from '../app/agent-sessions.mjs';
+import {providerLimit, providerLimitAttention} from '../app/agents/provider-limit.mjs';
+import {TerminalScreen} from '../app/agents/terminal-screen.mjs';
+import {AgentSessions, publicSession} from '../app/agents/sessions.mjs';
 import {terminalAttention} from '../src/agent-attention.js';
-import {automationAttention} from '../app/automation-attention.mjs';
-import {automationProgress} from '../app/automation-progress.mjs';
+import {automationAttention} from '../app/automation/attention.mjs';
+import {automationProgress} from '../app/automation/progress.mjs';
 
 const banner =
   "You've hit your session limit · resets 6am (Europe/Istanbul)\r\nUse your only limit reset to reset it now:\r\nclaude.ai/reset\r\n⚠ Usage limit reached · limit resets 6am\r\nContinuing automatically at 6am · esc to cancel\r\nctx 26.0% · auto mode on";

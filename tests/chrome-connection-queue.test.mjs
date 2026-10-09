@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {acquireChromeConnection} from '../app/jev-connection-queue.mjs';
+import {acquireChromeConnection} from '../app/jev/connection-queue.mjs';
 
 test('cancelled and timed out profile requests leave the active approval and remaining queue intact', async (t) => {
   t.mock.timers.enable({apis: ['setTimeout']});

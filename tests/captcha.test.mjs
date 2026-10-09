@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {setTimeout as delay} from 'node:timers/promises';
-import {CapsolverClient} from '../app/capsolver-client.mjs';
-import {CaptchaSettings} from '../app/captcha-settings.mjs';
-import {CaptchaCoordinator} from '../app/captcha-coordinator.mjs';
-import {captchaProvider, classifyCaptcha, detectCaptcha} from '../app/captcha-detection.mjs';
-import {BrowserTools} from '../app/browser.mjs';
+import {CapsolverClient} from '../app/captcha/capsolver-client.mjs';
+import {CaptchaSettings} from '../app/captcha/settings.mjs';
+import {CaptchaCoordinator} from '../app/captcha/coordinator.mjs';
+import {captchaProvider, classifyCaptcha, detectCaptcha} from '../app/captcha/detection.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
 
 const active = {
   provider: 'recaptcha',
@@ -350,7 +350,7 @@ test('settings cancellation during browser application is checked before the mut
 });
 
 test('an inconclusive detection without any provider frame never starts the solver loop', async () => {
-  const {resolveBrowserCaptcha} = await import('../app/captcha-automation.mjs');
+  const {resolveBrowserCaptcha} = await import('../app/captcha/automation.mjs');
   let runs = 0;
   const slot = {
     id: 'tab1',

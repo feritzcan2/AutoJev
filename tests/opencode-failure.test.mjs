@@ -4,10 +4,10 @@ import {mkdtemp, rm, writeFile, symlink} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
 import {DatabaseSync} from 'node:sqlite';
-import documentPlugin from '../app/opencode-documents-plugin.mjs';
-import {readOpenCodeFailure} from '../app/opencode-failure.mjs';
-import {AgentSessions} from '../app/agent-sessions.mjs';
-import {TaskRuns} from '../app/task-runs.mjs';
+import documentPlugin from '../app/agents/opencode-documents-plugin.mjs';
+import {readOpenCodeFailure} from '../app/agents/opencode-failure.mjs';
+import {AgentSessions} from '../app/agents/sessions.mjs';
+import {TaskRuns} from '../app/automation/task-runs.mjs';
 
 const nativeId = 'ses_12345678901234567890';
 const failure = {

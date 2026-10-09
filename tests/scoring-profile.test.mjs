@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {mkdtemp, mkdir, writeFile, rm, symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {loadScoringDocuments, scoringSources} from '../app/scoring-profile.mjs';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
+import {loadScoringDocuments, scoringSources} from '../app/scoring/profile.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
 async function fixture(t) {
   const root = await mkdtemp(path.join(tmpdir(), 'score-documents-'));
   t.after(() => rm(root, {recursive: true, force: true}));

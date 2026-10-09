@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
 import {jobSearchSources} from '../app/templates/job-search/sources.mjs';
-import {sourceScanScope} from '../app/source-scan.mjs';
-import {automationTaskContext} from '../app/automation-task-context.mjs';
-import {automationPrompt} from '../app/automation-worker.mjs';
-import {reusableTemplate, automationTemplate} from '../app/automation-templates.mjs';
+import {sourceScanScope} from '../app/sources/scan.mjs';
+import {automationTaskContext} from '../app/automation/task-context.mjs';
+import {automationPrompt} from '../app/automation/worker.mjs';
+import {reusableTemplate, automationTemplate} from '../app/templates/catalog.mjs';
 
 function fixture(t) {
   const core = new WorkspaceDatabase(':memory:');

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
 
 const url = 'https://example.test/list',
   one = url + '/one',
@@ -196,8 +196,8 @@ test('source scans do not list tools that only record operations can use', (t) =
   assert.ok(!recordNames.includes('record_automation_results'));
 });
 
-import {jevTaskSummary} from '../app/jev-tasks.mjs';
-import {JEV_CLASSIFICATION_VERSION} from '../app/jev-triage.mjs';
+import {jevTaskSummary} from '../app/jev/tasks.mjs';
+import {JEV_CLASSIFICATION_VERSION} from '../app/jev/triage.mjs';
 test('a review pause lists its whole batch in one read', () => {
   const urls = Array.from({length: 20}, (_, n) => 'https://example.test/' + n);
   const task = {

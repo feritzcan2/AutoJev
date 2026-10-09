@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
-import {automationTaskContext} from '../app/automation-task-context.mjs';
-import {sourceStop} from '../app/automation-stop.mjs';
-import {validate} from '../app/tool-schema.mjs';
-import {hasUnblockedScanWork} from '../app/scan-work.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {automationTaskContext} from '../app/automation/task-context.mjs';
+import {sourceStop} from '../app/automation/stop.mjs';
+import {validate} from '../app/agents/tool-schema.mjs';
+import {hasUnblockedScanWork} from '../app/sources/scan-work.mjs';
 
 test('site waits retain reachable details and undiscovered searches across search scopes', () => {
   const run = {

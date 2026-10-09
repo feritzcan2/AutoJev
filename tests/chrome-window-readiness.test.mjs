@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {chromeWindowMarker} from '../app/jev-chrome.mjs';
-import {JevBrowser} from '../app/jev-browser.mjs';
+import {chromeWindowMarker} from '../app/jev/chrome.mjs';
+import {JevBrowser} from '../app/jev/browser.mjs';
 
 const focus = (marker, focused = true, origin = new URL(marker.url).origin) =>
   fetch(marker.url + (focused ? '/focused' : '/blurred'), {

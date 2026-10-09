@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {normalizeFields, validateAnswers} from '../app/question-forms.mjs';
-import {validate} from '../app/tool-schema.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {normalizeFields, validateAnswers} from '../app/automation/question-forms.mjs';
+import {validate} from '../app/agents/tool-schema.mjs';
 import {startTestServer} from './helpers/tool-server.mjs';
-import {automationWorkflow, automationTools as tools} from '../app/automation-worker.mjs';
+import {automationWorkflow, automationTools as tools} from '../app/automation/worker.mjs';
 const fields = [
   {id: 'permit', label: 'Çalışma iznin var mı?', type: 'boolean'},
   {id: 'salary', label: 'Maaş', type: 'number'},

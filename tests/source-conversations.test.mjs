@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {AgentSessions} from '../app/agent-sessions.mjs';
-import {launchAutomationWorker} from '../app/automation-worker.mjs';
-import {workerKey} from '../app/worker-key.mjs';
-import {SCAN_OVERLAP_MS} from '../app/source-scan.mjs';
-import {automationTaskContext} from '../app/automation-task-context.mjs';
-import {rememberSourceAccess} from '../app/source-access-recovery.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {AgentSessions} from '../app/agents/sessions.mjs';
+import {launchAutomationWorker} from '../app/automation/worker.mjs';
+import {workerKey} from '../app/automation/worker-key.mjs';
+import {SCAN_OVERLAP_MS} from '../app/sources/scan.mjs';
+import {automationTaskContext} from '../app/automation/task-context.mjs';
+import {rememberSourceAccess} from '../app/sources/access-recovery.mjs';
 
 const sources = ['https://a.example/list', 'https://b.example/list'];
 async function fixture(t, provider = 'codex') {

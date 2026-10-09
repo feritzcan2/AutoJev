@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validate} from '../app/tool-schema.mjs';
-import {jevTaskTools} from '../app/jev-tasks.mjs';
-import {workspaceCellsSchema, normalizeCellToolArgs} from '../app/workspace-table-tools.mjs';
+import {validate} from '../app/agents/tool-schema.mjs';
+import {jevTaskTools} from '../app/jev/tasks.mjs';
+import {workspaceCellsSchema, normalizeCellToolArgs} from '../app/workspaces/table-tools.mjs';
 
 const note = {
   type: 'object',

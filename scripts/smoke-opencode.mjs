@@ -6,12 +6,12 @@ import {mkdtemp, mkdir, writeFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {Engine} from '../app/engine.mjs';
-import {TerminalScreen} from '../app/terminal-screen.mjs';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {automationTools} from '../app/automation-worker.mjs';
-import {startToolServer} from '../app/tool-server.mjs';
+import {Engine} from '../app/agents/engine.mjs';
+import {TerminalScreen} from '../app/agents/terminal-screen.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {automationTools} from '../app/automation/worker.mjs';
+import {startToolServer} from '../app/agents/tool-server.mjs';
 
 const directory = await mkdtemp(path.join(tmpdir(), 'autojev-opencode-'));
 const store = new WorkspaceDatabase(':memory:'),

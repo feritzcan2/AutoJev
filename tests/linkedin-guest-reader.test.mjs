@@ -8,8 +8,8 @@ import {
   readLinkedInGuest,
   LINKEDIN_PAGE_SIZE,
 } from '../app/site-extensions/linkedin.mjs';
-import {resultPageSummary, observedNextPage} from '../app/jev-results.mjs';
-import {SiteWaitError} from '../app/site-access.mjs';
+import {resultPageSummary, observedNextPage} from '../app/jev/results.mjs';
+import {SiteWaitError} from '../app/browser/site-access.mjs';
 
 const search =
   'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=senior+backend+engineer&location=Germany&sortBy=DD';

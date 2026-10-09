@@ -1,5 +1,5 @@
 import {questionForm} from './question-form.js';
-import {automationAttention} from '../app/automation-attention.mjs';
+import {automationAttention} from '../app/automation/attention.mjs';
 import {groupWorkspaceTabs} from './workspace-tabs.js';
 
 const el = (tag, text, cls) => {

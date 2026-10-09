@@ -1,14 +1,14 @@
 import {unknownScorecard} from './helpers/scorecard.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {WebTasks} from '../app/web-template.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
-import {automationTemplate, reusableTemplate} from '../app/automation-templates.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {WebTasks} from '../app/automation/web-template.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {automationTemplate, reusableTemplate} from '../app/templates/catalog.mjs';
 import {activeRecordOperations, recordOperationStatus} from '../src/record-operation-status.js';
-import {validate} from '../app/tool-schema.mjs';
-import {recordScoreTool, assessmentSchema} from '../app/record-scoring.mjs';
+import {validate} from '../app/agents/tool-schema.mjs';
+import {recordScoreTool, assessmentSchema} from '../app/scoring/record-scoring.mjs';
 
 const source = 'https://example.test/jobs',
   url = source + '/developer',
@@ -462,7 +462,7 @@ test('trial examples remain unscored and completed records cannot be rescored', 
 });
 
 test('score text normalization only accepts unambiguous whole numbers from zero to one hundred', async () => {
-  const {normalizeAssessment} = await import('../app/record-scoring.mjs');
+  const {normalizeAssessment} = await import('../app/scoring/record-scoring.mjs');
   for (const score of ['0', '39', '100', ' 82 ']) {
     const input = {score, summary: 'Unchanged note'},
       result = normalizeAssessment(input);

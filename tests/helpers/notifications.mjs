@@ -1,7 +1,7 @@
 import {randomUUID} from 'node:crypto';
-import {WorkspaceDatabase} from '../../app/workspace-database.mjs';
-import {AutomationStore} from '../../app/automation-store.mjs';
-import {WorkspaceSupport} from '../../app/workspace-support.mjs';
+import {WorkspaceDatabase} from '../../app/workspaces/database.mjs';
+import {AutomationStore} from '../../app/automation/store.mjs';
+import {WorkspaceSupport} from '../../app/workspaces/support.mjs';
 
 // Transport fixtures write through the same automation store and projection as
 // the desktop. They only seed data; execution and delivery use production code.

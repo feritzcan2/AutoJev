@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {Maintenance} from '../app/maintenance.mjs';
+import {Maintenance} from '../app/system/maintenance.mjs';
 const deferred = () => {
   let resolve;
   const promise = new Promise((r) => (resolve = r));

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 test('resume identity survives restart and stays scoped to candidate and provider', () => {
   const dir = mkdtempSync(join(tmpdir(), 'jobloop-resume-'));
   let store;

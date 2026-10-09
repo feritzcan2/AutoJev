@@ -6,7 +6,7 @@ import {
   jevWaitMsFor,
   observeClientAbort,
   resetClientLimits,
-} from '../app/jev-execution.mjs';
+} from '../app/jev/execution.mjs';
 
 test('long requests return a receipt and retries/polls never start another helper', async () => {
   const execution = new JevExecution({waitMs: 2});

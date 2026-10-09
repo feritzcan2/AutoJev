@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {mkdtemp, writeFile, rm, mkdir, symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {launchEnvironment, resolveLaunchEnvironment} from '../app/launch-environment.mjs';
-import {collectReadiness, findExecutable, readinessEnvironment} from '../app/readiness.mjs';
-import {Engine} from '../app/engine.mjs';
+import {launchEnvironment, resolveLaunchEnvironment} from '../app/agents/launch-environment.mjs';
+import {collectReadiness, findExecutable, readinessEnvironment} from '../app/system/readiness.mjs';
+import {Engine} from '../app/agents/engine.mjs';
 
 const chrome = {
   findChrome: async () => '/chrome',

@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {WebTasks} from '../app/web-template.mjs';
-import {automationWorkflow, automationPrompt} from '../app/automation-worker.mjs';
-import {automationTaskContext} from '../app/automation-task-context.mjs';
-import {enqueueScoreBatch, recordTask} from '../app/record-operations.mjs';
-import {workspaceHistory} from '../app/workspace-conversation.mjs';
-import {jevDetailItems} from '../app/jev-tasks.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {WebTasks} from '../app/automation/web-template.mjs';
+import {automationWorkflow, automationPrompt} from '../app/automation/worker.mjs';
+import {automationTaskContext} from '../app/automation/task-context.mjs';
+import {enqueueScoreBatch, recordTask} from '../app/records/operations.mjs';
+import {workspaceHistory} from '../app/workspaces/conversation.mjs';
+import {jevDetailItems} from '../app/jev/tasks.mjs';
 import {activeRecordOperations} from '../src/record-operation-status.js';
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 function fixture(t) {
@@ -488,7 +488,7 @@ test('continuation count survives restart, and scores from an unrelated task do 
   const copied = f.db.result(f.id, f.ids[0]);
   f.db.putResult({...f.items[3], assessment: copied.assessment});
   // The unrelated record is not assigned to this scoring task.
-  const {recordScoredInTask} = await import('../app/record-task-scope.mjs');
+  const {recordScoredInTask} = await import('../app/records/task-scope.mjs');
   assert.equal(recordScoredInTask(f.db, active, f.db.result(f.id, f.items[3].id)), false);
   for (let i = 0; i < 3; i++) await resumed.unreported(resumed.slot(f.id, active.id), 'idle');
   assert.equal(f.db.run(active.id).status, 'blocked');

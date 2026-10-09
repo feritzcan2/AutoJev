@@ -1,11 +1,11 @@
-import {AutomationStore} from '../app/automation-store.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 const require = createRequire(import.meta.url),
   {_electron: electron} = createRequire(require.resolve('@playwright/mcp/package.json'))(
     'playwright',
@@ -52,7 +52,7 @@ try {
         return original.call(this, op, args);
       };
     },
-    pathToFileURL(path.resolve('app/engine.mjs')).href,
+    pathToFileURL(path.resolve('app/agents/engine.mjs')).href,
   );
   await page.locator('#new').click();
   await page.locator('[data-view=agent]').click();

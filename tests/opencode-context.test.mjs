@@ -4,8 +4,8 @@ import {mkdtemp, writeFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import {ContextUsage, contextTokens} from '../app/context-usage.mjs';
-import {opencodeCompaction} from '../app/opencode-context.mjs';
+import {ContextUsage, contextTokens} from '../app/agents/context-usage.mjs';
+import {opencodeCompaction} from '../app/agents/opencode-context.mjs';
 
 test('OpenCode context counts cached input once, tracks completed compaction and isolates the session', async (t) => {
   const dir = await mkdtemp(path.join(tmpdir(), 'opencode-context-'));

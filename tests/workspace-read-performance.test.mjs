@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {taskSnapshot} from '../app/automation-snapshot.mjs';
-import {SourceAccessRecovery} from '../app/source-access-recovery.mjs';
-import {WebTasks} from '../app/web-template.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {taskSnapshot} from '../app/browser/automation-snapshot.mjs';
+import {SourceAccessRecovery} from '../app/sources/access-recovery.mjs';
+import {WebTasks} from '../app/automation/web-template.mjs';
 
 function fixture(t) {
   const core = new WorkspaceDatabase(':memory:'),

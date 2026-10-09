@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {startToolServer} from '../app/tool-server.mjs';
+import {startToolServer} from '../app/agents/tool-server.mjs';
 
 test('a tool call the client drops before the answer reports its elapsed time to the workflow once', async (t) => {
   const aborts = [],

@@ -4,8 +4,8 @@ import {mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
 
 const require = createRequire(import.meta.url),
   {_electron: electron} = createRequire(require.resolve('@playwright/mcp/package.json'))(
@@ -75,7 +75,7 @@ try {
         return original.call(this, op, args);
       };
     },
-    pathToFileURL(path.resolve('app/engine.mjs')).href,
+    pathToFileURL(path.resolve('app/agents/engine.mjs')).href,
   );
   // This scenario exercises profile/session coordination without opening Chrome.
   await app.evaluate(
@@ -87,7 +87,7 @@ try {
         {BrowserTools} = await load(url);
       BrowserTools.prototype.status = () => ({ready: true, state: 'ready'});
     },
-    pathToFileURL(path.resolve('app/browser.mjs')).href,
+    pathToFileURL(path.resolve('app/browser/tools.mjs')).href,
   );
   await app.evaluate(
     async (_, url) => {
@@ -104,7 +104,7 @@ try {
           : original.call(this, id, worker);
       };
     },
-    pathToFileURL(path.resolve('app/agent-sessions.mjs')).href,
+    pathToFileURL(path.resolve('app/agents/sessions.mjs')).href,
   );
   await page.waitForFunction(
     (id) => document.querySelector('#candidates').value === id,

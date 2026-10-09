@@ -4,9 +4,9 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import {BrowserTools} from '../app/browser.mjs';
-import {automationBrowser} from '../app/automation-browser.mjs';
-import {SiteAccess} from '../app/site-access.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
+import {automationBrowser} from '../app/browser/automation-browser.mjs';
+import {SiteAccess} from '../app/browser/site-access.mjs';
 
 const directory = await mkdtemp(path.join(os.tmpdir(), 'jev-site-access-')),
   db = new DatabaseSync(':memory:');

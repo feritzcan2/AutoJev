@@ -4,11 +4,11 @@ import {mkdtemp, mkdir, writeFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import {readRunTokenUsage, requestTokens} from '../app/run-token-usage.mjs';
-import {claudeProjectDirectory} from '../app/agent-transcript.mjs';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {launchAutomationWorker} from '../app/automation-worker.mjs';
+import {readRunTokenUsage, requestTokens} from '../app/agents/run-token-usage.mjs';
+import {claudeProjectDirectory} from '../app/agents/transcript.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {launchAutomationWorker} from '../app/automation/worker.mjs';
 
 const nativeId = '11111111-1111-4111-8111-111111111111',
   since = 1000,

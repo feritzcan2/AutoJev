@@ -6,7 +6,7 @@ import {
   readHimalayasPage,
   collectHimalayas,
 } from '../app/site-extensions/himalayas/api.mjs';
-import {collectorSearches, sourceCollector} from '../app/source-collectors.mjs';
+import {collectorSearches, sourceCollector} from '../app/sources/collectors.mjs';
 import {collectionArguments} from '../app/site-extensions/himalayas/cli.mjs';
 
 const base = 'https://himalayas.app/jobs/api/search?country=DE&q=backend';

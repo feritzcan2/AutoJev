@@ -3,10 +3,10 @@ import {createServer} from 'node:http';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {BrowserTools} from '../app/browser.mjs';
-import {automationBrowser} from '../app/automation-browser.mjs';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
+import {automationBrowser} from '../app/browser/automation-browser.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
 
 const directory = await mkdtemp(path.join(tmpdir(), 'record-identity-smoke-'));
 let submissions = 0;

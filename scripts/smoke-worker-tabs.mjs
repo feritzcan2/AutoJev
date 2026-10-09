@@ -4,7 +4,7 @@ import {mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createServer} from 'node:http';
-import {BrowserTools} from '../app/browser.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
 import {workerTabs} from '../src/workspace-tabs.js';
 
 const require = createRequire(import.meta.url),

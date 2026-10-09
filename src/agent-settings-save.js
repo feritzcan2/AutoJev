@@ -1,4 +1,4 @@
-import {withAgentDefaults} from '../app/agent-settings.mjs';
+import {withAgentDefaults} from '../app/agents/settings.mjs';
 
 // Capture the affected workers before saving: browser changes can stop them.
 export async function saveAgentSettings({api, owner, input, confirmRestart, onSaved = () => {}}) {

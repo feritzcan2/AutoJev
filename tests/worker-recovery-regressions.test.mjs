@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {WebTasks} from '../app/web-template.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
-import {scanIssue} from '../app/scan-issues.mjs';
-import {enqueueRecordOperation} from '../app/record-operations.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {WebTasks} from '../app/automation/web-template.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {scanIssue} from '../app/sources/scan-issues.mjs';
+import {enqueueRecordOperation} from '../app/records/operations.mjs';
 
 const source = 'https://example.test/homes';
 const settle = () => new Promise((resolve) => setImmediate(resolve));

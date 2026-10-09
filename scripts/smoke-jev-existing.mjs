@@ -4,8 +4,8 @@ import {mkdtemp, readFile, rm} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
-import {JevBrowser} from '../app/jev-browser.mjs';
-import {JevTabs} from '../app/jev-tabs.mjs';
+import {JevBrowser} from '../app/jev/browser.mjs';
+import {JevTabs} from '../app/jev/tabs.mjs';
 import {startJevFixture} from './jev-demo.mjs';
 const require = createRequire(import.meta.url),
   {chromium} = createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
@@ -143,7 +143,7 @@ try {
     () => call(restarted, 'browser_jev_observe', {tabId: second.tabId}),
     /bulunamadı|closed/,
   );
-  const {BrowserTools} = await import('../app/browser.mjs');
+  const {BrowserTools} = await import('../app/browser/tools.mjs');
   coldTools = new BrowserTools(directory, () => ({
     profile,
     endpoint,

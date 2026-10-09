@@ -3,16 +3,16 @@ import {createRequire} from 'node:module';
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
 import {
   InstructionLog,
   fileInstructionParts,
   contextInstructionParts,
   instructionPart,
-} from '../app/instruction-log.mjs';
-import {agentProfileId} from '../app/agent-profiles.mjs';
-import {AUTOMATION_INSTRUCTIONS} from '../app/automation-worker.mjs';
+} from '../app/system/instruction-log.mjs';
+import {agentProfileId} from '../app/agents/profiles.mjs';
+import {AUTOMATION_INSTRUCTIONS} from '../app/automation/worker.mjs';
 const require = createRequire(import.meta.url),
   {_electron: electron} = createRequire(require.resolve('@playwright/mcp/package.json'))(
     'playwright',

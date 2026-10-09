@@ -4,11 +4,11 @@ import {readFile, mkdtemp, rm} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
 import {DatabaseSync} from 'node:sqlite';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {WebTasks} from '../app/web-template.mjs';
-import {templateContract} from '../app/template-contract.mjs';
-import {workspaceTableCall} from '../app/workspace-table-tools.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {WebTasks} from '../app/automation/web-template.mjs';
+import {templateContract} from '../app/templates/contract.mjs';
+import {workspaceTableCall} from '../app/workspaces/table-tools.mjs';
 const car = JSON.parse(
   await readFile(new URL('./fixtures/car-search.loop-template.json', import.meta.url)),
 ).template;

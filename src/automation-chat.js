@@ -1,4 +1,4 @@
-import {boundedText, webUrl} from '../app/automation-templates.mjs';
+import {boundedText, webUrl} from '../app/templates/catalog.mjs';
 
 // An interview can start with an incomplete plan. Source requests are conversation
 // context; only actual web addresses become runnable automation sources.

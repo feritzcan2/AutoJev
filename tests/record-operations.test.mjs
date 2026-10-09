@@ -1,17 +1,17 @@
 import {unknownScorecard} from './helpers/scorecard.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {WebTasks} from '../app/web-template.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
-import {automationBrowser} from '../app/automation-browser.mjs';
-import {automationTemplate, reusableTemplate} from '../app/automation-templates.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {WebTasks} from '../app/automation/web-template.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {automationBrowser} from '../app/browser/automation-browser.mjs';
+import {automationTemplate, reusableTemplate} from '../app/templates/catalog.mjs';
 import {
   enqueueRecordOperation,
   recordOperationError,
   dispatchRecordOperations,
-} from '../app/record-operations.mjs';
+} from '../app/records/operations.mjs';
 import {recordOperationStatus, recordActivityAt} from '../src/record-operation-status.js';
 
 const source = 'https://example.test/list',
@@ -802,7 +802,7 @@ test('manual preparation takes the next free worker ahead of automatic pending w
       uncertainties: [],
     },
   });
-  const {enqueueRecordOperation} = await import('../app/record-operations.mjs');
+  const {enqueueRecordOperation} = await import('../app/records/operations.mjs');
   enqueueRecordOperation(f.runtime, f.id, other.id, 'prepare', {manual: false});
   const automatic = enqueueRecordOperation(f.runtime, f.id, f.item.id, 'prepare', {manual: false});
   const manual = await f.runtime.runRecord(f.id, f.item.id, 'prepare');
@@ -871,7 +871,7 @@ test('an explicit record request starts one disabled worker and keeps workspace 
 
 test('repeating a queued request wakes a worker and more preparation work starts another existing worker', async (t) => {
   const f = fixture(t);
-  const {enqueueRecordOperation} = await import('../app/record-operations.mjs');
+  const {enqueueRecordOperation} = await import('../app/records/operations.mjs');
   f.runtime.workers.setEnabled(f.id, 'main', false);
   await assert.rejects(f.runtime.runRecord(f.id, f.item.id, 'execute', {digest: 'invalid'}));
   assert.equal(f.runtime.workers.get(f.id, 'main').enabled, false);
@@ -905,7 +905,7 @@ test('preparation backlog uses all configured workers and leaves excess work que
   f.runtime.workers.add(f.id);
   for (const worker of f.runtime.workers.list(f.id))
     f.runtime.workers.setEnabled(f.id, worker.id, false);
-  const {enqueueRecordOperation} = await import('../app/record-operations.mjs');
+  const {enqueueRecordOperation} = await import('../app/records/operations.mjs');
   const records = [
     f.item,
     ...Array.from({length: 4}, (_, n) =>
@@ -1006,7 +1006,7 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
 
 test('direct execution is explicit, record-scoped, and still requires the current setup revision', async (t) => {
   const f = fixture(t),
-    {enqueueRecordOperation} = await import('../app/record-operations.mjs');
+    {enqueueRecordOperation} = await import('../app/records/operations.mjs');
   f.db.put({...f.db.get(f.id), mode: 'auto'});
   assert.throws(
     () =>

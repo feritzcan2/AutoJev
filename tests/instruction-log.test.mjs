@@ -3,19 +3,19 @@ import assert from 'node:assert/strict';
 import {mkdtemp, writeFile, rm, mkdir} from 'node:fs/promises';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
 import {
   InstructionLog,
   instructionPart,
   fileInstructionParts,
   contextInstructionParts,
   pruneInstructionLogs,
-} from '../app/instruction-log.mjs';
-import {AgentSessions} from '../app/agent-sessions.mjs';
-import {startToolServer} from '../app/tool-server.mjs';
-import {webInstructionCatalog} from '../app/instruction-catalog.mjs';
-import {createBackup, pruneLogs} from '../app/data-management.mjs';
+} from '../app/system/instruction-log.mjs';
+import {AgentSessions} from '../app/agents/sessions.mjs';
+import {startToolServer} from '../app/agents/tool-server.mjs';
+import {webInstructionCatalog} from '../app/system/instruction-catalog.mjs';
+import {createBackup, pruneLogs} from '../app/system/data-management.mjs';
 import {DatabaseSync} from 'node:sqlite';
 const settings = {
   provider: 'codex',

@@ -35,7 +35,7 @@ pub fn spawn(terminal: &termloop_terminal::TerminalService, id: &str, cwd: &str,
     if let Some(compaction)=compaction {apply_compaction(&mut config,compaction)?;}
     if let Some(directory)=document_directory {
         let plugin=directory.join("opencode-documents.mjs");
-        termloop_platform::write_private_file(&plugin,include_bytes!("../../app/opencode-documents-plugin.mjs")).map_err(|e|e.to_string())?;
+        termloop_platform::write_private_file(&plugin,include_bytes!("../../app/agents/opencode-documents-plugin.mjs")).map_err(|e|e.to_string())?;
         add_document_plugin(&mut config,&plugin)?;
     }
     terminal.spawn(termloop_terminal::PtySpawnSpec {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {startWithResumeRepair} from '../app/resume.mjs';
+import {startWithResumeRepair} from '../app/agents/resume.mjs';
 const args = {
   provider: 'codex',
   resumeId: 'original',
@@ -112,7 +112,7 @@ test('persistent history damage falls back fresh after one repair', async () => 
   );
   assert.equal(calls[3].data.resumeId, undefined);
 });
-import {rejectedResumeOnExit} from '../app/resume.mjs';
+import {rejectedResumeOnExit} from '../app/agents/resume.mjs';
 test('late CLI rejection is eligible for fresh recovery only on a resumed Codex process', () => {
   const active = {
     provider: 'codex',
@@ -125,8 +125,8 @@ test('late CLI rejection is eligible for fresh recovery only on a resumed Codex 
   assert.equal(rejectedResumeOnExit({...active, resumeDiagnostic: 'normal output'}), false);
 });
 
-import {selectResume} from '../app/resume.mjs';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
+import {selectResume} from '../app/agents/resume.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 test('model, permission or network changes start fresh; compatible settings preserve resume', () => {
   const store = new WorkspaceDatabase(':memory:');
   try {

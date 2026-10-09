@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validateNotSubmitted} from '../app/record-outcome.mjs';
+import {validateNotSubmitted} from '../app/records/outcome.mjs';
 
 const item = {
   url: 'https://listing.test/job',

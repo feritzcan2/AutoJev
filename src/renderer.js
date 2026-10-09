@@ -1,6 +1,6 @@
 import {formatTokens, parseTokenInput, setupTokenInput} from './token-input.js';
-import {DEFAULT_COMPACT_TOKENS} from '../app/context-compaction.mjs';
-import {defaultPermission} from '../app/agent-settings.mjs';
+import {DEFAULT_COMPACT_TOKENS} from '../app/agents/context-compaction.mjs';
+import {defaultPermission} from '../app/agents/settings.mjs';
 import {coalesceRefresh} from './refresh-queue.js';
 import {saveAgentSettings, createAgentRestartDialog} from './agent-settings-save.js';
 import {instructionsPanel} from './instructions.js';

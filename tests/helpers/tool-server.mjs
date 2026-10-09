@@ -1,4 +1,4 @@
-import {startToolServer} from '../../app/tool-server.mjs';
+import {startToolServer} from '../../app/agents/tool-server.mjs';
 
 export function startTestServer(core, defaultWorkflow = null) {
   return startToolServer({

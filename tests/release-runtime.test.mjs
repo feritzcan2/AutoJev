@@ -5,8 +5,8 @@ import path from 'node:path';
 import {mkdtemp, mkdir, writeFile, rm} from 'node:fs/promises';
 import os from 'node:os';
 import verifyUniversalInputs from '../scripts/verify-universal-inputs.cjs';
-import {engineBinaryPath, runtimeResourceRoot} from '../app/runtime-paths.mjs';
-import {createUpdateManager} from '../app/update-manager.mjs';
+import {engineBinaryPath, runtimeResourceRoot} from '../app/system/runtime-paths.mjs';
+import {createUpdateManager} from '../app/system/update-manager.mjs';
 test('packaged engine resolves outside asar and development uses an existing debug binary', () => {
   assert.equal(
     engineBinaryPath({

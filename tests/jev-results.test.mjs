@@ -7,7 +7,7 @@ import {
   observedNextPage,
   paginationScrollTarget,
   resultPageControls,
-} from '../app/jev-results.mjs';
+} from '../app/jev/results.mjs';
 
 test('a results page receipt lists its dropdowns with the names they offer', () => {
   const page = {

@@ -7,8 +7,8 @@ import {createRequire} from 'node:module';
 import {setTimeout as sleep} from 'node:timers/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {findChrome} from '../app/chrome-installation.mjs';
-import {JevBrowser} from '../app/jev-browser.mjs';
+import {findChrome} from '../app/browser/chrome-installation.mjs';
+import {JevBrowser} from '../app/jev/browser.mjs';
 
 const require = createRequire(import.meta.url),
   {chromium} = createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');

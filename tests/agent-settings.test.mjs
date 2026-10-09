@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {withAgentDefaults} from '../app/agent-settings.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {withAgentDefaults} from '../app/agents/settings.mjs';
 import {saveAgentSettings} from '../src/agent-settings-save.js';
 
 for (const [provider, permission] of [

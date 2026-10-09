@@ -4,7 +4,7 @@ import {mkdtemp, writeFile, rm, access} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {NotificationFixture} from './helpers/notifications.mjs';
-import {Telegram} from '../app/telegram-accounts.mjs';
+import {Telegram} from '../app/channels/telegram-accounts.mjs';
 
 const FIRST = '123456789:abcdefghijklmnopqrstuvwxyz_123456789',
   SECOND = '987654321:abcdefghijklmnopqrstuvwxyz_987654321';

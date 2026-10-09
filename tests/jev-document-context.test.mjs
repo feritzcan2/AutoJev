@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {documentObservation, documentReadiness, waitForDocument} from '../app/jev-document.mjs';
+import {documentObservation, documentReadiness, waitForDocument} from '../app/jev/document.mjs';
 import {runInNewContext} from 'node:vm';
 
 function fixture(text, viewportText) {

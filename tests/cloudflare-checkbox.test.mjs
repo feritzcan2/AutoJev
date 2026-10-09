@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareCloudflareCheckbox, cloudflareCheckboxMessage} from '../app/cloudflare-checkbox.mjs';
+import {
+  prepareCloudflareCheckbox,
+  cloudflareCheckboxMessage,
+} from '../app/captcha/cloudflare-checkbox.mjs';
 
 // A challenge page whose Turnstile host frame is still hidden: the provider is
 // running its own check and may pass or render the checkbox a few seconds later.

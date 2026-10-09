@@ -4,7 +4,7 @@ import {mkdtemp} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {NotificationFixture} from '../tests/helpers/notifications.mjs';
-import {TelegramStore} from '../app/telegram-store.mjs';
+import {TelegramStore} from '../app/channels/telegram-store.mjs';
 
 const require = createRequire(import.meta.url),
   {_electron: electron} = createRequire(require.resolve('@playwright/mcp/package.json'))(

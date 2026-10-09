@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
 import {
   runJevTask,
   jevDetailItems,
   jevTaskSummary,
   jevTaskReceipt,
   jevContextTasks,
-} from '../app/jev-tasks.mjs';
+} from '../app/jev/tasks.mjs';
 
 test('continuation receipts keep progress and errors without replaying collected listings', () => {
   const summary = {
@@ -57,9 +57,9 @@ test('oversized index requests remain bounded and keep their next offset', () =>
   assert.equal(page.nextOffset, 20);
   assert.throws(() => jevTaskSummary(task, {limit: -1}), /Geçersiz/);
 });
-import {askJev, jevProvider} from '../app/jev-policy.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
-import {jevDetailKey} from '../app/jev-detail-urls.mjs';
+import {askJev, jevProvider} from '../app/jev/policy.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {jevDetailKey} from '../app/jev/detail-urls.mjs';
 
 const url = 'https://example.test/list';
 // A card is asked what it opens (listing/other/uncertain) and whether it fits

@@ -3,11 +3,11 @@ import {mkdtemp, writeFile, mkdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {automationTools} from '../app/automation-worker.mjs';
-import {Engine} from '../app/engine.mjs';
-import {startToolServer} from '../app/tool-server.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {automationTools} from '../app/automation/worker.mjs';
+import {Engine} from '../app/agents/engine.mjs';
+import {startToolServer} from '../app/agents/tool-server.mjs';
 const dir = await mkdtemp(join(tmpdir(), 'jobloop-resume-')),
   store = new WorkspaceDatabase(join(dir, 'test.sqlite'));
 const db = new AutomationStore(store),

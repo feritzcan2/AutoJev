@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {sourceScanScope} from '../app/source-scan.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {sourceScanScope} from '../app/sources/scan.mjs';
 
 test('opening schema 34 data folds job-search scoring weights into the rubric and keeps saved scans', (t) => {
   const directory = mkdtempSync(path.join(tmpdir(), 'scoring-criteria-upgrade-'));

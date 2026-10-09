@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {deleteRecords} from '../app/record-deletion.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {deleteRecords} from '../app/records/deletion.mjs';
 
 function fixture(t, template = 'job-search') {
   const store = new WorkspaceDatabase(':memory:'),

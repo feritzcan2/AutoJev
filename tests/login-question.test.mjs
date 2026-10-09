@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {asksForLogin, validateLoginQuestion} from '../app/login-question.mjs';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {automationWorkflow} from '../app/automation-worker.mjs';
+import {asksForLogin, validateLoginQuestion} from '../app/automation/login-question.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
 
 const login =
   'Create a new account\nSign up with Google\nFirst name\nLast name\nEmail\nPassword\nAlready have an account? Log in';

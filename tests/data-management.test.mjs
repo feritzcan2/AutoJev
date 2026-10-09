@@ -1,5 +1,5 @@
 import test from 'node:test';
-import {CaptchaSettings} from '../app/captcha-settings.mjs';
+import {CaptchaSettings} from '../app/captcha/settings.mjs';
 import assert from 'node:assert/strict';
 import {
   mkdtemp,
@@ -18,9 +18,9 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createHash, randomUUID} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
-import {WorkspaceDatabase} from '../app/workspace-database.mjs';
-import {AutomationStore} from '../app/automation-store.mjs';
-import {TelegramStore} from '../app/telegram-store.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {TelegramStore} from '../app/channels/telegram-store.mjs';
 import {
   createBackup,
   inspectBackup,
@@ -31,17 +31,17 @@ import {
   pruneLogs,
   dataManagementStatus,
   DATA_SCHEMA_VERSION,
-} from '../app/data-management.mjs';
-import {prunePromptLogs} from '../app/data-management-schema.mjs';
-import {rememberSourceAccess} from '../app/source-access-recovery.mjs';
-import {sourceScanScope} from '../app/source-scan.mjs';
+} from '../app/system/data-management.mjs';
+import {prunePromptLogs} from '../app/system/data-management-schema.mjs';
+import {rememberSourceAccess} from '../app/sources/access-recovery.mjs';
+import {sourceScanScope} from '../app/sources/scan.mjs';
 import {
   prepareCollection,
   saveCollectionPage,
   collectSourcePage,
-} from '../app/source-collector-worker.mjs';
+} from '../app/sources/collector-worker.mjs';
 import {parseHimalayasPage} from '../app/site-extensions/himalayas/api.mjs';
-import {scoringPolicy} from '../app/scoring-policy.mjs';
+import {scoringPolicy} from '../app/scoring/policy.mjs';
 
 // Backup compatibility uses frozen legacy rows, not a second execution engine.
 const row = (core, table, id, column = 'candidate_id') =>

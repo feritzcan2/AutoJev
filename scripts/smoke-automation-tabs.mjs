@@ -3,8 +3,8 @@ import {mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createServer} from 'node:http';
-import {BrowserTools} from '../app/browser.mjs';
-import {automationBrowser} from '../app/automation-browser.mjs';
+import {BrowserTools} from '../app/browser/tools.mjs';
+import {automationBrowser} from '../app/browser/automation-browser.mjs';
 
 const directory = await mkdtemp(path.join(tmpdir(), 'loop-scan-tabs-'));
 const server = createServer((req, res) => {
