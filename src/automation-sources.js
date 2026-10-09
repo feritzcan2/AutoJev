@@ -1,4 +1,5 @@
 import {scanPageLabel} from '../app/sources/scan-page.mjs';
+import {currentWork} from '../app/automation/current-work.mjs';
 import {recipeSummary, recipePageCap, RECIPE_PAGINATION_KINDS} from '../app/sources/recipe.mjs';
 import {workspaceSourceTabs} from './workspace-tabs.js';
 
@@ -319,9 +320,10 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     const detail = source.scanning
       ? source.scanIssue
         ? `${source.scanIssue.url} · ${source.scanIssue.attempts}. deneme`
-        : scanPageLabel(source.pageProgress)
-          ? 'Son doğrulanan: ' + scanPageLabel(source.pageProgress)
-          : null
+        : (currentWork(data).find((row) => row.stop?.sourceUrl === source.url)?.progress ??
+          (scanPageLabel(source.pageProgress)
+            ? 'Son doğrulanan: ' + scanPageLabel(source.pageProgress)
+            : null))
       : (source.siteWait?.message ?? outcome.summary ?? null);
     if (detail) {
       const small = el('small', detail);
