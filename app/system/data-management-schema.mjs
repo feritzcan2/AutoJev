@@ -2,13 +2,8 @@
 // Increase this version whenever a release changes the persisted data contract.
 // Startup takes a backup before opening Store when this version or the app changes.
 export const DATA_SCHEMA_VERSION = 40;
-// Raw browsing caches are now process-local. Restoring an old database must
-// not reactivate disk storage for these transient helper tasks and page bodies.
-export function discardPersistentPageCaches(db) {
-  db.exec(
-    'DROP TABLE IF EXISTS automation_browser_evidence; DROP TABLE IF EXISTS automation_jev_evidence; DROP TABLE IF EXISTS automation_jev_tasks;',
-  );
-}
+// Older data formats are no longer converted; such data is refused unchanged.
+export const MIN_DATA_SCHEMA_VERSION = 40;
 export const LOG_RETENTION = {
   days: 30,
   promptsPerCandidate: 2000,
@@ -22,6 +17,13 @@ export function assertDataSchemaVersion(db) {
   if (version > DATA_SCHEMA_VERSION)
     throw Error(
       'Bu veriler daha yeni bir AutoJev sürümüne ait. Güncel sürümü kur; veriler değiştirilmedi.',
+    );
+  if (
+    version < MIN_DATA_SCHEMA_VERSION &&
+    db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' LIMIT 1").get()
+  )
+    throw Error(
+      'Bu veriler artık desteklenmeyen eski bir AutoJev sürümüne ait; veriler değiştirilmedi.',
     );
   return version;
 }

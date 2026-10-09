@@ -1,5 +1,4 @@
 // @ts-check
-import {migrateApplicationConversations} from '../agents/legacy-conversations.mjs';
 import {templateContract} from './contract.mjs';
 import {browserDefinition} from './browser-definition.mjs';
 import {automationTemplates} from './catalog.mjs';
@@ -10,16 +9,6 @@ export class TemplateRegistry {
     this.templates = new Map();
     this.register({
       ...browserDefinition,
-      legacyWorkspaces: [
-        ...browserDefinition.legacyWorkspaces,
-        {table: 'candidates', defaultTemplate: 'job-search'},
-      ],
-      legacyRecords: [
-        ...browserDefinition.legacyRecords,
-        {table: 'jobs', owner: 'candidate_id', key: 'url', identity: 'identity'},
-      ],
-      legacyWorkers: [{table: 'agent_workers', owner: 'candidate_id'}],
-      migrate: migrateApplicationConversations,
       templates: automationTemplates.filter(
         (t) => !drivers.some((d) => d.templates?.some((own) => own.id === t.id)),
       ),

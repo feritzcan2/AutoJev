@@ -9,59 +9,10 @@ export class WorkspaceRecords {
   constructor(workspaces) {
     this.workspaces = workspaces;
     this.db = workspaces.db;
-    this.migrate();
-    this.identities = new RecordIdentity(this);
-  }
-  migrate() {
-    const db = this.db,
-      legacy = [...this.workspaces.registry.drivers.values()]
-        .flatMap((driver) => driver.legacyRecords ?? [])
-        .filter(({table}) =>
-          db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table),
-        );
-    db.exec('PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE');
-    try {
-      db.exec(`CREATE TABLE IF NOT EXISTS workspace_records(id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,record_key TEXT NOT NULL,identity TEXT NOT NULL DEFAULT '',data TEXT NOT NULL,UNIQUE(workspace_id,record_key));
+    this.db
+      .exec(`CREATE TABLE IF NOT EXISTS workspace_records(id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,record_key TEXT NOT NULL,identity TEXT NOT NULL DEFAULT '',data TEXT NOT NULL,UNIQUE(workspace_id,record_key));
     CREATE INDEX IF NOT EXISTS workspace_records_owner ON workspace_records(workspace_id);`);
-      for (const {table, owner, key, identity = "''"} of legacy) {
-        db.exec(
-          `INSERT INTO workspace_records SELECT id,${owner},${key},${identity},data FROM ${table} ORDER BY rowid`,
-        );
-      }
-      // Keep foreign keys when an extension migrates its former record table.
-      for (const {table} of legacy)
-        for (const row of db
-          .prepare("SELECT name,sql FROM sqlite_master WHERE type='table' AND sql LIKE ?")
-          .all(`%REFERENCES ${table}(%`)) {
-          if (row.name === table) continue;
-          const name = row.name;
-          if (!/^[a-z_]+$/.test(name)) throw Error('Geçersiz eski tablo');
-          const indexes = db
-            .prepare(
-              "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL",
-            )
-            .all(name);
-          const create = row.sql
-            .replace(
-              new RegExp('CREATE TABLE (?:IF NOT EXISTS )?' + name, 'i'),
-              'CREATE TABLE ' + name + '_records_migration',
-            )
-            .replaceAll(`REFERENCES ${table}(`, 'REFERENCES workspace_records(');
-          db.exec(
-            `${create}; INSERT INTO ${name}_records_migration SELECT * FROM ${name}; DROP TABLE ${name}; ALTER TABLE ${name}_records_migration RENAME TO ${name};`,
-          );
-          for (const index of indexes) db.exec(index.sql);
-        }
-      for (const {table} of legacy) db.exec(`DROP TABLE ${table}`);
-      if (db.prepare('PRAGMA foreign_key_check').get())
-        throw Error('Kayıtlar taşınırken ilişki doğrulaması başarısız');
-      db.exec('COMMIT');
-    } catch (error) {
-      db.exec('ROLLBACK');
-      throw error;
-    } finally {
-      db.exec('PRAGMA foreign_keys=ON');
-    }
+    this.identities = new RecordIdentity(this);
   }
   get(id, recordId) {
     this.workspaces.get(id);

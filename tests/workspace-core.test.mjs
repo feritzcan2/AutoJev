@@ -8,7 +8,6 @@ import {AutomationStore} from '../app/automation/store.mjs';
 import {AgentSessions} from '../app/agents/sessions.mjs';
 import {WorkspaceScheduler} from '../app/workspaces/scheduler.mjs';
 import {seedLegacyDatabase} from './helpers/legacy-database.mjs';
-import {upgradeWorkspaces} from '../app/workspaces/upgrade.mjs';
 import {startTestServer} from './helpers/tool-server.mjs';
 import {automationWorkflow, launchAutomationWorker} from '../app/automation/worker.mjs';
 import {Workspaces} from '../app/workspaces/workspaces.mjs';
@@ -31,30 +30,6 @@ const table = {
   ],
 };
 
-test('legacy conversations migrate beside web data without changing saved authority or IDs', async (t) => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'loop-workspace-migration-'));
-  t.after(() => rm(directory, {recursive: true, force: true}));
-  const file = path.join(directory, 'db.sqlite');
-  const {profile: p, completed: job} = seedLegacyDatabase(file);
-  const store = new WorkspaceDatabase(file);
-  t.after(() => store.close());
-  const db = new AutomationStore(store);
-  upgradeWorkspaces(db);
-  const a = db.create('housing');
-  db.configureTable(a.id, table);
-  db.saveConversation(a.id, 'claude', 'web-native', {...settings, provider: 'claude'});
-  assert.equal(db.result(p.id, job.id).status, 'completed');
-  assert.equal(db.get(p.id).mode, 'observe');
-  assert.equal(store.workspaces.history(p.id).conversation(p.id, 'codex'), 'main-history');
-  assert.equal(db.conversation(a.id, 'claude'), 'web-native');
-  assert.equal(store.workspaces.exists('agent_conversations'), false);
-  assert.equal(store.workspaces.exists('conversation_launch_settings'), false);
-  const registry = new Workspaces(store.workspaces, {
-    templates: {browser: {snapshot: (id) => db.get(id)}},
-  });
-  assert.equal(registry.list().length, 2);
-  assert.equal(registry.snapshot(p.id).id, p.id);
-});
 test('job and custom tables use the same scoped MCP endpoint without changing authority', async (t) => {
   const store = new WorkspaceDatabase(':memory:');
   t.after(() => store.close());

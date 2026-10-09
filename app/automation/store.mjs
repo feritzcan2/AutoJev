@@ -8,8 +8,8 @@ import {isConversation, conversationWaiting} from '../workspaces/conversation.mj
 import {setupAgentOnboarding} from '../agents/setup-agent.mjs';
 import {recordOperationState} from '../records/operations.mjs';
 import {SiteAccess} from '../browser/site-access.mjs';
-import {automationTrialReady, migrateSourceTrials} from '../sources/trial.mjs';
-import {removeImportedWorkspace} from '../workspaces/upgrade.mjs';
+import {automationTrialReady} from '../sources/trial.mjs';
+import {removeImportedWorkspace} from '../workspaces/imported.mjs';
 import {withAgentDefaults} from '../agents/settings.mjs';
 import {globalTemplateSource, templateSourceSettings} from '../templates/sources.mjs';
 import {domainData} from '../workspaces/store.mjs';
@@ -85,7 +85,6 @@ export class AutomationStore {
    CREATE TABLE IF NOT EXISTS scan_seen_listings(workspace_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,url_key TEXT NOT NULL,scope_key TEXT NOT NULL,reason TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(workspace_id,url_key));`);
     this.jevTasks = new JevTaskStore(this.db, now);
     this.browserEvidence = new BrowserEvidenceStore(now);
-    migrateSourceTrials(this);
     for (const {id} of this.list())
       if (this.store.workspaces.records.usesUrl(id))
         this.store.workspaces.records.identities.rebuild(id);
@@ -197,7 +196,6 @@ export class AutomationStore {
       revision: 1,
       reviewedRevision: null,
       trial: null,
-      sourceTrialsVersion: 1,
       status: 'draft',
       nextRunAt: null,
       createdAt: this.now(),

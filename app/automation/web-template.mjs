@@ -29,7 +29,6 @@ import {
   unreportedSourceRun,
   requeueSourceRun,
   recoverUnreportedSources,
-  recoverExhaustedSourceRetries,
 } from './recovery.mjs';
 import {sourceMethods} from './web-template/sources.mjs';
 import {conversationMethods} from './web-template/conversation.mjs';
@@ -117,7 +116,6 @@ export class WebTasks extends TaskRuns {
               });
           recoverUnreportedSources(db, (options?.now ?? Date.now)());
           recoverRecordOperations(db);
-          recoverExhaustedSourceRetries(db);
         },
         config: (id) => db.get(id),
         run: (id) => db.run(id),
@@ -373,7 +371,6 @@ export class WebTasks extends TaskRuns {
     this.dispatching = true;
     try {
       recoverUnreportedSources(this.db, this.now());
-      recoverExhaustedSourceRetries(this.db);
       const ready = [],
         canBrowse = new Set();
       for (const saved of this.db.list()) {

@@ -25,7 +25,6 @@ export class WorkspaceStore {
   CREATE TABLE IF NOT EXISTS workspaces(id TEXT PRIMARY KEY,template_id TEXT NOT NULL,data TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS workspace_conversations(workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,worker_id TEXT NOT NULL,provider TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(workspace_id,worker_id,provider));
  `);
-    this.migrate();
     this.records = new WorkspaceRecords(this);
     this.tasks = new WorkspaceTasks(this);
     this.workers = new WorkspaceWorkers(this);
@@ -210,46 +209,5 @@ export class WorkspaceStore {
   }
   remove(id) {
     this.db.prepare('DELETE FROM workspaces WHERE id=?').run(id);
-  }
-  migrate() {
-    this.db.exec('SAVEPOINT workspace_migration');
-    try {
-      this.db.exec('UPDATE workspaces SET data=data WHERE 0');
-      for (const {table, defaultTemplate: kind = null} of [
-        ...this.registry.drivers.values(),
-      ].flatMap((driver) => driver.legacyWorkspaces ?? []))
-        if (this.exists(table))
-          for (const row of this.db.prepare(`SELECT id,data FROM ${table}`).all()) {
-            if (
-              table === 'candidates' &&
-              this.exists('workspace_imports') &&
-              this.db.prepare('SELECT 1 FROM workspace_imports WHERE workspace_id=?').get(row.id)
-            )
-              continue;
-            const value = parse(row),
-              existing = this.has(row.id) ? this.get(row.id) : null,
-              templateId = value.templateId ?? existing?.templateId ?? kind;
-            if (!existing) this.save(row.id, templateId, value);
-            else if (existing.templateId !== templateId)
-              throw Error('Eski kayıtlarda çalışma alanı kimliği çakışması var');
-            for (const [provider, saved] of Object.entries(value.conversations ?? {}))
-              if (saved?.nativeId)
-                this.history(row.id).saveConversation(
-                  row.id,
-                  provider,
-                  saved.nativeId,
-                  saved.settings,
-                );
-            delete value.conversations;
-            const cleaned = JSON.stringify(domainData(value));
-            if (cleaned !== row.data)
-              this.db.prepare(`UPDATE ${table} SET data=? WHERE id=?`).run(cleaned, row.id);
-          }
-      for (const driver of this.registry.drivers.values()) driver.migrate?.(this);
-      this.db.exec('RELEASE workspace_migration');
-    } catch (error) {
-      this.db.exec('ROLLBACK TO workspace_migration; RELEASE workspace_migration');
-      throw error;
-    }
   }
 }

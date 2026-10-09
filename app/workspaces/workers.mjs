@@ -7,23 +7,6 @@ export class WorkspaceWorkers {
     this.db.exec(
       'CREATE TABLE IF NOT EXISTS workspace_workers(workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,id TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(workspace_id,id))',
     );
-    this.db.exec(
-      "UPDATE workspace_workers SET data=json_remove(data,'$.role') WHERE json_type(data,'$.role') IS NOT NULL",
-    );
-    for (const {table, owner} of [...workspaces.registry.drivers.values()].flatMap(
-      (driver) => driver.legacyWorkers ?? [],
-    ))
-      if (workspaces.exists(table)) {
-        this.db.exec('SAVEPOINT migrate_workers');
-        try {
-          this.db.exec(
-            `INSERT OR IGNORE INTO workspace_workers SELECT ${owner},id,json_remove(data,'$.role') FROM ${table}; DROP TABLE ${table}; RELEASE migrate_workers`,
-          );
-        } catch (error) {
-          this.db.exec('ROLLBACK TO migrate_workers; RELEASE migrate_workers');
-          throw error;
-        }
-      }
   }
   list(id) {
     const workspace = this.workspaces.get(id);

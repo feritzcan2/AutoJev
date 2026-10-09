@@ -45,24 +45,6 @@ function exhaustTechnicalRetries(db, run, attempt, summary, finalSummary = exhau
   return {status: 'blocked', summary: finalSummary};
 }
 
-// Apply the limit to retries saved by earlier app versions before dispatch.
-export function recoverExhaustedSourceRetries(db) {
-  for (const a of db.list())
-    for (const task of db.store.workspaces.tasks.list(a.id, {states: ['pending']})) {
-      if (
-        task.recordId ||
-        !task.sourceUrl ||
-        (task.technicalRecovery?.attempt ?? 0) < TECHNICAL_RETRY_LIMIT
-      )
-        continue;
-      const run = db.runs(a.id).find((r) => r.taskId === task.id && !r.recordId);
-      if (!run || run.status === 'running') continue;
-      const outcome = exhaustTechnicalRetries(db, run, task.technicalRecovery.attempt, run.summary);
-      db.putRun({...db.run(run.id), ...outcome});
-      db.store.workspaces.tasks.finish(a.id, task.id, 'blocked', outcome.summary);
-    }
-}
-
 const legacyMessages = new Set([
   'Agent sonuç bildirmeden durdu. Agent ekranını kontrol et.',
   'Agent oturumu sonuç bildirmeden kapandı.',
