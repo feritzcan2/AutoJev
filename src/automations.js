@@ -12,6 +12,7 @@ import {automationResultsTable} from './automation-results.js';
 import {minimumSaveScoreSettings} from './minimum-save-score.js';
 import {automationSourcesPanel} from './automation-sources.js';
 import {automationAttentionPanel} from './automation-attention.js';
+import {renderCurrentWork} from './current-work.js';
 import './automation-attention.css';
 import './automations.css';
 import './run-history.css';
@@ -539,7 +540,7 @@ export function automationsPage(
     form.replaceChildren(...profileSections, footer);
     history.className = 'automation-history-section';
     history.innerHTML =
-      '<div class="section-title"><h2>Çalışma geçmişi</h2></div><div id="automation-runs" class="run-list"></div>';
+      '<div id="automation-current-work" class="current-work"></div><div class="section-title"><h2>Çalışma geçmişi</h2></div><div id="automation-runs" class="run-list"></div>';
     const pipeline = el('div', null, 'pipeline');
     pipeline.id = 'automation-pipeline';
     const top = el('div', null, 'pipeline-top');
@@ -1102,6 +1103,7 @@ export function automationsPage(
     if (!data.documents.length) docs.append(el('small', 'Bu otomasyona henüz belge eklenmedi.'));
     renderResults();
     renderRuns();
+    renderCurrentWork(find('#automation-current-work'), data, {stop: stopWork});
     renderWorkspacePages();
     renderIntro();
     setPane(pane ?? 'board');
@@ -1204,6 +1206,17 @@ export function automationsPage(
     conversation.hidden = false;
     chatPanel?.focus();
     conversation.scrollIntoView({block: 'start', behavior: 'smooth'});
+  }
+  async function stopWork({sourceUrl, workerId}) {
+    const owner = selected;
+    try {
+      await (sourceUrl
+        ? api.automationSourceStop(owner, sourceUrl)
+        : api.stopWorker(owner, workerId));
+      if (owner === selected) await refresh();
+    } catch (error) {
+      if (owner === selected) notice(error.message);
+    }
   }
   function renderRuns() {
     const root = find('#automation-runs');
