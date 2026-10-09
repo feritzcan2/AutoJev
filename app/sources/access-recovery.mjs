@@ -1,3 +1,4 @@
+// @ts-check
 import {randomUUID} from 'node:crypto';
 // Only scheduling metadata is durable. Retained Jev tasks/pages remain in RAM.
 export function rememberSourceAccess(db, run) {
@@ -57,7 +58,7 @@ export function finishSourceAccess(db, run) {
 }
 
 export class SourceAccessRecovery {
-  constructor(runtime, {closeTabs} = {}) {
+  constructor(runtime, {closeTabs = undefined} = {}) {
     this.runtime = runtime;
     this.db = runtime.db;
     this.closeTabs = closeTabs;

@@ -1,3 +1,4 @@
+// @ts-check
 import {taskRecordIds, recordScoredInTask} from '../../records/task-scope.mjs';
 import {CONVERSATION_WORKER} from '../../workspaces/conversation.mjs';
 import {activeSearch, replayScanWork, validateWorkCompletion} from '../../sources/scan-work.mjs';

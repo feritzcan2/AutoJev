@@ -1,3 +1,4 @@
+// @ts-check
 import {taskHasRecord, batchScoring, recordScoredInTask} from '../records/task-scope.mjs';
 import {scoringPolicy} from '../scoring/policy.mjs';
 import {COLLECTOR_INSTRUCTIONS, collectorProgress} from '../sources/collector-worker.mjs';
@@ -104,7 +105,7 @@ export const conversationContextVersion = (a) =>
 
 // Keep current rules and exact authorizations; old runs and unrelated rows are
 // available through lookup tools instead of replaying them at every start.
-export function automationTaskContext(db, id, active, {section} = {}) {
+export function automationTaskContext(db, id, active, {section = undefined} = {}) {
   const saved = db.get(id),
     conversation = isConversation(active),
     draft =

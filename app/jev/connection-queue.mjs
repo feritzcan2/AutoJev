@@ -1,3 +1,4 @@
+// @ts-check
 // All regular Chrome profiles share one permission endpoint and foreground
 // window. Hold this turn from profile activation through connection setup;
 // another workspace must not activate its profile while approval is pending.
@@ -10,7 +11,7 @@ function advance() {
   }
 }
 
-export function acquireChromeConnection({signal, timeout = 30000} = {}) {
+export function acquireChromeConnection({signal = undefined, timeout = 30000} = {}) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(signal.reason);

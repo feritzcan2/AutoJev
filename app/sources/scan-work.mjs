@@ -1,3 +1,4 @@
+// @ts-check
 import {webUrl, boundedText} from '../templates/catalog.mjs';
 import {validateScanCompletion} from './scan.mjs';
 import {siteKey} from '../browser/site-access.mjs';
@@ -71,7 +72,7 @@ export function hasUnblockedScanWork(run, sites) {
 export function withScanWork(run, work, patch = {}) {
   return {...run.scan, ...patch, complete: false, pendingUrls: pendingScanUrls(work), work};
 }
-export function scanQueue(run, {searchId, offset = 0, limit = 100} = {}) {
+export function scanQueue(run, {searchId = undefined, offset = 0, limit = 100} = {}) {
   const work = scanWork(run),
     search = work.searches.find((s) => s.id === (searchId ?? work.activeSearchId));
   if (!search) throw Error('Tarama araması bulunamadı.');
@@ -234,7 +235,7 @@ export function forgetPlanPosition(plan) {
   const {checkpoint, ...rest} = plan;
   return {...rest, order: null, boundary: null};
 }
-export function forgetScanPosition(state, isOldResultsPage = () => false) {
+export function forgetScanPosition(state, isOldResultsPage = (_url) => false) {
   if (!state) return state;
   const keep = (urls) => (urls ?? []).filter((url) => !isOldResultsPage(url));
   const next = {...state, pageProgress: null, observedPage: null};

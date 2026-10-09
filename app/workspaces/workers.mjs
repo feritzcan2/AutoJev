@@ -1,3 +1,4 @@
+// @ts-check
 import {randomUUID} from 'node:crypto';
 import {CONVERSATION_WORKER} from './conversation.mjs';
 export class WorkspaceWorkers {
@@ -28,7 +29,7 @@ export class WorkspaceWorkers {
     if (!found) throw Error('Worker bu çalışma alanına ait değil veya kaldırıldı.');
     return found;
   }
-  add(id, {name} = {}) {
+  add(id, {name = undefined} = {}) {
     const workers = this.list(id),
       max = this.workspaces.definition(id).execution.maxWorkers;
     if (workers.length >= max) throw Error(`En fazla ${max} worker eklenebilir.`);

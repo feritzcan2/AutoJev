@@ -1,3 +1,4 @@
+// @ts-check
 import {observedId} from './ids.mjs';
 const excluded =
   /captcha|recaptcha|hcaptcha|challenge|oauth|accounts\.google|login\.microsoftonline/i;

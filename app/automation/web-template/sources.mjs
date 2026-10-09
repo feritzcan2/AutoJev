@@ -1,3 +1,4 @@
+// @ts-check
 import {sourceInput} from '../../sources/automation-sources.mjs';
 import {automationAttention, dismissAutomationAttention} from '../attention.mjs';
 // WebTasks methods: per-source state, retries, runs and settings.

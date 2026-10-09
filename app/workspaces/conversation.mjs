@@ -1,3 +1,4 @@
+// @ts-check
 export const CONVERSATION_WORKER = 'conversation';
 export const isConversation = (run) => run?.workerId === CONVERSATION_WORKER;
 export const conversationWaiting = (run) =>
@@ -43,7 +44,14 @@ export function conversationRequest(db, id, run) {
 export function workspaceHistory(
   db,
   id,
-  {kind, query = '', itemId, recordId, before, limit = 5} = {},
+  {
+    kind = undefined,
+    query = '',
+    itemId = undefined,
+    recordId = undefined,
+    before = undefined,
+    limit = 5,
+  } = {},
 ) {
   const table =
     kind === 'messages' ? 'automation_messages' : kind === 'runs' ? 'automation_runs' : null;

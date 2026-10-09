@@ -1,3 +1,4 @@
+// @ts-check
 import {automaticAssessmentError} from '../../../src/scoring-state.js';
 import {taskRecordIds, taskHasRecord} from '../../records/task-scope.mjs';
 import {validateNotSubmitted} from '../../records/outcome.mjs';
@@ -51,7 +52,7 @@ export const recordMethods = {
     if (!item) throw Error('Sonuç bu otomasyona ait değil');
     return item;
   },
-  putResult(item, {run} = {}) {
+  putResult(item, {run = undefined} = {}) {
     return this.store.workspaces.tasks.atomic(() => {
       const previous = this.store.workspaces.records.find(item.automationId, item.key),
         saved = this.store.workspaces.records.put(item.automationId, item.key, item);
@@ -76,7 +77,7 @@ export const recordMethods = {
     this.store.workspaces.configureTable(id, input);
     return this.get(id);
   },
-  setSaveScoreThreshold(id, value, {expectedValue} = {}) {
+  setSaveScoreThreshold(id, value, {expectedValue = undefined} = {}) {
     return this.store.workspaces.tasks.atomic(() => {
       if (value != null && !['string', 'number'].includes(typeof value))
         throw Error('Minimum kayıt puanı: 0–100 arası tam sayı gerekli.');
