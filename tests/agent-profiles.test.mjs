@@ -12,11 +12,8 @@ import {
   webAgentProfile,
   AUTOMATION_INSTRUCTIONS,
 } from '../app/agents/automation-profiles.mjs';
-import {
-  automationWorkflow,
-  launchAutomationWorker,
-  automationPrompt,
-} from '../app/automation/worker.mjs';
+import {automationWorkflow, launchAutomationWorker} from '../app/automation/worker.mjs';
+import {automationPrompt} from '../app/automation/prompts.mjs';
 import {AgentSessions} from '../app/agents/sessions.mjs';
 import {InstructionLog} from '../app/system/instruction-log.mjs';
 import {selectResume} from '../app/agents/resume.mjs';

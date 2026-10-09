@@ -5,7 +5,7 @@ import {join, resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
-import {automationTools} from '../app/automation/worker.mjs';
+import {automationTools} from '../app/automation/tools.mjs';
 import {Engine} from '../app/agents/engine.mjs';
 import {startToolServer} from '../app/agents/tool-server.mjs';
 const dir = await mkdtemp(join(tmpdir(), 'jobloop-resume-')),

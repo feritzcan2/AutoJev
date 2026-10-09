@@ -8,11 +8,8 @@ import {AutomationStore} from '../app/automation/store.mjs';
 import {AgentSessions} from '../app/agents/sessions.mjs';
 import {startTestServer} from './helpers/tool-server.mjs';
 import {automationTaskContext} from '../app/automation/task-context.mjs';
-import {
-  automationWorkflow,
-  automationPrompt,
-  launchAutomationWorker,
-} from '../app/automation/worker.mjs';
+import {automationWorkflow, launchAutomationWorker} from '../app/automation/worker.mjs';
+import {automationPrompt} from '../app/automation/prompts.mjs';
 import {
   conversationRequest,
   workspaceHistory,

@@ -6,7 +6,8 @@ import path from 'node:path';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
 import {WebTasks} from '../app/automation/web-template.mjs';
-import {automationWorkflow, researchUrl} from '../app/automation/worker.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {researchUrl} from '../app/automation/page-content.mjs';
 import {
   automationTemplate,
   reusableTemplate,

@@ -12,7 +12,7 @@ import {
   instructionPart,
 } from '../app/system/instruction-log.mjs';
 import {agentProfileId} from '../app/agents/profiles.mjs';
-import {AUTOMATION_INSTRUCTIONS} from '../app/automation/worker.mjs';
+import {AUTOMATION_INSTRUCTIONS} from '../app/agents/automation-profiles.mjs';
 const require = createRequire(import.meta.url),
   {_electron: electron} = createRequire(require.resolve('@playwright/mcp/package.json'))(
     'playwright',
