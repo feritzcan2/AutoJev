@@ -69,9 +69,14 @@ function pagination(raw) {
   ];
   if (page < pageCount) {
     if (typeof template !== 'string' || !/%7bpage%7d|\{page\}/i.test(template)) return null;
+    // The page's own template can drop the sort and filters of the address
+    // (seen live: page 2 lost the date sort), so the next page keeps them.
+    const next = new URL(template.replace(/%7bpage%7d|\{page\}/i, String(page + 1)), raw.url);
+    for (const [key, value] of new URL(raw.url).searchParams)
+      if (key !== 'page' && !next.searchParams.has(key)) next.searchParams.append(key, value);
     pages.push({
       text: String(page + 1),
-      url: new URL(template.replace(/%7bpage%7d|\{page\}/i, String(page + 1)), raw.url).href,
+      url: next.href,
       current: false,
       disabled: false,
       kind: 'link',
