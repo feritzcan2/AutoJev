@@ -60,65 +60,6 @@ export class BrowserTools {
       if (connected) await connected.client.close();
     }
   }
-  async resumeApplication(id, jobId, sessionId) {
-    const options = this.options(id),
-      state = options.lifecycle ?? {};
-    if (state.activeJobId !== jobId) throw Error('Yalnızca etkin başvuru sürdürülebilir.');
-    const job = state.jobs?.find((job) => job.id === jobId);
-    if (!job) throw Error('İlan bulunamadı.');
-    if (job.followupStopped)
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              status: 'followup_stopped',
-              jobId,
-              submissionState: job.status,
-              message:
-                'Kullanıcı takibi bıraktı; önceki gönderim sonucu değiştirilmedi. Yeni işlem yapma.',
-            }),
-          },
-        ],
-      };
-    if (['submitted', 'already_submitted', 'skipped'].includes(job.status))
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              status: 'complete',
-              jobId,
-              message: 'Kayıtlı sonuç kesin; yeni başvuru açma.',
-            }),
-          },
-        ],
-      };
-    if (job.sessionId && job.sessionId !== sessionId) throw Error('İlan başka bir oturuma ait.');
-    if (job.resumeContext && job.resumeContext.browser !== 'Jev Chrome')
-      throw Error('Taslağı kayıtlı orijinal tarayıcı aracıyla sürdür; Jev ile yeni başvuru açma.');
-    const result = await this.call(
-      id,
-      'browser_jev_open',
-      {url: job.applicationUrl ?? job.url},
-      sessionId,
-    );
-    for (const part of result.content ?? [])
-      if (part.type === 'text') {
-        const value = JSON.parse(part.text);
-        if (value.tabId) {
-          value.resume = {
-            jobId,
-            reopened: !value.reused,
-            previousProgress: job.browserProgress ?? null,
-            message:
-              'Bu sonuç taze gözlemdir. Önceki ilerleme geçmiş kanıttır; güncel alanlarla karşılaştır, yalnızca eksikleri doldur. Eski fieldId/controlId kullanma.',
-          };
-          part.text = JSON.stringify(value);
-        }
-      }
-    return result;
-  }
   async connect(candidateId) {
     const options = this.options(candidateId),
       key = JSON.stringify({profile: options.profile?.directory, connection: options.connection});
@@ -159,10 +100,6 @@ export class BrowserTools {
         onTabsClosed: (ids) => {
           if (!this.closed) return this.onTabsClosed?.(candidateId, ids);
         },
-        onProgress: (jobId, progress, owner) =>
-          this.onProgress?.(candidateId, jobId, progress, owner),
-        beforeSubmit: (jobId, url, owner, verificationContinuation) =>
-          this.beforeSubmit?.(candidateId, jobId, url, owner, {verificationContinuation}),
       }),
       tools: jevTools,
       directory,
@@ -292,52 +229,6 @@ export class BrowserTools {
       return null;
     return client;
   }
-  cleanupSearch(candidateId, taskId) {
-    return this.enqueue(candidateId, () => this.performCleanupSearch(candidateId, taskId), {
-      checkActive: false,
-    });
-  }
-  async performCleanupSearch(candidateId, taskId) {
-    const connection = this.clients.get(candidateId);
-    if (!connection) return {deferred: true};
-    const options = this.options(candidateId),
-      {client} = await connection.pending;
-    if (client.profile?.directory !== options.profile?.directory) return {deferred: true};
-    return client.cleanupSearch(taskId, options.lifecycle ?? {});
-  }
-  cleanup(candidateId) {
-    return this.enqueue(candidateId, () => this.performCleanup(candidateId), {checkActive: false});
-  }
-  async performCleanup(candidateId) {
-    const connection = this.clients.get(candidateId),
-      options = this.options(candidateId);
-    if (!connection) return {deferred: true};
-    const {client} = await connection.pending;
-    if (client.profile?.directory !== options.profile?.directory) return {deferred: true};
-    return client.cleanupCompleted(options.lifecycle ?? {});
-  }
-  maintain(candidateId) {
-    const connection = this.clients.get(candidateId),
-      client = connection?.client;
-    // Maintenance never starts Chrome, requests permission or queues behind a
-    // running agent operation. The next tick retries disconnected/busy clients.
-    if (
-      this.closed ||
-      !client ||
-      client.closed ||
-      client.busy ||
-      !client.opening ||
-      (client.connection === 'existing' && !client.browser?.isConnected()) ||
-      this.operations.has(candidateId)
-    )
-      return Promise.resolve({deferred: true});
-    return this.enqueue(candidateId, async () => {
-      if (this.clients.get(candidateId) !== connection) return {deferred: true};
-      const options = this.options(candidateId);
-      if (client.profile?.directory !== options.profile?.directory) return {deferred: true};
-      return client.cleanupCompleted(options.lifecycle ?? {});
-    });
-  }
   async focus(candidateId, context) {
     return (await this.connect(candidateId)).client.focus(context.tabId);
   }
@@ -367,35 +258,17 @@ export class BrowserTools {
     );
   }
   async workspaceTabs(id) {
-    const client = await this.connectedClient(id),
-      options = this.options(id);
+    const client = await this.connectedClient(id);
     if (!client || (client.connection === 'existing' && !client.browser?.isConnected())) return [];
-    const jobs = Array.isArray(options.lifecycle?.jobs),
-      checkpoints = new Set(
-        (options.checkpoints ?? []).filter((c) => c?.browser === 'Jev Chrome').map((c) => c.tabId),
-      );
-    const webTab = (slot) => {
+    const ownTab = (slot) => {
       const owner = client.automationWorkspaces.get(slot.id);
       if (owner) return owner === id;
       // Tabs created before workspace labels were added remain in this browser's
       // exact owned-target set. Never infer ownership from URL or profile alone.
-      return (
-        !client.tabJobs.has(slot.id) &&
-        !client.tabSearches.has(slot.id) &&
-        (client.connection === 'existing' ? client.transport?.owned.has(slot.id) : true)
-      );
+      return client.connection === 'existing' ? client.transport?.owned.has(slot.id) : true;
     };
     return [...client.tabs.values()]
-      .filter(
-        (slot) =>
-          slot.id !== client.homeId &&
-          !slot.page.isClosed() &&
-          (jobs
-            ? client.tabJobs.has(slot.id) ||
-              client.tabSearches.has(slot.id) ||
-              checkpoints.has(slot.id)
-            : webTab(slot)),
-      )
+      .filter((slot) => slot.id !== client.homeId && !slot.page.isClosed() && ownTab(slot))
       .map((slot) => ({
         tabId: slot.id,
         url: slot.page.url(),
@@ -405,13 +278,6 @@ export class BrowserTools {
         ...(client.automationTabs.get(slot.id)?.startsWith('record:')
           ? {recordId: client.automationTabs.get(slot.id).slice(7)}
           : {}),
-        kind: client.tabJobs.has(slot.id)
-          ? 'application'
-          : client.tabSearches.has(slot.id)
-            ? 'search'
-            : 'workspace',
-        ...(client.tabJobs.has(slot.id) ? {jobId: client.tabJobs.get(slot.id)} : {}),
-        ...(client.tabSearches.has(slot.id) ? {searchTaskId: client.tabSearches.get(slot.id)} : {}),
         ...(client.automationSources.has(slot.id)
           ? {sourceUrl: client.automationSources.get(slot.id)}
           : {}),
@@ -510,48 +376,6 @@ export class BrowserTools {
       },
       {checkActive: false},
     );
-  }
-  async sourceTabs(candidateId, sources, task) {
-    const result = {},
-      connection = this.clients.get(candidateId),
-      client = await this.connectedClient(candidateId);
-    if (
-      !client ||
-      this.clients.get(candidateId) !== connection ||
-      (client.connection === 'existing' && !client.browser?.isConnected())
-    )
-      return result;
-    const usable = (slot) =>
-      slot && slot.id !== client.homeId && !slot.page.isClosed() && !client.tabJobs.has(slot.id);
-    for (const source of sources) {
-      const checkpoint =
-        source.resumeContext?.browser === 'Jev Chrome'
-          ? client.tabs.get(source.resumeContext.tabId)
-          : null;
-      const slot = usable(checkpoint)
-        ? checkpoint
-        : task?.kind === 'search' && task.sourceId === source.id
-          ? [...client.tabs.values()].find(
-              (slot) => usable(slot) && client.tabSearches.get(slot.id) === task.id,
-            )
-          : null;
-      if (slot) result[source.id] = {browser: 'Jev Chrome', tabId: slot.id, url: slot.page.url()};
-    }
-    return result;
-  }
-  async focusSource(candidateId, source, task) {
-    const connection = this.clients.get(candidateId),
-      context = (await this.sourceTabs(candidateId, [source], task))[source.id];
-    if (!context || this.clients.get(candidateId) !== connection)
-      throw Object.assign(Error('Bu kaynağın açık arama sekmesi bulunamadı.'), {
-        code: 'TAB_MISSING',
-      });
-    const connected = await connection?.pending;
-    if (!connected || connected.client.closed)
-      throw Object.assign(Error('Chrome bağlantısı kapandı.'), {code: 'TAB_MISSING'});
-    // Focus the live page directly; never reconnect or open a replacement here.
-    await connected.client.tab(context.tabId).page.bringToFront();
-    return {focused: true};
   }
   async close({closeTabs = false} = {}) {
     this.closed = true;

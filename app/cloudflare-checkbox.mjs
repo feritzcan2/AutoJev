@@ -199,7 +199,6 @@ export async function resolveCloudflareCheckbox(browser, id, result, owner, opti
       slot.page.isClosed() ||
       (browser.isActive && !browser.isActive()) ||
       !browser.captcha?.settings.status().enabled ||
-      client.tabJobs.has(slot.id) ||
       client.automationTabs.get(slot.id)?.startsWith('record:')
     )
       throw Error('Doğrulama görevi değişti.');

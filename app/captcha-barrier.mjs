@@ -75,8 +75,7 @@ export async function resolveTurnstileBarrier(browser, id, result, owner, option
     settings.changes.signal,
     ...(browser.signal ? [browser.signal] : []),
   ]);
-  const readonly = () =>
-    !client.tabJobs.has(slot.id) && !client.automationTabs.get(slot.id)?.startsWith('record:');
+  const readonly = () => !client.automationTabs.get(slot.id)?.startsWith('record:');
   const active = () =>
     !signal.aborted &&
     !page.isClosed() &&

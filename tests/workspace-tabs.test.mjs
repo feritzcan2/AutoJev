@@ -5,14 +5,9 @@ import {JevBrowser} from '../app/jev-browser.mjs';
 import {automationBrowser} from '../app/automation-browser.mjs';
 import {groupWorkspaceTabs, recordTabs, workerTab, workerTabs} from '../src/workspace-tabs.js';
 
-function fixture(kind = 'web') {
+function fixture() {
   const profile = {directory: 'Default'},
-    browser = new BrowserTools('/unused', () => ({
-      profile,
-      ...(kind === 'jobs'
-        ? {lifecycle: {jobs: []}, checkpoints: [{browser: 'Jev Chrome', tabId: 'saved'}]}
-        : {lifecycle: {multiWorker: true}}),
-    }));
+    browser = new BrowserTools('/unused', () => ({profile, lifecycle: {multiWorker: true}}));
   const client = new JevBrowser('/unused', {profile}),
     focused = [],
     closedTabs = [];
@@ -157,26 +152,6 @@ test('bulk close only closes the listed live workspace tabs', async () => {
     {closed: ['first', 'second'], failed: []},
   );
   assert.deepEqual(f.closedTabs, ['first', 'second']);
-  assert.deepEqual(await f.browser.workspaceTabs('workspace'), []);
-});
-
-test('Sources includes open job, search and saved tabs but excludes unrelated Chrome tabs', async () => {
-  const f = fixture('jobs');
-  for (const id of ['home', 'job', 'search', 'saved', 'personal']) f.add(id);
-  f.client.tabJobs.set('job', 'job-id');
-  f.client.tabSearches.set('search', 'task-id');
-  const tabs = await f.browser.workspaceTabs('workspace');
-  assert.deepEqual(
-    tabs.map((tab) => [tab.tabId, tab.kind]),
-    [
-      ['job', 'application'],
-      ['search', 'search'],
-      ['saved', 'workspace'],
-    ],
-  );
-  assert.equal(tabs[0].jobId, 'job-id');
-  assert.equal(tabs[1].searchTaskId, 'task-id');
-  f.client.profile = {directory: 'Other'};
   assert.deepEqual(await f.browser.workspaceTabs('workspace'), []);
 });
 

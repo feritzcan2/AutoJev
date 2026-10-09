@@ -1,30 +1,4 @@
 // @ts-check
-export const RESEARCH_TAB_LIMIT = 12;
-
-export function protectedResearchTabs(browser, state, {keepSources = true} = {}) {
-  const protectedTabs = new Set([
-    browser.homeId,
-    ...browser.tabJobs.keys(),
-    ...(state.jobs ?? []).map((job) => job.resumeContext?.tabId).filter(Boolean),
-    ...(state.activeSourceTabIds ?? []),
-    ...(keepSources ? (state.sourceTabIds ?? []) : []),
-  ]);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const slot of browser.tabs.values())
-      if (
-        slot.openerId !== browser.homeId &&
-        protectedTabs.has(slot.openerId) &&
-        !protectedTabs.has(slot.id)
-      ) {
-        protectedTabs.add(slot.id);
-        changed = true;
-      }
-  }
-  return protectedTabs;
-}
-
 // Executed in each frame. A search query is disposable; application data,
 // authentication and verification steps must survive automatic cleanup.
 export function disposableResearchDocument(root) {

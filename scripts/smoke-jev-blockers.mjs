@@ -133,57 +133,6 @@ try {
   assert.ok(inspected.fields.some((f) => f.label === 'Hidden preference'));
   assert.ok(!inspected.fields.some((f) => f.label === 'Username'));
   console.log('CLOSED_COOKIE_SHELL_IGNORED_ACTIVE_MODAL_RESPECTED_PASS');
-  // Final sends must not reach the browser before the durable checkpoint.
-  await page.setContent(
-    '<button type="button" onclick="window.sends++">Submit application</button><button type="button" onclick="window.nexts++">Next</button>',
-  );
-  await page.evaluate(() => {
-    window.sends = 0;
-    window.nexts = 0;
-  });
-  const sendState = (status) => ({activeJobId: 'send-job', jobs: [{id: 'send-job', status}]});
-  o = await call('browser_jev_observe', {tabId, full: true});
-  for (const status of ['working', 'prepared', 'uncertain']) {
-    const send = o.clickTargets.find((t) => t.label === 'Submit application');
-    o = await call('browser_jev_click', {tabId, targetId: send.targetId}, sendState(status));
-    assert.equal(o.status, 'submission_not_started');
-    assert.equal(o.executed, false);
-    assert.equal(await page.evaluate(() => window.sends), 0);
-  }
-  o = await call(
-    'browser_jev_click',
-    {tabId, targetId: o.clickTargets.find((t) => t.label === 'Next').targetId},
-    sendState('working'),
-  );
-  assert.equal(await page.evaluate(() => window.nexts), 1);
-  await call(
-    'browser_jev_click',
-    {tabId, targetId: o.clickTargets.find((t) => t.label === 'Submit application').targetId},
-    sendState('submitting'),
-  );
-  assert.equal(await page.evaluate(() => window.sends), 1);
-  await page.setContent('<button role="tab" onclick="window.opened=true">Apply</button>');
-  await page.evaluate(() => (window.opened = false));
-  o = await call('browser_jev_observe', {tabId, full: true});
-  await call(
-    'browser_jev_click',
-    {tabId, targetId: o.clickTargets.find((t) => t.label === 'Apply').targetId},
-    sendState('working'),
-  );
-  assert.equal(await page.evaluate(() => window.opened), true);
-  await page.setContent(
-    '<form><label>Name<input></label><button onclick="window.sent=true">Apply</button></form>',
-  );
-  await page.evaluate(() => (window.sent = false));
-  o = await call('browser_jev_observe', {tabId, full: true});
-  o = await call(
-    'browser_jev_click',
-    {tabId, targetId: o.clickTargets.find((t) => t.label === 'Apply').targetId},
-    sendState('working'),
-  );
-  assert.equal(o.status, 'submission_not_started');
-  assert.equal(o.retryable, false);
-  assert.equal(await page.evaluate(() => window.sent), false);
   // Listing-entry Apply buttons work without pretending the form is prepared.
   await page.setContent(
     '<button type="button" onclick="window.entered=true">Apply</button><div hidden><label>CV<input type="file"></label></div>',
@@ -191,11 +140,10 @@ try {
   await page.evaluate(() => (window.entered = false));
   o = await call('browser_jev_observe', {tabId, full: true});
   assert.equal(o.uploads.length, 0);
-  await call(
-    'browser_jev_click',
-    {tabId, targetId: o.clickTargets.find((t) => t.label === 'Apply').targetId},
-    sendState('working'),
-  );
+  await call('browser_jev_click', {
+    tabId,
+    targetId: o.clickTargets.find((t) => t.label === 'Apply').targetId,
+  });
   assert.equal(await page.evaluate(() => window.entered), true);
   // Hidden native upload remains supported behind an explicit visible label.
   await page.setContent(
@@ -234,14 +182,6 @@ try {
   const reused = await call('browser_jev_open_frame', {tabId, frameId: frame.frameId});
   assert.equal(reused.tabId, child.tabId);
   assert.equal(reused.reused, true);
-  client.tabJobs.set(tabId, 'uncertain-job');
-  await assert.rejects(() =>
-    call(
-      'browser_jev_open_frame',
-      {tabId, frameId: frame.frameId},
-      {activeJobId: 'uncertain-job', jobs: [{id: 'uncertain-job', status: 'uncertain'}]},
-    ),
-  );
   console.log('BLOCKERS_SMOKE_PASS');
 } finally {
   await client.close();

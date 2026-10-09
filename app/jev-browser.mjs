@@ -8,16 +8,13 @@ import {prepareTurnstileBarrier, turnstileBarrierResult} from './captcha-barrier
 import {privateJevPage, retryJevRead} from './jev-page.mjs';
 import {acquireTabRendering} from './jev-rendering.mjs';
 import {accessBarrier, SiteWaitError} from './site-access.mjs';
-import {foreignEmployerCheckpoint} from './jev-job-identity.mjs';
 import {observeFormFrame, actFormFrame, usableFormFrame} from './jev-frame-actions.mjs';
 import {captureCookieFrameTargets, clickCookieFrameTarget} from './jev-cookie-frame.mjs';
-import {presentRankObservation} from './jev-rank-observation.mjs';
 import {documentObservation, waitForDocument} from './jev-document.mjs';
 import {uploadDetails, validateUploadPurpose, isUploadTrigger} from './jev-upload.mjs';
-import {capturePasswordFields, fillAccountPassword, savedLoginState} from './jev-credentials.mjs';
+import {capturePasswordFields, savedLoginState} from './jev-credentials.mjs';
 import {captureEmbeddedForms, embeddedFormTarget} from './jev-frames.mjs';
 import {takeUploadAttempt} from './upload-budget.mjs';
-import {assertTaskTool, assertRankAction, rankActionAllowed} from './task-scope.mjs';
 import {installFormSemantics} from './form-semantics.mjs';
 import {
   verificationEvidence,
@@ -39,11 +36,7 @@ import {
 import {JevCdpTransport} from './jev-cdp.mjs';
 import {acquireChromeConnection} from './jev-connection-queue.mjs';
 import {JevTabs, restoredTargets, sameBrowserInstance} from './jev-tabs.mjs';
-import {
-  RESEARCH_TAB_LIMIT,
-  protectedResearchTabs,
-  disposableResearchTab,
-} from './jev-tab-lifecycle.mjs';
+import {disposableResearchTab} from './jev-tab-lifecycle.mjs';
 import {selectAutocomplete} from './jev-autocomplete.mjs';
 import {selectChoice, verifyChoice, choiceKey} from './jev-choice.mjs';
 import {captureClickTargets, takeClickTarget} from './jev-click.mjs';
@@ -112,27 +105,8 @@ export const jevTools = [
   {
     name: 'browser_jev_tabs',
     description:
-      'Reconnect and list this workspace’s saved Jev Chrome tabs, including after an app restart. Includes searchTaskId and jobId where assigned. At the start of browser research, recover tabs for the current task or the saved source checkpoint and observe them before opening new tabs. Never use a jobId tab for research. Does not reload forms or open replacements. No model call.',
+      'Reconnect and list this workspace’s saved Jev Chrome tabs, including after an app restart. At the start of browser research, recover tabs for the current task or the saved source checkpoint and observe them before opening new tabs. Does not reload forms or open replacements. No model call.',
     inputSchema: schema({}),
-  },
-  {
-    name: 'browser_jev_open_verification_mail',
-    description:
-      'Open the configured user Gmail inbox in the same Chrome profile for the current portal verification only. Requires saved gmailCodes permission. Preserves the form tab. Verify the displayed mailbox email against expectedEmail before reading; inspect only the current portal verification message. Never send, delete, read unrelated mail or use another mailbox.',
-    inputSchema: schema({}, []),
-  },
-  {
-    name: 'browser_jev_fill_account_password',
-    description:
-      'Fill the saved user portal password without exposing it to the agent. Use current passwordFields fieldIds (all password/confirmation fields for signup), and the verified user email already in this form. Only assigned record tabs support this. If unconfigured, opens a secure profile request; never ask for password in chat. Does not click signup, login or accept terms. Returns only verification status. Other tools/provider restrictions still apply.',
-    inputSchema: schema(
-      {
-        tabId: string,
-        email: string,
-        fieldIds: {type: 'array', minItems: 1, maxItems: 3, items: string},
-      },
-      ['tabId', 'email', 'fieldIds'],
-    ),
   },
   {
     name: 'browser_jev_observe',
@@ -347,9 +321,7 @@ export class JevBrowser {
       checkpoints = [],
       accountVault = null,
       onDisconnect = () => {},
-      onProgress = () => {},
       onTabsClosed = () => {},
-      beforeSubmit = () => {},
     } = {},
   ) {
     this.siteAccess = siteAccess;
@@ -362,9 +334,7 @@ export class JevBrowser {
     this.headless = headless;
     this.workspace = workspace;
     this.onDisconnect = onDisconnect;
-    this.onProgress = onProgress;
     this.onTabsClosed = onTabsClosed;
-    this.beforeSubmit = beforeSubmit;
     this.checkpoints = checkpoints;
     this.connection = connection;
     this.profile = profile;
@@ -375,15 +345,10 @@ export class JevBrowser {
     this.automationRuns = new Map();
     this.automationWorkspaces = new Map();
     this.automationSources = new Map();
-    this.tabSearches = new Map();
-    this.tabJobs = new Map();
     this.urlHashes = new Map();
-    this.cleanupTasks = new Set();
     this.busy = false;
     this.closed = false;
     this.abort = new AbortController();
-    this.startedAt = Date.now();
-    this.usedContinuations = new Set();
   }
   async context() {
     if (this.closed) throw Error('Jev browser is closed');
@@ -443,16 +408,6 @@ export class JevBrowser {
                 await transport.call('Browser.getWindowForTarget', {targetId: markerId})
               ).windowId;
             }
-            this.tabJobs = new Map(
-              restored
-                .filter((id) => typeof saved?.jobs?.[id] === 'string')
-                .map((id) => [id, saved.jobs[id]]),
-            );
-            this.tabSearches = new Map(
-              restored
-                .filter((id) => typeof saved?.searches?.[id] === 'string')
-                .map((id) => [id, saved.searches[id]]),
-            );
             this.automationTabs = new Map(
               restored
                 .filter((id) => typeof saved?.automationTabs?.[id] === 'string')
@@ -477,13 +432,6 @@ export class JevBrowser {
               restored
                 .filter((id) => typeof saved?.urlHashes?.[id] === 'string')
                 .map((id) => [id, saved.urlHashes[id]]),
-            );
-            const searchTasks = new Set(this.tabSearches.values());
-            this.cleanupTasks = new Set(
-              [
-                ...this.cleanupTasks,
-                ...(Array.isArray(saved?.cleanupTasks) ? saved.cleanupTasks : []),
-              ].filter((id) => searchTasks.has(id)),
             );
             for (const id of restored) transport.owned.add(id);
             this.connectedEndpoint = endpoint;
@@ -616,10 +564,6 @@ export class JevBrowser {
           };
       });
       this.tabs.set(slot.id, slot);
-      if (this.tabJobs.has(slot.openerId))
-        this.tabJobs.set(slot.id, this.tabJobs.get(slot.openerId));
-      if (this.tabSearches.has(slot.openerId))
-        this.tabSearches.set(slot.id, this.tabSearches.get(slot.openerId));
       if (!this.automationTabs.has(slot.id) && this.automationTabs.has(slot.openerId))
         this.automationTabs.set(slot.id, this.automationTabs.get(slot.openerId));
       if (!this.automationRuns.has(slot.id) && this.automationRuns.has(slot.openerId))
@@ -668,10 +612,7 @@ export class JevBrowser {
         automationRuns: Object.fromEntries(this.automationRuns),
         automationWorkspaces: Object.fromEntries(this.automationWorkspaces),
         automationSources: Object.fromEntries(this.automationSources),
-        jobs: Object.fromEntries(this.tabJobs),
-        searches: Object.fromEntries(this.tabSearches),
         urlHashes: Object.fromEntries(this.urlHashes),
-        cleanupTasks: [...this.cleanupTasks],
       });
   }
   forgetTab(id) {
@@ -680,16 +621,12 @@ export class JevBrowser {
     this.automationRuns.delete(id);
     this.automationWorkspaces.delete(id);
     this.automationSources.delete(id);
-    this.tabJobs.delete(id);
-    this.tabSearches.delete(id);
     this.urlHashes.delete(id);
     this.transport?.owned.delete(id);
     this.transport?.attached.delete(id);
     for (const slot of this.tabs.values())
       for (const [url, child] of slot.openedFrames ?? [])
         if (child === id) slot.openedFrames.delete(url);
-    for (const task of this.cleanupTasks)
-      if (![...this.tabSearches.values()].includes(task)) this.cleanupTasks.delete(task);
   }
   async openTabFrom(slot) {
     // Opening from an owned page selects its exact window; Target.createTarget
@@ -750,266 +687,12 @@ export class JevBrowser {
     }
     home = await this.track(page.context(), page);
     this.homeId = home.id;
-    this.tabJobs.delete(home.id);
     this.windowId = (
       await this.transport.call('Browser.getWindowForTarget', {targetId: home.id})
     ).windowId;
     await page.goto(homeUrl);
     await this.persistTabs();
     return home;
-  }
-  async reconcileJobs({jobs = [], sourceTabIds = []} = {}) {
-    const claims = new Map();
-    const claim = (id, job) => {
-      if (!claims.has(id)) claims.set(id, new Set());
-      claims.get(id).add(job);
-    };
-    for (const [id, job] of this.tabJobs) claim(id, job);
-    for (const job of jobs) {
-      const checkpoint = job.resumeContext;
-      if (
-        checkpoint?.browser === 'Jev Chrome' &&
-        this.tabs.has(checkpoint.tabId) &&
-        !foreignEmployerCheckpoint(job, checkpoint.url, jobs)
-      ) {
-        claim(checkpoint.tabId, job.id);
-        if (!this.tabJobs.has(checkpoint.tabId)) this.tabJobs.set(checkpoint.tabId, job.id);
-      }
-    }
-    // Popups belong to the opener's application, even when another task runs.
-    for (let i = 0; i < this.tabs.size; i++) {
-      let added = false;
-      for (const slot of this.tabs.values())
-        if (
-          !this.tabJobs.has(slot.id) &&
-          this.tabJobs.has(slot.openerId) &&
-          slot.id !== this.homeId
-        ) {
-          this.tabJobs.set(slot.id, this.tabJobs.get(slot.openerId));
-          claim(slot.id, this.tabJobs.get(slot.id));
-          added = true;
-        }
-      if (!added) break;
-    }
-    // A newly checkpointed child form supersedes its empty listing ancestors.
-    // Keep any other draft, shared/source tab, user navigation or unobserved tab.
-    const pruned = [];
-    for (const job of jobs) {
-      if (!['working', 'prepared', 'blocked'].includes(job.status)) continue;
-      const checkpoint = job.resumeContext;
-      if (checkpoint?.browser !== 'Jev Chrome') continue;
-      const current = this.tabs.get(checkpoint.tabId);
-      if (
-        !current ||
-        current.page.isClosed() ||
-        current.page.url() !== checkpoint.url ||
-        !this.urlHashes.has(current.id)
-      )
-        continue;
-      const seen = new Set();
-      let parentId = current.openerId;
-      while (parentId && !seen.has(parentId)) {
-        seen.add(parentId);
-        const parent = this.tabs.get(parentId);
-        if (!parent) break;
-        parentId = parent.openerId;
-        if (
-          parent.id === this.homeId ||
-          this.tabJobs.get(parent.id) !== job.id ||
-          sourceTabIds.includes(parent.id) ||
-          (claims.get(parent.id)?.size ?? 0) > 1 ||
-          this.urlHashes.get(parent.id) !== urlHash(parent.page.url())
-        )
-          continue;
-        // Inspect live values, including edits made manually since observation.
-        const hasDraft = await parent.page
-          .evaluate(() =>
-            [...document.querySelectorAll('input,textarea,select,[contenteditable="true"]')].some(
-              (e) => {
-                if (e.matches('input[type="hidden"],input[type="submit"],input[type="button"]'))
-                  return false;
-                if (e.matches('input[type="checkbox"],input[type="radio"]')) return e.checked;
-                if (e.type === 'file') return e.files.length > 0;
-                if (e.tagName === 'SELECT') return e.selectedIndex > 0;
-                return Boolean((e.value ?? e.textContent ?? '').trim());
-              },
-            ),
-          )
-          .catch(() => true);
-        if (hasDraft) continue;
-        try {
-          await parent.page.close({runBeforeUnload: false});
-          pruned.push(parent.id);
-          this.forgetTab(parent.id);
-        } catch {}
-      }
-    }
-    const terminal = new Map(
-      jobs
-        .filter(
-          (j) =>
-            (['submitted', 'already_submitted'].includes(j.status) &&
-              (j.proof || j.manualOutcome)) ||
-            j.status === 'skipped',
-        )
-        .map((j) => [j.id, j]),
-    );
-    const closed = [...pruned],
-      retained = [];
-    for (const [id, jobId] of this.tabJobs) {
-      const slot = this.tabs.get(id),
-        job = terminal.get(jobId);
-      if (!slot || !job || id === this.homeId) continue;
-      if (sourceTabIds.includes(id) || (claims.get(id)?.size ?? 0) > 1) {
-        retained.push(id);
-        continue;
-      }
-      const url = slot.page.url(),
-        known = this.urlHashes.get(id);
-      if (
-        known ? known !== urlHash(url) : ![job.resumeContext?.url, job.proof?.url].includes(url)
-      ) {
-        retained.push(id);
-        continue;
-      }
-      try {
-        await slot.page.close({runBeforeUnload: false});
-        closed.push(id);
-        this.forgetTab(id);
-      } catch {
-        retained.push(id);
-      }
-    }
-    if (closed.length) await this.onTabsClosed(closed);
-    await this.persistTabs();
-    return {closed, retained};
-  }
-  async cleanupSearch(taskId, state = {}) {
-    this.cleanupTasks.add(taskId);
-    await this.persistTabs();
-    if (
-      this.busy ||
-      !this.opening ||
-      (this.connection === 'existing' && !this.browser?.isConnected())
-    )
-      return {deferred: true};
-    this.busy = true;
-    try {
-      await this.context();
-      const jobs = await this.reconcileJobs(state),
-        research = await this.cleanupResearch(state);
-      return {
-        closed: [...(jobs?.closed ?? []), ...research.closed],
-        retained: [...(jobs?.retained ?? []), ...research.retained],
-      };
-    } finally {
-      this.busy = false;
-    }
-  }
-  async cleanupResearch(state = {}) {
-    for (const id of state.completedSearchTaskIds ?? []) this.cleanupTasks.add(id);
-    const active = new Set(state.activeSearchTaskIds ?? []),
-      closed = [],
-      retained = [];
-    const protectedTabs = protectedResearchTabs(this, state),
-      completedProtected = protectedResearchTabs(this, state, {keepSources: false});
-    const entries = [...this.tabSearches],
-      start = Math.max(
-        0,
-        entries.findIndex(([id]) => id === this.nextCleanupTab),
-      );
-    const deadline = Date.now() + 3000;
-    let inspected = 0;
-    for (let offset = 0; offset < entries.length; offset++) {
-      const index = (start + offset) % entries.length,
-        [id, taskId] = entries[index];
-      this.nextCleanupTab = id;
-      // Retained tabs must not starve later tabs or hold the agent's operation
-      // queue for an entire large backlog. The next core tick resumes here.
-      if (inspected >= RESEARCH_TAB_LIMIT || Date.now() >= deadline) break;
-      this.nextCleanupTab = entries[(index + 1) % entries.length][0];
-      if (active.has(taskId)) continue;
-      // Older registries have no completion queue. Only collect those research
-      // tabs when core supplies the complete set of current/paused worker tasks.
-      const completed = this.cleanupTasks.has(taskId);
-      if (!completed && !Array.isArray(state.activeSearchTaskIds)) continue;
-      const slot = this.tabs.get(id);
-      if (!slot) continue;
-      if ((completed ? completedProtected : protectedTabs).has(id)) {
-        retained.push(id);
-        continue;
-      }
-      inspected++;
-      if (!(await this.canRecycleResearch(slot))) {
-        retained.push(id);
-        continue;
-      }
-      try {
-        await slot.page.close({runBeforeUnload: false});
-        this.forgetTab(id);
-        closed.push(id);
-      } catch {
-        retained.push(id);
-      }
-    }
-    const remaining = new Set(this.tabSearches.values());
-    for (const id of this.cleanupTasks) if (!remaining.has(id)) this.cleanupTasks.delete(id);
-    if (closed.length) await this.onTabsClosed(closed);
-    await this.persistTabs();
-    return {closed, retained};
-  }
-  async canRecycleResearch(slot) {
-    const url = slot.page.url();
-    if (this.urlHashes.get(slot.id) !== urlHash(url) || !(await disposableResearchTab(slot)))
-      return false;
-    // Frame inspection yields to navigation/user input. Recheck before closing.
-    return !slot.page.isClosed() && slot.page.url() === url;
-  }
-  async reserveResearchTab(state, {exclude = []} = {}) {
-    if (!state.activeSearchTaskId) return;
-    await this.cleanupResearch(state);
-    const research = () =>
-      [...this.tabs.values()].filter(
-        (slot) =>
-          this.tabSearches.has(slot.id) && !this.tabJobs.has(slot.id) && !slot.page.isClosed(),
-      );
-    const protectedTabs = protectedResearchTabs(this, state);
-    for (const id of exclude) protectedTabs.add(id);
-    for (const slot of research()) {
-      if (research().length < RESEARCH_TAB_LIMIT) return;
-      if (
-        this.tabSearches.get(slot.id) !== state.activeSearchTaskId ||
-        protectedTabs.has(slot.id) ||
-        !(await this.canRecycleResearch(slot))
-      )
-        continue;
-      try {
-        await slot.page.close({runBeforeUnload: false});
-        this.forgetTab(slot.id);
-      } catch {}
-    }
-    await this.persistTabs();
-    if (research().length >= RESEARCH_TAB_LIMIT)
-      throw Object.assign(
-        Error(
-          `Araştırma sekmesi sınırına (${RESEARCH_TAB_LIMIT}) ulaşıldı. Core güvenle kapatılabilen sekme bulamadı. Mevcut görev sekmeleriyle devam et; yeni sekme açmayı tekrarlama. Taslaklar ve diğer worker sekmeleri korunuyor.`,
-        ),
-        {code: 'RESEARCH_TAB_LIMIT'},
-      );
-  }
-  async cleanupCompleted(state) {
-    if (this.busy || !this.opening || !this.tabs.size) return {deferred: true};
-    this.busy = true;
-    try {
-      const jobs = await this.reconcileJobs(state),
-        research = await this.cleanupResearch(state);
-      return {
-        closed: [...(jobs?.closed ?? []), ...research.closed],
-        retained: [...(jobs?.retained ?? []), ...research.retained],
-      };
-    } finally {
-      this.busy = false;
-    }
   }
   // Sites rewrite their own URL after an observation (selected listing,
   // tracking parameters). Only a different origin counts as navigating away.
@@ -1045,8 +728,6 @@ export class JevBrowser {
           slot.id === this.homeId ||
           slot.page.isClosed() ||
           this.automationWorkspaces.get(slot.id) !== workspaceId ||
-          this.tabJobs.has(slot.id) ||
-          this.tabSearches.has(slot.id) ||
           !runIds.includes(this.automationRuns.get(slot.id))
         )
           continue;
@@ -1085,7 +766,7 @@ export class JevBrowser {
     if (/^\d+$/.test(id))
       throw Object.assign(
         Error(
-          'Bu sayısal sekme kimliği mevcut Chrome aracına ait, Jev CDP kimliği değil. Kayıtlı taslağı orijinal Chrome aracıyla ve doğrulanmış aday profilinde sürdür; Jev bağlantısını yenileme veya yeni başvuru açma.',
+          'Bu sayısal sekme kimliği mevcut Chrome aracına ait, Jev CDP kimliği değil. Kayıtlı taslağı orijinal Chrome aracıyla sürdür; Jev bağlantısını yenileme veya yeni sekme açma.',
         ),
         {code: 'TAB_BACKEND_MISMATCH'},
       );
@@ -1093,7 +774,7 @@ export class JevBrowser {
     if (!slot || slot.page.isClosed())
       throw Object.assign(
         Error(
-          'Jev sekmesi bulunamadı: kayıtlı sekme kapatılmış veya seçili Chrome oturumunda artık mevcut değil. browser_jev_tabs ile kurtarılan sekmeleri kontrol et. Başvuruyu yeniden açmadan önce kayıtlı gönderim/sonuç durumunu doğrula; gönderildiği belirsiz bir başvuruyu tekrar gönderme.',
+          'Jev sekmesi bulunamadı: kayıtlı sekme kapatılmış veya seçili Chrome oturumunda artık mevcut değil. browser_jev_tabs ile kurtarılan sekmeleri kontrol et. Kaydı yeniden açmadan önce kayıtlı sonucu doğrula; gönderildiği belirsiz bir işlemi tekrar gönderme.',
         ),
         {code: 'TAB_MISSING'},
       );
@@ -1175,7 +856,6 @@ export class JevBrowser {
         this.autoVerify() &&
         (!this.siteAccess.status(observed.url)?.waiting ||
           (probe?.token && this.siteAccess.row(observed.url)?.token === probe.token)) &&
-        !this.tabJobs.has(slot.id) &&
         !this.automationTabs.get(slot.id)?.startsWith('record:');
       if (verificationPage && mayVerify && (await prepareTurnstileBarrier(slot))) {
         slot.observed = observed;
@@ -1333,37 +1013,6 @@ export class JevBrowser {
           url: e.href,
         })),
     );
-    const progressJobId = this.tabJobs.get(slot.id);
-    if (progressJobId && /^https?:/.test(observed.url)) {
-      const files = await slot.page.locator('input[type=file]').evaluateAll((nodes) =>
-        nodes.map((e) => ({
-          label:
-            e.getAttribute('aria-label') ||
-            [...(e.labels ?? [])].map((l) => l.innerText).join(' ') ||
-            e.name ||
-            'File upload',
-          files: [...(e.files ?? [])].map((f) => f.name),
-        })),
-      );
-      await this.onProgress(
-        progressJobId,
-        {
-          tabId: slot.id,
-          url: observed.url,
-          fields: fillFields.map(({label, type, value}) => ({label, type, value})),
-          controls: (observed.controls ?? []).map(({node, ...control}) => ({
-            ...control,
-            ...Object.fromEntries(
-              Object.entries(observed.actions.find((a) => a.node === node) ?? {}).filter(([key]) =>
-                ['checked', 'pressed'].includes(key),
-              ),
-            ),
-          })),
-          files,
-        },
-        slot.owner,
-      );
-    }
     return {
       savedLogin: await slot.page.evaluate(savedLoginState),
       passwordFields: await capturePasswordFields(slot, slot.owner),
@@ -1416,15 +1065,11 @@ export class JevBrowser {
   async observeAfterAction(slot) {
     return this.observe(slot);
   }
-  async execute(slot, pending, text, state = {}) {
+  async execute(slot, pending, text) {
     const {action, observed, operation} = pending;
-    const continuation = slot.allowVerificationContinuation;
-    slot.allowVerificationContinuation = null;
-    if (continuation) this.usedContinuations.add(continuation);
     if (
       slot.verification &&
       slot.verification.state !== 'answer_applied' &&
-      !continuation &&
       action?.kind === 'click' &&
       /submit|send application|apply now|başvur|gönder/i.test(action.label ?? '')
     )
@@ -1463,89 +1108,6 @@ export class JevBrowser {
               'Dosya seçici açılmadı. Güncel uploads listesindeki uploadId ve çalışma alanındaki belge yolu ile browser_upload_document (doğrudan Jev: browser_jev_upload) kullan. Normal tıklamayı tekrarlama.',
           };
       }
-    // A final send must have a durable submitting checkpoint BEFORE mouse input.
-    // Do not classify ordinary Apply links, Next, search or login as a final send.
-    let finalSend =
-      action.kind === 'click' &&
-      !['link', 'tab'].includes(action.role) &&
-      /^(submit(?: (?:my |your )?application)?|send application|apply|bewerbung (?:absenden|senden)|jetzt bewerben|başvuruyu gönder|başvuruyu tamamla)$/i.test(
-        (action.label ?? '').replace(/\s+/g, ' ').trim(),
-      );
-    const jobId = this.tabJobs.get(slot.id) || state.activeJobId;
-    const job = state.jobs?.find((j) => j.id === jobId);
-    // Ambiguous Apply is navigation when no rendered application form exists.
-    // Explicit submit labels and native submit buttons in forms retain the guard.
-    if (
-      finalSend &&
-      ![
-        'prepared',
-        'submitting',
-        'uncertain',
-        'submitted',
-        'already_submitted',
-        'skipped',
-      ].includes(job?.status) &&
-      /^(apply|jetzt bewerben)$/i.test((action.label ?? '').trim())
-    ) {
-      finalSend = await slot.page.evaluate((node) => {
-        const e = window.__jevFast.nodes.get(node);
-        if (!e) return true;
-        if (e.form && e.type === 'submit') return true;
-        const query = (root) => [
-          ...root.querySelectorAll('input,textarea,select,[role="textbox"],[role="combobox"]'),
-          ...[...root.querySelectorAll('*')]
-            .filter((n) => n.shadowRoot)
-            .flatMap((n) => query(n.shadowRoot)),
-        ];
-        return query(e.closest('form,[role="dialog"]') || document).some(
-          (n) =>
-            !['hidden', 'button', 'submit', 'reset', 'search'].includes(n.type) &&
-            !n.closest('header,nav,[role=search]') &&
-            !/search|suche/i.test(
-              [n.name, n.id, n.getAttribute('aria-label'), n.placeholder].join(' '),
-            ) &&
-            !n.disabled &&
-            !n.closest('[inert],[aria-hidden="true"]') &&
-            n.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) &&
-            n.getBoundingClientRect().width > 1 &&
-            n.getBoundingClientRect().height > 1,
-        );
-      }, action.node);
-    }
-
-    if (finalSend && (state.taskKind === 'preparation' || job?.preparation?.hold))
-      return {
-        ...(await this.observe(slot)),
-        status: 'submission_not_started',
-        executed: false,
-        retryable: false,
-        jobId,
-        blockerOrigin: 'jobloop_preparation_hold',
-        message:
-          'Hazırlık görevi gönderim yapamaz. Paketi kaydet ve kullanıcının Başvur seçimini bekle.',
-      };
-    if (finalSend && job)
-      await this.beforeSubmit(jobId, slot.page.url(), slot.owner, Boolean(continuation));
-
-    if (
-      finalSend &&
-      job &&
-      job.status !== 'submitting' &&
-      !(continuation && job.status === 'uncertain')
-    )
-      return {
-        ...(await this.observe(slot)),
-        status: 'submission_not_started',
-        executed: false,
-        retryable: false,
-        jobId,
-        recovery: 'verify_form_then_persist_submission',
-        blockerOrigin: 'jobloop_submission_guard',
-        message: ['uncertain', 'submitted', 'already_submitted', 'skipped'].includes(job.status)
-          ? 'Yeni gönderim yapılmadı. Kayıtlı sonucu doğrula; hazırlık durumuna geri dönme veya yeniden gönderme.'
-          : 'Tıklama tarayıcıya gönderilmedi; bu bir buton erişim hatası değil. Aynı tıklamayı veya next/act alternatifini tekrar deneme. Dönen güncel kontrol haritalarını kullan; controlMaps=replace ise eski kimlikleri bırak. Gerekirse inspect_form ile mevcut alanları kontrol et. Formun tamamlandığını doğrula. Önce update_application ile prepared, ardından submitting durumunu kalıcı kaydet; sonra güncel gönderim hedefini kullan. Gönderimden sonra bu durumları geriye dönük oluşturma.',
-      };
-
     const repeatKey = JSON.stringify([action.kind, action.node, action.value, action.delta, text]),
       before = progressKey(observed);
     if (action.kind !== 'wait' && blockedRepeat(slot, repeatKey, before))
@@ -1712,7 +1274,6 @@ export class JevBrowser {
     }
   }
   async callTool({name, arguments: args}, owner = 'local', state = {}) {
-    assertTaskTool({kind: state.taskKind}, name);
     validateJevArgs(name, args);
     if (this.busy) throw Error('Jev işlem yapıyor; mevcut çağrının sonucunu bekle.');
     this.busy = true;
@@ -1734,7 +1295,6 @@ export class JevBrowser {
         if (/^https?:/.test(url)) this.siteAccess?.assertAction(url);
       }
       const context = await this.context();
-      await this.reconcileJobs(state);
       let value;
       const sourceScope = Boolean(
         state.automationWorkspaceId && state.automationSourceUrl && state.automationTabKey,
@@ -1754,8 +1314,6 @@ export class JevBrowser {
           if (
             slot.id === this.homeId ||
             slot.page.isClosed() ||
-            this.tabJobs.has(slot.id) ||
-            this.tabSearches.has(slot.id) ||
             this.automationSources.has(slot.id)
           )
             continue;
@@ -1790,7 +1348,6 @@ export class JevBrowser {
           return (
             slot.id !== this.homeId &&
             !slot.page.isClosed() &&
-            !this.tabJobs.has(slot.id) &&
             this.automationWorkspaces.get(slot.id) === state.automationWorkspaceId &&
             this.automationTabs.get(slot.id) === state.automationTabKey
           );
@@ -1798,62 +1355,11 @@ export class JevBrowser {
           return (
             slot.id !== this.homeId &&
             !slot.page.isClosed() &&
-            !this.tabJobs.has(slot.id) &&
-            !this.tabSearches.has(slot.id) &&
             this.automationWorkspaces.get(slot.id) === state.automationWorkspaceId &&
             this.automationSources.get(slot.id) === state.automationSourceUrl
           );
-        if (!state.multiWorker) return true;
-        const job = this.tabJobs.get(slot.id),
-          search = this.tabSearches.get(slot.id);
-        if (job) return job === state.activeJobId;
-        if (search === state.activeSearchTaskId && search) return true;
-        if (search && (state.activeSearchTaskIds ?? []).includes(search)) return false;
-        return slot.id === state.activeSourceTabId || (!search && slot.owner === owner);
+        return !state.multiWorker || slot.owner === owner;
       };
-      if (name === 'browser_jev_open_verification_mail') {
-        const credentials = this.accountVault?.status();
-        if (
-          !credentials?.gmailCodes ||
-          !credentials.email ||
-          !['application', 'verify'].includes(state.taskKind) ||
-          !state.activeJobId
-        )
-          throw Error('Bu adayın başvuru doğrulaması için Gmail izni gerekli.');
-        let mail = [...this.tabs.values()].find((s) => {
-          try {
-            return accessible(s) && new URL(s.page.url()).hostname === 'mail.google.com';
-          } catch {
-            return false;
-          }
-        });
-        if (!mail) {
-          const page =
-            this.connection === 'existing'
-              ? await this.openTabFrom(await this.home())
-              : await context.newPage();
-          mail = await this.track(page.context(), page);
-          await page.goto(
-            'https://mail.google.com/mail/u/?authuser=' + encodeURIComponent(credentials.email),
-            {waitUntil: 'domcontentloaded', timeout: 20000},
-          );
-        }
-        mail.owner = owner;
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                ...presentObservation(mail, await this.observe(mail), {full: true}),
-                expectedEmail: credentials.email,
-                verificationMail: true,
-                message:
-                  'Önce görünen Gmail hesap adresini expectedEmail ile doğrula. Yalnızca etkin başvurunun güncel doğrulama iletisini oku; farklı hesaba veya ilgisiz postalara geçme.',
-              }),
-            },
-          ],
-        };
-      }
       if (name === 'browser_jev_tabs')
         value = {
           browser: 'Jev Chrome',
@@ -1867,8 +1373,6 @@ export class JevBrowser {
               ...(this.automationTabs.get(s.id)?.startsWith('record:')
                 ? {recordId: this.automationTabs.get(s.id).slice(7)}
                 : {}),
-              ...(this.tabSearches.has(s.id) ? {searchTaskId: this.tabSearches.get(s.id)} : {}),
-              ...(this.tabJobs.has(s.id) ? {jobId: this.tabJobs.get(s.id)} : {}),
             })),
         };
       else if (name === 'browser_jev_close_tab') {
@@ -1882,13 +1386,11 @@ export class JevBrowser {
         await this.persistTabs();
         value = {closed: true, closedTabId: slot.id};
       } else if (name === 'browser_jev_open' && state.automationTabKey) {
-        // Internal read-only automation scope, never a model-selected target or job draft.
-        if (state.activeJobId) throw Error('Başvuru sekmesi tarama için yeniden kullanılamaz.');
+        // Internal read-only automation scope, never a model-selected target.
         const reusable = [...this.tabs.values()].filter(
           (s) =>
             (sourceScope || this.automationTabs.get(s.id) === state.automationTabKey) &&
             accessible(s) &&
-            !this.tabJobs.has(s.id) &&
             !s.page.isClosed() &&
             (recordScope ||
               this.urlHashes.get(s.id) === urlHash(s.page.url()) ||
@@ -1984,106 +1486,6 @@ export class JevBrowser {
           };
         }
       } else if (name === 'browser_jev_open') {
-        if (
-          state.jobs?.some(
-            (j) =>
-              j.id === state.activeJobId &&
-              ['submitted', 'already_submitted', 'skipped'].includes(j.status),
-          )
-        )
-          throw Error('Bu başvuru tamamlandı; yeni sekme açma. Kayıtlı sonucu kullan.');
-        const activeJob = state.jobs?.find((j) => j.id === state.activeJobId);
-        if (activeJob?.followupStopped)
-          throw Error('Başvuru takibi bırakıldı; yeni tarayıcı işlemi yapma.');
-        if (
-          activeJob?.duplicateApplication &&
-          !(
-            state.repeatUncertain &&
-            activeJob.retryAuthorization?.kind === 'uncertain_submission' &&
-            activeJob.duplicateApplication.status === 'uncertain'
-          )
-        )
-          throw Error(activeJob.duplicateApplication.reason);
-        if (activeJob?.resumeContext && activeJob.resumeContext.browser !== 'Jev Chrome')
-          throw Object.assign(
-            Error('Kayıtlı taslak orijinal tarayıcı aracıyla sürdürülmeli; yeni Jev formu açma.'),
-            {code: 'TAB_BACKEND_MISMATCH'},
-          );
-        if (activeJob?.sessionId && activeJob.sessionId !== owner)
-          throw Error('İlan başka bir oturuma ait.');
-        const owned = state.activeJobId
-          ? [...this.tabs.values()].filter(
-              (s) => this.tabJobs.get(s.id) === state.activeJobId && !s.page.isClosed(),
-            )
-          : [];
-        const alternate =
-          activeJob &&
-          !['submitting', 'uncertain'].includes(activeJob.status) &&
-          args.url !== activeJob.url &&
-          (args.url === activeJob.applicationUrl || activeJob.note?.includes(args.url));
-        const existing = alternate
-          ? owned.findLast((s) => s.page.url() === args.url)
-          : (owned.find(
-              (s) =>
-                s.id === activeJob?.resumeContext?.tabId &&
-                !foreignEmployerCheckpoint(activeJob, s.page.url(), state.jobs),
-            ) ??
-            owned.findLast((s) => !foreignEmployerCheckpoint(activeJob, s.page.url(), state.jobs)));
-        if (existing) {
-          existing.owner = owner;
-          let page = presentObservation(existing, await this.observe(existing), {full: true});
-          if (state.taskKind === 'rank')
-            page = await presentRankObservation(existing, page, {restore: true});
-          return {content: [{type: 'text', text: JSON.stringify({...page, reused: true})}]};
-        }
-        const job = state.jobs?.find((j) => j.id === state.activeJobId);
-        if (job && ['submitting', 'uncertain'].includes(job.status))
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  status: 'verification_required',
-                  jobId: job.id,
-                  message:
-                    'Gönderim sonucu belirsiz ve kayıtlı sekme yok. Yeni başvuru açma veya tekrar gönderme; mevcut sonucu doğrula.',
-                }),
-              },
-            ],
-          };
-        if (job)
-          args = {
-            ...args,
-            url: alternate
-              ? args.url
-              : (job.applicationUrl ??
-                (job.resumeContext?.browser === 'Jev Chrome' &&
-                job.resumeContext.url &&
-                !foreignEmployerCheckpoint(job, job.resumeContext.url, state.jobs)
-                  ? job.resumeContext.url
-                  : job.url)),
-          };
-        if (state.activeSearchTaskId) {
-          const research = [...this.tabs.values()].find(
-            (slot) =>
-              this.tabSearches.get(slot.id) === state.activeSearchTaskId &&
-              !this.tabJobs.has(slot.id) &&
-              !slot.page.isClosed() &&
-              slot.page.url() === checkedUrl(args.url),
-          );
-          if (research) {
-            research.owner = owner;
-            let observation = presentObservation(research, await this.observe(research), {
-              full: true,
-            });
-            if (state.taskKind === 'rank')
-              observation = await presentRankObservation(research, observation, {restore: true});
-            return {
-              content: [{type: 'text', text: JSON.stringify({...observation, reused: true})}],
-            };
-          }
-          await this.reserveResearchTab(state);
-        }
         const page =
           this.connection === 'existing'
             ? await this.openTabFrom(await this.home())
@@ -2091,9 +1493,7 @@ export class JevBrowser {
         const slot = await this.track(page.context(), page);
         slot.owner = owner;
         await this.claimAutomationTab(slot, owner, state);
-        if (state.activeJobId) this.tabJobs.set(slot.id, state.activeJobId);
-        else if (state.activeSearchTaskId) this.tabSearches.set(slot.id, state.activeSearchTaskId);
-        else if (state.automationWorkspaceId)
+        if (state.automationWorkspaceId)
           this.automationWorkspaces.set(slot.id, state.automationWorkspaceId);
         if (state.automationSourceUrl)
           this.automationSources.set(slot.id, state.automationSourceUrl);
@@ -2128,46 +1528,7 @@ export class JevBrowser {
           this.automationSources.set(slot.id, state.automationSourceUrl);
           await this.persistTabs();
         }
-        if (
-          state.multiWorker &&
-          state.activeSearchTaskId &&
-          slot.id === state.activeSourceTabId &&
-          !this.tabJobs.has(slot.id)
-        ) {
-          this.tabSearches.set(slot.id, state.activeSearchTaskId);
-          await this.persistTabs();
-        }
-        if (state.jobs?.some((j) => j.id === this.tabJobs.get(slot.id) && j.followupStopped))
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  status: 'followup_stopped',
-                  message: 'Kullanıcı başvuru takibini bıraktı; bu sekmede işlem yapma.',
-                }),
-              },
-            ],
-          };
-        const job = state.jobs?.find((j) => j.id === this.tabJobs.get(slot.id)),
-          reserved = job?.verificationContinuation;
-        const continuationKey = reserved ? `${job.id}:${reserved.reservedAt}` : null;
-        const continuation =
-          reserved &&
-          Date.parse(reserved.reservedAt) >= this.startedAt &&
-          !this.usedContinuations.has(continuationKey);
-        const proposed =
-          name === 'browser_jev_click'
-            ? slot.clickTargets?.get(args.targetId)?.action
-            : name === 'browser_jev_act'
-              ? slot.pending?.action
-              : null;
-        assertRankAction(state.taskKind, proposed);
         releaseRendering = await acquireTabRendering(slot, {signal: this.readSignal});
-        slot.allowVerificationContinuation =
-          continuation && proposed?.kind === 'click' && proposed.label === reserved.actionLabel
-            ? continuationKey
-            : null;
         if (slot.verification) {
           updateVerification(slot, await verificationEvidence(slot.page, slot));
           if (
@@ -2183,7 +1544,7 @@ export class JevBrowser {
               'browser_jev_upload',
             ].includes(name)
           ) {
-            if (slot.verification.handoff && !slot.allowVerificationContinuation)
+            if (slot.verification.handoff)
               return {content: [{type: 'text', text: JSON.stringify(verificationHandoff(slot))}]};
             slot.verification.attempts++;
           }
@@ -2228,31 +1589,13 @@ export class JevBrowser {
         if (name === 'browser_jev_frame_observe' || name === 'browser_jev_frame_act') {
           let result = {};
           if (name === 'browser_jev_frame_act') {
-            if (state.taskKind === 'rank')
-              throw Error('Puanlama görevi gömülü başvuru formunu değiştiremez.');
             if (slot.verification)
               throw Error('Önce mevcut doğrulama adımını tamamla; formu tekrar gönderme.');
             const frame = slot.embeddedFrames?.get(args.frameId),
               target = slot.frameActionTargets?.get(args.targetId);
             if (!frame || !target || target.frame !== frame.frame)
               throw Error('Hedef bu frameId alanına ait değil.');
-            result = await actFormFrame(slot, args, owner, {
-              beforeClick: async (meta) => {
-                const final =
-                  !/^(next|continue|save and continue|weiter|back|zurück)$/i.test(meta.label) &&
-                  (meta.type === 'submit' ||
-                    /submit|send application|bewerbung.*(?:senden|schicken)|^apply$|başvuruyu gönder/i.test(
-                      meta.label,
-                    ));
-                if (final && job) {
-                  await this.beforeSubmit(job.id, slot.page.url(), owner);
-                  if (job.status !== 'submitting')
-                    throw Error(
-                      'submission_not_started: Önce formu doğrula ve prepared/submitting kaydet. Tıklama yapılmadı.',
-                    );
-                }
-              },
-            });
+            result = await actFormFrame(slot, args, owner);
           }
           let observed;
           try {
@@ -2266,11 +1609,7 @@ export class JevBrowser {
           return {content: [{type: 'text', text: JSON.stringify({...observed, ...result})}]};
         }
         if (name === 'browser_jev_open_frame') {
-          if (
-            slot.verification ||
-            (job &&
-              ['submitting', 'uncertain', 'submitted', 'already_submitted'].includes(job.status))
-          )
+          if (slot.verification)
             throw Error('Doğrulama/gönderim beklerken gömülü form yeniden açılamaz.');
           const url = await embeddedFormTarget(slot, args.frameId, owner);
           const openedId = slot.openedFrames?.get(url),
@@ -2291,8 +1630,6 @@ export class JevBrowser {
               ],
             };
           }
-          if (this.tabSearches.has(slot.id) && !this.tabJobs.has(slot.id))
-            await this.reserveResearchTab(state, {exclude: [slot.id]});
           const page =
             this.connection === 'existing' ? await this.openTabFrom(slot) : await context.newPage();
           const child = await this.track(page.context(), page);
@@ -2300,11 +1637,7 @@ export class JevBrowser {
           await this.claimAutomationTab(child, owner, state);
           slot.openedFrames ??= new Map();
           slot.openedFrames.set(url, child.id);
-          const jobId = this.tabJobs.get(slot.id);
-          if (jobId) this.tabJobs.set(child.id, jobId);
-          else if (this.tabSearches.has(slot.id))
-            this.tabSearches.set(child.id, this.tabSearches.get(slot.id));
-          else if (this.automationWorkspaces.has(slot.id))
+          if (this.automationWorkspaces.has(slot.id))
             this.automationWorkspaces.set(child.id, this.automationWorkspaces.get(slot.id));
           if (this.automationSources.has(slot.id))
             this.automationSources.set(child.id, this.automationSources.get(slot.id));
@@ -2352,22 +1685,6 @@ export class JevBrowser {
           }
           value = await this.observe(slot);
         }
-        if (name === 'browser_jev_fill_account_password') {
-          if (
-            !this.accountVault ||
-            state.taskKind !== 'application' ||
-            !job ||
-            job.id !== state.activeJobId ||
-            !['working', 'prepared', 'blocked'].includes(job.status)
-          )
-            throw Error('Yalnızca etkin başvuruya ait portal hesabı desteklenir.');
-          const result = await fillAccountPassword(slot, args, owner, {
-            vault: this.accountVault,
-            jobId: job.id,
-          });
-          value = {...(await this.observe(slot)), ...result};
-        }
-
         if (name === 'browser_jev_click') {
           const cookie =
             (await clickVerificationCheckbox(slot, args.targetId, owner)) ??
@@ -2376,7 +1693,7 @@ export class JevBrowser {
           else {
             const target = takeClickTarget(slot, args.targetId, owner);
             value = target
-              ? await this.execute(slot, target, undefined, state)
+              ? await this.execute(slot, target)
               : {
                   ...(await this.observe(slot)),
                   status: 'stale',
@@ -2465,35 +1782,9 @@ export class JevBrowser {
         }
         if (name === 'browser_jev_next') {
           const page = await this.observe(slot);
-          if (slot.verification?.handoff) {
-            const targets = continuation
-              ? page.clickTargets.filter((t) => t.label === reserved.actionLabel)
-              : [];
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(
-                    targets.length
-                      ? {
-                          ...page,
-                          status: 'verification_continuation_reserved',
-                          clickTargets: targets,
-                          nextAction: 'browser_jev_click',
-                          message:
-                            'Yalnızca kayıtlı izinli doğrulama devam adımını bir kez uygula; belirsiz sonucu tekrar deneme.',
-                        }
-                      : verificationHandoff(slot),
-                  ),
-                },
-              ],
-            };
-          }
-          const decisionPage =
-            state.taskKind === 'rank'
-              ? {...slot.observed, actions: slot.observed.actions.filter(rankActionAllowed)}
-              : slot.observed;
-          const decision = await this.choose(decisionPage, args.goal, slot.history, {
+          if (slot.verification?.handoff)
+            return {content: [{type: 'text', text: JSON.stringify(verificationHandoff(slot))}]};
+          const decision = await this.choose(slot.observed, args.goal, slot.history, {
             ...(await this.config()),
             signal: this.abort.signal,
           });
@@ -2561,7 +1852,7 @@ export class JevBrowser {
           if (pending.operation !== 'TYPE_TEXT' && args.text !== undefined)
             throw Error('Bu işlem metin kabul etmiyor.');
           slot.pending = null;
-          value = await this.execute(slot, pending, args.text, state);
+          value = await this.execute(slot, pending, args.text);
         }
         if (name === 'browser_jev_upload') {
           if (!path.isAbsolute(args.filePath)) throw Error('Dosya yolu mutlak olmalı.');
@@ -2648,10 +1939,6 @@ export class JevBrowser {
               ? presentObservation(slot, await this.observe(slot), {full: true, standalone: true})
               : value;
             return documentObservation(slot, observed);
-          });
-        if (state.taskKind === 'rank')
-          value = await presentRankObservation(slot, value, {
-            restore: name === 'browser_jev_open' || args.fullReason === 'context_loss',
           });
         if (
           name === 'browser_jev_observe' &&

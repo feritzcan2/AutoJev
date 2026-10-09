@@ -46,49 +46,6 @@ test('one connection handshake, backoff, disconnect and retry without agent call
   c.disconnected('a');
   assert.equal(c.status('a').ready, true);
 });
-test('resume uses the database URL and returns historical progress separately', async () => {
-  const job = {
-    id: 'job',
-    url: 'https://jobs.example/correct-id',
-    status: 'working',
-    sessionId: 's',
-    browserProgress: {fields: [{label: 'Name', value: 'Known'}]},
-  };
-  const browser = new BrowserTools('/unused', () => ({
-    lifecycle: {activeJobId: 'job', jobs: [job]},
-  }));
-  let requested;
-  browser.call = async (...args) => {
-    requested = args;
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({
-            tabId: 'live',
-            reused: true,
-            fillFields: [{label: 'Name', value: ''}],
-          }),
-        },
-      ],
-    };
-  };
-  const result = JSON.parse((await browser.resumeApplication('c', 'job', 's')).content[0].text);
-  assert.equal(requested[2].url, job.url);
-  assert.equal(result.resume.reopened, false);
-  assert.equal(result.fillFields[0].value, '');
-  assert.equal(result.resume.previousProgress.fields[0].value, 'Known');
-  await assert.rejects(() => browser.resumeApplication('c', 'other', 's'), /etkin/);
-  await assert.rejects(() => browser.resumeApplication('c', 'job', 'other'), /oturuma/);
-  job.resumeContext = {browser: 'Chrome profile old', tabId: '123'};
-  await assert.rejects(() => browser.resumeApplication('c', 'job', 's'), /orijinal/);
-  job.status = 'submitted';
-  assert.equal(
-    JSON.parse((await browser.resumeApplication('c', 'job', 's')).content[0].text).status,
-    'complete',
-  );
-});
-
 test('a late handshake cannot mark a newly selected Chrome profile ready', async () => {
   let resolve;
   const c = new BrowserConnections({connect: () => new Promise((r) => (resolve = r))});

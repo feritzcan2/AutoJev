@@ -120,9 +120,6 @@ test('failed read cleanup preserves other owners, sources, records, challenges a
   const record = await f.open();
   record.page.commitError();
   f.browser.automationTabs.set(record.id, 'record:application');
-  const job = await f.open();
-  job.page.commitError();
-  f.browser.tabJobs.set(job.id, 'application');
   const challenge = await f.open();
   challenge.page.commitError();
   challenge.verification = {state: 'required'};
@@ -130,7 +127,7 @@ test('failed read cleanup preserves other owners, sources, records, challenges a
   failed.page.commitError();
   await f.open();
   assert.deepEqual(f.closed, [failed.id]);
-  for (const slot of [otherRun, otherSource, otherWorkspace, changed, record, job, challenge])
+  for (const slot of [otherRun, otherSource, otherWorkspace, changed, record, challenge])
     assert.ok(f.browser.tabs.has(slot.id));
 });
 

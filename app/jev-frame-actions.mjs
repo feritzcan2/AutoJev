@@ -143,7 +143,7 @@ export async function observeFormFrame(slot, frameId, owner) {
       'Bu hedefler gömülü formun kendi bağlamında çalışır. Ana sayfa kimlikleriyle karıştırma. Her işlemden sonra yalnızca dönen yeni hedefleri kullan.',
   };
 }
-export async function actFormFrame(slot, args, owner, {beforeClick = async () => {}} = {}) {
+export async function actFormFrame(slot, args, owner) {
   const t = slot.frameActionTargets?.get(args.targetId);
   if (!t || t.owner !== owner) throw Error('Güncel gömülü form hedefi gerekli.');
   if (
@@ -166,7 +166,6 @@ export async function actFormFrame(slot, args, owner, {beforeClick = async () =>
     throw Error('Gözlenen seçenek value değeri gerekli.');
   if (meta.kind === 'choice' && typeof args.checked !== 'boolean')
     throw Error('İstenen checked durumu gerekli.');
-  if (meta.kind === 'click') await beforeClick(meta);
   slot.frameActionTargets.delete(args.targetId);
   try {
     if (meta.kind === 'fill') {
