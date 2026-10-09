@@ -324,6 +324,34 @@ test('an interrupted send becomes uncertain; verification is read-only and survi
   assert.equal(f.db.result(f.id, f.item.id).status, 'completed');
 });
 
+test('preparation sees general answers the user gave for other records', async (t) => {
+  const f = fixture(t),
+    seed = f.db.begin(f.id, 'run'),
+    other = f.db.record(f.id, seed.id, {
+      key: source + '/2',
+      url: source + '/2',
+      title: 'Other',
+      summary: 'Observed facts',
+    });
+  f.db.finish(f.id, seed.id, 'completed', 'Saved');
+  const ask = (input) => f.db.askQuestion(f.id, {recordId: other.id, ...input});
+  const fact = ask({text: 'Contact email?', fields: [{id: 'email', label: 'Email', type: 'text'}]});
+  f.db.answerQuestion(f.id, fact.id, {email: 'me@example.test'});
+  const login = ask({
+    text: 'Log in',
+    fields: [LOGGED_IN_FIELD],
+    accessCheck: {kind: 'login', url: 'https://portal.test', evidence: 'Sign in', snapshotId: 's'},
+  });
+  f.db.answerQuestion(f.id, login.id, {[LOGGED_IN_FIELD.id]: true});
+  await f.runtime.runRecord(f.id, f.item.id, 'prepare');
+  await settle();
+  const context = automationTaskContext(f.db, f.id, f.db.run(f.launches.at(-1).id));
+  assert.deepEqual(
+    context.earlierAnswers.answers.map((a) => a.answer),
+    ['Email: me@example.test'],
+  );
+});
+
 test('requested changes to a reviewed draft reach the next preparation', async (t) => {
   const f = fixture(t),
     prepared = await f.prepare();
