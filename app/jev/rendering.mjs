@@ -37,13 +37,16 @@ async function bounded(operation, {signal, timeoutMs}) {
     if (abort) signal.removeEventListener('abort', abort);
   }
 }
-export async function acquireTabRendering(slot, {signal, hidden, timeoutMs = 2000} = {}) {
+export async function acquireTabRendering(
+  slot,
+  {signal, hidden, foreground = false, timeoutMs = 2000} = {},
+) {
   signal?.throwIfAborted();
   if (!slot.cdp) return () => {};
   let state = active.get(slot);
   if (state?.stopping) {
     await bounded(() => state.stopping, {signal, timeoutMs});
-    return acquireTabRendering(slot, {signal, hidden, timeoutMs});
+    return acquireTabRendering(slot, {signal, hidden, foreground, timeoutMs});
   }
   if (!state) {
     state = {users: 0, enabled: false};
@@ -58,6 +61,15 @@ export async function acquireTabRendering(slot, {signal, hidden, timeoutMs = 200
       )
         return;
       signal?.throwIfAborted();
+      // Focus emulation keeps reads working in a background tab, but form
+      // writes (fill, click, upload) need real rendering: Playwright waits for
+      // visible, stable elements and a hidden tab never paints. Jev runs one
+      // tool call at a time, so bringing the tab forward cannot interleave
+      // with another worker's write.
+      if (foreground) {
+        await bounded(() => slot.page.bringToFront(), {signal, timeoutMs}).catch(() => {});
+        signal?.throwIfAborted();
+      }
       state.enabled = true;
       await bounded(() => slot.cdp.send('Emulation.setFocusEmulationEnabled', {enabled: true}), {
         signal,

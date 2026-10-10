@@ -5,17 +5,12 @@
 // of a browser tab and returned as ordinary Jev page objects. Everything after
 // the read (known listings, assessment, evidence, queue) stays generic.
 // Card and posting parsing follows github.com/MadsLorentzen/ai-job-search (MIT).
-import {SiteWaitError} from '../browser/site-access.mjs';
+import {decode, htmlText, inlineText, listingPage} from './listing.mjs';
+import {siteFetch, isMissing, readerPage} from './http.mjs';
 
 const SEARCH_PATH = '/jobs-guest/jobs/api/seeMoreJobPostings/search';
 const DETAIL_URL = 'https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/';
 export const LINKEDIN_PAGE_SIZE = 10;
-const BLOCKED_STATUSES = new Set([403, 429, 999]);
-const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (compatible; AutoJev/1.0)',
-  Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
-  'Accept-Language': 'en-US,en;q=0.9',
-};
 
 const linkedInHost = (host) => host === 'linkedin.com' || host.endsWith('.linkedin.com');
 // Which guest request serves this address: a search page, a posting, or none.
@@ -34,33 +29,7 @@ export function linkedInGuestRequest(value) {
   return id ? {kind: 'detail', id, url: url.href} : null;
 }
 
-const entity = (cp) => (cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : '');
-const decode = (text) =>
-  text
-    .replace(/&#(\d+);/g, (_, d) => entity(Number(d)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) => entity(parseInt(h, 16)))
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&');
-const clean = (html) =>
-  decode(html.replace(/<[^>]+>/g, ' '))
-    .replace(/\s+/g, ' ')
-    .trim();
-const blockText = (html) =>
-  decode(
-    html
-      .replace(/<\s*br\s*\/?>/gi, '\n')
-      .replace(/<\/(?:p|li|ul|ol|div|h\d)>/gi, '\n')
-      .replace(/<li[^>]*>/gi, '• ')
-      .replace(/<[^>]+>/g, ' '),
-  )
-    .replace(/[ \t]+/g, ' ')
-    .replace(/ *\n */g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+const clean = inlineText;
 // Inner HTML of the first <div> carrying this class, following nested divs.
 function divContent(html, className) {
   const open = new RegExp(`<div[^>]*class="[^"]*${className}[^"]*"[^>]*>`, 'i').exec(html);
@@ -122,7 +91,7 @@ export function parseJobDetail(html) {
         '',
     ) || null;
   const description =
-    blockText(
+    htmlText(
       divContent(html, 'show-more-less-html__markup') ??
         divContent(html, 'description__text') ??
         '',
@@ -144,17 +113,8 @@ export function parseJobDetail(html) {
   };
 }
 
-const ready = {loading: false, reason: null};
-const page = (url, title, text, links, pagination = []) => ({
-  browser: 'LinkedIn guest reader',
-  url,
-  title,
-  text,
-  links,
-  pagination,
-  status: 'ready',
-  reading: {scope: 'site_reader', truncated: false, readiness: ready, unreadFrames: 0},
-});
+const page = (url, title, text, links, pagination = []) =>
+  readerPage({browser: 'LinkedIn guest reader', url, title, text, links, pagination});
 
 // A results page lists its cards as known listings (links marked listing) and
 // numbers itself; a full page links the next offset, a short or empty page
@@ -197,63 +157,24 @@ export function linkedInDetailPage(url, html) {
       [],
     );
   const job = parseJobDetail(html);
-  const lines = [
-    job.title || 'LinkedIn job',
-    [job.company, job.location].filter(Boolean).join(' · '),
-    ...(job.closed ? ['No longer accepting applications.'] : []),
-    ...job.criteria.map(([k, v]) => `${k}: ${v}`),
-    '',
-    job.description ?? '',
-  ];
-  return page(
+  return listingPage({
+    browser: 'LinkedIn guest reader',
     url,
-    job.company ? `${job.title} @ ${job.company}` : job.title || 'LinkedIn job',
-    lines.join('\n').trim(),
-    [],
-  );
+    title: job.company ? `${job.title} @ ${job.company}` : job.title || 'LinkedIn job',
+    description: job.description,
+    fields: {company: job.company, location: job.location, ...Object.fromEntries(job.criteria)},
+    notes: job.closed ? ['No longer accepting applications.'] : [],
+  });
 }
 
-// One guest request through the shared site access rules: an active site wait
-// stops it before sending, pacing spaces requests after an incident, and a
-// block status starts the same shared wait a browser read would.
-export async function readLinkedInGuest(
-  url,
-  {
-    fetch = globalThis.fetch,
-    signal = undefined,
-    siteAccess = undefined,
-    wait = (ms) => new Promise((r) => setTimeout(r, ms)),
-  } = {},
-) {
+// One guest request through the shared site access rules (./http.mjs).
+export async function readLinkedInGuest(url, options = {}) {
   const request = linkedInGuestRequest(url);
   if (!request) throw Error('LinkedIn guest reader does not handle this address');
   const target = request.kind === 'search' ? request.url : DETAIL_URL + request.id;
-  const token = siteAccess?.begin(target) ?? null;
-  const delay = siteAccess?.pace(target) ?? 0;
-  if (delay) {
-    await wait(delay);
-    signal?.throwIfAborted();
-  }
-  const response = await fetch(target, {
-    headers: HEADERS,
-    redirect: 'follow',
-    signal: signal
-      ? AbortSignal.any([signal, AbortSignal.timeout(15000)])
-      : AbortSignal.timeout(15000),
-  });
-  if (BLOCKED_STATUSES.has(response.status)) {
-    const blocked = siteAccess?.complete(target, token, {
-      status: response.status,
-      reason: 'rate_limit',
-    });
-    if (blocked) throw Object.assign(new SiteWaitError(blocked), {url});
-    throw Object.assign(Error(`LinkedIn erişimi reddetti (HTTP ${response.status}).`), {url});
-  }
-  siteAccess?.complete(target, token, {status: response.status});
-  if (response.status === 404 || response.status === 410)
+  const response = await siteFetch(target, {...options, site: 'LinkedIn', url});
+  if (isMissing(response))
     return request.kind === 'search' ? linkedInSearchPage(url, []) : linkedInDetailPage(url, '');
-  if (!response.ok)
-    throw Object.assign(Error(`LinkedIn isteği başarısız oldu (HTTP ${response.status}).`), {url});
   const html = await response.text();
   return request.kind === 'search'
     ? linkedInSearchPage(url, parseJobCards(html))
@@ -261,7 +182,7 @@ export async function readLinkedInGuest(
 }
 
 // No browser tab: the worker reads guest search pages and postings through
-// reader.read and hands them to Jev as ordinary pages.
+// http.read and hands them to Jev as ordinary pages; a posting is a listing.
 export default {
   id: 'linkedin',
   matches: (value) => {
@@ -272,5 +193,20 @@ export default {
       return false;
     }
   },
-  reader: {handles: (url) => Boolean(linkedInGuestRequest(url)), read: readLinkedInGuest},
+  http: {handles: (url) => Boolean(linkedInGuestRequest(url)), read: readLinkedInGuest},
+  // The guest search address and the filters it accepts (observed 2026-10).
+  search: {
+    template: `https://www.linkedin.com${SEARCH_PATH}?keywords={query}&location={location}&sortBy=DD`,
+    ordering: 'newest_first',
+    pagination: 'url_param',
+    filters: [
+      {param: 'f_WT', label: 'Çalışma şekli', values: {1: 'Ofis', 2: 'Uzaktan', 3: 'Hibrit'}},
+      {
+        param: 'f_TPR',
+        label: 'Yayın tarihi',
+        values: {r86400: 'Son 24 saat', r604800: 'Son hafta', r2592000: 'Son ay'},
+      },
+    ],
+    notes: 'sortBy=DD orders newest first. 10 cards per page, pages via &start=10,20,…',
+  },
 };

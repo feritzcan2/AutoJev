@@ -373,3 +373,31 @@ test('offscreen pagination uses only its current owner-bound scroll ancestor', a
   assert.equal(pagination[2].scrollControlId, undefined);
   assert.ok(pagination.every((p) => !('scrollNode' in p)));
 });
+
+test('a shown JobPosting becomes the listing; a loading page or a mismatch keeps only the rendered read', async () => {
+  const job = {
+    '@type': 'JobPosting',
+    title: 'Senior Engineer',
+    description: `<p>${'Build the payments platform with a small team. '.repeat(6)}</p>`,
+    hiringOrganization: {name: 'Acme'},
+  };
+  const f = fixture('Menu\nSenior Engineer\nSimilar jobs', 'Senior Engineer');
+  Object.assign(f.document, {
+    jobPostings: [JSON.stringify(job)],
+    title: 'Senior Engineer | Jobs',
+    headings: ['Senior Engineer'],
+  });
+  const result = await documentObservation(f.slot, f.value);
+  assert.equal(result.text, f.document.text, 'the rendered read is unchanged');
+  assert.deepEqual(result.listing.fields, {company: 'Acme'});
+  assert.match(result.listing.text, /^Senior Engineer @ Acme\ncompany: Acme\n\nBuild the payments/);
+  assert.equal('jobPostings' in result, false);
+  f.document.headings = ['Other role'];
+  f.document.title = 'Other role';
+  assert.equal((await documentObservation(f.slot, f.value)).listing, undefined);
+  Object.assign(f.document, {
+    headings: ['Senior Engineer'],
+    readiness: {loading: true, reason: 'document_loading'},
+  });
+  assert.equal((await documentObservation(f.slot, f.value)).listing, undefined);
+});

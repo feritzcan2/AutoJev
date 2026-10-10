@@ -221,6 +221,10 @@ export class JevTaskStore {
   }
   evidence(task, page) {
     this.get(task.automationId, task.taskId, task.id);
+    // A listing read from the page's structured data replaces the rendered
+    // text and its site chrome; discovery keeps the rendered page, whose card
+    // offsets point into that text.
+    const listing = task.input.operation === 'scan_results' ? null : (page.listing ?? null);
     // SPA pagination can change every listing while keeping the same URL.
     // Discovery checkpoints must retain the page each link was observed on.
     const old =
@@ -234,12 +238,15 @@ export class JevTaskStore {
       id,
       url: page.url,
       title: page.title ?? '',
-      text: page.text ?? '',
+      text: listing?.text ?? page.text ?? '',
       links: page.links ?? [],
       pagination: page.pagination ?? [],
       canonicalUrl: page.canonicalUrl,
       at: this.now(),
       unreadFrames: page.reading?.unreadFrames ?? 0,
+      // A site extension or the page's structured data gave this listing
+      // itself; no site chrome to filter.
+      listing: listing && {fields: listing.fields},
     };
     this.briefs.delete(id);
     this.bodies.set(id, {jevTaskId: task.id, value: copy(value)});

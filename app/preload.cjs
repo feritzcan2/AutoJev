@@ -77,6 +77,7 @@ contextBridge.exposeInMainWorld('jobloop', {
   automationRun: (id, kind) => invoke('automation-run', id, kind),
   automationApprove: (id, item) => invoke('automation-approve', id, item),
   automationDismiss: (id, item) => invoke('automation-dismiss', id, item),
+  automationMarkSubmitted: (id, item) => invoke('automation-mark-submitted', id, item),
   automationStar: (id, item, starred) => invoke('automation-star', id, item, starred),
   automationBrowser: (id) => invoke('automation-browser', id),
   automationTerminal: (id, run) => invoke('automation-terminal', id, run),

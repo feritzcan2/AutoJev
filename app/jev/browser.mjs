@@ -4,6 +4,7 @@ import {
   cloudflareCheckboxMessage,
 } from '../captcha/cloudflare-checkbox.mjs';
 import {installTurnstileRegistration} from '../captcha/turnstile-registration.mjs';
+import {installNoTranslate} from './translation.mjs';
 import {prepareTurnstileBarrier, turnstileBarrierResult} from '../captcha/barrier.mjs';
 import {privateJevPage, retryJevRead} from './page.mjs';
 import {acquireTabRendering} from './rendering.mjs';
@@ -56,6 +57,21 @@ import {
 import {validateJevArgs} from './tools.mjs';
 const require = createRequire(import.meta.url);
 const urlHash = (url) => createHash('sha256').update(url).digest('hex');
+// Tools that write to or scroll the page need a rendering tab (see rendering.mjs).
+const WRITE_TOOLS = new Set([
+  'browser_jev_act',
+  'browser_jev_autocomplete',
+  'browser_jev_click',
+  'browser_jev_fill_fields',
+  'browser_jev_frame_act',
+  'browser_jev_next',
+  'browser_jev_reveal',
+  'browser_jev_scroll',
+  'browser_jev_select_choice',
+  'browser_jev_select_option',
+  'browser_jev_upload',
+  'browser_target_press',
+]);
 const homeUrl =
   'data:text/html;charset=utf-8,' +
   encodeURIComponent(
@@ -315,6 +331,8 @@ export class JevBrowser {
         pending: null,
         uploads: new Map(),
       };
+      // A tab that rejects init scripts still works; its labels may then be translated.
+      await installNoTranslate(slot.page).catch(() => {});
       if (this.autoVerify()) await installTurnstileRegistration(slot.page);
       if (this.connection === 'existing') {
         this.contextId = targetInfo.browserContextId;
@@ -556,6 +574,9 @@ export class JevBrowser {
     try {
       return await slot.page.goto(url, {waitUntil: 'domcontentloaded', timeout: 20000});
     } catch (error) {
+      // A 429 answered before its document loaded may still be an interactive
+      // verification page; with automatic verification the observation decides.
+      if (slot.http?.status === 429 && this.siteAccess && this.autoVerify()) throw error;
       const wait =
         this.siteAccess?.complete(url, token, {
           ...slot.http,
@@ -579,18 +600,11 @@ export class JevBrowser {
     });
   }
   async observeOnce(slot) {
-    // HTTP 429 can accompany a real interactive verification page. The actual
-    // verification document decides; its provider frame may render 10+ seconds
-    // later. Ordinary rate limits still return immediately.
-    const rateVerification =
-      this.siteAccess &&
-      slot.http?.status === 429 &&
-      this.autoVerify() &&
-      (await slot.page
-        .evaluate(() => ({title: document.title, text: document.body?.innerText ?? ''}))
-        .then((document) => accessBarrier(document) === 'verification')
-        .catch(() => false));
-    if (this.siteAccess && slot.http?.status === 429 && !rateVerification) {
+    // HTTP 429 can accompany a real interactive verification page. With
+    // automatic verification the loaded document decides below: a challenge
+    // gets its checkbox attempt, an ordinary rate limit starts the shared wait.
+    // Without it, rate limits return immediately.
+    if (this.siteAccess && slot.http?.status === 429 && !this.autoVerify()) {
       const probe = slot.accessProbe,
         url = probe?.url ?? slot.http.url;
       const wait =
@@ -778,9 +792,21 @@ export class JevBrowser {
           url: e.href,
         })),
     );
+    // Chrome's page translation rewrites labels between runs and away from the
+    // page's own wording; the model must act on ids, not remembered labels.
+    const translated = await slot.page
+      .evaluate(() => /\btranslated-(?:ltr|rtl)\b/.test(document.documentElement.className))
+      .catch(() => false);
     return {
       savedLogin: await slot.page.evaluate(savedLoginState),
       passwordFields: await capturePasswordFields(slot, slot.owner),
+      ...(translated
+        ? {
+            translated: true,
+            translationNotice:
+              'Chrome translated this page. Labels differ from the original wording and from earlier runs; act on the ids and roles in this observation, never on a remembered label. A control with visible:false may be a translated duplicate; prefer the visible clickTargets entry.',
+          }
+        : {}),
       accountCredentials: this.accountVault?.status() ?? {configured: false},
       browser: 'Jev Chrome',
       tabId: slot.id,
@@ -1293,7 +1319,10 @@ export class JevBrowser {
           this.automationSources.set(slot.id, state.automationSourceUrl);
           await this.persistTabs();
         }
-        releaseRendering = await acquireTabRendering(slot, {signal: this.readSignal});
+        releaseRendering = await acquireTabRendering(slot, {
+          signal: this.readSignal,
+          foreground: WRITE_TOOLS.has(name),
+        });
         if (slot.verification) {
           updateVerification(slot, await verificationEvidence(slot.page, slot));
           if (
@@ -1331,8 +1360,10 @@ export class JevBrowser {
           if (slot.verification) slot.verification.screenshots++;
           slot.pending = null;
           await clearFillFields(slot);
+          const jpeg = args.format === 'jpeg';
           const screenshot = await slot.page.screenshot({
-            type: 'png',
+            type: jpeg ? 'jpeg' : 'png',
+            ...(jpeg ? {quality: 60} : {}),
             fullPage: false,
             timeout: 10000,
           });
@@ -1347,7 +1378,11 @@ export class JevBrowser {
                   ...(slot.verification ? {verification: slot.verification} : {}),
                 }),
               },
-              {type: 'image', mimeType: 'image/png', data: screenshot.toString('base64')},
+              {
+                type: 'image',
+                mimeType: jpeg ? 'image/jpeg' : 'image/png',
+                data: screenshot.toString('base64'),
+              },
             ],
           };
         }
@@ -1457,14 +1492,21 @@ export class JevBrowser {
           if (cookie) value = {...(await this.observe(slot)), ...cookie};
           else {
             const target = takeClickTarget(slot, args.targetId, owner);
+            // A radio/checkbox controlId from inspect_form selects that answer.
+            const choice =
+              !target && slot.controls?.get(args.targetId)?.kind === 'control'
+                ? await selectChoice(slot, {controlId: args.targetId}, owner, this.reader)
+                : null;
             value = target
               ? await this.execute(slot, target)
-              : {
-                  ...(await this.observe(slot)),
-                  status: 'stale',
-                  executed: false,
-                  message: 'Tıklama hedefi eski; güncel clickTargets listesini kullan.',
-                };
+              : choice
+                ? {...(await this.observe(slot)), ...choice}
+                : {
+                    ...(await this.observe(slot)),
+                    status: 'stale',
+                    executed: false,
+                    message: 'Tıklama hedefi eski; güncel clickTargets listesini kullan.',
+                  };
           }
         }
         if (name === 'browser_jev_inspect_form' && slot.verification?.handoff)

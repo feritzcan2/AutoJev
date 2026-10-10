@@ -121,9 +121,23 @@ export function stepstoneResults(raw) {
   return {listings, pagination: fresh ? pagination(raw) : null};
 }
 
+// The results address StepStone accepts (observed 2026-10). {query} is a
+// hyphenated search slug; a city goes into the path (/jobs/{query}/in-berlin).
+const search = {
+  template: 'https://www.stepstone.de/jobs/{query}?sort=2&action=sort_publish',
+  ordering: 'newest_first',
+  pagination: 'url_param',
+  filters: [
+    {param: 'fdl', label: 'İlan dili', values: {en: 'İngilizce', de: 'Almanca'}},
+    {param: 'radius', label: 'Yarıçap (km, şehirle)', values: {10: '10', 30: '30', 50: '50'}},
+  ],
+  notes:
+    'sort=2&action=sort_publish orders by date. Pages via &page=N. For one city use /jobs/{query}/in-<city>; radius applies only with a city.',
+};
+
 export default {
   id: 'stepstone',
   matches: isStepstoneUrl,
-  collect: collectStepstonePage,
-  results: stepstoneResults,
+  dom: {collect: collectStepstonePage, results: stepstoneResults},
+  search,
 };

@@ -518,6 +518,7 @@ export class AutomationStore {
       automation: {...a, questions: (a.questions ?? []).map((q) => db.questionContext(id, q))},
       definition,
       sources: db.sources(id),
+      sourceCatalog: db.sourceCatalog(id, a),
       workers: db.store.workspaces.workers.list(id),
       tasks: tasks.slice(-100).reverse().map(taskSnapshot),
       messages: db.messages(id),

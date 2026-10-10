@@ -1,6 +1,10 @@
 // @ts-check
 import {taskHasRecord} from '../records/task-scope.mjs';
-import {validateWorkCompletion, hasUnblockedScanWork} from '../sources/scan-work.mjs';
+import {
+  validateWorkCompletion,
+  hasUnblockedScanWork,
+  scanWorkVerified,
+} from '../sources/scan-work.mjs';
 import {scanCheckpoint} from '../sources/automation-scan.mjs';
 import {sourceScan} from '../sources/scan-issues.mjs';
 import {validateLoginQuestion, LOGGED_IN_FIELD} from './login-question.mjs';
@@ -88,17 +92,20 @@ export function finishAutomationRun({
       loginAsked = true;
     }
   }
-  // A verify task that ends without portal proof has no next step for the
-  // agent. The user knows the outcome; the app asks and applies it.
+  // An execute or verify that ends without portal proof leaves the record
+  // uncertain, and most portals never show a draft state. The user knows the
+  // outcome (confirmation mail, portal account); the app asks once and applies it.
   if (
     ['blocked', 'failed'].includes(status) &&
-    active.recordOperation === 'verify' &&
+    ['execute', 'verify'].includes(active.recordOperation) &&
     active.recordId &&
     !loginAsked
   ) {
-    const item = db.result(id, active.recordId);
+    const item = db.result(id, active.recordId),
+      uncertain =
+        item.status === 'uncertain' || (item.status === 'executing' && active.actionId === item.id);
     if (
-      item.status === 'uncertain' &&
+      uncertain &&
       !(automation.questions ?? []).some((q) => q.recordId === item.id && q.answer == null)
     )
       db.askQuestion(
@@ -127,14 +134,18 @@ export function finishAutomationRun({
       throw Error(
         'Çözümlenmemiş sayfa sorunları var. Bu adresleri browser_open ile yeniden aç; yüklenmiyorsa failed bildir, uygulama sonra yeniden dener.',
       );
-    const scan = scanCheckpoint(active, args.scan);
+    // The verified searches decide; agents that saw pages beyond the page
+    // budget reported complete:false and were refused in a loop.
+    const scan = scanWorkVerified(active)
+      ? {...active.scan, complete: true, pendingUrls: []}
+      : scanCheckpoint(active, args.scan);
     if (!scan.complete && args.goalReached) throw Error('Eksik taramada hedefe ulaşıldı denemez');
     if (collecting) scan.reason = active.scan.reason;
     if (!scan.complete)
       throw Error(
         'Kaynak taraması bitmedi. Süre veya adım sınırı yok; aynı görevde kalan sayfaları işlemeye devam et ve complete_scan_search ile kapat. Gerçek erişim engelini blocked olarak bildir.',
       );
-    validateWorkCompletion(active, scan);
+    scan.completion = validateWorkCompletion(active, scan);
     if (scan.completion === 'cutoff' && args.goalReached)
       throw Error(
         'Yeni ilan kontrolünün tarih sınırına ulaşması otomasyonun hedefinin bittiği anlamına gelmez.',

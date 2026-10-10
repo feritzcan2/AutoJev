@@ -1,4 +1,4 @@
-import {checkSourceBrowser} from '../sources/browser-check.mjs';
+import {checkSourceBrowser, sourceCheckOwner} from '../sources/browser-check.mjs';
 import {BrowserConnections, browserWaitResult} from './connection.mjs';
 import path from 'node:path';
 import {mkdir} from 'node:fs/promises';
@@ -348,6 +348,15 @@ export class BrowserTools {
         return {closed, failed};
       },
       {checkActive: false},
+    );
+  }
+  // A failed source check leaves its tab open for the user; the resumed run
+  // closes it like a finished run's tab.
+  closeSourceCheck(id, run) {
+    return this.finishAutomationRun(
+      id,
+      {id: sourceCheckOwner(run.taskId), workerId: run.workerId},
+      {closeTabs: true, keepForms: false},
     );
   }
   async finishAutomationRun(

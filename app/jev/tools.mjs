@@ -73,14 +73,16 @@ export const jevTools = [
   {
     name: 'browser_jev_inspect_form',
     description:
-      'Read rendered form fields across the current page and frames, including below the fold, without clicking or submitting. Inspect once before asking questions and check again after meaningful form changes before submission. Check missingRequired and submitControls: a disabled Submit with unfilled required fields is an incomplete form, not an inaccessible button. Collect all missing facts/consents together. required=null means unknown, not optional. Does not expose password values, call a model, or prove a past submission failed; use actual post-submit validation evidence for that.',
+      'Read rendered form fields across the current page and frames, including below the fold, without clicking or submitting. Inspect once before asking questions and check again after meaningful form changes before submission. Check missingRequired and submitControls: a disabled Submit with unfilled required fields is an incomplete form, not an inaccessible button. Collect all missing facts/consents together. A field without required is unknown, not optional. Radio/checkbox options are grouped under their question with one controlId per option. Does not expose password values, call a model, or prove a past submission failed; use actual post-submit validation evidence for that.',
     inputSchema: schema({tabId: string}),
   },
   {
     name: 'browser_jev_screenshot',
     description:
       'Capture the visible viewport of this workspace’s existing Jev tab. Use for visual verification when DOM values are absent or redacted, especially before escalating a form-entry failure. Does not call Jev or act on the page.',
-    inputSchema: schema({tabId: string}),
+    inputSchema: schema({tabId: string, format: {type: 'string', enum: ['png', 'jpeg']}}, [
+      'tabId',
+    ]),
   },
   {
     name: 'browser_jev_click',

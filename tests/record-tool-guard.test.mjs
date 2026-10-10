@@ -206,7 +206,7 @@ test('failed save diagnostics survive worker shutdown without storing arguments 
     cells: {company: 42},
     'private-field-name': 'private text',
   };
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 6; i++) {
     const response = await f.call(entry, 'record_automation_result', input);
     assert.equal(response.result.isError, true);
     assert.match(errorText(response), /Missing summary/);
@@ -214,7 +214,7 @@ test('failed save diagnostics survive worker shutdown without storing arguments 
   }
   await entry.closed;
   const history = f.log.history(f.id, {session: entry.run.id}).events;
-  assert.equal(history.length, 3);
+  assert.equal(history.length, 6);
   assert.ok(history.every((e) => e.title === 'record_automation_result' && e.status === 'failed'));
   const details = history.map((e) => f.log.detail(f.id, e.seq));
   assert.doesNotMatch(
@@ -291,7 +291,7 @@ test('the third repeated save error stops only its worker and persists a visible
 test('schema validation failures are counted before the tool body executes', async (t) => {
   const f = await fixture(t),
     entry = await f.start();
-  for (let i = 0; i < 3; i++)
+  for (let i = 0; i < 6; i++)
     assert.equal((await f.score(entry, {score: '82 points'})).result.isError, true);
   assert.equal(entry.calls.filter((name) => name === 'record_automation_score').length, 0);
   assert.equal(f.db.run(entry.run.id).status, 'blocked');
@@ -482,7 +482,7 @@ test('source schema failures share a limit across records and cannot auto-requeu
     ),
   );
   assert.equal(f.db.run(entry.run.id).status, 'blocked');
-  assert.equal(f.failures(entry)[0].count, 3);
+  assert.equal(f.failures(entry)[0].count, 6);
   assert.equal(f.reports.length, 1);
   assert.equal(entry.calls.filter((n) => n === 'record_automation_result').length, 0);
   assert.ok(responses.every((r) => r.result?.isError || r.httpStatus === 401));

@@ -1,9 +1,15 @@
 // @ts-check
 import {isConversation} from '../../workspaces/conversation.mjs';
-import {forgetScanPosition, forgetPlanPosition} from '../../sources/scan-work.mjs';
+import {
+  forgetScanPosition,
+  forgetPlanPosition,
+  dropRecipeSearches,
+  replayScanWork,
+} from '../../sources/scan-work.mjs';
 import {recipeValues, recipeReplay, replayMatches, recipeStatus} from '../../sources/recipe.mjs';
 import {siteExtensionKind} from '../../site-extensions/index.mjs';
 import {templateSourceSettings, startingSource} from '../../templates/sources.mjs';
+import {siteKey} from '../../browser/site-key.mjs';
 import {randomUUID} from 'node:crypto';
 import {normalizeSourceUrls, webUrl} from '../../templates/catalog.mjs';
 import {automationSources, sourceInput} from '../../sources/automation-sources.mjs';
@@ -132,6 +138,36 @@ export const sourceMethods = {
         workerId: active?.workerId ?? null,
       };
     });
+  },
+  // The template's ready sources whose site is not in the workspace yet, for
+  // one-click adding. Country copies of one board ("Indeed (Almanya)", "Indeed
+  // (Fransa)") form one entry with a country choice. The workspace country
+  // comes first, then the sources for every country, then the others.
+  sourceCatalog(id, a = this.get(id)) {
+    const added = new Set(a.sources.map(siteKey)),
+      country = String(a.criteria?.country ?? '').toUpperCase(),
+      rank = (s) => (!s.countries?.length ? 1 : s.countries.includes(country) ? 0 : 2),
+      groups = new Map();
+    const sources = (this.template(a.templateId).defaultSources ?? [])
+      .filter((s) => !added.has(siteKey(s.url)))
+      .sort((x, y) => rank(x) - rank(y) || x.name.localeCompare(y.name, 'tr'));
+    for (const s of sources) {
+      const [, base, label] = s.name.match(/^(.*?)\s*\(([^)]*)\)$/) ?? [, s.name, null],
+        countries = s.countries ?? [];
+      if (!groups.has(base))
+        groups.set(base, {
+          name: base,
+          extension: siteExtensionKind(s.url, a.templateId)?.kind ?? null,
+          choices: [],
+        });
+      groups.get(base).choices.push({
+        url: s.url,
+        name: s.name,
+        countries,
+        label: label ?? (countries.join(', ') || 'Tüm ülkeler'),
+      });
+    }
+    return [...groups.values()];
   },
   saveSources(id, sources, {acceptDraft = false} = {}) {
     const a = this.get(id),
@@ -345,15 +381,30 @@ export const sourceMethods = {
           : {status: 'candidate', successCount: 0, failCount: 0, learnedRunId: runId};
     const old = a.sourceSettings?.[url]?.recipe ?? null,
       state = a.sourceState?.[url] ?? {};
-    const position =
-      recipeKey(old) !== recipeKey(settings.recipe)
-        ? this.forgetRecipePosition(id, a, url, old, state)
-        : state;
-    return this.put({
+    const changed = recipeKey(old) !== recipeKey(settings.recipe);
+    const position = changed ? this.forgetRecipePosition(id, a, url, old, state) : state;
+    const saved = this.put({
       ...a,
       sourceSettings: {...a.sourceSettings, [url]: settings},
       sourceState: {...a.sourceState, [url]: {...position, recipeState}},
     });
+    // The running scan continues with the new recipe's searches; the search the
+    // agent is on stays until it completes it.
+    const run = changed ? this.runs(id).find((r) => r.id === runId) : null;
+    if (run?.status === 'running' && run.sourceUrl === url && run.scan?.work) {
+      const oldReplay = recipeReplay(old, recipeValues(a, url)),
+        kept = dropRecipeSearches(
+          run.scan,
+          (candidate) => replayMatches(oldReplay, candidate),
+          run.scan.work.activeSearchId,
+        );
+      const scan = replayScanWork(
+        kept,
+        recipeReplay(settings.recipe, recipeValues(a, url))?.searches,
+      );
+      if (scan !== run.scan) this.persistScan(id, {...run, scan});
+    }
+    return saved;
   },
   // A new search method restarts the results pages of the saved scan while
   // queued listings stay: they are the same opportunities whichever page listed
@@ -362,7 +413,7 @@ export const sourceMethods = {
     const replay = recipeReplay(oldRecipe, recipeValues(a, url)),
       oldResults = (candidate) => replayMatches(replay, candidate);
     const queue = this.store.workspaces.tasks;
-    for (const task of queue.list(id, {states: ['pending']}))
+    for (const task of queue.list(id, {states: ['pending', 'paused', 'blocked']}))
       if (task.sourceUrl === url && (task.scan || task.scanPlan))
         queue.put({
           ...task,

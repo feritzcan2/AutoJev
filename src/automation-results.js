@@ -66,6 +66,12 @@ export function automationResultsTable(
     liveTabs = [],
     liveTabIdentity = '[]',
     tabVersion = 0;
+  // Frequent change notifications must not replace controls under the pointer:
+  // the table stays mounted and only parts whose inputs changed are rebuilt.
+  let mounted = null;
+  const renderKeys = new WeakMap(),
+    changed = (node, key) => renderKeys.get(node) !== key && (renderKeys.set(node, key), true),
+    rows = new Map();
   const selectedIds = new Set(),
     expanded = new Set(),
     requests = new Set(),
@@ -128,17 +134,6 @@ export function automationResultsTable(
     }
     submitReview('prepare', {changes: changes.value.trim()});
   };
-  const showReview = (result) => {
-    reviewed = {workspace: data.automation.id, id: result.id, digest: result.digest};
-    reviewTitle.textContent = result.title;
-    proposal.textContent = result.proposal;
-    reviewSummary.textContent =
-      'Bu içerik yalnızca seçtiğin kayıt için uygulanacak. Hedefi, yanıtları ve kullanılacak belgeleri kontrol et.';
-    confirm.textContent = data.definition.recordOperations.execute.reviewLabel;
-    changes.value = '';
-    reviewError.textContent = '';
-    review.showModal();
-  };
   const toolbar = el('div', null, 'automation-results-toolbar'),
     search = el('input'),
     filter = el('select'),
@@ -170,7 +165,7 @@ export function automationResultsTable(
     ['all', 'Tüm kayıtlar'],
     ['starred', '★ Yıldızlılar'],
     ['found', 'Bulunanlar'],
-    ['prepared', 'İşlem taslakları'],
+    ['prepared', 'Başvuruya hazır olanlar'],
     ['completed', 'Tamamlananlar'],
     ['uncertain', 'Doğrulama bekleyenler'],
     ['dismissed', 'Atlananlar'],
@@ -325,13 +320,16 @@ export function automationResultsTable(
     const focusedAction = openMenu?.contains(focused) ? menuControlKey(focused) : null,
       focusedToggle = openRow?.querySelector('.record-row-menu') === focused,
       menuScroll = openMenu?.scrollTop;
-    const previousTable = content.firstElementChild;
     const active = data.results.filter((r) => recordOperationStatus(r)?.active),
       queued = active.filter((r) => r.recordAction?.task?.state === 'pending').length,
       waiting = data.results.filter(recordNeedsAnswer).length;
-    activity.replaceChildren();
-    activity.hidden = !active.length;
-    if (active.length) {
+    if (
+      changed(activity, JSON.stringify([active.length, queued, waiting, filter.value === 'active']))
+    ) {
+      activity.replaceChildren();
+      activity.hidden = !active.length;
+    }
+    if (active.length && !activity.childElementCount) {
       activity.append(
         el(
           'span',
@@ -482,16 +480,21 @@ export function automationResultsTable(
       return input;
     };
 
-    pagination.replaceChildren(
-      el(
-        'span',
-        results.length
-          ? `${start + 1}–${start + visible.length} / ${results.length} kayıt`
-          : '0 kayıt',
-        'pagination-count',
-      ),
+    const paginationChanged = changed(
+      pagination,
+      JSON.stringify([start, visible.length, results.length, page, pages]),
     );
-    if (pages > 1) {
+    if (paginationChanged)
+      pagination.replaceChildren(
+        el(
+          'span',
+          results.length
+            ? `${start + 1}–${start + visible.length} / ${results.length} kayıt`
+            : '0 kayıt',
+          'pagination-count',
+        ),
+      );
+    if (paginationChanged && pages > 1) {
       const previous = button('Önceki', () => {
           page--;
           render();
@@ -504,86 +507,153 @@ export function automationResultsTable(
       next.disabled = page === pages;
       pagination.append(previous, el('span', `${page} / ${pages}`), next);
     }
-    disposeTable();
     visibleTabButtons.clear();
-    const {element, table, body, dispose} = recordTable(
-      [
-        ...(selectable ? [{key: 'selection', label: 'Seç'}] : []),
-        {key: 'updatedAt', label: 'Son aktivite'},
-        ...columns,
-        {key: 'status', label: 'Durum'},
-      ],
-      {
+    const tableColumns = [
+      ...(selectable ? [{key: 'selection', label: 'Seç'}] : []),
+      {key: 'updatedAt', label: 'Son aktivite'},
+      ...columns,
+      {key: 'status', label: 'Durum'},
+    ];
+    const tableKey = JSON.stringify([data.automation.id, tableColumns]),
+      previousTable = mounted && renderKeys.get(mounted.table) !== tableKey ? mounted : null;
+    if (!mounted || previousTable) {
+      disposeTable();
+      rows.clear();
+      mounted = recordTable(tableColumns, {
         className: 'jobs-table automation-results-table',
         scrollLeft,
         onScroll: (value) => {
           scrollLeft = value;
         },
         onLayout: positionOpenMenu,
-        header: (th, {key, label}) => {
-          if (key === 'selection') {
-            const count = visibleEligible.filter((result) => selectedIds.has(result.id)).length;
-            const selectPage = selectCheckbox(
-              'Bu sayfadaki kayıtları seç',
-              visibleEligible.length > 0 && count === visibleEligible.length,
-              () => {
-                for (const result of visibleEligible)
-                  selectPage.checked ? selectedIds.add(result.id) : selectedIds.delete(result.id);
-                selectionError.textContent = '';
-                render();
-              },
-            );
-            selectPage.indeterminate = count > 0 && count < visibleEligible.length;
-            selectPage.disabled ||= !visibleEligible.length;
-            selectPage.dataset.recordsSelectPage = '';
-            th.replaceChildren(selectPage);
-          } else if (key) {
-            th.setAttribute(
-              'aria-sort',
-              sort === key ? (direction === 1 ? 'ascending' : 'descending') : 'none',
-            );
-            const control = button(
-              label + (sort === key ? (direction === 1 ? ' ↑' : ' ↓') : ''),
-              () => {
-                direction = sort === key ? -direction : key === 'updatedAt' ? -1 : 1;
-                sort = key;
-                page = 1;
-                render();
-              },
-              'sort-button',
-            );
-            control.dataset.resultSort = key;
-            th.replaceChildren(control);
-          }
-        },
-      },
+      });
+      renderKeys.set(mounted.table, tableKey);
+      disposeTable = mounted.dispose;
+      mounted.table.setAttribute('aria-label', 'Takip kayıtları ve sonuçlar');
+      mounted.table.style.minWidth =
+        (columns.length > 5 ? 820 + (columns.length - 5) * 110 : columns.length > 2 ? 720 : 560) +
+        'px';
+      content.append(mounted.element);
+    }
+    const {element, table, body} = mounted,
+      headRow = table.tHead.rows[0];
+    if (
+      changed(
+        headRow,
+        JSON.stringify([
+          sort,
+          direction,
+          visibleEligible.map((result) => [result.id, selectedIds.has(result.id)]),
+          busy,
+          Boolean(batchSubmitting),
+        ]),
+      )
+    )
+      tableColumns.forEach(({key, label}, index) => {
+        const th = headRow.cells[index];
+        if (key === 'selection') {
+          const count = visibleEligible.filter((result) => selectedIds.has(result.id)).length;
+          const selectPage = selectCheckbox(
+            'Bu sayfadaki kayıtları seç',
+            visibleEligible.length > 0 && count === visibleEligible.length,
+            () => {
+              for (const result of visibleEligible)
+                selectPage.checked ? selectedIds.add(result.id) : selectedIds.delete(result.id);
+              selectionError.textContent = '';
+              render();
+            },
+          );
+          selectPage.indeterminate = count > 0 && count < visibleEligible.length;
+          selectPage.disabled ||= !visibleEligible.length;
+          selectPage.dataset.recordsSelectPage = '';
+          th.replaceChildren(selectPage);
+        } else {
+          th.setAttribute(
+            'aria-sort',
+            sort === key ? (direction === 1 ? 'ascending' : 'descending') : 'none',
+          );
+          const control = button(
+            label + (sort === key ? (direction === 1 ? ' ↑' : ' ↓') : ''),
+            () => {
+              direction = sort === key ? -direction : key === 'updatedAt' ? -1 : 1;
+              sort = key;
+              page = 1;
+              render();
+            },
+            'sort-button',
+          );
+          control.dataset.resultSort = key;
+          th.replaceChildren(control);
+        }
+      });
+    // Rows keep their nodes while their inputs are unchanged. Changed rows are
+    // inserted around the kept ones, so a kept row is not moved under the pointer.
+    const rowKeys = new Map(
+      visible.length
+        ? visible.map((result) => [
+            result.id,
+            JSON.stringify([
+              result,
+              requests.has(data.automation.id + ':' + result.id),
+              busy,
+              batchSubmitting,
+              selectedIds.has(result.id),
+              expanded.has(result.id),
+              openIds.has(result.id),
+              data.workers?.find((w) => w.id === result.recordAction?.task?.workerId)?.name,
+              data.automation.revision,
+            ]),
+          ])
+        : [['', JSON.stringify([Boolean(data.results.length)])]],
     );
-    disposeTable = dispose;
-    table.setAttribute('aria-label', 'Takip kayıtları ve sonuçlar');
-    table.style.minWidth =
-      (columns.length > 5 ? 820 + (columns.length - 5) * 110 : columns.length > 2 ? 720 : 560) +
-      'px';
-    content.append(element);
+    const kept = new Set(),
+      placed = new Set();
+    for (const [id, key] of rowKeys) {
+      const cached = rows.get(id);
+      if (cached?.key === key) kept.add(cached.row).add(cached.detailRow);
+      else rows.delete(id);
+    }
+    for (const id of rows.keys()) if (!rowKeys.has(id)) rows.delete(id);
+    let cursor = body.firstChild;
+    const place = (node) => {
+      while (cursor && !kept.has(cursor)) cursor = cursor.nextSibling;
+      placed.add(node);
+      if (node === cursor) cursor = node.nextSibling;
+      else if (node.parentNode === body) body.moveBefore(node, cursor);
+      else body.insertBefore(node, cursor);
+    };
+    const reuse = (id) => {
+      const cached = rows.get(id);
+      if (!cached) return false;
+      place(cached.row);
+      if (cached.detailRow) place(cached.detailRow);
+      if (cached.tab) visibleTabButtons.set(id, cached.tab);
+      return true;
+    };
     if (!visible.length) {
-      const row = el('tr'),
-        cell = el('td', null, 'empty');
-      cell.colSpan = columns.length + 2 + Number(selectable);
-      cell.append(
-        el(
-          'strong',
-          data.results.length ? 'Bu arama veya filtreye uyan sonuç yok.' : 'Henüz kayıt yok',
-        ),
-        el(
-          'p',
-          data.results.length
-            ? 'Farklı bir arama veya filtre deneyebilirsin.'
-            : 'Agent’ın bulduğu kayıtlar, hazırladığı taslaklar ve işlem sonuçları burada görünecek.',
-        ),
-      );
-      row.append(cell);
-      body.append(row);
+      if (!reuse('')) {
+        const row = el('tr'),
+          cell = el('td', null, 'empty');
+        cell.colSpan = columns.length + 2 + Number(selectable);
+        cell.append(
+          el(
+            'strong',
+            data.results.length ? 'Bu arama veya filtreye uyan sonuç yok.' : 'Henüz kayıt yok',
+          ),
+          el(
+            'p',
+            data.results.length
+              ? 'Farklı bir arama veya filtre deneyebilirsin.'
+              : 'Agent’ın bulduğu kayıtlar, başvuru notları ve işlem sonuçları burada görünecek.',
+          ),
+        );
+        row.append(cell);
+        place(row);
+        rows.set('', {key: rowKeys.get(''), row});
+      }
     }
     for (const result of visible) {
+      if (reuse(result.id)) continue;
       const progress = recordOperationStatus(result),
         requesting = requests.has(data.automation.id + ':' + result.id);
       const keepMenu = openRow?.dataset.resultId === result.id;
@@ -827,7 +897,8 @@ export function automationResultsTable(
       goToTab.dataset.recordTab = result.id;
       goToTab.dataset.recordMenuAction = 'tab';
       actions.append(open, detail);
-      visibleTabButtons.set(result.id, {result, control: goToTab, actions, open});
+      const tab = {result, control: goToTab, actions, open};
+      visibleTabButtons.set(result.id, tab);
       if (openIds.has(result.id)) actions.insertBefore(goToTab, open);
       recordActions(actions, result, data.definition, async (action) => {
         try {
@@ -865,10 +936,6 @@ export function automationResultsTable(
           retry = button(
             requesting ? 'Sıraya ekleniyor…' : 'Tekrar dene',
             async () => {
-              if (op.review) {
-                showReview(result);
-                return;
-              }
               try {
                 await sendOperation(result, op.kind, op.direct ? {direct: true} : {});
               } catch (error) {
@@ -909,21 +976,13 @@ export function automationResultsTable(
       if (recordAction?.operation) {
         const op = recordAction.operation,
           action = button(
-            requesting
-              ? 'Sıraya ekleniyor…'
-              : recordAction.task
-                ? progress.label
-                : op.kind === 'execute'
-                  ? 'İncele ve ' + op.label.toLocaleLowerCase('tr')
-                  : op.label,
+            requesting ? 'Sıraya ekleniyor…' : recordAction.task ? progress.label : op.label,
             async () => {
-              if (op.kind === 'execute') {
-                if (actionsPanel.matches(':popover-open')) actionsPanel.hidePopover();
-                showReview(result);
-                return;
-              }
+              // "Başvur" applies directly: there is no draft review step.
+              if (op.kind === 'execute' && actionsPanel.matches(':popover-open'))
+                actionsPanel.hidePopover();
               try {
-                await sendOperation(result, op.kind);
+                await sendOperation(result, op.kind, op.kind === 'execute' ? {direct: true} : {});
               } catch (error) {
                 window.alert(error.message);
               }
@@ -932,20 +991,33 @@ export function automationResultsTable(
           );
         action.dataset.recordOperation = op.kind;
         action.disabled = busy || requesting || op.disabled;
-        action.title = op.reason ?? '';
+        action.title =
+          op.reason ??
+          (op.kind === 'execute'
+            ? 'Agent formu kayıtlı bilgilerle doldurup başvuruyu gönderir. Eksik bilgi varsa tek seferde sorar.'
+            : '');
         actions.append(action);
-        if (op.kind === 'execute' && data.definition.recordOperations.prepare) {
-          const again = button('Taslağı yeniden hazırla', async () => {
-            try {
-              await sendOperation(result, 'prepare');
-            } catch (error) {
-              window.alert(error.message);
-            }
-          });
-          again.disabled = busy || requesting || Boolean(recordAction.task);
-          again.dataset.recordOperation = 'prepare';
-          actions.append(again);
-        }
+      }
+      if (['found', 'prepared', 'uncertain'].includes(result.status)) {
+        const submitted = button('Başvuruldu', async () => {
+          if (
+            !window.confirm(
+              'Bu başvurunun gönderildiğini (ör. onay e-postası) doğruladın mı? Kayıt tamamlandı sayılır ve bir daha gönderilmez.',
+            )
+          )
+            return;
+          try {
+            await api.automationMarkSubmitted(data.automation.id, result.id);
+          } catch (error) {
+            window.alert(error.message);
+          }
+          await refresh();
+        });
+        submitted.dataset.recordSubmitted = result.id;
+        submitted.disabled = busy || requesting;
+        submitted.title =
+          'Başvurunun gönderildiğini sen doğruladıysan kaydı tamamlandı olarak işaretle';
+        actions.append(submitted);
       }
       if (['found', 'prepared'].includes(result.status)) {
         const dismiss = button('Atla', async () => {
@@ -961,7 +1033,7 @@ export function automationResultsTable(
         control.disabled = busy || requesting || Boolean(recordAction?.task);
       if (!keepMenu) state.append(actionsToggle);
       row.append(state);
-      body.append(row);
+      place(row);
       if (keepMenu) {
         // Keep the connected native popover in the top layer while rebuilding the table.
         state.moveBefore(actionsToggle, null);
@@ -1030,14 +1102,16 @@ export function automationResultsTable(
           el('small', `Değerlendirme: ${time(assessment.scoredAt)} · Başarı olasılığı değildir.`),
         );
       }
-      if (result.proposal) cell.append(el('h3', 'İşlem taslağı'), el('pre', result.proposal));
+      if (result.proposal) cell.append(el('h3', 'Son çalışma notu'), el('pre', result.proposal));
       if (recordAction?.lastTask?.summary)
         cell.append(el('h3', 'Son kayıt işlemi'), el('p', recordAction.lastTask.summary));
       if (result.evidence) cell.append(el('h3', 'Sonuç kanıtı'), el('blockquote', result.evidence));
       detailRow.append(cell);
-      body.append(detailRow);
+      place(detailRow);
+      rows.set(result.id, {key: rowKeys.get(result.id), row, detailRow, tab});
     }
-    previousTable?.remove();
+    for (const node of [...body.children]) if (!placed.has(node)) node.remove();
+    previousTable?.element.remove();
     if (openMenu?.isConnected) {
       element.querySelector('.jobs-table-wrap').scrollLeft = scrollLeft;
       positionOpenMenu();
@@ -1059,6 +1133,8 @@ export function automationResultsTable(
       tabOwner = null;
       tabVersion++;
       disposeTable();
+      mounted = null;
+      rows.clear();
     },
     update(snapshot, isBusy) {
       if (data?.automation.id !== snapshot.automation.id) {
@@ -1084,16 +1160,20 @@ export function automationResultsTable(
       const currentIds = new Set(data.results.filter(selectableRecord).map((result) => result.id));
       for (const id of selectedIds)
         if (!currentIds.has(id) && !requests.has(selectionOwner + ':' + id)) selectedIds.delete(id);
-      const selected = filter.value;
-      filter.replaceChildren(
-        new Option('Tüm kayıtlar', 'all'),
-        new Option('★ Yıldızlılar', 'starred'),
-        new Option('İşlemdeki kayıtlar', 'active'),
-        new Option('Yanıt bekleyenler', 'waiting'),
-        ...(data.definition?.records.states ?? []).map((s) => new Option(s.label, s.id)),
-        new Option('Araştırma ve deneme örnekleri', 'trial'),
-      );
-      if ([...filter.options].some((o) => o.value === selected)) filter.value = selected;
+      const options = [
+        ['Tüm kayıtlar', 'all'],
+        ['★ Yıldızlılar', 'starred'],
+        ['İşlemdeki kayıtlar', 'active'],
+        ['Yanıt bekleyenler', 'waiting'],
+        ...(data.definition?.records.states ?? []).map((s) => [s.label, s.id]),
+        ['Araştırma ve deneme örnekleri', 'trial'],
+      ];
+      // Replacing the options would close the list while the user has it open.
+      if (changed(filter, JSON.stringify(options))) {
+        const selected = filter.value;
+        filter.replaceChildren(...options.map(([label, value]) => new Option(label, value)));
+        if (options.some(([, value]) => value === selected)) filter.value = selected;
+      }
       render();
       void refreshTabs();
     },

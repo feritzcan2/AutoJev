@@ -18,7 +18,11 @@ export const jobSearchTemplate = {
     identity: 'url',
     dismissLabel: 'Başvuruyu ele',
     states: browserDefinition.records.states.map((state) =>
-      state.id === 'completed' ? {...state, label: 'Başvuruldu'} : state,
+      state.id === 'completed'
+        ? {...state, label: 'Başvuruldu'}
+        : state.id === 'prepared'
+          ? {...state, label: 'Başvuruya hazır'}
+          : state,
     ),
   },
   recordOperations: {
@@ -30,7 +34,6 @@ export const jobSearchTemplate = {
     execute: {
       label: 'Başvur',
       runningLabel: 'Başvuruluyor',
-      reviewLabel: 'Onayla ve başvur',
       successCriteria:
         'The employer or portal shows confirmation for this exact vacancy and candidate, or its application history lists this application. Save the observed confirmation; an Apply button click is insufficient.',
     },
@@ -44,9 +47,16 @@ export const jobSearchTemplate = {
       type: 'text',
     },
     {
+      id: 'country',
+      label: 'Hedef ülke',
+      question: 'İlanlar hangi ülkede aransın? İki harfli ülke kodu (ör. DE, GB, US)',
+      required: false,
+      type: 'text',
+    },
+    {
       id: 'location',
       label: 'Arama konumu',
-      question: 'İlanlar hangi şehir veya ülkede aransın? (ör. Berlin, Germany)',
+      question: 'İlanlar hangi şehir veya bölgede aransın? (ör. London, United Kingdom)',
       required: false,
       type: 'text',
     },
@@ -71,6 +81,14 @@ export const jobSearchTemplate = {
       required: false,
       type: 'text',
     },
+    {
+      id: 'application_facts',
+      label: 'Başvuru formu bilgileri',
+      question:
+        'Formlarda sık sorulan bilgiler: telefon, LinkedIn adresi, çalışma izni veya vize durumu, dil seviyeleri, ihbar süresi, en erken başlangıç, maaş beklentisi, ofise gelme kabulü, cinsiyet (isteğe bağlı). Bunlar kayıtlı olursa agent başvuru sırasında soru sormaz.',
+      required: false,
+      type: 'text',
+    },
   ],
   table: {
     title: 'Başvuru akışı',
@@ -92,7 +110,7 @@ export const jobSearchTemplate = {
   assessmentHints:
     'Listings are jobs. An unrelated listing is a different profession, judged by its actual responsibilities and professional field. A title naming another specialization is unrelated even when it shares a generic word such as engineer, developer or architect. Salary is a soft preference unless the user makes it mandatory; an omitted salary is not a mismatch. A qualification missing from the CV is unknown, not lacking. Possible home office or hybrid is not full remote. A site salary estimate is not the employer offer.',
   guidance: `## Setup
-1. Ask for the CV and explain the "Belge ekle" control. Ask for target roles, countries and work modes. Save the main search place in criteria.location as job sites spell it (for example "Berlin, Germany"); recipes fill {location} with it.
+1. Ask for the CV and explain the "Belge ekle" control. Ask for target roles, countries and work modes. Save the main target country as its ISO 3166 alpha-2 code in criteria.country (for example "GB"), or leave it empty for a worldwide remote search, and the main search place in criteria.location as job sites spell it (for example "London, United Kingdom"); recipes fill {country} and {location} with them.
 2. Build the criteria.ranking proposal from technical skills, experience, role fit and work preferences, with weights that add up to 100. Ask about hard constraints such as salary, work permit, language and start date.
 
 ## Assessing listings
@@ -108,6 +126,6 @@ export const jobSearchTemplate = {
 - Save prepared documents such as cover letters under documents/ and list them in the proposal.
 
 ## Source discovery
-- template.defaultSources lists the starting sources. Sources without countries are already in the workspace. Sources with countries serve only those countries (ISO codes): propose the ones matching the user's target countries with save_automation_plan, keeping the existing sources. Adding one keeps its saved recipe and instructions.
+- template.defaultSources lists the starting sources. Sources without countries are already in the workspace. Sources with countries serve only those countries (ISO codes): propose the ones matching criteria.country and the user's other target countries with save_automation_plan, keeping the existing sources. Adding one keeps its saved recipe and instructions. A national board the user names that is not listed is added by its address; its recipe is learned in the trial.
 `,
 };

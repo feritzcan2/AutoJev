@@ -13,3 +13,6 @@ engine/target/
 /release-assets/
 vendor/termloop/clients/*/dist/
 vendor/termloop/target/
+
+# TermLoop runtime data
+.termloop-runtime/

@@ -1711,7 +1711,7 @@ test('job cards show each application state and change the delete label on compl
   );
   assert.match(original.text, /^<b>İş arama · Bulundu<\/b>/);
   const cases = [
-    [{status: 'prepared'}, 'Taslak hazır'],
+    [{status: 'prepared'}, 'Başvuruya hazır'],
     [{status: 'executing'}, 'İşlem sürüyor'],
     [{status: 'uncertain'}, 'Doğrulama bekliyor'],
     [{status: 'completed'}, 'Başvuruldu'],

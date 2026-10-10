@@ -69,7 +69,14 @@ test('workspace stop cancels queued submissions before waiting for slow workers'
     {runtime, id} = f;
   for (const item of f.items) await runtime.runRecord(id, item.id, 'execute', {direct: true});
   await settle();
-  assert.equal(f.launches.length, 2);
+  // Submissions share one lock: the free second worker waits for the first.
+  assert.equal(f.launches.length, 1);
+  assert.equal(f.launches[0].recordId, f.items[0].id);
+  assert.equal(
+    runtime.queue.list(id, {states: ['pending']}).filter((task) => task.lockKey === 'submit')
+      .length,
+    2,
+  );
   let release;
   f.closing.set(
     f.items[0].id,
@@ -85,13 +92,14 @@ test('workspace stop cancels queued submissions before waiting for slow workers'
     await settle();
     assert.equal(
       f.launches.length,
-      2,
-      'A freed worker cannot start the queued submission during stop',
+      1,
+      'A free worker cannot start a queued submission during stop',
     );
-    assert.equal(
-      runtime.queue.list(id).find((task) => task.recordId === f.items[2].id).state,
-      'cancelled',
-    );
+    for (const item of f.items.slice(1))
+      assert.equal(
+        runtime.queue.list(id).find((task) => task.recordId === item.id).state,
+        'cancelled',
+      );
   } finally {
     release();
     await stopping;
@@ -100,9 +108,10 @@ test('workspace stop cancels queued submissions before waiting for slow workers'
   assert.equal(f.db.get(id).status, 'paused');
   // A new explicit request after stopping remains supported.
   f.closing.clear();
-  await runtime.runRecord(id, f.items[2].id, 'prepare');
+  await runtime.runRecord(id, f.items[2].id, 'execute', {direct: true});
   await settle();
-  assert.equal(f.launches.length, 3);
+  assert.equal(f.launches.length, 2);
+  assert.equal(f.launches.at(-1).recordId, f.items[2].id);
 });
 
 test('a tick already in progress cannot launch a source after workspace stop', async (t) => {
@@ -117,8 +126,12 @@ test('a tick already in progress cannot launch a source after workspace stop', a
 test('stop waits for every closure after one fails and concurrent starts cannot bypass it', async (t) => {
   const f = fixture(t),
     {runtime, id} = f;
-  for (const item of f.items) await runtime.runRecord(id, item.id, 'execute', {direct: true});
+  // One submission and one preparation fill both workers; the second submission waits.
+  await runtime.runRecord(id, f.items[0].id, 'execute', {direct: true});
+  await runtime.runRecord(id, f.items[1].id, 'prepare');
+  await runtime.runRecord(id, f.items[2].id, 'execute', {direct: true});
   await settle();
+  assert.equal(f.launches.length, 2);
   let release;
   f.closing.set(f.items[0].id, async () => {
     throw Error('Close failed');

@@ -97,9 +97,11 @@ for (const early of [false, true])
   test(`answers resume the asking conversation after other worker history changes (early=${early})`, async (t) => {
     const f = fixture(t),
       {db, a, item, runtime} = f;
-    await runtime.runRecord(a.id, item.id, 'prepare');
+    // An application is one direct execute task; an answer continues that task.
+    await runtime.runRecord(a.id, item.id, 'execute', {direct: true});
     await settle();
     const origin = f.launches.at(-1);
+    assert.equal(origin.recordOperation, 'execute');
     f.history(origin).saveConversation(a.id, 'codex', 'asking-thread', settings);
     db.putRun({
       ...db.run(origin.id),
@@ -119,6 +121,8 @@ for (const early of [false, true])
     await settle();
     const resumed = f.launches.at(-1);
     assert.notEqual(resumed.id, origin.id);
+    assert.equal(resumed.recordOperation, 'execute');
+    assert.equal(resumed.request.direct, true);
     assert.equal(resumed.continuation.runId, origin.id);
     assert.equal(resumed.continuation.browserContext.tabId, 'form');
     assert.equal(selectResume(f.history(resumed), a.id, settings), 'asking-thread');

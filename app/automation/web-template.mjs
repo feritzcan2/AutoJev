@@ -1,4 +1,5 @@
 import {continueScoringRun, unreportedScoringRun, requeueScoringRun} from '../scoring/recovery.mjs';
+import {continueRecordRun, unreportedRecordRun, requeueRecordRun} from '../records/recovery.mjs';
 import {taskHasRecord, batchScoring} from '../records/task-scope.mjs';
 import {SourceRetryChecks} from '../sources/retry-check.mjs';
 import {CONVERSATION_WORKER, isConversation} from '../workspaces/conversation.mjs';
@@ -70,9 +71,12 @@ export class WebTasks extends TaskRuns {
         separateCapacity: (worker) => worker === CONVERSATION_WORKER,
         idleGraceMs: 10000,
         continueIdle: (id, runId) =>
-          continueScoringRun(db, id, runId) ?? continueSourceRun(db, id, runId),
+          continueScoringRun(db, id, runId) ??
+          continueRecordRun(db, id, runId) ??
+          continueSourceRun(db, id, runId),
         unreported: (id, runId, reason) =>
           unreportedScoringRun(db, id, runId, reason) ??
+          unreportedRecordRun(db, id, runId, reason) ??
           unreportedInterviewRun(db, id, runId) ??
           unreportedSourceRun(db, id, runId, reason, (options?.now ?? Date.now)()),
         recover: () => {
@@ -160,7 +164,7 @@ export class WebTasks extends TaskRuns {
           if (!run.taskId) return;
           const queue = db.store.workspaces.tasks,
             task = queue.get(id, run.taskId);
-          if (requeueScoringRun(db, run)) {
+          if (requeueScoringRun(db, run) || requeueRecordRun(db, run)) {
           } else if (
             ['partial', 'interrupted'].includes(run.status) &&
             run.sourceUrl &&
@@ -630,6 +634,11 @@ export class WebTasks extends TaskRuns {
     });
     await this.tick();
     return this.queue.get(id, task.id);
+  }
+  markRecordSubmitted(id, itemId) {
+    const item = this.db.markSubmitted(id, itemId);
+    this.changed(id);
+    return item;
   }
   async dismissRecord(id, itemId) {
     const item = this.db.dismiss(id, itemId, {stopActive: true});

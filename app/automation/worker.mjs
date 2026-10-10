@@ -14,7 +14,8 @@ import {
   collectorSaved,
   collectorProgress,
 } from '../sources/collector-worker.mjs';
-import {siteReaderFor} from '../site-extensions/index.mjs';
+import {siteReaderFor, siteExtensionKind} from '../site-extensions/index.mjs';
+import {siteSearchRecipe} from '../site-extensions/search.mjs';
 import {setTimeout as pause} from 'node:timers/promises';
 import {jevDetailKey} from '../jev/detail-urls.mjs';
 import {
@@ -23,6 +24,14 @@ import {
   normalizeRecordToolArgs,
 } from '../scoring/record-scoring.mjs';
 import {recordToolGuard} from '../records/tool-guard.mjs';
+import {
+  isSubmitLabel,
+  SUBMIT_SCREENSHOT_NOTE,
+  clickTargetLabel,
+  classifySubmission,
+  assertSubmitAllowed,
+  submissionGuidance,
+} from '../records/submission.mjs';
 import {automationTaskContext, conversationContextVersion} from './task-context.mjs';
 import {automationRunHistory} from './continuation.mjs';
 import {
@@ -173,6 +182,14 @@ export function automationWorkflow({
         : response;
     } catch (error) {
       return browserError(error);
+    }
+  };
+  const screenshot = async () => {
+    try {
+      const response = await browser.call(id, 'browser_screenshot', {}, run.id);
+      return (response?.content ?? []).find((p) => p.type === 'image' && p.data) ?? null;
+    } catch {
+      return null;
     }
   };
   let lastSnapshot = null;
@@ -1046,8 +1063,19 @@ export function automationWorkflow({
       case 'save_source_recipe': {
         if (!active.sourceUrl || active.recordId || !['trial', 'run'].includes(active.kind))
           throw Error('Reçete yalnızca atanmış kaynak görevinde kaydedilir.');
-        const recipe = normalizeSourceRecipe(args),
-          sourceUrl = active.sourceUrl;
+        const sourceUrl = active.sourceUrl,
+          siteSearch = siteExtensionKind(sourceUrl, a.templateId)?.search ?? null;
+        let recipe = normalizeSourceRecipe(args),
+          adjusted = [];
+        // A site extension knows the results address: the agent chooses the
+        // terms, path and filter values; the extension keeps the sort,
+        // pagination and ordering. Discovery stays open for a changed site.
+        if (siteSearch && recipe.entry.kind === 'search_form')
+          throw Error(
+            'Bu sitenin sonuç adresi site eklentisinde tanımlı. Reçeteyi siteSearch.template ile url_template olarak kaydet; yalnızca terimleri ve siteSearch.filters değerlerini seç.',
+          );
+        if (siteSearch && recipe.entry.kind === 'url_template')
+          ({recipe, changed: adjusted} = siteSearchRecipe(siteSearch, recipe));
         if (recipe.entry.kind === 'discovery') {
           db.learnSourceRecipe(id, sourceUrl, recipe, {runId: run.id, verified: false});
           db.putRun({...db.activeRun(id, run.id), recipeSaved: true});
@@ -1081,6 +1109,11 @@ export function automationWorkflow({
           saved: true,
           status: 'verified',
           url: check.url,
+          ...(adjusted.length
+            ? {
+                siteExtension: `The site extension set ${adjusted.join(', ')} from siteSearch; the saved recipe uses them.`,
+              }
+            : {}),
           ...(check.term ? {term: check.term, searches: replay.searches.length} : {}),
           listings: check.listings,
           pages: check.pages,
@@ -1254,6 +1287,8 @@ export function automationWorkflow({
       case 'browser_read': {
         const research = active.kind === 'interview';
         db.spendStep(id, run.id, {research});
+        const waitSeconds = Math.min(30, Math.max(0, Math.trunc(Number(args.waitSeconds) || 0)));
+        if (waitSeconds) await pause(waitSeconds * 1000, undefined, {signal});
         result = await inspect({research});
         if (
           result.readiness?.loading &&
@@ -1274,8 +1309,8 @@ export function automationWorkflow({
         break;
       }
       case 'browser_upload_document': {
-        if (active.recordOperation !== 'execute' || active.actionId !== active.recordId)
-          throw Error('Belge yüklemeden önce bu kayıt için gönderim rezervasyonu gerekli');
+        if (active.recordOperation !== 'execute' || !active.recordId)
+          throw Error('Belge yalnızca bir kayıt başvuru görevinde yüklenebilir');
         const item = db.result(id, active.recordId),
           base = workspace && (await realpath(workspace));
         if (!base) throw Error('Çalışma alanı dosya dizini bulunamadı');
@@ -1287,13 +1322,9 @@ export function automationWorkflow({
           !(await stat(file)).isFile()
         )
           throw Error('Yalnızca bu çalışma alanındaki belgeler yüklenebilir');
-        // Drafts name documents by file name; the folder they live in is the app's.
-        if (
-          !item.proposal.includes(relative) &&
-          !item.proposal.includes(file) &&
-          !item.proposal.includes(path.basename(file))
-        )
-          throw Error('Belge onaylanan taslakta yok; yeni taslak ve onay gerekli');
+        // Any document the user added to this workspace may be uploaded; there
+        // is no draft that has to name it first.
+        void item;
         db.spendStep(id, run.id);
         snapshots.invalidate();
         const response = await callBrowser(
@@ -1368,6 +1399,12 @@ export function automationWorkflow({
           if (args.text !== undefined) parameters.text = args.text;
           if (args.option !== undefined) parameters.option = args.option;
         } else throw Error('Desteklenmeyen etkileşim');
+        // The final submit click is gated by the app: execute task, reservation
+        // first, one click. The fresh page is then classified from evidence.
+        const submitLabel =
+          args.operation === 'click' ? clickTargetLabel(snapshots.current, args.ref) : null;
+        if (isSubmitLabel(submitLabel)) assertSubmitAllowed(db.activeRun(id, run.id), submitLabel);
+        const beforeSubmit = isSubmitLabel(submitLabel) ? (snapshots.current?.text ?? '') : '';
         snapshots.invalidate();
         const response = await callBrowser(id, operation, parameters, run.id);
         if (response.isError)
@@ -1379,6 +1416,26 @@ export function automationWorkflow({
           ...(await inspect({research})),
           ...(response.action ? {action: response.action} : {}),
         };
+        if (isSubmitLabel(submitLabel)) {
+          const active = db.run(run.id),
+            submission = {
+              ...classifySubmission(snapshots.current?.text ?? '', beforeSubmit),
+              label: submitLabel,
+              attempts: (active.submission?.attempts ?? 0) + 1,
+              at: db.now(),
+            };
+          db.putRun({...active, submission});
+          result.submission = {...submission, guidance: submissionGuidance(submission)};
+          // Text alone did not confirm the submission: one viewport image lets
+          // the agent judge the visible reaction. Capture failures stay silent.
+          if (submission.outcome !== 'confirmed') {
+            const image = await screenshot();
+            if (image) {
+              result.attachments = [image];
+              result.submission.screenshot = SUBMIT_SCREENSHOT_NOTE;
+            }
+          }
+        }
         break;
       }
       case 'finish_automation_run':
@@ -1560,6 +1617,7 @@ export async function launchAutomationWorker({
           onEvent({
             event: 'state',
             state: agents.sessions?.get(workerKey(automation.id, workerId))?.state ?? 'Idle',
+            compacted: true,
           });
       },
       onRetire: () => mcp.revoke(token),

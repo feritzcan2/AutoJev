@@ -120,7 +120,12 @@ test('a posting reads as text with its criteria; a removed posting says so', () 
   assert.equal(page.title, 'Senior Backend Engineer @ Acme & Co');
   assert.match(
     page.text,
-    /^Senior Backend Engineer\nAcme & Co · Berlin, Germany\nSeniority level: Mid-Senior level\n\nBuild APIs in Go \.?\n?• 5\+ years backend\n• English required$/,
+    /^Senior Backend Engineer @ Acme & Co\ncompany: Acme & Co\nlocation: Berlin, Germany\nSeniority level: Mid-Senior level\n\nBuild APIs in Go \.?\n?• 5\+ years backend\n• English required$/,
+  );
+  assert.deepEqual(
+    page.listing.fields,
+    {company: 'Acme & Co', location: 'Berlin, Germany', 'Seniority level': 'Mid-Senior level'},
+    'a posting is a listing the extension read itself',
   );
   assert.match(
     linkedInDetailPage(
@@ -132,10 +137,9 @@ test('a posting reads as text with its criteria; a removed posting says so', () 
     ).text,
     /No longer accepting applications/,
   );
-  assert.match(
-    linkedInDetailPage('https://www.linkedin.com/jobs/view/1234567', '').text,
-    /not found/,
-  );
+  const removed = linkedInDetailPage('https://www.linkedin.com/jobs/view/1234567', '');
+  assert.match(removed.text, /not found/);
+  assert.equal(removed.listing, undefined, 'no description, no listing');
 });
 
 test('guest reads use the shared site access rules and the guest endpoints', async () => {

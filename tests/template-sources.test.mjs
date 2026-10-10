@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
 import {automationTemplate, reusableTemplate} from '../app/templates/catalog.mjs';
+import {recipeReplay, recipeValues} from '../app/sources/recipe.mjs';
+import {automationTaskContext} from '../app/automation/task-context.mjs';
 function fixture(t) {
   const core = new WorkspaceDatabase(':memory:');
   t.after(() => core.close());
@@ -112,4 +114,76 @@ test('template source presets reject unsafe addresses, duplicates and invalid in
     [{url: 'https://example.test'}, {url: 'https://example.test/'}],
   ])
     assert.throws(() => reusableTemplate({...base, defaultSources}));
+});
+test('Indeed joins a workspace by country with one shared recipe', () => {
+  const indeed = automationTemplate('job-search').defaultSources.filter((s) =>
+    /^Indeed \(/.test(s.name),
+  );
+  assert.ok(indeed.length >= 40);
+  assert.equal(new Set(indeed.map((s) => s.url)).size, indeed.length);
+  assert.equal(new Set(indeed.flatMap((s) => s.countries)).size, indeed.length);
+  for (const source of indeed) {
+    const host = new URL(source.url).hostname;
+    assert.match(host, /^[a-z]+\.indeed\.com$/);
+    assert.equal(source.countries.length, 1);
+    assert.equal(source.recipe.entry.template, `https://${host}/jobs?q={query}&l={location}`);
+    assert.equal(source.recipe.pagination, 'url_param');
+  }
+  assert.ok(indeed.some((s) => s.countries[0] === 'GB'));
+  assert.ok(indeed.some((s) => s.countries[0] === 'TR'));
+});
+test('Himalayas searches worldwide unless the workspace names a country', () => {
+  const himalayas = automationTemplate('job-search').defaultSources.find(
+    (s) => s.name === 'Himalayas',
+  );
+  assert.equal(himalayas.countries, undefined);
+  const replay = (criteria) =>
+    recipeReplay(himalayas.recipe, recipeValues({criteria, goal: 'backend'}, himalayas.url))
+      .searches[0].url;
+  assert.equal(
+    replay({}),
+    'https://himalayas.app/jobs/api/search?q=backend&sort=recent',
+    'an empty country drops the filter',
+  );
+  assert.equal(
+    replay({country: 'GB'}),
+    'https://himalayas.app/jobs/api/search?country=GB&q=backend&sort=recent',
+  );
+  assert.ok(automationTemplate('job-search').fields.some((f) => f.id === 'country'));
+});
+test('the setup agent sees starting sources by address and country only', (t) => {
+  const db = fixture(t),
+    a = db.create('job-search');
+  const {template} = automationTaskContext(db, a.id, {
+    id: 'r1',
+    kind: 'interview',
+    status: 'running',
+  });
+  assert.ok(template.defaultSources.length > 40);
+  for (const source of template.defaultSources) {
+    assert.deepEqual(
+      Object.keys(source).filter((k) => !['url', 'name', 'countries'].includes(k)),
+      [],
+    );
+  }
+  assert.ok(template.guidance);
+});
+test('Arbeitnow joins a workspace through the feed of its own country', () => {
+  const feeds = automationTemplate('job-search').defaultSources.filter((s) =>
+    /^Arbeitnow \(/.test(s.name),
+  );
+  assert.deepEqual(
+    feeds.map((s) => [new URL(s.url).hostname, s.countries]),
+    [
+      ['www.arbeitnow.com', ['DE']],
+      ['www.arbeitnow.co.uk', ['GB']],
+      ['www.arbeitnow.fr', ['FR']],
+      ['www.arbeitnow.ch', ['CH']],
+    ],
+  );
+  for (const feed of feeds)
+    assert.equal(
+      feed.recipe.entry.template,
+      `https://${new URL(feed.url).hostname}/api/job-board-api`,
+    );
 });

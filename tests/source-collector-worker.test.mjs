@@ -52,9 +52,11 @@ const evaluate = async (state, questions) => ({
         name === 'fit'
           ? text.includes('DENTIST_MARKER')
             ? 'mismatch'
-            : text.includes('UNCERTAIN_MARKER')
-              ? 'uncertain'
-              : 'possible'
+            : text.includes('IMAGE_ONLY_MARKER')
+              ? 'incomplete'
+              : text.includes('UNCERTAIN_MARKER')
+                ? 'uncertain'
+                : 'possible'
           : name === 'support'
             ? 'supported'
             : name === 'exclusion'
@@ -230,11 +232,9 @@ test('CLI pages enter Jev triage, the agent scores retained items, and review ga
   assert.equal(stored.assessment.score, 42);
   assert.equal(stored.cells.location.length, 2000);
   assert.ok(stored.cells.location.endsWith('…'));
-  assert.ok(
-    f.db.jevTasks
-      .fullEvidence(f.id, f.run.taskId, good.evidenceId)
-      .text.includes('Synthetic country 199'),
-  );
+  const evidence = f.db.jevTasks.fullEvidence(f.id, f.run.taskId, good.evidenceId);
+  assert.ok(evidence.text.includes('Synthetic country 199'));
+  assert.ok(evidence.listing, 'API text is the listing itself; the brief needs no Jev filter');
   await assert.rejects(review(f, first), /İnceleme tamamlanmadı/);
   await save(f, helper(f, first).items[2]);
   const acknowledged = await review(f, first);
@@ -465,6 +465,36 @@ test('an unavailable detail does not block other pages, a moved listing is recov
   assert.equal(done.complete, true);
   assert.equal(done.progress.jevRejected, 1);
   assert.equal(done.progress.collected, 3);
+});
+
+test('a listing Jev cannot assess stays pending without holding its page', async (t) => {
+  const image = {guid: url('image'), title: 'Werkstudent', description: '<p>IMAGE_ONLY_MARKER</p>'};
+  const f = fixture(t, {
+    readPage: (value) => {
+      const second = new URL(value).searchParams.get('page') === '2';
+      return parseHimalayasPage(value, {
+        jobs: second ? [{...jobs[0], guid: url('second')}] : [jobs[0], image],
+        offset: second ? 20 : 0,
+        limit: 20,
+        totalCount: 21,
+      });
+    },
+  });
+  const first = await f.call('collect_source_page'),
+    task = helper(f, first);
+  assert.ok(task.items.find((i) => i.url === url('image')).error);
+  await save(
+    f,
+    task.items.find((i) => i.url === url('good')),
+  );
+  await review(f, first);
+  const second = await f.call('collect_source_page');
+  assert.notEqual(second.taskId, first.taskId, 'the next page is fetched');
+  await handle(f, second);
+  const end = await f.call('collect_source_page');
+  assert.equal(end.complete, false);
+  assert.equal(end.issue.reason, 'collector_details_unavailable');
+  assert.deepEqual(end.issue.urls, [url('image')]);
 });
 
 test('cancellation during missing-detail recovery preserves every pending address', async (t) => {

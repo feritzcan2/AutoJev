@@ -45,13 +45,23 @@ function trial(db, id) {
   db.finish(id, run.id, 'completed', 'İlanlar gözlendi');
   return run;
 }
-function record(db, id, run, key = '1', proposal = 'Merhaba, bu evle ilgileniyorum.') {
+function record(db, id, run, key = '1', proposal = 'Merhaba, bu evle ilgileniyorum.', assessment) {
   return db.record(id, run.id, {
     key,
     url: 'https://example.com/homes/' + key,
     title: 'İki odalı ev',
     summary: 'Berlin, 1400 EUR warm',
     proposal,
+    ...(assessment ? {assessment} : {}),
+  });
+}
+// Automatic submission needs a current score with verified mandatory conditions.
+function scoredRecord(db, id, run, key = '1', proposal = 'Merhaba, bu evle ilgileniyorum.') {
+  return record(db, id, run, key, proposal, {
+    score: 95,
+    eligibility: 'verified',
+    eligibilityReason: 'Fixture: mandatory conditions met',
+    summary: 'Fits criteria',
   });
 }
 const settle = () => new Promise((r) => setImmediate(r));
@@ -477,41 +487,51 @@ test('every source origin needs evidence; blocked trials never pass', (t) => {
   db.finish(id, blocked.id, 'blocked', 'Login needed');
   assert.equal(db.get(id).trial.status, 'failed');
 });
-test('optional action tracking respects the saved mode and exact proposal approval', (t) => {
+test('optional action tracking respects the saved mode and the explicit submission request', (t) => {
   const {db, id} = fixture(t);
   trial(db, id);
   db.save(id, {mode: 'observe'});
   let run = db.begin(id, 'run'),
-    item = record(db, id, run);
+    item = scoredRecord(db, id, run);
   assert.throws(() => db.reserve(id, run.id, item.id), /gözlem/);
   db.finish(id, run.id, 'completed', 'Found');
   db.save(id, {mode: 'prepare'});
-  db.approve(id, item.id);
   run = db.begin(id, 'run');
-  item = record(db, id, run, '1', 'Changed message');
-  assert.equal(item.approvedDigest, null);
-  assert.throws(() => db.reserve(id, run.id, item.id), /onay/);
+  item = scoredRecord(db, id, run, '1', 'Changed message');
+  // No draft approval: outside auto mode only the user's execute request submits.
+  assert.throws(() => db.reserve(id, run.id, item.id), /kullanıcı isteği/);
   db.finish(id, run.id, 'completed', 'Review');
-  db.approve(id, item.id);
-  run = db.begin(id, 'run');
+  const execute = db.template('housing').recordOperations.execute,
+    task = db.store.workspaces.tasks.enqueue(id, {
+      recordOperation: 'execute',
+      operation: execute.id,
+      capability: execute.capability,
+      recordId: item.id,
+      subject: item.id,
+      sources: [item.url],
+      lockKey: 'submit',
+      request: {manual: true, direct: true, revision: db.get(id).revision, at: Date.now()},
+    });
+  run = db.begin(id, {kind: 'run', taskId: task.id});
+  assert.equal(db.run(run.id).request.manual, true);
   db.reserve(id, run.id, item.id);
   assert.equal(db.run(run.id).actionId, item.id);
   db.observe(id, run.id, item.url, 'Message sent');
   db.resolve(id, run.id, item.id, {status: 'completed', evidence: 'Message sent', url: item.url});
   assert.equal(db.run(run.id).actionId, null);
   db.finish(id, run.id, 'completed', 'Sent');
+  assert.equal(db.result(id, item.id).status, 'completed');
   run = db.begin(id, 'trial');
   item = record(db, id, run, '2');
   assert.throws(() => db.reserve(id, run.id, item.id), /gözlem/);
   db.finish(id, run.id, 'blocked', 'Test');
-  assert.throws(() => db.approve(id, item.id), /Güncel/);
 });
 test('interrupted attempts stay protected while other listings have no daily quota', (t) => {
   const {db, id} = fixture(t);
   trial(db, id);
   db.save(id, {mode: 'auto', maxActionsPerDay: 1});
   let run = db.begin(id, 'run'),
-    item = record(db, id, run);
+    item = scoredRecord(db, id, run);
   db.reserve(id, run.id, item.id);
   db.finish(id, run.id, 'interrupted', 'Stopped');
   assert.equal(db.result(id, item.id).status, 'uncertain');
@@ -526,7 +546,7 @@ test('interrupted attempts stay protected while other listings have no daily quo
   assert.equal(duplicate.id, item.id);
   assert.equal(duplicate.duplicate, true);
   assert.throws(() => db.reserve(id, run.id, item.id));
-  const second = record(db, id, run, '2');
+  const second = scoredRecord(db, id, run, '2');
   assert.equal(db.reserve(id, run.id, second.id).reserved, true);
   db.observe(id, run.id, second.url, 'Second sent');
   db.resolve(id, run.id, second.id, {
@@ -630,7 +650,7 @@ test('restart holds the reserved record without suspending its automation', (t) 
   db.save(id, {mode: 'auto'});
   db.enable(id);
   const run = db.begin(id, 'run'),
-    item = record(db, id, run);
+    item = scoredRecord(db, id, run);
   db.reserve(id, run.id, item.id);
   db.recover();
   assert.equal(db.result(id, item.id).status, 'uncertain');
@@ -651,7 +671,7 @@ test('a new trial pauses an existing schedule; graceful shutdown holds only unce
   const runtime = new WebTasks(db, {launch: async () => ({close: async () => {}})});
   t.after(() => runtime.close());
   const run = await runtime.start(id),
-    item = record(db, id, run);
+    item = scoredRecord(db, id, run);
   db.reserve(id, run.id, item.id);
   await runtime.close();
   assert.equal(db.get(id).status, 'enabled');

@@ -1,5 +1,8 @@
 import {workerKey} from './worker-key.mjs';
 import {providerLimitAttention} from '../agents/provider-limit.mjs';
+// The app's own /compact ends the agent's turn, so every task kind needs a nudge.
+const COMPACTED_CONTINUATION =
+  'The app compacted this conversation; the same task is still open. Continue from the current page and saved state. Do not repeat a submission or upload that already happened. When the task is done or blocked, call finish_automation_run.';
 // Shared provider task lifecycle; policies validate durable domain outcomes.
 export class TaskRuns {
   constructor(
@@ -103,9 +106,12 @@ export class TaskRuns {
     }
     if (reason === 'idle' && slot.worker?.message) {
       const continuation = this.policy.continueIdle?.(slot.id, slot.run.id);
-      const message = typeof continuation === 'string' ? continuation : continuation?.message;
-      if (message && (!slot.idleContinuation || continuation.repeat === true)) {
+      const message =
+        (typeof continuation === 'string' ? continuation : continuation?.message) ||
+        (slot.compacted ? COMPACTED_CONTINUATION : null);
+      if (message && (!slot.idleContinuation || continuation?.repeat === true)) {
         slot.idleContinuation = true;
+        slot.compacted = false;
         try {
           await slot.worker.message(message);
           if (
@@ -191,6 +197,12 @@ export class TaskRuns {
       const state = String(event.state).replace(/^Some\((.*)\)$/, '$1');
       slot.run = {...this.policy.run(slot.run.id), state};
       if (['Working', 'Compacting'].includes(state)) slot.seenWorking = true;
+      // A native /compact ends the agent's turn. That stop is the app's own,
+      // so the next idle may send the continuation again.
+      if (event.compacted) {
+        slot.idleContinuation = false;
+        slot.compacted = true;
+      }
       clearTimeout(slot.idleTimer);
       if (slot.run.interactive && slot.seenWorking && ['Working', 'Idle'].includes(state))
         slot.run.awaitingMessage = state === 'Idle';

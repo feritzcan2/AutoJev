@@ -504,6 +504,34 @@ test('an unreported idle continues in the same provider once, without a new laun
   assert.equal(f.db.run(run.id).status, 'interrupted');
 });
 
+test('each app compaction ends the turn and earns its own continuation in the same session', async (t) => {
+  const f = fixture(t),
+    messages = [];
+  f.options.launch = async (run) => {
+    f.launches.push(run);
+    return {
+      close: async () => {},
+      state: () => f.db.run(run.id).state,
+      message: async (text) => messages.push(text),
+    };
+  };
+  f.runtime.launch = f.options.launch;
+  await f.runtime.runOnce(f.id);
+  await settle();
+  const run = f.launches[0];
+  f.checkpoint(run);
+  for (const n of [1, 2]) {
+    f.event('Working');
+    f.db.spendStep(f.id, run.id);
+    f.runtime.event(f.id, {event: 'state', state: 'Idle', compacted: true}, run.id);
+    t.mock.timers.tick(10000);
+    await settle();
+    assert.equal(messages.length, n);
+    assert.equal(f.db.run(run.id).status, 'running');
+  }
+  assert.equal(f.launches.length, 1, 'no relaunch after the second compaction');
+});
+
 test('technical retries check the browser without launching an agent and release only after recovery', async (t) => {
   const f = fixture(t);
   let ready = false,

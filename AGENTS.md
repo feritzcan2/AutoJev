@@ -22,6 +22,15 @@ features and bug fixes on browser behavior shared across websites.
   Do not assume missing content or a successful result. Add an exception for a
   particular website only when the user explicitly requests it.
 
+## Language of agent-facing text
+
+Everything the worker agents read is written in English: system prompts, tool
+names and descriptions, notices, guidance, action messages, error text returned
+from a tool, and any evidence or summary the app composes for an agent. Do not
+add Turkish (or any other language) to these strings, and translate Turkish
+ones you touch. Text shown to the user in the application UI, Telegram and
+questions to the user stays in the user's language.
+
 Follow [CONTRIBUTING.md](CONTRIBUTING.md) for other development and validation
 steps. Keep temporary page content and the Jev cache in RAM; read pages again
 after the application restarts.

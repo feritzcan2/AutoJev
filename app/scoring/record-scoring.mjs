@@ -59,7 +59,21 @@ export function normalizeAssessment(input) {
     return {...input, score: Number(score)};
   return input;
 }
+// Observations name their ids controlId/targetId/fieldId/uploadId while the
+// browser tools take a single ref. A weaker or freshly compacted agent often
+// copies the observation's key; accept exactly one such alias in place of ref.
+const REF_ALIASES = ['controlId', 'targetId', 'fieldId', 'uploadId'];
+const REF_TOOLS = new Set(['browser_interact', 'browser_upload_document', 'browser_target_press']);
+function normalizeRefAlias(name, args) {
+  if (!REF_TOOLS.has(name) || !args || typeof args !== 'object' || args.ref !== undefined)
+    return args;
+  const present = REF_ALIASES.filter((key) => typeof args[key] === 'string' && args[key]);
+  if (present.length !== 1) return args;
+  const {[present[0]]: ref, ...rest} = args;
+  return {...rest, ref};
+}
 export function normalizeRecordToolArgs(name, args) {
+  args = normalizeRefAlias(name, args);
   if (name === 'record_automation_results' && Array.isArray(args?.records))
     return {
       ...args,

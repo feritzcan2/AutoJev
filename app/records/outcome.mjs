@@ -31,7 +31,7 @@ export function validateNotSubmitted(item, proof, page) {
     proof?.kind === 'draft'
       ? /\b(draft|not submitted|unsubmitted|entwurf|nicht (?:abgesendet|eingereicht)|taslak|gönderilmedi)\b/
       : proof?.kind === 'rejected'
-        ? /\b(submission failed|not sent|was not submitted|could not (?:send|submit)|gönderilemedi)\b/
+        ? /\b(submission (?:failed|error)|error (?:submitting|sending)|failed to (?:submit|send)|not sent|was not submitted|could not (?:be )?(?:send|sent|submit|submitted)|unable to submit|fehler beim (?:senden|absenden|übermitteln)|konnte nicht (?:gesendet|übermittelt) werden|gönderilemedi|gönderim başarısız)\b/
         : null;
   const status = pattern?.exec(text)?.[0];
   if (!status)
