@@ -11,6 +11,7 @@ import {
   networkFailure,
 } from '../app/browser/site-access.mjs';
 import {JevBrowser} from '../app/jev/browser.mjs';
+import {documentReadiness} from '../app/jev/document.mjs';
 const url = 'https://www.kleinanzeigen.de/list',
   minute = 60000;
 
@@ -111,6 +112,122 @@ test('browser observation detects a challenge before creating listing evidence a
     assert.match(gate.status(url).message, /Erişim doğrulaması/);
     assert.throws(() => gate.begin(url + '/another'), {code: 'SITE_WAIT'});
     assert.equal(gate.begin('https://other.example/list'), null);
+  } finally {
+    db.close();
+  }
+});
+test('a 429 challenge page is judged from its loaded document and gets the native checkbox attempt, not a rate-limit wait', async () => {
+  const db = new DatabaseSync(':memory:'),
+    gate = new SiteAccess(db),
+    browser = new JevBrowser('/unused', {siteAccess: gate, autoVerify: () => true});
+  const calls = [];
+  let readiness = 0;
+  const page = {
+    evaluate: async (fn) => {
+      if (fn === documentReadiness) {
+        calls.push('readiness');
+        // The challenge document is still parsing when the response arrives.
+        return ++readiness === 1
+          ? {url, loading: true, reason: 'document_loading'}
+          : {url, loading: false};
+      }
+      if (typeof fn === 'function') return fn();
+      calls.push('reader');
+      return {url, ...challenge};
+    },
+    frames: () => [],
+    locator: () => ({evaluateAll: async () => false}),
+  };
+  const slot = {id: 'owned', http: {url, status: 429}, page};
+  try {
+    const result = await browser.observeOnce(slot);
+    assert.equal(result.status, 'verification_pending');
+    assert.equal(result.captcha.kind, 'cloudflare_checkbox');
+    assert.deepEqual(calls, ['readiness', 'readiness', 'reader']);
+    assert.equal(gate.status(url), null, 'no site wait while the checkbox attempt is pending');
+    assert.equal(gate.begin(url + '/another'), null);
+  } finally {
+    db.close();
+  }
+});
+test('an ordinary 429 page with automatic verification still starts the rate-limit wait from its loaded document', async () => {
+  const db = new DatabaseSync(':memory:'),
+    gate = new SiteAccess(db),
+    browser = new JevBrowser('/unused', {siteAccess: gate, autoVerify: () => true});
+  const slot = {
+    id: 'owned',
+    http: {url, status: 429},
+    page: {
+      evaluate: async (fn) =>
+        fn === documentReadiness
+          ? {url, loading: false}
+          : {url, title: 'Too Many Requests', text: 'Rate limit exceeded. Try again later.'},
+      frames: () => [],
+    },
+  };
+  try {
+    await assert.rejects(
+      browser.observeOnce(slot),
+      (error) =>
+        error.code === 'SITE_WAIT' && error.wait.reason === 'rate_limit' && error.url === url,
+    );
+    assert.equal(slot.observed, undefined);
+    assert.ok(gate.status(url).waiting);
+  } finally {
+    db.close();
+  }
+});
+test('without automatic verification a 429 starts the rate-limit wait before any document read', async () => {
+  const db = new DatabaseSync(':memory:'),
+    gate = new SiteAccess(db),
+    browser = new JevBrowser('/unused', {siteAccess: gate});
+  const slot = {
+    id: 'owned',
+    http: {url, status: 429},
+    page: {evaluate: async () => assert.fail('the document must not be read')},
+  };
+  try {
+    await assert.rejects(
+      browser.observeOnce(slot),
+      (error) => error.code === 'SITE_WAIT' && error.wait.reason === 'rate_limit',
+    );
+    assert.ok(gate.status(url).waiting);
+  } finally {
+    db.close();
+  }
+});
+test('a 429 navigation that gives up before its document loads leaves the decision to the observation when automatic verification is on', async () => {
+  const db = new DatabaseSync(':memory:'),
+    gate = new SiteAccess(db);
+  const slotFor = () => {
+    const slot = {
+      id: 'owned',
+      page: {
+        addInitScript: async () => {},
+        evaluate: async () => {},
+        goto: async () => {
+          slot.http = {url, status: 429};
+          throw Error('page.goto: Timeout 20000ms exceeded.');
+        },
+      },
+    };
+    return slot;
+  };
+  try {
+    const verifying = new JevBrowser('/unused', {siteAccess: gate, autoVerify: () => true}),
+      pending = slotFor();
+    await assert.rejects(verifying.navigate(pending, url), /Timeout/);
+    assert.equal(gate.status(url), null, 'no rate-limit wait before the document is read');
+    assert.deepEqual(
+      pending.accessProbe,
+      {url, token: null},
+      'the probe stays for the observation',
+    );
+    const plain = new JevBrowser('/unused', {siteAccess: gate});
+    await assert.rejects(
+      plain.navigate(slotFor(), url),
+      (error) => error.code === 'SITE_WAIT' && error.wait.reason === 'rate_limit',
+    );
   } finally {
     db.close();
   }

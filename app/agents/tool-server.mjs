@@ -2,6 +2,22 @@ import {createServer} from 'node:http';
 import {randomBytes, timingSafeEqual} from 'node:crypto';
 import {validate} from './tool-schema.mjs';
 
+// A tool result may carry binary parts (an image the agent should see) under
+// `attachments`; they travel as their own MCP content parts, never as JSON text.
+const BINARY_PARTS = new Set(['image', 'audio']);
+export function toolResponse(value) {
+  const {attachments, ...rest} = value && typeof value === 'object' ? value : {},
+    parts = Array.isArray(attachments)
+      ? attachments.filter((p) => BINARY_PARTS.has(p?.type) && p.mimeType && p.data)
+      : [];
+  return {
+    content: [
+      {type: 'text', text: JSON.stringify(parts.length ? rest : value)},
+      ...parts.map(({type, mimeType, data}) => ({type, mimeType, data})),
+    ],
+  };
+}
+
 export async function startToolServer({
   resolve,
   assertOwner,
@@ -137,7 +153,7 @@ export async function startToolServer({
       const value = await (protocol.guardToolCall
           ? protocol.guardToolCall(name, args, execute)
           : execute()),
-        response = {content: [{type: 'text', text: JSON.stringify(value)}]};
+        response = toolResponse(value);
       result(response);
       observe(grant, {name, result: response});
       return;

@@ -6,6 +6,8 @@ import {AutomationStore} from '../app/automation/store.mjs';
 import {WebTasks} from '../app/automation/web-template.mjs';
 import {automationWorkflow} from '../app/automation/worker.mjs';
 import {LOGGED_IN_FIELD} from '../app/automation/login-question.mjs';
+import {OUTCOME_FIELD} from '../app/automation/question-forms.mjs';
+import {directRecordInstructions} from '../app/records/operation-definitions.mjs';
 import {automationTaskContext} from '../app/automation/task-context.mjs';
 import {automationBrowser} from '../app/browser/automation-browser.mjs';
 import {automationTemplate, reusableTemplate} from '../app/templates/catalog.mjs';
@@ -82,8 +84,9 @@ function fixture(t, template = 'job-search', {onRunFinished} = {}) {
   return {store, db, id: a.id, item, runtime, launches, flow, finish, prepare};
 }
 
+// A stopped preparation is retried as a direct execution: there is no draft step.
 for (const kind of ['prepare', 'execute', 'verify'])
-  test(`retry offers the stopped ${kind} operation and disappears while queued`, async (t) => {
+  test(`retry after a stopped ${kind} offers the follow-up operation and disappears while queued`, async (t) => {
     const f = fixture(t);
     let item = f.item;
     if (kind !== 'prepare') item = await f.prepare();
@@ -99,8 +102,9 @@ for (const kind of ['prepare', 'execute', 'verify'])
     await f.finish(run, 'failed');
     const retry = f.db.snapshot(f.id).results.find((r) => r.id === item.id)
       .recordAction.retryOperation;
-    assert.equal(retry.kind, kind);
-    assert.equal(retry.direct, kind === 'execute');
+    const expected = kind === 'prepare' ? 'execute' : kind;
+    assert.equal(retry.kind, expected);
+    assert.equal(retry.direct, expected === 'execute');
     assert.equal(retry.disabled, false);
     assert.equal(retry.review, false);
     await f.runtime.runRecord(f.id, item.id, retry.kind, retry.direct ? {direct: true} : {});
@@ -111,16 +115,17 @@ for (const kind of ['prepare', 'execute', 'verify'])
     );
   });
 
-test('retry of a reviewed execution opens review again and pending answers prevent retry', async (t) => {
+test('retry of a blocked execution is a direct execution again and pending answers prevent retry', async (t) => {
   const f = fixture(t),
     item = await f.prepare();
-  await f.runtime.runRecord(f.id, item.id, 'execute', {digest: item.digest});
+  await f.runtime.runRecord(f.id, item.id, 'execute');
   await settle();
   await f.finish(f.launches.at(-1), 'blocked');
   const retry = () =>
     f.db.snapshot(f.id).results.find((r) => r.id === item.id).recordAction.retryOperation;
-  assert.equal(retry().review, true);
-  assert.equal(retry().direct, false);
+  assert.equal(retry().kind, 'execute');
+  assert.equal(retry().review, false);
+  assert.equal(retry().direct, true);
   f.db.askQuestion(f.id, {recordId: item.id, text: 'Required answer'});
   assert.equal(retry().disabled, true);
   assert.match(retry().reason, /soruları yanıtla/);
@@ -238,23 +243,27 @@ test('draft preparation keeps its tab; verified submission closes the completed 
   assert.deepEqual(calls.at(-1).options.runIds.toSorted(), [calls[0].run.id, run.id].toSorted());
 });
 
-test('exact manual approval permits only the selected draft without changing observe permissions; duplicate submission is rejected', async (t) => {
+test('a manual execute request needs no draft and keeps observe permissions; duplicate submission is rejected', async (t) => {
   const f = fixture(t),
-    prepared = await f.prepare();
-  await assert.rejects(
-    f.runtime.runRecord(f.id, f.item.id, 'execute', {digest: 'stale'}),
-    /Taslak değişti/,
-  );
-  const task = await f.runtime.runRecord(f.id, f.item.id, 'execute', {digest: prepared.digest});
+    a = f.db.get(f.id);
+  // No approval step: the user's request applies the found record as it is,
+  // and a stale or missing digest changes nothing. Automatic execution still
+  // needs more than observe mode.
+  assert.equal(f.item.status, 'found');
+  assert.equal(recordOperationError(a, f.item, 'execute', {manual: true, digest: 'stale'}), null);
+  assert.match(recordOperationError(a, f.item, 'execute'), /yalnızca bul modunda/);
+  const task = await f.runtime.runRecord(f.id, f.item.id, 'execute', {digest: 'stale'});
   await settle();
-  assert.equal(
-    (await f.runtime.runRecord(f.id, f.item.id, 'execute', {digest: prepared.digest})).id,
-    task.id,
-  );
+  assert.equal(task.request.direct, true);
+  assert.equal(task.request.digest, undefined);
+  assert.equal((await f.runtime.runRecord(f.id, f.item.id, 'execute')).id, task.id);
   const run = f.launches.at(-1);
   assert.equal(f.db.get(f.id).mode, 'observe');
-  f.db.reserve(f.id, run.id, f.item.id);
-  assert.throws(() => f.db.reserve(f.id, run.id, f.item.id));
+  const attemptedAt =
+    f.db.reserve(f.id, run.id, f.item.id) && f.db.result(f.id, f.item.id).attemptedAt;
+  // A repeated reserve in the same run keeps the one reservation.
+  assert.equal(f.db.reserve(f.id, run.id, f.item.id).alreadyReserved, true);
+  assert.equal(f.db.result(f.id, f.item.id).attemptedAt, attemptedAt);
   f.db.observe(f.id, run.id, f.item.url, 'Application confirmation');
   f.db.resolve(f.id, run.id, f.item.id, {
     status: 'completed',
@@ -264,29 +273,28 @@ test('exact manual approval permits only the selected draft without changing obs
   await f.finish(run);
   assert.equal(f.db.result(f.id, f.item.id).status, 'completed');
   assert.equal(f.db.snapshot(f.id).results[0].recordAction.operation, null);
-  await assert.rejects(
-    f.runtime.runRecord(f.id, f.item.id, 'execute', {digest: prepared.digest}),
-    /yeniden gönderilemez/,
-  );
+  await assert.rejects(f.runtime.runRecord(f.id, f.item.id, 'execute'), /yeniden gönderilemez/);
 });
 
-test('changed proposals invalidate queued consent, and editing during execution cannot reuse consent', async (t) => {
+test('changed proposals do not invalidate a queued execute; the running execute request covers its own proposal edits', async (t) => {
   const f = fixture(t),
     prepared = await f.prepare();
-  // Hold the only worker with a source task, then enqueue the reviewed draft.
+  // Hold the only worker with a source task, then enqueue the execution.
   await f.runtime.runOnce(f.id);
   await settle();
   const scan = f.launches.at(-1);
-  const task = await f.runtime.runRecord(f.id, f.item.id, 'execute', {digest: prepared.digest});
+  const task = await f.runtime.runRecord(f.id, f.item.id, 'execute');
   assert.equal(task.state, 'pending');
+  // Without a draft approval there is no consent to invalidate: a changed
+  // proposal leaves the queued request in place.
   f.db.putResult({...prepared, proposal: 'Changed commitment', digest: 'changed'});
   await f.finish(scan);
   await f.runtime.tick();
-  assert.equal(f.store.workspaces.tasks.get(f.id, task.id).state, 'cancelled');
-  assert.equal(f.launches.filter((r) => r.recordOperation === 'execute').length, 0);
-  await f.runtime.runRecord(f.id, f.item.id, 'execute', {digest: 'changed'});
   await settle();
+  assert.equal(f.store.workspaces.tasks.get(f.id, task.id).state, 'running');
+  assert.equal(f.launches.filter((r) => r.recordOperation === 'execute').length, 1);
   const run = f.launches.at(-1);
+  assert.equal(run.taskId, task.id);
   f.db.record(f.id, run.id, {
     key: f.item.key,
     url: f.item.url,
@@ -294,9 +302,7 @@ test('changed proposals invalidate queued consent, and editing during execution 
     summary: 'New requirement',
     proposal: 'Another changed proposal',
   });
-  assert.throws(() => f.db.reserve(f.id, run.id, f.item.id), /onay/);
-  await f.finish(run);
-  assert.equal(f.db.result(f.id, f.item.id).status, 'prepared');
+  assert.equal(f.db.reserve(f.id, run.id, f.item.id).proposal, 'Another changed proposal');
 });
 
 test('an interrupted send becomes uncertain; verification is read-only and survives disabled schedules', async (t) => {
@@ -398,7 +404,7 @@ test('one sign-in answer releases every open login question for the same site', 
   assert.equal(answered(other), false);
 });
 
-test('record questions resume preparation without pausing other scans or starting setup', async (t) => {
+test('record questions resume the application without pausing other scans or starting setup', async (t) => {
   const f = fixture(t);
   await f.runtime.runRecord(f.id, f.item.id, 'prepare');
   await settle();
@@ -414,7 +420,9 @@ test('record questions resume preparation without pausing other scans or startin
   await settle();
   const next = f.launches.at(-1);
   assert.notEqual(next.id, first.id);
-  assert.equal(next.recordOperation, 'prepare');
+  // The answer continues the application itself; there is no draft step.
+  assert.equal(next.recordOperation, 'execute');
+  assert.equal(next.request.direct, true);
   assert.equal(next.recordId, f.item.id);
   assert.equal(
     f.launches.some((r) => r.kind === 'interview'),
@@ -545,8 +553,9 @@ test('preparation and execution cannot claim success without their durable resul
   );
 });
 
-test('automatic preparation is independent of source completion, and prepare mode waits for exact approval', async (t) => {
+test('automatic execution is independent of source completion, and prepare mode waits for the user request', async (t) => {
   const f = fixture(t, 'housing');
+  f.db.put({...f.db.get(f.id), mode: 'prepare'});
   f.db.enable(f.id);
   f.db.put({
     ...f.db.get(f.id),
@@ -554,23 +563,31 @@ test('automatic preparation is independent of source completion, and prepare mod
   });
   await f.runtime.tick();
   await settle();
-  const run = f.launches.at(-1);
-  assert.equal(run.recordOperation, 'prepare');
-  f.db.record(f.id, run.id, {
-    key: f.item.key,
-    url: f.item.url,
-    title: f.item.title,
-    summary: 'Facts',
-    proposal: 'Message',
+  // Prepare mode never applies a record on its own; there is no draft to make.
+  assert.equal(f.launches.length, 0);
+  assert.match(
+    recordOperationError(f.db.get(f.id), f.db.result(f.id, f.item.id), 'execute'),
+    /kullanıcı isteği/,
+  );
+  f.db.put({...f.db.get(f.id), mode: 'auto'});
+  f.db.enable(f.id);
+  f.db.putResult({
+    ...f.db.result(f.id, f.item.id),
+    assessment: {
+      score: 95,
+      scoringVersion: 4,
+      revision: f.db.get(f.id).revision,
+      eligibility: 'verified',
+    },
   });
-  await f.finish(run);
-  await f.runtime.tick();
-  assert.equal(f.launches.length, 1);
-  assert.equal(f.db.sources(f.id)[0].blocked, true);
-  f.db.approve(f.id, f.item.id);
   await f.runtime.tick();
   await settle();
-  assert.equal(f.launches.at(-1).recordOperation, 'execute');
+  const run = f.launches.at(-1);
+  assert.equal(run.recordOperation, 'execute');
+  assert.equal(run.request.manual, false);
+  assert.equal(run.request.direct, true);
+  assert.equal(f.launches.length, 1);
+  assert.equal(f.db.sources(f.id)[0].blocked, true);
 });
 
 test('record tasks have an independent retained browser tab key across redirects', async () => {
@@ -634,7 +651,7 @@ test('source observations preserve existing drafts and do not overwrite an activ
 });
 
 for (const mode of ['observe', 'prepare', 'auto'])
-  test(`manual consent remains exact in ${mode} mode after proposal edits`, async (t) => {
+  test(`a manual execute request in ${mode} mode covers proposal edits and never relaunches itself`, async (t) => {
     const f = fixture(t),
       prepared = await f.prepare();
     f.db.put({...f.db.get(f.id), mode});
@@ -649,7 +666,7 @@ for (const mode of ['observe', 'prepare', 'auto'])
       summary: 'Changed requirement',
       proposal: 'Changed document',
     });
-    assert.throws(() => f.db.reserve(f.id, run.id, f.item.id), /yeniden onay/);
+    assert.equal(f.db.reserve(f.id, run.id, f.item.id).reserved, true);
     await f.finish(run);
     f.db.put({
       ...f.db.get(f.id),
@@ -661,7 +678,7 @@ for (const mode of ['observe', 'prepare', 'auto'])
     assert.equal(f.launches.filter((r) => r.recordOperation === 'execute').length, 1);
   });
 
-test('an answer arriving before the asking worker closes schedules a fresh preparation', async (t) => {
+test('an answer arriving before the asking worker closes schedules a fresh execution', async (t) => {
   const f = fixture(t);
   await f.runtime.runRecord(f.id, f.item.id, 'prepare');
   await settle();
@@ -675,10 +692,11 @@ test('an answer arriving before the asking worker closes schedules a fresh prepa
   await f.runtime.tick();
   await settle();
   assert.equal(f.launches.length, 2);
-  assert.equal(f.launches.at(-1).recordOperation, 'prepare');
+  assert.equal(f.launches.at(-1).recordOperation, 'execute');
+  assert.equal(f.launches.at(-1).request.direct, true);
 });
 
-test('document uploads require a reserved record and a listed file inside this workspace', async (t) => {
+test('document uploads need an execute task, not a reservation or a draft, and a file inside this workspace', async (t) => {
   const {mkdtemp, writeFile, rm, symlink} = await import('node:fs/promises'),
     os = await import('node:os'),
     path = await import('node:path');
@@ -703,28 +721,19 @@ test('document uploads require a reserved record and a listed file inside this w
   let flow = automationWorkflow({workspace, db: f.db, run, signal: {aborted: false}, browser});
   await assert.rejects(
     flow.call(f.id, run.id, 'browser_upload_document', {ref: 'file', filePath: 'cv.pdf'}),
-    /rezervasyonu/,
+    /başvuru görevinde/,
   );
-  const draft = f.db.record(f.id, run.id, {
+  f.db.record(f.id, run.id, {
     url: f.item.url,
     title: f.item.title,
     summary: f.item.summary,
     proposal: 'Upload cv.pdf',
   });
   await f.finish(run);
-  await f.runtime.runRecord(f.id, f.item.id, 'execute', {digest: draft.digest});
+  await f.runtime.runRecord(f.id, f.item.id, 'execute');
   await settle();
   run = f.launches.at(-1);
   flow = automationWorkflow({workspace, db: f.db, run, signal: {aborted: false}, browser});
-  await assert.rejects(
-    flow.call(f.id, run.id, 'browser_upload_document', {ref: 'file', filePath: 'cv.pdf'}),
-    /rezervasyonu/,
-  );
-  f.db.reserve(f.id, run.id, f.item.id);
-  await assert.rejects(
-    flow.call(f.id, run.id, 'browser_upload_document', {ref: 'file', filePath: 'private.pdf'}),
-    /taslakta yok/,
-  );
   await symlink(new URL(import.meta.url).pathname, path.join(workspace, 'outside.pdf'));
   await assert.rejects(
     flow.call(f.id, run.id, 'browser_upload_document', {ref: 'file', filePath: 'outside.pdf'}),
@@ -737,89 +746,62 @@ test('document uploads require a reserved record and a listed file inside this w
     calls[0].args.filePath,
     await import('node:fs/promises').then((m) => m.realpath(path.join(workspace, 'cv.pdf'))),
   );
-  // The draft names the file; the import folder it was stored in is the app's choice.
+  // The import folder a document was stored in is the app's choice.
   await flow.call(f.id, run.id, 'browser_upload_document', {
     ref: 'file',
     filePath: 'documents/import/cv.pdf',
   });
-  assert.equal(calls.filter((c) => c.name === 'browser_upload_document').length, 2);
+  // Any document inside the workspace may be uploaded; no draft has to name it.
+  await flow.call(f.id, run.id, 'browser_upload_document', {ref: 'file', filePath: 'private.pdf'});
+  assert.equal(calls.filter((c) => c.name === 'browser_upload_document').length, 3);
 });
 
-for (const [choice, status] of [
-  ['Gönderilmedi, yeniden gönderilebilir', 'prepared'],
-  ['Gönderildi', 'completed'],
-  ['Bilmiyorum, belirsiz kalsın', 'uncertain'],
-])
-  test(`a verify that ends without portal proof asks the applicant; "${choice}" leaves the record ${status}`, async (t) => {
-    const f = fixture(t);
-    await f.prepare();
-    await f.runtime.runRecord(f.id, f.item.id, 'execute', {direct: true});
-    await settle();
-    const execute = f.launches.at(-1);
-    f.db.reserve(f.id, execute.id, f.item.id);
-    await f.runtime.finish(f.id, 'blocked', 'Upload rejected', execute.workerId);
-    await f.runtime.runRecord(f.id, f.item.id, 'verify');
-    await settle();
-    const verify = f.launches.at(-1);
-    const browser = {
-      call: async () => ({
-        content: [
-          {
-            type: 'text',
-            text: `Page URL: ${f.item.url}\nLogin\nJob Application\nFirst Name*\nEmail*\nSubmit application\nSubscribe to updates\nEmail`,
-          },
-        ],
-      }),
-    };
-    const flow = automationWorkflow({
-      db: f.db,
-      run: verify,
-      signal: {aborted: false},
-      browser,
-      report: (...args) => f.runtime.report(...args),
-    });
-    await flow.call(f.id, verify.id, 'browser_read', {});
-    await flow.call(f.id, verify.id, 'finish_automation_run', {
-      status: 'blocked',
-      summary: 'Form boş, onay sayfası yok.',
-    });
-    await f.runtime.finish(f.id, 'blocked', 'Form boş, onay sayfası yok.', verify.workerId);
-    await settle();
-    const questions = f.db.get(f.id).questions.filter((q) => q.answer == null);
-    assert.equal(questions.length, 1);
-    const [q] = questions;
-    assert.equal(q.recordId, f.item.id);
-    assert.equal(q.outcome, true);
-    assert.equal(q.fields[0].id, 'outcome');
-    assert.equal(q.fields[0].type, 'select');
-    assert.match(q.text, /doğrulanamadı/);
-    assert.match(q.text, /Form boş/);
-    assert.equal(f.db.result(f.id, f.item.id).status, 'uncertain');
-    const launches = f.launches.length;
-    await f.runtime.answer(f.id, q.id, {outcome: choice});
-    await settle();
-    const item = f.db.result(f.id, f.item.id);
-    assert.equal(item.status, status);
-    assert.equal(
-      f.launches.length,
-      launches,
-      'the user picks the next step; no task starts by itself',
-    );
-    if (status === 'prepared') {
-      assert.equal(item.requiresReview, true);
-      assert.equal(item.notSubmitted.kind, 'user');
-      assert.equal(item.updatedAt, item.verifiedAt);
-      const row = f.db.snapshot(f.id).results.find((r) => r.id === item.id);
-      assert.equal(row.recordAction.operation.kind, 'execute');
-      assert.equal(row.recordAction.retryOperation, null);
-      assert.equal(recordOperationStatus(row), null);
-      // Existing records may still have the timestamp of the original proposal.
-      const legacy = {...row, updatedAt: 1};
-      assert.equal(recordOperationStatus(legacy), null);
-      assert.equal(recordActivityAt(legacy), item.verifiedAt);
-    }
-    if (status === 'completed') assert.match(item.evidence, /Kullanıcı/);
+test('a verify that ends without portal proof keeps the record uncertain and asks the applicant for the outcome once', async (t) => {
+  const f = fixture(t);
+  await f.prepare();
+  await f.runtime.runRecord(f.id, f.item.id, 'execute', {direct: true});
+  await settle();
+  const execute = f.launches.at(-1);
+  f.db.reserve(f.id, execute.id, f.item.id);
+  await f.runtime.finish(f.id, 'blocked', 'Upload rejected', execute.workerId);
+  await f.runtime.runRecord(f.id, f.item.id, 'verify');
+  await settle();
+  const verify = f.launches.at(-1);
+  const browser = {
+    call: async () => ({
+      content: [
+        {type: 'text', text: `Page URL: ${f.item.url}\nJob Application\nSubmit application`},
+      ],
+    }),
+  };
+  const flow = automationWorkflow({
+    db: f.db,
+    run: verify,
+    signal: {aborted: false},
+    browser,
+    report: (...args) => f.runtime.report(...args),
   });
+  await flow.call(f.id, verify.id, 'browser_read', {});
+  await flow.call(f.id, verify.id, 'finish_automation_run', {
+    status: 'blocked',
+    summary: 'Form boş, onay sayfası yok.',
+  });
+  const launches = f.launches.length;
+  await f.runtime.finish(f.id, 'blocked', 'Form boş, onay sayfası yok.', verify.workerId);
+  await settle();
+  // The app asks the applicant once per record; the record stays uncertain
+  // until they answer.
+  const open = (f.db.get(f.id).questions ?? []).filter((q) => q.answer == null);
+  assert.equal(open.length, 1);
+  assert.equal(open[0].outcome, true);
+  assert.equal(open[0].recordId, f.item.id);
+  assert.deepEqual(open[0].fields, [OUTCOME_FIELD]);
+  assert.equal(f.db.result(f.id, f.item.id).status, 'uncertain');
+  assert.equal(f.launches.length, launches);
+  f.db.answerQuestion(f.id, open[0].id, {[OUTCOME_FIELD.id]: OUTCOME_FIELD.options[1]});
+  assert.equal(f.db.result(f.id, f.item.id).status, 'prepared');
+  assert.equal(f.db.result(f.id, f.item.id).notSubmitted.kind, 'user');
+});
 
 test('Jev document upload uses the current record tab and observed upload ID', async () => {
   const calls = [],
@@ -949,7 +931,8 @@ test('repeating a queued request wakes a worker and more preparation work starts
   const f = fixture(t);
   const {enqueueRecordOperation} = await import('../app/records/operations.mjs');
   f.runtime.workers.setEnabled(f.id, 'main', false);
-  await assert.rejects(f.runtime.runRecord(f.id, f.item.id, 'execute', {digest: 'invalid'}));
+  // A rejected request (verify on a record that is not uncertain) wakes nobody.
+  await assert.rejects(f.runtime.runRecord(f.id, f.item.id, 'verify'), /belirsiz/);
   assert.equal(f.runtime.workers.get(f.id, 'main').enabled, false);
   const pending = enqueueRecordOperation(f.runtime, f.id, f.item.id, 'prepare');
   f.runtime.workers.setEnabled(f.id, 'main', false);
@@ -1035,9 +1018,12 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
       originalMode = f.db.get(f.id).mode;
     const initial = f.db.snapshot(f.id).results[0];
     assert.equal(initial.status, 'found');
-    assert.equal(initial.recordAction.directOperation.disabled, false);
-    await assert.rejects(f.runtime.runRecord(f.id, f.item.id, 'execute'), /taslağını/);
-    const task = await f.runtime.runRecord(f.id, f.item.id, 'execute', {direct: true});
+    // The one record action is the execution itself; there is no separate
+    // direct or draft operation.
+    assert.equal(initial.recordAction.operation.kind, 'execute');
+    assert.equal(initial.recordAction.operation.disabled, false);
+    assert.equal(initial.recordAction.directOperation, null);
+    const task = await f.runtime.runRecord(f.id, f.item.id, 'execute');
     await settle();
     const run = f.launches.at(-1);
     assert.equal(
@@ -1046,12 +1032,13 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
     );
     assert.equal(f.launches.length, 1);
     assert.equal(run.recordOperation, 'execute');
+    assert.equal(run.request.direct, true);
     assert.equal(run.request.digest, undefined);
     const context = await f.flow(run).call(f.id, run.id, 'get_automation_context', {});
     assert.equal(context.recordAuthorization.directExecution, true);
-    assert.equal(context.recordAuthorization.approvedProposalDigest, null);
-    assert.match(context.recordAuthorization.rule, /No prior preparation/);
-    assert.throws(() => f.db.reserve(f.id, run.id, f.item.id), /taslağı gerekli/);
+    assert.equal(context.recordAuthorization.explicitUserRequest, true);
+    assert.equal(context.recordAuthorization.approvedProposalDigest, undefined);
+    assert.equal(context.recordAuthorization.rule, directRecordInstructions);
     f.db.record(f.id, run.id, {
       key: f.item.key,
       url: f.item.url,
@@ -1060,11 +1047,11 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
       proposal: 'Actual form: verified answers, documents/cv.pdf, no additional commitments',
     });
     assert.throws(
-      () => f.db.finish(f.id, run.id, 'completed', 'Only saved a draft'),
+      () => f.db.finish(f.id, run.id, 'completed', 'Only filled the form'),
       /Gönderim tamamlanmadı/,
     );
     f.db.reserve(f.id, run.id, f.item.id);
-    assert.throws(() => f.db.reserve(f.id, run.id, f.item.id));
+    assert.equal(f.db.reserve(f.id, run.id, f.item.id).alreadyReserved, true);
     f.db.observe(f.id, run.id, f.item.url, 'Confirmed submitted');
     f.db.resolve(f.id, run.id, f.item.id, {
       status: 'completed',
@@ -1072,7 +1059,7 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
       evidence: 'Confirmed submitted',
     });
     await f.finish(run);
-    assert.equal(f.db.snapshot(f.id).results[0].recordAction.directOperation, null);
+    assert.equal(f.db.snapshot(f.id).results[0].recordAction.operation, null);
     assert.equal(f.db.get(f.id).mode, originalMode);
     await assert.rejects(
       f.runtime.runRecord(f.id, f.item.id, 'execute', {direct: true}),
@@ -1080,10 +1067,11 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
     );
   });
 
-test('direct execution is explicit, record-scoped, and still requires the current setup revision', async (t) => {
+test('direct execution is explicit, record-scoped, and a queued request still requires the current setup revision', async (t) => {
   const f = fixture(t),
     {enqueueRecordOperation} = await import('../app/records/operations.mjs');
-  f.db.put({...f.db.get(f.id), mode: 'auto'});
+  // Below auto mode only the user's own request may apply a record.
+  f.db.put({...f.db.get(f.id), mode: 'prepare'});
   assert.throws(
     () =>
       enqueueRecordOperation(f.runtime, f.id, f.item.id, 'execute', {manual: false, direct: true}),
@@ -1099,15 +1087,22 @@ test('direct execution is explicit, record-scoped, and still requires the curren
     url: source + '/not-assigned',
   });
   assert.throws(() => f.db.reserve(f.id, run.id, other.id), /ait değil/);
-  f.db.record(f.id, run.id, {
-    key: f.item.key,
-    url: f.item.url,
-    title: f.item.title,
-    summary: 'Checked',
-    proposal: 'Verified form',
-  });
+  await f.finish(run, 'blocked');
+  // Hold the only worker with a source scan, then queue a new request. A setup
+  // change while it waits cancels it instead of applying the record.
+  await f.runtime.runOnce(f.id);
+  await settle();
+  const scan = f.launches.at(-1);
+  const queued = await f.runtime.runRecord(f.id, f.item.id, 'execute', {direct: true});
+  assert.equal(queued.state, 'pending');
   f.db.put({...f.db.get(f.id), maxActionsPerDay: 10, revision: f.db.get(f.id).revision + 1});
-  assert.throws(() => f.db.reserve(f.id, run.id, f.item.id), /yeniden onay/);
+  await f.finish(scan);
+  await f.runtime.tick();
+  await settle();
+  const cancelled = f.runtime.queue.get(f.id, queued.id);
+  assert.equal(cancelled.state, 'cancelled');
+  assert.match(cancelled.summary, /kurulum değişti/);
+  assert.equal(f.launches.filter((r) => r.recordOperation === 'execute').length, 1);
 });
 
 for (const answerBeforeFinish of [false, true])
@@ -1135,17 +1130,24 @@ for (const answerBeforeFinish of [false, true])
     assert.equal(next.recordId, f.item.id);
   });
 
-test('stopping a direct request revokes submission authority when a later answer resumes preparation', async (t) => {
+test('stopping a direct request ends its task; a later answer starts a fresh direct execution', async (t) => {
   const f = fixture(t);
   await f.runtime.runRecord(f.id, f.item.id, 'execute', {direct: true});
   await settle();
   const run = f.launches.at(-1);
   const q = await f.flow(run).call(f.id, run.id, 'ask_workspace_question', {text: 'Missing fact?'});
   await f.runtime.stopWorker(f.id, run.workerId);
+  assert.equal(f.db.run(run.id).status, 'interrupted');
+  assert.equal(f.launches.length, 1);
   await f.runtime.answer(f.id, q.id, 'Known now');
   await settle();
-  assert.equal(f.launches.at(-1).recordOperation, 'prepare');
-  assert.notEqual(f.launches.at(-1).request.direct, true);
+  // There is no draft fallback: the answer continues the application in a new task.
+  const next = f.launches.at(-1);
+  assert.notEqual(next.id, run.id);
+  assert.notEqual(next.taskId, run.taskId);
+  assert.equal(next.recordOperation, 'execute');
+  assert.equal(next.request.direct, true);
+  assert.equal(next.recordId, f.item.id);
 });
 
 test('uncertain direct execution cannot be retried as another submission', async (t) => {
@@ -1219,7 +1221,6 @@ test('explicit destination changes invalidate reviewed consent and cannot target
   const saved = f.db.record(f.id, run.id, input);
   assert.notEqual(saved.digest, prepared.digest);
   assert.equal(saved.approvedDigest, null);
-  assert.throws(() => f.db.reserve(f.id, run.id, f.item.id), /onay/);
   const other = f.db.putResult({
     ...f.item,
     id: 'foreign-record',
@@ -1294,14 +1295,14 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
       proposal: 'Authorized action',
     });
     assert.equal(f.db.reserve(f.id, run.id, f.item.id).reserved, true);
-    assert.throws(() => f.db.reserve(f.id, run.id, f.item.id));
+    assert.equal(f.db.reserve(f.id, run.id, f.item.id).alreadyReserved, true);
   });
 
 for (const template of ['job-search', 'housing', 'appointment'])
   test(`${template}: positive not-submitted proof resumes the authorized record in a separate execution`, async (t) => {
-    const f = fixture(t, template),
-      draft = await f.prepare();
-    await f.runtime.runRecord(f.id, f.item.id, 'execute', {digest: draft.digest});
+    const f = fixture(t, template);
+    await f.prepare();
+    await f.runtime.runRecord(f.id, f.item.id, 'execute');
     await settle();
     const execute = f.launches.at(-1);
     f.db.reserve(f.id, execute.id, f.item.id);
@@ -1335,7 +1336,8 @@ for (const template of ['job-search', 'housing', 'appointment'])
     assert.notEqual(resumed.id, verify.id);
     assert.equal(resumed.recordOperation, 'execute');
     assert.equal(resumed.recordId, f.item.id);
-    assert.equal(resumed.request.digest, draft.digest);
+    assert.equal(resumed.request.direct, true);
+    assert.equal(resumed.request.digest, undefined);
     assert.equal(f.db.reserve(f.id, resumed.id, f.item.id).reserved, true);
   });
 
@@ -1620,10 +1622,21 @@ test('a high fit score cannot authorize automatic execution with unmet or unknow
   await f.finish(run, 'blocked');
 });
 
-test('starting workers cannot recreate a cancelled preparation queue; explicit prepare remains available', async (t) => {
+test('starting workers cannot recreate a cancelled automatic execution queue; explicit execute remains available', async (t) => {
   const f = fixture(t);
   f.db.put({...f.db.get(f.id), mode: 'auto'});
-  const task = enqueueRecordOperation(f.runtime, f.id, f.item.id, 'prepare', {manual: false});
+  f.db.putResult({
+    ...f.db.result(f.id, f.item.id),
+    assessment: {
+      score: 95,
+      scoringVersion: 4,
+      revision: f.db.get(f.id).revision,
+      eligibility: 'verified',
+    },
+  });
+  const task = enqueueRecordOperation(f.runtime, f.id, f.item.id, 'execute', {manual: false});
+  assert.equal(task.request.manual, false);
+  assert.equal(task.request.direct, true);
   await f.runtime.pause(f.id);
   assert.equal(f.runtime.queue.get(f.id, task.id).state, 'cancelled');
   assert.equal(f.runtime.queue.get(f.id, task.id).stopRequested, true);
@@ -1643,9 +1656,10 @@ test('starting workers cannot recreate a cancelled preparation queue; explicit p
     0,
     'A later score or cell update cannot revoke the explicit cancellation',
   );
-  await f.runtime.runRecord(f.id, f.item.id, 'prepare');
+  await f.runtime.runRecord(f.id, f.item.id, 'execute');
   await settle();
-  assert.equal(f.launches.at(-1).recordOperation, 'prepare');
+  assert.equal(f.launches.at(-1).recordOperation, 'execute');
+  assert.equal(f.launches.at(-1).request.manual, true);
 });
 
 for (const oldSource of ['https://example.test/list/', 'https://removed.test/jobs'])
@@ -1667,3 +1681,88 @@ for (const oldSource of ['https://example.test/list/', 'https://removed.test/job
       null,
     );
   });
+
+// The user learns the outcome outside the app (confirmation mail): one action
+// completes the record, closes its open questions and blocks any resend.
+test('a user can mark a found, prepared or uncertain record as submitted', async (t) => {
+  const f = fixture(t);
+  const prepared = await f.prepare();
+  f.db.askQuestion(f.id, {recordId: prepared.id, text: 'Pending detail'});
+  const saved = f.runtime.markRecordSubmitted(f.id, prepared.id);
+  assert.equal(saved.status, 'completed');
+  assert.match(saved.evidence, /gönderildiğini onayladı/);
+  assert.ok(f.db.get(f.id).questions.every((q) => q.recordId !== prepared.id || q.answer != null));
+  const state = f.db.snapshot(f.id).results.find((r) => r.id === prepared.id);
+  assert.equal(state.status, 'completed');
+  assert.equal(state.recordAction?.task ?? null, null);
+  assert.throws(() => f.db.markSubmitted(f.id, prepared.id), /işaretlenemez/);
+  assert.throws(() => f.db.dismiss(f.id, prepared.id), /değiştirilemez/);
+  // A queued or running operation blocks the manual mark.
+  const other = f.db.putResult({...f.item, id: undefined, key: source + '/2', url: source + '/2'});
+  await f.runtime.runRecord(f.id, other.id, 'execute', {direct: true});
+  await settle();
+  assert.throws(() => f.db.markSubmitted(f.id, other.id), /sırada veya çalışıyor/);
+});
+
+test('an unconfirmed submit click attaches one viewport image; a confirmed one attaches nothing', async (t) => {
+  for (const confirmed of [false, true]) {
+    const f = fixture(t);
+    const item = await f.prepare();
+    await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+    await settle();
+    const run = f.launches.at(-1);
+    f.db.reserve(f.id, run.id, item.id);
+    const image = {type: 'image', mimeType: 'image/jpeg', data: 'aGVsbG8='},
+      calls = [];
+    let clicked = false;
+    const browser = {
+      currentUrl: async () => item.url,
+      call: async (_id, name) => {
+        calls.push(name);
+        if (name === 'browser_screenshot') return {content: [image]};
+        if (name === 'browser_click') clicked = true;
+        const page = clicked
+          ? {
+              url: item.url,
+              text: confirmed ? 'Thank you for applying!' : 'Result\nAbout the company',
+              clickTargets: [],
+            }
+          : {
+              url: item.url,
+              text: 'Job Application\nResult',
+              fillFields: [{fieldId: 'f1'}],
+              clickTargets: [{targetId: 'e1', label: 'Submit application'}],
+            };
+        return {
+          content: [{type: 'text', text: `Page URL: ${item.url}\n${JSON.stringify(page)}`}],
+          action: {executed: true},
+        };
+      },
+    };
+    const flow = automationWorkflow({
+      db: f.db,
+      run,
+      signal: {aborted: false},
+      browser,
+      report: (...args) => f.runtime.report(...args),
+    });
+    await flow.call(f.id, run.id, 'browser_open', {url: item.url});
+    const result = await flow.call(f.id, run.id, 'browser_interact', {
+      operation: 'click',
+      ref: 'e1',
+    });
+    assert.equal(calls.filter((name) => name === 'browser_screenshot').length, confirmed ? 0 : 1);
+    if (confirmed) {
+      assert.equal(result.submission.outcome, 'confirmed');
+      assert.equal(result.attachments, undefined);
+      assert.equal(result.submission.screenshot, undefined);
+    } else {
+      assert.equal(result.submission.outcome, 'unknown');
+      assert.equal(result.submission.formGone, true);
+      assert.deepEqual(result.attachments, [image]);
+      assert.match(result.submission.screenshot, /attached image/);
+    }
+    // The stored run keeps the classification only, never the image.
+    assert.equal(f.db.run(run.id).submission.screenshot, undefined);
+  }
+});

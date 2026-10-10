@@ -45,17 +45,18 @@ export function recordOperationError(
   if (!manual && mode === 'observe') return 'Kaynak yalnızca bul modunda';
   if (kind === 'prepare') return null;
   if (kind !== 'execute') return 'Bilinmeyen kayıt işlemi';
+  // There is no draft approval step: a user's execute request applies the
+  // record directly, and auto mode applies scored records on its own.
   if (!manual) {
+    if (mode !== 'auto') return 'Başvuru için kullanıcı isteği gerekli';
+    // Without a draft review in between, an automatic submission needs a
+    // current score; an unscored record is never applied to on its own.
+    if (!item.assessment) return 'Otomatik başvuru için önce puanla';
     const error = automaticAssessmentError(item.assessment, a.revision);
     if (error) return error;
   }
-  if (direct === true)
-    return manual === true ? null : 'Doğrudan işlem için kullanıcı isteği gerekli';
-  if (item.status !== 'prepared' || !item.proposal || item.revision !== a.revision)
-    return 'Önce güncel işlem taslağını hazırla';
-  if (manual && digest !== item.digest) return 'Taslak değişti; güncel içeriği yeniden incele';
-  if (!manual && (mode !== 'auto' || item.requiresReview) && item.approvedDigest !== item.digest)
-    return 'İşlem onay bekliyor';
+  void digest;
+  void direct;
   return null;
 }
 
@@ -67,6 +68,8 @@ export function enqueueRecordOperation(
   {manual = true, digest, direct = false, changes = undefined} = {},
 ) {
   runtime.assertNotStopping(id);
+  // Every execute is direct: the agent fills and submits in one task.
+  if (kind === 'execute') direct = true;
   // The user's requested changes to a reviewed draft go to a new preparation.
   if (changes !== undefined)
     changes = kind === 'prepare' ? boundedText(changes, 'Değişiklik isteği', 2000) : undefined;
@@ -141,7 +144,7 @@ export function enqueueRecordOperation(
       request = {
         manual,
         revision: a.revision,
-        ...(kind === 'execute' ? (direct === true ? {direct: true} : {digest: item.digest}) : {}),
+        ...(kind === 'execute' ? {direct: true} : {}),
         ...(changes ? {changes} : {}),
         at: runtime.now(),
       };
@@ -153,7 +156,9 @@ export function enqueueRecordOperation(
       subject: item.id,
       sourceUrl,
       sources: [item.url],
-      lockKey: 'record:' + item.id,
+      // Submissions run one at a time: a form tab must stay in the foreground
+      // while it is filled, and one employer never gets two parallel attempts.
+      lockKey: kind === 'execute' ? 'submit' : 'record:' + item.id,
       request,
       recordVersion: item.digest ?? String(item.updatedAt),
     });
@@ -278,12 +283,8 @@ export function resumeRecordOperation(runtime, id, item, task) {
     });
     return ids.length ? enqueueScoreBatch(runtime, id, ids) : null;
   }
-  const direct =
-    task?.recordOperation === 'execute' &&
-    task.request?.manual === true &&
-    task.request?.direct === true &&
-    task.request.revision === runtime.db.get(id).revision &&
-    ['completed', 'blocked'].includes(task.completionState ?? task.state);
+  // An answered question continues the same application; there is no draft
+  // step to fall back to.
   return enqueueRecordOperation(
     runtime,
     id,
@@ -292,10 +293,8 @@ export function resumeRecordOperation(runtime, id, item, task) {
       ? 'verify'
       : task?.recordOperation === 'score'
         ? 'score'
-        : direct
-          ? 'execute'
-          : 'prepare',
-    {direct},
+        : 'execute',
+    {direct: true},
   );
 }
 
@@ -402,8 +401,7 @@ export async function dispatchRecordOperations(runtime, id, {manualOnly = false}
         activeRecords.has(item.id)
       )
         continue;
-      const kind =
-        item.status === 'found' ? 'prepare' : item.status === 'prepared' ? 'execute' : null;
+      const kind = ['found', 'prepared'].includes(item.status) ? 'execute' : null;
       if (!kind || !ops[kind] || recordOperationError(a, item, kind, {now: runtime.now()}))
         continue;
       // Interrupted preparation may resume. Explicit cancellation requires a new
@@ -471,22 +469,17 @@ export function recordOperationState(
 ) {
   const task = tasks.find((t) => taskHasRecord(t, item.id) && live.includes(t.state)),
     last = tasks.findLast((t) => taskHasRecord(t, item.id) && t.recordOperation);
+  // One action per record: verify an uncertain outcome, otherwise apply
+  // directly. There is no separate draft or approval step.
   const kind =
     item.status === 'uncertain'
       ? 'verify'
-      : item.status === 'prepared' && item.revision === a.revision
+      : ['found', 'prepared'].includes(item.status)
         ? 'execute'
-        : ['found', 'prepared'].includes(item.status)
-          ? 'prepare'
-          : null;
+        : null;
   const operation = kind && definition.recordOperations?.[kind];
   const error = operation
-    ? recordOperationError(a, item, kind, {manual: true, digest: item.digest, now: db.now()})
-    : null;
-  const directOp =
-    ['found', 'prepared'].includes(item.status) && definition.recordOperations?.execute;
-  const directError = directOp
-    ? recordOperationError(a, item, 'execute', {manual: true, direct: true, now: db.now()})
+    ? recordOperationError(a, item, kind, {manual: true, direct: true, now: db.now()})
     : null;
   const question = (a.questions ?? []).find((q) => q.recordId === item.id && q.answer == null);
   const scoreOp = ['found', 'prepared'].includes(item.status) && definition.recordOperations?.score;
@@ -510,8 +503,13 @@ export function recordOperationState(
     !item.trial &&
     !['completed', 'executing', 'dismissed'].includes(item.status)
   ) {
-    const retryKind = item.status === 'uncertain' ? 'verify' : last.recordOperation,
-      direct = retryKind === 'execute' && last.request?.direct === true;
+    const retryKind =
+        item.status === 'uncertain'
+          ? 'verify'
+          : last.recordOperation === 'prepare'
+            ? 'execute'
+            : last.recordOperation,
+      direct = retryKind === 'execute';
     if (definition.recordOperations?.[retryKind]) {
       const reason = recordOperationError(a, item, retryKind, {
         manual: true,
@@ -532,14 +530,8 @@ export function recordOperationState(
     scoringComplete,
     scoreOperation,
     retryOperation,
-    directOperation: directOp
-      ? {
-          kind: 'execute',
-          label: directOp.label,
-          disabled: Boolean(directError || task),
-          reason: directError,
-        }
-      : null,
+    // "Başvur" is the record's own operation now; no separate direct button.
+    directOperation: null,
     question: question ? {id: question.id, text: question.text} : null,
     lastTask:
       last && !scoringComplete
@@ -566,7 +558,6 @@ export function recordOperationState(
       ? {
           kind,
           label: operation.label,
-          reviewLabel: operation.reviewLabel,
           disabled: Boolean(error || task),
           reason: error,
         }

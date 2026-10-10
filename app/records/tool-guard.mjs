@@ -2,7 +2,8 @@
 import {createHash} from 'node:crypto';
 import {jobUrlKey} from './job-urls.mjs';
 
-const LIMIT = 3;
+const LIMIT = 3,
+  ARGUMENT_LIMIT = 6;
 const operationNames = {
   score: 'Puanlama',
   prepare: 'Hazırlama',
@@ -59,11 +60,15 @@ export function recordToolGuard({db, run, report, changed}) {
       count = (failures[failureKey]?.count ?? 0) + 1;
     failures[failureKey] = {operation, tool: name, message, count, category: kind};
     let summary;
+    // A wrong argument name is the agent misreading the schema, not a page or
+    // record problem: it gets the schema hint and twice the room before the
+    // task stops.
+    const limit = kind === 'arguments' ? ARGUMENT_LIMIT : LIMIT;
     queue.atomic(() => {
       queue.put({...task, toolFailures: failures});
-      if (count >= LIMIT) {
+      if (count >= limit) {
         const failure = {tool: name, message, count, runId: run.id, at: db.now()};
-        summary = `${operationNames[run.recordOperation] ?? (run.sourceUrl ? 'Kaynak taraması' : 'Kayıt işlemi')} durduruldu: aynı işlem ${LIMIT} kez aynı hata türüyle başarısız oldu. Son hata: ${message}`;
+        summary = `${operationNames[run.recordOperation] ?? (run.sourceUrl ? 'Kaynak taraması' : 'Kayıt işlemi')} durduruldu: aynı işlem ${limit} kez aynı hata türüyle başarısız oldu. Son hata: ${message}`;
         queue.put({...queue.get(id, run.taskId), toolFailure: failure});
         db.putRun({
           ...db.run(run.id),
@@ -78,7 +83,9 @@ export function recordToolGuard({db, run, report, changed}) {
       changed(id);
       return summary + ' Görev durduruldu; başka araç çağırma.';
     }
-    return `${message}\nAynı işlem aynı hata türüyle ${count}/${LIMIT} kez başarısız oldu. ${recoveryHint(kind)} Üçüncü hatada görev otomatik durdurulur.`;
+    if (kind === 'arguments')
+      return `${message}\nArgüman hatası ${count}/${limit}. ${recoveryHint(kind)} Yalnızca araç şemasındaki alan adlarını kullan (browser_interact: operation, ref, text, option, key). ${limit}. hatada görev durdurulur.`;
+    return `${message}\nAynı işlem aynı hata türüyle ${count}/${limit} kez başarısız oldu. ${recoveryHint(kind)} Üçüncü hatada görev otomatik durdurulur.`;
   };
   const call = async (name, args, execute) => {
     name = typeof name === 'string' ? name : 'unknown';

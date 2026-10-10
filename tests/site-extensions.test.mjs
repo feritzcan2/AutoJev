@@ -12,8 +12,14 @@ import {
   siteReaderFor,
   siteExtensionKind,
 } from '../app/site-extensions/index.mjs';
+import {
+  searchFilterValues,
+  withSearchFilters,
+  searchFilterLabels,
+} from '../app/site-extensions/search.mjs';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
+import {automationTaskContext} from '../app/automation/task-context.mjs';
 import {runJevTask} from '../app/jev/tasks.mjs';
 import {updateScanQueue, noteExcluded, noteCards} from '../app/sources/scan-work.mjs';
 
@@ -115,7 +121,7 @@ test('a stepstone page without result cards is left to the generic reader', () =
   );
   assert.equal(isStepstoneUrl('https://www.stepstone.de/jobs/x'), true);
   assert.equal(isStepstoneUrl('https://stepstone.de.evil.test/'), false);
-  assert.equal(siteExtensionFor('https://www.indeed.com/jobs'), null);
+  assert.equal(siteExtensionFor('https://www.glassdoor.com/Job/index.htm'), null);
   assert.equal(siteExtensionFor('https://himalayas.app/jobs/api/search?q=backend').id, 'himalayas');
   assert.equal(typeof siteExtensionFor('https://himalayas.app/').collector.readPage, 'function');
 });
@@ -478,19 +484,42 @@ test('an HTTP reader extension serves only the addresses it handles', () => {
     assert.equal(siteReaderFor(other), null);
 });
 
-test('the source list shows which kind of extension reads a source', (t) => {
-  assert.deepEqual(siteExtensionKind('https://www.stepstone.de/', 'job-search'), {
-    id: 'stepstone',
-    kind: 'browser',
-  });
-  assert.deepEqual(siteExtensionKind('https://www.linkedin.com/jobs/', 'job-search'), {
-    id: 'linkedin',
-    kind: 'http',
-  });
-  assert.deepEqual(siteExtensionKind('https://himalayas.app/', 'job-search'), {
-    id: 'himalayas',
-    kind: 'api',
-  });
+test('the source list shows which kind of extension reads a source and its search address', (t) => {
+  const kinds = Object.fromEntries(
+    [
+      ['https://www.stepstone.de/', 'stepstone'],
+      ['https://www.linkedin.com/jobs/', 'linkedin'],
+      ['https://himalayas.app/', 'himalayas'],
+      ['https://www.xing.com/jobs/', 'xing'],
+      ['https://berlinstartupjobs.com/engineering/', 'berlin-startup-jobs'],
+      ['https://www.arbeitnow.com/', 'arbeitnow'],
+    ].map(([url, id]) => [id, siteExtensionKind(url, 'job-search')]),
+  );
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(kinds).map(([id, k]) => [id, [k.id, k.kind]])),
+    {
+      stepstone: ['stepstone', 'browser'],
+      linkedin: ['linkedin', 'http'],
+      himalayas: ['himalayas', 'api'],
+      xing: ['xing', 'http'],
+      'berlin-startup-jobs': ['berlin-startup-jobs', 'http'],
+      arbeitnow: ['arbeitnow', 'api'],
+    },
+  );
+  for (const [id, {search}] of Object.entries(kinds)) {
+    assert.match(search.template, /^https:\/\//, id);
+    // A feed without search has no {query}; an order is claimed only when certain.
+    if (id !== 'arbeitnow') assert.match(search.template, /\{query\}/, id);
+    if (search.ordering) assert.equal(search.ordering, 'newest_first', id);
+    assert.ok(
+      search.filters.every((f) => f.param && f.label),
+      id,
+    );
+  }
+  assert.deepEqual(
+    ['stepstone', 'linkedin', 'himalayas'].map((id) => kinds[id].search.ordering),
+    ['newest_first', 'newest_first', 'newest_first'],
+  );
   assert.equal(
     siteExtensionKind('https://himalayas.app/', 'housing'),
     null,
@@ -509,4 +538,50 @@ test('the source list shows which kind of extension reads a source', (t) => {
     db.sources(a.id).map((s) => s.extension?.kind ?? null),
     ['browser', null],
   );
+});
+
+test('site filters are read from and written into a results template without touching placeholders', () => {
+  const {search} = siteExtensionKind('https://www.stepstone.de/', 'job-search');
+  const template =
+    'https://www.stepstone.de/jobs/{query}/in-berlin?radius=30&sort=2&action=sort_publish';
+  assert.deepEqual(searchFilterValues(search, template), {radius: '30'});
+  const withLanguage = withSearchFilters(template, {fdl: 'en'});
+  assert.equal(
+    withLanguage,
+    'https://www.stepstone.de/jobs/{query}/in-berlin?radius=30&sort=2&action=sort_publish&fdl=en',
+  );
+  assert.deepEqual(searchFilterLabels(search, withLanguage), [
+    'İlan dili: İngilizce',
+    'Yarıçap (km, şehirle): 30',
+  ]);
+  assert.equal(
+    withSearchFilters(withLanguage, {radius: '', fdl: 'de'}),
+    'https://www.stepstone.de/jobs/{query}/in-berlin?sort=2&action=sort_publish&fdl=de',
+  );
+  const linkedin = siteExtensionKind('https://www.linkedin.com/jobs/', 'job-search').search;
+  assert.equal(
+    withSearchFilters(linkedin.template, {f_WT: '2'}),
+    linkedin.template + '&f_WT=2',
+    'query placeholders survive the rewrite',
+  );
+  assert.equal(withSearchFilters('https://x.test/jobs', {}), 'https://x.test/jobs');
+  assert.deepEqual(searchFilterValues(search, 'not a url'), {});
+});
+
+test('an assigned extension source tells the agent its known search address', (t) => {
+  const core = new WorkspaceDatabase(':memory:'),
+    db = new AutomationStore(core);
+  t.after(() => core.close());
+  const a = db.create('housing', {
+    goal: 'Berlin homes',
+    criteria: {location: 'Berlin'},
+    sources: [results, 'https://example.test/homes'],
+  });
+  const context = (url) =>
+    automationTaskContext(db, a.id, {id: 'r1', kind: 'trial', sourceUrl: url, sources: [url]})
+      .assignedSource;
+  const stepstone = context(results);
+  assert.equal(stepstone.siteSearch.template, siteExtensionFor(results).search.template);
+  assert.match(stepstone.siteSearchGuidance, /siteSearch\.filters/);
+  assert.equal(context('https://example.test/homes').siteSearch, undefined);
 });

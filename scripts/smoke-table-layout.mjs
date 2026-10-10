@@ -74,7 +74,11 @@ try {
       {tabId: 'owned', recordId: item.id, url: 'https://example.test/login'},
     ];
     ipcMain.removeHandler('workspace-tabs');
-    ipcMain.handle('workspace-tabs', () => globalThis.recordTabs);
+    globalThis.tabReads = 0;
+    ipcMain.handle('workspace-tabs', () => {
+      globalThis.tabReads++;
+      return globalThis.recordTabs;
+    });
     ipcMain.removeHandler('focus-workspace-tab');
     ipcMain.handle('focus-workspace-tab', (_, id, tab) => {
       globalThis.focused.push({id, tab});
@@ -133,12 +137,19 @@ try {
   await row.getByRole('button', {name: /Kaynağı aç/}).evaluate((control) => {
     globalThis.previousMenuAction = control;
   });
-  await app.evaluate(() => {
+  const tabReads = await app.evaluate(() => {
     globalThis.recordTabs.push({tabId: 'unrelated', url: 'https://example.test/unrelated'});
+    return globalThis.tabReads;
   });
-  await page.waitForFunction(
-    () =>
-      document.querySelector('[data-record-menu-action=open]') !== globalThis.previousMenuAction,
+  // Two later reads guarantee the table has rendered the changed tab list.
+  for (let i = 0; i < 50 && (await app.evaluate(() => globalThis.tabReads)) < tabReads + 2; i++)
+    await page.waitForTimeout(100);
+  assert.equal(
+    await row
+      .getByRole('button', {name: /Kaynağı aç/})
+      .evaluate((control) => control === globalThis.previousMenuAction),
+    true,
+    'an unrelated tab must not rebuild the open menu',
   );
   assert.equal(
     await row

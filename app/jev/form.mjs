@@ -53,16 +53,19 @@ export async function inspectApplicationForm(page, slot = null) {
             .filter(modalSurface)
             .at(-1),
           root = modal ?? document;
+        // Styled checkboxes and radios often hide the native input behind a visible label.
+        const shown = (e) =>
+          visible(e) ||
+          (['checkbox', 'radio'].includes(e.type) && [...(e.labels ?? [])].some(visible));
         const nodes = queryAll(
           root,
           'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),textarea,select,[role="combobox"],[role="checkbox"],[role="radio"]',
         ).filter(
-          (e) =>
-            visible(e) && !e.matches(':disabled') && e.getAttribute('aria-disabled') !== 'true',
+          (e) => shown(e) && !e.matches(':disabled') && e.getAttribute('aria-disabled') !== 'true',
         );
         return {
           documentOrigin: performance.timeOrigin,
-          truncated: nodes.length > 100,
+          truncated: nodes.length > 200,
           submitControls: queryAll(root, 'button,input[type="submit"],[role="button"]')
             .filter(visible)
             .filter((e) =>
@@ -72,10 +75,11 @@ export async function inspectApplicationForm(page, slot = null) {
             )
             .slice(0, 10)
             .map((e) => ({
+              node: window.__jevFast?.ids.get(e),
               label: clean(e.getAttribute('aria-label') || e.innerText || e.value),
               disabled: e.disabled || e.getAttribute('aria-disabled') === 'true',
             })),
-          fields: nodes.slice(0, 100).map((e) => {
+          fields: nodes.slice(0, 200).map((e) => {
             const semantic = window.__jobloopFieldContext(e),
               label = semantic.label;
             const type = e.getAttribute('role') || e.type || e.tagName.toLowerCase();
@@ -117,8 +121,28 @@ export async function inspectApplicationForm(page, slot = null) {
       const current =
         slot && frame === page.mainFrame() && slot.observed?.page_key[0] === result.documentOrigin;
       truncated ||= result.truncated;
+      // The same observed node gives the submit button its click targetId (in
+      // view) or its controlId (for reveal); long pages never need a text slice.
       submitControls.push(
-        ...result.submitControls.map((control) => ({...control, frameUrl: frame.url()})),
+        ...result.submitControls.map(({node, ...control}) => {
+          const targetId = current
+            ? [...(slot.clickTargets ?? [])].find(
+                ([, saved]) => saved.owner === slot.owner && saved.action?.node === node,
+              )?.[0]
+            : undefined;
+          const controlId = current
+            ? [...(slot.controls ?? [])].find(
+                ([, saved]) =>
+                  saved.kind === 'control' && saved.node === node && saved.owner === slot.owner,
+              )?.[0]
+            : undefined;
+          return {
+            ...control,
+            ...(targetId ? {targetId} : {}),
+            ...(controlId ? {controlId} : {}),
+            frameUrl: frame.url(),
+          };
+        }),
       );
       fields.push(
         ...result.fields.map(({node, ...f}) => {
@@ -145,17 +169,90 @@ export async function inspectApplicationForm(page, slot = null) {
       unavailableFrames.push(frame.url());
     }
   }
+  const compact = compactFields(fields, page.url());
   return {
-    fields,
-    missingRequired: fields
+    ...compact,
+    missingRequired: compact.fields
       .filter((f) => f.required === true && f.filled === false)
       .map(({label, question, type, frameUrl}) => ({label, question, type, frameUrl})),
-    submitControls,
+    submitControls: submitControls.map(({frameUrl, ...c}) =>
+      frameUrl === page.url() ? c : {...c, frameUrl},
+    ),
     unavailableFrames,
     truncated,
     readOnly: true,
     notice:
-      'Rendered fields on the current step only; required=null means unknown, not optional. Later steps may add fields. This inspection is not submission-outcome evidence.',
+      'Rendered fields on the current step only. A field without required is unknown, not optional. Radio and checkbox options are grouped under their question; click an option with its controlId. A submit control with targetId is clickable now; with only controlId, browser_interact reveal it first and inspect again. Later steps may add fields. This inspection is not submission-outcome evidence.',
+  };
+}
+
+// Drops repeated and default values so a long form stays small: one question per
+// radio/checkbox group, no page-level frameUrl or language on every field.
+export function compactFields(fields, pageUrl) {
+  const language = fields.find((f) => f.frameUrl === pageUrl)?.language ?? fields[0]?.language;
+  // File types are listed once in uploads.
+  const strip = ({
+    frameUrl,
+    language: own,
+    help,
+    required,
+    invalid,
+    question,
+    label,
+    accept,
+    multiple,
+    files,
+    ...f
+  }) => ({
+    ...(label ? {label} : {}),
+    ...(question && question !== label ? {question} : {}),
+    ...(help ? {help} : {}),
+    ...(required != null ? {required} : {}),
+    ...(invalid ? {invalid} : {}),
+    ...(multiple ? {multiple} : {}),
+    ...(files?.length ? {files} : {}),
+    ...f,
+    ...(own && own !== language ? {language: own} : {}),
+    ...(frameUrl !== pageUrl ? {frameUrl} : {}),
+  });
+  const result = [];
+  let group = null;
+  for (const field of fields) {
+    const choice = ['checkbox', 'radio'].includes(field.type) && field.question;
+    if (
+      choice &&
+      group?.question === field.question &&
+      group.type === field.type &&
+      group.frameUrl === field.frameUrl
+    )
+      group.items.push(field);
+    else {
+      group = choice ? {...field, items: [field]} : null;
+      result.push(group ?? strip(field));
+    }
+  }
+  return {
+    ...(language ? {language} : {}),
+    fields: result.map((entry) => {
+      if (!entry.items) return entry;
+      const {items, option, controlId, fieldId, label, ...first} = entry;
+      const {question, ...rest} = strip({
+        ...first,
+        required: items.some((f) => f.required === true) ? true : first.required,
+        invalid: items.some((f) => f.invalid),
+        filled: items.some((f) => f.filled),
+      });
+      return {
+        question,
+        ...rest,
+        options: items.map((f) => ({
+          option: f.option || f.label,
+          ...(f.controlId ? {controlId: f.controlId} : {}),
+          ...(f.fieldId ? {fieldId: f.fieldId} : {}),
+          filled: f.filled,
+        })),
+      };
+    }),
   };
 }
 

@@ -38,6 +38,127 @@ export const browserSnapshotTools = [
   },
 ];
 
+// A structured page observation ("Page URL: …\n{json}") puts the rendered text
+// first and the action maps last, so a plain character slice of a long form
+// page hides every targetId and controlId from the model. The first part of a
+// large structured observation is an overview instead: all identifiers the
+// model can act on, compact control entries and the beginning of the text.
+// The complete text stays in the snapshot for browser_read_part/browser_search.
+const PAGE_PREFIX = /^Page URL: [^\n]*\n/;
+const OVERVIEW_NOTICE =
+  'Large page: this overview carries the current clickTargets/controls ids and the start of the text. Use browser_search(snapshotId, phrase) or browser_read_part(snapshotId, offset: 0) for the full text and full lists. Reading parts costs no browser step.';
+const CONTROL_KEYS = [
+  'controlId',
+  'label',
+  'role',
+  'required',
+  'visible',
+  'fieldId',
+  'recommendedTool',
+  'nativeSelect',
+  'autocomplete',
+  'choice',
+  'checked',
+];
+const compactControl = (control) => {
+  const out = {};
+  for (const key of CONTROL_KEYS) if (control[key] !== undefined) out[key] = control[key];
+  if (typeof control.value === 'string' && control.value) out.value = control.value.slice(0, 60);
+  return out;
+};
+// Option entries (radio, checkbox, listbox options) are plentiful and already
+// grouped by browser_jev_inspect_form; buttons, links and text controls stay
+// first when a list must be cut.
+const OPTION_ROLES = new Set(['radio', 'checkbox', 'option', 'menuitemradio', 'menuitemcheckbox']);
+const isOption = (item) => Boolean(item?.choice) || OPTION_ROLES.has(item?.role);
+const capped = (items, limit) => {
+  if (!Array.isArray(items) || items.length <= limit) return {items, omitted: 0};
+  const kept = [...items.filter((i) => !isOption(i)), ...items.filter(isOption)].slice(0, limit);
+  return {items: kept, omitted: items.length - limit};
+};
+function overviewPart(result, text, snapshot) {
+  const prefix = text.match(PAGE_PREFIX)?.[0] ?? '';
+  let page;
+  try {
+    page = JSON.parse(text.slice(prefix.length));
+  } catch {
+    return null;
+  }
+  if (!page || typeof page !== 'object' || Array.isArray(page)) return null;
+  if (!Array.isArray(page.clickTargets) && !Array.isArray(page.controls)) return null;
+  // Start from the small scalar state, then add the heavy sections greedily in
+  // priority order: action ids first, the text head last. viewportText and the
+  // elements duplicate are never repeated here; the raw snapshot keeps them.
+  const {
+    text: pageText,
+    viewportText,
+    links,
+    clickTargets,
+    controls,
+    elements,
+    history,
+    embeddedForms,
+    reading,
+    verificationDiagnostics,
+    fillFields,
+    listing,
+    ...base
+  } = page;
+  void viewportText;
+  void elements;
+  const wrap = (overview) => ({
+    ...result,
+    content: [{type: 'text', text: prefix + JSON.stringify({...overview, overview: true})}],
+    snapshot: {...snapshot, endOffset: 0, nextOffset: 0, complete: false},
+    notice: OVERVIEW_NOTICE,
+  });
+  const fits = (overview) => size(wrap(overview)) <= BROWSER_RESPONSE_BYTES;
+  let overview = base;
+  if (!fits(overview)) return null;
+  const tryAdd = (extra) => {
+    if (fits({...overview, ...extra})) overview = {...overview, ...extra};
+  };
+  const addCapped = (key, items, limits, map = (i) => i) => {
+    if (!Array.isArray(items)) return;
+    for (const limit of limits) {
+      const {items: kept, omitted} = capped(items.map(map), limit);
+      const extra = {[key]: kept, ...(omitted ? {[key + 'Omitted']: omitted} : {})};
+      if (fits({...overview, ...extra})) {
+        overview = {...overview, ...extra};
+        return;
+      }
+    }
+  };
+  const addText = (lengths) => {
+    if (typeof pageText !== 'string') return;
+    for (const length of lengths) {
+      if ((overview.text?.length ?? -1) >= length) return;
+      const extra = {
+        text: pageText.slice(0, length),
+        ...(pageText.length > length ? {textTruncated: true} : {}),
+      };
+      if (fits({...overview, ...extra})) {
+        overview = {...overview, ...extra};
+        return;
+      }
+    }
+  };
+  addCapped('fillFields', fillFields, [Infinity, 60, 30, 15]);
+  addCapped('clickTargets', clickTargets, [Infinity, 120, 80, 60, 30, 15]);
+  // A short text head always travels with the ids: the model must be able to
+  // see a confirmation or error line without a second read.
+  addText([600, 300, 120]);
+  addCapped('controls', controls, [Infinity, 120, 80, 40, 20, 10], compactControl);
+  if (reading) tryAdd({reading});
+  if (Array.isArray(history)) tryAdd({history: history.slice(-4)});
+  if (Array.isArray(embeddedForms)) tryAdd({embeddedForms: embeddedForms.slice(0, 5)});
+  if (verificationDiagnostics) tryAdd({verificationDiagnostics});
+  addText([2500, 1200]);
+  addCapped('links', links, [20, 10, 5], ({text: label, url}) => ({text: label, url}));
+  if (listing !== undefined) tryAdd({listing});
+  return wrap(overview);
+}
+
 // Each workflow owns its own cache. IDs cannot read another run's pages; a new
 // observation, navigation or attempted interaction invalidates the old one.
 export class BrowserSnapshot {
@@ -68,8 +189,8 @@ export class BrowserSnapshot {
     };
     const full = {...result, snapshot};
     if (size(full) <= BROWSER_RESPONSE_BYTES) return full;
-    const page = this.read({snapshotId});
     const omitted = content.filter((p) => p.type !== 'text').map((p) => p.type);
+    const page = overviewPart(result, text, snapshot) ?? this.read({snapshotId});
     if (omitted.length) page.omittedContentTypes = [...new Set(omitted)];
     return page;
   }

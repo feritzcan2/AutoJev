@@ -1,6 +1,8 @@
 // @ts-check
+// Every execute task applies the record in one pass; there is no saved draft
+// or approval step. Short numbered steps: the agents reading this are not experts.
 export const directRecordInstructions =
-  'The user explicitly requested direct execution for this assigned record. No prior preparation task or separate draft review is required. Inspect the actual destination and form, read the saved profile, documents, criteria and template preparation guidance, and use only verified facts. In this same task save the complete intended action with record_automation_result (destination, answers, documents and commitments), then call reserve_automation_action before uploading or submitting. Stop if reservation fails. Read fresh confirmation and call record_automation_outcome; an ambiguous result is uncertain and must never be resent. Ask record-scoped questions for missing facts or decisions, and finish while waiting. An answer can continue the original request; it does not expand its scope or override a refusal. Existing limits and prohibitions still apply. These instructions replace only requirements for a prior saved proposal or a separate draft review in the template execution instructions.';
+  'The user asked to apply to this record now. Steps: 1. Open the listing and reach the real application form. 2. Call browser_jev_inspect_form and list every required field and upload. 3. Answer each field only from the saved profile, documents and saved answers; never invent a fact. 4. If any required fact is missing, ask ONE ask_workspace_question with this recordId that contains one typed field per missing fact, then finish blocked; the answer resumes this application. 5. Fill the form, upload the documents from the workspace documents folder, tick consents the saved application policy allows. 6. Call reserve_automation_action, then click the final submit button once. 7. Read the fresh page and call record_automation_outcome: completed when the site confirms, otherwise uncertain. Never click submit twice; an unclear result is uncertain, not a retry. record_automation_result is optional notes, not a requirement.';
 
 export const recordOperationDefaults = {
   score: {
@@ -20,9 +22,7 @@ export const recordOperationDefaults = {
   execute: {
     label: 'Uygula',
     runningLabel: 'Uygulanıyor',
-    reviewLabel: 'Onayla ve uygula',
-    instructions:
-      'Execute only the assigned record’s saved proposal. Recheck current availability and form requirements. If answers, documents, destination or commitments must change, save a revised proposal and stop for review. Call reserve_automation_action before any external submission or upload; stop if it fails. After submitting read the fresh confirmation and call record_automation_outcome. If ambiguous, record uncertain; never submit twice.',
+    instructions: directRecordInstructions,
   },
   verify: {
     label: 'Sonucu doğrula',
@@ -78,12 +78,7 @@ export function normalizeRecordOperations(input, driver) {
       continue;
     }
     const saved = {...defaults, ...(input?.[kind] || {})};
-    for (const key of [
-      'label',
-      'runningLabel',
-      'instructions',
-      ...(kind === 'execute' ? ['reviewLabel'] : []),
-    ])
+    for (const key of ['label', 'runningLabel', 'instructions'])
       if (
         typeof saved[key] !== 'string' ||
         !saved[key].trim() ||
@@ -104,7 +99,6 @@ export function normalizeRecordOperations(input, driver) {
       id: 'record-' + kind,
       label: saved.label,
       runningLabel: saved.runningLabel,
-      ...(kind === 'execute' ? {reviewLabel: saved.reviewLabel} : {}),
       instructions: saved.instructions,
       successCriteria,
       scope: 'record',

@@ -72,7 +72,9 @@ export async function buildJevBrief({
   while (brief.next < brief.blocks.length) {
     check();
     const batch = brief.blocks.slice(brief.next, brief.next + 16);
-    if (evidence.text.length <= 1800) {
+    // Short text and an extension's own listing hold nothing to filter out:
+    // classifying them costs Jev calls and keeps every block anyway.
+    if (evidence.text.length <= 1800 || evidence.listing) {
       brief.selected = batch.map((b) => ({...b, kind: 'context'}));
       brief.next = brief.blocks.length;
       break;

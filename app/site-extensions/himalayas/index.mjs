@@ -1,6 +1,15 @@
 // @ts-check
 import {isHimalayasUrl, himalayasApiUrl} from './api.mjs';
 import {readCollectorCliPage, readCollectorCliDetail} from './cli-client.mjs';
+import {listingPage} from '../listing.mjs';
+
+const salaryText = (salary) => {
+  if (salary?.min == null && salary?.max == null) return '';
+  const range = [salary.min, salary.max].filter((v) => v != null).join('–');
+  return [range, salary.currency, salary.period && `per ${salary.period}`]
+    .filter(Boolean)
+    .join(' ');
+};
 
 // Like the DOM extensions, this adapter only supplies observed listings.
 // The common queue, Jev classifier and agent own every assessment and write.
@@ -15,24 +24,35 @@ export default {
     readPage: readCollectorCliPage,
     readDetail: readCollectorCliDetail,
     detail: (job) => ({
-      url: job.url,
-      title: job.title,
-      text: [
-        job.title,
-        job.company,
-        job.location,
-        job.employmentType,
-        job.publishedAt,
-        job.description,
-        JSON.stringify({
-          salary: job.salary,
-          timezoneRestrictions: job.timezoneRestrictions,
+      ...listingPage({
+        browser: 'Himalayas API',
+        url: job.url,
+        title: job.title,
+        description: job.description,
+        fields: {
+          company: job.company,
+          location: job.location,
+          employmentType: job.employmentType,
+          publishedAt: job.publishedAt,
           expiresAt: job.expiresAt,
-        }),
-      ]
-        .filter(Boolean)
-        .join('\n'),
+          salary: salaryText(job.salary),
+          timezoneRestrictions: job.timezoneRestrictions,
+        },
+      }),
       cells: {company: job.company, location: job.location},
     }),
+  },
+  // The API search address and the filters it accepts (Himalayas API docs).
+  search: {
+    template: 'https://himalayas.app/jobs/api/search?q={query}&sort=recent',
+    ordering: 'newest_first',
+    pagination: 'url_param',
+    filters: [
+      {param: 'country', label: 'Ülke (ISO kodu)'},
+      {param: 'worldwide', label: 'Dünya geneli', values: {true: 'Yalnızca dünya geneli'}},
+      {param: 'seniority', label: 'Kıdem'},
+      {param: 'employment_type', label: 'Çalışma türü'},
+    ],
+    notes: 'sort=recent orders newest first. Pages via &page=N.',
   },
 };

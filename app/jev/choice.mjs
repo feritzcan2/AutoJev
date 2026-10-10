@@ -45,7 +45,7 @@ export async function selectChoice(slot, args, owner, reader) {
       status: 'unsupported',
       executed: false,
       message:
-        'Sorusu ve seçili durumu gözlenen bir yanıt seçeneği gerekli. Genel düğmeler bu araçla tıklanmaz.',
+        'Bu kontrol bir radyo/onay kutusu seçeneği değil. Açılır liste veya combobox için browser_interact options ile seçenekleri oku, sonra select ya da autocomplete kullan. Düğmeler için clickTargets targetId kullan.',
     };
   const key = choiceKey(saved.node),
     before = progressKey(current);

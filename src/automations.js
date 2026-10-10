@@ -38,7 +38,7 @@ const statusNames = {
   interrupted: 'Durduruldu',
   timeout: 'Süre doldu',
   found: 'Bulundu',
-  prepared: 'İşlem taslağı',
+  prepared: 'Başvuruya hazır',
   executing: 'İşleniyor',
   uncertain: 'Sonuç doğrulanmalı',
   dismissed: 'Atlandı',
@@ -519,8 +519,8 @@ export function automationsPage(
       ],
       [
         'prepare',
-        'Hazırla, onayımı bekle',
-        'İşlem taslağını hazırla; göndermeden önce onayımı al.',
+        'Bul, başvuruyu bana bırak',
+        'Uygun sonuçları kaydet; ben "Başvur" dediğimde doğrudan başvur.',
       ],
       ['auto', 'Otomatik uygula', 'Kaydettiğim kurallara göre işlemleri uygula.'],
     ]) {

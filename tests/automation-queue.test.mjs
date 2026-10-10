@@ -67,6 +67,9 @@ function fixture(t, {mode = 'prepare', workers = 1, templateId = 'job-search'} =
               status: 'scored',
               scorecard: unknownScorecard(),
               score: 80,
+              // Auto mode submits on its own only with verified mandatory conditions.
+              eligibility: 'verified',
+              eligibilityReason: 'Fixture: mandatory conditions met',
               summary: 'Fits criteria',
               evidenceUrl: url,
               evidence: 'Verified facts',
@@ -193,16 +196,18 @@ test('restart preserves an active interview instead of launching an unscoped pro
   assert.notEqual(f.launches.at(-1).id, first.id);
 });
 
-test('explicitly stopped preparation queues stay cleared after stop/start', async (t) => {
-  const f = fixture(t),
+test('explicitly stopped submission queues stay cleared after stop/start', async (t) => {
+  const f = fixture(t, {mode: 'auto'}),
     seed = f.db.begin(f.id, 'run');
   const items = Array.from({length: 3}, (_, i) => f.record(seed, sources[0] + '/' + i));
   f.db.finish(f.id, seed.id, 'completed', 'Seeded');
   f.db.enable(f.id);
   await f.runtime.tick();
   await settle();
+  // Auto mode queues one execute per scored record; submissions run one at a time.
+  assert.equal(f.launches.filter((r) => r.recordOperation === 'execute').length, 1);
   assert.equal(
-    f.runtime.queue.list(f.id, {states: ['pending']}).filter((t) => t.recordOperation === 'prepare')
+    f.runtime.queue.list(f.id, {states: ['pending']}).filter((t) => t.recordOperation === 'execute')
       .length,
     2,
   );
@@ -217,22 +222,22 @@ test('explicitly stopped preparation queues stay cleared after stop/start', asyn
   const before = f.launches.length;
   await f.runtime.runOnce(f.id);
   await settle();
-  assert.equal(f.launches.slice(before).filter((r) => r.recordOperation === 'prepare').length, 0);
+  assert.equal(f.launches.slice(before).filter((r) => r.recordOperation === 'execute').length, 0);
   assert.equal(
     f.runtime.queue
       .list(f.id, {states: ['pending', 'running']})
-      .filter((t) => t.recordOperation === 'prepare').length,
+      .filter((t) => t.recordOperation === 'execute').length,
     0,
   );
   assert.equal(
-    f.runtime.queue.list(f.id).filter((t) => t.recordOperation === 'prepare' && t.stopRequested)
+    f.runtime.queue.list(f.id).filter((t) => t.recordOperation === 'execute' && t.stopRequested)
       .length,
     items.length,
   );
 });
 
-test('closing the app does not permanently suppress an unfinished automatic preparation', async (t) => {
-  const f = fixture(t),
+test('closing the app does not permanently suppress an unfinished automatic submission', async (t) => {
+  const f = fixture(t, {mode: 'auto'}),
     seed = f.db.begin(f.id, 'run'),
     item = f.record(seed, sources[0] + '/job');
   f.db.finish(f.id, seed.id, 'completed', 'Seeded');
@@ -246,25 +251,27 @@ test('closing the app does not permanently suppress an unfinished automatic prep
     await settle();
     assert.equal(f.launches.length, 2);
     assert.equal(f.launches.at(-1).recordId, item.id);
+    assert.equal(f.launches.at(-1).recordOperation, 'execute');
   } finally {
     await resumed.close();
   }
 });
 
 for (const outcome of ['failed', 'blocked'])
-  test(`unchanged ${outcome} preparation is not automatically retried`, async (t) => {
-    const f = fixture(t),
+  test(`unchanged ${outcome} submission is not automatically retried`, async (t) => {
+    const f = fixture(t, {mode: 'auto'}),
       seed = f.db.begin(f.id, 'run');
     f.record(seed, sources[0] + '/job');
     f.db.finish(f.id, seed.id, 'completed', 'Seeded');
     f.db.enable(f.id);
     await f.runtime.tick();
     await settle();
+    assert.equal(f.launches[0].recordOperation, 'execute');
     await f.finish(f.launches[0], outcome);
     await f.runtime.pause(f.id);
     await f.runtime.runOnce(f.id);
     await settle();
-    assert.equal(f.launches.filter((r) => r.recordOperation === 'prepare').length, 1);
+    assert.equal(f.launches.filter((r) => r.recordOperation === 'execute').length, 1);
   });
 
 test('restart after a reserved submission preserves uncertainty and never resubmits', async (t) => {
@@ -377,7 +384,7 @@ test('equal questions from different sources keep separate identities and legacy
   await assert.rejects(f.runtime.runRecord(f.id, item.id, 'prepare'), /soruları yanıtla/);
 });
 
-test('a pending question defers execution but changed approval still cancels it after the answer', async (t) => {
+test('a pending question defers execution and the answer releases it even after the record changed', async (t) => {
   const f = fixture(t, {mode: 'observe'}),
     seed = f.db.begin(f.id, 'run'),
     item = f.record(seed, sources[0] + '/job', 'Reviewed proposal');
@@ -385,16 +392,21 @@ test('a pending question defers execution but changed approval still cancels it 
   await f.runtime.runSource(f.id, sources[0]);
   await settle();
   const scan = f.launches.at(-1);
-  const task = await f.runtime.runRecord(f.id, item.id, 'execute', {digest: item.digest});
+  const task = await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  assert.equal(task.request.direct, true);
+  assert.equal(task.lockKey, 'submit');
   const question = f.db.askQuestion(f.id, {recordId: item.id, text: 'Required date?'});
   await f.finish(scan);
   await f.runtime.tick();
   assert.equal(f.runtime.queue.get(f.id, task.id).state, 'pending');
+  // No draft approval: a changed proposal does not revoke the user's request.
   f.db.putResult({...item, proposal: 'Different proposal', digest: 'changed'});
   f.db.answerQuestion(f.id, question.id, 'Tomorrow');
   await f.runtime.tick();
-  assert.equal(f.runtime.queue.get(f.id, task.id).state, 'cancelled');
-  assert.equal(f.launches.filter((r) => r.recordOperation === 'execute').length, 0);
+  await settle();
+  assert.equal(f.runtime.queue.get(f.id, task.id).state, 'running');
+  assert.equal(f.launches.filter((r) => r.recordOperation === 'execute').length, 1);
+  assert.equal(f.launches.at(-1).recordId, item.id);
 });
 
 test('answering a source question after an explicit stop does not restart its scan', async (t) => {

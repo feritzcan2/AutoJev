@@ -230,3 +230,70 @@ test('old text remains historical after navigation; finished runs cannot read ca
     /geçersiz/,
   );
 });
+
+test('a large structured observation starts with an overview that keeps every action id', () => {
+  const page = {
+    url,
+    title: 'Application',
+    text: Array.from({length: 120}, (_, i) => `Question ${i}: tell us about your experience.`).join(
+      '\n',
+    ),
+    links: Array.from({length: 100}, (_, i) => ({
+      text: `Link ${i}`,
+      url: `${url}/${i}`,
+      contextRange: {offset: i, length: 40},
+    })),
+    elements: Array.from({length: 300}, (_, i) => ({label: `Element ${i}`, role: 'radio'})),
+    clickTargets: [
+      ...Array.from({length: 150}, (_, i) => ({
+        targetId: `t-${i}`,
+        label: `Option ${i}`,
+        role: 'radio',
+      })),
+      {targetId: 't-submit', label: 'Submit Application', role: 'button'},
+    ],
+    controls: Array.from({length: 260}, (_, i) => ({
+      controlId: `c-${i}`,
+      label: `Control ${i}`,
+      role: 'radio',
+      value: 'x'.repeat(200),
+      required: null,
+      visible: i % 2 === 0,
+      nativeSelect: false,
+    })),
+    scrollTargets: [{controlId: 's-1', label: 'Page', top: 0, height: 8000, viewport: 800}],
+    history: [{action: 'Next', kind: 'click'}],
+  };
+  const text = 'Page URL: ' + url + '\n' + JSON.stringify(page);
+  assert.ok(text.length > 60000);
+  const reader = new BrowserSnapshot();
+  const first = reader.capture({url, content: [{type: 'text', text}]});
+  assert.ok(wireSize(first) <= BROWSER_RESPONSE_BYTES);
+  assert.equal(first.snapshot.complete, false);
+  assert.equal(first.snapshot.nextOffset, 0);
+  assert.match(first.notice, /browser_search/);
+  const overview = JSON.parse(textOf(first).replace(/^Page URL: [^\n]+\n/, ''));
+  assert.equal(overview.overview, true);
+  assert.equal(overview.elements, undefined);
+  assert.ok(overview.clickTargets.some((t) => t.targetId === 't-submit'));
+  assert.equal(overview.clickTargets.length + (overview.clickTargetsOmitted ?? 0), 151);
+  assert.equal(overview.controls.length + (overview.controlsOmitted ?? 0), 260);
+  assert.ok(overview.controls.every((c) => c.controlId && (c.value ?? '').length <= 60));
+  assert.equal(overview.textTruncated, true);
+  assert.deepEqual(overview.scrollTargets, page.scrollTargets);
+  // The raw observation stays readable and searchable in full.
+  const found = reader.search({snapshotId: first.snapshot.id, query: 'Submit Application'});
+  assert.equal(found.matches.length, 1);
+  let restored = '',
+    part = reader.read({snapshotId: first.snapshot.id, offset: 0});
+  for (;;) {
+    restored += textOf(part);
+    if (part.snapshot.nextOffset === null) break;
+    part = reader.read({snapshotId: first.snapshot.id, offset: part.snapshot.nextOffset});
+  }
+  assert.equal(restored, text);
+  // Unstructured large text keeps the plain first slice.
+  const plain = new BrowserSnapshot().capture({url, content: [{type: 'text', text: largePage}]});
+  assert.equal(plain.snapshot.offset, 0);
+  assert.ok(plain.snapshot.endOffset > 0);
+});

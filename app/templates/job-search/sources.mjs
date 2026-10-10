@@ -2,15 +2,8 @@
 // Starting sources for the job-search template. Workspace copies remain editable.
 // Sources without countries join every workspace; country sources are added
 // in setup for users searching in those countries (ISO 3166 alpha-2).
-const indeed = (host) => ({
-  entry: {kind: 'url_template', template: `https://${host}/jobs?q={query}&l={location}`},
-  pagination: 'url_param',
-  loginRequired: false,
-  notes:
-    'Result links are rc/clk and pagead/clk redirects; a detail opens as viewjob?jk=<id>. Pages via start=10,20,… No date order observed.',
-});
-const indeedInstructions =
-  'Güncel çalışma alanı kriterlerini ve kaynak sorgusunu kullan. Sonuç sayfalarını sırayla işle. Hız sınırı veya doğrulama sayfası çıkarsa bildir, aşmaya çalışma. Bu talimat işlem yetkisi vermez.';
+import {indeedSources} from './indeed.mjs';
+import {arbeitnowSources} from './arbeitnow.mjs';
 export const jobSearchSources = [
   {
     url: 'https://www.linkedin.com/jobs/',
@@ -70,40 +63,22 @@ export const jobSearchSources = [
   {
     url: 'https://himalayas.app/',
     name: 'Himalayas',
-    countries: ['DE'],
     intervalMinutes: 60,
     enabled: true,
     instructions:
-      "Himalayas extension'ı CLI ile resmî API'den Almanya'dan çalışılabilen ilanları ve tam açıklamalarını alır. Önce Jev profille karşılaştırıp eler, ardından agent kalanları puanlayıp kaydeder. collect_source_page ile bir sayfa al; Jev grubunu inceleyip onayladıktan sonra sonraki sayfaya geç. Ülke ve sorgu URL reçetesinden gelir. API önbelleklidir. Bu talimat işlem yetkisi vermez.",
+      "Himalayas extension'ı CLI ile resmî API'den dünya genelindeki uzaktan ilanları ve tam açıklamalarını alır. Önce Jev profille karşılaştırıp eler, ardından agent kalanları puanlayıp kaydeder. collect_source_page ile bir sayfa al; Jev grubunu inceleyip onayladıktan sonra sonraki sayfaya geç. Ülke ve sorgu URL reçetesinden gelir: ülke kodu boşsa dünya geneli aranır. API önbelleklidir. Bu talimat işlem yetkisi vermez.",
     recipe: {
       entry: {
         kind: 'url_template',
-        template: 'https://himalayas.app/jobs/api/search?country=DE&q={query}&sort=recent',
+        template: 'https://himalayas.app/jobs/api/search?country={country}&q={query}&sort=recent',
       },
       pagination: 'url_param',
       loginRequired: false,
       notes:
-        'Himalayas site extension: CLI supplies full JSON descriptions to the common Jev review queue. The agent scores and saves retained listings before advancing each page. Search pages use page=N and offset/limit/totalCount; a short page is not the end. Browser page caps and date cutoffs do not apply.',
+        'Himalayas site extension: CLI supplies full JSON descriptions to the common Jev review queue. {country} is the workspace country code (criteria.country); an empty one searches worldwide. The agent scores and saves retained listings before advancing each page. Search pages use page=N and offset/limit/totalCount; a short page is not the end. Browser page caps and date cutoffs do not apply.',
     },
   },
-  {
-    url: 'https://www.indeed.com/',
-    name: 'Indeed (ABD)',
-    countries: ['US'],
-    intervalMinutes: 30,
-    enabled: true,
-    instructions: indeedInstructions,
-    recipe: indeed('www.indeed.com'),
-  },
-  {
-    url: 'https://de.indeed.com/',
-    name: 'Indeed (Almanya)',
-    countries: ['DE'],
-    intervalMinutes: 30,
-    enabled: true,
-    instructions: indeedInstructions,
-    recipe: indeed('de.indeed.com'),
-  },
+  ...indeedSources,
   {
     url: 'https://www.stepstone.de/',
     name: 'StepStone',
@@ -124,6 +99,43 @@ export const jobSearchSources = [
         '{query} is a hyphenated search slug (senior-backend-engineer). This searches all of Germany; for one city use /jobs/{query}/in-<city>?radius=30. sort=2&action=sort_publish orders by date, so the first pages hold the newest listings. Pages via &page=N.',
     },
   },
+  {
+    url: 'https://www.xing.com/jobs/',
+    name: 'Xing',
+    countries: ['DE', 'AT', 'CH'],
+    intervalMinutes: 30,
+    enabled: true,
+    instructions:
+      "Almanya, Avusturya ve İsviçre. Xing extension'ı girişsiz arama sayfalarını ve ilanları HTTP ile okur; giriş duvarına gitme. Sonuçlar anlamsal alaka sırasındadır, tarihe göre değildir; sayfaları sırayla işle. Bu talimat işlem yetkisi vermez.",
+    recipe: {
+      entry: {
+        kind: 'url_template',
+        template: 'https://www.xing.com/jobs/search?keywords={query}&location={location}',
+      },
+      pagination: 'url_param',
+      loginRequired: false,
+      notes:
+        'Logged-out search read by the Xing extension: 20 results per page via &page=N, the page states its total. Semantic relevance order, no date sort. Postings are /jobs/<slug>-<id>.',
+    },
+  },
+  {
+    url: 'https://berlinstartupjobs.com/engineering/',
+    name: 'Berlin Startup Jobs',
+    countries: ['DE'],
+    intervalMinutes: 120,
+    enabled: true,
+    instructions:
+      'Berlin startup ilanları, kategori sayfaları halinde (engineering, product-management, marketing, sales, finance, operations, hr-recruiting, internships, other). Kriterlere uyan kategoriyi {query} olarak kullan; extension sayfaları ve ilanları HTTP ile okur. Site araması (?s=) yalnızca tarayıcıda çalışır, kullanma. Bu talimat işlem yetkisi vermez.',
+    recipe: {
+      entry: {kind: 'url_template', template: 'https://berlinstartupjobs.com/{query}/'},
+      pagination: 'url_param',
+      ordering: 'newest_first',
+      loginRequired: false,
+      notes:
+        '{query} is a category slug, not free text (engineering was read; product-management, marketing, sales, finance, operations, hr-recruiting, internships, other exist). 25 listings per page, pages via /{query}/page/N/, newest first by posting date. Listings are /<category>/<slug>/ links; /companies/ links are not listings.',
+    },
+  },
+  ...arbeitnowSources,
   {
     url: 'https://www.jobindex.dk/',
     name: 'Jobindex',

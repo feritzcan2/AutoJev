@@ -138,8 +138,12 @@ export function unreportedSourceRun(db, id, runId, reason, now) {
   return {status: 'interrupted', summary};
 }
 
+// 30 s, 2 min, 10 min, 30 min, then one hour longer each time (1 h, 2 h, 3 h...).
+const TECHNICAL_RETRY_STEPS = [30000, 120000, 600000, 1800000];
 export const technicalRetryDelay = (attempt) =>
-  [30000, 120000, 600000, 1800000][Math.min(Math.max(attempt - 1, 0), 3)];
+  attempt > TECHNICAL_RETRY_STEPS.length
+    ? (attempt - TECHNICAL_RETRY_STEPS.length) * 3600000
+    : TECHNICAL_RETRY_STEPS[Math.max(attempt - 1, 0)];
 
 export function retryTechnicalSource(db, id, runId, summary, now) {
   const run = db.run(runId);

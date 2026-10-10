@@ -5,14 +5,14 @@ import {AutomationStore} from '../app/automation/store.mjs';
 import {briefBlocks, readJevBrief} from '../app/jev/brief.mjs';
 import {jevTaskSummary} from '../app/jev/task-summary.mjs';
 
-function fixture(t, text) {
+function fixture(t, text, page = {}) {
   const core = new WorkspaceDatabase(':memory:');
   t.after(() => core.close());
   const db = new AutomationStore(core),
     a = db.create('job-search', {goal: 'Compliance', sources: ['https://example.test/']});
   const store = db.jevTasks,
     task = store.create(a.id, 'parent', {operation: 'collect_details'}),
-    e = store.evidence(task, {url: 'https://example.test/role', title: 'Role', text});
+    e = store.evidence(task, {url: 'https://example.test/role', title: 'Role', text, ...page});
   let calls = 0;
   const controller = new AbortController();
   const options = {
@@ -81,6 +81,21 @@ test('briefs retain exact mandatory qualifiers and late facts while omitting unr
   assert.equal(f.store.briefs.size, 0);
   assert.equal(f.store.briefJobs.size, 0);
   await assert.rejects(readJevBrief(f.options), /bu göreve ait değil/);
+});
+
+test('a listing a site extension read itself is passed through whole without Jev calls', async (t) => {
+  const raw = required.repeat(40),
+    f = fixture(t, raw, {listing: {fields: {company: 'Acme'}}});
+  let text = '',
+    offset = 0;
+  do {
+    const result = await readJevBrief({...f.options, offset});
+    assert.equal(result.status, 'ready');
+    text += result.sections.map((s) => s.text).join('');
+    offset = result.nextOffset;
+  } while (offset != null);
+  assert.equal(text, raw);
+  assert.equal(f.calls(), 0);
 });
 
 test('uncertain selections stay visible and partial reads cover all retained text', async (t) => {
@@ -193,4 +208,19 @@ test('compact review indices omit URLs and duplicate exclusion metadata but reta
       .join(''),
     text,
   );
+});
+
+test("a page's structured listing replaces its rendered text in detail evidence, not in discovery", (t) => {
+  const listing = {text: 'Role @ Acme\ncompany: Acme\n\nThe listing.', fields: {company: 'Acme'}};
+  const f = fixture(t, 'Menu\nRole\nCookie banner\nSimilar jobs', {listing});
+  const detail = f.store.fullEvidence(f.options.owner, 'parent', f.options.evidenceId);
+  assert.equal(detail.text, listing.text);
+  assert.deepEqual(detail.listing, {fields: {company: 'Acme'}});
+  const scan = f.store.create(f.options.owner, 'parent', {
+      operation: 'scan_results',
+      url: 'https://example.test/',
+    }),
+    page = f.store.evidence(scan, {url: 'https://example.test/', text: 'Results', listing});
+  assert.equal(page.text, 'Results');
+  assert.equal(page.listing, null);
 });

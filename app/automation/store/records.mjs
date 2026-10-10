@@ -327,6 +327,41 @@ export const recordMethods = {
     )
       throw Error('Bu kayıt için işlem sırada veya çalışıyor');
   },
+  // The user confirms outside the app (confirmation mail, portal) that this
+  // record was submitted; the app records that without a browser run.
+  markSubmitted(id, itemId) {
+    return this.store.workspaces.tasks.atomic(() => {
+      const item = this.result(id, itemId);
+      if (item.trial || !['found', 'prepared', 'uncertain', 'executing'].includes(item.status))
+        throw Error('Bu kayıt gönderildi olarak işaretlenemez');
+      this.assertRecordIdle(id, itemId);
+      const at = this.now(),
+        a = this.get(id);
+      const saved = this.putResult({
+        ...item,
+        status: 'completed',
+        approvedDigest: null,
+        evidence: 'Kullanıcı kaydın gönderildiğini onayladı.',
+        verifiedAt: at,
+        updatedAt: at,
+      });
+      this.put({
+        ...a,
+        questions: (a.questions ?? []).map((q) =>
+          q.recordId === item.id && q.answer == null
+            ? {
+                ...q,
+                answer: 'Kullanıcı kaydı gönderildi olarak işaretledi.',
+                answeredAt: at,
+                resolution: 'record_completed',
+              }
+            : q,
+        ),
+      });
+      this.event(id, 'record_completed', {itemId: item.id, by: 'user'});
+      return saved;
+    });
+  },
   star(id, itemId, starred) {
     if (typeof starred !== 'boolean') throw Error('Geçersiz yıldız durumu');
     const item = this.result(id, itemId);
@@ -399,26 +434,29 @@ export const recordMethods = {
     )
       throw Error('Bu görev adımı gönderim yapamaz');
     if (run.recordId && run.recordId !== itemId) throw Error('Kayıt bu göreve ait değil');
-    const explicit =
-      run.recordOperation === 'execute' &&
-      run.request?.manual &&
-      run.request.revision === a.revision &&
-      (run.request.direct === true || run.request.digest === item.digest);
-    if (run.recordOperation === 'execute' && run.request?.manual && !explicit)
-      throw Error('Taslak veya kurulum değişti; yeniden onay gerekli');
+    // A repeated reserve in the same run (after a late field fix) keeps the reservation.
+    if (run.actionId === item.id && item.status === 'executing' && item.attemptRunId === runId)
+      return {
+        reserved: true,
+        alreadyReserved: true,
+        itemId: item.id,
+        proposal: item.proposal,
+        url: item.actionUrl ?? item.url,
+      };
+    // No draft approval: the user's execute request is the authority. Automatic
+    // runs still need an eligible score and an auto-mode source.
+    const explicit = run.recordOperation === 'execute' && run.request?.manual === true;
+    if (run.kind !== 'run' || (mode === 'observe' && !explicit))
+      throw Error('Bu çalışma yalnızca gözlem yapabilir');
     if (!explicit) {
+      if (mode !== 'auto') throw Error('Başvuru için kullanıcı isteği gerekli');
+      if (!item.assessment) throw Error('Otomatik başvuru için önce puanla');
       const error = automaticAssessmentError(item.assessment, a.revision);
       if (error) throw Error(error);
     }
-    if (!explicit && item.requiresReview && item.approvedDigest !== item.digest)
-      throw Error('Değişen taslak yeniden onay bekliyor');
-    if (run.kind !== 'run' || (mode === 'observe' && !explicit))
-      throw Error('Bu çalışma yalnızca gözlem yapabilir');
-    if (item.trial || item.revision !== a.revision || item.status !== 'prepared' || !item.proposal)
-      throw Error('Güncel ve gönderilmemiş işlem taslağı gerekli');
+    if (item.trial || !['found', 'prepared'].includes(item.status))
+      throw Error('Bu kayıt gönderilebilir durumda değil');
     if (run.actionId) throw Error('Önce mevcut işlemin sonucunu doğrula');
-    if (!explicit && mode !== 'auto' && item.approvedDigest !== item.digest)
-      throw Error('İşlem kullanıcı onayı bekliyor');
     if (pendingRecordQuestion(a, item)) throw Error('Önce bu işlem için bekleyen soruları yanıtla');
     // Both reservation and attempted state are durable before any browser write.
     this.putResult(

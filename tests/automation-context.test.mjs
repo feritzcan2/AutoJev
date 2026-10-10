@@ -166,8 +166,9 @@ test('automation context can be fully read through MCP without file or browser a
   );
 });
 
-test('task context excludes unrelated questions and history while keeping exact answers, limits and assigned proposal', async (t) => {
+test('task context excludes unrelated questions and history while keeping exact answers, limits and the assigned record', async (t) => {
   const {automationTaskContext} = await import('../app/automation/task-context.mjs');
+  const {directRecordInstructions} = await import('../app/records/operation-definitions.mjs');
   const store = new WorkspaceDatabase(':memory:');
   t.after(() => store.close());
   const db = new AutomationStore(store),
@@ -179,7 +180,6 @@ test('task context excludes unrelated questions and history while keeping exact 
     status: 'prepared',
     proposal: {answers: {consent: false}, document: 'documents/cv.pdf'},
     digest: 'exact',
-    approvedDigest: 'exact',
   };
   db.putResult({
     ...own,
@@ -228,7 +228,7 @@ test('task context excludes unrelated questions and history while keeping exact 
     recordOperation: 'execute',
     operation: db.template(a.templateId).recordOperations.execute.id,
     sourceUrl: source,
-    request: {manual: true, direct: true, digest: 'exact'},
+    request: {manual: true, direct: true},
     scan: {pendingUrls: ['https://example.test/pending'], cursor: 'exact-cursor'},
     resumeContext: {tabId: 'retained'},
     observations: [{text: 'large'.repeat(10000)}],
@@ -241,7 +241,8 @@ test('task context excludes unrelated questions and history while keeping exact 
   assert.equal(context.questions[0].answerValues.consent, false);
   assert.deepEqual(context.assignedRecord, saved);
   assert.equal(context.recordAuthorization.directExecution, true);
-  assert.equal(context.recordAuthorization.approvedProposalDigest, 'exact');
+  assert.equal('approvedProposalDigest' in context.recordAuthorization, false);
+  assert.equal(context.recordAuthorization.rule, directRecordInstructions);
   assert.equal('maxActionsTotal' in context.automation, false);
   assert.equal('maxActionsPerDay' in context.automation, false);
   assert.equal(context.automation.facts, 'Verified fact');

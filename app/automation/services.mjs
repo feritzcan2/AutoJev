@@ -58,8 +58,10 @@ export function registerAutomationServices({
         browsers.prepare(id);
       return browsers.status(id).ready;
     },
-    launch: (run, automation, onEvent, signal) =>
-      launch({
+    launch: (run, automation, onEvent, signal) => {
+      if (run.sourceUrl && run.taskId && !run.recordOperation)
+        void browsers.closeSourceCheck(automation.id, run).catch(() => {});
+      return launch({
         data,
         db,
         run,
@@ -125,7 +127,8 @@ export function registerAutomationServices({
           while (outputs.size > 30) outputs.delete(outputs.keys().next().value);
           emit('automation-output', {automationId: run.automationId, runId: run.id, bytes});
         },
-      }),
+      });
+    },
   });
   const workspace = (id) => {
     db.get(id);
@@ -322,6 +325,7 @@ export function registerAutomationServices({
     return item;
   });
   handle('automation-dismiss', (id, itemId) => runtime.dismissRecord(id, itemId));
+  handle('automation-mark-submitted', (id, itemId) => runtime.markRecordSubmitted(id, itemId));
   handle('automation-star', (id, itemId, starred) => {
     const item = db.star(id, itemId, starred);
     changed(id);

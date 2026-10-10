@@ -574,6 +574,10 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+/* Shared width would otherwise squeeze short text columns until words split. */
+.automation-results-table td:has(> .automation-cell-text) {
+  min-width: 96px;
+}
 .automation-results-table [data-column='title'] {
   min-width: 200px;
   max-width: 300px;
@@ -715,6 +719,11 @@
 }
 .automation-results-table th[data-column='status'] {
   background: var(--bg-app);
+}
+/* Cells carry the hover color so the opaque sticky status cell matches its row.
+   Working, waiting and selected rows keep their own colors declared below. */
+.automation-results-table tr:where([data-result-id]):hover > td {
+  background: var(--bg-hover);
 }
 
 .workspace-conversation .automation-conversation[hidden] {

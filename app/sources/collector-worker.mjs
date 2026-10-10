@@ -6,6 +6,7 @@ import {
   needsCollectorReview,
 } from './collectors.mjs';
 import {scanWork, activeSearch, pendingScanUrls, noteCards} from './scan-work.mjs';
+import {recipePageCap} from './recipe.mjs';
 import {automationTextCells} from '../templates/catalog.mjs';
 
 export const COLLECTOR_INSTRUCTIONS =
@@ -270,9 +271,11 @@ export async function collectSourcePage(
   readPage ??= adapter.readPage;
   readDetail ??= adapter.readDetail;
   const task = pageTask(db, run, search);
+  // A listing Jev could not read or assess stays pending without holding the page.
   if (
     task &&
-    (task.items.some((i) => search.pendingUrls.includes(i.url) && !i.reviewed) || task.batch)
+    (task.items.some((i) => search.pendingUrls.includes(i.url) && !i.reviewed && !i.error) ||
+      task.batch)
   )
     return {taskId: task.id, progress: collectorProgress(run)};
   if (search.collector.page) {
@@ -283,14 +286,19 @@ export async function collectSourcePage(
       const recovered = await recoverDetails(db, run, search, page, {signal, readDetail});
       return {taskId: saveCollectionPage(db, runId, {...recovered, searchId: search.id}).id};
     }
-    const page = search.collector.page;
+    const page = search.collector.page,
+      visitedPages = [...new Set([...(search.collector.visitedPages ?? []), page.url])];
+    // Like browser scans: a feed with a newest-first recipe is read to its end,
+    // any other search reads only its share of the scan's page budget.
+    const recipe = db.get(run.automationId).sourceSettings?.[run.sourceUrl]?.recipe,
+      capped = recipe?.ordering !== 'newest_first' && visitedPages.length >= recipePageCap(recipe);
     search.collector = {
       ...search.collector,
-      nextUrl: page.nextUrl,
+      nextUrl: capped ? null : page.nextUrl,
       page: null,
-      visitedPages: [...new Set([...(search.collector.visitedPages ?? []), page.url])],
+      visitedPages,
     };
-    if (page.complete) {
+    if (page.complete || capped) {
       if (!search.pendingUrls.length) {
         search.status = 'completed';
         search.completion = 'end';

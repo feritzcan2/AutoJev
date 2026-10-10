@@ -248,12 +248,17 @@
       e.required??null,e.form?identity(e.form):null,e.form?.action??null,
       e.tagName==='SELECT'?[...e.options].map(o=>[o.value,o.label,o.disabled,!!o.closest('optgroup[disabled]')]):null,cache.choice(e),cache.combo(e)?.values??null,e.getAttribute('href')];
   };
-  const controls=[],control_guards={};
+  const controls=[],control_guards={};let fieldCount=0,otherCount=0;
   for(const e of candidates){
     if(!safe(e)||e.matches(':disabled')||closest(e,'[aria-disabled="true"],[inert]'))continue;
-    const guard=cache.controlGuard(e),rname=role(e);if(!guard||!rname)continue;
+    const rname=role(e);if(!rname)continue;
     const choice=cache.choice(e);
     if(!choice&&!['INPUT','TEXTAREA','SELECT'].includes(e.tagName)&&!['button','link','textbox','combobox','checkbox','radio','switch'].includes(rname))continue;
+    // Long forms: page links and buttons must not crowd out later answer fields.
+    const field=!!choice||['INPUT','TEXTAREA','SELECT'].includes(e.tagName)||!['button','link'].includes(rname);
+    if(field?fieldCount>=200:otherCount>=80){if(fieldCount>=200&&otherCount>=80)break;continue;}
+    const guard=cache.controlGuard(e);if(!guard)continue;
+    if(field)fieldCount++;else otherCount++;
     const node=identity(e);control_guards[node]=guard;
     controls.push({node,...fieldContext(e),label:choiceLabel(e,choice),role:rname,value:e.value??'',required:fieldContext(e)?.required??(e.required?true:null),...(choice?{choice}:{}),
       visible:!!cache.clickPoint(e),nativeSelect:e.tagName==='SELECT',optionCount:e.options?.length,
@@ -261,7 +266,6 @@
       // order, a region) even when the select has no label of its own.
       ...(e.tagName==='SELECT'?{selectedLabel:e.selectedOptions[0]?.label??'',options:[...e.options].slice(0,12).map(o=>o.label)}:{}),
       ...(cache.autocomplete(e)?{autocomplete:true,selectedLabels:cache.autocomplete(e).selectedLabels,suggestions:cache.autocomplete(e).options.map(o=>o.label).slice(0,20)}:{})});
-    if(controls.length>=80)break;
   }
   // Discover nested scrolling from actual controls, including forms in dialogs.
   // With a modal open, never choose the background document as a fallback.

@@ -67,10 +67,18 @@ export function recordTable(
     position.max = String(max);
     position.value = String(at);
     position.setAttribute('aria-valuetext', `${Math.round(max ? (at / max) * 100 : 0)}%`);
+    // A column pinned to the right edge covers the columns scrolled beneath it.
     const bounds = wrap.getBoundingClientRect(),
-      cells = [...row.cells],
+      pinned = new Set([...row.cells].filter((c) => getComputedStyle(c).position === 'sticky')),
+      cells = [...row.cells].filter((c) => !pinned.has(c)),
+      visibleRight = Math.min(
+        bounds.right,
+        ...[...pinned]
+          .filter((c) => getComputedStyle(c).right !== 'auto')
+          .map((c) => c.getBoundingClientRect().left),
+      ),
       before = cells.filter((c) => c.getBoundingClientRect().left < bounds.left - 2).length,
-      after = cells.filter((c) => c.getBoundingClientRect().right > bounds.right + 2).length;
+      after = cells.filter((c) => c.getBoundingClientRect().right > visibleRight + 2).length;
     hint.textContent = [before ? `${before} sütun solda` : '', after ? `${after} sütun sağda` : '']
       .filter(Boolean)
       .join(' · ');

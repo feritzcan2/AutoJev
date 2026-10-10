@@ -1,7 +1,7 @@
 // @ts-check
 const states = [
   ['found', 'Bulundu'],
-  ['prepared', 'Taslak hazır'],
+  ['prepared', 'İşleme hazır'],
   ['executing', 'İşlem sürüyor'],
   ['completed', 'Tamamlandı'],
   ['uncertain', 'Doğrulama bekliyor'],

@@ -86,6 +86,26 @@ export function rememberProgress(slot, key, before, after) {
   } else slot.noProgress.delete(key);
   return before !== after;
 }
+// A control the page keeps hidden (display none, visibility hidden, no box)
+// never scrolls into view; the same action usually exists as a visible target.
+export const concealedMessage =
+  'The page keeps this control hidden; reveal and scrolling cannot show it. Drop this id. The visible button for the same step is listed in clickTargets, often under a different label; click that one.';
+export async function concealedByPage(slot, node) {
+  return slot.page
+    .evaluate((node) => {
+      const e = window.__jevFast?.nodes.get(node);
+      if (!e) return false;
+      const style = getComputedStyle(e),
+        box = e.getBoundingClientRect();
+      return (
+        style.display === 'none' ||
+        style.visibility === 'hidden' ||
+        style.opacity === '0' ||
+        (box.width === 0 && box.height === 0)
+      );
+    }, node)
+    .catch(() => false);
+}
 export const stalled = {
   status: 'no_progress',
   executed: false,
@@ -320,12 +340,13 @@ export async function navigateObserved(slot, name, args, owner, reader) {
       progress = rememberProgress(slot, key, before, progressKey(after));
     if (name === 'browser_jev_reveal') {
       const visible = after.controls.find((c) => c.node === saved.node)?.visible === true;
+      const concealed = visible ? false : await concealedByPage(slot, saved.node);
       return {
         status: visible ? 'ready' : 'no_progress',
         executed: true,
         progress,
         visible,
-        ...(!visible ? {message: stalled.message} : {}),
+        ...(!visible ? {concealed, message: concealed ? concealedMessage : stalled.message} : {}),
       };
     }
     return {

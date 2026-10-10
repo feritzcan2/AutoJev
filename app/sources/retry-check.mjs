@@ -1,4 +1,6 @@
 import {technicalRetryDelay} from '../automation/recovery.mjs';
+import {checkUrl, givenUpUrls, PAGE_CHECK_LIMIT} from './browser-check.mjs';
+import {skipScanUrls} from './scan-work.mjs';
 
 // Readiness checks run without an LLM or a worker lease. One in-flight check
 // per durable task; a late result cannot revive a stopped or changed workspace.
@@ -19,7 +21,8 @@ export class SourceRetryChecks {
       return true;
     if (this.pending.has(task.id) || task.retryAt > this.now()) return false;
     const request = task.retryAt,
-      revision = a.revision;
+      revision = a.revision,
+      url = checkUrl(task);
     const work = Promise.resolve()
       .then(() => this.probe(id, task))
       .then((result) => {
@@ -44,11 +47,24 @@ export class SourceRetryChecks {
           probeAttempts =
             (saved.technicalRecovery?.probeAttempts ?? 0) +
             (result.ready || result.deferred ? 0 : 1);
+        const failures = {...saved.technicalRecovery?.failures};
+        if (!result.ready && !result.deferred) failures[url] = (failures[url] ?? 0) + 1;
+        // A page just given up: try another page of the source without the long wait.
+        const moved =
+          checkUrl({...saved, technicalRecovery: {...saved.technicalRecovery, failures}}) !== url;
         const retryAt = result.ready
           ? null
-          : checkedAt + (result.deferred ? 5000 : technicalRetryDelay(probeAttempts + 1));
+          : checkedAt +
+            (result.deferred ? 5000 : technicalRetryDelay(moved ? 1 : probeAttempts + 1));
+        // Another page of the source loads: the given-up pages are skipped.
+        const skipped = result.ready
+            ? givenUpUrls(saved.technicalRecovery).filter((failed) => failed !== url)
+            : [],
+          scan = skipped.length ? skipScanUrls(saved.scan, skipped) : saved.scan;
         const technicalRecovery = {
           ...saved.technicalRecovery,
+          urls: (saved.technicalRecovery?.urls ?? []).filter((failed) => !skipped.includes(failed)),
+          failures,
           probeAttempts,
           readyAt: retryAt,
           probe: {
@@ -58,7 +74,7 @@ export class SourceRetryChecks {
             evidence: String(result.evidence ?? '').slice(0, 600),
           },
         };
-        queue.put({...saved, retryAt, technicalRecovery});
+        queue.put({...saved, retryAt, technicalRecovery, scan});
         if (!result.deferred)
           this.db.put({
             ...current,
@@ -66,11 +82,14 @@ export class SourceRetryChecks {
               ...current.sourceState,
               [task.sourceUrl]: {
                 ...source,
+                ...(skipped.length ? {scan} : {}),
                 recovery: {...technicalRecovery, reason: 'technical_page'},
                 nextRunAt: retryAt ?? checkedAt,
-                lastResult: result.ready
-                  ? 'Sayfa yeniden erişilebilir; kaydedilen görev devam edecek.'
-                  : 'Sayfa hâlâ yüklenemiyor. Agent açılmadan yeniden kontrol edilecek.',
+                lastResult: skipped.length
+                  ? `${skipped.length} sayfa ${PAGE_CHECK_LIMIT} denemede açılmadı ve atlandı; site erişilebilir, kaydedilen görev devam edecek.`
+                  : result.ready
+                    ? 'Sayfa yeniden erişilebilir; kaydedilen görev devam edecek.'
+                    : 'Sayfa hâlâ yüklenemiyor. Agent açılmadan yeniden kontrol edilecek.',
               },
             },
           });

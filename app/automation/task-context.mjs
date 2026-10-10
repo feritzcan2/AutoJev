@@ -10,12 +10,22 @@ import {findOperation, operationFor} from '../templates/contract.mjs';
 import {sourceMode} from '../sources/automation-sources.mjs';
 import {SOURCE_SCAN_INSTRUCTIONS} from '../sources/scan.mjs';
 import {directRecordInstructions} from '../records/operation-definitions.mjs';
+import {siteExtensionKind} from '../site-extensions/index.mjs';
 import {createHash} from 'node:crypto';
 
 const pick = (value, keys) =>
   Object.fromEntries(
     keys.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]),
   );
+// Setup proposes starting sources by address and country; the store copies a
+// source's recipe and instructions when one is added, so the agent never
+// needs them (a template may list dozens of country boards).
+const templateContext = (definition) => ({
+  ...definition,
+  ...(definition.defaultSources
+    ? {defaultSources: definition.defaultSources.map((s) => pick(s, ['url', 'name', 'countries']))}
+    : {}),
+});
 function contextRun(run) {
   return {
     ...pick(run, [
@@ -140,7 +150,7 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
         draftPending: Boolean(draft),
         sourceDraftPending: Boolean(saved.sourceDraft),
       };
-    if (section === 'template') return {template: definition};
+    if (section === 'template') return {template: templateContext(definition)};
     if (section === 'questions')
       return {
         questions: (a.questions ?? [])
@@ -237,8 +247,16 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
       : [];
   const source = active.sourceUrl ? db.sources(id).find((s) => s.url === active.sourceUrl) : null;
   const recipeInfo = source ? db.sourceRecipe(id, source.url) : null;
+  const siteSearch = source ? (siteExtensionKind(source.url, a.templateId)?.search ?? null) : null;
   const assignedSource = source
     ? {
+        ...(siteSearch
+          ? {
+              siteSearch,
+              siteSearchGuidance:
+                'The site extension knows this results address. Build url_template recipes from siteSearch.template; add only filters from siteSearch.filters as param=value. Your choices are the terms, the filter values and, where siteSearch.notes allow it, the path. The app keeps the sort parameters, pagination and ordering of siteSearch whatever the recipe says. Do not look for other parameters or sort controls on the site, and do not judge the ordering yourself.',
+            }
+          : {}),
         ...pick(source, [
           'url',
           'name',
@@ -394,7 +412,7 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
             .map((r) => pick(r, ['url', 'title', 'status']))
         : [],
     template: interview
-      ? definition
+      ? templateContext(definition)
       : {
           ...pick(definition, ['id', 'version', 'title', 'guidance', 'records', 'table']),
           recordOperations: active.recordOperation ? {[active.recordOperation]: operation} : {},
@@ -466,24 +484,16 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
       ? {
           operation: active.recordOperation,
           explicitUserRequest: active.request?.manual === true,
-          directExecution:
-            active.recordOperation === 'execute' &&
-            active.request?.manual === true &&
-            active.request?.direct === true,
-          approvedProposalDigest:
-            active.recordOperation === 'execute' && active.request?.manual
-              ? (active.request.digest ?? null)
-              : null,
+          // Every execute applies the record directly; there is no draft digest.
+          directExecution: active.recordOperation === 'execute',
           ...(batch ? {recordIds: active.recordIds} : {}),
           rule: batch
             ? 'Score only assignedRecords. Save each individual assessment with record_automation_score(itemId, score). Finish after all assigned records are handled. Do not change proposals or submit.'
             : active.recordOperation === 'score'
               ? 'Score only the assigned listing using the current criteria.ranking and saved profile/documents. Save with record_automation_score. Do not change proposals or submit.'
-              : active.recordOperation === 'execute' &&
-                  active.request?.manual === true &&
-                  active.request?.direct === true
+              : active.recordOperation === 'execute'
                 ? directRecordInstructions
-                : 'prepare: no external submission; execute: reserve the exact proposal before submitting, obey limits; verify: inspect prior outcome without resubmitting. An explicit execute request authorizes only this record and digest, without changing workspace or source permissions.',
+                : 'prepare: no external submission; verify: inspect prior outcome without resubmitting. This request authorizes only this record, without changing workspace or source permissions.',
         }
       : null,
     contextScope: {

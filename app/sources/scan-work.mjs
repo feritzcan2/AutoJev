@@ -56,6 +56,20 @@ export function replayScanWork(scan, searches) {
 export function pendingScanUrls(work) {
   return [...new Set(work.searches.flatMap((s) => s.pendingUrls))];
 }
+// Pages that kept failing leave the queue as handled; the scan goes on without them.
+export function skipScanUrls(scan, urls) {
+  if (!scan) return scan;
+  const skip = new Set(urls);
+  if (!scan.work)
+    return {...scan, pendingUrls: (scan.pendingUrls ?? []).filter((url) => !skip.has(url))};
+  const work = structuredClone(scan.work);
+  for (const search of work.searches) {
+    const held = search.pendingUrls.filter((url) => skip.has(url));
+    search.pendingUrls = search.pendingUrls.filter((url) => !skip.has(url));
+    search.processedUrls = [...new Set([...search.processedUrls, ...held])];
+  }
+  return {...scan, pendingUrls: pendingScanUrls(work), work};
+}
 export function hasUnblockedScanWork(run, sites) {
   const blocked = new Set(sites),
     work = scanWork(run);
@@ -219,6 +233,17 @@ export function assertScanWorkFinished(run) {
       'Kayıtlı aramaların tamamı bitmedi; kalan aramayı complete_scan_search ile tamamla.',
     );
 }
+// Every saved search was closed by complete_scan_search and nothing is queued:
+// the app has verified the whole scan itself.
+export function scanWorkVerified(run) {
+  const work = run.scan?.work;
+  return Boolean(
+    work &&
+      work.searches.length > 1 &&
+      work.searches.every((s) => s.status === 'completed') &&
+      !pendingScanUrls(scanWork(run)).length,
+  );
+}
 export function otherScanSearchesPending(run) {
   return Boolean(
     run.scan?.work?.searches.some(
@@ -251,11 +276,38 @@ export function forgetScanPosition(state, isOldResultsPage = (_url) => false) {
           })),
         }
       : undefined;
-    next.scan = {...state.scan, pendingUrls: keep(state.scan.pendingUrls), ...(work ? {work} : {})};
+    next.scan = dropRecipeSearches(
+      {...state.scan, pendingUrls: keep(state.scan.pendingUrls), ...(work ? {work} : {})},
+      isOldResultsPage,
+    );
   }
   if (state.scanState?.active)
     next.scanState = {...state.scanState, active: forgetPlanPosition(state.scanState.active)};
   return next;
+}
+
+// Searches of a replaced recipe leave the scan unless they are finished, hold
+// queued listings, or are the search the running agent is on (keepId).
+export function dropRecipeSearches(scan, isOldResultsPage, keepId = null) {
+  if (!scan?.work) return scan;
+  const searches = scan.work.searches.filter(
+    (s) =>
+      s.id === keepId ||
+      s.status === 'completed' ||
+      s.pendingUrls.length ||
+      !s.url ||
+      !isOldResultsPage(s.url),
+  );
+  if (searches.length === scan.work.searches.length) return scan;
+  if (!searches.length) {
+    const {work: _work, ...rest} = scan;
+    return {...rest, complete: false, pendingUrls: []};
+  }
+  const work = {...scan.work, searches},
+    active = activeSearch(work);
+  if (!active || active.status === 'completed')
+    work.activeSearchId = (searches.find((s) => s.status !== 'completed') ?? searches[0]).id;
+  return {...scan, pendingUrls: pendingScanUrls(work), work};
 }
 
 export function scanPlanView(plan) {
@@ -278,15 +330,14 @@ export function validateWorkCompletion(run, scan) {
     return completion;
   }
   assertScanWorkFinished(run);
+  // Each search was verified by complete_scan_search; the agent's own
+  // completion word adds nothing and weak agents guessed it wrong.
   const completions = run.scan.work.searches.map((s) => s.completion);
-  const expected = completions.includes('user_stop')
+  return completions.includes('user_stop')
     ? 'user_stop'
     : completions.includes('cutoff')
       ? 'cutoff'
       : 'end';
-  if ((scan.completion ?? 'end') !== expected)
-    throw Error(`Aramaların doğrulanan ortak bitişi: ${expected}.`);
-  return expected;
 }
 
 export function scanProgressView(run) {

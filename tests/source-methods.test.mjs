@@ -155,9 +155,14 @@ test('another address on a starting source site gets that source template settin
   db.saveSources(id, [
     ...db.get(id).sources,
     'https://uk.indeed.com/',
+    'https://eg.indeed.com/',
     'https://jobs.example.test/',
   ]);
   const sources = db.sources(id);
-  assert.equal(sources.find((s) => s.url === 'https://uk.indeed.com/').recipe, undefined);
+  assert.equal(
+    sources.find((s) => s.url === 'https://uk.indeed.com/').recipe.entry.template,
+    'https://uk.indeed.com/jobs?q={query}&l={location}',
+  );
+  assert.equal(sources.find((s) => s.url === 'https://eg.indeed.com/').recipe, undefined);
   assert.equal(sources.find((s) => s.url === 'https://jobs.example.test/').recipe, undefined);
 });

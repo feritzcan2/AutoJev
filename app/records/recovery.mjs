@@ -76,3 +76,85 @@ export function recoverRecordOperations(db) {
     }
   }
 }
+
+// Execute and verify runs used to fail outright when the agent went idle or
+// its session closed without finish_automation_run. They now get one idle
+// nudge and one automatic requeue; a reservation that flipped the record to
+// uncertain continues as verify, never as a second submit.
+const RECORD_RUN_OPERATIONS = ['execute', 'verify'];
+function recordRunTask(db, id, runId) {
+  let run;
+  try {
+    run = db.run(runId);
+  } catch {
+    return null;
+  }
+  if (!RECORD_RUN_OPERATIONS.includes(run.recordOperation) || !run.taskId || run.stopRequested)
+    return null;
+  const task = db.store.workspaces.tasks.get(id, run.taskId);
+  if (task.stopRequested || task.toolFailure) return null;
+  return {run, task};
+}
+export function continueRecordRun(db, id, runId) {
+  const s = recordRunTask(db, id, runId);
+  if (!s || s.task.recordRecovery?.nudged === runId) return null;
+  db.store.workspaces.tasks.put({
+    ...s.task,
+    recordRecovery: {...s.task.recordRecovery, nudged: runId},
+  });
+  return {
+    message:
+      'The assigned record task is still open. Continue from the current page and saved state. Do not repeat a submission or upload that already happened. When the task is done or blocked, call finish_automation_run.',
+  };
+}
+export function unreportedRecordRun(db, id, runId, reason) {
+  const s = recordRunTask(db, id, runId);
+  if (!s) return null;
+  const attempt = s.task.recordRecovery?.attempt ?? 0;
+  if (attempt >= 1) return null;
+  db.store.workspaces.tasks.put({
+    ...s.task,
+    recordRecovery: {...s.task.recordRecovery, attempt: attempt + 1, requeue: runId},
+  });
+  return {
+    status: 'interrupted',
+    summary:
+      reason === 'idle'
+        ? 'Agent sonuç bildirmeden durdu; görev bir kez yeniden denenecek.'
+        : 'Agent oturumu sonuç bildirmeden kapandı; görev bir kez yeniden denenecek.',
+  };
+}
+export function requeueRecordRun(db, run) {
+  if (
+    !RECORD_RUN_OPERATIONS.includes(run.recordOperation) ||
+    run.status !== 'interrupted' ||
+    run.stopRequested ||
+    !run.taskId
+  )
+    return false;
+  const id = run.automationId,
+    queue = db.store.workspaces.tasks,
+    a = db.get(id),
+    task = queue.get(id, run.taskId);
+  if (task.stopRequested || task.toolFailure || task.recordRecovery?.requeue !== run.id)
+    return false;
+  const item = db.result(id, task.recordId);
+  if (['completed', 'dismissed'].includes(item.status)) return false;
+  const kind = item.status === 'uncertain' ? 'verify' : task.recordOperation,
+    op = db.template(a.templateId).recordOperations?.[kind];
+  if (!op) return false;
+  queue.put({
+    ...task,
+    state: 'pending',
+    workerId: null,
+    completionState: null,
+    recordOperation: kind,
+    operation: op.id,
+    capability: op.capability,
+    request: kind === 'verify' ? {manual: true, revision: a.revision, at: db.now()} : task.request,
+    retryAt: db.now() + 5000,
+    recordRecovery: {...task.recordRecovery, requeue: false},
+    summary: run.summary,
+  });
+  return true;
+}

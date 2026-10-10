@@ -1,4 +1,5 @@
 import {readSiteExtension} from '../site-extensions/index.mjs';
+import {jobPostingListing} from '../site-extensions/job-posting.mjs';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {acquireTabRendering} from './rendering.mjs';
 
@@ -198,12 +199,36 @@ export function renderedDocument() {
       if (['http:', 'https:'].includes(u.protocol) && !u.username && !u.password && !location.hash)
         canonicalUrl = u.href;
     } catch {}
+  // Structured listing data (schema.org JobPosting) and the shown headings it
+  // must match; read only when present to keep the transfer small. Browser
+  // translation rewrites headings but not the page's own title metadata, which
+  // then stands in for them.
+  const jobPostings = [...document.querySelectorAll('script[type="application/ld+json"]')]
+    .map((s) => s.textContent ?? '')
+    .filter((t) => t.includes('JobPosting'));
+  const translated = /\btranslated-(?:ltr|rtl)\b/.test(document.documentElement.className);
   return {
     url: location.href,
     text: words.join('\n'),
     links,
     pagination,
     canonicalUrl,
+    ...(jobPostings.length
+      ? {
+          jobPostings,
+          title: document.title,
+          headings: [
+            ...[...body.querySelectorAll('h1')].map((h) => h.innerText.trim()).slice(0, 5),
+            ...(translated
+              ? [
+                  ...document.querySelectorAll(
+                    'meta[property="og:title"],meta[name="og:title"],meta[name="twitter:title"]',
+                  ),
+                ].map((m) => m.getAttribute('content') ?? '')
+              : []),
+          ],
+        }
+      : {}),
     readiness: {
       loading,
       reason: pendingFragments
@@ -246,6 +271,10 @@ export async function documentObservation(slot, value) {
     document.readiness = settledBusy(slot, {url: document.url, ...document.readiness});
   if (document.url !== value.url || (readiness.url && readiness.url !== document.url))
     throw Error('Sayfa okuma sırasında yönlendi; browser_read ile güncel sayfayı tekrar oku.');
+  // The page's own structured listing; Jev's evidence uses it instead of the
+  // rendered text with its site chrome. A loading page is not read from it.
+  const listing =
+    document.readiness?.loading || readiness.loading ? null : jobPostingListing(document);
   // Join by the observed DOM node, never a repeated label such as "Next".
   // Offscreen buttons may only have a reveal control; no target is invented.
   const targets = new Map(
@@ -307,6 +336,7 @@ export async function documentObservation(slot, value) {
     pagination,
     canonicalUrl: document.canonicalUrl,
     ...(document.siteExtension ? {siteExtension: document.siteExtension} : {}),
+    ...(listing ? {listing} : {}),
     reading: {
       scope: 'rendered_document',
       truncated: false,

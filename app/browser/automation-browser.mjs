@@ -204,6 +204,20 @@ export function automationBrowser(
         return observed(await native(id, name, {...args, tabId}, session, options));
       if (name === 'browser_jev_inspect_form')
         return (await native(id, name, {tabId}, session, options)).page;
+      // A viewport image of the current tab; no page action, no Jev call.
+      if (name === 'browser_screenshot') {
+        const {response, page} = await native(
+          id,
+          'browser_jev_screenshot',
+          {tabId, format: 'jpeg'},
+          session,
+          options,
+        );
+        return {
+          pageContext: {url: page.url, tabId: page.tabId},
+          content: (response.content ?? []).filter((p) => p.type === 'image'),
+        };
+      }
       let tool,
         parameters = {tabId};
       if (name === 'browser_snapshot') {

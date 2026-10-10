@@ -1,6 +1,11 @@
 import {scanPageLabel} from '../app/sources/scan-page.mjs';
 import {currentWork} from '../app/automation/current-work.mjs';
 import {recipeSummary, recipePageCap, RECIPE_PAGINATION_KINDS} from '../app/sources/recipe.mjs';
+import {
+  searchFilterValues,
+  withSearchFilters,
+  searchFilterLabels,
+} from '../app/site-extensions/search.mjs';
 import {workspaceSourceTabs} from './workspace-tabs.js';
 
 const modes = {observe: 'Sadece bul', prepare: 'Hazırla, onayımı bekle', auto: 'Otomatik gönder'};
@@ -410,11 +415,13 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       "Site eklentisi: Chrome'da açılan sayfadan ilanlar ve sayfalama doğrudan okunur.",
     ],
   };
+  // A source row carries {kind}; a catalog group carries the kind itself.
   function extensionChip(source) {
-    const [label, detail] = extensionKinds[source.extension?.kind] ?? [];
+    const kind = source.extension?.kind ?? source.extension;
+    const [label, detail] = extensionKinds[kind] ?? [];
     if (!label) return null;
     const chip = el('span', label, 'source-extension');
-    chip.dataset.kind = source.extension.kind;
+    chip.dataset.kind = kind;
     chip.title = detail;
     return chip;
   }
@@ -499,8 +506,13 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       rs = source.recipeState;
     recipe.append(el('b', 'Arama reçetesi'));
     const lines = [summary.label + ' · ' + summary.detail];
-    if (source.recipe?.entry.kind === 'url_template')
+    if (source.recipe?.entry.kind === 'url_template') {
       lines.push('Şablon: ' + source.recipe.entry.template);
+      const filters = source.extension?.search
+        ? searchFilterLabels(source.extension.search, source.recipe.entry.template)
+        : [];
+      if (filters.length) lines.push('Site filtreleri: ' + filters.join(' · '));
+    }
     if (source.recipe?.entry.kind === 'search_form')
       lines.push(
         'Form: ' +
@@ -669,6 +681,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       form.querySelector('[data-recipe-ordering]').hidden =
         !['url_template', 'search_form'].includes(method);
     form.querySelector('[data-recipe-notes]').hidden = method === 'none';
+    form.querySelector('[data-recipe-site]').hidden = method !== 'url_template' || !form.siteSearch;
     form.elements.template.required = method === 'url_template';
     form.elements.formUrl.required = form.elements.queryLabel.required = method === 'search_form';
   }
@@ -714,6 +727,55 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       },
     };
   }
+  // A site extension's known results address: its filters become controls
+  // that rewrite the template, so nobody guesses parameters.
+  function siteSearchFields(form, search) {
+    form.siteSearch = search;
+    if (!search) return;
+    const f = form.elements,
+      block = form.querySelector('[data-recipe-site]'),
+      list = block.querySelector('.source-site-filters');
+    const controls = search.filters.map((filter) => {
+      const label = el('label', filter.label);
+      let control;
+      if (filter.values) {
+        control = el('select');
+        control.append(new Option('—', ''));
+        for (const [value, text] of Object.entries(filter.values))
+          control.append(new Option(text, value));
+      } else {
+        control = el('input');
+        control.maxLength = 80;
+      }
+      control.dataset.param = filter.param;
+      control.onchange = () => {
+        f.template.value = withSearchFilters(f.template.value, {[filter.param]: control.value});
+      };
+      label.append(control);
+      list.append(label);
+      return control;
+    });
+    const sync = () => {
+      const values = searchFilterValues(search, f.template.value);
+      for (const control of controls) control.value = values[control.dataset.param] ?? '';
+    };
+    f.template.addEventListener('input', sync);
+    const use = button('Site şablonunu kullan', () => {
+      f.template.value = search.template;
+      f.ordering.value = search.ordering ?? 'unknown';
+      f.pagination.value = search.pagination ?? 'auto';
+      sync();
+    });
+    block
+      .querySelector('small')
+      .append(
+        search.ordering === 'newest_first'
+          ? 'Site şablonu en yeniden eskiye sıralar. '
+          : 'Sitenin bilinen arama adresi. ',
+        use,
+      );
+    sync();
+  }
   function editor(source) {
     const form = el('form', null, source ? 'source-editor' : 'source-add');
     form.dataset.sourceId = source?.url ?? '';
@@ -724,6 +786,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
 <fieldset class="source-editor-section source-recipe-editor"><legend>Arama reçetesi <small class="source-recipe-legend"></small></legend>
 <label class="source-editor-wide">Arama yöntemi<select name="method"></select><small>Deneme turunda agent siteyi çözer ve reçeteyi kendisi kaydeder. Biliyorsan elle de yazabilirsin; uygulama ilk taramada doğrular.</small></label>
 <label class="source-editor-wide" data-recipe-template>URL şablonu<input name="template" maxlength="2000" placeholder="https://site/jobs?q={query}&l={location}&sort=date" spellcheck="false"><small>{query} arama terimini veya kapsamı alır. {location} gibi diğer yer tutucular aynı adlı kriter alanından doldurulur. Yer tutucusuz sabit adres de olabilir.</small></label>
+<div class="source-editor-wide source-site-search" data-recipe-site><b>Site filtreleri</b><small></small><div class="source-recipe-form source-site-filters"></div></div>
 <div class="source-editor-wide source-recipe-form" data-recipe-form><label>Arama formu sayfası<input name="formUrl" type="url" placeholder="https://site/jobs"></label><label>Arama alanı etiketi<input name="queryLabel" maxlength="120" placeholder="Stichwort"></label><label>Konum alanı etiketi (isteğe bağlı)<input name="locationLabel" maxlength="120" placeholder="Ort"></label></div>
 <label class="source-editor-wide" data-recipe-terms>Arama terimleri<input name="terms" maxlength="500" placeholder="Compliance, AI Governance, Data Protection" spellcheck="false"><small>Arama kapsamı anahtar kelime değilse virgülle en fazla 5 terim yaz; her terim ayrı arama olur.</small></label>
 <label data-recipe-pagination>Sayfalama<select name="pagination"></select></label>
@@ -751,6 +814,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     f.intervalMinutes.value = source?.intervalMinutes ?? data.automation.intervalMinutes;
     f.mode.value = source?.mode ?? data.automation.mode;
     f.instructions.value = source?.instructions ?? '';
+    siteSearchFields(form, source?.extension?.search ?? null);
     recipeFields(form, source?.recipe ?? null);
     f.method.onchange = f.ordering.onchange = () => syncRecipeFields(form);
     if (source) {
@@ -812,6 +876,55 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     });
     return form;
   }
+  // The sites the app already knows (template starting sources, most with a
+  // site extension), each added in one click with its ready recipe and
+  // instructions.
+  function renderCatalog(section) {
+    const groups = data.sourceCatalog ?? [],
+      key = groups.flatMap((group) => group.choices.map((choice) => choice.url)).join(' ');
+    if (section.dataset.key === key) return;
+    section.dataset.key = key;
+    section.hidden = !groups.length;
+    const rows = el('ul');
+    for (const group of groups) {
+      const row = el('li'),
+        about = el('div'),
+        [first] = group.choices,
+        many = group.choices.length > 1;
+      about.append(
+        el('b', many ? group.name : first.name),
+        el(
+          'small',
+          many
+            ? `${group.choices.length} ülke`
+            : `${new URL(first.url).hostname.replace(/^www\./, '')} · ${first.label}`,
+        ),
+      );
+      row.append(about);
+      // The workspace country, when the board serves it, is the first choice.
+      const country = el('select');
+      country.setAttribute('aria-label', `${group.name} ülkesi`);
+      for (const choice of group.choices) country.append(new Option(choice.label, choice.url));
+      if (many) row.append(country);
+      row.append(extensionChip(group) ?? '');
+      const add = button('Ekle', async () => {
+        const scope = owner,
+          choice = group.choices.find((c) => c.url === country.value) ?? first;
+        await api.automationSourceAdd(scope, {url: choice.url});
+        if (owner !== scope) return;
+        await refresh();
+        notice(`${choice.name} eklendi. İlk turunda otomatik denenir.`);
+      });
+      add.dataset.catalogAdd = group.name;
+      row.append(add);
+      rows.append(row);
+    }
+    section.replaceChildren(
+      el('h3', 'Hazır kaynaklar'),
+      el('small', 'Uygulamanın tanıdığı siteler; ad, arama reçetesi ve talimat hazır gelir.'),
+      rows,
+    );
+  }
   function updateEditor(form, source) {
     const locked = Boolean(source.scanning);
     for (const field of form.querySelectorAll('input,textarea,select,button'))
@@ -870,7 +983,8 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     add.disabled = bulkSaving;
     add.setAttribute('aria-expanded', String(adding));
     if (adding) {
-      if (!addHost.firstChild) addHost.append(editor(null));
+      if (!addHost.firstChild) addHost.append(el('section', null, 'source-catalog'), editor(null));
+      renderCatalog(addHost.querySelector('.source-catalog'));
     } else addHost.replaceChildren();
     const kept = list.querySelector('.source-editor'),
       keptMemory = list.querySelector('.source-memory'),

@@ -1277,18 +1277,23 @@ test('each recipe term is its own search: completing one opens the next with a f
   );
   const second = await cover(dev);
   assert.equal(second.next, undefined);
+  // Pages beyond the page cap stay unread, so the agent reports a partial scan
+  // without addresses and an unopened evidence page.
   await flow.call(f.id, scan.id, 'finish_automation_run', {
     status: 'completed',
     summary: 'Both terms covered',
     scan: {
-      complete: true,
+      complete: false,
       pendingUrls: [],
       reason: 'Page cap',
-      evidenceUrl: dev + '&start=10',
-      completion: 'end',
+      evidenceUrl: dev + '&start=90',
+      completion: 'cutoff',
     },
   });
   await f.runtime.finish(f.id, 'completed', 'Both terms covered', scan.workerId);
+  // The searches' verified ends decide; a wrong word from the agent is ignored.
+  assert.equal(f.db.run(scan.id).scan.complete, true);
+  assert.equal(f.db.run(scan.id).scan.completion, 'end');
   assert.equal(f.db.sources(f.id)[0].scanState.lastCompleted.completion, 'end');
 });
 
