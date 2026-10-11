@@ -149,6 +149,7 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
           : null,
         draftPending: Boolean(draft),
         sourceDraftPending: Boolean(saved.sourceDraft),
+        sourceSearch: db.sourceSearchOptions(id, a.sources),
       };
     if (section === 'template') return {template: templateContext(definition)};
     if (section === 'questions')

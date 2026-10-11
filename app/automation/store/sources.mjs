@@ -14,6 +14,11 @@ import {randomUUID} from 'node:crypto';
 import {normalizeSourceUrls, webUrl} from '../../templates/catalog.mjs';
 import {automationSources, sourceInput} from '../../sources/automation-sources.mjs';
 import {sourceScanScope} from '../../sources/scan.mjs';
+import {
+  sourceSearchChoice,
+  sourceSearchOptions,
+  sourceSearchRecipe,
+} from '../../sources/source-search.mjs';
 import {json, finishedSourceRun, runSource} from './rows.mjs';
 // Only a different search method changes a recipe; notes, the pagination
 // hint, the page cap and the login flag are advisory.
@@ -188,6 +193,52 @@ export const sourceMethods = {
       ...normalizeSourceUrls(add),
     ]);
   },
+  // A source's recipe, or the starting source's recipe it gets when added.
+  sourceRecipeBase(a, url) {
+    return (
+      a.sourceSettings?.[url]?.recipe ??
+      (a.sourceSettings?.[url]
+        ? null
+        : startingSource(this.template(a.templateId).defaultSources, url)?.recipe)
+    );
+  },
+  // Search choices for the listed sources whose site extension knows the
+  // results address, with the draft's choices applied.
+  sourceSearchOptions(id, sources) {
+    const a = this.get(id),
+      draft = a.sourceDraft?.searches ?? {};
+    return sources.flatMap((url) => {
+      const search = siteExtensionKind(url, a.templateId)?.search;
+      if (!search) return [];
+      const recipe = this.sourceRecipeBase(a, url);
+      return [
+        {
+          url,
+          ...sourceSearchOptions(
+            search,
+            draft[url] ? sourceSearchRecipe(search, recipe, draft[url]) : recipe,
+          ),
+        },
+      ];
+    });
+  },
+  // The agent names only the sources whose search changes; earlier choices of
+  // the draft stay while their source is in the list.
+  proposedSourceSearches(id, sources, input = []) {
+    const a = this.get(id),
+      searches = Object.fromEntries(
+        Object.entries(a.sourceDraft?.searches ?? {}).filter(([url]) => sources.includes(url)),
+      );
+    for (const {url: address, ...choice} of input) {
+      const url = webUrl(address),
+        search = siteExtensionKind(url, a.templateId)?.search;
+      if (!sources.includes(url))
+        throw Error(`Not a saved or suggested source: ${url}. Add it with addSources first.`);
+      if (!search) throw Error(`${url} has no site extension search; its trial learns the search.`);
+      searches[url] = sourceSearchChoice(search, this.sourceRecipeBase(a, url), choice);
+    }
+    return Object.keys(searches).length ? searches : null;
+  },
   saveSources(id, sources, {acceptDraft = false} = {}) {
     const a = this.get(id),
       urls = normalizeSourceUrls(sources);
@@ -236,8 +287,18 @@ export const sourceMethods = {
         const proposed = [
           ...new Set([...a.sourceDraft.sources.filter((url) => !removed.includes(url)), ...added]),
         ];
-        if (JSON.stringify(proposed) === JSON.stringify(urls)) delete next.sourceDraft;
-        else next.sourceDraft = {...a.sourceDraft, id: randomUUID(), sources: proposed};
+        const searches = Object.entries(a.sourceDraft.searches ?? {}).filter(([url]) =>
+          proposed.includes(url),
+        );
+        if (JSON.stringify(proposed) === JSON.stringify(urls) && !searches.length)
+          delete next.sourceDraft;
+        else
+          next.sourceDraft = {
+            ...a.sourceDraft,
+            id: randomUUID(),
+            sources: proposed,
+            searches: searches.length ? Object.fromEntries(searches) : undefined,
+          };
       }
       return this.put(next);
     });
@@ -280,7 +341,19 @@ export const sourceMethods = {
     const a = this.get(id);
     if (!a.sourceDraft || a.sourceDraft.id !== draftId)
       throw Error('The source suggestions changed. Review the current suggestions and try again.');
-    if (accept) return this.saveSources(id, a.sourceDraft.sources, {acceptDraft: true});
+    if (accept)
+      return this.store.workspaces.tasks.atomic(() => {
+        let next = this.saveSources(id, a.sourceDraft.sources, {acceptDraft: true});
+        for (const [url, choice] of Object.entries(a.sourceDraft.searches ?? {}))
+          next = this.saveSource(id, url, {
+            recipe: sourceSearchRecipe(
+              siteExtensionKind(url, next.templateId).search,
+              next.sourceSettings?.[url]?.recipe,
+              choice,
+            ),
+          });
+        return next;
+      });
     delete a.sourceDraft;
     return this.put(a);
   },

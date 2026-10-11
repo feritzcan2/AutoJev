@@ -59,20 +59,20 @@ test('recipes are validated as data: placeholders, form fields and pagination ki
     undefined,
     'the scan page budget replaces per-recipe page limits',
   );
-  // Every scan reads at most 15 pages shared by its searches, at least 2 per search.
-  assert.equal(recipePageCap(null), 15);
-  assert.equal(recipePageCap(normalizeSourceRecipe({entry: {kind: 'discovery'}})), 15);
+  // Every scan reads at most 30 pages shared by its searches, at least 2 per search.
+  assert.equal(recipePageCap(null), 30);
+  assert.equal(recipePageCap(normalizeSourceRecipe({entry: {kind: 'discovery'}})), 30);
   assert.equal(
     recipePageCap({entry: {kind: 'url_template', template}, ordering: 'newest_first'}),
-    15,
+    30,
     'a newest-first board is capped too',
   );
-  assert.equal(recipePageCap({entry: {kind: 'url_template', template}, terms: ['a', 'b']}), 7);
+  assert.equal(recipePageCap({entry: {kind: 'url_template', template}, terms: ['a', 'b']}), 15);
   assert.equal(
     recipePageCap({entry: {kind: 'url_template', template}, terms: ['a', 'b', 'c', 'd', 'e']}),
-    3,
+    6,
   );
-  assert.equal(scanPageCap(8), 2, 'each search keeps at least two pages');
+  assert.equal(scanPageCap(20), 2, 'each search keeps at least two pages');
   assert.deepEqual(
     normalizeSourceRecipe({entry: {kind: 'url_template', template: 'https://board.test/jobs'}})
       .entry,
@@ -312,6 +312,8 @@ function fixture(t) {
     criteria: {location: 'Berlin', budget: '2000', requirements: '2 rooms'},
     sources: [source],
   });
+  // These tests step the clock past a 30-minute scan interval.
+  db.saveSourcesInterval(a.id, 30);
   db.review(a.id);
   const launches = [],
     runtime = new WebTasks(db, {
@@ -844,7 +846,7 @@ test('relearning and settings carry recipes without touching scan state', async 
   assert.equal(settings.trialModel, 'gpt-5-pro');
   assert.equal(
     f.db.save(f.id, {agentSettings: {...settings, trialModel: null}}).agentSettings.trialModel,
-    undefined,
+    null,
   );
 });
 
@@ -1089,14 +1091,14 @@ test('on a board the recipe orders newest-first, a repeat scan stops after two p
   );
 });
 
-test('a single search reads at most the 15-page scan budget and ends there', async (t) => {
+test('a single search reads at most the 30-page scan budget and ends there', async (t) => {
   const f = fixture(t);
   f.db.enable(f.id);
   await f.runtime.tick();
   await settle();
   const trial = f.launches[0],
     expected = 'https://board.test/jobs/search?q=Find+homes&l=Berlin&sort=date',
-    {browser, opened} = jevBrowser(expected, {pages: 16});
+    {browser, opened} = jevBrowser(expected, {pages: 31});
   const trialFlow = automationWorkflow({
     db: f.db,
     run: trial,
@@ -1121,7 +1123,7 @@ test('a single search reads at most the 15-page scan budget and ends there', asy
   await settle();
   const scan = f.launches[1];
   assert.equal(scan.kind, 'run');
-  assert.equal(f.db.run(scan.id).scanPlan.pageCap, 15);
+  assert.equal(f.db.run(scan.id).scanPlan.pageCap, 30);
   const flow = automationWorkflow({
     db: f.db,
     run: scan,
@@ -1138,12 +1140,12 @@ test('a single search reads at most the 15-page scan budget and ends there', asy
   );
   assert.equal(capped.status, 'completed');
   assert.equal(capped.pageCapReached, true);
-  assert.equal(capped.pageCount, 15);
+  assert.equal(capped.pageCount, 30);
   assert.match(capped.next, /Recipe page limit reached/);
   assert.equal(
     opened.filter((u) => u.startsWith(expected)).length,
-    15,
-    'the sixteenth page was never opened',
+    30,
+    'the thirty-first page was never opened',
   );
   await reviewQueue(flow, f, scan, expected + '&start=10');
   assert.equal(
@@ -1475,7 +1477,7 @@ test('a changed search method restarts the results pages but keeps queued listin
     checkpoint: {url: oldPage, pendingUrls: [...details, oldPage], at: 2},
     order: {url: oldPage},
     boundary: null,
-    pageCap: 15,
+    pageCap: 30,
   };
   const scan = {
     pendingUrls: [...details, oldPage],
@@ -1547,7 +1549,7 @@ test('a changed search method restarts the results pages but keeps queued listin
     'the next turn starts the new recipe at its first page',
   );
   assert.equal(state.scanState.active.mode, 'full');
-  assert.equal(state.scanState.active.pageCap, 15);
+  assert.equal(state.scanState.active.pageCap, 30);
   assert.equal(state.scanState.active.order, null);
   const pending = queue.get(f.id, task.id);
   assert.deepEqual(pending.scan.pendingUrls, details);

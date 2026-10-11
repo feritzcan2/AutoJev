@@ -204,7 +204,8 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     const scope = owner,
       current = data.automation.sources,
       added = draft.sources.filter((url) => !current.includes(url)),
-      removed = current.filter((url) => !draft.sources.includes(url));
+      removed = current.filter((url) => !draft.sources.includes(url)),
+      searches = Object.entries(draft.searches ?? {});
     proposal.append(
       el('h3', 'Agent’s source suggestions'),
       el('p', 'Review and apply the changes. The first round of a new source is a trial.'),
@@ -219,6 +220,21 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         item.append(el('b', label + ': '), el('span', url));
         changes.append(item);
       }
+    for (const [url, choice] of searches) {
+      const item = el('li');
+      item.append(
+        el('b', 'Search: '),
+        el('span', url),
+        el(
+          'small',
+          [
+            ...(choice.terms ? ['Terms: ' + choice.terms.join(', ')] : []),
+            ...choice.filters.map((f) => f.label),
+          ].join(' · '),
+        ),
+      );
+      changes.append(item);
+    }
     proposal.append(changes);
     const actions = el('div', null, 'actions'),
       apply = button(
@@ -230,7 +246,8 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         },
         'primary',
       );
-    apply.disabled = removed.some(busySource) || bulkSaving;
+    const busy = [...removed, ...searches.map(([url]) => url)].some(busySource);
+    apply.disabled = busy || bulkSaving;
     const discard = button('Discard suggestions', async () => {
       await api.automationSourceDraft(scope, draft.id, false);
       await refresh();
@@ -239,9 +256,9 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     discard.disabled = bulkSaving;
     actions.append(apply, discard);
     proposal.append(actions);
-    if (removed.some(busySource))
+    if (busy)
       proposal.append(
-        el('small', 'To apply, stop the running tasks of the sources to be removed.'),
+        el('small', 'To apply, stop the running tasks of the sources to be removed or changed.'),
       );
   }
 
@@ -531,7 +548,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
           (source.recipe.ordering === 'newest_first'
             ? ' · Newest first; repeat scans stop at known listings'
             : '') +
-          ` · Each search reads the first ${recipePageCap(source.recipe)} pages (at most 15 pages per scan in total)`,
+          ` · Each search reads the first ${recipePageCap(source.recipe)} pages (at most 30 pages per scan in total)`,
       );
     if (rs?.verifiedAt)
       lines.push(

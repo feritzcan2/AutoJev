@@ -17,6 +17,8 @@ function fixture(t, {workers = 1} = {}) {
       criteria: {location: 'Germany', budget: '2000', requirements: 'Two rooms'},
       sources: urls,
     });
+  // These tests step the clock past a 30-minute scan interval.
+  db.saveSourcesInterval(a.id, 30);
   db.review(a.id);
   db.save(a.id, {mode: 'auto'});
   for (let n = 1; n < workers; n++) store.workspaces.workers.add(a.id);

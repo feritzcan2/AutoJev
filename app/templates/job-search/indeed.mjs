@@ -61,7 +61,6 @@ export const indeedSources = INDEED_SITES.map(([subdomain, country, name]) => {
     url: `https://${host}/`,
     name: `Indeed (${name})`,
     countries: [country],
-    intervalMinutes: 30,
     enabled: true,
     instructions,
     recipe: {

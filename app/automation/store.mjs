@@ -10,7 +10,11 @@ import {SiteAccess} from '../browser/site-access.mjs';
 import {automationTrialReady} from '../sources/trial.mjs';
 import {removeImportedWorkspace} from '../workspaces/imported.mjs';
 import {withAgentDefaults} from '../agents/settings.mjs';
-import {globalTemplateSource, templateSourceSettings} from '../templates/sources.mjs';
+import {
+  DEFAULT_SCAN_INTERVAL_MINUTES,
+  globalTemplateSource,
+  templateSourceSettings,
+} from '../templates/sources.mjs';
 import {domainData} from '../workspaces/store.mjs';
 import {contextCompactTokens} from '../agents/context-compaction.mjs';
 import {contextRestartTokens} from '../agents/context-usage.mjs';
@@ -57,7 +61,7 @@ function agentSettings(input) {
     permission: input.permission,
     reasoning: input.reasoning,
     network: input.provider === 'codex' ? input.network : null,
-    ...(trialModel ? {trialModel} : {}),
+    ...(trialModel || input.trialModel === null ? {trialModel} : {}),
     contextCompactTokens: contextCompactTokens(input.contextCompactTokens),
     ...(input.contextRestartTokens === undefined
       ? {}
@@ -190,7 +194,7 @@ export class AutomationStore {
       sourceSettings,
       mode: template.defaultMode,
       chromeProfile: null,
-      intervalMinutes: 30,
+      intervalMinutes: DEFAULT_SCAN_INTERVAL_MINUTES,
       agentSettings: agentSettings(input.agentSettings ?? defaultAutomationSettings),
       revision: 1,
       reviewedRevision: null,
@@ -311,8 +315,15 @@ export class AutomationStore {
     else if (profileChanged(profile, base))
       a.planDraft = {plan: profile, baseRevision: a.revision, runId, updatedAt};
     else delete a.planDraft;
-    if (JSON.stringify(plan.sources) !== JSON.stringify(a.sources))
-      a.sourceDraft = {id: randomUUID(), sources: plan.sources, runId, updatedAt};
+    const searches = this.proposedSourceSearches(id, plan.sources, input.sourceSearches);
+    if (JSON.stringify(plan.sources) !== JSON.stringify(a.sources) || searches)
+      a.sourceDraft = {
+        id: randomUUID(),
+        sources: plan.sources,
+        ...(searches ? {searches} : {}),
+        runId,
+        updatedAt,
+      };
     else delete a.sourceDraft;
     this.put(a);
     return {

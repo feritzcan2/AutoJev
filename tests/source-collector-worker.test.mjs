@@ -496,6 +496,37 @@ test('a listing Jev cannot assess stays pending without holding its page', async
   assert.deepEqual(end.issue.urls, [url('image')]);
 });
 
+test('a page holding only an unreadable listing is read on, and that listing is not re-read per page', async (t) => {
+  const image = {guid: url('image'), title: 'Werkstudent', description: '<p>IMAGE_ONLY_MARKER</p>'};
+  const page = (value, list, offset) =>
+    parseHimalayasPage(value, {jobs: list, offset, limit: 20, totalCount: 41});
+  let detailReads = 0;
+  const f = fixture(t, {
+    readPage: (value) => {
+      const n = new URL(value).searchParams.get('page') ?? '1';
+      return n === '1'
+        ? page(value, [image], 0)
+        : page(value, [{...jobs[0], guid: url(`p${n}`)}], n === '2' ? 20 : 40);
+    },
+    readDetail: async () => {
+      detailReads++;
+      return page('https://himalayas.app/jobs/api/search?page=1', [image], 0).jobs[0];
+    },
+  });
+  const first = await f.call('collect_source_page');
+  assert.equal(f.reads(), 2, 'the unreadable-only page is read on in the same call');
+  assert.deepEqual(
+    helper(f, first).items.map((i) => i.url),
+    [url('p2')],
+  );
+  await handle(f, first);
+  await handle(f, await f.call('collect_source_page'));
+  const end = await f.call('collect_source_page');
+  assert.equal(end.issue.reason, 'collector_details_unavailable');
+  assert.deepEqual(end.issue.urls, [url('image')]);
+  assert.equal(detailReads, 0, 'the unreadable listing is not re-read on later pages');
+});
+
 test('cancellation during missing-detail recovery preserves every pending address', async (t) => {
   let changed = false,
     entered;
@@ -566,9 +597,10 @@ test('pages without new listings are read on within one bounded call', async (t)
 });
 
 test('a single collector search closed by its page budget finishes completed', async (t) => {
-  const f = fixture(t, {terms: ['backend'], readPage: knownPages(25)});
+  const f = fixture(t, {terms: ['backend'], readPage: knownPages(40)});
+  await f.call('collect_source_page');
   assert.equal((await f.call('collect_source_page')).complete, true);
-  assert.equal(f.reads(), 15);
+  assert.equal(f.reads(), 30);
   await f.call('finish_automation_run', {status: 'completed', summary: 'Page budget read'});
   assert.equal(f.db.run(f.run.id).status, 'completed');
 });

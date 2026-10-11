@@ -23,10 +23,10 @@ export const RECIPE_FIELD_KEYS = ['query', 'location'];
 // newest_first lets repeat scans stop once consecutive pages hold only known listings.
 export const RECIPE_ORDERING_KINDS = ['unknown', 'newest_first'];
 export const RECIPE_STALE_FAILURES = 2;
-// User rule (2026-10-05), for every source scan: all searches of a scan
-// together read at most SCAN_PAGE_BUDGET result pages, shared evenly, and each
-// search reads at least SCAN_MIN_SEARCH_PAGES.
-export const SCAN_PAGE_BUDGET = 15;
+// User rule (2026-10-05, budget raised to 30 on 2026-10-11), for every source
+// scan: all searches of a scan together read at most SCAN_PAGE_BUDGET result
+// pages, shared evenly, and each search reads at least SCAN_MIN_SEARCH_PAGES.
+export const SCAN_PAGE_BUDGET = 30;
 export const SCAN_MIN_SEARCH_PAGES = 2;
 export const scanPageCap = (searches) =>
   Math.max(SCAN_MIN_SEARCH_PAGES, Math.floor(SCAN_PAGE_BUDGET / Math.max(1, searches)));

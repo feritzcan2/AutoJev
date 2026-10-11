@@ -1,6 +1,12 @@
-import {interviewRun, conversationWaiting} from '../app/workspaces/conversation.mjs';
+import {
+  interviewRun,
+  conversationWaiting,
+  CONVERSATION_WORKER,
+} from '../app/workspaces/conversation.mjs';
 import {automationProgress} from '../app/automation/progress.mjs';
-import {defaultPermission} from '../app/agents/settings.mjs';
+import {withAgentDefaults} from '../app/agents/settings.mjs';
+import {WorkerTerminalSurface} from './worker-terminal-surface.js';
+import {terminalAttention} from './agent-attention.js';
 import './onboarding.css';
 
 // Welcome screen of a new job search: the user picks the agent and the CV, the
@@ -80,7 +86,8 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     provider = null,
     readiness = null,
     reviewKey = '',
-    reviewDirty = false;
+    reviewDirty = false,
+    terminal = null;
 
   const showError = (message = '') => {
     error.textContent = message;
@@ -121,6 +128,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     if (!providers.size) checkProviders();
   }
   function close() {
+    closeTerminal();
     root.hidden = true;
     document.body.classList.remove('onboarding-open');
     unsubscribe?.();
@@ -189,10 +197,12 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       item.dataset.state = index < current ? 'done' : index === current ? 'current' : 'pending';
     });
     if (next !== step) {
+      closeTerminal();
       step = next;
       card.replaceChildren(
         ...(step === 'start' ? startStep() : step === 'reading' ? readingStep() : reviewStep()),
       );
+      if (step === 'reading') openTerminal(card.querySelector('.onboarding-terminal'));
     }
     update();
   }
@@ -231,6 +241,8 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     status.append(el('span', null, 'onboarding-spinner'), el('span', '0:00', 'onboarding-elapsed'));
     const attention = el('p', null, 'onboarding-attention');
     attention.hidden = true;
+    const screen = el('div', null, 'worker-terminal onboarding-terminal');
+    screen.setAttribute('aria-label', 'Setup agent terminal');
     const links = el('div', null, 'onboarding-links');
     links.append(button('Open the agent screen', () => chat(id), 'link'));
     return [
@@ -242,8 +254,83 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       ),
       status,
       attention,
+      screen,
       links,
     ];
+  }
+
+  // The setup agent's live terminal, so approvals it asks for can be answered here.
+  const conversationSession = () =>
+    data?.workers?.find((w) => w.id === CONVERSATION_WORKER)?.active ?? null;
+  function openTerminal(container) {
+    const owner = id,
+      t = {owner, pending: [], loading: true, sequence: 0, prompt: null};
+    t.surface = new WorkerTerminalSurface(
+      (text) =>
+        api
+          .input(owner, text, CONVERSATION_WORKER, conversationSession()?.sessionId)
+          .catch((failure) => showError(failure.message)),
+      (rows, cols) =>
+        api
+          .resize(owner, rows, cols, CONVERSATION_WORKER, conversationSession()?.sessionId)
+          .catch(() => {}),
+      () => {},
+    );
+    t.unsubscribe = api.onAgentEvent((event) => {
+      if (
+        event.candidateId !== owner ||
+        event.workerId !== CONVERSATION_WORKER ||
+        event.event !== 'output'
+      )
+        return;
+      if (t.loading) t.pending.push(event);
+      else writeTerminal(t, event);
+    });
+    terminal = t;
+    void replayTerminal(t, container);
+  }
+  async function replayTerminal(t, container) {
+    try {
+      await t.surface.mount(container);
+      if (t !== terminal) return;
+      const output = await api.terminalOutput(t.owner, CONVERSATION_WORKER);
+      if (t !== terminal) return;
+      await t.surface.restore(output);
+      if (t !== terminal) return;
+      t.sequence = output.sequence;
+      for (const event of t.pending) writeTerminal(t, event);
+    } catch (failure) {
+      if (t === terminal) showError(failure.message);
+    } finally {
+      if (t === terminal) {
+        t.loading = false;
+        t.pending = [];
+        t.surface.finishRestore();
+        sampleTerminal(t);
+      }
+    }
+  }
+  function writeTerminal(t, event) {
+    if (event.sequence <= t.sequence) return;
+    t.sequence = event.sequence;
+    t.surface.write(new Uint8Array(event.bytes), () => sampleTerminal(t));
+  }
+  // Claude's folder trust question and permission prompts fire no agent state change.
+  function sampleTerminal(t) {
+    if (t !== terminal) return;
+    const rows = t.surface.terminal.rows,
+      screen = t.surface.probe().text.split('\n').slice(-rows).join('\n'),
+      found = terminalAttention(screen, conversationSession()?.state);
+    const prompt = ['trust', 'permission'].includes(found?.kind) ? found.kind : null;
+    if (prompt === t.prompt) return;
+    t.prompt = prompt;
+    update();
+  }
+  function closeTerminal() {
+    if (!terminal) return;
+    terminal.unsubscribe();
+    terminal.surface.dispose();
+    terminal = null;
   }
   function reviewStep() {
     reviewKey = '';
@@ -261,10 +348,19 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       el('p', null, 'onboarding-reply'),
       el('div', null, 'onboarding-failure'),
       form,
+      el('div', null, 'onboarding-links'),
     ];
   }
 
   function update() {
+    // Every step can be left; on a first run with no other profile, leaving means starting over.
+    const links = card.querySelector('.onboarding-links'),
+      leave = cancellable ? 'Cancel' : step === 'start' ? null : 'Start over';
+    if (links && leave && !links.querySelector('[data-cancel]')) {
+      const node = button(leave, () => attempt(leaveOnboarding), 'link');
+      node.dataset.cancel = '';
+      links.append(node);
+    }
     if (step === 'start') {
       const list = card.querySelector('.onboarding-agents .authorization');
       list.replaceChildren();
@@ -299,26 +395,24 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       const blocked = !provider || ['checking', 'error'].includes(providers.get(provider)?.state);
       card.querySelector('[data-action=pick-cv]').disabled = busy || blocked;
       card.querySelector('[data-action=pick-cv]').textContent = busy ? 'Adding CV…' : 'Choose CV';
-      const links = card.querySelector('.onboarding-links');
-      if (cancellable && !links.querySelector('[data-cancel]')) {
-        const leave = button('Cancel', () => attempt(leaveOnboarding), 'link');
-        leave.dataset.cancel = '';
-        links.append(leave);
-      }
     } else if (step === 'reading') {
       const run = interviewRun(data),
+        prompt = terminal?.prompt,
         attention = card.querySelector('.onboarding-attention');
-      attention.hidden = !(run?.state === 'AwaitingInput' || run?.usageLimit);
+      attention.hidden = !(prompt || run?.state === 'AwaitingInput' || run?.usageLimit);
       attention.textContent = run?.usageLimit
-        ? 'The agent reached its usage limit. Check the status on the agent screen.'
-        : 'The agent is waiting for an approval in the terminal to continue. Open the agent screen and answer.';
+        ? 'The agent reached its usage limit. Check the status in the terminal below.'
+        : prompt === 'trust'
+          ? 'Claude asks whether it may work in this profile’s folder. Choose “Yes, I trust this folder” in the terminal below and press Enter.'
+          : 'The agent is waiting for an approval to continue. Answer it in the terminal below.';
       tick();
     } else if (step === 'review') updateReview();
   }
   function tick() {
     if (step !== 'reading' || !data) return;
+    // Run times are epoch milliseconds.
     const run = interviewRun(data),
-      since = Date.parse(run?.lastMessageAt ?? run?.startedAt ?? ''),
+      since = new Date(run?.lastMessageAt ?? run?.startedAt ?? NaN).getTime(),
       seconds = Number.isFinite(since) ? Math.max(0, Math.round((Date.now() - since) / 1000)) : 0;
     const label = card.querySelector('.onboarding-elapsed');
     if (label)
@@ -516,12 +610,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       await created(id);
     }
     if (provider) {
-      const settings = {
-        provider,
-        model: 'default',
-        reasoning: 'default',
-        permission: defaultPermission(provider),
-      };
+      const settings = withAgentDefaults({provider});
       await api.automationSave(id, {agentSettings: settings});
       await api.setupAgentSettings(id, settings);
     }
@@ -549,12 +638,24 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     await chat(owner);
     close();
   }
-  // An untouched workspace opened only for this screen is removed again.
+  // Before the CV only an untouched workspace is removed; after it, leaving
+  // discards the unfinished profile together with its setup agent.
   async function leaveOnboarding() {
     const owner = id,
+      started = step !== 'start',
       empty = Boolean(data && automationProgress(data).fresh && !data.documents?.length);
+    if (
+      started &&
+      !confirm(
+        (cancellable ? 'Cancel this profile?' : 'Start over?') +
+          ' The CV and everything the agent filled in are deleted.',
+      )
+    )
+      return;
     close();
-    await cancel(owner, {remove: empty});
+    if (owner && (started || empty)) localStorage.removeItem(flagKey(owner));
+    await cancel(owner, {remove: started || empty});
+    if (!cancellable) await open();
   }
   async function save(form) {
     const owner = id,

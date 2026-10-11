@@ -1,6 +1,5 @@
 import {formatTokens, parseTokenInput, setupTokenInput} from './token-input.js';
-import {DEFAULT_COMPACT_TOKENS} from '../app/agents/context-compaction.mjs';
-import {defaultPermission} from '../app/agents/settings.mjs';
+import {withAgentDefaults} from '../app/agents/settings.mjs';
 import {coalesceRefresh} from './refresh-queue.js';
 import {saveAgentSettings, createAgentRestartDialog} from './agent-settings-save.js';
 import {instructionsPanel} from './instructions.js';
@@ -276,17 +275,13 @@ function switchView(name, options = {}) {
 function settingsOptions(saved) {
   const current = catalog.find((a) => a.id === $('provider').value);
   if (!current) return;
-  const fields = $('agent-settings-form').elements;
+  const fields = $('agent-settings-form').elements,
+    settings = withAgentDefaults({...saved, provider: current.id});
   fields.network.disabled = current.id !== 'codex';
-  for (const [name, fallback] of [
-    ['contextCompactTokens', DEFAULT_COMPACT_TOKENS],
-    ['contextRestartTokens', 0],
-  ]) {
+  for (const name of ['contextCompactTokens', 'contextRestartTokens']) {
     const field = fields[name];
-    if (saved) {
-      field.value = formatTokens(saved[name] ?? fallback);
-      field.setCustomValidity('');
-    }
+    field.value = formatTokens(settings[name]);
+    field.setCustomValidity('');
   }
   for (const [key, list] of [
     ['model', current.models],
@@ -294,11 +289,7 @@ function settingsOptions(saved) {
     ['reasoning', current.reasoning],
   ]) {
     $(key).replaceChildren(...list.map((value) => new Option(value, value)));
-    $(key).value = list.includes(saved?.[key])
-      ? saved[key]
-      : key === 'permission'
-        ? defaultPermission(current.id)
-        : 'default';
+    $(key).value = list.includes(settings[key]) ? settings[key] : 'default';
   }
   $('trialModel').replaceChildren(
     new Option('Same as main model', ''),
@@ -306,7 +297,7 @@ function settingsOptions(saved) {
       .filter((value) => value !== 'default')
       .map((value) => new Option(value, value)),
   );
-  $('trialModel').value = current.models.includes(saved?.trialModel) ? saved.trialModel : '';
+  $('trialModel').value = current.models.includes(settings.trialModel) ? settings.trialModel : '';
 }
 function chromeProfileOptions(selected = workspaceAgent?.workspace?.chromeProfile) {
   const select = $('agent-settings-form').elements.chromeProfile;

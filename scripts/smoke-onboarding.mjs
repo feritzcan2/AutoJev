@@ -37,12 +37,14 @@ try {
       const {Engine} = await load(engine),
         original = Engine.prototype.request;
       globalThis.starts = [];
+      globalThis.inputs = [];
       Engine.prototype.request = function (op, args = {}) {
         if (op === 'start') {
           globalThis.starts.push(args);
           return Promise.resolve({});
         }
-        if (['message', 'resize', 'stop'].includes(op)) return Promise.resolve({});
+        if (op === 'input') globalThis.inputs.push(args.text);
+        if (['message', 'resize', 'stop', 'input'].includes(op)) return Promise.resolve({});
         return original.call(this, op, args);
       };
       const {BrowserTools} = await load(browser);
@@ -143,7 +145,20 @@ try {
     return page.evaluate(() => localStorage.getItem('selected-workspace'));
   };
 
+  // A first run can start over once the CV is read; declining the confirmation keeps it.
+  await pickCv();
+  const answer = (accept) =>
+    page.once('dialog', (dialog) => (accept ? dialog.accept() : dialog.dismiss()));
+  answer(false);
+  await screen.getByRole('button', {name: 'Start over'}).click();
+  assert.equal(await screen.getAttribute('data-step'), 'reading');
+  answer(true);
+  await screen.getByRole('button', {name: 'Start over'}).click();
+  await page.waitForFunction(() => document.querySelector('#onboarding').dataset.step === 'start');
+  assert.equal((await page.evaluate(() => window.jobloop.workspaces())).length, 0);
+
   // Notes typed next to the CV reach the setup agent with the CV task and stay in the chat.
+  await screen.locator('.choice[data-state=ready]').first().waitFor();
   await screen.locator('[name=notes]').fill('Remote or Berlin only, at least 80k EUR');
   const id = await pickCv();
   assert.ok(await page.getByText('Reading your CV').isVisible());
@@ -155,6 +170,37 @@ try {
     (await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), id)).messages.some(
       (m) => m.role === 'user' && m.text === 'Remote or Berlin only, at least 80k EUR',
     ),
+  );
+  // The setup agent's terminal is on the reading step: Claude's folder trust
+  // question fires no agent state, so the screen itself raises the notice.
+  const surface = screen.locator('.onboarding-terminal .xterm');
+  await surface.waitFor();
+  await app.evaluate(({BrowserWindow}, id) => {
+    const prompt =
+      '\x1b[2J\x1b[HAccessing workspace:\r\n\r\nQuick safety check: Is this a project you created or one you trust?\r\n\r\n' +
+      '❯ 1. Yes, I trust this folder\r\n  2. No, exit\r\n\r\nEnter to confirm · Esc to cancel\r\n';
+    BrowserWindow.getAllWindows()[0].webContents.send('agent-event', {
+      event: 'output',
+      candidateId: id,
+      workerId: 'conversation',
+      sequence: 1e9,
+      bytes: [...Buffer.from(prompt)],
+    });
+  }, id);
+  const trust = screen.getByText(/Choose “Yes, I trust this folder” in the terminal below/);
+  await trust.waitFor();
+  await surface.click();
+  await page.keyboard.press('Enter');
+  assert.ok(
+    await app.evaluate(async () => {
+      for (let i = 0; i < 50 && !globalThis.inputs.includes('\r'); i++)
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      return globalThis.inputs.includes('\r');
+    }),
+    'Keys typed in the terminal reach the setup agent',
+  );
+  await page.waitForFunction(
+    () => document.querySelector('.onboarding-elapsed')?.textContent !== '0:00',
   );
   await page.screenshot({path: path.join(data, '2-reading.png')});
   await agentFillsProfile(id, {
@@ -256,6 +302,23 @@ try {
     const items = await window.jobloop.workspaces();
     return items.length === 2 && document.querySelector('#candidates').value === id;
   }, second);
+  // Cancelling while the CV is read deletes the unfinished profile.
+  await page.locator('#new').click();
+  await screen.waitFor();
+  const third = await pickCv();
+  answer(true);
+  await screen.getByRole('button', {name: 'Cancel'}).click();
+  await screen.waitFor({state: 'hidden'});
+  await page.waitForFunction(
+    async ([third, second]) => {
+      const items = await window.jobloop.workspaces();
+      return (
+        !items.some((item) => item.id === third) &&
+        document.querySelector('#candidates').value === second
+      );
+    },
+    [third, second],
+  );
   const setups = await app.evaluate(() => globalThis.starts.length);
   await page.locator('#new').click();
   await screen.waitFor();
