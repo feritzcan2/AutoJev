@@ -308,7 +308,6 @@ export const collectorHidden = new Set([
   'browser_jev_tabs',
   'browser_jev_use_tab',
   'browser_jev_close_tab',
-  'save_source_recipe',
   'complete_scan_search',
 ]);
 

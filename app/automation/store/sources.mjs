@@ -391,7 +391,7 @@ export const sourceMethods = {
     // The running scan continues with the new recipe's searches; the search the
     // agent is on stays until it completes it.
     const run = changed ? this.runs(id).find((r) => r.id === runId) : null;
-    if (run?.status === 'running' && run.sourceUrl === url && run.scan?.work) {
+    if (run?.status === 'running' && run.sourceUrl === url && run.scan?.work && !run.collector) {
       const oldReplay = recipeReplay(old, recipeValues(a, url)),
         kept = dropRecipeSearches(
           run.scan,

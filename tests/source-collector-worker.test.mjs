@@ -744,6 +744,7 @@ test('a continuation reports the finished scan, and the next task skips reviewed
 
 test('opaque pagination cycles fail without certifying completion', async (t) => {
   const f = fixture(t, {
+    terms: ['backend'],
     readPage: (value) => ({
       ...parseHimalayasPage(value, {jobs: [], offset: 0, limit: 20, totalCount: 0}),
       complete: false,
@@ -753,6 +754,45 @@ test('opaque pagination cycles fail without certifying completion', async (t) =>
   await assert.rejects(f.call('collect_source_page'), /returned the same page/);
   assert.equal(f.reads(), 1);
   assert.equal(f.db.run(f.run.id).scan.complete, false);
+});
+
+test('an empty first page without search terms asks for terms; a saved recipe restarts the collection', async (t) => {
+  const f = fixture(t, {
+    readPage: (value) =>
+      parseHimalayasPage(
+        value,
+        new URL(value).searchParams.get('q') === 'platform'
+          ? {jobs, offset: 0, limit: 20, totalCount: jobs.length}
+          : {jobs: [], offset: 0, limit: 20, totalCount: 0},
+      ),
+  });
+  await assert.rejects(
+    f.call('collect_source_page'),
+    /no search terms, so \{query\} was filled with the source query "Current listings matching.*save_source_recipe/s,
+  );
+  assert.equal(f.db.run(f.run.id).scan.complete, false, 'an empty page is not a finished scan');
+  const recipe = (terms) => ({
+    entry: {kind: 'url_template', template: 'https://himalayas.app/jobs/api/search?q={query}'},
+    terms,
+    pagination: 'url_param',
+    loginRequired: false,
+  });
+  await assert.rejects(
+    f.call('save_source_recipe', recipe(['nothing'])),
+    /could not be verified: the first page has no listings/,
+  );
+  const saved = await f.call('save_source_recipe', recipe(['platform']));
+  assert.equal(saved.status, 'verified');
+  assert.equal(saved.listings, jobs.length);
+  assert.match(saved.next, /collect_source_page/);
+  assert.deepEqual(
+    f.db.run(f.run.id).scan.work.searches.map((s) => new URL(s.url).searchParams.get('q')),
+    ['platform'],
+    'the running collection uses the saved terms',
+  );
+  const receipt = await f.call('collect_source_page');
+  assert.ok(receipt.taskId);
+  assert.equal(f.browserCalls(), 0, 'the recipe was checked through the API, not a browser');
 });
 
 test('standalone CLI still emits NDJSON and exit 2 for an incomplete page budget', async () => {

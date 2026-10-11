@@ -8,11 +8,12 @@ import {jevWaitMsFor, observeClientAbort} from '../jev/execution.mjs';
 import {withAgentDefaults} from '../agents/settings.mjs';
 import {otherScanSearchesPending, scanWork} from '../sources/scan-work.mjs';
 import {siteKey, sameSite} from '../browser/site-access.mjs';
-import {collectorRun} from '../sources/collectors.mjs';
+import {collectorRun, collectorExtension} from '../sources/collectors.mjs';
 import {
   collectSourcePage,
   collectorSaved,
   collectorProgress,
+  prepareCollection,
 } from '../sources/collector-worker.mjs';
 import {siteReaderFor, siteExtensionKind} from '../site-extensions/index.mjs';
 import {siteSearchRecipe} from '../site-extensions/search.mjs';
@@ -698,6 +699,16 @@ export function automationWorkflow({
       : null;
   };
   const leadOrder = {listing: 0, uncertain: 1, other: 2};
+  // A collector recipe is checked through the site's API: its first search
+  // must return listings.
+  const checkCollectorRecipe = async (replay) => {
+    const collector = collectorExtension(db.get(id), run.sourceUrl).collector,
+      url = collector.searchUrl(replay.searches[0].url),
+      page = await (collectorReadPage ?? collector.readPage)(url, {signal});
+    return page.jobs.length
+      ? {ok: true, listings: page.jobs.length, pages: 1, url, term: replay.searches[0].term}
+      : {ok: false, reason: 'the first page has no listings', url};
+  };
   const checkRecipe = async (replay, scope) => {
     const first = replay.searches[0];
     let url = first.url;
@@ -1117,6 +1128,10 @@ export function automationWorkflow({
           );
         if (siteSearch && recipe.entry.kind === 'url_template')
           ({recipe, changed: adjusted} = siteSearchRecipe(siteSearch, recipe));
+        if (collecting && recipe.entry.kind !== 'url_template')
+          throw Error(
+            'This source is read by its collector: save a url_template recipe from siteSearch.template.',
+          );
         if (recipe.entry.kind === 'discovery') {
           db.learnSourceRecipe(id, sourceUrl, recipe, {runId: run.id, verified: false});
           db.putRun({...db.activeRun(id, run.id), recipeSaved: true});
@@ -1134,7 +1149,9 @@ export function automationWorkflow({
           );
         db.putRun({...db.activeRun(id, run.id), recipeChecks: checks + 1});
         const replay = recipeReplay(recipe, recipeValues(a, sourceUrl)),
-          check = await checkRecipe(replay, active.taskId ?? run.id);
+          check = collecting
+            ? await checkCollectorRecipe(replay)
+            : await checkRecipe(replay, active.taskId ?? run.id);
         if (!check.ok)
           throw Error(
             `Recipe could not be verified: ${check.reason} (${check.url}). ${2 - checks} check(s) left. ${recipe.terms ? '' : 'If the source query is not a keyword, give concrete search terms with terms. '}Fix the template or form labels; if there is no stable method, save entry.kind=discovery.`,
@@ -1146,6 +1163,8 @@ export function automationWorkflow({
           pages: check.pages,
         });
         db.putRun({...db.activeRun(id, run.id), recipeSaved: true});
+        // The collection restarts with the saved searches; known listings are skipped.
+        if (collecting) prepareCollection(db, db.activeRun(id, run.id), db.get(id));
         result = {
           saved: true,
           status: 'verified',
@@ -1170,8 +1189,9 @@ export function automationWorkflow({
                 note: 'Discovery could not confirm the result links; reading details proved them.',
               }
             : {}),
-          next:
-            active.kind === 'trial'
+          next: collecting
+            ? 'Recipe verified and saved. Call collect_source_page; the scan starts over with the saved searches.'
+            : active.kind === 'trial'
               ? 'Recipe verified and saved. Read one representative detail from the found listings, then finish the trial.'
               : 'Recipe verified and saved. Continue the scan from the found listings with collect_details using the returned scan task.',
         };
