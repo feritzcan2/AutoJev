@@ -24,14 +24,14 @@ import {randomUUID, createHash} from 'node:crypto';
 import path from 'node:path';
 import {actionSpace, chooseJev, jevConfig} from './policy.mjs';
 import {
-  existingChromeEndpoint,
-  openChromeWindow,
-  chromeWindowMarker,
+  openChromeUrl,
+  extensionInstalledInProfile,
+  extensionMissingMessage,
   resolveChromeProfile,
 } from './chrome.mjs';
-import {JevCdpTransport} from './cdp.mjs';
+import {ExtensionRelay} from './extension.mjs';
 import {acquireChromeConnection} from './connection-queue.mjs';
-import {JevTabs, restoredTargets, sameBrowserInstance} from './tabs.mjs';
+import {JevTabs, restoredTargets} from './tabs.mjs';
 import {disposableResearchTab} from './tab-lifecycle.mjs';
 import {selectAutocomplete, stale as staleControl} from './autocomplete.mjs';
 import {selectChoice, verifyChoice, choiceKey} from './choice.mjs';
@@ -60,11 +60,11 @@ const UPLOAD_BUTTON =
   /upload|attach|browse|(?:add|select|choose) files?|resume|\bcv\b|lebenslauf|hochladen|anhängen|datei|yükle|dosya|document|unterlagen/i;
 const MAX_SPARE_TABS = 2;
 const CHALLENGE_GRACE_MS = 12000;
-const homeUrl =
-  'data:text/html;charset=utf-8,' +
-  encodeURIComponent(
-    '<!doctype html><title>AutoJob</title><h1>AutoJob</h1><p>Listings and application forms open as tabs in this window.</p>',
-  );
+// Served by the extension relay on loopback: chrome.debugger cannot navigate a
+// tab to a data: URL.
+const homePage =
+  '<!doctype html><html lang="en"><meta charset="utf-8"><title>AutoJob</title><h1>AutoJob</h1><p>Listings and application forms open as tabs in this window.</p>';
+const isHomeUrl = (url) => /^http:\/\/127\.0\.0\.1:\d+\/jev\/[\w-]+\/home$/.test(url);
 const checkedUrl = (value) => {
   const url = new URL(value);
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
@@ -84,15 +84,14 @@ export class JevBrowser {
       siteAccess,
       connection = 'existing',
       profile,
-      endpoint = existingChromeEndpoint,
-      openWindow = openChromeWindow,
-      readyTimeout = 10000,
+      openUrl = openChromeUrl,
+      extensionInstalled = extensionInstalledInProfile,
+      relay = null,
       challengeGraceMs = CHALLENGE_GRACE_MS,
       checkpoints = [],
       accountVault = null,
       onDisconnect = () => {},
       onTabsClosed = () => {},
-      onWindowWait = () => {},
     } = {},
   ) {
     this.sharedSiteAccess = siteAccess;
@@ -105,13 +104,12 @@ export class JevBrowser {
     this.workspace = workspace;
     this.onDisconnect = onDisconnect;
     this.onTabsClosed = onTabsClosed;
-    this.onWindowWait = onWindowWait;
     this.checkpoints = checkpoints;
     this.connection = connection;
     this.profile = profile;
-    this.endpoint = endpoint;
-    this.openWindow = openWindow;
-    this.readyTimeout = readyTimeout;
+    this.openUrl = openUrl;
+    this.extensionInstalled = extensionInstalled;
+    this.relay = relay;
     this.challengeGraceMs = challengeGraceMs;
     this.tabs = new Map();
     this.automationTabs = new Map();
@@ -140,50 +138,38 @@ export class JevBrowser {
           let transport, browser, release;
           try {
             release = await acquireChromeConnection({signal: this.abort.signal});
-            // Chrome chooses the approval dialog's profile before CDP connects.
-            // Open and focus our selected profile first, even when it was closed.
-            const marker = await this.prepareProfileWindow();
-            const endpoint = await this.endpoint(),
-              saved = await this.registry.read();
-            await this.waitForProfileWindow(marker);
-            transport = await JevCdpTransport.connect(endpoint, {signal: this.abort.signal});
+            transport = await this.connectExtension();
             this.transport = transport;
             transport.onTargetDestroyed = (id) => {
               this.forgetTab(id);
               this.persistTabs().catch(() => {});
             };
+            transport.onWindowRemoved = (windowId) => {
+              if (this.windowId === windowId) this.windowId = null;
+            };
             this.abort.signal.throwIfAborted();
-            const markerId = await transport.ownWindow(marker.url);
-            const {targetInfo} = await transport.call('Target.getTargetInfo', {targetId: markerId});
-            const contextId = targetInfo.browserContextId;
-            if (!contextId)
-              throw Error('Could not verify the browser context of the selected Chrome profile.');
-            const {targetInfos} = await transport.call('Target.getTargets');
-            const live = new Map(
-              targetInfos.filter((t) => t.type === 'page').map((t) => [t.targetId, t]),
-            );
-            // A reconnect may change the address, but a different browser instance
-            // must not inherit old ownership. A saved context ID is not proof of
-            // the selected profile: verify it through a window opened in that
-            // profile before restoring any live tabs, including saved home tabs.
-            const recoverable = !saved || sameBrowserInstance(saved.endpoint, endpoint);
-            const restored = recoverable
-              ? restoredTargets(saved, this.checkpoints, live, contextId)
-              : [];
-            this.homeId = restored.includes(saved?.homeId) ? saved.homeId : null;
-            this.windowId =
-              saved?.endpoint === endpoint && saved.contextId === contextId ? saved.windowId : null;
-            if (restored.length) {
-              transport.owned.delete(markerId);
-              await transport.call('Target.closeTarget', {targetId: markerId});
-              marker.close();
-              this.profileWindow = null;
-            } else {
-              this.homeId = markerId;
-              this.windowId = (
-                await transport.call('Browser.getWindowForTarget', {targetId: markerId})
-              ).windowId;
+            const saved = await this.registry.read(),
+              instanceId = transport.instanceId;
+            // The extension resolves a target id only for a tab it opened in
+            // this Chrome run, so saved ownership can never land on another
+            // tab. Saved window metadata is trusted for the same run only.
+            const sameRun = saved?.instanceId === instanceId;
+            const restored = [];
+            for (const id of restoredTargets(sameRun ? saved : null, this.checkpoints)) {
+              const tabId = await transport.resolve(id);
+              if (tabId === null) continue;
+              try {
+                await transport.adopt(id, tabId);
+                restored.push(id);
+              } catch {}
             }
+            this.homeId = sameRun && restored.includes(saved.homeId) ? saved.homeId : null;
+            this.windowId =
+              sameRun &&
+              Number.isInteger(saved.windowId) &&
+              (await transport.windowExists(saved.windowId))
+                ? saved.windowId
+                : null;
             this.automationTabs = new Map(
               restored
                 .filter((id) => typeof saved?.automationTabs?.[id] === 'string')
@@ -210,9 +196,7 @@ export class JevBrowser {
                 .map((id) => [id, saved.urlHashes[id]]),
             );
             this.spareTabs = new Set(restored.filter((id) => saved?.spareTabs?.includes(id)));
-            for (const id of restored) transport.owned.add(id);
-            this.connectedEndpoint = endpoint;
-            this.contextId = contextId;
+            this.instanceId = instanceId;
             browser = await createRequire(require.resolve('@playwright/mcp/package.json'))(
               'playwright',
             ).chromium.connectOverCDP(transport, {timeout: 30000, noDefaults: true});
@@ -229,15 +213,12 @@ export class JevBrowser {
               this.opening = null;
               this.tabs.clear();
               this.tracking = new WeakMap();
-              if (!this.closed) this.onDisconnect();
+              if (!this.closed) this.onDisconnect(transport.cancelled ? {manual: true} : {});
             });
             for (const page of context.pages()) await this.track(context, page).catch(() => {});
             context.on('page', (page) => this.track(context, page).catch(() => {}));
-            if (this.homeId === markerId) await this.tab(markerId).page.goto(homeUrl);
-            marker.close();
-            this.profileWindow = null;
-            this.lastConnectError = null;
-            if (contextId) await this.persistTabs();
+            await this.home();
+            await this.persistTabs();
             return context;
           } catch (error) {
             await browser?.close().catch(() => {});
@@ -247,21 +228,10 @@ export class JevBrowser {
               this.browser = null;
               this.tabs.clear();
             }
-            if (this.abort.signal.aborted) {
-              this.profileWindow?.close();
-              this.profileWindow = null;
-            }
-            // A retry reuses the profile window, which may no longer be in front.
-            // Its readiness timeout must not hide why the previous attempt failed.
-            let message = error.message.split('\n')[0];
-            if (!['PROFILE_NOT_READY', 'WINDOW_CLOSED'].includes(error.code))
-              this.lastConnectError = message;
-            else if (this.lastConnectError)
-              message += ` The previous attempt failed: ${this.lastConnectError}`;
-            throw Object.assign(Error(`Could not connect to Chrome: ${message}`), {
-              code: 'BROWSER_DISCONNECTED',
-              windowWait: error.code === 'PROFILE_NOT_READY',
-            });
+            throw Object.assign(
+              Error(`Could not connect to Chrome: ${error.message.split('\n')[0]}`),
+              {code: 'BROWSER_DISCONNECTED'},
+            );
           } finally {
             release?.();
           }
@@ -287,67 +257,19 @@ export class JevBrowser {
       });
     return this.opening;
   }
-  async prepareProfileWindow() {
+  // The selected profile must hold the AutoJev extension. The relay reuses a
+  // connection the extension already made; otherwise it opens the extension's
+  // connect page in that profile once and waits for the extension to call back.
+  async connectExtension() {
     this.abort.signal.throwIfAborted();
-    // A window that never loaded or was closed cannot become ready; open a new
-    // one. After Reconnect, a window behind others is replaced too: Chrome
-    // brings a new window to the front, and the old page closes itself.
-    const fresh = this.freshWindow;
-    this.freshWindow = false;
-    if (
-      this.profileWindow &&
-      (!this.profileWindow.loaded || (fresh && !this.profileWindow.focused))
-    ) {
-      this.profileWindow.close();
-      this.profileWindow = null;
-    }
-    if (!this.profileWindow) {
-      const marker = await chromeWindowMarker({observeFocus: true});
-      this.profileWindow = marker;
-      try {
-        await this.openWindow(
-          marker.url,
-          {directory: this.profileDirectory},
-          {signal: this.abort.signal},
-        );
-      } catch (error) {
-        marker.close();
-        this.profileWindow = null;
-        throw error;
-      }
-    }
-    // A slow load or a denied connection reuses this window on retry.
-    this.abort.signal.throwIfAborted();
-    await this.waitForProfileWindow(this.profileWindow);
-    return this.profileWindow;
-  }
-  // Chrome gets no connection request until the selected profile's window is
-  // in front, so a window left behind others must be visible in the app.
-  async waitForProfileWindow(marker) {
-    const wait = (timeout) => marker.waitForReady({signal: this.abort.signal, timeout});
-    try {
-      await wait(Math.min(2000, this.readyTimeout));
-      return;
-    } catch (error) {
-      if (error.code !== 'PROFILE_NOT_READY') throw error;
-    }
-    this.waitingForWindow = marker;
-    this.onWindowWait(this.profile?.name);
-    try {
-      await wait(this.readyTimeout);
-    } finally {
-      if (this.waitingForWindow === marker) this.waitingForWindow = null;
-    }
-  }
-  // Reconnect: open the selected profile's window again in front. Returns true
-  // when it ended a wait for a window that stayed behind others.
-  reopenProfileWindow() {
-    this.freshWindow = true;
-    const marker = this.waitingForWindow;
-    if (!marker || marker !== this.profileWindow) return false;
-    marker.close();
-    this.profileWindow = null;
-    return true;
+    if (!(await this.extensionInstalled(this.profileDirectory)))
+      throw Error(extensionMissingMessage());
+    this.relay ??= await ExtensionRelay.listen({homePage});
+    return this.relay.connect({
+      open: (url) =>
+        this.openUrl(url, {directory: this.profileDirectory}, {signal: this.abort.signal}),
+      signal: this.abort.signal,
+    });
   }
   async findOwnedPage(id) {
     for (let i = 0; i < 100; i++) {
@@ -378,10 +300,7 @@ export class JevBrowser {
       };
       // A tab that rejects init scripts still works; its labels may then be translated.
       await installNoTranslate(slot.page).catch(() => {});
-      if (this.connection === 'existing') {
-        this.contextId = targetInfo.browserContextId;
-        await this.persistTabs();
-      }
+      if (this.connection === 'existing') await this.persistTabs();
       page.on('response', (response) => {
         if (response.request().isNavigationRequest() && response.frame() === page.mainFrame())
           slot.http = {
@@ -402,11 +321,7 @@ export class JevBrowser {
       page.on('close', () => {
         if (this.tabs.get(slot.id) === slot) {
           this.tabs.delete(slot.id);
-          if (
-            this.connection === 'existing' &&
-            this.transport?.socket.readyState !== WebSocket.OPEN
-          )
-            return;
+          if (this.connection === 'existing' && !this.transport?.connected) return;
           this.forgetTab(slot.id);
           this.persistTabs().catch(() => {});
         }
@@ -436,17 +351,22 @@ export class JevBrowser {
     await this.persistTabs();
   }
   async persistTabs() {
-    if (this.connection === 'existing' && this.transport && this.contextId)
-      await this.registry.save(this.connectedEndpoint, this.contextId, this.transport.owned, {
-        homeId: this.homeId ?? null,
-        windowId: this.windowId ?? null,
-        automationTabs: Object.fromEntries(this.automationTabs),
-        automationRuns: Object.fromEntries(this.automationRuns),
-        automationWorkspaces: Object.fromEntries(this.automationWorkspaces),
-        automationSources: Object.fromEntries(this.automationSources),
-        urlHashes: Object.fromEntries(this.urlHashes),
-        spareTabs: [...this.spareTabs],
-      });
+    if (this.connection === 'existing' && this.transport && this.instanceId)
+      await this.registry.save(
+        this.instanceId,
+        this.transport.owned,
+        this.transport.tabIdsByTarget(),
+        {
+          homeId: this.homeId ?? null,
+          windowId: this.windowId ?? null,
+          automationTabs: Object.fromEntries(this.automationTabs),
+          automationRuns: Object.fromEntries(this.automationRuns),
+          automationWorkspaces: Object.fromEntries(this.automationWorkspaces),
+          automationSources: Object.fromEntries(this.automationSources),
+          urlHashes: Object.fromEntries(this.urlHashes),
+          spareTabs: [...this.spareTabs],
+        },
+      );
   }
   forgetTab(id) {
     this.tabs.delete(id);
@@ -456,82 +376,46 @@ export class JevBrowser {
     this.automationSources.delete(id);
     this.urlHashes.delete(id);
     this.spareTabs.delete(id);
-    this.transport?.owned.delete(id);
-    this.transport?.attached.delete(id);
+    this.transport?.forget(id);
     for (const slot of this.tabs.values())
       for (const [url, child] of slot.openedFrames ?? [])
         if (child === id) slot.openedFrames.delete(url);
   }
   async openTabFrom(slot) {
-    // Opening from an owned page selects its exact window; Target.createTarget
-    // otherwise picks whichever personal Chrome window was activated last.
-    // window.open shows its window, which raises Chrome over the user's work.
-    // A new-tab modifier click opens a background tab without showing the
-    // window; Blink honours that modifier only from an isolated world.
-    const marker = await chromeWindowMarker();
-    try {
-      const {frameTree} = await slot.cdp.send('Page.getFrameTree');
-      const {executionContextId} = await slot.cdp.send('Page.createIsolatedWorld', {
-        frameId: frameTree.frame.id,
-        worldName: 'jobloop-tabs',
-      });
-      await slot.cdp.send('Runtime.evaluate', {
-        expression: `(() => {
-          const link = document.createElement('a');
-          link.href = ${JSON.stringify(marker.url)};
-          link.dispatchEvent(new MouseEvent('click', {view: window, ${process.platform === 'darwin' ? 'metaKey' : 'ctrlKey'}: true}));
-        })()`,
-        contextId: executionContextId,
-        userGesture: true,
-      });
-      const id = await this.transport.ownWindow(marker.url),
-        page = await this.findOwnedPage(id);
-      const [parent, child] = await Promise.all(
-        [slot.id, id].map((targetId) =>
-          this.transport.call('Browser.getWindowForTarget', {targetId}),
-        ),
-      );
-      if (parent.windowId !== child.windowId) {
-        await page.close();
-        throw Error('Could not open the new tab in the AutoJob window.');
-      }
-      return page;
-    } finally {
-      marker.close();
-    }
+    // The new tab opens in the owned page's window and inherits its task
+    // through the opener relation.
+    const windowId = await this.transport.windowOf(slot.id);
+    const id = await this.transport.createTab({windowId, openerTargetId: slot.id});
+    return this.findOwnedPage(id);
   }
   async home() {
     let home = this.tabs.get(this.homeId);
-    if (home && !home.page.isClosed() && home.page.url() === homeUrl) return home;
+    if (home && !home.page.isClosed() && isHomeUrl(home.page.url())) {
+      // A restored home tab still shows the previous app run's page.
+      if (home.page.url() !== this.relay.homeUrl) await home.page.goto(this.relay.homeUrl);
+      return home;
+    }
     this.homeId = null;
-    const candidates = [...this.tabs.values()].filter((s) => !s.page.isClosed());
-    let anchor;
-    for (const slot of candidates) {
-      const window = await this.transport
-        .call('Browser.getWindowForTarget', {targetId: slot.id})
-        .catch(() => null);
-      if (window && (!anchor || window.windowId === this.windowId)) {
-        anchor = slot;
-        if (window.windowId === this.windowId) break;
+    // Prefer the remembered AutoJev window, then any window holding an owned
+    // tab; otherwise open a new window in the selected profile.
+    let windowId =
+      Number.isInteger(this.windowId) && (await this.transport.windowExists(this.windowId))
+        ? this.windowId
+        : null;
+    if (windowId === null)
+      for (const slot of this.tabs.values()) {
+        if (slot.page.isClosed()) continue;
+        windowId = await this.transport.windowOf(slot.id).catch(() => null);
+        if (windowId !== null) break;
       }
-    }
-    let page;
-    if (anchor) page = await this.openTabFrom(anchor);
-    else {
-      const marker = await chromeWindowMarker();
-      try {
-        await this.openWindow(marker.url, {directory: this.profileDirectory});
-        page = await this.findOwnedPage(await this.transport.ownWindow(marker.url));
-      } finally {
-        marker.close();
-      }
-    }
+    let targetId;
+    if (windowId !== null) targetId = await this.transport.createTab({windowId});
+    else ({windowId, targetId} = await this.transport.createWindow('about:blank'));
+    const page = await this.findOwnedPage(targetId);
     home = await this.track(page.context(), page);
     this.homeId = home.id;
-    this.windowId = (
-      await this.transport.call('Browser.getWindowForTarget', {targetId: home.id})
-    ).windowId;
-    await page.goto(homeUrl);
+    this.windowId = windowId;
+    await page.goto(this.relay.homeUrl);
     await this.persistTabs();
     return home;
   }
@@ -2056,20 +1940,17 @@ export class JevBrowser {
   async close({closeTabs = false} = {}) {
     this.closed = true;
     this.abort.abort();
-    this.profileWindow?.close();
-    this.profileWindow = null;
     const closed = [],
       failed = [];
     if (closeTabs && this.connection === 'existing' && this.transport) {
-      // The CDP ownership set includes restored tabs and tabs opened by pages.
+      // The ownership set includes restored tabs and tabs opened by pages.
       // Never close other tabs in the user's Chrome profile.
       const ids = [...this.transport.owned].sort(
         (a, b) => (a === this.homeId) - (b === this.homeId),
       );
       for (const id of ids) {
         try {
-          const result = await this.transport.call('Target.closeTarget', {targetId: id});
-          if (!result.success) throw Error('Chrome did not close the target');
+          if (!(await this.transport.closeTarget(id))) throw Error('Chrome did not close the tab');
           this.forgetTab(id);
           closed.push(id);
         } catch {
@@ -2087,6 +1968,8 @@ export class JevBrowser {
     const context = await this.opening?.catch(() => null);
     if (this.connection === 'existing') await this.browser?.close();
     else await context?.close();
+    this.relay?.close();
+    this.relay = null;
     this.tabs.clear();
     return {closed, failed};
   }

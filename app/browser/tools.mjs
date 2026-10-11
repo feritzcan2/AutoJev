@@ -28,7 +28,6 @@ export class BrowserTools {
         const {client} = await this.connect(id);
         await client.context();
       },
-      reopen: (id) => this.clients.get(id)?.client?.reopenProfileWindow() ?? false,
       changed: (id, state) => this.onStatus?.(id, state),
     });
   }
@@ -105,8 +104,7 @@ export class BrowserTools {
         ...options,
         siteAccess: this.siteAccess,
         workspace,
-        onDisconnect: () => this.connections.disconnected(candidateId),
-        onWindowWait: (profileName) => this.connections.windowWait(candidateId, profileName),
+        onDisconnect: (reason) => this.connections.disconnected(candidateId, reason),
         onTabsClosed: (ids) => {
           if (!this.closed) return this.onTabsClosed?.(candidateId, ids);
         },

@@ -19,6 +19,8 @@ asar: true
 asarUnpack:
   - node_modules/**
 extraResources:
+  - from: extension
+    to: extension
   - from: engine/target/release
     to: engine
     filter:

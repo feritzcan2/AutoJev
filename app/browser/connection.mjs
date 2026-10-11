@@ -7,8 +7,8 @@ export const browserWaitResult = () => ({
     'The app is waiting for the Chrome connection. Do not create a question, a blocked status or a task report. End the turn; the same task resumes automatically once the connection is ready.',
 });
 export class BrowserConnections {
-  constructor({connect, reopen = () => false, changed = () => {}, now = () => Date.now()}) {
-    Object.assign(this, {connect, reopen, changed, now});
+  constructor({connect, changed = () => {}, now = () => Date.now()}) {
+    Object.assign(this, {connect, changed, now});
     this.states = new Map();
     this.pending = new Map();
     this.epochs = new Map();
@@ -23,34 +23,23 @@ export class BrowserConnections {
     this.changed(id, state);
     return state;
   }
-  disconnected(id) {
+  // A connection the user cancelled in Chrome waits for an explicit reconnect;
+  // any other loss retries on its own.
+  disconnected(id, {manual = false} = {}) {
     this.epochs.set(id, (this.epochs.get(id) ?? 0) + 1);
     const old = this.status(id);
     this.set(id, {
       ...old,
       state: 'waiting',
       ready: false,
-      retryAt: this.now() + 2000,
-      message: 'The Chrome connection was lost. The same task is waiting for the connection.',
-    });
-  }
-  // Chrome gets no connection request while the selected profile's window
-  // is behind others; say so instead of a plain "Connecting".
-  windowWait(id, profileName) {
-    const state = this.status(id);
-    if (state.state !== 'connecting') return;
-    this.set(id, {
-      ...state,
-      windowWait: true,
-      message: `Click the "AutoJob · Jev" window in Chrome${profileName ? ` (profile ${profileName})` : ''} to continue. Chrome asks for permission only after that window is in front. Reconnect opens it again in front.`,
+      retryAt: manual ? Infinity : this.now() + 2000,
+      message: manual
+        ? 'The Jev connection was cancelled in Chrome. Press Reconnect to continue.'
+        : 'The Chrome connection was lost. The same task is waiting for the connection.',
     });
   }
   prepare(id, {force = false} = {}) {
     const state = this.status(id);
-    // Reconnect replaces a window left behind others; when that ends the
-    // current attempt, start the next one at once with the new window.
-    if (force && !state.ready && this.reopen(id) && this.pending.has(id))
-      this.pending.get(id).finally(() => this.prepare(id, {force: true}));
     if (
       this.closed ||
       state.ready ||
@@ -77,7 +66,6 @@ export class BrowserConnections {
           publish({
             state: 'waiting',
             ready: false,
-            windowWait: Boolean(error.windowWait),
             attempts: attempt,
             retryAt: this.now() + Math.min(30000, 2000 * 2 ** Math.min(attempt - 1, 4)),
             message: String(error.message).split('\n')[0].slice(0, 600),

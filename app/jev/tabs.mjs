@@ -3,30 +3,16 @@ import {mkdir, readFile, writeFile, rename} from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 
-export function sameBrowserInstance(a, b) {
-  try {
-    const x = new URL(a),
-      y = new URL(b);
-    return (
-      /^wss?:$/.test(x.protocol) &&
-      /^wss?:$/.test(y.protocol) &&
-      /^\/devtools\/browser\/[^/]+$/.test(x.pathname) &&
-      x.pathname === y.pathname
-    );
-  } catch {
-    return false;
-  }
-}
+const TARGET_ID = /^[A-Fa-f0-9]{32}$/;
 
-export function restoredTargets(saved, checkpoints, live, contextId) {
-  if (!contextId) return [];
+// Saved and checkpoint targets worth asking the extension about. Never
+// discover a tab by URL.
+export function restoredTargets(saved, checkpoints) {
   const ids = new Set([
     ...(saved?.targets ?? []),
     ...checkpoints.filter((c) => c?.browser === 'Jev Chrome').map((c) => c.tabId),
   ]);
-  return [...ids].filter(
-    (id) => /^[A-Fa-f0-9]{32}$/.test(id) && live.get(id)?.browserContextId === contextId,
-  );
+  return [...ids].filter((id) => TARGET_ID.test(id));
 }
 
 // Candidate-owned metadata only: never discover a draft by matching its URL.
@@ -45,27 +31,30 @@ export class JevTabs {
       throw Error('Could not read the Jev tab record; existing forms are kept.');
     }
     // Another AutoJob version can share this data directory and write its own
-    // format. Its tabs cannot be restored here, but they must not block the
+    // format, such as version 1 of the former remote-debugging connection.
+    // Its tabs cannot be restored here, but they must not block the
     // connection: connect without restoring them; they stay open in Chrome.
-    if (Number.isInteger(saved?.version) && saved.version !== 1) return null;
+    if (Number.isInteger(saved?.version) && saved.version !== 2) return null;
     if (
-      saved.version !== 1 ||
+      saved?.version !== 2 ||
       saved.profile !== this.profile ||
-      typeof saved.endpoint !== 'string' ||
-      typeof saved.contextId !== 'string' ||
+      typeof saved.instanceId !== 'string' ||
       !Array.isArray(saved.targets) ||
-      !saved.targets.every((id) => /^[A-Fa-f0-9]{32}$/.test(id))
+      !saved.targets.every((id) => TARGET_ID.test(id)) ||
+      !saved.tabIds ||
+      typeof saved.tabIds !== 'object' ||
+      !Object.values(saved.tabIds).every((id) => Number.isInteger(id))
     )
       throw Error('The Jev tab record is invalid; existing forms are kept.');
     return saved;
   }
-  save(endpoint, contextId, targets, metadata = {}) {
+  save(instanceId, targets, tabIds, metadata = {}) {
     const data = JSON.stringify({
-      version: 1,
+      version: 2,
       profile: this.profile,
-      endpoint,
-      contextId,
+      instanceId,
       targets: [...new Set(targets)],
+      tabIds,
       ...metadata,
     });
     const write = async () => {

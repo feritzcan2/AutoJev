@@ -990,26 +990,23 @@ export function automationsPage(
     chrome.dataset.state = connection.state ?? 'idle';
     chrome.querySelector('b').textContent = connection.ready
       ? 'Chrome connected'
-      : connection.windowWait
-        ? 'Waiting for the Chrome window'
-        : connection.state === 'connecting'
-          ? 'Connecting to Chrome…'
-          : 'Chrome connection';
+      : connection.state === 'connecting'
+        ? 'Connecting to Chrome…'
+        : 'Chrome connection';
     chrome.querySelector('small').textContent = connection.ready
       ? (a.chromeProfile?.name ?? 'Selected Chrome session')
       : (connection.message ??
-        'Open chrome://inspect/#remote-debugging in Chrome and allow the connection request.');
-    // A failed handshake does not tell whether remote debugging is on, so
-    // point to the setting unless the message already does.
+        'The AutoJob extension must be installed in the selected Chrome profile. While it is connected, Chrome shows an "AutoJob" bar at the top.');
+    // A failed handshake does not tell whether the extension is installed, so
+    // point to it unless the message already does.
     chrome.querySelector('.chrome-tip').hidden =
       connection.ready ||
       connection.state === 'connecting' ||
-      connection.windowWait ||
       !connection.message ||
-      connection.message.includes('chrome://inspect');
+      connection.message.includes('extension');
     chrome.querySelector('.chrome-reconnect').hidden = Boolean(connection.ready);
     chrome.querySelector('.chrome-reconnect').disabled =
-      locked || (connection.state === 'connecting' && !connection.windowWait);
+      locked || connection.state === 'connecting';
     chrome.querySelector('.chrome-profile-change').disabled = locked;
     const jev = document.querySelector('.jev-status'),
       issue = data.jevIssue;

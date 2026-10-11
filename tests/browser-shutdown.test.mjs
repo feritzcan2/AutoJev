@@ -8,26 +8,26 @@ test('app shutdown closes every owned Chrome target and retains failed targets f
     closed = [],
     saved = [];
   client.opening = Promise.resolve({});
-  client.contextId = 'context';
-  client.connectedEndpoint = 'ws://chrome';
+  client.instanceId = 'run';
   client.homeId = 'home';
   client.registry = {save: async (...args) => saved.push(args)};
   client.browser = {close: async () => closed.push('disconnect')};
+  const owned = new Set(['home', 'first', 'failed']);
   client.transport = {
-    owned: new Set(['home', 'first', 'failed']),
-    attached: new Set(),
-    call: async (method, {targetId}) => {
-      assert.equal(method, 'Target.closeTarget');
+    owned,
+    closeTarget: async (targetId) => {
       closed.push(targetId);
-      return {success: targetId !== 'failed'};
+      return targetId !== 'failed';
     },
+    forget: (id) => owned.delete(id),
+    tabIdsByTarget: () => ({}),
     close: () => closed.push('transport'),
   };
   for (const id of ['home', 'first', 'failed', 'personal']) client.tabs.set(id, {id});
   const result = await client.close({closeTabs: true});
   assert.deepEqual(result, {closed: ['first', 'home'], failed: ['failed']});
   assert.deepEqual(closed, ['first', 'failed', 'home', 'transport', 'disconnect']);
-  assert.deepEqual(saved.at(-1)[2], new Set(['failed']));
+  assert.deepEqual(saved.at(-1)[1], new Set(['failed']));
 });
 
 test('ordinary browser disconnect preserves owned tabs', async () => {

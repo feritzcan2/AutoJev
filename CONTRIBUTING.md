@@ -39,6 +39,10 @@ own operating system. Interface tests on Linux need Xvfb.
 | `site-extensions/` | Site-specific readers (only on user request) |
 | `system/` | Settings, backup, updates, maintenance |
 
+The `extension/` folder at the repository root is the AutoJob Chrome extension
+that Jev connects through (`chrome.debugger`). Packaging copies it as the `extension`
+resource folder, and the user loads it into Chrome unpacked.
+
 New text and rules specific to job search go under `templates/job-search/`, not
 into the core folders. Formatting is kept with `pnpm format`; files that start with
 `// @ts-check` are type-checked by `pnpm check`.

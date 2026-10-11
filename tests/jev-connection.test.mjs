@@ -1,507 +1,500 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createServer} from 'node:http';
 import {mkdtemp, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {WebSocketServer} from 'ws';
-import {JevCdpTransport} from '../app/jev/cdp.mjs';
+import WebSocket from 'ws';
+import {
+  EXTENSION_ID,
+  EXTENSION_PROTOCOL,
+  ExtensionRelay,
+  JevExtensionTransport,
+  connectPageUrl,
+} from '../app/jev/extension.mjs';
 import {BrowserConnections} from '../app/browser/connection.mjs';
 import {BrowserTools} from '../app/browser/tools.mjs';
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
-const windowFocus = (url, focused = true) =>
-  fetch(url + (focused ? '/focused' : '/blurred'), {
-    method: 'POST',
-    headers: {Origin: new URL(url).origin},
-  });
-const openReadyWindow = async (url) => {
-  await fetch(url);
-  await windowFocus(url);
-};
-test('an out-of-process frame that loaded before the attach gets its URL', () => {
-  const sent = [],
-    forwarded = [],
-    socket = {readyState: 1, send: (data) => sent.push(JSON.parse(data))};
-  const transport = new JevCdpTransport(socket);
-  transport.onmessage = (message) => forwarded.push(message);
-  const attached = (sessionId, waitingForDebugger) => ({
-    sessionId: 'page',
-    method: 'Target.attachedToTarget',
-    params: {sessionId, waitingForDebugger, targetInfo: {targetId: sessionId, type: 'iframe'}},
-  });
-  transport.receive(attached('loaded', false));
-  transport.receive(attached('new', true));
-  transport.send({id: 7, sessionId: 'loaded', method: 'Page.getFrameTree'});
-  transport.send({id: 8, sessionId: 'new', method: 'Page.getFrameTree'});
-  const frame = (id) => ({frameTree: {frame: {id, url: 'https://forms.example/apply'}}});
-  transport.receive({id: 7, sessionId: 'loaded', result: frame('F1')});
-  transport.receive({id: 8, sessionId: 'new', result: frame('F2')});
-  assert.deepEqual(
-    forwarded.filter((m) => m.method === 'Page.navigatedWithinDocument'),
-    [
-      {
-        sessionId: 'loaded',
-        method: 'Page.navigatedWithinDocument',
-        params: {frameId: 'F1', url: 'https://forms.example/apply', navigationType: 'other'},
-      },
-    ],
-  );
-  assert.equal(transport.frameTrees.size, 0);
-  assert.equal(transport.loadedFrames.size, 0);
-});
-test('late internal CDP responses never enter the Playwright callback map', async (t) => {
-  t.mock.timers.enable({apis: ['setTimeout']});
-  const sent = [],
-    forwarded = [],
-    socket = {readyState: 1, send: (data) => sent.push(JSON.parse(data))};
-  const transport = new JevCdpTransport(socket);
-  transport.onmessage = (message) => forwarded.push(message);
-  const request = transport.call('Target.getTargets'),
-    rejected = assert.rejects(request, /timed out/);
-  t.mock.timers.tick(15000);
-  await rejected;
-  transport.receive({id: sent[0].id, result: {targetInfos: []}});
-  transport.receive({id: sent[0].id, error: {code: -32000, message: 'Late error'}});
-  assert.equal(forwarded.length, 0);
-  assert.equal(transport.pending.size, 0);
-  const result = {id: 12, result: {}};
-  transport.receive(result);
-  const event = {method: 'Target.attachedToTarget', params: {sessionId: 'owned'}};
-  transport.receive(event);
-  assert.deepEqual(forwarded, [result, event]);
-  const next = transport.call('Target.getTargets');
-  transport.receive({id: sent[1].id, result: {targetInfos: []}});
-  assert.deepEqual(await next, {targetInfos: []});
-  assert.equal(transport.pending.size, 0);
-});
-async function chromeFixture(t) {
-  const server = createServer(),
-    websockets = new WebSocketServer({noServer: true}),
-    sockets = new Set();
-  let requests = 0;
-  server.on('connection', (socket) => {
-    sockets.add(socket);
-    socket.on('close', () => sockets.delete(socket));
-  });
-  server.on('upgrade', () => requests++);
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  t.after(async () => {
-    for (const ws of websockets.clients) ws.terminate();
-    for (const socket of sockets) socket.destroy();
-    await Promise.all([
-      new Promise((resolve) => websockets.close(resolve)),
-      new Promise((resolve) => server.close(resolve)),
-    ]);
-  });
-  return {
-    endpoint: `ws://127.0.0.1:${server.address().port}/devtools/browser/fixture`,
-    get requests() {
-      return requests;
-    },
-    nextRequest: () =>
-      new Promise((resolve) =>
-        server.once('upgrade', (request, socket, head) =>
-          resolve({
-            socket,
-            allow: () =>
-              new Promise((accepted) => websockets.handleUpgrade(request, socket, head, accepted)),
-          }),
-        ),
-      ),
-  };
+const relayUrlOf = (connectUrl) => new URL(connectUrl).searchParams.get('relay');
+
+// Enough of extension/background.js to exercise the app side: tabs, windows,
+// debugger attachments and the events Chrome would raise.
+class FakeExtension {
+  constructor({instanceId = 'run-1'} = {}) {
+    this.instanceId = instanceId;
+    this.tabs = new Map();
+    this.windows = new Set([1]);
+    this.nextTab = 100;
+    this.nextWindow = 2;
+    this.attached = new Set();
+    this.commands = [];
+    this.sockets = [];
+  }
+  addTab({windowId = 1, openerTabId, url = 'about:blank', target = null} = {}) {
+    const id = this.nextTab++;
+    this.tabs.set(id, {
+      id,
+      windowId,
+      openerTabId,
+      url,
+      target: target ?? id.toString(16).padStart(32, '0'),
+    });
+    return this.tabs.get(id);
+  }
+  connect(connectUrl, {origin = `chrome-extension://${EXTENSION_ID}`, hello = true} = {}) {
+    const socket = new WebSocket(relayUrlOf(connectUrl), {origin});
+    this.sockets.push(socket);
+    socket.on('message', (data) => this.handle(socket, JSON.parse(data)));
+    return new Promise((resolve, reject) => {
+      socket.once('error', reject);
+      socket.once('unexpected-response', (_, response) =>
+        reject(Error(`Unexpected response ${response.statusCode}`)),
+      );
+      socket.once('open', () => {
+        if (hello)
+          socket.send(
+            JSON.stringify({
+              event: 'hello',
+              protocol: EXTENSION_PROTOCOL,
+              instanceId: this.instanceId,
+              userAgent: 'Mozilla/5.0 Chrome/154.0.0.0',
+              version: '1.0.0',
+            }),
+          );
+        resolve(socket);
+      });
+    });
+  }
+  emit(socket, event) {
+    socket.send(JSON.stringify(event));
+  }
+  handle(socket, {id, method, params}) {
+    this.commands.push({method, params});
+    const reply = (result) => socket.send(JSON.stringify({id, result}));
+    const fail = (message) => socket.send(JSON.stringify({id, error: {code: -32000, message}}));
+    const tab = (tabId) => {
+      const found = this.tabs.get(tabId);
+      if (!found) throw Error(`No tab with id: ${tabId}`);
+      return found;
+    };
+    try {
+      switch (method) {
+        case 'ping':
+          return reply({});
+        case 'tabs.get':
+        case 'tabs.claim':
+        case 'tabs.label':
+          tab(params.tabId);
+          return reply(method === 'tabs.get' ? {tab: this.tabs.get(params.tabId)} : {});
+        case 'tabs.resolve': {
+          const found = [...this.tabs.values()].find((t) => t.target === params.targetId);
+          if (!found) throw Error('Unknown AutoJev target');
+          return reply({tabId: found.id});
+        }
+        case 'tabs.create':
+          return reply({tab: this.addTab(params)});
+        case 'tabs.remove':
+          tab(params.tabId);
+          this.tabs.delete(params.tabId);
+          this.attached.delete(params.tabId);
+          this.emit(socket, {event: 'tabs.removed', tabId: params.tabId, windowId: 1});
+          return reply({});
+        case 'windows.create': {
+          const windowId = this.nextWindow++;
+          this.windows.add(windowId);
+          return reply({window: {id: windowId}, tab: this.addTab({windowId, url: params.url})});
+        }
+        case 'windows.get':
+          if (!this.windows.has(params.windowId)) throw Error('No window with id');
+          return reply({window: {id: params.windowId, focused: true}});
+        case 'debugger.attach':
+          tab(params.tabId);
+          this.attached.add(params.tabId);
+          return reply({});
+        case 'debugger.detach':
+          this.attached.delete(params.tabId);
+          return reply({});
+        case 'debugger.send': {
+          const {target, url} = tab(params.tabId);
+          if (!this.attached.has(params.tabId)) throw Error('Debugger is not attached');
+          if (params.method === 'Target.getTargetInfo')
+            return reply({
+              result: {
+                targetInfo: {
+                  targetId: target,
+                  type: 'page',
+                  title: '',
+                  url,
+                  attached: true,
+                  canAccessOpener: false,
+                  browserContextId: 'ctx',
+                },
+              },
+            });
+          return reply({result: {}});
+        }
+        default:
+          throw Error(`Unknown method ${method}`);
+      }
+    } catch (error) {
+      fail(error.message);
+    }
+  }
+  close() {
+    for (const socket of this.sockets) socket.terminate();
+  }
 }
 
-test(
-  'a delayed Chrome approval keeps one request and resumes after 15 minutes',
-  {timeout: 5000},
-  async (t) => {
-    const chrome = await chromeFixture(t),
-      abort = new AbortController();
-    t.mock.timers.enable({apis: ['setTimeout', 'Date']});
-    let transport;
-    const connections = new BrowserConnections({
-      connect: async () => {
-        transport = await JevCdpTransport.connect(chrome.endpoint, {signal: abort.signal});
-      },
-    });
-    t.after(() => {
-      connections.close();
-      abort.abort();
-      transport?.close();
-    });
-    const request = chrome.nextRequest();
-    connections.prepare('candidate');
-    const prompt = await request;
-    for (let minute = 0; minute < 15; minute++) {
-      t.mock.timers.tick(60000);
-      await flush();
-      connections.prepare('candidate');
-      connections.prepare('candidate', {force: true});
-      await flush();
-      assert.equal(connections.status('candidate').state, 'connecting');
-      assert.equal(connections.status('candidate').attempts, 1);
-      assert.equal(chrome.requests, 1);
-    }
-    const peer = await prompt.allow();
-    peer.on('message', (data) => {
-      const {id} = JSON.parse(data);
-      peer.send(JSON.stringify({id, result: {targetInfos: []}}));
-    });
-    await connections.pending.get('candidate');
-    assert.equal(connections.status('candidate').ready, true);
-    assert.deepEqual(await transport.call('Target.getTargets'), {targetInfos: []});
-    assert.equal(chrome.requests, 1);
-  },
-);
+async function relayFixture(t) {
+  const relay = await ExtensionRelay.listen(),
+    extension = new FakeExtension();
+  t.after(() => {
+    extension.close();
+    relay.close();
+  });
+  return {relay, extension};
+}
 
-test(
-  'closing or changing a candidate cancels an unanswered approval',
-  {timeout: 5000},
-  async (t) => {
-    const chrome = await chromeFixture(t),
-      directory = await mkdtemp(path.join(os.tmpdir(), 'jobloop-approval-'));
-    const browsers = new BrowserTools(directory, () => ({
-      profile: {directory: 'Default'},
-      endpoint: async () => chrome.endpoint,
-      openWindow: openReadyWindow,
-    }));
-    t.after(async () => {
-      await browsers.close();
-      await rm(directory, {recursive: true, force: true});
+test('the relay only accepts the AutoJev extension on its own token path', async (t) => {
+  const {relay, extension} = await relayFixture(t);
+  const url = connectPageUrl(relay.url);
+  assert.match(url, new RegExp(`^chrome-extension://${EXTENSION_ID}/connect\\.html\\?relay=`));
+  await assert.rejects(extension.connect(url, {origin: 'https://evil.example'}), /403/);
+  await assert.rejects(
+    extension.connect(connectPageUrl(relay.url.replace(/\/jev\/.*$/, '/jev/wrong-token')), {}),
+    /403/,
+  );
+  const socket = await extension.connect(url, {hello: false});
+  socket.send(JSON.stringify({event: 'hello', protocol: 99, instanceId: 'x'}));
+  await new Promise((resolve) => socket.once('close', resolve));
+});
+
+test('connecting opens the connect page once and reuses a connection the extension already made', async (t) => {
+  const {relay, extension} = await relayFixture(t);
+  const opened = [];
+  const connecting = relay.connect({
+    open: async (url) => {
+      opened.push(url);
+      await extension.connect(url);
+    },
+  });
+  const transport = await connecting;
+  t.after(() => transport.close());
+  assert.equal(opened.length, 1);
+  assert.equal(transport.instanceId, 'run-1');
+  // A restarted service worker reconnects on its own: no new page is needed.
+  await extension.connect(opened[0]);
+  for (let i = 0; i < 100 && !relay.available; i++) await new Promise((r) => setTimeout(r, 5));
+  const again = await relay.connect({
+    open: async () => assert.fail('a live extension connection must be reused'),
+  });
+  t.after(() => again.close());
+  assert.equal(again.instanceId, 'run-1');
+  await assert.rejects(relay.connect({open: async () => {}, timeout: 20}), /eklentisi bağlanmadı/);
+  const abort = new AbortController();
+  const cancelled = assert.rejects(relay.connect({open: async () => {}, signal: abort.signal}), {
+    name: 'AbortError',
+  });
+  abort.abort();
+  await cancelled;
+});
+
+async function transportFixture(t) {
+  const {relay, extension} = await relayFixture(t);
+  const transport = await relay.connect({open: (url) => extension.connect(url)});
+  t.after(() => transport.close());
+  const forwarded = [];
+  transport.onmessage = (message) => forwarded.push(message);
+  const call = (message) => {
+    transport.send(message);
+    return new Promise((resolve) => {
+      const check = () => {
+        const reply = forwarded.find((m) => m.id === message.id);
+        reply ? resolve(reply) : setImmediate(check);
+      };
+      check();
     });
-    let request = chrome.nextRequest();
-    browsers.prepare('candidate');
-    await request;
-    const oldPending = browsers.connections.pending.get('candidate');
-    await browsers.resetCandidate('candidate');
-    await oldPending;
-    assert.equal(browsers.status('candidate').state, 'idle');
-    assert.equal(browsers.connections.pending.has('candidate'), false);
-    request = chrome.nextRequest();
-    browsers.prepare('candidate');
-    await request;
-    const pending = browsers.connections.pending.get('candidate');
+  };
+  return {relay, extension, transport, forwarded, call};
+}
+
+test('owned tabs attach when Playwright enables auto-attach, with their out-of-process form frames and nothing else', async (t) => {
+  const {extension, transport, forwarded, call} = await transportFixture(t);
+  const saved = extension.addTab({url: 'https://jobs.example/form'}),
+    personal = extension.addTab({url: 'https://bank.example'});
+  await transport.adopt(saved.target, saved.id);
+  assert.equal(extension.attached.size, 0, 'adopting a saved tab does not debug it yet');
+  await assert.rejects(transport.adopt('A'.repeat(32), 999), /No tab with id/);
+  const version = await call({id: 1, method: 'Browser.getVersion'});
+  assert.equal(version.result.product, 'Chrome/154.0.0.0');
+  assert.deepEqual(
+    await call({id: 2, method: 'Target.setAutoAttach', params: {autoAttach: true}}),
+    {
+      id: 2,
+      result: {},
+    },
+  );
+  assert.deepEqual([...extension.attached], [saved.id]);
+  const sent = extension.commands.filter((c) => c.method === 'debugger.send');
+  assert.deepEqual(
+    sent.map((c) => c.params.method),
+    ['Target.getTargetInfo', 'Target.setAutoAttach'],
+  );
+  assert.equal(sent[1].params.params.waitForDebuggerOnStart, true);
+  assert.deepEqual(sent[1].params.params.filter, [
+    {type: 'iframe', exclude: false},
+    {exclude: true},
+  ]);
+  const attachedEvent = forwarded.find((m) => m.method === 'Target.attachedToTarget');
+  assert.equal(attachedEvent.params.sessionId, `jev-tab-${saved.id}`);
+  assert.equal(attachedEvent.params.targetInfo.targetId, saved.target);
+  assert.equal(attachedEvent.params.targetInfo.browserContextId, 'ctx');
+  assert.equal(forwarded.indexOf(attachedEvent) < forwarded.findIndex((m) => m.id === 2), true);
+  // Page commands go to the owned tab; the personal tab is never named.
+  await call({
+    id: 3,
+    sessionId: `jev-tab-${saved.id}`,
+    method: 'Page.navigate',
+    params: {url: 'x'},
+  });
+  const navigate = extension.commands.at(-1);
+  assert.deepEqual(navigate.params, {tabId: saved.id, method: 'Page.navigate', params: {url: 'x'}});
+  assert.equal(
+    extension.commands.some((c) => c.params?.tabId === personal.id),
+    false,
+  );
+  const socket = extension.sockets.at(-1);
+  extension.emit(socket, {
+    event: 'debugger.event',
+    tabId: saved.id,
+    method: 'Target.attachedToTarget',
+    params: {sessionId: 'frame-1', targetInfo: {type: 'iframe'}, waitingForDebugger: true},
+  });
+  extension.emit(socket, {
+    event: 'debugger.event',
+    tabId: saved.id,
+    sessionId: 'frame-1',
+    method: 'Page.frameNavigated',
+    params: {},
+  });
+  await flush();
+  await flush();
+  assert.deepEqual(
+    forwarded
+      .filter((m) => m.method?.startsWith('Page.frame') || m.method === 'Target.attachedToTarget')
+      .map((m) => m.sessionId),
+    [undefined, `jev-tab-${saved.id}`, 'frame-1'],
+  );
+  await call({id: 4, sessionId: 'frame-1', method: 'Runtime.runIfWaitingForDebugger'});
+  assert.deepEqual(extension.commands.at(-1).params, {
+    tabId: saved.id,
+    sessionId: 'frame-1',
+    method: 'Runtime.runIfWaitingForDebugger',
+    params: {},
+  });
+  const info = await call({
+    id: 5,
+    sessionId: `jev-tab-${saved.id}`,
+    method: 'Target.getTargetInfo',
+  });
+  assert.equal(info.result.targetInfo.targetId, saved.target);
+  const unknown = await call({id: 6, sessionId: 'nope', method: 'Page.enable'});
+  assert.match(unknown.error.message, /Session not found/);
+  // Playwright's newCDPSession: a browser session attaches to the tab or to
+  // one of its frames; chrome.debugger allows one attachment, so these
+  // sessions share it and see its events.
+  const {sessionId: browserSession} = (await call({id: 7, method: 'Target.attachToBrowserTarget'}))
+    .result;
+  const {sessionId: pageSession} = (
+    await call({
+      id: 8,
+      sessionId: browserSession,
+      method: 'Target.attachToTarget',
+      params: {targetId: saved.target, flatten: true},
+    })
+  ).result;
+  assert.notEqual(pageSession, `jev-tab-${saved.id}`);
+  await call({
+    id: 9,
+    sessionId: pageSession,
+    method: 'Runtime.evaluate',
+    params: {expression: '1'},
+  });
+  assert.deepEqual(extension.commands.at(-1).params, {
+    tabId: saved.id,
+    method: 'Runtime.evaluate',
+    params: {expression: '1'},
+  });
+  extension.emit(socket, {
+    event: 'debugger.event',
+    tabId: saved.id,
+    method: 'Page.loadEventFired',
+    params: {timestamp: 1},
+  });
+  await flush();
+  await flush();
+  assert.deepEqual(
+    forwarded.filter((m) => m.method === 'Page.loadEventFired').map((m) => m.sessionId),
+    [`jev-tab-${saved.id}`, pageSession],
+  );
+  await call({
+    id: 10,
+    sessionId: browserSession,
+    method: 'Target.detachFromTarget',
+    params: {sessionId: pageSession},
+  });
+  assert.deepEqual(forwarded.at(-2), {
+    sessionId: browserSession,
+    method: 'Target.detachedFromTarget',
+    params: {sessionId: pageSession, targetId: saved.target},
+  });
+  const frameTarget = 'F'.repeat(32);
+  extension.emit(socket, {
+    event: 'debugger.event',
+    tabId: saved.id,
+    method: 'Target.attachedToTarget',
+    params: {sessionId: 'frame-2', targetInfo: {type: 'iframe', targetId: frameTarget}},
+  });
+  await flush();
+  await flush();
+  const {sessionId: frameSession} = (
+    await call({
+      id: 11,
+      sessionId: browserSession,
+      method: 'Target.attachToTarget',
+      params: {targetId: frameTarget, flatten: true},
+    })
+  ).result;
+  await call({id: 12, sessionId: frameSession, method: 'DOM.getDocument'});
+  assert.deepEqual(extension.commands.at(-1).params, {
+    tabId: saved.id,
+    sessionId: 'frame-2',
+    method: 'DOM.getDocument',
+    params: {},
+  });
+});
+
+test('new tabs and popups of owned tabs join the connection; closing a tab retires it', async (t) => {
+  const {extension, transport, forwarded, call} = await transportFixture(t);
+  const destroyed = [];
+  transport.onTargetDestroyed = (id) => destroyed.push(id);
+  await call({id: 1, method: 'Target.setAutoAttach', params: {autoAttach: true}});
+  const {windowId, targetId: home} = await transport.createWindow('about:blank');
+  assert.equal(await transport.windowExists(windowId), true);
+  const child = await transport.createTab({windowId, openerTargetId: home});
+  assert.equal(await transport.windowOf(child), windowId);
+  const childEntry = transport.targets.get(child);
+  assert.equal(childEntry.info.openerId, home);
+  const created = extension.commands.find((c) => c.method === 'tabs.create');
+  assert.deepEqual(created.params, {
+    windowId,
+    openerTabId: transport.targets.get(home).tabId,
+    url: 'about:blank',
+    active: false,
+  });
+  // A popup opened by a page arrives as a Chrome tab event.
+  const popup = extension.addTab({
+    windowId,
+    openerTabId: childEntry.tabId,
+    url: 'https://jobs.example/apply',
+  });
+  extension.emit(extension.sockets.at(-1), {event: 'tabs.created', tab: popup});
+  for (let i = 0; i < 50 && !transport.attached.has(popup.target); i++) await flush();
+  assert.equal(transport.owned.has(popup.target), true);
+  assert.equal(transport.targets.get(popup.target).info.openerId, child);
+  // Unrelated tabs never arrive, and closing an owned tab retires it everywhere.
+  assert.equal(transport.owned.size, 3);
+  assert.deepEqual(
+    await call({id: 2, method: 'Target.closeTarget', params: {targetId: popup.target}}),
+    {
+      id: 2,
+      result: {success: true},
+    },
+  );
+  for (let i = 0; i < 50 && !destroyed.length; i++) await flush();
+  assert.deepEqual(destroyed, [popup.target]);
+  assert.equal(transport.owned.has(popup.target), false);
+  assert.equal(
+    forwarded.filter((m) => m.method === 'Target.detachedFromTarget').at(-1).params.targetId,
+    popup.target,
+  );
+  assert.deepEqual(transport.tabIdsByTarget(), {
+    [home]: transport.targets.get(home).tabId,
+    [child]: childEntry.tabId,
+  });
+  assert.deepEqual(await call({id: 3, method: 'Target.getTargets'}), {
+    id: 3,
+    result: {targetInfos: [transport.targets.get(home).info, childEntry.info]},
+  });
+});
+
+test('cancelling the Chrome infobar ends the connection and waits for an explicit reconnect', async (t) => {
+  const {extension, transport, call} = await transportFixture(t);
+  await call({id: 1, method: 'Target.setAutoAttach', params: {autoAttach: true}});
+  const {targetId} = await transport.createWindow('about:blank');
+  const closed = new Promise((resolve) => (transport.onclose = resolve));
+  extension.emit(extension.sockets.at(-1), {
+    event: 'debugger.detach',
+    tabId: transport.targets.get(targetId).tabId,
+    reason: 'canceled_by_user',
+  });
+  await closed;
+  assert.equal(transport.cancelled, true);
+  assert.equal(transport.connected, false);
+  await assert.rejects(transport.createWindow('about:blank'), /kapandı/);
+  let now = 0,
+    attempts = 0;
+  const connections = new BrowserConnections({
+    connect: async () => {
+      attempts++;
+    },
+    now: () => now,
+  });
+  t.after(() => connections.close());
+  connections.prepare('candidate');
+  await flush();
+  connections.disconnected('candidate', {manual: true});
+  assert.match(connections.status('candidate').message, /iptal edildi/);
+  now += 3600000;
+  connections.prepare('candidate');
+  await flush();
+  assert.equal(attempts, 1, 'a cancelled connection never reopens Chrome pages by itself');
+  connections.prepare('candidate', {force: true});
+  await flush();
+  assert.equal(attempts, 2);
+});
+
+test('a workspace without the extension never opens Chrome, and cancelling a pending connection stops waiting', async (t) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'jobloop-extension-'));
+  const opened = [];
+  let installed = false;
+  const browsers = new BrowserTools(directory, () => ({
+    profile: {directory: 'Profile 2'},
+    extensionInstalled: async (profile) => {
+      assert.equal(profile, 'Profile 2');
+      return installed;
+    },
+    openUrl: async (url, profile) => {
+      assert.equal(profile.directory, 'Profile 2');
+      opened.push(url);
+    },
+  }));
+  t.after(async () => {
     await browsers.close();
-    await pending;
-    assert.equal(browsers.connections.pending.size, 0);
-    assert.equal(chrome.requests, 2);
-  },
-);
-
-test(
-  'closing during setup also cancels CDP commands after approval',
-  {timeout: 5000},
-  async (t) => {
-    const chrome = await chromeFixture(t),
-      directory = await mkdtemp(path.join(os.tmpdir(), 'jobloop-approval-'));
-    const browsers = new BrowserTools(directory, () => ({
-      profile: {directory: 'Default'},
-      endpoint: async () => chrome.endpoint,
-      openWindow: openReadyWindow,
-    }));
-    t.after(async () => {
-      await browsers.close();
-      await rm(directory, {recursive: true, force: true});
-    });
-    const request = chrome.nextRequest();
-    browsers.prepare('candidate');
-    const peer = await (await request).allow();
-    const command = await new Promise((resolve) =>
-      peer.once('message', (data) => resolve(JSON.parse(data))),
-    );
-    assert.equal(command.method, 'Target.getTargets');
-    const pending = browsers.connections.pending.get('candidate');
-    await browsers.close();
-    await pending;
-    assert.equal(browsers.connections.pending.size, 0);
-    assert.equal(browsers.status('candidate').ready, false);
-  },
-);
-
-test(
-  'an already cancelled connection never opens an approval request',
-  {timeout: 5000},
-  async (t) => {
-    const chrome = await chromeFixture(t),
-      abort = new AbortController();
-    abort.abort();
-    await assert.rejects(JevCdpTransport.connect(chrome.endpoint, {signal: abort.signal}), {
-      name: 'AbortError',
-    });
-    assert.equal(chrome.requests, 0);
-  },
-);
-
-test(
-  'a closed selected profile is opened and focused before Chrome receives an approval request',
-  {timeout: 5000},
-  async (t) => {
-    const chrome = await chromeFixture(t),
-      directory = await mkdtemp(path.join(os.tmpdir(), 'jobloop-profile-approval-'));
-    let opened,
-      marker,
-      windows = 0,
-      activeProfile = 'Other';
-    const windowOpened = new Promise((resolve) => (opened = resolve));
-    const browsers = new BrowserTools(directory, () => ({
-      profile: {directory: 'Profile 2'},
-      endpoint: async () => {
-        assert.equal(activeProfile, 'Profile 2');
-        return chrome.endpoint;
-      },
-      openWindow: async (url, profile) => {
-        assert.equal(profile.directory, 'Profile 2');
-        windows++;
-        marker = url;
-        opened();
-      },
-    }));
-    t.after(async () => {
-      await browsers.close();
-      await rm(directory, {recursive: true, force: true});
-    });
-    browsers.prepare('candidate');
-    await windowOpened;
-    await fetch(marker);
-    await windowFocus(marker, false);
-    await flush();
-    assert.equal(
-      chrome.requests,
-      0,
-      'neither launching nor loading a background window grants readiness',
-    );
-    browsers.prepare('candidate', {force: true});
-    assert.equal(windows, 1);
-    const request = chrome.nextRequest();
-    activeProfile = 'Profile 2';
-    await windowFocus(marker);
-    await request;
-    assert.equal(chrome.requests, 1);
-    assert.equal(windows, 1);
-    const pending = browsers.connections.pending.get('candidate');
-    await browsers.resetCandidate('candidate');
-    await pending;
-    assert.equal(browsers.status('candidate').state, 'idle');
-  },
-);
-
-test(
-  'switching profiles while the selected window loads cancels it without requesting permission',
-  {timeout: 5000},
-  async (t) => {
-    const chrome = await chromeFixture(t),
-      directory = await mkdtemp(path.join(os.tmpdir(), 'jobloop-profile-loading-'));
-    let opened, marker;
-    const windowOpened = new Promise((resolve) => (opened = resolve));
-    const browsers = new BrowserTools(directory, () => ({
-      profile: {directory: 'Profile 2'},
-      endpoint: async () => chrome.endpoint,
-      openWindow: async (url) => {
-        marker = url;
-        opened();
-      },
-    }));
-    t.after(async () => {
-      await browsers.close();
-      await rm(directory, {recursive: true, force: true});
-    });
-    browsers.prepare('candidate');
-    await windowOpened;
-    const pending = browsers.connections.pending.get('candidate');
-    await browsers.resetCandidate('candidate');
-    await pending;
-    assert.equal(chrome.requests, 0);
-    assert.equal(browsers.status('candidate').state, 'idle');
-    await assert.rejects(fetch(marker));
-  },
-);
-
-test(
-  'restarted workspaces cannot switch the active profile during another approval or connection setup',
-  {timeout: 5000},
-  async (t) => {
-    const chrome = await chromeFixture(t),
-      directory = await mkdtemp(path.join(os.tmpdir(), 'jobloop-restart-approval-'));
-    const opened = [];
-    const browsers = new BrowserTools(directory, (id) => ({
-      profile: {directory: id},
-      endpoint: async () => chrome.endpoint,
-      openWindow: async (url, profile) => {
-        opened.push(profile.directory);
-        await openReadyWindow(url);
-      },
-    }));
-    t.after(async () => {
-      await browsers.close();
-      await rm(directory, {recursive: true, force: true});
-    });
-    let request = chrome.nextRequest();
-    browsers.prepare('Default');
-    const first = await request;
-    browsers.prepare('Profile 2');
-    await browsers.connect('Profile 2');
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    assert.deepEqual(
-      opened,
-      ['Default'],
-      'a queued profile must not steal focus from the pending approval',
-    );
-    assert.equal(chrome.requests, 1);
-    const peer = await first.allow();
-    await new Promise((resolve) => peer.once('message', resolve));
-    await flush();
-    assert.deepEqual(opened, ['Default'], 'restoring tabs also belongs to the exclusive setup');
-    request = chrome.nextRequest();
-    await browsers.resetCandidate('Default');
-    await request;
-    assert.deepEqual(opened, ['Default', 'Profile 2']);
-    assert.equal(chrome.requests, 2);
-  },
-);
-
-test(
-  'closing the app cancels queued profiles before any more Chrome windows open',
-  {timeout: 5000},
-  async (t) => {
-    const chrome = await chromeFixture(t),
-      directory = await mkdtemp(path.join(os.tmpdir(), 'jobloop-close-approval-'));
-    const opened = [];
-    const browsers = new BrowserTools(directory, (id) => ({
-      profile: {directory: id},
-      endpoint: async () => chrome.endpoint,
-      openWindow: async (url, profile) => {
-        opened.push(profile.directory);
-        await openReadyWindow(url);
-      },
-    }));
-    t.after(async () => {
-      await browsers.close();
-      await rm(directory, {recursive: true, force: true});
-    });
-    const request = chrome.nextRequest();
-    browsers.prepare('Default');
-    await request;
-    browsers.prepare('Profile 2');
-    await browsers.connect('Profile 2');
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const pending = [...browsers.connections.pending.values()];
-    await browsers.close();
-    await Promise.all(pending);
-    assert.deepEqual(opened, ['Default']);
-    assert.equal(chrome.requests, 1);
-    assert.equal(browsers.connections.pending.size, 0);
-  },
-);
-
-test(
-  'a profile changed while queued never opens its old window, and a denial lets the next workspace connect',
-  {timeout: 5000},
-  async (t) => {
-    const chrome = await chromeFixture(t),
-      directory = await mkdtemp(path.join(os.tmpdir(), 'jobloop-queued-profile-'));
-    const opened = [];
-    let selected = 'Profile 2';
-    const browsers = new BrowserTools(directory, (id) => ({
-      profile: {directory: id === 'changed' ? selected : id},
-      endpoint: async () => chrome.endpoint,
-      openWindow: async (url, profile) => {
-        opened.push(profile.directory);
-        await openReadyWindow(url);
-      },
-    }));
-    t.after(async () => {
-      await browsers.close();
-      await rm(directory, {recursive: true, force: true});
-    });
-    let request = chrome.nextRequest();
-    browsers.prepare('Default');
-    const first = await request;
-    browsers.prepare('changed');
-    await browsers.connect('changed');
-    const old = browsers.connections.pending.get('changed');
-    await browsers.resetCandidate('changed');
-    await old;
-    selected = 'Profile 3';
-    browsers.prepare('changed');
-    await browsers.connect('changed');
-    request = chrome.nextRequest();
-    first.socket.end('HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n');
-    await request;
-    assert.deepEqual(opened, ['Default', 'Profile 3']);
-    assert.equal(chrome.requests, 2);
-  },
-);
-
-test(
-  'owned tabs attach their out-of-process form frames and workers without attaching other tabs',
-  {timeout: 5000},
-  async (t) => {
-    const chrome = await chromeFixture(t),
-      request = chrome.nextRequest();
-    const transportPromise = JevCdpTransport.connect(chrome.endpoint);
-    const peer = await (await request).allow(),
-      transport = await transportPromise;
-    t.after(() => transport.close());
-    const commands = [];
-    peer.on('message', (data) => {
-      const command = JSON.parse(data);
-      commands.push(command);
-      peer.send(
-        JSON.stringify({
-          id: command.id,
-          result:
-            command.method === 'Target.attachToTarget' ? {sessionId: 'owned-page-session'} : {},
-        }),
-      );
-    });
-    await transport.attach('owned-page');
-    assert.equal(commands.length, 2);
-    assert.deepEqual(commands[0].params, {targetId: 'owned-page', flatten: true});
-    assert.equal(commands[1].method, 'Target.setAutoAttach');
-    assert.equal(commands[1].sessionId, 'owned-page-session');
-    // Playwright's own parameters: a filter that leaves out workers keeps them paused.
-    assert.deepEqual(commands[1].params, {
-      autoAttach: true,
-      waitForDebuggerOnStart: true,
-      flatten: true,
-    });
-  },
-);
-
-test(
-  'a restored tab that does not answer is left out instead of failing the connection',
-  {timeout: 5000},
-  async (t) => {
-    const chrome = await chromeFixture(t),
-      request = chrome.nextRequest();
-    const transportPromise = JevCdpTransport.connect(chrome.endpoint);
-    const peer = await (await request).allow(),
-      transport = await transportPromise;
-    t.after(() => transport.close());
-    transport.callTimeoutMs = 50;
-    const commands = [];
-    peer.on('message', (data) => {
-      const command = JSON.parse(data);
-      commands.push(command);
-      // The hung page never answers on its own session.
-      if (command.sessionId === 'hung-session') return;
-      const sessionId = {'hung-page': 'hung-session', 'live-page': 'live-session'}[
-        command.params?.targetId
-      ];
-      peer.send(JSON.stringify({id: command.id, result: sessionId ? {sessionId} : {}}));
-    });
-    transport.owned.add('hung-page');
-    transport.owned.add('live-page');
-    const answered = new Promise((resolve) => (transport.onmessage = resolve));
-    transport.send({id: 1, method: 'Target.setAutoAttach', params: {autoAttach: true}});
-    assert.deepEqual(await answered, {id: 1, result: {}});
-    assert.deepEqual([...transport.owned], ['live-page']);
-    assert.deepEqual([...transport.attached], ['live-page']);
-    assert.ok(
-      commands.some(
-        (c) => c.method === 'Target.detachFromTarget' && c.params.sessionId === 'hung-session',
-      ),
-    );
-  },
-);
+    await rm(directory, {recursive: true, force: true});
+  });
+  browsers.prepare('candidate');
+  await browsers.connections.pending.get('candidate');
+  assert.equal(opened.length, 0);
+  assert.match(browsers.status('candidate').message, /chrome:\/\/extensions/);
+  installed = true;
+  browsers.prepare('candidate', {force: true});
+  for (let i = 0; i < 50 && !opened.length; i++) await flush();
+  assert.equal(opened.length, 1);
+  assert.equal(browsers.status('candidate').state, 'connecting');
+  const pending = browsers.connections.pending.get('candidate');
+  await browsers.resetCandidate('candidate');
+  await pending;
+  assert.equal(browsers.status('candidate').state, 'idle');
+  assert.equal(opened.length, 1);
+});

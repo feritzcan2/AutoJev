@@ -1,14 +1,12 @@
 import assert from 'node:assert/strict';
-import {mkdtemp, readFile, rm} from 'node:fs/promises';
-import {createRequire} from 'node:module';
+import {mkdtemp, rm} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {BrowserTools} from '../app/browser/tools.mjs';
 import {automationBrowser} from '../app/browser/automation-browser.mjs';
+import {launchExtensionChrome} from './jev-extension-fixture.mjs';
 
-const require = createRequire(import.meta.url),
-  {chromium} = createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
 const directory = await mkdtemp(path.join(tmpdir(), 'loop-source-handoff-')),
   requests = [];
 const server = createServer((req, res) => {
@@ -22,29 +20,14 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const base = `http://127.0.0.1:${server.address().port}`,
   legacySource = base.replace('127.0.0.1', 'localhost') + '/legacy',
   sources = [base + '/source-a', base + '/source-b', legacySource];
-const chromeDir = path.join(directory, 'chrome'),
-  context = await chromium.launchPersistentContext(chromeDir, {
-    channel: 'chrome',
-    headless: true,
-    args: ['--remote-debugging-port=0'],
-  });
+const chrome = await launchExtensionChrome(path.join(directory, 'chrome')),
+  {context} = chrome;
 const personal = context.pages()[0];
 await personal.goto(base + '/personal');
-const root = await context.browser().newBrowserCDPSession(),
-  cdp = await context.newCDPSession(personal),
-  {targetInfo} = await cdp.send('Target.getTargetInfo');
-const [port, route] = (await readFile(path.join(chromeDir, 'DevToolsActivePort'), 'utf8'))
-  .trim()
-  .split('\n');
 const options = () => ({
   profile: {directory: 'Test'},
-  endpoint: async () => `ws://127.0.0.1:${port}${route}`,
-  openWindow: (url) =>
-    root.send('Target.createTarget', {
-      url,
-      newWindow: true,
-      browserContextId: targetInfo.browserContextId,
-    }),
+  openUrl: chrome.openUrl,
+  extensionInstalled: chrome.extensionInstalled,
   lifecycle: {multiWorker: true},
 });
 let browsers = new BrowserTools(directory, options);
@@ -65,7 +48,7 @@ try {
   );
   let {client} = await browsers.connect('workspace');
   await client.tab(opened.tabId).page.getByRole('searchbox').fill('retained filter');
-  await client.tab(opened.tabId).page.evaluate(() => window.scrollTo(0, 700));
+  await client.tab(opened.tabId).page.evaluate(() => globalThis.scrollTo(0, 700));
   const duplicate = unpack(
     await browsers
       .forWorker('main')

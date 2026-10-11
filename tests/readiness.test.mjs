@@ -17,8 +17,9 @@ const dependencies = {
   inspectLogin: async () => ready,
   findChrome: async () => '/chrome',
   listChromeProfiles: async () => [{directory: 'Default', name: 'Personal'}],
-  existingChromeEndpoint: async () => 'ws://127.0.0.1:9222/devtools/browser/example',
-  chromePortAvailable: async () => true,
+  resolveChromeProfile: async (selected) => selected?.directory ?? 'Default',
+  extensionInstalled: async () => true,
+  extensionMissingMessage: () => 'Install the AutoJev extension from /app/extension',
   jevStatus: async () => ({configured: true}),
 };
 test('OpenCode readiness accepts credentials without exposing account output', async () => {
@@ -60,28 +61,41 @@ test('first-run checks diagnose missing CLI while optional browser runtime check
   );
   assert.equal(result.checks.find((check) => check.id === 'chrome').state, 'ready');
 });
-test('Jev readiness verifies the selected profile, debug port and key without browsing or API calls', async () => {
+test('Jev readiness verifies the selected profile, its AutoJev extension and the key without browsing or API calls', async () => {
+  const checked = [];
   assert.equal(
     (
       await collectReadiness(
-        {provider: 'claude', decisions: 'jev', chromeProfile: {directory: 'Default'}},
-        dependencies,
+        {provider: 'claude', decisions: 'jev', chromeProfile: {directory: 'Profile 2'}},
+        {
+          ...dependencies,
+          listChromeProfiles: async () => [{directory: 'Profile 2', name: 'Work'}],
+          extensionInstalled: async (profile) => {
+            checked.push(profile);
+            return true;
+          },
+        },
       )
     ).ready,
     true,
   );
+  assert.deepEqual(checked, ['Profile 2']);
   const result = await collectReadiness(
     {decisions: 'jev', chromeProfile: {directory: 'Missing'}},
     {
       ...dependencies,
-      chromePortAvailable: async () => false,
+      extensionInstalled: async () => false,
       jevStatus: async () => ({configured: false}),
     },
   );
   assert.equal(result.ready, false);
   assert.deepEqual(
     result.checks.filter((check) => check.state === 'error').map((check) => check.id),
-    ['chrome-profile', 'chrome-debug', 'jev'],
+    ['chrome-profile', 'chrome-extension', 'jev'],
+  );
+  assert.match(
+    result.checks.find((check) => check.id === 'chrome-extension').detail,
+    /\/app\/extension/,
   );
 });
 test('input validation rejects arbitrary executable names and profile paths', async () => {
