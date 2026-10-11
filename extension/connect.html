@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <title>AutoJev · Chrome bağlantısı</title>
+    <style>
+      body {
+        font: 15px/1.5 system-ui, sans-serif;
+        margin: 48px auto;
+        max-width: 520px;
+        color: #1f2933;
+      }
+      p[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>AutoJev</h1>
+    <p id="pending">AutoJev bu Chrome profiline bağlanıyor…</p>
+    <p id="done" hidden>Bağlantı kuruldu. Bu sekme kapanabilir.</p>
+    <p id="error" hidden></p>
+    <script src="connect.js"></script>
+  </body>
+</html>

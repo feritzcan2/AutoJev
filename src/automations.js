@@ -795,7 +795,7 @@ export function automationsPage(
     chrome.querySelector('small').textContent = connection.ready
       ? (a.chromeProfile?.name ?? 'Seçili Chrome oturumu')
       : (connection.message ??
-        'Chrome’da chrome://inspect/#remote-debugging bağlantısını aç ve bağlantı isteğine izin ver.');
+        'AutoJev eklentisi seçili Chrome profilinde kurulu olmalı. Bağlıyken Chrome üst çubuğunda “AutoJev” uyarısı görünür.');
     chrome.querySelector('.chrome-reconnect').hidden = Boolean(connection.ready);
     chrome.querySelector('.chrome-reconnect').disabled =
       locked || connection.state === 'connecting';

@@ -1,7 +1,6 @@
 // Existing Chrome contract: shared login, separate windows, scoped tabs, safe disconnect.
 import assert from 'node:assert/strict';
-import {mkdtemp, readFile, rm} from 'node:fs/promises';
-import {createRequire} from 'node:module';
+import {mkdtemp, rm} from 'node:fs/promises';
 import {DatabaseSync} from 'node:sqlite';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,37 +12,19 @@ import {BrowserTools} from '../app/browser/tools.mjs';
 import {CaptchaSettings} from '../app/captcha/settings.mjs';
 import {CaptchaCoordinator} from '../app/captcha/coordinator.mjs';
 import {startJevFixture} from './jev-demo.mjs';
-const require = createRequire(import.meta.url),
-  {chromium} = createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
+import {launchExtensionChrome} from './jev-extension-fixture.mjs';
 const directory = await mkdtemp(path.join(os.tmpdir(), 'jev-existing-test-')),
   fixture = await startJevFixture();
-const context = await chromium.launchPersistentContext(directory, {
-  channel: 'chrome',
-  headless: true,
-  args: ['--remote-debugging-port=0'],
-});
-const browser = context.browser(),
-  root = await browser.newBrowserCDPSession(),
+const chrome = await launchExtensionChrome(path.join(directory, 'chrome'));
+const {context} = chrome,
   personal = context.pages()[0];
 await personal.goto(fixture.url);
 await context.addCookies([{name: 'test_login', value: 'existing-session', url: fixture.url}]);
-const session = await context.newCDPSession(personal),
-  {targetInfo} = await session.send('Target.getTargetInfo');
-const [port, route] = (await readFile(path.join(directory, 'DevToolsActivePort'), 'utf8'))
-  .trim()
-  .split('\n');
-const endpoint = async () => `ws://127.0.0.1:${port}${route}`;
-const openWindow = async (url) =>
-  root.send('Target.createTarget', {
-    url,
-    newWindow: true,
-    browserContextId: targetInfo.browserContextId,
-  });
 const db = new DatabaseSync(':memory:');
 const client = new JevBrowser(path.join(directory, 'candidate'), {
   profile: {directory: 'Test'},
-  endpoint,
-  openWindow,
+  openUrl: chrome.openUrl,
+  extensionInstalled: chrome.extensionInstalled,
   siteAccess: new SiteAccess(db),
   autoVerify: () => true,
 });

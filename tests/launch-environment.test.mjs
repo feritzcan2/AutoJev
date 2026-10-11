@@ -10,8 +10,8 @@ import {Engine} from '../app/agents/engine.mjs';
 const chrome = {
   findChrome: async () => '/chrome',
   listChromeProfiles: async () => [{directory: 'Default', name: 'Personal'}],
-  existingChromeEndpoint: async () => 'ws://127.0.0.1:9222/devtools/browser/example',
-  chromePortAvailable: async () => true,
+  resolveChromeProfile: async (selected) => selected?.directory ?? 'Default',
+  extensionInstalled: async () => true,
   jevStatus: async () => ({configured: true}),
 };
 test('macOS GUI PATH discovers Homebrew agent CLIs with the same environment used for login checks', async () => {

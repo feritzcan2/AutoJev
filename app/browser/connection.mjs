@@ -23,15 +23,19 @@ export class BrowserConnections {
     this.changed(id, state);
     return state;
   }
-  disconnected(id) {
+  // A connection the user cancelled in Chrome waits for an explicit reconnect;
+  // any other loss retries on its own.
+  disconnected(id, {manual = false} = {}) {
     this.epochs.set(id, (this.epochs.get(id) ?? 0) + 1);
     const old = this.status(id);
     this.set(id, {
       ...old,
       state: 'waiting',
       ready: false,
-      retryAt: this.now() + 2000,
-      message: 'Chrome bağlantısı kesildi. Aynı görev bağlantıyı bekliyor.',
+      retryAt: manual ? Infinity : this.now() + 2000,
+      message: manual
+        ? 'Jev bağlantısı Chrome’da iptal edildi. Sürdürmek için Yeniden bağlan’a bas.'
+        : 'Chrome bağlantısı kesildi. Aynı görev bağlantıyı bekliyor.',
     });
   }
   prepare(id, {force = false} = {}) {

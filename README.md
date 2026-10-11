@@ -89,9 +89,13 @@ yeniden aç. Kayıtlı profil ve CV korunur; hazırlık yeniden denenir.
    terminalde oturum aç. Sağlayıcı kullanımı hesabının ücret ve veri koşullarına tabidir.
 2. Genel web otomasyonları için Google Chrome kur. Agent ayarlarından ayrı tarayıcı
    veya Jev seçebilirsin. Ayrı tarayıcı her otomasyon için kendi profilini açar;
-   **Tarayıcıyı aç** düğmesinden hesaplarına giriş yapabilirsin. Jev kullanırken mevcut
-   Chrome’da `chrome://inspect/#remote-debugging` bağlantısını aç ve bağlantı
-   isteğine izin ver. Agent’ın kendi tarayıcı modunda araçları agent içinde etkinleştir.
+   **Tarayıcıyı aç** düğmesinden hesaplarına giriş yapabilirsin. Jev mevcut Chrome
+   profilinde çalışır ve ona yalnızca AutoJev eklentisi üzerinden bağlanır: Chrome’da
+   `chrome://extensions` sayfasını aç, Geliştirici modunu aç ve **Paketlenmemiş öğe
+   yükle** ile uygulamanın `extension` klasörünü seç (yol Hazırlık ekranında yazar).
+   Chrome uzaktan hata ayıklama moduna girmez; bağlıyken yalnızca Chrome üst çubuğunda
+   “AutoJev” uyarısı görünür ve yalnızca AutoJev’in açtığı sekmeler yönetilir. Agent’ın
+   kendi tarayıcı modunda araçları agent içinde etkinleştir.
 3. Jev kullanacaksan **Yapılandırma → Jev** bölümünden TypeSafe API anahtarını
    kaydet ve bağlantıyı test et. Kaynaklar seçili tarayıcı üzerinden taranır.
 4. **Template’ler** bölümünden başla ve çalışma alanı profilini kontrol et. İş arama

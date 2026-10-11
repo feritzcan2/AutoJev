@@ -38,6 +38,10 @@ ve `pnpm test:packaged` çalıştır. Linux’ta arayüz testleri için Xvfb ger
 | `site-extensions/` | Siteye özgü okuyucular (yalnızca kullanıcı isteğiyle) |
 | `system/` | Ayarlar, yedekleme, güncelleme, bakım |
 
+Depo kökündeki `extension/` klasörü Jev’in Chrome’a bağlandığı AutoJev eklentisidir
+(`chrome.debugger`); paketlenirken `extension` kaynak klasörü olarak kopyalanır ve
+kullanıcı onu Chrome’a paketlenmemiş yükler.
+
 İş aramaya özgü yeni metin ve kurallar çekirdek klasörlere değil
 `templates/job-search/` altına eklenir. Biçim `pnpm format` ile korunur; başında
 `// @ts-check` olan dosyalar `pnpm check` içinde tip denetiminden geçer.

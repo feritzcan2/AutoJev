@@ -1,69 +1,49 @@
-// Existing Chrome contract: shared login, separate windows, scoped tabs, safe disconnect.
+// Existing Chrome contract over the AutoJev extension: shared login, separate
+// windows, scoped tabs, safe disconnect, restart recovery.
 import assert from 'node:assert/strict';
-import {mkdtemp, readFile, rm} from 'node:fs/promises';
-import {createRequire} from 'node:module';
+import {mkdtemp, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
 import {JevTabs} from '../app/jev/tabs.mjs';
 import {startJevFixture} from './jev-demo.mjs';
-const require = createRequire(import.meta.url),
-  {chromium} = createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
+import {launchExtensionChrome} from './jev-extension-fixture.mjs';
 const directory = await mkdtemp(path.join(os.tmpdir(), 'jev-existing-test-')),
-  fixture = await startJevFixture();
-const context = await chromium.launchPersistentContext(directory, {
-  channel: 'chrome',
-  headless: true,
-  args: ['--remote-debugging-port=0'],
-});
-const browser = context.browser(),
-  root = await browser.newBrowserCDPSession(),
+  fixture = await startJevFixture(),
+  chrome = await launchExtensionChrome(path.join(directory, 'chrome'));
+const {context, openUrl} = chrome,
   personal = context.pages()[0];
 await personal.goto(fixture.url);
 await context.addCookies([{name: 'test_login', value: 'existing-session', url: fixture.url}]);
-const session = await context.newCDPSession(personal),
-  {targetInfo} = await session.send('Target.getTargetInfo');
-const [port, route] = (await readFile(path.join(directory, 'DevToolsActivePort'), 'utf8'))
-  .trim()
-  .split('\n');
-const endpoint = async () => `ws://127.0.0.1:${port}${route}`;
-let windowRequests = 0,
-  failFirst = true;
-const openWindow = async (url) => {
-  windowRequests++;
-  await root.send('Target.createTarget', {
-    url,
-    newWindow: true,
-    browserContextId: targetInfo.browserContextId,
-  });
-};
 const aDirectory = path.join(directory, 'candidate-a'),
   bDirectory = path.join(directory, 'candidate-b'),
   profile = {directory: 'Test'};
-const a = new JevBrowser(aDirectory, {
-    profile,
-    endpoint: async () => {
-      if (failFirst) {
-        failFirst = false;
-        return 'ws://127.0.0.1:1/devtools/browser/unavailable';
-      }
-      return endpoint();
-    },
-    openWindow,
-  }),
-  b = new JevBrowser(bDirectory, {profile, endpoint, openWindow});
-let restarted, wrongProfile, coldTools, otherProcess;
+let installed = false;
+const options = (extra = {}) => ({
+  profile,
+  openUrl,
+  extensionInstalled: async () => installed,
+  ...extra,
+});
+const a = new JevBrowser(aDirectory, options()),
+  b = new JevBrowser(bDirectory, options());
+let restarted, coldTools, otherProcess;
 const call = async (client, name, args = {}, state = {}) =>
   JSON.parse((await client.callTool({name, arguments: args}, 'local', state)).content[0].text);
+const windowOf = (client, id) => client.transport.windowOf(id);
 try {
-  await assert.rejects(() => call(a, 'browser_jev_tabs'), /Chrome bağlantısı/);
+  // Without the extension nothing opens in Chrome; the message tells how to install it.
+  await assert.rejects(() => call(a, 'browser_jev_tabs'), /chrome:\/\/extensions/);
+  assert.equal(chrome.opened, 0);
+  installed = true;
   assert.deepEqual((await call(a, 'browser_jev_tabs')).tabs, []);
-  assert.equal(windowRequests, 1);
+  assert.equal(chrome.opened, 1, 'one connect page per connection');
   const first = await call(a, 'browser_jev_open', {url: fixture.url});
-  assert.equal(windowRequests, 1);
+  assert.equal(chrome.opened, 1);
   assert.equal(
     await a.tab(first.tabId).page.evaluate(() => document.cookie),
     'test_login=existing-session',
+    'Jev tabs share the profile login',
   );
   const screenshot = await a.callTool({
     name: 'browser_jev_screenshot',
@@ -77,14 +57,9 @@ try {
   await personal.bringToFront();
   const second = await call(a, 'browser_jev_open', {url: fixture.url});
   const third = await call(b, 'browser_jev_open', {url: fixture.url});
-  const windows = await Promise.all(
-    [targetInfo.targetId, first.tabId, second.tabId, third.tabId].map((targetId) =>
-      root.send('Browser.getWindowForTarget', {targetId}),
-    ),
-  );
-  assert.equal(new Set(windows.map((w) => w.windowId)).size, 3);
-  assert.equal(windows[1].windowId, windows[2].windowId);
-  assert.notEqual(windows[1].windowId, windows[3].windowId);
+  assert.equal(chrome.opened, 2);
+  assert.equal(await windowOf(a, first.tabId), await windowOf(a, second.tabId));
+  assert.notEqual(await windowOf(a, first.tabId), await windowOf(b, third.tabId));
   assert.deepEqual(
     (await call(a, 'browser_jev_tabs')).tabs.map((t) => t.tabId).sort(),
     [first.tabId, second.tabId].sort(),
@@ -93,15 +68,31 @@ try {
     (await call(b, 'browser_jev_tabs')).tabs.map((t) => t.tabId),
     [third.tabId],
   );
-  await assert.rejects(
-    () => call(a, 'browser_jev_observe', {tabId: targetInfo.targetId}),
-    /bulunamadı/,
-  );
   await assert.rejects(() => call(b, 'browser_jev_observe', {tabId: first.tabId}), /bulunamadı/);
   await assert.rejects(
     () => b.callTool({name: 'browser_jev_screenshot', arguments: {tabId: first.tabId}}),
     /bulunamadı/,
   );
+  // Pages opened by a Jev tab join the same task; personal tabs never do.
+  const known = new Set(a.tabs.keys());
+  await a.tab(first.tabId).page.evaluate((url) => {
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.textContent = 'popup';
+    document.body.append(anchor);
+    anchor.click();
+  }, fixture.url);
+  for (let i = 0; i < 200 && a.tabs.size === known.size; i++)
+    await new Promise((r) => setTimeout(r, 50));
+  const popupId = [...a.tabs.keys()].find((id) => !known.has(id));
+  assert.ok(popupId, 'a page opened by a Jev tab joins the Jev tabs');
+  assert.equal(a.tabs.get(popupId).openerId, first.tabId);
+  assert.equal((await call(a, 'browser_jev_tabs')).tabs.length, 3);
+  await a.tab(popupId).page.close();
+  for (let i = 0; i < 200 && a.transport.owned.has(popupId); i++)
+    await new Promise((r) => setTimeout(r, 50));
+  assert.equal((await call(a, 'browser_jev_tabs')).tabs.length, 2);
   // A real filled draft survives both socket loss and an application restart.
   await a.tab(first.tabId).page.locator('#query').fill('unsent draft');
   a.choose = (page) => ({
@@ -124,66 +115,67 @@ try {
     /geçerli bir Jev kararı yok/,
   );
   assert.equal(await a.tab(first.tabId).page.locator('#query').inputValue(), 'unsent draft');
-  assert.equal(windowRequests, 3);
+  assert.equal(chrome.opened, 3);
   await a.close();
-  restarted = new JevBrowser(aDirectory, {profile, endpoint, openWindow});
+  restarted = new JevBrowser(aDirectory, options());
   await restarted.focus(first.tabId);
   assert.equal(
     await restarted.tab(first.tabId).page.locator('#query').inputValue(),
     'unsent draft',
   );
-  assert.equal(windowRequests, 4);
+  assert.equal(chrome.opened, 4);
   await assert.rejects(
     () => call(restarted, 'browser_jev_observe', {tabId: third.tabId}),
     /bulunamadı/,
   );
-  // A closed target cannot be confused with another open copy of the same URL.
-  await root.send('Target.closeTarget', {targetId: second.tabId});
+  // A tab closed in Chrome cannot be confused with another open copy of the same URL.
+  await restarted.tab(second.tabId).page.close();
   await assert.rejects(
     () => call(restarted, 'browser_jev_observe', {tabId: second.tabId}),
     /bulunamadı|closed/,
   );
   const {BrowserTools} = await import('../app/browser/tools.mjs');
-  coldTools = new BrowserTools(directory, () => ({
-    profile,
-    endpoint,
-    openWindow,
-    checkpoints: [{browser: 'Jev Chrome', tabId: first.tabId}],
-  }));
+  coldTools = new BrowserTools(directory, () =>
+    options({checkpoints: [{browser: 'Jev Chrome', tabId: first.tabId}]}),
+  );
   await coldTools.focus('legacy-candidate', {browser: 'Jev Chrome', tabId: first.tabId});
   assert.equal(
     (await coldTools.connect('legacy-candidate')).client.tab(first.tabId).page.url(),
     fixture.url,
   );
-  // An old browser process cannot transfer ownership, even with a matching ID.
-  const oldDirectory = path.join(directory, 'old-process');
+  // The extension vouches for a checkpointed tab, not the registry: a record
+  // from another Chrome run neither blocks the tab nor lends its window.
+  const oldDirectory = path.join(directory, 'old-process'),
+    tabIds = (await coldTools.connect('legacy-candidate')).client.transport.tabIdsByTarget();
   await new JevTabs(oldDirectory, profile.directory).save(
-    'ws://127.0.0.1:1/devtools/browser/old',
-    targetInfo.browserContextId,
+    'earlier-chrome-run',
     [first.tabId],
+    {[first.tabId]: 1},
+    {homeId: first.tabId, windowId: 1},
   );
-  otherProcess = new JevBrowser(oldDirectory, {
-    profile,
-    endpoint,
-    openWindow,
-    checkpoints: [{browser: 'Jev Chrome', tabId: first.tabId}],
-  });
-  const before = windowRequests;
-  assert.deepEqual((await call(otherProcess, 'browser_jev_tabs')).tabs, []);
-  assert.equal(windowRequests, before + 1);
+  otherProcess = new JevBrowser(
+    oldDirectory,
+    options({checkpoints: [{browser: 'Jev Chrome', tabId: first.tabId}]}),
+  );
+  const before = chrome.opened;
+  assert.ok(
+    (await call(otherProcess, 'browser_jev_tabs')).tabs.some((t) => t.tabId === first.tabId),
+  );
+  assert.notEqual(otherProcess.homeId, first.tabId);
+  assert.equal(chrome.opened, before + 1);
   await otherProcess.close();
+  // Ownership moved to the newest connection; the previous owner lost the tab.
+  for (let i = 0; i < 100 && restarted.tabs.has(first.tabId); i++)
+    await new Promise((r) => setTimeout(r, 50));
+  assert.equal(restarted.tabs.has(first.tabId), false);
   // A registry that missed a live checkpoint must not make the saved draft vanish.
-  await new JevTabs(oldDirectory, profile.directory).save(
-    await endpoint(),
-    targetInfo.browserContextId,
-    [],
-  );
-  otherProcess = new JevBrowser(oldDirectory, {
-    profile,
-    endpoint,
-    openWindow,
-    checkpoints: [{browser: 'Jev Chrome', tabId: first.tabId}],
+  await new JevTabs(oldDirectory, profile.directory).save(otherProcess.instanceId, [], {
+    [first.tabId]: tabIds[first.tabId],
   });
+  otherProcess = new JevBrowser(
+    oldDirectory,
+    options({checkpoints: [{browser: 'Jev Chrome', tabId: first.tabId}]}),
+  );
   assert.ok(
     (await call(otherProcess, 'browser_jev_tabs')).tabs.some((t) => t.tabId === first.tabId),
   );
@@ -191,40 +183,25 @@ try {
     await otherProcess.tab(first.tabId).page.locator('#query').inputValue(),
     'unsent draft',
   );
-  assert.equal(windowRequests, before + 2);
+  assert.equal(chrome.opened, before + 2);
   await otherProcess.close();
-  // Old saved checkpoints migrate by exact ID, only in the selected profile.
-  const otherContext = await browser.newContext();
-  const wrongOpen = async (url) => {
-    const p = await otherContext.newPage();
-    await p.goto(url);
-  };
-  wrongProfile = new JevBrowser(path.join(directory, 'wrong-profile'), {
-    profile: {directory: 'Other'},
-    endpoint,
-    openWindow: wrongOpen,
-    checkpoints: [{browser: 'Jev Chrome', tabId: first.tabId}],
-  });
-  assert.deepEqual((await call(wrongProfile, 'browser_jev_tabs')).tabs, []);
-  await wrongProfile.close();
-  await otherContext.close();
+  const closedByB = await b.close({closeTabs: true});
+  assert.deepEqual(closedByB.closed.sort(), [third.tabId, b.homeId ?? third.tabId].sort());
   await restarted.close();
-  await b.close();
   await coldTools.close();
   assert.equal(personal.isClosed(), false);
   assert.equal(personal.url(), fixture.url);
+  const urls = context.pages().map((p) => p.url());
   assert.equal(
-    (await root.send('Target.getTargets')).targetInfos.filter((t) =>
-      [first.tabId, second.tabId, third.tabId].includes(t.targetId),
-    ).length,
+    urls.filter((u) => u === fixture.url).length,
     2,
+    'first tab and personal tab remain',
   );
   console.log('JEV_EXISTING_LOGIN_WINDOWS_SCOPE_RECONNECT_RESTART_DRAFT_RECOVERY_PASS');
 } finally {
   await otherProcess?.close().catch(() => {});
   await coldTools?.close().catch(() => {});
   await restarted?.close().catch(() => {});
-  await wrongProfile?.close().catch(() => {});
   await a.close().catch(() => {});
   await b.close().catch(() => {});
   await context.close();

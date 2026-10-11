@@ -97,7 +97,7 @@ export class BrowserTools {
         siteAccess: this.siteAccess,
         autoVerify: () => this.captcha?.settings.status().enabled === true,
         workspace,
-        onDisconnect: () => this.connections.disconnected(candidateId),
+        onDisconnect: (reason) => this.connections.disconnected(candidateId, reason),
         onTabsClosed: (ids) => {
           if (!this.closed) return this.onTabsClosed?.(candidateId, ids);
         },

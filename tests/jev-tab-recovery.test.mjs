@@ -1,42 +1,50 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {restoredTargets, sameBrowserInstance} from '../app/jev/tabs.mjs';
-test('restore exact saved/checkpoint targets in a verified browser profile, never same-URL personal tabs', () => {
+import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {JevTabs, restoredTargets} from '../app/jev/tabs.mjs';
+
+test('restore candidates are exact saved/checkpoint Jev targets, never other browsers or malformed ids', () => {
   const a = 'A'.repeat(32),
     b = 'B'.repeat(32),
     c = 'C'.repeat(32),
     d = 'D'.repeat(32);
-  const saved = {endpoint: 'old-debugger', targets: [a, d]};
+  const saved = {targets: [a, d, 'not-a-target']};
   const checkpoints = [
     {browser: 'Jev Chrome', tabId: b},
     {browser: 'Jev Chrome', tabId: c},
     {browser: 'Chrome', tabId: '123'},
   ];
-  const live = new Map([
-    [a, {browserContextId: 'irem'}],
-    [b, {browserContextId: 'irem'}],
-    [c, {browserContextId: 'other'}],
-    ['E'.repeat(32), {browserContextId: 'irem', url: 'https://same.example/form'}],
-  ]);
-  assert.deepEqual(restoredTargets(saved, checkpoints, live, 'irem'), [a, b]);
-  assert.deepEqual(restoredTargets(saved, checkpoints, live, null), []);
-  assert.deepEqual(restoredTargets({targets: []}, checkpoints, live, 'irem'), [b]);
-  assert.deepEqual(restoredTargets(saved, checkpoints, new Map(), 'irem'), []);
+  assert.deepEqual(restoredTargets(saved, checkpoints), [a, d, b, c]);
+  assert.deepEqual(restoredTargets(null, checkpoints), [b, c]);
+  assert.deepEqual(restoredTargets({targets: [a]}, []), [a]);
 });
-test('an address change can preserve browser identity; a new Chrome process cannot', () => {
-  assert.equal(
-    sameBrowserInstance(
-      'ws://127.0.0.1:123/devtools/browser/browser-a',
-      'ws://localhost:456/devtools/browser/browser-a',
-    ),
-    true,
+
+test('the tab registry keeps Chrome tab ids per target and ignores records of the old port connection', async (t) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'jev-tabs-'));
+  t.after(() => rm(directory, {recursive: true, force: true}));
+  const registry = new JevTabs(directory, 'Profile 2');
+  assert.equal(await registry.read(), null);
+  const a = 'A'.repeat(32);
+  await registry.save('run-1', [a, a], {[a]: 12}, {homeId: a, windowId: 3});
+  const saved = await registry.read();
+  assert.equal(saved.version, 2);
+  assert.equal(saved.instanceId, 'run-1');
+  assert.deepEqual(saved.targets, [a]);
+  assert.deepEqual(saved.tabIds, {[a]: 12});
+  assert.equal(saved.windowId, 3);
+  await writeFile(
+    registry.file,
+    JSON.stringify({
+      version: 1,
+      profile: 'Profile 2',
+      endpoint: 'ws://127.0.0.1:1/devtools/browser/x',
+      contextId: 'ctx',
+      targets: [a],
+    }),
   );
-  assert.equal(
-    sameBrowserInstance(
-      'ws://127.0.0.1:123/devtools/browser/browser-a',
-      'ws://127.0.0.1:123/devtools/browser/browser-b',
-    ),
-    false,
-  );
-  assert.equal(sameBrowserInstance('ws://localhost', 'ws://localhost'), false);
+  assert.equal(await registry.read(), null);
+  await writeFile(registry.file, JSON.stringify({version: 2, profile: 'Profile 2'}));
+  await assert.rejects(registry.read(), /geçersiz/);
 });

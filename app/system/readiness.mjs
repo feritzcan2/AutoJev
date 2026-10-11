@@ -3,9 +3,12 @@ import {constants} from 'node:fs';
 import {homedir} from 'node:os';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {createConnection} from 'node:net';
 import {listChromeProfiles} from '../browser/chrome-profiles.mjs';
-import {existingChromeEndpoint} from '../jev/chrome.mjs';
+import {
+  extensionInstalledInProfile,
+  extensionMissingMessage,
+  resolveChromeProfile,
+} from '../jev/chrome.mjs';
 import {findChrome, findExecutable} from '../browser/chrome-installation.mjs';
 import {launchEnvironment as readinessEnvironment} from '../agents/launch-environment.mjs';
 import {missingAgentMessage} from '../agents/installation.mjs';
@@ -93,26 +96,6 @@ export async function inspectLogin(
         `Oturum durumu doğrulanamadı. Terminalde ${descriptor.login} ile kontrol et.`,
       );
 }
-export async function chromePortAvailable(endpoint) {
-  const url = new URL(endpoint);
-  if (
-    url.protocol !== 'ws:' ||
-    url.hostname !== '127.0.0.1' ||
-    !/^\/devtools\/browser\/[\w-]+$/.test(url.pathname)
-  )
-    return false;
-  return new Promise((resolve) => {
-    const socket = createConnection({host: '127.0.0.1', port: Number(url.port)});
-    const finish = (value) => {
-      socket.destroy();
-      resolve(value);
-    };
-    socket.setTimeout(1000);
-    socket.once('connect', () => finish(true));
-    socket.once('timeout', () => finish(false));
-    socket.once('error', () => finish(false));
-  });
-}
 export async function collectReadiness(input = {}, options = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input))
     throw Error('Geçersiz kurulum seçimi.');
@@ -182,20 +165,22 @@ export async function collectReadiness(input = {}, options = {}) {
           : 'Chrome’da profil oluştur veya Agent ayarlarından mevcut bir profil seç.',
       ),
     );
-    let listening = false;
+    let installed = false;
     try {
-      listening = await (options.chromePortAvailable ?? chromePortAvailable)(
-        await (options.existingChromeEndpoint ?? existingChromeEndpoint)(),
+      installed = await (options.extensionInstalled ?? extensionInstalledInProfile)(
+        await (options.resolveChromeProfile ?? resolveChromeProfile)(
+          profile ? {directory: profile} : undefined,
+        ),
       );
     } catch {}
     checks.push(
       item(
-        'chrome-debug',
-        'Chrome bağlantısı',
-        listening ? 'ready' : 'error',
-        listening
-          ? 'Yerel hata ayıklama bağlantısı açık. Agent başlarken Chrome’un bağlantı isteğine izin ver.'
-          : 'Chrome’da chrome://inspect/#remote-debugging sayfasından uzaktan hata ayıklamayı aç. Agent başlarken bağlantı isteğine izin ver.',
+        'chrome-extension',
+        'AutoJev eklentisi',
+        installed ? 'ready' : 'error',
+        installed
+          ? 'AutoJev eklentisi seçili Chrome profilinde kurulu. Bağlıyken Chrome üst çubuğunda “AutoJev” uyarısı görünür.'
+          : (options.extensionMissingMessage ?? extensionMissingMessage)(),
       ),
     );
     let jev;
