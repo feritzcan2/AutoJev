@@ -321,7 +321,7 @@ export class WebTasks extends TaskRuns {
         step.scope === 'source'
           ? [{key: source.url, sources: [source.url]}]
           : this.db
-              .results(id, {all: true})
+              .results(id)
               .filter(
                 (r) =>
                   !r.trial &&
@@ -396,7 +396,7 @@ export class WebTasks extends TaskRuns {
           native &&
           saved.status === 'enabled' &&
           saved.mode !== 'observe' &&
-          this.db.results(saved.id, {all: true}).some((item) => {
+          this.db.results(saved.id).some((item) => {
             const kind =
               item.status === 'found' ? 'prepare' : item.status === 'prepared' ? 'execute' : null;
             return kind && !recordOperationError(saved, item, kind, {now: this.now()});

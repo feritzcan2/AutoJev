@@ -28,7 +28,7 @@ export async function retryJevRead(page, read, {attempts = 3, delay = 150} = {})
 export function privateJevPage(page) {
   const frames = new WeakMap(),
     handles = new WeakMap();
-  const scope = `const window=new Proxy(globalThis,{get(target,key){return key==='__jevFast'||key==='__jobloopFieldContext'?state[key]:Reflect.get(target,key,target);},set(target,key,value){if(key==='__jevFast'||key==='__jobloopFieldContext'){state[key]=value;return true;}return Reflect.set(target,key,value,target);}});`;
+  const scope = `const privateKeys=new Set(['__jevFast','__jobloopFieldContext','__jobloopFieldError']),window=new Proxy(globalThis,{get(target,key){return privateKeys.has(key)?state[key]:Reflect.get(target,key,target);},set(target,key,value){if(privateKeys.has(key)){state[key]=value;return true;}return Reflect.set(target,key,value,target);}});`;
   const compiled = (fn, node = false) =>
     new Function(
       node ? 'element' : 'state',

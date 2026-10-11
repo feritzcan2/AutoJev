@@ -9,6 +9,10 @@ export class JevCdpTransport {
     this.owned = new Set();
     this.attached = new Set();
     this.pending = new Map();
+    // Out-of-process iframes that were already loaded when they got attached:
+    // their session ids, then Playwright's Page.getFrameTree requests for them.
+    this.loadedFrames = new Set();
+    this.frameTrees = new Map();
     this.sequence = INTERNAL_ID_BASE;
     socket.onmessage = (event) => this.receive(JSON.parse(event.data));
     socket.onclose = () => {
@@ -92,14 +96,12 @@ export class JevCdpTransport {
       // unrelated tabs in the user's Chrome profile.
       // Let Playwright initialize the frame session before navigation runs;
       // otherwise it can miss the frame URL and its visible controls.
+      // Use Playwright's own parameters: this call can arrive after Playwright's
+      // and replaces it, and a filter that leaves out workers keeps every
+      // worker the page starts paused, so uploads and other worker code hang.
       await this.call(
         'Target.setAutoAttach',
-        {
-          autoAttach: true,
-          waitForDebuggerOnStart: true,
-          flatten: true,
-          filter: [{type: 'iframe', exclude: false}, {exclude: true}],
-        },
+        {autoAttach: true, waitForDebuggerOnStart: true, flatten: true},
         sessionId,
       );
     } catch (error) {
@@ -120,6 +122,12 @@ export class JevCdpTransport {
     // A response can arrive after our timeout removed its callback. It still
     // belongs to this transport, not to Playwright's independent request map.
     if (message.id > INTERNAL_ID_BASE) return;
+    if (
+      message.method === 'Target.attachedToTarget' &&
+      message.params.targetInfo?.type === 'iframe' &&
+      !message.params.waitingForDebugger
+    )
+      this.loadedFrames.add(message.params.sessionId);
     if (!message.sessionId && message.method === 'Target.targetDestroyed') {
       const id = message.params.targetId;
       const owned = this.owned.delete(id);
@@ -142,8 +150,25 @@ export class JevCdpTransport {
       return;
     }
     this.onmessage?.(message);
+    // Playwright learns an out-of-process frame's URL only from its next
+    // navigation, so a frame that loaded before the attach keeps an empty URL.
+    // Report the URL from its frame tree as a same-document navigation, which
+    // sets only that URL.
+    const tree = this.frameTrees.get(message.id);
+    if (tree && tree === message.sessionId) {
+      this.frameTrees.delete(message.id);
+      const frame = message.result?.frameTree?.frame;
+      if (frame?.url)
+        this.onmessage?.({
+          sessionId: tree,
+          method: 'Page.navigatedWithinDocument',
+          params: {frameId: frame.id, url: frame.url, navigationType: 'other'},
+        });
+    }
   }
   send(message) {
+    if (message.method === 'Page.getFrameTree' && this.loadedFrames.delete(message.sessionId))
+      this.frameTrees.set(message.id, message.sessionId);
     // Browser-level auto-attach is replaced by explicit attachment to owned tabs.
     if (!message.sessionId && message.method === 'Target.setAutoAttach') {
       (async () => {

@@ -223,28 +223,41 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
       })
     : null;
   const savedPage = assignedRecord ? db.browserEvidence.latest(active, assignedRecord.url) : null;
-  // Answers the user gave for other records. General facts about the user
-  // carry over; decisions about one record do not.
-  const earlierAnswers =
-    assignedRecord && ['prepare', 'execute'].includes(active.recordOperation)
-      ? (a.questions ?? [])
-          .filter(
-            (q) =>
-              q.answer != null &&
-              q.recordId &&
-              q.recordId !== assignedRecord.id &&
-              !q.accessCheck &&
-              !q.outcome &&
-              !q.resolution,
-          )
-          .sort((x, y) => y.answeredAt - x.answeredAt)
-          .slice(0, 20)
-          .map((q) => ({
-            question: q.text.slice(0, 300),
-            answer: q.answer.slice(0, 500),
-            answeredAt: q.answeredAt,
+  // Answers the user gave for other records, one entry per answered field,
+  // newest first. Every short answer is kept so no general fact falls out of
+  // view; long free texts are mostly about one listing, so only a few stay.
+  const earlierAnswers = [];
+  if (assignedRecord && ['prepare', 'execute'].includes(active.recordOperation)) {
+    const seen = new Set();
+    let longAnswers = 0;
+    for (const q of (a.questions ?? [])
+      .filter(
+        (q) =>
+          q.answer != null &&
+          q.recordId &&
+          q.recordId !== assignedRecord.id &&
+          !q.accessCheck &&
+          !q.outcome &&
+          !q.resolution,
+      )
+      .sort((x, y) => y.answeredAt - x.answeredAt)) {
+      const values = q.answerValues ?? {},
+        answered = (q.fields ?? []).filter((f) => values[f.id] != null && values[f.id] !== '');
+      const entries = answered.length
+        ? answered.map((f) => ({
+            question: f.label,
+            answer: typeof values[f.id] === 'string' ? values[f.id] : JSON.stringify(values[f.id]),
           }))
-      : [];
+        : [{question: q.text, answer: q.answer}];
+      for (const {question, answer} of entries) {
+        const key = question + '\n' + answer;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (answer.length > 200 && ++longAnswers > 3) continue;
+        earlierAnswers.push({question: question.slice(0, 200), answer: answer.slice(0, 600)});
+      }
+    }
+  }
   const source = active.sourceUrl ? db.sources(id).find((s) => s.url === active.sourceUrl) : null;
   const recipeInfo = source ? db.sourceRecipe(id, source.url) : null;
   const siteSearch = source ? (siteExtensionKind(source.url, a.templateId)?.search ?? null) : null;
@@ -379,7 +392,7 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
       ? {
           earlierAnswers: {
             answers: earlierAnswers,
-            rule: 'Answers the user gave while preparing other records, newest first. Reuse one only for a general fact about the user (such as contact details, location, permits or languages) that this task asks the same way; prefer the newest. Never carry over a decision or an answer that is specific to another record. Ask when unsure or when the fact may have changed.',
+            rule: 'Answers the user gave for other records, newest first. Reuse every general fact about the user (gender, permits, languages, start date, notice period, hours, salary, contact details, past employers) even when this form words the question or its options differently: pick the option with the same meaning. Prefer the newest answer. Do not carry over a decision about another record (such as applying despite a requirement) or a text written for another company.',
           },
         }
       : {}),
@@ -406,7 +419,7 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
     sourceExamples:
       !active.recordId && active.sourceUrl
         ? db
-            .results(id, {all: true})
+            .results(id)
             .filter((r) => r.sourceUrl === active.sourceUrl)
             .slice(0, 3)
             .map((r) => pick(r, ['url', 'title', 'status']))

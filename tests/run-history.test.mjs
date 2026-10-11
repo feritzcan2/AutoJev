@@ -88,7 +88,7 @@ test('trial samples count only when promoted to production and sources keep sepa
   assert.equal(count(empty), 0);
 });
 
-test('history includes legacy records beyond the recent-results limit and excludes other workspaces and samples', (t) => {
+test('history includes legacy records and excludes other workspaces and samples', (t) => {
   const {core, db, id, start, save, count} = fixture(t),
     first = start();
   core.workspaces.tasks.atomic(() => {
@@ -127,7 +127,7 @@ test('history includes legacy records beyond the recent-results limit and exclud
     });
   });
   const snapshot = db.snapshot(id);
-  assert.equal(snapshot.results.length, 500);
+  assert.equal(snapshot.results.length, 504);
   assert.equal(count(first), 503);
   db.finish(id, first.id, 'completed', 'Legacy scan');
   const next = start();

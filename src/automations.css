@@ -74,80 +74,6 @@
   font-size: 12px;
   color: #9ba9b8;
 }
-.automation-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-}
-.automation-card {
-  padding: 25px;
-  border: 1px solid #303c46;
-  background: #181f27;
-  border-radius: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-}
-.automation-card h3 {
-  font-size: 21px;
-  font-weight: 550;
-  margin: 8px 0 0;
-  overflow-wrap: anywhere;
-}
-.automation-card p {
-  font-size: 13px;
-  line-height: 1.75;
-  color: #a0aebd;
-  margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 94px;
-  overflow: auto;
-}
-.automation-card small {
-  color: #9bae9e;
-  font-size: 11px;
-}
-.automation-card-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-}
-.automation-icon {
-  font-size: 27px;
-  color: #c3e5be;
-  background: #25382d;
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 12px;
-}
-.automation-card-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-top: 1px solid #2b3540;
-  padding-top: 18px;
-  margin-top: 14px;
-}
-.automation-card-foot span {
-  color: #92a2b3;
-  font-size: 12px;
-}
-.template-card ol {
-  color: #93a2b4;
-  font-size: 12px;
-  line-height: 2;
-  padding-left: 20px;
-  flex: 1;
-}
-.template-card > .primary {
-  align-self: flex-start;
-}
 .automation-badge {
   font-size: 11px;
   padding: 6px 10px;
@@ -406,30 +332,12 @@
 .automations-page [hidden] {
   display: none !important;
 }
-@media (min-width: 1450px) {
-  .template-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .template-card {
-    padding: 22px;
-  }
-  .template-card h3 {
-    font-size: 19px;
-  }
-  .template-card > .primary {
-    font-size: 11px;
-    padding: 10px;
-  }
-}
 @media (max-width: 1150px) {
   .automation-setup-grid {
     grid-template-columns: 1fr;
   }
   .automation-heading .actions {
     gap: 8px;
-  }
-  .automation-card {
-    padding: 20px;
   }
 }
 .automation-tabs {
@@ -451,36 +359,6 @@
 .automation-history-section {
   margin-top: 0;
   border-top: 0;
-}
-.automation-export-template {
-  background: none;
-  align-self: flex-start;
-  font-size: 11px;
-  color: #91a9ba;
-  padding-left: 0;
-}
-.automation-template-dialog {
-  width: min(640px, 90vw);
-  max-height: 90vh;
-  overflow: auto;
-  border: 1px solid #405264;
-  border-radius: 14px;
-  background: #19212a;
-  color: #e7ecf3;
-}
-.automation-template-dialog form {
-  padding: 18px;
-  max-width: none;
-  border: 0;
-}
-.automation-template-dialog p,
-.automation-template-dialog small {
-  color: #9dabbc;
-  font-size: 12px;
-  line-height: 1.8;
-}
-.automation-template-dialog textarea[name='guidance'] {
-  min-height: 150px;
 }
 .automation-chat-feedback {
   margin: 0;
@@ -998,10 +876,7 @@
   color: var(--bg-app);
 }
 /* While setup is the only thing to do, point the sidebar at it and quiet the empty pages. */
-.workspace-fresh
-  aside
-  nav
-  button:not(.selected, [data-view='setup-agent'], [data-view='templates'], [data-view='config']) {
+.workspace-fresh aside nav button:not(.selected, [data-view='setup-agent'], [data-view='config']) {
   opacity: 0.45;
 }
 .workspace-fresh

@@ -349,13 +349,24 @@ test('preparation sees general answers the user gave for other records', async (
     accessCheck: {kind: 'login', url: 'https://portal.test', evidence: 'Sign in', snapshotId: 's'},
   });
   f.db.answerQuestion(f.id, login.id, {[LOGGED_IN_FIELD.id]: true});
+  // Many later answers must not push the old fact out of view; repeats collapse.
+  for (let n = 0; n < 25; n++) {
+    const later = ask({
+      text: 'Form question ' + n,
+      fields: [
+        {id: 'years', label: 'Years with tool ' + n, type: 'number'},
+        {id: 'hours', label: 'Weekly hours', type: 'number'},
+      ],
+    });
+    f.db.answerQuestion(f.id, later.id, {years: n, hours: 40});
+  }
   await f.runtime.runRecord(f.id, f.item.id, 'prepare');
   await settle();
-  const context = automationTaskContext(f.db, f.id, f.db.run(f.launches.at(-1).id));
-  assert.deepEqual(
-    context.earlierAnswers.answers.map((a) => a.answer),
-    ['Email: me@example.test'],
-  );
+  const answers = automationTaskContext(f.db, f.id, f.db.run(f.launches.at(-1).id)).earlierAnswers
+    .answers;
+  assert.deepEqual(answers.at(-1), {question: 'Email', answer: 'me@example.test'});
+  assert.equal(answers.filter((a) => a.question === 'Weekly hours').length, 1);
+  assert.equal(answers.length, 27);
 });
 
 test('requested changes to a reviewed draft reach the next preparation', async (t) => {
@@ -549,7 +560,7 @@ test('preparation and execution cannot claim success without their durable resul
   await settle();
   assert.throws(
     () => f.db.finish(f.id, f.launches.at(-1).id, 'completed', 'Clicked'),
-    /tamamlanmadı/,
+    /application is not finished/,
   );
 });
 
@@ -1048,7 +1059,7 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
     });
     assert.throws(
       () => f.db.finish(f.id, run.id, 'completed', 'Only filled the form'),
-      /Gönderim tamamlanmadı/,
+      /application is not finished/,
     );
     f.db.reserve(f.id, run.id, f.item.id);
     assert.equal(f.db.reserve(f.id, run.id, f.item.id).alreadyReserved, true);
@@ -1195,7 +1206,7 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
     assert.equal(saved.actionUrl, form);
     assert.equal(f.store.workspaces.records.find(f.id, f.item.key).id, f.item.id);
     assert.equal(f.store.workspaces.records.find(f.id, form), null);
-    assert.equal(f.db.results(f.id, {all: true}).length, 1);
+    assert.equal(f.db.results(f.id).length, 1);
     // Legacy clients sometimes use the form URL for both key and url.
     assert.equal(f.db.record(f.id, run.id, {...input, key: form}).id, f.item.id);
     assert.equal(f.db.reserve(f.id, run.id, f.item.id).url, form);
@@ -1265,7 +1276,7 @@ test('rediscovering a listing keeps its form destination and does not create a d
   assert.equal(rediscovered.id, f.item.id);
   assert.equal(rediscovered.actionUrl, form);
   assert.equal(rediscovered.digest, saved.digest);
-  assert.equal(f.db.results(f.id, {all: true}).length, 1);
+  assert.equal(f.db.results(f.id).length, 1);
   f.db.finish(f.id, scan.id, 'completed', 'Done');
 });
 
@@ -1742,7 +1753,8 @@ test('an unconfirmed submit click attaches one viewport image; a confirmed one a
     const flow = automationWorkflow({
       db: f.db,
       run,
-      signal: {aborted: false},
+      signal: new AbortController().signal,
+      submitSettleMs: 0,
       browser,
       report: (...args) => f.runtime.report(...args),
     });
@@ -1752,6 +1764,8 @@ test('an unconfirmed submit click attaches one viewport image; a confirmed one a
       ref: 'e1',
     });
     assert.equal(calls.filter((name) => name === 'browser_screenshot').length, confirmed ? 0 : 1);
+    // An unconfirmed click is observed twice more before it is judged.
+    assert.equal(calls.filter((name) => name === 'browser_snapshot').length, confirmed ? 3 : 5);
     if (confirmed) {
       assert.equal(result.submission.outcome, 'confirmed');
       assert.equal(result.attachments, undefined);
@@ -1765,4 +1779,355 @@ test('an unconfirmed submit click attaches one viewport image; a confirmed one a
     // The stored run keeps the classification only, never the image.
     assert.equal(f.db.run(run.id).submission.screenshot, undefined);
   }
+});
+
+test('a confirmation that renders shortly after the submit click is still recognized', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  f.db.reserve(f.id, run.id, item.id);
+  const calls = [];
+  let clicked = false,
+    afterClick = 0;
+  const browser = {
+    currentUrl: async () => item.url,
+    call: async (_id, name) => {
+      calls.push(name);
+      if (name === 'browser_click') clicked = true;
+      else if (clicked && name === 'browser_snapshot') afterClick++;
+      const page = clicked
+        ? {
+            url: item.url + '?step=done',
+            text:
+              afterClick < 2
+                ? 'Job Application\nSubmitting…'
+                : 'Job Application\nYour application was successfully submitted.',
+            fillFields: [{fieldId: 'f1'}],
+            clickTargets: [],
+          }
+        : {
+            url: item.url + '?step=form',
+            text: 'Job Application',
+            fillFields: [{fieldId: 'f1'}],
+            clickTargets: [{targetId: 'e1', label: 'Submit application'}],
+          };
+      return {
+        content: [{type: 'text', text: `Page URL: ${page.url}\n${JSON.stringify(page)}`}],
+        action: {executed: true},
+      };
+    },
+  };
+  const flow = automationWorkflow({
+    db: f.db,
+    run,
+    signal: new AbortController().signal,
+    submitSettleMs: 0,
+    browser,
+    report: (...args) => f.runtime.report(...args),
+  });
+  await flow.call(f.id, run.id, 'browser_open', {url: item.url + '?step=form'});
+  const result = await flow.call(f.id, run.id, 'browser_interact', {operation: 'click', ref: 'e1'});
+  assert.equal(result.submission.outcome, 'confirmed');
+  assert.match(result.submission.quote, /successfully submitted/);
+  assert.equal(result.attachments, undefined);
+  assert.equal(f.db.run(run.id).submission.outcome, 'confirmed');
+  // The agent may name the confirmation page without its query string.
+  const saved = await flow.call(f.id, run.id, 'record_automation_outcome', {
+    status: 'completed',
+    evidence: 'Your application was successfully submitted.',
+    url: item.url,
+  });
+  assert.equal(saved.status, 'completed');
+});
+
+test('autocomplete text alone asks for the option with exactly that label', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  const calls = [];
+  const browser = {
+    currentUrl: async () => item.url,
+    call: async (_id, name, args) => {
+      calls.push([name, args]);
+      const page = {url: item.url, text: 'Job Application', fillFields: [], clickTargets: []};
+      return {
+        content: [{type: 'text', text: `Page URL: ${page.url}\n${JSON.stringify(page)}`}],
+        action: {executed: true},
+      };
+    },
+  };
+  const flow = automationWorkflow({
+    db: f.db,
+    run,
+    signal: new AbortController().signal,
+    browser,
+    report: (...args) => f.runtime.report(...args),
+  });
+  await flow.call(f.id, run.id, 'browser_open', {url: item.url});
+  await flow.call(f.id, run.id, 'browser_interact', {
+    operation: 'autocomplete',
+    ref: 'c1',
+    text: 'Yes',
+  });
+  await flow.call(f.id, run.id, 'browser_interact', {operation: 'autocomplete', ref: 'c2'});
+  const sent = calls
+    .filter(([name]) => name.includes('suggestions') || name.includes('autocomplete'))
+    .map(([name, {controlId, text, option}]) => [
+      name,
+      Object.fromEntries(
+        Object.entries({controlId, text, option}).filter(([, v]) => v !== undefined),
+      ),
+    ]);
+  assert.deepEqual(sent, [
+    ['browser_jev_autocomplete', {controlId: 'c1', text: 'Yes', option: 'Yes'}],
+    ['browser_jev_list_suggestions', {controlId: 'c2'}],
+  ]);
+});
+
+test('a CAPTCHA after the submit click asks the user to solve it before reporting the outcome', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  f.db.reserve(f.id, run.id, item.id);
+  let clicked = false;
+  const browser = {
+    currentUrl: async () => item.url,
+    call: async (_id, name) => {
+      if (name === 'browser_click') clicked = true;
+      const page = clicked
+        ? {
+            url: item.url,
+            text: 'Job Application\nPlease verify you are human',
+            verification: {state: 'required', evidence: 'hCaptcha challenge is visible.'},
+            fillFields: [{fieldId: 'f1'}],
+            clickTargets: [{targetId: 'e1', label: 'Submit application'}],
+          }
+        : {
+            url: item.url,
+            text: 'Job Application',
+            fillFields: [{fieldId: 'f1'}],
+            clickTargets: [{targetId: 'e1', label: 'Submit application'}],
+          };
+      return {
+        jevPage: page,
+        content: [{type: 'text', text: `Page URL: ${page.url}\n${JSON.stringify(page)}`}],
+        action: {executed: true},
+      };
+    },
+  };
+  const flow = automationWorkflow({
+    db: f.db,
+    run,
+    signal: new AbortController().signal,
+    submitSettleMs: 0,
+    browser,
+    report: (...args) => f.runtime.report(...args),
+  });
+  await flow.call(f.id, run.id, 'browser_open', {url: item.url});
+  const result = await flow.call(f.id, run.id, 'browser_interact', {operation: 'click', ref: 'e1'});
+  assert.equal(result.submission.verification, 'hCaptcha challenge is visible.');
+  assert.match(result.submission.guidance, /CAPTCHA/);
+  await flow.call(f.id, run.id, 'record_automation_outcome', {
+    status: 'uncertain',
+    evidence: 'A CAPTCHA appeared after the click.',
+    url: item.url,
+  });
+  await flow.call(f.id, run.id, 'finish_automation_run', {
+    status: 'blocked',
+    summary: 'Submitted once; a CAPTCHA is shown.',
+  });
+  const question = f.db.get(f.id).questions.find((q) => q.recordId === item.id && q.outcome);
+  assert.match(question.text, /doğrulamayı çöz/);
+  assert.equal(question.fields[0].label, 'Doğrulamayı çözdükten sonra: bu kayıt gönderildi mi?');
+});
+
+test('an execute run retires a record whose page says it is gone, only with a quote from that page', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  const gone = 'The job you are looking for is no longer open';
+  const browser = {
+    currentUrl: async () => item.url,
+    call: async () => ({
+      content: [
+        {
+          type: 'text',
+          text: `Page URL: ${item.url}\n${JSON.stringify({url: item.url, text: 'Careers\n' + gone})}`,
+        },
+      ],
+    }),
+  };
+  const flow = automationWorkflow({
+    db: f.db,
+    run,
+    signal: {aborted: false},
+    browser,
+    report: (...args) => f.runtime.report(...args),
+  });
+  await flow.call(f.id, run.id, 'browser_open', {url: item.url});
+  await assert.rejects(
+    flow.call(f.id, run.id, 'record_automation_outcome', {
+      status: 'closed',
+      evidence: 'This position has been filled already',
+    }),
+    /quote is not in the current page text/,
+  );
+  assert.equal(f.db.result(f.id, item.id).status, 'prepared');
+  const saved = await flow.call(f.id, run.id, 'record_automation_outcome', {
+    status: 'closed',
+    evidence: gone,
+  });
+  assert.equal(saved.status, 'dismissed');
+  assert.equal(saved.closed.evidence, gone);
+  assert.equal(saved.closed.url, item.url);
+  // A closed record lets its execute run finish completed.
+  await flow.call(f.id, run.id, 'finish_automation_run', {
+    status: 'completed',
+    summary: 'The listing is closed.',
+  });
+  // A reserved (possibly submitted) record can never be closed.
+  const f2 = fixture(t);
+  const item2 = await f2.prepare();
+  await f2.runtime.runRecord(f2.id, item2.id, 'execute', {direct: true});
+  await settle();
+  const run2 = f2.launches.at(-1);
+  f2.db.reserve(f2.id, run2.id, item2.id);
+  assert.throws(
+    () =>
+      f2.db.closeRecord(
+        f2.id,
+        run2.id,
+        item2.id,
+        {evidence: gone, url: item2.url},
+        {url: item2.url, text: gone},
+      ),
+    /uncertain/,
+  );
+  // The listing redirected to another host of the same site is still the record
+  // page; a page on a different site is not.
+  const f3 = fixture(t);
+  const item3 = await f3.prepare();
+  await f3.runtime.runRecord(f3.id, item3.id, 'execute', {direct: true});
+  await settle();
+  const run3 = f3.launches.at(-1),
+    listing = new URL(item3.url),
+    host = listing.hostname.replace(/^www\./, '');
+  assert.throws(
+    () =>
+      f3.db.closeRecord(
+        f3.id,
+        run3.id,
+        item3.id,
+        {evidence: gone, url: item3.url},
+        {url: `https://elsewhere.test${listing.pathname}`, text: gone},
+      ),
+    /observe the record page/,
+  );
+  const redirected = f3.db.closeRecord(
+    f3.id,
+    run3.id,
+    item3.id,
+    {evidence: gone, url: item3.url},
+    {url: `https://de.${host}${listing.pathname}/`, text: gone},
+  );
+  assert.equal(redirected.status, 'dismissed');
+});
+
+test('an application stopped by a shared site wait resumes after the wait, at most twice', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const wait = (run) =>
+    f.db.putRun({
+      ...f.db.run(run.id),
+      siteWait: {site: 'example.com', retryAt: f.db.now() + 60000, exhausted: false},
+    });
+  let run = f.launches.at(-1);
+  const taskId = run.taskId,
+    task = () => f.db.store.workspaces.tasks.get(f.id, taskId);
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    wait(run);
+    await f.runtime.finish(f.id, 'blocked', 'Rate limited', run.workerId);
+    assert.equal(task().state, 'pending', 'requeued after wait ' + attempt);
+    assert.ok(task().retryAt > f.db.now() + 50000);
+    assert.equal(task().recordRecovery.siteWaits, attempt);
+    // The scheduler starts it again once the wait is over.
+    f.db.store.workspaces.tasks.put({...task(), retryAt: f.db.now() - 1});
+    await f.runtime.tick();
+    await settle();
+    run = f.launches.at(-1);
+    assert.equal(run.taskId, taskId);
+  }
+  wait(run);
+  await f.runtime.finish(f.id, 'blocked', 'Rate limited', run.workerId);
+  assert.equal(task().state, 'blocked');
+  assert.equal(f.db.result(f.id, item.id).status, 'prepared');
+});
+
+test('a reserved application is never requeued by a site wait', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  f.db.reserve(f.id, run.id, item.id);
+  f.db.putRun({
+    ...f.db.run(run.id),
+    siteWait: {site: 'example.com', retryAt: f.db.now() + 60000, exhausted: false},
+  });
+  await f.runtime.finish(f.id, 'blocked', 'Rate limited', run.workerId);
+  const task = f.db.store.workspaces.tasks.get(f.id, run.taskId);
+  assert.notEqual(task.state, 'pending');
+  assert.equal(task.recordRecovery?.siteWaits, undefined);
+  assert.equal(f.db.result(f.id, item.id).status, 'uncertain');
+});
+
+test('a click that opens a new tab continues the run in that tab', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1),
+    calls = [];
+  const page = (url, text) => ({
+    content: [{type: 'text', text: `Page URL: ${url}\n${JSON.stringify({url, text})}`}],
+    pageContext: {url, tabId: url.endsWith('/apply') ? 'child' : 'main'},
+  });
+  const browser = {
+    currentUrl: async () => item.url,
+    call: async (_id, name, args) => {
+      calls.push({name, args});
+      if (name === 'browser_click')
+        return {
+          ...page(item.url, 'Listing'),
+          action: {status: 'uncertain', executed: true, openedTab: {tabId: 'child'}},
+        };
+      if (name === 'browser_jev_use_tab') return page(item.url + '/apply', 'Employer form');
+      return page(item.url, 'Listing');
+    },
+  };
+  const flow = automationWorkflow({
+    db: f.db,
+    run,
+    signal: {aborted: false},
+    browser,
+    report: (...args) => f.runtime.report(...args),
+  });
+  await flow.call(f.id, run.id, 'browser_open', {url: item.url});
+  const result = await flow.call(f.id, run.id, 'browser_interact', {
+    operation: 'click',
+    ref: 'e1',
+  });
+  assert.deepEqual(calls.find((c) => c.name === 'browser_jev_use_tab').args, {tabId: 'child'});
+  assert.equal(result.url, item.url + '/apply');
+  assert.match(result.action.message, /new tab/);
 });

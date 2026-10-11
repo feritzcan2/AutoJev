@@ -181,8 +181,11 @@ try {
   );
   for (const template of ['job-search']) {
     const previous = (await current())?.sessionId;
-    await page.locator('[data-view=templates]').click();
-    await page.locator(`[data-template="${template}"]`).click();
+    await page.locator('#new').click();
+    await page
+      .locator('#onboarding')
+      .getByRole('button', {name: 'Sohbetle kurmak istiyorum'})
+      .click();
     assert.equal(
       await page
         .locator('aside nav [data-view=setup-agent]')
@@ -245,9 +248,10 @@ try {
   }
   const before = (await current()).sessionId;
   await page.locator('#new').click();
-  await page.locator('[data-template="job-search"]').waitFor({state: 'visible'});
-  assert.equal(await page.locator('#heading').textContent(), 'Yeni çalışma alanı');
-  await page.locator('[data-template="job-search"]').click();
+  await page
+    .locator('#onboarding')
+    .getByRole('button', {name: 'Sohbetle kurmak istiyorum'})
+    .click();
   await waitStart(before);
   await tool('ask_workspace_question', {
     text: 'İş arama tercihlerin',

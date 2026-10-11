@@ -43,7 +43,7 @@ export class WorkspaceSupport {
     };
   }
   jobs(id) {
-    return this.automation.results(id, {all: true}).map((item) => this.project(item));
+    return this.automation.results(id).map((item) => this.project(item));
   }
   visibleJobs(id) {
     return this.jobs(id).filter((item) => !item.trial && !item.hidden);

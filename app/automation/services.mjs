@@ -3,9 +3,9 @@ import {deleteRecords} from '../records/deletion.mjs';
 import {workspaceDirectory} from '../workspaces/paths.mjs';
 import {withAgentDefaults} from '../agents/settings.mjs';
 import path from 'node:path';
-import {readFile, rm, writeFile, stat} from 'node:fs/promises';
+import {readFile, rm, writeFile} from 'node:fs/promises';
 import {WebTasks} from './web-template.mjs';
-import {reusableTemplate, webUrl} from '../templates/catalog.mjs';
+import {webUrl} from '../templates/catalog.mjs';
 import {sourceInput} from '../sources/automation-sources.mjs';
 import {launchAutomationWorker} from './worker.mjs';
 import {automationBrowser} from '../browser/automation-browser.mjs';
@@ -149,49 +149,6 @@ export function registerAutomationServices({
     );
   };
   handle('automation-templates', () => db.catalog());
-  handle('automation-template-save', (id, input) => {
-    const a = db.get(id),
-      base = db.template(a.templateId),
-      template = db.saveTemplate({
-        ...base,
-        title: input.title,
-        description: input.description,
-        guidance: input.guidance,
-        table: a.table,
-      });
-    changed(null);
-    return template;
-  });
-  handle('automation-template-export', async (id) => {
-    const t = db.template(id);
-    const template = reusableTemplate(t, (value) => db.store.workspaces.registry.normalize(value)),
-      result = await dialog.showSaveDialog(window(), {
-        defaultPath: t.title.replace(/[^\p{L}\p{N} _-]/gu, '') + '.loop-template.json',
-        filters: [{name: 'Loop template', extensions: ['json']}],
-      });
-    if (result.canceled) return;
-    await writeFile(
-      result.filePath,
-      JSON.stringify({format: 'loop-template', version: 2, template}, null, 2) + '\n',
-      {mode: 0o600},
-    );
-    return result.filePath;
-  });
-  handle('automation-template-import', async () => {
-    const picked = await dialog.showOpenDialog(window(), {
-      properties: ['openFile'],
-      filters: [{name: 'Loop template', extensions: ['json']}],
-    });
-    if (picked.canceled) return null;
-    const file = picked.filePaths[0];
-    if ((await stat(file)).size > 2 * 1024 * 1024) throw Error('Template dosyası çok büyük');
-    const input = JSON.parse(await readFile(file, 'utf8'));
-    if (input.format !== 'loop-template' || ![1, 2].includes(input.version))
-      throw Error('Desteklenmeyen template dosyası');
-    const template = db.saveTemplate(input.template);
-    changed(null);
-    return template;
-  });
   const snapshot = async (id) => {
     const activeRuns = runtime.slots(id).map((s) => runSnapshot(s.run));
     return webWorkspaceView(
@@ -244,6 +201,7 @@ export function registerAutomationServices({
   });
   handle('workspace-answer', (id, question, value) => runtime.answer(id, question, value));
   handle('automation-setup', (id) => runtime.setup(id));
+  handle('automation-onboarding', (id) => runtime.onboard(id));
   handle('setup-agent-settings', async (id, input) => {
     const settings = {...withAgentDefaults(input), contextRestartTokens: 0};
     await validateSettings(settings);
@@ -382,7 +340,7 @@ export function registerAutomationServices({
           templateId: a.templateId,
           table: a.table,
           exportedAt: new Date().toISOString(),
-          results: db.results(id, {all: true}),
+          results: db.results(id),
         },
         null,
         2,

@@ -7,7 +7,7 @@ import {readJevBrief} from '../jev/brief.mjs';
 import {jevWaitMsFor, observeClientAbort} from '../jev/execution.mjs';
 import {withAgentDefaults} from '../agents/settings.mjs';
 import {otherScanSearchesPending, scanWork} from '../sources/scan-work.mjs';
-import {siteKey} from '../browser/site-access.mjs';
+import {siteKey, sameSite} from '../browser/site-access.mjs';
 import {collectorRun} from '../sources/collectors.mjs';
 import {
   collectSourcePage,
@@ -91,7 +91,19 @@ import {saveJevCheckpoint, settleJevDetails, releaseBlockedSource} from './jev-s
 import {saveJevProfile, jevProfileView} from '../jev/qualification-profile.mjs';
 // A recipe check reads this many uncertain leads when discovery confirms none.
 const RECIPE_CHECK_DETAILS = 3;
+// One collect_source_page call reads on past at most this many pages that held
+// only listings the workspace already recorded or rejected.
+const KNOWN_COLLECTOR_PAGES = 20;
 // A trial checks access and learns the recipe; it never scans a whole board.
+const samePath = (a, b) => {
+  try {
+    const x = new URL(a),
+      y = new URL(b);
+    return x.origin === y.origin && x.pathname.replace(/\/$/, '') === y.pathname.replace(/\/$/, '');
+  } catch {
+    return false;
+  }
+};
 const TRIAL_SCAN_PAGE_LIMIT = 2;
 
 export function automationWorkflow({
@@ -103,6 +115,7 @@ export function automationWorkflow({
   report,
   changed = () => {},
   jevWaitMs = 30000,
+  submitSettleMs = 2000,
   collectorReadPage,
   collectorReadDetail,
 }) {
@@ -192,7 +205,8 @@ export function automationWorkflow({
       return null;
     }
   };
-  let lastSnapshot = null;
+  let lastSnapshot = null,
+    lastVerification = null;
   // The last page a site reader returned is the Jev task's current page; it
   // has no browser tab, so observing it returns the same read.
   let readerPage = null;
@@ -204,15 +218,24 @@ export function automationWorkflow({
   });
   // Jev pages report their scan position through its own checkpoint. A detail
   // or company page read by Jev never moves the search position or its page cap.
+  // A shared site wait reported by any browser step belongs to this run when it
+  // is the run's own site; the app resumes record work after the wait.
+  const noteSiteWait = (response) => {
+    if (
+      response?.siteWait &&
+      (!run.sourceUrl || sameSite(run.sourceUrl, 'https://' + response.siteWait.site))
+    )
+      db.putRun({...db.run(run.id), siteWait: response.siteWait});
+  };
   const inspect = async ({research = false, response: provided, jev = false} = {}) => {
     snapshots.invalidate();
     const response =
         provided ??
         (await callBrowser(id, 'browser_snapshot', {}, run.id, {completeSnapshot: true})),
       observation = pageObservation(response);
+    lastVerification = response.jevPage?.verification ?? null;
     if (response.siteWait) {
-      if (!run.sourceUrl || siteKey(run.sourceUrl) === response.siteWait.site)
-        db.putRun({...db.run(run.id), siteWait: response.siteWait});
+      noteSiteWait(response);
       const saved = db.get(id),
         sourceState = {...saved.sourceState};
       for (const url of saved.sources)
@@ -793,29 +816,40 @@ export function automationWorkflow({
     }
     return recordReceipt(saved);
   };
+  // A page of already known listings leaves nothing to review. Read on in the
+  // same call so an empty result never looks like a stalled collector.
   const collectNextPage = async () => {
-    let collected;
-    try {
-      collected = await collectSourcePage(db, run.id, {
-        signal,
-        readPage: collectorReadPage,
-        readDetail: collectorReadDetail,
-      });
-    } catch (error) {
-      signal.throwIfAborted();
-      const current = db.activeRun(id, run.id);
-      db.putRun({...current, collectorError: String(error.message).slice(0, 2000)});
-      throw error;
+    for (let page = 1; ; page++) {
+      let collected;
+      try {
+        collected = await collectSourcePage(db, run.id, {
+          signal,
+          readPage: collectorReadPage,
+          readDetail: collectorReadDetail,
+        });
+      } catch (error) {
+        signal.throwIfAborted();
+        const current = db.activeRun(id, run.id);
+        db.putRun({...current, collectorError: String(error.message).slice(0, 2000)});
+        throw error;
+      }
+      if (!collected.issue && db.run(run.id).collectorError)
+        db.putRun({...db.run(run.id), collectorError: null});
+      changed(id);
+      if (collected.complete || !collected.taskId) return collected;
+      const result = {
+        ...(await executeJev({taskId: collected.taskId})),
+        collector: db.activeRun(id, run.id).collector,
+        progress: collectorProgress(db.run(run.id)),
+      };
+      if (result.status !== 'completed' || result.total || result.unavailable || result.issue)
+        return result;
+      if (page >= KNOWN_COLLECTOR_PAGES)
+        return {
+          ...result,
+          next: `The last ${page} pages held no new listings to review. Call collect_source_page again for the next page.`,
+        };
     }
-    if (!collected.issue && db.run(run.id).collectorError)
-      db.putRun({...db.run(run.id), collectorError: null});
-    changed(id);
-    if (collected.complete || !collected.taskId) return collected;
-    return {
-      ...(await executeJev({taskId: collected.taskId})),
-      collector: db.activeRun(id, run.id).collector,
-      progress: collectorProgress(db.run(run.id)),
-    };
   };
   const performCall = async (owner, session, name, args) => {
     if (owner !== id || session !== run.id || signal.aborted)
@@ -1225,8 +1259,15 @@ export function automationWorkflow({
         // The app knows the assigned record and the observed page; the agent
         // names them only when it reports on something else.
         args = {itemId: active.recordId ?? undefined, url: snapshots.current?.url, ...args};
+        // The current page named without its query or hash is still that page.
+        if (snapshots.current?.url && args.url && samePath(args.url, snapshots.current.url))
+          args.url = snapshots.current.url;
         if (!args.itemId) throw Error('itemId gerekli: bu görevde atanmış tek kayıt yok');
         if (!args.url) throw Error('Önce sonuç sayfasını tarayıcıda gözlemle');
+        if (args.status === 'closed') {
+          result = db.closeRecord(id, run.id, args.itemId, args, snapshots.current);
+          break;
+        }
         let page, fresh;
         if (args.status === 'not_submitted') {
           const previous = snapshots.get(args.notSubmittedProof?.snapshotId);
@@ -1393,11 +1434,14 @@ export function automationWorkflow({
           parameters.ref = args.ref;
           parameters.key = args.key;
         } else if (args.operation === 'autocomplete') {
+          // Text alone names the wanted option; without an exact match the
+          // tool returns the full suggestion list and selects nothing.
+          const option = args.option ?? (args.text?.trim() ? args.text : undefined);
           operation =
-            args.option === undefined ? 'browser_jev_list_suggestions' : 'browser_jev_autocomplete';
+            option === undefined ? 'browser_jev_list_suggestions' : 'browser_jev_autocomplete';
           parameters.controlId = args.ref;
           if (args.text !== undefined) parameters.text = args.text;
-          if (args.option !== undefined) parameters.option = args.option;
+          if (option !== undefined) parameters.option = option;
         } else throw Error('Desteklenmeyen etkileşim');
         // The final submit click is gated by the app: execute task, reservation
         // first, one click. The fresh page is then classified from evidence.
@@ -1412,14 +1456,56 @@ export function automationWorkflow({
             'Tarayıcı adımı tamamlanamadı; sonucu kontrol et: ' +
               JSON.stringify(response.content).slice(0, 1000),
           );
-        result = {
-          ...(await inspect({research})),
-          ...(response.action ? {action: response.action} : {}),
-        };
+        noteSiteWait(response);
+        const openedTab = response.action?.openedTab;
+        if (openedTab?.tabId) {
+          // The click opened the next page in a new tab; continue there.
+          const switched = await callBrowser(
+            id,
+            'browser_jev_use_tab',
+            {tabId: openedTab.tabId},
+            run.id,
+          );
+          result = {
+            ...(await inspect({research, response: switched})),
+            action: {
+              ...response.action,
+              message:
+                'The click opened a new tab. This observation is that new tab; continue here. The previous tab stays open.',
+            },
+          };
+        } else
+          result = {
+            ...(await inspect({research})),
+            ...(response.action ? {action: response.action} : {}),
+          };
+        if (response.siteWait && active.recordId)
+          result.siteWaitGuidance =
+            'This site asked to slow down, so the step was not executed. Do not retry it now. Call finish_automation_run with status=blocked; the app resumes this record after the wait from the same tab.';
         if (isSubmitLabel(submitLabel)) {
-          const active = db.run(run.id),
+          let outcome = classifySubmission(snapshots.current?.text ?? '', beforeSubmit);
+          // A confirmation often renders a moment after the click: look twice more.
+          for (
+            let i = 0;
+            i < 2 && outcome.outcome === 'unknown' && !openedTab?.tabId && !response.siteWait;
+            i++
+          ) {
+            await pause(submitSettleMs, undefined, {signal});
+            result = {
+              ...(await inspect({research})),
+              ...(response.action ? {action: response.action} : {}),
+            };
+            outcome = classifySubmission(snapshots.current?.text ?? '', beforeSubmit);
+          }
+          // A CAPTCHA the user must solve stopped the submission on this page.
+          const challenge =
+              outcome.outcome !== 'confirmed' && lastVerification?.state === 'required'
+                ? String(lastVerification.evidence ?? 'CAPTCHA')
+                : null,
+            active = db.run(run.id),
             submission = {
-              ...classifySubmission(snapshots.current?.text ?? '', beforeSubmit),
+              ...outcome,
+              ...(challenge ? {verification: challenge} : {}),
               label: submitLabel,
               attempts: (active.submission?.attempts ?? 0) + 1,
               at: db.now(),

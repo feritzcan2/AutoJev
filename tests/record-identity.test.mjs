@@ -148,7 +148,7 @@ test('verified duplicate rows retain receipts and documents, resolve old IDs and
   assert.equal(merged.status, 'completed');
   assert.deepEqual(merged.evidence, receipt);
   assert.deepEqual(merged.documents, b.documents);
-  assert.equal(f.db.results(f.id, {all: true}).length, 1);
+  assert.equal(f.db.results(f.id).length, 1);
   assert.equal(f.db.resultCounts(f.id).resultCount, 1);
   assert.equal(f.core.workspaces.records.count(f.id), 1);
   assert.equal(f.core.workspaces.records.search(f.id, {query: 'Home'}).total, 1);

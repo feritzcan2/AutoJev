@@ -110,6 +110,8 @@ export const SUBMIT_SCREENSHOT_NOTE =
   'The attached image shows the visible page right after the click. Judge it together with the text: a visible confirmation message means the application went through; a visible field error means that field needs a fix. Evidence quotes come from the page text (browser_search), not from the image. If the image and the text disagree, record uncertain. Never click submit again.';
 
 export function submissionGuidance(submission) {
+  if (submission.verification)
+    return 'A verification challenge (CAPTCHA) appeared after the click. Do not solve it, do not click submit again. Call record_automation_outcome with status=uncertain, then finish_automation_run with status=blocked; the app asks the user to solve it in the open tab and to report the outcome.';
   switch (submission.outcome) {
     case 'confirmed':
       return 'The page shows a confirmation. Call record_automation_outcome with status=completed and this quote as evidence.';

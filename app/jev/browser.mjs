@@ -8,7 +8,7 @@ import {installNoTranslate} from './translation.mjs';
 import {prepareTurnstileBarrier, turnstileBarrierResult} from '../captcha/barrier.mjs';
 import {privateJevPage, retryJevRead} from './page.mjs';
 import {acquireTabRendering} from './rendering.mjs';
-import {accessBarrier, SiteWaitError} from '../browser/site-access.mjs';
+import {accessBarrier, SiteWaitError, siteKey} from '../browser/site-access.mjs';
 import {observeFormFrame, actFormFrame, usableFormFrame} from './frame-actions.mjs';
 import {captureCookieFrameTargets, clickCookieFrameTarget} from './cookie-frame.mjs';
 import {documentObservation, waitForDocument} from './document.mjs';
@@ -58,6 +58,8 @@ import {validateJevArgs} from './tools.mjs';
 const require = createRequire(import.meta.url);
 const urlHash = (url) => createHash('sha256').update(url).digest('hex');
 // Tools that write to or scroll the page need a rendering tab (see rendering.mjs).
+const UPLOAD_BUTTON =
+  /upload|attach|browse|(?:add|select|choose) files?|resume|\bcv\b|lebenslauf|hochladen|anhängen|datei|yükle|dosya|document|unterlagen/i;
 const WRITE_TOOLS = new Set([
   'browser_jev_act',
   'browser_jev_autocomplete',
@@ -235,7 +237,7 @@ export class JevBrowser {
               this.tracking = new WeakMap();
               if (!this.closed) this.onDisconnect();
             });
-            for (const page of context.pages()) await this.track(context, page);
+            for (const page of context.pages()) await this.track(context, page).catch(() => {});
             context.on('page', (page) => this.track(context, page).catch(() => {}));
             if (this.homeId === markerId) await this.tab(markerId).page.goto(homeUrl);
             marker.close();
@@ -274,7 +276,7 @@ export class JevBrowser {
           headless: this.headless,
           viewport: {width: 1120, height: 780},
         });
-        for (const page of context.pages()) await this.track(context, page);
+        for (const page of context.pages()) await this.track(context, page).catch(() => {});
         context.on('page', (page) => this.track(context, page).catch(() => {}));
         return context;
       })().catch((error) => {
@@ -309,8 +311,9 @@ export class JevBrowser {
     for (let i = 0; i < 100; i++) {
       for (const context of this.browser.contexts())
         for (const page of context.pages()) {
-          const slot = await this.track(context, page);
-          if (slot.id === id) return page;
+          // Another tab that cannot be tracked right now must not hide this one.
+          const slot = await this.track(context, page).catch(() => null);
+          if (slot?.id === id) return page;
         }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
@@ -370,7 +373,12 @@ export class JevBrowser {
       await this.persistTabs();
       return slot;
     })();
+    // A failed setup (for example a page navigating mid-install) must not stay
+    // cached: the next call tracks that page again.
     this.tracking.set(page, pending);
+    pending.catch(() => {
+      if (this.tracking?.get(page) === pending) this.tracking.delete(page);
+    });
     return pending;
   }
   async claimAutomationTab(slot, owner, state) {
@@ -563,6 +571,77 @@ export class JevBrowser {
       );
     return slot;
   }
+  // Some forms create their file input only when the upload button is
+  // clicked. Click that observed button while catching the file chooser it
+  // opens and hand the workspace file to it; no native dialog is shown.
+  async uploadThroughChooser(slot, args, owner) {
+    if (!path.isAbsolute(args.filePath)) throw Error('Dosya yolu mutlak olmalı.');
+    const label = slot.clickTargets.get(args.uploadId)?.action?.label ?? '';
+    if (!UPLOAD_BUTTON.test(label))
+      throw Error(
+        'This target is not a file upload button. Use an uploads[].uploadId or the targetId of the upload button.',
+      );
+    const {realpath, stat} = await import('node:fs/promises');
+    const file = await realpath(args.filePath),
+      workspace = await realpath(this.workspace ?? this.directory);
+    if (!file.startsWith(workspace + path.sep) || !(await stat(file)).isFile())
+      throw Error('Yalnızca bu adayın çalışma alanındaki dosyalar yüklenebilir.');
+    validateUploadPurpose(label, path.basename(file));
+    const info = await stat(file);
+    if (
+      !takeUploadAttempt(
+        slot,
+        JSON.stringify([slot.page.url(), label, file, info.size, info.mtimeMs]),
+      )
+    )
+      return {
+        tabId: slot.id,
+        status: 'no_progress',
+        executed: false,
+        message:
+          'Aynı dosya/düğme için iki deneme veya 60 saniye sınırına ulaşıldı. Gerçek teknik engeli raporla.',
+      };
+    const target = takeClickTarget(slot, args.uploadId, owner);
+    const chooser = slot.page.waitForEvent('filechooser', {timeout: 8000}).catch(() => null);
+    const clicked = await this.execute(slot, target);
+    const opened = await chooser;
+    if (!opened)
+      return {
+        ...clicked,
+        status: 'no_progress',
+        executed: false,
+        message:
+          'Düğme dosya seçici açmadı. Açılan menü veya seçenek varsa onun yükleme seçeneğinin targetId değeriyle browser_upload_document kullan; yoksa gerçek teknik engeli raporla.',
+      };
+    await opened.setFiles(file, {timeout: 10000});
+    return {
+      ...(await this.observe(slot)),
+      status: 'ready',
+      executed: true,
+      message:
+        'Dosya, düğmenin açtığı dosya seçiciye verildi. Sayfada dosya adının veya yükleme durumunun göründüğünü kontrol et.',
+    };
+  }
+  // A click that opens a new tab (target=_blank, window.open) leaves the
+  // clicked page unchanged; report the child tab so the caller can continue
+  // there. Bounded: tabs announce themselves within a few hundred ms.
+  async withOpenedTab(slot, before, value) {
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      const child = [...this.tabs.values()].find(
+        (t) => !before.has(t.id) && t.openerId === slot.id && !t.page.isClosed(),
+      );
+      if (child)
+        return {
+          ...value,
+          openedTab: {tabId: child.id, url: child.page.url()},
+          message: 'Bu tıklama yeni bir sekme açtı; devam etmek için o sekmeyi kullan.',
+        };
+      if (value?.status !== 'uncertain' && value?.status !== 'no_progress') return value;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return value;
+  }
   async navigate(slot, url) {
     if (this.autoVerify()) await installTurnstileRegistration(slot.page);
     // Paced sites wait their turn before the request leaves; cancellable.
@@ -700,7 +779,22 @@ export class JevBrowser {
         this.siteAccess.complete(probe?.url ?? observed.url, probe?.token, {...slot.http, reason});
       slot.accessProbe = null;
       slot.accessChecked = slot.http;
+      if (
+        !wait &&
+        !reason &&
+        slot.accessBlocked &&
+        slot.http &&
+        slot.http !== slot.accessBlocked.http &&
+        slot.http.status >= 200 &&
+        slot.http.status < 400 &&
+        siteKey(observed.url) === slot.accessBlocked.site
+      ) {
+        this.siteAccess.recoverVerification(observed.url, slot.accessBlocked.blockedAt);
+        delete slot.accessBlocked;
+      }
       if (wait) {
+        if (wait.reason === 'verification' && siteKey(observed.url) === wait.site)
+          slot.accessBlocked = {site: wait.site, blockedAt: wait.blockedAt, http: slot.http};
         const diagnostic = slot.cloudflareDiagnostic;
         if (diagnostic) {
           diagnostic.phase = 'handoff';
@@ -1082,8 +1176,10 @@ export class JevBrowser {
         args.tabId &&
         !['browser_jev_observe', 'browser_jev_screenshot', 'browser_jev_close_tab'].includes(name)
       ) {
-        const url = this.tab(args.tabId).page.url();
-        if (/^https?:/.test(url)) this.siteAccess?.assertAction(url);
+        const slot = this.tab(args.tabId),
+          url = slot.page.url();
+        const token = /^https?:/.test(url) ? this.siteAccess?.assertAction(url) : null;
+        if (token) slot.accessProbe = {url, token};
       }
       const context = await this.context();
       let value;
@@ -1491,14 +1587,15 @@ export class JevBrowser {
             (await clickCookieFrameTarget(slot, args.targetId, owner));
           if (cookie) value = {...(await this.observe(slot)), ...cookie};
           else {
-            const target = takeClickTarget(slot, args.targetId, owner);
+            const target = takeClickTarget(slot, args.targetId, owner),
+              tabsBefore = new Set(this.tabs.keys());
             // A radio/checkbox controlId from inspect_form selects that answer.
             const choice =
               !target && slot.controls?.get(args.targetId)?.kind === 'control'
                 ? await selectChoice(slot, {controlId: args.targetId}, owner, this.reader)
                 : null;
             value = target
-              ? await this.execute(slot, target)
+              ? await this.withOpenedTab(slot, tabsBefore, await this.execute(slot, target))
               : choice
                 ? {...(await this.observe(slot)), ...choice}
                 : {
@@ -1536,7 +1633,25 @@ export class JevBrowser {
             'browser_jev_list_options',
           ].includes(name)
         ) {
-          const result = await navigateObserved(slot, name, args, owner, this.reader);
+          // A custom dropdown (no native SELECT) lists and selects through its popup.
+          const saved = slot.controls?.get(args.controlId),
+            dropdown =
+              ['browser_jev_select_option', 'browser_jev_list_options'].includes(name) &&
+              saved?.kind === 'control' &&
+              slot.observed?.controls?.some(
+                (c) => c.node === saved.node && c.autocomplete && !c.nativeSelect,
+              );
+          const result = dropdown
+            ? await selectAutocomplete(
+                slot,
+                {
+                  controlId: args.controlId,
+                  ...(args.option !== undefined ? {option: args.option} : {}),
+                },
+                owner,
+                this.reader,
+              )
+            : await navigateObserved(slot, name, args, owner, this.reader);
           value = {...(await this.observe(slot)), ...result};
         }
         if (['browser_jev_autocomplete', 'browser_jev_list_suggestions'].includes(name)) {
@@ -1661,11 +1776,21 @@ export class JevBrowser {
           slot.pending = null;
           value = await this.execute(slot, pending, args.text);
         }
-        if (name === 'browser_jev_upload') {
+        if (
+          name === 'browser_jev_upload' &&
+          !slot.uploads.has(args.uploadId) &&
+          slot.clickTargets?.has(args.uploadId)
+        )
+          value = await this.uploadThroughChooser(slot, args, owner);
+        else if (name === 'browser_jev_upload') {
           if (!path.isAbsolute(args.filePath)) throw Error('Dosya yolu mutlak olmalı.');
           const upload = slot.uploads.get(args.uploadId);
-          if (!upload || upload.owner !== owner || upload.url !== slot.page.url())
-            throw Error('Dosya alanı değişti; tekrar gözlemle.');
+          if (!upload)
+            throw Error(
+              'This id is not a file upload on the current page. Use an uploads[].uploadId, or the targetId (from clickTargets) of the upload button.',
+            );
+          if (upload.owner !== owner || upload.url !== slot.page.url())
+            throw Error('The file field changed; observe the page again.');
           if (
             upload.frame &&
             (upload.frame.url() !== upload.frameUrl ||
@@ -1675,7 +1800,7 @@ export class JevBrowser {
             throw Error('Dosya alanının çerçevesi değişti; tekrar gözlemle.');
           const current = await upload.input.evaluate(uploadDetails);
           if (JSON.stringify(current) !== JSON.stringify(upload.details))
-            throw Error('Dosya alanı değişti; tekrar gözlemle.');
+            throw Error('The file field changed; observe the page again.');
           const {realpath, stat} = await import('node:fs/promises');
           const file = await realpath(args.filePath),
             workspace = await realpath(this.workspace ?? this.directory);

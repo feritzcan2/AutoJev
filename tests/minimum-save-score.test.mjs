@@ -65,7 +65,7 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
         assert.equal(receipt.assessment.score, score);
       }
     }
-    assert.equal(f.db.results(f.id, {all: true}).length, 3);
+    assert.equal(f.db.results(f.id).length, 3);
     assert.deepEqual(f.db.seenListingUrls(f.id, source, urls), [urls[0]]);
     assert.deepEqual(f.db.seenListingUrls(f.id, 'https://other-source.test/', urls), []);
     const other = f.db.create('custom', {goal: 'Other workspace', sources: [source]});
@@ -106,7 +106,7 @@ test('mixed and entirely skipped batches count saved records correctly and retir
   assert.equal(skipped.skipped, 1);
   assert.deepEqual(skipped.records, []);
   assert.equal(f.db.scanQueue(f.id, f.run.id).total, 0);
-  assert.equal(f.db.results(f.id, {all: true}).length, 1);
+  assert.equal(f.db.results(f.id).length, 1);
 });
 
 test('review accepts score exclusions without saving fake records or skipping incomplete details', async (t) => {
@@ -153,7 +153,7 @@ test('empty or zero thresholds keep low scores and invalid assessments cannot be
     await assert.rejects(
       f.call('record_automation_result', finding('https://catalog.test/invalid', score)),
     );
-  assert.equal(f.db.results(f.id, {all: true}).length, 0);
+  assert.equal(f.db.results(f.id).length, 0);
   assert.deepEqual(f.db.seenListingUrls(f.id, source, ['https://catalog.test/invalid']), []);
 });
 

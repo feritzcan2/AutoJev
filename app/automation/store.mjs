@@ -1,4 +1,3 @@
-import {taskRecordIds} from '../records/task-scope.mjs';
 import {profilePlan, profileChanged, splitPlanDraft} from './profile-updates.mjs';
 import {taskSnapshot} from '../browser/automation-snapshot.mjs';
 import {automationSnapshotReader} from '../browser/automation-snapshot-reader.mjs';
@@ -504,16 +503,7 @@ export class AutomationStore {
       definition = db.template(a.templateId),
       tasks = db.store.workspaces.tasks.list(id, {summary: true}),
       results = db.results(id),
-      included = new Set(results.map((item) => item.id)),
       foundCounts = db.runFoundCounts(id);
-    // A worker may prepare an older record outside the recent-results window.
-    for (const task of tasks)
-      if (['running', 'reported'].includes(task.state))
-        for (const itemId of taskRecordIds(task))
-          if (!included.has(itemId)) {
-            results.push(db.result(id, itemId));
-            included.add(itemId);
-          }
     return {
       automation: {...a, questions: (a.questions ?? []).map((q) => db.questionContext(id, q))},
       definition,

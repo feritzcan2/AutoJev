@@ -75,7 +75,7 @@ function resumable(db, run) {
     step.scope === 'source' &&
     (step.effect === 'read' || sourceMode(a, run.sourceUrl) === 'observe') &&
     !db
-      .results(a.id, {all: true})
+      .results(a.id)
       .some((r) => r.runId === run.id && ['executing', 'uncertain'].includes(r.status))
   );
 }

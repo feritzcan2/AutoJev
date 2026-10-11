@@ -29,6 +29,7 @@ export function conversationRequest(db, id, run) {
     const {text, at} = JSON.parse(row.data);
     return {message: text, at};
   }
+  if (run.onboarding) return {task: db.template(db.get(id).templateId).onboarding};
   const ids = run.inputQuestionIds ?? run.continuation?.questionIds ?? [];
   const answers = (db.get(id).questions ?? [])
     .filter((q) => q.conversation && ids.includes(q.id) && q.answer != null)

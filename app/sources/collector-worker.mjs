@@ -50,9 +50,11 @@ function persist(db, run, work, extra = {}) {
 export function prepareCollection(db, run, a) {
   const searches = collectorSearches(a, run.sourceUrl),
     current = db.activeRun(a.id, run.id);
+  // A continuation of the same task keeps its scan, even a finished one, so
+  // the agent can report it; a new task starts a finished scan over.
   const reusable =
     current.scan?.collector === format &&
-    !current.scan.complete &&
+    (!current.scan.complete || (current.taskId && current.scan.taskId === current.taskId)) &&
     JSON.stringify(current.scan.work?.searches.map((s) => s.url)) ===
       JSON.stringify(searches.map((s) => s.url));
   const work = reusable
@@ -76,7 +78,12 @@ export function prepareCollection(db, run, a) {
     ...current,
     collector: collectorRun(a, run),
     scanPlan: plan,
-    scan: {collector: format, work, reviewStats: reusable ? stats(current) : undefined},
+    scan: {
+      collector: format,
+      taskId: current.taskId,
+      work,
+      reviewStats: reusable ? stats(current) : undefined,
+    },
     pageProgress: activeSearch(work)?.pageProgress ?? null,
   };
   persist(db, updated, work);

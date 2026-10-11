@@ -62,6 +62,7 @@ export function automationsPage(
     focusAgent = () => {},
     syncWorkspaceMenu = () => {},
     refreshWorkspaces = async () => {},
+    openOnboarding = () => false,
   },
 ) {
   let sourcePanel, chatPanel, saveScoreSettings;
@@ -156,12 +157,6 @@ export function automationsPage(
   const find = (selector) =>
     host.querySelector(selector) ?? agentConversation.querySelector(selector);
   let progressSignature = '';
-  const templateNav = el('button');
-  templateNav.type = 'button';
-  templateNav.dataset.view = 'templates';
-  templateNav.innerHTML =
-    '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span>Template’ler</span>';
-  document.querySelector('aside nav button[data-view=config]').before(templateNav);
   let templates = [],
     selected = null,
     data = null,
@@ -264,53 +259,24 @@ export function automationsPage(
     const current = ++generation;
     await catalog();
     if (current !== generation || selected) return;
-    renderList();
+    renderStart();
   }
-  async function create(template) {
-    const a = await api.workspaceCreate(template.id, {});
+  // Job search is the only workspace type, so a new workspace starts from it directly.
+  async function create() {
+    const a = await api.workspaceCreate('job-search', {});
     await select(a.id);
   }
-  function renderList() {
+  function renderStart() {
     if (selected || host.hidden) return;
     host.replaceChildren();
     const heading = el('div', null, 'automation-heading');
     heading.append(
       sectionTitle(
-        'Nasıl başlamak istersin?',
-        'Hazır bir template seç. Agent sorularla çalışma alanını sana göre düzenler.',
+        'İş aramasına başla',
+        'Soldan bir çalışma alanı seç veya yeni bir iş araması aç. Kurulum agenti sorularla aramanı sana göre düzenler.',
       ),
     );
-    heading.append(
-      button('Template içe aktar', async () => {
-        const result = await api.automationTemplateImport();
-        if (result) {
-          templates = [];
-          await loadList();
-          notice('Template eklendi. Başlamak için kartını seç.');
-        }
-      }),
-    );
-    host.append(heading);
-    const grid = el('div', null, 'automation-grid template-grid');
-    for (const t of templates.filter((template) => !template.example)) {
-      const card = el('article', null, 'automation-card template-card');
-      card.append(el('span', t.icon, 'automation-icon'), el('h3', t.title), el('p', t.description));
-      const steps = el('ol');
-      for (const step of t.steps) steps.append(el('li', step));
-      card.append(steps);
-      const choose = button('Bu template ile başla →', () => create(t), 'primary');
-      choose.dataset.template = t.id;
-      card.append(choose);
-      card.append(
-        button(
-          'Template’i dışa aktar',
-          () => api.automationTemplateExport(t.id),
-          'automation-export-template',
-        ),
-      );
-      grid.append(card);
-    }
-    host.append(grid);
+    host.append(heading, button('Yeni iş araması başlat →', create, 'primary'));
     host.append(
       el(
         'p',
@@ -319,7 +285,7 @@ export function automationsPage(
       ),
     );
   }
-  async function select(id) {
+  async function select(id, {onboarding = true} = {}) {
     questionDialog.update(null);
     notice('');
     selected = id;
@@ -338,6 +304,7 @@ export function automationsPage(
       if (selected !== id) return;
       renderDetail();
     }
+    if (onboarding && openOnboarding(id, data)) return;
     if (automationProgress(data).fresh) {
       openConversation();
       if (data.automation.templateId !== 'custom') {
@@ -356,7 +323,7 @@ export function automationsPage(
     host.innerHTML = `<div id="automation-controls" class="actions"></div><p id="automation-runtime-note" class="automation-runtime-note" role="status"></p>
 <div class="automation-setup-grid"><section class="automation-conversation"><div class="automation-section-head"><h2>Asistanla kur</h2><p>İhtiyacını anlat, soruları yanıtla veya yapmak istediğin değişikliği yaz.</p></div><div id="automation-messages" class="automation-messages" role="log" aria-label="Kurulum konuşması"></div><form id="automation-chat"><label for="automation-message">Mesajın</label><textarea id="automation-message" placeholder="Örneğin: Berlin’de 1.500 euroya kadar iki odalı ev arıyorum…" maxlength="12000" required></textarea><div class="actions"><button id="automation-send" data-idle type="submit" class="primary">Gönder</button><button id="automation-add-document" data-idle type="button" class="quiet">Belge ekle</button></div><small>Değişiklik konuşması düzenli çalışmayı duraklatır. Yeni bilgiler çalışma alanı profilinde görünür.</small></form></section>
 <section class="automation-plan"><div class="automation-section-head"><h2>Kurulum kartı</h2><p>Asistanın hazırladıklarını incele ve düzenle. Yetkiyi buradan sen seçersin.</p></div><form id="automation-plan-form"><label>Ad<input name="title" required maxlength="150"></label><label>Amaç<textarea name="goal" required maxlength="6000"></textarea></label><div id="automation-criteria"></div><label>İşleyiş<textarea name="instructions" maxlength="12000"></textarea></label><details><summary>Kişisel bilgiler ve belgeler</summary><label>Bu otomasyonun kullanabileceği bilgiler<textarea name="facts" maxlength="12000" placeholder="Yalnızca bu iş için gereken bilgiler. Şifreleri burada paylaşma."></textarea></label><div id="automation-documents"></div><div id="automation-jev-profile" class="jev-profile"></div></details><label>İşlem yetkisi<select name="mode"><option value="observe">Bul ve bildir</option><option value="prepare">Hazırla, onayımı bekle</option><option value="auto">Otomatik uygula</option></select></label><div class="automation-plan-footer"><small id="automation-save-state" role="status"></small><button data-idle type="submit" class="primary">Kurulumu kaydet</button></div></form></section></div>
-<section class="automation-results-section"><div class="automation-heading"><div><h2>Sonuçlar</h2><p id="automation-results-summary"></p></div><button id="automation-export" type="button" class="quiet">Sonuçları dışa aktar</button></div><div id="automation-results"></div></section>
+<section class="automation-results-section"><div class="automation-heading"><div><h2>Sonuçlar</h2></div><button id="automation-export" type="button" class="quiet">Sonuçları dışa aktar</button></div><div id="automation-results"></div></section>
 <section class="automation-history-section"><div class="automation-section-head"><h2>Çalışma geçmişi</h2><p>Her turun sonucu ve gerektiğinde agent ekranı.</p></div><div id="automation-runs"></div></section><div class="automation-bottom-actions"><button id="automation-delete" type="button" class="quiet danger">Otomasyonu sil</button></div>`;
     const $ = (id) => find('#' + id),
       form = $('automation-plan-form');
@@ -382,16 +349,6 @@ export function automationsPage(
     chatFeedback.setAttribute('role', 'status');
     chatFeedback.setAttribute('aria-live', 'polite');
     $('automation-chat').querySelector('.actions').after(chatFeedback);
-    const saveTemplate = button('Template olarak kaydet', () => {
-      const a = data.automation;
-      templateDialog.querySelector('[name=title]').value = a.title + ' template';
-      templateDialog.querySelector('[name=description]').value = templates.find(
-        (t) => t.id === a.templateId,
-      ).description;
-      templateDialog.querySelector('[name=guidance]').value = a.instructions;
-      templateDialog.showModal();
-    });
-    find('.automation-bottom-actions').prepend(saveTemplate);
     const profileEdited = () => {
       dirty = profileChanged(readForm(), formBaseline ?? data.automation);
       notice('');
@@ -579,20 +536,6 @@ export function automationsPage(
     setupGrid.remove();
     find('.automation-bottom-actions').dataset.automationPane = 'profile';
   }
-  const templateDialog = el('dialog');
-  templateDialog.className = 'automation-template-dialog';
-  templateDialog.innerHTML =
-    '<form><h2>Tekrar kullanılabilir template</h2><p>Sorular ve aşağıdaki işleyiş yeni otomasyonlarda kullanılacak. Paylaşılacak metni kontrol et.</p><label>Template adı<input name="title" maxlength="150" required></label><label>Açıklama<textarea name="description" maxlength="1000" required></textarea></label><label>Paylaşılacak işleyiş<textarea name="guidance" maxlength="12000"></textarea></label><small>Kriter cevapları, kişisel bilgiler, kaynak adresleri, belgeler ve hesaplar template’e eklenmez. İşleyiş metnindeki kişisel ayrıntıları kendin çıkar.</small><div class="actions"><button type="button" class="quiet" data-cancel>Vazgeç</button><button type="submit" class="primary">Template’i kaydet</button></div></form>';
-  document.body.append(templateDialog);
-  templateDialog.querySelector('[data-cancel]').onclick = () => templateDialog.close();
-  templateDialog.querySelector('form').onsubmit = attempt(async (event) => {
-    const input = Object.fromEntries(new FormData(event.target));
-    await api.automationTemplateSave(selected, input);
-    templateDialog.close();
-    templates = [];
-    await catalog();
-    notice('Template kaydedildi. Template’ler sayfasından kullanabilir veya dışa aktarabilirsin.');
-  });
   // Initial setup and later conversations share the dedicated setup page.
   function buildIntro(chat) {
     const intro = el('div', null, 'workspace-intro');
@@ -1170,9 +1113,6 @@ export function automationsPage(
       files.append(el('p', 'Çalışma alanına eklediğin belgeler burada görünür.', 'empty'));
   }
   function renderResults() {
-    const summary = find('#automation-results-summary');
-    summary.hidden = data.resultCounts.storedCount <= data.results.length;
-    summary.textContent = `Son ${data.results.length} kayıt gösteriliyor; dışa aktarma tüm kayıtları içerir.`;
     resultsTable.update(data, busy);
   }
   async function sendMessage(text) {
@@ -1305,9 +1245,8 @@ export function automationsPage(
       if (!stale()) throw error;
     }
   }
-  async function show(name = 'templates', {detail = false} = {}) {
+  async function show() {
     host.hidden = false;
-    if (detail && selected) return;
     questionBadge.hidden = true;
     document.querySelector('[data-view=board]').setAttribute('aria-label', 'Takip tablosu');
     resultsTable?.dispose();
@@ -1321,7 +1260,7 @@ export function automationsPage(
     dirty = false;
     formRevision = '';
     localStorage.removeItem('selected-workspace');
-    navigate('templates', {detail: true});
+    navigate('start', {detail: true});
     await loadList();
   }
   api.onAutomationChange((event) => {
@@ -1332,6 +1271,7 @@ export function automationsPage(
     element: host,
     show,
     select,
+    create: attempt(create),
     refresh,
     start,
     stop,

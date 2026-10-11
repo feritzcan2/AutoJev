@@ -178,7 +178,9 @@ export async function installTurnstileRegistration(page) {
   if (pending) return pending;
   pending = (async () => {
     await page.addInitScript(captureTurnstileRegistration, turnstileBridge);
-    await page.evaluate(captureTurnstileRegistration, turnstileBridge);
+    // The init script covers the next document; a page that is navigating
+    // right now gets it there, so a failed read of the old one is harmless.
+    await page.evaluate(captureTurnstileRegistration, turnstileBridge).catch(() => {});
   })().catch((error) => {
     installed.delete(page);
     throw error;

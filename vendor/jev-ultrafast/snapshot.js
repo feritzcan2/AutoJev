@@ -174,7 +174,11 @@
     if(!question&&['checkbox','switch'].includes(r))question=semantic?.label||name(e);
     return {question,option:name(e)||r,selected:raw==='true'?true:raw==='false'?false:null,attribute};
   };
-  const fieldContext=e=>e.matches('input,textarea,select,[role="combobox"],[role="textbox"],[role="checkbox"],[role="radio"]')?window.__jobloopFieldContext?.(e):null;
+  // A select-only dropdown: a combobox or a button that opens a listbox/tree
+  // popup (not a menu or dialog). Labelled triggers are answer fields.
+  cache.popupTrigger=e=>!!e&&!['INPUT','TEXTAREA','SELECT'].includes(e.tagName)&&(e.getAttribute('role')==='combobox'||
+    (role(e)==='button'&&['listbox','tree','true'].includes(e.getAttribute('aria-haspopup'))&&(e.hasAttribute('aria-labelledby')||e.labels?.length>0)));
+  const fieldContext=e=>e.matches('input,textarea,select,[role="combobox"],[role="textbox"],[role="checkbox"],[role="radio"]')||cache.popupTrigger(e)?window.__jobloopFieldContext?.(e):null;
   // Button-driven picklists isolated in a shadow component, with one local
   // label and one dropdown. Never infer ownership from a whole form/page.
   cache.buttonList=e=>{
@@ -194,7 +198,65 @@
   for(const e of queryAll(root,'div,span'))if(customClick(e)&&!candidates.includes(e))candidates.push(e);
   // Associate suggestions with their input, never with matching text elsewhere
   // in the page. Some widgets expose plain divs rather than ARIA options.
+  const listOptions=lists=>{
+    const options=[];
+    for(const list of lists.filter(visible)){
+      let items=queryAll(list,'[role="option"],[role="treeitem"]').filter(n=>!n.querySelector('[role="treeitem"]'));
+      if(!items.length){
+        const group=list.querySelector('.dropdown-results')||list;
+        items=[...group.children].filter(n=>n.matches('div,li')&&!n.querySelector('input,button,a,select,textarea')&&getComputedStyle(n).cursor==='pointer');
+      }
+      for(const item of items){
+        if(item.matches('a[href],input,select,textarea,button:not([type="button"])')||item.querySelector('a[href],button,input,select,textarea'))continue;
+        const label=(item.innerText||'').replace(/\s+/g,' ').trim();
+        if(!label||label.length>500||!visible(item)||item.closest('[aria-disabled="true"],[inert]')||item.matches(':disabled'))continue;
+        options.push({node:identity(item),label,selected:item.getAttribute('aria-selected')==='true'||[...item.classList].some(c=>c.endsWith('__option--is-selected'))});
+      }
+    }
+    return options;
+  };
+  const idList=(e,key)=>(e.getAttribute(key)||'').split(/\s+/).filter(Boolean);
+  const byId=(e,id)=>e.getRootNode().getElementById?.(id)||document.getElementById(id);
+  const deepActive=()=>{let a=document.activeElement;while(a?.shadowRoot?.activeElement)a=a.shadowRoot.activeElement;return a;};
+  // The popup of a dropdown trigger, by ARIA only: aria-controls/owns, a list
+  // labelled by the same label or by the trigger, or (while expanded) the one
+  // list holding focus or the trigger's active descendant. Never page text.
+  const popupLists=e=>{
+    const owned=[...idList(e,'aria-controls'),...idList(e,'aria-owns')].map(id=>byId(e,id)).filter(Boolean);
+    if(owned.length)return owned;
+    const all=queryAll(document,'[role="listbox"],[role="tree"]').filter(l=>!e.contains(l)&&visible(l));
+    const labels=new Set([...idList(e,'aria-labelledby'),e.id].filter(Boolean));
+    const labelled=all.filter(l=>idList(l,'aria-labelledby').some(id=>labels.has(id)));
+    if(labelled.length)return labelled;
+    if(e.getAttribute('aria-expanded')!=='true')return [];
+    const active=deepActive(),descendant=byId(e,e.getAttribute('aria-activedescendant')||'');
+    const focused=all.filter(l=>[active,descendant].some(n=>n&&(contains(l,n)||idList(n,'aria-controls').includes(l.id))));
+    return focused.length===1?focused:[];
+  };
+  // Visible caption of a trigger: its own text, without popups or placeholders.
+  const caption=e=>{
+    const parts=[];
+    const walk=n=>{for(const c of n.childNodes){
+      if(c.nodeType===3)parts.push(c.textContent);
+      else if(c.nodeType===1&&visible(c)&&!c.matches('[role="listbox"],[role="tree"],[role="option"],[role="treeitem"]'))walk(c);
+    }};
+    walk(e);
+    const text=parts.join(' ').replace(/\s+/g,' ').trim();
+    const placeholders=[e,...e.querySelectorAll('[data-placeholder],[aria-placeholder],[placeholder]')].flatMap(n=>[n.getAttribute('aria-placeholder'),n.getAttribute('data-placeholder'),n.getAttribute('placeholder')]);
+    return placeholders.includes(text)?'':text;
+  };
   cache.autocomplete=e=>{
+    if(cache.popupTrigger(e)){
+      if(!e.isConnected||e.matches(':disabled')||closest(e,'[aria-disabled="true"],[inert]'))return null;
+      const lists=popupLists(e),options=listOptions(lists);
+      // A search box in the popup: one that controls the list, or the focused
+      // input that shares a small container with the list and no other input.
+      const active=deepActive(),near=l=>{for(let p=l,d=0;p&&d<6;p=p.parentElement,d++)if(p.contains(active))return p.querySelectorAll('input').length===1;return false;};
+      const search=queryAll(document,'input[aria-controls]').find(n=>visible(n)&&lists.some(l=>l.id&&idList(n,'aria-controls').includes(l.id)))||
+        (active?.tagName==='INPUT'&&['text','search'].includes(active.type)&&visible(active)&&lists.some(near)?active:null);
+      return {association:'popup',editable:false,searchable:true,search:search?identity(search):null,value:caption(e),selectedLabels:[],
+        expanded:e.getAttribute('aria-expanded')==='true'||lists.some(visible),options};
+    }
     const pick=cache.buttonList(e);
     if(pick){
       if(e.matches(':disabled')||closest(e,'[aria-disabled="true"],[inert]'))return null;
@@ -217,20 +279,7 @@
       }
     }
     if(!lists.length&&e.getAttribute('role')!=='combobox'&&!e.hasAttribute('aria-autocomplete'))return null;
-    const options=[];
-    for(const list of lists.filter(visible)){
-      let items=queryAll(list,'[role="option"]');
-      if(!items.length){
-        const group=list.querySelector('.dropdown-results')||list;
-        items=[...group.children].filter(n=>n.matches('div,li')&&!n.querySelector('input,button,a,select,textarea')&&getComputedStyle(n).cursor==='pointer');
-      }
-      for(const item of items){
-        if(item.matches('a[href],input,select,textarea,button:not([type="button"])')||item.querySelector('a[href],button,input,select,textarea'))continue;
-        const label=(item.innerText||'').replace(/\s+/g,' ').trim();
-        if(!label||label.length>500||!visible(item)||item.closest('[aria-disabled="true"],[inert]')||item.matches(':disabled'))continue;
-        options.push({node:identity(item),label,selected:item.getAttribute('aria-selected')==='true'||[...item.classList].some(c=>c.endsWith('__option--is-selected'))});
-      }
-    }
+    const options=listOptions(lists);
     return {association,options,expanded:e.getAttribute('aria-expanded')==='true'||lists.some(visible),selectedLabels:cache.combo(e)?.values??[]};
   };
   const suggestionOwners=new Map();

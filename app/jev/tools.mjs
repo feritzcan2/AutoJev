@@ -124,7 +124,7 @@ export const jevTools = [
   {
     name: 'browser_jev_list_suggestions',
     description:
-      'Open an observed autocomplete or supported button-driven picklist and read its actual associated option labels without choosing an answer or submitting. Use before guessing a translated label/internal enum, or when needs_selection returns no suggestions. For button-driven lists omit text. Optional text changes only the search query; text="" clears a failed query to reveal available options. Reads all currently rendered associated suggestions, which may be a filtered/virtualized subset. Reuse the returned exact label supported by user facts/policy with browser_jev_autocomplete. No model call.',
+      'Open an observed autocomplete or supported button-driven picklist and read its actual associated option labels without choosing an answer or submitting. Use before guessing a translated label/internal enum, or when needs_selection returns no suggestions. For a dropdown button, text types into its popup search box, if any. Optional text changes only the search query; text="" clears a failed query to reveal available options. Reads all currently rendered associated suggestions, which may be a filtered/virtualized subset. Reuse the returned exact label supported by user facts/policy with browser_jev_autocomplete. No model call.',
     inputSchema: schema(
       {tabId: string, controlId: string, text: {type: 'string', maxLength: 12000}},
       ['tabId', 'controlId'],
@@ -139,7 +139,7 @@ export const jevTools = [
   {
     name: 'browser_jev_autocomplete',
     description:
-      'Select a unique exact suggestion associated with an observed autocomplete or button-driven picklist controlId. For button-driven lists omit text. Optionally supply verified query text; waits briefly for suggestions, clicks the exact option and verifies acceptance in ONE call, with no model. Use option from observed suggestions or a verified exact answer; never guess. Returns suggestions if no match; do not repeat an unchanged failed query. Does not submit, write hidden fields or grant consent. Returns fresh controls; ready with selection.verified=true needs no extra observe/screenshot.',
+      'Select a unique exact suggestion associated with an observed autocomplete or dropdown button controlId (also custom dropdowns with role=button/combobox). For a dropdown button, text types into its popup search box, if any; omit it for short lists. Optionally supply verified query text; waits briefly for suggestions, clicks the exact option and verifies acceptance in ONE call, with no model. Use option from observed suggestions or a verified exact answer; never guess. Returns suggestions if no match; do not repeat an unchanged failed query. Does not submit, write hidden fields or grant consent. Returns fresh controls; ready with selection.verified=true needs no extra observe/screenshot.',
     inputSchema: schema({tabId: string, controlId: string, text: string, option: string}, [
       'tabId',
       'controlId',

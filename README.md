@@ -94,8 +94,8 @@ yeniden aç. Kayıtlı profil ve CV korunur; hazırlık yeniden denenir.
    isteğine izin ver. Agent’ın kendi tarayıcı modunda araçları agent içinde etkinleştir.
 3. Jev kullanacaksan **Yapılandırma → Jev** bölümünden TypeSafe API anahtarını
    kaydet ve bağlantıyı test et. Kaynaklar seçili tarayıcı üzerinden taranır.
-4. **Template’ler** bölümünden başla ve çalışma alanı profilini kontrol et. İş arama
-   template’inde aday profilini ve CV’yi ekle; başvuru yetkisini ve tercihleri seç.
+4. **Yeni çalışma alanı** düğmesiyle bir iş araması aç ve çalışma alanı profilini
+   kontrol et. Aday profilini ve CV’yi ekle; başvuru yetkisini ve tercihleri seç.
 
 Portal üyelik şifresi, o aday adına **yeni iş sitesi hesapları oluşturmak** için
 saklanır. Her adayın kaydı ayrıdır. Mevcut bir hesabın şifresi olduğunu varsaymaz.

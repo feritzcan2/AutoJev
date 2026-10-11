@@ -64,6 +64,48 @@ try {
   );
   observed = await call('browser_jev_observe', {tabId});
   assert.equal(observed.uploads.length, 0);
+  // A button that creates its file input only when clicked: the file goes to
+  // the chooser it opens; an ordinary button is refused as an upload target.
+  await page.setContent(
+    `<button type="button" id="upload">Add file</button><p id="name"></p><button type="button">Continue</button>`,
+  );
+  await page.evaluate(() => {
+    document.querySelector('#upload').onclick = () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.onchange = () => (document.querySelector('#name').textContent = input.files[0].name);
+      input.click();
+    };
+  });
+  observed = await call('browser_jev_observe', {tabId});
+  assert.equal(observed.uploads.length, 0);
+  const continueTarget = observed.clickTargets.find((t) => t.label === 'Continue');
+  await assert.rejects(
+    client
+      .callTool(
+        {
+          name: 'browser_jev_upload',
+          arguments: {
+            tabId,
+            uploadId: continueTarget.targetId,
+            filePath: path.join(directory, 'CV.pdf'),
+          },
+        },
+        'test',
+      )
+      .then((r) => {
+        if (r.isError) throw Error(r.content[0].text);
+      }),
+    /not a file upload button/,
+  );
+  const button = observed.clickTargets.find((t) => t.label === 'Add file');
+  const chosen = await call('browser_jev_upload', {
+    tabId,
+    uploadId: button.targetId,
+    filePath: path.join(directory, 'CV.pdf'),
+  });
+  assert.equal(chosen.executed, true, JSON.stringify(chosen).slice(0, 400));
+  assert.equal(await page.locator('#name').textContent(), 'CV.pdf');
   console.log('JEV_FORM_REVEAL_AND_UPLOAD_PASS');
 } finally {
   await client.close();

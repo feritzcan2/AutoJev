@@ -8,6 +8,28 @@ const stale = {
   message: 'Kontrol kimliği eski; dönen güncel controls listesini kullan. Ek observe gerekmez.',
 };
 
+// Scroll the open popup list one step from an option inside it. Long or
+// virtualized lists render only part of their options at a time.
+async function scrollOptions(page, node, {top = false} = {}) {
+  return page.evaluate(
+    ({node, top}) => {
+      for (let p = window.__jevFast.nodes.get(node)?.parentElement; p; p = p.parentElement) {
+        if (p === document.body || p === document.documentElement) return false;
+        if (
+          p.scrollHeight <= p.clientHeight + 1 ||
+          !/auto|scroll/.test(getComputedStyle(p).overflowY)
+        )
+          continue;
+        const before = p.scrollTop;
+        p.scrollTop = top ? 0 : before + Math.max(p.clientHeight * 0.8, 40);
+        return p.scrollTop !== before;
+      }
+      return false;
+    },
+    {node, top},
+  );
+}
+
 // Query + bounded wait + exact selection. No model, selectors from the caller,
 // hidden-field writes, keyboard submission, or fuzzy candidate answers.
 export async function selectAutocomplete(slot, args, owner, reader) {
@@ -68,28 +90,57 @@ export async function selectAutocomplete(slot, args, owner, reader) {
   };
   try {
     const initial = await read();
-    if (initial?.editable === false && args.text !== undefined)
+    if (initial?.editable === false && !initial.searchable && args.text !== undefined && listOnly)
       return {
         status: 'unsupported',
         executed: false,
         message:
-          'Bu liste yazı alanı değil; text göndermeden seçenekleri listele veya option ile seç.',
+          'This list has no text field; omit text to list its options, or select one with option.',
       };
     if (!initial)
       return {
         status: 'unsupported',
         executed: false,
         message:
-          'Bu kontrol için ilişkilendirilmiş autocomplete bulunamadı; native select veya normal gözlenen hedefi kullan.',
+          'No suggestion list is associated with this control; use a native select or an observed click target.',
       };
     await revealInView(slot, input);
     let current = await read();
-    if (!current?.point || !same(current.identity, initial.identity)) return stale;
+    // An open popup may cover its own trigger; only a closed one needs a click.
+    if (!current || !same(current.identity, initial.identity)) return stale;
     if (!current.expanded) {
+      if (!current.point) return stale;
       opened = true;
       await slot.page.mouse.click(current.point.x, current.point.y);
     }
-    if (args.text !== undefined) {
+    if (args.text !== undefined && initial.editable === false) {
+      // A dropdown button: type into the search box its open popup shows.
+      const until = Date.now() + 1500;
+      while (!(current = await read())?.search && Date.now() < until)
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      if (!current || !same(current.identity, initial.identity))
+        return await stop('stale', 'The control changed; nothing was selected.');
+      if (!current.search && listOnly)
+        return await stop(
+          'unsupported',
+          'This dropdown has no search box. Omit text and pass option with the exact label; the tool scrolls a long list to find it. The suggestions below may be only the first part of the list.',
+          {suggestions: current.options.map((o) => o.label).slice(0, 20)},
+        );
+      // With a wanted option the text only aids the search; without a search
+      // box the option is picked from the (scrolled) list below.
+      if (current.search) {
+        const search = await slot.page.evaluateHandle(
+          (node) => window.__jevFast.nodes.get(node),
+          current.search,
+        );
+        try {
+          wrote = true;
+          await search.asElement().fill(args.text, {timeout: 2000});
+        } finally {
+          await search.dispose();
+        }
+      }
+    } else if (args.text !== undefined) {
       if (current.value !== args.text) {
         wrote = true;
         await input.fill(args.text, {timeout: 2000});
@@ -117,6 +168,28 @@ export async function selectAutocomplete(slot, args, owner, reader) {
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     } while (Date.now() < deadline);
+    // The wanted option, or the full list, may lie below the rendered part.
+    // Scroll the popup list from its top in bounded steps; never past its end.
+    const seen = new Set(current.options.map((o) => o.label));
+    if (!match && current.options.length) {
+      await scrollOptions(slot.page, current.options[0].node, {top: true}).catch(() => false);
+      for (let step = 0; step < 60; step++) {
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        current = await read();
+        if (!current || !same(current.identity, initial.identity))
+          return await stop('stale', 'The control changed; nothing was selected.');
+        for (const o of current.options) seen.add(o.label);
+        if (!listOnly) {
+          const matches = current.options.filter(
+            (o) => normalize(o.label) === normalize(args.option),
+          );
+          if (matches.length === 1) match = matches[0];
+        }
+        if (match || !current.options.length) break;
+        if (!(await scrollOptions(slot.page, current.options.at(-1).node).catch(() => false)))
+          break;
+      }
+    }
     if (listOnly)
       return {
         status: 'ready',
@@ -124,18 +197,18 @@ export async function selectAutocomplete(slot, args, owner, reader) {
         selected: false,
         query: current.value,
         expanded: current.expanded,
-        optionCount: current.options.length,
-        suggestions: current.options.map((o) => o.label),
+        optionCount: seen.size,
+        suggestions: [...seen],
         options: current.options.map(({label, selected}) => ({label, selected})),
-        message: current.options.length
-          ? 'Gerçek seçenek etiketlerini kayıtlı yanıtla eşleştir; seçim yapılmadı.'
-          : 'Bu sorgu için ilişkilendirilmiş seçenek görünmüyor. Tahmin yürütme; gerekiyorsa text="" ile geçici sorguyu temizleyip listeyi oku.',
+        message: seen.size
+          ? 'Nothing was selected. Call again with option set to the exact label (from suggestions) that matches the proven answer; typed text alone is cleared when the field loses focus.'
+          : 'No option is shown for this query. Do not guess; clear the query with text="" to read the list.',
       };
     if (!match)
       return await stop(
         'needs_selection',
-        'Tam eşleşen seçenek bulunamadı; dönen seçeneklerden kanıtlanan yanıtı kullan. Aynı sorguyu tekrarlama.',
-        {suggestions: current.options.map((o) => o.label).slice(0, 20)},
+        'No option matches exactly, also after scrolling the whole list. Pick the returned option with the same meaning as the proven answer; do not repeat the same query.',
+        {suggestions: [...seen].slice(0, 300)},
       );
     if (current.editable === false) {
       const optionHandle = await slot.page.evaluateHandle(

@@ -404,9 +404,42 @@ test('repeated transport failures across a site start a shared wait; one address
     const token = gate.begin(url);
     assert.equal(gate.complete(url, token, {status: 200}), null);
     assert.equal(gate.status(url), null, 'a successful probe recovers the site');
+    // A retained tab that only acts (no navigation) probes with its first action.
+    const later = gate.block(url, 'rate_limit');
+    assert.throws(
+      () => gate.assertAction(url),
+      (error) => error.code === 'SITE_WAIT',
+    );
+    now = later.retryAt;
+    const action = gate.assertAction(url);
+    assert.ok(action, 'the first action after the wait takes the probe');
+    assert.throws(
+      () => gate.assertAction(url),
+      (error) => error.code === 'SITE_WAIT',
+    );
+    assert.equal(gate.complete(url, action, {status: 200}), null);
+    assert.equal(gate.status(url), null);
     assert.ok(networkFailure(h2));
     assert.equal(networkFailure(Error('Navigation failed')), false);
   } finally {
     db.close();
   }
+});
+
+test('a verification the same tab got past ends the shared wait; rate limits and newer incidents stay', () => {
+  const db = new DatabaseSync(':memory:'),
+    gate = new SiteAccess(db);
+  const url = 'https://jobs.example/listing/1';
+  const verification = gate.block(url, 'verification');
+  assert.equal(gate.status(url).waiting, true);
+  // A stale incident marker cannot clear a newer wait.
+  assert.equal(gate.recoverVerification(url, verification.blockedAt - 1), false);
+  assert.equal(gate.status(url).waiting, true);
+  assert.equal(gate.recoverVerification(url, verification.blockedAt), true);
+  assert.equal(gate.status(url), null);
+  gate.assertAction(url);
+  const limited = gate.block('https://limited.example/', 'rate_limit');
+  assert.equal(gate.recoverVerification('https://limited.example/', limited.blockedAt), false);
+  assert.equal(gate.status('https://limited.example/').waiting, true);
+  db.close();
 });

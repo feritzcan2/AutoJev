@@ -252,3 +252,20 @@ test('read indexes are added to existing stores without changing persisted paylo
   );
   assert.equal(reopened.sources(id)[0].lastRun.id, 'old');
 });
+
+test('the snapshot lists every record, also one found long ago', (t) => {
+  const {db, id} = fixture(t);
+  for (let n = 0; n < 502; n++)
+    db.putResult({
+      id: 'record-' + n,
+      automationId: id,
+      key: 'record-' + n,
+      url: 'https://board.test/listing/' + n,
+      title: 'Listing ' + n,
+      status: 'found',
+      trial: false,
+    });
+  const ids = db.snapshot(id).results.map((item) => item.id);
+  assert.equal(ids.length, 502);
+  assert.ok(ids.includes('record-0'));
+});

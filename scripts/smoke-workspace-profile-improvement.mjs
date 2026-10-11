@@ -841,8 +841,13 @@ try {
     conversationOnly.map((run) => run.id),
   );
   await page.evaluate((id) => window.jobloop.workspaceStop(id), workspace.id);
-  await page.locator('#new').click();
-  await page.locator('[data-template=custom]').click();
+  // The new-workspace button always creates a job search; open a fresh custom one directly.
+  const fresh = await page.evaluate(() => window.jobloop.workspaceCreate('custom', {}));
+  await page.evaluate((id) => {
+    localStorage.setItem('selected-workspace', id);
+    localStorage.setItem('selected-view', 'board');
+  }, fresh.id);
+  await page.reload();
   await page.locator('#setup-agent').waitFor({state: 'visible'});
   const freshId = await page.locator('#candidates').inputValue();
   assert.notEqual(freshId, workspace.id);
