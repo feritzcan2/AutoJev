@@ -169,6 +169,25 @@ export const sourceMethods = {
     }
     return [...groups.values()];
   },
+  // The agent names only the changes; every other saved or already suggested
+  // source is kept, so a partial list never reads as removals.
+  proposedSources(id, add = [], remove = []) {
+    const a = this.get(id),
+      base = a.sourceDraft?.sources ?? a.sources,
+      dropped = normalizeSourceUrls(remove);
+    const unknown = dropped.filter((url) => !base.includes(url));
+    if (unknown.length)
+      throw Error(
+        'Not a saved or suggested source: ' +
+          unknown.join(', ') +
+          '. Current sources: ' +
+          base.join(', '),
+      );
+    return normalizeSourceUrls([
+      ...base.filter((url) => !dropped.includes(url)),
+      ...normalizeSourceUrls(add),
+    ]);
+  },
   saveSources(id, sources, {acceptDraft = false} = {}) {
     const a = this.get(id),
       urls = normalizeSourceUrls(sources);

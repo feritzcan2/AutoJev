@@ -368,7 +368,6 @@ test('the source-discovery conversation can draft later rubric changes for revie
     title: a.title,
     goal: a.goal,
     criteria: Object.entries({...a.criteria, ranking}).map(([key, value]) => ({key, value})),
-    sources: a.sources,
     instructions: a.instructions,
     facts: a.facts,
   });

@@ -148,16 +148,17 @@ export const automationTools = [
   ),
   tool(
     'save_automation_plan',
-    'Interview only: update the plan from known user answers. Missing facts stay empty. Grants no permission and activates nothing.',
+    'Interview only: update the plan from known user answers. Missing facts stay empty. Saved sources stay unchanged unless listed: addSources proposes new source URLs, removeSources proposes removing saved sources and is only for sources the user asked to drop. Source changes are suggestions the user applies on Sources. Grants no permission and activates nothing.',
     {
       title: str,
       goal: optional,
       criteria: fields,
-      sources: {type: 'array', maxItems: 20, items: str},
+      addSources: {type: 'array', maxItems: 20, items: str},
+      removeSources: {type: 'array', maxItems: 20, items: str},
       instructions: optional,
       facts: optional,
     },
-    ['title', 'goal', 'criteria', 'sources', 'instructions', 'facts'],
+    ['title', 'goal', 'criteria', 'instructions', 'facts'],
   ),
   tool(
     'reply_to_user',

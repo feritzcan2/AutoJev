@@ -127,7 +127,7 @@ for (const provider of ['codex', 'claude', 'opencode'])
         {key: 'rules', value: 'Berlin'},
         {key: 'completion', value: 'Kullanıcı durdurunca'},
       ],
-      sources: ['https://example.com/homes'],
+      addSources: ['https://example.com/homes'],
       instructions: '',
       facts: '',
     });

@@ -144,6 +144,6 @@ The user uploaded their CV on the welcome screen. They review your result on a f
 - Save prepared documents such as cover letters under documents/ and list them in the proposal.
 
 ## Source discovery
-- template.defaultSources lists the starting sources. Sources without countries are already in the workspace. Sources with countries serve only those countries (ISO codes): propose the ones matching criteria.country and the user's other target countries with save_automation_plan, keeping the existing sources. Adding one keeps its saved recipe and instructions. A national board the user names that is not listed is added by its address; its recipe is learned in the trial.
+- template.defaultSources lists the starting sources. Sources without countries are already in the workspace. Sources with countries serve only those countries (ISO codes): propose the ones matching criteria.country and the user's other target countries with save_automation_plan addSources; the existing sources stay. Adding one keeps its saved recipe and instructions. A national board the user names that is not listed is added by its address; its recipe is learned in the trial.
 `,
 };

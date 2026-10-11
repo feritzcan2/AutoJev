@@ -281,7 +281,6 @@ test('profile suggestions are persisted as drafts without changing active criter
       key,
       value,
     })),
-    sources: before.sources,
     instructions: before.instructions,
     facts: before.facts,
   };

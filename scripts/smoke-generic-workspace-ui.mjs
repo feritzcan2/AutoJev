@@ -218,7 +218,7 @@ try {
       criteria: (await tool('get_automation_context', {section: 'template'})).template.fields.map(
         (f) => ({key: f.id, value: f.type === 'number' ? '60' : 'Test criteria'}),
       ),
-      sources: [fixtureUrl],
+      addSources: [fixtureUrl],
       instructions: 'Only observe the local fixture; no submissions.',
       facts: '',
     });
