@@ -198,7 +198,9 @@ export async function resolveTurnstileBarrier(browser, id, result, owner, option
       );
       return await observe();
     } catch (error) {
-      fail('The verification task stopped or the page changed; the old answer was not applied again.');
+      fail(
+        'The verification task stopped or the page changed; the old answer was not applied again.',
+      );
       if (signal.aborted) throw error;
       if (active()) return await observe();
       return {

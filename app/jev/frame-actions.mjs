@@ -207,7 +207,8 @@ export async function actFormFrame(slot, args, owner) {
       return {
         status: 'ready',
         executed: true,
-        message: 'The click was made; verify the new form or the submission confirmation from the returned observation.',
+        message:
+          'The click was made; verify the new form or the submission confirmation from the returned observation.',
       };
     const verified = await t.handle.evaluate(
       (e, a) =>
@@ -219,7 +220,8 @@ export async function actFormFrame(slot, args, owner) {
     return {
       status: 'uncertain',
       executed: 'unknown',
-      message: 'Could not verify the embedded form action; inspect the current state without repeating the same action.',
+      message:
+        'Could not verify the embedded form action; inspect the current state without repeating the same action.',
     };
   } finally {
     await t.handle.dispose().catch(() => {});

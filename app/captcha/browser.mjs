@@ -2,7 +2,8 @@ import {captchaHash, detectCaptcha, gridSelector} from './detection.mjs';
 import {CaptchaError} from './capsolver-client.mjs';
 import {turnstileBridge} from './turnstile-registration.mjs';
 
-const stale = () => new CaptchaError('CAPTCHA_STALE', 'The verification changed; the old solution was not applied.');
+const stale = () =>
+  new CaptchaError('CAPTCHA_STALE', 'The verification changed; the old solution was not applied.');
 export async function captureCaptcha(page, target) {
   if (target.provider === 'image') {
     const image = await target.frame
@@ -28,7 +29,10 @@ export async function captureCaptcha(page, target) {
     };
   }
   if (!target.sitekey || target.enterprise)
-    throw new CaptchaError('CAPTCHA_UNSUPPORTED', 'There is not enough information to solve this CAPTCHA.');
+    throw new CaptchaError(
+      'CAPTCHA_UNSUPPORTED',
+      'There is not enough information to solve this CAPTCHA.',
+    );
   if (target.managed)
     throw new CaptchaError(
       'CAPTCHA_UNSUPPORTED',
@@ -72,7 +76,10 @@ export async function captureCaptcha(page, target) {
         ...(target.dataS ? {recaptchaDataSValue: target.dataS} : {}),
       },
     };
-  throw new CaptchaError('CAPTCHA_UNSUPPORTED', 'This CAPTCHA type is outside the scope of automatic solving.');
+  throw new CaptchaError(
+    'CAPTCHA_UNSUPPORTED',
+    'This CAPTCHA type is outside the scope of automatic solving.',
+  );
 }
 
 // Called only in the workspace queue, with ownership/authority revalidated by
@@ -104,7 +111,10 @@ export async function applyCaptcha(
       solution.objects.some((i) => !Number.isInteger(i) || i < 0 || i >= target.count) ||
       new Set(solution.objects).size !== solution.objects.length
     )
-      throw new CaptchaError('CAPTCHA_RESPONSE', 'The CapSolver image selection response is invalid.');
+      throw new CaptchaError(
+        'CAPTCHA_RESPONSE',
+        'The CapSolver image selection response is invalid.',
+      );
     const table = current.frame.locator(gridSelector),
       image = await table.screenshot({type: 'png', timeout: 2500});
     if (captchaHash(image.toString('base64')) !== capture.imageHash) throw stale();

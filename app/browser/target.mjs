@@ -3,7 +3,8 @@
 export async function pressBrowserTarget(client, jev, args, owner) {
   if (typeof args.key !== 'string' || !args.key.trim()) throw Error('A key is required');
   if (!jev) {
-    if (!/^(?:f\d+)*e\d+$/.test(args.ref)) throw Error('A ref from the page observation is required');
+    if (!/^(?:f\d+)*e\d+$/.test(args.ref))
+      throw Error('A ref from the page observation is required');
     const focused = await client.callTool({
       name: 'browser_evaluate',
       arguments: {

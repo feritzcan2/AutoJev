@@ -96,7 +96,10 @@ export function classifyCaptcha({
     pendingHosts ||
     frames.some((f) => f.unavailable || (f.visible && (!f.loaded || f.loading || f.dynamic)))
   )
-    return {state: 'unknown', reason: 'The verification area could not be read yet; waiting for it to load.'};
+    return {
+      state: 'unknown',
+      reason: 'The verification area could not be read yet; waiting for it to load.',
+    };
   const checked = frames.find(
     (f) =>
       f.visible &&
@@ -135,7 +138,10 @@ export function classifyCaptcha({
       reason: 'Verified an answer field clearly tied to a visible CAPTCHA image.',
     };
   if (staleError)
-    return {state: 'error', reason: 'Verification error text is present; there is no evidence of an active CAPTCHA.'};
+    return {
+      state: 'error',
+      reason: 'Verification error text is present; there is no evidence of an active CAPTCHA.',
+    };
   if (frames.some((f) => f.visible && !f.invisible))
     return {
       state: loading ? 'checking' : 'idle',
@@ -265,7 +271,11 @@ export async function detectCaptcha(page, {timeoutMs = 1500} = {}) {
     entry = {};
     inFlight.set(page, entry);
     entry.promise = readCaptcha(page)
-      .catch(() => ({state: 'unknown', reason: 'Could not read the verification area.', frames: []}))
+      .catch(() => ({
+        state: 'unknown',
+        reason: 'Could not read the verification area.',
+        frames: [],
+      }))
       .finally(() => {
         if (inFlight.get(page) === entry) inFlight.delete(page);
       });

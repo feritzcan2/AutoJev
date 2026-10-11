@@ -65,7 +65,7 @@ Ashby, Indeed in 2026-10), a `dom` extension needs no listing reader.
    without it the filter is free text). The trial agent gets it as
    `assignedSource.siteSearch` and builds the recipe from it instead of
    guessing; the Sources editor shows the filters as controls that rewrite
-   the template and a "Use site template" button. Data only: it never
+   the template and a "Use the site template" button. Data only: it never
    decides which filter a workspace uses. When the agent saves a recipe,
    `siteSearchRecipe` restores the template's fixed (sort) parameters and
    sets `pagination` and `ordering` from `search`; the agent keeps the
@@ -265,7 +265,7 @@ Tell the user to restart the app (never restart it yourself) and run a scan on
 the source. What to look for:
 - the source's Details panel: the pending list has no company/category/filter
   URLs; page numbers advance as "N / M" and stop at the page budget (15 pages
-  per scan, at least 2 per search); red "Rejected · Card" entries appear for
+  per scan, at least 2 per search); red "Excluded · On card · …" entries appear for
   clearly unrelated titles;
 - with a listing reader: saved records show company and location, and the
   run's `tokenUsage.jevTokens` drops compared with a scan before the change.

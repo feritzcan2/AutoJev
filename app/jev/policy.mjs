@@ -81,9 +81,12 @@ export function validateChoice(answer, choices) {
   const keys = Object.keys(choices).sort(),
     probabilities = answer?.probabilities;
   const invalid = (reason) => {
-    throw Object.assign(Error(`Jev returned an invalid response: ${reason}; no action was taken.`), {
-      code: 'JEV_INVALID_RESPONSE',
-    });
+    throw Object.assign(
+      Error(`Jev returned an invalid response: ${reason}; no action was taken.`),
+      {
+        code: 'JEV_INVALID_RESPONSE',
+      },
+    );
   };
   if (!answer || !keys.includes(answer.choice))
     invalid('the chosen option is not among the offered options');
@@ -138,7 +141,8 @@ export async function askJev(
         : AbortSignal.timeout(15000),
     });
     providerResponse(response);
-    if (!response.ok) throw Error(`TypeSafe HTTP ${response.status}; the Jev task did not advance.`);
+    if (!response.ok)
+      throw Error(`TypeSafe HTTP ${response.status}; the Jev task did not advance.`);
     let result;
     try {
       result = await response.json();
@@ -248,7 +252,8 @@ export async function chooseJev(
     throw Error('The Jev connection could not be completed; no action was taken in the browser.');
   }
   providerResponse(response);
-  if (!response.ok) throw Error(`TypeSafe HTTP ${response.status}; no action was taken in the browser.`);
+  if (!response.ok)
+    throw Error(`TypeSafe HTTP ${response.status}; no action was taken in the browser.`);
   let result;
   try {
     result = await response.json();

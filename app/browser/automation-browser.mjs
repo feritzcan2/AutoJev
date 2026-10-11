@@ -72,7 +72,9 @@ export function automationBrowser(
       }),
       page = value(response);
     if (page.status === 'browser_wait')
-      throw Error('Jev is waiting for the Chrome connection. Reconnect with the Open browser button.');
+      throw Error(
+        'Jev is waiting for the Chrome connection. Reconnect with the Open browser button.',
+      );
     return {response, page};
   };
   const observed = ({response, page}) => ({

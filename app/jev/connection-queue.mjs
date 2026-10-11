@@ -30,7 +30,12 @@ export function acquireChromeConnection({signal = undefined, timeout = 30000} = 
     };
     const abort = () => fail(signal.reason);
     const timer = setTimeout(
-      () => fail(Error('Another Chrome connection is waiting for permission. This profile will connect in turn.')),
+      () =>
+        fail(
+          Error(
+            'Another Chrome connection is waiting for permission. This profile will connect in turn.',
+          ),
+        ),
       timeout,
     );
     const entry = {

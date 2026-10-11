@@ -164,7 +164,8 @@ export class JevBrowser {
             const markerId = await transport.ownWindow(marker.url);
             const {targetInfo} = await transport.call('Target.getTargetInfo', {targetId: markerId});
             const contextId = targetInfo.browserContextId;
-            if (!contextId) throw Error('Could not verify the browser context of the selected Chrome profile.');
+            if (!contextId)
+              throw Error('Could not verify the browser context of the selected Chrome profile.');
             const {targetInfos} = await transport.call('Target.getTargets');
             const live = new Map(
               targetInfos.filter((t) => t.type === 'page').map((t) => [t.targetId, t]),
@@ -1315,7 +1316,9 @@ export class JevBrowser {
               try {
                 await failed.page.close({runBeforeUnload: false});
               } catch {
-                throw Error('Could not close the previous error tab; no new control tab was opened.');
+                throw Error(
+                  'Could not close the previous error tab; no new control tab was opened.',
+                );
               }
               this.forgetTab(failed.id);
               closed.push(failed.id);
@@ -1486,7 +1489,9 @@ export class JevBrowser {
           let result = {};
           if (name === 'browser_jev_frame_act') {
             if (slot.verification)
-              throw Error('Complete the current verification step first; do not resubmit the form.');
+              throw Error(
+                'Complete the current verification step first; do not resubmit the form.',
+              );
             const frame = slot.embeddedFrames?.get(args.frameId),
               target = slot.frameActionTargets?.get(args.targetId);
             if (!frame || !target || target.frame !== frame.frame)
@@ -1506,7 +1511,9 @@ export class JevBrowser {
         }
         if (name === 'browser_jev_open_frame') {
           if (slot.verification)
-            throw Error('The embedded form cannot be reopened while a verification/submission is pending.');
+            throw Error(
+              'The embedded form cannot be reopened while a verification/submission is pending.',
+            );
           const url = await embeddedFormTarget(slot, args.frameId, owner);
           const openedId = slot.openedFrames?.get(url),
             opened = openedId ? this.tabs.get(openedId) : null;
@@ -1561,7 +1568,8 @@ export class JevBrowser {
                     status: 'loading',
                     tabId: child.id,
                     parentTabId: slot.id,
-                    message: 'The embedded page is opening; observe the same new tab, do not open it again.',
+                    message:
+                      'The embedded page is opening; observe the same new tab, do not open it again.',
                   }),
                 },
               ],
@@ -1766,7 +1774,9 @@ export class JevBrowser {
         if (name === 'browser_jev_act') {
           const pending = slot.pending;
           if (!pending || pending.owner !== owner || pending.decisionId !== args.decisionId)
-            throw Error('There is no valid Jev decision for this session. Call browser_jev_next first.');
+            throw Error(
+              'There is no valid Jev decision for this session. Call browser_jev_next first.',
+            );
           if (pending.operation === 'TYPE_TEXT' && typeof args.text !== 'string')
             throw Error(
               'The AutoJev agent must supply the text value to type. No separate API key is needed.',

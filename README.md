@@ -2,7 +2,7 @@
 
 AutoJev is a desktop app that manages personal web tasks through automations set
 up with templates and an assistant. The job-search interface keeps its workspace
-selector, the **Applications** table, and the Sources, Agent, Background jobs and
+selector, the **Applications** table, and the Sources, Agent, Background work and
 Files pages. Job search, home search and appointment tracking share this layout.
 The agent learns what you need by asking questions and adapts the profile and the
 table columns to the automation. All templates share the same record store, task
@@ -14,7 +14,7 @@ applications and Telegram connections. Other automations have their own
 conversation, sources, browser settings, permissions and result history. Reusable
 templates can be saved and shared as a JSON file. The interface is in English.
 
-Use **Sources → Add source** to add a site address, or **Find with Agent** to
+Use **Sources → Add source** to add a site address, or **Find with the agent** to
 research sources. Each source carries an editable working instruction, an optional
 skill text and a search recipe. The agent reads the source instruction and scans the
 source through the Chrome instance managed by Jev.

@@ -190,7 +190,7 @@ test('manual scoring preserves an approved draft and only exposes assessment wri
     assert.deepEqual(saved[key], item[key], key);
   assert.equal(saved.cells.company, 'Company');
   assert.equal(saved.cells.score, '82');
-  assert.equal(f.db.snapshot(f.id).results[0].recordAction.scoreOperation.label, 'Yeniden puanla');
+  assert.equal(f.db.snapshot(f.id).results[0].recordAction.scoreOperation.label, 'Rescore');
   assert.equal(f.db.snapshot(f.id).results[0].recordAction.operation.kind, 'execute');
 });
 

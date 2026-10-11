@@ -185,10 +185,7 @@ try {
   assert.equal(saved.digest, item.digest);
   assert.equal(saved.approvedDigest, item.digest);
   await row.locator('.record-row-menu').click();
-  await row
-    .locator('[data-record-operation=score]')
-    .getByText('Rescore', {exact: true})
-    .waitFor();
+  await row.locator('[data-record-operation=score]').getByText('Rescore', {exact: true}).waitFor();
   await row.locator('.record-row-menu').click();
   await page.evaluate(
     ({id, criteria}) =>

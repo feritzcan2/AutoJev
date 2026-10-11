@@ -5,7 +5,8 @@ const normalize = (value) => value.replace(/\s+/g, ' ').trim();
 const stale = {
   status: 'stale',
   executed: false,
-  message: 'The control id is stale; use the returned current controls list. No extra observe is needed.',
+  message:
+    'The control id is stale; use the returned current controls list. No extra observe is needed.',
 };
 
 // Scroll the open popup list one step from an option inside it. Long or
@@ -159,9 +160,13 @@ export async function selectAutocomplete(slot, args, owner, reader) {
       }
       const matches = current.options.filter((o) => normalize(o.label) === normalize(args.option));
       if (matches.length > 1)
-        return await stop('ambiguous', 'More than one option has the same name; nothing was selected.', {
-          suggestions: current.options.map((o) => o.label).slice(0, 20),
-        });
+        return await stop(
+          'ambiguous',
+          'More than one option has the same name; nothing was selected.',
+          {
+            suggestions: current.options.map((o) => o.label).slice(0, 20),
+          },
+        );
       if (matches.length === 1) {
         match = matches[0];
         break;
@@ -232,7 +237,10 @@ export async function selectAutocomplete(slot, args, owner, reader) {
       return option ? c.clickPoint(c.nodes.get(node)) : null;
     }, match);
     if (!point)
-      return await stop('stale', 'The option is covered or the target changed; it was not clicked.');
+      return await stop(
+        'stale',
+        'The option is covered or the target changed; it was not clicked.',
+      );
     clicked = true;
     await slot.page.mouse.click(point.x, point.y);
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -309,7 +317,8 @@ export async function selectAutocomplete(slot, args, owner, reader) {
     if (!wrote && !clicked && !opened) throw error;
     return await stop(
       'uncertain',
-      'Could not verify the autocomplete result; inspect the returned observation. ' + error.message.split('\n')[0],
+      'Could not verify the autocomplete result; inspect the returned observation. ' +
+        error.message.split('\n')[0],
     );
   } finally {
     await handle.dispose();

@@ -100,10 +100,14 @@ export function validateUploadPurpose(label, filename) {
     /cover\s*letter|anschreiben|ön\s*yazı/i.test(label) &&
     /^(?:cv|resume|résumé)(?:[\s._-]|$)/i.test(name)
   )
-    throw Error('A CV file cannot be uploaded to the cover letter field; choose the correct cover letter document.');
+    throw Error(
+      'A CV file cannot be uploaded to the cover letter field; choose the correct cover letter document.',
+    );
   if (
     /\b(?:resume|résumé|curriculum vitae|cv)\b/i.test(label) &&
     /^(?:cover[\s._-]*letter|anschreiben|ön[\s._-]*yazı)(?:[\s._-]|$)/i.test(name)
   )
-    throw Error('A cover letter file cannot be uploaded to the CV field; choose the correct CV document.');
+    throw Error(
+      'A cover letter file cannot be uploaded to the CV field; choose the correct CV document.',
+    );
 }

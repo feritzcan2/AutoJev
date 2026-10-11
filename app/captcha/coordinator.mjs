@@ -17,7 +17,8 @@ export class CaptchaCoordinator {
   async run(slot, context) {
     const existing = this.pending.get(slot);
     if (existing) {
-      if (existing.owner !== context.owner) throw Error('The verification belongs to another task.');
+      if (existing.owner !== context.owner)
+        throw Error('The verification belongs to another task.');
       return existing.promise;
     }
     if (!this.settings.status().enabled) return null;
@@ -56,7 +57,10 @@ export class CaptchaCoordinator {
     const check = () => {
       abort.throwIfAborted();
       if (!active() || this.settings.revision !== revision)
-        throw new CaptchaError('CAPTCHA_CANCELLED', 'The verification task stopped or the tab changed.');
+        throw new CaptchaError(
+          'CAPTCHA_CANCELLED',
+          'The verification task stopped or the tab changed.',
+        );
     };
     const status = (state, message) => {
       slot.captchaProgress = {state, message};
@@ -94,7 +98,10 @@ export class CaptchaCoordinator {
       if (previous?.key === key) return previous.result;
       attempt = {
         key,
-        result: {state: 'handoff', message: 'Automatic solving was already tried for this verification.'},
+        result: {
+          state: 'handoff',
+          message: 'Automatic solving was already tried for this verification.',
+        },
       };
       this.attempted.set(slot, attempt);
       const budgetKey = JSON.stringify([owner, revision, last.documentId]);
@@ -107,7 +114,10 @@ export class CaptchaCoordinator {
       for (let round = 0; round < this.maxRounds; round++) {
         check();
         if (!allowed(last.target))
-          throw new CaptchaError('CAPTCHA_AUTHORITY', 'The action authorization for the verification changed.');
+          throw new CaptchaError(
+            'CAPTCHA_AUTHORITY',
+            'The action authorization for the verification changed.',
+          );
         const target = last.target;
         if (rounds.has(target.round))
           throw new CaptchaError(
@@ -128,7 +138,10 @@ export class CaptchaCoordinator {
         const solution = await this.settings.client.solve(apiKey, captured.task, {signal: abort});
         check();
         if (!allowed(target))
-          throw new CaptchaError('CAPTCHA_AUTHORITY', 'The action authorization for the verification changed.');
+          throw new CaptchaError(
+            'CAPTCHA_AUTHORITY',
+            'The action authorization for the verification changed.',
+          );
         const applied = await apply(target, captured, solution, check);
         check();
         if (applied.state === 'cleared') {
@@ -150,7 +163,8 @@ export class CaptchaCoordinator {
           if (last.state === 'cleared') {
             attempt.result = {
               state: 'cleared',
-              message: 'The verification check completed. The task result still needs a separate check.',
+              message:
+                'The verification check completed. The task result still needs a separate check.',
             };
             return attempt.result;
           }
