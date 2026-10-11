@@ -373,7 +373,6 @@ try {
       key,
       value,
     })),
-    sources: workspace.sources,
     instructions: 'Uzaktan çalışılan ilanları değerlendir.',
     facts: '',
   });

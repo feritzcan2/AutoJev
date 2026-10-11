@@ -123,7 +123,6 @@ try {
       title,
       goal,
       criteria: Object.entries(criteria).map(([key, value]) => ({key, value})),
-      sources: created.automation.sources,
       instructions: '',
       facts: '',
     });
