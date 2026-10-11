@@ -5,6 +5,7 @@ import {AutomationStore} from '../app/automation/store.mjs';
 import {WebTasks} from '../app/automation/web-template.mjs';
 import {automationTaskContext} from '../app/automation/task-context.mjs';
 import {automationProgress} from '../app/automation/progress.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
 import {prepareAutomationChat} from '../src/automation-chat.js';
 
 const first = 'https://one.test/homes',
@@ -125,6 +126,40 @@ test('source-only suggestions appear in conversation context without becoming a 
   db.resolveSourceDraft(id, draftId, false);
   assert.equal(db.get(id).sourceDraft, undefined);
   assert.deepEqual(db.get(id).sources, [first, second]);
+});
+
+test('the plan tool changes only the sources it names', async (t) => {
+  const {db, runtime, id} = fixture(t),
+    chat = await runtime.message(id, 'Kaynak öner.'),
+    flow = automationWorkflow({db, run: chat, signal: {aborted: false}, browser: {}}),
+    a = db.get(id);
+  const plan = (input) =>
+    flow.call(id, chat.id, 'save_automation_plan', {
+      title: a.title,
+      goal: a.goal,
+      criteria: Object.entries(a.criteria).map(([key, value]) => ({key, value})),
+      instructions: a.instructions,
+      facts: a.facts,
+      ...input,
+    });
+  await plan({});
+  assert.equal(db.get(id).sourceDraft, undefined, 'A profile-only save suggests no source change');
+  await plan({addSources: [third]});
+  assert.deepEqual(db.get(id).sourceDraft.sources, [first, second, third]);
+  assert.deepEqual(db.get(id).sources, [first, second]);
+  await plan({addSources: ['https://four.test/homes']});
+  assert.deepEqual(db.get(id).sourceDraft.sources, [
+    first,
+    second,
+    third,
+    'https://four.test/homes',
+  ]);
+  await plan({removeSources: [second]});
+  assert.deepEqual(db.get(id).sourceDraft.sources, [first, third, 'https://four.test/homes']);
+  await assert.rejects(
+    plan({removeSources: ['https://unknown.test/']}),
+    /Not a saved or suggested source/,
+  );
 });
 
 test('manual source changes preserve profile drafts and newer source choices, stale proposals are rejected', async (t) => {
