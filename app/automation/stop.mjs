@@ -22,7 +22,7 @@ export function sourceStop(run, input) {
     );
   if (!verified.length)
     throw Error(
-      'Doğrulanmış bir yükleme hatası yok. Erişim engeli için stop.kind=access, eksik kullanıcı bilgisi için user_input bildir; aksi halde kalan işe devam et.',
+      'No verified loading failure. Report stop.kind=access for an access barrier or stop.kind=user_input for missing user information; otherwise continue the remaining work.',
     );
   const remaining = (run.scan?.pendingUrls ?? []).filter(
     (url) => !verified.some((issue) => issue.global || issue.url === url),

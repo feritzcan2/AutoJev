@@ -18,7 +18,7 @@ export class NotificationFixture extends WorkspaceSupport {
     return this.automation.create('job-search', {title: name, goal: preferences, sources: []});
   }
   addRecord(id, {url, company, role, location, fit}) {
-    const existing = this.automation.results(id, {all: true}).find((item) => item.url === url);
+    const existing = this.automation.results(id).find((item) => item.url === url);
     if (existing) return {job: this.project(existing), duplicate: true};
     const item = this.automation.putResult({
       id: randomUUID(),

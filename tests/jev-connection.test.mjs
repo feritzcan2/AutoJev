@@ -19,6 +19,37 @@ const openReadyWindow = async (url) => {
   await fetch(url);
   await windowFocus(url);
 };
+test('an out-of-process frame that loaded before the attach gets its URL', () => {
+  const sent = [],
+    forwarded = [],
+    socket = {readyState: 1, send: (data) => sent.push(JSON.parse(data))};
+  const transport = new JevCdpTransport(socket);
+  transport.onmessage = (message) => forwarded.push(message);
+  const attached = (sessionId, waitingForDebugger) => ({
+    sessionId: 'page',
+    method: 'Target.attachedToTarget',
+    params: {sessionId, waitingForDebugger, targetInfo: {targetId: sessionId, type: 'iframe'}},
+  });
+  transport.receive(attached('loaded', false));
+  transport.receive(attached('new', true));
+  transport.send({id: 7, sessionId: 'loaded', method: 'Page.getFrameTree'});
+  transport.send({id: 8, sessionId: 'new', method: 'Page.getFrameTree'});
+  const frame = (id) => ({frameTree: {frame: {id, url: 'https://forms.example/apply'}}});
+  transport.receive({id: 7, sessionId: 'loaded', result: frame('F1')});
+  transport.receive({id: 8, sessionId: 'new', result: frame('F2')});
+  assert.deepEqual(
+    forwarded.filter((m) => m.method === 'Page.navigatedWithinDocument'),
+    [
+      {
+        sessionId: 'loaded',
+        method: 'Page.navigatedWithinDocument',
+        params: {frameId: 'F1', url: 'https://forms.example/apply', navigationType: 'other'},
+      },
+    ],
+  );
+  assert.equal(transport.frameTrees.size, 0);
+  assert.equal(transport.loadedFrames.size, 0);
+});
 test('late internal CDP responses never enter the Playwright callback map', async (t) => {
   t.mock.timers.enable({apis: ['setTimeout']});
   const sent = [],
@@ -403,7 +434,7 @@ test(
 );
 
 test(
-  'owned tabs attach their out-of-process form frames without attaching other tabs',
+  'owned tabs attach their out-of-process form frames and workers without attaching other tabs',
   {timeout: 5000},
   async (t) => {
     const chrome = await chromeFixture(t),
@@ -429,10 +460,11 @@ test(
     assert.deepEqual(commands[0].params, {targetId: 'owned-page', flatten: true});
     assert.equal(commands[1].method, 'Target.setAutoAttach');
     assert.equal(commands[1].sessionId, 'owned-page-session');
-    assert.equal(commands[1].params.waitForDebuggerOnStart, true);
-    assert.deepEqual(commands[1].params.filter, [
-      {type: 'iframe', exclude: false},
-      {exclude: true},
-    ]);
+    // Playwright's own parameters: a filter that leaves out workers keeps them paused.
+    assert.deepEqual(commands[1].params, {
+      autoAttach: true,
+      waitForDebuggerOnStart: true,
+      flatten: true,
+    });
   },
 );

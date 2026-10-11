@@ -104,6 +104,8 @@ export function finishAutomationRun({
     const item = db.result(id, active.recordId),
       uncertain =
         item.status === 'uncertain' || (item.status === 'executing' && active.actionId === item.id);
+    // A CAPTCHA after the submit click: the user must act first, so say so up front.
+    const challenge = Boolean(db.run(run.id)?.submission?.verification);
     if (
       uncertain &&
       !(automation.questions ?? []).some((q) => q.recordId === item.id && q.answer == null)
@@ -111,9 +113,15 @@ export function finishAutomationRun({
       db.askQuestion(
         id,
         {
-          text: `${item.title ?? item.url} için gönderim sonucu doğrulanamadı.\nAgent notu: ${String(args.summary ?? '').slice(0, 1500)}`,
+          text: challenge
+            ? `${item.title ?? item.url}: gönderimden sonra sayfada bir doğrulama (CAPTCHA) çıktı. Chrome'daki açık sekmede doğrulamayı çöz. Sonra onay mesajı görünüyorsa "Gönderildi", form hâlâ duruyorsa "Gönderilmedi" seç.\nAgent notu: ${String(args.summary ?? '').slice(0, 1500)}`
+            : `${item.title ?? item.url} için gönderim sonucu doğrulanamadı.\nAgent notu: ${String(args.summary ?? '').slice(0, 1500)}`,
           recordId: item.id,
-          fields: [OUTCOME_FIELD],
+          fields: [
+            challenge
+              ? {...OUTCOME_FIELD, label: 'Doğrulamayı çözdükten sonra: bu kayıt gönderildi mi?'}
+              : OUTCOME_FIELD,
+          ],
           outcome: true,
         },
         {runId: run.id},
@@ -140,7 +148,6 @@ export function finishAutomationRun({
       ? {...active.scan, complete: true, pendingUrls: []}
       : scanCheckpoint(active, args.scan);
     if (!scan.complete && args.goalReached) throw Error('Eksik taramada hedefe ulaşıldı denemez');
-    if (collecting) scan.reason = active.scan.reason;
     if (!scan.complete)
       throw Error(
         'Kaynak taraması bitmedi. Süre veya adım sınırı yok; aynı görevde kalan sayfaları işlemeye devam et ve complete_scan_search ile kapat. Gerçek erişim engelini blocked olarak bildir.',

@@ -12,13 +12,27 @@ import {collectorFindingInput} from '../../sources/collector-worker.mjs';
 import {findOperation, operationFor} from '../../templates/contract.mjs';
 import {randomUUID, createHash} from 'node:crypto';
 import {boundedText, webUrl} from '../../templates/catalog.mjs';
+import {sameSite} from '../../browser/site-access.mjs';
+import {recordUrlKey} from '../../records/identity.mjs';
+
+// The same listing reached through a redirect to another host of the same
+// site (de.example.com -> www.example.com, trailing slash) is still that page.
+function samePage(a, b) {
+  const x = recordUrlKey(a),
+    y = recordUrlKey(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const u = new URL(x),
+    v = new URL(y);
+  return sameSite(x, y) && u.pathname === v.pathname && u.search === v.search;
+}
 import {automationCells} from '../../templates/catalog.mjs';
 import {sourceMode} from '../../sources/automation-sources.mjs';
 // AutomationStore methods: records: lookup, saving findings, review, reservation and outcomes.
 export const recordMethods = {
-  results(id, {all = false} = {}) {
+  results(id) {
     this.get(id);
-    return this.store.workspaces.records.list(id, {limit: all ? -1 : 500});
+    return this.store.workspaces.records.list(id, {limit: -1});
   },
   runFoundCounts(id) {
     this.get(id);
@@ -383,43 +397,83 @@ export const recordMethods = {
   dismiss(id, itemId, {stopActive = false} = {}) {
     return this.store.workspaces.tasks.atomic(() => {
       const item = this.result(id, itemId);
-      itemId = item.id;
       if (['executing', 'completed', 'uncertain'].includes(item.status))
         throw Error('İşlem geçmişi değiştirilemez');
-      if (!stopActive) this.assertRecordIdle(id, itemId);
-      const summary = 'Kullanıcı bu kaydı eledi. Bu kayıt için işleme devam etme.',
-        a = this.get(id),
-        at = this.now(),
-        queue = this.store.workspaces.tasks;
-      // Persist exclusion before closing a worker; late proposals and reservations
-      // cannot revive the record, and other records keep their own tasks/questions.
-      const saved = this.putResult({
-        ...item,
-        status: 'dismissed',
-        approvedDigest: null,
-        updatedAt: at,
+      if (!stopActive) this.assertRecordIdle(id, item.id);
+      return this.excludeRecord(id, item, {
+        summary: 'Kullanıcı bu kaydı eledi. Bu kayıt için işleme devam etme.',
+        resolution: 'record_dismissed',
+        event: 'record_dismissed',
       });
-      this.put({
-        ...a,
-        questions: (a.questions ?? []).map((q) =>
-          q.recordId === itemId && q.answer == null
-            ? {
-                ...q,
-                answer: summary,
-                answerValues: null,
-                answeredAt: at,
-                resolution: 'record_dismissed',
-              }
-            : q,
-        ),
-      });
-      for (const task of queue.list(id).filter((t) => taskHasRecord(t, itemId))) {
-        if (task.resumeRecordAfterAnswer) queue.put({...task, resumeRecordAfterAnswer: false});
-        if (task.state === 'pending') queue.finish(id, task.id, 'cancelled', summary);
-      }
-      this.event(id, 'record_dismissed', {itemId});
-      return saved;
     });
+  },
+  // An execute run found the record's destination itself saying it is gone
+  // (removed, expired, not found). The quote must be on the observed page and
+  // nothing may have been reserved; the record leaves every queue like a
+  // dismissal and keeps the evidence.
+  closeRecord(id, runId, itemId, {evidence, url}, page) {
+    return this.store.workspaces.tasks.atomic(() => {
+      const run = this.activeRun(id, runId),
+        item = this.result(id, itemId);
+      if (run.recordOperation !== 'execute' || run.recordId !== item.id)
+        throw Error('closed is only allowed in the execute task of the assigned record.');
+      if (!['found', 'prepared'].includes(item.status) || run.actionId)
+        throw Error(
+          'A submission was already started, so the record cannot be closed. Record uncertain.',
+        );
+      const proofUrl = webUrl(url);
+      if (!page || !samePage(page.url, proofUrl))
+        throw Error('First observe the record page in the browser during this task.');
+      const quote = boundedText(evidence, 'Closed evidence', 600),
+        flat = (text) =>
+          String(text ?? '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toLowerCase();
+      let text = page.text;
+      try {
+        text = JSON.parse(page.text.slice(page.text.indexOf('{'))).text ?? page.text;
+      } catch {}
+      if (flat(quote).length < 8 || !flat(text).includes(flat(quote)))
+        throw Error(
+          'The quote is not in the current page text. Quote the page sentence that says the listing is gone, word for word.',
+        );
+      return this.excludeRecord(id, item, {
+        summary: 'Kayıt kaynağında artık mevcut değil: ' + quote,
+        resolution: 'record_closed',
+        event: 'record_closed',
+        extra: {closed: {at: this.now(), url: proofUrl, evidence: quote, runId}},
+      });
+    });
+  },
+  excludeRecord(id, item, {summary, resolution, event, extra = {}}) {
+    const itemId = item.id,
+      a = this.get(id),
+      at = this.now(),
+      queue = this.store.workspaces.tasks;
+    // Persist exclusion before closing a worker; late proposals and reservations
+    // cannot revive the record, and other records keep their own tasks/questions.
+    const saved = this.putResult({
+      ...item,
+      ...extra,
+      status: 'dismissed',
+      approvedDigest: null,
+      updatedAt: at,
+    });
+    this.put({
+      ...a,
+      questions: (a.questions ?? []).map((q) =>
+        q.recordId === itemId && q.answer == null
+          ? {...q, answer: summary, answerValues: null, answeredAt: at, resolution}
+          : q,
+      ),
+    });
+    for (const task of queue.list(id).filter((t) => taskHasRecord(t, itemId))) {
+      if (task.resumeRecordAfterAnswer) queue.put({...task, resumeRecordAfterAnswer: false});
+      if (task.state === 'pending') queue.finish(id, task.id, 'cancelled', summary);
+    }
+    this.event(id, event, {itemId});
+    return saved;
   },
   reserve(id, runId, itemId) {
     const run = this.activeRun(id, runId),
@@ -490,7 +544,9 @@ export const recordMethods = {
     if (run.recordId && run.recordId !== itemId) throw Error('Kayıt bu göreve ait değil');
     const proofUrl = webUrl(url);
     if (!run.observations.some((o) => o.url === proofUrl && o.at >= (item.attemptedAt ?? 0)))
-      throw Error('Önce sonuç adresindeki güncel durumu tarayıcıda gözlemle');
+      throw Error(
+        'Observe the result page in the browser first; url must be the current page address.',
+      );
     if (status === 'not_submitted') {
       if (
         run.recordOperation !== 'verify' ||

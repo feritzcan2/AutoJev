@@ -124,22 +124,48 @@ export function unreportedRecordRun(db, id, runId, reason) {
         : 'Agent oturumu sonuç bildirmeden kapandı; görev bir kez yeniden denenecek.',
   };
 }
+// A record run that stopped on a shared site wait (rate limit, verification
+// cooldown with a known end) before anything was reserved resumes after the
+// wait, at most twice per task. Waits without an end need the user.
+const SITE_WAIT_REQUEUES = 2;
+function siteWaitRequeue(run, task, item) {
+  const wait = run.siteWait;
+  return (
+    ['blocked', 'failed'].includes(run.status) &&
+    wait &&
+    !wait.exhausted &&
+    Number.isFinite(wait.retryAt) &&
+    !run.actionId &&
+    ['found', 'prepared'].includes(item.status) &&
+    (task.recordRecovery?.siteWaits ?? 0) < SITE_WAIT_REQUEUES
+  );
+}
 export function requeueRecordRun(db, run) {
-  if (
-    !RECORD_RUN_OPERATIONS.includes(run.recordOperation) ||
-    run.status !== 'interrupted' ||
-    run.stopRequested ||
-    !run.taskId
-  )
+  if (!RECORD_RUN_OPERATIONS.includes(run.recordOperation) || run.stopRequested || !run.taskId)
     return false;
   const id = run.automationId,
     queue = db.store.workspaces.tasks,
     a = db.get(id),
     task = queue.get(id, run.taskId);
-  if (task.stopRequested || task.toolFailure || task.recordRecovery?.requeue !== run.id)
-    return false;
+  if (task.stopRequested || task.toolFailure) return false;
   const item = db.result(id, task.recordId);
   if (['completed', 'dismissed'].includes(item.status)) return false;
+  if (siteWaitRequeue(run, task, item)) {
+    queue.put({
+      ...task,
+      state: 'pending',
+      workerId: null,
+      completionState: null,
+      retryAt: Math.max(run.siteWait.retryAt, db.now()) + 5000,
+      recordRecovery: {
+        ...task.recordRecovery,
+        siteWaits: (task.recordRecovery?.siteWaits ?? 0) + 1,
+      },
+      summary: run.summary,
+    });
+    return true;
+  }
+  if (run.status !== 'interrupted' || task.recordRecovery?.requeue !== run.id) return false;
   const kind = item.status === 'uncertain' ? 'verify' : task.recordOperation,
     op = db.template(a.templateId).recordOperations?.[kind];
   if (!op) return false;

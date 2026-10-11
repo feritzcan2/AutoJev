@@ -10,10 +10,10 @@ export function createDataManagement(api, {notice = () => {}} = {}) {
  <div class="data-actions"><button type="button" class="quiet" data-open-directory>Klasörü göster</button><button type="button" data-use-directory>Mevcut veri klasörünü aç</button><button type="button" class="quiet" data-change-directory>Verileri başka klasöre taşı</button></div>
  <p>Mevcut veri klasörünü açarken jobloop.sqlite dosyasının bulunduğu klasörü seç. Uygulama yeniden başlar ve sonraki açılışlarda da seçilen klasördeki kayıtları kullanır. Verileri taşımak için boş bir klasör seç; eski klasör kurtarma kopyası olarak kalır.</p>
  <h4>Yedekler</h4>
- <p>Otomasyonlarını, template’lerini, aday profillerini, belgelerini ve sonuç kayıtlarını bir yedek klasörüne aktar.</p>
+ <p>Otomasyonlarını, aday profillerini, belgelerini ve sonuç kayıtlarını bir yedek klasörüne aktar.</p>
  <p class="data-notice">Yedekler kişisel veriler içerir ve şifrelenmez; güvenli bir yerde sakla. Dışa aktarılan yedekte kayıtlı portal şifreleri, Telegram bağlantıları, Jev anahtarı ve agent oturumları bulunmaz. Geri yükledikten sonra bunları yeniden bağlamalısın.</p>
  <div class="data-actions"><button type="button" data-backup>Yedek dışa aktar</button><button type="button" class="quiet" data-restore>Yedekten geri yükle</button><button type="button" class="quiet" data-open>Otomatik yedekleri aç</button></div>
- <p class="data-restore-note">Geri yükleme mevcut otomasyonları, template’leri, adayları ve sonuçları seçilen yedekle değiştirir. Önce mevcut verilerin kurtarma yedeği alınır; uygulama yeniden başlar. Otomasyonlar, kampanyalar ve Telegram duraklatılmış olarak açılır. Otomasyonların kaynaklarını yeniden dene. Geri yüklenen eski bir yedek, sonradan yapılan başvuruları içermeyebilir; devam etmeden önce sonuçları kontrol et.</p>
+ <p class="data-restore-note">Geri yükleme mevcut otomasyonları, adayları ve sonuçları seçilen yedekle değiştirir. Önce mevcut verilerin kurtarma yedeği alınır; uygulama yeniden başlar. Otomasyonlar, kampanyalar ve Telegram duraklatılmış olarak açılır. Otomasyonların kaynaklarını yeniden dene. Geri yüklenen eski bir yedek, sonradan yapılan başvuruları içermeyebilir; devam etmeden önce sonuçları kontrol et.</p>
  <h4>İşlem kayıtları</h4><p data-retention>Prompt ve tamamlanmış arka plan terminal kayıtları en fazla 30 gün tutulur.</p>
  <button type="button" class="quiet" data-clear>Prompt ve terminal kayıtlarını temizle</button>
  <p class="data-status" role="status" aria-live="polite"></p><ul class="data-backups" aria-label="Otomatik yedekler"></ul>`;

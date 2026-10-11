@@ -73,6 +73,28 @@ export const conversationMethods = {
       return {waitingForAnswers: true};
     return this.start(id, 'interview', worker);
   },
+  // The welcome screen starts setup after a document upload. The template's
+  // onboarding text is the request; the user reviews the result on a form.
+  async onboard(id) {
+    this.assertConversationAvailable(id);
+    const a = this.db.get(id),
+      task = this.db.template(a.templateId).onboarding;
+    if (!task) throw Error('Bu çalışma alanı belgeyle kurulumu desteklemiyor.');
+    const active = this.slots(id).find((s) => s.run.kind === 'interview');
+    if (!active)
+      return this.start(id, {kind: 'interview', onboarding: true}, this.conversationWorker(id));
+    if (
+      !conversationWaiting(this.db.run(active.run.id)) ||
+      active.finishing ||
+      active.worker?.isBusy?.()
+    )
+      throw Error('Kurulum agenti yanıtını hazırlıyor. Yanıt tamamlanınca tekrar dene.');
+    return this.sendConversation(id, active, task, {
+      messageId: null,
+      inputQuestionIds: [],
+      onboarding: true,
+    });
+  },
   async answer(id, questionId, value) {
     const answer = await this.answerOne(id, questionId, value);
     // One sign-in serves every task waiting on the same site in this
@@ -216,6 +238,8 @@ export const conversationMethods = {
     slot.seenWorking = false;
     slot.run = this.db.putRun({
       ...before,
+      // A later message or answer is the new request, not the welcome-screen task.
+      onboarding: undefined,
       ...input,
       awaitingMessage: false,
       lastMessageAt: this.now(),

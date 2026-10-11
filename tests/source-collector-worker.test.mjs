@@ -84,6 +84,7 @@ function fixture(
       throw Error('Synthetic detail unavailable');
     },
     terms,
+    ordering,
     saveScoreThreshold,
   } = {},
 ) {
@@ -104,6 +105,7 @@ function fixture(
         entry: {kind: 'url_template', template: 'https://himalayas.app/jobs/api/search?q={query}'},
         terms,
         pagination: 'url_param',
+        ...(ordering ? {ordering} : {}),
       },
     });
   db.review(a.id);
@@ -131,10 +133,10 @@ function fixture(
           totalCount: 21,
         });
   };
-  const makeFlow = (store = db, signal = new AbortController().signal) =>
+  const makeFlow = (store = db, signal = new AbortController().signal, runId = run.id) =>
     automationWorkflow({
       db: store,
-      run: store.run(run.id),
+      run: store.run(runId),
       signal,
       collectorReadPage: reader,
       collectorReadDetail: readDetail,
@@ -194,7 +196,7 @@ function restart(f) {
 test('CLI pages enter Jev triage, the agent scores retained items, and review gates page advancement', async (t) => {
   const f = fixture(t),
     first = await f.call('collect_source_page');
-  assert.equal(f.db.results(f.id, {all: true}).length, 0);
+  assert.equal(f.db.results(f.id).length, 0);
   assert.equal(f.reads(), 1);
   assert.equal(helper(f, first).items.length, 3);
   assert.ok(
@@ -257,7 +259,7 @@ test('CLI pages enter Jev triage, the agent scores retained items, and review ga
     saved: 3,
     pending: 0,
   });
-  assert.equal(f.db.results(f.id, {all: true}).length, 3);
+  assert.equal(f.db.results(f.id).length, 3);
   assert.equal(f.browserCalls(), 0);
   assert.ok(
     !JSON.stringify(f.core.db.prepare('SELECT data FROM workspace_records').all()).includes(
@@ -301,7 +303,7 @@ test('legacy unscored CLI records are reviewed in place and confirmed exclusions
   const first = await f.call('collect_source_page');
   await assert.rejects(review(f, first), /İnceleme tamamlanmadı/);
   await handle(f, first);
-  const records = f.db.results(f.id, {all: true});
+  const records = f.db.results(f.id);
   assert.equal(records.length, 3);
   assert.equal(records.find((r) => r.id === 'legacy-0').assessment.score, 42);
   assert.equal(records.find((r) => r.id === 'legacy-1').status, 'dismissed');
@@ -347,7 +349,7 @@ test('minimum save score excludes CLI findings, allows batch review, and survive
     saved: 1,
     pending: 0,
   });
-  assert.equal(db.results(f.id, {all: true}).length, 1);
+  assert.equal(db.results(f.id).length, 1);
   assert.equal(db.jevTasks.bodies.size, 0);
 });
 
@@ -365,7 +367,7 @@ test('restart refetches the unfinished page without rescoring saved items or per
     db.jevTasks.get(f.id, f.run.taskId, receipt.taskId).items.map((i) => i.url),
     [url('reject'), url('uncertain')],
   );
-  assert.equal(db.results(f.id, {all: true}).length, 1);
+  assert.equal(db.results(f.id).length, 1);
   assert.equal(db.run(f.run.id).scan.reviewStats.collected, 3);
 });
 
@@ -535,13 +537,43 @@ test('all recipe searches must finish, including empty results, before completio
     terms: ['backend', 'platform'],
     readPage: (value) => parseHimalayasPage(value, {jobs: [], offset: 0, limit: 20, totalCount: 0}),
   });
-  await f.call('collect_source_page');
-  assert.equal(f.db.run(f.run.id).scan.complete, false);
-  await f.call('collect_source_page');
-  assert.equal(f.db.run(f.run.id).scan.complete, false);
+  // Empty pages need no review, so one call reads both searches to their end.
   const done = await f.call('collect_source_page');
   assert.equal(done.complete, true);
   assert.equal(f.reads(), 2);
+});
+
+// Pages whose listings are all already known: none reaches review.
+const knownPages = (total) => (value) => {
+  const page = Number(new URL(value).searchParams.get('page')),
+    next = new URL(value);
+  next.searchParams.set('page', String(page + 1));
+  return {
+    url: value,
+    jobs: [],
+    page,
+    totalPages: total,
+    nextUrl: page < total ? next.href : null,
+    complete: page >= total,
+  };
+};
+
+test('pages without new listings are read on within one bounded call', async (t) => {
+  const f = fixture(t, {terms: ['backend'], ordering: 'newest_first', readPage: knownPages(25)});
+  const first = await f.call('collect_source_page');
+  assert.equal(f.reads(), 20);
+  assert.equal(f.db.run(f.run.id).scan.complete, false);
+  assert.match(first.next, /no new listings.*collect_source_page again/);
+  assert.equal((await f.call('collect_source_page')).complete, true);
+  assert.equal(f.reads(), 25);
+});
+
+test('a single collector search closed by its page budget finishes completed', async (t) => {
+  const f = fixture(t, {terms: ['backend'], readPage: knownPages(25)});
+  assert.equal((await f.call('collect_source_page')).complete, true);
+  assert.equal(f.reads(), 15);
+  await f.call('finish_automation_run', {status: 'completed', summary: 'Page budget read'});
+  assert.equal(f.db.run(f.run.id).status, 'completed');
 });
 
 test('HTTP errors and cancellation leave checkpoints incomplete, with no production records', async (t) => {
@@ -684,18 +716,33 @@ test('cancelling an active CLI request terminates its child', async () => {
   assert.ok(child.exitCode !== null || child.signalCode !== null);
 });
 
-test('reviewed duplicates and confirmed exclusions do not return in the next scan', async (t) => {
-  const f = fixture(t),
-    first = await f.call('collect_source_page');
-  await handle(f, first);
-  const second = await f.call('collect_source_page');
-  await handle(f, second);
-  await f.call('collect_source_page');
-  const before = f.db.results(f.id, {all: true}).length;
+test('a continuation reports the finished scan, and the next task skips reviewed listings', async (t) => {
+  const f = fixture(t);
+  await handle(f, await f.call('collect_source_page'));
+  await handle(f, await f.call('collect_source_page'));
+  assert.equal((await f.call('collect_source_page')).complete, true);
+  const reads = f.reads(),
+    before = f.db.results(f.id).length;
+  // The turn ended before the report: the task's next run starts with the
+  // finished scan and no page of its own, and collector runs have no browser.
+  f.db.putRun({...f.db.run(f.run.id), navigation: null, observations: []});
   prepareCollection(f.db, f.db.run(f.run.id), f.db.get(f.id));
-  const again = await f.call('collect_source_page');
-  assert.equal(helper(f, again).items.length, 0);
-  assert.equal(f.db.results(f.id, {all: true}).length, before);
+  assert.equal((await f.call('collect_source_page')).complete, true);
+  assert.equal(f.reads(), reads);
+  await f.call('finish_automation_run', {status: 'completed', summary: 'All pages reviewed'});
+  assert.equal(f.db.run(f.run.id).status, 'completed');
+  const task = f.core.workspaces.tasks.enqueue(f.id, {
+      sourceUrl: source,
+      operation: 'scan',
+      sources: [source],
+      lockKey: 'source:' + source,
+    }),
+    run = f.db.begin(f.id, {kind: 'run', taskId: task.id});
+  prepareCollection(f.db, run, f.db.get(f.id));
+  const again = await f.makeFlow(f.db, undefined, run.id).call(f.id, run.id, 'collect_source_page');
+  assert.equal(again.complete, true);
+  assert.equal(f.reads(), reads + 2);
+  assert.equal(f.db.results(f.id).length, before);
 });
 
 test('opaque pagination cycles fail without certifying completion', async (t) => {
@@ -706,8 +753,8 @@ test('opaque pagination cycles fail without certifying completion', async (t) =>
       nextUrl: value,
     }),
   });
-  await f.call('collect_source_page');
   await assert.rejects(f.call('collect_source_page'), /aynı sayfaya/);
+  assert.equal(f.reads(), 1);
   assert.equal(f.db.run(f.run.id).scan.complete, false);
 });
 

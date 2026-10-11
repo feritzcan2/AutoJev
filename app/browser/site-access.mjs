@@ -113,9 +113,11 @@ export class SiteAccess {
     this.save({...this.row(url), token, leaseUntil: this.now() + minute});
     return token;
   }
+  // Once the wait is over, the first action on a page of that site is its one
+  // access probe, as a navigation would be. The page observed after the action
+  // completes the probe with the returned token.
   assertAction(url) {
-    const wait = this.status(url);
-    if (wait) throw new SiteWaitError(wait);
+    return this.status(url) ? this.begin(url) : null;
   }
   // Only the explicit user-response path may retire an old cooldown early.
   // A later incident or an in-flight probe must not be cleared by a stale card.
@@ -196,6 +198,21 @@ export class SiteAccess {
       return null;
     this.failures.delete(site);
     return this.block(url, 'unreachable');
+  }
+  // A verification challenge that the same tab got past (a new successful
+  // document of that site without a barrier) proves access again. Rate limits
+  // and IP blocks keep their wait: one page view says nothing about pacing.
+  recoverVerification(url, blockedAt) {
+    const previous = this.row(url);
+    if (
+      !previous ||
+      previous.recovered ||
+      previous.reason !== 'verification' ||
+      previous.blockedAt !== blockedAt
+    )
+      return false;
+    this.save({...previous, recovered: true, token: null, leaseUntil: 0, retryAt: null});
+    return true;
   }
   complete(url, token, {status, reason, retryAfter} = {}) {
     if (!reason && status >= 200 && status < 400) this.failures.delete(siteKey(url));

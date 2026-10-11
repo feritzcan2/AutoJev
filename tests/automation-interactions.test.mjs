@@ -52,7 +52,7 @@ for (const kind of ['interview', 'trial', 'run'])
         {operation: 'type', ref: 'e1', text: 'Any text'},
         {operation: 'select', ref: 'e1', text: 'Any option'},
         {operation: 'press', ref: 'e1', key: 'Shift+Tab'},
-        {operation: 'autocomplete', ref: 'c1', text: 'Berlin'},
+        {operation: 'autocomplete', ref: 'c1'},
         {operation: 'autocomplete', ref: 'c1', option: 'Berlin'},
       ])
         await call('browser_interact', input);

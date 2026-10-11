@@ -89,6 +89,7 @@ export function automationBrowser(
       executed: page.executed,
       verified: page.verified,
       message: page.message,
+      ...(page.openedTab ? {openedTab: page.openedTab} : {}),
     },
   });
   const document = async (id, result, session) => {

@@ -233,13 +233,14 @@ export function assertScanWorkFinished(run) {
       'Kayıtlı aramaların tamamı bitmedi; kalan aramayı complete_scan_search ile tamamla.',
     );
 }
-// Every saved search was closed by complete_scan_search and nothing is queued:
-// the app has verified the whole scan itself.
+// Every saved search was closed by complete_scan_search, or by a collector
+// from its own API pages, and nothing is queued: the app has verified the
+// whole scan itself.
 export function scanWorkVerified(run) {
   const work = run.scan?.work;
   return Boolean(
     work &&
-      work.searches.length > 1 &&
+      (work.searches.length > 1 || run.scan.collector) &&
       work.searches.every((s) => s.status === 'completed') &&
       !pendingScanUrls(scanWork(run)).length,
   );
@@ -324,13 +325,13 @@ export function scanPlanView(plan) {
   };
 }
 export function validateWorkCompletion(run, scan) {
-  if ((run.scan?.work?.searches.length ?? 0) <= 1) {
+  if ((run.scan?.work?.searches.length ?? 0) <= 1 && !run.scan?.collector) {
     const completion = validateScanCompletion(run.scanPlan, scan, run.pageProgress, run.id);
     assertScanWorkFinished(run);
     return completion;
   }
   assertScanWorkFinished(run);
-  // Each search was verified by complete_scan_search; the agent's own
+  // Each search was verified by complete_scan_search or its collector; the agent's own
   // completion word adds nothing and weak agents guessed it wrong.
   const completions = run.scan.work.searches.map((s) => s.completion);
   return completions.includes('user_stop')

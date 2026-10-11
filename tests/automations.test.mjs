@@ -563,7 +563,7 @@ test('interrupted attempts stay protected while other listings have no daily quo
   db.finish(id, run.id, 'completed', 'Verified');
   assert.equal(db.result(id, item.id).status, 'completed');
 });
-test('counts, export data and approval invalidation cover results older than the UI window', (t) => {
+test('counts, export data and approval invalidation cover every result', (t) => {
   const {db, id} = fixture(t);
   trial(db, id);
   const run = db.begin(id, 'run');
@@ -574,8 +574,7 @@ test('counts, export data and approval invalidation cover results older than the
   }
   db.finish(id, run.id, 'completed', 'Prepared');
   db.approve(id, first.id);
-  assert.equal(db.results(id).length, 500);
-  assert.equal(db.results(id, {all: true}).length, 503);
+  assert.equal(db.results(id).length, 503);
   assert.equal(db.resultCounts(id).resultCount, 503);
   assert.equal(db.resultCounts(id).pendingCount, 502);
   db.save(id, {goal: 'Find a different home'});

@@ -222,12 +222,12 @@ export const automationTools = [
   ),
   tool(
     'browser_upload_document',
-    'Execute tasks only: upload one document listed in the saved proposal; no reservation needed. filePath is relative to this workspace; ref is a current uploads.uploadId. Never upload during preparation or verification.',
+    'Execute tasks only: upload one document listed in the saved proposal; no reservation needed. filePath is relative to this workspace; ref is a current uploads.uploadId, or the targetId of a visible upload button (e.g. "Upload CV") when uploads is empty. Never upload during preparation or verification.',
     {ref: str, filePath: str},
   ),
   tool(
     'browser_interact',
-    'Act on the current page with a fresh ref. click: clickTargets.targetId, or a radio/checkbox controlId from browser_jev_inspect_form (selects that option and verifies it). type: fillFields.fieldId + text. select: controls.controlId + text. options: list a dropdown. press: a key. autocomplete: controlId; text reads suggestions, option selects one. scroll: scrollTargets.controlId with direction; stop on no_progress. reveal: bring an offscreen controlId into view, then type with the returned fieldId. If action.executed is false or status is stale, repeat once with the fresh ref. Tools do not enforce authority; you decide what the user allowed.',
+    'Act on the current page with a fresh ref. click: clickTargets.targetId, or a radio/checkbox controlId from browser_jev_inspect_form (selects that option and verifies it). type: fillFields.fieldId + text. select: controls.controlId + text. options: list a dropdown. press: a key. autocomplete: controlId; option selects that exact label (text may search first); text alone selects the option with exactly that label, otherwise returns the full suggestion list; neither lists the suggestions. scroll: scrollTargets.controlId with direction; stop on no_progress. reveal: bring an offscreen controlId into view, then type with the returned fieldId. If action.executed is false or status is stale, repeat once with the fresh ref. Tools do not enforce authority; you decide what the user allowed.',
     {
       operation: {
         type: 'string',
@@ -243,10 +243,10 @@ export const automationTools = [
   ),
   tool(
     'record_automation_outcome',
-    'Record completed or uncertain. In a verify task, not_submitted needs notSubmittedProof: the latest snapshotId, kind draft/rejected and recordEvidence (exact title, ID or URL fragment, 6+ characters) showing this record was not sent; an unfinished form or missing success message is insufficient. Verification never submits. itemId defaults to the assigned record, url to the current page.',
+    'Record completed or uncertain. In an execute task before any reservation, closed means the record page itself says it is no longer available (removed, expired, not found, no longer accepting applications); evidence is that exact page sentence; the record is then retired. In a verify task, not_submitted needs notSubmittedProof: the latest snapshotId, kind draft/rejected and recordEvidence (exact title, ID or URL fragment, 6+ characters) showing this record was not sent; an unfinished form or missing success message is insufficient. Verification never submits. itemId defaults to the assigned record, url to the current page.',
     {
       itemId: str,
-      status: {type: 'string', enum: ['completed', 'uncertain', 'not_submitted']},
+      status: {type: 'string', enum: ['completed', 'uncertain', 'not_submitted', 'closed']},
       evidence: str,
       url: str,
       notSubmittedProof: object(

@@ -43,7 +43,9 @@ export function scanCheckpoint(run, input, {checkpoint = false} = {}) {
   const evidenceUrl = webUrl(input.evidenceUrl),
     reason = boundedText(input.reason, 'Kapsam açıklaması', 2000);
   if (!(run.navigation ?? run.observations ?? []).some((o) => o.url === evidenceUrl))
-    throw Error('Kapsamın kanıt sayfasını bu turda gerçekten aç');
+    throw Error(
+      'Open the evidence page (evidenceUrl) in this turn before reporting scan coverage.',
+    );
   if (input.complete && pendingUrls.length)
     throw Error('Bekleyen sayfa veya ilan varken tarama tamamlandı denemez');
   if (!checkpoint && !input.complete && !pendingUrls.length)

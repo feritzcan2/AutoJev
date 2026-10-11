@@ -106,6 +106,20 @@ export const jobSearchTemplate = {
     'Başvuru belgelerini ve cevaplarını hazırla',
     'Yetki kapsamında başvur ve sonucu doğrula',
   ],
+  // Request of the setup turn started by the welcome screen after a CV upload.
+  // The user reviews the saved profile on a form, so the turn asks nothing.
+  onboarding: `## Profile from the CV
+The user uploaded their CV on the welcome screen. They review your result on a form, not in this chat.
+1. Read the uploaded CV from the saved documents.
+2. Call save_automation_plan once. Keep the saved sources, instructions and facts. Set title to the candidate's full name, goal to one sentence naming the roles and places to search, and these criteria keys:
+   - preferences: target roles from the CV's recent titles and seniority, plus places and work modes the CV states.
+   - experience: years of experience, main skills, languages with levels, education.
+   - country (ISO code) and location: from the CV address, only when the CV shows them.
+   - application_facts: phone, email, LinkedIn and language levels from the CV.
+   - ranking: your scoring proposal, weights adding up to 100.
+3. Leave a field empty when the CV does not show it. Never guess salary, work permit, start date or work mode.
+4. Do not call ask_workspace_question and do not research sources in this turn.
+5. Call reply_to_user with two short sentences: what you filled and what the user should check or add on the form. Then call finish_automation_run.`,
   // Sent to Jev with every listing triage; keep it short.
   assessmentHints:
     'Listings are jobs. An unrelated listing is a different profession, judged by its actual responsibilities and professional field. A title naming another specialization is unrelated even when it shares a generic word such as engineer, developer or architect. Salary is a soft preference unless the user makes it mandatory; an omitted salary is not a mismatch. A qualification missing from the CV is unknown, not lacking. Possible home office or hybrid is not full remote. A site salary estimate is not the employer offer.',

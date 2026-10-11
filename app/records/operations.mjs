@@ -393,7 +393,7 @@ export async function dispatchRecordOperations(runtime, id, {manualOnly = false}
       activeRecords = new Set(
         previous.filter((t) => live.includes(t.state)).flatMap(taskRecordIds),
       );
-    for (const item of db.results(id, {all: true})) {
+    for (const item of db.results(id)) {
       // Scheduling needs source permissions, not the UI projection that loads
       // every result and run. Read those settings once with the workspace.
       if (

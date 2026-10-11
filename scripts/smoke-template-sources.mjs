@@ -28,7 +28,11 @@ try {
     ipcMain.removeHandler('automation-setup');
     ipcMain.handle('automation-setup', () => ({test: true}));
   });
-  await page.locator('[data-template="job-search"]').click();
+  // The first run opens the welcome screen; its chat link creates the job search.
+  await page
+    .locator('#onboarding')
+    .getByRole('button', {name: 'Sohbetle kurmak istiyorum'})
+    .click();
   await page.waitForFunction(() => document.querySelector('#candidates')?.value);
   const snapshot = await page.evaluate(() =>
     window.jobloop.workspaceSnapshot(document.querySelector('#candidates').value),

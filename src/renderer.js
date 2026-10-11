@@ -5,6 +5,7 @@ import {coalesceRefresh} from './refresh-queue.js';
 import {saveAgentSettings, createAgentRestartDialog} from './agent-settings-save.js';
 import {instructionsPanel} from './instructions.js';
 import {automationsPage} from './automations.js';
+import {onboardingScreen, wantsOnboarding} from './onboarding.js';
 import {createChromeProfileDialog} from './chrome-profile-dialog.js';
 import {workspaceSwitcher} from './workspace-switcher.js';
 import {workerTerminals} from './worker-terminals.js';
@@ -111,7 +112,7 @@ async function deleteWorkspace(owner = selectedWorkspace()) {
     automationUI.deselect();
     deletingWorkspace = null;
     await refresh();
-    switchView('templates');
+    switchView('start');
     notice(`“${owner.title}” çalışma alanı silindi.`);
   } catch (error) {
     notice(error.message);
@@ -136,6 +137,37 @@ const automationUI = automationsPage(api, {
   refreshWorkspaces: refresh,
   deleteWorkspace,
   isDeleting: () => Boolean(deletingWorkspace),
+  openOnboarding: (id, data) => {
+    if (!wantsOnboarding(data)) return false;
+    onboardingUI.open(id).catch((error) => notice(error.message));
+    return true;
+  },
+});
+// Leaving the welcome screen of a new profile returns to the profile open before it.
+let workspaceBeforeNew = null;
+const onboardingUI = onboardingScreen(api, {
+  getCatalog: () => catalog,
+  created: async (id) => {
+    localStorage.setItem('selected-workspace', id);
+    await refresh();
+  },
+  finish: async (id) => {
+    await automationUI.select(id, {onboarding: false});
+    switchView('board');
+    await refresh();
+  },
+  chat: async (id) => {
+    await automationUI.select(id, {onboarding: false});
+    if (automationUI.selected === id) switchView('setup-agent');
+    await refresh();
+  },
+  cancel: async (id, {remove}) => {
+    const items = (await api.workspaces()).filter((item) => item.id !== id),
+      other = items.find((item) => item.id === workspaceBeforeNew) ?? items[0];
+    if (other) await automationUI.select(other.id);
+    if (id && remove) await api.deleteWorkspace(id);
+    await refresh();
+  },
 });
 await document.fonts.ready;
 const terminalSection = document.querySelector('#agent .terminal-section');
@@ -208,7 +240,7 @@ sourcesNav.innerHTML =
   '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Kaynaklar</span><span id="sources-nav-status" class="agent-nav-status sources-nav-status" data-tone="active" aria-hidden="true" hidden></span>';
 document.querySelector('nav button[data-view="agent"]').before(sourcesNav);
 function switchView(name, options = {}) {
-  const global = ['automations', 'templates'].includes(name),
+  const global = name === 'start',
     selected = automationUI.selected;
   document.querySelector('main>header>.actions').hidden =
     global || !selected || name === 'setup-agent';
@@ -218,7 +250,7 @@ function switchView(name, options = {}) {
   automationUI.element.hidden = false;
   if (global) {
     $('heading').textContent = 'Yeni çalışma alanı';
-    if (!options.detail) automationUI.show('templates').catch((error) => notice(error.message));
+    if (!options.detail) automationUI.show().catch((error) => notice(error.message));
   } else if (selected) {
     automationUI.renderShell();
     if (name === 'config') {
@@ -394,7 +426,10 @@ async function refreshWorkspace() {
   workspaceMenu.sync();
 }
 $('new').textContent = 'Yeni çalışma alanı';
-$('new').onclick = () => switchView('templates');
+$('new').onclick = () => {
+  workspaceBeforeNew = automationUI.selected;
+  return automationUI.create();
+};
 $('candidates').onchange = attempt(async () => {
   const id = $('candidates').value;
   notice('');
@@ -555,7 +590,10 @@ if (selected) {
         ? initialView
         : 'board',
   );
-} else switchView('templates');
+} else {
+  switchView('start');
+  await onboardingUI.open();
+}
 localStorage.removeItem('selected-candidate');
 localStorage.removeItem('selected-automation');
 api.onAutomationChange?.((event) => {

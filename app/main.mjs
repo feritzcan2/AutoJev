@@ -20,6 +20,7 @@ import {mkdir, rm} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Maintenance} from './system/maintenance.mjs';
+import {startDevControl} from './system/dev-control.mjs';
 import {registerAutomationServices} from './automation/services.mjs';
 import {AutomationStore} from './automation/store.mjs';
 import {registerSettingsServices} from './system/settings-services.mjs';
@@ -215,7 +216,9 @@ async function boot() {
       if (!quitting) for (const service of services) await service.resume?.();
     },
   });
+  const handlers = new Map();
   function handle(name, fn) {
+    handlers.set(name, fn);
     ipcMain.handle(name, async (event, ...args) => {
       if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame)
         throw Error('Untrusted sender');
@@ -471,6 +474,17 @@ async function boot() {
   window.webContents.on('will-navigate', (event) => event.preventDefault());
   await window.loadFile(path.join(root, 'dist/index.html'));
   await completeDataUpgrade({dataDirectory: data, appVersion: app.getVersion()});
+  // Unpackaged builds only: lets a local development script drive the app.
+  const devControl = app.isPackaged
+    ? null
+    : await startDevControl({
+        directory: bootstrapDirectory,
+        handlers,
+        invoke: (name, fn) => maintenance.invoke(name, fn),
+      }).catch((error) => {
+        console.error('Dev control unavailable:', error.message);
+        return null;
+      });
   app.on('second-instance', () => {
     window?.show();
     window?.focus();
@@ -487,6 +501,7 @@ async function boot() {
       await agents.close();
       await browser.close({closeTabs: true});
       await mcp.close();
+      await devControl?.close();
       core.close();
       app.quit();
     })();

@@ -154,7 +154,7 @@ test('technical failures retain their reason when run history is not in the snap
       summary: 'Browser disconnected',
       stop: {kind: 'technical', evidence: 'Connection closed after reconnect'},
     }),
-    /Doğrulanmış/,
+    /No verified loading failure/,
   );
   // App-generated failures remain visible; an agent cannot invent technical proof.
   f.db.finish(f.id, f.run.id, 'failed', 'Browser disconnected');

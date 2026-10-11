@@ -444,7 +444,7 @@ test('scan evidence and continuation URLs must be observed, scoped and consisten
   assert.deepEqual(scanCheckpoint(run, base), base);
   for (const pendingUrls of [[third], ['https://other.test/page'], []])
     assert.throws(() => scanCheckpoint(run, {...base, pendingUrls}));
-  assert.throws(() => scanCheckpoint(run, {...base, evidenceUrl: second}), /bu turda/);
+  assert.throws(() => scanCheckpoint(run, {...base, evidenceUrl: second}), /in this turn/);
   assert.throws(() => scanCheckpoint({...run, recordId: 'one'}, base), /kaynak görevine/);
   const response = {
     content: [

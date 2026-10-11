@@ -131,7 +131,7 @@ test('a failed results page cannot abandon 17 reachable details, then retries on
   assert.equal(result.status, 'interrupted');
   assert.equal(result.recovery.reason, 'technical_page');
   assert.deepEqual(result.scan.pendingUrls, [next]);
-  assert.equal(f.db.results(f.id, {all: true}).length, 17);
+  assert.equal(f.db.results(f.id).length, 17);
   assert.notEqual(f.db.sources(f.id)[0].blocked, true);
   assert.equal(f.calls.filter((c) => c.name === 'browser_reopen_readonly').length, 1);
 });
@@ -144,7 +144,7 @@ test('technical proof requires actual repeated transport errors and is invalidat
   assert.equal(issue.verified, false);
   await assert.rejects(
     f.call('finish_automation_run', {status: 'failed', summary: 'Disconnected'}),
-    /Doğrulanmış/,
+    /No verified loading failure/,
   );
   await assert.rejects(f.call('browser_open', {url: next}), /Page load failed/);
   issue = f.db.run(f.run.id).scanIssues[next];
@@ -154,7 +154,7 @@ test('technical proof requires actual repeated transport errors and is invalidat
   await f.call('browser_open', {url: source});
   await assert.rejects(
     f.call('finish_automation_run', {status: 'failed', summary: 'Old error'}),
-    /Doğrulanmış/,
+    /No verified loading failure/,
   );
   f.error('Observed ref is stale');
   await assert.rejects(f.call('browser_open', {url: next}), /stale/);

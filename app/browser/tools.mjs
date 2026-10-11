@@ -159,7 +159,8 @@ export class BrowserTools {
     if (name === 'browser_target_press') {
       const url = client.tab(args.tabId).page.url();
       try {
-        if (/^https?:/.test(url)) this.siteAccess?.assertAction(url);
+        const token = /^https?:/.test(url) ? this.siteAccess?.assertAction(url) : null;
+        if (token) client.tab(args.tabId).accessProbe = {url, token};
       } catch (error) {
         if (error.code !== 'SITE_WAIT') throw error;
         return {

@@ -22,7 +22,7 @@ import {beginSourceScan, sourceScanScope, completeSourceScan} from '../../source
 export const runMethods = {
   begin(id, input, workerId = 'main') {
     return this.store.workspaces.tasks.atomic(() => {
-      const {kind, taskId, messageId, inputQuestionIds} =
+      const {kind, taskId, messageId, inputQuestionIds, onboarding} =
         typeof input === 'string' ? {kind: input} : input;
       const conversation = workerId === CONVERSATION_WORKER;
       if (conversation && kind !== 'interview')
@@ -116,6 +116,7 @@ export const runMethods = {
               awaitingMessage: false,
               ...(messageId ? {messageId} : {}),
               ...(inputQuestionIds ? {inputQuestionIds} : {}),
+              ...(onboarding ? {onboarding: true} : {}),
             }
           : {}),
         ...(continuation ? {continuation} : {}),
@@ -172,6 +173,7 @@ export const runMethods = {
           if (
             run.recordOperation === 'execute' &&
             item.status !== 'completed' &&
+            !(item.status === 'dismissed' && item.closed?.runId === run.id) &&
             !run.actionId &&
             !(
               run.request?.direct !== true &&
@@ -180,7 +182,9 @@ export const runMethods = {
             ) &&
             !question
           )
-            throw Error('Gönderim tamamlanmadı; gerçek sonucu doğrula veya engeli bildir');
+            throw Error(
+              'The application is not finished. Record the real outcome with record_automation_outcome, or ask the missing question, before finishing.',
+            );
           if (
             run.recordOperation === 'verify' &&
             item.status !== 'completed' &&

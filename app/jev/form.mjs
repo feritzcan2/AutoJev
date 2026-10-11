@@ -57,11 +57,47 @@ export async function inspectApplicationForm(page, slot = null) {
         const shown = (e) =>
           visible(e) ||
           (['checkbox', 'radio'].includes(e.type) && [...(e.labels ?? [])].some(visible));
+        // Custom dropdowns: a non-input combobox, or a labelled button that
+        // opens a listbox/tree popup. Its answer is the trigger's own text.
+        const trigger = (e) =>
+          !['INPUT', 'TEXTAREA', 'SELECT'].includes(e.tagName) &&
+          (e.getAttribute('role') === 'combobox' ||
+            ((e.tagName === 'BUTTON' || e.getAttribute('role') === 'button') &&
+              ['listbox', 'tree', 'true'].includes(e.getAttribute('aria-haspopup')) &&
+              (e.hasAttribute('aria-labelledby') || e.labels?.length > 0)));
+        const caption = (e) => {
+          const text = clean(
+            [...e.childNodes]
+              .map((n) =>
+                n.nodeType === Node.TEXT_NODE
+                  ? n.textContent
+                  : n.nodeType === Node.ELEMENT_NODE &&
+                      visible(n) &&
+                      !n.matches('[role="listbox"],[role="tree"]')
+                    ? n.innerText
+                    : '',
+              )
+              .join(' '),
+          );
+          const placeholders = [
+            e,
+            ...e.querySelectorAll('[data-placeholder],[aria-placeholder],[placeholder]'),
+          ].flatMap((n) =>
+            ['aria-placeholder', 'data-placeholder', 'placeholder'].map((a) => n.getAttribute(a)),
+          );
+          return placeholders.includes(text) ? '' : text;
+        };
         const nodes = queryAll(
           root,
-          'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),textarea,select,[role="combobox"],[role="checkbox"],[role="radio"]',
+          'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),textarea,select,[role="combobox"],[role="checkbox"],[role="radio"],[aria-haspopup]',
         ).filter(
-          (e) => shown(e) && !e.matches(':disabled') && e.getAttribute('aria-disabled') !== 'true',
+          (e) =>
+            shown(e) &&
+            !e.matches(':disabled') &&
+            e.getAttribute('aria-disabled') !== 'true' &&
+            (!e.matches('[aria-haspopup]:not([role="combobox"])') ||
+              ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.tagName) ||
+              trigger(e)),
         );
         return {
           documentOrigin: performance.timeOrigin,
@@ -82,11 +118,20 @@ export async function inspectApplicationForm(page, slot = null) {
           fields: nodes.slice(0, 200).map((e) => {
             const semantic = window.__jobloopFieldContext(e),
               label = semantic.label;
-            const type = e.getAttribute('role') || e.type || e.tagName.toLowerCase();
+            const dropdown = trigger(e);
+            const type = dropdown
+              ? 'combobox'
+              : e.getAttribute('role') || e.type || e.tagName.toLowerCase();
             const required = semantic.required;
-            const message = clean(e.validationMessage || refs(e, 'aria-errormessage'));
+            // Visible error text first: it is what the page shows after a failed submit.
+            const shownError = window.__jobloopFieldError(e);
+            const message = clean(
+              shownError || e.validationMessage || refs(e, 'aria-errormessage'),
+            );
             const invalid =
-              e.getAttribute('aria-invalid') === 'true' || e.validity?.valid === false;
+              Boolean(shownError) ||
+              e.getAttribute('aria-invalid') === 'true' ||
+              e.validity?.valid === false;
             const field = {
               node: window.__jevFast?.ids.get(e),
               ...semantic,
@@ -107,13 +152,15 @@ export async function inspectApplicationForm(page, slot = null) {
               e.closest('[lang]')?.getAttribute('lang') || document.documentElement.lang;
             if (language) field.language = language;
             if (type !== 'password')
-              field.filled = ['checkbox', 'radio'].includes(type)
-                ? Boolean(e.checked || e.getAttribute('aria-checked') === 'true')
-                : type === 'file'
-                  ? Boolean(e.files?.length)
-                  : typeof e.value === 'string'
-                    ? Boolean(e.value.trim())
-                    : null;
+              field.filled = dropdown
+                ? Boolean(caption(e))
+                : ['checkbox', 'radio'].includes(type)
+                  ? Boolean(e.checked || e.getAttribute('aria-checked') === 'true')
+                  : type === 'file'
+                    ? Boolean(e.files?.length)
+                    : typeof e.value === 'string'
+                      ? Boolean(e.value.trim())
+                      : null;
             return field;
           }),
         };
@@ -173,8 +220,16 @@ export async function inspectApplicationForm(page, slot = null) {
   return {
     ...compact,
     missingRequired: compact.fields
-      .filter((f) => f.required === true && f.filled === false)
-      .map(({label, question, type, frameUrl}) => ({label, question, type, frameUrl})),
+      .filter(
+        (f) => (f.required === true && f.filled === false) || (f.invalid && f.validationMessage),
+      )
+      .map(({label, question, type, frameUrl, validationMessage}) => ({
+        label,
+        question,
+        type,
+        frameUrl,
+        ...(validationMessage ? {validationMessage} : {}),
+      })),
     submitControls: submitControls.map(({frameUrl, ...c}) =>
       frameUrl === page.url() ? c : {...c, frameUrl},
     ),
@@ -182,7 +237,7 @@ export async function inspectApplicationForm(page, slot = null) {
     truncated,
     readOnly: true,
     notice:
-      'Rendered fields on the current step only. A field without required is unknown, not optional. Radio and checkbox options are grouped under their question; click an option with its controlId. A submit control with targetId is clickable now; with only controlId, browser_interact reveal it first and inspect again. Later steps may add fields. This inspection is not submission-outcome evidence.',
+      'Rendered fields on the current step only. A field without required is unknown, not optional. missingRequired also lists fields that show a validation message; fix those before submitting again. Radio and checkbox options are grouped under their question; click an option with its controlId. A combobox is a custom dropdown: choose with autocomplete, its controlId and the exact option. A submit control with targetId is clickable now; with only controlId, browser_interact reveal it first and inspect again. Later steps may add fields. This inspection is not submission-outcome evidence.',
   };
 }
 
