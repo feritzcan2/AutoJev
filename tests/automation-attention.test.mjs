@@ -215,7 +215,7 @@ test('closing an intervention persists across restart without changing work and 
     automationAttention(db.snapshot(a.id)).map((i) => i.id),
     [source.url, other],
   );
-  assert.throws(() => dismissAutomationAttention(db, a.id, issue.id, issue.dismissKey), /değişti/);
+  assert.throws(() => dismissAutomationAttention(db, a.id, issue.id, issue.dismissKey), /changed/);
 });
 
 test('closing a card cannot dismiss a question, a scheduled retry, or another workspace incident', (t) => {
@@ -231,17 +231,17 @@ test('closing a card cannot dismiss a question, a scheduled retry, or another wo
   const [issue] = automationAttention(db.snapshot(a.id));
   assert.throws(
     () => dismissAutomationAttention(db, other.id, issue.id, issue.dismissKey),
-    /kapatılamıyor/,
+    /can no longer be dismissed/,
   );
   const question = db.askQuestion(a.id, {text: 'Choose a location'});
   assert.throws(
     () => dismissAutomationAttention(db, a.id, question.id, undefined),
-    /kapatılamıyor/,
+    /can no longer be dismissed/,
   );
   db.put({...db.get(a.id), retryPlan: {[source.url]: {at: Date.now() + 7200000}}});
   assert.throws(
     () => dismissAutomationAttention(db, a.id, issue.id, issue.dismissKey),
-    /kapatılamıyor/,
+    /can no longer be dismissed/,
   );
   assert.equal(db.get(a.id).dismissedAttention, undefined);
   assert.equal(db.get(a.id).questions[0].answer, null);

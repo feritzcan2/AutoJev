@@ -111,10 +111,10 @@ test('a feed page maps its postings to listings with the stated facts', () => {
   const last = parseArbeitnowPage(source, response([job('a')], 1, null));
   assert.equal(last.complete, true);
   assert.equal(last.nextUrl, null);
-  assert.throws(() => parseArbeitnowPage(source, response([job('a')], 2)), /farklı bir sayfa/);
+  assert.throws(() => parseArbeitnowPage(source, response([job('a')], 2)), /different page/);
   assert.throws(
     () => parseArbeitnowPage(source, response([job('a', {description: ' '})])),
-    /eksik/,
+    /missing/,
   );
   assert.throws(
     () =>
@@ -122,10 +122,10 @@ test('a feed page maps its postings to listings with the stated facts', () => {
         source,
         response([job('a', {url: 'https://evil.test/jobs/companies/x/y'})]),
       ),
-    /doğrulanamadı/,
+    /could not be verified/,
   );
-  assert.throws(() => parseArbeitnowPage(source, response([])), /boş sayfaya rağmen/);
-  assert.throws(() => parseArbeitnowPage(source, {data: 'x'}), /biçimi geçersiz/);
+  assert.throws(() => parseArbeitnowPage(source, response([])), /despite an empty page/);
+  assert.throws(() => parseArbeitnowPage(source, {data: 'x'}), /response format/);
   const detail = arbeitnow.collector.detail(page.jobs[0]);
   assert.equal(detail.title, 'Senior SAP SD Consultant');
   assert.deepEqual(detail.listing.fields, {
@@ -160,7 +160,7 @@ test('feed and listing reads report failures instead of empty results', async ()
       fetch: async () =>
         new Response('<html>', {status: 200, headers: {'content-type': 'text/html'}}),
     }),
-    /JSON yerine/,
+    /other than JSON/,
   );
   const failure = await readArbeitnowPage(source, {
     fetch: async () => new Response('', {status: 503}),
@@ -203,13 +203,16 @@ test('feed and listing reads report failures instead of empty results', async ()
     readArbeitnowDetail(listing, {
       fetch: async () => new Response('<html><body>Gone</body></html>'),
     }),
-    /güncel ilan verisi yok/,
+    /no current listing data/,
   );
   await assert.rejects(
     readArbeitnowDetail(listing, {fetch: async () => new Response('', {status: 404})}),
     /HTTP 404/,
   );
-  await assert.rejects(readArbeitnowDetail('https://www.arbeitnow.com/jobs', {fetch}), /Tekil/);
+  await assert.rejects(
+    readArbeitnowDetail('https://www.arbeitnow.com/jobs', {fetch}),
+    /single Arbeitnow listing/,
+  );
 });
 
 function workspace(t, recipe) {

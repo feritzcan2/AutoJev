@@ -7,7 +7,7 @@ export class Maintenance {
   }
   assertAvailable() {
     if (this.busy)
-      throw Error('Yedekleme, geri yükleme veya güncelleme sürüyor. İşlem bitince tekrar dene.');
+      throw Error('A backup, restore or update is in progress. Try again when it finishes.');
   }
   async invoke(name, fn) {
     this.assertAvailable();
@@ -27,7 +27,7 @@ export class Maintenance {
     let stopped = false,
       completed = false;
     try {
-      if (this.pending.size) throw Error('Devam eden işlemin bitmesini bekle ve tekrar dene.');
+      if (this.pending.size) throw Error('Wait for the running operation to finish and try again.');
       this.assertIdle();
       stopped = true;
       await this.stop();

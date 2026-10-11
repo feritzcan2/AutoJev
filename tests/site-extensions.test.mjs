@@ -551,8 +551,8 @@ test('site filters are read from and written into a results template without tou
     'https://www.stepstone.de/jobs/{query}/in-berlin?radius=30&sort=2&action=sort_publish&fdl=en',
   );
   assert.deepEqual(searchFilterLabels(search, withLanguage), [
-    'İlan dili: İngilizce',
-    'Yarıçap (km, şehirle): 30',
+    'Listing language: English',
+    'Radius (km, with a city): 30',
   ]);
   assert.equal(
     withSearchFilters(withLanguage, {radius: '', fdl: 'de'}),

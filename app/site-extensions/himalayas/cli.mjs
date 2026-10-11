@@ -20,20 +20,20 @@ export function collectionArguments(args) {
       ].includes(key) ||
       flags.has(key)
     )
-      throw Error(`Geçersiz seçenek: ${key}`);
+      throw Error(`Invalid option: ${key}`);
     if (['--all', '--help'].includes(key)) flags.set(key, true);
     else {
       const value = args[++i];
-      if (!value || value.startsWith('--')) throw Error(`${key} için değer gerekli.`);
+      if (!value || value.startsWith('--')) throw Error(`${key} needs a value.`);
       flags.set(key, value);
     }
   }
   if (flags.has('--help')) return null;
   if ((flags.get('--source') ?? 'himalayas') !== 'himalayas')
-    throw Error('Desteklenen kaynak: himalayas');
+    throw Error('Supported source: himalayas');
   if (flags.has('--detail-url')) {
     if ([...flags.keys()].some((k) => !['--source', '--detail-url'].includes(k)))
-      throw Error('--detail-url arama seçenekleriyle birlikte kullanılamaz.');
+      throw Error('--detail-url cannot be combined with search options.');
     himalayasJobIdentity(flags.get('--detail-url'));
     return {detailUrl: flags.get('--detail-url')};
   }
@@ -42,7 +42,7 @@ export function collectionArguments(args) {
       (flags.has('--query') || flags.has('--country') || flags.has('--url'))) ||
     (flags.has('--url') && (flags.has('--query') || flags.has('--country')))
   )
-    throw Error('--all, --url ve arama filtrelerini birlikte kullanma.');
+    throw Error('Do not combine --all, --url and search filters.');
   const url = new URL(
     flags.get('--url') ?? `https://himalayas.app/jobs/api${flags.has('--all') ? '' : '/search'}`,
   );
@@ -50,7 +50,7 @@ export function collectionArguments(args) {
   if (flags.has('--country')) url.searchParams.set('country', flags.get('--country'));
   const maxPages = Number(flags.get('--max-pages') ?? 1000);
   if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 10000)
-    throw Error('--max-pages 1–10000 arasında olmalı.');
+    throw Error('--max-pages must be between 1 and 10000.');
   return {searches: [{id: 'collector-1', url: himalayasApiUrl(url.href)}], maxPages};
 }
 
@@ -71,17 +71,17 @@ async function main() {
   process.once('SIGINT', stop);
   try {
     if (process.argv.slice(2).includes('--worker')) {
-      if (!process.send) throw Error('Toplayıcı worker iletişim kanalı eksik.');
+      if (!process.send) throw Error('The collector worker IPC channel is missing.');
       process.once('disconnect', stop);
       const [request] = await once(process, 'message', {signal: controller.signal});
-      if (request?.type !== 'start') throw Error('Toplayıcı başlatma isteği eksik.');
+      if (request?.type !== 'start') throw Error('The collector start request is missing.');
       const result = await collect(request.input, {
         signal: controller.signal,
         onPage: async (page) => {
           const ack = once(process, 'message', {signal: controller.signal});
           await send({type: 'page', page});
           const [message] = await ack;
-          if (message?.type !== 'ack') throw Error('Toplayıcı sayfası kaydedilemedi.');
+          if (message?.type !== 'ack') throw Error('The collector page could not be saved.');
         },
       });
       await send({type: 'done', result});
@@ -105,7 +105,7 @@ async function main() {
     }
   } catch (error) {
     const message = controller.signal.aborted
-      ? 'Toplama iptal edildi; tamamlanmadı.'
+      ? 'Collection was cancelled; it is not complete.'
       : error.message;
     if (process.send && process.connected) await send({type: 'error', message}).catch(() => {});
     else process.stderr.write(message + '\n');

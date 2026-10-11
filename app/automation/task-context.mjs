@@ -131,7 +131,7 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
     interview = active.kind === 'interview';
   if (section) {
     if (!conversation)
-      throw Error('Ek bağlam bölümleri yalnızca bağımsız sohbet için kullanılabilir.');
+      throw Error('Extra context sections are only available to the independent conversation.');
     if (section === 'profile')
       return {
         automation: pick(a, [
@@ -157,7 +157,7 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
           .filter((q) => !q.recordId && !q.sourceUrl)
           .map(questionContext),
       };
-    throw Error('Bilinmeyen bağlam bölümü.');
+    throw Error('Unknown context section.');
   }
   const request = conversation ? conversationRequest(db, id, active) : null;
   if (conversation)
@@ -193,7 +193,7 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
         draftPending: Boolean(draft),
         sourceDraftPending: Boolean(saved.sourceDraft),
         instructions:
-          'Use the existing conversation history. If setupComplete is false, read get_automation_context section template, lead the initial setup and save the unapproved profile for review. Otherwise answer the current message directly; inspect specific records only when needed. Other workers continue. Profile changes are reviewed on Çalışma alanı profili. Source suggestions are reviewed and applied separately on Kaynaklar; saving the profile does not apply sources. After reply_to_user, call finish_automation_run to wait for the next message in this same session.',
+          'Use the existing conversation history. If setupComplete is false, read get_automation_context section template, lead the initial setup and save the unapproved profile for review. Otherwise answer the current message directly; inspect specific records only when needed. Other workers continue. Profile changes are reviewed on the Workspace profile screen. Source suggestions are reviewed and applied separately on the Sources screen; saving the profile does not apply sources. After reply_to_user, call finish_automation_run to wait for the next message in this same session.',
       },
       profileUpdate: saved.profileUpdate
         ? {

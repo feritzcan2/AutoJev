@@ -46,12 +46,12 @@ export function createAgentRestartDialog() {
   dialog.id = 'agent-settings-restart-dialog';
   dialog.setAttribute('aria-labelledby', 'agent-settings-restart-title');
   dialog.innerHTML =
-    '<form method="dialog"><h2 id="agent-settings-restart-title">Agent’ler yeniden başlatılsın mı?</h2><p data-message></p><p>Devam eden işler kesilir ve yeni ayarlarla yeni oturumlar açılır. Kayıtlı ilerleme korunur.</p><div class="workspace-dialog-actions"><button class="quiet" value="later" autofocus>Daha sonra</button><button class="primary" value="restart">Yeniden başlat</button></div></form>';
+    '<form method="dialog"><h2 id="agent-settings-restart-title">Restart the agents?</h2><p data-message></p><p>Work in progress is interrupted and new sessions open with the new settings. Saved progress is kept.</p><div class="workspace-dialog-actions"><button class="quiet" value="later" autofocus>Later</button><button class="primary" value="restart">Restart</button></div></form>';
   document.body.append(dialog);
   return (count) =>
     new Promise((resolve) => {
       dialog.querySelector('[data-message]').textContent =
-        `Ayarlar kaydedildi. Bu çalışma alanındaki ${count} açık agent yeniden başlatılsın mı?`;
+        `Settings saved. Restart the ${count} open agent${count === 1 ? '' : 's'} in this workspace?`;
       dialog.returnValue = 'later';
       dialog.addEventListener('close', () => resolve(dialog.returnValue === 'restart'), {
         once: true,

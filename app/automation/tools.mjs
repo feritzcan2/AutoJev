@@ -161,7 +161,7 @@ export const automationTools = [
   ),
   tool(
     'reply_to_user',
-    'Save a concise Turkish assistant message. Ask only unanswered questions or explain the next step.',
+    'Save a concise English assistant message. Ask only unanswered questions or explain the next step.',
     {message: str},
   ),
   tool(

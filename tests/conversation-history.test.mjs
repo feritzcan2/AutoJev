@@ -84,11 +84,11 @@ test('new and resumed chat inputs contain only the pinned request, with history 
   assert.equal(JSON.parse(result.content[0].text).entries[0].id, old.id);
   await assert.rejects(
     flow.call('foreign', run.id, 'get_workspace_history', {kind: 'messages'}),
-    /geçersiz/,
+    /Invalid/,
   );
   await assert.rejects(
     flow.call(id, 'foreign', 'get_workspace_history', {kind: 'messages'}),
-    /geçersiz/,
+    /Invalid/,
   );
   // Explicitly requested long profile data still uses exact paged context.
   let page = await flow.call(id, run.id, 'get_automation_context', {section: 'profile'}),
@@ -263,7 +263,7 @@ for (const provider of ['codex', 'opencode'])
     assert.match(second.prompt, /Follow-up question/);
     assert.doesNotMatch(second.prompt, /First question/);
     rejectResume = true;
-    await assert.rejects(launch('Question after repair'), /Oturum korundu/);
+    await assert.rejects(launch('Question after repair'), /session was kept/);
     const failed = db.runs(id).find((run) => run.status === 'running');
     db.finish(id, failed.id, 'failed', 'Resume failed');
     const retried = await launch('Retry');

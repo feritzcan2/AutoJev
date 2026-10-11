@@ -117,18 +117,21 @@ export function recordResultInput(args) {
 export function recordAssessment(db, id, run, input, recordUrl) {
   input = normalizeAssessment(input);
   const a = db.get(id);
-  if (run.revision !== a.revision) throw Error('Profil değişti; güncel bilgilerle yeniden puanla');
+  if (run.revision !== a.revision)
+    throw Error('The profile changed; score again with the current information');
   const score = input?.score,
     status = score === null ? 'unavailable' : 'scored';
   if (!input || (score !== null && (!Number.isInteger(score) || score < 0 || score > 100)))
-    throw Error('Puan 0–100 arasında tam sayı olmalı; değerlendirilemiyorsa score=null kullan');
+    throw Error(
+      'The score must be an integer from 0 to 100; use score=null if it cannot be assessed',
+    );
   if (
     input.eligibility !== undefined &&
     !['verified', 'unverified', 'mismatch'].includes(input.eligibility)
   )
-    throw Error('Zorunlu şart durumu geçersiz');
+    throw Error('Invalid eligibility status');
   const eligibility = score === null ? 'unverified' : (input.eligibility ?? 'unverified'),
-    eligibilityReason = boundedText(input.eligibilityReason ?? '', 'Zorunlu şart gerekçesi', 3000, {
+    eligibilityReason = boundedText(input.eligibilityReason ?? '', 'Eligibility reason', 3000, {
       empty: true,
     });
   const fallback = recordUrl ?? run.sourceUrl;
@@ -142,7 +145,7 @@ export function recordAssessment(db, id, run, input, recordUrl) {
   const lists = Object.fromEntries(
     ['strengths', 'gaps', 'uncertainties'].map((key) => {
       const values = input[key] ?? [];
-      if (!Array.isArray(values) || values.length > 10) throw Error('Puanlama notları geçersiz');
+      if (!Array.isArray(values) || values.length > 10) throw Error('Invalid scoring notes');
       return [key, values.map((value) => boundedText(value, 'Puanlama notu', 3000))];
     }),
   );
@@ -152,7 +155,7 @@ export function recordAssessment(db, id, run, input, recordUrl) {
     scoringVersion: SCORING_VERSION,
     eligibility,
     eligibilityReason,
-    summary: boundedText(input.summary ?? '', 'Puan gerekçesi', 3000, {empty: true}),
+    summary: boundedText(input.summary ?? '', 'Score reason', 3000, {empty: true}),
     evidenceUrl: evidenceUrl ?? '',
     evidence: boundedText(input.evidence ?? '', 'Puanlama notu', 3000, {empty: true}),
     ...lists,
@@ -175,12 +178,12 @@ export function assessmentCells(table, cells, assessment) {
 export function saveRecordScore(db, id, runId, input) {
   const run = db.activeRun(id, runId);
   if (batchScoring(run) && !input.itemId)
-    throw Error('Toplu puanlamada itemId ile atanmış kaydı belirt');
+    throw Error('In batch scoring, name the assigned record with itemId');
   const item = db.result(id, input.itemId ?? run.recordId);
   if (run.recordOperation !== 'score' || !taskHasRecord(run, item.id))
-    throw Error('Puan yalnızca atanmış puanlama görevinde kaydedilebilir');
+    throw Error('A score can only be saved in the assigned scoring task');
   if (item.trial || !['found', 'prepared'].includes(item.status))
-    throw Error('Bu kayıt puanlanamaz');
+    throw Error('This record cannot be scored');
   const assessment = recordAssessment(db, id, run, input, item.url),
     cells = assessmentCells(db.get(id).table, item.cells, assessment);
   return db.putResult({...item, assessment, cells, updatedAt: assessment.scoredAt});

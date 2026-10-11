@@ -31,7 +31,7 @@ try {
   // The first run opens the welcome screen; its chat link creates the job search.
   await page
     .locator('#onboarding')
-    .getByRole('button', {name: 'Sohbetle kurmak istiyorum'})
+    .getByRole('button', {name: 'I want to set it up in a chat'})
     .click();
   await page.waitForFunction(() => document.querySelector('#candidates')?.value);
   const snapshot = await page.evaluate(() =>

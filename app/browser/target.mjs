@@ -1,9 +1,9 @@
 // Keyboard adapter for a current element ref. This only resolves the target;
 // action authority is the automation agent's responsibility.
 export async function pressBrowserTarget(client, jev, args, owner) {
-  if (typeof args.key !== 'string' || !args.key.trim()) throw Error('Tuş gerekli');
+  if (typeof args.key !== 'string' || !args.key.trim()) throw Error('A key is required');
   if (!jev) {
-    if (!/^(?:f\d+)*e\d+$/.test(args.ref)) throw Error('Sayfa gözlemindeki ref gerekli');
+    if (!/^(?:f\d+)*e\d+$/.test(args.ref)) throw Error('A ref from the page observation is required');
     const focused = await client.callTool({
       name: 'browser_evaluate',
       arguments: {
@@ -22,7 +22,7 @@ export async function pressBrowserTarget(client, jev, args, owner) {
       slot.controls?.get(args.ref) ??
       slot.cookieFrameTargets?.get(args.ref);
   if (!saved || saved.owner !== owner || slot.owner !== owner)
-    throw Error('Bu oturumun güncel hedefi gerekli');
+    throw Error('A current target of this session is required');
   let handle = saved.input,
     dispose = false;
   try {

@@ -2,7 +2,7 @@ export function minimumSaveScoreSettings({save}) {
   const element = document.createElement('form');
   element.className = 'automation-save-score-settings';
   element.innerHTML =
-    '<label>Minimum kayıt puanı<input id="automation-save-score-minimum" type="number" min="0" max="100" step="1" placeholder="Kapalı" aria-describedby="automation-save-score-hint"></label><button id="automation-save-score" type="submit" class="quiet">Kaydet</button><small id="automation-save-score-hint">Yeni sonuçlar bu puanın altındaysa kaydedilmez. Değişiklik sonraki kayıttan itibaren uygulanır; boş bırakırsan eleme yapılmaz.</small><span class="minimum-save-score-status" role="status"></span>';
+    '<label>Minimum save score<input id="automation-save-score-minimum" type="number" min="0" max="100" step="1" placeholder="Off" aria-describedby="automation-save-score-hint"></label><button id="automation-save-score" type="submit" class="quiet">Save</button><small id="automation-save-score-hint">New results below this score are not saved. The change applies from the next record on; leave it empty to keep every result.</small><span class="minimum-save-score-status" role="status"></span>';
   const input = element.querySelector('input'),
     button = element.querySelector('button'),
     status = element.querySelector('[role=status]');
@@ -14,7 +14,7 @@ export function minimumSaveScoreSettings({save}) {
   const render = () => {
     input.disabled = saving || busy;
     button.disabled = saving || busy || !dirty;
-    button.textContent = saving ? 'Kaydediliyor…' : 'Kaydet';
+    button.textContent = saving ? 'Saving…' : 'Save';
   };
   input.oninput = () => {
     dirty = input.value !== baseline;
@@ -35,7 +35,7 @@ export function minimumSaveScoreSettings({save}) {
         baseline = String(saved.criteria.save_score_threshold ?? '');
         input.value = baseline;
         dirty = false;
-        status.textContent = 'Kaydedildi.';
+        status.textContent = 'Saved.';
       }
     } catch (error) {
       if (owner === id) status.textContent = error.message;

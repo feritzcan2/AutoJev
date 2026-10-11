@@ -69,7 +69,7 @@ test('missing, malformed and incomplete tool responses do not become valid listi
     {content: [{type: 'text', text: '# Backend engineer\n## Job Description\n'}]},
     {content: []},
   ])
-    await assert.rejects(readHimalayasDetail(url, {fetch: transport(result)}), /okunamadı/);
+    await assert.rejects(readHimalayasDetail(url, {fetch: transport(result)}), /could not be read/);
 });
 test('detail requests are cancellable and a never-completing connection times out', async () => {
   const controller = new AbortController();

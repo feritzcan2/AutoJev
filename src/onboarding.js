@@ -10,9 +10,13 @@ const providerOrder = ['claude', 'codex', 'opencode'];
 const reviewFields = ['preferences', 'country', 'location', 'constraints', 'application_facts'];
 const readinessIds = ['chrome', 'chrome-profile', 'chrome-debug', 'jev', 'failed'];
 const modes = [
-  ['observe', 'Bul ve bildir', 'Uygun ilanları bulur ve puanlar; başvuru göndermez.'],
-  ['prepare', 'Bul, başvuruyu bana bırak', 'Sen "Başvur" dediğinde başvurur.'],
-  ['auto', 'Otomatik uygula', 'Uygun bulduğu ilanlara kendisi başvurur.'],
+  [
+    'observe',
+    'Find and notify',
+    'Finds and scores suitable listings; does not submit applications.',
+  ],
+  ['prepare', 'Find, leave applying to me', 'Applies when you say "Apply".'],
+  ['auto', 'Apply automatically', 'Applies to suitable listings on its own.'],
 ];
 const flagKey = (id) => 'onboarding:' + id;
 
@@ -53,14 +57,14 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
   root.hidden = true;
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-modal', 'true');
-  root.setAttribute('aria-label', 'İş aramasına başla');
+  root.setAttribute('aria-label', 'Start a job search');
   document.body.append(root);
   const head = el('header', null, 'onboarding-head'),
     steps = el('ol', null, 'onboarding-steps'),
     card = el('section', null, 'onboarding-card'),
     error = el('p', null, 'onboarding-error');
   head.append(el('b', 'AutoJev', 'onboarding-brand'), steps);
-  for (const label of ['CV', 'Profil', 'Başlat']) steps.append(el('li', label));
+  for (const label of ['CV', 'Profile', 'Start']) steps.append(el('li', label));
   error.setAttribute('role', 'alert');
   error.hidden = true;
   root.append(head, card, error);
@@ -195,21 +199,32 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
 
   function startStep() {
     const intro = [
-      el('h1', 'İş aramanı CV’nle başlatalım'),
+      el('h1', 'Let’s start your job search from your CV'),
       el(
         'p',
-        'CV’ni seç. Agent profilini CV’den çıkarır; sen kontrol edip aramayı başlatırsın.',
+        'Choose your CV. The agent builds your profile from it; you review it and start the search.',
         'onboarding-lead',
       ),
     ];
     const agents = el('fieldset', null, 'onboarding-agents');
-    agents.append(el('legend', 'Hangi AI agent çalışsın?'), el('div', null, 'authorization'));
-    const pick = button('CV seç', () => attempt(pickCv), 'primary onboarding-cv');
+    agents.append(el('legend', 'Which AI agent should run?'), el('div', null, 'authorization'));
+    const notes = el('label', 'Notes for the agent (optional)', 'onboarding-notes'),
+      input = el('textarea');
+    input.name = 'notes';
+    input.maxLength = 12000;
+    input.placeholder =
+      'Where do you want to work, which roles, remote or on-site, salary, start date, anything your CV does not say.';
+    notes.append(input);
+    const pick = button('Choose CV', () => attempt(pickCv), 'primary onboarding-cv');
     pick.dataset.action = 'pick-cv';
-    const hint = el('small', 'PDF, DOCX veya TXT. Dosya bu bilgisayarda kalır.', 'onboarding-hint');
+    const hint = el(
+      'small',
+      'PDF, DOCX or TXT. The file stays on this computer; your notes go to the agent with it.',
+      'onboarding-hint',
+    );
     const links = el('div', null, 'onboarding-links');
-    links.append(button('Sohbetle kurmak istiyorum', () => attempt(skip), 'link'));
-    return [...intro, agents, pick, hint, links];
+    links.append(button('I want to set it up in a chat', () => attempt(skip), 'link'));
+    return [...intro, agents, notes, pick, hint, links];
   }
   function readingStep() {
     const status = el('div', null, 'onboarding-progress');
@@ -217,12 +232,12 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     const attention = el('p', null, 'onboarding-attention');
     attention.hidden = true;
     const links = el('div', null, 'onboarding-links');
-    links.append(button('Agent ekranını aç', () => chat(id), 'link'));
+    links.append(button('Open the agent screen', () => chat(id), 'link'));
     return [
-      el('h1', 'CV’n okunuyor'),
+      el('h1', 'Reading your CV'),
       el(
         'p',
-        'Agent CV’nden profilini çıkarıyor. Bu genelde bir iki dakika sürer; ekran kendiliğinden ilerler.',
+        'The agent is building your profile from your CV. This usually takes a minute or two; the screen moves on by itself.',
         'onboarding-lead',
       ),
       status,
@@ -242,7 +257,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       if (event.target.name === 'country') renderSources(form);
     };
     return [
-      el('h1', 'Profilini kontrol et'),
+      el('h1', 'Review your profile'),
       el('p', null, 'onboarding-reply'),
       el('div', null, 'onboarding-failure'),
       form,
@@ -270,23 +285,23 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
           el(
             'small',
             p.state === 'checking'
-              ? 'Kontrol ediliyor…'
+              ? 'Checking…'
               : p.state === 'ready'
-                ? 'Hazır'
-                : p.detail || 'Kullanılamıyor',
+                ? 'Ready'
+                : p.detail || 'Unavailable',
           ),
         );
         choice.dataset.state = p.state;
         choice.append(input, copy);
         list.append(choice);
       }
-      if (!providers.size) list.append(el('p', 'Agent listesi yükleniyor…', 'onboarding-hint'));
+      if (!providers.size) list.append(el('p', 'Loading the agent list…', 'onboarding-hint'));
       const blocked = !provider || ['checking', 'error'].includes(providers.get(provider)?.state);
       card.querySelector('[data-action=pick-cv]').disabled = busy || blocked;
-      card.querySelector('[data-action=pick-cv]').textContent = busy ? 'CV ekleniyor…' : 'CV seç';
+      card.querySelector('[data-action=pick-cv]').textContent = busy ? 'Adding CV…' : 'Choose CV';
       const links = card.querySelector('.onboarding-links');
       if (cancellable && !links.querySelector('[data-cancel]')) {
-        const leave = button('Vazgeç', () => attempt(leaveOnboarding), 'link');
+        const leave = button('Cancel', () => attempt(leaveOnboarding), 'link');
         leave.dataset.cancel = '';
         links.append(leave);
       }
@@ -295,8 +310,8 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         attention = card.querySelector('.onboarding-attention');
       attention.hidden = !(run?.state === 'AwaitingInput' || run?.usageLimit);
       attention.textContent = run?.usageLimit
-        ? 'Agent kullanım limitine ulaştı. Agent ekranından durumu kontrol et.'
-        : 'Agent devam etmek için terminalde onay bekliyor. Agent ekranını açıp yanıtla.';
+        ? 'The agent reached its usage limit. Check the status on the agent screen.'
+        : 'The agent is waiting for an approval in the terminal to continue. Open the agent screen and answer.';
       tick();
     } else if (step === 'review') updateReview();
   }
@@ -318,13 +333,17 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       latest = data.runs.find((r) => r.kind === 'interview'),
       failed = !interviewRun(data) && ['failed', 'timeout', 'interrupted'].includes(latest?.status);
     card.querySelector('.onboarding-reply').textContent =
-      reply?.text ?? 'Agent’ın doldurduğu bilgileri kontrol et, eksikleri tamamla.';
+      reply?.text ?? 'Check the details the agent filled in and complete anything missing.';
     const failure = card.querySelector('.onboarding-failure');
     failure.replaceChildren();
     if (failed)
       failure.append(
-        el('p', 'Profil CV’den çıkarılamadı: ' + (latest.summary || 'agent tamamlayamadı.')),
-        button('Tekrar dene', () => attempt(readAgain)),
+        el(
+          'p',
+          'Could not build the profile from the CV: ' +
+            (latest.summary || 'the agent could not finish.'),
+        ),
+        button('Try again', () => attempt(readAgain)),
       );
     const form = card.querySelector('.onboarding-form'),
       key = JSON.stringify([a.revision, a.updatedAt]);
@@ -353,12 +372,12 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     };
     const profile = el('div', null, 'onboarding-fields');
     profile.append(
-      text('title', 'Ad soyad', a.title === data.definition?.title ? '' : a.title, {
-        placeholder: 'Adın ve soyadın',
+      text('title', 'Full name', a.title === data.definition?.title ? '' : a.title, {
+        placeholder: 'Your first and last name',
         multiline: false,
       }),
-      text('goal', 'Aradığın iş', a.goal, {
-        placeholder: 'Örn. Berlin’de veya uzaktan kıdemli backend mühendisliği',
+      text('goal', 'The job you are looking for', a.goal, {
+        placeholder: 'E.g. senior backend engineering in Berlin or remote',
         required: true,
       }),
     );
@@ -386,7 +405,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     }
     const mode = el('fieldset', null, 'onboarding-section'),
       choices = el('div', null, 'authorization');
-    mode.append(el('legend', 'Agent’ın yetkisi'), choices);
+    mode.append(el('legend', 'Agent permissions'), choices);
     for (const [value, title, description] of modes) {
       const choice = el('label', null, 'choice'),
         input = el('input'),
@@ -400,12 +419,12 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       choices.append(choice);
     }
     const sources = el('fieldset', null, 'onboarding-section onboarding-sources');
-    sources.append(el('legend', 'Nerede arayalım?'), el('div', null, 'onboarding-checks'));
+    sources.append(el('legend', 'Where should we search?'), el('div', null, 'onboarding-checks'));
     const checks = el('section', null, 'onboarding-readiness');
-    checks.setAttribute('aria-label', 'Başlamadan önce');
+    checks.setAttribute('aria-label', 'Before you start');
     const foot = el('div', null, 'onboarding-foot'),
-      again = button('CV’den yeniden doldur', () => attempt(readAgain)),
-      submit = el('button', 'Kaydet ve aramayı başlat', 'primary');
+      again = button('Refill from CV', () => attempt(readAgain)),
+      submit = el('button', 'Save and start the search', 'primary');
     again.dataset.action = 'read-again';
     submit.type = 'submit';
     foot.append(again, submit);
@@ -438,7 +457,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     for (const group of data.sourceCatalog ?? [])
       for (const choice of group.choices)
         if (country && choice.countries.includes(country))
-          row(choice.url, choice.name, 'Önerilen · ' + choice.label, true);
+          row(choice.url, choice.name, 'Suggested · ' + choice.label, true);
   }
   function renderReadiness(form) {
     const root = form.querySelector('.onboarding-readiness');
@@ -449,7 +468,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     );
     root.hidden = !open.length;
     if (!open.length) return;
-    root.append(el('h2', 'Başlamadan önce'));
+    root.append(el('h2', 'Before you start'));
     for (const check of open) {
       const item = el('div', null, 'onboarding-check');
       item.dataset.state = check.state;
@@ -459,11 +478,11 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
           input = el('input');
         input.type = 'password';
         input.name = 'jevKey';
-        input.placeholder = 'TypeSafe API anahtarı';
+        input.placeholder = 'TypeSafe API key';
         input.autocomplete = 'off';
         key.append(
           input,
-          button('Anahtarı kaydet', () =>
+          button('Save key', () =>
             attempt(async () => {
               await api.saveJevSettings({apiKey: input.value});
               readiness = null;
@@ -475,7 +494,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       }
       root.append(item);
     }
-    root.append(button('Tekrar kontrol et', () => checkReadiness(form), 'link'));
+    root.append(button('Check again', () => checkReadiness(form), 'link'));
   }
   async function checkReadiness(form) {
     const owner = id;
@@ -484,9 +503,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       readiness = await api.readiness({provider: data.automation.agentSettings.provider});
     } catch (failure) {
       readiness = {
-        checks: [
-          {id: 'failed', label: 'Kurulum kontrolü', state: 'error', detail: failure.message},
-        ],
+        checks: [{id: 'failed', label: 'Setup check', state: 'error', detail: failure.message}],
       };
     }
     if (owner === id && form.isConnected) renderReadiness(form);
@@ -511,10 +528,11 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     return id;
   }
   async function pickCv() {
-    const owner = await prepare();
+    const notes = card.querySelector('[name=notes]')?.value ?? '',
+      owner = await prepare();
     if (!(await api.pickDocument(owner))) return;
     localStorage.setItem(flagKey(owner), 'cv');
-    await api.automationOnboarding(owner);
+    await api.automationOnboarding(owner, {notes});
     await load();
   }
   async function readAgain() {
@@ -523,8 +541,11 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     await load();
   }
   async function skip() {
-    const owner = await prepare();
+    const notes = (card.querySelector('[name=notes]')?.value ?? '').trim(),
+      owner = await prepare();
     localStorage.setItem(flagKey(owner), 'skip');
+    // Notes start the chat setup as its first message.
+    if (notes) await api.automationMessage(owner, notes);
     await chat(owner);
     close();
   }
@@ -539,12 +560,11 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     const owner = id,
       f = form.elements;
     const jev = await api.jevSettingsStatus();
-    if (!jev.configured)
-      throw Error(jev.error ?? 'Aramayı başlatmak için TypeSafe API anahtarını kaydet.');
+    if (!jev.configured) throw Error(jev.error ?? 'Save the TypeSafe API key to start the search.');
     const chosen = new Set(
       [...form.querySelectorAll('input[name=source]')].filter((i) => i.checked).map((i) => i.value),
     );
-    if (!chosen.size) throw Error('En az bir kaynak seç.');
+    if (!chosen.size) throw Error('Choose at least one source.');
     for (const source of data.sources)
       if (chosen.has(source.url) !== source.enabled)
         await api.automationSourceSave(owner, source.url, {enabled: chosen.has(source.url)});

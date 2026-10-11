@@ -16,14 +16,14 @@ export function assertDataSchemaVersion(db) {
   const version = db.prepare('PRAGMA user_version').get().user_version;
   if (version > DATA_SCHEMA_VERSION)
     throw Error(
-      'Bu veriler daha yeni bir AutoJev sürümüne ait. Güncel sürümü kur; veriler değiştirilmedi.',
+      'This data belongs to a newer AutoJev version. Install the current version; the data was not changed.',
     );
   if (
     version < MIN_DATA_SCHEMA_VERSION &&
     db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' LIMIT 1").get()
   )
     throw Error(
-      'Bu veriler artık desteklenmeyen eski bir AutoJev sürümüne ait; veriler değiştirilmedi.',
+      'This data belongs to an old AutoJev version that is no longer supported; the data was not changed.',
     );
   return version;
 }
@@ -40,7 +40,7 @@ export function prunePromptLogs(
   } = {},
 ) {
   for (const [name, value] of Object.entries({days, perCandidate, total}))
-    if (!Number.isSafeInteger(value) || value < 1) throw Error(`Geçersiz log sınırı: ${name}`);
+    if (!Number.isSafeInteger(value) || value < 1) throw Error(`Invalid log limit: ${name}`);
   if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='prompts'").get())
     return 0;
   const before = db.prepare('SELECT count(*) AS n FROM prompts').get().n;

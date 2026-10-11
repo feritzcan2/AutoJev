@@ -42,13 +42,13 @@ test('web workspaces show saved messages and the worker’s own run history in t
     [
       ['user', 'Ev arıyorum'],
       ['agent', 'Hangi şehir?'],
-      ['system', 'Çalışma · 3 ilan kaydedildi'],
+      ['system', 'Run · 3 ilan kaydedildi'],
     ],
   );
-  assert.equal(entries[2].label, 'Tamamlandı');
+  assert.equal(entries[2].label, 'Completed');
   assert.deepEqual(
     workerConversation(snapshot, {id: 'worker-2', name: 'Worker 2'}).map((e) => [e.role, e.text]),
-    [['system', 'Çalışma · başka worker']],
+    [['system', 'Run · başka worker']],
   );
 });
 
@@ -66,7 +66,7 @@ test('document notes show the file name, never the internal path', () => {
   };
   assert.deepEqual(
     workerConversation(snapshot, {id: 'main'}).map((e) => [e.role, e.text, e.label]),
-    [['system', 'Belge eklendi: Resume.pdf', 'Belge']],
+    [['system', 'Document added: Resume.pdf', 'Document']],
   );
 });
 
@@ -131,11 +131,11 @@ test('job workspaces turn worker events and sent prompts into a readable transcr
     [
       ['task', 'Berlin’e odaklan'],
       ['agent', 'Kaynağı tarıyorum'],
-      ['system', 'Acme · Dev: ilan bulundu'],
+      ['system', 'Acme · Dev: listing found'],
       ['agent', 'Maaş beklentin?'],
     ],
   );
-  assert.equal(entries[3].label, 'Soru');
+  assert.equal(entries[3].label, 'Question');
   assert.equal(entries[3].pending, true);
 });
 
@@ -163,7 +163,7 @@ test('provider transcripts add the agent’s own words and mark app-sent prompts
   assert.deepEqual(
     entries.map((e) => [e.role, e.text, e.label ?? null]),
     [
-      ['task', 'Görev metni', 'Görev'],
+      ['task', 'Görev metni', 'Task'],
       ['agent', 'Şu an 13. sayfadayım.', null],
       ['user', 'devam et', null],
     ],

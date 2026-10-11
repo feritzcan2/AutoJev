@@ -32,7 +32,7 @@ import {recordMethods} from './store/records.mjs';
 import {runMethods} from './store/runs.mjs';
 const integer = (value, label, min, max) => {
   if (!Number.isInteger(value) || value < min || value > max)
-    throw Error(`${label}: ${min}–${max} arasında tam sayı gerekli`);
+    throw Error(`${label}: a whole number between ${min} and ${max} is required`);
   return value;
 };
 const planKey = (value) =>
@@ -46,10 +46,10 @@ const planKey = (value) =>
   ]);
 function agentSettings(input) {
   if (!['codex', 'claude', 'opencode'].includes(input?.provider))
-    throw Error('Desteklenmeyen sağlayıcı');
+    throw Error('Unsupported provider');
   input = withAgentDefaults(input);
   for (const key of ['model', 'permission', 'reasoning']) boundedText(input[key], key, 120);
-  if (![true, false, null].includes(input.network)) throw Error('Geçersiz ağ ayarı');
+  if (![true, false, null].includes(input.network)) throw Error('Invalid network setting');
   const trialModel = input.trialModel ? boundedText(input.trialModel, 'trialModel', 120) : null;
   return {
     provider: input.provider,
@@ -105,7 +105,7 @@ export class AutomationStore {
   }
   get(id) {
     const a = json(this.db.prepare('SELECT data FROM automations WHERE id=?').get(id));
-    if (!a) throw Error('Otomasyon bulunamadı');
+    if (!a) throw Error('Automation not found');
     delete a.maxActionsTotal;
     delete a.maxActionsPerDay;
     delete a.endAt;
@@ -171,7 +171,7 @@ export class AutomationStore {
   }
   create(templateId, input = {}) {
     const template = this.template(templateId);
-    if (template.kind !== 'web') throw Error('İş arama için aday kurulumunu kullan');
+    if (template.kind !== 'web') throw Error('Use the candidate setup for job search');
     const defaults = template.defaultSources ?? [],
       plan = planInput(template, {
         ...input,
@@ -202,9 +202,14 @@ export class AutomationStore {
     };
     a.table = template.table ? automationTable(template.table) : defaultAutomationTable(templateId);
     this.put(a);
-    this.message(a.id, 'assistant', `Ne yapmak istediğini anlat. ${template.fields[0].question}`, {
-      conversation: true,
-    });
+    this.message(
+      a.id,
+      'assistant',
+      `Describe what you want to do. ${template.fields[0].question}`,
+      {
+        conversation: true,
+      },
+    );
     return a;
   }
   assertIdle(id, {allowConversation = false, allowWaitingConversation = false} = {}) {
@@ -216,7 +221,7 @@ export class AutomationStore {
           !(allowWaitingConversation && conversationWaiting(run)),
       )
     )
-      throw Error('Önce çalışan otomasyonu durdur');
+      throw Error('Stop the running automation first');
   }
   save(id, input, {agent = false, allowConversation = false} = {}) {
     const previous = this.get(id),
@@ -230,12 +235,12 @@ export class AutomationStore {
       a = {...previous, ...plan, updatedAt: this.now()};
     if (agent) {
       if (previous.status === 'enabled')
-        throw Error('Etkin otomasyon kurulum sırasında değiştirilemez');
+        throw Error('An enabled automation cannot be changed during setup');
     } else {
       const mode = input.mode ?? previous.mode;
-      if (!['observe', 'prepare', 'auto'].includes(mode)) throw Error('Geçersiz işlem yetkisi');
+      if (!['observe', 'prepare', 'auto'].includes(mode)) throw Error('Invalid action permission');
       a.mode = mode;
-      for (const [key, label, min, max] of [['intervalMinutes', 'Tarama aralığı', 1, 10080]])
+      for (const [key, label, min, max] of [['intervalMinutes', 'Scan interval', 1, 10080]])
         a[key] = integer(input[key] ?? previous[key], label, min, max);
       if (input.chromeProfile !== undefined) {
         const profile = input.chromeProfile;
@@ -245,20 +250,20 @@ export class AutomationStore {
             typeof profile !== 'object' ||
             !/^[-\w ]{1,100}$/.test(profile.directory ?? ''))
         )
-          throw Error('Geçersiz Chrome profili');
+          throw Error('Invalid Chrome profile');
         a.chromeProfile =
           profile === null
             ? null
             : {
                 directory: profile.directory,
-                name: boundedText(profile.name, 'Chrome profili', 300),
+                name: boundedText(profile.name, 'Chrome profile', 300),
               };
       }
       if (input.agentSettings) a.agentSettings = agentSettings(input.agentSettings);
     }
     if (changed) {
       for (const task of this.store.workspaces.tasks.list(id, {states: ['pending']}))
-        this.store.workspaces.tasks.finish(id, task.id, 'cancelled', 'Plan değişti');
+        this.store.workspaces.tasks.finish(id, task.id, 'cancelled', 'Plan changed');
       a.batchId = null;
       a.sourceState = Object.fromEntries(
         a.sources
@@ -291,7 +296,7 @@ export class AutomationStore {
   }
   saveConversationPlan(id, runId, input) {
     const run = this.activeRun(id, runId);
-    if (run.kind !== 'interview' || !isConversation(run)) throw Error('Sohbet oturumu gerekli');
+    if (run.kind !== 'interview' || !isConversation(run)) throw Error('A chat session is required');
     const onboarding = setupAgentOnboarding(this, id);
     let a = this.get(id);
     const base = a.profileUpdate ? {...a, ...a.profileUpdate.plan} : a,
@@ -316,7 +321,7 @@ export class AutomationStore {
       plan,
       applied: false,
       message:
-        'Taslak kaydedildi. Profil değişiklikleri Çalışma alanı profili, kaynak önerileri Kaynaklar ekranından ayrı ayrı incelenip kaydedilir. Çalışan işler mevcut ayarlarla devam ediyor.',
+        'Draft saved. Profile changes are reviewed and saved on the Workspace profile screen, source suggestions on the Sources screen. Running work continues with the current settings.',
     };
   }
   normalizeSetupAgentSettings(input) {
@@ -329,7 +334,7 @@ export class AutomationStore {
     this.assertIdle(id, {allowWaitingConversation: true, allowConversation});
     const a = this.get(id),
       missing = missingProfileFields(a, this.template(a.templateId));
-    if (missing.length) throw Error('Eksik bilgiler: ' + missing.join(', '));
+    if (missing.length) throw Error('Missing information: ' + missing.join(', '));
     return this.put({...a, reviewedRevision: a.revision, status: 'ready', nextRunAt: null});
   }
   enable(id, {sourceUrl = null} = {}) {
@@ -337,11 +342,11 @@ export class AutomationStore {
     // Enabling the whole workspace still requires idle workers.
     if (!sourceUrl) this.assertIdle(id, {allowConversation: true});
     const a = this.get(id);
-    if (a.reviewedRevision !== a.revision) throw Error('Önce kurulumu kaydet');
+    if (a.reviewedRevision !== a.revision) throw Error('Save the setup first');
     if (sourceUrl && !a.sources.includes(sourceUrl))
-      throw Error('Kaynak bu çalışma alanına ait değil');
+      throw Error('The source does not belong to this workspace');
     if (sourceUrl && a.sourceSettings?.[sourceUrl]?.enabled === false)
-      throw Error('Önce kaynağı aç');
+      throw Error('Turn on the source first');
     return this.put({
       ...a,
       status: 'enabled',
@@ -354,9 +359,9 @@ export class AutomationStore {
   skipTrial(id) {
     this.assertIdle(id);
     const a = this.get(id);
-    if (a.reviewedRevision !== a.revision) throw Error('Önce kurulum kartını kontrol edip kaydet');
+    if (a.reviewedRevision !== a.revision) throw Error('Review and save the setup card first');
     if ((a.questions ?? []).some((q) => q.answer == null))
-      throw Error('Önce kurulum sorularını yanıtla');
+      throw Error('Answer the setup questions first');
     if (automationTrialReady(a)) return a;
     return this.put({
       ...a,
@@ -386,12 +391,12 @@ export class AutomationStore {
   }
   message(id, role, text, context = {}) {
     this.get(id);
-    if (!['user', 'assistant', 'system'].includes(role)) throw Error('Geçersiz mesaj');
+    if (!['user', 'assistant', 'system'].includes(role)) throw Error('Invalid message');
     const m = {
       id: randomUUID(),
       automationId: id,
       role,
-      text: boundedText(text, 'Mesaj', 12000),
+      text: boundedText(text, 'Message', 12000),
       at: this.now(),
       ...context,
     };
@@ -400,7 +405,7 @@ export class AutomationStore {
       .run(m.id, id, JSON.stringify(m));
     return m;
   }
-  // Documents the user added with "Belge ekle"; files agents prepared are not listed.
+  // Documents the user added with "Add document"; files agents prepared are not listed.
   userDocuments(id) {
     return this.db
       .prepare(
@@ -448,7 +453,7 @@ export class AutomationStore {
   }
   run(id) {
     const r = json(this.db.prepare('SELECT data FROM automation_runs WHERE id=?').get(id));
-    if (!r) throw Error('Çalışma bulunamadı');
+    if (!r) throw Error('Run not found');
     return r;
   }
   putRun(run) {
@@ -462,7 +467,7 @@ export class AutomationStore {
   activeRun(automationId, runId) {
     const run = this.run(runId);
     if (run.automationId !== automationId || run.status !== 'running')
-      throw Error('Çalışma oturumu geçersiz');
+      throw Error('Invalid run session');
     return run;
   }
   recover() {
@@ -475,7 +480,7 @@ export class AutomationStore {
         run.automationId,
         run.id,
         'interrupted',
-        'Uygulama kapandı. Kaydedilen sonuçlar korunuyor.',
+        'The app closed. Saved results are kept.',
       );
     }
   }

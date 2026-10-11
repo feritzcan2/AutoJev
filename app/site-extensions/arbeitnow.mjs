@@ -30,13 +30,13 @@ export const isArbeitnowUrl = (value) => {
 // Any address on a site means that site's feed; the page number and the
 // documented visa_sponsorship filter carry over, nothing else.
 export function arbeitnowApiUrl(value) {
-  if (!isArbeitnowUrl(value)) throw Error('Arbeitnow için geçerli bir HTTPS adresi gerekli.');
+  if (!isArbeitnowUrl(value)) throw Error('A valid HTTPS address is required for Arbeitnow.');
   const input = new URL(value),
     page = input.searchParams.get('page') ?? '1',
     visa = input.searchParams.get('visa_sponsorship');
-  if (!/^[1-9]\d{0,5}$/.test(page)) throw Error('Geçersiz Arbeitnow sayfa numarası.');
+  if (!/^[1-9]\d{0,5}$/.test(page)) throw Error('Invalid Arbeitnow page number.');
   if (visa !== null && !['true', 'false'].includes(visa))
-    throw Error('Geçersiz Arbeitnow vize sponsorluğu filtresi.');
+    throw Error('Invalid Arbeitnow visa sponsorship filter.');
   const url = new URL(API_PATH, `https://www.${site(input.hostname)}`);
   if (visa !== null) url.searchParams.set('visa_sponsorship', visa);
   url.searchParams.set('page', page);
@@ -47,14 +47,16 @@ const strings = (value) => (Array.isArray(value) ? value.filter((v) => typeof v 
 const text = (value) => (typeof value === 'string' ? value.trim() : '');
 function jobRecord(job) {
   if (!text(job?.url) || !text(job.title) || !text(job.description))
-    throw Error('Arbeitnow ilan adresi, başlığı veya açıklaması eksik; sayfa tamamlanmadı.');
+    throw Error(
+      'An Arbeitnow listing address, title or description is missing; the page is not complete.',
+    );
   const url = new URL(job.url);
   if (!isArbeitnowUrl(url.href) || !LISTING_PATH.test(url.pathname))
-    throw Error('Arbeitnow ilan adresi doğrulanamadı.');
+    throw Error('The Arbeitnow listing address could not be verified.');
   url.search = '';
   url.hash = '';
   const description = htmlText(job.description);
-  if (!description) throw Error('Arbeitnow ilan açıklaması okunamadı.');
+  if (!description) throw Error('The Arbeitnow listing description could not be read.');
   return {
     url: url.href,
     title: text(job.title).slice(0, 300),
@@ -74,18 +76,20 @@ export function parseArbeitnowPage(value, data) {
   const url = arbeitnowApiUrl(value),
     page = Number(new URL(url).searchParams.get('page'));
   if (!data || !Array.isArray(data.data) || !Number.isSafeInteger(data.meta?.current_page))
-    throw Error('Arbeitnow API yanıt biçimi geçersiz; boş sonuç kabul edilmedi.');
+    throw Error('Invalid Arbeitnow API response format; an empty result was not accepted.');
   if (data.meta.current_page !== page)
-    throw Error('Arbeitnow istenen sayfa yerine farklı bir sayfa döndürdü.');
+    throw Error('Arbeitnow returned a different page than the one requested.');
   const next = data.links?.next ?? null;
   if (next !== null && typeof next !== 'string')
-    throw Error('Arbeitnow devam bağlantısı geçersiz.');
+    throw Error('Invalid Arbeitnow continuation link.');
   // The feed's next link is only the sign that more pages exist; the next
   // address keeps this request's own filter.
   const nextUrl = next ? url.replace(/page=\d+$/, `page=${page + 1}`) : null;
   const jobs = data.data.map(jobRecord);
   if (!jobs.length && nextUrl)
-    throw Error('Arbeitnow sonuçları eksik; boş sayfaya rağmen devam bağlantısı var.');
+    throw Error(
+      'Arbeitnow results are incomplete; there is a continuation link despite an empty page.',
+    );
   return {url, jobs, page, totalPages: null, nextUrl, complete: nextUrl === null};
 }
 
@@ -108,16 +112,16 @@ export async function readArbeitnowPage(
   });
   if (!response.ok) {
     await response.body?.cancel();
-    throw Object.assign(Error(`Arbeitnow API HTTP ${response.status}; tarama tamamlanmadı.`), {
+    throw Object.assign(Error(`Arbeitnow API HTTP ${response.status}; the scan is not complete.`), {
       status: response.status,
     });
   }
   if (!response.headers.get('content-type')?.includes('application/json')) {
     await response.body?.cancel();
-    throw Error('Arbeitnow JSON yerine farklı içerik döndürdü.');
+    throw Error('Arbeitnow returned content other than JSON.');
   }
   const body = await response.text();
-  if (body.length > MAX_BYTES) throw Error('Arbeitnow API sayfası boyut sınırını aştı.');
+  if (body.length > MAX_BYTES) throw Error('The Arbeitnow API page exceeded the size limit.');
   return parseArbeitnowPage(url, JSON.parse(body));
 }
 
@@ -128,7 +132,7 @@ export async function readArbeitnowDetail(
   {fetch = globalThis.fetch, signal = undefined, timeoutMs = 20000} = {},
 ) {
   if (!isArbeitnowUrl(url) || !LISTING_PATH.test(new URL(url).pathname))
-    throw Error('Tekil Arbeitnow ilan adresi gerekli.');
+    throw Error('A single Arbeitnow listing address is required.');
   const response = await fetch(url, {
     headers: READER_HEADERS,
     redirect: 'follow',
@@ -136,11 +140,13 @@ export async function readArbeitnowDetail(
   });
   if (!response.ok) {
     await response.body?.cancel();
-    throw Error(`Arbeitnow ilan sayfası HTTP ${response.status}; adres beklemede tutuluyor.`);
+    throw Error(`Arbeitnow listing page HTTP ${response.status}; the address stays pending.`);
   }
   const job = jobPostingDetail(jobPostingHtml(await response.text()));
   if (!job)
-    throw Error('Arbeitnow ilan sayfasında güncel ilan verisi yok; adres beklemede tutuluyor.');
+    throw Error(
+      'The Arbeitnow listing page has no current listing data; the address stays pending.',
+    );
   return {
     url,
     title: job.title,
@@ -190,8 +196,8 @@ export default {
     filters: [
       {
         param: 'visa_sponsorship',
-        label: 'Vize sponsorluğu',
-        values: {true: 'Yalnızca sponsorluk verenler', false: 'Sponsorluk vermeyenler'},
+        label: 'Visa sponsorship',
+        values: {true: 'Only with sponsorship', false: 'Without sponsorship'},
       },
     ],
     notes:

@@ -116,8 +116,7 @@ export function workspaceTableCall(store, id, name, args) {
         record: project(workspaces.records.get(id, args.itemId)),
       };
     const query = args.query?.trim();
-    if (args.query !== undefined && !query)
-      throw Error('Kayıt araması için boş olmayan bir metin gerekli.');
+    if (args.query !== undefined && !query) throw Error('Record search needs non-empty text.');
     const found = query
       ? workspaces.records.search(id, {query, offset, limit})
       : {
@@ -135,5 +134,5 @@ export function workspaceTableCall(store, id, name, args) {
         'This is a table index. Read get_workspace_records(itemId) for the complete record, proposal, evidence and uncertainties before judging or acting.',
     };
   }
-  throw Error('Bilinmeyen tablo aracı');
+  throw Error('Unknown table tool');
 }

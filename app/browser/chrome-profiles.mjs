@@ -21,7 +21,7 @@ export async function listChromeProfiles({directory = chromeUserDataDirectory()}
     state = JSON.parse(await readFile(path.join(directory, 'Local State'), 'utf8'));
   } catch (error) {
     if (error.code === 'ENOENT') return [];
-    throw Error('Chrome profilleri okunamadı.');
+    throw Error('Could not read the Chrome profiles.');
   }
   return Object.entries(state.profile?.info_cache ?? {})
     .filter(
@@ -31,5 +31,5 @@ export async function listChromeProfiles({directory = chromeUserDataDirectory()}
         profile.name.trim(),
     )
     .map(([directory, profile]) => ({directory, name: profile.name.trim().slice(0, 300)}))
-    .sort((a, b) => a.name.localeCompare(b.name, 'tr'));
+    .sort((a, b) => a.name.localeCompare(b.name, 'en'));
 }

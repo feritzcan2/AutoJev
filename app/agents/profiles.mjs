@@ -32,7 +32,7 @@ export class AgentProfiles {
   register(definitions) {
     for (const definition of definitions) {
       const id = agentProfileId(definition.role);
-      if (this.definitions.has(id)) throw Error('Agent zaten kayıtlı: ' + id);
+      if (this.definitions.has(id)) throw Error('Agent already registered: ' + id);
       this.definitions.set(id, Object.freeze({...definition}));
     }
   }
@@ -43,7 +43,7 @@ export class AgentProfiles {
   }
   get(id, role, settings) {
     const definition = this.definitions.get(agentProfileId(role));
-    if (!definition) throw Error('Agent tanımı bulunamadı: ' + role);
+    if (!definition) throw Error('Agent definition not found: ' + role);
     const workspace = this.workspaces.get(id),
       base = personalAgent(definition, settings ?? workspace.agentSettings),
       saved = this.library(id).agents.find((p) => p.id === base.id);
@@ -69,8 +69,8 @@ export class AgentProfiles {
   async update(id, role, {instructions, expectedRevision}) {
     const previous = this.library(id);
     if (previous.revision !== expectedRevision)
-      throw Error('Agent talimatları değişti. Yenileyip tekrar kaydet.');
-    if (typeof instructions !== 'string') throw Error('Agent talimatı gerekli');
+      throw Error('The agent instructions changed. Refresh and save again.');
+    if (typeof instructions !== 'string') throw Error('Agent instructions are required');
     const profile = {...this.get(id, role), instructions, version: this.get(id, role).version + 1};
     const library = {
       ...previous,
@@ -80,7 +80,7 @@ export class AgentProfiles {
     await this.validate(library);
     // Validation crosses an async boundary. Never overwrite a newer editor's save.
     if (this.library(id).revision !== expectedRevision)
-      throw Error('Agent talimatları değişti. Yenileyip tekrar kaydet.');
+      throw Error('The agent instructions changed. Refresh and save again.');
     const workspace = this.workspaces.get(id);
     workspace.agentLibrary = library;
     this.workspaces.db

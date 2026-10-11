@@ -128,11 +128,11 @@ try {
     const panel = page.locator('[data-automation-pane=sources]'),
       interval = panel.locator('[name=intervalMinutes]');
     await interval.fill(String(minutes));
-    await panel.getByRole('button', {name: 'Tümüne uygula', exact: true}).click();
+    await panel.getByRole('button', {name: 'Apply to all', exact: true}).click();
     await page.waitForFunction(
       (value) =>
         [...document.querySelectorAll('[data-automation-pane=sources] .source-plan b')].every(
-          (n) => n.textContent === `Her ${value} dk`,
+          (n) => n.textContent === `Every ${value} min`,
         ),
       minutes,
     );
@@ -148,7 +148,7 @@ try {
   await page.locator('[data-view=setup-agent]').click();
   await page.getByLabel('Bölge', {exact: true}).selectOption('Ring içi');
   await page.getByLabel('Bütçe', {exact: true}).fill('2000');
-  await page.getByRole('button', {name: 'Yanıtları gönder', exact: true}).click();
+  await page.getByRole('button', {name: 'Send answers', exact: true}).click();
   await page
     .locator('.automation-help-card')
     .filter({hasText: 'Ev tercihleri'})
@@ -159,7 +159,7 @@ try {
   assert.equal(await page.locator('#notice').isVisible(), false);
   await page.locator('[data-view=setup-agent]').click();
   await page.getByLabel('When can you start?', {exact: true}).fill('Next month');
-  await page.getByRole('button', {name: 'Yanıtla', exact: true}).click();
+  await page.getByRole('button', {name: 'Answer', exact: true}).click();
   await page
     .locator('.automation-help-card')
     .filter({hasText: 'When can you start?'})
@@ -171,7 +171,7 @@ try {
     .locator('#automation-criteria [name=criteria-preferences]')
     .waitFor({state: 'visible'});
   await page.locator('[data-view=notifications]').click();
-  await page.getByRole('heading', {name: 'Bildirim ayarları'}).waitFor();
+  await page.getByRole('heading', {name: 'Notification settings'}).waitFor();
   await page.locator('[data-view=background]').click();
   await page.locator('[data-automation-pane=background]').waitFor({state: 'visible'});
   await page.reload();
@@ -184,7 +184,7 @@ try {
     await page.locator('#new').click();
     await page
       .locator('#onboarding')
-      .getByRole('button', {name: 'Sohbetle kurmak istiyorum'})
+      .getByRole('button', {name: 'I want to set it up in a chat'})
       .click();
     assert.equal(
       await page
@@ -203,7 +203,7 @@ try {
     });
     await finish('Form yanıtı bekleniyor');
     await page.getByLabel('Kurulum seçimi', {exact: true}).selectOption('A');
-    await page.getByRole('button', {name: 'Yanıtları gönder', exact: true}).click();
+    await page.getByRole('button', {name: 'Send answers', exact: true}).click();
     await page.waitForFunction(async () => {
       const s = await window.jobloop.workspaceSnapshot(document.querySelector('#candidates').value);
       return s.automation.questions.some((q) => q.answerValues?.choice === 'A');
@@ -223,7 +223,7 @@ try {
       facts: '',
     });
     await tool('reply_to_user', {message: 'Kurulum hazır, profili kontrol edip kaydet.'});
-    await finish('Kurulum taslağı hazır');
+    await finish('Setup draft ready');
     await page.locator('[data-view=profile]').click();
     await page.locator('#automation-plan-form button[type=submit]').click();
     await page.waitForFunction(
@@ -250,7 +250,7 @@ try {
   await page.locator('#new').click();
   await page
     .locator('#onboarding')
-    .getByRole('button', {name: 'Sohbetle kurmak istiyorum'})
+    .getByRole('button', {name: 'I want to set it up in a chat'})
     .click();
   await waitStart(before);
   await tool('ask_workspace_question', {

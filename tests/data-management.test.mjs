@@ -192,7 +192,7 @@ test('portable backup includes committed WAL data and documents while removing c
 
 test('backup rejects live data destinations and candidate symlinks without creating partial exports', async (t) => {
   const f = await fixture(t);
-  await assert.rejects(() => f.create(path.join(f.data, 'bad-backup')), /dışında/);
+  await assert.rejects(() => f.create(path.join(f.data, 'bad-backup')), /outside/);
   await mkdir(path.join(f.base, 'outside'));
   await writeFile(path.join(f.base, 'outside', 'file.txt'), 'external');
   await symlink(
@@ -200,7 +200,7 @@ test('backup rejects live data destinations and candidate symlinks without creat
     path.join(f.candidate, 'linked'),
     process.platform === 'win32' ? 'junction' : 'dir',
   );
-  await assert.rejects(() => f.create(), /sembolik/);
+  await assert.rejects(() => f.create(), /symbolic/);
   assert.equal(
     (await readdir(f.base)).some(
       (name) => name.startsWith('.jobloop-backup-') || name === 'export',
@@ -236,14 +236,14 @@ test('restore validates hashes, traversal, duplicate names, case conflicts, syml
     await writeFile(path.join(f.backup, 'manifest.json'), original);
   }
   await writeFile(path.join(f.backup, 'candidates', f.profile.id, 'CV.pdf'), 'tampered');
-  await assert.rejects(() => inspectBackup(f.backup), /değiştirilmiş/);
+  await assert.rejects(() => inspectBackup(f.backup), /missing or changed/);
   await rm(path.join(f.backup, 'candidates', f.profile.id), {recursive: true});
   await symlink(
     f.candidate,
     path.join(f.backup, 'candidates', f.profile.id),
     process.platform === 'win32' ? 'junction' : 'dir',
   );
-  await assert.rejects(() => inspectBackup(f.backup), /bağlantı/);
+  await assert.rejects(() => inspectBackup(f.backup), /link/);
   assert.equal(
     f.store.db
       .prepare('SELECT data FROM candidates')
@@ -402,10 +402,10 @@ test('newer schema is refused before Store modifies data', async (t) => {
     db = new DatabaseSync(file);
   db.exec(`CREATE TABLE sentinel(value TEXT); PRAGMA user_version=${DATA_SCHEMA_VERSION + 1}`);
   db.close();
-  assert.throws(() => new WorkspaceDatabase(file), /daha yeni/);
+  assert.throws(() => new WorkspaceDatabase(file), /newer/);
   await assert.rejects(
     () => prepareDataUpgrade({dataDirectory: directory, appVersion: '0.1.0'}),
-    /daha yeni/,
+    /newer/,
   );
   const check = new DatabaseSync(file, {readOnly: true});
   assert.deepEqual(
@@ -519,7 +519,7 @@ test('a corrupted pending restore is canceled while current records remain usabl
   await writeFile(path.join(f.data, pending.stageName, 'jobloop.sqlite'), 'corrupt');
   await assert.rejects(
     () => applyPendingRestore({dataDirectory: f.data}),
-    /mevcut veriler korundu/,
+    /existing data was kept/,
   );
   assert.deepEqual(await applyPendingRestore({dataDirectory: f.data}), {restored: false});
   const current = new WorkspaceDatabase(path.join(f.data, 'jobloop.sqlite'));
@@ -542,13 +542,13 @@ test('backup validation rejects unsafe record IDs and executable SQLite objects'
   db.prepare('UPDATE candidates SET data=?').run(JSON.stringify({...f.profile, id: '../outside'}));
   db.close();
   await updateDatabaseHash();
-  await assert.rejects(() => inspectBackup(f.backup), /kimliği/);
+  await assert.rejects(() => inspectBackup(f.backup), /record id/);
   const other = new DatabaseSync(path.join(f.backup, 'jobloop.sqlite'));
   other.prepare('UPDATE candidates SET data=?').run(JSON.stringify(f.profile));
   other.exec('CREATE TRIGGER unexpected AFTER UPDATE ON candidates BEGIN DELETE FROM jobs; END');
   other.close();
   await updateDatabaseHash();
-  await assert.rejects(() => inspectBackup(f.backup), /nesneleri/);
+  await assert.rejects(() => inspectBackup(f.backup), /database objects/);
 });
 
 test('automatic backup retention covers updater snapshots and keeps recovery backups', async (t) => {
@@ -731,7 +731,7 @@ test('optional canonical source metadata stays compatible and rejects relative o
     await manifest(f.backup, (value) => {
       value.canonicalSourceDirectory = canonicalSourceDirectory;
     });
-    await assert.rejects(() => inspectBackup(f.backup), /geçersiz/);
+    await assert.rejects(() => inspectBackup(f.backup), /invalid/i);
   }
 });
 
@@ -744,10 +744,10 @@ test('data from a schema older than the supported minimum is refused unchanged',
     "CREATE TABLE candidates(id TEXT PRIMARY KEY,data TEXT); INSERT INTO candidates VALUES('a','{}'); PRAGMA user_version=39",
   );
   old.close();
-  assert.throws(() => new WorkspaceDatabase(file), /desteklenmeyen eski/);
+  assert.throws(() => new WorkspaceDatabase(file), /no longer supported/);
   await assert.rejects(
     prepareDataUpgrade({dataDirectory: dir, appVersion: 'test'}),
-    /desteklenmeyen eski/,
+    /no longer supported/,
   );
   const check = new DatabaseSync(file);
   assert.equal(check.prepare('PRAGMA user_version').get().user_version, 39);

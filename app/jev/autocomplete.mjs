@@ -5,7 +5,7 @@ const normalize = (value) => value.replace(/\s+/g, ' ').trim();
 const stale = {
   status: 'stale',
   executed: false,
-  message: 'Kontrol kimliği eski; dönen güncel controls listesini kullan. Ek observe gerekmez.',
+  message: 'The control id is stale; use the returned current controls list. No extra observe is needed.',
 };
 
 // Scroll the open popup list one step from an option inside it. Long or
@@ -36,7 +36,7 @@ export async function selectAutocomplete(slot, args, owner, reader) {
   const listOnly = args.option === undefined;
   const saved = slot.controls?.get(args.controlId);
   if (!saved) return stale;
-  if (saved.owner !== owner) throw Error('Bu oturuma ait güncel controlId gerekli.');
+  if (saved.owner !== owner) throw Error('A current controlId of this session is required.');
   const observed = await slot.page.evaluate(reader);
   if (saved.kind !== 'control' || !same(observed?.control_guards?.[saved.node], saved.guard))
     return stale;
@@ -151,7 +151,7 @@ export async function selectAutocomplete(slot, args, owner, reader) {
     do {
       current = await read();
       if (!current || !same(current.identity, initial.identity))
-        return await stop('stale', 'Alan değişti; seçim yapılmadı.');
+        return await stop('stale', 'The field changed; nothing was selected.');
       if (listOnly) {
         if (current.options.length) break;
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -159,7 +159,7 @@ export async function selectAutocomplete(slot, args, owner, reader) {
       }
       const matches = current.options.filter((o) => normalize(o.label) === normalize(args.option));
       if (matches.length > 1)
-        return await stop('ambiguous', 'Birden fazla aynı adlı seçenek var; seçim yapılmadı.', {
+        return await stop('ambiguous', 'More than one option has the same name; nothing was selected.', {
           suggestions: current.options.map((o) => o.label).slice(0, 20),
         });
       if (matches.length === 1) {
@@ -222,7 +222,7 @@ export async function selectAutocomplete(slot, args, owner, reader) {
       }
       const fresh = await read();
       if (!fresh || !same(fresh.identity, initial.identity))
-        return await stop('stale', 'Liste değişti; seçim yapılmadı.');
+        return await stop('stale', 'The list changed; nothing was selected.');
     }
     // Recheck the same option immediately before clicking. Never use an old point.
     const point = await input.evaluate((e, {node, label}) => {
@@ -232,7 +232,7 @@ export async function selectAutocomplete(slot, args, owner, reader) {
       return option ? c.clickPoint(c.nodes.get(node)) : null;
     }, match);
     if (!point)
-      return await stop('stale', 'Seçeneğin üzeri kapalı veya hedef değişti; tıklanmadı.');
+      return await stop('stale', 'The option is covered or the target changed; it was not clicked.');
     clicked = true;
     await slot.page.mouse.click(point.x, point.y);
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -295,7 +295,7 @@ export async function selectAutocomplete(slot, args, owner, reader) {
     if (!verified)
       return await stop(
         'uncertain',
-        'Seçenek tıklandı fakat kabul edildiği doğrulanamadı. Dönen form kanıtını incele; işlemi körlemesine tekrarlama.',
+        'The option was clicked, but its acceptance could not be verified. Inspect the returned form evidence; do not blindly repeat the action.',
         {selection},
       );
     return {
@@ -303,13 +303,13 @@ export async function selectAutocomplete(slot, args, owner, reader) {
       executed: true,
       selection,
       message:
-        'Autocomplete seçimi doğrulandı. Dönen güncel gözlemi kullan; ek observe veya screenshot gerekmez.',
+        'The autocomplete selection was verified. Use the returned current observation; no extra observe or screenshot is needed.',
     };
   } catch (error) {
     if (!wrote && !clicked && !opened) throw error;
     return await stop(
       'uncertain',
-      'Autocomplete sonucu doğrulanamadı; dönen gözlemi incele. ' + error.message.split('\n')[0],
+      'Could not verify the autocomplete result; inspect the returned observation. ' + error.message.split('\n')[0],
     );
   } finally {
     await handle.dispose();

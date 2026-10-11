@@ -98,7 +98,7 @@ test('a failed results page cannot abandon 17 reachable details, then retries on
   // The agent only reports the failure; the app decides it is technical.
   await assert.rejects(
     f.call('finish_automation_run', {status: 'blocked', summary: 'Page empty'}),
-    /17 bekleyen/,
+    /17 reachable pending/,
   );
   await assert.rejects(
     f.call('finish_automation_run', {
@@ -106,7 +106,7 @@ test('a failed results page cannot abandon 17 reachable details, then retries on
       summary: 'Done',
       scan: {complete: true, pendingUrls: [], reason: 'Done', evidenceUrl: next},
     }),
-    /Çözümlenmemiş/,
+    /unresolved page issues/,
   );
   for (const url of details) {
     await f.call('browser_open', {url});
@@ -190,7 +190,7 @@ test('navigation context errors and missing observations retain the attempted pa
       next,
       'Failure belongs to the attempted page, not the previous good page',
     );
-    await assert.rejects(f.call('browser_read'), /Tarama beklemeye alındı/);
+    await assert.rejects(f.call('browser_read'), /The scan is on hold/);
     const run = f.db.run(f.run.id);
     assert.equal(run.status, 'interrupted');
     assert.equal(run.recovery.reason, 'technical_page');
@@ -211,7 +211,7 @@ test('repeated page errors block further attempts to that URL but preserve reach
     await assert.rejects(f.call('browser_open', {url: next}), /ERR_HTTP2/);
   assert.equal(f.db.run(f.run.id).status, 'running');
   const count = f.calls.length;
-  await assert.rejects(f.call('browser_open', {url: next}), /diğer bekleyen/i);
+  await assert.rejects(f.call('browser_open', {url: next}), /other pending/i);
   assert.equal(f.calls.length, count);
   f.error(null);
   await f.call('browser_open', {url: details[0]});

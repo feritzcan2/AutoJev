@@ -101,13 +101,13 @@ export class AgentSessions {
   }
   engineFor(s) {
     if (this.sessions.get(workerKey(s.candidateId, s.workerId)) !== s)
-      throw Error('Agent oturumu değişti.');
+      throw Error('The agent session changed.');
     return this.engines.get(workerKey(s.candidateId, s.workerId));
   }
   ensure(id = 'catalog', worker = MAIN_WORKER) {
     const key = workerKey(id, worker);
     if (this.closing.has(key) || this.failedStops.has(key))
-      throw Error('Önce önceki agent oturumunun kapanması doğrulanmalı.');
+      throw Error('The previous agent session must be verified as closed first.');
     if (!this.engines.has(key)) {
       const instance = this.createEngine(
         engineBinaryPath({root: this.root}),
@@ -175,7 +175,7 @@ export class AgentSessions {
           if (s && ['delivery', 'compaction'].includes(event.event))
             this.audit(s, {
               kind: event.event,
-              title: event.event === 'delivery' ? 'Sağlayıcı teslim durumu' : 'Context sıkıştırma',
+              title: event.event === 'delivery' ? 'Provider delivery status' : 'Context compaction',
               status: 'observed',
               detail: String(event.state),
               parts: [],
@@ -313,7 +313,7 @@ export class AgentSessions {
       this.closing.has(key) ||
       this.failedStops.has(key)
     )
-      throw Error('Bu worker’ın agent oturumu zaten açık veya kapanıyor.');
+      throw Error('This worker’s agent session is already open or closing.');
     this.starting.add(key);
     const resumeId =
       resume && history ? selectResume(history, id, settings, {persistent}) : undefined;
@@ -347,7 +347,7 @@ export class AgentSessions {
         try {
           this.audit(s, {
             kind: 'files',
-            title: 'Oturum talimat dosyaları',
+            title: 'Session instruction files',
             status: 'available',
             parts: await launchInstructionParts(cwd),
           });
@@ -355,10 +355,11 @@ export class AgentSessions {
           this.emit({event: 'instruction-log-error', candidateId: id, error: error.message});
         }
       }
-      if (this.sessions.get(key) !== s) throw Error('Agent başlatılırken oturum kapandı.');
+      if (this.sessions.get(key) !== s)
+        throw Error('The session closed while the agent was starting.');
       this.audit(s, {
         kind: 'launch',
-        title: 'Oturum başlangıç mesajı',
+        title: 'Session start message',
         status: 'requested',
         resumed: Boolean(resumeId),
         parts: [
@@ -370,16 +371,16 @@ export class AgentSessions {
                   'system',
                   agentProfile.instructions,
                   {
-                    when: 'Oturum açılırken sağlayıcının sistem/geliştirici talimatı olarak verilir.',
+                    when: 'Given as the provider’s system/developer instruction when the session opens.',
                   },
                 ),
-                instructionPart('session-agent-profile', 'Agent oturum kaydı', 'system', {
+                instructionPart('session-agent-profile', 'Agent session record', 'system', {
                   session_id: sessionId,
                   agent: agentProfile,
                 }),
               ]
             : []),
-          instructionPart('launch-prompt', 'Başlangıç mesajı', 'system', prompt),
+          instructionPart('launch-prompt', 'Start message', 'system', prompt),
         ],
       });
       const engine = this.ensure(id, worker);
@@ -417,27 +418,28 @@ export class AgentSessions {
       );
       this.audit(s, {
         kind: 'launch_accepted',
-        title: 'Başlatma isteği kabul edildi',
+        title: 'Start request accepted',
         status: 'accepted',
         parts: launch?.providerInstructions
           ? [
               instructionPart(
                 'provider-agent-instructions',
-                'Sağlayıcıya verilen agent talimatı',
+                'Agent instructions given to the provider',
                 'system',
                 launch.providerInstructions,
               ),
             ]
           : [],
       });
-      if (this.sessions.get(key) !== s) throw Error('Agent başlatılırken oturum kapandı.');
+      if (this.sessions.get(key) !== s)
+        throw Error('The session closed while the agent was starting.');
       await engine.request('resize', this.grid(id, worker));
       this.changed(id);
       return {sessionId};
     } catch (error) {
       this.audit(s, {
         kind: 'launch_failed',
-        title: 'Başlatma tamamlanamadı',
+        title: 'Start did not complete',
         status: 'failed',
         detail: error.message,
         parts: [],
@@ -569,19 +571,19 @@ export class AgentSessions {
   }
   async message(id, text, worker = MAIN_WORKER) {
     const s = this.sessions.get(workerKey(id, worker));
-    if (!s) throw Error('Etkin agent bulunamadı.');
+    if (!s) throw Error('No active agent found.');
     this.transcripts.get(workerKey(id, worker))?.appSent.add(String(text).trim());
     this.audit(s, {
       kind: 'message',
-      title: 'Devam mesajı',
+      title: 'Follow-up message',
       status: 'requested',
-      parts: [instructionPart('message', 'Mesaj', 'user', text)],
+      parts: [instructionPart('message', 'Message', 'user', text)],
     });
     try {
       const result = await this.engineFor(s).request('message', {text});
       this.audit(s, {
         kind: 'message_accepted',
-        title: 'Mesaj kuyruğa alındı',
+        title: 'Message queued',
         status: 'accepted',
         parts: [],
       });
@@ -589,7 +591,7 @@ export class AgentSessions {
     } catch (error) {
       this.audit(s, {
         kind: 'message_failed',
-        title: 'Mesaj iletilemedi',
+        title: 'Message could not be delivered',
         status: 'failed',
         detail: error.message,
         parts: [],

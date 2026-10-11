@@ -52,13 +52,13 @@ export function classifyCaptcha({
   if (active.length > 1)
     return {
       state: 'unsupported',
-      reason: 'Birden fazla aktif CAPTCHA var; otomatik çözüm belirsiz.',
+      reason: 'More than one CAPTCHA is active; automatic solving is ambiguous.',
     };
   if (active.length === 1)
     return {
       state: active[0].provider === 'recaptcha' ? 'active' : 'unsupported',
       target: active[0],
-      reason: 'Görünür sağlayıcı challenge alanı ve görsel seçim yönergesi doğrulandı.',
+      reason: 'Verified a visible provider challenge area and image selection instruction.',
     };
   const turnstiles = frames.filter(
     (f) =>
@@ -73,13 +73,13 @@ export function classifyCaptcha({
   if (turnstiles.length > 1)
     return {
       state: 'unsupported',
-      reason: 'Birden fazla aktif Turnstile var; otomatik çözüm belirsiz.',
+      reason: 'More than one Turnstile is active; automatic solving is ambiguous.',
     };
   if (turnstiles.length === 1)
     return {
       state: 'active',
       target: turnstiles[0],
-      reason: 'Turnstile içinde görünür, bekleyen doğrulama kontrolü doğrulandı.',
+      reason: 'Verified a visible, pending verification control inside Turnstile.',
     };
   const unsupported = frames.find(
     (f) =>
@@ -90,13 +90,13 @@ export function classifyCaptcha({
     return {
       state: 'unsupported',
       target: unsupported,
-      reason: 'Görünür doğrulama otomatik çözüm kapsamı dışında.',
+      reason: 'The visible verification is outside the scope of automatic solving.',
     };
   if (
     pendingHosts ||
     frames.some((f) => f.unavailable || (f.visible && (!f.loaded || f.loading || f.dynamic)))
   )
-    return {state: 'unknown', reason: 'Doğrulama alanı henüz okunamadı; yüklenme bekleniyor.'};
+    return {state: 'unknown', reason: 'The verification area could not be read yet; waiting for it to load.'};
   const checked = frames.find(
     (f) =>
       f.visible &&
@@ -110,14 +110,14 @@ export function classifyCaptcha({
   if (checked)
     return {
       state: 'cleared',
-      reason: 'Doğrulama kontrolü tamamlandı; sonraki site yanıtını kontrol et.',
+      reason: 'The verification check completed; check the next site response.',
     };
   const token = frames.find((f) => f.provider === 'turnstile' && f.visible && f.token);
   if (token)
     return {
       state: 'token_present',
       target: token,
-      reason: 'Doğrulama yanıtı var; site kabulünü normal görev akışında doğrula.',
+      reason: 'A verification response exists; verify site acceptance in the normal task flow.',
     };
   if (
     frames.some(
@@ -126,23 +126,23 @@ export function classifyCaptcha({
   )
     return {
       state: 'unknown',
-      reason: 'Turnstile durumu okunamadı; aktif challenge olduğu varsayılmadı.',
+      reason: 'Could not read the Turnstile state; no active challenge was assumed.',
     };
   if (ocr)
     return {
       state: 'active',
       target: ocr,
-      reason: 'Görünür CAPTCHA resmi ile açıkça ilişkili cevap alanı doğrulandı.',
+      reason: 'Verified an answer field clearly tied to a visible CAPTCHA image.',
     };
   if (staleError)
-    return {state: 'error', reason: 'Doğrulama hata metni var; aktif CAPTCHA kanıtı yok.'};
+    return {state: 'error', reason: 'Verification error text is present; there is no evidence of an active CAPTCHA.'};
   if (frames.some((f) => f.visible && !f.invisible))
     return {
       state: loading ? 'checking' : 'idle',
       target: frames.find((f) => f.visible),
-      reason: 'Doğrulama widget’ı var; aktif challenge kanıtı yok.',
+      reason: 'A verification widget is present; there is no evidence of an active challenge.',
     };
-  if (loading && frames.length) return {state: 'checking', reason: 'Doğrulama yükleniyor.'};
+  if (loading && frames.length) return {state: 'checking', reason: 'The verification is loading.'};
   return {state: 'none'};
 }
 
@@ -265,7 +265,7 @@ export async function detectCaptcha(page, {timeoutMs = 1500} = {}) {
     entry = {};
     inFlight.set(page, entry);
     entry.promise = readCaptcha(page)
-      .catch(() => ({state: 'unknown', reason: 'Doğrulama alanı okunamadı.', frames: []}))
+      .catch(() => ({state: 'unknown', reason: 'Could not read the verification area.', frames: []}))
       .finally(() => {
         if (inFlight.get(page) === entry) inFlight.delete(page);
       });
@@ -279,7 +279,7 @@ export async function detectCaptcha(page, {timeoutMs = 1500} = {}) {
           () =>
             resolve({
               state: 'unknown',
-              reason: 'Doğrulama alanının yanıtı bekleniyor.',
+              reason: 'Waiting for the verification area to respond.',
               frames: [],
             }),
           timeoutMs,
@@ -308,7 +308,7 @@ async function readCaptcha(page) {
   if (barrier === 'ip_block')
     return {
       state: 'unsupported',
-      reason: 'IP erişim engeli; aktif CAPTCHA olduğu varsayılmadı.',
+      reason: 'IP access block; no active CAPTCHA was assumed.',
       documentId: main.origin,
       pageUrl: main.url,
       frames: [],
@@ -486,10 +486,10 @@ async function readCaptcha(page) {
       result = {
         state: 'unsupported',
         reason: target?.managed
-          ? 'Cloudflare Challenge verisi saptandı; proxy gerektiren çözüm bu oturumda yapılandırılmadı.'
+          ? 'Cloudflare Challenge data detected; solving that needs a proxy is not configured in this session.'
           : target?.provider === 'turnstile'
-            ? 'Turnstile görülüyor; sitekey ve doğrulanmış sonuç callback’i birlikte okunamadı. API isteği gönderilmedi.'
-            : 'Erişim engelinde API ile çözülebilen aktif bir widget doğrulanamadı.',
+            ? 'Turnstile is visible; the sitekey and the verified result callback could not both be read. No API request was sent.'
+            : 'Could not verify an active widget on the access barrier that the API can solve.',
       };
   }
   const target = result.target;

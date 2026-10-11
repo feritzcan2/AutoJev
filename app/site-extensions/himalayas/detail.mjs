@@ -3,10 +3,10 @@ import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/st
 import {isHimalayasUrl} from './api.mjs';
 
 export function himalayasJobIdentity(value) {
-  if (!isHimalayasUrl(value)) throw Error('Geçersiz Himalayas ilan adresi.');
+  if (!isHimalayasUrl(value)) throw Error('Invalid Himalayas listing address.');
   const url = new URL(value),
     match = url.pathname.match(/^\/companies\/([^/]+)\/jobs\/([^/]+)\/?$/);
-  if (!match) throw Error('Tekil Himalayas ilan adresi gerekli.');
+  if (!match) throw Error('A single Himalayas listing address is required.');
   return {company_slug: decodeURIComponent(match[1]), job_slug: decodeURIComponent(match[2])};
 }
 
@@ -44,7 +44,7 @@ export async function readHimalayasDetail(
     const title = text.match(/^#\s+([^\n]+)/)?.[1]?.trim(),
       description = text.split(/^## Job Description\s*$/m)[1]?.trim();
     if (result.isError || !title || !description || text.length > 8 * 1024 * 1024)
-      throw Error('Himalayas tekil ilan detayı okunamadı; adres beklemede tutuluyor.');
+      throw Error('The Himalayas listing detail could not be read; the address stays pending.');
     return {url, title: title.slice(0, 300), description: text, company: '', location: ''};
   } finally {
     await client.close();

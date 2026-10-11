@@ -96,13 +96,13 @@ const search = (url) => ({
   filters: [
     {
       param: 'fromage',
-      label: 'Yayın tarihi',
-      values: {1: 'Son 24 saat', 3: 'Son 3 gün', 7: 'Son 7 gün', 14: 'Son 14 gün'},
+      label: 'Posted',
+      values: {1: 'Last 24 hours', 3: 'Last 3 days', 7: 'Last 7 days', 14: 'Last 14 days'},
     },
     {
       param: 'radius',
-      label: 'Yarıçap (km)',
-      values: {0: 'Yalnız şehir', 10: '10', 25: '25', 50: '50'},
+      label: 'Radius (km)',
+      values: {0: 'City only', 10: '10', 25: '25', 50: '50'},
     },
   ],
   notes:

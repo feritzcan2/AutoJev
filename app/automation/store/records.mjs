@@ -63,7 +63,7 @@ export const recordMethods = {
   result(id, itemId) {
     this.get(id);
     const item = this.store.workspaces.records.identities.resolve(id, itemId);
-    if (!item) throw Error('Sonuç bu otomasyona ait değil');
+    if (!item) throw Error('The result does not belong to this automation');
     return item;
   },
   putResult(item, {run = undefined} = {}) {
@@ -71,7 +71,8 @@ export const recordMethods = {
       const previous = this.store.workspaces.records.find(item.automationId, item.key),
         saved = this.store.workspaces.records.put(item.automationId, item.key, item);
       if (run) {
-        if (run.automationId !== item.automationId) throw Error('Çalışma bu otomasyona ait değil');
+        if (run.automationId !== item.automationId)
+          throw Error('The run does not belong to this automation');
         this.putRun(run);
       }
       if (!previous) this.event(item.automationId, 'job_found', {id: saved.id});
@@ -94,13 +95,13 @@ export const recordMethods = {
   setSaveScoreThreshold(id, value, {expectedValue = undefined} = {}) {
     return this.store.workspaces.tasks.atomic(() => {
       if (value != null && !['string', 'number'].includes(typeof value))
-        throw Error('Minimum kayıt puanı: 0–100 arası tam sayı gerekli.');
+        throw Error('Minimum record score: a whole number between 0 and 100 is required.');
       const a = this.get(id),
         threshold = saveScoreThreshold({save_score_threshold: value}),
         next = threshold === null ? '' : String(threshold),
         current = String(a.criteria.save_score_threshold ?? '');
       if (expectedValue !== undefined && String(expectedValue ?? '') !== current)
-        throw Error('Minimum kayıt puanı değişti. Güncel değeri inceleyip yeniden kaydet.');
+        throw Error('The minimum record score changed. Review the current value and save again.');
       if (next === current) return a;
       const updated = {
         ...a,
@@ -138,9 +139,9 @@ export const recordMethods = {
       research = run.kind === 'interview';
     if (collectorRun(this.get(id), run)) input = collectorFindingInput(this, run, input);
     if (run.recordOperation === 'score')
-      throw Error('Puanlama sonucunu record_automation_score ile kaydet');
+      throw Error('Save the scoring result with record_automation_score');
     const observedUrl = webUrl(input.url),
-      inputKey = boundedText(input.key ?? observedUrl, 'Sonuç anahtarı', 2000);
+      inputKey = boundedText(input.key ?? observedUrl, 'Result key', 2000);
     let url = observedUrl,
       key = this.template(this.get(id).templateId).records.identity === 'url' ? url : inputKey;
     let previous = this.store.workspaces.records.find(id, key),
@@ -178,9 +179,9 @@ export const recordMethods = {
         (previous && previous.id !== assigned.id) ||
         (keyRecord && keyRecord.id !== assigned.id)
       )
-        throw Error('Kayıt bu göreve ait değil');
+        throw Error('The record does not belong to this task');
       if (inputKey !== assigned.key && inputKey !== observedUrl)
-        throw Error('Atanmış kaydın mevcut key değerini kullan');
+        throw Error('Use the existing key of the assigned record');
       previous = assigned;
       key = assigned.key;
       url = assigned.url;
@@ -192,26 +193,25 @@ export const recordMethods = {
           : actionUrl;
       const destinationRecord = destination && this.store.workspaces.records.find(id, destination);
       if (destinationRecord && destinationRecord.id !== assigned.id)
-        throw Error('Kayıt bu göreve ait değil');
+        throw Error('The record does not belong to this task');
       if (
         destination &&
         destination !== url &&
         destination !== actionUrl &&
         !run.observations.some((o) => o.url === destination && o.evidence?.trim())
       )
-        throw Error('İşlem adresini önce bu görevde tarayıcıda gözlemle');
+        throw Error('Observe the action address in the browser in this task first');
       actionUrl = destination === url ? undefined : destination;
     } else if (input.recordId || input.actionUrl)
-      throw Error('Kayıt ID ve işlem adresi yalnızca atanmış kayıt görevinde kullanılabilir');
+      throw Error('A record ID and action address are only allowed in an assigned record task');
     if (research) {
       if (input.proposal?.trim())
-        throw Error(
-          'Kurulumda yalnızca araştırma örneği kaydedilebilir; işlem taslağı oluşturulamaz',
-        );
+        throw Error('Setup can only save a research sample; it cannot create an action draft');
       if (!run.observations.some((o) => o.url === url && o.evidence.trim()))
-        throw Error('Araştırma örneğinin detay sayfasını önce bu turda gözlemle');
+        throw Error('Observe the research sample’s detail page in this round first');
     }
-    if (run.recordId && run.recordId !== previous?.id) throw Error('Kayıt bu göreve ait değil');
+    if (run.recordId && run.recordId !== previous?.id)
+      throw Error('The record does not belong to this task');
     // Neither setup nor trial samples may demote live records or clear approvals.
     if (run.kind !== 'run' && previous && !previous.trial) return {...previous, duplicate: true};
     if (previous && ['completed', 'uncertain', 'executing', 'dismissed'].includes(previous.status))
@@ -224,9 +224,9 @@ export const recordMethods = {
         .some((t) => taskHasRecord(t, previous.id))
     )
       return {...previous, duplicate: true};
-    const title = boundedText(input.title, 'Başlık', 300),
-      summary = boundedText(input.summary, 'Özet', 6000),
-      proposal = boundedText(input.proposal ?? previous?.proposal ?? '', 'İşlem taslağı', 12000, {
+    const title = boundedText(input.title, 'Title', 300),
+      summary = boundedText(input.summary, 'Summary', 6000),
+      proposal = boundedText(input.proposal ?? previous?.proposal ?? '', 'Action draft', 12000, {
         empty: true,
       });
     const digest = createHash('sha256')
@@ -239,7 +239,7 @@ export const recordMethods = {
       findOperation(this.template(this.get(id).templateId), run.operation) &&
       operationFor(this.template(this.get(id).templateId), run.operation).effect === 'read'
     )
-      throw Error('Bu adım yalnızca gözlem ve değerlendirme yapabilir');
+      throw Error('This step can only observe and assess');
     const cells = input.cells === undefined ? {} : automationCells(input.cells, this.get(id).table);
     const scoring = this.template(this.get(id).templateId).recordOperations?.score;
     if (
@@ -250,9 +250,9 @@ export const recordMethods = {
       (!previous || previous.trial) &&
       !input.assessment
     )
-      throw Error('Yeni ilanı kaydetmeden önce puanla ve kayıt çağrısında score alanını gönder');
+      throw Error('Score a new listing before saving it and send the score field in the save call');
     if (input.assessment && (run.kind !== 'run' || !scoring))
-      throw Error('Bu görevde uygunluk puanı kaydedilemez');
+      throw Error('A fit score cannot be saved in this task');
     const assessment = input.assessment
       ? recordAssessment(this, id, run, input.assessment, url)
       : previous?.assessment;
@@ -266,7 +266,7 @@ export const recordMethods = {
       assessment?.status === 'scored' &&
       assessment.score < saveThreshold
     ) {
-      const message = `Puan ${assessment.score}/100, minimum kayıt puanı ${saveThreshold}; kaydedilmeden elendi.`;
+      const message = `Score ${assessment.score}/100, minimum record score ${saveThreshold}; excluded without saving.`;
       this.rememberSeenListings(id, run.sourceUrl, [observedUrl, url, ...aliases], message);
       return {
         saved: false,
@@ -339,7 +339,7 @@ export const recordMethods = {
         .list(id, {states: ['pending', 'running', 'reported', 'paused']})
         .some((t) => taskRecordIds(t).some((recordId) => this.result(id, recordId).id === resolved))
     )
-      throw Error('Bu kayıt için işlem sırada veya çalışıyor');
+      throw Error('An action for this record is queued or running');
   },
   // The user confirms outside the app (confirmation mail, portal) that this
   // record was submitted; the app records that without a browser run.
@@ -347,7 +347,7 @@ export const recordMethods = {
     return this.store.workspaces.tasks.atomic(() => {
       const item = this.result(id, itemId);
       if (item.trial || !['found', 'prepared', 'uncertain', 'executing'].includes(item.status))
-        throw Error('Bu kayıt gönderildi olarak işaretlenemez');
+        throw Error('This record cannot be marked as submitted');
       this.assertRecordIdle(id, itemId);
       const at = this.now(),
         a = this.get(id);
@@ -355,7 +355,7 @@ export const recordMethods = {
         ...item,
         status: 'completed',
         approvedDigest: null,
-        evidence: 'Kullanıcı kaydın gönderildiğini onayladı.',
+        evidence: 'The user confirmed the record was submitted.',
         verifiedAt: at,
         updatedAt: at,
       });
@@ -365,7 +365,7 @@ export const recordMethods = {
           q.recordId === item.id && q.answer == null
             ? {
                 ...q,
-                answer: 'Kullanıcı kaydı gönderildi olarak işaretledi.',
+                answer: 'The user marked the record as submitted.',
                 answeredAt: at,
                 resolution: 'record_completed',
               }
@@ -377,7 +377,7 @@ export const recordMethods = {
     });
   },
   star(id, itemId, starred) {
-    if (typeof starred !== 'boolean') throw Error('Geçersiz yıldız durumu');
+    if (typeof starred !== 'boolean') throw Error('Invalid star state');
     const item = this.result(id, itemId);
     return this.putResult({...item, starred});
   },
@@ -391,17 +391,17 @@ export const recordMethods = {
       item.trial ||
       item.revision !== a.revision
     )
-      throw Error('Güncel bir çalışma sonucundaki işlem taslağı gerekli');
+      throw Error('An action draft from a current run result is required');
     return this.putResult({...item, approvedDigest: item.digest});
   },
   dismiss(id, itemId, {stopActive = false} = {}) {
     return this.store.workspaces.tasks.atomic(() => {
       const item = this.result(id, itemId);
       if (['executing', 'completed', 'uncertain'].includes(item.status))
-        throw Error('İşlem geçmişi değiştirilemez');
+        throw Error('Action history cannot be changed');
       if (!stopActive) this.assertRecordIdle(id, item.id);
       return this.excludeRecord(id, item, {
-        summary: 'Kullanıcı bu kaydı eledi. Bu kayıt için işleme devam etme.',
+        summary: 'The user rejected this record. Do not continue working on it.',
         resolution: 'record_dismissed',
         event: 'record_dismissed',
       });
@@ -439,7 +439,7 @@ export const recordMethods = {
           'The quote is not in the current page text. Quote the page sentence that says the listing is gone, word for word.',
         );
       return this.excludeRecord(id, item, {
-        summary: 'Kayıt kaynağında artık mevcut değil: ' + quote,
+        summary: 'The record is no longer available at its source: ' + quote,
         resolution: 'record_closed',
         event: 'record_closed',
         extra: {closed: {at: this.now(), url: proofUrl, evidence: quote, runId}},
@@ -486,8 +486,9 @@ export const recordMethods = {
       findOperation(this.template(a.templateId), run.operation) &&
       operationFor(this.template(a.templateId), run.operation).effect !== 'write'
     )
-      throw Error('Bu görev adımı gönderim yapamaz');
-    if (run.recordId && run.recordId !== itemId) throw Error('Kayıt bu göreve ait değil');
+      throw Error('This task step cannot submit');
+    if (run.recordId && run.recordId !== itemId)
+      throw Error('The record does not belong to this task');
     // A repeated reserve in the same run (after a late field fix) keeps the reservation.
     if (run.actionId === item.id && item.status === 'executing' && item.attemptRunId === runId)
       return {
@@ -501,17 +502,18 @@ export const recordMethods = {
     // runs still need an eligible score and an auto-mode source.
     const explicit = run.recordOperation === 'execute' && run.request?.manual === true;
     if (run.kind !== 'run' || (mode === 'observe' && !explicit))
-      throw Error('Bu çalışma yalnızca gözlem yapabilir');
+      throw Error('This run can only observe');
     if (!explicit) {
-      if (mode !== 'auto') throw Error('Başvuru için kullanıcı isteği gerekli');
-      if (!item.assessment) throw Error('Otomatik başvuru için önce puanla');
+      if (mode !== 'auto') throw Error('Applying requires a user request');
+      if (!item.assessment) throw Error('Score first before applying automatically');
       const error = automaticAssessmentError(item.assessment, a.revision);
       if (error) throw Error(error);
     }
     if (item.trial || !['found', 'prepared'].includes(item.status))
-      throw Error('Bu kayıt gönderilebilir durumda değil');
-    if (run.actionId) throw Error('Önce mevcut işlemin sonucunu doğrula');
-    if (pendingRecordQuestion(a, item)) throw Error('Önce bu işlem için bekleyen soruları yanıtla');
+      throw Error('This record is not in a sendable state');
+    if (run.actionId) throw Error('Verify the result of the current action first');
+    if (pendingRecordQuestion(a, item))
+      throw Error('Answer the pending questions for this action first');
     // Both reservation and attempted state are durable before any browser write.
     this.putResult(
       {
@@ -538,10 +540,11 @@ export const recordMethods = {
       !['completed', 'uncertain', 'not_submitted'].includes(status) ||
       !['executing', 'uncertain'].includes(item.status)
     )
-      throw Error('Doğrulanabilecek işlem bulunamadı');
+      throw Error('No action to verify was found');
     if (item.status === 'executing' && run.actionId !== item.id)
-      throw Error('İşlem bu çalışmaya ait değil');
-    if (run.recordId && run.recordId !== itemId) throw Error('Kayıt bu göreve ait değil');
+      throw Error('The action does not belong to this run');
+    if (run.recordId && run.recordId !== itemId)
+      throw Error('The record does not belong to this task');
     const proofUrl = webUrl(url);
     if (!run.observations.some((o) => o.url === proofUrl && o.at >= (item.attemptedAt ?? 0)))
       throw Error(
@@ -554,7 +557,9 @@ export const recordMethods = {
         item.status !== 'uncertain' ||
         page?.url !== proofUrl
       )
-        throw Error('Gönderilmedi sonucu yalnızca atanmış kayıt doğrulamasında bildirilebilir');
+        throw Error(
+          'A not-submitted result can only be reported in an assigned record verification',
+        );
       const proof = validateNotSubmitted(item, notSubmittedProof, page),
         at = this.now();
       return this.putResult(
@@ -563,7 +568,7 @@ export const recordMethods = {
           status: item.proposal ? 'prepared' : 'found',
           approvedDigest: null,
           requiresReview: true,
-          evidence: boundedText(evidence, 'Sonuç kanıtı', 4000),
+          evidence: boundedText(evidence, 'Result evidence', 4000),
           proofUrl,
           verifiedAt: at,
           notSubmitted: {...proof, at, runId, attemptRunId: item.attemptRunId, digest: item.digest},
@@ -575,7 +580,7 @@ export const recordMethods = {
       {
         ...item,
         status,
-        evidence: boundedText(evidence, 'Sonuç kanıtı', 4000),
+        evidence: boundedText(evidence, 'Result evidence', 4000),
         proofUrl,
         verifiedAt: this.now(),
       },

@@ -25,9 +25,9 @@ export const scanMethods = {
   spendStep(id, runId, {research = false} = {}) {
     const run = this.activeRun(id, runId);
     if (run.kind === 'interview' && !research)
-      throw Error('Kurulum sırasında yalnızca kaynak araştırması yapılabilir');
+      throw Error('Only source research is allowed during setup');
     if (research && run.kind !== 'interview')
-      throw Error('Kaynak araştırması yalnızca kurulum sırasında yapılabilir');
+      throw Error('Source research is only allowed during setup');
     run.browserSteps++;
     this.putRun(run);
   },
@@ -35,13 +35,13 @@ export const scanMethods = {
     return this.store.workspaces.tasks.atomic(() => {
       const run = this.activeRun(id, runId);
       if (run.kind !== 'run' || !run.sourceUrl || run.recordId)
-        throw Error('Sayfa bildirimi yalnızca kaynak taramasında kullanılabilir.');
+        throw Error('Page reports are only available in a source scan.');
       pageProgress = {...pageProgress, url: webUrl(pageProgress.url)};
       if (!(run.navigation ?? []).some((n) => n.url === pageProgress.url))
-        throw Error('Bildirilen sayfa bu görevde gözlenmedi.');
+        throw Error('The reported page was not observed in this task.');
       const reported = reportWorkPage(run, pageProgress),
         scan = withScanWork(run, reported.work, {
-          reason: run.scan?.reason ?? `Son bildirilen sonuç sayfası ${pageProgress.currentPage}.`,
+          reason: run.scan?.reason ?? `Last reported results page ${pageProgress.currentPage}.`,
           evidenceUrl: run.scan?.evidenceUrl ?? pageProgress.url,
         });
       // Observation and resumable work are separate: even a successful recovery
@@ -107,7 +107,7 @@ export const scanMethods = {
   scanWorkRun(id, runId) {
     const run = this.activeRun(id, runId);
     if (run.kind !== 'run' || !run.sourceUrl || run.recordId)
-      throw Error('Tarama kuyruğu yalnızca kaynak görevine aittir.');
+      throw Error('The scan queue belongs only to a source task.');
     return run;
   },
   scanQueue(id, runId, input) {
@@ -152,7 +152,7 @@ export const scanMethods = {
         scanPlan,
         scan: withScanWork(run, work, {
           reason:
-            'Reçeteye göre en yeniden eskiye sıralı panoda art arda bilinen sayfalar; daha eski ilanlar zaten kayıtlı.',
+            'Consecutive known pages on a board the recipe says is sorted newest first; older listings are already recorded.',
           evidenceUrl: url,
         }),
       });
@@ -170,7 +170,7 @@ export const scanMethods = {
         ...run,
         scanPlan,
         scan: withScanWork(run, work, {
-          reason: `Reçetede sıralama bilinmediği için arama ilk ${scanPlan.pageCap} sayfayla sınırlı.`,
+          reason: `The recipe does not know the sort order, so the search is limited to the first ${scanPlan.pageCap} pages.`,
           evidenceUrl: url,
         }),
       });
@@ -181,10 +181,8 @@ export const scanMethods = {
     return this.store.workspaces.tasks.atomic(() => {
       const run = this.scanWorkRun(id, runId);
       if (!Array.isArray(input.pendingUrls) || input.pendingUrls.length > 100)
-        throw Error(
-          'Bir seferde en fazla 100 bekleyen adres ekle; kalanları sonraki çağrıda ekleyebilirsin.',
-        );
-      const reason = boundedText(input.reason, 'Kapsam açıklaması', 2000),
+        throw Error('Add at most 100 pending addresses at a time; add the rest in the next call.');
+      const reason = boundedText(input.reason, 'Coverage explanation', 2000),
         work = updateScanQueue(run, input),
         search = activeSearch(work);
       // Queue updates accept the agent's report. A page is optional and only
@@ -260,9 +258,9 @@ export const scanMethods = {
   knownResults(id, runId, keys) {
     const run = this.activeRun(id, runId);
     if (!run.sourceUrl || run.recordId || !Array.isArray(keys) || keys.length > 100)
-      throw Error('Kaynak taraması için en fazla 100 ilan anahtarı gerekli.');
+      throw Error('A source scan accepts at most 100 listing keys.');
     return keys.map((key) => {
-      boundedText(key, 'İlan anahtarı', 3000);
+      boundedText(key, 'Listing key', 3000);
       const record = this.store.workspaces.records.find(id, key),
         item = record && !record.trial ? record : null;
       return {

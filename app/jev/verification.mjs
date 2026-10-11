@@ -22,7 +22,7 @@ export async function verificationEvidence(page, slot) {
         state: 'checking',
         capability: 'pending',
         evidence:
-          'Önceki CAPTCHA artık görünmüyor; doğrulama sonucu henüz kanıtlanmadı. Mevcut sekmeyi kontrol et.',
+          'The earlier CAPTCHA is no longer visible; the verification result is not proven yet. Check the current tab.',
       };
     if (
       detection.state === 'active' &&
@@ -33,7 +33,7 @@ export async function verificationEvidence(page, slot) {
         state: 'required',
         capability: 'supported',
         checkbox: true,
-        evidence: 'Turnstile içinde görünür doğrulama kutusu. Önce tek tık ile doğrula.',
+        evidence: 'A visible verification checkbox inside Turnstile. Verify with a single click first.',
       };
     if (
       slot.captchaAnswer &&
@@ -57,7 +57,7 @@ export async function verificationEvidence(page, slot) {
       return {
         state: 'checking',
         capability: 'pending',
-        evidence: 'Önceki doğrulama henüz yeniden okunamadı; sayfa yükleniyor.',
+        evidence: 'The earlier verification could not be read again yet; the page is loading.',
       };
   }
   const evidence = await page.evaluate(() => {
@@ -158,7 +158,7 @@ export function updateVerification(slot, evidence, now = Date.now()) {
   if (state.capability === 'pending' && !state.handoff) {
     state.nextAction = 'wait_for_verification';
     state.message =
-      'Doğrulama yükleniyor; çözüldüğü veya CAPTCHA olmadığı varsayılamaz. Mevcut sekmeyi yeniden gözlemle.';
+      'The verification is loading; do not assume it is solved or that there is no CAPTCHA. Observe the current tab again.';
     slot.verification = state;
     return state;
   }

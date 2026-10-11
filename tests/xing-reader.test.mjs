@@ -276,7 +276,7 @@ test('the publication date filter is the only search filter and keeps the placeh
     template,
     'https://www.xing.com/jobs/search?keywords={query}&location={location}&sincePeriod=LAST_WEEK',
   );
-  assert.deepEqual(searchFilterLabels(search, template), ['Yayın tarihi: Son hafta']);
+  assert.deepEqual(searchFilterLabels(search, template), ['Posted: Last week']);
   assert.equal(
     xingRequest(template.replace('{query}', 'x').replace('{location}', 'y')).kind,
     'search',

@@ -201,7 +201,7 @@ export function registerAutomationServices({
   });
   handle('workspace-answer', (id, question, value) => runtime.answer(id, question, value));
   handle('automation-setup', (id) => runtime.setup(id));
-  handle('automation-onboarding', (id) => runtime.onboard(id));
+  handle('automation-onboarding', (id, input) => runtime.onboard(id, input));
   handle('setup-agent-settings', async (id, input) => {
     const settings = {...withAgentDefaults(input), contextRestartTokens: 0};
     await validateSettings(settings);
@@ -247,7 +247,7 @@ export function registerAutomationServices({
     await runtime.tick();
   });
   handle('automation-source-draft', async (id, draftId, accept) => {
-    if (typeof accept !== 'boolean') throw Error('Geçersiz kaynak işlemi');
+    if (typeof accept !== 'boolean') throw Error('Invalid source action');
     db.resolveSourceDraft(id, draftId, accept);
     changed(id);
     await runtime.tick();
@@ -258,14 +258,14 @@ export function registerAutomationServices({
     return a;
   });
   handle('automation-skip-trial', (id) => {
-    if (runtime.slots(id).length) throw Error('Önce çalışan otomasyonu durdur');
+    if (runtime.slots(id).length) throw Error('Stop the running automation first');
     const a = db.skipTrial(id);
     changed(id);
     return a;
   });
   handle('automation-message', (id, text) => runtime.message(id, text));
   handle('automation-run', async (id, kind) => {
-    if (!['trial', 'run'].includes(kind)) throw Error('Geçersiz çalışma');
+    if (!['trial', 'run'].includes(kind)) throw Error('Invalid run');
     return runtime.runOnce(id);
   });
   handle('automation-records-score', (id, itemIds) => runtime.runRecords(id, itemIds));
@@ -313,11 +313,12 @@ export function registerAutomationServices({
     if (!status.ready || runtime.slots(id).length > 0) return status;
     db.assertIdle(id);
     const a = db.get(id);
-    if (!a.sources.length) throw Error('Önce en az bir kaynak adresi kaydet');
+    if (!a.sources.length) throw Error('Save at least one source address first');
     return automationBrowser(browsers).call(id, 'browser_navigate', {url: a.sources[0]}, 'user');
   });
   handle('automation-terminal', async (id, runId) => {
-    if (db.run(runId).automationId !== id) throw Error('Çalışma bu otomasyona ait değil');
+    if (db.run(runId).automationId !== id)
+      throw Error('The run does not belong to this automation');
     return [
       ...(outputs.get(runId) ??
         (await readFile(path.join(data, 'automations', 'runs', runId, 'terminal.log')).catch(() =>
@@ -329,7 +330,7 @@ export function registerAutomationServices({
     const a = db.get(id),
       result = await dialog.showSaveDialog(window(), {
         defaultPath: a.title.replace(/[^\p{L}\p{N} _-]/gu, '') + '.json',
-        filters: [{name: 'Sonuçlar', extensions: ['json']}],
+        filters: [{name: 'Results', extensions: ['json']}],
       });
     if (result.canceled) return;
     await writeFile(

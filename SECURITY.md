@@ -1,19 +1,22 @@
-# Güvenlik bildirimi
+# Security reporting
 
-Güvenlik açığını herkese açık issue’ya yazma. `feritzcan93@gmail.com` adresine
-konusu `JobLoop security` olan bir e-posta gönder. Etkilenen sürümü, işletim
-sistemini, beklenen/gerçek davranışı ve sentetik verilerle tekrar adımlarını ekle.
-CV, aday profili, gerçek şifre, token, tarayıcı çerezi veya oturum kaydı gönderme.
+Do not write about a security vulnerability in a public issue. Send an email with
+the subject `JobLoop security` to `feritzcan93@gmail.com`. Include the affected
+version, operating system, expected/actual behaviour and reproduction steps using
+synthetic data. Do not send CVs, candidate profiles, real passwords, tokens, browser
+cookies or session logs.
 
-Desteklenen düzeltme hedefi son yayımlanan sürümdür. Düzeltme ve açıklama zamanını
-bildirimi yapan kişiyle birlikte planlarız; belirli bir yanıt süresi taahhüt edilmez.
+The supported fix target is the latest released version. We plan the timing of the
+fix and disclosure together with the reporter; no specific response time is
+promised.
 
-JobLoop yalnızca yerel masaüstü arayüzünü açar. Agent MCP bağlantısı loopback
-üzerinden oturuma özel bearer token ve aday/worker kapsamıyla çalışır.
-Telegram erişimi adayın yapılandırdığı bot ve eşleşmiş sohbet üzerinden sağlanır.
-Portal, Telegram ve Jev sırları işletim sistemi anahtarlığıyla şifrelenir;
-anahtarlık kullanılamıyorsa yeni sır kaydedilmez.
+JobLoop only opens a local desktop interface. The agent MCP connection runs over
+loopback with a session-specific bearer token and candidate/worker scope.
+Telegram access goes through the bot configured by the candidate and the paired
+chat. Portal, Telegram and Jev secrets are encrypted with the operating system
+keychain; if the keychain is unavailable, no new secret is saved.
 
-Başvuru otomasyonu, agent sağlayıcısı ve sitelerle bağlantı gerçek kullanıcı
-yetkileriyle çalışır. Adayın verdiği yetkiyi, doğru bilgileri ve hangi işlemlerin
-gönderilebileceğini uygulamadaki görev/başvuru ayarlarında açıkça belirt.
+Application automation, the agent provider and connections to sites run with real
+user permissions. State clearly in the app's task/application settings the
+permission the candidate gives, the correct information, and which actions may be
+submitted.

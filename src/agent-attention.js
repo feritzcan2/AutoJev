@@ -16,9 +16,9 @@ export function terminalAttention(screen, state, provider = 'claude') {
   if (trust)
     return {
       kind: 'trust',
-      title: 'Çalışma alanı için güven onayı bekleniyor',
+      title: 'Waiting for workspace trust approval',
       detail:
-        'Claude Code klasöre erişmek için onay istiyor. Terminaldeki yolu kontrol edip seçimini orada yap.',
+        'Claude Code is asking for permission to access the folder. Check the path in the terminal and make your choice there.',
     };
   const permission =
     /(?:do you want to (?:allow|proceed|approve)|allow .{1,120}\?|permission (?:required|requested)|needs (?:your )?permission)/i.test(
@@ -30,14 +30,14 @@ export function terminalAttention(screen, state, provider = 'claude') {
   if (permission)
     return {
       kind: 'permission',
-      title: 'Agent işlem için onay bekliyor',
-      detail: 'İstenen işlemi terminalde inceleyip karar ver.',
+      title: 'Agent is waiting for approval of an action',
+      detail: 'Review the requested action in the terminal and decide.',
     };
   if (state === 'AwaitingInput')
     return {
       kind: 'input',
-      title: 'Agent giriş veya onay bekliyor',
-      detail: 'Devam etmek için terminaldeki isteği inceleyip yanıtla.',
+      title: 'Agent is waiting for input or approval',
+      detail: 'Review the request in the terminal and answer it to continue.',
     };
   return null;
 }

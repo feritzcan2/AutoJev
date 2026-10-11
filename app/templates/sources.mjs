@@ -18,22 +18,22 @@ export function startingSource(sources = [], url) {
 }
 export function normalizeTemplateSources(input = []) {
   if (!Array.isArray(input) || input.length > TEMPLATE_SOURCE_LIMIT)
-    throw Error(`Template en fazla ${TEMPLATE_SOURCE_LIMIT} başlangıç kaynağı içerebilir`);
+    throw Error(`A template can hold at most ${TEMPLATE_SOURCE_LIMIT} starting sources`);
   const seen = new Set();
   return input.map((source) => {
     if (!source || typeof source !== 'object' || Array.isArray(source))
-      throw Error('Geçersiz kaynak tanımı');
+      throw Error('Invalid source definition');
     let url;
     try {
       url = new URL(source.url);
     } catch {
-      throw Error('Geçersiz template kaynak adresi');
+      throw Error('Invalid template source address');
     }
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
-      throw Error('Template kaynağı kullanıcı bilgisi içermeyen HTTP(S) adresi olmalı');
+      throw Error('A template source must be an HTTP(S) address without user credentials');
     url.hash = '';
     const address = url.href;
-    if (seen.has(address)) throw Error('Template kaynak adresleri benzersiz olmalı');
+    if (seen.has(address)) throw Error('Template source addresses must be unique');
     seen.add(address);
     const name = source.name ?? url.hostname,
       query = source.query ?? '',
@@ -46,22 +46,22 @@ export function normalizeTemplateSources(input = []) {
       typeof query !== 'string' ||
       query.length > 6000
     )
-      throw Error('Geçersiz template kaynak açıklaması');
+      throw Error('Invalid template source description');
     if (
       !Number.isInteger(intervalMinutes) ||
       intervalMinutes < 1 ||
       intervalMinutes > 10080 ||
       typeof enabled !== 'boolean'
     )
-      throw Error('Geçersiz template kaynak zamanlaması');
+      throw Error('Invalid template source schedule');
     const instructions = source.instructions ?? '';
     if (typeof instructions !== 'string' || instructions.length > 6000)
-      throw Error('Kaynak talimatı en fazla 6000 karakter olmalı');
+      throw Error('Source instructions must be at most 6000 characters');
     if (
       source.skill !== undefined &&
       (typeof source.skill !== 'string' || source.skill.length > 60000)
     )
-      throw Error('Kaynak skilli en fazla 60000 karakter olmalı');
+      throw Error('A source skill must be at most 60000 characters');
     const recipe = normalizeSourceRecipe(source.recipe);
     const countries = source.countries ?? [];
     if (
@@ -69,7 +69,7 @@ export function normalizeTemplateSources(input = []) {
       countries.length > 60 ||
       countries.some((c) => typeof c !== 'string' || !/^[A-Z]{2}$/.test(c))
     )
-      throw Error('Kaynak ülkeleri ISO iki harfli kodlar olmalı');
+      throw Error('Source countries must be two-letter ISO codes');
     return {
       url: address,
       name: name.trim(),

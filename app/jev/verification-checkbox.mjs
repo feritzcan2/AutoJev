@@ -112,7 +112,7 @@ export async function captureVerificationTargets(slot) {
 export async function clickVerificationCheckbox(slot, targetId, owner) {
   const t = slot.verificationTargets?.get(targetId);
   if (!t) return null;
-  if (t.owner !== owner) throw Error('Güncel doğrulama hedefi gerekli.');
+  if (t.owner !== owner) throw Error('A current verification target is required.');
   slot.verificationTargets.delete(targetId);
   try {
     if (slot.verificationCheckboxAttempt === t.frame.url())
@@ -120,7 +120,7 @@ export async function clickVerificationCheckbox(slot, targetId, owner) {
         status: 'verification_handoff',
         executed: false,
         message:
-          'Bu doğrulama kutusu bir kez denendi. Tekrarlama; mevcut challenge veya kullanıcı doğrulamasını bekle.',
+          'This verification checkbox was already tried once. Do not repeat it; wait for the current challenge or for the user to verify.',
       };
     if (
       t.url !== slot.page.url() ||
@@ -141,13 +141,13 @@ export async function clickVerificationCheckbox(slot, targetId, owner) {
       status: 'checking',
       executed: true,
       message:
-        'Görünür doğrulama kutusuna bir kez tıklandı. Görsel/sesli challenge çözme veya tekrar tıklama; dönen doğrulama durumunu kontrol et. Bu, başvurunun gönderildiği anlamına gelmez.',
+        'The visible verification checkbox was clicked once. Do not solve an image/audio challenge or click again; check the returned verification state. This does not mean the application was submitted.',
     };
   } catch {
     return {
       status: 'verification_handoff',
       executed: 'unknown',
-      message: 'Doğrulama kutusu tıklaması doğrulanamadı; tekrar deneme.',
+      message: 'Could not verify the verification checkbox click; do not retry.',
     };
   } finally {
     await t.handle.dispose().catch(() => {});

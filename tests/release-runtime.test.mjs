@@ -66,7 +66,7 @@ test('development and Linux deb packages do not initialize an updater', async ()
       env: {},
     });
     assert.equal(manager.snapshot().enabled, false);
-    await assert.rejects(manager.install(), /desteklenmiyor/);
+    await assert.rejects(manager.install(), /not supported/);
   }
 });
 test('installer errors release maintenance whether thrown or emitted asynchronously', async () => {

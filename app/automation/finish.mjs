@@ -27,7 +27,9 @@ export function finishAutomationRun({
 }) {
   const status = args.status;
   if (collecting && status === 'completed' && !active.scan?.complete)
-    throw Error('CLI sayfaları ve Jev/agent incelemesi bitmedi; collect_source_page ile devam et.');
+    throw Error(
+      'CLI pages and the Jev/agent review are not finished; continue with collect_source_page.',
+    );
   if (
     sourceScan(active) &&
     args.stop?.kind === 'access' &&
@@ -45,7 +47,7 @@ export function finishAutomationRun({
     if (sites.size && hasUnblockedScanWork(active, sites))
       throw Object.assign(
         Error(
-          'Erişim engeli yalnızca bildirilen sitelerde. Diğer sitelerde bekleyen ilanlar veya aramalar var; onları işle, engelli adresleri bekleyen kuyrukta bırak.',
+          'The access blocker applies only to the reported sites. Other sites have pending listings or searches; process them and leave the blocked addresses in the pending queue.',
         ),
         {code: 'JEV_WORK_REMAINS'},
       );
@@ -114,12 +116,15 @@ export function finishAutomationRun({
         id,
         {
           text: challenge
-            ? `${item.title ?? item.url}: gönderimden sonra sayfada bir doğrulama (CAPTCHA) çıktı. Chrome'daki açık sekmede doğrulamayı çöz. Sonra onay mesajı görünüyorsa "Gönderildi", form hâlâ duruyorsa "Gönderilmedi" seç.\nAgent notu: ${String(args.summary ?? '').slice(0, 1500)}`
-            : `${item.title ?? item.url} için gönderim sonucu doğrulanamadı.\nAgent notu: ${String(args.summary ?? '').slice(0, 1500)}`,
+            ? `${item.title ?? item.url}: a verification (CAPTCHA) appeared on the page after submitting. Solve it in the open tab in Chrome. Then choose "${OUTCOME_FIELD.options[0]}" if a confirmation message appears, or "${OUTCOME_FIELD.options[1]}" if the form is still there.\nAgent note: ${String(args.summary ?? '').slice(0, 1500)}`
+            : `The submission result for ${item.title ?? item.url} could not be verified.\nAgent note: ${String(args.summary ?? '').slice(0, 1500)}`,
           recordId: item.id,
           fields: [
             challenge
-              ? {...OUTCOME_FIELD, label: 'Doğrulamayı çözdükten sonra: bu kayıt gönderildi mi?'}
+              ? {
+                  ...OUTCOME_FIELD,
+                  label: 'After solving the verification: was this record submitted?',
+                }
               : OUTCOME_FIELD,
           ],
           outcome: true,
@@ -132,30 +137,31 @@ export function finishAutomationRun({
     active.siteWait &&
     db.siteAccess.status('https://' + active.siteWait.site)
   )
-    throw Error('Site için ortak bekleme sürüyor; bu turu blocked olarak bildir.');
+    throw Error('A shared wait for this site is in progress; report this round as blocked.');
   if (active.kind === 'trial' && !active.browserSteps)
     throw Error(
-      'Bu denemede henüz kaynak kontrolü yapılmadı. Önce browser_open ile güncel erişimi kontrol et. Önceki denemenin engel raporu bu tur için kanıt değildir.',
+      'This trial has not checked the source yet. First check current access with browser_open. The previous trial’s blocker report is not evidence for this round.',
     );
   if (status === 'completed' && active.kind === 'run' && active.sourceUrl && !active.recordId) {
     if (Object.keys(active.scanIssues ?? {}).length)
       throw Error(
-        'Çözümlenmemiş sayfa sorunları var. Bu adresleri browser_open ile yeniden aç; yüklenmiyorsa failed bildir, uygulama sonra yeniden dener.',
+        'There are unresolved page issues. Reopen these addresses with browser_open; if they do not load, report failed and the app retries later.',
       );
     // The verified searches decide; agents that saw pages beyond the page
     // budget reported complete:false and were refused in a loop.
     const scan = scanWorkVerified(active)
       ? {...active.scan, complete: true, pendingUrls: []}
       : scanCheckpoint(active, args.scan);
-    if (!scan.complete && args.goalReached) throw Error('Eksik taramada hedefe ulaşıldı denemez');
+    if (!scan.complete && args.goalReached)
+      throw Error('An incomplete scan cannot report the goal as reached');
     if (!scan.complete)
       throw Error(
-        'Kaynak taraması bitmedi. Süre veya adım sınırı yok; aynı görevde kalan sayfaları işlemeye devam et ve complete_scan_search ile kapat. Gerçek erişim engelini blocked olarak bildir.',
+        'The source scan is not finished. There is no time or step limit; keep processing the remaining pages in the same task and close it with complete_scan_search. Report a real access blocker as blocked.',
       );
     scan.completion = validateWorkCompletion(active, scan);
     if (scan.completion === 'cutoff' && args.goalReached)
       throw Error(
-        'Yeni ilan kontrolünün tarih sınırına ulaşması otomasyonun hedefinin bittiği anlamına gelmez.',
+        'Reaching the date cutoff of a new-listing check does not mean the automation goal is finished.',
       );
     db.putRun({...active, scan});
   }

@@ -147,12 +147,12 @@ try {
     },
   );
   await page.locator('.automation-attention-banner').waitFor({state: 'visible'});
-  assert.equal(await page.locator('#agent-nav-status').textContent(), '1 müdahale');
-  await page.getByRole('button', {name: 'Müdahaleleri göster', exact: true}).click();
+  assert.equal(await page.locator('#agent-nav-status').textContent(), '1 issue(s)');
+  await page.getByRole('button', {name: 'Show issues', exact: true}).click();
   const card = page.locator('.automation-help-card');
   await card.waitFor({state: 'visible'});
   assert.match(await card.textContent(), /CAPTCHA/);
-  await card.getByRole('button', {name: 'Sekmeyi göster ↗', exact: true}).click();
+  await card.getByRole('button', {name: 'Show tab ↗', exact: true}).click();
   assert.deepEqual(await app.evaluate(() => globalThis.attentionActions[0]), {
     kind: 'focus',
     id: a.id,
@@ -161,20 +161,20 @@ try {
   await app.evaluate(() => {
     globalThis.attentionTabs = [];
   });
-  await card.getByRole('button', {name: 'Sekmeyi göster ↗', exact: true}).click();
-  await card.getByText(/İlgili açık sekme bulunamadı/).waitFor();
+  await card.getByRole('button', {name: 'Show tab ↗', exact: true}).click();
+  await card.getByText(/The related open tab was not found/).waitFor();
   await app.evaluate((_, source) => {
     globalThis.attentionTabs = [
       {tabId: 'one', url: 'https://auth.example/login', sourceUrl: source},
       {tabId: 'two', url: 'https://homes.example/detail/3', sourceUrl: source},
     ];
   }, source);
-  await card.getByRole('button', {name: 'Sekmeyi göster ↗', exact: true}).click();
+  await card.getByRole('button', {name: 'Show tab ↗', exact: true}).click();
   await card.getByRole('button', {name: 'https://auth.example/login', exact: true}).click();
   assert.equal(await app.evaluate(() => globalThis.attentionActions.at(-1).tabId), 'one');
-  await card.getByRole('button', {name: 'Yanıtla', exact: true}).click();
-  const reply = card.getByRole('textbox', {name: 'Agent’a ne yapması gerektiğini yaz'}),
-    send = card.getByRole('button', {name: 'Gönder', exact: true});
+  await card.getByRole('button', {name: 'Reply', exact: true}).click();
+  const reply = card.getByRole('textbox', {name: 'Tell the agent what to do'}),
+    send = card.getByRole('button', {name: 'Send', exact: true});
   assert.equal(await send.isDisabled(), true);
   await reply.fill('   ');
   assert.equal(await send.isDisabled(), true);
@@ -188,7 +188,7 @@ try {
   });
   await page.screenshot({path: path.join(data, 'attention-reply.png'), fullPage: true});
   await send.click();
-  await card.getByText('Yanıtın agente iletildi.', {exact: true}).waitFor();
+  await card.getByText('Your reply was sent to the agent.', {exact: true}).waitFor();
   assert.equal(await reply.isVisible(), false);
   const replies = await app.evaluate(() =>
     globalThis.attentionActions.filter((a) => a.kind === 'reply'),
@@ -200,13 +200,13 @@ try {
   assert.ok(replies[1].text.includes('CAPTCHA'));
   assert.ok(
     replies[1].text.endsWith(
-      'Kullanıcının talimatı:\nBu kaynağı şimdilik atla, diğer kaynaklarla devam et.',
+      'User instruction:\nBu kaynağı şimdilik atla, diğer kaynaklarla devam et.',
     ),
   );
-  await card.getByRole('button', {name: 'Yanıtla', exact: true}).click();
+  await card.getByRole('button', {name: 'Reply', exact: true}).click();
   assert.equal(await reply.inputValue(), '');
   await reply.fill('Gönderilmeyecek taslak');
-  await card.getByRole('button', {name: 'Vazgeç', exact: true}).click();
+  await card.getByRole('button', {name: 'Cancel', exact: true}).click();
   assert.equal(await reply.isVisible(), false);
   assert.equal(
     await app.evaluate(() => globalThis.attentionActions.filter((a) => a.kind === 'reply').length),
@@ -214,10 +214,10 @@ try {
   );
   await page.screenshot({path: path.join(data, 'attention.png'), fullPage: true});
   const beforeClose = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), a.id);
-  await card.getByRole('button', {name: 'Kapat', exact: true}).click();
+  await card.getByRole('button', {name: 'Close', exact: true}).click();
   await card.waitFor({state: 'detached'});
   await page.locator('.automation-attention-banner').waitFor({state: 'hidden'});
-  assert.notEqual(await page.locator('#agent-nav-status').textContent(), '1 müdahale');
+  assert.notEqual(await page.locator('#agent-nav-status').textContent(), '1 issue(s)');
   const afterClose = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), a.id);
   assert.deepEqual(afterClose.automation.sourceState, beforeClose.automation.sourceState);
   assert.equal(afterClose.automation.status, beforeClose.automation.status);
@@ -231,12 +231,12 @@ try {
   await app.evaluate(() => globalThis.repeatAttentionFailure());
   await page.reload();
   await card.waitFor({state: 'visible'});
-  assert.equal(await page.locator('#agent-nav-status').textContent(), '1 müdahale');
+  assert.equal(await page.locator('#agent-nav-status').textContent(), '1 issue(s)');
   const scheduledAt = Date.now();
-  await card.getByRole('button', {name: '2 saat sonra dene', exact: true}).click();
+  await card.getByRole('button', {name: 'Try in 2 hours', exact: true}).click();
   await card.waitFor({state: 'detached'});
   await page.locator('.automation-attention-banner').waitFor({state: 'hidden'});
-  assert.notEqual(await page.locator('#agent-nav-status').textContent(), '1 müdahale');
+  assert.notEqual(await page.locator('#agent-nav-status').textContent(), '1 issue(s)');
   await page.locator('.automation-retry-plans').waitFor({state: 'visible'});
   assert.equal(await page.locator('.automation-retry-plans').getAttribute('open'), null);
   const scheduled = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), a.id),
@@ -251,7 +251,7 @@ try {
   await page.locator('.automation-retry-plans summary').click();
   await page
     .locator('.automation-retry-plans')
-    .getByRole('button', {name: 'Ertelemeyi iptal et', exact: true})
+    .getByRole('button', {name: 'Cancel postponement', exact: true})
     .click();
   await card.waitFor({state: 'visible'});
   await page.locator('.automation-retry-plans').waitFor({state: 'hidden'});
@@ -261,13 +261,13 @@ try {
     ],
     undefined,
   );
-  await card.getByRole('button', {name: 'Çözdüm, devam et', exact: true}).click();
+  await card.getByRole('button', {name: 'Resolved, continue', exact: true}).click();
   await card.getByText(/kaynak yeniden başlatılamadı/).waitFor();
   assert.equal(await card.isVisible(), true);
   await app.evaluate(() => {
     globalThis.failAttentionRetry = false;
   });
-  await card.getByRole('button', {name: 'Çözdüm, devam et', exact: true}).click();
+  await card.getByRole('button', {name: 'Resolved, continue', exact: true}).click();
   await page.locator('.automation-attention-banner').waitFor({state: 'hidden'});
   const snapshot = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), a.id);
   assert.equal(snapshot.sources.find((s) => s.url === source).blocked, false);
@@ -278,14 +278,14 @@ try {
   assert.ok(retries.every((r) => r.id === a.id && r.source === source));
   await app.evaluate(() => globalThis.collectorAttentionFailure());
   await page.reload();
-  await page.getByRole('button', {name: 'Müdahaleleri göster', exact: true}).click();
+  await page.getByRole('button', {name: 'Show issues', exact: true}).click();
   await card.waitFor({state: 'visible'});
-  assert.equal(await card.getByRole('button', {name: 'Sekmeyi göster ↗', exact: true}).count(), 0);
+  assert.equal(await card.getByRole('button', {name: 'Show tab ↗', exact: true}).count(), 0);
   assert.equal(
-    await card.getByRole('button', {name: 'Taramaya devam et', exact: true}).isVisible(),
+    await card.getByRole('button', {name: 'Continue scan', exact: true}).isVisible(),
     true,
   );
-  assert.doesNotMatch(await card.textContent(), /Chrome|İlgili sekme/);
+  assert.doesNotMatch(await card.textContent(), /Chrome|related tab/);
   await page.screenshot({path: path.join(data, 'collector-attention.png'), fullPage: true});
   assert.deepEqual(errors, []);
   console.log('ATTENTION_CARD_DISMISS_PERSISTENCE_NEW_FAILURE_TAB_CHOOSER_SCOPED_RETRY_PASS', data);

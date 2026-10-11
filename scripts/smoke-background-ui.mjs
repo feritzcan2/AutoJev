@@ -96,28 +96,28 @@ try {
   await history.waitFor({state: 'visible'});
   const found = history.locator('[data-run-id="history-fixture"]');
   await found.waitFor({state: 'visible'});
-  assert.deepEqual(await history.locator('h2').allTextContents(), ['Çalışma geçmişi']);
+  assert.deepEqual(await history.locator('h2').allTextContents(), ['Run history']);
   assert.equal(await history.locator('.run-row').count(), 3);
   assert.ok((await history.textContent()).includes('Berlin ilanları kontrol edildi.'));
-  assert.equal(await found.locator('.run-found').textContent(), 'Bu turda 3 yeni kayıt');
+  assert.equal(await found.locator('.run-found').textContent(), '3 new record(s) this round');
   assert.equal(await found.locator('.run-source').textContent(), 'Berlin ilanları');
   assert.equal(
     await history.locator('[data-run-id="empty-fixture"] .run-found').textContent(),
-    'Bu turda 0 yeni kayıt',
+    '0 new record(s) this round',
   );
   assert.equal(await history.locator('[data-run-id="record-fixture"] .run-found').count(), 0);
-  assert.equal(await found.locator('.run-tokens').textContent(), 'Toplam 13.500 token');
+  assert.equal(await found.locator('.run-tokens').textContent(), '13,500 tokens in total');
   assert.equal(
     await found.locator('.run-tokens').getAttribute('title'),
-    'Agent: 12.000 · Jev: 1.500',
+    'Agent: 12,000 · Jev: 1,500',
   );
   assert.equal(
     await history.locator('[data-run-id="empty-fixture"] .run-tokens').textContent(),
-    'Toplam 0 token',
+    '0 tokens in total',
   );
   assert.equal(
     await history.locator('[data-run-id="record-fixture"] .run-tokens').textContent(),
-    'Token kullanımı bilinmiyor',
+    'Token usage unknown',
   );
   assert.equal(await history.locator('button,form,textarea').count(), 0);
   assert.equal(
@@ -150,14 +150,14 @@ try {
   await page.screenshot({path: path.join(data, 'history.png'), fullPage: true});
   await page.locator('#candidates').selectOption(other.id);
   await page.locator('[data-view=background]').click();
-  await history.getByText('Henüz çalışma yok.', {exact: true}).waitFor();
+  await history.getByText('No runs yet.', {exact: true}).waitFor();
   assert.equal(await history.locator('.run-row').count(), 0);
   await page.locator('#candidates').selectOption(workspace.id);
   await page.locator('[data-view=background]').click();
   await page.reload();
   await history.waitFor({state: 'visible'});
   await history.getByText('Berlin ilanları kontrol edildi.', {exact: true}).waitFor();
-  assert.equal(await found.locator('.run-tokens').textContent(), 'Toplam 13.500 token');
+  assert.equal(await found.locator('.run-tokens').textContent(), '13,500 tokens in total');
   const sqlite = new DatabaseSync(path.join(data, 'jobloop.sqlite'), {readOnly: true});
   try {
     const tables = sqlite

@@ -31,7 +31,7 @@ test('hidden metadata, malformed JSON, changed identity and changed status are n
   ])
     assert.throws(
       () => validateNotSubmitted(item, proof, {url: 'https://portal.test/home', text}),
-      /kanıt|taslak|Atanmış kayıt/,
+      /evidence|draft|assigned record/i,
     );
 });
 

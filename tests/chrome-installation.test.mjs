@@ -77,7 +77,7 @@ test('Chrome debug endpoint stays on loopback and handles Windows line endings',
       '9222\n/devtools/page/example',
     ]) {
       await writeFile(file, content);
-      await assert.rejects(() => existingChromeEndpoint({directory}), /geçersiz/);
+      await assert.rejects(() => existingChromeEndpoint({directory}), /invalid/);
     }
   } finally {
     await rm(directory, {recursive: true, force: true});
@@ -123,7 +123,7 @@ test('launch uses the discovered installation and selected profile as arguments,
     assert.equal(called, 1);
     await assert.rejects(
       () => openChromeWindow('http://127.0.0.1:9999/marker', {directory: '../outside'}, options),
-      /bulunamadı/,
+      /not found/,
     );
     assert.equal(called, 1);
     await assert.rejects(
@@ -133,7 +133,7 @@ test('launch uses the discovered installation and selected profile as arguments,
           {directory: 'Default'},
           {...options, findChromeImpl: async () => null},
         ),
-      /Chrome bulunamadı/,
+      /Chrome was not found/,
     );
   } finally {
     await rm(directory, {recursive: true, force: true});

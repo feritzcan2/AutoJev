@@ -45,14 +45,14 @@ export function queueProfileUpdate(db, id, input, {expectedRevision = undefined}
   const a = db.get(id),
     template = db.template(a.templateId);
   if (expectedRevision !== undefined && expectedRevision !== a.revision)
-    throw Error('Profil değişti. Güncel profili inceleyip yeniden kaydet.');
+    throw Error('The profile changed. Review the current profile and save again.');
   if (
     !input ||
     typeof input !== 'object' ||
     Array.isArray(input) ||
     Object.keys(input).some((key) => !fields.includes(key))
   )
-    throw Error('Geçersiz profil alanı.');
+    throw Error('Invalid profile field.');
   // The board owns this live setting. Profile forms omit it, so preserve the
   // latest saved value even if the profile was opened before it changed.
   if (
@@ -67,9 +67,9 @@ export function queueProfileUpdate(db, id, input, {expectedRevision = undefined}
       criteria: {...input.criteria, save_score_threshold: a.criteria.save_score_threshold},
     };
   const plan = profilePlan({...planInput(template, input, a), mode: input.mode ?? a.mode});
-  if (!['observe', 'prepare', 'auto'].includes(plan.mode)) throw Error('Geçersiz işlem yetkisi');
+  if (!['observe', 'prepare', 'auto'].includes(plan.mode)) throw Error('Invalid action permission');
   const missing = missingProfileFields(plan, template);
-  if (missing.length) throw Error('Eksik bilgiler: ' + missing.join(', '));
+  if (missing.length) throw Error('Missing information: ' + missing.join(', '));
   if (!a.profileUpdate && a.reviewedRevision === a.revision && !profileChanged(plan, a)) return a;
   const {planDraft, ...current} = a;
   return db.put({...current, profileUpdate: {plan, baseRevision: a.revision, savedAt: db.now()}});
@@ -81,7 +81,7 @@ export function applyProfileUpdate(db, id) {
   if (!update) return false;
   if (db.runs(id).some((run) => run.status === 'running' && run.kind !== 'interview')) return false;
   if (update.baseRevision !== a.revision)
-    throw Error('Kaydedilen profilin sürümü değişti. Profili yeniden inceleyip kaydet.');
+    throw Error('The saved profile version changed. Review the profile again and save.');
   return db.store.workspaces.tasks.atomic(() => {
     db.save(id, profilePlan(update.plan), {allowConversation: true});
     db.review(id, {allowConversation: true});

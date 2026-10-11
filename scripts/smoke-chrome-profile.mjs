@@ -124,14 +124,14 @@ try {
       state: 'waiting',
       ready: false,
       message:
-        'Seçili Chrome profili hazır değil. Açılan AutoJev penceresini öne getirip yeniden bağlan.',
+        'The selected Chrome profile is not ready. Bring the opened AutoJev window to the front and reconnect.',
     };
   });
   const waiting = await page.evaluate((id) => window.jobloop.automationBrowser(id), web.id);
   assert.equal(waiting.state, 'waiting');
   assert.equal(waiting.ready, false);
   await page.waitForFunction(() =>
-    document.querySelector('.chrome-status small').textContent.includes('profili hazır değil'),
+    document.querySelector('.chrome-status small').textContent.includes('profile is not ready'),
   );
   await page.screenshot({path: path.join(data, 'chrome-waiting.png')});
   await application.evaluate(() => {

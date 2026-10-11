@@ -39,7 +39,7 @@ impl Engine {
                 if provider=="opencode" {
                     let capability=termloop_agents::discover_capabilities(provider);
                     if capability.available && capability.observation!=termloop_agents::ObservationCapability::LaunchScopedHook {
-                        return Err("AutoJev otomasyonları durum takibi için OpenCode 1.18.33–1.x gerektiriyor. OpenCode v2 için durum takibi ve oturum devamı henüz desteklenmiyor; uyumlu bir 1.x sürümü veya başka bir sağlayıcı seç.".into());
+                        return Err("AutoJev automations need OpenCode 1.18.33–1.x for status tracking. Status tracking and session resume are not yet supported for OpenCode v2; choose a compatible 1.x version or another provider.".into());
                     }
                 }
                 let id=field(v,"sessionId")?;let cwd=field(v,"cwd")?;let directory=field(v,"runtimeDirectory")?;
@@ -118,7 +118,7 @@ impl Engine {
                 let ready=self.terminal.input_readiness_snapshot(&self.id,1).map_err(|e|e.to_string())?.facts();
                 if self.compact.is_some()||runtime.delivery_state().is_some()||self.manual_draft
                     ||state.and_then(|s|compact::submit_key(&self.provider,s)).is_none()||!ready.bracketed_paste_enabled{
-                    return Ok(json!({"deferred":true,"reason":"Terminal komut almaya hazır değil veya kullanıcı girdisi var."}));
+                    return Ok(json!({"deferred":true,"reason":"The terminal is not ready for a command or has pending user input."}));
                 }
                 // begin only fails before a paste was enqueued. Those cases
                 // can safely wait; later transport failures are never retried.

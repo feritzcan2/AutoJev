@@ -39,6 +39,6 @@ test('legacy mail metadata remains portable in saved templates', (t) => {
   ])
     assert.throws(
       () => reusableTemplate({...definition, mail: {...mail, outcomes}}),
-      /posta sonucu/,
+      /mail outcome/,
     );
 });

@@ -176,10 +176,10 @@ test('encrypted settings retain key and daily usage across settings instances an
   s.reserve();
   s.save({apiKey: '', dailyLimit: 2});
   s.reserve();
-  assert.throws(() => s.reserve(), /sınırına/);
+  assert.throws(() => s.reserve(), /limit was reached/);
   const restored = new CaptchaSettings(s.db, {encrypt: s.encrypt, decrypt: s.decrypt, now: s.now});
   assert.equal(restored.used(), 2);
-  assert.throws(() => restored.reserve(), /sınırına/);
+  assert.throws(() => restored.reserve(), /limit was reached/);
   s.now = () => Date.parse('2026-10-04T00:00:00Z');
   s.reserve();
   assert.equal(s.used(), 1);

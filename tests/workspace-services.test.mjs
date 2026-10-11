@@ -163,7 +163,7 @@ test('web workers share restart ordering, ownership checks and removal cleanup',
     });
   const worker = await workspaces.addWorker(web.id),
     foreign = store.workspaces.workers.add(job.id);
-  await assert.rejects(workspaces.startWorker(web.id, foreign.id), /ait değil/);
+  await assert.rejects(workspaces.startWorker(web.id, foreign.id), /does not belong/);
   await workspaces.startWorker(web.id, worker.id);
   assert.equal(launches.length, 1);
   await workspaces.restartWorker(web.id, worker.id);
@@ -174,7 +174,7 @@ test('web workers share restart ordering, ownership checks and removal cleanup',
   assert.equal(runtime.slots(web.id).length, 0);
   await workspaces.removeWorker(web.id, worker.id);
   assert.deepEqual(removed, [[web.id, worker.id]]);
-  await assert.rejects(workspaces.removeWorker(web.id, 'main'), /İlk worker/);
+  await assert.rejects(workspaces.removeWorker(web.id, 'main'), /first worker/);
 });
 
 test('deleting a running automation stops its active worker before removing the workspace', async (t) => {
@@ -244,17 +244,23 @@ test('worker reads and terminal sizing remain scoped during a restart while comm
   assert.equal(workspaces.changing.has(web.id), true);
   assert.equal(workspaces.validateWorker(web.id, worker.id, {mutable: false}).id, worker.id);
   assert.equal(workspaces.validateWorker(web.id, 'main', {mutable: false}).id, 'main');
-  assert.throws(() => workspaces.validateWorker(web.id, foreign.id, {mutable: false}), /ait değil/);
-  assert.throws(() => workspaces.validateWorker('missing', 'main', {mutable: false}), /bulunamadı/);
-  assert.throws(() => workspaces.validateWorker(web.id, worker.id), /güncelleniyor/);
-  assert.throws(() => workspaces.beforeInput(web.id, 'input', worker.id), /güncelleniyor/);
-  assert.throws(() => workspaces.message(web.id, 'message', worker.id), /güncelleniyor/);
+  assert.throws(
+    () => workspaces.validateWorker(web.id, foreign.id, {mutable: false}),
+    /does not belong/,
+  );
+  assert.throws(() => workspaces.validateWorker('missing', 'main', {mutable: false}), /not found/);
+  assert.throws(() => workspaces.validateWorker(web.id, worker.id), /being updated/);
+  assert.throws(() => workspaces.beforeInput(web.id, 'input', worker.id), /being updated/);
+  assert.throws(() => workspaces.message(web.id, 'message', worker.id), /being updated/);
   assert.equal(workspaces.validateWorker(job.id, foreign.id).id, foreign.id);
   finish();
   await restarting;
   assert.equal(workspaces.validateWorker(web.id, worker.id).id, worker.id);
   store.workspaces.workers.remove(web.id, worker.id);
-  assert.throws(() => workspaces.validateWorker(web.id, worker.id, {mutable: false}), /kaldırıldı/);
+  assert.throws(
+    () => workspaces.validateWorker(web.id, worker.id, {mutable: false}),
+    /was removed/,
+  );
 });
 
 test('the same workspace APIs rename, delete, import, preview and open documents for both templates', async (t) => {
@@ -305,15 +311,15 @@ test('the same workspace APIs rename, delete, import, preview and open documents
     await symlink(source, path.join(dir, id, 'outside.txt'));
     await assert.rejects(documents.open(id, 'outside.txt'));
   }
-  await assert.rejects(documents.pick(job.id, {purpose: 'cv'}), /desteklenmiyor/);
-  await assert.rejects(documents.pick(web.id, {purpose: 'cv'}), /desteklenmiyor/);
+  await assert.rejects(documents.pick(job.id, {purpose: 'cv'}), /not supported/);
+  await assert.rejects(documents.pick(web.id, {purpose: 'cv'}), /not supported/);
   picked = null;
   assert.equal(await documents.pick(web.id), null);
   assert.equal(added.length, 2);
   for (const id of [web.id, job.id]) {
     await workspaces.remove(id);
     assert.equal(store.workspaces.has(id), false);
-    assert.throws(() => documents.list(id), /bulunamadı/);
+    assert.throws(() => documents.list(id), /not found/);
   }
   assert.deepEqual(removed, [
     [web.id, 'main'],

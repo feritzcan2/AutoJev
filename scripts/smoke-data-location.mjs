@@ -117,13 +117,13 @@ try {
     dialog.showOpenDialog = async () => ({canceled: false, filePaths: [directory]});
   }, root);
   await page.locator('[data-use-directory]').click();
-  await page.locator('.data-status').filter({hasText: 'jobloop.sqlite bulunamadı'}).waitFor();
+  await page.locator('.data-status').filter({hasText: 'jobloop.sqlite was not found'}).waitFor();
   assert.equal((await page.evaluate(() => window.jobloop.dataStatus())).directory, destination);
   await app.evaluate(
     ({app, dialog}, {existing, marker}) => {
       dialog.showOpenDialog = async (_window, options) => {
         if (
-          options.buttonLabel !== 'Aç ve yeniden başlat' ||
+          options.buttonLabel !== 'Open and restart' ||
           options.properties.join(',') !== 'openDirectory'
         )
           throw Error('Unexpected folder dialog');

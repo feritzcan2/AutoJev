@@ -52,7 +52,7 @@ export function workspaceSwitcher(select) {
   menu.className = 'workspace-switcher-menu';
   menu.id = 'workspace-switcher-menu';
   menu.setAttribute('role', 'menu');
-  menu.setAttribute('aria-label', 'Çalışma alanları');
+  menu.setAttribute('aria-label', 'Workspaces');
   menu.hidden = true;
   trigger.setAttribute('aria-controls', menu.id);
   container.append(trigger);
@@ -111,8 +111,8 @@ export function workspaceSwitcher(select) {
     const list = ordered(),
       current = list.find((item) => item.id === select.value);
     trigger.disabled = select.disabled;
-    label.textContent = current?.title ?? 'Çalışma alanı seç';
-    avatar.textContent = current?.title?.slice(0, 1).toLocaleUpperCase('tr-TR') ?? '↻';
+    label.textContent = current?.title ?? 'Select a workspace';
+    avatar.textContent = current?.title?.slice(0, 1).toLocaleUpperCase('en-GB') ?? '↻';
     menu.replaceChildren();
     for (const [index, item] of list.entries()) {
       const row = document.createElement('button'),
@@ -127,7 +127,7 @@ export function workspaceSwitcher(select) {
       row.setAttribute('aria-current', String(item.id === select.value));
       icon.className = 'workspace-switcher-avatar';
       icon.setAttribute('aria-hidden', 'true');
-      icon.textContent = item.title.slice(0, 1).toLocaleUpperCase('tr-TR');
+      icon.textContent = item.title.slice(0, 1).toLocaleUpperCase('en-GB');
       copy.textContent = item.title;
       hint.className = 'workspace-switcher-hint';
       hint.textContent = index < LIMIT ? `${modifier}${index + 1}` : '';

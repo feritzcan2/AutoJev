@@ -44,7 +44,7 @@ export async function startWithResumeRepair(
     }
     if (!allowFreshFallback)
       throw Error(
-        'Kayıtlı kurulum oturumuna devam edilemedi. Oturum korundu; tekrar deneyebilir veya Yeniden başlat ile yeni bir sohbet açabilirsin. ' +
+        'Could not resume the saved setup session. The session was kept; you can try again or open a new chat with Restart. ' +
           error.message,
       );
     onRepair({fresh: true, replacedResumeId: args.resumeId});

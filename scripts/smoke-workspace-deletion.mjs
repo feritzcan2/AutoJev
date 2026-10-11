@@ -130,7 +130,7 @@ try {
         true,
         selector + ' must stay disabled during deletion',
       );
-    assert.match(await page.locator('#notice').textContent(), /siliniyor/);
+    assert.match(await page.locator('#notice').textContent(), /being deleted/);
     const count = await app.evaluate(() => globalThis.deletions);
     await page.evaluate(() => {
       document.querySelector('#delete-workspace').onclick();
@@ -139,12 +139,12 @@ try {
     assert.equal(await app.evaluate(() => globalThis.deletions), count);
     await app.evaluate(() => globalThis.releaseDeletion());
     await page.waitForFunction(() =>
-      document.querySelector('#notice').textContent.includes('çalışma alanı silindi.'),
+      document.querySelector('#notice').textContent.includes('workspace was deleted.'),
     );
     await app.evaluate(() => globalThis.rejectSnapshot());
     // Flush the late renderer promise before checking the final message.
     await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)));
-    assert.match(await page.locator('#notice').textContent(), /çalışma alanı silindi\./);
+    assert.match(await page.locator('#notice').textContent(), /workspace was deleted\./);
     await page.waitForFunction(
       (id) => ![...document.querySelector('#candidates').options].some((o) => o.value === id),
       workspace.id,

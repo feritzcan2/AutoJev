@@ -1,10 +1,10 @@
 import {setTimeout as delay} from 'node:timers/promises';
 
 const messages = {
-  ERROR_ZERO_BALANCE: 'CapSolver bakiyesi yetersiz.',
-  ERROR_KEY_DOES_NOT_EXIST: 'CapSolver anahtarı kabul edilmedi.',
-  ERROR_CAPTCHA_UNSOLVABLE: 'CapSolver bu doğrulamayı çözemedi.',
-  ERROR_INVALID_TASK_DATA: 'Doğrulama bilgileri CapSolver tarafından kabul edilmedi.',
+  ERROR_ZERO_BALANCE: 'The CapSolver balance is insufficient.',
+  ERROR_KEY_DOES_NOT_EXIST: 'The CapSolver key was not accepted.',
+  ERROR_CAPTCHA_UNSOLVABLE: 'CapSolver could not solve this verification.',
+  ERROR_INVALID_TASK_DATA: 'CapSolver did not accept the verification details.',
 };
 export class CaptchaError extends Error {
   constructor(code, message) {
@@ -33,7 +33,7 @@ export class CapsolverClient {
         await response.body?.cancel().catch(() => {});
         throw new CaptchaError(
           'CAPTCHA_HTTP',
-          `CapSolver bağlantısı tamamlanamadı (HTTP ${response.status}).`,
+          `The CapSolver connection could not be completed (HTTP ${response.status}).`,
         );
       }
       const reader = response.body.getReader(),
@@ -45,7 +45,7 @@ export class CapsolverClient {
           if (done) break;
           size += value.length;
           if (size > 262144)
-            throw new CaptchaError('CAPTCHA_RESPONSE', 'CapSolver yanıtı geçersiz.');
+            throw new CaptchaError('CAPTCHA_RESPONSE', 'The CapSolver response is invalid.');
           parts.push(value);
         }
       } finally {
@@ -55,27 +55,27 @@ export class CapsolverClient {
       try {
         value = JSON.parse(Buffer.concat(parts).toString('utf8'));
       } catch {
-        throw new CaptchaError('CAPTCHA_RESPONSE', 'CapSolver yanıtı okunamadı.');
+        throw new CaptchaError('CAPTCHA_RESPONSE', 'Could not read the CapSolver response.');
       }
       if (!value || typeof value !== 'object' || !Number.isInteger(value.errorId))
-        throw new CaptchaError('CAPTCHA_RESPONSE', 'CapSolver yanıtı geçersiz.');
+        throw new CaptchaError('CAPTCHA_RESPONSE', 'The CapSolver response is invalid.');
       // Never echo server errorDescription: it can contain submitted data/secrets.
       if (value.errorId !== 0)
         throw new CaptchaError(
           Object.hasOwn(messages, value.errorCode) ? value.errorCode : 'CAPTCHA_PROVIDER',
-          messages[value.errorCode] ?? 'CapSolver çözüm isteğini tamamlayamadı.',
+          messages[value.errorCode] ?? 'CapSolver could not complete the solve request.',
         );
       return value;
     } catch (error) {
       signal?.throwIfAborted();
       if (error instanceof CaptchaError) throw error;
-      throw new CaptchaError('CAPTCHA_NETWORK', 'CapSolver bağlantısı zamanında tamamlanamadı.');
+      throw new CaptchaError('CAPTCHA_NETWORK', 'The CapSolver connection did not complete in time.');
     }
   }
   async balance(apiKey, signal) {
     const value = await this.request('getBalance', apiKey, {}, signal);
     if (!Number.isFinite(value.balance) || value.balance < 0)
-      throw new CaptchaError('CAPTCHA_RESPONSE', 'CapSolver bakiye yanıtı geçersiz.');
+      throw new CaptchaError('CAPTCHA_RESPONSE', 'The CapSolver balance response is invalid.');
     return value.balance;
   }
   async solve(apiKey, task, {signal, onTask = () => {}} = {}) {
@@ -85,7 +85,7 @@ export class CapsolverClient {
       signal?.throwIfAborted();
       if (value.status === 'ready') {
         if (!value.solution || typeof value.solution !== 'object')
-          throw new CaptchaError('CAPTCHA_RESPONSE', 'CapSolver çözüm yanıtı geçersiz.');
+          throw new CaptchaError('CAPTCHA_RESPONSE', 'The CapSolver solution response is invalid.');
         return value.solution;
       }
       if (
@@ -94,7 +94,7 @@ export class CapsolverClient {
         typeof value.taskId !== 'string' ||
         value.taskId.length > 200
       )
-        throw new CaptchaError('CAPTCHA_RESPONSE', 'CapSolver görev sonucu alınamadı.');
+        throw new CaptchaError('CAPTCHA_RESPONSE', 'Could not get the CapSolver task result.');
       await delay(this.pollMs, undefined, {signal});
       value = {
         ...(await this.request('getTaskResult', apiKey, {taskId: value.taskId}, signal)),

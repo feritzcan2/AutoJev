@@ -1,6 +1,6 @@
 ---
 name: site-extension
-description: Add or fix a per-site extension (DOM reader, HTTP reader or API collector) so Jev finds a source site's listings and pagination from the site itself and, where possible, reads each listing's own description and facts (company, location, pay) without site chrome. Use when the user wants to add or fix a site extension ("yeni site ekle", "site extension yap", "<site> için extension", a results URL of a new source site).
+description: Add or fix a per-site extension (DOM reader, HTTP reader or API collector) so Jev finds a source site's listings and pagination from the site itself and, where possible, reads each listing's own description and facts (company, location, pay) without site chrome. Use when the user wants to add or fix a site extension ("add a new site", "make a site extension", "extension for <site>", "yeni site ekle", "site extension yap", "<site> için extension", a results URL of a new source site).
 ---
 
 # Adding a site extension
@@ -64,8 +64,8 @@ Ashby, Indeed in 2026-10), a `dom` extension needs no listing reader.
    accepts as `{param, label, values?}` (`values` maps a value to its label,
    without it the filter is free text). The trial agent gets it as
    `assignedSource.siteSearch` and builds the recipe from it instead of
-   guessing; the Kaynaklar editor shows the filters as controls that rewrite
-   the template and a "Site şablonunu kullan" button. Data only: it never
+   guessing; the Sources editor shows the filters as controls that rewrite
+   the template and a "Use site template" button. Data only: it never
    decides which filter a workspace uses. When the agent saves a recipe,
    `siteSearchRecipe` restores the template's fixed (sort) parameters and
    sets `pagination` and `ordering` from `search`; the agent keeps the
@@ -263,9 +263,9 @@ their output.
 
 Tell the user to restart the app (never restart it yourself) and run a scan on
 the source. What to look for:
-- the source's Detay panel: the pending list has no company/category/filter
+- the source's Details panel: the pending list has no company/category/filter
   URLs; page numbers advance as "N / M" and stop at the page budget (15 pages
-  per scan, at least 2 per search); red "Elendi · Kartta" entries appear for
+  per scan, at least 2 per search); red "Rejected · Card" entries appear for
   clearly unrelated titles;
 - with a listing reader: saved records show company and location, and the
   run's `tokenUsage.jevTokens` drops compared with a scan before the change.

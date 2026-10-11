@@ -4,7 +4,7 @@ export const browserWaitResult = () => ({
   status: 'browser_wait',
   nextAction: 'end_turn',
   message:
-    'Chrome bağlantısı uygulama tarafından bekleniyor. Soru, blocked durumu veya görev raporu oluşturma. Turu bitir; bağlantı hazır olunca aynı görev otomatik sürdürülecek.',
+    'The app is waiting for the Chrome connection. Do not create a question, a blocked status or a task report. End the turn; the same task resumes automatically once the connection is ready.',
 });
 export class BrowserConnections {
   constructor({connect, changed = () => {}, now = () => Date.now()}) {
@@ -31,7 +31,7 @@ export class BrowserConnections {
       state: 'waiting',
       ready: false,
       retryAt: this.now() + 2000,
-      message: 'Chrome bağlantısı kesildi. Aynı görev bağlantıyı bekliyor.',
+      message: 'The Chrome connection was lost. The same task is waiting for the connection.',
     });
   }
   prepare(id, {force = false} = {}) {
@@ -52,7 +52,7 @@ export class BrowserConnections {
       state: 'connecting',
       ready: false,
       attempts: attempt,
-      message: 'Chrome bağlantısı kuruluyor…',
+      message: 'Connecting to Chrome…',
     });
     const pending = Promise.resolve()
       .then(() => this.connect(id))

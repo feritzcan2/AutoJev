@@ -308,11 +308,11 @@ test('malformed Jev choices report the failing invariant without echoing source 
   const valid = {choice: 'a', confidence: 0.9, probabilities: {a: 0.9, b: 0.1}},
     choices = {a: 'first', b: 'second'};
   for (const [patch, pattern] of [
-    [{probabilities: {a: 0.3, b: 0.1}}, /toplamı 0.4000/],
-    [{confidence: 2}, /0 ile 1/],
-    [{probabilities: {a: 0.1, b: 0.9}}, /en yüksek/],
-    [{probabilities: {a: 1}}, /alanları/],
-    [{choice: 'private source text'}, /seçenekler arasında/],
+    [{probabilities: {a: 0.3, b: 0.1}}, /sum to 0.4000/],
+    [{confidence: 2}, /between 0 and 1/],
+    [{probabilities: {a: 0.1, b: 0.9}}, /highest probability/],
+    [{probabilities: {a: 1}}, /probability fields/],
+    [{choice: 'private source text'}, /among the offered options/],
   ]) {
     assert.throws(
       () => validateChoice({...valid, ...patch}, choices),

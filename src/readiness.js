@@ -17,9 +17,9 @@ export function readinessPanel(api, root, {getSettings = () => ({})} = {}) {
   }
   root.classList.add('readiness-card');
   const heading = node('div'),
-    title = node('h4', 'Başlamadan önce'),
-    button = node('button', 'Tekrar kontrol et'),
-    summary = node('p', 'Agent ve tarayıcı kurulumu kontrol edilecek.'),
+    title = node('h4', 'Before you start'),
+    button = node('button', 'Check again'),
+    summary = node('p', 'The agent and browser setup will be checked.'),
     list = node('ul');
   heading.className = 'readiness-heading';
   button.type = 'button';
@@ -29,14 +29,14 @@ export function readinessPanel(api, root, {getSettings = () => ({})} = {}) {
   root.append(heading, summary, list);
   function render() {
     button.disabled = busy;
-    button.textContent = busy ? 'Kontrol ediliyor…' : 'Tekrar kontrol et';
+    button.textContent = busy ? 'Checking…' : 'Check again';
     summary.textContent = busy
-      ? 'Agent ve tarayıcı kurulumu kontrol ediliyor…'
+      ? 'Checking the agent and browser setup…'
       : result
         ? result.ready
-          ? 'Kurulum kontrolü tamamlandı. Aşağıdaki bağlantı notlarını gözden geçir.'
-          : 'Başlamak için aşağıdaki eksikleri tamamla.'
-        : 'Agent ve tarayıcı kurulumu kontrol edilecek.';
+          ? 'Setup check complete. Review the connection notes below.'
+          : 'Complete the missing items below to start.'
+        : 'The agent and browser setup will be checked.';
     list.replaceChildren(
       ...(result?.checks ?? []).map((check) => {
         const row = node('li'),
@@ -71,9 +71,9 @@ export function readinessPanel(api, root, {getSettings = () => ({})} = {}) {
           checks: [
             {
               id: 'failed',
-              label: 'Kurulum kontrolü',
+              label: 'Setup check',
               state: 'error',
-              detail: error.message ?? 'Kontrol tamamlanamadı. Tekrar dene.',
+              detail: error.message ?? 'The check could not finish. Try again.',
             },
           ],
         };
@@ -104,9 +104,9 @@ export function readinessPanel(api, root, {getSettings = () => ({})} = {}) {
           checks: [
             {
               id: 'failed',
-              label: 'Kurulum kontrolü',
+              label: 'Setup check',
               state: 'error',
-              detail: error.message ?? 'Ayarlar okunamadı.',
+              detail: error.message ?? 'Settings could not be read.',
             },
           ],
         };
@@ -119,7 +119,7 @@ export function readinessPanel(api, root, {getSettings = () => ({})} = {}) {
       if (!next?.ready)
         throw Error(
           next?.checks.find((check) => check.state === 'error')?.detail ??
-            'Kurulum kontrolünü tamamla.',
+            'Complete the setup check.',
         );
       return next;
     },

@@ -1,7 +1,7 @@
 export const DEFAULT_COMPACT_TOKENS = 150000;
 export function contextCompactTokens(value = DEFAULT_COMPACT_TOKENS) {
   if (!Number.isSafeInteger(value) || value < 0)
-    throw Error('Compaction eşiği 0 (kapalı) veya pozitif bir tam token sayısı olmalı.');
+    throw Error('The compaction threshold must be 0 (off) or a positive whole number of tokens.');
   return value;
 }
 export const compactionPending = (session) =>
@@ -102,7 +102,7 @@ export class ContextCompaction {
     if (c?.state === 'submitted' && c.idleAt != null && this.now() - c.idleAt > 30000)
       this.update(session, {
         state: 'unconfirmed',
-        error: 'Komut gönderildi; compaction başlangıcı doğrulanamadı.',
+        error: 'Command sent; could not verify that compaction started.',
       });
     if (
       !threshold ||

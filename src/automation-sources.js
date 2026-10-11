@@ -8,29 +8,33 @@ import {
 } from '../app/site-extensions/search.mjs';
 import {workspaceSourceTabs} from './workspace-tabs.js';
 
-const modes = {observe: 'Sadece bul', prepare: 'Hazırla, onayımı bekle', auto: 'Otomatik gönder'};
+const modes = {
+  observe: 'Find only',
+  prepare: 'Prepare, wait for my approval',
+  auto: 'Send automatically',
+};
 const paginationLabels = {
-  auto: 'Otomatik tespit',
-  url_param: 'Sayfa parametresi (page=2)',
-  next_link: 'Sonraki bağlantısı',
-  next_click: 'Sonraki düğmesi',
-  load_more: 'Daha fazla yükle',
-  infinite_scroll: 'Sonsuz kaydırma',
-  none: 'Tek sayfa',
+  auto: 'Detect automatically',
+  url_param: 'Page parameter (page=2)',
+  next_link: 'Next link',
+  next_click: 'Next button',
+  load_more: 'Load more',
+  infinite_scroll: 'Infinite scroll',
+  none: 'Single page',
 };
 const methodLabels = {
-  none: 'Henüz yok · deneme turunda öğrenilecek',
-  url_template: 'URL şablonu',
-  search_form: 'Arama formu',
-  discovery: 'Keşif · agent her turda kendisi arar',
+  none: 'None yet · learned in the trial round',
+  url_template: 'URL template',
+  search_form: 'Search form',
+  discovery: 'Discovery · the agent searches itself every round',
 };
 const runOutcomes = {
-  completed: 'Başarılı',
-  failed: 'Başarısız',
-  blocked: 'Engellendi',
-  timeout: 'Süre doldu',
-  interrupted: 'Durduruldu',
-  partial: 'Kısmi tamamlandı',
+  completed: 'Succeeded',
+  failed: 'Failed',
+  blocked: 'Blocked',
+  timeout: 'Timed out',
+  interrupted: 'Stopped',
+  partial: 'Partially completed',
 };
 const el = (tag, text, cls) => {
   const n = document.createElement(tag);
@@ -40,7 +44,7 @@ const el = (tag, text, cls) => {
 };
 const time = (at) =>
   at
-    ? new Date(at).toLocaleString('tr-TR', {
+    ? new Date(at).toLocaleString('en-GB', {
         day: '2-digit',
         month: '2-digit',
         hour: '2-digit',
@@ -49,20 +53,21 @@ const time = (at) =>
     : '—';
 function timeUntil(at) {
   const remaining = at - Date.now();
-  if (remaining <= 0) return 'sırası geldi';
-  if (remaining < 60000) return '1 dk içinde';
+  if (remaining <= 0) return 'due now';
+  if (remaining < 60000) return 'within 1 min';
   const minutes = Math.ceil(remaining / 60000),
     parts = [
-      [Math.floor(minutes / 1440), 'gün'],
-      [Math.floor(minutes / 60) % 24, 'saat'],
-      [minutes % 60, 'dk'],
+      [Math.floor(minutes / 1440), 'd'],
+      [Math.floor(minutes / 60) % 24, 'h'],
+      [minutes % 60, 'min'],
     ];
   return (
+    'in ' +
     parts
       .filter(([value]) => value)
       .slice(0, 2)
       .map(([value, unit]) => `${value} ${unit}`)
-      .join(' ') + ' sonra'
+      .join(' ')
   );
 }
 const updateNextRun = (node) => {
@@ -84,7 +89,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     saving = false,
     bulkSaving = false;
   host.innerHTML =
-    '<div class="sources-head"><div><h2>Kaynaklar</h2><p></p></div><div class="sources-head-actions"></div></div><div data-add></div><ul class="source-list"></ul>';
+    '<div class="sources-head"><div><h2>Sources</h2><p></p></div><div class="sources-head-actions"></div></div><div data-add></div><ul class="source-list"></ul>';
   const head = host.querySelector('.sources-head'),
     headActions = head.querySelector('.sources-head-actions'),
     list = host.querySelector('.source-list'),
@@ -93,9 +98,9 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     otherHost = el('li', null, 'source-tabs-other'),
     empty = el('li', null, 'source-empty');
   empty.append(
-    el('strong', 'Henüz kaynak yok'),
+    el('strong', 'No sources yet'),
     document.createTextNode(
-      'Bir ilan sitesi ekle veya agent’tan bulmasını iste. İlk turda agent siteyi bir kez çözer ve arama reçetesini kaydeder.',
+      'Add a job site or ask the agent to find one. In the first round the agent works out the site once and saves its search recipe.',
     ),
   );
   list.append(otherHost);
@@ -138,7 +143,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
 
   // Header actions: add a source or ask the agent to find one.
   const add = button(
-    '＋ Kaynak ekle',
+    '＋ Add source',
     () => {
       adding = !adding;
       render();
@@ -147,17 +152,17 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
   );
   headActions.append(add);
   if (ask) {
-    const discover = button('Agent ile bul', ask);
+    const discover = button('Find with the agent', ask);
     discover.dataset.sourceDiscover = '';
     headActions.append(discover);
   }
 
   // Bulk settings fold away; a single form applies mode and interval to every source.
   const bulk = el('details', null, 'source-bulk');
-  bulk.innerHTML = '<summary>Tüm kaynaklara uygula</summary>';
+  bulk.innerHTML = '<summary>Apply to all sources</summary>';
   const bulkForm = el('form', null, 'source-bulk-form');
   bulkForm.innerHTML =
-    '<label>İşlem modu<select name="mode"><option value="">Değiştirme</option></select></label><label for="automation-sources-interval">Tarama aralığı (dk)<input id="automation-sources-interval" name="intervalMinutes" type="number" min="1" max="10080" step="1" placeholder="Değiştirme"></label><button type="submit" class="quiet">Tümüne uygula</button><small role="status"></small>';
+    '<label>Action mode<select name="mode"><option value="">Do not change</option></select></label><label for="automation-sources-interval">Scan interval (min)<input id="automation-sources-interval" name="intervalMinutes" type="number" min="1" max="10080" step="1" placeholder="Do not change"></label><button type="submit" class="quiet">Apply to all</button><small role="status"></small>';
   for (const [mode, label] of Object.entries(modes))
     bulkForm.elements.mode.append(new Option(label, mode));
   bulk.append(bulkForm);
@@ -168,7 +173,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       mode = bulkForm.elements.mode.value,
       interval = bulkForm.elements.intervalMinutes.value;
     if (!mode && !interval) {
-      notice('Değiştirilecek bir ayar seç.');
+      notice('Choose a setting to change.');
       return;
     }
     bulkSaving = true;
@@ -179,7 +184,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       if (owner === scope && host.isConnected) {
         bulkForm.reset();
         await refresh();
-        if (owner === scope && host.isConnected) notice('Ayar tüm kaynaklara uygulandı.');
+        if (owner === scope && host.isConnected) notice('Setting applied to all sources.');
       }
     } finally {
       bulkSaving = false;
@@ -188,7 +193,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
   });
 
   const proposal = el('section', null, 'source-proposal');
-  proposal.setAttribute('aria-label', 'Agent’ın kaynak önerileri');
+  proposal.setAttribute('aria-label', 'Agent’s source suggestions');
   proposal.hidden = true;
   head.after(proposal);
   function renderProposal() {
@@ -201,13 +206,13 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       added = draft.sources.filter((url) => !current.includes(url)),
       removed = current.filter((url) => !draft.sources.includes(url));
     proposal.append(
-      el('h3', 'Agent’ın kaynak önerileri'),
-      el('p', 'Değişiklikleri inceleyip uygula. Yeni kaynakların ilk turu denemedir.'),
+      el('h3', 'Agent’s source suggestions'),
+      el('p', 'Review and apply the changes. The first round of a new source is a trial.'),
     );
     const changes = el('ul');
     for (const [label, urls] of [
-      ['Eklenecek', added],
-      ['Kaldırılacak', removed],
+      ['To add', added],
+      ['To remove', removed],
     ])
       for (const url of urls) {
         const item = el('li');
@@ -217,26 +222,26 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     proposal.append(changes);
     const actions = el('div', null, 'actions'),
       apply = button(
-        'Önerileri uygula',
+        'Apply suggestions',
         async () => {
           await api.automationSourceDraft(scope, draft.id, true);
           await refresh();
-          notice('Kaynak önerileri uygulandı.');
+          notice('Source suggestions applied.');
         },
         'primary',
       );
     apply.disabled = removed.some(busySource) || bulkSaving;
-    const discard = button('Önerileri kaldır', async () => {
+    const discard = button('Discard suggestions', async () => {
       await api.automationSourceDraft(scope, draft.id, false);
       await refresh();
-      notice('Kaynak önerileri kaldırıldı.');
+      notice('Source suggestions discarded.');
     });
     discard.disabled = bulkSaving;
     actions.append(apply, discard);
     proposal.append(actions);
     if (removed.some(busySource))
       proposal.append(
-        el('small', 'Uygulamak için kaldırılacak kaynakların çalışan görevlerini durdur.'),
+        el('small', 'To apply, stop the running tasks of the sources to be removed.'),
       );
   }
 
@@ -248,7 +253,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       actions: el('div', null, 'source-actions'),
       tabHost: el('div', null, 'source-tabs-control'),
       run: button('', () => {}),
-      restart: button('Sıfırdan başla', () => {}, 'quiet source-restart'),
+      restart: button('Start over', () => {}, 'quiet source-restart'),
       edit: button('', () => {}, 'quiet source-edit'),
       memoryButton: button('', () => {}, 'quiet source-memory-toggle'),
       pending: null,
@@ -275,10 +280,10 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         if (current())
           notice(
             stop
-              ? 'Tarama durduruldu. Kaydedilen ilerleme korundu.'
+              ? 'Scan stopped. Saved progress was kept.'
               : fresh
-                ? 'Tarama ilk sayfadan başlayacak. Kayıtlı ilanlar yeniden okunmaz.'
-                : 'Tarama isteği alındı. Kaynak hazır olduğunda başlayacak.',
+                ? 'The scan will start from the first page. Saved listings are not read again.'
+                : 'Scan request received. It starts when the source is ready.',
           );
       }
     } catch (error) {
@@ -293,28 +298,28 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
   function statusLine(source) {
     const status = el('div', null, 'source-status');
     const state = source.blocker?.stop?.retryExhausted
-      ? 'Erişim sorunu sürüyor'
+      ? 'Access problem persists'
       : source.siteWait?.exhausted
-        ? 'Otomatik deneme durduruldu'
+        ? 'Automatic retries stopped'
         : source.siteWait
-          ? 'Erişim beklemesi · otomatik devam'
+          ? 'Access wait · continues automatically'
           : source.scanning
             ? source.trialRunning
-              ? 'Deneme sürüyor'
+              ? 'Trial in progress'
               : source.scanIssue
-                ? 'Sayfa yüklenemedi'
-                : 'Taranıyor'
+                ? 'Page could not load'
+                : 'Scanning'
             : source.recovery && data.automation.status === 'enabled'
-              ? 'Otomatik devam bekleniyor'
+              ? 'Waiting to continue automatically'
               : source.blocked
                 ? source.lastStatus === 'failed' || source.blocker?.stop?.kind === 'technical'
-                  ? 'Tarama tamamlanamadı'
-                  : 'Kaynak engelli'
+                  ? 'Scan could not finish'
+                  : 'Source blocked'
                 : source.lastStatus === 'partial'
-                  ? `Kısmi tarama · ${source.scan?.pendingUrls.length ?? 0} adres kaldı`
+                  ? `Partial scan · ${source.scan?.pendingUrls.length ?? 0} address(es) left`
                   : (source.lastRun?.finishedAt ?? source.lastRunAt)
-                    ? `Toplam ${source.resultCount ?? source.lastFound ?? 0} kayıt`
-                    : 'Henüz taranmadı';
+                    ? `${source.resultCount ?? source.lastFound ?? 0} record(s) in total`
+                    : 'Not scanned yet';
     if (source.siteWait && !source.siteWait.exhausted) status.dataset.state = 'waiting';
     status.append(el('b', state));
     const outcome = source.lastRun ?? {
@@ -324,10 +329,10 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     };
     const detail = source.scanning
       ? source.scanIssue
-        ? `${source.scanIssue.url} · ${source.scanIssue.attempts}. deneme`
+        ? `${source.scanIssue.url} · attempt ${source.scanIssue.attempts}`
         : (currentWork(data).find((row) => row.stop?.sourceUrl === source.url)?.progress ??
           (scanPageLabel(source.pageProgress)
-            ? 'Son doğrulanan: ' + scanPageLabel(source.pageProgress)
+            ? 'Last verified: ' + scanPageLabel(source.pageProgress)
             : null))
       : (source.siteWait?.message ?? outcome.summary ?? null);
     if (detail) {
@@ -341,7 +346,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     const meta = el('div', null, 'source-meta');
     const plan = el('span', null, 'source-plan');
     plan.append(
-      el('b', `Her ${source.intervalMinutes} dk`),
+      el('b', `Every ${source.intervalMinutes} min`),
       document.createTextNode(' · ' + modes[source.mode]),
     );
     meta.append(plan);
@@ -349,14 +354,14 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       nextRun = el(
         'b',
         !source.enabled
-          ? 'Kapalı'
+          ? 'Off'
           : source.scanning
-            ? 'Şu anda taranıyor'
+            ? 'Scanning now'
             : source.blocked
-              ? 'Yeniden başlatılmayı bekliyor'
+              ? 'Waiting for a restart'
               : data.automation.status !== 'enabled'
-                ? 'Takip duraklatıldı'
-                : 'Sıradaki tarama',
+                ? 'Tracking paused'
+                : 'Next scan',
       );
     const nextAt = source.enabled
       ? (source.siteWait?.retryAt ??
@@ -366,7 +371,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       : null;
     if (nextAt) {
       nextRun.dataset.sourceNextAt = String(nextAt);
-      nextRun.dataset.sourceNextLabel = source.siteWait ? 'Erişim kontrolü' : 'Sonraki tarama';
+      nextRun.dataset.sourceNextLabel = source.siteWait ? 'Access check' : 'Next scan';
       nextRun.title = nextRun.dataset.sourceNextLabel + ' ' + time(nextAt);
       updateNextRun(nextRun);
     }
@@ -376,10 +381,10 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       lastRun = el(
         'span',
         outcomeLabel
-          ? `Son tur: ${outcomeLabel}`
+          ? `Last round: ${outcomeLabel}`
           : source.scanning
-            ? 'Son tur: İlk tarama sürüyor'
-            : 'Son tur: Henüz çalışmadı',
+            ? 'Last round: first scan in progress'
+            : 'Last round: not run yet',
         'source-last-run',
       );
     lastRun.dataset.status = outcomeLabel ? outcome.status : 'none';
@@ -392,10 +397,10 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       const trial = el(
         'small',
         source.trialRunning
-          ? 'Denemede işlem gönderilmez'
+          ? 'Nothing is submitted during the trial'
           : source.trial?.status === 'failed'
-            ? 'Deneme tamamlanamadı'
-            : 'İlk turda denenecek',
+            ? 'Trial could not finish'
+            : 'Will be tried in the first round',
         'source-trial-status',
       );
       trial.dataset.status = source.trialRunning ? 'running' : (source.trial?.status ?? 'pending');
@@ -407,12 +412,12 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
   const extensionKinds = {
     api: [
       'API',
-      "Site eklentisi: ilanlar sitenin API'sinden tam metinle alınır, tarayıcı açılmaz.",
+      "Site extension: listings come in full text from the site's API; no browser is opened.",
     ],
-    http: ['HTTP', 'Site eklentisi: sayfalar tarayıcı açılmadan HTTP ile okunur.'],
+    http: ['HTTP', 'Site extension: pages are read over HTTP without opening a browser.'],
     browser: [
-      'Otomasyon',
-      "Site eklentisi: Chrome'da açılan sayfadan ilanlar ve sayfalama doğrudan okunur.",
+      'Automation',
+      'Site extension: listings and pagination are read directly from the page opened in Chrome.',
     ],
   };
   // A source row carries {kind}; a catalog group carries the kind itself.
@@ -441,18 +446,16 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     chip.dataset.status = summary.status;
     chip.title =
       summary.detail +
-      (source.recipeState?.verifiedAt
-        ? ` · Doğrulandı ${time(source.recipeState.verifiedAt)}`
-        : '');
+      (source.recipeState?.verifiedAt ? ` · Verified ${time(source.recipeState.verifiedAt)}` : '');
     return chip;
   }
 
   // Memory: scan facts, recipe history and the pending queue. Rules fold away.
   const exclusionLabels = {
-    hard_constraint: 'Kesin kısıt',
-    qualification: 'Nitelik çelişkisi',
-    unrelated_role: 'Alakasız rol',
-    not_listing: 'İlan değil',
+    hard_constraint: 'Hard constraint',
+    qualification: 'Qualification conflict',
+    unrelated_role: 'Unrelated role',
+    not_listing: 'Not a listing',
   };
   function progressDetails(source) {
     const section = el('section', null, 'source-progress-details source-memory'),
@@ -462,32 +465,32 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       cycle = state?.active ?? state?.lastCompleted,
       pending = scan?.complete === false ? (scan.pendingUrls ?? []) : [];
     section.dataset.sourceId = source.url;
-    section.setAttribute('aria-label', 'Tarama hafızası');
-    section.append(el('h3', 'Tarama hafızası'));
+    section.setAttribute('aria-label', 'Scan memory');
+    section.append(el('h3', 'Scan memory'));
     const facts = el('dl', null, 'source-progress-facts');
     for (const [label, value] of [
       [
-        'Tarama türü',
+        'Scan type',
         cycle?.mode === 'incremental'
-          ? 'Yeni kayıt kontrolü'
+          ? 'New record check'
           : cycle
-            ? 'Tam tarama'
+            ? 'Full scan'
             : source.trial?.status === 'passed'
-              ? 'İlk taramada tüm sayfalar'
-              : 'İlk turda kaynak denemesi',
+              ? 'All pages in the first scan'
+              : 'Source trial in the first round',
       ],
-      ['Son tam tarama', time(state?.lastFullScanAt)],
-      ['Bu turun başlangıcı', time(cycle?.startedAt)],
+      ['Last full scan', time(state?.lastFullScanAt)],
+      ['Start of this round', time(cycle?.startedAt)],
       [
-        'Yeni kayıtlar için tarih sınırı',
-        cycle?.mode === 'incremental' ? time(cycle.cutoffAt) : 'Son sayfaya kadar',
+        'Date cutoff for new records',
+        cycle?.mode === 'incremental' ? time(cycle.cutoffAt) : 'Up to the last page',
       ],
-      ['Toplam kayıt', source.resultCount ?? 0],
+      ['Total records', source.resultCount ?? 0],
       [
-        'Son bildirilen sayfa',
+        'Last reported page',
         page
-          ? `${page.currentPage}. sayfa${page.totalPages ? ` / ${page.totalPages}` : ''}`
-          : 'Henüz bildirilmedi',
+          ? `Page ${page.currentPage}${page.totalPages ? ` / ${page.totalPages}` : ''}`
+          : 'Not reported yet',
       ],
     ]) {
       const fact = el('div');
@@ -504,14 +507,14 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     const recipe = el('div', null, 'source-progress-note source-progress-recipe'),
       summary = recipeSummary(source.recipe ?? null, source.recipeState ?? null),
       rs = source.recipeState;
-    recipe.append(el('b', 'Arama reçetesi'));
+    recipe.append(el('b', 'Search recipe'));
     const lines = [summary.label + ' · ' + summary.detail];
     if (source.recipe?.entry.kind === 'url_template') {
-      lines.push('Şablon: ' + source.recipe.entry.template);
+      lines.push('Template: ' + source.recipe.entry.template);
       const filters = source.extension?.search
         ? searchFilterLabels(source.extension.search, source.recipe.entry.template)
         : [];
-      if (filters.length) lines.push('Site filtreleri: ' + filters.join(' · '));
+      if (filters.length) lines.push('Site filters: ' + filters.join(' · '));
     }
     if (source.recipe?.entry.kind === 'search_form')
       lines.push(
@@ -520,70 +523,72 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
           ' · ' +
           source.recipe.entry.fields.map((f) => `${f.key}=“${f.label}”`).join(', '),
       );
-    if (source.recipe?.terms?.length)
-      lines.push('Arama terimleri: ' + source.recipe.terms.join(', '));
+    if (source.recipe?.terms?.length) lines.push('Search terms: ' + source.recipe.terms.join(', '));
     if (source.recipe && source.recipe.entry.kind !== 'discovery')
       lines.push(
-        'Sayfalama: ' +
+        'Pagination: ' +
           paginationLabels[source.recipe.pagination ?? 'auto'] +
           (source.recipe.ordering === 'newest_first'
-            ? ' · En yeniden eskiye, tekrar taramalar bilinen ilanlarda durur'
+            ? ' · Newest first; repeat scans stop at known listings'
             : '') +
-          ` · Her arama ilk ${recipePageCap(source.recipe)} sayfayı okur (taramada toplam en fazla 15 sayfa)`,
+          ` · Each search reads the first ${recipePageCap(source.recipe)} pages (at most 15 pages per scan in total)`,
       );
     if (rs?.verifiedAt)
       lines.push(
-        `Son doğrulama ${time(rs.verifiedAt)} · ${rs.successCount} başarılı, ${rs.failCount} başarısız`,
+        `Last verification ${time(rs.verifiedAt)} · ${rs.successCount} succeeded, ${rs.failCount} failed`,
       );
     if (rs?.lastFailure)
       lines.push(
-        `Son hata ${time(rs.lastFailure.at)}: ${rs.lastFailure.reason}${rs.lastFailure.url ? ' · ' + rs.lastFailure.url : ''}`,
+        `Last error ${time(rs.lastFailure.at)}: ${rs.lastFailure.reason}${rs.lastFailure.url ? ' · ' + rs.lastFailure.url : ''}`,
       );
     recipe.append(el('p', lines.join('\n')));
     section.append(recipe);
     const reasons = {
-      initial: 'İlk başarılı tam tarama henüz yapılmadı.',
-      periodic: 'Düzenli tam tarama zamanı geldi.',
-      ordering_unverified: 'Yeniden eskiye sıralama doğrulanamadı; tüm sayfalar taranacak.',
-      start_unverified: 'Taramanın ilk sayfadan başladığı doğrulanamadı; tüm sayfalar taranacak.',
-      dates_unverified: 'İlan tarihleri eksik veya belirsiz; tüm sayfalar taranacak.',
-      ordering_changed: 'İlanların tarih sırası tutarlı değil; tüm sayfalar taranacak.',
+      initial: 'The first successful full scan has not happened yet.',
+      periodic: 'A regular full scan is due.',
+      ordering_unverified:
+        'Newest-first ordering could not be verified; all pages will be scanned.',
+      start_unverified:
+        'It could not be verified that the scan started on the first page; all pages will be scanned.',
+      dates_unverified: 'Listing dates are missing or unclear; all pages will be scanned.',
+      ordering_changed:
+        'The date order of the listings is inconsistent; all pages will be scanned.',
     };
-    if (reasons[cycle?.reason]) note('Kapsamın nedeni', reasons[cycle.reason]);
+    if (reasons[cycle?.reason]) note('Reason for the scope', reasons[cycle.reason]);
     if (page?.url) {
       const group = el('div', null, 'source-progress-note');
-      group.append(el('b', 'Son bildirilen sonuç sayfası'), address(page.url));
+      group.append(el('b', 'Last reported results page'), address(page.url));
       section.append(group);
     } else if (cycle?.checkpoint?.url) {
       const group = el('div', null, 'source-progress-note');
-      group.append(el('b', 'Devam sayfası'), address(cycle.checkpoint.url));
+      group.append(el('b', 'Resume page'), address(cycle.checkpoint.url));
       section.append(group);
     }
-    if (cycle?.checkpoint?.cursor) note('Kaydedilen devam işareti', cycle.checkpoint.cursor);
+    if (cycle?.checkpoint?.cursor) note('Saved resume marker', cycle.checkpoint.cursor);
     if (source.recovery)
       note(
-        'Otomatik devam',
-        `${time(source.recovery.readyAt)} · Agent oturumu kesildi; aynı kaynak ve devam noktası yeniden devralınacak.`,
+        'Automatic resume',
+        `${time(source.recovery.readyAt)} · The agent session was interrupted; the same source and resume point will be picked up again.`,
       );
     if (cycle?.boundary)
       note(
-        'Tarih sınırı',
-        'Bu sayfadaki tüm kayıtlar tarih sınırından eski olarak bildirildi ve doğrulandı.',
+        'Date cutoff',
+        'All records on this page were reported and verified as older than the date cutoff.',
       );
-    if (scan?.reason) note(scan.complete ? 'Tamamlanma notu' : 'Devam notu', scan.reason);
+    if (scan?.reason) note(scan.complete ? 'Completion note' : 'Resume note', scan.reason);
     if (source.observedPage && page && source.observedPage.currentPage !== page.currentPage)
       note(
-        'Son açılan sonuç sayfası',
-        `${source.observedPage.currentPage}. sayfa. Kayıtlı ilerleme ve kalan adresler korunuyor.`,
+        'Last opened results page',
+        `Page ${source.observedPage.currentPage}. Saved progress and remaining addresses are kept.`,
       );
     if (scan?.work?.searches.length > 1) {
       const searches = el('div', null, 'source-progress-note');
-      searches.append(el('b', 'Aramalar'));
+      searches.append(el('b', 'Searches'));
       for (const search of scan.work.searches)
         searches.append(
           el(
             'p',
-            `${search.label} · ${search.status === 'completed' ? 'Tamamlandı' : `${search.pendingUrls.length} adres bekliyor`}${search.pageProgress ? ` · ${search.pageProgress.currentPage}. sayfa` : ''}${search.id === scan.work.activeSearchId ? ' · Seçili arama' : ''}`,
+            `${search.label} · ${search.status === 'completed' ? 'Completed' : `${search.pendingUrls.length} address(es) waiting`}${search.pageProgress ? ` · page ${search.pageProgress.currentPage}` : ''}${search.id === scan.work.activeSearchId ? ' · Selected search' : ''}`,
           ),
         );
       section.append(searches);
@@ -591,7 +596,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     // Waiting addresses first, then what Jev eliminated (card or detail) in red.
     const excluded = (scan?.work?.searches ?? []).flatMap((s) => s.excluded ?? []).reverse();
     const cards = Object.assign({}, ...(scan?.work?.searches ?? []).map((s) => s.cards ?? {})),
-      pct = (p) => `%${Math.round(p * 100)}`;
+      pct = (p) => `${Math.round(p * 100)}%`;
     if (pending.length || excluded.length) {
       const details = el('details', null, 'source-progress-pending'),
         urls = el('ol');
@@ -599,12 +604,12 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       details.append(
         el(
           'summary',
-          `Devam edilecek adresler (${pending.length}${excluded.length ? ` · ${excluded.length} elendi` : ''})`,
+          `Addresses to continue with (${pending.length}${excluded.length ? ` · ${excluded.length} excluded` : ''})`,
         ),
       );
       const rows = [...pending.map((url) => ({url})), ...excluded];
       let shown = 0;
-      const more = button('Sonraki 100 adresi göster', () => append());
+      const more = button('Show the next 100 addresses', () => append());
       const append = () => {
         for (const row of rows.slice(shown, shown + 100)) {
           const item = el('li');
@@ -613,7 +618,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
             item.append(
               el(
                 'b',
-                `Elendi · ${row.stage === 'detail' ? 'Detayda' : 'Kartta'} · ${exclusionLabels[row.reason] ?? row.reason}${row.confidence != null ? ` · Jev ${pct(row.confidence)}` : ''}`,
+                `Excluded · ${row.stage === 'detail' ? 'On detail' : 'On card'} · ${exclusionLabels[row.reason] ?? row.reason}${row.confidence != null ? ` · Jev ${pct(row.confidence)}` : ''}`,
               ),
             );
             if (row.title) item.append(el('span', row.title));
@@ -625,7 +630,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
               item.append(
                 el(
                   'small',
-                  `Jev kartı: tut ${pct(card.keep)}${card.risk?.p >= 0.1 ? ` · en yakın eleme ${exclusionLabels[card.risk.reason]} ${pct(card.risk.p)}` : ''}`,
+                  `Jev card: keep ${pct(card.keep)}${card.risk?.p >= 0.1 ? ` · closest exclusion ${exclusionLabels[card.risk.reason]} ${pct(card.risk.p)}` : ''}`,
                 ),
               );
           }
@@ -639,13 +644,13 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       details.append(urls, more);
       section.append(details);
     }
-    if (source.lastResult) note('Son çalışma sonucu', source.lastResult);
+    if (source.lastResult) note('Last run result', source.lastResult);
     const rules = el('details', null, 'source-progress-rules');
     rules.append(
-      el('summary', 'Takip kuralı'),
+      el('summary', 'Tracking rule'),
       el(
         'p',
-        'İlk turda kaynak denenir, reçete kaydedilir ve işlem gönderilmez. Sonraki ilk taramada ve 7 günde bir tüm sayfalar taranır. Diğer turlarda, güvenilir tarih sıralaması varsa son başarılı turun başlangıcından 24 saat öncesine kadar kontrol edilir. Reçete iki ardışık turda sonuç vermezse kaynak yeniden öğrenilir.',
+        'In the first round the source is tried, the recipe is saved and nothing is submitted. All pages are scanned in the next first scan and every 7 days. In other rounds, if the date ordering is reliable, listings are checked back to 24 hours before the start of the last successful round. If the recipe gives no results in two consecutive rounds, the source is learned again.',
       ),
     );
     section.append(rules);
@@ -760,7 +765,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       for (const control of controls) control.value = values[control.dataset.param] ?? '';
     };
     f.template.addEventListener('input', sync);
-    const use = button('Site şablonunu kullan', () => {
+    const use = button('Use the site template', () => {
       f.template.value = search.template;
       f.ordering.value = search.ordering ?? 'unknown';
       f.pagination.value = search.pagination ?? 'auto';
@@ -770,8 +775,8 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       .querySelector('small')
       .append(
         search.ordering === 'newest_first'
-          ? 'Site şablonu en yeniden eskiye sıralar. '
-          : 'Sitenin bilinen arama adresi. ',
+          ? 'The site template sorts newest first. '
+          : 'The site’s known search address. ',
         use,
       );
     sync();
@@ -779,20 +784,20 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
   function editor(source) {
     const form = el('form', null, source ? 'source-editor' : 'source-add');
     form.dataset.sourceId = source?.url ?? '';
-    form.innerHTML = `<fieldset class="source-editor-section"><legend>Kaynak</legend>
-<label>Kaynak adı<input name="name" required maxlength="120"></label><label>Başlangıç adresi<input name="url" type="url" required></label>
-<label class="source-editor-wide">Arama kapsamı<textarea name="query" required maxlength="2000"></textarea><small>Reçetede arama terimi yoksa {query} yer tutucusuna bu metin yazılır.</small></label>
-<label>Tarama aralığı (dk)<input name="intervalMinutes" type="number" min="1" max="10080" required></label><label>İşlem modu<select name="mode"></select></label></fieldset>
-<fieldset class="source-editor-section source-recipe-editor"><legend>Arama reçetesi <small class="source-recipe-legend"></small></legend>
-<label class="source-editor-wide">Arama yöntemi<select name="method"></select><small>Deneme turunda agent siteyi çözer ve reçeteyi kendisi kaydeder. Biliyorsan elle de yazabilirsin; uygulama ilk taramada doğrular.</small></label>
-<label class="source-editor-wide" data-recipe-template>URL şablonu<input name="template" maxlength="2000" placeholder="https://site/jobs?q={query}&l={location}&sort=date" spellcheck="false"><small>{query} arama terimini veya kapsamı alır. {location} gibi diğer yer tutucular aynı adlı kriter alanından doldurulur. Yer tutucusuz sabit adres de olabilir.</small></label>
-<div class="source-editor-wide source-site-search" data-recipe-site><b>Site filtreleri</b><small></small><div class="source-recipe-form source-site-filters"></div></div>
-<div class="source-editor-wide source-recipe-form" data-recipe-form><label>Arama formu sayfası<input name="formUrl" type="url" placeholder="https://site/jobs"></label><label>Arama alanı etiketi<input name="queryLabel" maxlength="120" placeholder="Stichwort"></label><label>Konum alanı etiketi (isteğe bağlı)<input name="locationLabel" maxlength="120" placeholder="Ort"></label></div>
-<label class="source-editor-wide" data-recipe-terms>Arama terimleri<input name="terms" maxlength="500" placeholder="Compliance, AI Governance, Data Protection" spellcheck="false"><small>Arama kapsamı anahtar kelime değilse virgülle en fazla 5 terim yaz; her terim ayrı arama olur.</small></label>
-<label data-recipe-pagination>Sayfalama<select name="pagination"></select></label>
-<label data-recipe-ordering>Sıralama<select name="ordering"><option value="unknown">Bilinmiyor</option><option value="newest_first">En yeniden eskiye · bilinen ilanlarda durur</option></select></label>
-<label class="source-editor-wide" data-recipe-notes>Agent’a not<textarea name="notes" maxlength="1000" placeholder="Filtreler, sıralama, dikkat edilecekler…"></textarea></label>
-<label class="source-editor-wide">Çalışma talimatı<textarea name="instructions" maxlength="6000" placeholder="Bu kaynak için ek kurallar (isteğe bağlı)"></textarea></label></fieldset>
+    form.innerHTML = `<fieldset class="source-editor-section"><legend>Source</legend>
+<label>Source name<input name="name" required maxlength="120"></label><label>Start address<input name="url" type="url" required></label>
+<label class="source-editor-wide">Search scope<textarea name="query" required maxlength="2000"></textarea><small>If the recipe has no search terms, this text fills the {query} placeholder.</small></label>
+<label>Scan interval (min)<input name="intervalMinutes" type="number" min="1" max="10080" required></label><label>Action mode<select name="mode"></select></label></fieldset>
+<fieldset class="source-editor-section source-recipe-editor"><legend>Search recipe <small class="source-recipe-legend"></small></legend>
+<label class="source-editor-wide">Search method<select name="method"></select><small>In the trial round the agent works out the site and saves the recipe itself. If you know it, you can also write it by hand; the app verifies it in the first scan.</small></label>
+<label class="source-editor-wide" data-recipe-template>URL template<input name="template" maxlength="2000" placeholder="https://site/jobs?q={query}&l={location}&sort=date" spellcheck="false"><small>{query} takes the search term or the scope. Other placeholders such as {location} are filled from the criteria field of the same name. A fixed address without placeholders also works.</small></label>
+<div class="source-editor-wide source-site-search" data-recipe-site><b>Site filters</b><small></small><div class="source-recipe-form source-site-filters"></div></div>
+<div class="source-editor-wide source-recipe-form" data-recipe-form><label>Search form page<input name="formUrl" type="url" placeholder="https://site/jobs"></label><label>Search field label<input name="queryLabel" maxlength="120" placeholder="Stichwort"></label><label>Location field label (optional)<input name="locationLabel" maxlength="120" placeholder="Ort"></label></div>
+<label class="source-editor-wide" data-recipe-terms>Search terms<input name="terms" maxlength="500" placeholder="Compliance, AI Governance, Data Protection" spellcheck="false"><small>If the search scope is not a keyword, write up to 5 comma-separated terms; each term becomes a separate search.</small></label>
+<label data-recipe-pagination>Pagination<select name="pagination"></select></label>
+<label data-recipe-ordering>Ordering<select name="ordering"><option value="unknown">Unknown</option><option value="newest_first">Newest first · stops at known listings</option></select></label>
+<label class="source-editor-wide" data-recipe-notes>Note to the agent<textarea name="notes" maxlength="1000" placeholder="Filters, ordering, things to watch out for…"></textarea></label>
+<label class="source-editor-wide">Working instructions<textarea name="instructions" maxlength="6000" placeholder="Extra rules for this source (optional)"></textarea></label></fieldset>
 <div class="source-editor-foot"></div>`;
     const f = form.elements,
       footer = form.querySelector('.source-editor-foot'),
@@ -818,38 +823,40 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     recipeFields(form, source?.recipe ?? null);
     f.method.onchange = f.ordering.onchange = () => syncRecipeFields(form);
     if (source) {
-      const relearn = button('Yeniden öğren', async () => {
+      const relearn = button('Relearn', async () => {
         await api.automationSourceRelearn(scope, source.url);
         editing = null;
         await refresh();
-        notice('Kaynağın sıradaki turu deneme olacak; agent reçeteyi yeniden çıkaracak.');
+        notice(
+          'The source’s next round will be a trial; the agent will work out the recipe again.',
+        );
       });
-      relearn.title = 'Deneme turunu yeniden çalıştırır ve reçeteyi güçlü agentle yeniden öğrenir.';
+      relearn.title = 'Runs the trial round again and relearns the recipe with the strong agent.';
       relearn.dataset.sourceRelearn = '';
       const remove = button(
-        'Kaynağı sil',
+        'Delete source',
         async () => {
           await api.automationSourceRemove(scope, source.url);
           if (owner === scope) {
             if (editing === source.url) editing = null;
             if (memory === source.url) memory = null;
             await refresh();
-            notice('Kaynak silindi. Bulunan kayıtlar korundu.');
+            notice('Source deleted. Found records were kept.');
           }
         },
         'quiet source-remove',
       );
-      remove.title = 'Kaynağı ve reçetesini sil; bulunan kayıtlar korunur.';
+      remove.title = 'Delete the source and its recipe; found records are kept.';
       footer.append(relearn, remove);
     }
-    const cancel = button('Vazgeç', () => {
+    const cancel = button('Cancel', () => {
       editing = null;
       adding = false;
       render();
     });
     cancel.dataset.cancel = '';
     footer.append(cancel);
-    const submit = el('button', source ? 'Kaydet' : 'Kaynağı ekle', 'primary');
+    const submit = el('button', source ? 'Save' : 'Add source', 'primary');
     submit.type = 'submit';
     footer.append(submit);
     form.onsubmit = action(async () => {
@@ -869,7 +876,9 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         editing = null;
         adding = false;
         await refresh();
-        notice(source ? 'Kaynak kaydedildi.' : 'Kaynak eklendi. İlk turunda otomatik denenir.');
+        notice(
+          source ? 'Source saved.' : 'Source added. It is tried automatically in its first round.',
+        );
       } finally {
         submit.disabled = false;
       }
@@ -896,32 +905,32 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         el(
           'small',
           many
-            ? `${group.choices.length} ülke`
+            ? `${group.choices.length} countries`
             : `${new URL(first.url).hostname.replace(/^www\./, '')} · ${first.label}`,
         ),
       );
       row.append(about);
       // The workspace country, when the board serves it, is the first choice.
       const country = el('select');
-      country.setAttribute('aria-label', `${group.name} ülkesi`);
+      country.setAttribute('aria-label', `${group.name} country`);
       for (const choice of group.choices) country.append(new Option(choice.label, choice.url));
       if (many) row.append(country);
       row.append(extensionChip(group) ?? '');
-      const add = button('Ekle', async () => {
+      const add = button('Add', async () => {
         const scope = owner,
           choice = group.choices.find((c) => c.url === country.value) ?? first;
         await api.automationSourceAdd(scope, {url: choice.url});
         if (owner !== scope) return;
         await refresh();
-        notice(`${choice.name} eklendi. İlk turunda otomatik denenir.`);
+        notice(`${choice.name} added. It is tried automatically in its first round.`);
       });
       add.dataset.catalogAdd = group.name;
       row.append(add);
       rows.append(row);
     }
     section.replaceChildren(
-      el('h3', 'Hazır kaynaklar'),
-      el('small', 'Uygulamanın tanıdığı siteler; ad, arama reçetesi ve talimat hazır gelir.'),
+      el('h3', 'Ready-made sources'),
+      el('small', 'Sites the app knows; the name, search recipe and instructions come ready.'),
       rows,
     );
   }
@@ -943,7 +952,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       (source.recipeState?.verifiedAt ? ` · ${time(source.recipeState.verifiedAt)}` : '');
     legend.dataset.status = summary.status;
     form.querySelector('.source-editor-foot').title = locked
-      ? 'Kaynak çalışıyor. Değiştirmek için önce taramayı durdur.'
+      ? 'The source is running. Stop the scan first to change it.'
       : '';
   }
 
@@ -958,23 +967,23 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         .sort((a, b) => a.nextRunAt - b.nextRunAt)[0];
     const verified = sources.filter((s) => s.recipeState?.status === 'verified').length;
     const overview = head.querySelector('p');
-    overview.textContent = `${enabled.length} etkin kaynak${sources.length - enabled.length ? `, ${sources.length - enabled.length} kapalı` : ''}${blocked.length ? `, ${blocked.length} engelli` : ''}${sources.length ? ` · ${verified} reçete doğrulandı` : ''}. `;
+    overview.textContent = `${enabled.length} active source(s)${sources.length - enabled.length ? `, ${sources.length - enabled.length} off` : ''}${blocked.length ? `, ${blocked.length} blocked` : ''}${sources.length ? ` · ${verified} recipe(s) verified` : ''}. `;
     if (data.automation.status === 'enabled' && upcoming) {
       const next = el('span');
       next.dataset.sourceNextAt = String(upcoming.nextRunAt);
-      next.dataset.sourceNextLabel = 'Sıradaki tarama';
+      next.dataset.sourceNextLabel = 'Next scan';
       next.dataset.sourceNextSuffix = `: ${upcoming.name}.`;
       next.title = time(upcoming.nextRunAt);
       updateNextRun(next);
       overview.append(next);
-    } else overview.append(document.createTextNode('Her kaynak kendi aralığında takip edilir.'));
+    } else overview.append(document.createTextNode('Each source is tracked at its own interval.'));
     for (const control of bulkForm.querySelectorAll('input,select,button'))
       control.disabled = bulkSaving || (active && control.name === 'mode') || !sources.length;
     bulkForm.setAttribute('aria-busy', String(bulkSaving));
     bulkForm.querySelector('[role=status]').textContent = bulkSaving
-      ? 'Kaydediliyor…'
+      ? 'Saving…'
       : active && sources.length
-        ? 'İşlem modu çalışan tur bitince değiştirilebilir.'
+        ? 'The action mode can be changed when the running round ends.'
         : '';
     bulk.hidden = !sources.length;
     list.inert = bulkSaving;
@@ -1017,7 +1026,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
               : 'none';
       toggle.checked = source.enabled;
       toggle.disabled = Boolean(source.stopping || view.pending);
-      toggle.setAttribute('aria-label', source.name + ' aktif');
+      toggle.setAttribute('aria-label', source.name + ' active');
       toggle.onchange = action(async () => {
         const enabled = toggle.checked;
         toggle.disabled = true;
@@ -1054,10 +1063,10 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
           (r) => r.sourceUrl === source.url && !r.recordId && !r.recordOperation,
         ) && !source.scanning;
       let runLabel = closing
-          ? 'Oturum kapanıyor…'
+          ? 'Session closing…'
           : source.blocked || source.siteWait?.exhausted
-            ? 'Tekrar dene'
-            : 'Şimdi tara',
+            ? 'Retry'
+            : 'Scan now',
         runDisabled =
           closing ||
           (source.siteWait?.waiting && !source.siteWait?.exhausted) ||
@@ -1066,14 +1075,14 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       run.title =
         source.trial?.status === 'passed'
           ? ''
-          : 'İlk tur denemedir: agent siteyi çözer ve arama reçetesini kaydeder.';
+          : 'The first round is a trial: the agent works out the site and saves the search recipe.';
       if (source.scanning || source.stopping) {
-        runLabel = source.stopping ? 'Durduruluyor…' : 'Taramayı durdur';
+        runLabel = source.stopping ? 'Stopping…' : 'Stop scan';
         runDisabled = source.stopping;
         run.dataset.sourceStop = source.url;
       } else delete run.dataset.sourceStop;
       if (view.pending) {
-        runLabel = view.pending === 'stop' ? 'Durduruluyor…' : 'Başlatılıyor…';
+        runLabel = view.pending === 'stop' ? 'Stopping…' : 'Starting…';
         runDisabled = true;
       }
       if (run.textContent !== runLabel) run.textContent = runLabel;
@@ -1088,22 +1097,23 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         !source.scanning &&
         !source.stopping &&
         (source.scan?.complete === false || Boolean(source.scanState?.active));
-      if (resumable) run.title = 'Kaldığı sayfadan ve kalan adreslerden devam eder.';
+      if (resumable)
+        run.title = 'Continues from the page where it stopped and the remaining addresses.';
       restart.hidden = !resumable || runDisabled || Boolean(source.siteWait);
       restart.disabled = Boolean(view.pending);
       restart.title =
-        'Kayıtlı sayfa konumunu ve kalan adresleri siler, taramayı ilk sonuç sayfasından başlatır. Kayıtlı ilanlar yeniden okunmaz.';
+        'Clears the saved page position and remaining addresses and starts the scan from the first results page. Saved listings are not read again.';
       restart.onclick = (event) => {
         event.preventDefault();
         if (!restart.disabled) void scanAction(view, scope, source.url, false, true);
       };
-      edit.textContent = open ? 'Kapat' : 'Düzenle';
+      edit.textContent = open ? 'Close' : 'Edit';
       edit.onclick = action(() => {
         editing = open ? null : source.url;
         render();
       });
       edit.setAttribute('aria-expanded', String(open));
-      memoryButton.textContent = memoryOpen ? 'Detayı kapat' : 'Detay';
+      memoryButton.textContent = memoryOpen ? 'Close details' : 'Details';
       memoryButton.onclick = action(() => {
         memory = memoryOpen ? null : source.url;
         render();

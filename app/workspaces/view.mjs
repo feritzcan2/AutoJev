@@ -12,13 +12,13 @@ export function webWorkspaceView(snapshot, agents) {
     title = progress.title;
   const execution = {
     status: run || a.status === 'enabled' ? 'running' : a.status,
-    note: run ? a.goal : (runs[0]?.summary ?? 'Agent’a ne yapmak istediğini anlat.'),
+    note: run ? a.goal : (runs[0]?.summary ?? 'Tell the agent what you want to do.'),
     intervalMinutes: a.intervalMinutes,
     task: run ? {id: run.id, kind: run.kind, createdAt: run.startedAt} : null,
   };
   const definitions = [...(snapshot.workers ?? [{id: 'main', name: 'Worker 1'}])];
   if (runs.some(isConversation) && !definitions.some((w) => w.id === CONVERSATION_WORKER))
-    definitions.push({id: CONVERSATION_WORKER, name: 'Sohbet', conversation: true});
+    definitions.push({id: CONVERSATION_WORKER, name: 'Chat', conversation: true});
   const workers = definitions.map((worker) => {
     const slotRun = (snapshot.activeRuns ?? [run]).find(
         (r) => r && (r.workerId ?? 'main') === worker.id,
@@ -36,11 +36,11 @@ export function webWorkspaceView(snapshot, agents) {
           task: ownRun ? {id: ownRun.id, kind: ownRun.kind, createdAt: ownRun.startedAt} : null,
         },
         presentation: {
-          title: waiting ? 'Sohbet açık' : ownRun ? 'Yanıt hazırlanıyor' : 'Agent ile konuş',
-          status: waiting ? 'Mesaj bekliyor' : ownRun ? 'Çalışıyor' : 'Hazır',
+          title: waiting ? 'Chat open' : ownRun ? 'Preparing a reply' : 'Talk to the agent',
+          status: waiting ? 'Waiting for a message' : ownRun ? 'Working' : 'Ready',
           detail: waiting
-            ? 'Yeni mesajını yazabilirsin. Sohbeti kapatana kadar aynı oturum açık kalır.'
-            : 'Sohbet, kaynak taramalarından bağımsız çalışır.',
+            ? 'You can write your next message. The same session stays open until you close the chat.'
+            : 'The chat runs independently of source scans.',
         },
       };
     }
@@ -48,9 +48,9 @@ export function webWorkspaceView(snapshot, agents) {
     const startLabel =
       worker.id === 'main'
         ? progress.reviewed
-          ? 'Agent’ı başlat'
+          ? 'Start agent'
           : progress.primary?.label
-        : 'Worker’ı başlat';
+        : 'Start worker';
     return {
       ...worker,
       active: ownActive,
@@ -69,22 +69,22 @@ export function webWorkspaceView(snapshot, agents) {
       presentation: {
         pageProgress: ownRun?.pageProgress ?? null,
         title: waiting
-          ? 'Sıradaki görev bekleniyor'
+          ? 'Waiting for the next task'
           : ownRun
             ? runOperationLabel(ownRun.operation, ownRun.kind)
             : isConversation(run)
-              ? 'Görev yok'
+              ? 'No task'
               : title,
         status: ownActive
-          ? 'Çalışıyor'
+          ? 'Working'
           : waiting
-            ? 'Görev bekliyor'
+            ? 'Waiting for a task'
             : isConversation(run)
-              ? 'Kapalı'
+              ? 'Off'
               : progress.label,
         startLabel,
         detail: waiting
-          ? 'Worker açık; çalışan agent oturumu yok. Uygun görev geldiğinde otomatik başlayacak.'
+          ? 'Worker on; no agent session is running. It starts automatically when a suitable task arrives.'
           : ownRun
             ? (ownRun.sources ?? []).join(' · ')
             : progress.next,
@@ -112,7 +112,7 @@ export function webWorkspaceView(snapshot, agents) {
       documents: true,
       terminalConversation: true,
       workerRestart: false,
-      workerDescription: 'Agent, çalışma alanının kaynaklarını ve kayıtlarını takip eder.',
+      workerDescription: 'The agent follows the workspace’s sources and records.',
     },
     active:
       workers.find((w) => w.active?.sessionId === run?.id)?.active ??

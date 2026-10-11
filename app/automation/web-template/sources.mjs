@@ -33,11 +33,11 @@ export const sourceMethods = {
       activeRuns: this.slots(id).map((s) => s.run),
     }).find((i) => i.id === key);
     if (!issue?.retry || issue.closing)
-      throw Error('Bu müdahale için yeniden deneme şu anda planlanamaz.');
+      throw Error('A retry cannot be scheduled for this item right now.');
     const at = this.now() + 2 * 60 * 60 * 1000;
     if (issue.kind === 'site_access') {
       if (issue.accessExhausted)
-        throw Error('Otomatik denemeler durduruldu. Engel giderildikten sonra devam et.');
+        throw Error('Automatic retries stopped. Continue once the blocker is resolved.');
       const accessRecovery = this.sourceAccess.current(id, key);
       this.sourceState(id, key, {accessRecovery: {...accessRecovery, retryAt: at}});
       this.changed(id);
@@ -53,7 +53,7 @@ export const sourceMethods = {
       activeRuns: this.slots(id).map((s) => s.run),
     }).find((i) => i.id === key);
     if (!issue?.dismissKey || issue.dismissKey !== dismissKey || issue.closing)
-      throw Error('Bu müdahale değişti veya oturum hâlâ kapanıyor.');
+      throw Error('This item changed or the session is still closing.');
     if (issue.kind === 'site_access') {
       await this.sourceAccess.reset(id, key, issue.runId, {dismissed: true});
       return {dismissed: true};
@@ -71,7 +71,7 @@ export const sourceMethods = {
         !a.sourceState?.[task.sourceUrl]?.accessRecovery &&
         !this.slots(id).some((s) => s.run.sourceUrl === task.sourceUrl)
       )
-        this.queue.finish(id, task.id, 'cancelled', 'Yeni kaynak turu');
+        this.queue.finish(id, task.id, 'cancelled', 'New source round');
     for (const url of urls) {
       if (a.sourceState?.[url]?.accessRecovery) continue;
       const wait = this.db.sourceWait(id, {url}, a);
@@ -90,10 +90,10 @@ export const sourceMethods = {
   async runSource(id, url, {fresh = false} = {}) {
     this.assertNotStopping(id);
     const source = this.db.sources(id).find((s) => s.url === url);
-    if (!source) throw Error('Kaynak bu çalışma alanına ait değil');
-    if (!source.enabled) throw Error('Önce kaynağı aç');
+    if (!source) throw Error('The source does not belong to this workspace');
+    if (!source.enabled) throw Error('Turn on the source first');
     if (this.slots(id).some((s) => s.run.sourceUrl === url))
-      throw Error('Bu kaynak zaten çalışıyor');
+      throw Error('This source is already running');
     if (source.siteWait?.exhausted) {
       if (source.accessRecovery?.state === 'waiting')
         return this.sourceAccess.resume(id, url, source.accessRecovery.runId);
@@ -115,12 +115,12 @@ export const sourceMethods = {
   async relearnSource(id, url) {
     this.assertNotStopping(id);
     const source = this.db.sources(id).find((s) => s.url === url);
-    if (!source) throw Error('Kaynak bu çalışma alanına ait değil');
+    if (!source) throw Error('The source does not belong to this workspace');
     if (source.scanning) await this.stopSource(id, url);
     this.clearRetry(id, url);
     for (const task of this.queue.list(id, {states: ['pending']}))
       if (task.sourceUrl === url && !task.recordOperation)
-        this.queue.finish(id, task.id, 'cancelled', 'Kaynak yeniden öğrenilecek');
+        this.queue.finish(id, task.id, 'cancelled', 'The source will be learned again');
     this.db.relearnSource(id, url);
     this.sourceState(id, url, {batchId: null});
     this.changed(id);
@@ -129,8 +129,8 @@ export const sourceMethods = {
   },
   async stopSource(id, url) {
     const source = this.db.sources(id).find((s) => s.url === url);
-    if (!source) throw Error('Kaynak bu çalışma alanına ait değil');
-    const summary = 'Tarama kullanıcı tarafından durduruldu.',
+    if (!source) throw Error('The source does not belong to this workspace');
+    const summary = 'Scan stopped by the user.',
       matches = (run) =>
         ['run', 'trial'].includes(run.kind) &&
         !run.recordId &&
@@ -221,7 +221,7 @@ export const sourceMethods = {
       this.clearRetry(id, url);
       for (const task of this.queue.list(id, {states: ['pending']}))
         if (task.sourceUrl === url && !task.recordOperation)
-          this.queue.finish(id, task.id, 'cancelled', 'Kaynak kapatıldı');
+          this.queue.finish(id, task.id, 'cancelled', 'Source turned off');
       this.sourceState(id, url, {batchId: null});
     }
     const before = this.db.sources(id).find((s) => s.url === url);

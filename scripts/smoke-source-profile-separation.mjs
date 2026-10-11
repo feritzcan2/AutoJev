@@ -61,19 +61,19 @@ try {
   const profile = page.locator('#automation-plan-form');
   await profile.waitFor();
   assert.equal(await profile.locator('[name=sources]').count(), 0);
-  assert.doesNotMatch(await profile.innerText(), /Kaynak adresleri|Kaynaklar ve işleyiş/);
+  assert.doesNotMatch(await profile.innerText(), /Source addresses|Sources and workflow/);
   assert.equal(await profile.locator('[name=criteria-budget]').inputValue(), '1700');
   await profile.locator('[name=instructions]').fill('Her ilanın kira tutarını doğrula.');
   await page.locator('[data-view=sources]').click();
   const sources = page.locator('[data-automation-pane=sources]');
   await sources.locator('.source-proposal').waitFor();
-  assert.match(await sources.locator('.source-proposal').innerText(), /Eklenecek:.*three\.test/);
-  assert.match(await sources.locator('.source-proposal').innerText(), /Kaldırılacak:.*two\.test/);
-  await sources.getByRole('button', {name: '＋ Kaynak ekle', exact: true}).click();
+  assert.match(await sources.locator('.source-proposal').innerText(), /To add:.*three\.test/);
+  assert.match(await sources.locator('.source-proposal').innerText(), /To remove:.*two\.test/);
+  await sources.getByRole('button', {name: '＋ Add source', exact: true}).click();
   const form = sources.locator('.source-add');
   await form.locator('[name=name]').fill('Ek kaynak');
   await form.locator('[name=url]').fill(manual);
-  await form.getByRole('button', {name: 'Kaynağı ekle', exact: true}).click();
+  await form.getByRole('button', {name: 'Add source', exact: true}).click();
   await page.waitForFunction(
     async (id) =>
       (await window.jobloop.workspaceSnapshot(id)).automation.sources.includes(
@@ -99,13 +99,13 @@ try {
   await page.screenshot({path: path.join(data, 'profile.png'), fullPage: true});
   await page.locator('[data-view=setup-agent]').click();
   assert.equal(
-    await page.getByRole('button', {name: 'Taslağı incele ve kaydet', exact: true}).isVisible(),
+    await page.getByRole('button', {name: 'Review and save the draft', exact: true}).isVisible(),
     false,
   );
-  await page.getByRole('button', {name: 'Kaynak önerilerini incele', exact: true}).click();
+  await page.getByRole('button', {name: 'Review source suggestions', exact: true}).click();
   await sources.locator('.source-proposal').waitFor();
   await page.screenshot({path: path.join(data, 'sources.png'), fullPage: true});
-  await sources.getByRole('button', {name: 'Önerileri uygula', exact: true}).click();
+  await sources.getByRole('button', {name: 'Apply suggestions', exact: true}).click();
   await sources.locator('.source-proposal').waitFor({state: 'hidden'});
   state = await snapshot();
   assert.deepEqual(state.automation.sources, [first, third, manual]);
@@ -113,8 +113,8 @@ try {
   assert.equal(state.automation.reviewedRevision, state.automation.revision);
   const revision = state.automation.revision;
   const manualRow = sources.locator(`.source-row[data-source-id="${manual}"]`);
-  await manualRow.getByRole('button', {name: 'Düzenle', exact: true}).click();
-  await manualRow.getByRole('button', {name: 'Kaynağı sil', exact: true}).click();
+  await manualRow.getByRole('button', {name: 'Edit', exact: true}).click();
+  await manualRow.getByRole('button', {name: 'Delete source', exact: true}).click();
   await manualRow.waitFor({state: 'detached'});
   state = await snapshot();
   assert.deepEqual(state.automation.sources, [first, third]);

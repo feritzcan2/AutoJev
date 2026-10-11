@@ -64,14 +64,17 @@ test('large context preserves exact criteria, permission and recovery state in b
   assert.deepEqual(JSON.parse(text), value);
   const id = page.context.id;
   for (const offset of [-1, NaN, 1.5, Infinity, text.length + 1])
-    assert.throws(() => cache.read({contextId: id, offset}), /aralığı/);
-  assert.throws(() => new AutomationContext().read({contextId: id, offset: 0}), /bu çalışmaya/);
+    assert.throws(() => cache.read({contextId: id, offset}), /range/);
+  assert.throws(
+    () => new AutomationContext().read({contextId: id, offset: 0}),
+    /belongs to another run/,
+  );
   cache.capture({...value, revision: 2});
-  assert.throws(() => cache.read({contextId: id, offset: 0}), /eski/);
+  assert.throws(() => cache.read({contextId: id, offset: 0}), /stale/);
   const next = cache.current.id,
     small = {automation: {mode: 'observe'}};
   assert.deepEqual(cache.capture(small), small);
-  assert.throws(() => cache.read({contextId: next, offset: 0}), /eski/);
+  assert.throws(() => cache.read({contextId: next, offset: 0}), /stale/);
 });
 
 test('automation context can be fully read through MCP without file or browser access', async (t) => {
@@ -137,12 +140,9 @@ test('automation context can be fully read through MCP without file or browser a
   const args = {contextId: id, offset: 0};
   await assert.rejects(
     flow.call('foreign', run.id, 'read_automation_context_part', args),
-    /geçersiz/,
+    /Invalid/,
   );
-  await assert.rejects(
-    flow.call(a.id, 'foreign', 'read_automation_context_part', args),
-    /geçersiz/,
-  );
+  await assert.rejects(flow.call(a.id, 'foreign', 'read_automation_context_part', args), /Invalid/);
   const other = automationWorkflow({
     db,
     run,
@@ -152,17 +152,17 @@ test('automation context can be fully read through MCP without file or browser a
   });
   await assert.rejects(
     other.call(a.id, run.id, 'read_automation_context_part', args),
-    /bu çalışmaya/,
+    /belongs to another run/,
   );
   await call('get_automation_context');
-  await assert.rejects(flow.call(a.id, run.id, 'read_automation_context_part', args), /eski/);
+  await assert.rejects(flow.call(a.id, run.id, 'read_automation_context_part', args), /stale/);
   controller.abort();
   await assert.rejects(
     flow.call(a.id, run.id, 'read_automation_context_part', {
       contextId: page.context.id,
       offset: 0,
     }),
-    /geçersiz/,
+    /Invalid/,
   );
 });
 

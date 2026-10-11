@@ -43,7 +43,7 @@ try {
   await panel.locator('button[type=submit]').click();
   await page.waitForFunction(
     () =>
-      document.querySelector('#config-captcha [data-state]').textContent === 'Otomatik çözüm açık',
+      document.querySelector('#config-captcha [data-state]').textContent === 'Automatic solving on',
   );
   const saved = await page.evaluate(() => window.jobloop.captchaSettingsStatus());
   assert.equal(saved.enabled, true);

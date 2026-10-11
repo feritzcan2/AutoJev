@@ -74,7 +74,7 @@ test('structured answers remain candidate-scoped, preserve readable evidence and
     assert.throws(() => s.answerQuestion(other.id, q.id, {permit: true, salary: 70000}));
     assert.throws(() => s.answerQuestion(p.id, q.id, '   '));
     s.answerQuestion(p.id, q.id, {permit: false, salary: 70000});
-    assert.match(s.get(p.id).questions[0].answer, /Hayır/);
+    assert.match(s.get(p.id).questions[0].answer, /No/);
     assert.equal(s.get(p.id).questions[0].answerValues.salary, 70000);
     assert.throws(() => s.answerQuestion(p.id, q.id, {permit: true, salary: 1}));
     const legacy = s.askQuestion(p.id, {text: 'Legacy?'});

@@ -56,7 +56,7 @@ let restarted, wrongProfile, coldTools, otherProcess;
 const call = async (client, name, args = {}, state = {}) =>
   JSON.parse((await client.callTool({name, arguments: args}, 'local', state)).content[0].text);
 try {
-  await assert.rejects(() => call(a, 'browser_jev_tabs'), /Chrome bağlantısı/);
+  await assert.rejects(() => call(a, 'browser_jev_tabs'), /Chrome connection/);
   assert.deepEqual((await call(a, 'browser_jev_tabs')).tabs, []);
   assert.equal(windowRequests, 1);
   const first = await call(a, 'browser_jev_open', {url: fixture.url});
@@ -95,12 +95,12 @@ try {
   );
   await assert.rejects(
     () => call(a, 'browser_jev_observe', {tabId: targetInfo.targetId}),
-    /bulunamadı/,
+    /not found/,
   );
-  await assert.rejects(() => call(b, 'browser_jev_observe', {tabId: first.tabId}), /bulunamadı/);
+  await assert.rejects(() => call(b, 'browser_jev_observe', {tabId: first.tabId}), /not found/);
   await assert.rejects(
     () => b.callTool({name: 'browser_jev_screenshot', arguments: {tabId: first.tabId}}),
-    /bulunamadı/,
+    /not found/,
   );
   // A real filled draft survives both socket loss and an application restart.
   await a.tab(first.tabId).page.locator('#query').fill('unsent draft');
@@ -121,7 +121,7 @@ try {
         decisionId: decision.decisionId,
         text: 'must not execute',
       }),
-    /geçerli bir Jev kararı yok/,
+    /no valid Jev decision/,
   );
   assert.equal(await a.tab(first.tabId).page.locator('#query').inputValue(), 'unsent draft');
   assert.equal(windowRequests, 3);
@@ -135,13 +135,13 @@ try {
   assert.equal(windowRequests, 4);
   await assert.rejects(
     () => call(restarted, 'browser_jev_observe', {tabId: third.tabId}),
-    /bulunamadı/,
+    /not found/,
   );
   // A closed target cannot be confused with another open copy of the same URL.
   await root.send('Target.closeTarget', {targetId: second.tabId});
   await assert.rejects(
     () => call(restarted, 'browser_jev_observe', {tabId: second.tabId}),
-    /bulunamadı|closed/,
+    /not found|closed/,
   );
   const {BrowserTools} = await import('../app/browser/tools.mjs');
   coldTools = new BrowserTools(directory, () => ({

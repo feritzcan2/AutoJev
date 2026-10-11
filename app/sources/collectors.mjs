@@ -16,10 +16,10 @@ export const needsCollectorReview = (record) =>
 export const collectorRun = (a, run) =>
   !run.recordId && !run.recordOperation && run.kind === 'run' && sourceCollector(a, run.sourceUrl);
 export function collectorSearches(a, url) {
-  if (!sourceCollector(a, url)) throw Error('Bu kaynak için özel toplayıcı yok.');
+  if (!sourceCollector(a, url)) throw Error('This source has no dedicated collector.');
   const recipe = a.sourceSettings?.[url]?.recipe;
   if (recipe && recipe.entry.kind !== 'url_template')
-    throw Error('Bu toplayıcı için URL arama reçetesi gerekli.');
+    throw Error('This collector needs a URL search recipe.');
   const adapter = collectorExtension(a, url).collector,
     values = recipeValues(a, url),
     fallback = new URL(url);
@@ -36,7 +36,7 @@ export function collectorSearches(a, url) {
   const unique = new Map(
     searches.map((s) => {
       const url = adapter.searchUrl(s.url);
-      return [url, {url, label: s.term ?? new URL(url).searchParams.get('q') ?? 'Kaynak'}];
+      return [url, {url, label: s.term ?? new URL(url).searchParams.get('q') ?? 'Source'}];
     }),
   );
   return [...unique.values()].map((s, index) => ({id: `collector-${index + 1}`, ...s}));

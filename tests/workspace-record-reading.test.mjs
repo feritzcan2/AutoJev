@@ -81,8 +81,8 @@ test('literal Unicode searches stay within the workspace and paginate only match
   assert.equal(second.nextOffset, null);
   assert.equal(f.call({query: 'NOT PRESENT'}).total, 0);
   assert.equal(f.call({query: 'jobs.example/two'}).records[0].id, 'two');
-  assert.throws(() => f.call({itemId: 'foreign'}), /çalışma alanına/);
-  assert.throws(() => f.call({query: '  '}), /boş olmayan/);
+  assert.throws(() => f.call({itemId: 'foreign'}), /this workspace/);
+  assert.throws(() => f.call({query: '  '}), /non-empty text/);
   const schema = workspaceTableTools.find((t) => t.name === 'get_workspace_records').inputSchema;
   for (const args of [{query: 'x'.repeat(201)}, {limit: 51}, {offset: -1}])
     assert.throws(() => validate(schema, args));

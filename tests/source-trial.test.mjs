@@ -92,7 +92,7 @@ test('reviewed setup starts source trials without a workspace trial, then schedu
     proposal: 'Sample draft',
   });
   assert.equal(sample.trial, true);
-  assert.throws(() => f.db.reserve(f.id, first.id, sample.id), /gözlem/);
+  assert.throws(() => f.db.reserve(f.id, first.id, sample.id), /observe/);
   await f.finish(first);
   await f.runtime.tick();
   await settle();

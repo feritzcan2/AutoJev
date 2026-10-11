@@ -2,7 +2,7 @@ import {currentWork} from '../app/automation/current-work.mjs';
 import {elapsedLabel} from './activity.js';
 
 const clock = (value) =>
-  new Date(value).toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'});
+  new Date(value).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'});
 const el = (tag, text, cls) => {
   const node = document.createElement(tag);
   if (text != null) node.textContent = text;
@@ -10,7 +10,7 @@ const el = (tag, text, cls) => {
   return node;
 };
 
-// "Şu anki işler": every running or waiting piece of work in one list.
+// "Current work": every running or waiting piece of work in one list.
 export function renderCurrentWork(root, view, {stop}) {
   const rows = currentWork(view),
     list = el('div', null, 'run-list current-work-list');
@@ -22,9 +22,9 @@ export function renderCurrentWork(root, view, {stop}) {
     const when = row.startedAt
       ? elapsedLabel(new Date(row.startedAt).toISOString())
       : row.resumesAt
-        ? `Devam: ${clock(row.resumesAt)}`
+        ? `Resumes: ${clock(row.resumesAt)}`
         : row.queuedAt
-          ? `Eklendi: ${clock(row.queuedAt)}`
+          ? `Queued: ${clock(row.queuedAt)}`
           : null;
     if (when) head.append(el('time', when));
     item.append(head);
@@ -32,9 +32,9 @@ export function renderCurrentWork(root, view, {stop}) {
     if (meta || row.stop) {
       const line = el('div', null, 'run-results');
       if (meta) line.append(el('span', meta));
-      if (row.updatedAt) line.append(el('span', `Son sayfa ${clock(row.updatedAt)}`, 'run-tokens'));
+      if (row.updatedAt) line.append(el('span', `Last page ${clock(row.updatedAt)}`, 'run-tokens'));
       if (row.stop) {
-        const button = el('button', 'Durdur', 'quiet current-work-stop');
+        const button = el('button', 'Stop', 'quiet current-work-stop');
         button.type = 'button';
         button.onclick = async () => {
           button.disabled = true;
@@ -52,11 +52,11 @@ export function renderCurrentWork(root, view, {stop}) {
     list.append(item);
   }
   const title = el('div', null, 'section-title');
-  title.append(el('h2', 'Şu anki işler'));
+  title.append(el('h2', 'Current work'));
   root.replaceChildren(
     title,
     rows.length
       ? list
-      : el('p', 'Şu anda çalışan veya bekleyen iş yok.', 'run-history-empty current-work-empty'),
+      : el('p', 'No work is running or waiting right now.', 'run-history-empty current-work-empty'),
   );
 }

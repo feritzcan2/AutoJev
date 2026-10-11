@@ -46,8 +46,8 @@ export async function readOpenCodeFailure({
       at: message.time.completed,
       kind: unsupported ? 'unsupported_file' : 'provider_error',
       summary: unsupported
-        ? 'Model PDF dosya ekini kabul etmedi. Belgeler read_scoring_profile aracıyla metin olarak okunmalı. Görev durduruldu; yeniden deneme yeni bir oturum açacak.'
-        : `Model sağlayıcısı isteği tamamlayamadı${Number.isInteger(code) && code >= 400 && code <= 599 ? ` (HTTP ${code})` : ''}. Görev durduruldu; agent terminalindeki hatayı kontrol et.`,
+        ? 'The model did not accept the PDF attachment. Documents must be read as text with the read_scoring_profile tool. The task was stopped; a retry opens a new session.'
+        : `The model provider could not complete the request${Number.isInteger(code) && code >= 400 && code <= 599 ? ` (HTTP ${code})` : ''}. The task was stopped; check the error in the agent terminal.`,
     };
   } catch {
     return null;

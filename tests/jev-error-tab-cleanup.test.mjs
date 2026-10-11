@@ -139,7 +139,7 @@ test('a failed tab close prevents allocating further retry tabs', async () => {
     throw Error('Disconnected');
   };
   const created = f.created;
-  await assert.rejects(f.open(), /yeni kontrol sekmesi açılmadı/);
+  await assert.rejects(f.open(), /no new control tab was opened/);
   assert.equal(f.created, created);
   assert.equal(f.browser.tabs.size, 1);
 });

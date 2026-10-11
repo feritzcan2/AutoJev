@@ -24,6 +24,7 @@ import xing from './xing.mjs';
 import berlinStartupJobs from './berlin-startup-jobs.mjs';
 import arbeitnow from './arbeitnow.mjs';
 import indeed from './indeed.mjs';
+import freehire from './freehire.mjs';
 
 export const SITE_EXTENSIONS = [
   stepstone,
@@ -33,6 +34,7 @@ export const SITE_EXTENSIONS = [
   berlinStartupJobs,
   arbeitnow,
   indeed,
+  freehire,
 ];
 export const siteExtensionFor = (url) => SITE_EXTENSIONS.find((e) => e.matches(url)) ?? null;
 // What reads this source for the source list: api (collector, only for its

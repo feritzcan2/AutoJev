@@ -93,9 +93,12 @@ test('a third executor registers its own capabilities and runs through the same 
           {id: 'bad', capability: 'browser.act', scope: 'source', instructions: 'Wrong capability'},
         ],
       }),
-    /adımı/,
+    /template step/,
   );
-  assert.throws(() => registry.normalize({execution: {driver: 'unregistered'}}), /uzantısı/);
+  assert.throws(
+    () => registry.normalize({execution: {driver: 'unregistered'}}),
+    /extension is not installed/,
+  );
 });
 
 test('generic boot has no static dependency on application stores, campaigns or MCP handlers', async () => {

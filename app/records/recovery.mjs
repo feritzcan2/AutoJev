@@ -3,6 +3,10 @@ import {taskRecordIds, recordScoredInTask} from './task-scope.mjs';
 // Reconnect shutdowns and the former app-generated unreported scoring failure.
 // User stops and actual tool/provider failures are never revived.
 const shutdownMessages = new Set([
+  'App closed.',
+  'The app closed. Saved results are kept.',
+  'The previous app session closed',
+  // Stored by earlier versions.
   'Uygulama kapatıldı.',
   'Uygulama kapandı. Kaydedilen sonuçlar korunuyor.',
   'Önceki uygulama oturumu kapandı',
@@ -21,6 +25,9 @@ export function recoverRecordOperations(db) {
         task.recordOperation === 'score' &&
         task.state === 'failed' &&
         [
+          'The agent stopped without reporting a result. Check the agent screen.',
+          'The agent session closed without reporting a result.',
+          // Stored by earlier versions.
           'Agent sonuç bildirmeden durdu. Agent ekranını kontrol et.',
           'Agent oturumu sonuç bildirmeden kapandı.',
         ].includes(task.summary);
@@ -40,7 +47,7 @@ export function recoverRecordOperations(db) {
             a.id,
             task.id,
             'completed',
-            'Bütün puanlar kaydedilmiş; tamamlanma durumu düzeltildi.',
+            'All scores were saved; the completion state was corrected.',
           );
           continue;
         }
@@ -49,7 +56,7 @@ export function recoverRecordOperations(db) {
           state: 'pending',
           workerId: null,
           completionState: null,
-          summary: `Kaydedilen puanlar korundu; kalan ${remaining.length} kayıttan devam edecek.`,
+          summary: `Saved scores were kept; it will continue with the remaining ${remaining.length} records.`,
           recoveredAt: db.now(),
         });
         continue;
@@ -70,7 +77,7 @@ export function recoverRecordOperations(db) {
         capability: op.capability,
         request:
           kind === 'verify' ? {manual: true, revision: a.revision, at: db.now()} : task.request,
-        summary: 'Uygulama kapanırken yarım kaldı. Tarayıcı bağlandığında devam edecek.',
+        summary: 'Left unfinished when the app closed. It will continue once the browser connects.',
         recoveredAt: db.now(),
       });
     }
@@ -120,8 +127,8 @@ export function unreportedRecordRun(db, id, runId, reason) {
     status: 'interrupted',
     summary:
       reason === 'idle'
-        ? 'Agent sonuç bildirmeden durdu; görev bir kez yeniden denenecek.'
-        : 'Agent oturumu sonuç bildirmeden kapandı; görev bir kez yeniden denenecek.',
+        ? 'The agent stopped without reporting a result; the task will be retried once.'
+        : 'The agent session closed without reporting a result; the task will be retried once.',
   };
 }
 // A record run that stopped on a shared site wait (rate limit, verification

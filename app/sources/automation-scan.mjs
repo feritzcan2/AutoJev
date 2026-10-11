@@ -24,9 +24,9 @@ export function observedLinks(response, pageUrl) {
 
 export function scanCheckpoint(run, input, {checkpoint = false} = {}) {
   if (run.kind !== 'run' || !run.sourceUrl || run.recordId)
-    throw Error('Tarama kapsamı yalnızca kaynak görevine aittir');
+    throw Error('Scan coverage belongs only to a source task');
   if (!input || typeof input.complete !== 'boolean' || !Array.isArray(input.pendingUrls))
-    throw Error('Tarama kapsamı gerekli: complete, pendingUrls, reason, evidenceUrl');
+    throw Error('Scan coverage required: complete, pendingUrls, reason, evidenceUrl');
   const pendingUrls = [...new Set(input.pendingUrls.map(webUrl))];
   // A source can discover an employer board on another host. Ownership is the
   // assigned run, not the marketing site's origin; guessed URLs remain invalid.
@@ -38,19 +38,19 @@ export function scanCheckpoint(run, input, {checkpoint = false} = {}) {
   ]);
   if (pendingUrls.some((url) => !known.has(url)))
     throw Error(
-      'Devam adresleri bu görevde gerçekten gözlenen bağlantılar olmalı; URL tahmin etme',
+      'Continuation addresses must be links actually observed in this task; do not guess URLs',
     );
   const evidenceUrl = webUrl(input.evidenceUrl),
-    reason = boundedText(input.reason, 'Kapsam açıklaması', 2000);
+    reason = boundedText(input.reason, 'Coverage reason', 2000);
   if (!(run.navigation ?? run.observations ?? []).some((o) => o.url === evidenceUrl))
     throw Error(
       'Open the evidence page (evidenceUrl) in this turn before reporting scan coverage.',
     );
   if (input.complete && pendingUrls.length)
-    throw Error('Bekleyen sayfa veya ilan varken tarama tamamlandı denemez');
+    throw Error('A scan cannot be called complete while pages or listings are pending');
   if (!checkpoint && !input.complete && !pendingUrls.length)
     throw Error(
-      'Kısmi taramada kalan sayfa/ilan bağlantılarını kaydet; ilerleyemiyorsan engeli bildir',
+      'In a partial scan, save the remaining page/listing links; if you cannot proceed, report the blocker',
     );
   if (
     !checkpoint &&
@@ -59,7 +59,7 @@ export function scanCheckpoint(run, input, {checkpoint = false} = {}) {
       JSON.stringify([...(run.scan?.pendingUrls ?? [])].sort())
   )
     throw Error(
-      'Devam noktası ilerlemedi. Kalan sayfaları işle veya gerçek engeli bildir; aynı işi tekrar kuyruğa koyma',
+      'The continuation point did not advance. Process the remaining pages or report the actual blocker; do not queue the same work again',
     );
   return {
     ...run.scan,

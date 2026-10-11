@@ -24,6 +24,6 @@ export function readBrowserEvidence({db, run, snapshots, method, args}) {
       offsetReset: rebound,
     },
     notice:
-      'Kayıtlı metin aynı görev ve aramadan geri yüklendi. Dönen snapshotId ve offset ile devam et. Bu metin güncel tarayıcı kontrolü veya gönderim kanıtı değildir.',
+      'The saved text was restored from the same task and search. Continue with the returned snapshotId and offset. This text is not a current browser check or proof of submission.',
   };
 }

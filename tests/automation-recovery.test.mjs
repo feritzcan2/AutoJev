@@ -414,7 +414,7 @@ test('an unreported run with verified browser failures uses technical backoff in
   assert.equal(task.technicalRecovery.attempt, 1);
   assert.equal(task.retryAt, Date.now() + 30000);
   assert.deepEqual(task.scan.pendingUrls, [second]);
-  assert.match(f.db.sources(f.id)[0].lastResult, /Sayfa yüklenemedi/);
+  assert.match(f.db.sources(f.id)[0].lastResult, /Page failed to load/);
 });
 
 test('three technical failures stop automatic retries across ticks and restarts; manual retry keeps progress and resets the count', async (t) => {
@@ -443,7 +443,7 @@ test('three technical failures stop automatic retries across ticks and restarts;
   assert.equal(sourceState.nextRunAt, null);
   assert.equal(sourceState.blocker.stop.retryExhausted, true);
   assert.deepEqual(sourceState.scan.pendingUrls, [second]);
-  assert.match(sourceState.lastResult, /Erişim sorunu sürüyor/);
+  assert.match(sourceState.lastResult, /Access problem persists/);
   const task = f.store.workspaces.tasks.get(f.id, original.taskId);
   assert.equal(task.state, 'blocked');
   assert.equal(task.technicalRecovery.attempt, 3);

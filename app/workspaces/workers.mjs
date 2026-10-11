@@ -24,20 +24,20 @@ export class WorkspaceWorkers {
       worker === CONVERSATION_WORKER &&
       this.workspaces.definition(id).execution.driver === 'browser'
     )
-      return {id: worker, name: 'Sohbet', conversation: true};
+      return {id: worker, name: 'Chat', conversation: true};
     const found = this.list(id).find((w) => w.id === worker);
-    if (!found) throw Error('Worker bu çalışma alanına ait değil veya kaldırıldı.');
+    if (!found) throw Error('The worker does not belong to this workspace or was removed.');
     return found;
   }
   add(id, {name = undefined} = {}) {
     const workers = this.list(id),
       max = this.workspaces.definition(id).execution.maxWorkers;
-    if (workers.length >= max) throw Error(`En fazla ${max} worker eklenebilir.`);
+    if (workers.length >= max) throw Error(`At most ${max} workers can be added.`);
     const label =
       name ??
       `Worker ${Math.max(...workers.map((w) => Number(w.name.match(/^Worker (\d+)$/)?.[1]) || 1)) + 1}`;
     if (typeof label !== 'string' || !label.trim() || label.length > 80)
-      throw Error('Worker adı 1–80 karakter olmalı.');
+      throw Error('The worker name must be 1–80 characters.');
     const worker = {id: randomUUID(), name: label.trim()};
     this.db
       .prepare('INSERT INTO workspace_workers VALUES(?,?,?)')
@@ -55,13 +55,14 @@ export class WorkspaceWorkers {
   }
   remove(id, worker) {
     this.get(id, worker);
-    if (worker === 'main' || worker === CONVERSATION_WORKER) throw Error('Bu worker kaldırılamaz.');
+    if (worker === 'main' || worker === CONVERSATION_WORKER)
+      throw Error('This worker cannot be removed.');
     if (
       this.workspaces.tasks
         .list(id, {states: ['running', 'reported', 'paused']})
         .some((t) => t.workerId === worker)
     )
-      throw Error('Önce worker görevini durdur');
+      throw Error('Stop the worker’s task first');
     this.db.prepare('DELETE FROM workspace_workers WHERE workspace_id=? AND id=?').run(id, worker);
     this.db
       .prepare('DELETE FROM workspace_conversations WHERE workspace_id=? AND worker_id=?')

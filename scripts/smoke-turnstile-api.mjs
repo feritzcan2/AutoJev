@@ -149,7 +149,7 @@ try {
     after = tasks;
   assert.equal(rejected.siteWait.reason, 'verification');
   assert.equal(rejected.jevPage.captcha.state, 'handoff');
-  assert.match(rejected.jevPage.captcha.message, /engeli kalkmadı/);
+  assert.match(rejected.jevPage.captcha.message, /barrier did not clear/);
   const repeat = await browsers.call(
     'workspace',
     'browser_jev_observe',
@@ -165,7 +165,7 @@ try {
   apiError = null;
   assert.equal(tasks, beforeError + 1);
   assert.equal(error.jevPage.captcha.state, 'handoff');
-  assert.match(error.siteWait.message, /bakiye/i);
+  assert.match(error.siteWait.message, /balance/i);
   console.log('Turnstile API: hidden, missing callback, managed payload and ordinary form');
   const page = await context.newPage(),
     slot = await client.track(context, page);
@@ -194,7 +194,7 @@ try {
   assert.notEqual((await detectCaptcha(slot.page)).target.identity, first.target.identity);
   await assert.rejects(
     () => applyCaptcha(slot.page, first.target, old, {token}, {allowBarrierCallback: true}),
-    /değişti/,
+    /changed/,
   );
   assert.equal(await page.evaluate(() => window.callbackCalls), 0);
   // Callback exceptions do not allow a second delivery of the same token.
@@ -248,7 +248,7 @@ try {
         {token},
         {allowBarrierCallback: true},
       ),
-    /değişti/,
+    /changed/,
   );
   assert.equal(await page.evaluate(() => window.callbackCalls), 0);
   console.log('Turnstile API: navigation during solver, queue remains available');

@@ -1,4 +1,4 @@
-/* Yapılandırma: every text the agent receives, as a browsable document. */
+/* Configuration: every text the agent receives, as a browsable document. */
 .config-head {
   display: flex;
   align-items: flex-start;

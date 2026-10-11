@@ -86,10 +86,10 @@ export class SourceRetryChecks {
                 recovery: {...technicalRecovery, reason: 'technical_page'},
                 nextRunAt: retryAt ?? checkedAt,
                 lastResult: skipped.length
-                  ? `${skipped.length} sayfa ${PAGE_CHECK_LIMIT} denemede açılmadı ve atlandı; site erişilebilir, kaydedilen görev devam edecek.`
+                  ? `${skipped.length} pages did not open in ${PAGE_CHECK_LIMIT} attempts and were skipped; the site is reachable, the saved task will continue.`
                   : result.ready
-                    ? 'Sayfa yeniden erişilebilir; kaydedilen görev devam edecek.'
-                    : 'Sayfa hâlâ yüklenemiyor. Agent açılmadan yeniden kontrol edilecek.',
+                    ? 'The page is reachable again; the saved task will continue.'
+                    : 'The page still does not load. It will be checked again before an agent is opened.',
               },
             },
           });

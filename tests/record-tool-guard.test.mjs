@@ -257,7 +257,7 @@ test('the third repeated save error stops only its worker and persists a visible
     itemId: 'missing-record',
     evidenceUrl: 'https://www.linkedin.com/jobs/view/4473093841',
   });
-  assert.match(errorText(response), /Puanlama durduruldu.*3 kez/);
+  assert.match(errorText(response), /Scoring stopped.*3 times/);
   assert.equal(f.db.run(entry.run.id).status, 'blocked');
   assert.equal(f.reports.length, 1);
   assert.equal(f.failures(entry)[0].count, 3);
@@ -275,13 +275,13 @@ test('the third repeated save error stops only its worker and persists a visible
   assert.equal(f.entries.size, 2, 'No automatic retry of the blocked task');
   const snapshot = f.db.snapshot(f.id),
     row = snapshot.results.find((r) => r.id === f.item.id);
-  assert.equal(recordOperationStatus(row).label, 'İşlem engellendi');
-  assert.match(row.recordAction.lastTask.summary, /Sonuç bu otomasyona ait değil/);
+  assert.equal(recordOperationStatus(row).label, 'Operation blocked');
+  assert.match(row.recordAction.lastTask.summary, /The result does not belong to this automation/);
   const issues = automationAttention({...snapshot, runs: [], activeRuns: [other.run]});
   assert.equal(issues.length, 1);
   assert.equal(issues[0].kind, 'repeated_tool_error');
   assert.equal(issues[0].recordId, f.item.id);
-  assert.match(issues[0].message, /3 kez/);
+  assert.match(issues[0].message, /3 times/);
   assert.equal(
     f.db.messages(f.id).filter((m) => m.recordId === f.item.id && m.role === 'system').length,
     1,
@@ -349,7 +349,7 @@ test('distinct errors stay separate and rebuilding the workflow preserves counte
   f.rebuild(entry);
   assert.match(errorText(await f.score(entry, {itemId: 'missing-record'})), /2\/3/);
   assert.equal(f.db.run(entry.run.id).status, 'running');
-  assert.match(errorText(await f.score(entry, {itemId: 'missing-record'})), /3 kez/);
+  assert.match(errorText(await f.score(entry, {itemId: 'missing-record'})), /3 times/);
   assert.equal(f.db.run(entry.run.id).status, 'blocked');
 });
 
@@ -383,7 +383,7 @@ test('application restart resumes the same task with its existing failure count'
   const next = [...f.entries.values()].at(-1);
   assert.notEqual(next.run.id, entry.run.id);
   assert.equal(next.run.taskId, entry.run.taskId);
-  assert.match(errorText(await f.score(next, {itemId: 'missing-record'})), /3 kez/);
+  assert.match(errorText(await f.score(next, {itemId: 'missing-record'})), /3 times/);
   assert.equal(f.db.run(next.run.id).status, 'blocked');
 });
 
@@ -401,7 +401,7 @@ test('browser failures on different pages are distinct while same-listing URL al
   const response = await f.call(entry, 'browser_open', {
     url: 'https://www.linkedin.com/jobs/view/4473093841/?utm_source=mail',
   });
-  assert.match(errorText(response), /3 kez/);
+  assert.match(errorText(response), /3 times/);
   assert.equal(f.db.run(entry.run.id).status, 'blocked');
 });
 
@@ -455,7 +455,7 @@ test('rejected proof responses also stop after three attempts while preserving u
     assert.equal(observed.status, 'evidence_rejected');
     assert.equal(observed.saved, false);
   }
-  assert.match(observed.message, /Doğrulama durduruldu.*3 kez/);
+  assert.match(observed.message, /Verification stopped.*3 times/);
   assert.equal(f.db.run(entry.run.id).status, 'blocked');
   assert.equal(f.db.result(f.id, item.id).status, 'uncertain');
 });
@@ -492,7 +492,7 @@ test('source schema failures share a limit across records and cannot auto-requeu
   await f.runtime.tick();
   assert.equal(f.entries.size, count);
   assert.equal(f.core.workspaces.tasks.get(f.id, entry.run.taskId).state, 'blocked');
-  assert.match(f.db.run(entry.run.id).summary, /Kaynak taraması durduruldu/);
+  assert.match(f.db.run(entry.run.id).summary, /Source scan stopped/);
 });
 
 test('URL records omit redundant key and recover from complete field feedback without losing deduplication', async (t) => {

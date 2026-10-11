@@ -91,16 +91,16 @@ export function assertSubmitAllowed(run, label) {
   const name = JSON.stringify(String(label ?? '').slice(0, 80));
   if (run.recordOperation !== 'execute')
     throw Error(
-      `${name} bir gönderim düğmesi olabilir. Yalnızca başvuru (execute) görevi gönderebilir; bu görevde tıklama.`,
+      `${name} may be a submit button. Only an application (execute) task may submit; do not click it in this task.`,
     );
   if (!run.actionId)
     throw Error(
-      `${name} bir gönderim düğmesi olabilir. Önce reserve_automation_action çağır, sonra bu düğmeye bir kez tıkla.`,
+      `${name} may be a submit button. Call reserve_automation_action first, then click this button once.`,
     );
   const previous = run.submission;
   if (previous && previous.outcome !== 'validation')
     throw Error(
-      `Gönderim zaten denendi (sonuç: ${previous.outcome}). Tekrar tıklama. Sayfayı oku ve record_automation_outcome ile kaydet: onay görüldüyse completed, görülmediyse uncertain.`,
+      `Submission was already attempted (outcome: ${previous.outcome}). Do not click again. Read the page and record it with record_automation_outcome: completed if a confirmation is visible, otherwise uncertain.`,
     );
 }
 

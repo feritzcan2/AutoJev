@@ -7,7 +7,7 @@ export function workerPreviews({browsers, sessionFor}) {
   async function capture(id, worker) {
     const session = sessionFor(id, worker),
       runId = session?.sessionId;
-    if (!runId) return empty('idle', 'Worker’ın aktif tarayıcı işi yok.');
+    if (!runId) return empty('idle', 'The worker has no active browser work.');
     const connection = browsers.clients.get(id),
       client = connection?.client;
     const connected = () =>
@@ -17,7 +17,7 @@ export function workerPreviews({browsers, sessionFor}) {
       !client.closed &&
       client.profile?.directory === browsers.options(id).profile?.directory &&
       (client.connection !== 'existing' || client.browser?.isConnected());
-    if (!connected()) return empty('waiting', 'Chrome bağlantısı bekleniyor.');
+    if (!connected()) return empty('waiting', 'Waiting for the Chrome connection.');
     const owned = (slot) =>
       slot &&
       slot.id !== client.homeId &&
@@ -28,11 +28,11 @@ export function workerPreviews({browsers, sessionFor}) {
       .filter(owned)
       .reverse()
       .sort((a, b) => (b.previewAt ?? 0) - (a.previewAt ?? 0))[0];
-    if (!slot) return empty('empty', 'Bu worker henüz bir tarayıcı sekmesi açmadı.');
+    if (!slot) return empty('empty', 'This worker has not opened a browser tab yet.');
     // A UI timeout does not cancel CDP. Keep at most one actual capture per tab
     // until Chrome answers or disconnects, even across later refresh attempts.
     if (capturing.has(slot))
-      return empty('waiting', 'Chrome’un önceki görüntü isteğini tamamlaması bekleniyor.');
+      return empty('waiting', 'Waiting for Chrome to finish the previous screenshot request.');
     const url = slot.page.url(),
       current = () =>
         connected() &&
@@ -59,13 +59,13 @@ export function workerPreviews({browsers, sessionFor}) {
         screenshot,
         new Promise((_, reject) => {
           timer = setTimeout(
-            () => reject(Error('Chrome görüntüsü zamanında alınamadı. Yeniden deneniyor.')),
+            () => reject(Error('The Chrome screenshot did not arrive in time. Retrying.')),
             4000,
           );
         }),
       ]);
       if (!current())
-        return empty('waiting', 'Worker’ın sekmesi değişti; yeni görüntü bekleniyor.');
+        return empty('waiting', 'The worker’s tab changed; waiting for a new screenshot.');
       return {
         state: 'ready',
         runId,
@@ -77,10 +77,7 @@ export function workerPreviews({browsers, sessionFor}) {
         image: `data:image/jpeg;base64,${data}`,
       };
     } catch (error) {
-      return empty(
-        'waiting',
-        current() ? error.message : 'Chrome sekmesi veya bağlantısı değişti.',
-      );
+      return empty('waiting', current() ? error.message : 'The Chrome tab or connection changed.');
     } finally {
       clearTimeout(timer);
     }

@@ -97,12 +97,12 @@ for (const kind of ['interview', 'trial', 'run'])
       assert.equal(db.results(a.id).length, 0);
       await assert.rejects(
         flow.call('foreign', run.id, 'browser_interact', {operation: 'click', ref: 'e1'}),
-        /geçersiz/,
+        /Invalid/,
       );
       await assert.rejects(
         flow.call(a.id, 'old-session', 'browser_interact', {operation: 'click', ref: 'e1'}),
-        /geçersiz/,
+        /Invalid/,
       );
       controller.abort();
-      await assert.rejects(call('browser_interact', {operation: 'click', ref: 'e1'}), /geçersiz/);
+      await assert.rejects(call('browser_interact', {operation: 'click', ref: 'e1'}), /Invalid/);
     });

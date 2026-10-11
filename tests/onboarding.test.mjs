@@ -14,9 +14,9 @@ function fixture(t, templateId = 'job-search') {
     templateId === 'job-search'
       ? db.create(templateId, {})
       : db.create(templateId, {
-          title: 'Ev takibi',
-          goal: 'Berlin evleri',
-          criteria: {location: 'Berlin', budget: '1500', requirements: '2 oda'},
+          title: 'Home search',
+          goal: 'Homes in Berlin',
+          criteria: {location: 'Berlin', budget: '1500', requirements: '2 rooms'},
           sources: ['https://example.com/homes'],
         });
   const sent = [],
@@ -61,7 +61,7 @@ test('reading the CV again reuses the waiting session; a later message replaces 
   const first = await runtime.onboard(id);
   await assert.rejects(
     runtime.onboard(id),
-    /yanıtını hazırlıyor/,
+    /preparing its reply/,
     'A busy turn is not interrupted',
   );
   db.putRun({...db.run(first.id), awaitingMessage: true});
@@ -72,14 +72,37 @@ test('reading the CV again reuses the waiting session; a later message replaces 
   assert.equal(db.run(first.id).onboarding, true);
   db.putRun({...db.run(first.id), awaitingMessage: true});
   runtime.active[0].run = db.run(first.id);
-  await runtime.message(id, 'Sadece Berlin');
+  await runtime.message(id, 'Only Berlin');
   const run = db.run(first.id);
   assert.equal(run.onboarding, undefined);
-  assert.equal(conversationRequest(db, id, run).message, 'Sadece Berlin');
+  assert.equal(conversationRequest(db, id, run).message, 'Only Berlin');
+});
+
+test('notes typed with the CV go to the agent with the CV task and stay in the chat', async (t) => {
+  const {db, id, runtime, sent} = fixture(t);
+  const run = await runtime.onboard(id, {notes: '  Remote only, at least 80k EUR  '});
+  const notes = db.messages(id).find((m) => m.onboardingNotes);
+  assert.equal(notes.role, 'user');
+  assert.equal(notes.text, 'Remote only, at least 80k EUR');
+  assert.equal(notes.conversation, true, 'The notes show in the setup chat');
+  const request = conversationRequest(db, id, run);
+  assert.match(request.task, /userNotes/);
+  assert.equal(request.userNotes, 'Remote only, at least 80k EUR');
+  assert.match(automationPrompt(run, request), /Remote only, at least 80k EUR/);
+  db.putRun({...db.run(run.id), awaitingMessage: true});
+  runtime.active[0].run = db.run(run.id);
+  await runtime.onboard(id);
+  assert.match(
+    sent.at(-1),
+    /"userNotes":"Remote only, at least 80k EUR"/,
+    'Reading again reuses them',
+  );
+  assert.equal(db.messages(id).filter((m) => m.onboardingNotes).length, 1);
+  await assert.rejects(runtime.onboard(id, {notes: 42}), /Notes must be text/);
 });
 
 test('a template without a CV task cannot start the welcome-screen setup', async (t) => {
   const {id, runtime, started} = fixture(t, 'housing');
-  await assert.rejects(runtime.onboard(id), /belgeyle kurulumu desteklemiyor/);
+  await assert.rejects(runtime.onboard(id), /does not support setup from a document/);
   assert.deepEqual(started, []);
 });

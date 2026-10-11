@@ -10,33 +10,33 @@ export function captchaSettingsPanel(api, root, {notice = () => {}} = {}) {
     error = '',
     version = 0;
   root.classList.add('jev-settings');
-  root.innerHTML = `<div class="jev-settings-heading"><h4>CapSolver bağlantısı</h4><span data-state role="status">Yükleniyor…</span></div>
- <p>Aktif CAPTCHA doğrulandığında otomatik çözüm denenir. Desteklenmeyen veya çözülemeyen doğrulamalarda mevcut sekmeden yardım isteyebilirsin.</p>
- <form><label>CapSolver API anahtarı<input name="apiKey" type="password" autocomplete="new-password" spellcheck="false" maxlength="4096" placeholder="CapSolver hesabındaki API anahtarın"></label>
- <label>Otomatik çözüm<select name="enabled"><option value="false">Kapalı</option><option value="true">Açık</option></select></label>
- <label>Günlük çözüm isteği sınırı<input name="dailyLimit" type="number" min="1" max="10000" value="100" required></label>
- <div class="jev-settings-actions"><button class="primary" type="submit">Kaydet</button><button class="quiet" type="button" data-test>Bağlantı ve bakiyeyi kontrol et</button><button class="quiet" type="button" data-remove>Anahtarı kaldır</button></div></form>
- <p data-usage></p><p class="jev-settings-hint">Çözüm için sayfa adresi, CAPTCHA bilgileri veya yalnızca CAPTCHA görseli CapSolver ile paylaşılır. Anahtar sistem anahtarlığıyla şifrelenir. Her görsel tur ayrı bir istek sayılır; günlük sayaç UTC’ye göre yenilenir ve yeniden başlatmayla sıfırlanmaz. Bağlantı testi yalnızca bakiyeyi sorgular.</p><p class="jev-settings-message" data-message role="status"></p>`;
+  root.innerHTML = `<div class="jev-settings-heading"><h4>CapSolver connection</h4><span data-state role="status">Loading…</span></div>
+ <p>When an active CAPTCHA is detected, automatic solving is tried. For unsupported or unsolvable challenges you can ask for help from the current tab.</p>
+ <form><label>CapSolver API key<input name="apiKey" type="password" autocomplete="new-password" spellcheck="false" maxlength="4096" placeholder="The API key from your CapSolver account"></label>
+ <label>Automatic solving<select name="enabled"><option value="false">Off</option><option value="true">On</option></select></label>
+ <label>Daily solve request limit<input name="dailyLimit" type="number" min="1" max="10000" value="100" required></label>
+ <div class="jev-settings-actions"><button class="primary" type="submit">Save</button><button class="quiet" type="button" data-test>Check connection and balance</button><button class="quiet" type="button" data-remove>Remove key</button></div></form>
+ <p data-usage></p><p class="jev-settings-hint">To solve a challenge, the page address and CAPTCHA details, or only the CAPTCHA image, are shared with CapSolver. The key is encrypted with the system keychain. Each image round counts as a separate request; the daily counter resets on UTC time and is not reset by a restart. The connection test only queries the balance.</p><p class="jev-settings-message" data-message role="status"></p>`;
   const $ = (selector) => root.querySelector(selector),
     form = $('form');
   function render() {
     $('[data-state]').textContent = status?.error
-      ? 'Anahtar açılamadı'
+      ? 'Key could not be decrypted'
       : status?.enabled
-        ? 'Otomatik çözüm açık'
+        ? 'Automatic solving on'
         : status?.configured
-          ? 'Otomatik çözüm kapalı'
-          : 'Anahtar gerekli';
+          ? 'Automatic solving off'
+          : 'Key required';
     for (const control of form.elements) control.disabled = busy;
     $('[data-test]').disabled = busy || !status?.configured;
     $('[data-remove]').disabled = busy || !status?.saved;
     $('[data-usage]').textContent = status
-      ? `Bugün ${status.usedToday} / ${status.dailyLimit} çözüm isteği`
+      ? `Today ${status.usedToday} / ${status.dailyLimit} solve requests`
       : '';
     $('[data-message]').textContent = error || status?.error || status?.lastCheck?.message || '';
     form.elements.apiKey.placeholder = status?.saved
-      ? 'Değiştirmek için yeni anahtar gir'
-      : 'CapSolver hesabındaki API anahtarın';
+      ? 'Enter a new key to replace it'
+      : 'The API key from your CapSolver account';
   }
   async function load() {
     if (busy) return;
@@ -81,7 +81,7 @@ export function captchaSettingsPanel(api, root, {notice = () => {}} = {}) {
     void act(async () => {
       try {
         status = await api.saveCaptchaSettings(input);
-        notice('CAPTCHA ayarları kaydedildi.');
+        notice('CAPTCHA settings saved.');
       } finally {
         input.apiKey = '';
       }
@@ -97,7 +97,7 @@ export function captchaSettingsPanel(api, root, {notice = () => {}} = {}) {
       status = await api.removeCaptchaSettings();
       form.elements.enabled.value = 'false';
       form.elements.apiKey.value = '';
-      notice('CapSolver anahtarı kaldırıldı.');
+      notice('CapSolver key removed.');
     });
   return {load};
 }

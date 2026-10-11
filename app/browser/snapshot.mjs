@@ -197,14 +197,14 @@ export class BrowserSnapshot {
   get(id) {
     if (!this.current || this.current.id !== id)
       throw Error(
-        'Sayfa gözlemi eski veya bu çalışmaya ait değil. Son yanıttaki snapshot.id ile devam et; gerekiyorsa browser_read ile güncel sayfayı oku.',
+        'The page observation is stale or does not belong to this run. Continue with snapshot.id from the last response; if needed, read the current page with browser_read.',
       );
     return this.current;
   }
   read({snapshotId, offset = 0, limit = BROWSER_PART_CHARACTERS}) {
     const page = this.get(snapshotId);
     if (!integer(offset, 0, page.text.length) || !integer(limit, 1, BROWSER_PART_CHARACTERS))
-      throw Error('Geçersiz sayfa aralığı. Dönen nextOffset değerini kullan.');
+      throw Error('Invalid page range. Use the returned nextOffset value.');
     const build = (end) => ({
       url: page.url,
       ...(page.readiness ? {readiness: page.readiness} : {}),
@@ -221,7 +221,7 @@ export class BrowserSnapshot {
       ...(offset > 0 || end < page.text.length
         ? {
             notice:
-              'Bu, kaydedilmiş sayfanın bir parçasıdır. Devamı için browser_read_part(snapshotId, offset: nextOffset), belirli içerik için browser_search kullan. Parçaları okumak tarayıcı adımı harcamaz; tüm sayfayı okumuş sayılmazsın.',
+              'This is one part of the saved page. Use browser_read_part(snapshotId, offset: nextOffset) for the rest and browser_search for specific content. Reading parts does not use a browser step; you have not read the whole page yet.',
           }
         : {}),
     });
@@ -250,7 +250,7 @@ export class BrowserSnapshot {
       !integer(offset, 0, page.text.length) ||
       !integer(limit, 1, 5)
     )
-      throw Error('Geçersiz sayfa araması. Kısa bir metin ve geçerli offset kullan.');
+      throw Error('Invalid page search. Use a short text and a valid offset.');
     const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
     pattern.lastIndex = offset;
     const matches = [];

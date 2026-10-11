@@ -82,7 +82,7 @@ for (const state of ['pending', 'running', 'reported', 'paused'])
         recordOperation: 'score',
       });
     queue.put({...task, state});
-    assert.throws(() => deleteRecords(db, id, ['first', 'second']), /işlemlerini durdur/);
+    assert.throws(() => deleteRecords(db, id, ['first', 'second']), /before deleting/);
     assert.equal(db.results(id).length, 3);
     assert.equal(queue.get(id, task.id).state, state);
   });
@@ -96,10 +96,10 @@ test('rejects a live run even without a queue task and preserves uncertain execu
     kind: 'run',
     recordIds: ['first', 'second'],
   });
-  assert.throws(() => deleteRecords(db, id, ['second']), /işlemlerini durdur/);
+  assert.throws(() => deleteRecords(db, id, ['second']), /before deleting/);
   db.putRun({...db.run('live'), status: 'completed'});
   db.putResult({...db.result(id, 'first'), status: 'executing'});
-  assert.throws(() => deleteRecords(db, id, ['first']), /işlemlerini durdur/);
+  assert.throws(() => deleteRecords(db, id, ['first']), /before deleting/);
 });
 
 test('merged aliases disappear together without orphaning old record keys', (t) => {

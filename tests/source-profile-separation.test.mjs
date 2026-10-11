@@ -68,7 +68,7 @@ test('removing an idle source only cancels its queued tasks and rejects removal 
     sourceUrl: second,
     sources: [second],
   });
-  assert.throws(() => db.removeSource(id, first), /çalışan görevini/);
+  assert.throws(() => db.removeSource(id, first), /running task/);
   assert.deepEqual(db.get(id), before);
   db.removeSource(id, second);
   assert.equal(core.workspaces.tasks.get(id, removedTask.id).state, 'cancelled');
@@ -134,7 +134,7 @@ test('manual source changes preserve profile drafts and newer source choices, st
   const draft = db.get(id).sourceDraft;
   db.addSource(id, {url: 'https://manual.test/homes'});
   assert.equal(db.get(id).planDraft.plan.instructions, 'Yeni işleyiş');
-  assert.throws(() => db.resolveSourceDraft(id, draft.id, true), /önerileri değişti/);
+  assert.throws(() => db.resolveSourceDraft(id, draft.id, true), /suggestions changed/);
   db.resolveSourceDraft(id, db.get(id).sourceDraft.id, true);
   assert.deepEqual(db.get(id).sources, [first, third, 'https://manual.test/homes']);
   assert.equal(db.get(id).instructions, '');
@@ -250,7 +250,7 @@ test('a reported source stays protected until its provider session finishes clos
   await settle();
   try {
     assert.notEqual(db.run(run.id).status, 'running');
-    assert.throws(() => db.removeSource(id, first), /çalışan görevini/);
+    assert.throws(() => db.removeSource(id, first), /running task/);
   } finally {
     release();
   }

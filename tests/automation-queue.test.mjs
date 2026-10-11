@@ -135,8 +135,8 @@ test('workspace restart keeps source permissions, disabled sources and the one-o
   assert.equal(context.automation.mode, 'observe');
   assert.equal(context.assignedOperation.effect, 'read');
   const item = f.record(run, sources[0] + '/job');
-  assert.throws(() => f.record(run, item.url, 'Submit application'), /yalnızca gözlem/);
-  assert.throws(() => f.db.reserve(f.id, run.id, item.id), /gönderim yapamaz/);
+  assert.throws(() => f.record(run, item.url, 'Submit application'), /can only observe/);
+  assert.throws(() => f.db.reserve(f.id, run.id, item.id), /cannot submit/);
   assert.deepEqual(f.closed, [first.id]);
   assert.equal(f.runtime.slots(f.id).length, 1);
   for (const worker of f.runtime.workers.list(f.id))
@@ -292,7 +292,7 @@ test('restart after a reserved submission preserves uncertainty and never resubm
   assert.ok(f.launches.slice(1).every((r) => !r.recordId));
   await assert.rejects(
     f.runtime.runRecord(f.id, item.id, 'execute', {direct: true}),
-    /yeniden gönderilemez/,
+    /cannot be submitted again/,
   );
 });
 
@@ -381,7 +381,10 @@ test('equal questions from different sources keep separate identities and legacy
   const global = f.db.askQuestion(f.id, {text: 'General authorization?'});
   assert.equal(global.sourceUrl, null);
   const item = f.record(b, sources[1] + '/job');
-  await assert.rejects(f.runtime.runRecord(f.id, item.id, 'prepare'), /soruları yanıtla/);
+  await assert.rejects(
+    f.runtime.runRecord(f.id, item.id, 'prepare'),
+    /Answer the pending questions/,
+  );
 });
 
 test('a pending question defers execution and the answer releases it even after the record changed', async (t) => {
@@ -484,7 +487,7 @@ for (const templateId of ['job-search', 'housing'])
         assert.equal(f.db.sources(f.id).find((s) => s.url === sources[1]).enabled, false);
         await assert.rejects(
           (resumed ?? f.runtime).runRecord(f.id, item.id, 'execute', {direct: true}),
-          /yeniden gönderilemez/,
+          /cannot be submitted again/,
         );
       } finally {
         await resumed?.close();

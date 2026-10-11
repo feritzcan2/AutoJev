@@ -270,7 +270,7 @@ export async function documentObservation(slot, value) {
   if (document.readiness)
     document.readiness = settledBusy(slot, {url: document.url, ...document.readiness});
   if (document.url !== value.url || (readiness.url && readiness.url !== document.url))
-    throw Error('Sayfa okuma sırasında yönlendi; browser_read ile güncel sayfayı tekrar oku.');
+    throw Error('The page redirected while being read; read the current page again with browser_read.');
   // The page's own structured listing; Jev's evidence uses it instead of the
   // rendered text with its site chrome. A loading page is not read from it.
   const listing =

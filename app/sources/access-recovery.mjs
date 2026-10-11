@@ -125,7 +125,7 @@ export class SourceAccessRecovery {
           id,
           url,
           recovery.runId,
-          'Bekleme süresi doldu; kaydedilen noktadan otomatik devam.',
+          'The wait is over; continuing automatically from the saved point.',
           {automatic: true},
         ).catch(() => {});
     }
@@ -134,7 +134,7 @@ export class SourceAccessRecovery {
     id,
     url,
     runId,
-    response = 'Erişim engelini çözdüm, devam et.',
+    response = 'I resolved the access block, continue.',
     {automatic = false} = {},
   ) {
     const r = this.runtime,
@@ -147,10 +147,10 @@ export class SourceAccessRecovery {
       recovery.revision !== a.revision ||
       recovery.state !== 'waiting'
     )
-      throw Error('Bu bekleme artık devam ettirilemiyor. Kaynağın güncel durumunu kontrol et.');
-    if (this.busy(id, url)) throw Error('Bu kaynağın önceki oturumu hâlâ kapanıyor.');
+      throw Error('This wait can no longer be resumed. Check the current state of the source.');
+    if (this.busy(id, url)) throw Error('The previous session of this source is still closing.');
     if (typeof response !== 'string' || !response.trim() || response.length > 10000)
-      throw Error('1–10000 karakterlik bir yanıt gerekli.');
+      throw Error('An answer of 1–10000 characters is required.');
     const run = this.db.run(runId),
       task = r.queue.get(id, run.taskId),
       batchId = task.batchId ?? randomUUID();
@@ -238,7 +238,7 @@ export class SourceAccessRecovery {
       this.db.message(
         id,
         automatic ? 'system' : 'user',
-        `${automatic ? 'Otomatik devam' : 'Müdahaleye yanıt'} (${url}): ${response.trim()}`,
+        `${automatic ? 'Automatic continuation' : 'Reply to intervention'} (${url}): ${response.trim()}`,
       );
     });
     r.changed(id);
@@ -255,7 +255,7 @@ export class SourceAccessRecovery {
       !['waiting', 'resetting'].includes(recovery.state) ||
       this.busy(id, url)
     )
-      return Promise.reject(Error('Bu müdahale değişti veya kaynak hâlâ çalışıyor.'));
+      return Promise.reject(Error('This intervention changed or the source is still running.'));
     // Set this synchronously: a reply and the timer cannot both win.
     r.sourceState(id, url, {
       accessRecovery: {
@@ -285,7 +285,9 @@ export class SourceAccessRecovery {
           runIds: sourceRunIds,
         });
         if (result?.deferred || result?.retained?.length || result?.failed?.length)
-          throw Error('Kaynağın bekleyen sekmeleri henüz kapatılamadı; yeniden kontrol edilecek.');
+          throw Error(
+            "The source's pending tabs could not be closed yet; it will be checked again.",
+          );
         if (r.closed) return;
         const a = this.db.get(id),
           current = this.current(id, url);
@@ -301,7 +303,7 @@ export class SourceAccessRecovery {
               id,
               task.id,
               'cancelled',
-              'Erişim beklemesi bitti; sonraki tarama sıfırdan başlayacak.',
+              'The access wait is over; the next scan will start from scratch.',
             );
         const state = a.sourceState[url];
         r.clearRetry(id, url);
@@ -326,7 +328,7 @@ export class SourceAccessRecovery {
             q.answer == null && !q.recordId && q.runId === runId
               ? {
                   ...q,
-                  answer: 'Kaynak yeniden denenecek.',
+                  answer: 'The source will be retried.',
                   answeredAt: r.now(),
                   resolution: 'source_access_reset',
                 }

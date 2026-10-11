@@ -24,10 +24,10 @@ export const questionMethods = {
     {text, recordId = null, fields = null, accessCheck = null, outcome = false},
     {runId = undefined} = {},
   ) {
-    text = boundedText(text, 'Soru', 6000);
+    text = boundedText(text, 'Question', 6000);
     fields = normalizeFields(fields);
     if (recordId && this.result(id, recordId).status === 'dismissed')
-      throw Error('Elenen kayıt için soru sorulamaz');
+      throw Error('Cannot ask a question about a rejected record');
     const run = runId ? this.activeRun(id, runId) : null,
       sourceUrl =
         !recordId && ['run', 'trial'].includes(run?.kind) ? (run.sourceUrl ?? null) : null;
@@ -75,12 +75,12 @@ export const questionMethods = {
   answerQuestion(id, questionId, value) {
     const a = this.get(id),
       question = (a.questions ?? []).find((q) => q.id === questionId);
-    if (!question) throw Error('Soru bu çalışma alanına ait değil');
-    if (question.answer !== null) throw Error('Bu soru zaten yanıtlandı');
+    if (!question) throw Error('The question does not belong to this workspace');
+    if (question.answer !== null) throw Error('This question was already answered');
     const result =
         question.fields && typeof value !== 'string'
           ? validateAnswers(question.fields, value)
-          : {summary: boundedText(value, 'Yanıt', 10000), values: null},
+          : {summary: boundedText(value, 'Answer', 10000), values: null},
       answer = result.summary;
     // Documents attached while the question was open belong to this answer.
     const documents = this.messages(id)
@@ -111,23 +111,27 @@ export const questionMethods = {
     let resolved = null;
     if (question.outcome && question.recordId) {
       const item = this.result(id, question.recordId),
-        choice = result.values?.[OUTCOME_FIELD.id],
+        // Compare by position in the question's own options: questions stored
+        // by earlier versions carry Turkish option labels.
+        options =
+          question.fields?.find((f) => f.id === OUTCOME_FIELD.id)?.options ?? OUTCOME_FIELD.options,
+        choice = options.indexOf(result.values?.[OUTCOME_FIELD.id]),
         at = this.now();
-      if (item.status === 'uncertain' && choice === OUTCOME_FIELD.options[0])
+      if (item.status === 'uncertain' && choice === 0)
         resolved = {
           ...item,
           status: 'completed',
-          evidence: 'Kullanıcı kaydın gönderildiğini onayladı.',
+          evidence: 'The user confirmed the record was submitted.',
           verifiedAt: at,
           updatedAt: at,
         };
-      if (item.status === 'uncertain' && choice === OUTCOME_FIELD.options[1])
+      if (item.status === 'uncertain' && choice === 1)
         resolved = {
           ...item,
           status: item.proposal ? 'prepared' : 'found',
           approvedDigest: null,
           requiresReview: true,
-          evidence: 'Kullanıcı kaydın gönderilmediğini bildirdi; yeniden gönderilebilir.',
+          evidence: 'The user reported the record was not submitted; it can be sent again.',
           verifiedAt: at,
           updatedAt: at,
           notSubmitted: {kind: 'user', at, digest: item.digest, attemptRunId: item.attemptRunId},
@@ -136,7 +140,7 @@ export const questionMethods = {
     this.store.workspaces.tasks.atomic(() => {
       this.put({...a, questions: a.questions.map((q) => (q.id === questionId ? updated : q))});
       if (resolved) this.putResult(resolved);
-      this.message(id, 'user', question.text + '\nYanıt: ' + answer, {
+      this.message(id, 'user', question.text + '\nAnswer: ' + answer, {
         questionId,
         conversation,
         ...(runId ? {runId} : {}),

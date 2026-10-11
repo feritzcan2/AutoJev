@@ -5,12 +5,13 @@ import {browserRenderedText} from '../browser/rendered-text.mjs';
 export const LOGGED_IN_FIELD = {
   id: 'loggedIn',
   type: 'boolean',
-  label: 'Açık sekmede giriş yaptınız mı?',
+  label: 'Have you signed in on the open tab?',
   required: true,
-  help: 'Giriş yaptıktan sonra Evet yanıtını gönderin. Şifre veya doğrulama kodu paylaşmayın.',
+  help: 'Send Yes after signing in. Do not share passwords or verification codes.',
 };
 // Matches a request to log in, not a statement that the user is logged in
-// ("giriş yapmış", "oturum açık").
+// ("giriş yapmış", "oturum açık"). The Turkish and German alternatives match
+// questions stored by earlier versions and text on third-party pages.
 export function asksForLogin(question) {
   if (question.accessCheck?.kind === 'login') return true;
   const text = [
@@ -48,11 +49,11 @@ function credentialField(page, text) {
 export function validateLoginQuestion(page, proof) {
   if (page.readiness?.loading)
     throw Error(
-      'Sayfa hâlâ yükleniyor. Giriş engeli varsayma; browser_read ile güncel sayfayı kontrol et.',
+      'The page is still loading. Do not assume a login barrier; check the current page with browser_read.',
     );
   if (!proof || proof.snapshotId !== page.id)
     throw Error(
-      'Giriş sorusu için son snapshot.id içeren accessCheck gerekli. /signup bağlantısı veya önceki rapor kanıt değildir.',
+      'A login question requires an accessCheck with the latest snapshot.id. A /signup link or an earlier report is not evidence.',
     );
   const text = browserRenderedText(page)
     .replace(/^.*\blink\s+"[^\n]*$/gm, '')
@@ -61,7 +62,7 @@ export function validateLoginQuestion(page, proof) {
   const quote =
     typeof proof.evidence === 'string'
       ? proof.evidence.trim().slice(0, 600)
-      : 'Güncel sayfada giriş gerekli.';
+      : 'The current page requires sign-in.';
   const field = credentialField(page, text);
   // Word boundaries: "designing" is not "sign in".
   const form =
@@ -74,7 +75,7 @@ export function validateLoginQuestion(page, proof) {
     );
   if (!gate && !(field && form))
     throw Error(
-      'Güncel sayfada giriş formu veya açık bir giriş zorunluluğu görülmüyor. Giriş/kayıt bağlantısı tek başına engel değildir. İlanın gerçek başvuru düğmesini takip et ve ulaşılan sayfayı browser_read ile doğrula.',
+      'The current page shows no sign-in form or explicit sign-in requirement. A sign-in/sign-up link alone is not a barrier. Follow the listing’s actual apply button and verify the resulting page with browser_read.',
     );
   return {kind: 'login', url: page.url, evidence: quote, snapshotId: page.id};
 }

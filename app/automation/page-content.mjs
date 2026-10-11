@@ -19,7 +19,7 @@ export function researchUrl(value) {
     host.startsWith('[') ||
     /(?:^|\.)(?:localhost|local|internal|test|invalid)$/.test(host)
   )
-    throw Error('Kaynak araştırmasında herkese açık bir web alan adı gerekli');
+    throw Error('Source research requires a public web domain');
   return normalized;
 }
 // Compare the rendered page text (and links) with the previous snapshot. Jev

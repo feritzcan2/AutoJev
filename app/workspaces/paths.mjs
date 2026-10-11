@@ -4,7 +4,7 @@ function scoped(root, relative) {
   const target = path.resolve(root, relative),
     base = path.resolve(root);
   if (target !== base && !target.startsWith(base + path.sep))
-    throw Error('Çalışma alanı dizini geçersiz');
+    throw Error('Invalid workspace directory');
   return target;
 }
 export const workspaceDirectory = (data, workspace) =>

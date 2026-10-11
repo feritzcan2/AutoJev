@@ -16,11 +16,11 @@ test('window readiness requires focus from its own page, and a late focus can re
   assert.equal(response.status, 200);
   assert.match(await response.text(), /document\.hasFocus\(\)/);
   assert.equal((await focus(marker, true, 'https://unrelated.example')).status, 404);
-  await assert.rejects(marker.waitForReady({timeout: 20}), /profili hazır değil/);
+  await assert.rejects(marker.waitForReady({timeout: 20}), /profile is not ready/);
   await focus(marker);
   await marker.waitForReady({timeout: 20});
   await focus(marker, false);
-  await assert.rejects(marker.waitForReady({timeout: 20}), /profili hazır değil/);
+  await assert.rejects(marker.waitForReady({timeout: 20}), /profile is not ready/);
   await focus(marker);
   await marker.waitForReady({timeout: 20});
 });
@@ -41,7 +41,7 @@ test('window readiness is cancellable and markers cannot complete one another', 
   await rejected;
   await assert.rejects(first.waitForReady({signal: abort.signal}), {name: 'AbortError'});
   const closing = first.waitForReady(),
-    closed = assert.rejects(closing, /kapandı/);
+    closed = assert.rejects(closing, /closed/);
   first.close();
   await closed;
 });

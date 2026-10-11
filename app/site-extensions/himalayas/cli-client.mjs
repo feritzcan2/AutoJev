@@ -11,7 +11,7 @@ export async function readCollectorCliPage(url, {signal, forkProcess = fork} = {
 export async function readCollectorCliDetail(url, options = {}) {
   const page = await readCollectorCliRequest({detailUrl: url}, options);
   if (page.jobs?.length !== 1 || page.jobs[0].url !== url)
-    throw Error('Toplayıcı beklenen tekil ilanı döndürmedi.');
+    throw Error('The collector did not return the expected single listing.');
   return page.jobs[0];
 }
 async function readCollectorCliRequest(input, {signal, forkProcess = fork} = {}) {
@@ -32,9 +32,9 @@ async function readCollectorCliRequest(input, {signal, forkProcess = fork} = {})
       child.kill();
       killTimer ??= setTimeout(() => child.kill('SIGKILL'), 2000);
     };
-    const abort = () => stop(signal.reason ?? Error('Toplama iptal edildi.'));
+    const abort = () => stop(signal.reason ?? Error('Collection was cancelled.'));
     const timer = setTimeout(
-      () => stop(Error('Toplayıcı zaman aşımına uğradı; sayfa tamamlanmadı.')),
+      () => stop(Error('The collector timed out; the page is not complete.')),
       120000,
     );
     const send = (value) =>
@@ -58,7 +58,7 @@ async function readCollectorCliRequest(input, {signal, forkProcess = fork} = {})
       else
         stop(
           Error(
-            message.type === 'error' ? message.message : 'Toplayıcıdan beklenmeyen yanıt geldi.',
+            message.type === 'error' ? message.message : 'Unexpected response from the collector.',
           ),
         );
     });
@@ -72,7 +72,7 @@ async function readCollectorCliRequest(input, {signal, forkProcess = fork} = {})
       cleanup();
       if (failure) reject(failure);
       else if (code !== 0 || !done || !page)
-        reject(Error(`Toplayıcı sayfayı tamamlamadı (${code}). ${stderr}`));
+        reject(Error(`The collector did not complete the page (${code}). ${stderr}`));
       else resolve(page);
     });
     signal?.addEventListener('abort', abort, {once: true});

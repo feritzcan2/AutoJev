@@ -49,7 +49,7 @@ try {
   await page.locator('aside nav [data-view=board]').click();
   await page.locator(`[data-record-question="${q.id}"]`).click();
   const card = page.locator('dialog.record-question-dialog');
-  await card.getByRole('button', {name: 'Atla', exact: true}).click();
+  await card.getByRole('button', {name: 'Skip', exact: true}).click();
   await card.waitFor({state: 'hidden'});
   assert.equal(await page.locator(`[data-record-question="${otherQ.id}"]`).isVisible(), true);
   const snapshot = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), a.id);
@@ -178,7 +178,7 @@ try {
   await page.setViewportSize({width: 1040, height: 700});
   const workingRow = page.locator('tr[data-result-id=working]');
   assert.equal((await ids())[0], 'waiting', 'Unanswered questions stay ahead of other records');
-  assert.equal(await workingRow.locator('.record-working-badge').innerText(), 'Agent çalışıyor');
+  assert.equal(await workingRow.locator('.record-working-badge').innerText(), 'Agent working');
   assert.equal(
     await workingRow
       .locator('td')
@@ -194,13 +194,13 @@ try {
   await page.evaluate(() => window.scrollTo(0, 250));
   const after = await workingRow.locator('td').first().boundingBox();
   assert.ok(after.y < before.y - 50, 'Active row scrolls normally with the page');
-  await page.getByRole('button', {name: 'Sonraki', exact: true}).click();
+  await page.getByRole('button', {name: 'Next', exact: true}).click();
   assert.equal(
     (await ids()).includes('working'),
     false,
     'Active records are sorted first, not repeated on every page',
   );
-  await page.getByRole('button', {name: 'Önceki', exact: true}).click();
+  await page.getByRole('button', {name: 'Previous', exact: true}).click();
   await page.screenshot({path: path.join(data, 'working-first.png')});
   await page.locator('[data-result-sort=updatedAt]').click();
   assert.deepEqual((await ids()).slice(0, 3), ['waiting', 'working', 'reporting']);

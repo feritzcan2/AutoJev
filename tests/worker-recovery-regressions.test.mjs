@@ -151,10 +151,10 @@ test('stop waits for every closure after one fails and concurrent starts cannot 
     assert.equal(runtime.pausing.has(id), true);
     await assert.rejects(
       runtime.runRecord(id, f.items[2].id, 'execute', {direct: true}),
-      /durduruluyor/,
+      /stopping/,
     );
-    await assert.rejects(runtime.start(id, 'interview'), /durduruluyor/);
-    await assert.rejects(runtime.runOnce(id), /durduruluyor/);
+    await assert.rejects(runtime.start(id, 'interview'), /stopping/);
+    await assert.rejects(runtime.runOnce(id), /stopping/);
     await runtime.tick();
     assert.equal(f.launches.length, 2);
   } finally {

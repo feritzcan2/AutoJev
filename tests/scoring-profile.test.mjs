@@ -65,7 +65,7 @@ test('documents the user added are read, including PDFs, without a legacy CV pat
   const {root, a, db, added} = await fixture(t);
   delete a.referenceData.profile.cvPath;
   assert.equal((await loadScoringDocuments(db, 'one')).text, '');
-  assert.match((await loadScoringDocuments(db, 'one')).unavailable, /Kayıtlı belge yok/);
+  assert.match((await loadScoringDocuments(db, 'one')).unavailable, /No saved documents/);
   await writeFile(
     path.join(root, 'candidates/one/documents/cv.pdf'),
     pdf('Five years of compliance experience.'),
@@ -107,10 +107,10 @@ test('unreadable, missing, foreign and symlinked documents are reported as unkno
   assert.deepEqual(value.paths, ['documents/ok.txt']);
   assert.match(value.text, /Readable fact/);
   assert.doesNotMatch(value.text, /private facts/);
-  assert.match(value.unavailable, /other.txt \(Bu dosya görüntülenemez\)/);
-  assert.match(value.unavailable, /photo.png \(bu biçimden metin alınamadı\)/);
-  assert.match(value.unavailable, /link.txt \(Bu dosya görüntülenemez\)/);
-  assert.match(value.unavailable, /missing.pdf \(dosya bulunamadı\)/);
+  assert.match(value.unavailable, /other.txt \(This file cannot be displayed\)/);
+  assert.match(value.unavailable, /photo.png \(no text could be extracted from this format\)/);
+  assert.match(value.unavailable, /link.txt \(This file cannot be displayed\)/);
+  assert.match(value.unavailable, /missing.pdf \(file not found\)/);
 });
 test('the store lists only documents the user added with the document control', async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), 'user-documents-'));

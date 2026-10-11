@@ -47,21 +47,21 @@ try {
       };
       const {BrowserTools} = await load(browser);
       BrowserTools.prototype.status = () => ({ready: true, state: 'ready'});
-      const ready = (id, label) => ({id, label, state: 'ready', detail: 'Hazır.'});
+      const ready = (id, label) => ({id, label, state: 'ready', detail: 'Ready.'});
       ipcMain.removeHandler('readiness');
       ipcMain.handle('readiness', (_, input) => ({
         ready: input.provider !== 'opencode',
         provider: input.provider,
         checks: [
           input.provider === 'opencode'
-            ? {id: 'agent', label: 'OpenCode', state: 'error', detail: 'OpenCode kurulu değil.'}
+            ? {id: 'agent', label: 'OpenCode', state: 'error', detail: 'OpenCode is not installed.'}
             : ready('agent', input.provider),
-          ready('login', 'Agent oturumu'),
+          ready('login', 'Agent session'),
           ready('chrome', 'Google Chrome'),
-          ready('chrome-debug', 'Chrome bağlantısı'),
+          ready('chrome-debug', 'Chrome connection'),
           globalThis.jevMissing
-            ? {id: 'jev', label: 'Jev anahtarı', state: 'error', detail: 'Anahtarı kaydet.'}
-            : ready('jev', 'Jev anahtarı'),
+            ? {id: 'jev', label: 'Jev key', state: 'error', detail: 'Save the key.'}
+            : ready('jev', 'Jev key'),
         ],
       }));
       ipcMain.removeHandler('jev-settings-status');
@@ -87,7 +87,7 @@ try {
     true,
     'A ready agent is preselected',
   );
-  assert.equal(await screen.getByText('Vazgeç').count(), 0, 'First run cannot be cancelled');
+  assert.equal(await screen.getByText('Cancel').count(), 0, 'First run cannot be cancelled');
   await page.screenshot({path: path.join(data, '1-start.png')});
 
   let rpc = 0;
@@ -130,22 +130,33 @@ try {
     await tool('reply_to_user', {message: reply});
     await tool('finish_automation_run', {
       status: 'completed',
-      summary: 'Profil CV’den dolduruldu.',
+      summary: 'Profile filled from the CV.',
     });
     await page.waitForFunction(
       () => document.querySelector('#onboarding').dataset.step === 'review',
     );
   };
   const pickCv = async () => {
-    await screen.getByRole('button', {name: 'CV seç'}).click();
+    await screen.getByRole('button', {name: 'Choose CV'}).click();
     await page.waitForFunction(
       () => document.querySelector('#onboarding').dataset.step === 'reading',
     );
     return page.evaluate(() => localStorage.getItem('selected-workspace'));
   };
 
+  // Notes typed next to the CV reach the setup agent with the CV task and stay in the chat.
+  await screen.locator('[name=notes]').fill('Remote or Berlin only, at least 80k EUR');
   const id = await pickCv();
-  assert.ok(await page.getByText('CV’n okunuyor').isVisible());
+  assert.ok(await page.getByText('Reading your CV').isVisible());
+  const cvTurn = await app.evaluate(() =>
+    globalThis.starts.filter((s) => /Profile from the CV/.test(s.prompt)).at(-1),
+  );
+  assert.match(cvTurn.prompt, /userNotes.*Remote or Berlin only, at least 80k EUR/s);
+  assert.ok(
+    (await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), id)).messages.some(
+      (m) => m.role === 'user' && m.text === 'Remote or Berlin only, at least 80k EUR',
+    ),
+  );
   await page.screenshot({path: path.join(data, '2-reading.png')});
   await agentFillsProfile(id, {
     title: 'Deniz Yilmaz',
@@ -157,10 +168,10 @@ try {
       experience: '9 years .NET and AWS',
       application_facts: 'English C1',
     },
-    reply: 'CV’nden rolünü ve konumunu doldurdum. Maaş ve çalışma iznini ekle.',
+    reply: 'I filled your role and location from your CV. Add your salary and work permit.',
   });
   const form = screen.locator('form');
-  await page.getByText('Maaş ve çalışma iznini ekle.').waitFor();
+  await page.getByText('Add your salary and work permit.').waitFor();
   assert.equal(await form.locator('[name=title]').inputValue(), 'Deniz Yilmaz');
   assert.equal(await form.locator('[name=country]').inputValue(), 'DE');
   assert.equal(
@@ -175,24 +186,24 @@ try {
   assert.equal(await form.locator('.onboarding-checks').getByText('StepStone').count(), 0);
   assert.ok(await form.locator('.onboarding-checks').getByText('Jobindex').isVisible());
   await form.locator('[name=country]').fill('DE');
-  await form.locator('[name=constraints]').fill('En az 80.000 EUR, AB çalışma izni var');
-  await form.getByText('Jev anahtarı').waitFor();
+  await form.locator('[name=constraints]').fill('At least 80,000 EUR, EU work permit');
+  await form.getByText('Jev key').waitFor();
   await page.screenshot({path: path.join(data, '3-review.png')});
   await screen.evaluate((node) => node.scrollTo(0, node.scrollHeight));
   await page.screenshot({path: path.join(data, '3-review-bottom.png')});
 
-  await form.getByRole('button', {name: 'Kaydet ve aramayı başlat'}).click();
-  await screen.locator('.onboarding-error').getByText('TypeSafe API anahtarını kaydet').waitFor();
+  await form.getByRole('button', {name: 'Save and start the search'}).click();
+  await screen.locator('.onboarding-error').getByText('Save the TypeSafe API key').waitFor();
   assert.equal(await screen.isVisible(), true, 'A missing Jev key blocks the start');
   await app.evaluate(() => {
     globalThis.jevMissing = false;
   });
-  await form.getByRole('button', {name: 'Kaydet ve aramayı başlat'}).click();
+  await form.getByRole('button', {name: 'Save and start the search'}).click();
   await screen.waitFor({state: 'hidden'});
   await page.waitForFunction((id) => document.querySelector('#candidates').value === id, id);
   const a = (await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), id)).automation;
   assert.equal(a.title, 'Deniz Yilmaz');
-  assert.equal(a.criteria.constraints, 'En az 80.000 EUR, AB çalışma izni var');
+  assert.equal(a.criteria.constraints, 'At least 80,000 EUR, EU work permit');
   assert.equal(a.reviewedRevision, a.revision, 'The profile is saved and reviewed');
   assert.equal(a.status, 'enabled', 'The first search starts');
   assert.ok(
@@ -211,19 +222,19 @@ try {
   await page.locator('#new').click();
   await screen.waitFor();
   assert.equal(await screen.getAttribute('data-step'), 'start');
-  await screen.getByRole('button', {name: 'Vazgeç'}).waitFor();
+  await screen.getByRole('button', {name: 'Cancel'}).waitFor();
   const second = await pickCv();
   assert.notEqual(second, id);
   await agentFillsProfile(second, {
     title: 'Ayse Kaya',
     goal: 'Product designer roles in Copenhagen',
     criteria: {preferences: 'Product Designer', country: 'DK', location: 'Copenhagen, Denmark'},
-    reply: 'Rolünü ve şehrini CV’nden doldurdum.',
+    reply: 'I filled your role and city from your CV.',
   });
   assert.equal(await form.locator('[name=title]').inputValue(), 'Ayse Kaya');
   assert.equal(await form.locator('[name=constraints]').inputValue(), '', 'No values leak in');
   assert.ok(await form.locator('.onboarding-checks').getByText('Jobindex').isVisible());
-  await form.getByRole('button', {name: 'Kaydet ve aramayı başlat'}).click();
+  await form.getByRole('button', {name: 'Save and start the search'}).click();
   await screen.waitFor({state: 'hidden'});
   await page.waitForFunction((id) => document.querySelector('#candidates').value === id, second);
   for (const [workspace, title] of [
@@ -240,7 +251,7 @@ try {
   // Leaving a new profile removes the empty one and returns to the profile open before.
   await page.locator('#new').click();
   await screen.waitFor();
-  await screen.getByRole('button', {name: 'Vazgeç'}).click();
+  await screen.getByRole('button', {name: 'Cancel'}).click();
   await screen.waitFor({state: 'hidden'});
   await page.waitForFunction(async (id) => {
     const items = await window.jobloop.workspaces();
@@ -249,15 +260,17 @@ try {
   const setups = await app.evaluate(() => globalThis.starts.length);
   await page.locator('#new').click();
   await screen.waitFor();
-  await screen.getByRole('button', {name: 'Sohbetle kurmak istiyorum'}).click();
+  // Notes written before choosing the chat become its first message.
+  await screen.locator('[name=notes]').fill('Only part-time roles');
+  await screen.getByRole('button', {name: 'I want to set it up in a chat'}).click();
   await screen.waitFor({state: 'hidden'});
   await page.locator('aside nav [data-view=setup-agent].selected').waitFor();
-  const chatStarted = await app.evaluate(async (_, count) => {
+  const chatTurn = await app.evaluate(async (_, count) => {
     for (let i = 0; i < 100 && globalThis.starts.length === count; i++)
       await new Promise((r) => setTimeout(r, 50));
-    return globalThis.starts.length > count;
+    return globalThis.starts.at(-1);
   }, setups);
-  assert.ok(chatStarted, 'Choosing the chat starts the setup agent');
+  assert.match(chatTurn.prompt, /Only part-time roles/, 'The chat starts with the notes');
   assert.equal((await page.evaluate(() => window.jobloop.workspaces())).length, 3);
   assert.deepEqual(errors, []);
   console.log('onboarding smoke passed', data);

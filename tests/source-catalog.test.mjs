@@ -29,9 +29,9 @@ test('the catalog lists each ready board once, with its countries as choices', (
   const indeed = catalog.find((g) => g.name === 'Indeed');
   assert.deepEqual(indeed.choices[0], {
     url: 'https://de.indeed.com/',
-    name: 'Indeed (Almanya)',
+    name: 'Indeed (Germany)',
     countries: ['DE'],
-    label: 'Almanya',
+    label: 'Germany',
   });
   assert.equal(
     indeed.choices.some((c) => c.url === 'https://fr.indeed.com/'),
@@ -64,7 +64,7 @@ test('a catalog choice added by its address alone gets the template settings and
   const source = db.sources(a.id).find((s) => s.url === choice.url);
   assert.equal(source.name, 'Berlin Startup Jobs');
   assert.equal(source.recipe.entry.template, 'https://berlinstartupjobs.com/{query}/');
-  assert.match(source.instructions, /kategori/);
+  assert.match(source.instructions, /category/);
   assert.equal(source.extension.kind, 'http');
   assert.equal(
     db.sourceCatalog(a.id).some((g) => g.name === 'Berlin Startup Jobs'),

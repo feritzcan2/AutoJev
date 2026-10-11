@@ -99,7 +99,7 @@ export function advanceSourceScan(
   runId,
   now,
 ) {
-  if (!plan) throw Error('Kaynak tarama planı bulunamadı.');
+  if (!plan) throw Error('Source scan plan not found.');
   // A page-cap boundary survives later queue updates like a known boundary.
   const capBoundary = plan.boundary?.pageCap ? plan.boundary : null;
   let next = {
@@ -110,7 +110,7 @@ export function advanceSourceScan(
       pendingUrls,
       reason,
       at: now,
-      ...(cursor ? {cursor: boundedText(cursor, 'Devam işareti', 2000)} : {}),
+      ...(cursor ? {cursor: boundedText(cursor, 'Continuation cursor', 2000)} : {}),
     },
   };
   if (plan.mode === 'full') return next;
@@ -131,7 +131,7 @@ export function advanceSourceScan(
     return fallback('dates_unverified');
   let evidence, times;
   try {
-    evidence = boundedText(chronology.evidence, 'Tarih sıralaması açıklaması', 2000);
+    evidence = boundedText(chronology.evidence, 'Date ordering explanation', 2000);
     times = dates.map(publishedUpperBound);
   } catch {
     return fallback('chronology_unverified');
@@ -172,10 +172,12 @@ export function markPageCap(plan, url, runId, now) {
 
 export function validateScanCompletion(plan, scan, pageProgress, runId) {
   const completion = scan.completion ?? 'end';
-  if (!['end', 'cutoff', 'user_stop'].includes(completion)) throw Error('Geçersiz tarama bitişi.');
+  if (!['end', 'cutoff', 'user_stop'].includes(completion)) throw Error('Invalid scan completion.');
   if (completion === 'cutoff' && plan?.boundary?.known) {
     if (plan.boundary.runId !== runId || plan.checkpoint?.pendingUrls.length)
-      throw Error('Bilinen ilan sınırı bu turda doğrulanmadı veya kuyrukta bekleyen adres var.');
+      throw Error(
+        'The known-listing boundary was not verified in this turn, or addresses are still pending in the queue.',
+      );
     return completion;
   }
   if (
@@ -187,11 +189,13 @@ export function validateScanCompletion(plan, scan, pageProgress, runId) {
       plan.checkpoint?.pendingUrls.length)
   )
     throw Error(
-      'Tarih sınırı doğrulanmadı. En yeniden başlayıp tüm sayfayı işle; güvenilir sıralama ve tarih yoksa son sayfaya devam et.',
+      'The date cutoff was not verified. Start from the newest and process the whole page; without reliable ordering and dates, continue to the last page.',
     );
   if (completion === 'end' && plan?.boundary?.pageCap) {
     if (plan.boundary.runId !== runId || plan.checkpoint?.pendingUrls.length)
-      throw Error('Sayfa sınırı bu turda doğrulanmadı veya kuyrukta bekleyen adres var.');
+      throw Error(
+        'The page limit was not verified in this turn, or addresses are still pending in the queue.',
+      );
     return completion;
   }
   if (
@@ -200,7 +204,7 @@ export function validateScanCompletion(plan, scan, pageProgress, runId) {
     pageProgress.currentPage < pageProgress.totalPages
   )
     throw Error(
-      'Son sayfaya henüz ulaşılmadı. Kalan sayfaları işle veya doğrulanmış tarih sınırını bildir.',
+      'The last page has not been reached yet. Process the remaining pages or report a verified date cutoff.',
     );
   return completion;
 }

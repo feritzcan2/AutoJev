@@ -58,7 +58,7 @@ test('late internal CDP responses never enter the Playwright callback map', asyn
   const transport = new JevCdpTransport(socket);
   transport.onmessage = (message) => forwarded.push(message);
   const request = transport.call('Target.getTargets'),
-    rejected = assert.rejects(request, /zaman aşımı/);
+    rejected = assert.rejects(request, /timed out/);
   t.mock.timers.tick(15000);
   await rejected;
   transport.receive({id: sent[0].id, result: {targetInfos: []}});

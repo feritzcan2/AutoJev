@@ -10,30 +10,31 @@ export const jobSearchTemplate = {
   id: 'job-search',
   version: 2,
   kind: 'web',
-  title: 'İş arama',
+  title: 'Job search',
   icon: '↗',
-  description: 'Uygun ilanları bul, değerlendir, başvuruları hazırla ve sonuçlarını takip et.',
+  description:
+    'Find suitable listings, assess them, prepare applications and track their outcomes.',
   defaultMode: 'observe',
   records: {
     identity: 'url',
-    dismissLabel: 'Başvuruyu ele',
+    dismissLabel: 'Dismiss application',
     states: browserDefinition.records.states.map((state) =>
       state.id === 'completed'
-        ? {...state, label: 'Başvuruldu'}
+        ? {...state, label: 'Applied'}
         : state.id === 'prepared'
-          ? {...state, label: 'Başvuruya hazır'}
+          ? {...state, label: 'Ready to apply'}
           : state,
     ),
   },
   recordOperations: {
     prepare: {
-      label: 'Başvuruyu hazırla',
+      label: 'Prepare application',
       instructions:
         'Read the full vacancy, candidate CV and saved application rules. Inspect the actual application form. Prepare exact answers and document paths, explaining eligibility and any missing facts through record-scoped questions. Save the complete application as a proposal. Do not submit an application during preparation.',
     },
     execute: {
-      label: 'Başvur',
-      runningLabel: 'Başvuruluyor',
+      label: 'Apply',
+      runningLabel: 'Applying',
       successCriteria:
         'The employer or portal shows confirmation for this exact vacancy and candidate, or its application history lists this application. Save the observed confirmation; an Apply button click is insufficient.',
     },
@@ -41,90 +42,93 @@ export const jobSearchTemplate = {
   fields: [
     {
       id: 'preferences',
-      label: 'İş tercihleri',
-      question: 'Hangi roller, ülkeler ve çalışma şekilleri uygun?',
+      label: 'Job preferences',
+      question: 'Which roles, countries and work modes fit?',
       required: true,
       type: 'text',
     },
     {
       id: 'country',
-      label: 'Hedef ülke',
-      question: 'İlanlar hangi ülkede aransın? İki harfli ülke kodu (ör. DE, GB, US)',
+      label: 'Target country',
+      question:
+        'Which country should listings be searched in? Two-letter country code (e.g. DE, GB, US)',
       required: false,
       type: 'text',
     },
     {
       id: 'location',
-      label: 'Arama konumu',
-      question: 'İlanlar hangi şehir veya bölgede aransın? (ör. London, United Kingdom)',
+      label: 'Search location',
+      question:
+        'Which city or region should listings be searched in? (e.g. London, United Kingdom)',
       required: false,
       type: 'text',
     },
     {
       id: 'experience',
-      label: 'Deneyim ve yetkinlikler',
-      question: 'CV ve belgelerine göre hangi deneyim ve yetkinliklerin var?',
+      label: 'Experience and skills',
+      question: 'What experience and skills do you have according to your CV and documents?',
       required: false,
       type: 'text',
     },
     {
       id: 'constraints',
-      label: 'Kesin şartlar',
-      question: 'Maaş, çalışma izni, dil ve başlangıç tarihi şartların neler?',
+      label: 'Hard requirements',
+      question: 'What are your salary, work permit, language and start date requirements?',
       required: false,
       type: 'text',
     },
     {
       id: 'application_policy',
-      label: 'Başvuru kuralları',
-      question: 'Başvurularda hangi şartlara ve onay tercihlerine uyulmalı?',
+      label: 'Application rules',
+      question: 'Which conditions and approval preferences should applications follow?',
       required: false,
       type: 'text',
     },
     {
       id: 'application_facts',
-      label: 'Başvuru formu bilgileri',
+      label: 'Application form details',
       question:
-        'Formlarda sık sorulan bilgiler: telefon, LinkedIn adresi, çalışma izni veya vize durumu, dil seviyeleri, ihbar süresi, en erken başlangıç, maaş beklentisi, ofise gelme kabulü, cinsiyet (isteğe bağlı). Bunlar kayıtlı olursa agent başvuru sırasında soru sormaz.',
+        'Details forms often ask for: phone, LinkedIn address, work permit or visa status, language levels, notice period, earliest start, salary expectation, willingness to come to the office, gender (optional). When these are saved, the agent does not ask during the application.',
       required: false,
       type: 'text',
     },
   ],
   table: {
-    title: 'Başvuru akışı',
+    title: 'Applications',
     columns: [
-      {key: 'source', label: 'Kaynak', type: 'text'},
-      {key: 'title', label: 'Pozisyon', type: 'text'},
-      {key: 'company', label: 'Şirket', type: 'text'},
-      {key: 'location', label: 'Konum', type: 'text'},
-      {key: 'score', label: 'Uygunluk puanı', type: 'number'},
+      {key: 'source', label: 'Source', type: 'text'},
+      {key: 'title', label: 'Position', type: 'text'},
+      {key: 'company', label: 'Company', type: 'text'},
+      {key: 'location', label: 'Location', type: 'text'},
+      {key: 'score', label: 'Fit score', type: 'number'},
     ],
   },
   steps: [
-    'Profili ve CV belgelerini incele',
-    'Güncel ilanları bul ve uygunluğunu değerlendir',
-    'Başvuru belgelerini ve cevaplarını hazırla',
-    'Yetki kapsamında başvur ve sonucu doğrula',
+    'Review the profile and CV documents',
+    'Find current listings and assess their fit',
+    'Prepare application documents and answers',
+    'Apply within the granted permissions and verify the outcome',
   ],
   // Request of the setup turn started by the welcome screen after a CV upload.
   // The user reviews the saved profile on a form, so the turn asks nothing.
   onboarding: `## Profile from the CV
 The user uploaded their CV on the welcome screen. They review your result on a form, not in this chat.
-1. Read the uploaded CV from the saved documents.
+1. Read the uploaded CV from the saved documents. If the request has userNotes, read them too: they are the user's own words and win over the CV.
 2. Call save_automation_plan once. Keep the saved sources, instructions and facts. Set title to the candidate's full name, goal to one sentence naming the roles and places to search, and these criteria keys:
-   - preferences: target roles from the CV's recent titles and seniority, plus places and work modes the CV states.
+   - preferences: target roles, places and work modes from userNotes; otherwise from the CV's recent titles and seniority.
    - experience: years of experience, main skills, languages with levels, education.
-   - country (ISO code) and location: from the CV address, only when the CV shows them.
-   - application_facts: phone, email, LinkedIn and language levels from the CV.
-   - ranking: your scoring proposal, weights adding up to 100.
-3. Leave a field empty when the CV does not show it. Never guess salary, work permit, start date or work mode.
+   - country (ISO code) and location: from userNotes; otherwise from the CV address when it shows them.
+   - constraints: salary, work permit, language and start date conditions that userNotes state.
+   - application_facts: phone, email, LinkedIn and language levels from the CV, plus facts userNotes state such as notice period or salary expectation.
+   - ranking: your scoring proposal, weights adding up to 100, following userNotes.
+3. Leave a field empty when neither userNotes nor the CV show it. Never guess salary, work permit, start date or work mode.
 4. Do not call ask_workspace_question and do not research sources in this turn.
 5. Call reply_to_user with two short sentences: what you filled and what the user should check or add on the form. Then call finish_automation_run.`,
   // Sent to Jev with every listing triage; keep it short.
   assessmentHints:
     'Listings are jobs. An unrelated listing is a different profession, judged by its actual responsibilities and professional field. A title naming another specialization is unrelated even when it shares a generic word such as engineer, developer or architect. Salary is a soft preference unless the user makes it mandatory; an omitted salary is not a mismatch. A qualification missing from the CV is unknown, not lacking. Possible home office or hybrid is not full remote. A site salary estimate is not the employer offer.',
   guidance: `## Setup
-1. Ask for the CV and explain the "Belge ekle" control. Ask for target roles, countries and work modes. Save the main target country as its ISO 3166 alpha-2 code in criteria.country (for example "GB"), or leave it empty for a worldwide remote search, and the main search place in criteria.location as job sites spell it (for example "London, United Kingdom"); recipes fill {country} and {location} with them.
+1. Ask for the CV and explain the "Add document" control. Ask for target roles, countries and work modes. Save the main target country as its ISO 3166 alpha-2 code in criteria.country (for example "GB"), or leave it empty for a worldwide remote search, and the main search place in criteria.location as job sites spell it (for example "London, United Kingdom"); recipes fill {country} and {location} with them.
 2. Build the criteria.ranking proposal from technical skills, experience, role fit and work preferences, with weights that add up to 100. Ask about hard constraints such as salary, work permit, language and start date.
 
 ## Assessing listings

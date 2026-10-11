@@ -40,7 +40,7 @@ export function fileInstructionParts(file, text) {
           .slice(0, 85)}`,
         file.startsWith('.agents/') || file === 'TASK.md' ? 'skill' : 'system',
         part,
-        {when: 'Oturum başında dosyadan erişilebilir; okunduğu doğrulanmaz.'},
+        {when: 'Available from a file at session start; reading it is not verified.'},
       ),
     );
 }
@@ -52,7 +52,7 @@ export function contextInstructionParts(name, value) {
       return item.map((message, index) =>
         instructionPart(
           `tool:${name}:messages:${message.id ?? index}`,
-          message.role === 'user' ? 'Kullanıcı mesajı' : 'Konuşma bağlamı',
+          message.role === 'user' ? 'User message' : 'Conversation context',
           message.role === 'user' ? 'user' : 'workspace',
           message,
         ),
@@ -184,7 +184,7 @@ export class InstructionLog {
         'SELECT seq,worker_id AS workerId,session_id AS sessionId,at,kind,data FROM workspace_instruction_events WHERE workspace_id=? AND seq=?',
       )
       .get(id, seq);
-    if (!row) throw Error('Talimat kaydı bulunamadı veya saklama süresi doldu.');
+    if (!row) throw Error('Instruction record not found or its retention period ended.');
     const {data, ...meta} = row;
     return {...meta, ...JSON.parse(data)};
   }
@@ -197,7 +197,7 @@ export class InstructionLog {
       !Number.isSafeInteger(before) ||
       before < 1
     )
-      throw Error('Geçersiz talimat filtresi');
+      throw Error('Invalid instruction filter');
     const rows = this.db
       .prepare(
         "SELECT seq FROM workspace_instruction_events WHERE workspace_id=? AND (?='' OR worker_id=?) AND (?='' OR session_id=?) AND (?='' OR json_extract(data,'$.agentProfileId')=?) AND seq<? ORDER BY seq DESC LIMIT 101",
@@ -292,7 +292,7 @@ export class InstructionLog {
                 ...result,
                 content: result.content?.map((p) =>
                   p.type === 'image' || p.type === 'audio'
-                    ? {type: p.type, mimeType: p.mimeType, note: 'İkili içerik kaydedilmedi'}
+                    ? {type: p.type, mimeType: p.mimeType, note: 'Binary content was not saved'}
                     : p,
                 ),
               }),
@@ -303,7 +303,7 @@ export class InstructionLog {
       sessionId: grant.sessionId,
       agentProfileId: grant.agentProfileId,
       kind,
-      title: kind === 'tool_catalog' ? 'Araç tanımları' : name,
+      title: kind === 'tool_catalog' ? 'Tool definitions' : name,
       status: result?.isError ? 'failed' : 'returned',
       parts,
     });

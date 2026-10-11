@@ -132,11 +132,11 @@ export function jevTaskSummary(
     limit < 1 ||
     (pageOffset !== undefined && (!Number.isSafeInteger(pageOffset) || pageOffset < 0))
   )
-    throw Error('Geçersiz Jev sonuç aralığı.');
+    throw Error('Invalid Jev result range.');
   limit = Math.min(limit, 20);
   if (batchId && batchId !== task.batch?.id)
     throw jevReviewRequired(
-      'İnceleme grubu eski; read_jev_task(taskId) ile güncel grubu ve item numaralarını oku.',
+      'The review batch is stale; read the current batch and item numbers with read_jev_task(taskId).',
     );
   const scan = task.input.operation === 'scan_results',
     all = scan ? listingFirst(task.items) : task.items,

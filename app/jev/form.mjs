@@ -510,7 +510,7 @@ export async function fillKnownFields(slot, fields, owner, reader) {
       status: 'invalid_target',
       results: fields.map(({fieldId}) => ({fieldId, status: 'not_attempted'})),
       message:
-        'controlId yazılabilir fieldId değildir. Dönen controls içinde alanı bul; görünür değilse browser_interact reveal ile görünür yap, ardından güncel fillFields içindeki fieldId değerini kullan. Aynı controlId ile yazmayı tekrar deneme.',
+        'A controlId is not a writable fieldId. Find the field in the returned controls; if it is not visible, make it visible with browser_interact reveal, then use the fieldId from the current fillFields. Do not retry typing with the same controlId.',
     };
   // Removed, consumed or foreign-session IDs cannot write.
   if (fields.some((field) => !slot.fillFields?.has(field.fieldId)))
@@ -518,14 +518,14 @@ export async function fillKnownFields(slot, fields, owner, reader) {
       status: 'stale',
       results: fields.map(({fieldId}) => ({fieldId, status: 'not_attempted'})),
       message:
-        'Alan kimlikleri eski; dönen güncel fillFields listesini kullan. Ek observe gerekmez.',
+        'The field ids are stale; use the returned current fillFields list. No extra observe is needed.',
     };
   // Validate the complete mapping before touching any field, then consume it.
   const entries = fields.map((field) => {
     const saved = slot.fillFields?.get(field.fieldId);
     if (!saved || saved.owner !== owner)
       throw Error(
-        'Bu oturuma ait güncel alan kimliği gerekli; son gözlemdeki fillFields listesini kullan.',
+        'A current field id of this session is required; use the fillFields list from the last observation.',
       );
     if (saved.details.type === 'date') {
       const valid =
@@ -534,16 +534,16 @@ export async function fillKnownFields(slot, fields, owner, reader) {
         new Date(field.text).toISOString().slice(0, 10) === field.text;
       if (!valid)
         throw Error(
-          'Tarih YYYY-MM-DD biçiminde geçerli bir takvim tarihi olmalı; hiçbir alan doldurulmadı.',
+          'The date must be a valid calendar date in YYYY-MM-DD format; no field was filled.',
         );
       if (
         (saved.details.min && field.text < saved.details.min) ||
         (saved.details.max && field.text > saved.details.max)
       )
-        throw Error('Tarih alanın min/max sınırları dışında; hiçbir alan doldurulmadı.');
+        throw Error('The date is outside the min/max limits of the field; no field was filled.');
     }
     if (saved.details.maxLength >= 0 && field.text.length > saved.details.maxLength)
-      throw Error('Metin alanın izin verdiği uzunluğu aşıyor; hiçbir alan doldurulmadı.');
+      throw Error('The text exceeds the length the field allows; no field was filled.');
     return {...saved, ...field};
   });
   const handles = new Map(fields.map(({fieldId}) => [fieldId, slot.fillFields.get(fieldId)]));
@@ -677,8 +677,8 @@ export async function fillKnownFields(slot, fields, owner, reader) {
       formChanged,
       message:
         status === 'ready'
-          ? 'İstenen alan değerleri doğrulandı. Dönen güncel gözlemi kullan; bu alanları tekrar doldurma. Gönderim yapılmadı.'
-          : `${verifiedCount}/${results.length} alan doğrulandı. Yalnızca doğrulanmayan veya not_attempted alanları incele; filled/unchanged alanları tekrar doldurma. Güncel alan haritası bu sonuçta var.`,
+          ? 'The requested field values were verified. Use the returned current observation; do not fill these fields again. Nothing was submitted.'
+          : `${verifiedCount}/${results.length} fields verified. Inspect only the unverified or not_attempted fields; do not fill filled/unchanged fields again. The current field map is in this result.`,
     };
   } finally {
     await Promise.all(

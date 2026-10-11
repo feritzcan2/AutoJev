@@ -33,7 +33,7 @@ function persist(db, run, work, extra = {}) {
   const progress = {...stats(run), ...extra},
     pending = pendingScanUrls(work),
     complete = work.searches.every((s) => s.status === 'completed') && !pending.length;
-  const reason = `Toplanan: ${progress.collected} · Jev eledi: ${progress.jevRejected} · Agent eledi: ${progress.agentRejected} · İnceleme bekleyen: ${pending.length} · Kaydedilen: ${progress.saved}`;
+  const reason = `Collected: ${progress.collected} · Rejected by Jev: ${progress.jevRejected} · Rejected by agent: ${progress.agentRejected} · Awaiting review: ${pending.length} · Saved: ${progress.saved}`;
   db.persistScan(run.automationId, {
     ...run,
     scan: {
@@ -98,7 +98,7 @@ const currentRun = (db, runId) => {
     run.status !== 'running' ||
     run.revision !== a.revision
   )
-    throw Error('Toplayıcı görevi artık etkin değil.');
+    throw Error('The collector task is no longer active.');
   return run;
 };
 const pageTask = (db, run, search) =>
@@ -131,7 +131,7 @@ export function saveCollectionPage(db, runId, page) {
     search.status === 'completed' ||
     (checkpoint.page?.url ?? checkpoint.nextUrl) !== page.url
   )
-    throw Error('Toplayıcı sayfası atanmış aramaya ait değil.');
+    throw Error('The collector page does not belong to the assigned search.');
   const jobs = [...new Map(page.jobs.map((job) => [job.url, job])).values()];
   const pending = new Set(pendingScanUrls(work));
   const known = new Set(
@@ -192,7 +192,7 @@ export function saveCollectionPage(db, runId, page) {
         a.id,
         run.id,
         page.url,
-        `API: ${jobs.length} ilan; ${picked.length} inceleme bekliyor.`,
+        `API: ${jobs.length} listings; ${picked.length} awaiting review.`,
         jobs.map((j) => j.url),
       );
       const updated = db.run(run.id);
@@ -221,12 +221,12 @@ async function recoverDetails(db, run, search, page, {signal, readDetail}) {
     missing.slice(0, 4).map(async (url) => {
       signal?.throwIfAborted();
       try {
-        if (!readDetail) throw Error('Bu kaynak tekil ilanı yeniden okuyamıyor.');
+        if (!readDetail) throw Error('This source cannot re-read a single listing.');
         const job = await readDetail(url, {signal});
         signal?.throwIfAborted();
         currentRun(db, run.id);
         if (job?.url !== url || !job.title?.trim() || !job.description?.trim())
-          throw Error('Yeniden okunan ilan eksik veya bekleyen adresle eşleşmiyor.');
+          throw Error('The re-read listing is incomplete or does not match the pending address.');
         jobs.push(job);
       } catch (error) {
         signal?.throwIfAborted();
@@ -352,7 +352,7 @@ export async function collectSourcePage(
       return {taskId: saveCollectionPage(db, runId, {...recovered, searchId: search.id}).id};
     }
     const urls = pendingScanUrls(work),
-      message = `Sonuç sayfaları tarandı; ${urls.length} ilanın detayları yeniden okunamadı. Bekleyen adresler korunuyor.`;
+      message = `Result pages were scanned; the details of ${urls.length} listings could not be re-read. The pending addresses are kept.`;
     db.putRun({...run, collectorError: message});
     return {
       complete: false,
@@ -363,9 +363,9 @@ export async function collectSourcePage(
     };
   }
   const url = search.collector.page?.url ?? search.collector.nextUrl;
-  if (!url) throw Error('Toplayıcı devam sayfası eksik; tarama tamamlanmadı.');
+  if (!url) throw Error('The collector continuation page is missing; the scan is not complete.');
   if (search.collector.visitedPages?.includes(url))
-    throw Error('API sayfalaması aynı sayfaya döndü; tarama tamamlanmadı.');
+    throw Error('API pagination returned the same page; the scan is not complete.');
   const page = await readPage(url, {signal});
   signal?.throwIfAborted();
   const recovered = await recoverDetails(db, run, search, page, {signal, readDetail});
@@ -376,7 +376,7 @@ export async function collectSourcePage(
 }
 
 export function collectorFindingInput(db, run, input) {
-  if (run.scan?.collector !== format) throw Error('Önce CLI inceleme kuyruğunu başlat.');
+  if (run.scan?.collector !== format) throw Error('Start the CLI review queue first.');
   const search = activeSearch(scanWork(run)),
     task = pageTask(db, run, search),
     item = task?.items.find((i) => i.url === input.url);
@@ -388,10 +388,10 @@ export function collectorFindingInput(db, run, input) {
     item.detailComplete === false ||
     (!search.pendingUrls.includes(item.url) && existing?.assessment?.runId !== run.id)
   )
-    throw Error('Kaydetmeden önce CLI ilanını Jev ile incele.');
+    throw Error('Review the CLI listing with Jev before saving it.');
   if (item.assessment.decision === 'mismatch')
-    throw Error('Jev uyumsuz buldu; bu ilanı inceleme grubunda ele.');
-  if (!input.assessment) throw Error('İlanı puanlamadan kaydetme.');
+    throw Error('Jev found it a mismatch; dismiss this listing in the review batch.');
+  if (!input.assessment) throw Error('Do not save the listing without scoring it.');
   return {
     ...input,
     cells: [

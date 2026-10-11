@@ -84,25 +84,22 @@ try {
     };
     panel.update(snapshot, 'owner');
   });
-  await page.getByText('Sayfa yüklenemedi', {exact: true}).waitFor();
-  assert.match(await page.locator('.source-status').innerText(), /page=8.*2. deneme/);
+  await page.getByText('Page could not load', {exact: true}).waitFor();
+  assert.match(await page.locator('.source-status').innerText(), /page=8.*attempt 2/);
   await page.evaluate(() => {
     const {source, snapshot, panel} = window.sourceFixture;
     source.scanIssue = null;
     panel.update(snapshot, 'owner');
   });
-  await page.getByRole('button', {name: 'Taramayı durdur', exact: true}).click();
-  assert.equal(
-    await page.getByRole('button', {name: 'Durduruluyor…', exact: true}).isDisabled(),
-    true,
-  );
+  await page.getByRole('button', {name: 'Stop scan', exact: true}).click();
+  assert.equal(await page.getByRole('button', {name: 'Stopping…', exact: true}).isDisabled(), true);
   assert.deepEqual(await page.evaluate(() => window.stopCalls), [
     {id: 'owner', url: 'https://example.test/jobs'},
   ]);
   await page.evaluate(() => window.finishStop());
-  await page.getByRole('button', {name: 'Şimdi tara', exact: true}).waitFor();
-  assert.match(await page.evaluate(() => window.lastNotice), /ilerleme korundu/);
-  await page.getByRole('button', {name: 'Şimdi tara', exact: true}).click();
+  await page.getByRole('button', {name: 'Scan now', exact: true}).waitFor();
+  assert.match(await page.evaluate(() => window.lastNotice), /Saved progress was kept/);
+  await page.getByRole('button', {name: 'Scan now', exact: true}).click();
   assert.deepEqual(await page.evaluate(() => window.runCalls), [
     {id: 'owner', url: 'https://example.test/jobs'},
   ]);
@@ -117,13 +114,10 @@ try {
     });
     panel.update(snapshot, 'owner');
   });
-  await page.getByText('Erişim sorunu sürüyor', {exact: true}).waitFor();
-  await page.getByText('Yeniden başlatılmayı bekliyor', {exact: true}).waitFor();
-  assert.equal(
-    await page.getByRole('button', {name: 'Tekrar dene', exact: true}).isEnabled(),
-    true,
-  );
-  await page.getByRole('button', {name: 'Tekrar dene', exact: true}).click();
+  await page.getByText('Access problem persists', {exact: true}).waitFor();
+  await page.getByText('Waiting for a restart', {exact: true}).waitFor();
+  assert.equal(await page.getByRole('button', {name: 'Retry', exact: true}).isEnabled(), true);
+  await page.getByRole('button', {name: 'Retry', exact: true}).click();
   assert.equal(await page.evaluate(() => window.runCalls.length), 2);
   await page.evaluate(() => {
     const {source, snapshot, panel} = window.sourceFixture,
@@ -155,21 +149,21 @@ try {
     source.observedPage = {currentPage: 1};
     panel.update(snapshot, 'owner');
   });
-  await page.getByRole('button', {name: 'Detay', exact: true}).click();
+  await page.getByRole('button', {name: 'Details', exact: true}).click();
   await page
-    .getByText('North · 250 adres bekliyor · 7. sayfa · Seçili arama', {exact: true})
+    .getByText('North · 250 address(es) waiting · page 7 · Selected search', {exact: true})
     .waitFor();
   await page
-    .getByText('1. sayfa. Kayıtlı ilerleme ve kalan adresler korunuyor.', {exact: true})
+    .getByText('Page 1. Saved progress and remaining addresses are kept.', {exact: true})
     .waitFor();
   await page.locator('.source-progress-pending summary').click();
   assert.equal(await page.locator('.source-progress-pending li').count(), 100);
-  await page.getByRole('button', {name: 'Sonraki 100 adresi göster', exact: true}).click();
+  await page.getByRole('button', {name: 'Show the next 100 addresses', exact: true}).click();
   assert.equal(await page.locator('.source-progress-pending li').count(), 200);
-  await page.getByRole('button', {name: 'Sonraki 100 adresi göster', exact: true}).click();
+  await page.getByRole('button', {name: 'Show the next 100 addresses', exact: true}).click();
   assert.equal(await page.locator('.source-progress-pending li').count(), 250);
   assert.equal(
-    await page.getByRole('button', {name: 'Sonraki 100 adresi göster', exact: true}).isVisible(),
+    await page.getByRole('button', {name: 'Show the next 100 addresses', exact: true}).isVisible(),
     false,
   );
   await page.evaluate(() => {
@@ -208,38 +202,32 @@ try {
     panel.update(snapshot, 'owner');
   });
   assert.deepEqual(await page.locator('.source-last-run').allTextContents(), [
-    'Son tur: Başarılı',
-    'Son tur: Başarısız',
-    'Son tur: Engellendi',
-    'Son tur: Durduruldu',
-    'Son tur: Kısmi tamamlandı',
-    'Son tur: Süre doldu',
-    'Son tur: Henüz çalışmadı',
+    'Last round: Succeeded',
+    'Last round: Failed',
+    'Last round: Blocked',
+    'Last round: Stopped',
+    'Last round: Partially completed',
+    'Last round: Timed out',
+    'Last round: not run yet',
   ]);
   const rows = page.locator('.source-row');
-  assert.equal(await rows.nth(1).locator('.source-status b').textContent(), 'Taranıyor');
-  assert.equal(
-    await rows.nth(0).locator('.source-timing b').textContent(),
-    'Sonraki tarama 1 gün 1 saat sonra',
-  );
+  assert.equal(await rows.nth(1).locator('.source-status b').textContent(), 'Scanning');
+  assert.equal(await rows.nth(0).locator('.source-timing b').textContent(), 'Next scan in 1 d 1 h');
   assert.equal(
     await rows.nth(2).locator('.source-timing b').textContent(),
-    'Sonraki tarama 1 saat 5 dk sonra',
+    'Next scan in 1 h 5 min',
   );
   assert.match(
     await page.locator('.sources-head p').textContent(),
-    /Sıradaki tarama 1 saat 5 dk sonra: Engelli kaynak/,
+    /Next scan in 1 h 5 min: Engelli kaynak/,
   );
   assert.match(await rows.nth(0).locator('.source-timing b').getAttribute('title'), /02[./]10/);
   await page.clock.fastForward(60000);
   assert.equal(
     await rows.nth(2).locator('.source-timing b').textContent(),
-    'Sonraki tarama 1 saat 4 dk sonra',
+    'Next scan in 1 h 4 min',
   );
-  assert.match(
-    await page.locator('.sources-head p').textContent(),
-    /Sıradaki tarama 1 saat 4 dk sonra/,
-  );
+  assert.match(await page.locator('.sources-head p').textContent(), /Next scan in 1 h 4 min/);
   await page.screenshot({path: path.join(data, 'source-status.png'), fullPage: true});
   await page.evaluate(() => {
     const {snapshot, panel} = window.sourceFixture;
@@ -247,13 +235,10 @@ try {
     snapshot.sources[2].nextRunAt = Date.now() + 30000;
     panel.update(snapshot, 'owner');
   });
-  assert.equal(
-    await rows.nth(0).locator('.source-timing b').textContent(),
-    'Sonraki tarama sırası geldi',
-  );
+  assert.equal(await rows.nth(0).locator('.source-timing b').textContent(), 'Next scan due now');
   assert.equal(
     await rows.nth(2).locator('.source-timing b').textContent(),
-    'Sonraki tarama 1 dk içinde',
+    'Next scan within 1 min',
   );
   console.log('SOURCE_LAST_OUTCOME_AND_COUNTDOWN_PASS', data);
   console.log('SOURCE_STOP_BUTTON_SCOPE_BUSY_AND_RESTART_PASS');

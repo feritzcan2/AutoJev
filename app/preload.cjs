@@ -66,7 +66,7 @@ contextBridge.exposeInMainWorld('jobloop', {
   terminalMessage: (id, text, worker = 'main') => invoke('terminal-message', id, text, worker),
   automationSkipTrial: (id) => invoke('automation-skip-trial', id),
   automationSetup: (id) => invoke('automation-setup', id),
-  automationOnboarding: (id) => invoke('automation-onboarding', id),
+  automationOnboarding: (id, input) => invoke('automation-onboarding', id, input),
   automationTemplates: () => invoke('automation-templates'),
   workspaceCreate: (templateId, input) => invoke('workspace-create', templateId, input),
   automationSave: (id, input) => invoke('automation-save', id, input),
