@@ -9,9 +9,9 @@ import {
 import {workspaceSourceTabs} from './workspace-tabs.js';
 
 const modes = {
-  observe: 'Find only',
-  prepare: 'Prepare, wait for my approval',
-  auto: 'Send automatically',
+  observe: 'Only find',
+  prepare: 'Find, apply when I say (older setting)',
+  auto: 'Find and apply',
 };
 const paginationLabels = {
   auto: 'Detect automatically',

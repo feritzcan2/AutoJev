@@ -14,7 +14,12 @@ function fixture(t, {workers = 1} = {}) {
   const db = new AutomationStore(store, {now: () => now}),
     a = db.create('housing', {
       goal: 'Find homes',
-      criteria: {location: 'Germany', budget: '2000', requirements: 'Two rooms'},
+      criteria: {
+        location: 'Germany',
+        budget: '2000',
+        requirements: 'Two rooms',
+        score_threshold: '60',
+      },
       sources: urls,
     });
   // These tests step the clock past a 30-minute scan interval.
@@ -104,12 +109,10 @@ test('reviewed setup starts source trials without a workspace trial, then schedu
   assert.equal(second.kind, 'trial');
   assert.equal(second.sourceUrl, urls[1]);
   await f.finish(second);
-  await f.runtime.tick();
-  assert.equal(f.launches.length, 2);
-  assert.equal(f.store.workspaces.tasks.list(f.id, {batchId: first.batchId}).length, 1);
-  f.advance();
+  // A passed trial queues the source's first scan without waiting for its interval.
   await f.runtime.tick();
   await settle();
+  assert.equal(f.store.workspaces.tasks.list(f.id, {batchId: first.batchId}).length, 1);
   const scan = f.launches[2];
   assert.equal(scan.kind, 'run');
   assert.equal(scan.sourceUrl, urls[0]);

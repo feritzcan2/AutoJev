@@ -2,9 +2,13 @@
 import {automaticAssessmentError} from '../../../src/scoring-state.js';
 import {taskRecordIds, taskHasRecord} from '../../records/task-scope.mjs';
 import {validateNotSubmitted} from '../../records/outcome.mjs';
-import {pendingRecordQuestion, recordSource} from '../../records/operations.mjs';
+import {
+  pendingRecordQuestion,
+  recordSource,
+  savedBeforeAutoApply,
+} from '../../records/operations.mjs';
 import {recordAssessment, assessmentCells} from '../../scoring/record-scoring.mjs';
-import {saveScoreThreshold} from '../../scoring/thresholds.mjs';
+import {saveScoreThreshold, autoApplyThreshold} from '../../scoring/thresholds.mjs';
 import {activeRecordSql} from '../../records/identity.mjs';
 import {observedRecordAliases} from '../../records/aliases.mjs';
 import {collectorRun} from '../../sources/collectors.mjs';
@@ -506,7 +510,13 @@ export const recordMethods = {
     if (!explicit) {
       if (mode !== 'auto') throw Error('Applying requires a user request');
       if (!item.assessment) throw Error('Score first before applying automatically');
-      const error = automaticAssessmentError(item.assessment, a.revision);
+      if (savedBeforeAutoApply(a, item))
+        throw Error('Saved before Find and apply was turned on; apply it yourself');
+      const error = automaticAssessmentError(
+        item.assessment,
+        a.revision,
+        autoApplyThreshold(a.criteria),
+      );
       if (error) throw Error(error);
     }
     if (item.trial || !['found', 'prepared'].includes(item.status))

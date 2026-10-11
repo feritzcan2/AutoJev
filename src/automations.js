@@ -45,9 +45,9 @@ const statusNames = {
 };
 const time = (value) => (value ? new Date(value).toLocaleString('en-GB') : '—');
 const modeNames = {
-  observe: 'Find and report',
-  prepare: 'Prepare, wait for my approval',
-  auto: 'Apply automatically',
+  observe: 'Only find',
+  prepare: 'Find, apply when I say (older setting)',
+  auto: 'Find and apply',
 };
 
 export function automationsPage(
@@ -199,6 +199,26 @@ export function automationsPage(
   profileSaveDialog.innerHTML =
     '<form method="dialog"><h2 id="automation-profile-save-title">Save the profile and restart the agents?</h2><p id="automation-profile-save-warning"></p><div class="workspace-dialog-actions"><button class="quiet" value="cancel" autofocus>Cancel</button><button class="primary" value="save">Confirm and save</button></div></form>';
   document.body.append(profileSaveDialog);
+  const queueExistingDialog = el('dialog');
+  queueExistingDialog.id = 'automation-queue-existing-dialog';
+  queueExistingDialog.setAttribute('aria-labelledby', 'automation-queue-existing-title');
+  queueExistingDialog.innerHTML =
+    '<form method="dialog"><h2 id="automation-queue-existing-title">Apply to listings you already have?</h2><p></p><div class="workspace-dialog-actions"><button class="quiet" value="cancel">Cancel</button><button class="quiet" value="new">Only new listings</button><button class="primary" value="queue" autofocus>Queue them too</button></div></form>';
+  document.body.append(queueExistingDialog);
+  // Resolves true (queue existing), false (only new) or null (cancel the save).
+  function askQueueExisting(count, threshold) {
+    return new Promise((resolve) => {
+      queueExistingDialog.querySelector('p').textContent =
+        `${count} saved listing(s) have not been applied to yet. Queue those scoring ${threshold} or more for automatic applying, or apply only to listings found from now on?`;
+      queueExistingDialog.returnValue = 'cancel';
+      queueExistingDialog.addEventListener(
+        'close',
+        () => resolve({queue: true, new: false}[queueExistingDialog.returnValue] ?? null),
+        {once: true},
+      );
+      queueExistingDialog.showModal();
+    });
+  }
   function confirmProfileSave(count) {
     return new Promise((resolve) => {
       profileSaveDialog.querySelector('p').textContent =
@@ -322,7 +342,7 @@ export function automationsPage(
     progressSignature = '';
     host.innerHTML = `<div id="automation-controls" class="actions"></div><p id="automation-runtime-note" class="automation-runtime-note" role="status"></p>
 <div class="automation-setup-grid"><section class="automation-conversation"><div class="automation-section-head"><h2>Set up with the assistant</h2><p>Describe what you need, answer the questions or write the change you want.</p></div><div id="automation-messages" class="automation-messages" role="log" aria-label="Setup conversation"></div><form id="automation-chat"><label for="automation-message">Your message</label><textarea id="automation-message" placeholder="For example: I am looking for a two-room flat in Berlin up to 1,500 euros…" maxlength="12000" required></textarea><div class="actions"><button id="automation-send" data-idle type="submit" class="primary">Send</button><button id="automation-add-document" data-idle type="button" class="quiet">Add document</button></div><small>A change conversation pauses regular runs. New details appear in the workspace profile.</small></form></section>
-<section class="automation-plan"><div class="automation-section-head"><h2>Setup card</h2><p>Review and edit what the assistant prepared. You choose the permission here.</p></div><form id="automation-plan-form"><label>Name<input name="title" required maxlength="150"></label><label>Goal<textarea name="goal" required maxlength="6000"></textarea></label><div id="automation-criteria"></div><label>Workflow<textarea name="instructions" maxlength="12000"></textarea></label><details><summary>Personal details and documents</summary><label>Details this automation may use<textarea name="facts" maxlength="12000" placeholder="Only the details needed for this work. Do not share passwords here."></textarea></label><div id="automation-documents"></div><div id="automation-jev-profile" class="jev-profile"></div></details><label>Action permission<select name="mode"><option value="observe">Find and report</option><option value="prepare">Prepare, wait for my approval</option><option value="auto">Apply automatically</option></select></label><div class="automation-plan-footer"><small id="automation-save-state" role="status"></small><button data-idle type="submit" class="primary">Save setup</button></div></form></section></div>
+<section class="automation-plan"><div class="automation-section-head"><h2>Setup card</h2><p>Review and edit what the assistant prepared. You choose the permission here.</p></div><form id="automation-plan-form"><label>Name<input name="title" required maxlength="150"></label><label>Goal<textarea name="goal" required maxlength="6000"></textarea></label><div id="automation-criteria"></div><label>Workflow<textarea name="instructions" maxlength="12000"></textarea></label><details><summary>Personal details and documents</summary><label>Details this automation may use<textarea name="facts" maxlength="12000" placeholder="Only the details needed for this work. Do not share passwords here."></textarea></label><div id="automation-documents"></div><div id="automation-jev-profile" class="jev-profile"></div></details><label>Action permission<select name="mode"><option value="observe">Only find</option><option value="auto">Find and apply</option></select></label><div class="automation-plan-footer"><small id="automation-save-state" role="status"></small><button data-idle type="submit" class="primary">Save setup</button></div></form></section></div>
 <section class="automation-results-section"><div class="automation-heading"><div><h2>Results</h2></div><button id="automation-export" type="button" class="quiet">Export results</button></div><div id="automation-results"></div></section>
 <section class="automation-history-section"><div class="automation-section-head"><h2>Run history</h2><p>The outcome of each round and, when needed, the agent screen.</p></div><div id="automation-runs"></div></section><div class="automation-bottom-actions"><button id="automation-delete" type="button" class="quiet danger">Delete automation</button></div>`;
     const $ = (id) => find('#' + id),
@@ -369,7 +389,17 @@ export function automationsPage(
       ).length;
       if (activeCount && !(await confirmProfileSave(activeCount))) return;
       if (owner !== selected || isDeleting()) return;
-      await api.automationProfileSave(owner, input, {expectedRevision});
+      const options = {expectedRevision};
+      if (input.mode === 'auto' && snapshot.automation.mode !== 'auto') {
+        const existing = (snapshot.results ?? []).filter(
+          (r) => !r.trial && ['found', 'prepared'].includes(r.status),
+        ).length;
+        if (existing) {
+          options.queueExisting = await askQueueExisting(existing, input.criteria.score_threshold);
+          if (options.queueExisting === null || owner !== selected || isDeleting()) return;
+        } else options.queueExisting = true;
+      }
+      await api.automationProfileSave(owner, input, options);
       if (owner !== selected) return;
       dirty = false;
       formRevision = '';
@@ -475,15 +505,14 @@ export function automationsPage(
     for (const [value, title, description] of [
       [
         'observe',
-        'Find and report',
-        'Search, filter and save suitable results; do not send messages or applications.',
+        'Only find',
+        'Search, score and save suitable listings; never apply on its own. You can still press "Apply".',
       ],
       [
-        'prepare',
-        'Find, leave applying to me',
-        'Save suitable results; apply directly when I press "Apply".',
+        'auto',
+        'Find and apply',
+        'Also applies on its own to listings that reach the minimum score.',
       ],
-      ['auto', 'Apply automatically', 'Carry out actions according to the rules I saved.'],
     ]) {
       const choice = el('label', null, 'choice'),
         input = el('input'),
@@ -491,10 +520,14 @@ export function automationsPage(
       input.type = 'radio';
       input.name = 'mode';
       input.value = value;
+      input.required = true;
       copy.append(el('b', title), el('small', description));
       choice.append(input, copy);
       authorization.append(choice);
     }
+    // fillForm moves the criteria's minimum score field here.
+    authorization.append(el('div', null, 'authorization-score'));
+    authorization.addEventListener('change', syncApplyScore);
     mode.closest('label').replaceWith(authorization);
     const footer = form.querySelector('.automation-plan-footer');
     footer.className = 'profile-foot';
@@ -956,7 +989,25 @@ export function automationsPage(
       a.criteria,
     );
     for (const key of ['title', 'goal', 'instructions', 'facts', 'mode']) f[key].value = a[key];
+    const score = f['criteria-score_threshold']?.closest('label'),
+      slot = form.querySelector('.authorization-score');
+    if (score && slot) {
+      score.firstChild.textContent = 'Minimum score to apply';
+      slot.replaceChildren(score);
+    }
+    syncApplyScore();
     formBaseline = readForm();
+  }
+  // Find and apply only runs with an explicit minimum score.
+  function syncApplyScore() {
+    const form = find('#automation-plan-form'),
+      input = form?.elements['criteria-score_threshold'],
+      slot = form?.querySelector('.authorization-score');
+    if (!input || !slot) return;
+    const auto = form.elements.mode.value === 'auto';
+    Object.assign(input, {required: auto, min: '1', max: '100', step: '1'});
+    input.placeholder = '1–100, required for Find and apply';
+    slot.hidden = !auto;
   }
   function renderControls() {
     if (!data || !find('#automation-controls')) return;

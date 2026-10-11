@@ -5,9 +5,14 @@ import {sourceMode} from '../sources/automation-sources.mjs';
 import {automationReady} from '../sources/trial.mjs';
 import {workerKey} from '../automation/worker-key.mjs';
 import {boundedText} from '../templates/catalog.mjs';
+import {autoApplyThreshold} from '../scoring/thresholds.mjs';
 
 const live = ['pending', 'running', 'reported', 'paused'];
 const waitingForAnswer = 'Answer the pending questions for this record first';
+// When the user switched to Find and apply without queueing existing records,
+// only records saved after the switch are applied to automatically.
+export const savedBeforeAutoApply = (a, item) =>
+  Boolean(a.autoApplyAfter) && (item.createdAt ?? 0) < a.autoApplyAfter;
 export function recordSource(a, item) {
   if (item.sourceUrl) return item.sourceUrl;
   const sources = a.sources.filter((url) => new URL(url).origin === new URL(item.url).origin);
@@ -54,7 +59,13 @@ export function recordOperationError(
     // Without a draft review in between, an automatic submission needs a
     // current score; an unscored record is never applied to on its own.
     if (!item.assessment) return 'Score it first for an automatic application';
-    const error = automaticAssessmentError(item.assessment, a.revision);
+    if (savedBeforeAutoApply(a, item))
+      return 'Saved before Find and apply was turned on; apply it yourself';
+    const error = automaticAssessmentError(
+      item.assessment,
+      a.revision,
+      autoApplyThreshold(a.criteria),
+    );
     if (error) return error;
   }
   void digest;
