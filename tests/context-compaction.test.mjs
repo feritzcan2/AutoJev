@@ -29,7 +29,7 @@ function fixture(provider = 'codex', send) {
   });
   return {session, controller, calls, time: (n) => (now = n)};
 }
-test('compaction defaults to 150k tokens and preserves explicit disabling and restart settings', () => {
+test('compaction uses provider defaults and preserves explicit disabling and restart settings', () => {
   assert.equal(contextCompactTokens(), 150000);
   for (const bad of [-1, Number.MAX_SAFE_INTEGER + 1, null, '50', 0.5, NaN, Infinity])
     assert.throws(() => contextCompactTokens(bad));
@@ -39,10 +39,10 @@ test('compaction defaults to 150k tokens and preserves explicit disabling and re
       title: 'Local',
       agentSettings: {provider: 'claude', contextRestartTokens: 40},
     });
-    assert.equal(p.agentSettings.contextCompactTokens, 150000);
+    assert.equal(p.agentSettings.contextCompactTokens, 200000);
     delete p.agentSettings.contextCompactTokens;
     store.db.prepare('UPDATE workspaces SET data=? WHERE id=?').run(JSON.stringify(p), p.id);
-    assert.equal(store.workspaces.get(p.id).agentSettings.contextCompactTokens, 150000);
+    assert.equal(store.workspaces.get(p.id).agentSettings.contextCompactTokens, 200000);
     assert.equal(store.workspaces.get(p.id).agentSettings.contextRestartTokens, 40);
     assert.equal(
       store.workspaces.save(p.id, p.templateId, {

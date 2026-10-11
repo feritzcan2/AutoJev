@@ -858,11 +858,21 @@ export function automationWorkflow({
         collector: db.activeRun(id, run.id).collector,
         progress: collectorProgress(db.run(run.id)),
       };
-      if (result.status !== 'completed' || result.total || result.unavailable || result.issue)
-        return result;
+      // Listings whose details stayed unreadable remain pending in the collector;
+      // a page holding nothing else to review is read on like a known page.
+      const unreadable =
+        result.unavailable > 0 && result.unavailable === result.total && !result.classified;
+      if (!unreadable && (result.status !== 'completed' || result.total || result.issue))
+        return result.unavailable
+          ? {
+              ...result,
+              next: `${result.next} Unreadable listings stay pending in the collector; after this batch call collect_source_page for the next page.`,
+            }
+          : result;
       if (page >= KNOWN_COLLECTOR_PAGES)
         return {
           ...result,
+          issue: undefined,
           next: `The last ${page} pages held no new listings to review. Call collect_source_page again for the next page.`,
         };
     }

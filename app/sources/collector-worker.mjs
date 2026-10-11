@@ -313,7 +313,10 @@ export async function collectSourcePage(
       const next = work.searches.find((s) => s.collector.page || s.collector.nextUrl);
       if (next) work.activeSearchId = next.id;
     }
-    task.deferredUrls = task.items.filter((i) => i.review?.decision === 'defer').map((i) => i.url);
+    // An unreadable listing is not re-read on every later page of this run.
+    task.deferredUrls = task.items
+      .filter((i) => i.review?.decision === 'defer' || i.error)
+      .map((i) => i.url);
     db.jevTasks.save(task);
     persist(db, run, work);
     db.jevTasks.releaseEvidence(run.automationId, run.taskId ?? run.id, task.id);

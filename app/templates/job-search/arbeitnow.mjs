@@ -19,7 +19,6 @@ export const arbeitnowSources = ARBEITNOW_SITES.map(([host, country, name, scope
   url: `https://${host}/`,
   name: `Arbeitnow (${name})`,
   countries: [country],
-  intervalMinutes: 180,
   enabled: true,
   instructions: `${scope}. The Arbeitnow extension reads the public API feed: listings arrive with their full descriptions, and there is no search. Fetch one page with collect_source_page; Jev filters against the profile, then score and save the rest. These instructions grant no permission to act.`,
   recipe: {

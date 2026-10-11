@@ -58,6 +58,9 @@
   font-size: 13px;
   overflow-wrap: anywhere;
 }
+.source-proposal li small {
+  display: block;
+}
 .source-proposal .actions {
   margin-top: 18px;
 }

@@ -6,6 +6,8 @@ import {siteKey} from '../browser/site-key.mjs';
 // countries; it joins a workspace when setup adds it. Untagged sources serve
 // every country and join every new workspace.
 export const TEMPLATE_SOURCE_LIMIT = 100;
+// A new workspace scans each source every 18 hours unless the user changes it.
+export const DEFAULT_SCAN_INTERVAL_MINUTES = 18 * 60;
 export const globalTemplateSource = (source) => !source.countries?.length;
 export function templateSourceSettings({url: _url, countries: _countries, ...settings}) {
   return settings;
@@ -37,7 +39,7 @@ export function normalizeTemplateSources(input = []) {
     seen.add(address);
     const name = source.name ?? url.hostname,
       query = source.query ?? '',
-      intervalMinutes = source.intervalMinutes ?? 30,
+      intervalMinutes = source.intervalMinutes ?? DEFAULT_SCAN_INTERVAL_MINUTES,
       enabled = source.enabled ?? true;
     if (
       typeof name !== 'string' ||

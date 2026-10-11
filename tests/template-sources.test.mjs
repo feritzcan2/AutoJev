@@ -22,7 +22,7 @@ test('job template creates its worldwide sources; country sources wait for setup
   );
   assert.ok(sources.every((s) => s.enabled));
   const linked = sources.find((s) => s.name === 'LinkedIn');
-  assert.equal(linked.intervalMinutes, 15);
+  assert.equal(linked.intervalMinutes, 18 * 60);
   assert.equal(linked.integrationId, undefined);
   assert.equal(linked.searchMethod, undefined);
   assert.ok(sources.some((s) => s.name === 'FreeHire'));

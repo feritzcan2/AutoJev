@@ -8,7 +8,6 @@ export const jobSearchSources = [
   {
     url: 'https://www.linkedin.com/jobs/',
     name: 'LinkedIn',
-    intervalMinutes: 15,
     enabled: true,
     instructions:
       "Use the current workspace criteria and the source query. The logged-out jobs-guest results address returns only listing cards; do not go to the login wall. Keep each query's pagination and remaining details in the scan queue. Tell an empty result apart from an access block; report a login or verification block and do not try to get past it. These instructions grant no permission to act; applications run from record tasks.",
@@ -28,7 +27,6 @@ export const jobSearchSources = [
   {
     url: 'https://html.duckduckgo.com/html/',
     name: 'Company career pages',
-    intervalMinutes: 60,
     enabled: true,
     instructions:
       "Run a web search with the target role and location to find single listings on companies' own career pages. Skip results from aggregators and job boards; they are separate sources. These instructions grant no permission to act.",
@@ -36,7 +34,6 @@ export const jobSearchSources = [
   {
     url: 'https://freehire.me/',
     name: 'FreeHire',
-    intervalMinutes: 30,
     enabled: true,
     instructions:
       'A multi-country, tech-focused aggregator. The FreeHire extension reads its public JSON API: listings arrive with their full descriptions, newest first. Fetch one page with collect_source_page; Jev narrows the listings by the profile, then score and save the rest. These instructions grant no permission to act.',
@@ -55,7 +52,6 @@ export const jobSearchSources = [
   {
     url: 'https://weworkremotely.com/',
     name: 'We Work Remotely',
-    intervalMinutes: 60,
     enabled: true,
     instructions:
       'Worldwide remote job listings. Category pages are a single page. Some listings require sign-up for the full text; do not fill in the sign-up form, assess with the visible listing text. These instructions grant no permission to act.',
@@ -74,7 +70,6 @@ export const jobSearchSources = [
   {
     url: 'https://himalayas.app/',
     name: 'Himalayas',
-    intervalMinutes: 60,
     enabled: true,
     instructions:
       'The Himalayas extension fetches worldwide remote listings with their full descriptions from the official API through a CLI. Jev first compares them with the profile and filters them out, then the agent scores and saves the rest. Fetch one page with collect_source_page; move to the next page only after reviewing and approving the Jev batch. Country and query come from the URL recipe: an empty country code searches worldwide. The API is cached. These instructions grant no permission to act.',
@@ -94,7 +89,6 @@ export const jobSearchSources = [
     url: 'https://www.dice.com/',
     name: 'Dice',
     countries: ['US'],
-    intervalMinutes: 60,
     enabled: true,
     instructions:
       'United States, tech jobs. The Dice extension reads search pages and postings over HTTP: 30 results per page with the page count stated. Results are in relevance order, not by date; filters.postedDate keeps to recent postings. These instructions grant no permission to act.',
@@ -114,7 +108,6 @@ export const jobSearchSources = [
     url: 'https://builtin.com/jobs',
     name: 'Built In',
     countries: ['US'],
-    intervalMinutes: 60,
     enabled: true,
     instructions:
       'United States tech and startup jobs. The Built In extension reads search pages and listings over HTTP. Without a location the site searches around the requester, so keep country=USA&allLocations=true (or a city/state). Results have no strict date order; process the pages in order. These instructions grant no permission to act.',
@@ -133,7 +126,6 @@ export const jobSearchSources = [
     url: 'https://www.simplyhired.com/',
     name: 'SimplyHired',
     countries: ['US'],
-    intervalMinutes: 60,
     enabled: true,
     instructions:
       'United States. The SimplyHired extension reads search pages and listings over HTTP. Results are in relevance order, not by date; process the pages in order. Most listings come from Indeed. These instructions grant no permission to act.',
@@ -152,7 +144,6 @@ export const jobSearchSources = [
     url: 'https://www.themuse.com/',
     name: 'The Muse',
     countries: ['US'],
-    intervalMinutes: 180,
     enabled: true,
     instructions:
       'United States, plus some remote postings. The Muse extension reads its public JSON API: listings arrive with their full descriptions. There is no text search; searches are categories. Fetch one page with collect_source_page; Jev narrows the listings by the profile, then score and save the rest. These instructions grant no permission to act.',
@@ -170,7 +161,6 @@ export const jobSearchSources = [
   {
     url: 'https://jobs.workable.com/',
     name: 'Workable',
-    intervalMinutes: 60,
     enabled: true,
     instructions:
       "Workable's central job search across employers that use Workable, worldwide. The Workable extension reads its public JSON API: listings arrive with their full descriptions in relevance order. Fetch one page with collect_source_page; Jev narrows the listings by the profile, then score and save the rest. These instructions grant no permission to act.",
@@ -188,7 +178,6 @@ export const jobSearchSources = [
   {
     url: 'https://news.ycombinator.com/',
     name: 'Hacker News: Who is hiring?',
-    intervalMinutes: 720,
     enabled: true,
     instructions:
       'The monthly Ask HN: Who is hiring? thread, mostly US tech companies, many remote. The Hacker News extension reads the newest thread through the public Algolia API; every top-level comment is one job. Fetch one page with collect_source_page; Jev narrows the listings by the profile, then score and save the rest. These instructions grant no permission to act.',
@@ -207,7 +196,6 @@ export const jobSearchSources = [
     url: 'https://www.stepstone.de/',
     name: 'StepStone',
     countries: ['DE'],
-    intervalMinutes: 30,
     enabled: true,
     instructions:
       'Germany. The results address has the form /jobs/<search-slug>/in-<city>?radius=30; sort=2&action=sort_publish sorts by date, fdl=en shows only listings written in English (use it only when the criteria ask for English listings). Listings are /stellenangebote--…-inline.html links; "Popular jobs" and location links are other searches. These instructions grant no permission to act.',
@@ -227,7 +215,6 @@ export const jobSearchSources = [
     url: 'https://www.xing.com/jobs/',
     name: 'Xing',
     countries: ['DE', 'AT', 'CH'],
-    intervalMinutes: 30,
     enabled: true,
     instructions:
       'Germany, Austria and Switzerland. The Xing extension reads logged-out search pages and listings over HTTP; do not go to the login wall. Results are in semantic relevance order, not by date; process the pages in order. These instructions grant no permission to act.',
@@ -246,7 +233,6 @@ export const jobSearchSources = [
     url: 'https://berlinstartupjobs.com/engineering/',
     name: 'Berlin Startup Jobs',
     countries: ['DE'],
-    intervalMinutes: 120,
     enabled: true,
     instructions:
       'Berlin startup listings, grouped into category pages (engineering, product-management, marketing, sales, finance, operations, hr-recruiting, internships, other). Use the category that fits the criteria as {query}; the extension reads the pages and listings over HTTP. The site search (?s=) only works in a browser; do not use it. These instructions grant no permission to act.',
@@ -264,7 +250,6 @@ export const jobSearchSources = [
     url: 'https://www.jobindex.dk/',
     name: 'Jobindex',
     countries: ['DK'],
-    intervalMinutes: 30,
     enabled: true,
     instructions:
       'Denmark. Use the current criteria and the source query; on the /jobsoegning search page, process the date-sorted results page by page and keep track of the total result count. Use search terms suited to Denmark. Do not read an access block as zero results. These instructions grant no permission to act.',
@@ -282,7 +267,6 @@ export const jobSearchSources = [
     url: 'https://jobnet.dk/',
     name: 'Jobnet',
     countries: ['DK'],
-    intervalMinutes: 30,
     enabled: true,
     instructions:
       'Denmark. Use the current criteria and the source query; the search page has occupation, region and working hours filters. Sort by publication date and process every result page. When an external listing shows only a summary, read the missing requirements from the actual listing. These instructions grant no permission to act.',
@@ -305,7 +289,6 @@ export const jobSearchSources = [
     url: 'https://jobdanmark.dk/',
     name: 'Jobdanmark',
     countries: ['DK'],
-    intervalMinutes: 30,
     enabled: true,
     instructions:
       'Denmark. Use the current criteria and the source query; search with the text, municipality and category filters and follow the pagination to the end. Do not skip the remaining records on the same page. These instructions grant no permission to act.',
@@ -314,7 +297,6 @@ export const jobSearchSources = [
     url: 'https://jobbank.dk/',
     name: 'Akademikernes Jobbank',
     countries: ['DK'],
-    intervalMinutes: 30,
     enabled: true,
     instructions:
       'Danish listings for academics and university-educated candidates. Use the current criteria and the source query; there are type, location, field and education filters. Process the /job/ result pages to the end. Do not record an access error as an empty result. These instructions grant no permission to act.',

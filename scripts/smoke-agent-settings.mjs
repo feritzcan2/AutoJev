@@ -70,6 +70,28 @@ try {
   assert.equal(await form.locator('[name=provider]').inputValue(), 'opencode');
   assert.equal(await form.locator('[name=model]').inputValue(), 'opencode-go/kimi-k2.7-code');
   console.log('OPENCODE_SETTINGS_UI_PASS');
+  await form.locator('[name=provider]').selectOption('claude');
+  assert.equal(await form.locator('[name=model]').inputValue(), 'haiku');
+  assert.equal(await form.locator('[name=trialModel]').inputValue(), 'opus[1m]');
+  assert.equal(await form.locator('[name=permission]').inputValue(), 'auto');
+  assert.equal(await form.locator('[name=reasoning]').inputValue(), 'medium');
+  assert.equal(await field.inputValue(), '200,000');
+  assert.equal(await form.locator('[name=contextRestartTokens]').inputValue(), '0');
+  await save.click();
+  await page.waitForFunction(() => !document.querySelector('#agent-settings-form').inert);
+  await page.reload();
+  await page.locator('[data-view=agent]').click();
+  assert.equal(await form.locator('[name=model]').inputValue(), 'haiku');
+  assert.equal(await form.locator('[name=trialModel]').inputValue(), 'opus[1m]');
+  await page.screenshot({path: path.join(data, 'claude-default-settings.png'), fullPage: true});
+  // An explicit trial-model opt-out must survive normalization and reload.
+  await form.locator('[name=trialModel]').selectOption('');
+  await save.click();
+  await page.waitForFunction(() => !document.querySelector('#agent-settings-form').inert);
+  await page.reload();
+  await page.locator('[data-view=agent]').click();
+  assert.equal(await form.locator('[name=trialModel]').inputValue(), '');
+  console.log('CLAUDE_DEFAULT_SETTINGS_UI_PASS');
   // Simulate active workers without launching any provider or touching real workspaces.
   await app.evaluate(
     ({ipcMain}, {initial}) => {
@@ -152,7 +174,7 @@ try {
       document.querySelector('#agent-settings-status').textContent.startsWith('Saved.'),
   );
   assert.equal(await dialog.isVisible(), false);
-  assert.equal(await restartField.inputValue(), '220.000');
+  assert.equal(await restartField.inputValue(), '220,000');
   assert.deepEqual((await app.evaluate(() => globalThis.settingsTest)).restarts, []);
   assert.equal(
     (await app.evaluate(() => globalThis.settingsTest)).input.agentSettings.contextRestartTokens,
@@ -195,7 +217,7 @@ try {
   await page.waitForFunction(
     () =>
       !document.querySelector('#agent-settings-form').inert &&
-      document.querySelector('#agent-settings-status').textContent.startsWith('Kaydedilemedi:'),
+      document.querySelector('#agent-settings-status').textContent.startsWith('Could not save:'),
   );
   assert.equal(await dialog.isVisible(), false);
   assert.equal(await permission.inputValue(), 'plan');
