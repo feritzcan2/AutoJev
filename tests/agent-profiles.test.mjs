@@ -165,7 +165,7 @@ test('interviews resume their conversation; trials start fresh and require a cur
     assert.match(launch.prompt, /managed browser to search/);
     assert.match(launch.prompt, /Previous runs are historical context/);
     assert.match(launch.prompt, /site_wait response is current application evidence/);
-    assert.match(launch.prompt, /Use browser_interact for cookie overlays/);
+    assert.match(launch.prompt, /accept cookie overlays and terms-of-service gates/);
     assert.match(launch.prompt, /actual tool call returns a permission error/);
     assert.doesNotMatch(launch.prompt, /Do not use other browser tools/);
   }
