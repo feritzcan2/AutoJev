@@ -167,7 +167,8 @@ export async function openChromeWindow(
     throw Error('The selected existing Chrome profile was not found.');
   const args = [`--profile-directory=${profile}`, '--new-window', url];
   const executable = await findChromeImpl();
-  if (!executable) throw Error('Google Chrome was not found. Install Chrome and open it at least once.');
+  if (!executable)
+    throw Error('Google Chrome was not found. Install Chrome and open it at least once.');
   signal?.throwIfAborted();
   await execImpl(executable, args, {windowsHide: true, signal});
 }

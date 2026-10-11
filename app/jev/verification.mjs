@@ -33,7 +33,8 @@ export async function verificationEvidence(page, slot) {
         state: 'required',
         capability: 'supported',
         checkbox: true,
-        evidence: 'A visible verification checkbox inside Turnstile. Verify with a single click first.',
+        evidence:
+          'A visible verification checkbox inside Turnstile. Verify with a single click first.',
       };
     if (
       slot.captchaAnswer &&

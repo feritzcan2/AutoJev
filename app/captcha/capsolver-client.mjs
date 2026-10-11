@@ -69,7 +69,10 @@ export class CapsolverClient {
     } catch (error) {
       signal?.throwIfAborted();
       if (error instanceof CaptchaError) throw error;
-      throw new CaptchaError('CAPTCHA_NETWORK', 'The CapSolver connection did not complete in time.');
+      throw new CaptchaError(
+        'CAPTCHA_NETWORK',
+        'The CapSolver connection did not complete in time.',
+      );
     }
   }
   async balance(apiKey, signal) {

@@ -31,7 +31,8 @@ export async function selectChoice(slot, args, owner, reader) {
     status: 'stale',
     reason: 'control_changed',
     executed: false,
-    message: 'The option changed; use the returned current controls list. No extra observe is needed.',
+    message:
+      'The option changed; use the returned current controls list. No extra observe is needed.',
   };
   const saved = slot.controls?.get(args.controlId);
   if (!saved) return {...stale, reason: 'unknown_control'};

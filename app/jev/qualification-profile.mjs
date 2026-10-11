@@ -48,7 +48,10 @@ export function saveJevProfile(db, id, text, by, documents) {
   if (by === 'agent') {
     if (!value) throw Error('The Jev profile cannot be empty.');
     if (a.jevProfile?.by === 'user' && jevProfileStatus(a, documents) === 'current')
-      return {saved: false, reason: 'The profile edited by the user is current; it was not changed.'};
+      return {
+        saved: false,
+        reason: 'The profile edited by the user is current; it was not changed.',
+      };
   }
   const {jevProfile, ...rest} = a;
   db.put(

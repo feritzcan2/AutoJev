@@ -91,6 +91,119 @@ export const jobSearchSources = [
   },
   ...indeedSources,
   {
+    url: 'https://www.dice.com/',
+    name: 'Dice',
+    countries: ['US'],
+    intervalMinutes: 60,
+    enabled: true,
+    instructions:
+      'United States, tech jobs. The Dice extension reads search pages and postings over HTTP: 30 results per page with the page count stated. Results are in relevance order, not by date; filters.postedDate keeps to recent postings. These instructions grant no permission to act.',
+    recipe: {
+      entry: {
+        kind: 'url_template',
+        template:
+          'https://www.dice.com/jobs?q={query}&location={location}&filters.postedDate=SEVEN',
+      },
+      pagination: 'url_param',
+      loginRequired: false,
+      notes:
+        'Dice site extension: 30 results per page via &page=N, the page states its page count and total. Relevance order; sortBy is ignored, so filters.postedDate=ONE|THREE|SEVEN limits to recent postings. filters.workplaceTypes=Remote|On-Site|Hybrid and filters.employmentType=FULLTIME|PARTTIME|CONTRACTS|THIRD_PARTY also work. Location is free text; empty searches the whole US. Listings are /job-detail/<guid>; the Similar Jobs cards beside the results are not results.',
+    },
+  },
+  {
+    url: 'https://builtin.com/jobs',
+    name: 'Built In',
+    countries: ['US'],
+    intervalMinutes: 60,
+    enabled: true,
+    instructions:
+      'United States tech and startup jobs. The Built In extension reads search pages and listings over HTTP. Without a location the site searches around the requester, so keep country=USA&allLocations=true (or a city/state). Results have no strict date order; process the pages in order. These instructions grant no permission to act.',
+    recipe: {
+      entry: {
+        kind: 'url_template',
+        template: 'https://builtin.com/jobs?search={query}&country=USA&allLocations=true',
+      },
+      pagination: 'url_param',
+      loginRequired: false,
+      notes:
+        "Built In site extension: 25 cards per page via &page=N; the page links its last page. country=USA&allLocations=true searches the whole US (without it the site uses the requester's location). Path segments narrow: /jobs/remote|hybrid|office, then a category (engineering, data-analytics, ai-machine-learning, …) and a level (junior, mid-level, senior, expert-leader). daysSinceUpdated=1|3|7|30 limits to recent postings. No sort control. Listings are /job/<slug>/<id> and carry a JobPosting.",
+    },
+  },
+  {
+    url: 'https://www.simplyhired.com/',
+    name: 'SimplyHired',
+    countries: ['US'],
+    intervalMinutes: 60,
+    enabled: true,
+    instructions:
+      'United States. The SimplyHired extension reads search pages and listings over HTTP. Results are in relevance order, not by date; process the pages in order. Most listings come from Indeed. These instructions grant no permission to act.',
+    recipe: {
+      entry: {
+        kind: 'url_template',
+        template: 'https://www.simplyhired.com/search?q={query}&l={location}&t=7',
+      },
+      pagination: 'next_link',
+      loginRequired: false,
+      notes:
+        'SimplyHired extension: 20 results per page; the next page is the same address with the cursor the page gives, not a page number. Relevance order, no date sort; t=N keeps postings from the last N days (1, 3, 7, 14, 30). Postings are /job/<jobKey>; most come from Indeed.',
+    },
+  },
+  {
+    url: 'https://www.themuse.com/',
+    name: 'The Muse',
+    countries: ['US'],
+    intervalMinutes: 180,
+    enabled: true,
+    instructions:
+      'United States, plus some remote postings. The Muse extension reads its public JSON API: listings arrive with their full descriptions. There is no text search; searches are categories. Fetch one page with collect_source_page; Jev narrows the listings by the profile, then score and save the rest. These instructions grant no permission to act.',
+    recipe: {
+      entry: {
+        kind: 'url_template',
+        template: 'https://www.themuse.com/api/public/jobs?category={query}',
+      },
+      pagination: 'url_param',
+      loginRequired: false,
+      notes:
+        'The Muse site extension: public JSON API without text search. {query} is a category name such as "Software Engineering", "Data and Analytics", "Product Management". 20 postings per page with full descriptions, pages from 0 via page=N, not ordered by date, so a scan reads its page budget. location="City, ST" (also returns Flexible / Remote) and level=Entry Level|Mid Level|Senior Level|Management|Internship narrow it. Any other parameter is refused. Budget: 500 requests per hour.',
+    },
+  },
+  {
+    url: 'https://jobs.workable.com/',
+    name: 'Workable',
+    intervalMinutes: 60,
+    enabled: true,
+    instructions:
+      "Workable's central job search across employers that use Workable, worldwide. The Workable extension reads its public JSON API: listings arrive with their full descriptions in relevance order. Fetch one page with collect_source_page; Jev narrows the listings by the profile, then score and save the rest. These instructions grant no permission to act.",
+    recipe: {
+      entry: {
+        kind: 'url_template',
+        template: 'https://jobs.workable.com/api/v1/jobs?query={query}&location={location}',
+      },
+      pagination: 'url_param',
+      loginRequired: false,
+      notes:
+        'Workable site extension: public JSON API, 20 listings per page with full descriptions, relevance order (not by date). Pages follow the API cursor (page=N&pageToken=…); do not build page addresses. {location} is a place name ("United States", "Berlin"); an empty one searches worldwide. day_range=1|7|30 keeps recent postings; workplace=remote|hybrid|on_site. Unknown filters or values stop the scan.',
+    },
+  },
+  {
+    url: 'https://news.ycombinator.com/',
+    name: 'Hacker News: Who is hiring?',
+    intervalMinutes: 720,
+    enabled: true,
+    instructions:
+      'The monthly Ask HN: Who is hiring? thread, mostly US tech companies, many remote. The Hacker News extension reads the newest thread through the public Algolia API; every top-level comment is one job. Fetch one page with collect_source_page; Jev narrows the listings by the profile, then score and save the rest. These instructions grant no permission to act.',
+    recipe: {
+      entry: {
+        kind: 'url_template',
+        template: 'https://hn.algolia.com/api/v1/search?tags=comment,story_latest&query={query}',
+      },
+      pagination: 'url_param',
+      loginRequired: false,
+      notes:
+        'Hacker News site extension: story_latest is the newest Who is hiring? thread (a new one each month). {query} is a short Algolia full-text search where every word must match (a role word, "remote" or a city), not a sentence; an empty query lists the whole thread (about 250-400 jobs). 50 comments per page via page=0,1,…, relevance order.',
+    },
+  },
+  {
     url: 'https://www.stepstone.de/',
     name: 'StepStone',
     countries: ['DE'],

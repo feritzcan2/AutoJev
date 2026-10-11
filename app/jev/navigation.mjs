@@ -361,7 +361,8 @@ export async function navigateObserved(slot, name, args, owner, reader) {
       status: 'uncertain',
       executed: 'unknown',
       message:
-        'Could not verify the action result; check the current observation. ' + error.message.split('\n')[0],
+        'Could not verify the action result; check the current observation. ' +
+        error.message.split('\n')[0],
     };
   }
 }

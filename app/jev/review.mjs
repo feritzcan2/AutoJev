@@ -44,7 +44,9 @@ export function resolveJevReview(items, decisions = []) {
       if (index === undefined) fail('The URL does not match any listing in this batch.');
     }
     if (seen.has(index))
-      fail(`item ${index + 1} was already chosen in review[${seen.get(index)}]; send one decision.`);
+      fail(
+        `item ${index + 1} was already chosen in review[${seen.get(index)}]; send one decision.`,
+      );
     if (
       !['reject', 'defer'].includes(decision.decision) ||
       typeof decision.reason !== 'string' ||

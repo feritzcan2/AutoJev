@@ -649,10 +649,7 @@ try {
   await profileSave.click();
   const saveDialog = page.locator('#automation-profile-save-dialog');
   await saveDialog.waitFor({state: 'visible'});
-  assert.match(
-    await saveDialog.textContent(),
-    /2 active agent\(s\).*restarted.*Do you confirm/,
-  );
+  assert.match(await saveDialog.textContent(), /2 active agent\(s\).*restarted.*Do you confirm/);
   assert.equal(
     await saveDialog.locator('[value=cancel]').evaluate((el) => el === document.activeElement),
     true,

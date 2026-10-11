@@ -152,7 +152,10 @@ test('slow brief calls continue in RAM and polling never duplicates work', async
 
 test('briefs isolate owners and invalidate on fresh text or criteria; failures expose a fallback', async (t) => {
   const f = fixture(t, noise + required + noise);
-  await assert.rejects(readJevBrief({...f.options, owner: 'foreign'}), /does not belong to this task/);
+  await assert.rejects(
+    readJevBrief({...f.options, owner: 'foreign'}),
+    /does not belong to this task/,
+  );
   await readJevBrief(f.options);
   const before = f.calls();
   await readJevBrief({...f.options, criteria: {goal: 'Other goal'}});

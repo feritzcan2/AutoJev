@@ -6,9 +6,12 @@ import {captchaProvider} from './provider.mjs';
 // The site-wait card is the only place a user sees why the one native attempt
 // ended. Keep the reason code too; it names the exact discovery/click step.
 const outcomes = {
-  barrier_after_click: 'The verification checkbox was clicked once; Cloudflare did not open access.',
-  document_changed: 'The verification page reloaded during the attempt; the checkbox was not clicked again.',
-  paint_pending: 'The checkbox could not be clicked because the tab could not render in the background.',
+  barrier_after_click:
+    'The verification checkbox was clicked once; Cloudflare did not open access.',
+  document_changed:
+    'The verification page reloaded during the attempt; the checkbox was not clicked again.',
+  paint_pending:
+    'The checkbox could not be clicked because the tab could not render in the background.',
   target_changed: 'The verification checkbox changed just before the click; it was not clicked.',
   frame_obscured: 'The verification checkbox was covered; it was not clicked.',
   multiple_checkboxes: 'More than one verification checkbox was found; none was clicked.',

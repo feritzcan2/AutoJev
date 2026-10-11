@@ -140,7 +140,8 @@ export function jobPostingHtml(html) {
       .slice(0, 5),
     jobPostings: [
       ...html.matchAll(
-        /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
+        // Attribute values may encode the plus (ld&#x2B;json); a browser decodes them.
+        /<script\b[^>]*type=["']application\/ld(?:\+|&#x2B;|&#43;)json["'][^>]*>([\s\S]*?)<\/script>/gi,
       ),
     ]
       .map((m) => m[1])
