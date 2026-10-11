@@ -2195,3 +2195,32 @@ test('a click that opens a new tab continues the run in that tab', async (t) => 
   assert.equal(result.url, item.url + '/apply');
   assert.match(result.action.message, /new tab/);
 });
+
+test('automatic applying needs the minimum score and skips records kept out when switching to Find and apply', async (t) => {
+  const f = fixture(t),
+    prepared = await f.prepare();
+  f.db.put({...f.db.get(f.id), mode: 'auto'});
+  const a = {...f.db.get(f.id), criteria: {...f.db.get(f.id).criteria, score_threshold: '80'}},
+    assessment = (score) => ({
+      score,
+      scoringVersion: 4,
+      revision: a.revision,
+      eligibility: 'verified',
+    });
+  assert.match(
+    recordOperationError(a, {...prepared, assessment: assessment(79)}, 'execute'),
+    /below the minimum score/,
+  );
+  assert.equal(recordOperationError(a, {...prepared, assessment: assessment(80)}, 'execute'), null);
+  const kept = {...a, autoApplyAfter: (prepared.createdAt ?? 0) + 1},
+    item = {...prepared, assessment: assessment(95)};
+  assert.match(recordOperationError(kept, item, 'execute'), /apply it yourself/);
+  assert.equal(
+    recordOperationError(kept, item, 'execute', {manual: true, digest: item.digest}),
+    null,
+  );
+  assert.equal(
+    recordOperationError({...kept, autoApplyAfter: prepared.createdAt}, item, 'execute'),
+    null,
+  );
+});

@@ -18,11 +18,10 @@ const readinessIds = ['chrome', 'chrome-profile', 'chrome-debug', 'jev', 'failed
 const modes = [
   [
     'observe',
-    'Find and notify',
-    'Finds and scores suitable listings; does not submit applications.',
+    'Only find',
+    'Finds and scores suitable listings; applies only when you say "Apply".',
   ],
-  ['prepare', 'Find, leave applying to me', 'Applies when you say "Apply".'],
-  ['auto', 'Apply automatically', 'Applies to suitable listings on its own.'],
+  ['auto', 'Find and apply', 'Also applies on its own to listings that reach the minimum score.'],
 ];
 const flagKey = (id) => 'onboarding:' + id;
 
@@ -507,11 +506,32 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       input.type = 'radio';
       input.name = 'mode';
       input.value = value;
+      input.required = true;
       input.checked = value === a.mode;
       copy.append(el('b', title), el('small', description));
       choice.append(input, copy);
       choices.append(choice);
     }
+    // Find and apply only runs with an explicit minimum score.
+    const score = el('label', 'Minimum score to apply', 'authorization-score'),
+      scoreInput = el('input');
+    Object.assign(scoreInput, {
+      name: 'score_threshold',
+      type: 'number',
+      min: '1',
+      max: '100',
+      step: '1',
+      placeholder: '1–100, required for Find and apply',
+      value: a.criteria.score_threshold ?? '',
+    });
+    score.append(scoreInput);
+    choices.append(score);
+    const syncScore = () => {
+      const auto = form.elements.mode.value === 'auto';
+      scoreInput.required = auto;
+      score.hidden = !auto;
+    };
+    choices.addEventListener('change', syncScore);
     const sources = el('fieldset', null, 'onboarding-section onboarding-sources');
     sources.append(el('legend', 'Where should we search?'), el('div', null, 'onboarding-checks'));
     const checks = el('section', null, 'onboarding-readiness');
@@ -523,6 +543,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     submit.type = 'submit';
     foot.append(again, submit);
     form.append(profile, mode, sources, checks, foot);
+    syncScore();
     renderSources(form);
     renderReadiness(form);
   }
@@ -677,6 +698,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       criteria = {...current.criteria};
     for (const key of reviewFields) if (f[key]) criteria[key] = f[key].value.trim();
     if (f.experience) criteria.experience = f.experience.value.trim();
+    criteria.score_threshold = f.score_threshold.value.trim();
     if (criteria.country) criteria.country = criteria.country.toUpperCase();
     delete criteria.save_score_threshold;
     await api.automationProfileSave(

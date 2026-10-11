@@ -1,5 +1,6 @@
 // @ts-check
 import {planInput, missingProfileFields} from '../templates/catalog.mjs';
+import {assertAutoApplyThreshold} from '../scoring/thresholds.mjs';
 
 const fields = ['title', 'goal', 'criteria', 'instructions', 'facts', 'mode'];
 export const profilePlan = (plan) =>
@@ -41,7 +42,12 @@ export function splitPlanDraft(a) {
   }
   return next;
 }
-export function queueProfileUpdate(db, id, input, {expectedRevision = undefined} = {}) {
+export function queueProfileUpdate(
+  db,
+  id,
+  input,
+  {expectedRevision = undefined, queueExisting = undefined} = {},
+) {
   const a = db.get(id),
     template = db.template(a.templateId);
   if (expectedRevision !== undefined && expectedRevision !== a.revision)
@@ -68,11 +74,15 @@ export function queueProfileUpdate(db, id, input, {expectedRevision = undefined}
     };
   const plan = profilePlan({...planInput(template, input, a), mode: input.mode ?? a.mode});
   if (!['observe', 'prepare', 'auto'].includes(plan.mode)) throw Error('Invalid action permission');
+  assertAutoApplyThreshold(plan);
   const missing = missingProfileFields(plan, template);
   if (missing.length) throw Error('Missing information: ' + missing.join(', '));
   if (!a.profileUpdate && a.reviewedRevision === a.revision && !profileChanged(plan, a)) return a;
-  const {planDraft, ...current} = a;
-  return db.put({...current, profileUpdate: {plan, baseRevision: a.revision, savedAt: db.now()}});
+  const {planDraft, ...current} = a,
+    update = {plan, baseRevision: a.revision, savedAt: db.now()};
+  // Switching to Find and apply: the user chose whether existing records join the queue.
+  if (plan.mode === 'auto' && a.mode !== 'auto') update.queueExisting = queueExisting !== false;
+  return db.put({...current, profileUpdate: update});
 }
 
 export function applyProfileUpdate(db, id) {
@@ -88,6 +98,8 @@ export function applyProfileUpdate(db, id) {
     const next = db.get(id);
     // Preserve a newer proposal created after the user saved this profile.
     if (a.planDraft) next.planDraft = {...a.planDraft, baseRevision: next.revision};
+    if (Object.hasOwn(update, 'queueExisting'))
+      next.autoApplyAfter = update.queueExisting ? null : update.savedAt;
     // Applying a profile does not start paused work. Existing tracking continues.
     if (a.status === 'enabled')
       Object.assign(next, {

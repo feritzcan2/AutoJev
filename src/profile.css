@@ -240,6 +240,22 @@
   margin: 2px 0 0;
   accent-color: var(--accent);
 }
+/* Find and apply's required minimum score, under the choices. */
+.authorization-score {
+  display: grid;
+  gap: 6px;
+  padding: 12px 15px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--accent-wash);
+  color: var(--text);
+  font-size: 13px;
+}
+.authorization-score[hidden] {
+  display: none;
+}
+.authorization-score input {
+  max-width: 160px;
+}
 .choice input:focus-visible {
   outline: none;
 }

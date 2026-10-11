@@ -284,3 +284,22 @@ test('an accepted profile survives app restart and is applied before recovered t
   assert.equal(launched[0].run.revision, a.revision + 1);
   assert.equal(db.get(a.id).profileUpdate, undefined);
 });
+
+test('Find and apply needs a minimum score and records whether existing listings join the queue', async (t) => {
+  const {db, id, runtime} = fixture(t);
+  await assert.rejects(runtime.saveProfile(id, {mode: 'auto'}), /minimum score/);
+  const criteria = {...db.get(id).criteria, score_threshold: '0'};
+  await assert.rejects(runtime.saveProfile(id, {mode: 'auto', criteria}), /minimum score/);
+  criteria.score_threshold = '70';
+  await runtime.saveProfile(id, {mode: 'auto', criteria}, {queueExisting: false});
+  const saved = db.get(id);
+  assert.equal(saved.mode, 'auto');
+  assert.equal(typeof saved.autoApplyAfter, 'number');
+  await runtime.saveProfile(id, {mode: 'observe'});
+  await runtime.saveProfile(id, {mode: 'auto'}, {queueExisting: true});
+  assert.equal(db.get(id).autoApplyAfter, null);
+  // Staying in Find and apply keeps the earlier choice.
+  db.put({...db.get(id), autoApplyAfter: 5});
+  await runtime.saveProfile(id, {facts: 'Updated facts'});
+  assert.equal(db.get(id).autoApplyAfter, 5);
+});

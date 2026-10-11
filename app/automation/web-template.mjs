@@ -554,10 +554,16 @@ export class WebTasks extends TaskRuns {
             const blocked =
               source.blocked ||
               tasks.some((t) => ['blocked', 'failed', 'interrupted'].includes(t.state));
+            // A passed trial only learned the source; its first scan starts right away.
+            const trialPassed =
+              tasks.some((t) => t.operation === 'trial') &&
+              sourceTrialReady(this.db.get(a.id), source.url);
             this.sourceState(a.id, source.url, {
               batchId: null,
               blocked,
-              nextRunAt: blocked ? null : this.now() + source.intervalMinutes * 60000,
+              nextRunAt: blocked
+                ? null
+                : this.now() + (trialPassed ? 0 : source.intervalMinutes * 60000),
               onceCompleted: Boolean(a.once),
             });
           } else

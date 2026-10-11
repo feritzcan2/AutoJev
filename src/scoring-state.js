@@ -9,11 +9,13 @@ export const assessmentEligibility = (assessment) =>
   assessment?.eligibility ?? assessment?.calculation?.eligibility ?? 'unverified';
 export const oldScoringMethod = (assessment) =>
   (assessment?.scoringVersion ?? assessment?.calculation?.version ?? 0) < SCORING_VERSION;
-export function automaticAssessmentError(assessment, revision) {
+export function automaticAssessmentError(assessment, revision, threshold = null) {
   if (!assessment) return null;
   if (oldScoringMethod(assessment) || assessment.revision !== revision)
     return 'Re-score with the current method and criteria before automatic actions';
   if (assessment.score === null) return 'The record must be scored before automatic actions';
+  if (threshold !== null && assessment.score < threshold)
+    return 'The score is below the minimum score for automatic applying';
   return assessmentEligibility(assessment) === 'verified'
     ? null
     : eligibilityLabels[assessmentEligibility(assessment)];
