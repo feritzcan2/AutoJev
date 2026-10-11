@@ -1218,10 +1218,13 @@ export function automationWorkflow({
       case 'save_automation_plan': {
         if (active.kind !== 'interview')
           throw Error('The plan can only change in the setup conversation');
-        const plan = {
-          ...args,
-          criteria: Object.fromEntries(args.criteria.map((f) => [f.key, f.value])),
-        };
+        const {addSources, removeSources, ...fields} = args,
+          plan = {
+            ...fields,
+            criteria: Object.fromEntries(args.criteria.map((f) => [f.key, f.value])),
+          };
+        if (addSources?.length || removeSources?.length)
+          plan.sources = db.proposedSources(id, addSources, removeSources);
         result = isConversation(active)
           ? db.saveConversationPlan(id, run.id, plan)
           : db.save(id, plan, {agent: true});
