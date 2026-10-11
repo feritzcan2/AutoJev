@@ -7,7 +7,7 @@ import {opencodeDatabase, opencodeModel} from './opencode-context.mjs';
 const validCount = (n) => Number.isSafeInteger(n) && n >= 0;
 export function contextRestartTokens(value = 0) {
   if (!Number.isSafeInteger(value) || value < 0)
-    throw Error('Yeni oturum eşiği 0 (kapalı) veya pozitif bir tam token sayısı olmalı.');
+    throw Error('The new-session threshold must be 0 (off) or a positive whole number of tokens.');
   return value;
 }
 

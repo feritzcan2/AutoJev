@@ -166,6 +166,9 @@ test('progress without a page preserves the queue while falling back from an uns
   assert.equal(saved.scanPlan.mode, 'full');
   assert.equal(saved.scanPlan.boundary, null);
   assert.throws(() => f.save({pendingUrls: ['javascript:alert(1)']}), /HTTP/);
-  assert.throws(() => f.save({pendingUrls: [p(2)], processedUrls: [p(2)]}), /aynı anda/);
+  assert.throws(
+    () => f.save({pendingUrls: [p(2)], processedUrls: [p(2)]}),
+    /both pending and processed/,
+  );
   assert.deepEqual(f.db.scanQueue(f.id, f.run.id).pendingUrls, [p(2)]);
 });

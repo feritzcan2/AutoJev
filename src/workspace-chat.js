@@ -12,7 +12,7 @@ const node = (tag, cls, text) => {
 };
 const timestamp = (value) => (typeof value === 'number' ? value : Date.parse(value) || 0);
 const clock = (value) =>
-  new Date(timestamp(value)).toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'});
+  new Date(timestamp(value)).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'});
 const drafts = new Map();
 
 export function workspaceChat({
@@ -43,20 +43,20 @@ export function workspaceChat({
     lastSignature = '',
     visible = false;
   root.className = 'automation-conversation workspace-chat';
-  root.setAttribute('aria-label', 'Kurulum agenti ile sohbet');
+  root.setAttribute('aria-label', 'Chat with the setup agent');
   const header = node('div', 'workspace-chat-header'),
     identity = node('div', 'workspace-chat-identity'),
     mark = node('span', 'workspace-chat-avatar', 'A'),
     copy = node('div'),
-    title = node('h2', '', 'Kurulum agenti'),
-    status = node('span', 'workspace-chat-status', 'Hazır');
+    title = node('h2', '', 'Setup agent'),
+    status = node('span', 'workspace-chat-status', 'Ready');
   status.id = 'automation-chat-state';
   status.setAttribute('role', 'status');
   copy.append(title, status);
   identity.append(mark, copy);
   const controls = node('div', 'workspace-chat-controls'),
-    questionLink = node('button', 'quiet workspace-chat-question-link', 'Formu aç'),
-    close = node('button', 'quiet', 'Sohbeti kapat');
+    questionLink = node('button', 'quiet workspace-chat-question-link', 'Open form'),
+    close = node('button', 'quiet', 'Close chat');
   questionLink.type = close.type = 'button';
   questionLink.hidden = true;
   questionLink.onclick = () => showQuestion();
@@ -74,10 +74,10 @@ export function workspaceChat({
   header.append(identity, controls);
   const profileNotice = node('section', 'workspace-chat-profile'),
     profileCopy = node('div'),
-    profileTitle = node('b', '', 'Profil değişikliği hazır'),
+    profileTitle = node('b', '', 'Profile change ready'),
     profileDetail = node('p'),
-    reviewProfile = node('button', 'primary', 'Taslağı incele ve kaydet');
-  profileNotice.setAttribute('aria-label', 'Profil değişikliği');
+    reviewProfile = node('button', 'primary', 'Review and save the draft');
+  profileNotice.setAttribute('aria-label', 'Profile change');
   profileNotice.hidden = true;
   reviewProfile.type = 'button';
   reviewProfile.onclick = onReviewProfile;
@@ -85,32 +85,32 @@ export function workspaceChat({
   profileNotice.append(profileCopy, reviewProfile);
   const sourceNotice = node('section', 'workspace-chat-profile'),
     sourceCopy = node('div'),
-    reviewSources = node('button', 'primary', 'Kaynak önerilerini incele');
-  sourceNotice.setAttribute('aria-label', 'Kaynak önerileri');
+    reviewSources = node('button', 'primary', 'Review source suggestions');
+  sourceNotice.setAttribute('aria-label', 'Source suggestions');
   sourceNotice.hidden = true;
   reviewSources.type = 'button';
   reviewSources.onclick = onReviewSources;
   sourceCopy.append(
-    node('b', '', 'Kaynak önerileri hazır'),
-    node(
-      'p',
-      '',
-      'Agent’ın önerdiği kaynak değişikliklerini Kaynaklar ekranından inceleyip uygula.',
-    ),
+    node('b', '', 'Source suggestions ready'),
+    node('p', '', 'Review and apply the agent’s suggested source changes on the Sources screen.'),
   );
   sourceNotice.append(sourceCopy, reviewSources);
   const viewport = node('div', 'workspace-chat-viewport'),
     empty = node('div', 'workspace-chat-empty');
   empty.append(
-    node('span', 'workspace-chat-eyebrow', 'BİRLİKTE ÇALIŞALIM'),
-    node('h3', '', 'Neyi konuşalım?'),
-    node('p', '', 'Sonuçları sor, tercihlerini değiştir veya bir sonraki adımı birlikte belirle.'),
+    node('span', 'workspace-chat-eyebrow', 'LET’S WORK TOGETHER'),
+    node('h3', '', 'What should we talk about?'),
+    node(
+      'p',
+      '',
+      'Ask about the results, change your preferences or decide the next step together.',
+    ),
   );
   const suggestions = node('div', 'workspace-chat-suggestions');
   for (const text of [
-    'Sonuçları kısaca özetle',
-    'Bu sonuçlar neden uygun?',
-    'Tercihlerimi güncellemek istiyorum',
+    'Briefly summarise the results',
+    'Why are these results a good fit?',
+    'I want to update my preferences',
   ]) {
     const b = node('button', 'quiet', text);
     b.type = 'button';
@@ -123,7 +123,7 @@ export function workspaceChat({
   }
   empty.append(suggestions);
   log.className = 'workspace-chat-messages';
-  log.setAttribute('aria-label', 'Sohbet mesajları');
+  log.setAttribute('aria-label', 'Chat messages');
   log.setAttribute('aria-live', 'polite');
   log.setAttribute('aria-relevant', 'additions text');
   const thinking = node('div', 'workspace-chat-thinking'),
@@ -135,9 +135,9 @@ export function workspaceChat({
   thinking.append(dots, thinkingText, elapsed);
   thinking.hidden = true;
   const questions = node('section', 'workspace-chat-questions');
-  questions.setAttribute('aria-label', 'Yanıt bekleyen sorular');
+  questions.setAttribute('aria-label', 'Questions awaiting an answer');
   questions.hidden = true;
-  const jump = node('button', 'workspace-chat-jump', '↓ Yeni mesajlar');
+  const jump = node('button', 'workspace-chat-jump', '↓ New messages');
   jump.type = 'button';
   jump.hidden = true;
   jump.onclick = () => {
@@ -151,16 +151,16 @@ export function workspaceChat({
   form.querySelector('.automation-compose')?.remove();
   form.querySelector('label').className = 'workspace-chat-input-label';
   input.rows = 2;
-  input.placeholder = 'Agent’a mesaj yaz…';
-  input.setAttribute('aria-label', 'Agent’a mesaj');
+  input.placeholder = 'Write a message to the agent…';
+  input.setAttribute('aria-label', 'Message to the agent');
   send.removeAttribute('data-idle');
-  send.textContent = 'Gönder ↑';
-  attach.textContent = '＋ Belge';
+  send.textContent = 'Send ↑';
+  attach.textContent = '＋ Document';
   const feedback = form.querySelector('#automation-chat-feedback');
   feedback.setAttribute('role', 'alert');
   feedback.hidden = true;
   const hint = form.querySelector('small');
-  hint.textContent = 'Enter ile gönder · Shift + Enter ile yeni satır';
+  hint.textContent = 'Enter to send · Shift + Enter for a new line';
   root.replaceChildren(header, profileNotice, sourceNotice, viewport, jump, form);
   input.value = drafts.get(owner) ?? '';
   const sizeInput = () => {
@@ -212,8 +212,8 @@ export function workspaceChat({
     for (const card of [...questions.children]) if (!cards.includes(card)) card.remove();
     for (const card of cards) if (card.parentElement !== questions) questions.append(card);
     questions.hidden = questionLink.hidden = !cards.length;
-    questionLink.textContent = cards.length > 1 ? `Formları aç · ${cards.length}` : 'Formu aç';
-    jump.textContent = cards.length ? '↓ Yanıt bekleyen form' : '↓ Yeni mesajlar';
+    questionLink.textContent = cards.length > 1 ? `Open forms · ${cards.length}` : 'Open form';
+    jump.textContent = cards.length ? '↓ Form awaiting an answer' : '↓ New messages';
     renderStatus();
     scroll();
   }
@@ -243,16 +243,16 @@ export function workspaceChat({
       snapshot.workers?.find((w) => w.id === (run?.workerId ?? 'main'))?.active?.state ===
       'AwaitingInput';
     const label = sending
-      ? 'Mesaj iletiliyor…'
+      ? 'Sending message…'
       : awaiting
-        ? 'Terminalde yanıtın gerekiyor'
+        ? 'Your reply is needed in the terminal'
         : working
-          ? 'Yanıt hazırlıyor'
+          ? 'Preparing a reply'
           : questions.childElementCount
-            ? 'Yanıtın bekleniyor'
+            ? 'Waiting for your answer'
             : run
-              ? 'Sohbet açık'
-              : 'Hazır';
+              ? 'Chat open'
+              : 'Ready';
     status.textContent = label;
     root.dataset.working = String(working || sending);
     close.hidden = !run;
@@ -262,22 +262,22 @@ export function workspaceChat({
     profileNotice.hidden = !a?.planDraft && !a?.profileUpdate;
     const savedProfile = a?.profileUpdate && !a?.planDraft;
     profileTitle.textContent = a?.profileUpdate?.error
-      ? 'Profil uygulanamadı'
+      ? 'Profile could not be applied'
       : savedProfile
-        ? 'Profil uygulanıyor'
-        : 'Profil değişikliği hazır';
-    reviewProfile.textContent = savedProfile ? 'Profili görüntüle' : 'Taslağı incele ve kaydet';
+        ? 'Applying profile'
+        : 'Profile change ready';
+    reviewProfile.textContent = savedProfile ? 'View profile' : 'Review and save the draft';
     profileDetail.textContent = a?.profileUpdate?.error
-      ? 'Değişikliklerin saklandı. Profil sayfasından tekrar kaydet.'
+      ? 'Your changes were kept. Save again from the Profile page.'
       : savedProfile
-        ? 'Taramalar durdurulup yeni kriterlerle yeniden başlatılıyor. Sohbet açık kalacak.'
-        : 'Agent’ın önerdiği değişiklikler henüz uygulanmadı. Profili inceleyip kaydet.';
+        ? 'Scans are being stopped and restarted with the new criteria. The chat stays open.'
+        : 'The agent’s suggested changes are not applied yet. Review the profile and save it.';
     send.disabled =
       sending ||
       !input.value.trim() ||
       working ||
       Boolean(snapshot.activeRun && !snapshot.capabilities?.concurrentConversation);
-    send.textContent = sending ? 'Gönderiliyor…' : 'Gönder ↑';
+    send.textContent = sending ? 'Sending…' : 'Send ↑';
     input.disabled = false;
     attach.disabled = sending || Boolean(snapshot.activeRun);
     const active = working || sending;
@@ -285,21 +285,21 @@ export function workspaceChat({
     const currentActivity =
       activity?.at >= (run?.lastMessageAt ?? run?.startedAt ?? 0) ? activity : run?.chatActivity;
     thinkingText.textContent = sending
-      ? 'Mesajın iletiliyor'
+      ? 'Sending your message'
       : awaiting
-        ? 'Devam etmek için Terminal sekmesini aç'
-        : (currentActivity?.label ?? (working ? 'Yanıt hazırlanıyor' : ''));
+        ? 'Open the Terminal tab to continue'
+        : (currentActivity?.label ?? (working ? 'Preparing a reply' : ''));
     const seconds = Math.max(
       0,
       Math.floor((Date.now() - (run?.lastMessageAt ?? run?.startedAt ?? Date.now())) / 1000),
     );
     elapsed.textContent =
       active && seconds >= 10
-        ? `${seconds < 60 ? seconds + ' sn' : Math.floor(seconds / 60) + ' dk ' + (seconds % 60) + ' sn'}`
+        ? `${seconds < 60 ? seconds + ' s' : Math.floor(seconds / 60) + ' min ' + (seconds % 60) + ' s'}`
         : '';
     hint.textContent = working
-      ? 'Yanıt hazırlanırken sonraki mesajını yazabilirsin.'
-      : 'Enter ile gönder · Shift + Enter ile yeni satır';
+      ? 'You can write your next message while the reply is being prepared.'
+      : 'Enter to send · Shift + Enter for a new line';
   }
   function renderMessages() {
     if (!snapshot) return;
@@ -334,15 +334,15 @@ export function workspaceChat({
         bubble.dataset.id = m.id;
         bubble.dataset.role = m.role;
         const meta = node('div', 'workspace-chat-meta');
-        meta.append(node('b', '', m.role === 'user' ? 'Sen' : 'AutoJev'), node('time'));
+        meta.append(node('b', '', m.role === 'user' ? 'You' : 'AutoJev'), node('time'));
         bubble.append(meta, node('div', 'workspace-chat-body'));
       }
       bubble.dataset.pending = String(Boolean(m.pending));
       bubble.dataset.failed = String(Boolean(m.failed));
       bubble.querySelector('time').textContent = m.failed
-        ? 'İletilemedi'
+        ? 'Not delivered'
         : m.pending
-          ? 'Gönderiliyor…'
+          ? 'Sending…'
           : clock(m.at);
       renderMessageText(bubble.querySelector('.workspace-chat-body'), m.text);
       if (bubble !== cursor) log.insertBefore(bubble, cursor);
@@ -379,7 +379,7 @@ export function workspaceChat({
       if (disposed) return;
       pending = pending.filter((m) => m !== echo);
       failures.push({...echo, until: Date.now()});
-      feedback.textContent = error.message + ' Tekrar gönderebilirsin.';
+      feedback.textContent = error.message + ' You can send it again.';
       feedback.hidden = false;
       feedback.classList.add('error');
       if (!input.value) {

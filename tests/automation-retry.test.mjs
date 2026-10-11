@@ -229,7 +229,7 @@ test('a changed plan or disabled source cancels stale retries and uncertain acti
     sourceSettings: {},
     sourceState: {[source]: {blocked: true, blocker: {recordId: 'uncertain'}}},
   });
-  assert.throws(() => r.retryLater(f.id, source), /planlanamaz/);
+  assert.throws(() => r.retryLater(f.id, source), /cannot be scheduled/);
   f.db.put({...f.db.get(f.id), sourceState: {[source]: {blocked: true}}});
   r.retryLater(f.id, source);
   f.db.save(f.id, {goal: 'A new search'});

@@ -125,7 +125,7 @@ test('browse echoes opaque cursors and rejects a cursor cycle', () => {
         first.nextUrl,
         payload([job(2)], {totalCount: 50, nextCursor: 'opaque+/= value'}),
       ),
-    /ilerlemedi/,
+    /did not advance/,
   );
   assert.equal(
     parseHimalayasPage(first.nextUrl, payload([job(2)], {totalCount: 50})).complete,

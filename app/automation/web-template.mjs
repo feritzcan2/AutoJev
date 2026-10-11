@@ -38,7 +38,7 @@ import {conversationMethods} from './web-template/conversation.mjs';
 export class WebTasks extends TaskRuns {
   async saveProfile(id, input, options) {
     this.assertNotStopping(id);
-    if (this.restarting.has(id)) throw Error('Çalışma alanı güncelleniyor.');
+    if (this.restarting.has(id)) throw Error('The workspace is being updated.');
     const saved = queueProfileUpdate(this.db, id, input, options);
     if (!saved.profileUpdate) return {saved: true, applied: true};
     this.restarting.add(id);
@@ -47,12 +47,14 @@ export class WebTasks extends TaskRuns {
       const results = await Promise.allSettled(
         this.slots(id)
           .filter((slot) => slot.run.kind !== 'interview')
-          .map((slot) => this.finish(id, 'interrupted', 'Yeni profil uygulanıyor.', slot.workerId)),
+          .map((slot) =>
+            this.finish(id, 'interrupted', 'Applying the new profile.', slot.workerId),
+          ),
       );
       const failed = results.find((result) => result.status === 'rejected');
       if (failed) throw failed.reason;
       if (!applyProfileUpdate(this.db, id))
-        throw Error('Çalışan görevler henüz durdurulamadı. Tekrar kaydet.');
+        throw Error('Running tasks could not be stopped yet. Save again.');
     } catch (error) {
       const a = this.db.get(id);
       if (a.profileUpdate)
@@ -93,7 +95,7 @@ export class WebTasks extends TaskRuns {
               source = a.sourceState?.[task.sourceUrl],
               scan = task.scan ?? source?.scan;
             if (task.stopRequested)
-              queue.finish(a.id, task.id, 'cancelled', 'Tarama kullanıcı tarafından durduruldu.');
+              queue.finish(a.id, task.id, 'cancelled', 'Scan stopped by the user.');
             else if (
               task.sourceUrl &&
               !task.recordId &&
@@ -107,7 +109,7 @@ export class WebTasks extends TaskRuns {
                 a.id,
                 task.id,
                 task.completionState ?? 'interrupted',
-                'Önceki uygulama oturumu kapandı',
+                'The previous app session closed',
               );
           }
           for (const a of db.list())
@@ -193,7 +195,7 @@ export class WebTasks extends TaskRuns {
         },
         closeFailed: (id, runId, error) => {
           const run = db.run(runId),
-            summary = 'Oturum kapatılamadı: ' + error.message;
+            summary = 'The session could not be closed: ' + error.message;
           if (run.status === 'running') db.finish(id, runId, 'failed', summary);
           else db.putRun({...run, status: 'failed', summary});
           if (run.taskId) {
@@ -269,7 +271,7 @@ export class WebTasks extends TaskRuns {
   }
   assertNotStopping(id) {
     if (this.pausing.has(id))
-      throw Error('Çalışma alanı durduruluyor. Kapanış tamamlanınca yeniden başlat.');
+      throw Error('The workspace is stopping. Restart it once shutdown completes.');
   }
   async start(id, input, workerId = 'main') {
     this.assertNotStopping(id);
@@ -282,7 +284,12 @@ export class WebTasks extends TaskRuns {
     if (sourceCollector(a, source.url)) {
       for (const task of tasks)
         if (task.operation === 'trial' && task.state === 'pending')
-          this.queue.finish(id, task.id, 'cancelled', 'Bu kaynak özel toplayıcıyla taranacak.');
+          this.queue.finish(
+            id,
+            task.id,
+            'cancelled',
+            'This source will be scanned by its dedicated collector.',
+          );
       const scan = tasks.find((t) => t.operation === 'scan');
       return scan
         ? [scan]
@@ -303,7 +310,7 @@ export class WebTasks extends TaskRuns {
     if (!sourceTrialReady(a, source.url)) {
       for (const task of tasks)
         if (task.state === 'pending')
-          this.queue.finish(id, task.id, 'cancelled', 'Kaynağın ilk turu deneme olacak');
+          this.queue.finish(id, task.id, 'cancelled', 'The source’s first round will be a trial');
       return [
         this.queue.enqueue(id, {
           batchId,
@@ -450,7 +457,11 @@ export class WebTasks extends TaskRuns {
             if (issue.retry === 'source') await this.runSource(a.id, issue.sourceUrl);
             else void this.start(a.id, 'trial', worker.id).catch(() => {});
           } catch (error) {
-            this.db.message(a.id, 'system', 'Planlanan deneme başlatılamadı: ' + error.message);
+            this.db.message(
+              a.id,
+              'system',
+              'The scheduled trial could not start: ' + error.message,
+            );
             this.changed(a.id);
           }
         }
@@ -537,7 +548,7 @@ export class WebTasks extends TaskRuns {
             : this.plan(a.id, batchId, source);
           if (source.blocked)
             for (const task of tasks.filter((t) => t.state === 'pending'))
-              this.queue.finish(a.id, task.id, 'cancelled', 'Kaynak engellendi');
+              this.queue.finish(a.id, task.id, 'cancelled', 'Source blocked');
           const waiting = source.blocked ? [] : tasks.filter((t) => t.state === 'pending');
           if (!waiting.length && !this.slots(a.id).some((s) => s.run.batchId === batchId)) {
             const blocked =
@@ -646,11 +657,13 @@ export class WebTasks extends TaskRuns {
     await Promise.all(
       this.slots(id)
         .filter((slot) => taskHasRecord(slot.run, itemId))
-        .map((slot) => this.finish(id, 'interrupted', 'Kullanıcı bu kaydı eledi.', slot.workerId)),
+        .map((slot) =>
+          this.finish(id, 'interrupted', 'The user rejected this record.', slot.workerId),
+        ),
     );
     for (const task of this.queue.list(id, {states: ['pending', 'running', 'reported', 'paused']}))
       if (taskHasRecord(task, itemId))
-        this.queue.finish(id, task.id, 'cancelled', 'Kullanıcı bu kaydı eledi.');
+        this.queue.finish(id, task.id, 'cancelled', 'The user rejected this record.');
     this.changed(id);
     return item;
   }
@@ -709,8 +722,7 @@ export class WebTasks extends TaskRuns {
           task.recordOperation
         )
           this.queue.put({...this.queue.get(id, task.id), stopRequested: true});
-        if (task.state === 'pending')
-          this.queue.finish(id, task.id, 'cancelled', 'Çalışma durduruldu');
+        if (task.state === 'pending') this.queue.finish(id, task.id, 'cancelled', 'Run stopped');
       }
     });
     const slots = this.slots(id);
@@ -718,7 +730,9 @@ export class WebTasks extends TaskRuns {
     const stopping = Promise.resolve()
       .then(async () => {
         const results = await Promise.allSettled(
-          slots.map((slot) => this.finish(id, 'interrupted', 'Kullanıcı durdurdu.', slot.workerId)),
+          slots.map((slot) =>
+            this.finish(id, 'interrupted', 'Stopped by the user.', slot.workerId),
+          ),
         );
         for (const source of this.db.sources(id)) this.sourceState(id, source.url, {batchId: null});
         this.db.put({
@@ -737,7 +751,7 @@ export class WebTasks extends TaskRuns {
     return stopping;
   }
   async restart(id) {
-    if (this.restarting.has(id)) throw Error('Çalışma alanı yeniden başlatılıyor.');
+    if (this.restarting.has(id)) throw Error('The workspace is restarting.');
     const a = this.db.get(id),
       runs = this.slots(id).map((slot) => this.db.run(slot.run.id)),
       conversation = runs.find(isConversation),
@@ -810,7 +824,7 @@ export class WebTasks extends TaskRuns {
       const previous = this.db.run(restart.runId),
         conversation = previous.conversation;
       if (previous.automationId !== id || (previous.workerId ?? 'main') !== worker)
-        throw Error('Yeniden başlatılacak oturum bu worker’a ait değil.');
+        throw Error('The session to restart does not belong to this worker.');
       // Source retries use the run's conversation, not just worker history. Clear
       // both references while retaining the durable task, queue and browser tabs.
       if (conversation)
@@ -842,14 +856,14 @@ export class WebTasks extends TaskRuns {
     await this.finish(
       id,
       'interrupted',
-      worker === CONVERSATION_WORKER ? 'Sohbet durduruldu.' : 'Worker durduruldu.',
+      worker === CONVERSATION_WORKER ? 'Chat stopped.' : 'Worker stopped.',
       worker,
     );
     this.changed(id);
   }
   async remove(id, worker) {
     if (worker === 'main' || worker === CONVERSATION_WORKER)
-      throw Error('İlk worker kaldırılamaz.');
+      throw Error('The first worker cannot be removed.');
     await this.stopWorker(id, worker);
     this.workers.remove(id, worker);
     this.changed(id);

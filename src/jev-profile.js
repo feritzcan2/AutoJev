@@ -2,9 +2,9 @@
 // sees what Jev reads and can correct it; an edit they save is kept.
 const states = {
   missing:
-    'Henüz yok. Bir sonraki taramada agent belgelerinden ve bilgilerinden yazar; o zamana kadar Jev tam profili okur.',
+    'Not written yet. The agent writes it from your documents and facts on the next scan; until then Jev reads the full profile.',
   stale:
-    'Belgelerin veya bilgilerin değişti. Bir sonraki taramada agent yeniden yazar; o zamana kadar Jev tam profili okur.',
+    'Your documents or facts changed. The agent rewrites it on the next scan; until then Jev reads the full profile.',
 };
 
 export function renderJevProfile(box, view, save) {
@@ -13,13 +13,13 @@ export function renderJevProfile(box, view, save) {
       text = document.createElement('textarea'),
       state = document.createElement('small'),
       button = document.createElement('button');
-    label.textContent = 'Jev için kısa profil';
+    label.textContent = 'Short profile for Jev';
     text.maxLength = 3000;
     text.rows = 8;
     text.placeholder =
-      'Diller ve seviyeleri, deneyim, alan, eğitim, çalışma izni, çalışabileceğin yerler.';
+      'Languages and levels, experience, field, education, work permit, where you can work.';
     button.type = 'button';
-    button.textContent = 'Kısa profili kaydet';
+    button.textContent = 'Save short profile';
     label.append(text);
     box.append(label, state, button);
     text.addEventListener('input', () => {
@@ -41,8 +41,8 @@ export function renderJevProfile(box, view, save) {
   box.dataset.saved = view?.text ?? '';
   if (!editing) text.value = box.dataset.saved;
   button.disabled = text.value.trim() === box.dataset.saved;
-  const at = view?.at ? new Date(view.at).toLocaleString('tr-TR') : '';
+  const at = view?.at ? new Date(view.at).toLocaleString('en-GB') : '';
   state.textContent =
     states[view?.status] ??
-    `Jev her ilanı CV’n yerine bununla karşılaştırır. ${view?.by === 'user' ? 'Sen düzenledin' : 'Agent yazdı'}${at ? ' · ' + at : ''}. Yanlış veya eksik bir bilgi varsa düzeltip kaydet; boş kaydedersen Jev tam profili okur.`;
+    `Jev compares every listing with this instead of your CV. ${view?.by === 'user' ? 'Edited by you' : 'Written by the agent'}${at ? ' · ' + at : ''}. If anything is wrong or missing, fix it and save; if you save it empty, Jev reads the full profile.`;
 }

@@ -31,11 +31,11 @@ export async function selectChoice(slot, args, owner, reader) {
     status: 'stale',
     reason: 'control_changed',
     executed: false,
-    message: 'Seçenek değişti; dönen güncel controls listesini kullan. Ek observe gerekmez.',
+    message: 'The option changed; use the returned current controls list. No extra observe is needed.',
   };
   const saved = slot.controls?.get(args.controlId);
   if (!saved) return {...stale, reason: 'unknown_control'};
-  if (saved.owner !== owner) throw Error('Bu oturuma ait güncel controlId gerekli.');
+  if (saved.owner !== owner) throw Error('A current controlId of this session is required.');
   const current = await slot.page.evaluate(reader);
   if (saved.kind !== 'control' || !same(current?.control_guards?.[saved.node], saved.guard))
     return stale;
@@ -45,7 +45,7 @@ export async function selectChoice(slot, args, owner, reader) {
       status: 'unsupported',
       executed: false,
       message:
-        'Bu kontrol bir radyo/onay kutusu seçeneği değil. Açılır liste veya combobox için browser_interact options ile seçenekleri oku, sonra select ya da autocomplete kullan. Düğmeler için clickTargets targetId kullan.',
+        'This control is not a radio/checkbox option. For a dropdown or combobox, read the options with browser_interact options, then use select or autocomplete. For buttons, use the clickTargets targetId.',
     };
   const key = choiceKey(saved.node),
     before = progressKey(current);
@@ -71,7 +71,7 @@ export async function selectChoice(slot, args, owner, reader) {
       return {
         status: 'unsupported',
         executed: false,
-        message: 'Gönderim düğmesi yanıt seçeneği olarak kullanılamaz.',
+        message: 'A submit button cannot be used as an answer option.',
       };
     if (choice.selected)
       return {
@@ -90,7 +90,7 @@ export async function selectChoice(slot, args, owner, reader) {
       reason,
       executed: false,
       message:
-        'Seçenek mevcut ancak güvenli tıklama noktası bulunamadı. Dönen tam gözlemde engeli incele; alan kaybolmuş sayılmaz. Aynı işlemi değişiklik olmadan tekrarlama.',
+        'The option exists, but no safe click point was found. Inspect the obstruction in the returned full observation; the field is not considered gone. Do not repeat the same action unchanged.',
     });
     const target = await handle.evaluateHandle((e) => window.__jevFast.scrollTarget(e));
     try {
@@ -141,8 +141,8 @@ export async function selectChoice(slot, args, owner, reader) {
       selection,
       ...(!selection.verified ? {retryBlocked: true} : {}),
       message: selection.verified
-        ? 'Yanıtın seçildiği doğrulandı. Güncel gözlemi kullan; ek observe/screenshot gerekmez.'
-        : 'Tıklama yapıldı fakat yanıt seçimi doğrulanamadı. Aynı işlemi tekrarlama; dönen güncel kanıtı incele.',
+        ? 'The answer was verified as selected. Use the current observation; no extra observe/screenshot is needed.'
+        : 'The click was made, but the answer selection could not be verified. Do not repeat the same action; inspect the returned current evidence.',
     };
   } catch (error) {
     if (!clicked) throw error;
@@ -155,7 +155,7 @@ export async function selectChoice(slot, args, owner, reader) {
       status: 'uncertain',
       executed: 'unknown',
       retryBlocked: true,
-      message: 'Yanıt seçimi doğrulanamadı; aynı işlemi tekrarlama.',
+      message: 'Could not verify the answer selection; do not repeat the same action.',
     };
   } finally {
     await handle.dispose();

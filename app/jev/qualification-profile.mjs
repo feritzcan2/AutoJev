@@ -40,15 +40,15 @@ export function jevProfileView(automation, documents) {
 
 // The user's own text wins: an agent may replace it only after its sources changed.
 export function saveJevProfile(db, id, text, by, documents) {
-  if (typeof text !== 'string') throw Error('Jev profili metin olmalı.');
+  if (typeof text !== 'string') throw Error('The Jev profile must be text.');
   const value = text.trim(),
     a = db.get(id);
   if (value.length > JEV_PROFILE_LIMIT)
-    throw Error(`Jev profili en fazla ${JEV_PROFILE_LIMIT} karakter olmalı.`);
+    throw Error(`The Jev profile must be at most ${JEV_PROFILE_LIMIT} characters.`);
   if (by === 'agent') {
-    if (!value) throw Error('Jev profili boş olamaz.');
+    if (!value) throw Error('The Jev profile cannot be empty.');
     if (a.jevProfile?.by === 'user' && jevProfileStatus(a, documents) === 'current')
-      return {saved: false, reason: 'Kullanıcının düzenlediği profil güncel; değiştirilmedi.'};
+      return {saved: false, reason: 'The profile edited by the user is current; it was not changed.'};
   }
   const {jevProfile, ...rest} = a;
   db.put(

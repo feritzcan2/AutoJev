@@ -6,27 +6,27 @@ export const directRecordInstructions =
 
 export const recordOperationDefaults = {
   score: {
-    label: 'Puanla',
-    runningLabel: 'Puanlanıyor',
+    label: 'Score',
+    runningLabel: 'Scoring',
     instructions:
       'Assess only the assigned record. Read its full live detail (keep any retained form intact), the saved criteria.ranking, facts and documents, and follow scoringPolicy.instructions. Save an integer score 0–100 with record_automation_score; eligibility and reasons are optional extras. If the detail cannot be read, save status=unavailable with score=null and the observed reason. Do not change proposals, fill forms, upload or submit. Finish after saving.',
     successCriteria:
       'A score from this run is saved with record_automation_score; inaccessible details are recorded as unavailable without a fabricated score.',
   },
   prepare: {
-    label: 'İşlemi hazırla',
-    runningLabel: 'Hazırlanıyor',
+    label: 'Prepare action',
+    runningLabel: 'Preparing',
     instructions:
       'Inspect the assigned record and the actual destination form. Prepare the complete intended action using saved criteria and verified personal facts. Include the destination, all answers, document paths and any commitments in the proposal. Ask missing facts with ask_workspace_question and this recordId. Save the proposal with record_automation_result. Do not submit, send, book or create an external commitment.',
   },
   execute: {
-    label: 'Uygula',
-    runningLabel: 'Uygulanıyor',
+    label: 'Run',
+    runningLabel: 'Running',
     instructions: directRecordInstructions,
   },
   verify: {
-    label: 'Sonucu doğrula',
-    runningLabel: 'Doğrulanıyor',
+    label: 'Verify outcome',
+    runningLabel: 'Verifying',
     instructions:
       'Inspect only whether the assigned record’s earlier action succeeded. Use its retained page, confirmation or history. Never resubmit, reserve another action or change the proposal. Call record_automation_outcome with current evidence. If the portal explicitly identifies this exact action as a draft, not submitted, or rejected before submission, report not_submitted with the current snapshot and record identity; a status description is optional. Inspect the site’s history/status if necessary without discarding the retained form. An unfinished form, missing attachment, or absent success message alone is not proof. If inconclusive retain uncertain and explain what is missing. After not_submitted finish completed; the application separately resumes an unchanged authorized execution or requests review. Never execute in this verification task.',
   },
@@ -37,24 +37,24 @@ export const recordOperationDefaults = {
 export const scoringFields = [
   {
     id: 'ranking',
-    label: 'Puanlama kriterleri',
+    label: 'Scoring criteria',
     question:
-      'Kayıtlar 0–100 arasında hangi kriterlere göre puanlanmalı? Kurulum agenti önerir; serbest metin.',
+      'Which criteria should records be scored by, 0–100? The setup agent suggests them; free text.',
     required: false,
     type: 'text',
   },
   {
     id: 'score_threshold',
-    label: 'Otomatik işlem alt puanı',
-    question: 'Otomatik işlem için en düşük puan, 1–100 (varsayılan 60)',
+    label: 'Minimum score for automatic action',
+    question: 'Lowest score for automatic action, 1–100 (default 60)',
     required: false,
     type: 'number',
   },
   {
     id: 'save_score_threshold',
-    label: 'Minimum kayıt puanı',
+    label: 'Minimum score to save',
     question:
-      'Yeni sonuçlar bu puanın altındaysa kaydedilmez. 0–100; boş bırakırsan puana göre elenmez.',
+      'New results below this score are not saved. 0–100; leave empty to keep results regardless of score.',
     required: false,
     type: 'number',
   },
@@ -67,10 +67,10 @@ export const withScoringFields = (fields) => [
 export function normalizeRecordOperations(input, driver) {
   if (driver.id !== 'browser') return {};
   if (input != null && input !== false && (typeof input !== 'object' || Array.isArray(input)))
-    throw Error('Kayıt işlemleri geçersiz');
+    throw Error('Invalid record operations');
   const result = {};
   for (const key of Object.keys(input || {}))
-    if (!Object.hasOwn(recordOperationDefaults, key)) throw Error('Bilinmeyen kayıt işlemi');
+    if (!Object.hasOwn(recordOperationDefaults, key)) throw Error('Unknown record operation');
   for (const [kind, defaults] of Object.entries(recordOperationDefaults)) {
     // Templates may switch off outgoing operations, never scoring.
     if (kind !== 'score' && (input === false || input?.[kind] === false)) {
@@ -84,7 +84,7 @@ export function normalizeRecordOperations(input, driver) {
         !saved[key].trim() ||
         saved[key].length > (key === 'instructions' ? 6000 : 100)
       )
-        throw Error('Kayıt işlemi ' + key + ' geçersiz');
+        throw Error('Invalid record operation ' + key);
     const successCriteria =
       saved.successCriteria ??
       'Save fresh observed confirmation of the intended outcome. A click or lack of an error is not confirmation.';
@@ -93,7 +93,7 @@ export function normalizeRecordOperations(input, driver) {
       !successCriteria.trim() ||
       successCriteria.length > 2000
     )
-      throw Error('İşlem başarı koşulu geçersiz');
+      throw Error('Invalid operation success criteria');
     result[kind] = {
       kind,
       id: 'record-' + kind,

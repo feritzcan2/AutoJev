@@ -106,7 +106,7 @@ export async function observeFormFrame(slot, frameId, owner) {
     saved.rawUrl !== saved.frame.url() ||
     !(await usableFormFrame(saved.frame, slot.page))
   )
-    throw Error('Güncel ve erişilebilir frameId gerekli.');
+    throw Error('A current, accessible frameId is required.');
   const prior = slot.frameActionTargets ?? new Map();
   slot.frameActionTargets = new Map();
   await Promise.all([...prior.values()].map((t) => t.handle.dispose().catch(() => {})));
@@ -141,32 +141,32 @@ export async function observeFormFrame(slot, frameId, owner) {
     controls,
     nextAction: 'browser_jev_frame_act',
     message:
-      'Bu hedefler gömülü formun kendi bağlamında çalışır. Ana sayfa kimlikleriyle karıştırma. Her işlemden sonra yalnızca dönen yeni hedefleri kullan.',
+      'These targets work only inside the embedded form. Do not mix them with main page ids. After each action, use only the newly returned targets.',
   };
 }
 export async function actFormFrame(slot, args, owner) {
   const t = slot.frameActionTargets?.get(args.targetId);
-  if (!t || t.owner !== owner) throw Error('Güncel gömülü form hedefi gerekli.');
+  if (!t || t.owner !== owner) throw Error('A current embedded form target is required.');
   if (
     t.pageUrl !== slot.page.url() ||
     t.frameUrl !== t.frame.url() ||
     !(await usableFormFrame(t.frame, slot.page))
   )
-    throw Error('Gömülü form değişti; işlem yapılmadı.');
+    throw Error('The embedded form changed; no action was taken.');
   const meta = await t.handle.evaluate(describe);
   if (!meta || JSON.stringify(meta) !== JSON.stringify(t.meta))
     return {
       status: 'stale',
       executed: false,
-      message: 'Gömülü alan değişti; güncel hedefleri kullan.',
+      message: 'The embedded field changed; use the current targets.',
     };
-  if (args.action !== meta.kind) throw Error('Hedef türüne uygun action kullan.');
+  if (args.action !== meta.kind) throw Error('Use an action that fits the target type.');
   if (meta.kind === 'fill' && typeof args.text !== 'string')
-    throw Error('Doğrulanmış text yanıtı gerekli.');
+    throw Error('A verified text answer is required.');
   if (meta.kind === 'select' && !meta.options.some((o) => o.value === args.value))
-    throw Error('Gözlenen seçenek value değeri gerekli.');
+    throw Error('An observed option value is required.');
   if (meta.kind === 'choice' && typeof args.checked !== 'boolean')
-    throw Error('İstenen checked durumu gerekli.');
+    throw Error('The requested checked state is required.');
   slot.frameActionTargets.delete(args.targetId);
   try {
     if (meta.kind === 'fill') {
@@ -189,8 +189,8 @@ export async function actFormFrame(slot, args, owner) {
           verified,
           suggestionsVisible,
           message: suggestionsVisible
-            ? 'Bu alan öneri seçimi istiyor. Dönen gömülü form kontrollerindeki görünür role=option hedeflerinden doğrulanmış şehri seç; yalnızca metin yazmak formu tamamlamaz.'
-            : 'Henüz öneri görünmüyor. Şehir adının kısa önekini yazıp tekrar dene (ör. Berl); öneri seçilmeden bu alan geçerli sayılmaz.',
+            ? 'This field needs a suggestion to be selected. Choose the verified city from the visible role=option targets in the returned embedded form controls; typing text alone does not complete the form.'
+            : 'No suggestions are visible yet. Type a short prefix of the city name and try again (e.g. Berl); this field is not valid until a suggestion is selected.',
         };
       }
       await t.handle.evaluate((e) => e.blur());
@@ -207,7 +207,7 @@ export async function actFormFrame(slot, args, owner) {
       return {
         status: 'ready',
         executed: true,
-        message: 'Tıklama yapıldı; yeni form veya gönderim onayını dönen gözlemden doğrula.',
+        message: 'The click was made; verify the new form or the submission confirmation from the returned observation.',
       };
     const verified = await t.handle.evaluate(
       (e, a) =>
@@ -219,7 +219,7 @@ export async function actFormFrame(slot, args, owner) {
     return {
       status: 'uncertain',
       executed: 'unknown',
-      message: 'Gömülü form işlemi doğrulanamadı; aynı işlemi tekrar etmeden güncel durumu incele.',
+      message: 'Could not verify the embedded form action; inspect the current state without repeating the same action.',
     };
   } finally {
     await t.handle.dispose().catch(() => {});

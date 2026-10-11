@@ -42,7 +42,7 @@ export class JevTabs {
       saved = JSON.parse(await readFile(this.file, 'utf8'));
     } catch (error) {
       if (error.code === 'ENOENT') return null;
-      throw Error('Jev sekme kaydı okunamadı; mevcut formlar korunuyor.');
+      throw Error('Could not read the Jev tab record; existing forms are kept.');
     }
     if (
       saved.version !== 1 ||
@@ -52,7 +52,7 @@ export class JevTabs {
       !Array.isArray(saved.targets) ||
       !saved.targets.every((id) => /^[A-Fa-f0-9]{32}$/.test(id))
     )
-      throw Error('Jev sekme kaydı geçersiz; mevcut formlar korunuyor.');
+      throw Error('The Jev tab record is invalid; existing forms are kept.');
     return saved;
   }
   save(endpoint, contextId, targets, metadata = {}) {

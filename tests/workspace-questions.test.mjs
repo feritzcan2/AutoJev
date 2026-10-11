@@ -35,8 +35,8 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
     ];
     const q = await call('ask_workspace_question', {text: 'Eksik bilgiler', fields});
     assert.equal((await call('ask_workspace_question', {text: 'Eksik bilgiler', fields})).id, q.id);
-    assert.throws(() => db.answerQuestion(other.id, q.id, {}), /ait değil/);
-    assert.throws(() => db.answerQuestion(a.id, q.id, {date: '2026-02-30'}), /geçerli/);
+    assert.throws(() => db.answerQuestion(other.id, q.id, {}), /does not belong/);
+    assert.throws(() => db.answerQuestion(a.id, q.id, {date: '2026-02-30'}), /valid/);
     const answer = {date: '2026-10-01', choice: 'A', count: 2, consent: false, areas: ['X', 'Y']};
     db.answerQuestion(a.id, q.id, answer);
     let context = await call('get_automation_context');
@@ -53,7 +53,7 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
     }
     assert.deepEqual(context.questions[0].answerValues, answer);
     assert.equal(db.messages(a.id).at(-1).role, 'user');
-    assert.throws(() => db.answerQuestion(a.id, q.id, answer), /zaten/);
+    assert.throws(() => db.answerQuestion(a.id, q.id, answer), /already/);
     const free = await call('ask_workspace_question', {
       text: 'Başka bilgi?',
       fields: [{id: 'text', label: 'Bilgi', type: 'text'}],
@@ -133,7 +133,7 @@ test('template setup is idempotent, form submission continues with saved answers
     fields: [{id: 'budget', label: 'Bütçe', type: 'number'}],
   });
   assert.equal(unreportedInterviewRun(db, a.id, first.id).status, 'completed');
-  await assert.rejects(runtime.answer(a.id, q.id, {budget: 'invalid'}), /geçerli/);
+  await assert.rejects(runtime.answer(a.id, q.id, {budget: 'invalid'}), /valid/);
   assert.equal(starts.length, 1);
   await runtime.answer(a.id, q.id, {budget: 1500});
   assert.equal(starts.length, 2);
@@ -144,7 +144,7 @@ test('template setup is idempotent, form submission continues with saved answers
   fail = true;
   await runtime.answer(a.id, next.id, 'Berlin');
   assert.equal(db.get(a.id).questions[1].answer, 'Berlin');
-  assert.match(db.messages(a.id).at(-1).text, /Yanıtın kaydedildi.*Provider unavailable/);
+  assert.match(db.messages(a.id).at(-1).text, /Your answer was saved.*Provider unavailable/);
 });
 
 test('documents attached while a setup question is open travel with its answer', (t) => {
@@ -155,7 +155,7 @@ test('documents attached while a setup question is open travel with its answer',
     a = db.create('custom');
   db.message(a.id, 'system', 'Eski belge', {document: 'documents/old.pdf'});
   const run = db.begin(a.id, 'interview', 'conversation');
-  assert.throws(() => db.assertIdle(a.id), /durdur/);
+  assert.throws(() => db.assertIdle(a.id), /Stop the running/);
   assert.doesNotThrow(() => db.assertIdle(a.id, {allowConversation: true}));
   const q = db.askQuestion(a.id, {text: 'CV’ni ekler misin?'}, {runId: run.id});
   db.message(a.id, 'system', 'Yeni belge', {document: 'documents/cv.pdf'});

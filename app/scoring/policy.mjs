@@ -15,8 +15,8 @@ export const SCORING_INSTRUCTIONS = `Score each record 0–100 against criteria.
 6. scoringPolicy.threshold only decides which records qualify for automatic actions: a lower or missing score never qualifies, and a high score never authorizes an action.`;
 export function scoringPolicy(automation) {
   const criteria = automation.criteria ?? {};
-  const threshold = scoreThresholdValue(criteria, 'score_threshold', 'Puanlama eşiği') ?? 60;
-  if (threshold < 1) throw Error('Puanlama eşiği 1–100 arasında olmalı.');
+  const threshold = scoreThresholdValue(criteria, 'score_threshold', 'Scoring threshold') ?? 60;
+  if (threshold < 1) throw Error('The scoring threshold must be between 1 and 100.');
   const saveThreshold = saveScoreThreshold(criteria);
   const policy = {version: SCORING_VERSION, threshold, saveThreshold};
   return {

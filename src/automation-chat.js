@@ -3,7 +3,7 @@ import {boundedText, webUrl} from '../app/templates/catalog.mjs';
 // An interview can start with an incomplete plan. Source requests are conversation
 // context; only actual web addresses become runnable automation sources.
 export function prepareAutomationChat(message, draft) {
-  const text = boundedText(message, 'Mesaj', 12000);
+  const text = boundedText(message, 'Message', 12000);
   if (!draft) return {message: text, draft: null};
   if (!Object.hasOwn(draft, 'sources')) return {message: text, draft};
   const sources = [],
@@ -18,10 +18,10 @@ export function prepareAutomationChat(message, draft) {
     sources.push(webUrl(source));
   }
   const context = notes.length
-    ? '\n\nKaynak isteğim (henüz doğrulanmış web adresi değil):\n' + notes.join('\n')
+    ? '\n\nMy source request (not yet a verified web address):\n' + notes.join('\n')
     : '';
   return {
-    message: boundedText(text + context, 'Mesaj ve kaynak notları', 12000),
+    message: boundedText(text + context, 'Message and source notes', 12000),
     draft: {...draft, sources},
   };
 }

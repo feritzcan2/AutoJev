@@ -226,7 +226,7 @@ test('the deadline resumes the same task, retained tab, queue and RAM automatica
   );
   await assert.rejects(
     f.runtime.sourceAccess.resume(f.id, source, blocked.run.id),
-    /devam ettirilemiyor/,
+    /can no longer be resumed/,
   );
 });
 
@@ -243,7 +243,7 @@ test('closing the intervention closes its tabs now and starts fresh only at the 
   assert.equal(f.db.get(f.id).sourceState[source].nextRunAt, blocked.wait.retryAt);
   await assert.rejects(
     f.runtime.sourceAccess.resume(f.id, source, blocked.run.id),
-    /devam ettirilemiyor/,
+    /can no longer be resumed/,
   );
   f.setNow(blocked.wait.retryAt);
   await f.runtime.tick();
@@ -260,10 +260,10 @@ test('failed explicit tab cleanup remains pending without interrupting other sou
     blocked = await f.block();
   await assert.rejects(
     f.runtime.sourceAccess.reset(f.id, source, blocked.run.id, {dismissed: true}),
-    /kapatılamadı/,
+    /could not be closed/,
   );
   assert.equal(f.launches.length, 1);
-  assert.match(f.issue().cleanupError, /kapatılamadı/);
+  assert.match(f.issue().cleanupError, /could not be closed/);
   await f.runtime.tick();
   await settle();
   assert.equal(f.cleanups.length, 1);
@@ -315,7 +315,7 @@ test('a source question answer follows its incident and a stale reply cannot cle
   assert.equal(f.launches.at(-1).continuation.reason, 'site_access_response');
   const wait = f.db.siteAccess.block(source, 'verification');
   f.db.siteAccess.save({...f.db.siteAccess.row(source), blockedAt: wait.blockedAt + 1});
-  assert.throws(() => f.db.siteAccess.acknowledge([wait]), /yeni bir erişim/);
+  assert.throws(() => f.db.siteAccess.acknowledge([wait]), /new access wait/);
   assert.ok(f.db.siteAccess.status(source));
 });
 

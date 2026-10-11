@@ -4,7 +4,7 @@ import path from 'node:path';
 const extensions = new Set(['.pdf', '.docx', '.txt', '.md', '.png', '.jpg', '.jpeg']);
 const excluded = new Set(['runtime', 'node_modules', 'AGENTS.md', 'CLAUDE.md']);
 export async function documentPath(root, relative) {
-  if (typeof relative !== 'string' || path.isAbsolute(relative)) throw Error('Geçersiz dosya');
+  if (typeof relative !== 'string' || path.isAbsolute(relative)) throw Error('Invalid file');
   const base = await realpath(root),
     file = await realpath(path.resolve(base, relative));
   if (
@@ -13,7 +13,7 @@ export async function documentPath(root, relative) {
     !extensions.has(path.extname(file).toLowerCase()) ||
     !(await stat(file)).isFile()
   )
-    throw Error('Bu dosya görüntülenemez');
+    throw Error('This file cannot be displayed');
   return file;
 }
 export async function listDocuments(root) {
@@ -56,8 +56,8 @@ export async function listDocuments(root) {
 export async function readDocument(root, relative) {
   const file = await documentPath(root, relative);
   if (!['.txt', '.md'].includes(path.extname(file).toLowerCase()))
-    throw Error('Metin önizlemesi desteklenmiyor');
+    throw Error('Text preview is not supported');
   if ((await stat(file)).size > 1024 * 1024)
-    throw Error('Dosya önizleme için çok büyük; dosyayı açabilirsin.');
+    throw Error('The file is too large to preview; you can open the file.');
   return readFile(file, 'utf8');
 }

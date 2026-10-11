@@ -102,7 +102,7 @@ export class SiteAccess {
       exhausted,
       probing,
       waiting: exhausted || retryAt > this.now(),
-      message: `${row.site}: ${row.reason === 'ip_block' ? 'IP engeli' : row.reason === 'verification' ? 'Erişim doğrulaması' : row.reason === 'unreachable' ? 'siteye ulaşılamaması' : 'İstek sınırı'} nedeniyle ortak bekleme. ${exhausted ? 'Üçüncü erişim hatası; otomatik deneme durduruldu. Devam etmek için müdahale gerekiyor.' : probing ? 'Tek bir erişim kontrolü sürüyor.' : `Otomatik devam: ${new Date(retryAt).toLocaleString('tr-TR')}.`} Diğer siteler çalışmaya devam edebilir.`,
+      message: `${row.site}: shared wait because of ${row.reason === 'ip_block' ? 'an IP block' : row.reason === 'verification' ? 'an access verification' : row.reason === 'unreachable' ? 'the site being unreachable' : 'a rate limit'}. ${exhausted ? 'Third access failure; automatic retries stopped. Intervention is needed to continue.' : probing ? 'A single access check is in progress.' : `Resumes automatically: ${new Date(retryAt).toLocaleString('en-GB')}.`} Other sites can keep working.`,
     };
   }
   begin(url) {
@@ -125,7 +125,7 @@ export class SiteAccess {
     for (const wait of waits) {
       const row = this.row('https://' + wait.site);
       if (row && (row.blockedAt !== wait.blockedAt || row.leaseUntil > this.now()))
-        throw Error('Bu sitede yeni bir erişim beklemesi var. Güncel müdahale kartını kontrol et.');
+        throw Error('This site has a new access wait. Check the current intervention card.');
     }
     for (const wait of waits)
       this.db.prepare('DELETE FROM browser_site_waits WHERE site=?').run(wait.site);

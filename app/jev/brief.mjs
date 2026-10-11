@@ -53,7 +53,7 @@ export async function buildJevBrief({
   offset = 0,
 }) {
   const evidence = store.fullEvidence(owner, taskId, evidenceId);
-  if (!Number.isSafeInteger(offset) || offset < 0) throw Error('Geçersiz Jev özet aralığı.');
+  if (!Number.isSafeInteger(offset) || offset < 0) throw Error('Invalid Jev brief range.');
   const key = createHash('sha256')
     .update(JSON.stringify([evidence.text, evidence.unreadFrames, criteria]))
     .digest('hex');
@@ -62,7 +62,7 @@ export async function buildJevBrief({
     assertActive();
     const current = store.fullEvidence(owner, taskId, evidenceId);
     if (current.at !== evidence.at || current.text !== evidence.text)
-      throw Error('İlan metni değişti; güncel Jev özetini tekrar oku.');
+      throw Error('The listing text changed; read the current Jev brief again.');
   };
   let brief = store.briefs.get(evidenceId);
   if (brief?.key !== key) {
@@ -141,7 +141,7 @@ export async function buildJevBrief({
       title: evidence.title,
       next: 'No reliable listing sections selected. Read relevant original text with read_jev_evidence before scoring; missing facts remain unknown.',
     };
-  if (offset > brief.selected.length) throw Error('Geçersiz Jev özet aralığı.');
+  if (offset > brief.selected.length) throw Error('Invalid Jev brief range.');
   const sections = [];
   let length = 0,
     index = offset;

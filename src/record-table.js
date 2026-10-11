@@ -40,12 +40,12 @@ export function recordTable(
   left.className = right.className = 'quiet';
   left.textContent = '←';
   right.textContent = '→';
-  left.setAttribute('aria-label', 'Tabloyu sola kaydır');
-  right.setAttribute('aria-label', 'Tabloyu sağa kaydır');
+  left.setAttribute('aria-label', 'Scroll the table left');
+  right.setAttribute('aria-label', 'Scroll the table right');
   position.type = 'range';
   position.min = '0';
   position.step = '1';
-  position.setAttribute('aria-label', 'Tablonun yatay kaydırma konumu');
+  position.setAttribute('aria-label', 'Horizontal scroll position of the table');
   navigation.append(left, position, right);
   controls.append(hint, navigation);
   frame.append(wrap);
@@ -58,7 +58,7 @@ export function recordTable(
     wrap.tabIndex = overflow ? 0 : -1;
     wrap.setAttribute(
       'aria-label',
-      'Takip tablosu' + (overflow ? ' · diğer sütunlar için yatay kaydır' : ''),
+      'Tracking table' + (overflow ? ' · scroll horizontally for more columns' : ''),
     );
     element.dataset.left = String(overflow && at > 2);
     element.dataset.right = String(overflow && at < max - 2);
@@ -79,10 +79,13 @@ export function recordTable(
       ),
       before = cells.filter((c) => c.getBoundingClientRect().left < bounds.left - 2).length,
       after = cells.filter((c) => c.getBoundingClientRect().right > visibleRight + 2).length;
-    hint.textContent = [before ? `${before} sütun solda` : '', after ? `${after} sütun sağda` : '']
+    hint.textContent = [
+      before ? `${before} column${before === 1 ? '' : 's'} to the left` : '',
+      after ? `${after} column${after === 1 ? '' : 's'} to the right` : '',
+    ]
       .filter(Boolean)
       .join(' · ');
-    hint.title = 'Tüm sütunları görmek için okları veya kaydırma çubuğunu kullan.';
+    hint.title = 'Use the arrows or the scroll bar to see all columns.';
     onLayout();
   };
   const move = (direction) =>
@@ -132,11 +135,11 @@ export function recordCell(column, value, {openLink}) {
     const link = document.createElement('button');
     link.type = 'button';
     link.className = 'quiet';
-    link.textContent = 'Aç ↗';
+    link.textContent = 'Open ↗';
     link.onclick = () => openLink(value);
     cell.append(link);
   } else if (['number', 'money'].includes(column.type) && Number.isFinite(Number(value))) {
-    cell.textContent = Number(value).toLocaleString('tr-TR', {
+    cell.textContent = Number(value).toLocaleString('en-GB', {
       minimumFractionDigits: column.type === 'money' ? 2 : 0,
       maximumFractionDigits: 2,
     });

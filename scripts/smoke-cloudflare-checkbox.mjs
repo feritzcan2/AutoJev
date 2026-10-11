@@ -143,7 +143,7 @@ try {
   assert.equal(blocked.jevPage.captcha.reason, 'barrier_after_click');
   assert.match(
     blocked.siteWait.message,
-    /bir kez tıklandı.*\(barrier_after_click\)/,
+    /clicked once.*\(barrier_after_click\)/,
     'The wait card names the checkbox outcome',
   );
   assert.ok((await a.call('workspace', 'browser_snapshot', {}, 'run')).siteWait);

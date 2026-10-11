@@ -172,7 +172,7 @@ test('a live limit appears above source failures and in the progress status with
   assert.equal(issues[0].name, 'Worker 2 · Homes');
   assert.equal(issues[0].retry, null);
   assert.equal(issues[0].sessionOpen, true);
-  assert.equal(automationProgress(snapshot).label, 'Kullanım limiti');
+  assert.equal(automationProgress(snapshot).label, 'Usage limit');
   run.usageLimit = null;
   assert.equal(automationAttention(snapshot).length, 0);
 });

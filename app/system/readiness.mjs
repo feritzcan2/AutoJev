@@ -30,9 +30,9 @@ export async function inspectLogin(
   if (platform === 'win32' && /\.(cmd|bat)$/i.test(executable))
     return item(
       'login',
-      'Agent oturumu',
+      'Agent session',
       'warning',
-      `Terminalde ${descriptor.login} ile oturum aç. Bu kurulumun oturumu otomatik doğrulanamıyor.`,
+      `Sign in with ${descriptor.login} in a terminal. The session of this installation cannot be verified automatically.`,
     );
   let output, stdout;
   try {
@@ -50,15 +50,15 @@ export async function inspectLogin(
     if (error.code === 1)
       return item(
         'login',
-        'Agent oturumu',
+        'Agent session',
         'error',
-        `Oturum doğrulanamadı. Terminalde ${descriptor.login} ile oturum aç ve tekrar kontrol et.`,
+        `Could not verify the session. Sign in with ${descriptor.login} in a terminal and check again.`,
       );
     return item(
       'login',
-      'Agent oturumu',
+      'Agent session',
       'warning',
-      `Oturum kontrolü tamamlanamadı. Terminalde ${descriptor.login} ile girişini kontrol et.`,
+      `The session check did not complete. Check your sign-in with ${descriptor.login} in a terminal.`,
     );
   }
   let authenticated = false;
@@ -68,9 +68,9 @@ export async function inspectLogin(
       if (status.loggedIn === false)
         return item(
           'login',
-          'Agent oturumu',
+          'Agent session',
           'error',
-          `Terminalde ${descriptor.login} ile oturum aç ve tekrar kontrol et.`,
+          `Sign in with ${descriptor.login} in a terminal and check again.`,
         );
       authenticated = status.loggedIn === true;
     } catch {}
@@ -82,15 +82,15 @@ export async function inspectLogin(
   return authenticated
     ? item(
         'login',
-        'Agent oturumu',
+        'Agent session',
         'ready',
-        'CLI oturum bilgisi mevcut. Hizmet erişimi görev başladığında doğrulanır.',
+        'CLI session credentials found. Service access is verified when a task starts.',
       )
     : item(
         'login',
-        'Agent oturumu',
+        'Agent session',
         'warning',
-        `Oturum durumu doğrulanamadı. Terminalde ${descriptor.login} ile kontrol et.`,
+        `Could not verify the session status. Check with ${descriptor.login} in a terminal.`,
       );
 }
 export async function chromePortAvailable(endpoint) {
@@ -115,12 +115,12 @@ export async function chromePortAvailable(endpoint) {
 }
 export async function collectReadiness(input = {}, options = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input))
-    throw Error('Geçersiz kurulum seçimi.');
+    throw Error('Invalid setup choice.');
   const provider = input.provider ?? 'codex';
-  if (!Object.hasOwn(providers, provider)) throw Error('Geçersiz kurulum seçimi.');
+  if (!Object.hasOwn(providers, provider)) throw Error('Invalid setup choice.');
   const profile = input.chromeProfile?.directory;
   if (profile !== undefined && (typeof profile !== 'string' || !/^[\w -]{1,100}$/.test(profile)))
-    throw Error('Geçersiz Chrome profili.');
+    throw Error('Invalid Chrome profile.');
   const platform = options.platform ?? process.platform,
     home = options.home ?? homedir(),
     env = readinessEnvironment(options.env ?? process.env, platform, home);
@@ -139,8 +139,8 @@ export async function collectReadiness(input = {}, options = {}) {
         'AutoJev engine',
         usable ? 'ready' : 'error',
         usable
-          ? 'Uygulama motoru hazır.'
-          : 'Uygulama motoru bulunamadı. AutoJev’i yeniden kur; kaynak koddan çalıştırıyorsan engine:build komutunu çalıştır.',
+          ? 'The app engine is ready.'
+          : 'The app engine was not found. Reinstall AutoJev; if you run from source, run the engine:build command.',
       ),
     );
   }
@@ -150,7 +150,7 @@ export async function collectReadiness(input = {}, options = {}) {
       'agent',
       descriptor.label,
       executable ? 'ready' : 'error',
-      executable ? 'Agent komutu bulundu.' : missingAgentMessage(provider),
+      executable ? 'Agent command found.' : missingAgentMessage(provider),
     ),
   );
   if (executable)
@@ -161,7 +161,7 @@ export async function collectReadiness(input = {}, options = {}) {
       'chrome',
       'Google Chrome',
       chrome ? 'ready' : 'error',
-      chrome ? 'Chrome kurulumu bulundu.' : 'Google Chrome’u kur ve en az bir kez aç.',
+      chrome ? 'Chrome installation found.' : 'Install Google Chrome and open it at least once.',
     ),
   );
   {
@@ -175,11 +175,11 @@ export async function collectReadiness(input = {}, options = {}) {
     checks.push(
       item(
         'chrome-profile',
-        'Chrome profili',
+        'Chrome profile',
         hasProfile ? 'ready' : 'error',
         hasProfile
-          ? 'Mevcut Chrome profili bulundu.'
-          : 'Chrome’da profil oluştur veya Agent ayarlarından mevcut bir profil seç.',
+          ? 'Existing Chrome profile found.'
+          : 'Create a profile in Chrome or choose an existing profile in Agent settings.',
       ),
     );
     let listening = false;
@@ -191,11 +191,11 @@ export async function collectReadiness(input = {}, options = {}) {
     checks.push(
       item(
         'chrome-debug',
-        'Chrome bağlantısı',
+        'Chrome connection',
         listening ? 'ready' : 'error',
         listening
-          ? 'Yerel hata ayıklama bağlantısı açık. Agent başlarken Chrome’un bağlantı isteğine izin ver.'
-          : 'Chrome’da chrome://inspect/#remote-debugging sayfasından uzaktan hata ayıklamayı aç. Agent başlarken bağlantı isteğine izin ver.',
+          ? 'Local debugging connection is open. Allow Chrome’s connection request when the agent starts.'
+          : 'Turn on remote debugging in Chrome at chrome://inspect/#remote-debugging. Allow the connection request when the agent starts.',
       ),
     );
     let jev;
@@ -205,11 +205,11 @@ export async function collectReadiness(input = {}, options = {}) {
     checks.push(
       item(
         'jev',
-        'Jev anahtarı',
+        'Jev key',
         jev?.configured ? 'ready' : 'error',
         jev?.configured
-          ? 'Jev anahtarı yapılandırıldı. Yapılandırma → Jev bölümünden bağlantıyı test edebilirsin.'
-          : (jev?.error ?? 'Yapılandırma → Jev bölümünden TypeSafe API anahtarını kaydet.'),
+          ? 'Jev key configured. You can test the connection under Configuration → Jev.'
+          : (jev?.error ?? 'Save the TypeSafe API key under Configuration → Jev.'),
       ),
     );
   }

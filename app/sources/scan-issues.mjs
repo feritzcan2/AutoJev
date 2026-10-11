@@ -32,7 +32,7 @@ export function clearScanIssue(db, id, runId, url) {
 export function browserFailure(error) {
   const text = String(error.message ?? error);
   if (
-    !/timeout|timed out|zaman aşımı|net::|ERR_[A-Z_]+|ECONN|Execution context was destroyed|interrupted by another navigation|Cannot find context with specified id|Sayfa gözlemi alınamadı|disconnected|connection.*closed|Chrome bağlantısı|BROWSER_DISCONNECTED/i.test(
+    !/timeout|timed out|net::|ERR_[A-Z_]+|ECONN|Execution context was destroyed|interrupted by another navigation|Cannot find context with specified id|could not get a page observation|disconnected|connection.*closed|Chrome connection|BROWSER_DISCONNECTED/i.test(
       text,
     )
   )
@@ -40,6 +40,6 @@ export function browserFailure(error) {
   return {
     kind: 'browser_error',
     evidence: text,
-    global: /disconnected|connection.*closed|Chrome bağlantısı|BROWSER_DISCONNECTED/i.test(text),
+    global: /disconnected|connection.*closed|Chrome connection|BROWSER_DISCONNECTED/i.test(text),
   };
 }

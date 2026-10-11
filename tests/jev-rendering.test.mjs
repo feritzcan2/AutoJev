@@ -209,7 +209,7 @@ test('foreign worker tabs are rejected before rendering or inspecting their DOM'
     client.callTool({name: 'browser_jev_observe', arguments: {tabId: slot.id}}, 'worker', {
       multiWorker: true,
     }),
-    /başka bir worker/,
+    /another worker/,
   );
 });
 

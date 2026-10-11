@@ -211,7 +211,7 @@ test('CLI pages enter Jev triage, the agent scores retained items, and review ga
   assert.equal(f.reads(), 1);
   await assert.rejects(
     f.call('finish_automation_run', {status: 'completed', summary: 'Premature'}),
-    /bitmedi/,
+    /not finished/,
   );
   await assert.rejects(
     f.call('browser_jev_run', {operation: 'scan_results', url: source}),
@@ -226,9 +226,9 @@ test('CLI pages enter Jev triage, the agent scores retained items, and review ga
       title: good.title,
       summary: 'Missing score',
     }),
-    /puanlama/,
+    /scoring/,
   );
-  await assert.rejects(save(f, helper(f, first).items[1]), /uyumsuz/);
+  await assert.rejects(save(f, helper(f, first).items[1]), /mismatch/);
   await save(f, good);
   const stored = f.db.results(f.id)[0];
   assert.equal(stored.assessment.score, 42);
@@ -237,7 +237,7 @@ test('CLI pages enter Jev triage, the agent scores retained items, and review ga
   const evidence = f.db.jevTasks.fullEvidence(f.id, f.run.taskId, good.evidenceId);
   assert.ok(evidence.text.includes('Synthetic country 199'));
   assert.ok(evidence.listing, 'API text is the listing itself; the brief needs no Jev filter');
-  await assert.rejects(review(f, first), /İnceleme tamamlanmadı/);
+  await assert.rejects(review(f, first), /Review not complete/);
   await save(f, helper(f, first).items[2]);
   const acknowledged = await review(f, first);
   assert.equal(acknowledged.acknowledged.status, 'completed');
@@ -246,10 +246,7 @@ test('CLI pages enter Jev triage, the agent scores retained items, and review ga
   assert.equal(helper(f, second).id, (await f.call('collect_source_page')).taskId);
   assert.equal(f.reads(), 2);
   await handle(f, second);
-  assert.throws(
-    () => f.db.jevTasks.fullEvidence(f.id, f.run.taskId, good.evidenceId),
-    /süresi doldu/,
-  );
+  assert.throws(() => f.db.jevTasks.fullEvidence(f.id, f.run.taskId, good.evidenceId), /expired/);
   const done = await f.call('collect_source_page');
   assert.equal(done.complete, true);
   assert.deepEqual(done.progress, {
@@ -279,7 +276,7 @@ test('CLI pages enter Jev triage, the agent scores retained items, and review ga
   assert.equal(f.db.run(f.run.id).status, 'completed');
   assert.match(
     f.db.get(f.id).sourceState[source].scan.reason,
-    /Toplanan: 4.*Jev eledi: 1.*Kaydedilen: 3/,
+    /Collected: 4.*Rejected by Jev: 1.*Saved: 3/,
   );
 });
 
@@ -301,7 +298,7 @@ test('legacy unscored CLI records are reviewed in place and confirmed exclusions
       createdAt: 1,
     });
   const first = await f.call('collect_source_page');
-  await assert.rejects(review(f, first), /İnceleme tamamlanmadı/);
+  await assert.rejects(review(f, first), /Review not complete/);
   await handle(f, first);
   const records = f.db.results(f.id);
   assert.equal(records.length, 3);
@@ -753,7 +750,7 @@ test('opaque pagination cycles fail without certifying completion', async (t) =>
       nextUrl: value,
     }),
   });
-  await assert.rejects(f.call('collect_source_page'), /aynı sayfaya/);
+  await assert.rejects(f.call('collect_source_page'), /returned the same page/);
   assert.equal(f.reads(), 1);
   assert.equal(f.db.run(f.run.id).scan.complete, false);
 });

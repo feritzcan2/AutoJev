@@ -127,7 +127,7 @@ try {
     ),
   );
   assert.ok((await page.locator('#config-instructions-list .config-group').count()) >= 3);
-  await page.getByLabel('Metinlerde ara', {exact: true}).fill('1500');
+  await page.getByLabel('Search text', {exact: true}).fill('1500');
   assert.equal(await page.locator('#config-instructions-list .prompt-card:visible').count(), 1);
   await page.locator('#config-instructions-list .prompt-card:visible summary').click();
   assert.ok(
@@ -140,9 +140,9 @@ try {
   );
   await page.locator('[data-view=config]').click();
   await page.waitForFunction(
-    () => document.querySelector('#config-search-note').textContent === 'Eşleşme yok',
+    () => document.querySelector('#config-search-note').textContent === 'No matches',
   );
-  await page.getByLabel('Metinlerde ara', {exact: true}).fill('');
+  await page.getByLabel('Search text', {exact: true}).fill('');
   assert.ok(!(await page.locator('#config-instructions-list').textContent()).includes('1500'));
   await page.locator('#candidates').selectOption(a.id);
   await page.waitForFunction(
@@ -157,16 +157,16 @@ try {
   await page.locator('a[href="#config-skills"]').click();
   assert.ok(
     (await page.locator('#config-skills').textContent()).includes(
-      'ayrı bir beceri dosyası tanımlı değil',
+      'No separate skill file is defined',
     ),
   );
   await page.locator('[data-view=agent]').click();
-  await page.getByRole('tab', {name: 'Talimatlar', exact: true}).click();
+  await page.getByRole('tab', {name: 'Instructions', exact: true}).click();
   await page.waitForFunction(() => document.querySelectorAll('.instruction-card').length > 10);
-  assert.equal(await page.getByRole('tab', {name: 'Kurulum', exact: true}).count(), 1);
-  await page.getByRole('tab', {name: 'Çalışma', exact: true}).click();
+  assert.equal(await page.getByRole('tab', {name: 'Setup', exact: true}).count(), 1);
+  await page.getByRole('tab', {name: 'Run', exact: true}).click();
   await page.waitForFunction(
-    () => document.querySelector('.instruction-agent-summary h3')?.textContent === 'Çalışma agent',
+    () => document.querySelector('.instruction-agent-summary h3')?.textContent === 'Run agent',
   );
   assert.ok(
     (await page.locator('.instruction-agent-summary').textContent()).includes(
@@ -175,40 +175,43 @@ try {
   );
   await page.locator('.instruction-profile-editor>summary').click();
   await page
-    .getByLabel('Agent talimatı', {exact: true})
+    .getByLabel('Agent instruction', {exact: true})
     .fill('Only the assigned work. Save observed results.');
-  await page.getByRole('button', {name: 'Talimatı kaydet', exact: true}).click();
+  await page.getByRole('button', {name: 'Save instruction', exact: true}).click();
   await page.waitForFunction(() =>
-    document.querySelector('.instruction-agent-summary small')?.textContent.startsWith('Sürüm 2'),
+    document.querySelector('.instruction-agent-summary small')?.textContent.startsWith('Version 2'),
   );
-  await page.getByRole('tab', {name: 'Kurulum', exact: true}).click();
+  await page.getByRole('tab', {name: 'Setup', exact: true}).click();
   await page.waitForFunction(
-    () => document.querySelector('.instruction-agent-summary h3')?.textContent === 'Kurulum agent',
+    () => document.querySelector('.instruction-agent-summary h3')?.textContent === 'Setup agent',
   );
-  assert.ok((await page.getByText('Güncel sürüm kayıttakinden farklı', {exact: true}).count()) > 0);
+  assert.ok(
+    (await page.getByText('Current version differs from the recorded one', {exact: true}).count()) >
+      0,
+  );
   assert.equal(await page.locator('#agent-settings').isVisible(), false);
-  await page.getByLabel('Talimatlarda ara', {exact: true}).fill('1500');
+  await page.getByLabel('Search instructions', {exact: true}).fill('1500');
   assert.equal(await page.locator('.instruction-card').count(), 1);
   await page.locator('.instruction-card summary').click();
   assert.ok((await page.locator('.instruction-card pre').textContent()).includes('1500'));
-  await page.getByLabel('Talimatlarda ara', {exact: true}).fill('');
+  await page.getByLabel('Search instructions', {exact: true}).fill('');
   await page.screenshot({path: '/tmp/loop-instructions-parts.png', fullPage: false});
-  await page.getByRole('tab', {name: 'Gönderim geçmişi', exact: true}).click();
-  await page.getByLabel('Talimat worker filtresi').selectOption('second');
+  await page.getByRole('tab', {name: 'Delivery history', exact: true}).click();
+  await page.getByLabel('Instruction worker filter').selectOption('second');
   await page.waitForFunction(() => document.querySelectorAll('.instruction-event').length === 1);
   await page.locator('.instruction-event>summary').click();
   await page.locator('.instruction-part>summary').click();
   assert.ok((await page.locator('.instruction-event pre').textContent()).includes('1.400 €'));
   await page.screenshot({path: '/tmp/loop-instructions-history.png', fullPage: false});
-  await page.getByLabel('Talimat worker filtresi').selectOption('');
-  await page.getByLabel('Talimat oturum filtresi').selectOption('session-first');
+  await page.getByLabel('Instruction worker filter').selectOption('');
+  await page.getByLabel('Instruction session filter').selectOption('session-first');
   await page.waitForFunction(() => document.querySelectorAll('.instruction-event').length === 3);
   await page.locator('#candidates').selectOption(b.id);
   await page.locator('[data-view=agent]').click();
   await page.waitForFunction(() =>
-    document.querySelector('.instruction-empty')?.textContent.includes('Henüz kayıt yok'),
+    document.querySelector('.instruction-empty')?.textContent.includes('No records yet'),
   );
-  await page.getByRole('tab', {name: 'Çalışma alanı', exact: true}).click();
+  await page.getByRole('tab', {name: 'Workspace', exact: true}).click();
   assert.equal(await page.locator('.workspace-conversation').isVisible(), true);
   if (process.env.LOOP_EXTENSIONS === 'job-search') {
     const job = await page.evaluate(() =>
@@ -223,8 +226,8 @@ try {
     );
     await page.locator('#candidates').selectOption(job.id);
     await page.locator('[data-view=agent]').click();
-    await page.getByRole('tab', {name: 'Talimatlar', exact: true}).click();
-    await page.getByRole('tab', {name: 'Talimat parçaları', exact: true}).click();
+    await page.getByRole('tab', {name: 'Instructions', exact: true}).click();
+    await page.getByRole('tab', {name: 'Instruction parts', exact: true}).click();
     await page.waitForFunction(() =>
       [...document.querySelectorAll('.instruction-card')].some((c) =>
         c.textContent.includes('Görev yönlendirme'),

@@ -31,12 +31,14 @@ export const isHimalayasUrl = (value) => {
 };
 
 export function himalayasApiUrl(value) {
-  if (!isHimalayasUrl(value)) throw Error('Himalayas için geçerli bir HTTPS adresi gerekli.');
+  if (!isHimalayasUrl(value)) throw Error('A valid HTTPS address is required for Himalayas.');
   const input = new URL(value),
     path = input.pathname.replace(/\/$/, '');
   const country = path.match(/^\/jobs\/countries\/([^/]+)$/)?.[1];
   if (!['', '/jobs', '/jobs/api', '/jobs/api/search'].includes(path) && !country)
-    throw Error('Bu Himalayas arama adresi henüz desteklenmiyor; API arama reçetesi gerekli.');
+    throw Error(
+      'This Himalayas search address is not supported yet; an API search recipe is required.',
+    );
   const browse = path === '/jobs/api',
     url = new URL(browse ? '/jobs/api' : '/jobs/api/search', origin);
   for (const [key, value] of input.searchParams) {
@@ -51,7 +53,7 @@ export function himalayasApiUrl(value) {
       url.searchParams.has('country') &&
       url.searchParams.get('country') !== decodeURIComponent(country)
     )
-      throw Error('Çelişen Himalayas ülke filtreleri.');
+      throw Error('Conflicting Himalayas country filters.');
     url.searchParams.set('country', decodeURIComponent(country));
   }
   if (browse) url.searchParams.set('limit', '20');
@@ -62,7 +64,7 @@ export function himalayasApiUrl(value) {
       !/^[1-9]\d*$/.test(url.searchParams.get('page')) ||
       !Number.isSafeInteger(Number(url.searchParams.get('page')))
     )
-      throw Error('Geçersiz Himalayas sayfa numarası.');
+      throw Error('Invalid Himalayas page number.');
   }
   url.searchParams.sort();
   return url.href;
@@ -87,22 +89,22 @@ function jobRecord(job) {
     typeof job.description !== 'string' ||
     !job.description.trim()
   )
-    throw Error('Himalayas ilan başlığı veya açıklaması eksik; sayfa tamamlanmadı.');
+    throw Error('A Himalayas listing title or description is missing; the page is not complete.');
   const url = new URL(job.guid);
   if (!isHimalayasUrl(url.href) || !/^\/companies\/[^/]+\/jobs\/[^/]+\/?$/.test(url.pathname))
-    throw Error('Himalayas ilan adresi doğrulanamadı.');
+    throw Error('The Himalayas listing address could not be verified.');
   url.hash = '';
   for (const key of [...url.searchParams.keys()])
     if (key.startsWith('utm_')) url.searchParams.delete(key);
   const description = plain(job.description);
-  if (!description) throw Error('Himalayas ilan açıklaması okunamadı.');
+  if (!description) throw Error('The Himalayas listing description could not be read.');
   const locations = job.locationRestrictions;
   if (
     locations !== undefined &&
     (!Array.isArray(locations) ||
       locations.some((v) => typeof v !== 'string' && typeof v?.name !== 'string'))
   )
-    throw Error('Himalayas konum verisi değişti.');
+    throw Error('The Himalayas location data changed.');
   const location = locations
       ? locations.map((v) => (typeof v === 'string' ? v : v.name)).join(', ') || 'Worldwide'
       : '',
@@ -145,16 +147,16 @@ export function parseHimalayasPage(value, data) {
     data.offset < 0 ||
     data.jobs.length > data.limit
   )
-    throw Error('Himalayas API yanıt biçimi geçersiz; boş sonuç kabul edilmedi.');
+    throw Error('Invalid Himalayas API response format; an empty result was not accepted.');
   if (
     data.nextCursor !== undefined &&
     (typeof data.nextCursor !== 'string' || !data.nextCursor || data.nextCursor.length > 2000)
   )
-    throw Error('Himalayas devam işareti geçersiz.');
+    throw Error('Invalid Himalayas continuation cursor.');
   const jobs = data.jobs.map(jobRecord),
     page = browse ? null : Number(url.searchParams.get('page'));
   if (!browse && data.offset !== (page - 1) * data.limit)
-    throw Error('Himalayas istenen sayfa yerine farklı bir sayfa döndürdü.');
+    throw Error('Himalayas returned a different page than the one requested.');
   let nextUrl = null;
   if (browse && data.nextCursor) {
     const next = new URL(url);
@@ -167,8 +169,8 @@ export function parseHimalayasPage(value, data) {
     nextUrl = himalayasApiUrl(next.href);
   }
   if (!jobs.length && (nextUrl || data.totalCount > data.offset))
-    throw Error('Himalayas sonuçları eksik; boş sayfaya rağmen bekleyen ilanlar var.');
-  if (nextUrl === url.href) throw Error('Himalayas sayfalaması ilerlemedi.');
+    throw Error('Himalayas results are incomplete; listings are pending despite an empty page.');
+  if (nextUrl === url.href) throw Error('Himalayas pagination did not advance.');
   return {
     url: url.href,
     jobs,
@@ -212,7 +214,7 @@ export async function readHimalayasPage(
                 ? Math.max(0, (Date.parse(retryAfter) - Date.now()) / 1000)
                 : null;
         const error = Object.assign(
-          Error(`Himalayas API HTTP ${response.status}; tarama tamamlanmadı.`),
+          Error(`Himalayas API HTTP ${response.status}; the scan is not complete.`),
           {
             status: response.status,
             retryable: response.status === 429 || response.status >= 500,
@@ -224,13 +226,13 @@ export async function readHimalayasPage(
       }
       if (!response.headers.get('content-type')?.includes('application/json')) {
         await response.body?.cancel();
-        throw Error('Himalayas JSON yerine farklı içerik döndürdü.');
+        throw Error('Himalayas returned content other than JSON.');
       }
       let bytes = 0;
       const parts = [];
       for await (const chunk of response.body) {
         bytes += chunk.length;
-        if (bytes > 8 * 1024 * 1024) throw Error('Himalayas API sayfası boyut sınırını aştı.');
+        if (bytes > 8 * 1024 * 1024) throw Error('The Himalayas API page exceeded the size limit.');
         parts.push(chunk);
       }
       return parseHimalayasPage(url, JSON.parse(Buffer.concat(parts).toString('utf8')));
@@ -258,7 +260,7 @@ export async function collectHimalayas(
     maxPages < 1 ||
     maxPages > 10000
   )
-    throw Error('Geçersiz Himalayas toplama isteği.');
+    throw Error('Invalid Himalayas collection request.');
   let pages = 0,
     count = 0;
   const seenPages = new Set(),
@@ -268,7 +270,7 @@ export async function collectHimalayas(
     while (url) {
       signal?.throwIfAborted();
       if (pages >= maxPages) return {complete: false, pages, count};
-      if (seenPages.has(url)) throw Error('Himalayas aynı sonuç sayfasını tekrar döndürdü.');
+      if (seenPages.has(url)) throw Error('Himalayas returned the same result page again.');
       seenPages.add(url);
       const page = await readPage(url, {signal});
       signal?.throwIfAborted();

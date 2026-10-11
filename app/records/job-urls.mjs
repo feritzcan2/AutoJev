@@ -4,9 +4,9 @@ import {recordUrlKey} from './identity.mjs';
 // entity query parameters and SPA routes significant.
 export function canonicalJobUrl(raw) {
   if (typeof raw !== 'string' || !raw.trim() || raw.length > 3000)
-    throw Error('Geçersiz ilan bağlantısı');
+    throw Error('Invalid listing link');
   const key = recordUrlKey(raw.trim());
-  if (!key) throw Error('Geçersiz ilan bağlantısı');
+  if (!key) throw Error('Invalid listing link');
   return key;
 }
 

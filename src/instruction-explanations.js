@@ -1,104 +1,105 @@
 const descriptions = {
   criteria:
-    'Bütçe, konum, oda sayısı gibi seçim şartların. Agent bulduğu seçenekleri bu şartlarla karşılaştırır.',
+    'Your selection criteria, such as budget, location or number of rooms. The agent compares the options it finds against them.',
   preferences:
-    'Aradığın iş, konum, çalışma biçimi ve diğer tercihlerin. Agent ilanları bunlara göre değerlendirir.',
+    'The job you are looking for, location, working style and other preferences. The agent evaluates listings against them.',
   instructions:
-    'Bu çalışma alanı için eklediğin özel çalışma kuralları. Örneğin ilanları tek tek incelemesini veya belirli seçenekleri elemesini burada söyleyebilirsin.',
+    'Custom working rules you added for this workspace. For example, you can tell it here to review listings one by one or to rule out certain options.',
   facts:
-    'Senin hakkında kaydettiğin bilgiler. Agent uygunluğu değerlendirirken, yanıt veya mesaj hazırlarken bunlara başvurur.',
-  mode: 'Agent’ın yalnızca araştırması, taslak hazırlaması ya da izin verdiğin işlemleri yapması gerektiğini belirtir.',
+    'Information you saved about yourself. The agent refers to it when judging fit and when preparing answers or messages.',
+  mode: 'States whether the agent should only research, prepare drafts, or carry out the actions you allow.',
   authorization:
-    'Agent’ın araştırma, hazırlık veya gönderim yapabileceği sınırı belirtir. Göreve özel izinler ayrıca görev bilgisinde verilebilir.',
+    'States how far the agent may go: research, preparation or submission. Task-specific permissions can also be given in the task details.',
   applicationPolicy:
-    'Form doldurma, onay kutuları ve bilinmeyen bilgilerde sana soru sorma gibi başvuru kuralları.',
-  goal: 'Bu çalışma alanında ulaşılmasını istediğin sonuç. Agent yapacağı işi ve neyi başarı sayacağını buna göre yorumlar.',
+    'Application rules such as filling forms, consent checkboxes and asking you when information is unknown.',
+  goal: 'The outcome you want reached in this workspace. The agent interprets its work and what counts as success from it.',
   sources:
-    'Araştırılacak siteler ve başlangıç adresleri. Bir worker’a yalnızca o görevde inceleyeceği kaynaklar verilebilir.',
+    'Sites to research and their start addresses. A worker may be given only the sources it reviews in that task.',
   maxActionsPerDay:
-    'Bir günde yapılabilecek dış işlemlerin üst sınırı. Agent planı okurken öğrenir; uygulama da ilgili işlem kayıtlarında bu sınırı kontrol eder.',
+    'The upper limit of external actions per day. The agent learns it when reading the plan; the app also checks this limit in the related action records.',
   maxBrowserSteps:
-    'Bir çalışma turunda kullanılabilecek tarayıcı adımı sınırı. Agent bu bilgiyle çalışmasını planlar; uygulama adımları ayrıca sayar.',
+    'The limit of browser steps in one working round. The agent plans its work with it; the app also counts the steps.',
   timeoutMinutes:
-    'Bir çalışma turunun süre sınırı. Agent planı okurken öğrenir; süre takibini uygulama yapar.',
+    'The time limit of one working round. The agent learns it when reading the plan; the app tracks the time.',
   guidance:
-    'Seçtiğin template’in bu iş türüne özgü kuralları. Örneğin ev ararken hangi bilgilerin inceleneceğini anlatır.',
+    'Rules of the selected template specific to this kind of work. For example, it explains which details to review when searching for a home.',
   workflow:
-    'Template’in görev adımları ve sıralaması. Agent’a o turda yapacağı adım ayrıca atanır; bütün adımları aynı turda yapması beklenmez.',
+    'The template’s task steps and their order. The agent is assigned the step for that round separately; it is not expected to do all steps in the same round.',
   fields:
-    'Kurulumda hangi bilgilerin sorulacağını tanımlar. Agent eksik bilgileri toplarken bu alanları kullanır.',
+    'Defines which information is asked during setup. The agent uses these fields when collecting missing information.',
   title:
-    'Çalışma alanının veya template’in adı. Agent’ın hangi iş üzerinde çalıştığını anlamasına yardımcı olur.',
-  records: 'Kayıt alanlarını, durumlarını ve kullanılabilir geçişleri tanımlar.',
-  execution: 'Template’in hangi yürütücü ve tarayıcı seçenekleriyle çalışacağını tanımlar.',
+    'The name of the workspace or template. It helps the agent understand which job it is working on.',
+  records: 'Defines record fields, their statuses and the allowed transitions.',
+  execution: 'Defines which runner and browser options the template runs with.',
   table:
-    'Sonuç tablosunun sütunlarını ve alan türlerini tanımlar. Agent sonuçları bu yapıya göre kaydeder.',
+    'Defines the columns and field types of the results table. The agent saves results according to this structure.',
 };
 export function instructionExplanation(part) {
   const key = part.key,
     field = key.split(':').at(-1);
   if (key.startsWith('agent-profile:'))
     return {
-      purpose: 'Seçilen agent’ın görevini ve çalışma kurallarını tanımlar.',
+      purpose: 'Defines the selected agent’s task and working rules.',
       timing:
-        'Bu agent için oturum açılırken Codex’e geliştirici talimatı, Claude’a ek sistem talimatı olarak doğrudan verilir.',
+        'When a session opens for this agent, it is given directly as the developer instruction to Codex and as an additional system instruction to Claude.',
       change:
-        'Kaydettiğin sürüm sonraki oturumda kullanılır. Açık oturumun talimatları değişmez; farklı sürümdeki eski konuşma sürdürülmez.',
+        'The version you save is used in the next session. The instructions of an open session do not change; an old conversation on a different version is not resumed.',
     };
   if (key.startsWith('file:'))
     return {
       purpose:
         part.source === 'skill'
-          ? 'Belirli bir işi nasıl yapacağını anlatan beceri dosyası. Her görevde bütün becerilerin okunması gerekmez.'
-          : 'Agent’ın çalışma biçimini belirleyen talimat dosyasının bir bölümü.',
+          ? 'A skill file that explains how to do a specific job. Not every skill has to be read in every task.'
+          : 'A section of an instruction file that shapes how the agent works.',
       timing:
         part.source === 'skill'
-          ? 'Oturum hazırlanırken dosya erişime açılır. Agent ilgili görev için bu dosyayı açıp okursa içeriği öğrenir.'
-          : 'Oturum hazırlanırken çalışma klasörüne konur. Sağlayıcı veya agent bu dosyayı okuduğunda içeriği öğrenir.',
+          ? 'The file is made accessible while the session is prepared. The agent learns its content if it opens and reads this file for the relevant task.'
+          : 'It is placed in the working folder while the session is prepared. The provider or agent learns its content when reading this file.',
       change:
-        'Dosyaya erişim kaydı, okuma kanıtı değildir. Güncel dosyanın açık konuşmaya yeniden okunduğunu bu sayfadan kesinleştiremeyiz.',
+        'A file access record is not proof of reading. This page cannot confirm that the current file was read again into an open conversation.',
     };
   if (key === 'startup-routing' || key === 'browser-profile')
     return {
       purpose:
         key === 'startup-routing'
-          ? 'Agent’a verilen göreve nasıl başlayacağını ve hangi talimatları izleyeceğini söyler.'
-          : 'Seçilen tarayıcının ve profilin nasıl kullanılacağını anlatır.',
+          ? 'Tells the agent how to start the given task and which instructions to follow.'
+          : 'Explains how the selected browser and profile are to be used.',
       timing:
-        'Agent oturumu başlatılırken ilk mesajın içine eklenir. Önceki konuşma sürdürülse de yeni başlatmada tekrar iletilir.',
+        'It is added to the first message when the agent session starts. Even when the previous conversation is resumed, it is sent again on a new start.',
       change:
-        'Buradaki güncel metin, açık oturuma kendiliğinden yeni bir mesaj olarak gönderilmez. Sonraki başlatmada yeni metin kullanılır.',
+        'The current text here is not sent to an open session as a new message on its own. The new text is used on the next start.',
     };
   if (key.includes(':messages:'))
     return {
       purpose:
         part.source === 'user'
-          ? 'Bu çalışma alanındaki konuşmada yazdığın mesaj. Agent isteğini ve önceki yanıtlarını hatırlamak için kullanır.'
-          : 'Çalışma alanının kayıtlı konuşmasından bir mesaj; sonraki turda konuşmanın devamını anlamaya yardımcı olur.',
+          ? 'A message you wrote in this workspace’s conversation. The agent uses it to remember your request and its earlier replies.'
+          : 'A message from the workspace’s saved conversation; it helps the next round understand how the conversation continues.',
       timing:
-        'Kurulum agent’ı kayıtlı görev bilgilerini istediğinde, boyut sınırına sığan son mesajlarla birlikte verilir. Deneme ve Çalışma agent’larına ham kurulum sohbeti gönderilmez.',
+        'When the setup agent asks for the saved task details, it is given together with the latest messages that fit the size limit. The raw setup chat is not sent to Trial and Run agents.',
       change:
-        'Bir mesajın burada listelenmesi tek başına o oturuma iletildiğini göstermez. Gönderim geçmişindeki bağlam yanıtını kontrol edebilirsin.',
+        'A message being listed here does not by itself show that it was delivered to that session. You can check the context reply in the delivery history.',
     };
   if (key.startsWith('tool:get_'))
     return {
       purpose:
         descriptions[field] ??
         (part.source === 'template'
-          ? 'Seçili template’in bu çalışma için tanımladığı bilgi.'
-          : 'Çalışma alanında kayıtlı görev bilgisi.'),
+          ? 'Information the selected template defines for this work.'
+          : 'Task information saved in the workspace.'),
       timing: key.includes('get_task_context')
-        ? 'Yeni bir görev başlarken agent kayıtlı görev bilgilerini ister. Bu bilgi, o isteğe verilen yanıtın içinde iletilir.'
-        : 'Agent kurulum sohbeti, deneme veya normal çalışma turuna başlarken kayıtlı planı ister. Bu bilgi, o isteğe verilen yanıtın içinde iletilir.',
+        ? 'When a new task starts, the agent asks for the saved task details. This information is delivered inside the reply to that request.'
+        : 'When starting the setup chat, a trial or a normal working round, the agent asks for the saved plan. This information is delivered inside the reply to that request.',
       change:
-        'Kaydettiğin değişiklik açık konuşmaya otomatik olarak eklenmez. Agent görev bilgilerini yeniden istediğinde güncel değer verilir. Her tıklamada tekrar gönderilmez.',
+        'A change you save is not added to an open conversation automatically. The agent gets the current value when it asks for the task details again. It is not resent on every click.',
     };
   return {
     purpose:
       part.source === 'tool'
-        ? 'Agent’ın kullanabildiği bir aracın açıklaması veya araçtan dönen bilgi.'
-        : 'Agent’ın çalışırken kullanabileceği talimat veya bilgi.',
-    timing: part.when ?? 'İlgili görev ya da araç isteği sırasında iletilir.',
-    change: 'İletilen gerçek metni ve zamanı Gönderim geçmişi bölümünden inceleyebilirsin.',
+        ? 'The description of a tool the agent can use, or information returned by the tool.'
+        : 'An instruction or information the agent can use while working.',
+    timing: part.when ?? 'Delivered during the related task or tool request.',
+    change:
+      'You can review the actual delivered text and its time in the Delivery history section.',
   };
 }

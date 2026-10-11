@@ -44,7 +44,7 @@ test('an interview completion asks for missing answers or profile review, never 
   assert.equal(p.running, false);
   s.missing = [];
   const ready = automationProgress(s);
-  assert.equal(ready.title, 'Kurulum taslağı hazır');
+  assert.equal(ready.title, 'Setup draft ready');
   assert.equal(ready.primary.id, 'profile');
   assert.equal(ready.steps[0].state, 'current');
 });
@@ -52,8 +52,8 @@ test('an interview completion asks for missing answers or profile review, never 
 test('reviewed setup names the exact next action and explains the read-only trial', () => {
   const p = automationProgress(snapshot());
   assert.equal(p.primary.id, 'enable');
-  assert.equal(p.title, 'Kurulum tamamlandı');
-  assert.match(p.next, /göndermez/);
+  assert.equal(p.title, 'Setup complete');
+  assert.match(p.next, /submits nothing/);
   assert.deepEqual(
     p.steps.map((s) => s.state),
     ['done', 'current'],
@@ -67,7 +67,7 @@ test('a failed trial takes precedence over a ready profile on every Agent surfac
   );
   const p = automationProgress(s),
     v = webWorkspaceView(s, {sessions: new Map()});
-  assert.equal(p.title, 'Deneme tamamlanamadı');
+  assert.equal(p.title, 'Trial could not complete');
   assert.equal(p.primary.id, 'sources');
   assert.match(p.detail, /Çerez/);
   assert.equal(p.passed, false);
@@ -86,7 +86,7 @@ test('a recorded result remains closing until the active run is released', () =>
       ),
     );
   assert.equal(p.running, true);
-  assert.equal(p.title, 'Oturum kapanıyor…');
+  assert.equal(p.title, 'Session closing…');
   assert.equal(p.primary, null);
   assert.equal(p.finishedRun, null);
 });
@@ -99,13 +99,13 @@ test('repeated failed trials lead to fixing the blocker, and another active work
     );
   const repeated = automationProgress(s);
   assert.equal(repeated.primary.id, 'sources');
-  assert.match(repeated.next, /engelli kaynağı/);
+  assert.match(repeated.next, /blocked source/);
   const ended = finished('run', 'completed'),
     running = {...ended, id: 'another', status: 'running', finishedAt: null};
   const p = automationProgress(
     snapshot({}, {runs: [ended, running], activeRun: ended, activeRuns: [ended, running]}),
   );
-  assert.equal(p.title, 'Kaynaklar taranıyor');
+  assert.equal(p.title, 'Scanning sources');
   assert.equal(p.finishedRun, null);
 });
 
@@ -113,10 +113,10 @@ test('successful trial offers tracking and one-off execution as separate actions
   const p = automationProgress(
     snapshot({trial: {revision: 2, status: 'passed'}}, {runs: [finished('trial', 'completed')]}),
   );
-  assert.equal(p.title, 'Kurulum tamamlandı');
+  assert.equal(p.title, 'Setup complete');
   assert.equal(p.primary.id, 'enable');
   assert.ok(p.secondary.some((a) => a.id === 'run'));
-  assert.match(p.next, /Düzenli takip kapalı/);
+  assert.match(p.next, /Regular tracking is off/);
 });
 
 test('reviewed setup has no workspace trial gate, including legacy skip metadata', () => {
@@ -126,10 +126,10 @@ test('reviewed setup has no workspace trial gate, including legacy skip metadata
     assert.ok(p.secondary.some((a) => a.id === 'run'));
     assert.deepEqual(
       p.steps.map((step) => step.label),
-      ['Kurulum', 'Takip'],
+      ['Setup', 'Tracking'],
     );
     assert.ok(!p.secondary.some((a) => a.id === 'skip-trial'));
-    assert.match(p.next, /ilk turu denemedir/);
+    assert.match(p.next, /first round is a trial/);
   }
 });
 
@@ -146,7 +146,7 @@ test('a paused source failure exposes tracking for healthy sources without retry
   );
   const p = automationProgress(s);
   assert.equal(p.primary.id, 'enable');
-  assert.equal(p.primary.label, 'Düzenli takibi sürdür');
+  assert.equal(p.primary.label, 'Resume regular tracking');
   assert.ok(p.secondary.some((a) => a.id === 'sources'));
   assert.ok(!p.secondary.some((a) => a.id === 'run'));
   for (const changed of [
@@ -162,7 +162,7 @@ test('one completed scan does not claim the overall goal is complete or tracking
   const stopped = automationProgress(
     snapshot({trial: {revision: 2, status: 'passed'}}, {runs: [run]}),
   );
-  assert.equal(stopped.title, 'Bu tur tamamlandı');
+  assert.equal(stopped.title, 'This round is complete');
   assert.equal(stopped.primary.id, 'enable');
   const scheduled = automationProgress(
     snapshot(
@@ -170,8 +170,8 @@ test('one completed scan does not claim the overall goal is complete or tracking
       {runs: [run]},
     ),
   );
-  assert.equal(scheduled.title, 'Düzenli takip açık');
-  assert.match(scheduled.next, /Sonraki kontrol/);
+  assert.equal(scheduled.title, 'Regular tracking on');
+  assert.match(scheduled.next, /Next check/);
   assert.equal(scheduled.primary.id, 'results');
   assert.ok(scheduled.secondary.some((a) => a.id === 'stop'));
 });
@@ -187,7 +187,7 @@ test('dirty and revised plans cannot present an old trial as ready to run', () =
     dirty: true,
   });
   assert.equal(dirty.primary.id, 'profile');
-  assert.match(dirty.title, /kaydedilmedi/);
+  assert.match(dirty.title, /not saved/);
 });
 
 test('provider permission requests lead to the live terminal, and legacy expiry dates do not block tracking', () => {
@@ -260,37 +260,37 @@ test('an enabled worker with no task waits instead of borrowing another worker�
     },
   );
   const view = webWorkspaceView(s, {sessions: new Map([['home', session]])});
-  assert.equal(view.workers[0].presentation.status, 'Çalışıyor');
+  assert.equal(view.workers[0].presentation.status, 'Working');
   const idle = view.workers[1];
   assert.equal(idle.active, null);
   assert.equal(idle.execution.task, null);
   assert.equal(idle.execution.status, 'running'); // Still enabled to receive work.
-  assert.equal(idle.presentation.status, 'Görev bekliyor');
-  assert.equal(idle.presentation.title, 'Sıradaki görev bekleniyor');
-  assert.match(idle.presentation.detail, /çalışan agent oturumu yok/);
+  assert.equal(idle.presentation.status, 'Waiting for a task');
+  assert.equal(idle.presentation.title, 'Waiting for the next task');
+  assert.match(idle.presentation.detail, /no agent session is running/);
   assert.equal(idle.presentation.outcome, null);
   s.activeRun = null;
   s.activeRuns = [];
   s.runs = [finished('run', 'completed')];
   assert.equal(
     webWorkspaceView(s, {sessions: new Map()}).workers[1].presentation.status,
-    'Görev bekliyor',
+    'Waiting for a task',
   );
   s.workers[1].enabled = false;
   const stopped = webWorkspaceView(s, {sessions: new Map()}).workers[1];
   assert.equal(stopped.execution.status, 'paused');
-  assert.notEqual(stopped.presentation.status, 'Görev bekliyor');
+  assert.notEqual(stopped.presentation.status, 'Waiting for a task');
 });
 
 test('a brand-new workspace with no conversation invites the first message instead of listing missing fields', () => {
   const greeting = {role: 'assistant', text: 'Ne yapmak istediğini anlat.', at: 1};
   const s = snapshot(
     {goal: '', reviewedRevision: null},
-    {messages: [greeting], missing: ['Amaç', 'En az bir kaynak adresi', 'Beklenen sonuç']},
+    {messages: [greeting], missing: ['Goal', 'At least one source address', 'Expected outcome']},
   );
   const p = automationProgress(s);
-  assert.equal(p.title, 'Ne yapmak istediğini anlat');
-  assert.equal(p.next, 'İlk mesajını Agent sayfasına yaz; gerisini agent sorar.');
+  assert.equal(p.title, 'Describe what you want to do');
+  assert.equal(p.next, 'Write your first message on the Agent page; the agent asks the rest.');
   assert.equal(p.primary.id, 'message');
   assert.equal(p.fresh, true);
   assert.doesNotMatch(p.next, /Eksik/);
@@ -305,6 +305,6 @@ test('a brand-new workspace with no conversation invites the first message inste
     ...s,
     messages: [greeting, {role: 'user', text: 'Ev arıyorum', at: 2}],
   });
-  assert.match(after.next, /Eksik bilgiler/);
+  assert.match(after.next, /Missing information/);
   assert.equal(after.fresh, false);
 });

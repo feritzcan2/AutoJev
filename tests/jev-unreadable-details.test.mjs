@@ -90,7 +90,10 @@ test('details that stay unreadable after bounded recovery leave the queue with a
     [slow, good],
     'the slow page keeps its wait, the good detail awaits review',
   );
-  assert.match(db.run(run.id).scan.reason, /okunamadı; kuyruktan çıkarıldı/);
+  assert.match(
+    db.run(run.id).scan.reason,
+    /could not be read even after bounded rereads; removed from the queue/,
+  );
   assert.ok(reads.filter((u) => u === apply).length <= 3, 'reads stay bounded');
   assert.equal(db.jevTasks.detailDeferrals(id, task.id, slow), 1);
 });
@@ -172,14 +175,14 @@ test('a detail Jev could not render is a verified loading issue: the app retries
   const issue = db.run(run.id).scanIssues[slow];
   assert.equal(issue?.kind, 'render_pending');
   assert.equal(issue.verified, true);
-  assert.match(issue.evidence, /yüklenmedi/);
+  assert.match(issue.evidence, /did not load/);
   await assert.rejects(
     flow.call(id, run.id, 'finish_automation_run', {
       status: 'completed',
       summary: 'Done',
       scan: {complete: true, pendingUrls: [], reason: 'Done', evidenceUrl: source},
     }),
-    /Çözümlenmemiş/,
+    /unresolved page issues/,
   );
   // A fresh load of the queued address, even through a redirect, clears the issue.
   loading = false;

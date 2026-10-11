@@ -26,14 +26,14 @@ test('a signup link and hidden login controls cannot establish an authentication
   );
   assert.throws(
     () => validateLoginQuestion(listing, {...proof, evidence: 'Backend role'}),
-    /giriş formu/,
+    /no sign-in form/,
   );
   const signedIn = page('Complete your profile\nSaved jobs\nNotifications\nSign up', {
     passwordFields: [],
   });
   assert.throws(
     () => validateLoginQuestion(signedIn, {...proof, evidence: 'Complete your profile'}),
-    /giriş formu/,
+    /no sign-in form/,
   );
   // A public application form: an Email field plus "designing" is not a login form.
   const form = page(
@@ -41,7 +41,7 @@ test('a signup link and hidden login controls cannot establish an authentication
   );
   assert.throws(
     () => validateLoginQuestion(form, {...proof, evidence: 'Job Application'}),
-    /giriş formu/,
+    /no sign-in form/,
   );
 });
 
@@ -67,7 +67,7 @@ for (const url of [
         }),
         url,
       };
-      assert.throws(() => validateLoginQuestion(observed, proof), /giriş formu/);
+      assert.throws(() => validateLoginQuestion(observed, proof), /no sign-in form/);
     }
     assert.throws(
       () =>
@@ -75,7 +75,7 @@ for (const url of [
           {id: 'current', url, text: '- button "Login"\n- heading "Newsletter"\n- textbox "Email"'},
           proof,
         ),
-      /giriş formu/,
+      /no sign-in form/,
     );
   });
 
@@ -108,7 +108,7 @@ test('login needs visible authentication evidence and never uses a truncated str
         }),
         proof,
       ),
-    /giriş formu/,
+    /no sign-in form/,
   );
   assert.equal(
     validateLoginQuestion(page('Please sign in to continue\nEmail', {passwordFields: []}), proof)
@@ -119,18 +119,18 @@ test('login needs visible authentication evidence and never uses a truncated str
     ...page(''),
     text: 'Page URL: https://example.test/\n{"text":"Public page","hiddenLabel":"Login Password"',
   };
-  assert.throws(() => validateLoginQuestion(truncated, proof), /giriş formu/);
+  assert.throws(() => validateLoginQuestion(truncated, proof), /no sign-in form/);
 });
 
 test('login proof must come from a current fully rendered page', () => {
   assert.equal(validateLoginQuestion(page(login), proof).kind, 'login');
   assert.throws(
     () => validateLoginQuestion({...page(login), readiness: {loading: true}}, proof),
-    /yükleniyor/,
+    /still loading/,
   );
   assert.throws(
     () => validateLoginQuestion(page(login), {...proof, snapshotId: 'old'}),
-    /son snapshot/,
+    /latest snapshot/,
   );
   assert.equal(
     validateLoginQuestion(page(login), {...proof, evidence: 'Login is required here'}).kind,
@@ -206,7 +206,7 @@ test('login questions recheck the live page and reject a barrier that disappeare
       text: 'Hesabınıza giriş yapın.',
       accessCheck: {...proof, snapshotId: read.snapshot.id},
     }),
-    /bulunamadı|giriş formu/,
+    /not found|no sign-in form/,
   );
   assert.equal((f.db.get(f.id).questions ?? []).length, 0);
   assert.ok(f.reads() >= 3);

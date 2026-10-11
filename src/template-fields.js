@@ -11,11 +11,11 @@ export function templateFields(root, fields, values = {}, prefix = 'criteria-') 
     input.required = field.required;
     input.maxLength = 6000;
     if (select) {
-      input.add(new Option('Seç…', ''));
+      input.add(new Option('Select…', ''));
       for (const [value, title] of field.type === 'boolean'
         ? [
-            ['true', 'Evet'],
-            ['false', 'Hayır'],
+            ['true', 'Yes'],
+            ['false', 'No'],
           ]
         : (field.options ?? []).map((value) => [value, value]))
         input.add(new Option(title, value));

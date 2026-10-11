@@ -92,7 +92,7 @@ test('a trial cannot save a search form for a site whose results address the ext
         fields: [{key: 'query', label: 'Search'}],
       },
     }),
-    /site eklentisinde tanımlı/,
+    /defined in its site extension/,
   );
   assert.equal(db.sources(a.id)[0].recipe.entry.template, 'https://berlinstartupjobs.com/{query}/');
 });

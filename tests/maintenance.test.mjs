@@ -18,7 +18,7 @@ test('maintenance refuses in-flight IPC and blocks new calls while copying', asy
     pending = gate.invoke('pick-document', () => ipc.promise);
   await assert.rejects(
     gate.run(async () => events.push('copy')),
-    /Devam eden/,
+    /running operation/,
   );
   assert.equal(gate.busy, false);
   ipc.resolve();
@@ -33,11 +33,11 @@ test('maintenance refuses in-flight IPC and blocks new calls while copying', asy
   await started.promise;
   await assert.rejects(
     gate.invoke('save-profile', () => assert.fail()),
-    /Yedekleme/,
+    /backup, restore or update/,
   );
   await assert.rejects(
     gate.run(() => assert.fail()),
-    /Yedekleme/,
+    /backup, restore or update/,
   );
   copy.resolve();
   await backup;

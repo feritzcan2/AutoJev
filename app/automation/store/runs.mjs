@@ -26,19 +26,19 @@ export const runMethods = {
         typeof input === 'string' ? {kind: input} : input;
       const conversation = workerId === CONVERSATION_WORKER;
       if (conversation && kind !== 'interview')
-        throw Error('Sohbet worker’ı yalnızca konuşma görevini çalıştırabilir');
+        throw Error('The chat worker can only run the conversation task');
       if (!taskId && !conversation) this.assertIdle(id);
       const a = this.get(id);
       this.store.workspaces.workers.get(id, workerId);
-      if (!['interview', 'trial', 'run'].includes(kind)) throw Error('Geçersiz çalışma');
+      if (!['interview', 'trial', 'run'].includes(kind)) throw Error('Invalid run');
       if (kind !== 'interview' && a.profileUpdate)
-        throw Error('Profil güncellemesi tamamlanmadan yeni görev başlatılamaz.');
+        throw Error('A new task cannot start until the profile update completes.');
       if (
         kind !== 'interview' &&
         !(taskId && this.store.workspaces.tasks.get(id, taskId).recordOperation === 'verify') &&
         a.reviewedRevision !== a.revision
       )
-        throw Error('Önce kurulum kartını kontrol edip kaydet');
+        throw Error('Review and save the setup card first');
       if (
         !taskId &&
         !conversation &&
@@ -144,7 +144,7 @@ export const runMethods = {
         finishedAt: null,
         browserSteps: 0,
         observations: [],
-        summary: 'Başlatılıyor',
+        summary: 'Starting',
         actionId: null,
       });
     });
@@ -153,7 +153,7 @@ export const runMethods = {
     return this.store.workspaces.tasks.atomic(() => {
       const run = this.activeRun(id, runId);
       if (!['completed', 'partial', 'failed', 'blocked', 'interrupted', 'timeout'].includes(status))
-        throw Error('Geçersiz çalışma sonucu');
+        throw Error('Invalid run result');
       if (status === 'completed' && run.recordOperation)
         for (const itemId of taskRecordIds(run)) {
           const item = this.result(id, itemId),
@@ -162,14 +162,16 @@ export const runMethods = {
             );
           if (run.recordOperation === 'score' && !recordScoredInTask(this, run, item) && !question)
             throw Error(
-              'Önce bu kayıt için puanlama sonucunu kaydet veya eksik bilgi sorusunu sor',
+              'Save the scoring result for this record or ask the missing-information question first',
             );
           if (
             run.recordOperation === 'prepare' &&
             !(item.status === 'prepared' && item.proposal && item.runId === run.id) &&
             !question
           )
-            throw Error('Önce bu kayıt için taslağı kaydet veya eksik bilgi sorusunu sor');
+            throw Error(
+              'Save the draft for this record or ask the missing-information question first',
+            );
           if (
             run.recordOperation === 'execute' &&
             item.status !== 'completed' &&
@@ -190,17 +192,19 @@ export const runMethods = {
             item.status !== 'completed' &&
             !(run.verifiedNotSubmitted === item.id && item.notSubmitted?.runId === run.id)
           )
-            throw Error('Sonuç henüz doğrulanmadı; belirsiz durumu koru ve engeli bildir');
+            throw Error(
+              'The result is not verified yet; keep the uncertain state and report the blocker',
+            );
         }
       if (status === 'partial' && (!run.sourceUrl || run.recordId || !run.scan?.pendingUrls.length))
-        throw Error('Kısmi çalışma için kaydedilmiş kaynak devam noktası gerekli');
+        throw Error('A partial run requires a saved source checkpoint');
       if (run.actionId) {
         const item = this.result(id, run.actionId);
         if (item.status === 'executing')
           this.putResult({
             ...item,
             status: 'uncertain',
-            evidence: 'İşlem sonucu doğrulanamadı; tekrar gönderilmeden kontrol edilmeli.',
+            evidence: 'The action result could not be verified; check it without submitting again.',
           });
         if (['completed', 'partial'].includes(status)) status = 'blocked';
       }
@@ -214,7 +218,7 @@ export const runMethods = {
         ) {
           status = 'failed';
           summary =
-            'Deneme tamamlanamadı: her kaynakta güncel sayfa gözlemi veya CLI yanıtı gerekli.';
+            'Trial could not complete: every source needs a current page observation or CLI response.';
         }
       }
       let scanCompletion = null;
@@ -230,7 +234,7 @@ export const runMethods = {
       this.putRun({
         ...run,
         status,
-        summary: boundedText(summary, 'Çalışma özeti', 6000),
+        summary: boundedText(summary, 'Run summary', 6000),
         finishedAt: this.now(),
         actionId: null,
       });
@@ -266,7 +270,7 @@ export const runMethods = {
               recipe: {
                 entry: {kind: 'discovery'},
                 pagination: 'auto',
-                notes: 'Deneme turu reçete kaydetmedi.',
+                notes: 'The trial round did not save a recipe.',
               },
             },
           };

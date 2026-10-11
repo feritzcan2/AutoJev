@@ -47,10 +47,10 @@ test('current work lists a running scan with its live search and page progress',
     {...rows[0], progress: undefined},
     {
       id: 'r1',
-      title: 'Kaynak taraması',
+      title: 'Source scan',
       subject: 'jobs.example',
       worker: 'Worker 1',
-      state: 'Çalışıyor',
+      state: 'Running',
       tone: 'running',
       progress: undefined,
       startedAt: 1,
@@ -60,7 +60,7 @@ test('current work lists a running scan with its live search and page progress',
   );
   assert.equal(
     rows[0].progress,
-    'Arama 2/2 (platform) · sayfa 3/4 · 2 adres bekliyor · 3 elendi · 2 yeni kayıt',
+    'Search 2/2 (platform) · page 3/4 · 2 addresses pending · 3 excluded · 2 new records',
   );
 });
 
@@ -93,10 +93,10 @@ test('current work shows queued tasks oldest first and the waits, skipping the s
   assert.deepEqual(
     rows.map((r) => [r.id, r.title, r.subject, r.state]),
     [
-      ['t1', 'Kaynak taraması', 'a.example', 'Durakladı'],
-      ['t2', 'İlan puanlanıyor', 'Staff Engineer', 'Sırada'],
-      ['wait:https://b.example/', 'Erişim beklemesi', 'b.example', 'Bekliyor'],
-      ['question:q1', 'Yanıtın bekleniyor', 'Staff Engineer', 'Bekliyor'],
+      ['t1', 'Source scan', 'a.example', 'Paused'],
+      ['t2', 'Scoring listing', 'Staff Engineer', 'Queued'],
+      ['wait:https://b.example/', 'Access wait', 'b.example', 'Waiting'],
+      ['question:q1', 'Waiting for your answer', 'Staff Engineer', 'Waiting'],
     ],
   );
   assert.equal(rows[2].resumesAt, 8);
@@ -111,5 +111,5 @@ test('a long queue shows its first tasks and a count of the rest', () => {
   }));
   const rows = currentWork({automation: {status: 'paused'}, tasks});
   assert.equal(rows.length, 21);
-  assert.equal(rows.at(-1).title, '5 görev daha sırada');
+  assert.equal(rows.at(-1).title, '5 more tasks queued');
 });

@@ -7,9 +7,9 @@ import {COLLECTOR_INSTRUCTIONS} from '../sources/collector-worker.mjs';
 const TECHNICAL_RETRY_LIMIT = 3,
   IDLE_RETRY_LIMIT = 5;
 const exhaustedSummary =
-  'Erişim sorunu sürüyor. 3 tarama turu teknik hatayla sonuçlandı; otomatik deneme durduruldu. İlerleme korundu. Devam etmek için Tekrar dene’ye bas.';
+  'Access problem persists. 3 scan rounds ended with a technical error; automatic retries stopped. Progress is kept. Press Retry to continue.';
 const idleExhaustedSummary =
-  'Agent 5 kez üst üste ilerleme kaydetmeden ve rapor vermeden durdu; otomatik devam durduruldu. İlerleme korundu. Devam etmek için Tekrar dene’ye bas.';
+  'The agent stopped 5 times in a row without saving progress or reporting; automatic resume stopped. Progress is kept. Press Retry to continue.';
 function exhaustTechnicalRetries(db, run, attempt, summary, finalSummary = exhaustedSummary) {
   const id = run.automationId,
     task = db.store.workspaces.tasks.get(id, run.taskId),
@@ -46,6 +46,9 @@ function exhaustTechnicalRetries(db, run, attempt, summary, finalSummary = exhau
 }
 
 const legacyMessages = new Set([
+  'The agent stopped without reporting a result. Check the agent screen.',
+  'The agent session closed without reporting a result.',
+  // Stored by earlier app versions.
   'Agent sonuç bildirmeden durdu. Agent ekranını kontrol et.',
   'Agent oturumu sonuç bildirmeden kapandı.',
 ]);
@@ -106,7 +109,7 @@ export function unreportedSourceRun(db, id, runId, reason, now) {
     const pendingUrls = [
       ...new Set([...(run.scan?.pendingUrls ?? []), ...issues.map((issue) => issue.url)]),
     ];
-    const summary = `Sayfa yüklenemedi; yeniden denenecek: ${issues[0].url}`;
+    const summary = `Page failed to load; will retry: ${issues[0].url}`;
     db.persistScan(id, {
       ...run,
       scan: {
@@ -128,12 +131,12 @@ export function unreportedSourceRun(db, id, runId, reason, now) {
       db,
       run,
       attempt,
-      run.summary ?? 'Agent oturumu rapor vermeden kesildi.',
+      run.summary ?? 'The agent session was interrupted without a report.',
       idleExhaustedSummary,
     );
   const delay = [5000, 15000, 30000, 60000][Math.min(attempt - 1, 3)],
     recovery = {reason, attempt, readyAt: now + delay};
-  const summary = `Agent oturumu kesildi. Kaydedilen noktadan ${delay / 1000} saniye sonra otomatik devam edilecek.`;
+  const summary = `The agent session was interrupted. It will resume automatically from the saved checkpoint in ${delay / 1000} seconds.`;
   db.putRun({...run, recovery});
   return {status: 'interrupted', summary};
 }
@@ -165,7 +168,7 @@ export function retryTechnicalSource(db, id, runId, summary, now) {
   return {
     status: 'interrupted',
     summary:
-      `Geçici tarama sorunu; kaydedilen adresler ${delay / 60000 < 1 ? '30 saniye' : delay / 60000 + ' dakika'} sonra otomatik yeniden denenecek. ${summary}`.slice(
+      `Temporary scan problem; the saved addresses will be retried automatically in ${delay / 60000 < 1 ? '30 seconds' : delay / 60000 + ' minutes'}. ${summary}`.slice(
         0,
         6000,
       ),
@@ -205,12 +208,7 @@ export function requeueSourceRun(db, run) {
     if (run.toolFailure || task.toolFailure)
       return q.finish(run.automationId, task.id, 'blocked', run.summary);
     if (run.stopRequested || task.stopRequested)
-      return q.finish(
-        run.automationId,
-        task.id,
-        'cancelled',
-        'Tarama kullanıcı tarafından durduruldu.',
-      );
+      return q.finish(run.automationId, task.id, 'cancelled', 'Scan stopped by the user.');
     q.put({
       ...task,
       state: 'pending',
@@ -276,5 +274,5 @@ export function unreportedInterviewRun(db, id, runId) {
       (q.runId ? q.runId === runId : !q.recordId && !q.sourceUrl),
   );
   if (!pending.length) return null;
-  return {status: 'completed', summary: 'Kurulum soruları kaydedildi; form yanıtların bekleniyor.'};
+  return {status: 'completed', summary: 'Setup questions saved; waiting for your form answers.'};
 }

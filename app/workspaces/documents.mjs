@@ -30,19 +30,19 @@ export class WorkspaceDocuments {
     const validate = () => {
       this.workspaces.assertMutable(id);
       if (!extensions[purpose] || !driver.documentPurposes.includes(purpose))
-        throw Error('Bu belge türü çalışma alanında desteklenmiyor');
+        throw Error('This document type is not supported in the workspace');
       driver.beforeDocument?.(id, purpose);
     };
     validate();
     const picked = await this.dialog.showOpenDialog(this.window(), {
       properties: ['openFile'],
-      filters: [{name: purpose === 'cv' ? 'CV' : 'Belgeler', extensions: extensions[purpose]}],
+      filters: [{name: purpose === 'cv' ? 'CV' : 'Documents', extensions: extensions[purpose]}],
     });
     if (picked.canceled) return null;
     validate();
     const source = picked.filePaths[0],
       extension = path.extname(source).slice(1).toLowerCase();
-    if (!extensions[purpose].includes(extension)) throw Error('Desteklenmeyen belge türü');
+    if (!extensions[purpose].includes(extension)) throw Error('Unsupported document type');
     this.workspaces.changing.add(id);
     try {
       const root = this.directory(id),

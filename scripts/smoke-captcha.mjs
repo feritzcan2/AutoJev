@@ -97,7 +97,7 @@ try {
     .evaluate((img, src) => (img.src = src), svg('black'));
   await assert.rejects(
     () => applyCaptcha(page, evidence.target, stale, {type: 'multi', size: 3, objects: [0]}),
-    /değişti/,
+    /changed/,
   );
   assert.equal(await evidence.target.frame.locator('.rc-imageselect-tileselected').count(), 0);
   console.log('CAPTCHA fixture: token');
@@ -236,7 +236,7 @@ try {
     );
     assert.equal(requests, 2);
     assert.equal(v.status, 'verification_handoff');
-    assert.match(v.captcha.message, /yetkisi/);
+    assert.match(v.captcha.message, /submit authorization/);
   } finally {
     await client.close();
     db.close();

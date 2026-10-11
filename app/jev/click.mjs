@@ -22,7 +22,7 @@ export function captureClickTargets(slot, owner) {
 export function takeClickTarget(slot, targetId, owner) {
   const target = slot.clickTargets?.get(targetId);
   if (!target) return null;
-  if (target.owner !== owner) throw Error('Bu oturuma ait güncel targetId gerekli.');
+  if (target.owner !== owner) throw Error('A current targetId of this session is required.');
   // Consume this target even if the click has no effect. Unchanged unrelated
   // targets can keep their IDs in the fresh observation returned afterwards.
   slot.clickTargets.delete(targetId);

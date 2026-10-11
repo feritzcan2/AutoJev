@@ -37,7 +37,7 @@ export class WorkspaceTasks {
         .prepare('SELECT data FROM workspace_tasks WHERE workspace_id=? AND id=?')
         .get(id, taskId),
     );
-    if (!task) throw Error('Görev bu çalışma alanına ait değil');
+    if (!task) throw Error('The task does not belong to this workspace');
     return task;
   }
   list(id, {states, batchId, limit = -1, summary = false} = {}) {
@@ -110,7 +110,7 @@ export class WorkspaceTasks {
           .prepare('SELECT workspace_id,data FROM workspace_tasks WHERE id=?')
           .get(input.id);
         if (existing) {
-          if (existing.workspace_id !== id) throw Error('Görev başka çalışma alanına ait');
+          if (existing.workspace_id !== id) throw Error('The task belongs to another workspace');
           return parse(existing);
         }
       }
@@ -132,12 +132,12 @@ export class WorkspaceTasks {
     return this.atomic(() => {
       const task = this.get(id, taskId);
       if (active.includes(task.state)) {
-        if (task.workerId !== workerId) throw Error('Görev başka bir worker tarafından işleniyor.');
+        if (task.workerId !== workerId) throw Error('The task is being handled by another worker.');
         return task;
       }
-      if (task.state !== 'pending') throw Error('Görev çalıştırılabilir durumda değil');
+      if (task.state !== 'pending') throw Error('The task is not in a runnable state');
       if (task.dependsOn.some((parent) => this.get(id, parent).state !== 'completed'))
-        throw Error('Görevin önceki adımları tamamlanmadı');
+        throw Error('The task’s previous steps are not complete');
       const canonical = (recordId) =>
         this.workspaces.records.identities.resolve(id, recordId)?.id ?? recordId;
       if (
@@ -150,7 +150,7 @@ export class WorkspaceTasks {
             ),
         )
       )
-        throw Error('Görev başka bir worker tarafından işleniyor.');
+        throw Error('The task is being handled by another worker.');
       return this.put({
         ...task,
         state: 'running',
@@ -162,7 +162,7 @@ export class WorkspaceTasks {
   }
   finish(id, taskId, state = 'completed', summary = '') {
     if (!['completed', 'partial', 'blocked', 'failed', 'interrupted', 'cancelled'].includes(state))
-      throw Error('Geçersiz görev sonucu');
+      throw Error('Invalid task result');
     const task = this.get(id, taskId);
     return this.put({...task, state, summary, finishedAt: Date.now()});
   }
@@ -177,7 +177,7 @@ export class WorkspaceTasks {
           id,
           previous.id,
           previous.result?.state ?? 'interrupted',
-          previous.result?.summary ?? 'Görev sona erdi',
+          previous.result?.summary ?? 'Task ended',
         );
       if (!input) return;
       let current = this.enqueue(id, input);

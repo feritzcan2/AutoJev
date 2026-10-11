@@ -18,7 +18,7 @@ export class JevCdpTransport {
     socket.onclose = () => {
       for (const {reject, timer} of this.pending.values()) {
         clearTimeout(timer);
-        reject(Error('Chrome bağlantısı kapandı.'));
+        reject(Error('The Chrome connection closed.'));
       }
       this.pending.clear();
       this.onclose?.();
@@ -53,8 +53,8 @@ export class JevCdpTransport {
         cleanup();
         resolve();
       };
-      socket.onerror = () => fail(Error('Chrome bağlantısı kurulamadı.'));
-      socket.onclose = () => fail(Error('Chrome bağlantısı kurulmadan kapandı.'));
+      socket.onerror = () => fail(Error('Could not connect to Chrome.'));
+      socket.onclose = () => fail(Error('The Chrome connection closed before it was established.'));
       signal?.addEventListener('abort', abort, {once: true});
       if (signal?.aborted) abort();
     });
@@ -62,12 +62,12 @@ export class JevCdpTransport {
   }
   call(method, params = {}, sessionId) {
     if (this.socket.readyState !== WebSocket.OPEN)
-      return Promise.reject(Error('Chrome bağlantısı kapandı.'));
+      return Promise.reject(Error('The Chrome connection closed.'));
     return new Promise((resolve, reject) => {
       const id = ++this.sequence,
         timer = setTimeout(() => {
           this.pending.delete(id);
-          reject(Error(`Chrome ${method} zaman aşımı.`));
+          reject(Error(`Chrome ${method} timed out.`));
         }, 15000);
       this.pending.set(id, {resolve, reject, timer});
       this.socket.send(JSON.stringify({id, method, params, ...(sessionId ? {sessionId} : {})}));
@@ -84,7 +84,7 @@ export class JevCdpTransport {
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    throw Error('Yeni Jev penceresi bulunamadı; mevcut sekmeler korunuyor.');
+    throw Error('The new Jev window was not found; existing tabs are kept.');
   }
   async attach(targetId) {
     if (this.attached.has(targetId)) return;

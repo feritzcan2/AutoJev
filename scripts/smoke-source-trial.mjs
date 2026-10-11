@@ -124,7 +124,7 @@ try {
     assert.match(JSON.stringify(detail), /1400 EUR/);
   };
   await page.locator('[data-view=agent]').click();
-  await page.getByRole('button', {name: 'Düzenli takibi başlat', exact: true}).first().waitFor();
+  await page.getByRole('button', {name: 'Start regular tracking', exact: true}).first().waitFor();
   assert.equal(
     await page.locator('#automation-trial,[data-progress-action=skip-trial]').count(),
     0,
@@ -163,7 +163,7 @@ try {
   await page
     .locator('.source-row')
     .nth(1)
-    .getByRole('button', {name: 'Tekrar dene', exact: true})
+    .getByRole('button', {name: 'Retry', exact: true})
     .click();
   await wait((s) => s.activeRun?.kind === 'trial');
   assert.equal((await snapshot()).activeRun.sourceUrl, sources[1]);
@@ -176,7 +176,7 @@ try {
   await page
     .locator('.source-row')
     .first()
-    .getByRole('button', {name: 'Şimdi tara', exact: true})
+    .getByRole('button', {name: 'Scan now', exact: true})
     .click();
   await wait((s) => s.activeRun?.kind === 'run');
   assert.equal((await snapshot()).activeRun.sourceUrl, sources[0]);
@@ -187,7 +187,7 @@ try {
   await page.locator('[data-view=sources]').click();
   await page.locator('.source-trial-status[data-status=passed]').first().waitFor();
   assert.equal(await page.locator('.source-trial-status[data-status=passed]').count(), 2);
-  assert.equal(await page.getByRole('button', {name: 'Rehber ve araçlar', exact: true}).count(), 0);
+  assert.equal(await page.getByRole('button', {name: 'Guide and tools', exact: true}).count(), 0);
   assert.deepEqual(errors, []);
   console.log('SOURCE_TRIAL_UI_PASS', data);
 } finally {

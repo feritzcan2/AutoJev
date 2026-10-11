@@ -22,19 +22,19 @@ export const questionFieldsSchema = {
 export const OUTCOME_FIELD = {
   id: 'outcome',
   type: 'select',
-  label: 'Bu kayıt gönderildi mi?',
+  label: 'Was this record submitted?',
   required: true,
-  help: 'Gönderilmedi dersen kayıt yeniden gönderilebilir duruma döner; Gönderildi dersen tamamlandı sayılır.',
-  options: ['Gönderildi', 'Gönderilmedi, yeniden gönderilebilir', 'Bilmiyorum, belirsiz kalsın'],
+  help: 'Not submitted makes the record sendable again; Submitted marks it complete.',
+  options: ['Submitted', 'Not submitted, can be sent again', 'Don’t know, leave it uncertain'],
 };
 export function normalizeFields(fields) {
   if (fields === undefined || fields === null) return null;
   if (!Array.isArray(fields) || !fields.length || fields.length > 10)
-    throw Error('Form 1–10 alan içermeli');
+    throw Error('A form must have 1–10 fields');
   const ids = new Set();
   return fields.map((f) => {
     if (!f || typeof f !== 'object' || !/^\w[\w-]{0,63}$/.test(f.id ?? '') || ids.has(f.id))
-      throw Error('Alan kimliği benzersiz olmalı');
+      throw Error('Field ids must be unique');
     ids.add(f.id);
     if (
       typeof f.label !== 'string' ||
@@ -42,11 +42,11 @@ export function normalizeFields(fields) {
       f.label.length > 2000 ||
       !['text', 'boolean', 'select', 'multiselect', 'date', 'number'].includes(f.type)
     )
-      throw Error('Geçersiz form alanı');
+      throw Error('Invalid form field');
     if (f.required !== undefined && typeof f.required !== 'boolean')
-      throw Error('Geçersiz zorunluluk');
+      throw Error('Invalid required flag');
     if (f.help !== undefined && (typeof f.help !== 'string' || f.help.length > 2000))
-      throw Error('Geçersiz alan açıklaması');
+      throw Error('Invalid field help text');
     const field = {
       id: f.id,
       label: f.label.trim(),
@@ -62,7 +62,7 @@ export function normalizeFields(fields) {
         f.options.some((v) => typeof v !== 'string' || !v.trim() || v.length > 200) ||
         new Set(f.options).size !== f.options.length
       )
-        throw Error('Benzersiz cevap seçenekleri gerekli');
+        throw Error('Unique answer options are required');
       field.options = f.options;
     }
     return field;
@@ -70,15 +70,15 @@ export function normalizeFields(fields) {
 }
 export function validateAnswers(fields, values) {
   if (!values || typeof values !== 'object' || Array.isArray(values))
-    throw Error('Form cevapları gerekli');
+    throw Error('Form answers are required');
   if (Object.keys(values).some((id) => !fields.some((f) => f.id === id)))
-    throw Error('Bilinmeyen cevap alanı');
+    throw Error('Unknown answer field');
   const result = {};
   for (const f of fields) {
     const v = values[f.id],
       empty = v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length);
     if (empty) {
-      if (f.required) throw Error(`${f.label}: cevap gerekli`);
+      if (f.required) throw Error(`${f.label}: an answer is required`);
       continue;
     }
     let valid = false;
@@ -98,16 +98,16 @@ export function validateAnswers(fields, values) {
         /^\d{4}-\d{2}-\d{2}$/.test(v) &&
         Number.isFinite(Date.parse(v)) &&
         new Date(v).toISOString().slice(0, 10) === v;
-    if (!valid) throw Error(`${f.label}: geçerli cevap gerekli`);
+    if (!valid) throw Error(`${f.label}: a valid answer is required`);
     result[f.id] = v;
   }
   const summary = fields
     .filter((f) => Object.hasOwn(result, f.id))
     .map(
       (f) =>
-        `${f.label}: ${typeof result[f.id] === 'boolean' ? (result[f.id] ? 'Evet' : 'Hayır') : Array.isArray(result[f.id]) ? result[f.id].join(', ') : result[f.id]}`,
+        `${f.label}: ${typeof result[f.id] === 'boolean' ? (result[f.id] ? 'Yes' : 'No') : Array.isArray(result[f.id]) ? result[f.id].join(', ') : result[f.id]}`,
     )
     .join('\n');
-  if (!summary || summary.length > 10000) throw Error('Cevap boş veya çok uzun');
+  if (!summary || summary.length > 10000) throw Error('The answer is empty or too long');
   return {values: result, summary};
 }

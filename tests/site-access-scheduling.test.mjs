@@ -124,7 +124,7 @@ test('trial wait is recorded without a fake page read, retries at the gate deadl
   assert.equal(f.db.run(run.id).siteWait.retryAt, wait.retryAt);
   await assert.rejects(
     flow.call(id, run.id, 'finish_automation_run', {status: 'completed', summary: 'Done'}),
-    /ortak bekleme/,
+    /shared wait/,
   );
   await flow.call(id, run.id, 'finish_automation_run', {status: 'blocked', summary: wait.message});
   assert.equal(f.db.get(id).retryPlan[run.id].at, wait.retryAt);

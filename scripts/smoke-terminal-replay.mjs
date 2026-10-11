@@ -58,7 +58,7 @@ try {
   await page.locator('#new').click();
   await page
     .locator('#onboarding')
-    .getByRole('button', {name: 'Sohbetle kurmak istiyorum'})
+    .getByRole('button', {name: 'I want to set it up in a chat'})
     .click();
   await page.locator('[data-view=agent]').click();
   await page.locator('.worker-idle').waitFor({state: 'visible'});

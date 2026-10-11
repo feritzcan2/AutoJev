@@ -30,7 +30,7 @@ try {
   const snapshot = () => page.evaluate((id) => window.jobloop.workspaceSnapshot(id), profile.id);
   await page.locator('button[data-view=agent]').click();
   const compact = page.locator('[name=contextCompactTokens]');
-  assert.equal(await compact.inputValue(), '150.000');
+  assert.equal(await compact.inputValue(), '150,000');
   const field = page.locator('[name=contextRestartTokens]');
   assert.equal(await field.inputValue(), '0');
   for (const provider of ['codex', 'claude']) {
@@ -61,7 +61,7 @@ try {
     );
     await page.reload();
     await page.locator('button[data-view=agent]').click();
-    assert.equal(await compact.inputValue(), provider === 'codex' ? '120.000' : '55.000');
+    assert.equal(await compact.inputValue(), provider === 'codex' ? '120,000' : '55,000');
     assert.equal(await field.inputValue(), provider === 'codex' ? '160.000' : '200.000');
     assert.equal((await snapshot()).active, null, 'settings must never start an agent');
   }
@@ -76,8 +76,8 @@ try {
   await compact.evaluate((el) => el.setSelectionRange(3, 3));
   await compact.press('Delete');
   assert.equal(await compact.inputValue(), '12.356');
-  await compact.fill('120.000');
-  assert.equal(await compact.inputValue(), '120.000');
+  await compact.fill('120,000');
+  assert.equal(await compact.inputValue(), '120,000');
   await compact.fill('9007199254740992');
   assert.equal(await compact.evaluate((el) => el.checkValidity()), false);
   await compact.fill('');
@@ -150,12 +150,12 @@ try {
   await page.locator('button[data-view=agent]').click();
   await page
     .getByText(
-      'Context kullanımı: 180.000 token. Eşiğe ulaşıldı; görev bitince yeni agent oturumu açılacak.',
+      'Context usage: 180,000 tokens. Threshold reached; a new agent session opens when the task finishes.',
       {exact: true},
     )
     .waitFor();
   await page
-    .getByText('/compact gönderildi; sağlayıcıdan compaction bekleniyor.', {exact: true})
+    .getByText('/compact sent; waiting for the provider to compact.', {exact: true})
     .waitFor();
   await page.screenshot({path: path.join(data, 'context-settings.png'), fullPage: true});
   assert.deepEqual(errors, []);

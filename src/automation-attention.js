@@ -33,14 +33,14 @@ export function automationAttentionPanel(
   banner.hidden = true;
   banner.dataset.webOnly = '';
   const bannerText = el('strong'),
-    review = el('button', 'Müdahaleleri göster', 'quiet');
+    review = el('button', 'Show issues', 'quiet');
   review.type = 'button';
   banner.append(el('span', '!', 'attention-icon'), bannerText, review);
   document.querySelector('main>header').after(banner);
   const panel = el('section', null, 'automation-attention');
   panel.hidden = true;
   panel.dataset.webOnly = '';
-  panel.setAttribute('aria-label', 'Müdahale gereken kaynaklar');
+  panel.setAttribute('aria-label', 'Sources that need attention');
   document.querySelector('#now-panel').before(panel);
   const announcement = el('p', null, 'attention-announcement');
   announcement.setAttribute('role', 'status');
@@ -66,7 +66,7 @@ export function automationAttentionPanel(
     planSignature = '',
     conversationCount = 0;
   function questionTab(issue, workspace, feedback) {
-    const open = el('button', 'Sekmeyi göster ↗', 'primary'),
+    const open = el('button', 'Show tab ↗', 'primary'),
       choices = el('div', null, 'automation-help-tabs');
     open.type = 'button';
     choices.hidden = true;
@@ -93,13 +93,13 @@ export function automationAttentionPanel(
         );
         if (!tabs.length)
           throw Error(
-            'İlgili açık sekme bulunamadı. Sekme kapanmış veya tarayıcı bağlantısı kesilmiş olabilir.',
+            'The related open tab was not found. The tab may have been closed or the browser connection lost.',
           );
         if (tabs.length === 1) {
           await focus(tabs[0]);
           return;
         }
-        choices.replaceChildren(el('p', 'İlgili açık sekmeyi seç:'));
+        choices.replaceChildren(el('p', 'Choose the related open tab:'));
         choices.hidden = false;
         for (const tab of tabs) {
           const pick = el('button', tab.url, 'quiet');
@@ -148,21 +148,21 @@ export function automationAttentionPanel(
     const waiting = issue.kind === 'site_access' && !issue.accessExhausted;
     if (waiting) card.dataset.waiting = '';
     const clock = (at) =>
-      at ? new Date(at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'}) : null;
+      at ? new Date(at).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'}) : null;
     const heading = el('div', null, 'automation-help-heading'),
       copy = el('div');
     copy.append(
       el(
         'span',
         technical
-          ? 'Tarama tamamlanamadı'
+          ? 'Scan could not finish'
           : issue.kind === 'site_access'
             ? issue.accessExhausted
-              ? 'Otomatik deneme durduruldu'
+              ? 'Automatic retries stopped'
               : clock(issue.accessRetryAt)
-                ? `Bekleniyor · ${clock(issue.accessRetryAt)} saatinde otomatik devam`
-                : 'Erişim kontrolü sürüyor'
-            : 'Müdahale gerekiyor',
+                ? `Waiting · continues automatically at ${clock(issue.accessRetryAt)}`
+                : 'Access check in progress'
+            : 'Needs attention',
         'automation-help-label',
       ),
       el('h3', issue.name),
@@ -176,54 +176,54 @@ export function automationAttentionPanel(
     const instructions = el(
       'p',
       technical && issue.retry
-        ? 'Kaydedilen sonuçlar ve devam noktası korunuyor. Taramayı yeniden deneyebilirsin.'
+        ? 'Saved results and the resume point are kept. You can retry the scan.'
         : issue.retry
-          ? 'İlgili sekmede engeli giderdikten sonra devam edebilirsin.'
-          : 'İlgili sekmeyi kontrol et. Sonuç belirsizse agent’a durumu yaz; işlemi yeniden gönderme.',
+          ? 'You can continue after clearing the block in the related tab.'
+          : 'Check the related tab. If the outcome is unclear, tell the agent what happened; do not resend the action.',
       'automation-help-instructions',
     );
     if (issue.kind === 'site_access')
       instructions.textContent =
         issue.cleanupError ??
         (issue.accessExhausted
-          ? 'Üçüncü erişim hatasında otomatik denemeler durduruldu. Devam noktası korunuyor. Engeli giderdikten sonra “Çözdüm, devam et” ile yeniden başlatabilirsin. Diğer kaynaklar çalışmaya devam eder.'
-          : `İlk hatada 5, ikinci hatada 10 dakika beklenir. Bu tarama ${new Date(issue.accessRetryAt).toLocaleString('tr-TR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})} tarihinde kaldığı yerden otomatik devam edecek. Üçüncü hatada durur. Diğer kaynaklar çalışmaya devam eder. Kartı kapatırsan sekmeler şimdi kapanır; sonraki deneme sıfırdan başlar.`);
+          ? 'Automatic retries stopped at the third access error. The resume point is kept. After clearing the block, restart with “Resolved, continue”. Other sources keep running.'
+          : `The first error waits 5 minutes, the second 10. This scan will continue automatically where it stopped on ${new Date(issue.accessRetryAt).toLocaleString('en-GB', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}. It stops at the third error. Other sources keep running. If you close the card, the tabs close now and the next attempt starts from scratch.`);
     const actions = el('div', null, 'automation-help-actions'),
-      open = el('button', 'Sekmeyi göster ↗', 'primary'),
-      reply = el('button', 'Yanıtla', 'quiet'),
+      open = el('button', 'Show tab ↗', 'primary'),
+      reply = el('button', 'Reply', 'quiet'),
       resume = issue.retry
-        ? el('button', technical ? 'Taramaya devam et' : 'Çözdüm, devam et', 'quiet')
+        ? el('button', technical ? 'Continue scan' : 'Resolved, continue', 'quiet')
         : null;
     open.type = reply.type = 'button';
     actions.append(open, reply);
     if (issue.browserRequired === false) {
       open.hidden = true;
       instructions.textContent =
-        'Kaydedilen sonuçlar ve bekleyen adresler korunuyor. Taramaya kaldığı yerden devam edebilirsin.';
+        'Saved results and pending addresses are kept. You can continue the scan where it stopped.';
     }
     if (resume) {
       resume.type = 'button';
       actions.append(resume);
     }
     const later =
-      issue.retry && !issue.accessExhausted ? el('button', '2 saat sonra dene', 'quiet') : null;
+      issue.retry && !issue.accessExhausted ? el('button', 'Try in 2 hours', 'quiet') : null;
     if (later) {
       later.type = 'button';
       later.disabled = Boolean(issue.closing);
       actions.append(later);
     }
-    const close = el('button', 'Kapat', 'quiet');
+    const close = el('button', 'Close', 'quiet');
     close.type = 'button';
     close.dataset.dismissAttention = issue.id;
-    close.title = 'Bu müdahale bildirimini kapat';
+    close.title = 'Close this notice';
     actions.append(close);
     if (issue.kind === 'site_access') {
-      close.title = 'Bu kaynağın bekleyen sekmelerini kapat; sonraki denemede sıfırdan başla';
+      close.title = 'Close this source’s pending tabs; start from scratch on the next attempt';
       close.disabled = Boolean(issue.closing);
     }
     if (issue.closing && resume) {
       resume.disabled = true;
-      resume.textContent = 'Oturum kapanıyor…';
+      resume.textContent = 'Session closing…';
     }
     const feedback = el('p', null, 'automation-help-feedback');
     feedback.hidden = true;
@@ -231,14 +231,14 @@ export function automationAttentionPanel(
     const choices = el('div', null, 'automation-help-tabs');
     choices.hidden = true;
     const form = el('form', null, 'automation-help-reply'),
-      label = el('label', 'Agent’a ne yapması gerektiğini yaz'),
+      label = el('label', 'Tell the agent what to do'),
       input = el('textarea'),
-      send = el('button', 'Gönder', 'primary'),
-      cancel = el('button', 'Vazgeç', 'quiet');
+      send = el('button', 'Send', 'primary'),
+      cancel = el('button', 'Cancel', 'quiet');
     input.required = true;
     input.maxLength = 10000;
     input.rows = 3;
-    input.placeholder = 'Örneğin: Indeed’i şimdilik atla, diğer kaynaklarla devam et.';
+    input.placeholder = 'For example: skip Indeed for now and continue with the other sources.';
     input.value = replyDrafts.get(issue.id) ?? '';
     form.hidden = !replyDrafts.has(issue.id);
     reply.setAttribute('aria-expanded', String(!form.hidden));
@@ -252,7 +252,7 @@ export function automationAttentionPanel(
       label,
       el(
         'small',
-        'Yanıtın bu engelin açıklamasıyla birlikte agente iletilir. Diğer kaynakların takibi devam eder.',
+        'Your reply is sent to the agent together with the description of this block. Other sources keep being tracked.',
         'automation-help-instructions',
       ),
       replyActions,
@@ -315,10 +315,10 @@ export function automationAttentionPanel(
       if (!text || issue.closing) return;
       void run(async () => {
         const context = [
-          `Müdahaleye yanıt: ${issue.name}`,
-          issue.sourceUrl && `Kaynak: ${issue.sourceUrl}`,
-          issue.url && `Sekme: ${issue.url}`,
-          `Agent’ın açıklaması: ${issue.message}`,
+          `Reply to attention request: ${issue.name}`,
+          issue.sourceUrl && `Source: ${issue.sourceUrl}`,
+          issue.url && `Tab: ${issue.url}`,
+          `Agent’s description: ${issue.message}`,
         ]
           .filter(Boolean)
           .join('\n')
@@ -328,12 +328,12 @@ export function automationAttentionPanel(
         else
           await api.terminalMessage(
             workspace,
-            `${context}\n\nKullanıcının talimatı:\n${text}`,
+            `${context}\n\nUser instruction:\n${text}`,
             issue.workerId ?? 'main',
           );
         if (owner !== workspace) return;
         toggleReply(false);
-        feedback.textContent = 'Yanıtın agente iletildi.';
+        feedback.textContent = 'Your reply was sent to the agent.';
         feedback.hidden = false;
         await refresh();
       });
@@ -352,13 +352,13 @@ export function automationAttentionPanel(
         );
         if (!tabs.length)
           throw Error(
-            'İlgili açık sekme bulunamadı. Sekme kapanmış veya tarayıcı bağlantısı kesilmiş olabilir. Chrome bağlantısını kontrol et.',
+            'The related open tab was not found. The tab may have been closed or the browser connection lost. Check the Chrome connection.',
           );
         if (tabs.length === 1) {
           await api.focusWorkspaceTab(workspace, tabs[0].tabId);
           return;
         }
-        choices.replaceChildren(el('p', 'Bu kaynağa ait açık sekmeyi seç:'));
+        choices.replaceChildren(el('p', 'Choose this source’s open tab:'));
         choices.hidden = false;
         for (const tab of tabs) {
           const button = el('button', tab.url, 'quiet');
@@ -386,7 +386,7 @@ export function automationAttentionPanel(
     card.append(heading, summary, instructions, actions, form, choices, feedback);
     if (issue.message.length > 300) {
       const details = el('details');
-      details.append(el('summary', 'Agent’ın açıklamasının tamamı'), el('p', issue.message));
+      details.append(el('summary', 'Agent’s full description'), el('p', issue.message));
       card.append(details);
     }
     list.append(card);
@@ -395,7 +395,7 @@ export function automationAttentionPanel(
   function createToolFailure(issue) {
     const card = el('article', null, 'automation-help-card');
     card.dataset.issueId = issue.id;
-    const open = el('button', 'Kaydı göster', 'primary');
+    const open = el('button', 'Show record', 'primary');
     open.type = 'button';
     open.onclick = () => {
       navigate('board');
@@ -404,12 +404,12 @@ export function automationAttentionPanel(
         ?.scrollIntoView({block: 'center', behavior: 'smooth'});
     };
     card.append(
-      el('span', 'Tekrarlanan hata · Görev durduruldu', 'automation-help-label'),
+      el('span', 'Repeated error · Task stopped', 'automation-help-label'),
       el('h3', issue.name),
       el('p', issue.message, 'automation-help-summary'),
       el(
         'p',
-        'Otomatik denemeler durduruldu. Hatanın nedenini giderdikten sonra sonuçlar tablosundan yeniden deneyebilirsin.',
+        'Automatic retries stopped. After fixing the cause of the error, you can retry from the results table.',
         'automation-help-instructions',
       ),
       open,
@@ -421,7 +421,7 @@ export function automationAttentionPanel(
     const conversation = issue.kind === 'conversation',
       workspace = owner,
       card = el('article', null, 'automation-help-card'),
-      open = el('button', conversation ? 'Sohbete devam et' : 'Kuruluma devam et', 'primary'),
+      open = el('button', conversation ? 'Continue chat' : 'Continue setup', 'primary'),
       feedback = el('p');
     card.dataset.issueId = issue.id;
     open.type = 'button';
@@ -441,13 +441,13 @@ export function automationAttentionPanel(
       }
     };
     card.append(
-      el('h3', conversation ? 'Sohbet yarıda kaldı' : 'Kurulum yarıda kaldı'),
+      el('h3', conversation ? 'Chat was interrupted' : 'Setup was interrupted'),
       el('p', issue.message),
       el(
         'p',
         conversation
-          ? 'Mesajların kayıtlı. Diğer işler devam ederken sohbeti yeniden deneyebilirsin.'
-          : 'Bilgilerin ve yanıtların kayıtlı. Aynı kurulumdan devam edebilirsin.',
+          ? 'Your messages are saved. You can retry the chat while other work continues.'
+          : 'Your details and answers are saved. You can continue the same setup.',
       ),
       open,
       feedback,
@@ -467,7 +467,7 @@ export function automationAttentionPanel(
         if (owner === workspace) await refresh();
       },
     );
-    const attach = el('button', 'Belge ekle', 'quiet'),
+    const attach = el('button', 'Add document', 'quiet'),
       feedback = el('p');
     attach.type = 'button';
     feedback.setAttribute('role', 'status');
@@ -476,7 +476,8 @@ export function automationAttentionPanel(
       try {
         const added = await api.pickDocument(workspace);
         if (added) {
-          feedback.textContent = 'Belge eklendi. Formu gönderdiğinde agent inceleyecek.';
+          feedback.textContent =
+            'Document added. The agent will review it when you submit the form.';
           if (owner === workspace) await refresh();
         }
       } catch (error) {
@@ -492,7 +493,7 @@ export function automationAttentionPanel(
     if (issue.recordId && issue.canDismissRecord) {
       const dismiss = el(
         'button',
-        snapshot.definition?.records?.dismissLabel ?? 'Kaydı ele',
+        snapshot.definition?.records?.dismissLabel ?? 'Dismiss record',
         'quiet',
       );
       dismiss.type = 'button';
@@ -523,9 +524,9 @@ export function automationAttentionPanel(
     card.dataset.issueId = issue.id;
     const heading = el('div', null, 'automation-help-heading'),
       copy = el('div');
-    copy.append(el('span', 'Kullanım limiti', 'automation-help-label'), el('h3', issue.name));
+    copy.append(el('span', 'Usage limit', 'automation-help-label'), el('h3', issue.name));
     heading.append(el('span', '!', 'attention-icon'), copy);
-    const open = el('button', 'Terminali göster', 'primary');
+    const open = el('button', 'Show terminal', 'primary');
     open.type = 'button';
     open.onclick = () => {
       navigate(isChatIssue(issue) ? 'setup-agent' : 'agent');
@@ -549,8 +550,8 @@ export function automationAttentionPanel(
       el(
         'p',
         issue.sessionOpen
-          ? 'Görev ve devam noktası korunuyor. Yeniden agent açılmadan bu oturumda bekleniyor.'
-          : 'Sağlayıcı limiti nedeniyle oturum kapandı. Limit yenilendikten sonra görevi yeniden başlatabilirsin.',
+          ? 'The task and resume point are kept. Waiting in this session without opening a new agent.'
+          : 'The session closed because of the provider limit. You can restart the task after the limit resets.',
         'automation-help-instructions',
       ),
       actions,
@@ -597,17 +598,17 @@ export function automationAttentionPanel(
       const onlyRecordQuestions = issues.length && !panelIssues.length,
         onlyChatQuestions = issues.length && inline.length === issues.length;
       review.textContent = onlyRecordQuestions
-        ? 'Yanıt bekleyenleri göster'
+        ? 'Show unanswered questions'
         : onlyChatQuestions
-          ? 'Formu aç'
-          : 'Müdahaleleri göster';
+          ? 'Open form'
+          : 'Show issues';
       bannerText.textContent = onlyChatQuestions
-        ? `${inline.length} soru yanıtını bekliyor`
+        ? `${inline.length} question(s) awaiting your answer`
         : issues.length && issues.every((i) => i.kind === 'usage_limit')
-          ? `${issues.length} agent kullanım limitini bekliyor`
+          ? `${issues.length} agent(s) waiting for the usage limit`
           : issues.length && issues.every((i) => i.kind === 'site_access' && !i.accessExhausted)
-            ? `${issues.length} kaynak erişim beklemesinde · otomatik devam edecek`
-            : `${issues.length} müdahale bekleniyor`;
+            ? `${issues.length} source(s) in an access wait · will continue automatically`
+            : `${issues.length} item(s) need attention`;
       for (const [key, item] of cards)
         if (!panelIssues.some((i) => i.id === key)) {
           item.card.remove();
@@ -630,24 +631,24 @@ export function automationAttentionPanel(
         if (card.parentElement !== list) list.append(card);
       }
       announcement.textContent = outside.length
-        ? 'Agent’ın beklediği durumlar aşağıda gösteriliyor.'
+        ? 'Situations the agent is waiting on are shown below.'
         : '';
       scheduled.hidden = !plans.length;
       const nextPlans = JSON.stringify(plans);
       if (nextPlans !== planSignature) {
         planSignature = nextPlans;
-        scheduled.replaceChildren(el('summary', `Planlanan denemeler (${plans.length})`));
+        scheduled.replaceChildren(el('summary', `Scheduled retries (${plans.length})`));
         for (const issue of plans) {
           const workspace = id,
             row = el('div', null, 'automation-retry-plan'),
-            cancel = el('button', 'Ertelemeyi iptal et', 'quiet');
+            cancel = el('button', 'Cancel postponement', 'quiet');
           cancel.type = 'button';
           const feedback = el('span');
           feedback.setAttribute('role', 'status');
           row.append(
             el(
               'span',
-              `${issue.name} · ${new Date(issue.retryAt).toLocaleString('tr-TR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}`,
+              `${issue.name} · ${new Date(issue.retryAt).toLocaleString('en-GB', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}`,
             ),
             cancel,
             feedback,

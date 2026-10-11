@@ -81,30 +81,30 @@ export function validateChoice(answer, choices) {
   const keys = Object.keys(choices).sort(),
     probabilities = answer?.probabilities;
   const invalid = (reason) => {
-    throw Object.assign(Error(`Jev geçersiz yanıt döndürdü: ${reason}; işlem yapılmadı.`), {
+    throw Object.assign(Error(`Jev returned an invalid response: ${reason}; no action was taken.`), {
       code: 'JEV_INVALID_RESPONSE',
     });
   };
   if (!answer || !keys.includes(answer.choice))
-    invalid('seçilen seçenek sunulan seçenekler arasında değil');
+    invalid('the chosen option is not among the offered options');
   if (
     !probabilities ||
     Array.isArray(probabilities) ||
     typeof probabilities !== 'object' ||
     JSON.stringify(Object.keys(probabilities).sort()) !== JSON.stringify(keys)
   )
-    invalid('olasılık alanları sunulan seçeneklerle eşleşmiyor');
+    invalid('the probability fields do not match the offered options');
   const values = Object.values(probabilities);
   if (
     ![answer.confidence, ...values].every(
       (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1,
     )
   )
-    invalid('güven ve olasılıklar 0 ile 1 arasında sonlu sayılar olmalı');
+    invalid('confidence and probabilities must be finite numbers between 0 and 1');
   const total = values.reduce((a, b) => a + b, 0);
-  if (Math.abs(total - 1) >= 0.02) invalid(`olasılık toplamı ${total.toFixed(4)}, beklenen 1`);
+  if (Math.abs(total - 1) >= 0.02) invalid(`probabilities sum to ${total.toFixed(4)}, expected 1`);
   if (probabilities[answer.choice] < Math.max(...values) - 1e-6)
-    invalid('seçilen seçenek en yüksek olasılığa sahip değil');
+    invalid('the chosen option does not have the highest probability');
   return answer;
 }
 // Last TypeSafe HTTP failure. The key is app-wide, so every workspace shows it.
@@ -120,7 +120,7 @@ export async function askJev(
   questions,
   {apiKey, model = 'jev-latest', fetchImpl = fetch, signal} = {},
 ) {
-  if (!apiKey?.trim()) throw Error('Jev için TypeSafe API anahtarı gerekli.');
+  if (!apiKey?.trim()) throw Error('Jev needs a TypeSafe API key.');
   const started = Date.now(),
     answers = {},
     usage = {input_tokens: 0, output_tokens: 0};
@@ -138,12 +138,12 @@ export async function askJev(
         : AbortSignal.timeout(15000),
     });
     providerResponse(response);
-    if (!response.ok) throw Error(`TypeSafe HTTP ${response.status}; Jev görevi ilerletilmedi.`);
+    if (!response.ok) throw Error(`TypeSafe HTTP ${response.status}; the Jev task did not advance.`);
     let result;
     try {
       result = await response.json();
     } catch {
-      throw Error('Jev yanıtı JSON olarak okunamadı; işlem yapılmadı.');
+      throw Error('Could not read the Jev response as JSON; no action was taken.');
     }
     for (const key of Object.keys(usage))
       usage[key] +=
@@ -159,7 +159,7 @@ export async function askJev(
           (!Number.isFinite(answer?.noul) || answer.noul < 0 || answer.noul > 1)
         )
           throw Object.assign(
-            Error('Jev geçersiz değerlendirme döndürdü: 0 ile 1 arasında sayı gerekli.'),
+            Error('Jev returned an invalid assessment: a number between 0 and 1 is required.'),
             {code: 'JEV_INVALID_RESPONSE'},
           );
         answers[key] = answer;
@@ -191,7 +191,7 @@ export async function chooseJev(
 ) {
   if (!apiKey?.trim())
     throw Error(
-      'Jev için Yapılandırma → Jev bölümünden TypeSafe API anahtarını kaydet. Geliştirme ortamında TYPESAFE_API_KEY de kullanılabilir. Ayrı metin modeli anahtarı gerekmez.',
+      'Save the TypeSafe API key for Jev under Configuration → Jev. In development, TYPESAFE_API_KEY also works. No separate text model key is needed.',
     );
   const {elements, targets, controls} = actionSpace(page.actions);
   const labels = {
@@ -245,15 +245,15 @@ export async function chooseJev(
         : AbortSignal.timeout(25000),
     });
   } catch {
-    throw Error('Jev bağlantısı tamamlanamadı; tarayıcıda işlem yapılmadı.');
+    throw Error('The Jev connection could not be completed; no action was taken in the browser.');
   }
   providerResponse(response);
-  if (!response.ok) throw Error(`TypeSafe HTTP ${response.status}; tarayıcıda işlem yapılmadı.`);
+  if (!response.ok) throw Error(`TypeSafe HTTP ${response.status}; no action was taken in the browser.`);
   let result;
   try {
     result = await response.json();
   } catch {
-    throw Error('Jev yanıtı okunamadı; işlem yapılmadı.');
+    throw Error('Could not read the Jev response; no action was taken.');
   }
   const operation = validateChoice(result.answers?.operation, operations),
     group = targets[operation.choice];

@@ -173,10 +173,10 @@ test('incremental finish needs current full-page chronology, not known results o
       completion: 'cutoff',
     },
   };
-  await assert.rejects(call('finish_automation_run', done), /Tarih sınırı/);
+  await assert.rejects(call('finish_automation_run', done), /date cutoff was not verified/);
   await assert.rejects(
     call('finish_automation_run', {...done, scan: {...done.scan, completion: 'end'}}),
-    /Son sayfaya/,
+    /last page has not been reached/,
   );
   // Chronology is app-level checkpoint data, never an agent report.
   const args = {
@@ -188,13 +188,13 @@ test('incremental finish needs current full-page chronology, not known results o
   const saved = db.saveScanProgress(id, run.id, args, {url: source, text: snapshot.text});
   assert.ok(saved.scanPlan.boundary);
   await call('browser_read', {});
-  await assert.rejects(call('finish_automation_run', done), /Tarih sınırı/);
+  await assert.rejects(call('finish_automation_run', done), /date cutoff was not verified/);
   assert.equal(db.sources(id)[0].scanState.active.boundary, null);
   await call('browser_read', {});
   db.saveScanProgress(id, run.id, args, {url: source, text: snapshot.text});
   await assert.rejects(
     call('finish_automation_run', {...done, goalReached: true}),
-    /hedefinin bittiği/,
+    /goal is finished/,
   );
   await call('finish_automation_run', done);
   const state = db.sources(id)[0].scanState;
@@ -243,7 +243,7 @@ test('failed, interrupted and restarted workers preserve the exact cycle and cut
         null,
         resumed.id,
       ),
-    /Tarih sınırı/,
+    /date cutoff was not verified/,
   );
   restored.finish(id, resumed.id, 'failed', 'Access lost');
   assert.equal(restored.sources(id)[0].scanState.lastSuccessfulStartAt, epoch);
@@ -488,7 +488,7 @@ test('a recipe ordered newest-first keeps the incremental plan and ends at a kno
         null,
         'run-2',
       ),
-    /doğrulanmadı/,
+    /was not verified/,
   );
   assert.throws(
     () =>
@@ -501,7 +501,7 @@ test('a recipe ordered newest-first keeps the incremental plan and ends at a kno
         null,
         'run-1',
       ),
-    /bekleyen/,
+    /pending/,
   );
 });
 
@@ -581,7 +581,7 @@ test('a recipe without a known ordering caps every search at its first pages', (
         progress,
         'run-1',
       ),
-    /Son sayfaya/,
+    /last page has not been reached/,
     'without the boundary the board must be covered',
   );
   assert.throws(
@@ -592,7 +592,7 @@ test('a recipe without a known ordering caps every search at its first pages', (
         progress,
         'run-2',
       ),
-    /doğrulanmadı/,
+    /was not verified/,
   );
   assert.throws(
     () =>
@@ -605,6 +605,6 @@ test('a recipe without a known ordering caps every search at its first pages', (
         progress,
         'run-1',
       ),
-    /bekleyen/,
+    /pending/,
   );
 });

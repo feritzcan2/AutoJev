@@ -1,11 +1,11 @@
 // @ts-check
 const states = [
-  ['found', 'Bulundu'],
-  ['prepared', 'İşleme hazır'],
-  ['executing', 'İşlem sürüyor'],
-  ['completed', 'Tamamlandı'],
-  ['uncertain', 'Doğrulama bekliyor'],
-  ['dismissed', 'Atlandı'],
+  ['found', 'Found'],
+  ['prepared', 'Ready for action'],
+  ['executing', 'In progress'],
+  ['completed', 'Completed'],
+  ['uncertain', 'Awaiting verification'],
+  ['dismissed', 'Skipped'],
 ];
 export const browserDefinition = {
   id: 'browser',

@@ -66,7 +66,7 @@ export async function findTurnstileCheckbox(page, report = () => {}) {
             functionDeclaration: `function(){return (${fn.toString()})(this);}`,
             returnByValue: true,
           });
-          if (result.exceptionDetails) throw Error('Doğrulama kontrolü okunamadı.');
+          if (result.exceptionDetails) throw Error('Could not read the verification control.');
           return result.result.value;
         };
         const read = (e) => {

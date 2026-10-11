@@ -132,7 +132,7 @@ export class TelegramStore {
   }
   assertCandidate(candidate) {
     this.store.profile(candidate);
-    if (!this.owns(candidate)) throw Error('Bu aday farklı bir Telegram botuna bağlı.');
+    if (!this.owns(candidate)) throw Error('This candidate is linked to a different Telegram bot.');
   }
   links() {
     return this.db
@@ -164,7 +164,7 @@ export class TelegramStore {
   pair(candidate) {
     this.assertCandidate(candidate);
     if (this.link(candidate))
-      throw Error('Bu aday zaten bağlı. Yeni hesap için önce bağlantıyı kaldır.');
+      throw Error('This candidate is already linked. Remove the link first to use a new account.');
     const token = randomBytes(24).toString('base64url'),
       expires = this.now() + 10 * 60 * 1000;
     this.db
@@ -218,7 +218,7 @@ export class TelegramStore {
   }
   preferences(candidate, input) {
     const link = this.link(candidate);
-    if (!link) throw Error('Önce adayı Telegram’a bağla.');
+    if (!link) throw Error('Link the candidate to Telegram first.');
     const previousMinScore = link.data.newJobsMinScore ?? null,
       wasEnabled = link.data.newJobs !== false;
     if (
@@ -228,13 +228,13 @@ export class TelegramStore {
         input.newJobsMinScore < 0 ||
         input.newJobsMinScore > 100)
     )
-      throw Error('Otomatik ilanlar için minimum puan 0–100 arasında olmalı.');
+      throw Error('The minimum score for automatic listings must be between 0 and 100.');
     for (const key of ['notifications', 'questions']) {
-      if (typeof input[key] !== 'boolean') throw Error('Geçersiz bildirim tercihi');
+      if (typeof input[key] !== 'boolean') throw Error('Invalid notification preference');
       link.data[key] = input[key];
     }
     if (input.newJobs !== undefined && typeof input.newJobs !== 'boolean')
-      throw Error('Geçersiz ilan bildirimi tercihi');
+      throw Error('Invalid listing notification preference');
     link.data.newJobs = input.newJobs ?? link.data.newJobs ?? true;
     if (input.newJobsMinScore !== undefined) link.data.newJobsMinScore = input.newJobsMinScore;
     if (!link.data.questions) link.data.dialog = null;
@@ -498,13 +498,13 @@ export class TelegramStore {
   }
   queueUnsentJobs(candidate, botId, input = {}) {
     this.assertCandidate(candidate);
-    if (!this.link(candidate)) throw Error('Önce adayı Telegram’a bağla.');
+    if (!this.link(candidate)) throw Error('Link the candidate to Telegram first.');
     if (!input || typeof input !== 'object' || Array.isArray(input))
-      throw Error('Geçersiz Telegram gönderim seçimi.');
+      throw Error('Invalid Telegram send choice.');
     const {minScore = null, resend = false} = input;
     if (minScore !== null && (!Number.isFinite(minScore) || minScore < 0 || minScore > 100))
-      throw Error('Minimum puan 0–100 arasında olmalı.');
-    if (typeof resend !== 'boolean') throw Error('Geçersiz yeniden gönderme seçimi.');
+      throw Error('The minimum score must be between 0 and 100.');
+    if (typeof resend !== 'boolean') throw Error('Invalid resend choice.');
     return this.transaction(() => {
       this.migrateSentJobs(botId);
       const result = {queued: 0, alreadyQueued: 0, alreadySent: 0, completed: 0, filtered: 0};

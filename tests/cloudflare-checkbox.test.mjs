@@ -55,6 +55,6 @@ test('a hidden provider frame keeps checkbox discovery pending within its deadli
   );
   assert.match(
     cloudflareCheckboxMessage({reason: 'frame_hidden', elapsedMs: 30000}),
-    /30 sn.*\(frame_hidden\)/,
+    /30 s\..*\(frame_hidden\)/,
   );
 });

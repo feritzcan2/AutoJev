@@ -66,11 +66,11 @@ test('minimum save score is optional, independent of actions, and validated when
   for (const value of ['-1', '101', '60.5', 'invalid']) {
     assert.throws(
       () => scoringPolicy({criteria: {save_score_threshold: value}}),
-      /Minimum kayıt puanı/,
+      /Minimum score to save/,
     );
     assert.throws(
       () => planInput(template, {criteria: {save_score_threshold: value}}),
-      /Minimum kayıt puanı/,
+      /Minimum score to save/,
     );
   }
   const criteria = {...profile.criteria, save_score_threshold: '43'};
@@ -115,5 +115,5 @@ test('record writes save the supplied score without a mandatory breakdown', () =
   assert.equal(saved.rubric, profile.criteria.ranking);
   assert.equal(recordAssessment(db, 'one', run, {score: 75}).score, 75);
   delete input.score;
-  assert.throws(() => recordAssessment(db, 'one', run, input), /Puan/);
+  assert.throws(() => recordAssessment(db, 'one', run, input), /score/);
 });

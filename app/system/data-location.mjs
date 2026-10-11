@@ -61,19 +61,19 @@ async function save(file, value) {
 }
 async function checkedDirectory(directory) {
   if (typeof directory !== 'string' || !path.isAbsolute(directory))
-    throw Error('Geçerli bir veri klasörü seç.');
+    throw Error('Choose a valid data folder.');
   const info = await lstat(directory);
   if (!info.isDirectory() || info.isSymbolicLink())
-    throw Error('Veri konumu gerçek bir klasör olmalı.');
+    throw Error('The data location must be a real folder.');
   return realpath(directory);
 }
 export async function currentDataDirectory(bootstrapDirectory) {
   const saved = await json(path.join(bootstrapDirectory, settingsName));
   if (!saved) return checkedDirectory(bootstrapDirectory);
-  if (saved.version !== 1) throw Error('Veri konumu ayarı okunamadı.');
+  if (saved.version !== 1) throw Error('Could not read the data location setting.');
   const directory = await checkedDirectory(saved.directory);
   if (!(await exists(path.join(directory, 'jobloop.sqlite'))))
-    throw Error('Seçilen veri klasöründeki veritabanı bulunamadı: ' + directory);
+    throw Error('Database not found in the selected data folder: ' + directory);
   return directory;
 }
 export async function requestDataLocation({bootstrapDirectory, dataDirectory, destination}) {
@@ -85,13 +85,13 @@ export async function requestDataLocation({bootstrapDirectory, dataDirectory, de
     inside(target, source) ||
     inside(target, await realpath(bootstrapDirectory))
   )
-    throw Error('Mevcut veri klasörüyle iç içe olmayan boş bir klasör seç.');
+    throw Error('Choose an empty folder that is not nested with the current data folder.');
   if ((await readdir(target)).length)
-    throw Error('Seçilen klasör boş olmalı. İçindeki dosyalar değiştirilmedi.');
+    throw Error('The selected folder must be empty. Its files were not changed.');
   if (await exists(path.join(source, 'pending-restore.json')))
-    throw Error('Önce bekleyen geri yüklemeyi tamamla.');
+    throw Error('Finish the pending restore first.');
   if (await exists(path.join(bootstrapDirectory, pendingName)))
-    throw Error('Veri klasörünü değiştirmek için yeniden başlatma bekleniyor.');
+    throw Error('A restart is pending to change the data folder.');
   const request = {version: 1, id: randomUUID(), source, destination: target};
   await save(path.join(bootstrapDirectory, pendingName), request);
   return {changed: true, directory: target, restartRequired: true};
@@ -99,18 +99,20 @@ export async function requestDataLocation({bootstrapDirectory, dataDirectory, de
 async function existingDataDirectory(directory, {allowPendingLocation = false} = {}) {
   const target = await checkedDirectory(directory);
   if (await exists(path.join(target, 'manifest.json')))
-    throw Error('Bu bir yedek klasörü. Yedekten geri yükle seçeneğini kullan.');
+    throw Error('This is a backup folder. Use the Restore from backup option.');
   const file = path.join(target, 'jobloop.sqlite');
   if (!(await exists(file)))
-    throw Error('Seçilen klasörde jobloop.sqlite bulunamadı. Mevcut AutoJev veri klasörünü seç.');
+    throw Error(
+      'jobloop.sqlite was not found in the selected folder. Choose an existing AutoJev data folder.',
+    );
   const info = await lstat(file);
-  if (!info.isFile() || info.isSymbolicLink()) throw Error('Veritabanı gerçek bir dosya olmalı.');
+  if (!info.isFile() || info.isSymbolicLink()) throw Error('The database must be a real file.');
   if (
     (await exists(path.join(target, 'pending-restore.json'))) ||
     (!allowPendingLocation && (await exists(path.join(target, pendingName))))
   )
     throw Error(
-      'Seçilen klasörde bekleyen geri yükleme veya veri konumu değişikliği var. Önce bu işlemi tamamla.',
+      'The selected folder has a pending restore or data location change. Finish that first.',
     );
   const db = new DatabaseSync(file, {readOnly: true});
   try {
@@ -129,9 +131,9 @@ export async function requestExistingDataLocation({
     target = await checkedDirectory(destination);
   if (source === target) return {changed: false, directory: source};
   if (await exists(path.join(source, 'pending-restore.json')))
-    throw Error('Önce bekleyen geri yüklemeyi tamamla.');
+    throw Error('Finish the pending restore first.');
   if (await exists(path.join(bootstrapDirectory, pendingName)))
-    throw Error('Veri klasörünü değiştirmek için yeniden başlatma bekleniyor.');
+    throw Error('A restart is pending to change the data folder.');
   await existingDataDirectory(target);
   await save(path.join(bootstrapDirectory, pendingName), {
     version: 1,
@@ -150,7 +152,7 @@ async function digest(file) {
 async function copyTree(source, target) {
   const info = await lstat(source);
   if (info.isSymbolicLink()) {
-    throw Error('Bağlantı dosyası taşınamadı: ' + source);
+    throw Error('Could not move linked file: ' + source);
   }
   if (info.isDirectory()) {
     await mkdir(target, {recursive: true, mode: 0o700});
@@ -174,15 +176,15 @@ async function copyTree(source, target) {
     await copyFile(source, target);
     await chmod(target, 0o600 | (info.mode & 0o100));
     if ((await digest(source)) !== (await digest(target)))
-      throw Error('Dosya doğrulaması başarısız: ' + source);
-  } else throw Error('Desteklenmeyen veri dosyası: ' + source);
+      throw Error('File verification failed: ' + source);
+  } else throw Error('Unsupported data file: ' + source);
 }
 function checkDatabase(db) {
   if (
     db.prepare('PRAGMA quick_check').get().quick_check !== 'ok' ||
     db.prepare('PRAGMA foreign_key_check').get()
   )
-    throw Error('Taşınan veritabanı doğrulanamadı.');
+    throw Error('Could not verify the moved database.');
   if (
     !db
       .prepare(
@@ -190,7 +192,7 @@ function checkDatabase(db) {
       )
       .get()
   )
-    throw Error('Loop veritabanı bulunamadı.');
+    throw Error('Loop database not found.');
 }
 export function relocatePaths(db, source, destination) {
   const rewrite = (value) => {
@@ -254,12 +256,13 @@ export async function resolveDataDirectory({bootstrapDirectory}) {
       typeof request.destination !== 'string' ||
       !path.isAbsolute(request.destination)
     )
-      throw Error('Bekleyen veri konumu seçimi geçersiz.');
+      throw Error('The pending data location choice is invalid.');
     // When returning to the bootstrap folder, its pending request is this switch.
     const destination = await existingDataDirectory(request.destination, {
       allowPendingLocation: request.destination === (await realpath(bootstrapDirectory)),
     });
-    if (destination !== request.destination) throw Error('Seçilen veri klasörünün konumu değişti.');
+    if (destination !== request.destination)
+      throw Error('The location of the selected data folder changed.');
     await save(path.join(bootstrapDirectory, settingsName), {version: 1, directory: destination});
     await rm(pendingFile, {force: true});
     return destination;
@@ -280,7 +283,7 @@ export async function resolveDataDirectory({bootstrapDirectory}) {
     inside(current, request.destination) ||
     inside(request.destination, current)
   )
-    throw Error('Bekleyen veri taşıma kaydı geçersiz.');
+    throw Error('The pending data move record is invalid.');
   const destination = request.destination,
     stage = destination + '.loop-moving-' + request.id;
   const marker = {version: 1, id: request.id, source: current, directory: destination};
@@ -291,11 +294,11 @@ export async function resolveDataDirectory({bootstrapDirectory}) {
         (await checkedDirectory(destination)) !== destination ||
         (await readdir(destination)).length
       )
-        throw Error('Hedef klasör değişti veya boş değil; mevcut veriler korunuyor.');
+        throw Error('The target folder changed or is not empty; existing data is kept.');
     }
     if (await exists(stage)) {
       const prior = await json(path.join(stage, markerName));
-      if (prior?.id !== request.id) throw Error('Taşıma klasörü doğrulanamadı.');
+      if (prior?.id !== request.id) throw Error('Could not verify the move folder.');
       await rm(stage, {recursive: true});
     }
     await mkdir(stage, {mode: 0o700});
@@ -321,12 +324,14 @@ export async function resolveDataDirectory({bootstrapDirectory}) {
       }
       if (await exists(destination)) {
         if ((await readdir(destination)).length)
-          throw Error('Hedef klasöre dosya eklendi; taşıma durduruldu.');
+          throw Error('Files were added to the target folder; the move was stopped.');
         await rmdir(destination);
       }
       await rename(stage, destination);
     } catch (error) {
-      throw new Error('Veriler taşınamadı; eski klasör korundu. ' + error.message, {cause: error});
+      throw new Error('Could not move the data; the old folder was kept. ' + error.message, {
+        cause: error,
+      });
     }
   }
   const verify = new DatabaseSync(path.join(destination, 'jobloop.sqlite'), {readOnly: true});

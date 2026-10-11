@@ -1,7 +1,7 @@
-export const formatTokens = (value) => value.toLocaleString('tr-TR', {maximumFractionDigits: 0});
+export const formatTokens = (value) => value.toLocaleString('en-GB', {maximumFractionDigits: 0});
 export function parseTokenInput(text) {
-  if (!/^(?:\d+|\d{1,3}(?:\.\d{3})+)$/.test(text)) return NaN;
-  const value = Number(text.replaceAll('.', ''));
+  if (!/^(?:\d+|\d{1,3}(?:[.,]\d{3})+)$/.test(text)) return NaN;
+  const value = Number(text.replace(/[.,]/g, ''));
   return Number.isSafeInteger(value) && value >= 0 ? value : NaN;
 }
 
@@ -10,11 +10,12 @@ export function setupTokenInput(field) {
     const text = field.value,
       caret = field.selectionStart ?? text.length;
     const digits = text.slice(0, caret).replace(/\D/g, '').length;
-    // Dots are grouping separators, including while editing a formatted value.
-    const value = /^[\d.]+$/.test(text) ? parseTokenInput(text.replaceAll('.', '')) : NaN;
+    // Commas (and dots, for older values) are grouping separators, including
+    // while editing a formatted value.
+    const value = /^[\d.,]+$/.test(text) ? parseTokenInput(text.replace(/[.,]/g, '')) : NaN;
     field.setCustomValidity(
       Number.isNaN(value)
-        ? '0 (kapalı) veya pozitif bir tam token sayısı gir. Örnek: 120.000.'
+        ? 'Enter 0 (off) or a positive whole number of tokens. Example: 120,000.'
         : '',
     );
     if (Number.isNaN(value)) return;
@@ -32,13 +33,13 @@ export function setupTokenInput(field) {
       end = field.selectionEnd;
     if (start !== end || event.ctrlKey || event.metaKey || event.altKey) return;
     // Deleting beside a separator removes the adjacent digit too.
-    if (event.key === 'Backspace' && start >= 2 && field.value[start - 1] === '.') {
+    if (event.key === 'Backspace' && start >= 2 && ',.'.includes(field.value[start - 1])) {
       event.preventDefault();
       field.setRangeText('', start - 2, start, 'end');
     } else if (
       event.key === 'Delete' &&
       start + 1 < field.value.length &&
-      field.value[start] === '.'
+      ',.'.includes(field.value[start])
     ) {
       event.preventDefault();
       field.setRangeText('', start, start + 2, 'start');

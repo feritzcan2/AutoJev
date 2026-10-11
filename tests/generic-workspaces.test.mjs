@@ -41,11 +41,11 @@ test('a new car template defines fields, states and executable operations withou
         ...car,
         workflow: [{...car.workflow[0], after: ['contact']}, ...car.workflow.slice(1)],
       }),
-    /bağımlılığı/,
+    /step dependency/,
   );
   assert.throws(
     () => templateContract({...car, workflow: [{...car.workflow[0], capability: 'shell.execute'}]}),
-    /adımı/,
+    /template step/,
   );
 });
 
@@ -86,7 +86,7 @@ test('job and web records have one physical store and shared table/state tools p
   assert.equal(changed.digest, record.digest);
   assert.throws(
     () => workspaceTableCall(store, id, 'update_workspace_cells', {itemId: job.id, cells: []}),
-    /ait/,
+    /belong/,
   );
   assert.equal(db.result(p.id, job.id).status, 'found');
 });
@@ -135,7 +135,7 @@ test('two workers execute one declarative graph, wait for closure, and never exe
   assert.notEqual(launched[2].recordId, launched[3].recordId);
   for (const run of launched.slice(2)) {
     store.workspaces.transition(id, run.recordId, 'shortlist');
-    assert.throws(() => db.reserve(id, run.id, run.recordId), /adımı/);
+    assert.throws(() => db.reserve(id, run.id, run.recordId), /task step/);
     await finish(run);
   }
   await runtime.tick();
@@ -172,13 +172,13 @@ test('worker record claims and dependencies are durable and cannot cross workspa
     first = queue.enqueue(id, {operation: 'one', lockKey: 'record:1'}),
     second = queue.enqueue(id, {operation: 'two', dependsOn: [first.id], lockKey: 'record:1'});
   queue.claim(id, first.id, 'main');
-  assert.throws(() => queue.claim(id, second.id, 'second'), /tamamlanmadı/);
+  assert.throws(() => queue.claim(id, second.id, 'second'), /not complete/);
   queue.finish(id, first.id);
   queue.claim(id, second.id, 'second');
   const third = queue.enqueue(id, {operation: 'three', lockKey: 'record:1'});
-  assert.throws(() => queue.claim(id, third.id, 'main'), /başka bir worker/);
+  assert.throws(() => queue.claim(id, third.id, 'main'), /another worker/);
   const outsider = new AutomationStore(store).create('custom', {title: 'Other'});
-  assert.throws(() => queue.enqueue(outsider.id, {id: second.id}), /başka çalışma/);
+  assert.throws(() => queue.enqueue(outsider.id, {id: second.id}), /another workspace/);
 });
 
 test('an imported job template uses the browser contract and canonical record tasks', (t) => {
@@ -203,7 +203,7 @@ test('an imported job template uses the browser contract and canonical record ta
   });
   const task = core.workspaces.tasks.enqueue(a.id, {operation: 'score', recordId: item.id});
   assert.equal(core.workspaces.tasks.get(a.id, task.id).recordId, item.id);
-  assert.throws(() => db.save(a.id, {criteria: {salary: 'unknown'}}), /sayı gerekli/);
+  assert.throws(() => db.save(a.id, {criteria: {salary: 'unknown'}}), /a number is required/);
 });
 test('a failed close retains the shared lease until termination is confirmed', async (t) => {
   const {store, db, id} = fixture(t);
@@ -220,7 +220,7 @@ test('a failed close retains the shared lease until termination is confirmed', a
   runtime.report(id, run.id, 'completed', 'Observed');
   await assert.rejects(runtime.finish(id), /still alive/);
   assert.equal(store.workspaces.tasks.get(id, run.taskId).state, 'paused');
-  await assert.rejects(runtime.start(id, 'run'), /zaten/);
+  await assert.rejects(runtime.start(id, 'run'), /already/);
   fail = false;
   await runtime.finish(id);
   assert.equal(runtime.active.size, 0);

@@ -68,7 +68,7 @@ test('the fresh page after a submit is classified from generic wording', () => {
 test('only a reserved execute run may click submit, and only once', () => {
   assert.throws(
     () => assertSubmitAllowed({recordOperation: 'verify', actionId: 'r1'}, 'Submit'),
-    /Yalnızca başvuru/,
+    /Only an application/,
   );
   assert.throws(
     () => assertSubmitAllowed({recordOperation: 'execute'}, 'Submit'),
@@ -83,7 +83,7 @@ test('only a reserved execute run may click submit, and only once', () => {
         {recordOperation: 'execute', actionId: 'r1', submission: {outcome: 'unknown'}},
         'Submit',
       ),
-    /Gönderim zaten denendi/,
+    /Submission was already attempted/,
   );
   assert.throws(
     () =>
@@ -91,7 +91,7 @@ test('only a reserved execute run may click submit, and only once', () => {
         {recordOperation: 'execute', actionId: 'r1', submission: {outcome: 'error'}},
         'Submit',
       ),
-    /Tekrar tıklama/,
+    /Do not click again/,
   );
   // A form validation message means the first click did not submit: one retry is fine.
   assert.doesNotThrow(() =>

@@ -12,7 +12,7 @@ async function bounded(operation, {signal, timeoutMs}) {
         reject(
           Object.assign(
             Error(
-              'Sekmenin arka plan çizimi zamanında hazırlanamadı; aynı sekmedeki teknik engeli bildir.',
+              'Background rendering of the tab was not ready in time; report the technical blocker on the same tab.',
             ),
             {code: 'TAB_RENDER_TIMEOUT'},
           ),

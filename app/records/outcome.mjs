@@ -10,23 +10,23 @@ const normalize = (value) =>
 // An unfinished form or absence of a success message cannot release a hold.
 export function validateNotSubmitted(item, proof, page) {
   if (!page || page.readiness?.loading)
-    throw Error('Gönderilmediğini doğrulamak için güncel, yüklenmiş sayfa gerekli');
+    throw Error('A current, loaded page is required to verify it was not submitted');
   if (
     ![item.url, item.actionUrl]
       .filter(Boolean)
       .some((url) => new URL(url).origin === new URL(page.url).origin)
   )
-    throw Error('Gönderilmeme kanıtı kayıt veya işlem sitesinden gelmeli');
+    throw Error('Evidence of non-submission must come from the record or action site');
   const identity = normalize(proof?.recordEvidence),
     text = normalize(browserRenderedText(page));
   if (identity.length < 6 || !text.includes(identity))
-    throw Error('Atanmış kayıt güncel sayfada bulunmalı');
+    throw Error('The assigned record must be on the current page');
   if (
     ![item.url, item.actionUrl, item.title, item.key].some((value) =>
       normalize(value).includes(identity),
     )
   )
-    throw Error('Gönderilmeme kanıtı atanmış kayıtla eşleşmiyor');
+    throw Error('The evidence of non-submission does not match the assigned record');
   const pattern =
     proof?.kind === 'draft'
       ? /\b(draft|not submitted|unsubmitted|entwurf|nicht (?:abgesendet|eingereicht)|taslak|gönderilmedi)\b/
@@ -36,7 +36,7 @@ export function validateNotSubmitted(item, proof, page) {
   const status = pattern?.exec(text)?.[0];
   if (!status)
     throw Error(
-      'Açık taslak/gönderilmedi durumu gerekli; eksik CV veya başarı mesajının yokluğu yeterli değil',
+      'An explicit draft/not-submitted state is required; a missing CV or the absence of a success message is not enough',
     );
   return {
     kind: proof.kind,

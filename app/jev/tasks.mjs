@@ -40,7 +40,7 @@ const detailSignature = (page) =>
 const http = (value) => {
   const u = new URL(value);
   if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password)
-    throw Error('Geçerli bir web adresi gerekli.');
+    throw Error('A valid web address is required.');
   return u.href;
 };
 export function jevDetailItems(
@@ -52,18 +52,18 @@ export function jevDetailItems(
   const urls =
     input.urls ?? (input.url ? [input.url] : records.length ? assignedUrls : pendingUrls);
   if (!Array.isArray(urls) || urls.length > 100)
-    throw Error('Bir detay görevine en fazla 100 gözlenen adres ver.');
+    throw Error('Give at most 100 observed addresses to a detail task.');
   const selected = [...new Set(urls.map(http))],
     allowed = new Set([...pendingUrls, ...observedUrls, ...savedUrls, ...assignedUrls].map(http));
   if (selected.some((url) => !allowed.has(url)))
     throw Error(
-      'Detay adresi gözlenen bağlantılardan, bu aramanın bekleyen kuyruğundan veya kayıtlı ilanlardan gelmeli. Önce gerçek bağlantıyı managed browser ile gözle; URL tahmin etme.',
+      'A detail address must come from observed links, the pending queue of this search or recorded listings. Observe the real link with the managed browser first; do not guess URLs.',
     );
   if (
     records.length &&
     selected.some((url) => !assignedUrls.includes(url) && !observedUrls.map(http).includes(url))
   )
-    throw Error('Detaylar atanmış kayda veya bu görevde gözlenen bağlantılarına ait olmalı.');
+    throw Error('Details must belong to the assigned record or to links observed in this task.');
   return uniqueJevDetails(
     selected.map((url) => ({
       url,
@@ -138,14 +138,14 @@ export async function runJevTask({
     )
   )
     throw Error(
-      `Görev girdileri değiştirilemez. Devam için yalnızca {taskId:"${task.id}"} gönder. Kaydedilmiş sonuçlardan YENİ detay toplamak için {operation:"collect_details",fromTaskId:"${task.id}"} kullan; taskId ekleme.`,
+      `Task inputs cannot be changed. To continue, send only {taskId:"${task.id}"}. To collect NEW details from saved results, use {operation:"collect_details",fromTaskId:"${task.id}"}; do not add taskId.`,
     );
-  if (input.reviewedBatchId && !task) throw Error('İncelenen grup için mevcut taskId gerekli.');
+  if (input.reviewedBatchId && !task) throw Error('The reviewed batch needs an existing taskId.');
   if (input.review && !input.reviewedBatchId)
-    throw Error('review kararları için reviewedBatchId gerekli.');
+    throw Error('review decisions need a reviewedBatchId.');
   await ports.authorize(task?.input.operation ?? input.operation);
   if (task?.searchId !== undefined && task.searchId !== ports.searchId)
-    throw Error('Jev görevi başka bir kayıtlı aramaya ait. Önce o aramayı seç.');
+    throw Error('The Jev task belongs to another saved search. Select that search first.');
   if (!task) {
     const waiting =
       ['collect_details', 'classify_results'].includes(input.operation) &&
@@ -162,27 +162,27 @@ export async function runJevTask({
       ports.onTask?.(waiting);
       return jevTaskSummary(waiting);
     }
-    if (!JEV_OPERATIONS.includes(input.operation)) throw Error('Jev görev türü gerekli.');
+    if (!JEV_OPERATIONS.includes(input.operation)) throw Error('A Jev task type is required.');
     if (
       input.answers?.some((a) =>
         /password|passwd|otp|verification.?code|şifre|doğrulama.?kodu/i.test(a.key + ' ' + a.label),
       )
     )
-      throw Error('Jev görevine şifre veya doğrulama kodu gönderme.');
+      throw Error('Do not send a password or verification code to a Jev task.');
     if (new Set((input.answers ?? []).map((a) => a.key)).size !== (input.answers ?? []).length)
-      throw Error('Cevap anahtarları benzersiz olmalı.');
+      throw Error('Answer keys must be unique.');
     if (input.operation === 'fill_form' && !input.answers?.length)
-      throw Error('Doldurulacak doğrulanmış cevaplar gerekli.');
+      throw Error('Verified answers to fill are required.');
     if (input.urls && input.operation !== 'collect_details')
       throw Error(
-        'urls yalnızca collect_details içindir. Tarama için tek bir sonuç sayfasını url ile ver.',
+        'urls is only for collect_details. For a scan, give a single results page as url.',
       );
     if (input.url && input.operation === 'classify_results')
       throw Error(
-        'URL değerlendirmeden önce collect_details ile okunmalı. Sonra classify_results ve dönen fromTaskId ile devam et.',
+        'A URL must be read with collect_details before assessment. Then continue with classify_results and the returned fromTaskId.',
       );
     if ((input.url && input.urls) || (input.fromTaskId && (input.url || input.urls)))
-      throw Error('İlan kaynağı olarak yalnızca url, urls veya fromTaskId kullan.');
+      throw Error('Use only url, urls or fromTaskId as the listing source.');
     const source = input.fromTaskId
       ? store.get(owner, taskId, input.fromTaskId)
       : input.operation === 'classify_results'
@@ -196,10 +196,10 @@ export async function runJevTask({
             )
         : null;
     if (source?.searchId !== undefined && source.searchId !== ports.searchId)
-      throw Error('Kaynak Jev görevi başka bir kayıtlı aramaya ait.');
+      throw Error('The source Jev task belongs to another saved search.');
     if (input.operation === 'classify_results' && !source)
       throw Error(
-        'Önce collect_details ile ilanları oku (url/urls, bekleyen kuyruk veya atanmış kayıt). Sonra classify_results çağır; fromTaskId isteğe bağlıdır.',
+        'First read the listings with collect_details (url/urls, the pending queue or the assigned record). Then call classify_results; fromTaskId is optional.',
       );
     const details =
       input.operation === 'collect_details' && !source
@@ -208,7 +208,7 @@ export async function runJevTask({
         : null;
     if (input.operation === 'collect_details' && !source && !details?.length)
       throw Error(
-        'Toplanacak ilan yok. collect_details için gözlenen ilanı url/urls ile ver, fromTaskId ile bir tarama seç veya kayıtlı bekleyen kuyruğu kullan.',
+        'No listings to collect. For collect_details, give the observed listing as url/urls, choose a scan with fromTaskId or use the saved pending queue.',
       );
     if (input.url) http(input.url);
     task = store.create(owner, taskId, input);
@@ -329,12 +329,12 @@ export async function runJevTask({
     if (input.reviewedBatchId !== task.batch?.id)
       throw jevReviewRequired(
         task.batch
-          ? `İnceleme grubu eski veya yanlış yazılmış. Güncel reviewedBatchId: ${task.batch.id}. Item numaraları bu gruba göredir; emin değilsen read_jev_task(taskId) ile oku.`
-          : 'İnceleme grubu eski veya başka göreve ait. read_jev_task(taskId) ile güncel grubu ve item numaralarını oku.',
+          ? `The review batch is stale or misspelled. Current reviewedBatchId: ${task.batch.id}. Item numbers refer to this batch; if unsure, read it with read_jev_task(taskId).`
+          : 'The review batch is stale or belongs to another task. Read the current batch and item numbers with read_jev_task(taskId).',
       );
     const items = task.batch.urls.map((url) => task.items.find((i) => i.url === url));
     if (!ports.reviewBatch)
-      throw Error('İnceleme grubu doğrulaması kullanılamıyor; kuyruk korunuyor.');
+      throw Error('Review batch verification is unavailable; the queue is kept.');
     const review = resolveJevReview(items, input.review ?? []);
     await ports.reviewBatch(task, items, review);
     signal?.throwIfAborted();

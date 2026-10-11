@@ -103,16 +103,16 @@ test('relocation preserves application evidence, secrets and documents and persi
 test('occupied, nested and linked destinations leave existing data untouched', async (t) => {
   const f = await fixture(t);
   await writeFile(path.join(f.destination, 'mine.txt'), 'Keep me');
-  await assert.rejects(() => requestDataLocation(f.options), /boş/);
+  await assert.rejects(() => requestDataLocation(f.options), /empty/);
   assert.equal(await readFile(path.join(f.destination, 'mine.txt'), 'utf8'), 'Keep me');
   const nested = path.join(f.source, 'nested');
   await mkdir(nested);
-  await assert.rejects(() => requestDataLocation({...f.options, destination: nested}), /iç içe/);
+  await assert.rejects(() => requestDataLocation({...f.options, destination: nested}), /nested/);
   const linked = path.join(f.root, 'linked');
   await symlink(f.destination, linked);
   await assert.rejects(
     () => requestDataLocation({...f.options, destination: linked}),
-    /gerçek bir klasör/,
+    /real folder/,
   );
   assert.equal(await currentDataDirectory(f.source), f.source);
 });
@@ -121,7 +121,7 @@ test('a changed destination fails safely and the original can be reopened', asyn
   const f = await fixture(t);
   await requestDataLocation(f.options);
   await writeFile(path.join(f.destination, 'new.txt'), 'Unrelated');
-  await assert.rejects(() => resolveDataDirectory({bootstrapDirectory: f.source}), /boş değil/);
+  await assert.rejects(() => resolveDataDirectory({bootstrapDirectory: f.source}), /not empty/);
   await cancelDataLocation(f.source);
   assert.equal(await resolveDataDirectory({bootstrapDirectory: f.source}), f.source);
   assert.equal(await readFile(path.join(f.destination, 'new.txt'), 'utf8'), 'Unrelated');
@@ -166,10 +166,7 @@ test('document symlinks cannot silently omit or pull unrelated data into the mov
   await writeFile(outside, 'Outside');
   await symlink(outside, path.join(f.source, 'candidates/person/link.txt'));
   await requestDataLocation(f.options);
-  await assert.rejects(
-    () => resolveDataDirectory({bootstrapDirectory: f.source}),
-    /Bağlantı dosyası/,
-  );
+  await assert.rejects(() => resolveDataDirectory({bootstrapDirectory: f.source}), /linked file/);
   assert.equal(await currentDataDirectory(f.source), f.source);
   assert.equal(await readFile(outside, 'utf8'), 'Outside');
 });
@@ -229,7 +226,10 @@ test('opening existing data persists without copying or rewriting either databas
 test('existing folder selection rejects missing, invalid, linked and backup databases', async (t) => {
   const f = await fixture(t),
     file = path.join(f.destination, 'jobloop.sqlite');
-  await assert.rejects(() => requestExistingDataLocation(f.options), /jobloop.sqlite bulunamadı/);
+  await assert.rejects(
+    () => requestExistingDataLocation(f.options),
+    /jobloop.sqlite was not found/,
+  );
   await assert.rejects(() => stat(file), {code: 'ENOENT'});
   await writeFile(file, 'not sqlite');
   await assert.rejects(() => requestExistingDataLocation(f.options));
@@ -237,14 +237,14 @@ test('existing folder selection rejects missing, invalid, linked and backup data
   const db = new DatabaseSync(file);
   db.exec('CREATE TABLE unrelated(id TEXT)');
   db.close();
-  await assert.rejects(() => requestExistingDataLocation(f.options), /Loop veritabanı bulunamadı/);
+  await assert.rejects(() => requestExistingDataLocation(f.options), /Loop database not found/);
   await rm(file);
   await symlink(path.join(f.source, 'jobloop.sqlite'), file);
-  await assert.rejects(() => requestExistingDataLocation(f.options), /gerçek bir dosya/);
+  await assert.rejects(() => requestExistingDataLocation(f.options), /real file/);
   await rm(file);
   await cp(f.source, f.destination, {recursive: true});
   await writeFile(path.join(f.destination, 'manifest.json'), '{}');
-  await assert.rejects(() => requestExistingDataLocation(f.options), /Yedekten geri yükle/);
+  await assert.rejects(() => requestExistingDataLocation(f.options), /Restore from backup/);
   assert.equal(await currentDataDirectory(f.source), f.source);
   await assert.rejects(() => stat(path.join(f.source, 'pending-data-location.json')), {
     code: 'ENOENT',
@@ -258,7 +258,7 @@ test('existing data is revalidated at restart and failed selection leaves the cu
   await rm(path.join(f.destination, 'jobloop.sqlite'));
   await assert.rejects(
     () => resolveDataDirectory({bootstrapDirectory: f.source}),
-    /jobloop.sqlite bulunamadı/,
+    /jobloop.sqlite was not found/,
   );
   await cancelDataLocation(f.source);
   assert.equal(await resolveDataDirectory({bootstrapDirectory: f.source}), f.source);
@@ -274,9 +274,9 @@ test('pending restore and location requests cannot be bypassed by opening an exi
   for (const directory of [f.source, f.destination]) {
     const pending = path.join(directory, 'pending-restore.json');
     await writeFile(pending, '{}');
-    await assert.rejects(() => requestExistingDataLocation(f.options), /geri yükleme/);
+    await assert.rejects(() => requestExistingDataLocation(f.options), /pending restore/);
     await rm(pending);
   }
   await requestExistingDataLocation(f.options);
-  await assert.rejects(() => requestExistingDataLocation(f.options), /yeniden başlatma bekleniyor/);
+  await assert.rejects(() => requestExistingDataLocation(f.options), /restart is pending/);
 });

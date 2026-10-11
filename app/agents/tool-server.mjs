@@ -133,7 +133,7 @@ export async function startToolServer({
         } catch {}
     });
     try {
-      if (!grants.has(token)) throw Error('Worker oturumu kapandı.');
+      if (!grants.has(token)) throw Error('The worker session closed.');
       protocol = resolve(grant);
       const name = rpc.params?.name,
         args = rpc.params?.arguments ?? {};

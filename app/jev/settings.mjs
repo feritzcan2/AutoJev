@@ -1,7 +1,7 @@
 import {jevConfig} from './policy.mjs';
 
 const unreadable =
-  'Kayıtlı Jev anahtarı açılamadı. Sistem anahtarlığını aç veya anahtarı yeniden kaydet.';
+  'Could not unlock the saved Jev key. Unlock the system keychain or save the key again.';
 const validModel = (value) =>
   typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/.test(value);
 const validKey = (value) =>
@@ -57,19 +57,19 @@ export class JevSettings {
       Array.isArray(input) ||
       Object.keys(input).some((key) => !['apiKey', 'model'].includes(key))
     )
-      throw Error('Geçersiz Jev ayarı.');
+      throw Error('Invalid Jev setting.');
     const previous = this.row(),
       model = input.model ?? previous?.model ?? 'jev-latest';
-    if (!validModel(model)) throw Error('Geçerli bir Jev model adı gir.');
+    if (!validModel(model)) throw Error('Enter a valid Jev model name.');
     if (input.apiKey !== undefined && typeof input.apiKey !== 'string')
-      throw Error('Geçerli bir TypeSafe API anahtarı gir.');
+      throw Error('Enter a valid TypeSafe API key.');
     const key = input.apiKey?.trim();
     let ciphertext = previous?.ciphertext;
     if (key) {
-      if (!validKey(key)) throw Error('Geçerli bir TypeSafe API anahtarı gir.');
+      if (!validKey(key)) throw Error('Enter a valid TypeSafe API key.');
       ciphertext = this.encrypt(key);
     }
-    if (!ciphertext) throw Error('TypeSafe API anahtarını gir.');
+    if (!ciphertext) throw Error('Enter the TypeSafe API key.');
     this.db
       .prepare(
         'INSERT INTO jev_settings(id,ciphertext,model) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET ciphertext=excluded.ciphertext,model=excluded.model',
@@ -86,14 +86,14 @@ export class JevSettings {
     return this.status();
   }
   async testConnection() {
-    if (this.checking) throw Error('Jev bağlantısı kontrol ediliyor.');
+    if (this.checking) throw Error('The Jev connection is being checked.');
     this.checking = true;
     const revision = this.revision;
     // Pin this non-inference endpoint: https://api.typesafe.ai/openapi.json.
     // No candidate data, page state, model task or browser operation is sent.
     try {
       const {apiKey, model} = await this.config();
-      if (!apiKey?.trim()) throw Error('Önce TypeSafe API anahtarını kaydet.');
+      if (!apiKey?.trim()) throw Error('Save the TypeSafe API key first.');
       let response;
       try {
         response = await this.fetchImpl('https://api.typesafe.ai/v1/models', {
@@ -104,15 +104,15 @@ export class JevSettings {
         });
       } catch {
         throw Error(
-          'TypeSafe bağlantısı 10 saniye içinde tamamlanamadı. İnternet bağlantını kontrol et.',
+          'The TypeSafe connection did not complete within 10 seconds. Check your internet connection.',
         );
       }
       if (!response.ok) {
         await response.body?.cancel().catch(() => {});
         throw Error(
           response.status === 401 || response.status === 403
-            ? 'TypeSafe anahtarı kabul edilmedi. Anahtarı ve hesap erişimini kontrol et.'
-            : `TypeSafe bağlantısı tamamlanamadı (HTTP ${response.status}). Daha sonra tekrar dene.`,
+            ? 'The TypeSafe key was not accepted. Check the key and account access.'
+            : `The TypeSafe connection could not be completed (HTTP ${response.status}). Try again later.`,
         );
       }
       let result;
@@ -139,15 +139,15 @@ export class JevSettings {
         )
           throw Error();
       } catch {
-        throw Error('TypeSafe model listesi okunamadı. Daha sonra tekrar dene.');
+        throw Error('Could not read the TypeSafe model list. Try again later.');
       }
       const check = {
         ok: true,
         checkedAt: this.now(),
         modelListed: result.models.some((item) => item.name === model),
         message: result.models.some((item) => item.name === model)
-          ? 'Bağlantı ve anahtar doğrulandı. Seçili model kullanılabilir.'
-          : 'Bağlantı ve anahtar doğrulandı; seçili model dönen listede yok. Model adını kontrol et.',
+          ? 'Connection and key verified. The selected model is available.'
+          : 'Connection and key verified; the selected model is not in the returned list. Check the model name.',
       };
       if (this.revision === revision) this.lastCheck = check;
       return check;

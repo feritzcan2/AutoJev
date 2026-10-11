@@ -14,12 +14,12 @@ const el = (tag, text, cls) => {
   if (cls) node.className = cls;
   return node;
 };
-const collator = new Intl.Collator('tr', {numeric: true, sensitivity: 'base'});
+const collator = new Intl.Collator('en', {numeric: true, sensitivity: 'base'});
 const source = (result) => {
   try {
     return new URL(result.url).hostname.replace(/^www\./, '');
   } catch {
-    return 'Kaynak';
+    return 'Source';
   }
 };
 const tabIdentity = (tabs) =>
@@ -84,10 +84,10 @@ export function automationResultsTable(
     changes = el('textarea'),
     reviewError = el('p'),
     reviewActions = el('div', null, 'actions');
-  const cancel = button('Vazgeç', () => review.close()),
-    requestChanges = button('Değişiklik iste', () => {}),
-    confirm = button('Onayla ve uygula', () => {}, 'primary');
-  changes.placeholder = 'Taslakta neyin değişmesini istiyorsun? (isteğe bağlı)';
+  const cancel = button('Cancel', () => review.close()),
+    requestChanges = button('Request changes', () => {}),
+    confirm = button('Approve and apply', () => {}, 'primary');
+  changes.placeholder = 'What should change in the draft? (optional)';
   changes.maxLength = 2000;
   reviewError.setAttribute('role', 'alert');
   reviewActions.append(cancel, requestChanges, confirm);
@@ -129,7 +129,7 @@ export function automationResultsTable(
   // The draft goes back to preparation with the note; it needs approval again.
   requestChanges.onclick = () => {
     if (!changes.value.trim()) {
-      reviewError.textContent = 'Önce neyin değişmesini istediğini yaz.';
+      reviewError.textContent = 'First write what you want changed.';
       return changes.focus();
     }
     submitReview('prepare', {changes: changes.value.trim()});
@@ -143,33 +143,33 @@ export function automationResultsTable(
   activity.setAttribute('role', 'status');
   search.type = 'search';
   search.id = 'automation-result-search';
-  search.placeholder = 'Sonuçlarda ara…';
-  search.setAttribute('aria-label', 'Sonuçlarda ara');
+  search.placeholder = 'Search results…';
+  search.setAttribute('aria-label', 'Search results');
   filter.id = 'automation-result-filter';
-  filter.setAttribute('aria-label', 'Sonuç durumunu filtrele');
+  filter.setAttribute('aria-label', 'Filter result status');
   const scoreFilter = el('div', null, 'record-score-filter'),
     scoreComparison = el('select'),
     scoreMinimum = el('input');
   scoreComparison.id = 'automation-result-score-comparison';
-  scoreComparison.setAttribute('aria-label', 'Puan karşılaştırması');
+  scoreComparison.setAttribute('aria-label', 'Score comparison');
   scoreComparison.append(new Option('>', 'gt'), new Option('<', 'lt'));
   scoreMinimum.type = 'number';
   scoreMinimum.id = 'automation-result-score-minimum';
   scoreMinimum.min = '0';
   scoreMinimum.max = '100';
   scoreMinimum.step = 'any';
-  scoreMinimum.placeholder = 'Tümü';
-  scoreMinimum.setAttribute('aria-label', 'Puan sınırı');
-  scoreFilter.append(el('span', 'Puan'), scoreComparison, scoreMinimum);
+  scoreMinimum.placeholder = 'All';
+  scoreMinimum.setAttribute('aria-label', 'Score limit');
+  scoreFilter.append(el('span', 'Score'), scoreComparison, scoreMinimum);
   for (const [value, label] of [
-    ['all', 'Tüm kayıtlar'],
-    ['starred', '★ Yıldızlılar'],
-    ['found', 'Bulunanlar'],
-    ['prepared', 'Başvuruya hazır olanlar'],
-    ['completed', 'Tamamlananlar'],
-    ['uncertain', 'Doğrulama bekleyenler'],
-    ['dismissed', 'Atlananlar'],
-    ['trial', 'Araştırma ve deneme örnekleri'],
+    ['all', 'All records'],
+    ['starred', '★ Starred'],
+    ['found', 'Found'],
+    ['prepared', 'Ready to apply'],
+    ['completed', 'Completed'],
+    ['uncertain', 'Awaiting verification'],
+    ['dismissed', 'Skipped'],
+    ['trial', 'Research and trial samples'],
   ])
     filter.add(new Option(label, value));
   toolbar.append(search, filter, scoreFilter);
@@ -202,13 +202,13 @@ export function automationResultsTable(
         !requests.has(data.automation.id + ':' + result.id),
     );
   const selectableRecord = (result) => eligible(result) || deletable(result);
-  const clearSelection = button('Seçimi temizle', () => {
+  const clearSelection = button('Clear selection', () => {
     selectedIds.clear();
     selectionError.textContent = '';
     render();
   });
   const scoreSelected = button(
-    'Seçilenleri puanla',
+    'Score selected',
     async () => {
       if (
         batchSubmitting ||
@@ -240,7 +240,7 @@ export function automationResultsTable(
   );
   scoreSelected.dataset.recordsScore = '';
   const deleteSelected = button(
-    'Seçilenleri sil',
+    'Delete selected',
     async () => {
       if (
         batchSubmitting ||
@@ -251,7 +251,7 @@ export function automationResultsTable(
         return;
       const workspace = data.automation.id,
         ids = [...selectedIds];
-      if (!window.confirm(`${ids.length} seçili kayıt kalıcı olarak silinsin mi?`)) return;
+      if (!window.confirm(`Permanently delete ${ids.length} selected record(s)?`)) return;
       batchSubmitting = 'delete';
       selectionError.textContent = '';
       for (const id of ids) requests.add(workspace + ':' + id);
@@ -333,19 +333,16 @@ export function automationResultsTable(
       activity.append(
         el(
           'span',
-          `${active.length} kayıt işlemde · ${queued} sırada${waiting ? ` · ${waiting} yanıt bekliyor` : ''}`,
+          `${active.length} record(s) in progress · ${queued} queued${waiting ? ` · ${waiting} awaiting an answer` : ''}`,
         ),
-        button(
-          filter.value === 'active' ? 'Tüm kayıtları göster' : 'İşlemdeki kayıtları göster',
-          () => {
-            filter.value = filter.value === 'active' ? 'all' : 'active';
-            page = 1;
-            render();
-          },
-        ),
+        button(filter.value === 'active' ? 'Show all records' : 'Show records in progress', () => {
+          filter.value = filter.value === 'active' ? 'all' : 'active';
+          page = 1;
+          render();
+        }),
       );
     }
-    const query = search.value.trim().toLocaleLowerCase('tr-TR').split(/\s+/).filter(Boolean);
+    const query = search.value.trim().toLocaleLowerCase('en-GB').split(/\s+/).filter(Boolean);
     const hasScore = Boolean(
       data.definition.recordOperations?.score ||
         data.automation.table?.columns?.some((column) => column.key === 'score'),
@@ -386,7 +383,7 @@ export function automationResultsTable(
             recordOperationStatus(r)?.label ?? '',
           ]
             .join(' ')
-            .toLocaleLowerCase('tr-TR')
+            .toLocaleLowerCase('en-GB')
             .includes(q),
         ),
     );
@@ -398,8 +395,8 @@ export function automationResultsTable(
         : [],
     );
     const columns = data.automation.table?.columns ?? [
-      {key: 'source', label: 'Kaynak', type: 'text'},
-      {key: 'title', label: 'Kayıt', type: 'text'},
+      {key: 'source', label: 'Source', type: 'text'},
+      {key: 'title', label: 'Record', type: 'text'},
     ];
     if (!['status', 'updatedAt', ...columns.map((c) => c.key)].includes(sort)) {
       sort = 'updatedAt';
@@ -440,16 +437,14 @@ export function automationResultsTable(
       ),
       visibleEligible = visible.filter(selectableRecord);
     selection.hidden = !selectable || !selectedIds.size;
-    selectionCount.textContent = selectedIds.size + ' kayıt seçildi';
+    selectionCount.textContent = selectedIds.size + ' record(s) selected';
     const selectedResults = data.results.filter((result) => selectedIds.has(result.id)),
       allScorable = selectedResults.every(eligible),
       allDeletable = selectedResults.every(deletable);
     scoreSelected.hidden = !data.definition.recordOperations?.score;
     deleteSelected.hidden = !api.automationRecordsDelete;
     scoreSelected.textContent =
-      batchSubmitting === 'score'
-        ? 'Sıraya ekleniyor…'
-        : `Seçilenleri puanla (${selectedIds.size})`;
+      batchSubmitting === 'score' ? 'Queueing…' : `Score selected (${selectedIds.size})`;
     scoreSelected.disabled =
       busy ||
       Boolean(batchSubmitting) ||
@@ -458,16 +453,16 @@ export function automationResultsTable(
       !allScorable;
     scoreSelected.title =
       selectedIds.size > 100
-        ? 'Bir seferde en fazla 100 kayıt puanlanabilir.'
+        ? 'At most 100 records can be scored at once.'
         : !allScorable
-          ? 'Seçili kayıtların bazıları şu anda puanlanamaz.'
+          ? 'Some selected records cannot be scored right now.'
           : '';
     deleteSelected.textContent =
-      batchSubmitting === 'delete' ? 'Siliniyor…' : `Seçilenleri sil (${selectedIds.size})`;
+      batchSubmitting === 'delete' ? 'Deleting…' : `Delete selected (${selectedIds.size})`;
     deleteSelected.disabled =
       busy || Boolean(batchSubmitting) || !selectedIds.size || !allDeletable;
     deleteSelected.title = !allDeletable
-      ? 'Silmeden önce seçili kayıtların sıradaki veya çalışan işlemlerini durdur.'
+      ? 'Stop the queued or running operations of the selected records before deleting.'
       : '';
     clearSelection.disabled = Boolean(batchSubmitting);
     const selectCheckbox = (label, checked, change) => {
@@ -489,17 +484,17 @@ export function automationResultsTable(
         el(
           'span',
           results.length
-            ? `${start + 1}–${start + visible.length} / ${results.length} kayıt`
-            : '0 kayıt',
+            ? `${start + 1}–${start + visible.length} / ${results.length} records`
+            : '0 records',
           'pagination-count',
         ),
       );
     if (paginationChanged && pages > 1) {
-      const previous = button('Önceki', () => {
+      const previous = button('Previous', () => {
           page--;
           render();
         }),
-        next = button('Sonraki', () => {
+        next = button('Next', () => {
           page++;
           render();
         });
@@ -509,10 +504,10 @@ export function automationResultsTable(
     }
     visibleTabButtons.clear();
     const tableColumns = [
-      ...(selectable ? [{key: 'selection', label: 'Seç'}] : []),
-      {key: 'updatedAt', label: 'Son aktivite'},
+      ...(selectable ? [{key: 'selection', label: 'Select'}] : []),
+      {key: 'updatedAt', label: 'Last activity'},
       ...columns,
-      {key: 'status', label: 'Durum'},
+      {key: 'status', label: 'Status'},
     ];
     const tableKey = JSON.stringify([data.automation.id, tableColumns]),
       previousTable = mounted && renderKeys.get(mounted.table) !== tableKey ? mounted : null;
@@ -529,7 +524,7 @@ export function automationResultsTable(
       });
       renderKeys.set(mounted.table, tableKey);
       disposeTable = mounted.dispose;
-      mounted.table.setAttribute('aria-label', 'Takip kayıtları ve sonuçlar');
+      mounted.table.setAttribute('aria-label', 'Tracked records and results');
       mounted.table.style.minWidth =
         (columns.length > 5 ? 820 + (columns.length - 5) * 110 : columns.length > 2 ? 720 : 560) +
         'px';
@@ -554,7 +549,7 @@ export function automationResultsTable(
         if (key === 'selection') {
           const count = visibleEligible.filter((result) => selectedIds.has(result.id)).length;
           const selectPage = selectCheckbox(
-            'Bu sayfadaki kayıtları seç',
+            'Select records on this page',
             visibleEligible.length > 0 && count === visibleEligible.length,
             () => {
               for (const result of visibleEligible)
@@ -638,13 +633,13 @@ export function automationResultsTable(
         cell.append(
           el(
             'strong',
-            data.results.length ? 'Bu arama veya filtreye uyan sonuç yok.' : 'Henüz kayıt yok',
+            data.results.length ? 'No results match this search or filter.' : 'No records yet',
           ),
           el(
             'p',
             data.results.length
-              ? 'Farklı bir arama veya filtre deneyebilirsin.'
-              : 'Agent’ın bulduğu kayıtlar, başvuru notları ve işlem sonuçları burada görünecek.',
+              ? 'Try a different search or filter.'
+              : 'Records the agent finds, application notes and action results will appear here.',
           ),
         );
         row.append(cell);
@@ -685,24 +680,28 @@ export function automationResultsTable(
       actionsPanel.id = 'record-row-actions-' + result.id;
       actionsToggle.setAttribute('aria-controls', actionsPanel.id);
       actionsToggle.setAttribute('aria-expanded', String(keepMenu));
-      actionsToggle.setAttribute('aria-label', result.title + ' · İşlemler');
-      actionsToggle.title = 'İşlemler';
+      actionsToggle.setAttribute('aria-label', result.title + ' · Actions');
+      actionsToggle.title = 'Actions';
       actionsPanel.ontoggle = () =>
         actionsToggle.setAttribute('aria-expanded', String(actionsPanel.matches(':popover-open')));
       row.dataset.selected = String(selectedIds.has(result.id));
       if (selectable) {
         const cell = el('td');
         cell.dataset.column = 'selection';
-        const checkbox = selectCheckbox(result.title + ' · Seç', selectedIds.has(result.id), () => {
-          checkbox.checked ? selectedIds.add(result.id) : selectedIds.delete(result.id);
-          selectionError.textContent = '';
-          render();
-          root.querySelector(`[data-record-select="${result.id}"]`)?.focus();
-        });
+        const checkbox = selectCheckbox(
+          result.title + ' · Select',
+          selectedIds.has(result.id),
+          () => {
+            checkbox.checked ? selectedIds.add(result.id) : selectedIds.delete(result.id);
+            selectionError.textContent = '';
+            render();
+            root.querySelector(`[data-record-select="${result.id}"]`)?.focus();
+          },
+        );
         checkbox.dataset.recordSelect = result.id;
         checkbox.disabled ||= !selectableRecord(result);
         checkbox.title = !selectableRecord(result)
-          ? 'Bu kayıt için işlem sırada veya çalışıyor'
+          ? 'An operation for this record is queued or running'
           : '';
         cell.append(checkbox);
         row.append(cell);
@@ -722,7 +721,7 @@ export function automationResultsTable(
               },
               'job-star',
             );
-          star.setAttribute('aria-label', result.starred ? 'Yıldızı kaldır' : 'Yıldızla');
+          star.setAttribute('aria-label', result.starred ? 'Remove star' : 'Star');
           star.setAttribute('aria-pressed', String(Boolean(result.starred)));
           const name = el('span', source(result));
           name.title = source(result);
@@ -737,29 +736,29 @@ export function automationResultsTable(
             const worker = data.workers?.find((w) => w.id === result.recordAction.task.workerId),
               mark = el(
                 'span',
-                'Agent çalışıyor' + (worker?.name ? ' · ' + worker.name : ''),
+                'Agent working' + (worker?.name ? ' · ' + worker.name : ''),
                 'record-working-badge',
               );
             cell.prepend(mark);
           }
           if (recordNeedsAnswer(result)) {
             const question = result.recordAction.question,
-              mark = el('span', 'Yanıt bekliyor', 'record-question-badge'),
+              mark = el('span', 'Awaiting answer', 'record-question-badge'),
               preview = el('span', question.text, 'record-question-preview'),
               reply = button(
-                'Soruyu yanıtla',
+                'Answer question',
                 () => onQuestion(question.id),
                 'record-question-link',
               );
             preview.title = question.text;
             reply.dataset.recordQuestion = question.id;
-            reply.setAttribute('aria-label', result.title + ' · Soruyu yanıtla');
+            reply.setAttribute('aria-label', result.title + ' · Answer question');
             cell.append(mark, preview, reply);
           }
         } else if (column.key === 'score' && result.assessment) {
           const assessment = result.assessment,
             score = button(
-              assessment.score === null ? 'Değerlendirilemedi' : `${assessment.score}/100`,
+              assessment.score === null ? 'Could not be assessed' : `${assessment.score}/100`,
               () => {
                 expanded.has(result.id) ? expanded.delete(result.id) : expanded.add(result.id);
                 render();
@@ -768,7 +767,7 @@ export function automationResultsTable(
             );
           score.title = assessment.summary;
           score.setAttribute('aria-expanded', String(expanded.has(result.id)));
-          score.setAttribute('aria-label', result.title + ' · Puanlama gerekçesi');
+          score.setAttribute('aria-label', result.title + ' · Scoring rationale');
           score.dataset.recordScore = result.id;
           cell.append(
             score,
@@ -779,9 +778,9 @@ export function automationResultsTable(
             ),
           );
           if (oldScoringMethod(assessment))
-            cell.append(el('small', 'Eski yöntem · yeniden puanla', 'record-score-stale'));
+            cell.append(el('small', 'Old method · rescore', 'record-score-stale'));
           if (assessment.revision !== data.automation.revision)
-            cell.append(el('small', 'Eski değerlendirme', 'record-score-stale'));
+            cell.append(el('small', 'Outdated assessment', 'record-score-stale'));
         } else {
           row.append(
             recordCell(column, result.cells?.[column.key], {openLink: (url) => api.openLink(url)}),
@@ -797,8 +796,8 @@ export function automationResultsTable(
           'span',
           requesting
             ? batchSubmitting === 'delete'
-              ? 'Siliniyor'
-              : 'Sıraya ekleniyor'
+              ? 'Deleting'
+              : 'Queueing'
             : (progress?.label ?? recordState(result, data.definition).label),
           'automation-badge ' + (requesting ? 'queued' : (progress?.tone ?? result.status)),
         ),
@@ -814,7 +813,7 @@ export function automationResultsTable(
         state.append(
           el(
             'span',
-            result.sampleKind === 'interview' ? 'Araştırma örneği' : 'Deneme örneği',
+            result.sampleKind === 'interview' ? 'Research sample' : 'Trial sample',
             'automation-trial-label',
           ),
         );
@@ -823,12 +822,12 @@ export function automationResultsTable(
       date.dateTime = activityDate.toISOString();
       date.title = time(recordActivityAt(result));
       date.append(
-        el('span', activityDate.toLocaleDateString('tr-TR')),
-        el('span', activityDate.toLocaleTimeString('tr-TR'), 'automation-result-clock'),
+        el('span', activityDate.toLocaleDateString('en-GB')),
+        el('span', activityDate.toLocaleTimeString('en-GB'), 'automation-result-clock'),
       );
       updated.append(date);
       const detailsId = 'automation-result-detail-' + result.id,
-        detail = button(expanded.has(result.id) ? 'Kapat' : 'Detay', () => {
+        detail = button(expanded.has(result.id) ? 'Close' : 'Details', () => {
           expanded.has(result.id) ? expanded.delete(result.id) : expanded.add(result.id);
           render();
           root.querySelector(`[data-result-detail="${result.id}"]`)?.focus();
@@ -837,12 +836,12 @@ export function automationResultsTable(
       detail.dataset.recordMenuAction = 'detail';
       detail.setAttribute('aria-expanded', String(expanded.has(result.id)));
       detail.setAttribute('aria-controls', detailsId);
-      const open = button('Aç ↗', () => {
+      const open = button('Open ↗', () => {
         if (actionsPanel.matches(':popover-open')) actionsPanel.hidePopover();
         api.openLink(result.url);
       });
       open.dataset.recordMenuAction = 'open';
-      open.setAttribute('aria-label', result.title + ' · Kaynağı aç');
+      open.setAttribute('aria-label', result.title + ' · Open source');
       const tabWorkspace = data.automation.id,
         tabFeedback = keepMenu
           ? actionsPanel.querySelector('.record-tab-feedback')
@@ -862,7 +861,7 @@ export function automationResultsTable(
           void refreshTabs();
         }
       };
-      const goToTab = button('Sekmeye git', async () => {
+      const goToTab = button('Go to tab', async () => {
         tabFeedback.textContent = '';
         tabChoices.replaceChildren();
         try {
@@ -880,14 +879,14 @@ export function automationResultsTable(
           const current = data.results.find((item) => item.id === result.id),
             tabs = current ? recordTabs(current, openTabs, data) : [];
           if (!tabs.length) {
-            tabFeedback.textContent = 'Bu kaydın açık sekmesi bulunamadı.';
+            tabFeedback.textContent = 'No open tab was found for this record.';
             return;
           }
           if (tabs.length === 1) {
             await focusTab(tabs[0]);
             return;
           }
-          tabFeedback.textContent = 'Açık sekmeyi seç:';
+          tabFeedback.textContent = 'Choose the open tab:';
           for (const tab of tabs) tabChoices.append(button(tab.url, () => focusTab(tab)));
         } catch (error) {
           tabFeedback.textContent = error.message;
@@ -913,7 +912,7 @@ export function automationResultsTable(
         const op = recordAction.scoreOperation,
           score = button(
             requesting
-              ? 'Sıraya ekleniyor…'
+              ? 'Queueing…'
               : recordAction.task?.kind === 'score'
                 ? progress.label
                 : op.label,
@@ -928,13 +927,13 @@ export function automationResultsTable(
         score.dataset.recordOperation = 'score';
         score.disabled = busy || requesting || op.disabled;
         score.title =
-          op.reason ?? 'İlanı kayıtlı puanlama kriterlerine, profile ve CV’ye göre değerlendir.';
+          op.reason ?? 'Assess the listing against the saved scoring criteria, profile and CV.';
         actions.append(score);
       }
       if (recordAction?.retryOperation) {
         const op = recordAction.retryOperation,
           retry = button(
-            requesting ? 'Sıraya ekleniyor…' : 'Tekrar dene',
+            requesting ? 'Queueing…' : 'Retry',
             async () => {
               try {
                 await sendOperation(result, op.kind, op.direct ? {direct: true} : {});
@@ -949,14 +948,14 @@ export function automationResultsTable(
         retry.title =
           op.reason ??
           (op.kind === 'verify'
-            ? 'Yeniden göndermeden önce işlemin sonucunu doğrula.'
-            : 'Son yarım kalan işlemi yeniden dene.');
+            ? 'Verify the outcome of the action before resending it.'
+            : 'Retry the last unfinished action.');
         state.append(retry);
       }
       if (recordAction?.directOperation && !recordAction.task) {
         const op = recordAction.directOperation,
           apply = button(
-            requesting ? 'Sıraya ekleniyor…' : op.label,
+            requesting ? 'Queueing…' : op.label,
             async () => {
               try {
                 await sendOperation(result, 'execute', {direct: true});
@@ -970,15 +969,15 @@ export function automationResultsTable(
         apply.disabled = busy || requesting || op.disabled;
         apply.title =
           op.reason ??
-          'Agent gerekli bilgileri kontrol edip bu kayıt için işlemi tamamlar. Eksik bilgi varsa sana sorar.';
+          'The agent checks the required information and completes the action for this record. If anything is missing, it asks you.';
         actions.append(apply);
       }
       if (recordAction?.operation) {
         const op = recordAction.operation,
           action = button(
-            requesting ? 'Sıraya ekleniyor…' : recordAction.task ? progress.label : op.label,
+            requesting ? 'Queueing…' : recordAction.task ? progress.label : op.label,
             async () => {
-              // "Başvur" applies directly: there is no draft review step.
+              // "Apply" applies directly: there is no draft review step.
               if (op.kind === 'execute' && actionsPanel.matches(':popover-open'))
                 actionsPanel.hidePopover();
               try {
@@ -994,15 +993,15 @@ export function automationResultsTable(
         action.title =
           op.reason ??
           (op.kind === 'execute'
-            ? 'Agent formu kayıtlı bilgilerle doldurup başvuruyu gönderir. Eksik bilgi varsa tek seferde sorar.'
+            ? 'The agent fills the form with the saved information and submits the application. If anything is missing, it asks all at once.'
             : '');
         actions.append(action);
       }
       if (['found', 'prepared', 'uncertain'].includes(result.status)) {
-        const submitted = button('Başvuruldu', async () => {
+        const submitted = button('Applied', async () => {
           if (
             !window.confirm(
-              'Bu başvurunun gönderildiğini (ör. onay e-postası) doğruladın mı? Kayıt tamamlandı sayılır ve bir daha gönderilmez.',
+              'Did you verify that this application was submitted (e.g. a confirmation email)? The record counts as completed and will not be submitted again.',
             )
           )
             return;
@@ -1016,17 +1015,17 @@ export function automationResultsTable(
         submitted.dataset.recordSubmitted = result.id;
         submitted.disabled = busy || requesting;
         submitted.title =
-          'Başvurunun gönderildiğini sen doğruladıysan kaydı tamamlandı olarak işaretle';
+          'If you verified that the application was submitted, mark the record as completed';
         actions.append(submitted);
       }
       if (['found', 'prepared'].includes(result.status)) {
-        const dismiss = button('Atla', async () => {
+        const dismiss = button('Skip', async () => {
           await api.automationDismiss(data.automation.id, result.id);
           await refresh();
         });
         dismiss.dataset.recordDismiss = result.id;
         dismiss.disabled = busy || requesting;
-        dismiss.title = 'Bu kaydı atla ve bu kayda ait bekleyen soruları kapat';
+        dismiss.title = 'Skip this record and close its pending questions';
         actions.append(dismiss);
       }
       for (const control of actions.querySelectorAll('[data-idle]'))
@@ -1062,8 +1061,8 @@ export function automationResultsTable(
           el(
             'h3',
             assessment.score === null
-              ? 'Puanlama · Değerlendirilemedi'
-              : `Uygunluk puanı · ${assessment.score}/100`,
+              ? 'Scoring · Could not be assessed'
+              : `Fit score · ${assessment.score}/100`,
           ),
           scoreBreakdown(assessment),
           el('p', assessment.summary),
@@ -1072,7 +1071,7 @@ export function automationResultsTable(
           cell.append(
             el(
               'p',
-              'Bu puan önceki yöntemle kaydedildi; sabit tavan uygulanmış olabilir. Güncel uyum puanı için yeniden puanla.',
+              'This score was saved with the previous method; a fixed cap may have been applied. Rescore for a current fit score.',
               'record-score-stale',
             ),
           );
@@ -1080,14 +1079,14 @@ export function automationResultsTable(
           cell.append(
             el(
               'p',
-              'Profil veya kriterler değişti. Bu değerlendirme eski bilgilere dayanıyor.',
+              'The profile or criteria changed. This assessment is based on outdated information.',
               'record-score-stale',
             ),
           );
         for (const [key, label] of [
-          ['strengths', 'Eşleşmeler'],
-          ['gaps', 'Eksikler'],
-          ['uncertainties', 'Belirsizlikler'],
+          ['strengths', 'Matches'],
+          ['gaps', 'Gaps'],
+          ['uncertainties', 'Uncertainties'],
         ])
           if (assessment[key]?.length) {
             const list = el('ul');
@@ -1095,17 +1094,18 @@ export function automationResultsTable(
             cell.append(el('h4', label), list);
           }
         if (assessment.rubric)
-          cell.append(el('h4', 'Kullanılan puanlama kriterleri'), el('p', assessment.rubric));
+          cell.append(el('h4', 'Scoring criteria used'), el('p', assessment.rubric));
         cell.append(
           el('blockquote', assessment.evidence),
-          button('Değerlendirilen ilan ↗', () => api.openLink(assessment.evidenceUrl)),
-          el('small', `Değerlendirme: ${time(assessment.scoredAt)} · Başarı olasılığı değildir.`),
+          button('Assessed listing ↗', () => api.openLink(assessment.evidenceUrl)),
+          el('small', `Assessed: ${time(assessment.scoredAt)} · Not a probability of success.`),
         );
       }
-      if (result.proposal) cell.append(el('h3', 'Son çalışma notu'), el('pre', result.proposal));
+      if (result.proposal) cell.append(el('h3', 'Last work note'), el('pre', result.proposal));
       if (recordAction?.lastTask?.summary)
-        cell.append(el('h3', 'Son kayıt işlemi'), el('p', recordAction.lastTask.summary));
-      if (result.evidence) cell.append(el('h3', 'Sonuç kanıtı'), el('blockquote', result.evidence));
+        cell.append(el('h3', 'Last record operation'), el('p', recordAction.lastTask.summary));
+      if (result.evidence)
+        cell.append(el('h3', 'Outcome evidence'), el('blockquote', result.evidence));
       detailRow.append(cell);
       place(detailRow);
       rows.set(result.id, {key: rowKeys.get(result.id), row, detailRow, tab});
@@ -1161,12 +1161,12 @@ export function automationResultsTable(
       for (const id of selectedIds)
         if (!currentIds.has(id) && !requests.has(selectionOwner + ':' + id)) selectedIds.delete(id);
       const options = [
-        ['Tüm kayıtlar', 'all'],
-        ['★ Yıldızlılar', 'starred'],
-        ['İşlemdeki kayıtlar', 'active'],
-        ['Yanıt bekleyenler', 'waiting'],
+        ['All records', 'all'],
+        ['★ Starred', 'starred'],
+        ['Records in progress', 'active'],
+        ['Awaiting answer', 'waiting'],
         ...(data.definition?.records.states ?? []).map((s) => [s.label, s.id]),
-        ['Araştırma ve deneme örnekleri', 'trial'],
+        ['Research and trial samples', 'trial'],
       ];
       // Replacing the options would close the list while the user has it open.
       if (changed(filter, JSON.stringify(options))) {

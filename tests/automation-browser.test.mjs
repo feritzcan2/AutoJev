@@ -153,6 +153,6 @@ test('connecting while a worker is active preserves its tabs', async (t) => {
 test('a ready connection still reports invalid source configuration', async (t) => {
   const f = fixture(t, async () => {});
   f.db.save(f.id, {sources: []});
-  await assert.rejects(f.open(), /en az bir kaynak/);
+  await assert.rejects(f.open(), /at least one source/);
   assert.deepEqual(f.calls, []);
 });

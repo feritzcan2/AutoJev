@@ -51,7 +51,7 @@ test('saved agent revisions are isolated by workspace and reject stale editor sa
   assert.equal(profiles.get(b.id, 'web-run').instructions, original.instructions);
   await assert.rejects(
     profiles.update(a.id, 'web-run', {instructions: 'stale', expectedRevision: 0}),
-    /değişti/,
+    /changed/,
   );
   assert.equal(profiles.get(a.id, 'web-interview').version, 1);
 });

@@ -26,18 +26,18 @@ export class Workspaces {
   assertMutable(id) {
     this.store.get(id);
     this.assertAvailable(id);
-    if (this.changing.has(id)) throw Error('Çalışma alanı güncelleniyor.');
+    if (this.changing.has(id)) throw Error('The workspace is being updated.');
   }
   template(id) {
     const definition = this.store.definition(id);
     const driver = this.templates[definition.execution.driver];
-    if (!driver) throw Error('Template yürütücüsü bulunamadı: ' + definition.execution.driver);
+    if (!driver) throw Error('Template driver not found: ' + definition.execution.driver);
     return driver;
   }
   async create(templateId, input = {}) {
     const definition = this.store.template(templateId),
       driver = this.templates[definition.execution.driver];
-    if (!driver) throw Error('Template uzantısı yüklü değil');
+    if (!driver) throw Error('Template extension is not loaded');
     if (input.agentSettings) {
       input = {...input, agentSettings: withAgentDefaults(input.agentSettings)};
       await this.validateSettings(input.agentSettings);
@@ -142,7 +142,7 @@ export class Workspaces {
   }
   async removeWorker(id, worker) {
     this.validateWorker(id, worker);
-    if (worker === 'main') throw Error('İlk worker kaldırılamaz.');
+    if (worker === 'main') throw Error('The first worker cannot be removed.');
     await this.template(id).workers.remove(id, worker);
     await this.workerRemoved(id, worker);
     this.changed(id);
@@ -154,14 +154,14 @@ export class Workspaces {
   message(id, text, worker = 'main') {
     this.validateWorker(id, worker);
     if (typeof text !== 'string' || !text.trim() || text.length > 12000)
-      throw Error('1–12000 karakter arasında mesaj yaz');
+      throw Error('Write a message of 1–12000 characters');
     return this.template(id).message(id, text, worker);
   }
   async settings(id, input) {
     this.assertMutable(id);
     const fields = ['agentSettings', 'chromeProfile'];
     if (!input || Object.keys(input).some((key) => !fields.includes(key)))
-      throw Error('Geçersiz agent ayarı');
+      throw Error('Invalid agent setting');
     if (input.agentSettings) {
       const s = withAgentDefaults(input.agentSettings);
       input = {...input, agentSettings: s};
@@ -169,7 +169,7 @@ export class Workspaces {
         !['codex', 'claude', 'opencode'].includes(s.provider) ||
         ![true, false, null].includes(s.network)
       )
-        throw Error('Geçersiz agent ayarları');
+        throw Error('Invalid agent settings');
       await this.validateSettings(s);
     }
     return this.template(id).settings(id, input);

@@ -7,8 +7,8 @@ const node = (tag, cls, text) => {
 
 export const WORKER_VIEWS = [
   ['terminal', 'Terminal'],
-  ['screenshot', 'Ekran görüntüsü'],
-  ['chat', 'Sohbet'],
+  ['screenshot', 'Screenshot'],
+  ['chat', 'Chat'],
 ];
 
 // The same terminal frame is used by job workers and template workspaces.
@@ -24,7 +24,7 @@ export function workerPane({
 }) {
   const card = node('section', 'worker-pane');
   card.dataset.workerId = id;
-  card.setAttribute('aria-label', `${name} terminali`);
+  card.setAttribute('aria-label', `${name} terminal`);
   const top = node('div', 'worker-pane-head'),
     identity = node('div', 'worker-identity'),
     heading = node('h3', '', name),
@@ -34,7 +34,7 @@ export function workerPane({
     buttons = {};
   const switcher = node('div', 'worker-view-switch');
   switcher.setAttribute('role', 'tablist');
-  switcher.setAttribute('aria-label', `${name} görünümü`);
+  switcher.setAttribute('aria-label', `${name} view`);
   const views = {};
   for (const [key, label] of WORKER_VIEWS.filter(([key]) => showChat || key !== 'chat')) {
     const button = node('button', '', label);
@@ -63,11 +63,11 @@ export function workerPane({
     views[next].focus();
   };
   for (const [key, text, label] of [
-    ['tab', 'Sekmeler', 'aktif işinin sekmelerini göster'],
-    ['start', 'Başlat', 'başlat'],
-    ['stop', 'Durdur', 'durdur'],
-    ['restart', 'Yenile', 'yeniden başlat'],
-    ['remove', '×', 'kaldır'],
+    ['tab', 'Tabs', 'show the active task’s tabs'],
+    ['start', 'Start', 'start'],
+    ['stop', 'Stop', 'stop'],
+    ['restart', 'Restart', 'restart'],
+    ['remove', '×', 'remove'],
   ]) {
     const button = node('button', 'quiet' + (key === 'remove' ? ' worker-remove' : ''), text);
     button.type = 'button';
@@ -97,11 +97,11 @@ export function workerPane({
   if (terminalId) host.id = terminalId;
   const screenshot = node('section', 'worker-screenshot'),
     screenshotImage = node('img', 'worker-screenshot-image'),
-    screenshotEmpty = node('div', 'worker-screenshot-empty', 'Görüntü bekleniyor…'),
+    screenshotEmpty = node('div', 'worker-screenshot-empty', 'Waiting for a screenshot…'),
     screenshotMeta = node('div', 'worker-screenshot-meta'),
     screenshotUrl = node('span', 'worker-screenshot-url'),
     screenshotStatus = node('span', 'worker-screenshot-status');
-  screenshotImage.alt = `${name} tarayıcı ekranı`;
+  screenshotImage.alt = `${name} browser screen`;
   screenshotImage.hidden = true;
   screenshotImage.draggable = false;
   screenshotStatus.setAttribute('role', 'status');
@@ -113,10 +113,10 @@ export function workerPane({
   robot.setAttribute('aria-hidden', 'true');
   robot.innerHTML =
     '<svg viewBox="0 0 128 112" fill="none"><ellipse cx="63" cy="104" rx="32" ry="5" fill="currentColor" opacity=".08"/><path d="M63 28V19" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><circle cx="63" cy="14" r="5" fill="currentColor" opacity=".65"/><rect x="24" y="30" width="78" height="58" rx="22" fill="currentColor" opacity=".12"/><rect x="24" y="30" width="78" height="58" rx="22" stroke="currentColor" stroke-width="2"/><path d="M40 56q6 7 12 0m22 0q6 7 12 0M58 72q5 4 10 0" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M17 52v15m92-15v15M44 91v5m38-5v5" stroke="currentColor" stroke-width="6" stroke-linecap="round"/><circle cx="38" cy="68" r="4" fill="#dfaaa5" opacity=".55"/><circle cx="88" cy="68" r="4" fill="#dfaaa5" opacity=".55"/></svg><span class="worker-idle-zzz">z<span>z</span></span>';
-  const idleTitle = node('strong', 'worker-idle-title', 'Agent kapalı'),
+  const idleTitle = node('strong', 'worker-idle-title', 'Agent is off'),
     idleDetail = node('p', 'worker-idle-detail'),
     idleActions = node('div', 'worker-idle-actions'),
-    idleHistory = node('button', 'worker-idle-history', 'Son terminal çıktısı');
+    idleHistory = node('button', 'worker-idle-history', 'Last terminal output');
   idleHistory.type = 'button';
   idleHistory.setAttribute('aria-expanded', 'false');
   idleActions.append(idleHistory);
@@ -125,7 +125,7 @@ export function workerPane({
     attentionCopy = node('div', 'worker-attention-copy'),
     attentionTitle = node('strong', 'worker-attention-title'),
     attentionDetail = node('span', 'worker-attention-detail'),
-    attentionButton = node('button', 'worker-attention-button', 'Terminalde yanıtla');
+    attentionButton = node('button', 'worker-attention-button', 'Reply in the terminal');
   attention.hidden = true;
   attention.setAttribute('role', 'status');
   attention.setAttribute('aria-live', 'polite');
@@ -139,16 +139,16 @@ export function workerPane({
   const chat = node('div', 'worker-chat'),
     chatLog = node('div', 'worker-chat-log');
   chatLog.setAttribute('role', 'log');
-  chatLog.setAttribute('aria-label', `${name} sohbeti`);
+  chatLog.setAttribute('aria-label', `${name} chat`);
   chatLog.setAttribute('aria-live', 'polite');
   const chatForm = node('form', 'worker-chat-form'),
     chatInput = node('textarea', ''),
-    chatSend = node('button', 'primary', 'Gönder');
+    chatSend = node('button', 'primary', 'Send');
   chatSend.type = 'submit';
   chatInput.rows = 1;
   chatInput.maxLength = 12000;
-  chatInput.placeholder = 'Agent’a yaz…';
-  chatInput.setAttribute('aria-label', `${name} mesajı`);
+  chatInput.placeholder = 'Write to the agent…';
+  chatInput.setAttribute('aria-label', `${name} message`);
   chatInput.onkeydown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
       event.preventDefault();
@@ -159,7 +159,7 @@ export function workerPane({
     chatInput.style.height = 'auto';
     chatInput.style.height = Math.min(160, chatInput.scrollHeight) + 'px';
   };
-  const chatJump = node('button', 'worker-chat-jump', '↓ Yeni mesaj');
+  const chatJump = node('button', 'worker-chat-jump', '↓ New message');
   chatJump.type = 'button';
   chatJump.hidden = true;
   chatForm.append(chatInput, chatSend);
@@ -169,7 +169,7 @@ export function workerPane({
   outcome.setAttribute('role', 'status');
   const outcomeTitle = node('strong', ''),
     outcomeDetail = node('span', ''),
-    outcomeLink = node('button', 'quiet', 'Sonuç ve sonraki adım ↑');
+    outcomeLink = node('button', 'quiet', 'Result and next step ↑');
   outcomeLink.type = 'button';
   outcomeLink.onclick = () =>
     document.querySelector('#now-panel')?.scrollIntoView({block: 'start', behavior: 'smooth'});

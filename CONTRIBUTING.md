@@ -1,10 +1,11 @@
-# Katkı geliştirme
+# Contributing
 
-Kurulum için [README](README.md).
+See the [README](README.md) for setup.
 
-Değişikliğin davranışını ve ilgili doğrulamayı PR açıklamasına yaz. Testlerde
-sentetik aday, iş ilanı ve anahtar kullan; gerçek sitelere başvuru gönderen testleri
-CI’a bağlama. Eşzamanlı worker’ların görev, tarayıcı sekmesi ve aday kapsamını koru.
+Describe the behaviour of your change and the related verification in the PR
+description. Use synthetic candidates, job listings and keys in tests; do not wire
+tests that submit applications to real sites into CI. Preserve the task, browser
+tab and candidate scope of concurrent workers.
 
 ```sh
 pnpm vendor:verify
@@ -14,40 +15,44 @@ pnpm build
 cargo test --locked --manifest-path engine/Cargo.toml --target-dir engine/target
 ```
 
-Arayüz değişikliğinde ilgili `scripts/smoke-*.mjs` senaryosunu çalıştır ve ekranı
-kontrol et. Paketleme değişikliğinde kendi işletim sisteminde `pnpm package:ci`
-ve `pnpm test:packaged` çalıştır. Linux’ta arayüz testleri için Xvfb gerekir.
+For interface changes, run the relevant `scripts/smoke-*.mjs` scenario and check the
+screen. For packaging changes, run `pnpm package:ci` and `pnpm test:packaged` on your
+own operating system. Interface tests on Linux need Xvfb.
 
-## Kod düzeni
+## Code layout
 
-`app/main.mjs` uygulamayı kurar; diğer modüller sorumluluklarına göre klasörlerdedir:
+`app/main.mjs` sets up the app; the other modules live in folders by responsibility:
 
-| Klasör | İçerik |
+| Folder | Contents |
 | --- | --- |
-| `workspaces/` | Çalışma alanları, depolama, zamanlayıcı, belgeler |
-| `automation/` | Agent turları: worker, araç çağrıları, görev bağlamı, kurtarma |
-| `sources/` | Kaynak tarama, reçeteler, toplayıcılar, deneme turları |
-| `records/` | Kayıtlar, kimlik, kayıt işlemleri (hazırla/uygula) |
-| `scoring/` | Puanlama politikası, eşikler, puan kaydı |
-| `jev/` | Jev: sayfa okuma, kararlar, form doldurma, görev kuyruğu |
-| `browser/` | Chrome bağlantısı, sekmeler, kanıt, site erişim bekleme |
-| `captcha/` | Doğrulama sayfaları ve çözücüler |
-| `agents/` | Claude/Codex/OpenCode oturumları, bağlam, araç sunucusu |
-| `channels/` | Bildirim kanalları (Telegram) |
-| `templates/` | Şablon sözleşmesi ve kataloğu; `job-search/` iş aramaya özgü her şey |
-| `site-extensions/` | Siteye özgü okuyucular (yalnızca kullanıcı isteğiyle) |
-| `system/` | Ayarlar, yedekleme, güncelleme, bakım |
+| `workspaces/` | Workspaces, storage, scheduler, documents |
+| `automation/` | Agent turns: worker, tool calls, task context, recovery |
+| `sources/` | Source scanning, recipes, collectors, trial runs |
+| `records/` | Records, identity, record operations (prepare/apply) |
+| `scoring/` | Scoring policy, thresholds, score record |
+| `jev/` | Jev: page reading, decisions, form filling, task queue |
+| `browser/` | Chrome connection, tabs, evidence, site access wait |
+| `captcha/` | Verification pages and solvers |
+| `agents/` | Claude/Codex/OpenCode sessions, context, tool server |
+| `channels/` | Notification channels (Telegram) |
+| `templates/` | Template contract and catalog; `job-search/` holds everything specific to job search |
+| `site-extensions/` | Site-specific readers (only on user request) |
+| `system/` | Settings, backup, updates, maintenance |
 
-İş aramaya özgü yeni metin ve kurallar çekirdek klasörlere değil
-`templates/job-search/` altına eklenir. Biçim `pnpm format` ile korunur; başında
-`// @ts-check` olan dosyalar `pnpm check` içinde tip denetiminden geçer.
-Büyük sınıfların yöntem grupları (`automation/store/`, `automation/web-template/`)
-ayrı dosyalarda tutulur ve `Object.assign(Sinif.prototype, ...)` ile bağlanır.
+New text and rules specific to job search go under `templates/job-search/`, not
+into the core folders. Formatting is kept with `pnpm format`; files that start with
+`// @ts-check` are type-checked by `pnpm check`.
+Method groups of large classes (`automation/store/`, `automation/web-template/`)
+are kept in separate files and attached with `Object.assign(Class.prototype, ...)`.
 
-Veri biçimi değişiyorsa `app/system/data-management-schema.mjs` sürümünü artır;
-eski verinin yedeklenmesi, yükseltilmesi ve geri yüklenmesi için test ekle.
-Kaynak depo bağlantılarını ve vendor lisanslarını koru; `vendor/termloop` dosyalarını
-elle değiştirip checksum doğrulamasını atlama.
+All text in the app is English: UI, Telegram, notices, errors, agent-facing text,
+comments and docs. Do not add Turkish strings.
 
-CI üç işletim sisteminde exact commit’i doğrular. Public release için aynı commit’in
-başarılı CI kanıtı gerekir. Fork PR’ları özel runner veya release secret’larına erişmez.
+If the data format changes, bump the version in
+`app/system/data-management-schema.mjs` and add tests for backing up, upgrading and
+restoring old data. Preserve source repository links and vendor licenses; do not
+edit `vendor/termloop` files by hand or bypass the checksum verification.
+
+CI verifies the exact commit on three operating systems. A public release needs
+successful CI evidence for the same commit. Fork PRs have no access to private
+runners or release secrets.

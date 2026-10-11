@@ -130,7 +130,7 @@ test('unfinished coverage cannot escape validation by switching completed to fai
         summary: 'No access barrier; pages remain',
         stop: {kind: 'incomplete', evidence: 'Page 1 of 8'},
       }),
-      /aynı görevde/,
+      /same task/,
     );
     assert.equal(f.db.run(f.run.id).status, 'running');
     assert.notEqual(f.db.sources(f.id)[0].blocked, true);
@@ -177,7 +177,7 @@ test('checkpoints permit observed cross-host discovery but never invented or ano
       evidenceUrl: source,
     };
   assert.deepEqual(scanCheckpoint(run, input), input);
-  assert.throws(() => scanCheckpoint({...run, observedLinks: []}, input), /gözlenen/);
+  assert.throws(() => scanCheckpoint({...run, observedLinks: []}, input), /actually observed/);
 });
 
 test('table feedback identifies app-owned cells and lists usable keys', (t) => {

@@ -1,21 +1,21 @@
 const running = {
-  score: 'Puanlanıyor',
-  prepare: 'Hazırlanıyor',
-  execute: 'Uygulanıyor',
-  verify: 'Doğrulanıyor',
+  score: 'Scoring',
+  prepare: 'Preparing',
+  execute: 'Applying',
+  verify: 'Verifying',
 };
 const queued = {
-  score: 'Puanlama sırada',
-  prepare: 'Hazırlama sırada',
-  execute: 'Uygulama sırada',
-  verify: 'Doğrulama sırada',
+  score: 'Scoring queued',
+  prepare: 'Preparation queued',
+  execute: 'Application queued',
+  verify: 'Verification queued',
 };
 export function recordOperationStatus(record) {
   const {task, lastTask, question} = record.recordAction ?? {};
   if (question)
     return {
       id: 'waiting',
-      label: 'Yanıt bekliyor',
+      label: 'Awaiting answer',
       tone: 'blocked',
       detail: question.text,
       active: true,
@@ -24,32 +24,34 @@ export function recordOperationStatus(record) {
     if (task.state === 'paused')
       return {
         id: 'paused',
-        label: 'İşlem durakladı',
+        label: 'Operation paused',
         tone: 'blocked',
-        detail: 'Agent görevini kontrol et.',
+        detail: 'Check the agent task.',
         active: true,
       };
     if (task.state === 'pending')
       return {
         id: 'queued',
-        label: queued[task.kind] ?? 'İşlem sırada',
+        label: queued[task.kind] ?? 'Operation queued',
         tone: 'queued',
-        detail: task.manual ? 'Boşalan ilk agent bu kaydı alacak.' : 'Uygun agent bekleniyor.',
+        detail: task.manual
+          ? 'The first free agent will take this record.'
+          : 'Waiting for an available agent.',
         active: true,
       };
     if (task.state === 'reported')
       return {
         id: 'finishing',
-        label: 'İşlem sonlandırılıyor',
+        label: 'Finishing operation',
         tone: 'running',
-        detail: 'Agent oturumu kapanıyor.',
+        detail: 'The agent session is closing.',
         active: true,
       };
     return {
       id: 'working',
-      label: running[task.kind] ?? 'İşlem sürüyor',
+      label: running[task.kind] ?? 'Operation in progress',
       tone: 'running',
-      detail: 'Agent bu kayıt üzerinde çalışıyor.',
+      detail: 'The agent is working on this record.',
       active: true,
     };
   }
@@ -60,10 +62,10 @@ export function recordOperationStatus(record) {
     !['completed', 'uncertain', 'executing', 'dismissed'].includes(record.status)
   ) {
     const label = {
-      blocked: 'İşlem engellendi',
-      failed: 'İşlem başarısız',
-      interrupted: 'İşlem kesildi',
-      cancelled: 'İşlem iptal edildi',
+      blocked: 'Operation blocked',
+      failed: 'Operation failed',
+      interrupted: 'Operation interrupted',
+      cancelled: 'Operation cancelled',
     }[lastTask.state];
     if (label)
       return {id: 'stopped', label, tone: 'blocked', detail: lastTask.summary, active: false};
@@ -111,6 +113,6 @@ export function activeRecordOperations(snapshot) {
       count: counts.get(kind),
       label: (
         snapshot.definition?.recordOperations?.[kind]?.runningLabel ?? running[kind]
-      ).toLocaleLowerCase('tr-TR'),
+      ).toLocaleLowerCase('en'),
     }));
 }

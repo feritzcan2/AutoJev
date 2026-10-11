@@ -182,7 +182,7 @@ test('model/provider changes and explicit restart reset only setup; unchanged sa
   assert.equal(f.launches.length, 1);
   await assert.rejects(
     f.runtime.configureConversation(id, {...original, provider: 'bad'}),
-    /sağlayıcı/,
+    /provider/,
   );
   assert.equal(f.runtime.slots(id)[0].run.id, run.id);
   const workerSettings = f.db.get(id).agentSettings;
@@ -246,7 +246,7 @@ test('persistent resume rejection preserves history and never starts fresh autom
       },
       {allowFreshFallback: false},
     ),
-    /Oturum korundu/,
+    /session was kept/,
   );
   assert.equal(calls.length, 1);
   assert.equal(calls[0].args.resumeId, 'saved');

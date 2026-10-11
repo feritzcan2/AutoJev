@@ -109,7 +109,7 @@ test('recipes are validated as data: placeholders, form fields and pagination ki
   );
   assert.throws(
     () => normalizeSourceRecipe({entry: {kind: 'url_template', template}, pagination: 'magic'}),
-    /sayfalama/,
+    /pagination/,
   );
   assert.equal(normalizeSourceRecipe(null), null);
   const form = normalizeSourceRecipe({
@@ -299,7 +299,7 @@ test('scan outcomes verify, tolerate barriers and mark a recipe stale after two 
       {entry: {kind: 'url_template', template}},
       {status: 'verified', successCount: 2, failCount: 0},
     ).label,
-    'Reçete doğrulandı',
+    'Recipe verified',
   );
 });
 
@@ -615,7 +615,7 @@ test('a trial agent saves a recipe that the app verifies with Jev before accepti
     flow.call(f.id, trial.id, 'save_source_recipe', {
       entry: {kind: 'url_template', template: 'https://board.test/other?q={query}'},
     }),
-    /doğrulanamadı: no_listing_links/,
+    /could not be verified: no_listing_links/,
   );
   assert.equal(f.db.sources(f.id)[0].recipe, undefined, 'a failed check saves nothing');
   const saved = await flow.call(f.id, trial.id, 'save_source_recipe', {
@@ -685,7 +685,7 @@ test('a passed trial without a saved recipe leaves the source in discovery mode'
   assert.equal(after.trial.status, 'passed');
   assert.equal(after.recipe.entry.kind, 'discovery');
   assert.equal(after.recipeState.status, 'discovery');
-  assert.equal(recipeSummary(after.recipe, after.recipeState).label, 'Keşif modu');
+  assert.equal(recipeSummary(after.recipe, after.recipeState).label, 'Discovery mode');
 });
 
 test('a trial reads the notes of an unverified recipe as claims to re-check', async (t) => {
@@ -1273,7 +1273,7 @@ test('each recipe term is its own search: completing one opens the next with a f
         completion: 'end',
       },
     }),
-    /aramaların tamamı/,
+    /Not all saved searches/,
   );
   const second = await cover(dev);
   assert.equal(second.next, undefined);
@@ -1427,7 +1427,7 @@ test('a saved single-search scan gains the recipe searches it is missing', () =>
       searches: [
         {
           id: 'default',
-          label: 'Kaynak taraması',
+          label: 'Source scan',
           status: 'completed',
           completion: 'end',
           pendingUrls: [],
@@ -1484,7 +1484,7 @@ test('a changed search method restarts the results pages but keeps queued listin
       searches: [
         {
           id: 'default',
-          label: 'Kaynak taraması',
+          label: 'Source scan',
           status: 'pending',
           pendingUrls: [...details, oldPage],
           processedUrls: [],

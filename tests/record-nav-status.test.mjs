@@ -24,8 +24,8 @@ function snapshot() {
 test('board nav counts active application and preparation workers separately, using template labels', () => {
   const s = snapshot();
   assert.deepEqual(activeRecordOperations(s), [
-    {kind: 'execute', count: 1, label: 'başvuruluyor'},
-    {kind: 'prepare', count: 1, label: 'hazırlanıyor'},
+    {kind: 'execute', count: 1, label: 'applying'},
+    {kind: 'prepare', count: 1, label: 'preparing'},
   ]);
   s.definition.recordOperations.execute.runningLabel = 'Rezervasyon yapılıyor';
   assert.equal(activeRecordOperations(s)[0].label, 'rezervasyon yapılıyor');
@@ -46,5 +46,5 @@ test('completed runs, stopped workers, unanswered records and queued tasks are n
   s.workers[1].execution.task.id = 'new';
   assert.deepEqual(activeRecordOperations(s), []);
   s.workers[1].execution.task.id = 'draft';
-  assert.deepEqual(activeRecordOperations(s), [{kind: 'prepare', count: 1, label: 'hazırlanıyor'}]);
+  assert.deepEqual(activeRecordOperations(s), [{kind: 'prepare', count: 1, label: 'preparing'}]);
 });

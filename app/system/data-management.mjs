@@ -65,7 +65,7 @@ function safeRelative(value) {
     value.includes('\0') ||
     path.posix.isAbsolute(value)
   )
-    throw Error('Yedekte geçersiz dosya yolu.');
+    throw Error('Invalid file path in the backup.');
   const parts = value.split('/');
   if (
     parts.some(
@@ -80,13 +80,13 @@ function safeRelative(value) {
         /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(p),
     )
   )
-    throw Error('Yedekte güvenli olmayan dosya yolu.');
+    throw Error('Unsafe file path in the backup.');
   if (
     value !== 'jobloop.sqlite' &&
     !(parts[0] === 'candidates' && parts.length >= 3) &&
     !(parts[0] === 'automations' && parts[1] === 'workspaces' && parts.length >= 4)
   )
-    throw Error('Yedek yalnızca çalışma alanı dosyalarını ve veritabanını içerebilir.');
+    throw Error('A backup may contain only workspace files and the database.');
   return value;
 }
 async function regularFile(root, relative) {
@@ -99,9 +99,9 @@ async function regularFile(root, relative) {
       info.isSymbolicLink() ||
       (index === parts.length - 1 ? !info.isFile() : !info.isDirectory())
     )
-      throw Error('Yedekte bağlantı veya geçersiz dosya var.');
+      throw Error('The backup contains a link or an invalid file.');
   }
-  if (!within(root, await realpath(file))) throw Error('Yedek dosyası klasörün dışında.');
+  if (!within(root, await realpath(file))) throw Error('A backup file is outside the folder.');
   return file;
 }
 async function digest(file) {
@@ -130,7 +130,7 @@ async function backupOwner(dataDirectory, {create = false} = {}) {
   if (await exists(file)) {
     const owner = JSON.parse(await readFile(file, 'utf8'));
     if (typeof owner.id !== 'string' || !/^[a-f0-9-]{36}$/.test(owner.id))
-      throw Error('Yedek sahipliği kaydı geçersiz.');
+      throw Error('The backup ownership record is invalid.');
     return owner.id;
   }
   if (!create) return null;
@@ -155,15 +155,15 @@ function sqliteCheck(file) {
         )
         .get()
     )
-      throw Error('Yedek desteklenmeyen veritabanı nesneleri içeriyor.');
+      throw Error('The backup contains unsupported database objects.');
     if (db.prepare('PRAGMA quick_check').get().quick_check !== 'ok')
-      throw Error('Yedek veritabanı bozuk.');
+      throw Error('The backup database is corrupt.');
     for (const name of tableExists(db, 'workspaces')
       ? ['workspaces', 'workspace_records']
       : ['candidates', 'jobs', 'sources', 'questions'])
-      if (!tableExists(db, name)) throw Error('Bu dosya bir AutoJev veritabanı değil.');
+      if (!tableExists(db, name)) throw Error('This file is not an AutoJev database.');
     if (db.prepare('PRAGMA foreign_key_check').get())
-      throw Error('Yedek veritabanının ilişkileri tutarsız.');
+      throw Error('The backup database has inconsistent relations.');
     for (const table of [
       'candidates',
       'jobs',
@@ -183,7 +183,7 @@ function sqliteCheck(file) {
         for (const row of db.prepare(`SELECT id,data FROM ${table}`).iterate()) {
           const value = JSON.parse(row.data);
           if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,149}$/.test(row.id) || value.id !== row.id)
-            throw Error('Yedekte geçersiz kayıt kimliği var.');
+            throw Error('The backup contains an invalid record id.');
         }
     return {
       schemaVersion: db.prepare('PRAGMA user_version').get().user_version,
@@ -237,24 +237,25 @@ function sanitizeExport(db) {
 async function candidateFiles(root, prefix = 'candidates') {
   const files = [];
   async function walk(directory, relative = '', depth = 0) {
-    if (depth > 20) throw Error('Aday dosyaları çok fazla iç içe klasör içeriyor.');
+    if (depth > 20) throw Error('Candidate files contain too many nested folders.');
     for (const entry of await readdir(directory, {withFileTypes: true})) {
       if (entry.name.startsWith('.') || excluded.has(entry.name)) continue;
       const rel = relative ? relative + '/' + entry.name : entry.name,
         file = path.join(directory, entry.name);
       if (entry.isSymbolicLink())
         throw Error(
-          'Aday dosyalarında sembolik bağlantı var; yedeği oluşturmadan önce normal bir dosyaya dönüştür.',
+          'Candidate files contain a symbolic link; turn it into a regular file before creating the backup.',
         );
       if (entry.isDirectory()) await walk(file, rel, depth + 1);
       else if (entry.isFile()) {
         files.push(safeRelative(prefix + '/' + rel));
-        if (files.length > MAX_FILES - 1) throw Error('Yedekte çok fazla dosya var.');
+        if (files.length > MAX_FILES - 1) throw Error('The backup contains too many files.');
       }
     }
   }
   if (await exists(root)) {
-    if ((await lstat(root)).isSymbolicLink()) throw Error('Aday klasörü sembolik bağlantı olamaz.');
+    if ((await lstat(root)).isSymbolicLink())
+      throw Error('The candidate folder cannot be a symbolic link.');
     await walk(root);
   }
   return files;
@@ -271,12 +272,13 @@ export async function createBackup({
 }) {
   const base = await realpath(dataDirectory),
     internal = ['upgrade', 'before-restore'].includes(kind);
-  if (!['manual', 'upgrade', 'before-restore'].includes(kind)) throw Error('Geçersiz yedek türü.');
+  if (!['manual', 'upgrade', 'before-restore'].includes(kind)) throw Error('Invalid backup type.');
   const parent = await realpath(path.dirname(destination)),
     target = path.join(parent, path.basename(destination));
   if (within(base, target) && (!internal || parent !== path.join(base, 'backups')))
-    throw Error('Yedek için uygulama veri klasörünün dışında bir yer seç.');
-  if (await exists(target)) throw Error('Yedek klasörü zaten var; yeni bir klasör adı seç.');
+    throw Error('Choose a location outside the app data folder for the backup.');
+  if (await exists(target))
+    throw Error('The backup folder already exists; choose a new folder name.');
   const temporary = path.join(parent, '.jobloop-backup-' + randomUUID());
   await mkdir(temporary, {mode: 0o700});
   let connection = db;
@@ -303,14 +305,14 @@ export async function createBackup({
       ],
       manifestFiles = [];
     let totalBytes = 0;
-    if (files.length > MAX_FILES) throw Error('Yedekte çok fazla dosya var.');
+    if (files.length > MAX_FILES) throw Error('The backup contains too many files.');
     for (const name of files) {
       const source =
         name === 'jobloop.sqlite' ? path.join(temporary, name) : await regularFile(base, name);
       const info = await lstat(source);
       totalBytes += info.size;
       if (info.size > MAX_FILE_BYTES || totalBytes > MAX_TOTAL_BYTES)
-        throw Error('Yedek sınırı aşıldı: dosya başına 512 MB, toplam 2 GB.');
+        throw Error('Backup limit exceeded: 512 MB per file, 2 GB in total.');
       const output = path.join(temporary, ...name.split('/'));
       if (name !== 'jobloop.sqlite') await privateCopy(source, output);
       manifestFiles.push({
@@ -360,12 +362,12 @@ function summary(manifest) {
 export async function inspectBackup(directory) {
   const requested = path.resolve(directory);
   if ((await lstat(requested)).isSymbolicLink())
-    throw Error('Yedek klasörü bir sembolik bağlantı olamaz.');
+    throw Error('The backup folder cannot be a symbolic link.');
   const root = await realpath(requested),
     manifestPath = path.join(root, 'manifest.json'),
     info = await lstat(manifestPath);
   if (!info.isFile() || info.isSymbolicLink() || info.size > 8 * 1024 * 1024)
-    throw Error('Geçersiz yedek manifesti.');
+    throw Error('Invalid backup manifest.');
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
   if (
     manifest.format !== FORMAT ||
@@ -385,7 +387,7 @@ export async function inspectBackup(directory) {
     manifest.appVersion.length > 100 ||
     !Number.isFinite(Date.parse(manifest.createdAt))
   )
-    throw Error('Desteklenmeyen veya geçersiz AutoJev yedeği.');
+    throw Error('Unsupported or invalid AutoJev backup.');
   const seen = new Set();
   let total = 0;
   for (const entry of manifest.files) {
@@ -398,28 +400,28 @@ export async function inspectBackup(directory) {
       entry.bytes > MAX_FILE_BYTES ||
       !/^[a-f0-9]{64}$/.test(entry.sha256)
     )
-      throw Error('Yedekte yinelenen veya geçersiz dosya kaydı.');
+      throw Error('Duplicate or invalid file entry in the backup.');
     seen.add(key);
     total += entry.bytes;
-    if (total > MAX_TOTAL_BYTES) throw Error('Yedek 2 GB sınırını aşıyor.');
+    if (total > MAX_TOTAL_BYTES) throw Error('The backup exceeds the 2 GB limit.');
     const file = await regularFile(root, name);
     if ((await lstat(file)).size !== entry.bytes || (await digest(file)) !== entry.sha256)
-      throw Error('Yedek dosyası eksik veya değiştirilmiş: ' + name);
+      throw Error('A backup file is missing or changed: ' + name);
   }
   for (const key of seen) {
     const parts = key.split('/');
     for (let index = 1; index < parts.length; index++)
       if (seen.has(parts.slice(0, index).join('/')))
-        throw Error('Yedekte dosya/klasör çakışması var.');
+        throw Error('The backup has a file/folder conflict.');
   }
-  if (!seen.has('jobloop.sqlite')) throw Error('Yedekte veritabanı eksik.');
+  if (!seen.has('jobloop.sqlite')) throw Error('The backup is missing the database.');
   const counts = sqliteCheck(path.join(root, 'jobloop.sqlite'));
   if (
     counts.schemaVersion !== manifest.schemaVersion ||
     counts.candidates !== manifest.candidates ||
     counts.jobs !== manifest.jobs
   )
-    throw Error('Yedek özeti veritabanıyla uyuşmuyor.');
+    throw Error('The backup summary does not match the database.');
   return {path: root, ...summary(manifest)};
 }
 
@@ -499,7 +501,7 @@ function prepareRestoredDatabase(file, manifest, dataDirectory) {
           Object.assign(value, {
             status: 'paused',
             wakeAt: 0,
-            note: 'Yedekten geri yüklendi. Sonuçları kontrol edip Başlat ile devam edebilirsin.',
+            note: 'Restored from backup. Check the results, then continue with Start.',
           });
         if (table === 'candidates' && value.cvPath) {
           const relative = path.relative(dataDirectory, value.cvPath).split(path.sep).join('/'),
@@ -546,10 +548,10 @@ function prepareRestoredDatabase(file, manifest, dataDirectory) {
           if (value.status === 'submitting') {
             value.status = 'uncertain';
             value.note =
-              'Yedekten geri yüklendi; tekrar göndermeden önce başvuru sonucunu doğrula.';
+              'Restored from backup; verify the application outcome before submitting again.';
           } else if (value.status === 'working') {
             value.status = 'blocked';
-            value.note = 'Yedekten geri yüklendi; başvuru sonucunu kontrol et.';
+            value.note = 'Restored from backup; check the application outcome.';
           }
         }
         db.prepare(`UPDATE ${table} SET data=? WHERE rowid=?`).run(
@@ -603,9 +605,9 @@ export async function stageRestore({dataDirectory, directory, db, appVersion}) {
   const info = await inspectBackup(directory),
     base = await realpath(dataDirectory);
   if (within(base, info.path) && !within(path.join(base, 'backups'), info.path))
-    throw Error('Uygulama veri klasöründen geri yükleme yapılamaz.');
+    throw Error('Cannot restore from the app data folder.');
   if (await exists(path.join(base, 'pending-restore.json')))
-    throw Error('Bir geri yükleme zaten yeniden başlatmayı bekliyor.');
+    throw Error('A restore is already waiting for a restart.');
   const manifest = JSON.parse(await readFile(path.join(info.path, 'manifest.json'), 'utf8'));
   const id = randomUUID(),
     stageName = '.restore-stage-' + id,
@@ -671,7 +673,7 @@ function validateStageName(value, prefix) {
     !value.startsWith(prefix) ||
     !/^[a-f0-9-]{36}$/.test(value.slice(prefix.length))
   )
-    throw Error('Geçersiz geri yükleme işlemi.');
+    throw Error('Invalid restore operation.');
   return value;
 }
 async function recoverTransaction(base, journal) {
@@ -681,7 +683,7 @@ async function recoverTransaction(base, journal) {
     !Array.isArray(journal.originals) ||
     journal.originals.some((name) => !restoreTargets.includes(name))
   )
-    throw Error('Geçersiz geri yükleme kaydı.');
+    throw Error('Invalid restore record.');
   for (const name of restoreTargets) {
     const current = path.join(base, name),
       old = path.join(rollback, name);
@@ -717,7 +719,7 @@ export async function applyPendingRestore({dataDirectory}) {
     await rm(pendingPath, {force: true});
     if (stage) await rm(stage, {recursive: true, force: true});
     throw Error(
-      'Yedek doğrulanamadı; mevcut veriler korundu. AutoJev’i yeniden açabilirsin. ' +
+      'Could not verify the backup; existing data was kept. You can reopen AutoJev. ' +
         error.message,
     );
   }

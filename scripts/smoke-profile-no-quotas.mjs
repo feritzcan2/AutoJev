@@ -49,7 +49,7 @@ try {
   await page.locator('#automation-plan-form [name=title]').fill('Profil kaydı çalışıyor');
   await page.locator('#automation-plan-form button[type=submit]').click();
   await page.waitForFunction(
-    () => document.querySelector('#automation-save-state').textContent === 'Kurulum kaydedildi',
+    () => document.querySelector('#automation-save-state').textContent === 'Profile saved.',
   );
   const snapshot = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), a.id);
   assert.equal(snapshot.automation.title, 'Profil kaydı çalışıyor');
@@ -59,7 +59,7 @@ try {
   await page.locator('.source-row').first().waitFor();
   assert.ok(
     (await page.locator('[data-automation-pane=sources]').innerText()).includes(
-      'Tarama aralığı (dk)',
+      'Scan interval (min)',
     ),
   );
   assert.deepEqual(errors, []);

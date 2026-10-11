@@ -1,44 +1,44 @@
 import {instructionExplanation} from './instruction-explanations.js';
 import './instructions.css';
 const labels = {
-  system: 'Sistem',
+  system: 'System',
   template: 'Template',
-  workspace: 'Çalışma alanı',
-  user: 'Kullanıcı',
-  skill: 'Beceri',
-  tool: 'Araç',
+  workspace: 'Workspace',
+  user: 'User',
+  skill: 'Skill',
+  tool: 'Tool',
 };
 const states = {
-  unrecorded: 'Seçili kapsamda kayıt yok',
-  changed: 'Güncel sürüm kayıttakinden farklı',
-  available: 'Dosyada mevcut · okunması doğrulanmadı',
-  recorded: 'Aynı içerik kayıtta var',
+  unrecorded: 'No record in the selected scope',
+  changed: 'Current version differs from the recorded one',
+  available: 'Present in a file · reading not verified',
+  recorded: 'Same content is recorded',
 };
 const statuses = {
-  available: 'Dosyadan erişilebilir',
-  requested: 'Gönderim istendi',
-  accepted: 'İstek kabul edildi',
-  returned: 'Araç yanıtı döndü',
-  observed: 'Sağlayıcı bildirimi',
-  failed: 'Başarısız',
+  available: 'Accessible from a file',
+  requested: 'Delivery requested',
+  accepted: 'Request accepted',
+  returned: 'Tool reply returned',
+  observed: 'Provider notice',
+  failed: 'Failed',
 };
 const fieldLabels = {
-  goal: 'Hedef',
-  criteria: 'Kriterler',
-  instructions: 'Özel talimatlar',
-  facts: 'Kullanıcı bilgileri',
-  mode: 'İşlem yetkisi',
-  sources: 'Kaynaklar',
-  guidance: 'Template kuralları',
-  workflow: 'Görev adımları',
-  fields: 'Kurulum soruları',
-  preferences: 'Tercihler',
-  authorization: 'İşlem yetkisi',
-  applicationPolicy: 'Başvuru kuralları',
-  maxActionsPerDay: 'Günlük işlem sınırı',
-  maxBrowserSteps: 'Tarayıcı adım sınırı',
-  timeoutMinutes: 'Süre sınırı',
-  title: 'Başlık',
+  goal: 'Goal',
+  criteria: 'Criteria',
+  instructions: 'Custom instructions',
+  facts: 'User information',
+  mode: 'Action permission',
+  sources: 'Sources',
+  guidance: 'Template rules',
+  workflow: 'Task steps',
+  fields: 'Setup questions',
+  preferences: 'Preferences',
+  authorization: 'Action permission',
+  applicationPolicy: 'Application rules',
+  maxActionsPerDay: 'Daily action limit',
+  maxBrowserSteps: 'Browser step limit',
+  timeoutMinutes: 'Time limit',
+  title: 'Title',
 };
 const node = (tag, cls, text) => {
   const n = document.createElement(tag);
@@ -47,7 +47,7 @@ const node = (tag, cls, text) => {
   return n;
 };
 const time = (value) =>
-  new Date(value).toLocaleString('tr-TR', {
+  new Date(value).toLocaleString('en-GB', {
     day: '2-digit',
     month: 'short',
     hour: '2-digit',
@@ -59,18 +59,22 @@ const workerName = (id) => (id === 'main' ? 'Worker 1' : id);
 function textBody(part) {
   const wrap = node('div', 'instruction-text'),
     head = node('div', 'instruction-text-head'),
-    copy = node('button', 'quiet', 'Kopyala');
+    copy = node('button', 'quiet', 'Copy');
   copy.type = 'button';
   copy.onclick = async () => {
     try {
       await navigator.clipboard.writeText(part.text);
-      copy.textContent = 'Kopyalandı';
+      copy.textContent = 'Copied';
     } catch {
-      copy.textContent = 'Kopyalanamadı';
+      copy.textContent = 'Could not copy';
     }
   };
   head.append(
-    node('small', '', `${(part.characters ?? part.text.length).toLocaleString('tr-TR')} karakter`),
+    node(
+      'small',
+      '',
+      `${(part.characters ?? part.text.length).toLocaleString('en-GB')} characters`,
+    ),
     copy,
   );
   wrap.append(head);
@@ -79,18 +83,18 @@ function textBody(part) {
       node(
         'p',
         'instruction-warning',
-        'Bu uzun içerik kayıt sınırında kesildi; aşağıdaki metin tam içerik değildir.',
+        'This long content was cut at the record limit; the text below is not the full content.',
       ),
     );
-  wrap.append(node('pre', '', part.text || '(Boş)'));
+  wrap.append(node('pre', '', part.text || '(Empty)'));
   return wrap;
 }
 export function instructionsPanel(api, agent) {
   const tabs = node('div', 'agent-view-tabs');
   tabs.setAttribute('role', 'tablist');
-  tabs.setAttribute('aria-label', 'Agent görünümleri');
-  const live = node('button', '', 'Çalışma alanı'),
-    inspect = node('button', '', 'Talimatlar');
+  tabs.setAttribute('aria-label', 'Agent views');
+  const live = node('button', '', 'Workspace'),
+    inspect = node('button', '', 'Instructions');
   for (const [button, name] of [
     [live, 'work'],
     [inspect, 'instructions'],
@@ -107,14 +111,14 @@ export function instructionsPanel(api, agent) {
   root.hidden = true;
   root.setAttribute('aria-labelledby', inspect.id);
   root.setAttribute('role', 'tabpanel');
-  root.innerHTML = `<div class="instruction-heading"><div><span class="instruction-eyebrow">AGENT BAĞLAMI</span><h2>Hangi talimat, hangi oturum?</h2><p>Güncel kuralları incele; oturuma sunulan içerikle karşılaştır.</p></div><button type="button" class="quiet" data-refresh>Yenile</button></div>
- <div class="instruction-agents" role="tablist" aria-label="Agent türleri"></div><div class="instruction-agent-summary"></div>
- <div class="instruction-filters"><label>Worker<select data-worker aria-label="Talimat worker filtresi"></select></label><label>Oturum<select data-session aria-label="Talimat oturum filtresi"></select></label><label class="instruction-search">Metinde ara<input type="search" data-search placeholder="Sekme, bütçe, yetki…" aria-label="Talimatlarda ara"></label></div>
+  root.innerHTML = `<div class="instruction-heading"><div><span class="instruction-eyebrow">AGENT CONTEXT</span><h2>Which instruction, which session?</h2><p>Review the current rules and compare them with what a session received.</p></div><button type="button" class="quiet" data-refresh>Refresh</button></div>
+ <div class="instruction-agents" role="tablist" aria-label="Agent types"></div><div class="instruction-agent-summary"></div>
+ <div class="instruction-filters"><label>Worker<select data-worker aria-label="Instruction worker filter"></select></label><label>Session<select data-session aria-label="Instruction session filter"></select></label><label class="instruction-search">Search text<input type="search" data-search placeholder="Tab, budget, permission…" aria-label="Search instructions"></label></div>
  <p class="instruction-error" role="alert" hidden></p><div class="instruction-stats"></div>
- <div class="instruction-modes" role="tablist" aria-label="Talimat görünümü"><button type="button" role="tab" data-mode="parts">Talimat parçaları</button><button type="button" role="tab" data-mode="history">Gönderim geçmişi</button></div>
- <details class="instruction-guide"><summary>Talimatlar agent’a nasıl ulaşır?</summary><ol><li><strong>Oturum açılır:</strong> Seçilen agent’ın talimatı sistem/geliştirici mesajı olarak verilir. Başlangıç mesajı iletilir, ortak talimat ve beceri dosyaları erişime açılır. Dosyanın okunması ayrı bir adımdır.</li><li><strong>Bir görev başlar:</strong> Agent kayıtlı planı ve görev bilgilerini ister; kriterlerin, özel talimatların ve işlem yetkisi bu yanıtın içinde verilir.</li><li><strong>Agent çalışır:</strong> Açtığı sayfalar ve kullandığı araçların sonuçları geldikçe yeni bilgi alır. Planın tamamı her işlemde yeniden gönderilmez.</li></ol><p>Bu sayfa güncel tanımları gösterir. Bir ayarı değiştirmen, çalışan agent’ın değişikliği hemen gördüğü anlamına gelmez. Belirli bir oturumun ne aldığını <strong>Gönderim geçmişi</strong> bölümünde kontrol et.</p></details>
- <p class="instruction-scope"></p><div class="instruction-sources"></div><div class="instruction-content"></div><button type="button" class="quiet instruction-more" hidden>Daha eski kayıtlar</button>
- <p class="instruction-footnote">Dosyanın oturumda bulunması okunduğunu, mesajın kuyruğa alınması modelin onu işlediğini kanıtlamaz. Terminalde doğrudan yazılan tuşlar, sağlayıcının kendi talimatları ve harici araçların yanıtları bu geçmişte izlenmez. Kayıtlar bu özellik etkinleştirildikten sonra oluşur; 30 gün ve kayıt sınırları uygulanır.</p>`;
+ <div class="instruction-modes" role="tablist" aria-label="Instruction view"><button type="button" role="tab" data-mode="parts">Instruction parts</button><button type="button" role="tab" data-mode="history">Delivery history</button></div>
+ <details class="instruction-guide"><summary>How do instructions reach the agent?</summary><ol><li><strong>A session opens:</strong> The selected agent’s instruction is given as a system/developer message. The start message is delivered, and the shared instruction and skill files are made accessible. Reading a file is a separate step.</li><li><strong>A task starts:</strong> The agent asks for the saved plan and task details; your criteria, custom instructions and action permission are given inside that reply.</li><li><strong>The agent works:</strong> It receives new information as the pages it opens and the tools it uses return results. The whole plan is not resent on every action.</li></ol><p>This page shows the current definitions. Changing a setting does not mean a running agent sees the change right away. Check what a specific session received in the <strong>Delivery history</strong> section.</p></details>
+ <p class="instruction-scope"></p><div class="instruction-sources"></div><div class="instruction-content"></div><button type="button" class="quiet instruction-more" hidden>Older records</button>
+ <p class="instruction-footnote">A file being present in a session does not prove it was read, and a queued message does not prove the model processed it. Keys typed directly in the terminal, the provider’s own instructions and replies from external tools are not tracked in this history. Records are created after this feature is enabled; a 30-day limit and record limits apply.</p>`;
   agent.prepend(tabs);
   agent.append(root);
   const find = (q) => root.querySelector(q),
@@ -149,7 +153,7 @@ export function instructionsPanel(api, agent) {
       next?.click();
       next?.focus();
     };
-    for (const item of [...(data?.profiles ?? []), {id: 'all', name: 'Tüm kayıtlar'}]) {
+    for (const item of [...(data?.profiles ?? []), {id: 'all', name: 'All records'}]) {
       const button = node('button', '', item.name);
       button.type = 'button';
       button.setAttribute('role', 'tab');
@@ -159,7 +163,7 @@ export function instructionsPanel(api, agent) {
         if (
           editing &&
           editing.value !== editing.original &&
-          !window.confirm('Kaydedilmeyen agent talimatı silinsin mi?')
+          !window.confirm('Discard the unsaved agent instruction?')
         )
           return;
         editing = null;
@@ -184,18 +188,18 @@ export function instructionsPanel(api, agent) {
       node(
         'small',
         '',
-        `Sürüm ${selected.version} · ${selected.agent_id} · ${selected.selection.model}. Sağlayıcı ve model çalışma alanı ayarlarından alınır.`,
+        `Version ${selected.version} · ${selected.agent_id} · ${selected.selection.model}. Provider and model come from the workspace settings.`,
       ),
     );
     const edit = node('details', 'instruction-profile-editor');
-    edit.append(node('summary', '', 'Agent talimatını düzenle'));
+    edit.append(node('summary', '', 'Edit agent instruction'));
     const note = node(
       'p',
       '',
-      'Kaydedilen talimat sonraki oturum açılışında sistem/geliştirici talimatı olarak verilir. Açık oturum kendi sürümüyle devam eder. Ortak kurallar aşağıda ayrıca gösterilir.',
+      'The saved instruction is given as the system/developer instruction when the next session opens. An open session continues with its own version. Shared rules are shown separately below.',
     );
     const input = node('textarea');
-    input.setAttribute('aria-label', 'Agent talimatı');
+    input.setAttribute('aria-label', 'Agent instruction');
     input.value = editing?.id === profile ? editing.value : selected.instructions;
     input.rows = 10;
     if (editing?.id === profile) edit.open = true;
@@ -204,7 +208,7 @@ export function instructionsPanel(api, agent) {
         editing = {id: profile, revision: data.profileRevision, original: selected.instructions};
       editing.value = input.value;
     };
-    const save = node('button', '', 'Talimatı kaydet');
+    const save = node('button', '', 'Save instruction');
     save.type = 'button';
     save.onclick = async () => {
       save.disabled = true;
@@ -259,7 +263,7 @@ export function instructionsPanel(api, agent) {
         ]),
       ];
     worker.replaceChildren(
-      new Option('Tüm worker’lar', ''),
+      new Option('All workers', ''),
       ...workers.map((id) => new Option(workerLabel(id), id)),
     );
     worker.value = workers.includes(selectedWorker) ? selectedWorker : '';
@@ -268,11 +272,11 @@ export function instructionsPanel(api, agent) {
       if (!all.has(active.id)) all.set(active.id, active);
     const sessions = [...all.values()].filter((s) => !worker.value || s.workerId === worker.value);
     session.replaceChildren(
-      new Option('Tüm oturumlar', ''),
+      new Option('All sessions', ''),
       ...sessions.map(
         (s) =>
           new Option(
-            `${data.activeSessions.some((a) => a.id === s.id) ? '● Açık · ' : ''}${s.startedAt ? time(s.startedAt) + ' · ' : ''}${workerLabel(s.workerId)} · ${s.id.slice(0, 8)}`,
+            `${data.activeSessions.some((a) => a.id === s.id) ? '● Open · ' : ''}${s.startedAt ? time(s.startedAt) + ' · ' : ''}${workerLabel(s.workerId)} · ${s.id.slice(0, 8)}`,
             s.id,
           ),
       ),
@@ -328,9 +332,9 @@ export function instructionsPanel(api, agent) {
     const stats = find('.instruction-stats');
     stats.replaceChildren();
     for (const [value, label] of [
-      [data?.parts.length ?? 0, 'Tanımlı parça'],
-      [data?.activeSessions.length ?? 0, 'Açık oturum'],
-      [data?.events.length ?? 0, 'Görüntülenen olay'],
+      [data?.parts.length ?? 0, 'Defined parts'],
+      [data?.activeSessions.length ?? 0, 'Open sessions'],
+      [data?.events.length ?? 0, 'Events shown'],
     ]) {
       const card = node('div');
       card.append(node('strong', '', String(value)), node('span', '', label));
@@ -338,12 +342,12 @@ export function instructionsPanel(api, agent) {
     }
     find('.instruction-scope').textContent =
       mode === 'parts'
-        ? 'Şu anda tanımlı içerik · Durumlar seçtiğin worker ve oturumun saklanan son içerikleriyle karşılaştırılır.'
-        : 'Gerçek çalışma kayıtları · En yeni olay üstte. Açık oturumda yeni kayıtlar otomatik görünür. Arama, yüklenen olay başlıklarını ve parça adlarını tarar.';
+        ? 'Currently defined content · States are compared with the latest stored content of the worker and session you selected.'
+        : 'Actual run records · Newest event first. New records of an open session appear automatically. Search covers loaded event titles and part names.';
     const sources = find('.instruction-sources');
     sources.replaceChildren();
     sources.hidden = mode === 'history';
-    for (const [id, label] of [['', 'Tümü'], ...Object.entries(labels)]) {
+    for (const [id, label] of [['', 'All'], ...Object.entries(labels)]) {
       const b = node('button', source === id ? 'selected' : '', label);
       b.type = 'button';
       b.setAttribute('aria-pressed', String(source === id));
@@ -354,21 +358,19 @@ export function instructionsPanel(api, agent) {
       sources.append(b);
     }
     if (!owner) {
-      content.append(
-        node('p', 'instruction-empty', 'Talimatları görmek için bir çalışma alanı seç.'),
-      );
+      content.append(node('p', 'instruction-empty', 'Select a workspace to see its instructions.'));
       return;
     }
     if (!data) {
-      content.append(node('p', 'instruction-empty', 'Talimatlar yükleniyor…'));
+      content.append(node('p', 'instruction-empty', 'Loading instructions…'));
       return;
     }
-    const query = search.value.toLocaleLowerCase('tr-TR');
+    const query = search.value.toLocaleLowerCase('en-GB');
     if (mode === 'parts') {
       for (const part of data.parts) {
         if (
           (source && part.source !== source) ||
-          (query && !`${title(part)} ${part.text}`.toLocaleLowerCase('tr-TR').includes(query))
+          (query && !`${title(part)} ${part.text}`.toLocaleLowerCase('en-GB').includes(query))
         )
           continue;
         const card = node('details', 'instruction-card');
@@ -384,13 +386,13 @@ export function instructionsPanel(api, agent) {
         );
         const timing = node('span', 'instruction-when');
         timing.append(
-          node('b', '', 'Ne zaman verilir? '),
+          node('b', '', 'When is it given? '),
           document.createTextNode(explanation.timing),
         );
         main.append(timing);
         const help = node('div', 'instruction-change');
         help.append(
-          node('strong', '', 'Değiştirirsen ne olur?'),
+          node('strong', '', 'What happens if you change it?'),
           node('p', '', explanation.change),
         );
 
@@ -405,7 +407,7 @@ export function instructionsPanel(api, agent) {
         if (
           query &&
           !`${event.title} ${event.detail ?? ''} ${event.parts.map((p) => p.title).join(' ')}`
-            .toLocaleLowerCase('tr-TR')
+            .toLocaleLowerCase('en-GB')
             .includes(query)
         )
           continue;
@@ -420,7 +422,7 @@ export function instructionsPanel(api, agent) {
             `${time(event.at)} · ${workerLabel(event.workerId)} · ${event.sessionId.slice(0, 8)}`,
           ),
           node('strong', '', event.title),
-          node('span', 'instruction-when', event.detail ?? `${event.parts.length} içerik parçası`),
+          node('span', 'instruction-when', event.detail ?? `${event.parts.length} content parts`),
         );
         const status = node('span', 'instruction-state', statuses[event.status] ?? event.status);
         status.dataset.state = event.status;
@@ -432,7 +434,7 @@ export function instructionsPanel(api, agent) {
         const load = async () => {
           if (loaded) return;
           loaded = true;
-          body.textContent = 'İçerik yükleniyor…';
+          body.textContent = 'Loading content…';
           const id = owner;
           try {
             let full = detailCache.get(event.seq);
@@ -443,7 +445,7 @@ export function instructionsPanel(api, agent) {
             }
             body.replaceChildren();
             if (!full.parts.length)
-              body.append(node('p', '', full.detail ?? 'Bu olay yeni bir içerik göndermedi.'));
+              body.append(node('p', '', full.detail ?? 'This event did not send new content.'));
             for (const part of full.parts) {
               const item = node('details', 'instruction-part');
               item.append(
@@ -473,10 +475,10 @@ export function instructionsPanel(api, agent) {
           'p',
           'instruction-empty',
           query || source
-            ? 'Bu filtreyle eşleşen içerik yok.'
+            ? 'No content matches this filter.'
             : mode === 'history'
-              ? 'Henüz kayıt yok. Yeni agent oturumları ve araç yanıtları burada görünecek.'
-              : 'Bu template için tanımlı talimat parçası yok.',
+              ? 'No records yet. New agent sessions and tool replies will appear here.'
+              : 'This template defines no instruction parts.',
         ),
       );
   }
@@ -517,8 +519,8 @@ export function instructionsPanel(api, agent) {
       find('[data-refresh]').disabled = false;
       data = null;
       detailCache.clear();
-      worker.replaceChildren(new Option('Tüm worker’lar', ''));
-      session.replaceChildren(new Option('Tüm oturumlar', ''));
+      worker.replaceChildren(new Option('All workers', ''));
+      session.replaceChildren(new Option('All sessions', ''));
       error.hidden = true;
       if (visible) {
         render();

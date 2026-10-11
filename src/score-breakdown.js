@@ -1,24 +1,24 @@
 import {eligibilityLabels, assessmentEligibility} from './scoring-state.js';
 const labels = {
-  technical: 'Teknik / mesleki uyum',
-  experience: 'Deneyim',
-  role: 'Rol',
-  preferences: 'Çalışma tercihleri',
+  technical: 'Technical / professional fit',
+  experience: 'Experience',
+  role: 'Role',
+  preferences: 'Work preferences',
 };
 const levels = {
-  direct: 'Doğrudan',
-  partial: 'Kısmen',
-  transferable: 'Aktarılabilir',
-  unknown: 'Doğrulanmadı',
-  mismatch: 'Uyumsuz',
+  direct: 'Direct',
+  partial: 'Partial',
+  transferable: 'Transferable',
+  unknown: 'Not verified',
+  mismatch: 'Mismatch',
 };
 const matches = {
-  met: 'Karşılanıyor',
-  partial: 'Kısmen',
-  unknown: 'Doğrulanmadı',
-  unmet: 'Karşılanmıyor',
+  met: 'Met',
+  partial: 'Partial',
+  unknown: 'Not verified',
+  unmet: 'Not met',
 };
-const sources = {cv: 'CV', facts: 'Profil', preferences: 'Tercihler'};
+const sources = {cv: 'CV', facts: 'Profile', preferences: 'Preferences'};
 const el = (tag, text) => {
   const node = document.createElement(tag);
   if (text != null) node.textContent = text;
@@ -27,21 +27,21 @@ const el = (tag, text) => {
 export function scoreBreakdown(assessment) {
   const root = el('section');
   root.className = 'record-score-breakdown';
-  root.setAttribute('aria-label', 'Puan hesabı');
+  root.setAttribute('aria-label', 'Score breakdown');
   root.append(el('p', eligibilityLabels[assessmentEligibility(assessment)]));
   if (assessment.eligibilityReason) root.append(el('p', assessment.eligibilityReason));
   const c = assessment.calculation;
   if (!c) {
     if (assessment.score !== null)
-      root.append(el('p', 'Puan, agent değerlendirmesine göre kaydedildi.'));
+      root.append(el('p', 'The score was saved from the agent assessment.'));
     return root;
   }
-  root.append(el('h4', 'Puan hesabı'));
+  root.append(el('h4', 'Score breakdown'));
   const table = el('table'),
     head = el('thead'),
     titles = el('tr'),
     body = el('tbody');
-  for (const label of ['Kriter', 'Eşleşme', 'Puan', 'Ağırlık', 'Katkı']) {
+  for (const label of ['Criterion', 'Match', 'Score', 'Weight', 'Contribution']) {
     const th = el('th', label);
     th.scope = 'col';
     titles.append(th);
@@ -65,8 +65,8 @@ export function scoreBreakdown(assessment) {
     el(
       'p',
       c.cap === null
-        ? `Ağırlıklı toplam: ${c.score}/100.`
-        : `Ağırlıklı toplam: ${c.rawScore}/100 · Zorunlu şart sınırı: ${c.cap} · Sonuç: ${c.score}/100.`,
+        ? `Weighted total: ${c.score}/100.`
+        : `Weighted total: ${c.rawScore}/100 · Requirement cap: ${c.cap} · Result: ${c.score}/100.`,
     ),
   );
   if (c.eligibility !== 'verified')
@@ -74,28 +74,30 @@ export function scoreBreakdown(assessment) {
       el(
         'p',
         c.eligibility === 'mismatch'
-          ? 'Zorunlu bir şart veya temel uyum karşılanmıyor.'
-          : 'Zorunlu şartlar veya temel uyum henüz tam doğrulanmadı.',
+          ? 'A required condition or the core fit is not met.'
+          : 'The required conditions or the core fit are not fully verified yet.',
       ),
     );
   const evidence = el('details');
-  evidence.append(el('summary', 'Kriter kanıtları ve zorunlu şartlar'));
+  evidence.append(el('summary', 'Criterion evidence and required conditions'));
   for (const d of [...c.dimensions, ...c.requirements]) {
     const item = el('div');
     item.append(
       el(
         'h4',
-        d.key ? labels[d.key] + ' · ' + levels[d.level] : 'Zorunlu şart · ' + matches[d.match],
+        d.key
+          ? labels[d.key] + ' · ' + levels[d.level]
+          : 'Required condition · ' + matches[d.match],
       ),
       el('p', d.reason),
     );
-    if (d.listingQuote) item.append(el('p', 'İlan: ' + d.listingQuote));
+    if (d.listingQuote) item.append(el('p', 'Listing: ' + d.listingQuote));
     item.append(
       el(
         'p',
         d.candidateQuote
           ? `${sources[d.candidateSource]}: ${d.candidateQuote}`
-          : 'Aday kanıtı doğrulanmadı.',
+          : 'Candidate evidence not verified.',
       ),
     );
     evidence.append(item);

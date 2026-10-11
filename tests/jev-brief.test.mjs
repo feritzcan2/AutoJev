@@ -80,7 +80,7 @@ test('briefs retain exact mandatory qualifiers and late facts while omitting unr
   f.store.release(f.options.owner, 'parent');
   assert.equal(f.store.briefs.size, 0);
   assert.equal(f.store.briefJobs.size, 0);
-  await assert.rejects(readJevBrief(f.options), /bu göreve ait değil/);
+  await assert.rejects(readJevBrief(f.options), /does not belong to this task/);
 });
 
 test('a listing a site extension read itself is passed through whole without Jev calls', async (t) => {
@@ -152,7 +152,7 @@ test('slow brief calls continue in RAM and polling never duplicates work', async
 
 test('briefs isolate owners and invalidate on fresh text or criteria; failures expose a fallback', async (t) => {
   const f = fixture(t, noise + required + noise);
-  await assert.rejects(readJevBrief({...f.options, owner: 'foreign'}), /bu göreve ait değil/);
+  await assert.rejects(readJevBrief({...f.options, owner: 'foreign'}), /does not belong to this task/);
   await readJevBrief(f.options);
   const before = f.calls();
   await readJevBrief({...f.options, criteria: {goal: 'Other goal'}});

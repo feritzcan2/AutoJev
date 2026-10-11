@@ -159,13 +159,13 @@ try {
   await one.locator('.xterm-screen').waitFor();
   assert.equal(counts.main, 0);
   assert.equal(counts.second, 0);
-  await one.getByRole('tab', {name: 'Ekran görüntüsü', exact: true}).click();
+  await one.getByRole('tab', {name: 'Screenshot', exact: true}).click();
   await page.waitForFunction(
     () => document.querySelector('[data-worker-id=main] img')?.naturalWidth > 0,
   );
   assert.equal(await two.getAttribute('data-view'), 'terminal');
   assert.equal(counts.second, 0);
-  await two.getByRole('tab', {name: 'Ekran görüntüsü', exact: true}).click();
+  await two.getByRole('tab', {name: 'Screenshot', exact: true}).click();
   await page.waitForFunction(
     () => document.querySelector('[data-worker-id=second] img')?.naturalWidth > 0,
   );
@@ -197,7 +197,7 @@ try {
   });
   assert.match(
     await two.locator('.worker-screenshot-status').textContent(),
-    /Worker durdu · Son görüntü/,
+    /Worker stopped · Last screenshot/,
   );
   const afterStop = counts.second;
   await new Promise((r) => setTimeout(r, 1800));

@@ -24,7 +24,7 @@ test('workspace rename and deletion preserve the other workspace and its records
   db.save(first.id, {goal: 'Berlin remote'});
   assert.equal(db.get(first.id).title, 'Berlin search');
   db.remove(first.id);
-  assert.throws(() => db.get(first.id), /bulunamadı/);
+  assert.throws(() => db.get(first.id), /not found/);
   assert.equal(db.get(second.id).title, 'Grace');
   for (const table of ['workspace_records', 'workspace_events'])
     assert.equal(

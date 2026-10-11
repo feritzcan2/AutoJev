@@ -52,7 +52,7 @@ test('an agent keeps the user edited profile until its sources change', () => {
     {...jevProfileView(db.get(), newCv), at: null},
     {status: 'current', text: 'Agent wording', by: 'agent', at: null},
   );
-  assert.throws(() => saveJevProfile(db, 'w', ' ', 'agent', newCv), /boş/);
+  assert.throws(() => saveJevProfile(db, 'w', ' ', 'agent', newCv), /cannot be empty/);
   assert.throws(() => saveJevProfile(db, 'w', 'x'.repeat(3001), 'user', newCv), /3000/);
   saveJevProfile(db, 'w', '', 'user', newCv);
   assert.equal(

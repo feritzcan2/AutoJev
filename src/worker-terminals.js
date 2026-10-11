@@ -11,13 +11,13 @@ import {terminalAttention} from './agent-attention.js';
 import {providerLimitAttention} from '../app/agents/provider-limit.mjs';
 
 const states = {
-  Working: 'Çalışıyor',
-  Idle: 'Hazır',
-  AwaitingInput: 'Giriş bekliyor',
-  Compacting: 'Özetliyor',
-  Failed: 'Hata',
-  Interrupted: 'Kesildi',
-  Unknown: 'Bağlanıyor',
+  Working: 'Working',
+  Idle: 'Ready',
+  AwaitingInput: 'Awaiting input',
+  Compacting: 'Compacting',
+  Failed: 'Error',
+  Interrupted: 'Interrupted',
+  Unknown: 'Connecting',
 };
 const clear = new TextEncoder().encode('\x1b[2J\x1b[3J\x1b[H');
 const node = (tag, cls, text) => {
@@ -40,11 +40,11 @@ const saveView = (candidate, worker, view) => {
     localStorage.setItem(viewKey(candidate, worker), view);
   } catch {}
 };
-const roleNames = {user: 'Sen', agent: 'Agent', system: 'Kayıt', task: 'Görev'};
+const roleNames = {user: 'You', agent: 'Agent', system: 'Record', task: 'Task'};
 const clock = (value) => {
   const at = Date.parse(value ?? '');
   return Number.isFinite(at)
-    ? new Date(at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})
+    ? new Date(at).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})
     : '';
 };
 
@@ -66,12 +66,12 @@ export function workerTerminals(
     tabControls = workerTabControls(api, {notice});
   container.classList.add('worker-terminals');
   container.innerHTML =
-    '<div class="worker-toolbar"><div><h2>Agent worker’ları</h2><p>Her worker arama, puanlama ve başvuru işlerini ortak kuyruktan alır.</p></div><div class="worker-add"><button id="worker-add" class="primary" type="button">＋ Worker ekle</button></div></div><div class="worker-splits" aria-label="Worker terminalleri"></div>';
+    '<div class="worker-toolbar"><div><h2>Agent workers</h2><p>Each worker takes search, scoring and application tasks from a shared queue.</p></div><div class="worker-add"><button id="worker-add" class="primary" type="button">＋ Add worker</button></div></div><div class="worker-splits" aria-label="Worker terminals"></div>';
   const splits = container.querySelector('.worker-splits'),
     add = container.querySelector('#worker-add');
   const conversationSplits = conversationContainer ? node('div', 'worker-splits') : null;
   if (conversationSplits) {
-    conversationSplits.setAttribute('aria-label', 'Kurulum agenti terminali');
+    conversationSplits.setAttribute('aria-label', 'Setup agent terminal');
     conversationContainer.append(conversationSplits);
   }
   add.onclick = async () => {
@@ -129,7 +129,7 @@ export function workerTerminals(
       await pane.surface.restore(output);
       if (pane.dead || version !== pane.version) return;
       if (output.bytes.length) sampleAttention(pane);
-      else pane.surface.writeln('Görev başladığında agent çıktısı burada görünecek.');
+      else pane.surface.writeln('Agent output will appear here when a task starts.');
       pane.hasOutput = output.bytes.length > 0;
       pane.sequence = output.sequence;
       pane.promptShown = false;
@@ -301,7 +301,7 @@ export function workerTerminals(
         pane.size = {rows, cols};
         syncSize(pane);
       },
-      () => notice('Belge eklemek için Dosyalar sayfasını kullan.'),
+      () => notice('Use the Files page to add a document.'),
     );
     panes.set(worker.id, pane);
     pane.ready = pane.surface.mount(host, false);
@@ -325,13 +325,13 @@ export function workerTerminals(
     if (!entries.length) {
       const empty = node('div', 'worker-chat-empty');
       empty.append(
-        node('strong', '', 'Henüz kayıtlı konuşma yok'),
+        node('strong', '', 'No saved conversation yet'),
         node(
           'span',
           '',
           pane.worker.active
-            ? 'Agent çalışırken bildirdiği adımlar ve gönderdiğin mesajlar burada sıralanır. Ham çıktı için Terminal görünümüne geç.'
-            : 'Aşağıya yazarak konuşmayı başlat. Kayıtlı bildirimler ve mesajlar burada birikir.',
+            ? 'Steps the agent reports while working and the messages you send are listed here. Switch to the Terminal view for raw output.'
+            : 'Start the conversation by typing below. Saved notices and messages collect here.',
         ),
       );
       log.append(empty);
@@ -346,7 +346,7 @@ export function workerTerminals(
           node(
             'div',
             'worker-chat-day',
-            new Date(entry.at).toLocaleDateString('tr-TR', {day: 'numeric', month: 'long'}),
+            new Date(entry.at).toLocaleDateString('en-GB', {day: 'numeric', month: 'long'}),
           ),
         );
       }
@@ -357,7 +357,7 @@ export function workerTerminals(
       const meta = node('div', 'worker-chat-meta');
       meta.append(
         node('span', '', entry.label ?? roleNames[entry.role]),
-        node('time', '', entry.local ? 'Gönderiliyor' : clock(entry.at)),
+        node('time', '', entry.local ? 'Sending' : clock(entry.at)),
       );
       if (entry.role === 'task') {
         const first = entry.text.split('\n')[0],
@@ -433,53 +433,55 @@ export function workerTerminals(
       pane.attentionTitle.textContent = attention.title;
       pane.attentionDetail.textContent = attention.detail;
       pane.attentionButton.textContent =
-        attention.kind === 'usage_limit' ? 'Terminali göster' : 'Terminalde yanıtla';
+        attention.kind === 'usage_limit' ? 'Show terminal' : 'Reply in the terminal';
     }
     pane.status.textContent =
       attention?.kind === 'usage_limit'
-        ? 'Kullanım limiti'
+        ? 'Usage limit'
         : attention
-          ? 'Yanıt bekliyor'
+          ? 'Awaiting reply'
           : paused
-            ? 'Durduruldu'
+            ? 'Stopped'
             : (worker.presentation?.status ??
               (active
-                ? (states[active.state] ?? 'Bağlanıyor')
+                ? (states[active.state] ?? 'Connecting')
                 : c?.status === 'running'
-                  ? 'Görev bekliyor'
+                  ? 'Waiting for a task'
                   : c?.status === 'complete'
-                    ? 'Tamamlandı'
-                    : 'Kapalı'));
+                    ? 'Completed'
+                    : 'Off'));
     pane.status.dataset.active = String(Boolean(active));
     pane.status.dataset.attention = String(Boolean(attention));
     pane.card.dataset.attention = String(Boolean(attention));
     pane.title.textContent = paused
-      ? 'Worker durduruldu'
-      : (worker.presentation?.title ?? 'Sıradaki görev bekleniyor');
+      ? 'Worker stopped'
+      : (worker.presentation?.title ?? 'Waiting for the next task');
     const pageProgress = worker.presentation?.pageProgress;
     pane.pageProgress.textContent = scanPageLabel(pageProgress);
     pane.pageProgress.hidden = !pane.pageProgress.textContent;
     pane.pageProgress.title = pageProgress
-      ? `Son bildirilen sonuç sayfası; tamamlanma oranı değildir.\n${pageProgress.evidence}`
+      ? `Last reported results page; not a completion rate.\n${pageProgress.evidence}`
       : '';
     pane.title.title = pane.title.textContent;
     const usage = active?.contextUsage?.percent;
     pane.detail.textContent = paused
-      ? 'Başlattığında sıradaki görevi alır.'
+      ? 'Takes the next task once you start it.'
       : [
-          worker.presentation?.detail ?? c?.note ?? 'Başlatıldığında uygun işi kuyruktan alır.',
+          worker.presentation?.detail ??
+            c?.note ??
+            'Takes a suitable task from the queue once started.',
           usage != null
-            ? `Context %${usage.toLocaleString('tr-TR', {maximumFractionDigits: 1})}`
+            ? `Context ${usage.toLocaleString('en-GB', {maximumFractionDigits: 1})}%`
             : null,
         ]
           .filter(Boolean)
           .join(' · ');
     pane.start.hidden = Boolean(active) || c?.status === 'running';
     pane.stop.hidden = pane.start.hidden === false;
-    pane.start.textContent = worker.presentation?.startLabel ?? 'Başlat';
+    pane.start.textContent = worker.presentation?.startLabel ?? 'Start';
     pane.start.setAttribute(
       'aria-label',
-      worker.presentation?.startLabel ?? `${worker.name} başlat`,
+      worker.presentation?.startLabel ?? `Start ${worker.name}`,
     );
     const web = Boolean(snapshot?.automation);
     tabControls.render(pane);
@@ -488,12 +490,12 @@ export function workerTerminals(
     pane.card.dataset.closed = String(!active);
     pane.card.dataset.history = String(Boolean(pane.showHistory));
     pane.idle.hidden = Boolean(active);
-    pane.idleTitle.textContent = 'Agent kapalı';
+    pane.idleTitle.textContent = 'Agent is off';
     pane.idleDetail.textContent = paused
-      ? 'Şimdilik küçük bir mola. Hazır olduğunda devam edebiliriz.'
-      : 'Şu an dinleniyorum. Hazır olduğunda buradayım.';
+      ? 'Taking a short break. We can continue whenever you are ready.'
+      : 'Resting for now. I am here when you are ready.';
     pane.idleHistory.hidden = !pane.hasOutput || pane.view() === 'chat';
-    pane.idleHistory.textContent = pane.showHistory ? 'Çıktıyı gizle' : 'Son terminal çıktısı';
+    pane.idleHistory.textContent = pane.showHistory ? 'Hide output' : 'Last terminal output';
     pane.idleHistory.setAttribute('aria-expanded', String(Boolean(pane.showHistory)));
     pane.task.hidden = web && !active && !c?.task;
     if (
@@ -512,10 +514,10 @@ export function workerTerminals(
     }
     pane.inputHint.hidden = !snapshot?.capabilities?.terminalConversation;
     pane.inputHint.textContent = active
-      ? 'Canlı terminal · Giriş ve izin isteklerini burada yanıtlayabilirsin.'
+      ? 'Live terminal · You can answer input and permission requests here.'
       : web
-        ? 'Oturum kapalı · Yeni mesajlarını Kurulum agenti sayfasından gönderebilirsin.'
-        : 'Oturum kapalı · Yukarıdaki çıktı önceki oturuma ait. Yeni mesaj yazıp Enter’a basarak agent ile konuşabilirsin.';
+        ? 'Session closed · You can send new messages from the Setup agent page.'
+        : 'Session closed · The output above belongs to the previous session. Type a new message and press Enter to talk to the agent.';
     pane.start.disabled = pane.busy || !(snapshot?.capabilities?.canStart ?? false);
     pane.stop.disabled = pane.busy;
     pane.restart.disabled = pane.busy || !(snapshot?.capabilities?.canRestart ?? false);
@@ -529,22 +531,22 @@ export function workerTerminals(
       pane.restart.hidden = true;
       pane.remove.hidden = true;
       pane.stop.hidden = !active;
-      pane.stop.textContent = 'Kapat';
-      pane.stop.setAttribute('aria-label', 'Sohbeti kapat');
+      pane.stop.textContent = 'Close';
+      pane.stop.setAttribute('aria-label', 'Close chat');
     }
     const blocked = Boolean(prompt),
       closed = !active && !snapshot?.capabilities?.terminalConversation;
     pane.chatInput.placeholder = blocked
-      ? 'Önce terminaldeki onayı yanıtla'
+      ? 'Answer the approval in the terminal first'
       : active
-        ? 'Agent’a yaz…'
-        : 'Agent’a mesaj bırak…';
+        ? 'Write to the agent…'
+        : 'Leave the agent a message…';
     pane.chatSend.disabled = pane.sending || blocked || closed;
     pane.chatInput.disabled = pane.sending || blocked || closed;
     pane.chatForm.title = blocked
-      ? 'Agent terminalde bir onay bekliyor. Yukarıdaki düğmeyle terminale geç ve seçimini yap.'
+      ? 'The agent is waiting for an approval in the terminal. Use the button above to switch to the terminal and make your choice.'
       : closed
-        ? 'Bu çalışma alanında kapalı oturuma mesaj bırakılamaz; worker’ı başlat.'
+        ? 'You cannot leave a message for a closed session in this workspace; start the worker.'
         : '';
     renderChat(pane);
   }
@@ -560,7 +562,7 @@ export function workerTerminals(
       divider.tabIndex = 0;
       divider.setAttribute('role', 'separator');
       divider.setAttribute('aria-orientation', 'vertical');
-      divider.setAttribute('aria-label', 'Terminal genişliğini ayarla');
+      divider.setAttribute('aria-label', 'Adjust terminal width');
       divider.setAttribute('aria-valuemin', '20');
       divider.setAttribute('aria-valuemax', '80');
       divider.setAttribute('aria-valuenow', '50');
@@ -639,7 +641,7 @@ export function workerTerminals(
           pane.promptAttention = null;
           pane.dismissedPrompt = false;
           if (snapshot?.capabilities?.terminalConversation)
-            pane.surface.writeln('\r\n── Oturum sona erdi · Sonuç ve sonraki adım yukarıda ──');
+            pane.surface.writeln('\r\n── Session ended · Result and next step above ──');
         }
         render(pane);
       }
@@ -665,11 +667,11 @@ export function workerTerminals(
     }
     const maxWorkers = value?.capabilities?.maxWorkers ?? 8;
     add.hidden = maxWorkers === 1;
-    container.querySelector('.worker-toolbar h2').textContent = 'Agent worker’ları';
+    container.querySelector('.worker-toolbar h2').textContent = 'Agent workers';
     container.querySelector('.worker-toolbar p').textContent = value?.automation
-      ? 'Her worker’ı terminalden veya tarayıcı ekranından izle.'
+      ? 'Watch each worker from its terminal or browser screen.'
       : (value?.capabilities?.workerDescription ??
-        'Worker’lar çalışma alanının görevlerini ortak kuyruktan alır.');
+        'Workers take the workspace’s tasks from a shared queue.');
     add.disabled = adding || !id || workers.filter((w) => !w.conversation).length >= maxWorkers;
   }
   function event(event) {
@@ -684,7 +686,7 @@ export function workerTerminals(
         pane.sequence = event.sequence;
       }
     } else if (event.event === 'gap')
-      pane.surface.writeln('\r\n[Terminal çıktısının bir kısmı atlandı]');
+      pane.surface.writeln('\r\n[Part of the terminal output was skipped]');
     else if (event.event === 'state' && pane.worker.active?.sessionId === event.sessionId) {
       pane.worker.active.state = event.state.replace(/^Some\((.*)\)$/, '$1');
       render(pane);

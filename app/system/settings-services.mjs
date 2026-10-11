@@ -54,12 +54,12 @@ export async function registerSettingsServices({
   });
   let choosingDirectory = false;
   handle('data-use-directory', async () => {
-    if (choosingDirectory) throw Error('Veri klasörü seçimi zaten açık.');
+    if (choosingDirectory) throw Error('A data folder chooser is already open.');
     choosingDirectory = true;
     try {
       const selected = await dialog.showOpenDialog(window(), {
-        title: 'Mevcut AutoJev veri klasörünü seç',
-        buttonLabel: 'Aç ve yeniden başlat',
+        title: 'Choose an existing AutoJev data folder',
+        buttonLabel: 'Open and restart',
         properties: ['openDirectory'],
       });
       if (selected.canceled) return null;
@@ -78,12 +78,12 @@ export async function registerSettingsServices({
     }
   });
   handle('data-change-directory', async () => {
-    if (choosingDirectory) throw Error('Veri klasörü seçimi zaten açık.');
+    if (choosingDirectory) throw Error('A data folder chooser is already open.');
     choosingDirectory = true;
     try {
       const selected = await dialog.showOpenDialog(window(), {
-        title: 'Verilerin taşınacağı boş klasörü seç',
-        buttonLabel: 'Taşı ve yeniden başlat',
+        title: 'Choose an empty folder to move the data to',
+        buttonLabel: 'Move and restart',
         properties: ['openDirectory', 'createDirectory'],
       });
       if (selected.canceled) return null;
@@ -104,7 +104,7 @@ export async function registerSettingsServices({
   handle('data-backup', () =>
     maintenance.run(async () => {
       const selected = await dialog.showOpenDialog(window(), {
-        title: 'Yedeğin kaydedileceği klasörü seç',
+        title: 'Choose a folder to save the backup in',
         properties: ['openDirectory', 'createDirectory'],
       });
       if (selected.canceled) return null;
@@ -124,7 +124,7 @@ export async function registerSettingsServices({
     const result = await maintenance.run(
       async () => {
         const selected = await dialog.showOpenDialog(window(), {
-          title: 'AutoJev yedek klasörünü seç',
+          title: 'Choose an AutoJev backup folder',
           properties: ['openDirectory'],
         });
         if (selected.canceled) return null;
@@ -132,13 +132,13 @@ export async function registerSettingsServices({
           preview = await inspectBackup(directory);
         const answer = await dialog.showMessageBox(window(), {
           type: 'warning',
-          buttons: ['Vazgeç', 'Geri yükle ve yeniden başlat'],
+          buttons: ['Cancel', 'Restore and restart'],
           defaultId: 0,
           cancelId: 0,
-          title: 'Yedeği geri yükle',
+          title: 'Restore backup',
           message:
-            'Mevcut otomasyonlar, template’ler, adaylar ve sonuç kayıtları bu yedekle değiştirilecek.',
-          detail: `Önce mevcut verilerin kurtarma yedeği alınır. Etkin görevler durdurulmuş olarak açılır. Eski bir yedek, sonradan yapılan işlemleri içermeyebilir; devam etmeden sonuçları kontrol et. Otomasyonları yeniden dene; taşınabilir yedeklerde portal şifreleri, Telegram ve Jev anahtarı yeniden girilir.\n\nYedek: ${directory}\n${preview.candidates ?? preview.summary?.candidates ?? '?'} aday · ${preview.jobs ?? preview.summary?.jobs ?? '?'} ilan`,
+            'Current automations, templates, candidates and result records will be replaced by this backup.',
+          detail: `A recovery backup of the current data is taken first. Active tasks open paused. An older backup may not include later operations; check the results before continuing. Retry the automations; with portable backups, portal passwords, Telegram and the Jev key must be entered again.\n\nBackup: ${directory}\n${preview.candidates ?? preview.summary?.candidates ?? '?'} candidates · ${preview.jobs ?? preview.summary?.jobs ?? '?'} listings`,
         });
         if (answer.response !== 1) return null;
         const staged = await stageRestore({...params, directory});

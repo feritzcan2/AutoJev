@@ -63,7 +63,7 @@ export class RecordIdentity {
     const seen = new Set();
     let value = this.raw(owner, id);
     while (value?.mergedInto) {
-      if (seen.has(value.id)) throw Error('Kayıt birleştirme döngüsü');
+      if (seen.has(value.id)) throw Error('Record merge cycle');
       seen.add(value.id);
       value = this.raw(owner, value.mergedInto);
     }
@@ -85,7 +85,7 @@ export class RecordIdentity {
       const key = recordUrlKey(url),
         other = this.find(owner, url);
       if (other && other.id !== record.id)
-        throw Error('Bu adres başka bir kayıtla eşleşiyor; kayıtları önce birleştir.');
+        throw Error('This address matches another record; merge the records first.');
       this.db
         .prepare(
           'INSERT INTO workspace_record_urls VALUES(?,?,?) ON CONFLICT(workspace_id,url_key) DO UPDATE SET record_id=excluded.record_id',
@@ -97,9 +97,10 @@ export class RecordIdentity {
     return this.atomic(() => {
       const resolved = ids.map((id) => this.resolve(owner, id));
       if (resolved.some((v) => !v))
-        throw Error('Birleştirilecek kayıt bu çalışma alanına ait değil');
+        throw Error('The record to merge does not belong to this workspace');
       const values = unique(resolved.map((r) => r.id)).map((id) => this.raw(owner, id));
-      if (values.some((v) => !v)) throw Error('Birleştirilecek kayıt bu çalışma alanına ait değil');
+      if (values.some((v) => !v))
+        throw Error('The record to merge does not belong to this workspace');
       if (values.length < 2) return values[0];
       if (
         !allowActive &&
@@ -111,7 +112,7 @@ export class RecordIdentity {
             ),
           )
       )
-        throw Error('Birleştirmeden önce bu kayıtların çalışan görevlerini durdur');
+        throw Error('Stop the running tasks of these records before merging');
       values.sort(
         (a, b) =>
           Number(Boolean(a.trial)) - Number(Boolean(b.trial)) ||

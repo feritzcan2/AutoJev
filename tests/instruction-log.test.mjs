@@ -67,7 +67,7 @@ test('instruction history distinguishes current, available and changed content a
   assert.equal(history.events.length, 1);
   assert.equal(history.events[0].parts[0].text, undefined);
   assert.equal(log.detail(a.id, history.events[0].seq).parts[0].text, '1500');
-  assert.throws(() => log.detail(b.id, history.events[0].seq), /bulunamadı/);
+  assert.throws(() => log.detail(b.id, history.events[0].seq), /not found/);
   assert.ok(webInstructionCatalog(new AutomationStore(core), a.id).length > 10);
   core.workspaces.remove(a.id);
   assert.equal(

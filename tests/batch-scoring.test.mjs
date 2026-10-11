@@ -104,10 +104,10 @@ test('selected rows launch one agent with the full assignment and distinct indiv
       activeRuns: [run],
       workers: [{id: run.workerId, active: {sessionId: run.id}, execution: {task: {id: run.id}}}],
     }),
-    [{kind: 'score', count: 3, label: 'puanlanıyor'}],
+    [{kind: 'score', count: 3, label: 'scoring'}],
   );
   await flow.call(f.id, run.id, 'record_automation_score', {itemId: f.ids[0], score: 81});
-  assert.throws(() => f.db.finish(f.id, run.id, 'completed', 'Too soon'), /puanlama sonucunu/);
+  assert.throws(() => f.db.finish(f.id, run.id, 'completed', 'Too soon'), /scoring result/);
   await flow.call(f.id, run.id, 'record_automation_score', {itemId: f.ids[1], score: 62});
   await flow.call(f.id, run.id, 'record_automation_score', {itemId: f.ids[2], score: null});
   await f.finish(run);
@@ -131,17 +131,17 @@ test('batch retries are idempotent and every selected row is locked against over
   assert.equal(f.launches.length, 1);
   for (const id of f.ids) {
     assert.equal(recordTask(f.db, f.id, id).id, task.id);
-    await assert.rejects(f.runtime.runRecord(f.id, id, 'prepare'), /başka bir görev/);
-    assert.throws(() => f.db.assertRecordIdle(f.id, id), /sırada/);
+    await assert.rejects(f.runtime.runRecord(f.id, id, 'prepare'), /Another task/);
+    assert.throws(() => f.db.assertRecordIdle(f.id, id), /queued/);
   }
-  await assert.rejects(f.runtime.runRecords(f.id, [f.ids[2], f.items[3].id]), /başka bir görev/);
+  await assert.rejects(f.runtime.runRecords(f.id, [f.ids[2], f.items[3].id]), /Another task/);
   const worker = f.runtime.workers.add(f.id),
     conflict = f.runtime.queue.enqueue(f.id, {
       operation: 'custom',
       recordId: f.ids[2],
       lockKey: 'custom',
     });
-  assert.throws(() => f.runtime.queue.claim(f.id, conflict.id, worker.id), /başka bir worker/);
+  assert.throws(() => f.runtime.queue.claim(f.id, conflict.id, worker.id), /another worker/);
 });
 for (const count of [1, 3])
   test(`finishing ${count} scored records cannot complete the workspace or disable another source worker's recovery`, async (t) => {
@@ -222,17 +222,17 @@ test('batch writes and questions require an assigned ID and reject stale profile
   await assert.rejects(call('record_automation_score', {score: 80}), /itemId/);
   await assert.rejects(
     call('record_automation_score', {itemId: f.items[3].id, score: 80}),
-    /atanmış/,
+    /assigned/,
   );
   await assert.rejects(call('ask_workspace_question', {text: 'Which location?'}), /recordId/);
   await assert.rejects(
     call('ask_workspace_question', {recordId: f.items[3].id, text: 'Which location?'}),
-    /atanmış/,
+    /assigned/,
   );
   f.db.put({...f.db.get(f.id), revision: 2});
   await assert.rejects(
     call('record_automation_score', {itemId: f.ids[1], score: 80}),
-    /Profil değişti/,
+    /The profile changed/,
   );
   assert.equal(f.db.result(f.id, f.ids[1]).assessment, undefined);
 });
@@ -275,7 +275,7 @@ test('Jev accepts every selected listing as a batch and rejects unassigned URLs'
   );
   assert.throws(
     () => jevDetailItems({urls: [f.items[3].url]}, {assignedRecords}),
-    /gözlen|atanmış/,
+    /observed|assigned/,
   );
 });
 test('dismissing any batch row stops its shared worker and keeps already saved scores', async (t) => {
@@ -354,8 +354,8 @@ test('three automatic continuations are bounded and completed rows retain their 
   for (let i = 0; i < 4; i++) await f.runtime.unreported(slot, 'idle');
   assert.equal(messages.length, 3);
   assert.equal(f.db.run(run.id).status, 'blocked');
-  assert.match(f.db.run(run.id).summary, /2 kayıt kaldı/);
-  assert.match(f.db.run(run.id).summary, /3 otomatik/);
+  assert.match(f.db.run(run.id).summary, /2 left/);
+  assert.match(f.db.run(run.id).summary, /3 automatic/);
   assert.equal(f.runtime.queue.get(f.id, task.id).scoreRecovery.attempt, 3);
   const rows = f.db.snapshot(f.id).results;
   assert.equal(rows.find((r) => r.id === f.ids[0]).recordAction.lastTask, null);
@@ -381,7 +381,7 @@ test('unexpected provider exit resumes the same scoring task after delay, skippi
   const context = automationTaskContext(f.db, f.id, resumed);
   assert.equal(context.assignedRecords[0].scoredInThisTask, true);
   assert.equal(context.assignedRecords[1].scoredInThisTask, false);
-  assert.throws(() => f.db.finish(f.id, resumed.id, 'completed', 'Too soon'), /puanlama sonucunu/);
+  assert.throws(() => f.db.finish(f.id, resumed.id, 'completed', 'Too soon'), /scoring result/);
   const workflow = automationWorkflow({
     db: f.db,
     run: resumed,
@@ -425,7 +425,7 @@ test('pending record questions wait for the user while other batch records can f
     await flow.call(f.id, run.id, 'record_automation_score', {itemId, score: 75});
   await f.runtime.unreported(slot, 'idle');
   assert.equal(f.db.run(run.id).status, 'completed');
-  assert.match(f.db.run(run.id).summary, /1 kayıt yanıt bekliyor/);
+  assert.match(f.db.run(run.id).summary, /1 awaiting an answer/);
 });
 
 test('duplicate idle notifications cannot send concurrent continuations', async (t) => {

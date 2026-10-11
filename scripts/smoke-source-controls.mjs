@@ -109,8 +109,8 @@ try {
   };
   // A real pointer press overlaps an incoming snapshot, as it does while workers report progress.
   for (const [index, label, kind] of [
-    [0, 'Şimdi tara', 'start'],
-    [1, 'Taramayı durdur', 'stop'],
+    [0, 'Scan now', 'start'],
+    [1, 'Stop scan', 'stop'],
   ]) {
     await reset();
     const control = row(index).getByRole('button', {name: label, exact: true});
@@ -132,7 +132,7 @@ try {
     assert.equal(
       await row(index)
         .getByRole('button', {
-          name: kind === 'start' ? 'Başlatılıyor…' : 'Durduruluyor…',
+          name: kind === 'start' ? 'Starting…' : 'Stopping…',
           exact: true,
         })
         .isDisabled(),
@@ -142,7 +142,7 @@ try {
   }
   // Space activates on keyup; an incoming snapshot must preserve keyboard focus too.
   await reset();
-  await row(1).getByRole('button', {name: 'Taramayı durdur', exact: true}).focus();
+  await row(1).getByRole('button', {name: 'Stop scan', exact: true}).focus();
   await page.keyboard.down('Space');
   await refresh();
   await page.keyboard.up('Space');
@@ -150,9 +150,9 @@ try {
   await finish(1);
   // A different panel action must not silently swallow either scan control.
   await reset();
-  await page.getByRole('button', {name: 'Agent ile bul', exact: true}).click();
-  await row(0).getByRole('button', {name: 'Şimdi tara', exact: true}).click();
-  await row(1).getByRole('button', {name: 'Taramayı durdur', exact: true}).click();
+  await page.getByRole('button', {name: 'Find with the agent', exact: true}).click();
+  await row(0).getByRole('button', {name: 'Scan now', exact: true}).click();
+  await row(1).getByRole('button', {name: 'Stop scan', exact: true}).click();
   assert.deepEqual(await page.evaluate(() => window.fixture.calls.map((c) => c.kind)), [
     'start',
     'stop',
@@ -161,18 +161,18 @@ try {
   await finish(1);
   await page.evaluate(() => window.fixture.finishDiscovery());
   await reset();
-  await row(0).getByRole('button', {name: 'Şimdi tara', exact: true}).click();
+  await row(0).getByRole('button', {name: 'Scan now', exact: true}).click();
   await refresh();
   assert.equal(
-    await row(0).getByRole('button', {name: 'Başlatılıyor…', exact: true}).isDisabled(),
+    await row(0).getByRole('button', {name: 'Starting…', exact: true}).isDisabled(),
     true,
   );
   // Snapshot updates must not erase pending state or allow a duplicate request.
   await row(0)
-    .getByRole('button', {name: 'Başlatılıyor…', exact: true})
+    .getByRole('button', {name: 'Starting…', exact: true})
     .evaluate((button) => button.click());
-  await row(1).getByRole('button', {name: 'Taramayı durdur', exact: true}).click();
-  await row(2).getByRole('button', {name: 'Şimdi tara', exact: true}).click();
+  await row(1).getByRole('button', {name: 'Stop scan', exact: true}).click();
+  await row(2).getByRole('button', {name: 'Scan now', exact: true}).click();
   assert.deepEqual(await page.evaluate(() => window.fixture.calls.map((c) => c.kind)), [
     'start',
     'stop',
@@ -180,33 +180,33 @@ try {
   ]);
   await refresh();
   assert.equal(
-    await row(1).getByRole('button', {name: 'Durduruluyor…', exact: true}).isDisabled(),
+    await row(1).getByRole('button', {name: 'Stopping…', exact: true}).isDisabled(),
     true,
   );
   await page.screenshot({path: path.join(data, 'source-controls-pending.png'), fullPage: true});
   await finish(0, {error: 'Başlatma başarısız'});
-  await row(0).getByRole('button', {name: 'Şimdi tara', exact: true}).waitFor();
+  await row(0).getByRole('button', {name: 'Scan now', exact: true}).waitFor();
   assert.equal(await page.evaluate(() => window.lastNotice), 'Başlatma başarısız');
   await finish(1, {error: 'Durdurma başarısız'});
-  await row(1).getByRole('button', {name: 'Taramayı durdur', exact: true}).waitFor();
+  await row(1).getByRole('button', {name: 'Stop scan', exact: true}).waitFor();
   assert.equal(await page.evaluate(() => window.lastNotice), 'Durdurma başarısız');
-  await row(0).getByRole('button', {name: 'Şimdi tara', exact: true}).click();
+  await row(0).getByRole('button', {name: 'Scan now', exact: true}).click();
   await finish(0);
   await finish(2);
-  await row(0).getByRole('button', {name: 'Taramayı durdur', exact: true}).waitFor();
+  await row(0).getByRole('button', {name: 'Stop scan', exact: true}).waitFor();
   // Old requests must neither lock nor report failures in the newly selected workspace.
   await reset();
-  await row(0).getByRole('button', {name: 'Şimdi tara', exact: true}).click();
+  await row(0).getByRole('button', {name: 'Scan now', exact: true}).click();
   await page.evaluate(() => window.fixture.select('other-owner'));
-  await row(0).getByRole('button', {name: 'Şimdi tara', exact: true}).click();
+  await row(0).getByRole('button', {name: 'Scan now', exact: true}).click();
   await finish(0, {error: 'Eski çalışma alanının hatası'});
   assert.equal(
-    await row(0).getByRole('button', {name: 'Başlatılıyor…', exact: true}).isDisabled(),
+    await row(0).getByRole('button', {name: 'Starting…', exact: true}).isDisabled(),
     true,
   );
   assert.notEqual(await page.evaluate(() => window.lastNotice), 'Eski çalışma alanının hatası');
   await finish(0, {id: 'other-owner'});
-  await row(0).getByRole('button', {name: 'Taramayı durdur', exact: true}).waitFor();
+  await row(0).getByRole('button', {name: 'Stop scan', exact: true}).waitFor();
   console.log('SOURCE_CONTROLS_CLICK_REFRESH_CONCURRENCY_ERROR_SCOPE_PASS', data);
 } finally {
   await app.close();

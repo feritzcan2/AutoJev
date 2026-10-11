@@ -144,13 +144,13 @@ try {
   await page.locator('aside nav [data-view=notifications]').click();
   const batch = page.locator('.telegram-batch');
   await batch.waitFor({state: 'visible'});
-  await batch.getByRole('spinbutton', {name: 'Minimum puan'}).fill('70');
-  await batch.getByLabel('Gönderim kapsamı').selectOption('resend');
+  await batch.getByRole('spinbutton', {name: 'Minimum score'}).fill('70');
+  await batch.getByLabel('Sending scope').selectOption('resend');
   assert.match(await batch.textContent(), /70 → 71–100/);
-  assert.match(await batch.textContent(), /tamamlanmış başvurular/);
+  assert.match(await batch.textContent(), /completed applications/);
   // Periodic refresh must not reset partially edited fields.
   await page.waitForTimeout(5200);
-  assert.equal(await batch.getByLabel('Gönderim kapsamı').inputValue(), 'resend');
+  assert.equal(await batch.getByLabel('Sending scope').inputValue(), 'resend');
   assert.equal(
     (
       await app.evaluate(() =>
@@ -160,9 +160,9 @@ try {
     0,
   );
   await page.locator('#notifications').screenshot({path: path.join(data, 'telegram-resend.png')});
-  await batch.getByRole('button', {name: 'İlanları yeniden gönder', exact: true}).click();
+  await batch.getByRole('button', {name: 'Resend listings', exact: true}).click();
   await page.waitForFunction(
-    () => document.querySelector('[data-deliveries]')?.textContent.startsWith('0 mesaj'),
+    () => document.querySelector('[data-deliveries]')?.textContent.startsWith('0 messages'),
     null,
     {timeout: 30000},
   );
@@ -184,12 +184,15 @@ try {
   const completedCard = messages.find(
     (c) => c.body.reply_markup.inline_keyboard[0][0].url === jobs.get('Tamamlanan başvuru').url,
   ).body;
-  assert.match(completedCard.text, /İş arama · Başvuruldu/);
-  assert.equal(completedCard.reply_markup.inline_keyboard.at(-1)[0].text, '🗑 Mesajı sil');
+  assert.match(completedCard.text, /Job search · Applied/);
+  assert.equal(completedCard.reply_markup.inline_keyboard.at(-1)[0].text, '🗑 Delete message');
   const pendingCard = messages.find(
     (c) => c.body.reply_markup.inline_keyboard[0][0].url === jobs.get('Yeni ilan').url,
   ).body;
-  assert.equal(pendingCard.reply_markup.inline_keyboard.at(-1)[0].text, '🗑 Sil · Kaydı ele');
+  assert.equal(
+    pendingCard.reply_markup.inline_keyboard.at(-1)[0].text,
+    '🗑 Delete · Dismiss record',
+  );
   const verify = new NotificationFixture(file);
   try {
     assert.deepEqual(verify.jobs(p.id), originalRecords);
@@ -197,13 +200,13 @@ try {
     verify.close();
   }
   const automaticScore = page.getByRole('spinbutton', {
-    name: 'Otomatik ilanlar için minimum puan',
+    name: 'Minimum score for automatic listings',
     exact: true,
   });
   await automaticScore.fill('65');
   await automaticScore.press('Tab');
   await waitForStatus((c) => c.newJobsMinScore === 65);
-  await page.getByRole('checkbox', {name: 'Yeni ilanları otomatik gönder', exact: true}).check();
+  await page.getByRole('checkbox', {name: 'Send new listings automatically', exact: true}).check();
   await waitForStatus((c) => c.newJobs);
   const automaticFixture = new NotificationFixture(file),
     automatic = [];
@@ -255,29 +258,35 @@ try {
   );
   assert.equal(messages.length, 5);
   assert.equal(messages.at(-1).body.reply_markup.inline_keyboard[0][0].url, automatic[1].url);
-  assert.equal(await batch.getByLabel('Minimum puan', {exact: true}).inputValue(), '70');
+  assert.equal(await batch.getByLabel('Minimum score', {exact: true}).inputValue(), '70');
   await page.waitForFunction(() =>
     document
       .querySelector('[data-deliveries]')
-      ?.textContent.includes('1 ilan puan sınırını geçmeyi bekliyor'),
+      ?.textContent.includes('1 listings waiting to pass the score limit'),
   );
   await page
     .locator('#notifications')
     .screenshot({path: path.join(data, 'telegram-automatic-score.png')});
   await page.locator('#candidates').selectOption(other.id);
   await page.waitForFunction(
-    () => document.querySelector('[data-candidate-state]')?.textContent !== 'Ada hesabı bağlı.',
+    () =>
+      document.querySelector('[data-candidate-state]')?.textContent !==
+      'Ada’s account is connected.',
   );
   await page.locator('aside nav [data-view=notifications]').click();
   await page.waitForFunction(
-    () => document.querySelector('[data-candidate-state]')?.textContent === 'Grace hesabı bağlı.',
+    () =>
+      document.querySelector('[data-candidate-state]')?.textContent ===
+      'Grace’s account is connected.',
   );
-  assert.equal(await batch.getByLabel('Gönderim kapsamı').inputValue(), 'unsent');
-  assert.equal(await batch.getByLabel('Minimum puan').inputValue(), '70');
+  assert.equal(await batch.getByLabel('Sending scope').inputValue(), 'unsent');
+  assert.equal(await batch.getByLabel('Minimum score').inputValue(), '70');
   assert.equal(await automaticScore.inputValue(), '');
   await page.locator('#candidates').selectOption(p.id);
   await page.waitForFunction(
-    () => document.querySelector('[data-candidate-state]')?.textContent !== 'Grace hesabı bağlı.',
+    () =>
+      document.querySelector('[data-candidate-state]')?.textContent !==
+      'Grace’s account is connected.',
   );
   await page.locator('aside nav [data-view=notifications]').click();
   await page.waitForFunction(

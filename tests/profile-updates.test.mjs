@@ -79,7 +79,7 @@ test('saving stops active workers before applying new criteria, restarts trackin
   assert.equal(automationTaskContext(db, id, chat).automation.criteria.budget, '1700');
   await runtime.tick();
   assert.equal(f.started.length, 3, 'No old task is dispatched during the switch');
-  await assert.rejects(runtime.saveProfile(id, {goal: 'Concurrent update'}), /güncelleniyor/);
+  await assert.rejects(runtime.saveProfile(id, {goal: 'Concurrent update'}), /being updated/);
   release();
   assert.deepEqual(await saving, {saved: true, applied: true});
   await settle();
@@ -181,10 +181,10 @@ test('validation and stale revision rejection leave active workers and drafts un
   await settle();
   const before = db.get(id);
   for (const [input, options, pattern] of [
-    [{sources: []}, {}, /Geçersiz profil/],
-    [{mode: 'invalid'}, {}, /yetkisi/],
-    [{goal: 'new'}, {expectedRevision: 0}, /Profil değişti/],
-    [{agentSettings: {}}, {}, /Geçersiz profil/],
+    [{sources: []}, {}, /Invalid profile/],
+    [{mode: 'invalid'}, {}, /permission/],
+    [{goal: 'new'}, {expectedRevision: 0}, /profile changed/],
+    [{agentSettings: {}}, {}, /Invalid profile/],
   ]) {
     await assert.rejects(runtime.saveProfile(id, input, options), pattern);
     assert.deepEqual(db.get(id), before);

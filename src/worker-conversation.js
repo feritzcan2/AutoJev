@@ -1,15 +1,15 @@
 // One worker’s transcript, built from saved records rather than terminal bytes.
 // Web workspaces keep a message table; job workspaces keep prompts and events.
-const runKinds = {interview: 'Görüşme', trial: 'Deneme', run: 'Çalışma'};
+const runKinds = {interview: 'Interview', trial: 'Trial', run: 'Run'};
 const runStatuses = {
-  running: 'Çalışıyor',
-  completed: 'Tamamlandı',
-  partial: 'Kısmi',
-  blocked: 'Engellendi',
-  failed: 'Başarısız',
-  timeout: 'Süre doldu',
-  stopped: 'Durduruldu',
-  interrupted: 'Kesildi',
+  running: 'Running',
+  completed: 'Completed',
+  partial: 'Partial',
+  blocked: 'Blocked',
+  failed: 'Failed',
+  timeout: 'Timed out',
+  stopped: 'Stopped',
+  interrupted: 'Interrupted',
 };
 const time = (value) => (Number.isFinite(Date.parse(value)) ? Date.parse(value) : 0);
 const entry = (id, role, text, at, extra = {}) => ({
@@ -36,31 +36,31 @@ function jobEvent(event, worker, snapshot) {
     case 'question_asked': {
       const open = (snapshot.questions ?? []).find((q) => q.question === d.question);
       return entry(id, 'agent', d.question, event.at, {
-        label: 'Soru',
+        label: 'Question',
         pending: open ? open.answer === null : true,
       });
     }
     case 'question_answered':
-      return entry(id, 'user', d.answer ?? 'Yanıt kaydedildi', event.at, {label: 'Yanıt'});
+      return entry(id, 'user', d.answer ?? 'Answer recorded', event.at, {label: 'Answer'});
     case 'job_found':
-      return entry(id, 'system', `${d.company} · ${d.role}: ilan bulundu`, event.at, {
-        label: 'Bulundu',
+      return entry(id, 'system', `${d.company} · ${d.role}: listing found`, event.at, {
+        label: 'Found',
       });
     case 'job_updated':
       return entry(id, 'system', `${d.company}: ${d.note ?? d.status}`, event.at, {
-        label: 'Güncelleme',
+        label: 'Update',
       });
     case 'submission_recorded':
-      return entry(id, 'system', `${d.company}: gönderim onayı kaydedildi`, event.at, {
-        label: 'Gönderim',
+      return entry(id, 'system', `${d.company}: submission confirmation recorded`, event.at, {
+        label: 'Submission',
       });
     case 'agent_context_restart':
       return entry(
         id,
         'system',
-        `Context eşiği aşıldı${d.peakPercent == null ? '' : ` (%${d.peakPercent.toLocaleString('tr-TR', {maximumFractionDigits: 1})})`}; yeni oturum hazırlanıyor`,
+        `Context threshold exceeded${d.peakPercent == null ? '' : ` (${d.peakPercent.toLocaleString('en-GB', {maximumFractionDigits: 1})}%)`}; preparing a new session`,
         event.at,
-        {label: 'Oturum'},
+        {label: 'Session'},
       );
     default:
       return null;
@@ -71,19 +71,24 @@ function jobEvent(event, worker, snapshot) {
 export function workerConversation(snapshot, worker, transcript = []) {
   if (!snapshot || !worker) return [];
   const entries = transcript.map((m) =>
-      entry(`native:${m.id}`, m.role, m.text, m.at, m.role === 'task' ? {label: 'Görev'} : {}),
+      entry(`native:${m.id}`, m.role, m.text, m.at, m.role === 'task' ? {label: 'Task'} : {}),
     ),
     native = new Set(entries.map((e) => e.text));
   if (snapshot.automation) {
     // The setup conversation belongs to the workspace and runs on the main worker; extra workers only carry their own runs.
     for (const m of snapshot.messages ?? []) {
       if (worker.conversation ? !m.conversation : worker.id !== 'main' || m.conversation) continue;
+      // Messages saved before the English switch still carry the Turkish wording.
       const document =
-        m.role === 'system' ? /^Kullanıcı bir belge ekledi: \S+ \((.+?)\)\./.exec(m.text) : null;
+        m.role === 'system'
+          ? /^(?:The user added a document|Kullanıcı bir belge ekledi): \S+ \((.+?)\)\./.exec(
+              m.text,
+            )
+          : null;
       entries.push(
         document
-          ? entry(`message:${m.id}`, 'system', `Belge eklendi: ${document[1]}`, m.at, {
-              label: 'Belge',
+          ? entry(`message:${m.id}`, 'system', `Document added: ${document[1]}`, m.at, {
+              label: 'Document',
             })
           : entry(
               `message:${m.id}`,
@@ -112,7 +117,7 @@ export function workerConversation(snapshot, worker, transcript = []) {
       const mine = p.sessionId ? p.sessionId === session : worker.id === 'main';
       // Job workspaces only send app-generated task prompts; the provider transcript already carries them when available.
       if (mine && !native.has(String(p.text).trim()))
-        entries.push(entry(`prompt:${p.seq}`, 'task', p.text, p.at, {label: 'Görev'}));
+        entries.push(entry(`prompt:${p.seq}`, 'task', p.text, p.at, {label: 'Task'}));
     }
     for (const event of snapshot.events ?? []) {
       const item = jobEvent(event, worker, snapshot);

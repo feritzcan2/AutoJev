@@ -25,9 +25,11 @@ export function scanPageReport(snapshot, {currentPage, totalPages = null, eviden
     !pageNumber(currentPage) ||
     (totalPages !== null && (!pageNumber(totalPages) || totalPages < currentPage))
   )
-    throw Error('Geçerli sayfa numarası gerekli; toplam bilinmiyorsa totalPages alanını gönderme.');
+    throw Error(
+      'A valid page number is required; if the total is unknown, do not send totalPages.',
+    );
   if (typeof evidence !== 'string' || evidence.trim().length < 1 || evidence.length > 500)
-    throw Error('Sayfa konumu için kısa bir açıklama gerekli.');
+    throw Error('A short description of the page position is required.');
   const quote = normalize(evidence);
   return {currentPage, totalPages, url: snapshot.url, evidence: quote, at};
 }
@@ -35,6 +37,6 @@ export function scanPageReport(snapshot, {currentPage, totalPages = null, eviden
 export function scanPageLabel(progress) {
   if (!pageNumber(progress?.currentPage)) return '';
   return pageNumber(progress.totalPages) && progress.totalPages >= progress.currentPage
-    ? `Sayfa ${progress.currentPage} / ${progress.totalPages}`
-    : `${progress.currentPage}. sayfa`;
+    ? `Page ${progress.currentPage} / ${progress.totalPages}`
+    : `Page ${progress.currentPage}`;
 }

@@ -75,7 +75,7 @@ test('viewport-only facts, frame content and changed consent wording remain verb
 test('document reading refuses a redirect rather than combining stale action IDs with another page', async () => {
   const f = fixture('Role', 'Role');
   f.document.url = 'https://other.example/';
-  await assert.rejects(documentObservation(f.slot, f.value), /yönlendi/);
+  await assert.rejects(documentObservation(f.slot, f.value), /redirected while being read/);
 });
 
 test('only visible substantive or unreadable frames count as missing document content', async () => {
@@ -281,7 +281,7 @@ test('document observation preserves new busy state and refuses readiness from a
   assert.equal((await documentObservation(f.slot, f.value)).reading.readiness.loading, true);
   f.slot.page.evaluate = async (fn) =>
     fn === documentReadiness ? {url: 'https://different.test', loading: false} : f.document;
-  await assert.rejects(documentObservation(f.slot, f.value), /yönlendi/);
+  await assert.rejects(documentObservation(f.slot, f.value), /redirected while being read/);
 });
 
 test('background rendering is scoped to the pending document and restored on timeout, failure or cancellation', async () => {

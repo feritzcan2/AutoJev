@@ -25,29 +25,29 @@ const el = (tag, text, cls) => {
   return node;
 };
 const statusNames = {
-  draft: 'Kurulum',
-  ready: 'Denemeye hazır',
-  enabled: 'Düzenli çalışıyor',
-  paused: 'Duraklatıldı',
-  blocked: 'Yardım bekliyor',
-  complete: 'Tamamlandı',
-  running: 'Çalışıyor',
-  completed: 'Tamamlandı',
-  partial: 'Kısmi · devam edecek',
-  failed: 'Tamamlanamadı',
-  interrupted: 'Durduruldu',
-  timeout: 'Süre doldu',
-  found: 'Bulundu',
-  prepared: 'Başvuruya hazır',
-  executing: 'İşleniyor',
-  uncertain: 'Sonuç doğrulanmalı',
-  dismissed: 'Atlandı',
+  draft: 'Setup',
+  ready: 'Ready for trial',
+  enabled: 'Running regularly',
+  paused: 'Paused',
+  blocked: 'Needs help',
+  complete: 'Completed',
+  running: 'Running',
+  completed: 'Completed',
+  partial: 'Partial · will continue',
+  failed: 'Could not finish',
+  interrupted: 'Stopped',
+  timeout: 'Timed out',
+  found: 'Found',
+  prepared: 'Ready to apply',
+  executing: 'In progress',
+  uncertain: 'Outcome needs verification',
+  dismissed: 'Skipped',
 };
-const time = (value) => (value ? new Date(value).toLocaleString('tr-TR') : '—');
+const time = (value) => (value ? new Date(value).toLocaleString('en-GB') : '—');
 const modeNames = {
-  observe: 'Bul ve bildir',
-  prepare: 'Hazırla, onayımı bekle',
-  auto: 'Otomatik uygula',
+  observe: 'Find and report',
+  prepare: 'Prepare, wait for my approval',
+  auto: 'Apply automatically',
 };
 
 export function automationsPage(
@@ -83,7 +83,7 @@ export function automationsPage(
   setupPage.append(setupSettings.element);
   const setupTabs = el('div', null, 'agent-view-tabs setup-agent-tabs');
   setupTabs.setAttribute('role', 'tablist');
-  setupTabs.setAttribute('aria-label', 'Kurulum agenti görünümü');
+  setupTabs.setAttribute('aria-label', 'Setup agent view');
   setupPage.append(setupTabs);
   const agentConversation = el('div', null, 'workspace-conversation');
   setupPage.append(agentConversation);
@@ -93,7 +93,7 @@ export function automationsPage(
   chatTerminal.append(
     el(
       'p',
-      'Sohbet henüz başlatılmadı. Sohbet sekmesinden mesaj gönderdiğinde terminal burada görünecek.',
+      'The chat has not started yet. The terminal appears here once you send a message from the Chat tab.',
       'setup-terminal-empty',
     ),
   );
@@ -101,7 +101,7 @@ export function automationsPage(
   agentConversation.id = 'setup-agent-chat';
   const setupViews = new Map();
   for (const [view, label, panel] of [
-    ['chat', 'Sohbet', agentConversation],
+    ['chat', 'Chat', agentConversation],
     ['terminal', 'Terminal', chatTerminal],
   ]) {
     const tab = el('button', label);
@@ -144,12 +144,12 @@ export function automationsPage(
   setupNav.type = 'button';
   setupNav.dataset.view = 'setup-agent';
   setupNav.innerHTML =
-    '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 1-8 8H4l-2 3V11a9 9 0 0 1 18 0Z"/><path d="M7 9h8M7 13h5"/></svg><span>Kurulum agenti</span><span id="setup-agent-status" class="agent-nav-status" aria-hidden="true" hidden></span>';
+    '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 1-8 8H4l-2 3V11a9 9 0 0 1 18 0Z"/><path d="M7 9h8M7 13h5"/></svg><span>Setup agent</span><span id="setup-agent-status" class="agent-nav-status" aria-hidden="true" hidden></span>';
   document.querySelector('aside nav button[data-view=agent]').after(setupNav);
   const progressBox = el('div', null, 'workspace-progress');
   progressBox.dataset.webOnly = '';
   progressBox.innerHTML =
-    '<ol id="automation-steps" aria-label="Kurulum ilerlemesi"></ol><p id="automation-next-step"></p><div id="automation-next-actions" class="actions"></div><section id="automation-agent-reply" aria-label="Agent’ın son yanıtı"><b>Agent’ın yanıtı</b><p></p></section>';
+    '<ol id="automation-steps" aria-label="Setup progress"></ol><p id="automation-next-step"></p><div id="automation-next-actions" class="actions"></div><section id="automation-agent-reply" aria-label="Agent’s last reply"><b>Agent’s reply</b><p></p></section>';
   document.querySelector('#now-history').before(progressBox);
   const steps = progressBox.querySelector('#automation-steps');
   steps.dataset.webOnly = '';
@@ -197,12 +197,12 @@ export function automationsPage(
   profileSaveDialog.setAttribute('aria-labelledby', 'automation-profile-save-title');
   profileSaveDialog.setAttribute('aria-describedby', 'automation-profile-save-warning');
   profileSaveDialog.innerHTML =
-    '<form method="dialog"><h2 id="automation-profile-save-title">Profili kaydet ve agent’ları yeniden başlat?</h2><p id="automation-profile-save-warning"></p><div class="workspace-dialog-actions"><button class="quiet" value="cancel" autofocus>Vazgeç</button><button class="primary" value="save">Onayla ve kaydet</button></div></form>';
+    '<form method="dialog"><h2 id="automation-profile-save-title">Save the profile and restart the agents?</h2><p id="automation-profile-save-warning"></p><div class="workspace-dialog-actions"><button class="quiet" value="cancel" autofocus>Cancel</button><button class="primary" value="save">Confirm and save</button></div></form>';
   document.body.append(profileSaveDialog);
   function confirmProfileSave(count) {
     return new Promise((resolve) => {
       profileSaveDialog.querySelector('p').textContent =
-        `Bu çalışma alanındaki ${count} aktif agent durdurulup yeni profille yeniden başlatılacaktır. Onaylıyor musunuz?`;
+        `${count} active agent(s) in this workspace will be stopped and restarted with the new profile. Do you confirm?`;
       profileSaveDialog.returnValue = 'cancel';
       profileSaveDialog.addEventListener(
         'close',
@@ -272,15 +272,15 @@ export function automationsPage(
     const heading = el('div', null, 'automation-heading');
     heading.append(
       sectionTitle(
-        'İş aramasına başla',
-        'Soldan bir çalışma alanı seç veya yeni bir iş araması aç. Kurulum agenti sorularla aramanı sana göre düzenler.',
+        'Start a job search',
+        'Pick a workspace on the left or open a new job search. The setup agent asks questions to tailor the search to you.',
       ),
     );
-    host.append(heading, button('Yeni iş araması başlat →', create, 'primary'));
+    host.append(heading, button('Start a new job search →', create, 'primary'));
     host.append(
       el(
         'p',
-        'Bu bilgisayarda çalışır. Düzenli kontroller için uygulamayı ve bilgisayarı açık tut.',
+        'Runs on this computer. Keep the app and the computer on for regular checks.',
         'automation-local-note',
       ),
     );
@@ -321,10 +321,10 @@ export function automationsPage(
     agentConversation.replaceChildren();
     progressSignature = '';
     host.innerHTML = `<div id="automation-controls" class="actions"></div><p id="automation-runtime-note" class="automation-runtime-note" role="status"></p>
-<div class="automation-setup-grid"><section class="automation-conversation"><div class="automation-section-head"><h2>Asistanla kur</h2><p>İhtiyacını anlat, soruları yanıtla veya yapmak istediğin değişikliği yaz.</p></div><div id="automation-messages" class="automation-messages" role="log" aria-label="Kurulum konuşması"></div><form id="automation-chat"><label for="automation-message">Mesajın</label><textarea id="automation-message" placeholder="Örneğin: Berlin’de 1.500 euroya kadar iki odalı ev arıyorum…" maxlength="12000" required></textarea><div class="actions"><button id="automation-send" data-idle type="submit" class="primary">Gönder</button><button id="automation-add-document" data-idle type="button" class="quiet">Belge ekle</button></div><small>Değişiklik konuşması düzenli çalışmayı duraklatır. Yeni bilgiler çalışma alanı profilinde görünür.</small></form></section>
-<section class="automation-plan"><div class="automation-section-head"><h2>Kurulum kartı</h2><p>Asistanın hazırladıklarını incele ve düzenle. Yetkiyi buradan sen seçersin.</p></div><form id="automation-plan-form"><label>Ad<input name="title" required maxlength="150"></label><label>Amaç<textarea name="goal" required maxlength="6000"></textarea></label><div id="automation-criteria"></div><label>İşleyiş<textarea name="instructions" maxlength="12000"></textarea></label><details><summary>Kişisel bilgiler ve belgeler</summary><label>Bu otomasyonun kullanabileceği bilgiler<textarea name="facts" maxlength="12000" placeholder="Yalnızca bu iş için gereken bilgiler. Şifreleri burada paylaşma."></textarea></label><div id="automation-documents"></div><div id="automation-jev-profile" class="jev-profile"></div></details><label>İşlem yetkisi<select name="mode"><option value="observe">Bul ve bildir</option><option value="prepare">Hazırla, onayımı bekle</option><option value="auto">Otomatik uygula</option></select></label><div class="automation-plan-footer"><small id="automation-save-state" role="status"></small><button data-idle type="submit" class="primary">Kurulumu kaydet</button></div></form></section></div>
-<section class="automation-results-section"><div class="automation-heading"><div><h2>Sonuçlar</h2></div><button id="automation-export" type="button" class="quiet">Sonuçları dışa aktar</button></div><div id="automation-results"></div></section>
-<section class="automation-history-section"><div class="automation-section-head"><h2>Çalışma geçmişi</h2><p>Her turun sonucu ve gerektiğinde agent ekranı.</p></div><div id="automation-runs"></div></section><div class="automation-bottom-actions"><button id="automation-delete" type="button" class="quiet danger">Otomasyonu sil</button></div>`;
+<div class="automation-setup-grid"><section class="automation-conversation"><div class="automation-section-head"><h2>Set up with the assistant</h2><p>Describe what you need, answer the questions or write the change you want.</p></div><div id="automation-messages" class="automation-messages" role="log" aria-label="Setup conversation"></div><form id="automation-chat"><label for="automation-message">Your message</label><textarea id="automation-message" placeholder="For example: I am looking for a two-room flat in Berlin up to 1,500 euros…" maxlength="12000" required></textarea><div class="actions"><button id="automation-send" data-idle type="submit" class="primary">Send</button><button id="automation-add-document" data-idle type="button" class="quiet">Add document</button></div><small>A change conversation pauses regular runs. New details appear in the workspace profile.</small></form></section>
+<section class="automation-plan"><div class="automation-section-head"><h2>Setup card</h2><p>Review and edit what the assistant prepared. You choose the permission here.</p></div><form id="automation-plan-form"><label>Name<input name="title" required maxlength="150"></label><label>Goal<textarea name="goal" required maxlength="6000"></textarea></label><div id="automation-criteria"></div><label>Workflow<textarea name="instructions" maxlength="12000"></textarea></label><details><summary>Personal details and documents</summary><label>Details this automation may use<textarea name="facts" maxlength="12000" placeholder="Only the details needed for this work. Do not share passwords here."></textarea></label><div id="automation-documents"></div><div id="automation-jev-profile" class="jev-profile"></div></details><label>Action permission<select name="mode"><option value="observe">Find and report</option><option value="prepare">Prepare, wait for my approval</option><option value="auto">Apply automatically</option></select></label><div class="automation-plan-footer"><small id="automation-save-state" role="status"></small><button data-idle type="submit" class="primary">Save setup</button></div></form></section></div>
+<section class="automation-results-section"><div class="automation-heading"><div><h2>Results</h2></div><button id="automation-export" type="button" class="quiet">Export results</button></div><div id="automation-results"></div></section>
+<section class="automation-history-section"><div class="automation-section-head"><h2>Run history</h2><p>The outcome of each round and, when needed, the agent screen.</p></div><div id="automation-runs"></div></section><div class="automation-bottom-actions"><button id="automation-delete" type="button" class="quiet danger">Delete automation</button></div>`;
     const $ = (id) => find('#' + id),
       form = $('automation-plan-form');
     resultsTable = automationResultsTable($('automation-results'), {
@@ -374,7 +374,7 @@ export function automationsPage(
       dirty = false;
       formRevision = '';
       await refresh();
-      notice('Profil kaydedildi ve uygulandı.');
+      notice('Profile saved and applied.');
     });
     $('automation-add-document').onclick = attempt(async () => {
       await api.pickDocument(selected);
@@ -390,7 +390,7 @@ export function automationsPage(
       history = find('.automation-history-section');
     plan.dataset.automationPane = 'profile';
     plan.className = 'profile automation-plan';
-    plan.querySelector('h2').textContent = 'Çalışma alanı profili';
+    plan.querySelector('h2').textContent = 'Workspace profile';
     form.classList.add('profile-form');
     results.dataset.automationPane = 'board';
     history.dataset.automationPane = 'background';
@@ -430,9 +430,9 @@ export function automationsPage(
     profileCopy.append(...profileHead.children);
     profileHead.replaceChildren(profileCopy);
     profileHead.className = 'profile-head';
-    const improve = button('Agent ile geliştir', openConversation);
+    const improve = button('Improve with the agent', openConversation);
     plan.querySelector('.profile-head').append(improve);
-    const profileSave = el('button', 'Profili kaydet', 'primary');
+    const profileSave = el('button', 'Save profile', 'primary');
     profileSave.id = 'automation-profile-save';
     profileSave.type = 'submit';
     profileSave.setAttribute('form', form.id);
@@ -442,11 +442,15 @@ export function automationsPage(
     profileState.setAttribute('role', 'status');
     profileHead.after(profileState);
     const sections = [
-      ['Çalışma alanı', 'Bu otomasyonun adı ve amacı.', ['title', 'goal']],
-      ['Ne arıyorsun', 'Agent sonuçları bu kriterlere göre değerlendirir.', ['criteria']],
-      ['İşleyiş', 'Agent’ın takip edeceği adımlar.', ['instructions']],
-      ['Kişisel bilgiler', 'Agent yalnızca burada verdiğin bilgileri kullanır.', ['facts']],
-      ['İşlem yetkisi', 'Hangi işlemleri yapabileceğini sen seçersin.', ['mode']],
+      ['Workspace', 'The name and goal of this automation.', ['title', 'goal']],
+      [
+        'What you are looking for',
+        'The agent evaluates results against these criteria.',
+        ['criteria'],
+      ],
+      ['Workflow', 'The steps the agent follows.', ['instructions']],
+      ['Personal details', 'The agent uses only the details you give here.', ['facts']],
+      ['Action permission', 'You choose which actions it may take.', ['mode']],
     ];
     const profileSections = [];
     for (const [title, description, names] of sections) {
@@ -471,15 +475,15 @@ export function automationsPage(
     for (const [value, title, description] of [
       [
         'observe',
-        'Bul ve bildir',
-        'Ara, filtrele ve uygun sonuçları kaydet; mesaj veya başvuru gönderme.',
+        'Find and report',
+        'Search, filter and save suitable results; do not send messages or applications.',
       ],
       [
         'prepare',
-        'Bul, başvuruyu bana bırak',
-        'Uygun sonuçları kaydet; ben "Başvur" dediğimde doğrudan başvur.',
+        'Find, leave applying to me',
+        'Save suitable results; apply directly when I press "Apply".',
       ],
-      ['auto', 'Otomatik uygula', 'Kaydettiğim kurallara göre işlemleri uygula.'],
+      ['auto', 'Apply automatically', 'Carry out actions according to the rules I saved.'],
     ]) {
       const choice = el('label', null, 'choice'),
         input = el('input'),
@@ -494,12 +498,12 @@ export function automationsPage(
     mode.closest('label').replaceWith(authorization);
     const footer = form.querySelector('.automation-plan-footer');
     footer.className = 'profile-foot';
-    footer.querySelector('button').textContent = 'Profili kaydet';
+    footer.querySelector('button').textContent = 'Save profile';
     footer.querySelector('button').removeAttribute('data-idle');
     form.replaceChildren(...profileSections, footer);
     history.className = 'automation-history-section';
     history.innerHTML =
-      '<div id="automation-current-work" class="current-work"></div><div class="section-title"><h2>Çalışma geçmişi</h2></div><div id="automation-runs" class="run-list"></div>';
+      '<div id="automation-current-work" class="current-work"></div><div class="section-title"><h2>Run history</h2></div><div id="automation-runs" class="run-list"></div>';
     const pipeline = el('div', null, 'pipeline');
     pipeline.id = 'automation-pipeline';
     const top = el('div', null, 'pipeline-top');
@@ -519,15 +523,15 @@ export function automationsPage(
         const input = find('#automation-message');
         if (!input.value.trim())
           input.value =
-            'Hedefime uygun kaynakları araştırıp öner ve takip planımı hazırlamama yardımcı ol.';
+            'Research and suggest sources that fit my goal and help me prepare my tracking plan.';
       },
     });
     const files = el('section');
     files.dataset.automationPane = 'files';
     files.innerHTML =
-      '<div class="section-title"><h2>Dosyalar</h2><span>Çalışma alanının belgeleri</span></div><div id="automation-file-list"></div>';
+      '<div class="section-title"><h2>Files</h2><span>The workspace’s documents</span></div><div id="automation-file-list"></div>';
     files.querySelector('.section-title').append(
-      button('Belge ekle', async () => {
+      button('Add document', async () => {
         await api.pickDocument(selected);
         await refresh();
       }),
@@ -541,19 +545,19 @@ export function automationsPage(
     const intro = el('div', null, 'workspace-intro');
     intro.hidden = true;
     intro.append(
-      el('span', 'YENİ ÇALIŞMA ALANI', 'workspace-intro-eyebrow'),
-      el('h2', 'Bu çalışma alanı ne yapsın?'),
+      el('span', 'NEW WORKSPACE', 'workspace-intro-eyebrow'),
+      el('h2', 'What should this workspace do?'),
       el(
         'p',
-        'Tek cümle yeter. Agent eksik olanı sorar; kaynakları, kriterleri ve işlem yetkisini birlikte belirlersiniz.',
+        'One sentence is enough. The agent asks for what is missing; you decide the sources, criteria and action permission together.',
       ),
     );
     const steps = el('ol', null, 'workspace-intro-steps');
-    steps.setAttribute('aria-label', 'Kurulum adımları');
+    steps.setAttribute('aria-label', 'Setup steps');
     for (const [index, text] of [
-      'Ne istediğini anlat',
-      'Agent soruları sorar',
-      'Profili onayla ve başlat',
+      'Describe what you want',
+      'The agent asks questions',
+      'Confirm the profile and start',
     ].entries()) {
       const step = el('li');
       if (!index) step.className = 'current';
@@ -561,11 +565,11 @@ export function automationsPage(
       steps.append(step);
     }
     const examples = el('div', null, 'workspace-intro-examples');
-    examples.setAttribute('aria-label', 'Örnekler');
+    examples.setAttribute('aria-label', 'Examples');
     for (const text of [
-      'Berlin’de 1.500 €’ya kadar iki odalı kiralık ev bul, uygun olanları listele.',
-      'İstanbul’da uzaktan çalışılabilen ürün yöneticisi ilanlarını takip et ve puanla.',
-      'Tokyo–İstanbul uçuşlarında fiyat 600 €’nun altına düşünce haber ver.',
+      'Find a two-room rental flat in Berlin up to €1,500 and list the suitable ones.',
+      'Track and score remote-friendly product manager listings in Istanbul.',
+      'Let me know when Tokyo–Istanbul flights drop below €600.',
     ]) {
       const chip = el('button', text);
       chip.type = 'button';
@@ -591,8 +595,8 @@ export function automationsPage(
     if (intro) intro.hidden = !fresh;
     if (message)
       message.placeholder = fresh
-        ? 'Ne yapmak istediğini bir cümleyle anlat…'
-        : 'Agent’a mesaj yaz…';
+        ? 'Describe in one sentence what you want to do…'
+        : 'Write a message to the agent…';
     chatPanel?.update(data);
   }
   function setPane(name) {
@@ -629,8 +633,8 @@ export function automationsPage(
     start.disabled = locked || hasUnsaved();
     stop.disabled = locked;
     restart.disabled = locked || hasUnsaved() || !ready;
-    start.textContent = p.primary?.label ?? 'Çalışıyor';
-    stop.textContent = data.activeRun ? 'Turu durdur' : 'Takibi duraklat';
+    start.textContent = p.primary?.label ?? 'Running';
+    stop.textContent = data.activeRun ? 'Stop round' : 'Pause tracking';
     restart.hidden = true;
     for (const id of ['candidates', 'new']) document.querySelector('#' + id).disabled = locked;
     document.querySelector('#rename-workspace').disabled = locked || Boolean(data.activeRun);
@@ -644,8 +648,8 @@ export function automationsPage(
         (run) => run.kind !== 'interview',
       ).length;
     questionBadge.hidden = !questionCount;
-    questionBadge.textContent = questionCount ? `${questionCount} yanıt` : '';
-    questionBadge.title = `${questionCount} yanıt bekliyor`;
+    questionBadge.textContent = questionCount ? `${questionCount} answer(s)` : '';
+    questionBadge.title = `${questionCount} awaiting an answer`;
     const work = activeRecordOperations(data),
       workSummary = work.map(({count, label}) => `${count} ${label}`);
     recordWork.hidden = !work.length;
@@ -659,17 +663,17 @@ export function automationsPage(
     );
     boardNav.title = [
       ...workSummary,
-      ...(questionCount ? [`${questionCount} yanıt bekliyor`] : []),
+      ...(questionCount ? [`${questionCount} awaiting an answer`] : []),
     ].join(' · ');
     boardNav.setAttribute(
       'aria-label',
-      ['Takip tablosu', boardNav.title].filter(Boolean).join(' · '),
+      ['Tracking table', boardNav.title].filter(Boolean).join(' · '),
     );
     const status = document.querySelector('#agent-nav-status');
     status.textContent = agentHelpCount
-      ? `${agentHelpCount} müdahale`
+      ? `${agentHelpCount} issue(s)`
       : running
-        ? `${running} çalışıyor`
+        ? `${running} running`
         : '';
     status.hidden = !status.textContent;
     status.dataset.tone = agentHelpCount ? 'waiting' : 'active';
@@ -681,16 +685,16 @@ export function automationsPage(
       : interviewBusy(data)
         ? ''
         : chatRun
-          ? 'Açık'
+          ? 'Open'
           : '';
     chatStatus.hidden = !attention.conversationCount && !chatRun;
     setupNav.title = attention.conversationCount
-      ? `${attention.conversationCount} yanıt bekleniyor`
+      ? `${attention.conversationCount} awaiting an answer`
       : interviewBusy(data)
-        ? 'Yanıt hazırlanıyor'
+        ? 'Preparing a reply'
         : chatRun
-          ? 'Sohbet açık'
-          : 'Kurulum agenti ile konuş';
+          ? 'Chat open'
+          : 'Talk to the setup agent';
     chatStatus.dataset.tone = attention.conversationCount
       ? 'waiting'
       : interviewBusy(data)
@@ -715,30 +719,30 @@ export function automationsPage(
         (url) => data.sources.find((s) => s.url === url)?.name ?? new URL(url).hostname,
       );
       sourceStatus.hidden = !scanning.size;
-      sourceStatus.textContent = scanning.size ? `${scanning.size} taranıyor` : '';
+      sourceStatus.textContent = scanning.size ? `${scanning.size} scanning` : '';
       sourcesNav.title = names.join(', ');
       sourcesNav.setAttribute(
         'aria-label',
         scanning.size
-          ? `Kaynaklar · ${scanning.size} kaynak taranıyor: ${names.join(', ')}`
-          : 'Kaynaklar',
+          ? `Sources · ${scanning.size} source(s) scanning: ${names.join(', ')}`
+          : 'Sources',
       );
     }
-    document.querySelector('[data-view=profile] span').textContent = 'Çalışma alanı profili';
-    document.querySelector('[data-view=board] span').textContent = 'Takip tablosu';
+    document.querySelector('[data-view=profile] span').textContent = 'Workspace profile';
+    document.querySelector('[data-view=board] span').textContent = 'Tracking table';
     const chrome = document.querySelector('.chrome-status'),
       connection = data.browserStatus ?? {};
     chrome.hidden = false;
     chrome.dataset.state = connection.state ?? 'idle';
     chrome.querySelector('b').textContent = connection.ready
-      ? 'Chrome bağlı'
+      ? 'Chrome connected'
       : connection.state === 'connecting'
-        ? 'Chrome’a bağlanıyor…'
-        : 'Chrome bağlantısı';
+        ? 'Connecting to Chrome…'
+        : 'Chrome connection';
     chrome.querySelector('small').textContent = connection.ready
-      ? (a.chromeProfile?.name ?? 'Seçili Chrome oturumu')
+      ? (a.chromeProfile?.name ?? 'Selected Chrome session')
       : (connection.message ??
-        'Chrome’da chrome://inspect/#remote-debugging bağlantısını aç ve bağlantı isteğine izin ver.');
+        'Open chrome://inspect/#remote-debugging in Chrome and allow the connection request.');
     chrome.querySelector('.chrome-reconnect').hidden = Boolean(connection.ready);
     chrome.querySelector('.chrome-reconnect').disabled =
       locked || connection.state === 'connecting';
@@ -749,13 +753,13 @@ export function automationsPage(
     if (issue) {
       const [title, detail] =
         issue.status === 402
-          ? ['Jev kredisi bitti', 'TypeSafe kredisi ekleyince taramayı sürdür.']
+          ? ['Jev credit ran out', 'Add TypeSafe credit to resume scanning.']
           : [401, 403].includes(issue.status)
-            ? ['Jev anahtarı reddedildi', 'Yapılandırma → Jev bölümünden anahtarı kontrol et.']
-            : ['Jev yanıt vermiyor', 'Jev görevleri ilerlemiyor.'];
+            ? ['Jev key rejected', 'Check the key under Configuration → Jev.']
+            : ['Jev is not responding', 'Jev tasks are not progressing.'];
       jev.querySelector('b').textContent = title;
       jev.querySelector('small').textContent =
-        `TypeSafe HTTP ${issue.status} · ${new Date(issue.at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})}. ${detail}`;
+        `TypeSafe HTTP ${issue.status} · ${new Date(issue.at).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})}. ${detail}`;
     }
     syncWorkspaceMenu();
   }
@@ -795,7 +799,7 @@ export function automationsPage(
     if (id === 'stop') return stop();
     if (hasUnsaved()) {
       navigate('profile');
-      notice('Önce profil değişikliklerini kaydet.');
+      notice('Save the profile changes first.');
       return;
     }
     if (id === 'enable') await api.workspaceStart(selected);
@@ -874,13 +878,13 @@ export function automationsPage(
     recordWork.replaceChildren();
     boardNav.title = '';
     questionBadge.hidden = true;
-    document.querySelector('[data-view=board]').setAttribute('aria-label', 'Takip tablosu');
+    document.querySelector('[data-view=board]').setAttribute('aria-label', 'Tracking table');
     const sourceStatus = document.querySelector('#sources-nav-status');
     if (sourceStatus) sourceStatus.hidden = true;
     const sourcesNav = document.querySelector('[data-view=sources]');
     if (sourcesNav) {
       sourcesNav.title = '';
-      sourcesNav.setAttribute('aria-label', 'Kaynaklar');
+      sourcesNav.setAttribute('aria-label', 'Sources');
     }
     resultsTable?.dispose();
     attention.update(null, null);
@@ -897,8 +901,8 @@ export function automationsPage(
     host.hidden = true;
     onSnapshot(null);
     document.body.classList.remove('automation-workspace');
-    document.querySelector('[data-view=profile] span').textContent = 'Çalışma alanı profili';
-    document.querySelector('[data-view=board] span').textContent = 'Takip tablosu';
+    document.querySelector('[data-view=profile] span').textContent = 'Workspace profile';
+    document.querySelector('[data-view=board] span').textContent = 'Tracking table';
   }
   function readForm() {
     const f = find('#automation-plan-form').elements,
@@ -966,13 +970,13 @@ export function automationsPage(
       controls.append(b);
     };
     action(
-      'Tarayıcıyı aç',
+      'Open browser',
       () => api.automationBrowser(selected),
       'automation-browser',
       !a.sources.length || hasUnsaved(),
     );
     action(
-      'Bir kez çalıştır',
+      'Run once',
       () => performAction('run'),
       'automation-run',
       hasUnsaved() || !automationReady(a),
@@ -992,21 +996,21 @@ export function automationsPage(
       draft = Boolean(a.planDraft),
       working = (data.activeRuns ?? []).some((run) => run.kind !== 'interview');
     const changeNote = working
-      ? ' Kaydettiğinde taramalar durdurulup yeni kriterlerle yeniden başlayacak. Sohbet açık kalacak.'
+      ? ' When you save, scans will stop and restart with the new criteria. The chat stays open.'
       : '';
     const text = a.profileUpdate?.error
-      ? 'Profil uygulanamadı: ' + a.profileUpdate.error + ' Tekrar kaydedebilirsin.'
+      ? 'The profile could not be applied: ' + a.profileUpdate.error + ' You can save again.'
       : pending
-        ? 'Profil kaydedildi; uygulanıyor. Taramalar durdurulup yeni kriterlerle yeniden başlatılıyor.'
+        ? 'Profile saved; applying. Scans are stopping and restarting with the new criteria.'
         : hasUnsaved()
-          ? 'Kaydedilmemiş değişiklikler.' + changeNote
+          ? 'Unsaved changes.' + changeNote
           : draft && profileNeedsSave()
-            ? 'Agent’ın profil taslağı hazır. İncele ve Profili kaydet düğmesine bas.' + changeNote
+            ? 'The agent’s profile draft is ready. Review it and press Save profile.' + changeNote
             : a.reviewedRevision === a.revision
-              ? 'Profil kaydedildi.'
+              ? 'Profile saved.'
               : data.missing.length
-                ? 'Eksikler: ' + data.missing.join(', ')
-                : 'Profili kontrol edip kaydet.';
+                ? 'Missing: ' + data.missing.join(', ')
+                : 'Check and save the profile.';
     form.inert = busy;
     for (const status of [find('#automation-save-state'), find('#automation-profile-state')])
       if (status) {
@@ -1021,12 +1025,12 @@ export function automationsPage(
         button.disabled = busy || (pending && !a.profileUpdate.error) || !profileNeedsSave();
         button.textContent =
           pending && !a.profileUpdate.error
-            ? 'Profil uygulanıyor…'
+            ? 'Applying profile…'
             : busy
-              ? 'Kaydediliyor…'
+              ? 'Saving…'
               : a.profileUpdate?.error
-                ? 'Tekrar kaydet'
-                : 'Profili kaydet';
+                ? 'Save again'
+                : 'Save profile';
       }
   }
   function renderDetail() {
@@ -1045,7 +1049,8 @@ export function automationsPage(
       const b = button(doc.name + ' ↗', () => api.openDocument(selected, doc.path));
       docs.append(b);
     }
-    if (!data.documents.length) docs.append(el('small', 'Bu otomasyona henüz belge eklenmedi.'));
+    if (!data.documents.length)
+      docs.append(el('small', 'No documents have been added to this automation yet.'));
     renderJevProfile($('automation-jev-profile'), data.jevProfile, async (text) => {
       await api.saveJevProfile(selected, text);
       await refresh();
@@ -1062,22 +1067,22 @@ export function automationsPage(
   function renderWorkspacePages() {
     const a = data.automation,
       counts = data.resultCounts;
-    find('#automation-table-title').textContent = a.table?.title ?? 'Takip akışı';
+    find('#automation-table-title').textContent = a.table?.title ?? 'Tracking flow';
     find('#automation-pipeline').dataset.status = data.activeRun ? 'running' : a.status;
     const metrics = find('.automation-metrics');
     metrics.replaceChildren();
     const bar = el('div', null, 'pipeline-bar'),
       legend = el('div', null, 'pipeline-legend');
     for (const [key, value, label] of [
-      ['submitted', counts.completedCount, 'tamamlandı'],
-      ['waiting', counts.pendingCount + counts.uncertainCount, 'bekliyor'],
+      ['submitted', counts.completedCount, 'completed'],
+      ['waiting', counts.pendingCount + counts.uncertainCount, 'waiting'],
       [
         'found',
         Math.max(
           0,
           counts.resultCount - counts.completedCount - counts.pendingCount - counts.uncertainCount,
         ),
-        'bulundu',
+        'found',
       ],
     ]) {
       if (value) {
@@ -1094,7 +1099,7 @@ export function automationsPage(
     const samples = Math.max(0, counts.storedCount - counts.resultCount);
     if (samples) {
       const entry = el('span');
-      entry.append(el('b', String(samples)), document.createTextNode(' araştırma / deneme örneği'));
+      entry.append(el('b', String(samples)), document.createTextNode(' research / trial samples'));
       legend.append(entry);
     }
     metrics.append(bar, legend);
@@ -1105,12 +1110,12 @@ export function automationsPage(
       const row = el('div', null, 'document-row');
       row.append(
         el('strong', doc.name),
-        button('Aç ↗', () => api.openDocument(selected, doc.path)),
+        button('Open ↗', () => api.openDocument(selected, doc.path)),
       );
       files.append(row);
     }
     if (!data.documents.length)
-      files.append(el('p', 'Çalışma alanına eklediğin belgeler burada görünür.', 'empty'));
+      files.append(el('p', 'Documents you add to the workspace appear here.', 'empty'));
   }
   function renderResults() {
     resultsTable.update(data, busy);
@@ -1118,7 +1123,7 @@ export function automationsPage(
   async function sendMessage(text) {
     if (data?.activeRun && !data?.capabilities?.concurrentConversation)
       throw Error(
-        'Bağımsız sohbet için uygulama güncellemesi bekleniyor. Çalışan tur bittikten sonra uygulamayı yeniden aç.',
+        'Independent chat needs an app update. Reopen the app after the running round finishes.',
       );
     const owner = selected,
       form = find('#automation-plan-form'),
@@ -1131,7 +1136,7 @@ export function automationsPage(
     if (pending.draft) {
       if (hasBlockingRun(data) || data.automation.profileUpdate)
         pending.message +=
-          '\n\nProfilde düzenlediğim, henüz onaylamadığım taslak (JSON):\n' +
+          '\n\nDraft I edited in the profile and have not confirmed yet (JSON):\n' +
           JSON.stringify(pending.draft);
       else {
         await api.automationSave(owner, pending.draft);
@@ -1195,10 +1200,10 @@ export function automationsPage(
           name.title = sourceUrl;
           results.append(name);
         }
-        const count = el('span', `Bu turda ${run.foundCount ?? 0} yeni kayıt`, 'run-found');
+        const count = el('span', `${run.foundCount ?? 0} new record(s) this round`, 'run-found');
         count.dataset.empty = String(!run.foundCount);
         count.title =
-          'Bu turda ilk kez kaydedilen sonuçlar. Tekrar görülen kayıtlar ve deneme örnekleri dahil değildir.';
+          'Results saved for the first time in this round. Records seen again and trial samples are not included.';
         results.append(count);
         row.append(results);
       }
@@ -1208,25 +1213,25 @@ export function automationsPage(
         const tokens = el(
           'span',
           known
-            ? `Toplam ${usage.totalTokens.toLocaleString('tr-TR')} token`
-            : 'Token kullanımı bilinmiyor',
+            ? `${usage.totalTokens.toLocaleString('en-GB')} tokens in total`
+            : 'Token usage unknown',
           'run-tokens',
         );
         tokens.title = known
-          ? `Agent: ${usage.agentTokens.toLocaleString('tr-TR')} · Jev: ${usage.jevTokens.toLocaleString('tr-TR')}`
-          : 'Bu tur için toplam token kullanımı kaydedilemedi.';
+          ? `Agent: ${usage.agentTokens.toLocaleString('en-GB')} · Jev: ${usage.jevTokens.toLocaleString('en-GB')}`
+          : 'Total token usage for this round could not be recorded.';
         row.append(tokens);
       }
       row.append(
         el(
           'span',
-          run.summary || {interview: 'Kurulum sohbeti', trial: 'Deneme', run: 'Çalışma'}[run.kind],
+          run.summary || {interview: 'Setup chat', trial: 'Trial', run: 'Run'}[run.kind],
           'run-summary',
         ),
       );
       root.append(row);
     }
-    if (!data.runs.length) root.append(el('p', 'Henüz çalışma yok.', 'run-history-empty'));
+    if (!data.runs.length) root.append(el('p', 'No runs yet.', 'run-history-empty'));
   }
   async function refresh() {
     if (isDeleting()) return;
@@ -1248,7 +1253,7 @@ export function automationsPage(
   async function show() {
     host.hidden = false;
     questionBadge.hidden = true;
-    document.querySelector('[data-view=board]').setAttribute('aria-label', 'Takip tablosu');
+    document.querySelector('[data-view=board]').setAttribute('aria-label', 'Tracking table');
     resultsTable?.dispose();
     agentNavLabel(false);
     chatPanel?.dispose();

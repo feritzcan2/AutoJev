@@ -26,11 +26,11 @@ test('a user response retires only its incident; observing a real challenge bloc
     now++;
     const next = gate.complete(url, null, {status: 403, reason: 'verification'});
     assert.ok(next.waiting);
-    assert.throws(() => gate.acknowledge([first]), /yeni bir erişim/);
+    assert.throws(() => gate.acknowledge([first]), /new access wait/);
     assert.equal(gate.status(url).blockedAt, next.blockedAt);
     now = next.retryAt;
     gate.begin(url);
-    assert.throws(() => gate.acknowledge([next]), /yeni bir erişim/);
+    assert.throws(() => gate.acknowledge([next]), /new access wait/);
   } finally {
     db.close();
   }
@@ -109,7 +109,7 @@ test('browser observation detects a challenge before creating listing evidence a
     );
     assert.equal(slot.observed, undefined);
     assert.equal(reads, 2);
-    assert.match(gate.status(url).message, /Erişim doğrulaması/);
+    assert.match(gate.status(url).message, /access verification/);
     assert.throws(() => gate.begin(url + '/another'), {code: 'SITE_WAIT'});
     assert.equal(gate.begin('https://other.example/list'), null);
   } finally {
@@ -395,7 +395,7 @@ test('repeated transport failures across a site start a shared wait; one address
     assert.equal(wait.reason, 'unreachable');
     assert.equal(wait.attempts, 1);
     assert.equal(wait.retryAt, now + 5 * minute);
-    assert.match(wait.message, /ulaşılamaması/);
+    assert.match(wait.message, /unreachable/);
     assert.throws(
       () => gate.begin(url),
       (error) => error.code === 'SITE_WAIT',

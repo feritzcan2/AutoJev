@@ -50,7 +50,7 @@ test('oversized index requests remain bounded and keep their next offset', () =>
   const page = jevTaskSummary(task, {limit: 100});
   assert.equal(page.items.length, 20);
   assert.equal(page.nextOffset, 20);
-  assert.throws(() => jevTaskSummary(task, {limit: -1}), /Geçersiz/);
+  assert.throws(() => jevTaskSummary(task, {limit: -1}), /Invalid/);
 });
 import {askJev, jevProvider} from '../app/jev/policy.mjs';
 import {automationWorkflow} from '../app/automation/worker.mjs';
@@ -267,7 +267,7 @@ test('highlight and tracking variants share a read while job parameters and SPA 
   assert.deepEqual(task.items[0].aliases, [original, alias]);
   assert.throws(
     () => jevDetailItems({urls: [alias]}, {observedUrls: [original]}),
-    /gözlenen/,
+    /observed/,
     'Deduplication never authorizes an unobserved navigation URL',
   );
 });
@@ -394,8 +394,11 @@ test('scan -> details -> preliminary classification retains originals and uncert
   assert.equal(evidence.nextOffset, 6000);
   assert.ok(!JSON.stringify(details).includes('rent 1500'));
   assert.ok(JSON.stringify(details).length < 2000);
-  assert.throws(() => f.db.jevTasks.readEvidence(f.a.id, 'foreign', evidence.id), /göreve ait/);
-  assert.throws(() => f.db.jevTasks.get('foreign', 'assigned', scan.taskId), /ait değil/);
+  assert.throws(
+    () => f.db.jevTasks.readEvidence(f.a.id, 'foreign', evidence.id),
+    /belong to this task/,
+  );
+  assert.throws(() => f.db.jevTasks.get('foreign', 'assigned', scan.taskId), /does not belong/);
 });
 
 test('large pages checkpoint link batches and resume without restarting or losing items', async (t) => {
@@ -414,7 +417,7 @@ test('large pages checkpoint link batches and resume without restarting or losin
   const calls = second.usage.calls;
   assert.equal((await f.run({taskId: first.taskId})).usage.calls, calls);
   f.ports.searchId = 'other';
-  await assert.rejects(f.run({taskId: first.taskId}), /başka bir kayıtlı aramaya/);
+  await assert.rejects(f.run({taskId: first.taskId}), /another saved search/);
 });
 
 test('repeated page or uncertain pagination hands off without certifying completion', async (t) => {
@@ -827,7 +830,7 @@ test('workflow enforces operation scope before creating a task or touching Chrom
       operation: 'fill_form',
       answers: [{key: 'name', label: 'Name', value: 'Ada'}],
     }),
-    /yalnızca okuma/,
+    /can only read/,
   );
   assert.equal(f.db.jevTasks.list(f.a.id, run.id).length, 0);
 });
@@ -1078,7 +1081,7 @@ test('page receipts use the same URL normalization as observations without autho
         evidence: '2',
         at: Date.now(),
       }),
-    /gözlenmedi/,
+    /not observed/,
   );
 });
 
@@ -1156,7 +1159,7 @@ test('generic Jev requests validate every returned choice and propagate cancella
         json: async () => ({answers: {fit: {choice: 'foreign'}}}),
       }),
     }),
-    /geçersiz/,
+    /invalid/,
   );
 });
 
@@ -1182,17 +1185,20 @@ test('observed URLs, the assigned record and a resumed queue do not need a prior
   const before = f.calls.length;
   await assert.rejects(
     f.run({operation: 'collect_details', url: 'https://unseen.test/job'}),
-    /gözlenen/,
+    /observed/,
   );
   assert.equal(f.calls.length, before);
   f.ports.searchId = 'another';
-  await assert.rejects(f.run({operation: 'classify_results'}), /Önce collect_details/);
+  await assert.rejects(
+    f.run({operation: 'classify_results'}),
+    /First read the listings with collect_details/,
+  );
   assert.deepEqual(jevDetailItems({}, {assignedRecord: {url: one, title: 'Assigned'}}), [
     {url: one, title: 'Assigned'},
   ]);
   assert.throws(
     () => jevDetailItems({urls: [two]}, {assignedRecord: {url: one}, savedUrls: [two]}),
-    /atanmış kayda/,
+    /assigned record/,
   );
 });
 
@@ -1386,7 +1392,7 @@ test('restart reuses discovered Jev links only in their task/search without inve
   assert.equal(f.db.scanQueue(f.a.id, run.id).total, 0);
   await assert.rejects(
     call('browser_jev_run', {operation: 'collect_details', url: foreign}),
-    /gözlenen/,
+    /observed/,
   );
   const result = await call('browser_jev_run', {operation: 'collect_details', url: child});
   assert.equal(result.issue.reason, 'batch_ready');
@@ -1830,7 +1836,7 @@ test('resume tolerates identical operation arguments without permitting changed 
     {goal: 'Different work'},
     {fromTaskId: original.taskId},
   ])
-    await assert.rejects(f.run({taskId: original.taskId, ...args}), /girdileri değiştirilemez/);
+    await assert.rejects(f.run({taskId: original.taskId, ...args}), /inputs cannot be changed/);
   assert.equal(f.calls.length, before);
 });
 
@@ -1942,9 +1948,12 @@ test('collection stops before opening listing 21 and resumes only after its dura
   assert.equal(f.calls.length, 20);
   assert.throws(
     () => jevTaskSummary(f.db.jevTasks.get(f.a.id, 'assigned', result.taskId), {batchId: 'stale'}),
-    /eski/,
+    /stale/,
   );
-  await assert.rejects(f.run({taskId: result.taskId, reviewedBatchId: batch}), /doğrulaması/);
+  await assert.rejects(
+    f.run({taskId: result.taskId, reviewedBatchId: batch}),
+    /verification is unavailable/,
+  );
   f.ports.reviewBatch = async (task, items) => {
     assert.equal(task.batch.id, batch);
     assert.equal(items.length, 20);
@@ -2087,12 +2096,12 @@ test('helper state and bodies never enter SQLite and expire in a new app instanc
   const next = new AutomationStore(f.core);
   assert.deepEqual(next.jevTasks.list(f.a.id, 'assigned'), []);
   assert.notEqual(next.jevTasks.epoch, f.db.jevTasks.epoch);
-  assert.throws(() => next.jevTasks.get(f.a.id, 'assigned', task.id), /süresi doldu/);
-  assert.throws(() => next.jevTasks.fullEvidence(f.a.id, 'assigned', evidence.id), /süresi doldu/);
+  assert.throws(() => next.jevTasks.get(f.a.id, 'assigned', task.id), /expired/);
+  assert.throws(() => next.jevTasks.fullEvidence(f.a.id, 'assigned', evidence.id), /expired/);
   const other = f.db.jevTasks.create(f.a.id, 'other', {operation: 'collect_details'}),
     kept = f.db.jevTasks.evidence(other, {url, text: 'Keep other task'});
   f.db.jevTasks.release(f.a.id, 'assigned');
-  assert.throws(() => f.db.jevTasks.fullEvidence(f.a.id, 'assigned', evidence.id), /süresi doldu/);
+  assert.throws(() => f.db.jevTasks.fullEvidence(f.a.id, 'assigned', evidence.id), /expired/);
   assert.equal(f.db.jevTasks.fullEvidence(f.a.id, 'other', kept.id).text, 'Keep other task');
 });
 
@@ -2112,7 +2121,7 @@ test('failed source import rolls back temporary helper data along with the paren
   );
   assert.deepEqual(f.db.jevTasks.list(f.a.id, 'assigned'), []);
   assert.equal(f.db.jevTasks.bodies.size, 0);
-  assert.throws(() => f.core.workspaces.tasks.get(f.a.id, 'pending-import'), /ait değil/);
+  assert.throws(() => f.core.workspaces.tasks.get(f.a.id, 'pending-import'), /does not belong/);
 });
 
 test('discovery retires explicit card conflicts at 85 percent without opening details or creating records', async (t) => {
@@ -2338,7 +2347,7 @@ test('persistent invalid responses stop after one repair and cancellation never 
     }),
     (error) =>
       error.code === 'JEV_INVALID_RESPONSE' &&
-      /fit:.*toplamı/.test(error.message) &&
+      /fit:.*sum to/.test(error.message) &&
       error.requestCount === 2,
   );
   assert.equal(calls, 2);
@@ -2565,7 +2574,7 @@ test('tracking-parameter aliases share one assessment without merging jobs or ch
     jevDetailKey('https://example.test/jobs/view/123?refId=2'),
     'site-specific parameter names stay meaningful',
   );
-  assert.throws(() => jevDetailItems({url: base}, {observedUrls: [original]}), /gözlenen/);
+  assert.throws(() => jevDetailItems({url: base}, {observedUrls: [original]}), /observed/);
 });
 
 test('pagination scrolls its observed container without repeating card classification or checkpoint', async (t) => {

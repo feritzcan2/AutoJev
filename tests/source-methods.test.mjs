@@ -73,7 +73,7 @@ test('source and skill are independent workspace copies, used by the agent and r
   assert.equal(context.assignedSource.skill, 'My edited skill');
   assert.equal(context.assignedSource.cli, undefined);
   assert.equal(context.assignedSource.tool, undefined);
-  assert.throws(() => db.removeSource(id, entry.url), /çalışan/);
+  assert.throws(() => db.removeSource(id, entry.url), /running/);
   const record = db.record(id, run.id, {
     url: 'https://employer.test/job/1',
     title: 'Synthetic job',

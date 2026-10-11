@@ -104,18 +104,21 @@ test('small structured Jev replies remain intact; cache IDs and input bounds are
   assert.deepEqual(first.content, content);
   assert.equal(first.snapshot.complete, true);
   const next = reader.capture({url, content});
-  assert.throws(() => reader.read({snapshotId: first.snapshot.id}), /eski/);
-  assert.throws(() => new BrowserSnapshot().read({snapshotId: next.snapshot.id}), /bu çalışmaya/);
+  assert.throws(() => reader.read({snapshotId: first.snapshot.id}), /stale/);
+  assert.throws(
+    () => new BrowserSnapshot().read({snapshotId: next.snapshot.id}),
+    /does not belong to this run/,
+  );
   for (const args of [{offset: -1}, {offset: 1.5}, {offset: 1e9}, {limit: 0}, {limit: 8001}])
-    assert.throws(() => reader.read({snapshotId: next.snapshot.id, ...args}), /aralığı/);
+    assert.throws(() => reader.read({snapshotId: next.snapshot.id, ...args}), /range/);
   for (const args of [{query: ''}, {query: 'x'.repeat(201)}, {query: 'x', limit: 6}])
-    assert.throws(() => reader.search({snapshotId: next.snapshot.id, ...args}), /araması/);
+    assert.throws(() => reader.search({snapshotId: next.snapshot.id, ...args}), /page search/);
   for (const tool of browserSnapshotTools)
     assert.throws(() =>
       validate(tool.inputSchema, {snapshotId: next.snapshot.id, query: 'x', path: '/etc/passwd'}),
     );
   reader.invalidate();
-  assert.throws(() => reader.search({snapshotId: next.snapshot.id, query: 'Visit'}), /eski/);
+  assert.throws(() => reader.search({snapshotId: next.snapshot.id, query: 'Visit'}), /stale/);
 });
 
 function workflowFixture(t) {
@@ -197,17 +200,17 @@ test('MCP returns small readable page parts and searches without spending browse
   );
   await assert.rejects(
     f.flow.call('other', f.run.id, 'browser_read_part', {snapshotId: page.snapshot.id}),
-    /geçersiz/,
+    /Invalid/,
   );
   await assert.rejects(
     f.flow.call(f.a.id, 'other', 'browser_search', {
       snapshotId: page.snapshot.id,
       query: 'Wohnung',
     }),
-    /geçersiz/,
+    /Invalid/,
   );
   f.controller.abort();
-  await assert.rejects(f.call('browser_read_part', {snapshotId: page.snapshot.id}), /geçersiz/);
+  await assert.rejects(f.call('browser_read_part', {snapshotId: page.snapshot.id}), /Invalid/);
 });
 
 test('old text remains historical after navigation; finished runs cannot read cached pages', async (t) => {
@@ -227,7 +230,7 @@ test('old text remains historical after navigation; finished runs cannot read ca
   f.db.finish(f.a.id, f.run.id, 'completed', 'Done');
   await assert.rejects(
     f.call('browser_search', {snapshotId: next.snapshot.id, query: 'Wohnung'}),
-    /geçersiz/,
+    /Invalid/,
   );
 });
 

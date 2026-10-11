@@ -56,7 +56,7 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
       'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; connect-src 'self'`,
     });
     res.end(
-      '<!doctype html><title>AutoJev · Jev</title><p>AutoJev mevcut Chrome oturumuna bağlanıyor…</p>' +
+      '<!doctype html><title>AutoJev · Jev</title><p>AutoJev is connecting to the existing Chrome session…</p>' +
         (observeFocus
           ? `<script nonce="${nonce}">
       let previous;
@@ -80,7 +80,7 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
           return;
         }
         if (closed) {
-          reject(Error('Chrome hazırlık penceresi kapandı.'));
+          reject(Error('The Chrome setup window was closed.'));
           return;
         }
         if (focused) {
@@ -98,7 +98,7 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
             () =>
               finish(
                 Error(
-                  'Seçili Chrome profili hazır değil. Açılan AutoJev penceresini öne getirip yeniden bağlan.',
+                  'The selected Chrome profile is not ready. Bring the opened AutoJev window to the front and reconnect.',
                 ),
               ),
             timeout,
@@ -110,7 +110,7 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
     close() {
       if (closed) return;
       closed = true;
-      for (const finish of waiters) finish(Error('Chrome hazırlık penceresi kapandı.'));
+      for (const finish of waiters) finish(Error('The Chrome setup window was closed.'));
       server.closeAllConnections();
       server.close();
     },
@@ -125,7 +125,7 @@ export async function existingChromeEndpoint({directory = chromeUserDataDirector
       .split(/\r?\n/);
   } catch {
     throw Error(
-      'Mevcut Chrome bağlantısı kapalı. Chrome’da chrome://inspect/#remote-debugging sayfasından uzaktan hata ayıklamayı aç ve bağlantı isteğine izin ver. Jev ayrı profil açmaz.',
+      'The existing Chrome connection is off. In Chrome, turn on remote debugging at chrome://inspect/#remote-debugging and allow the connection request. Jev does not open a separate profile.',
     );
   }
   const [port, route] = lines;
@@ -135,13 +135,13 @@ export async function existingChromeEndpoint({directory = chromeUserDataDirector
     Number(port) > 65535 ||
     !/^\/devtools\/browser\/[\w-]+$/.test(route)
   )
-    throw Error('Chrome bağlantı bilgisi geçersiz.');
+    throw Error('The Chrome connection details are invalid.');
   return `ws://127.0.0.1:${port}${route}`;
 }
 
 export async function resolveChromeProfile(selected) {
   if (selected?.directory) {
-    if (!/^[\w -]{1,100}$/.test(selected.directory)) throw Error('Geçersiz Chrome profili.');
+    if (!/^[\w -]{1,100}$/.test(selected.directory)) throw Error('Invalid Chrome profile.');
     return selected.directory;
   }
   const state = JSON.parse(
@@ -164,10 +164,10 @@ export async function openChromeWindow(
   const state = JSON.parse(await readFile(path.join(directory, 'Local State'), 'utf8'));
   const profile = selected?.directory ?? state.profile?.last_used ?? 'Default';
   if (!/^[\w -]{1,100}$/.test(profile) || !state.profile?.info_cache?.[profile])
-    throw Error('Seçili mevcut Chrome profili bulunamadı.');
+    throw Error('The selected existing Chrome profile was not found.');
   const args = [`--profile-directory=${profile}`, '--new-window', url];
   const executable = await findChromeImpl();
-  if (!executable) throw Error('Google Chrome bulunamadı. Chrome’u kur ve en az bir kez aç.');
+  if (!executable) throw Error('Google Chrome was not found. Install Chrome and open it at least once.');
   signal?.throwIfAborted();
   await execImpl(executable, args, {windowsHide: true, signal});
 }

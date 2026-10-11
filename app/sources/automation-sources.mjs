@@ -33,22 +33,24 @@ export function automationSources(a) {
 }
 export function sourceInput(a, url, input) {
   url = webUrl(url);
-  if (!a.sources.includes(url)) throw Error('Kaynak bu çalışma alanına ait değil');
+  if (!a.sources.includes(url)) throw Error('The source does not belong to this workspace');
   const saved = a.sourceSettings?.[url] ?? {},
     result = {...saved};
-  if (input.name !== undefined) result.name = boundedText(input.name, 'Kaynak adı', 120);
-  if (input.query !== undefined) result.query = boundedText(input.query, 'Arama kapsamı', 2000);
+  if (input.name !== undefined) result.name = boundedText(input.name, 'Source name', 120);
+  if (input.query !== undefined) result.query = boundedText(input.query, 'Search scope', 2000);
   if (input.instructions !== undefined)
-    result.instructions = boundedText(input.instructions, 'Çalışma talimatı', 6000, {empty: true});
+    result.instructions = boundedText(input.instructions, 'Working instructions', 6000, {
+      empty: true,
+    });
   if (input.skill !== undefined)
-    result.skill = boundedText(input.skill, 'Kaynak skilli', 60000, {empty: true});
+    result.skill = boundedText(input.skill, 'Source skill', 60000, {empty: true});
   if (input.recipe !== undefined) {
     const recipe = normalizeSourceRecipe(input.recipe);
     if (recipe) result.recipe = recipe;
     else delete result.recipe;
   }
   if (input.enabled !== undefined) {
-    if (typeof input.enabled !== 'boolean') throw Error('Geçersiz kaynak durumu');
+    if (typeof input.enabled !== 'boolean') throw Error('Invalid source state');
     result.enabled = input.enabled;
   }
   if (input.intervalMinutes !== undefined) {
@@ -57,12 +59,12 @@ export function sourceInput(a, url, input) {
       input.intervalMinutes < 1 ||
       input.intervalMinutes > 10080
     )
-      throw Error('Tarama aralığı: 1–10080 arasında tam sayı gerekli');
+      throw Error('Scan interval: an integer from 1 to 10080 is required');
     result.intervalMinutes = input.intervalMinutes;
   }
   if (input.mode !== undefined) {
     if (!modes.includes(input.mode) || modes.indexOf(input.mode) > modes.indexOf(a.mode))
-      throw Error('Kaynak yetkisi profilin işlem yetkisini aşamaz');
+      throw Error('Source permissions cannot exceed the profile action permissions');
     result.mode = input.mode;
   }
   return result;

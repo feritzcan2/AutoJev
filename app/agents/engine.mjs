@@ -46,9 +46,7 @@ export class Engine {
       const id = randomUUID();
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(
-          Error('Motor yanıtı zaman aşımına uğradı; tekrar başlatmadan önce durumu kontrol et.'),
-        );
+        reject(Error('The engine response timed out; check the status before starting again.'));
       }, 60000);
       this.pending.set(id, {resolve, reject, timer});
       this.child.stdin.write(JSON.stringify({id, op, ...args}) + '\n', (error) => {
@@ -69,7 +67,8 @@ export class Engine {
     const exited = new Promise((resolve, reject) => {
       child.once('exit', resolve);
       deadline = setTimeout(
-        () => reject(Error('Motor kapanışı doğrulanamadı; yeni oturum açılmadı.')),
+        () =>
+          reject(Error('Could not verify that the engine shut down; no new session was opened.')),
         12000,
       );
     });
@@ -82,7 +81,7 @@ export class Engine {
       await Promise.race([
         this.request('stop'),
         new Promise((_, reject) => {
-          timer = setTimeout(() => reject(Error('Motor kapanma zaman aşımı')), 8000);
+          timer = setTimeout(() => reject(Error('Engine shutdown timed out')), 8000);
         }),
       ]).catch(() => {});
       child.stdin.end();

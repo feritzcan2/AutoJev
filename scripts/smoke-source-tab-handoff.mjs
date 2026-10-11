@@ -103,17 +103,17 @@ try {
   );
   await assert.rejects(
     call(successor, 'new-run', 'browser_jev_use_tab', {tabId: other.tabId}),
-    /başka bir worker/,
+    /another worker/,
   );
   await assert.rejects(
     call(successor, 'new-run', 'browser_jev_close_tab', {tabId: other.tabId}),
-    /kaynağın/,
+    /source you took over/,
   );
   // A user navigation must be inspected before a retained tab can be discarded.
   await client.tab(opened.tabId).page.goto(base + '/manual-change');
   await assert.rejects(
     call(successor, 'new-run', 'browser_jev_close_tab', {tabId: opened.tabId}),
-    /Sekme değişti/,
+    /The tab changed/,
   );
   await call(successor, 'new-run', 'browser_jev_use_tab', {tabId: opened.tabId});
   // Earlier versions stored owned target IDs and URL hashes but no source labels.
@@ -172,7 +172,7 @@ try {
     true,
   );
   assert.deepEqual((await call(restarted, 'restart-run', 'browser_jev_tabs')).tabs, []);
-  await assert.rejects(call(restarted, 'restart-run', 'browser_snapshot'), /Önce/);
+  await assert.rejects(call(restarted, 'restart-run', 'browser_snapshot'), /[Oo]pen a page/);
   assert.equal(personal.url(), base + '/personal');
   assert.equal(personal.isClosed(), false);
   console.log(

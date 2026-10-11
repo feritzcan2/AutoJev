@@ -69,7 +69,7 @@ test('same-task text survives a new run and stale ID recovery resets the offset'
   assert.equal(f.snapshots.current, null);
   assert.throws(
     () => f.snapshots.get(f.page.id),
-    /gözlemi eski/,
+    /observation is stale/,
     'Historical text cannot authorize browser actions',
   );
 });
@@ -82,12 +82,12 @@ test('recovery cannot read another task, workspace, search or record', (t) => {
     {recordId: 'other'},
     {scan: {work: {activeSearchId: 'other'}}},
   ])
-    assert.throws(() => f.read({snapshotId: f.page.id}, patch), /gözlemi eski/);
+    assert.throws(() => f.read({snapshotId: f.page.id}, patch), /observation is stale/);
   const other = {...f.run, taskId: 'other'};
   f.db.browserEvidence.save(other, {...f.page, id: 'foreign'});
   assert.throws(
     () => f.read({snapshotId: 'foreign'}),
-    /gözlemi eski/,
+    /observation is stale/,
     'Do not silently rebind a known foreign ID',
   );
   assert.equal(assessmentListingText(f.db, 'other', f.run, f.record.url), '');
@@ -97,7 +97,7 @@ test('unknown IDs in source scans cannot guess a listing; known saved pages rema
   const f = fixture(t),
     sourceRun = {...f.run, recordId: undefined};
   f.db.browserEvidence.save(sourceRun, {...f.page, id: 'source-page'});
-  assert.throws(() => f.read({snapshotId: 'unknown'}, sourceRun), /gözlemi eski/);
+  assert.throws(() => f.read({snapshotId: 'unknown'}, sourceRun), /observation is stale/);
   const search = f.read({snapshotId: 'source-page', query: 'Required'}, sourceRun, 'search');
   assert.equal(search.matches.length, 5);
   assert.equal(search.historical, true);

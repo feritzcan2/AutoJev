@@ -13,7 +13,7 @@ test('cancelled and timed out profile requests leave the active approval and rem
   abort.abort();
   await cancelled;
   await assert.rejects(acquireChromeConnection({signal: abort.signal}), {name: 'AbortError'});
-  const timedOut = assert.rejects(acquireChromeConnection(), /sırayla bağlanacak/);
+  const timedOut = assert.rejects(acquireChromeConnection(), /connect in turn/);
   t.mock.timers.tick(30000);
   await timedOut;
   let started = false;

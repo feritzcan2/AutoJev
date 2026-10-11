@@ -89,7 +89,7 @@ try {
   await page.locator('#config-jev button[type=submit]').click();
   await page.waitForFunction(
     () =>
-      document.querySelector('#config-jev [data-state]').textContent === 'Anahtar yapılandırıldı' &&
+      document.querySelector('#config-jev [data-state]').textContent === 'Key configured' &&
       document.querySelector('#config-jev input[name=apiKey]').value === '',
   );
   const saved = await page.evaluate(() => window.jobloop.jevSettingsStatus());
@@ -116,15 +116,15 @@ try {
   await page.locator('#config-privacy').waitFor({state: 'visible'});
   const disclosure = await page.locator('#config-privacy').innerText();
   for (const label of [
-    'AI sağlayıcısında',
+    'At the AI provider you choose',
     'TypeSafe / Jev',
     'Telegram',
-    'form alanlarının mevcut değerleri',
+    'current form field values',
   ])
     assert.ok(disclosure.includes(label));
   assert.equal(
     (await page.locator('aside .sidebar-bottom').innerText()).includes(
-      'Veriler bu bilgisayarda kalır',
+      'Data stays on this computer',
     ),
     false,
   );
@@ -133,17 +133,17 @@ try {
   await page.locator('#config-data').waitFor({state: 'visible'});
   const dataStatus = await page.evaluate(() => window.jobloop.dataStatus());
   await page.waitForFunction(() =>
-    document.querySelector('#config-data .data-status').textContent.includes('prompt kaydı'),
+    document.querySelector('#config-data .data-status').textContent.includes('prompt logs'),
   );
   const dataText = await page.locator('#config-data').innerText();
-  assert.ok(dataText.includes(`${dataStatus.retention.days} gün`));
+  assert.ok(dataText.includes(`${dataStatus.retention.days} days`));
   assert.ok(
     dataText.includes(
-      'Başvuru geçmişi, otomasyon konuşmaları ve sonuçlar bu temizliğe dahil değildir',
+      'Application history, automation conversations and results are not part of this cleanup',
     ),
   );
-  assert.ok(dataText.includes('Jev anahtarı'));
-  assert.ok(dataText.includes('şifrelenmez'));
+  assert.ok(dataText.includes('the Jev key'));
+  assert.ok(dataText.includes('not encrypted'));
   for (const action of [
     'backup',
     'restore',
