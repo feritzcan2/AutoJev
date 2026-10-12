@@ -75,6 +75,10 @@
     "typescript": "5.9.3"
   },
   "pnpm": {
+    "supportedArchitectures": {
+      "os": ["current"],
+      "cpu": ["current", "arm64", "x64"]
+    },
     "onlyBuiltDependencies": [
       "electron",
       "esbuild"

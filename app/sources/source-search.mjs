@@ -54,7 +54,7 @@ export function sourceSearchChoice(search, recipe, input) {
   return choice;
 }
 
-export function sourceSearchRecipe(search, recipe, {terms, filters}) {
+export function sourceSearchRecipe(search, recipe, {terms = undefined, filters}) {
   const base = baseRecipe(search, recipe),
     template = withSearchFilters(
       base.entry.template,
