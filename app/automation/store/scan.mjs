@@ -14,6 +14,7 @@ import {
 } from '../../sources/scan-work.mjs';
 import {jevDetailKey} from '../../jev/detail-urls.mjs';
 import {boundedText, webUrl} from '../../templates/catalog.mjs';
+import {SCAN_SEARCH_LISTINGS} from '../../sources/recipe.mjs';
 import {
   sourceScanScope,
   advanceSourceScan,
@@ -170,7 +171,7 @@ export const scanMethods = {
         ...run,
         scanPlan,
         scan: withScanWork(run, work, {
-          reason: `The recipe does not know the sort order, so the search is limited to the first ${scanPlan.pageCap} pages.`,
+          reason: `The search reached its limit of ${scanPlan.pageCap} pages or ${SCAN_SEARCH_LISTINGS} new listings.`,
           evidenceUrl: url,
         }),
       });

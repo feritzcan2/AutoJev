@@ -166,8 +166,19 @@ export function updateScanQueue(run, input) {
   );
   if (input.excluded?.length) noteExcluded(search, input.excluded);
   if (input.cards?.length) noteCards(search, input.cards);
+  // New listings by results page; a page read again after a restart keeps its count.
+  if (input.newListings)
+    search.newListings = {
+      ...search.newListings,
+      [input.newListings.url]: Math.max(
+        search.newListings?.[input.newListings.url] ?? 0,
+        input.newListings.count,
+      ),
+    };
   return work;
 }
+export const searchNewListings = (search) =>
+  Object.values(search?.newListings ?? {}).reduce((sum, count) => sum + count, 0);
 // Jev's card reading of a waiting listing: its title, the probability it is
 // kept, and the closest exclusion. Only waiting listings keep a note.
 const EXCLUSIONS = ['hard_constraint', 'qualification', 'unrelated_role'];

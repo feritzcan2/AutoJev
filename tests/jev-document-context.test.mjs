@@ -325,6 +325,45 @@ test('background rendering is scoped to the pending document and restored on tim
   }
 });
 
+test('a fresh document is read once its content stops changing', async () => {
+  let time = 0,
+    keys = ['10:100', '12:140', '12:140', '12:140', '12:140', '12:140'];
+  const url = 'https://jobs.test/apply';
+  const slot = {
+    page: {
+      evaluate: async () => ({url, loading: false, age: 900 + time, contentKey: keys.shift()}),
+    },
+  };
+  const options = {
+    delay: 250,
+    now: () => time,
+    wait: async (ms) => {
+      time += ms;
+    },
+  };
+  const ready = await waitForDocument(slot, options);
+  assert.equal(ready.contentKey, '12:140', 'late content is part of the first read');
+  assert.equal(time, 250 + 750, 'one quiet period after the last change');
+  time = 0;
+  slot.page.evaluate = async () => ({
+    url,
+    loading: false,
+    age: 900 + time,
+    contentKey: String(time),
+  });
+  const changing = await waitForDocument(slot, {...options, attempts: 4});
+  assert.equal(
+    changing.loading,
+    false,
+    'a page that never settles is still read when the wait ends',
+  );
+  assert.equal(time, 750);
+  time = 0;
+  slot.page.evaluate = async () => ({url, loading: false});
+  assert.equal((await waitForDocument(slot, options)).loading, false);
+  assert.equal(time, 0, 'an older document is read without waiting');
+});
+
 test('ready or foreground documents need no emulation, and abort interrupts a long polling delay', async () => {
   for (const state of [
     {loading: false, hidden: true},

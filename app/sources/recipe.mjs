@@ -23,13 +23,12 @@ export const RECIPE_FIELD_KEYS = ['query', 'location'];
 // newest_first lets repeat scans stop once consecutive pages hold only known listings.
 export const RECIPE_ORDERING_KINDS = ['unknown', 'newest_first'];
 export const RECIPE_STALE_FAILURES = 2;
-// User rule (2026-10-05, budget raised to 30 on 2026-10-11), for every source
-// scan: all searches of a scan together read at most SCAN_PAGE_BUDGET result
-// pages, shared evenly, and each search reads at least SCAN_MIN_SEARCH_PAGES.
-export const SCAN_PAGE_BUDGET = 30;
-export const SCAN_MIN_SEARCH_PAGES = 2;
-export const scanPageCap = (searches) =>
-  Math.max(SCAN_MIN_SEARCH_PAGES, Math.floor(SCAN_PAGE_BUDGET / Math.max(1, searches)));
+// User rule (2026-10-11), for every source scan and every kind of source: each
+// search (one per recipe term) reads at most SCAN_SEARCH_PAGES result pages and
+// ends with the page that brings its new listings to SCAN_SEARCH_LISTINGS. New
+// listings are those the workspace had not recorded or rejected before.
+export const SCAN_SEARCH_PAGES = 10;
+export const SCAN_SEARCH_LISTINGS = 100;
 export const RECIPE_TERM_LIMIT = 5;
 const placeholderPattern = /\{([a-z_][a-z0-9_]*)\}/g;
 
@@ -169,13 +168,6 @@ export function replayMatches(replay, url) {
   });
 }
 
-// How many result pages a scan reads per search when the board's order is unknown.
-// Each recipe term is one search; a scan without terms or recipe is one search.
-export const recipePageCap = (recipe) =>
-  scanPageCap(
-    recipe?.entry?.kind !== 'discovery' && recipe?.terms?.length ? recipe.terms.length : 1,
-  );
-
 export const recipeStatus = (recipe, state) =>
   !recipe
     ? 'none'
@@ -309,7 +301,7 @@ export function recipeSummary(recipe, state) {
     return {
       status,
       label: 'Recipe verified',
-      detail: `${state.successCount} successful turns${state.failCount ? `, ${state.failCount} failed` : ''}${recipe.terms?.length ? ` · ${recipe.terms.length} search terms` : ''}${recipe.ordering === 'newest_first' ? ' · new listings only' : ''} · first ${recipePageCap(recipe)} pages per search`,
+      detail: `${state.successCount} successful turns${state.failCount ? `, ${state.failCount} failed` : ''}${recipe.terms?.length ? ` · ${recipe.terms.length} search terms` : ''}${recipe.ordering === 'newest_first' ? ' · new listings only' : ''} · up to ${SCAN_SEARCH_LISTINGS} new listings or ${SCAN_SEARCH_PAGES} pages per search`,
     };
   if (status === 'stale')
     return {

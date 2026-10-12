@@ -115,7 +115,7 @@ try {
     panel.update(snapshot, 'owner');
   });
   await page.getByText('Access problem persists', {exact: true}).waitFor();
-  await page.getByText('Waiting for a restart', {exact: true}).waitFor();
+  await page.getByText('Paused until a retry', {exact: true}).waitFor();
   assert.equal(await page.getByRole('button', {name: 'Retry', exact: true}).isEnabled(), true);
   await page.getByRole('button', {name: 'Retry', exact: true}).click();
   assert.equal(await page.evaluate(() => window.runCalls.length), 2);
@@ -149,6 +149,7 @@ try {
     source.observedPage = {currentPage: 1};
     panel.update(snapshot, 'owner');
   });
+  await page.locator('.source-row-menu').click();
   await page.getByRole('button', {name: 'Details', exact: true}).click();
   await page
     .getByText('North · 250 address(es) waiting · page 7 · Selected search', {exact: true})
@@ -201,14 +202,11 @@ try {
     }));
     panel.update(snapshot, 'owner');
   });
+  // The status line already covers success, a running scan and a partial scan.
   assert.deepEqual(await page.locator('.source-last-run').allTextContents(), [
-    'Last round: Succeeded',
-    'Last round: Failed',
     'Last round: Blocked',
     'Last round: Stopped',
-    'Last round: Partially completed',
     'Last round: Timed out',
-    'Last round: not run yet',
   ]);
   const rows = page.locator('.source-row');
   assert.equal(await rows.nth(1).locator('.source-status b').textContent(), 'Scanning');

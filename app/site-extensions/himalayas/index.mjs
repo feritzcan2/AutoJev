@@ -31,13 +31,20 @@ export default {
         description: job.description,
         fields: {
           company: job.company,
-          location: job.location,
+          applicantLocation: job.location,
           employmentType: job.employmentType,
           publishedAt: job.publishedAt,
           expiresAt: job.expiresAt,
           salary: salaryText(job.salary),
           timezoneRestrictions: job.timezoneRestrictions,
         },
+        // Himalayas lists only remote roles; its location is a restriction on
+        // where applicants may live, not where the employer is.
+        notes: job.location
+          ? [
+              'applicantLocation is the Himalayas restriction on where candidates must be based; Worldwide means no country restriction.',
+            ]
+          : [],
       }),
       cells: {company: job.company, location: job.location},
     }),

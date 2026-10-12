@@ -386,8 +386,7 @@ export const sourceMethods = {
       (old.instructions ?? '') !== (settings.instructions ?? '') ||
       (old.tool ?? '') !== (settings.tool ?? '') ||
       (old.skill ?? '') !== (settings.skill ?? '');
-    if (old.query !== settings.query || old.mode !== settings.mode || methodChanged)
-      this.clearApprovals(id);
+    if (old.query !== settings.query || methodChanged) this.clearApprovals(id);
     const scopeChanged =
       sourceScanScope({...a, sourceSettings: {...a.sourceSettings, [url]: old}}, url) !==
       sourceScanScope(a, url);

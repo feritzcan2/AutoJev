@@ -174,9 +174,9 @@ try {
       .getByText('Preparing', {exact: true})
       .waitFor();
     assert.equal(await row.locator('[data-record-operation=prepare]').textContent(), 'Preparing');
-    await page.getByRole('button', {name: 'Show records in progress', exact: true}).click();
-    assert.equal(await page.locator('#automation-result-filter').inputValue(), 'active');
-    await page.getByRole('button', {name: 'Show all records', exact: true}).click();
+    await page.locator('#automation-result-filter [data-filter=active]').click();
+    assert.equal(await page.locator('[data-filter=active]').getAttribute('aria-pressed'), 'true');
+    await page.locator('#automation-result-filter [data-filter=all]').click();
     const context = await tool('get_automation_context');
     assert.equal(context.assignedRecord.id, item.id);
     assert.equal(context.assignedOperation.kind, 'prepare');

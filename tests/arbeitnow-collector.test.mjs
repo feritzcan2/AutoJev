@@ -9,7 +9,7 @@ import arbeitnow, {
 import {siteExtensionKind} from '../app/site-extensions/index.mjs';
 import {collectorSearches} from '../app/sources/collectors.mjs';
 import {prepareCollection, collectSourcePage} from '../app/sources/collector-worker.mjs';
-import {recipePageCap} from '../app/sources/recipe.mjs';
+import {SCAN_SEARCH_PAGES} from '../app/sources/recipe.mjs';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
 
@@ -263,18 +263,18 @@ test('one feed is one search, and without a newest-first recipe it reads only it
   for (let i = 0; i < 40 && !result?.complete; i++)
     result = await collectSourcePage(db, run.id, {readPage: endless(reads)});
   assert.equal(result.complete, true);
-  assert.equal(reads.length, recipePageCap(undefined));
+  assert.equal(reads.length, SCAN_SEARCH_PAGES);
   assert.equal(db.run(run.id).scan.work.searches[0].completion, 'end');
 });
 
-test('a newest-first recipe reads a collector feed to its end', async (t) => {
+test('a newest-first recipe reads a collector feed only within the page budget', async (t) => {
   const {db, run} = workspace(t, {
     entry: {kind: 'url_template', template: 'https://www.arbeitnow.com/api/job-board-api'},
     pagination: 'url_param',
     ordering: 'newest_first',
   });
   const reads = [];
-  const limit = recipePageCap(undefined) + 5;
+  const limit = SCAN_SEARCH_PAGES + 5;
   const readPage = async (url) => {
     const page = await endless(reads)(url);
     return page.page >= limit ? {...page, nextUrl: null, complete: true} : page;
@@ -283,5 +283,5 @@ test('a newest-first recipe reads a collector feed to its end', async (t) => {
   for (let i = 0; i < 60 && !result?.complete; i++)
     result = await collectSourcePage(db, run.id, {readPage});
   assert.equal(result.complete, true);
-  assert.equal(reads.length, limit);
+  assert.equal(reads.length, SCAN_SEARCH_PAGES);
 });

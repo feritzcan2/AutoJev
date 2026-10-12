@@ -85,6 +85,22 @@ export function queueProfileUpdate(
   return db.put({...current, profileUpdate: update});
 }
 
+// Saving without a restart writes the profile at once and keeps the revision, so
+// running tasks stay valid and finish; every later context read sees the new profile.
+export function applyProfileInPlace(db, id) {
+  const a = db.get(id),
+    update = a.profileUpdate;
+  if (!update) return false;
+  if (update.baseRevision !== a.revision)
+    throw Error('The saved profile version changed. Review the profile again and save.');
+  const {profileUpdate, ...next} = {...a, ...profilePlan(update.plan), updatedAt: db.now()};
+  if (Object.hasOwn(update, 'queueExisting'))
+    next.autoApplyAfter = update.queueExisting ? null : update.savedAt;
+  db.put(next);
+  db.event(id, 'profile_applied', {revision: a.revision, savedAt: update.savedAt, inPlace: true});
+  return true;
+}
+
 export function applyProfileUpdate(db, id) {
   const a = db.get(id),
     update = a.profileUpdate;

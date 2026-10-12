@@ -83,6 +83,7 @@ import {
   recipeValues,
   jevListingItem,
   replayMatches,
+  SCAN_SEARCH_LISTINGS,
 } from '../sources/recipe.mjs';
 import {scopedAutomationTools, collectorHidden, scoreWrites} from './tools.mjs';
 import {pageObservation, researchUrl, unchangedPageContent} from './page-content.mjs';
@@ -106,6 +107,11 @@ const samePath = (a, b) => {
   }
 };
 const TRIAL_SCAN_PAGE_LIMIT = 2;
+// Click targets keep the page's raw spacing; form inspection collapses it.
+const spaced = (label) =>
+  String(label ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 export function automationWorkflow({
   workspace,
@@ -191,6 +197,14 @@ export function automationWorkflow({
             .map((c) => c.text)
             .join('\n'),
         );
+      // Whether the latest browser step was stopped by this run's shared site
+      // wait; record recovery only resumes runs that ended on that wait.
+      const wait = response.siteWait ?? response.jevPage?.siteWait,
+        waitBlocked = Boolean(
+          wait && (!run.sourceUrl || sameSite(run.sourceUrl, 'https://' + wait.site)),
+        );
+      if (Boolean(db.run(run.id).siteWaitBlocked) !== waitBlocked)
+        db.putRun({...db.run(run.id), siteWaitBlocked: waitBlocked});
       return name === 'browser_navigate' && response.pageContext
         ? {...response, pageContext: {...response.pageContext, requestedUrl: args.url}}
         : response;
@@ -616,6 +630,7 @@ export function automationWorkflow({
           ...(active.kind === 'run' && operation === 'scan_results' && active.scanPlan?.pageCap
             ? {
                 pageCap: active.scanPlan.pageCap,
+                listingLimit: SCAN_SEARCH_LISTINGS,
                 pageCapReached: (page) => db.markPageCap(id, run.id, page.url),
               }
             : {}),
@@ -1395,7 +1410,10 @@ export function automationWorkflow({
         // also when its label is "Apply" or "Bewerben".
         formSubmits =
           result.fields?.some((field) => field.required) || result.uploads?.length
-            ? {url: result.url, labels: new Set((result.submitControls ?? []).map((c) => c.label))}
+            ? {
+                url: result.url,
+                labels: new Set((result.submitControls ?? []).map((c) => spaced(c.label))),
+              }
             : null;
         break;
       }
@@ -1504,7 +1522,7 @@ export function automationWorkflow({
         const submitClick =
           isSubmitLabel(submitLabel) ||
           (Boolean(submitLabel) &&
-            formSubmits?.labels.has(submitLabel) &&
+            formSubmits?.labels.has(spaced(submitLabel)) &&
             formSubmits.url === (await browser.currentUrl(id)));
         if (submitClick) assertSubmitAllowed(db.activeRun(id, run.id), submitLabel);
         const beforeSubmit = submitClick ? (snapshots.current?.text ?? '') : '';

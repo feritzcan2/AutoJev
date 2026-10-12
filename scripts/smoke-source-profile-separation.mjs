@@ -113,6 +113,7 @@ try {
   assert.equal(state.automation.reviewedRevision, state.automation.revision);
   const revision = state.automation.revision;
   const manualRow = sources.locator(`.source-row[data-source-id="${manual}"]`);
+  await manualRow.locator('.source-row-menu').click();
   await manualRow.getByRole('button', {name: 'Edit', exact: true}).click();
   await manualRow.getByRole('button', {name: 'Delete source', exact: true}).click();
   await manualRow.waitFor({state: 'detached'});

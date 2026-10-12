@@ -256,6 +256,9 @@
 .authorization-score input {
   max-width: 160px;
 }
+.authorization-score select {
+  max-width: 340px;
+}
 .choice input:focus-visible {
   outline: none;
 }

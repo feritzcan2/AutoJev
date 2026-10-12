@@ -86,6 +86,12 @@ export function installFormSemantics() {
           if (!help) help = texts.slice(1).join(' ');
         }
       }
+      // A file input's own label is often its trigger verb ("Attach"); keep
+      // walking to the group that names its purpose ("Resume/CV").
+      if (e.type === 'file' && question === explicit) {
+        question = '';
+        questionNode = null;
+      }
       if (question) break;
     }
     const label = explicit || question || clean(e.getAttribute('placeholder')) || '';
@@ -106,6 +112,7 @@ export function installFormSemantics() {
       required,
       ...(choice ? {option: explicit || clean(e.value)} : {}),
       named: Boolean(explicit || question),
+      explicitLabel: Boolean(explicit),
       choice,
       container,
       sources: [
@@ -150,8 +157,42 @@ export function installFormSemantics() {
       container: group.container,
     };
   };
+  // A file input hidden behind its own drop zone: the nearest rendered,
+  // focusable or clickable ancestor that holds no other file input.
+  window.__jobloopFileSurface = (e) => {
+    if (e.type !== 'file') return null;
+    for (let p = e.parentElement, depth = 0; p && depth < 4; p = p.parentElement, depth++) {
+      if (p.matches('form,body') || p.querySelectorAll('input[type=file]').length !== 1)
+        return null;
+      const r = p.getBoundingClientRect();
+      if (
+        visible(p) &&
+        r.width > 1 &&
+        r.height > 1 &&
+        (p.tabIndex >= 0 || p.matches('label,[role="button"]'))
+      )
+        return p;
+    }
+    return null;
+  };
+  // A custom dropdown drawn as a plain button without ARIA popup markup: the
+  // only button of a field group that carries its own question, and no file
+  // input (an upload group's Attach button is not an answer).
+  window.__jobloopPicker = (e) => {
+    if (!(e.tagName === 'BUTTON' ? e.type === 'button' : e.getAttribute('role') === 'button'))
+      return false;
+    if (e.closest('[role="listbox"],[role="menu"],[role="option"],[role="tree"]')) return false;
+    const field = context(e);
+    if (!field.named || !field.container || field.explicitLabel) return false;
+    const caption = clean(e.innerText);
+    if (!caption || caption.length > 80 || caption === field.question) return false;
+    return (
+      field.container.querySelectorAll('button,[role="button"],a[href]').length === 1 &&
+      !field.container.querySelector('input[type=file]')
+    );
+  };
   window.__jobloopFieldContext = (e) => {
-    const {named, choice, container, sources, ...field} = context(e);
+    const {named, choice, container, sources, explicitLabel, ...field} = context(e);
     return field;
   };
   // Visible validation text tied to the field: its aria-errormessage or

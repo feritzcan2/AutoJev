@@ -194,6 +194,7 @@ try {
   await page.evaluate(() => window.scrollTo(0, 250));
   const after = await workingRow.locator('td').first().boundingBox();
   assert.ok(after.y < before.y - 50, 'Active row scrolls normally with the page');
+  await page.selectOption('#automation-result-page-size', '10');
   await page.getByRole('button', {name: 'Next', exact: true}).click();
   assert.equal(
     (await ids()).includes('working'),

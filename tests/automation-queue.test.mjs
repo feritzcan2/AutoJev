@@ -84,9 +84,8 @@ function fixture(t, {mode = 'prepare', workers = 1, templateId = 'job-search'} =
   return {store, db, id: a.id, runtime, launches, closed, finish, flow, record, options};
 }
 
-test('workspace restart keeps source permissions, disabled sources and the one-off scope', async (t) => {
-  const f = fixture(t, {mode: 'auto', workers: 2});
-  f.db.saveSource(f.id, sources[0], {mode: 'observe'});
+test('workspace restart keeps the profile permission, disabled sources and the one-off scope', async (t) => {
+  const f = fixture(t, {mode: 'observe', workers: 2});
   f.db.saveSource(f.id, sources[1], {enabled: false});
   for (const worker of f.runtime.workers.list(f.id))
     f.store.workspaces

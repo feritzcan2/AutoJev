@@ -105,6 +105,64 @@ test('saving stops active workers before applying new criteria, restarts trackin
   assert.ok(!f.closed.includes(chat.id));
 });
 
+test('saving a profile does not start source scans before they are due', async (t) => {
+  const f = fixture(t),
+    {db, id, runtime} = f,
+    [due, later, last] = db.get(id).sources,
+    future = db.now() + 3600000;
+  db.enable(id);
+  db.put({
+    ...db.get(id),
+    sourceState: {
+      [due]: {trial: {status: 'passed'}, nextRunAt: db.now() - 1000},
+      [later]: {trial: {status: 'passed'}, nextRunAt: future, lastRunAt: db.now() - 1000},
+      [last]: {trial: {status: 'passed'}, nextRunAt: future},
+    },
+  });
+  await runtime.saveProfile(id, {criteria: {...db.get(id).criteria, budget: '1900'}});
+  await runtime.tick();
+  await settle();
+  const after = db.get(id);
+  assert.equal(after.criteria.budget, '1900');
+  assert.deepEqual(
+    f.started.map((run) => run.sourceUrl),
+    [due],
+  );
+  assert.equal(after.sourceState[later].nextRunAt, future);
+  assert.equal(after.sourceState[later].trial.status, 'passed');
+  assert.equal(after.sourceState[last].nextRunAt, future);
+});
+
+test('a profile saved without a restart applies after the scans finish and waits for their next interval', async (t) => {
+  const f = fixture(t),
+    {db, id, runtime} = f;
+  db.enable(id);
+  await runtime.tick();
+  await settle();
+  assert.equal(f.started.length, 2);
+  await runtime.saveProfile(
+    id,
+    {criteria: {...db.get(id).criteria, budget: '1900'}},
+    {restart: false},
+  );
+  await runtime.finish(id, 'completed', 'Done.', runtime.slots(id)[0].workerId);
+  await runtime.finish(id, 'completed', 'Done.', runtime.slots(id)[0].workerId);
+  for (let i = 0; i < 3; i++) {
+    await runtime.tick();
+    await settle();
+  }
+  const after = db.get(id),
+    finished = f.started.slice(0, 2).map((run) => run.sourceUrl),
+    waiting = after.sources.find((url) => !finished.includes(url));
+  assert.equal(after.criteria.budget, '1900');
+  assert.deepEqual(
+    f.started.slice(2).map((run) => run.sourceUrl),
+    [waiting],
+    'Only the source that never ran starts; finished scans wait for their interval',
+  );
+  for (const url of finished) assert.ok(after.sourceState[url].nextRunAt > db.now());
+});
+
 test('saving while only setup is busy applies immediately and does not start paused tracking', async (t) => {
   const {db, id, runtime, closed} = fixture(t);
   db.pause(id);
@@ -291,9 +349,14 @@ test('Find and apply needs a minimum score and records whether existing listings
   const criteria = {...db.get(id).criteria, score_threshold: '0'};
   await assert.rejects(runtime.saveProfile(id, {mode: 'auto', criteria}), /minimum score/);
   criteria.score_threshold = '70';
+  const revision = db.get(id).revision;
   await runtime.saveProfile(id, {mode: 'auto', criteria}, {queueExisting: false});
   const saved = db.get(id);
   assert.equal(saved.mode, 'auto');
+  assert.equal(saved.criteria.score_threshold, '70');
+  // The threshold does not change scoring, so existing scores stay current.
+  assert.equal(saved.revision, revision);
+  assert.equal(saved.reviewedRevision, revision);
   assert.equal(typeof saved.autoApplyAfter, 'number');
   await runtime.saveProfile(id, {mode: 'observe'});
   await runtime.saveProfile(id, {mode: 'auto'}, {queueExisting: true});
@@ -302,4 +365,34 @@ test('Find and apply needs a minimum score and records whether existing listings
   db.put({...db.get(id), autoApplyAfter: 5});
   await runtime.saveProfile(id, {facts: 'Updated facts'});
   assert.equal(db.get(id).autoApplyAfter, 5);
+});
+
+test('saving without a restart applies the profile at once and keeps running tasks', async (t) => {
+  const {db, id, runtime, closed} = fixture(t);
+  db.enable(id);
+  await runtime.tick();
+  await settle();
+  const scans = runtime.slots(id).map((slot) => slot.run),
+    before = db.get(id);
+  assert.equal(scans.length, 2);
+  const result = await runtime.saveProfile(
+    id,
+    {criteria: {...before.criteria, budget: '1900'}},
+    {expectedRevision: before.revision, restart: false},
+  );
+  assert.deepEqual(result, {saved: true, applied: true, restarted: false});
+  assert.deepEqual(closed, []);
+  const after = db.get(id);
+  assert.equal(after.criteria.budget, '1900');
+  assert.equal(after.profileUpdate, undefined);
+  assert.equal(after.status, 'enabled');
+  // The revision stays, so the running tasks remain valid and keep their slots.
+  assert.equal(after.revision, before.revision);
+  assert.equal(after.reviewedRevision, before.revision);
+  assert.deepEqual(
+    runtime.slots(id).map((slot) => slot.run.id),
+    scans.map((run) => run.id),
+  );
+  // Their next context read sees the new profile.
+  assert.equal(automationTaskContext(db, id, scans[0]).automation.criteria.budget, '1900');
 });

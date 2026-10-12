@@ -117,3 +117,21 @@ test('record writes save the supplied score without a mandatory breakdown', () =
   delete input.score;
   assert.throws(() => recordAssessment(db, 'one', run, input), /score/);
 });
+
+test('unstated mandatory conditions stay unverified unless the profile treats them as met', () => {
+  const base = {revision: 1, criteria: {ranking: 'Fit'}};
+  assert.equal(scoringPolicy(base).unstatedConditions, 'check');
+  assert.equal(
+    scoringPolicy({...base, criteria: {...base.criteria, unstated_conditions: 'Treat as met'}})
+      .unstatedConditions,
+    'met',
+  );
+  assert.equal(
+    scoringPolicy({
+      ...base,
+      criteria: {...base.criteria, unstated_conditions: 'Do not apply until checked'},
+    }).unstatedConditions,
+    'check',
+  );
+  assert.match(scoringPolicy(base).instructions, /unstatedConditions/);
+});

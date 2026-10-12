@@ -14,6 +14,7 @@ import {
   collectSourcePage,
 } from '../app/sources/collector-worker.mjs';
 import {parseHimalayasPage} from '../app/site-extensions/himalayas/api.mjs';
+import {SCAN_SEARCH_PAGES} from '../app/sources/recipe.mjs';
 import {
   readCollectorCliPage,
   readCollectorCliDetail,
@@ -44,12 +45,19 @@ const jobs = [
     excerpt: 'Platform role',
   },
 ];
+// Listing URLs whose full text Jev assessed.
+const detailReads = [];
 const evaluate = async (state, questions) => ({
   answers: Object.fromEntries(
     Object.entries(questions).map(([name, q]) => {
       const text = JSON.stringify(state);
-      let choice =
-        name === 'fit'
+      if (name === 'fit' && state.listing) detailReads.push(state.listing.url);
+      const card = /^fit\d+$/.test(name) && state.links?.['link' + name.slice(3)];
+      let choice = card
+        ? card.context.includes('CARD_CONFLICT_MARKER')
+          ? 'hard_constraint'
+          : 'keep'
+        : name === 'fit'
           ? text.includes('DENTIST_MARKER')
             ? 'mismatch'
             : text.includes('IMAGE_ONLY_MARKER')
@@ -587,20 +595,20 @@ const knownPages = (total) => (value) => {
 };
 
 test('pages without new listings are read on within one bounded call', async (t) => {
-  const f = fixture(t, {terms: ['backend'], ordering: 'newest_first', readPage: knownPages(25)});
+  const f = fixture(t, {terms: ['backend', 'platform', 'staff'], readPage: knownPages(25)});
   const first = await f.call('collect_source_page');
   assert.equal(f.reads(), 20);
   assert.equal(f.db.run(f.run.id).scan.complete, false);
   assert.match(first.next, /no new listings.*collect_source_page again/);
   assert.equal((await f.call('collect_source_page')).complete, true);
-  assert.equal(f.reads(), 25);
+  assert.equal(f.reads(), 3 * SCAN_SEARCH_PAGES, 'each of the three searches reads its 10 pages');
 });
 
 test('a single collector search closed by its page budget finishes completed', async (t) => {
   const f = fixture(t, {terms: ['backend'], readPage: knownPages(40)});
   await f.call('collect_source_page');
   assert.equal((await f.call('collect_source_page')).complete, true);
-  assert.equal(f.reads(), 30);
+  assert.equal(f.reads(), SCAN_SEARCH_PAGES);
   await f.call('finish_automation_run', {status: 'completed', summary: 'Page budget read'});
   assert.equal(f.db.run(f.run.id).status, 'completed');
 });
@@ -859,4 +867,101 @@ test('standalone CLI still emits NDJSON and exit 2 for an incomplete page budget
   const lines = stdout.trim().split('\n').map(JSON.parse);
   assert.equal(lines[0].page.jobs.length, 1);
   assert.equal(lines[1].result.complete, false);
+});
+
+test('a collector card with a confident conflict is rejected without reading its full text', async (t) => {
+  const conflict = {
+    guid: url('us-only'),
+    title: 'Staff backend engineer',
+    companyName: 'Synthetic Co',
+    locationRestrictions: ['CARD_CONFLICT_MARKER'],
+    description: '<p>Backend role for residents only.</p>',
+  };
+  const f = fixture(t, {
+    terms: ['backend'],
+    readPage: (value) =>
+      parseHimalayasPage(value, {jobs: [jobs[0], conflict], offset: 0, limit: 20, totalCount: 2}),
+  });
+  detailReads.length = 0;
+  const receipt = await f.call('collect_source_page'),
+    items = helper(f, receipt).items;
+  const rejected = items.find((i) => i.url === conflict.guid);
+  assert.equal(rejected.assessment.decision, 'mismatch');
+  assert.deepEqual(
+    [rejected.assessment.exclusion.basis, rejected.assessment.exclusion.reason],
+    ['card', 'hard_constraint'],
+  );
+  assert.deepEqual(detailReads, [jobs[0].guid], 'only the kept card got a full read');
+  await handle(f, receipt);
+  assert.equal(f.db.run(f.run.id).scan.reviewStats.jevRejected, 1);
+  assert.deepEqual(f.db.knownListingUrls(f.id, f.run.id, [conflict.guid]), [conflict.guid]);
+});
+
+test('a collector search ends with the page that brings its new listings to 100', async (t) => {
+  const listing = (page, i) => ({
+    guid: url(`new-${page}-${i}`),
+    title: 'Backend engineer',
+    description: '<p>Backend role.</p>',
+  });
+  const f = fixture(t, {
+    terms: ['backend'],
+    readPage: (value) => {
+      const page = Number(new URL(value).searchParams.get('page') ?? 1);
+      return parseHimalayasPage(value, {
+        jobs: Array.from({length: 20}, (_, i) => listing(page, i)),
+        offset: (page - 1) * 20,
+        limit: 20,
+        totalCount: 400,
+      });
+    },
+  });
+  let receipt = await f.call('collect_source_page');
+  for (let i = 0; i < 10 && !receipt.complete; i++) {
+    await handle(f, receipt);
+    receipt = await f.call('collect_source_page');
+  }
+  assert.equal(receipt.complete, true);
+  assert.equal(f.reads(), 5, 'five pages of 20 new listings reach the limit');
+});
+
+test('a newest-first collector reads its page budget and stops after two pages of known listings', async (t) => {
+  const budget = fixture(t, {
+    terms: ['backend'],
+    ordering: 'newest_first',
+    readPage: knownPages(40),
+  });
+  await budget.call('collect_source_page');
+  assert.equal((await budget.call('collect_source_page')).complete, true);
+  assert.equal(
+    budget.reads(),
+    SCAN_SEARCH_PAGES,
+    'the first scan of a newest-first feed keeps the page limit',
+  );
+
+  const listing = (page) => ({
+    guid: url('page-' + page),
+    title: 'Backend engineer',
+    description: '<p>Backend role.</p>',
+  });
+  const f = fixture(t, {
+    terms: ['backend'],
+    ordering: 'newest_first',
+    readPage: (value) => {
+      const page = Number(new URL(value).searchParams.get('page') ?? 1);
+      return parseHimalayasPage(value, {
+        jobs: [listing(page)],
+        offset: (page - 1) * 20,
+        limit: 20,
+        totalCount: 500,
+      });
+    },
+  });
+  f.db.rememberSeenListings(
+    f.id,
+    source,
+    Array.from({length: 25}, (_, i) => listing(i + 1).guid),
+    'Seen in an earlier scan',
+  );
+  assert.equal((await f.call('collect_source_page')).complete, true);
+  assert.equal(f.reads(), 2, 'new listings come first, so known pages end the search');
 });

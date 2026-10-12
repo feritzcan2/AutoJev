@@ -27,6 +27,8 @@ export function uploadDetails(e) {
     p = p.parentElement, depth++
   ) {
     if (p.querySelectorAll('input[type=file]').length !== 1) break;
+    // A drop zone: the focusable or clickable box around a hidden input.
+    localTrigger ||= rendered(p) && (p.tabIndex >= 0 || p.matches('label,[role=button]'));
     localTrigger ||= [...p.querySelectorAll('button,[role=button],a,[role=link]')].some(
       (n) =>
         rendered(n) &&
@@ -42,10 +44,12 @@ export function uploadDetails(e) {
     labels.map((l) => l.innerText).join(' ') ||
     e.name ||
     'File upload';
+  // Short text around the input (its group's name, often a few levels up)
+  // tells a CV field from a cover-letter field.
   let context = '';
   for (
     let p = e.parentElement, depth = 0;
-    p && depth < 4 && !p.matches('form,body');
+    p && depth < 6 && !p.matches('form,body');
     p = p.parentElement, depth++
   ) {
     const text = (p.innerText || '').replace(/\s+/g, ' ').trim();

@@ -143,7 +143,7 @@ try {
         },
         'other',
       ),
-    /oturuma/,
+    /current controlId of this session/,
   );
   // Duplicate labels, covered controls, swapped inputs and rejected clicks never report success.
   observed = await reset({duplicate: true});
@@ -340,6 +340,182 @@ try {
   assert.deepEqual(result.suggestions, ['Germany +49']);
   assert.equal(await page.evaluate(() => window.selections), 0);
   console.log('JEV_REACT_SELECT_PORTAL_CAPTION_AND_SELECTED_STATE_PASS');
+  // A searchable combobox opened without a query shows its whole list in a
+  // short scrolling popup: the wanted option starts outside the visible part.
+  // A missed option click leaves the control id valid for the next call.
+  const longReset = async ({cover = false} = {}) => {
+    const names = Array.from({length: 80}, (_, i) => `Country ${String(i).padStart(2, '0')}`);
+    names.splice(60, 0, 'Germany');
+    await page.setContent(
+      `<label id="long-label">Working from</label><input aria-labelledby="long-label" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="long-list"><div id="long-list" role="listbox" hidden style="max-height:120px;overflow-y:auto">${names.map((n) => `<div role="option" style="padding:4px">${n}</div>`).join('')}</div>${cover ? '<div id="cover" style="position:fixed;top:60px;left:0;right:0;height:300px;z-index:9;background:white">Cookie notice</div>' : ''}`,
+    );
+    await page.evaluate(() => {
+      const input = document.querySelector('input'),
+        list = document.querySelector('#long-list');
+      window.selections = 0;
+      input.onmousedown = () => {
+        list.hidden = false;
+        input.setAttribute('aria-expanded', 'true');
+      };
+      for (const option of list.children)
+        option.onclick = () => {
+          window.selections++;
+          input.value = option.textContent;
+          list.hidden = true;
+          input.setAttribute('aria-expanded', 'false');
+        };
+    });
+    return call('browser_jev_observe', {tabId});
+  };
+  observed = await longReset();
+  result = await call('browser_jev_autocomplete', {
+    tabId,
+    controlId: observed.controls.find((c) => c.label === 'Working from').controlId,
+    option: 'Germany',
+  });
+  assert.equal(result.status, 'ready');
+  assert.equal(result.selection.verified, true);
+  assert.equal(await page.locator('input').inputValue(), 'Germany');
+  observed = await longReset({cover: true});
+  control = observed.controls.find((c) => c.label === 'Working from');
+  result = await call('browser_jev_autocomplete', {
+    tabId,
+    controlId: control.controlId,
+    option: 'Germany',
+  });
+  assert.equal(result.status, 'stale');
+  assert.equal(await page.evaluate(() => window.selections), 0);
+  await page.evaluate(() => document.querySelector('#cover').remove());
+  result = await call('browser_jev_autocomplete', {
+    tabId,
+    controlId: control.controlId,
+    option: 'Germany',
+  });
+  assert.equal(
+    result.status,
+    'ready',
+    JSON.stringify({status: result.status, message: result.message}),
+  );
+  assert.equal(await page.locator('input').inputValue(), 'Germany');
+  console.log('JEV_AUTOCOMPLETE_LONG_LIST_AND_COVERED_OPTION_PASS');
+  // React Select multiple choice: a chosen option becomes a chip, leaves the
+  // list, and the list stays open. The input itself stays empty.
+  await page.setContent(
+    '<form><label id="source-label">How did you hear about us?</label><div class="multi__control"><div class="multi__value-container"><div class="multi__input-container"><input aria-labelledby="source-label" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-required="true"></div></div></div><div id="multi-list" role="listbox" hidden></div></form>',
+  );
+  await page.evaluate(() => {
+    const input = document.querySelector('input'),
+      values = document.querySelector('.multi__value-container'),
+      list = document.querySelector('#multi-list'),
+      chosen = [];
+    window.selections = 0;
+    const render = () => {
+      list.innerHTML = ['Job Board', 'Referral', 'Event']
+        .filter((n) => !chosen.includes(n))
+        .map((n) => `<div role="option">${n}</div>`)
+        .join('');
+      for (const option of list.children)
+        option.onclick = () => {
+          window.selections++;
+          chosen.push(option.textContent);
+          values.insertAdjacentHTML(
+            'afterbegin',
+            `<div class="multi__multi-value"><div class="multi__multi-value__label">${option.textContent}</div><div role="button" aria-label="Remove ${option.textContent}">x</div></div>`,
+          );
+          render();
+        };
+    };
+    document.querySelector('.multi__control').onmousedown = () => {
+      render();
+      list.hidden = false;
+      input.setAttribute('aria-expanded', 'true');
+      input.setAttribute('aria-controls', 'multi-list');
+    };
+    input.onkeydown = (e) => {
+      if (e.key !== 'Escape') return;
+      list.hidden = true;
+      input.setAttribute('aria-expanded', 'false');
+    };
+  });
+  observed = await call('browser_jev_observe', {tabId});
+  let form = await call('browser_jev_inspect_form', {tabId});
+  assert.deepEqual(
+    form.missingRequired.map((f) => f.label),
+    ['How did you hear about us?'],
+  );
+  result = await call('browser_jev_autocomplete', {
+    tabId,
+    controlId: observed.controls.find((c) => c.label === 'How did you hear about us?').controlId,
+    option: 'Job Board',
+  });
+  assert.equal(
+    result.status,
+    'ready',
+    JSON.stringify({status: result.status, message: result.message}),
+  );
+  assert.equal(result.selection.verified, true);
+  assert.equal(await page.evaluate(() => window.selections), 1);
+  assert.equal(await page.locator('input').getAttribute('aria-expanded'), 'false');
+  form = await call('browser_jev_inspect_form', {tabId});
+  assert.deepEqual(form.missingRequired, []);
+  console.log('JEV_REACT_SELECT_MULTIPLE_CHOICE_PASS');
+  // Select-only combobox (as in Ant Design): a read-only transparent input over
+  // a box that shows a placeholder, then the chosen option as text.
+  await page.setContent(
+    '<form><label for="contact">Preferred Contact Method</label><div class="select"><div class="selector"><span class="search"><input type="search" id="contact" role="combobox" readonly aria-expanded="false" aria-haspopup="listbox" aria-controls="contact_list" aria-required="true" style="opacity:0;position:absolute;inset:0;width:100%"></span><span class="selection-placeholder"></span></div></div><div id="contact_list" role="listbox" hidden></div></form><style>.selector{position:relative;height:30px;width:300px;border:1px solid #888}</style>',
+  );
+  await page.evaluate(() => {
+    const input = document.querySelector('#contact'),
+      selector = document.querySelector('.selector'),
+      list = document.querySelector('#contact_list');
+    window.selections = 0;
+    list.innerHTML = ['Email', 'Mobile Phone', 'Home Phone']
+      .map((n) => `<div role="option" aria-selected="false" title="${n}">${n}</div>`)
+      .join('');
+    for (const option of list.children)
+      option.onclick = () => {
+        window.selections++;
+        selector.querySelector('.selection-placeholder')?.remove();
+        selector.querySelector('.selection-item')?.remove();
+        selector.insertAdjacentHTML(
+          'beforeend',
+          `<span class="selection-item" title="${option.title}">${option.textContent}</span>`,
+        );
+        list.hidden = true;
+        input.setAttribute('aria-expanded', 'false');
+      };
+    input.onmousedown = () => {
+      list.hidden = false;
+      input.setAttribute('aria-expanded', 'true');
+    };
+  });
+  observed = await call('browser_jev_observe', {tabId});
+  control = observed.controls.find((c) => c.label === 'Preferred Contact Method');
+  assert.ok(control?.autocomplete, JSON.stringify(observed.controls));
+  form = await call('browser_jev_inspect_form', {tabId});
+  assert.deepEqual(
+    form.missingRequired.map((f) => f.label),
+    ['Preferred Contact Method'],
+  );
+  result = await call('browser_jev_autocomplete', {
+    tabId,
+    controlId: control.controlId,
+    option: 'Mobile Phone',
+  });
+  assert.equal(
+    result.status,
+    'ready',
+    JSON.stringify({status: result.status, message: result.message}),
+  );
+  assert.equal(result.selection.verified, true);
+  assert.equal(await page.evaluate(() => window.selections), 1);
+  assert.deepEqual(
+    result.controls.find((c) => c.label === 'Preferred Contact Method').selectedLabels,
+    ['Mobile Phone'],
+  );
+  form = await call('browser_jev_inspect_form', {tabId});
+  assert.deepEqual(form.missingRequired, []);
+  console.log('JEV_SELECT_ONLY_COMBOBOX_PASS');
 } finally {
   await client.close();
   await rm(dir, {recursive: true, force: true});

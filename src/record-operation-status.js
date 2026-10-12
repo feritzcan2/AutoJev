@@ -34,9 +34,13 @@ export function recordOperationStatus(record) {
         id: 'queued',
         label: queued[task.kind] ?? 'Operation queued',
         tone: 'queued',
-        detail: task.manual
-          ? 'The first free agent will take this record.'
-          : 'Waiting for an available agent.',
+        detail: task.retryAt
+          ? `Waiting for a site access wait; resumes after ${new Date(task.retryAt).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})}.`
+          : task.waitingForApplication
+            ? 'Waiting for the current application to finish; applications run one at a time.'
+            : task.manual
+              ? 'The first free agent will take this record.'
+              : 'Waiting for an available agent.',
         active: true,
       };
     if (task.state === 'reported')
@@ -115,4 +119,21 @@ export function activeRecordOperations(snapshot) {
         snapshot.definition?.recordOperations?.[kind]?.runningLabel ?? running[kind]
       ).toLocaleLowerCase('en'),
     }));
+}
+
+// A stopped operation or an unverified outcome the user has to look at.
+export function recordProblem(record) {
+  if (record.status === 'dismissed' || record.trial) return null;
+  const progress = recordOperationStatus(record),
+    summary = record.recordAction?.lastTask?.summary;
+  if (progress?.id === 'stopped')
+    return {label: progress.label, reason: summary || 'The agent did not record a reason.'};
+  if (!progress && record.status === 'uncertain')
+    return {
+      label: 'Outcome needs verification',
+      reason:
+        summary ||
+        'It is unclear whether the action was completed. Verify the outcome or mark it yourself.',
+    };
+  return null;
 }

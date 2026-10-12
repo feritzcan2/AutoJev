@@ -92,6 +92,9 @@ export function automationBrowser(
       verified: page.verified,
       message: page.message,
       ...(page.openedTab ? {openedTab: page.openedTab} : {}),
+      // An autocomplete result names the offered options and what was chosen.
+      ...(page.suggestions ? {suggestions: page.suggestions} : {}),
+      ...(page.selection ? {selection: page.selection} : {}),
     },
   });
   const document = async (id, result, session) => {

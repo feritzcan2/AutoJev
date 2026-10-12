@@ -46,11 +46,35 @@
     for(let p=e.parentElement,depth=0;p&&depth<4;p=p.parentElement,depth++){
       if(p.matches('form,body,dialog'))break;
       if(componentPart(p,'control')&&p.querySelectorAll('input[role="combobox"]').length===1){
-        const values=[...p.querySelectorAll('div,span')].filter(n=>componentPart(n,'single-value')&&visible(n));
+        // A single choice shows one value; a multiple choice shows one chip per answer.
+        const values=[...p.querySelectorAll('div,span')].filter(n=>(componentPart(n,'single-value')||componentPart(n,'multi-value__label'))&&visible(n));
         return {control:p,values:values.map(n=>(n.innerText||'').replace(/\s+/g,' ').trim()).filter(Boolean)};
       }
     }
-    return null;
+    // A select combobox: a read-only, often transparent input, or an empty
+    // search input, over a box that shows the choice as text beside it, or a
+    // placeholder while nothing is chosen.
+    if(!(e.readOnly||!e.value)||!(e.hasAttribute('aria-controls')||e.hasAttribute('aria-owns')))return null;
+    const row=e.getBoundingClientRect();
+    // Labels, buttons and links in the box are never the choice; next to an
+    // editable input only text on the input's own row is.
+    const choice=(n,p)=>{
+      for(let m=n;m&&m!==p;m=m.parentElement)if(m.matches('label,button,a,[role="button"],[role="listbox"]'))return false;
+      if(e.readOnly)return true;
+      const r=n.getBoundingClientRect();return r.top<row.bottom&&r.bottom>row.top;
+    };
+    let box=null;
+    for(let p=e.parentElement,depth=0;p&&depth<3;p=p.parentElement,depth++){
+      if(p.matches('form,body,dialog,label')||p.querySelectorAll('input,select,textarea').length!==1)break;
+      if(!visible(p))continue;
+      box??=p;
+      const placeholder=n=>/placeholder/i.test(n.className?.baseVal??n.className??'');
+      const values=[...p.querySelectorAll('*')].filter(n=>!n.contains(e)&&!n.childElementCount&&choice(n,p)&&
+        ![...p.querySelectorAll('*')].some(m=>placeholder(m)&&m.contains(n))&&visible(n))
+        .map(n=>(n.textContent||'').replace(/\s+/g,' ').trim()).filter(Boolean);
+      if(values.length||[...p.querySelectorAll('*')].some(placeholder))return {control:p,values};
+    }
+    return box?{control:box,values:[]}:null;
   };
   // Custom checkboxes/radios often hide the native input. Only its associated
   // HTML label may stand in for it; nearby text is never guessed as a target.
@@ -81,7 +105,8 @@
       if (right<=left || bottom<=top) continue;
       for (const [fx,fy] of proxy ? [[.5,.5],[.1,.5],[.9,.5],[.1,.1],[.9,.9]] : [[.5,.5]]) {
         const x=left+(right-left)*fx,y=top+(bottom-top)*fy,hit=hitAt(x,y);
-        if (!hit || !contains(target,hit)) continue;
+        // A combobox's chosen value drawn over its input belongs to the same box.
+        if (!hit || !contains(target,hit) && !(target===e && contains(cache.combo(e)?.control,hit))) continue;
         // Clicking a link/button inside a label must not activate that control.
         const interactive=closest(hit,'a[href],button,input,select,textarea,[role="link"],[role="button"]');
         if (proxy && interactive && interactive!==e && contains(target,interactive)) continue;
@@ -145,7 +170,24 @@
     if(!visible(n))return false;
     const r=n.getBoundingClientRect();return r.width>1&&r.height>1;
   });
-  const modal=queryAll(document,'dialog[open],[role="dialog"],[aria-modal="true"]').filter(modalSurface).at(-1);
+  // Dialog semantics scope the page only for a layer over it: a native modal
+  // dialog, or an open dialog in (or, when boxless, holding) a fixed layer.
+  // A closed <dialog> kept in the layout by CSS, an inline widget that carries
+  // dialog roles (a date picker), and a non-modal popup that a field outside
+  // it controls (suggestions) stay part of the page and never hide the form.
+  const fixedLayer=n=>getComputedStyle(n).position==='fixed';
+  const ownedPopup=d=>!d.matches('[aria-modal="true"]')&&queryAll(document,'[aria-controls],[aria-owns]').some(c=>!contains(d,c)&&
+    [...(c.getAttribute('aria-controls')||'').split(/\s+/),...(c.getAttribute('aria-owns')||'').split(/\s+/)]
+      .some(id=>{const t=id&&(c.getRootNode().getElementById?.(id)||document.getElementById(id));return !!t&&contains(d,t);}));
+  const overlay=e=>{
+    if(e.tagName==='DIALOG'&&!e.open)return false;
+    if(e.matches('dialog:modal'))return true;
+    if(ownedPopup(e))return false;
+    for(let p=e;p&&p.nodeType===1;p=parent(p))if(fixedLayer(p))return true;
+    const r=e.getBoundingClientRect();
+    return (r.width<=1||r.height<=1)&&queryAll(e,'*').some(n=>visible(n)&&fixedLayer(n));
+  };
+  const modal=queryAll(document,'dialog[open],[role="dialog"],[aria-modal="true"]').filter(e=>modalSurface(e)&&overlay(e)).at(-1);
   const root=modal||document.body;
   // Read semantic state, never infer selection from color, focus or click success.
   // Resolve a question from a labelled group or one bounded field wrapper; no
@@ -267,7 +309,9 @@
         })):[]};
     }
 
-    if(!e?.isConnected||e.tagName!=='INPUT'||!['text','search'].includes(e.type)||e.readOnly||e.matches(':disabled')||e.closest('[aria-disabled="true"],[inert]'))return null;
+    // A read-only input is a list only as a select-only combobox.
+    const selectOnly=e?.readOnly&&e.getAttribute('role')==='combobox';
+    if(!e?.isConnected||e.tagName!=='INPUT'||!['text','search'].includes(e.type)||e.readOnly&&!selectOnly||e.matches(':disabled')||e.closest('[aria-disabled="true"],[inert]'))return null;
     const ids=(e.getAttribute('aria-controls')||e.getAttribute('aria-owns')||'').split(/\s+/).filter(Boolean);
     let lists=ids.map(id=>e.getRootNode().getElementById?.(id)||document.getElementById(id)).filter(Boolean),association=ids.length?'aria':null;
     if(!ids.length){
@@ -280,7 +324,8 @@
     }
     if(!lists.length&&e.getAttribute('role')!=='combobox'&&!e.hasAttribute('aria-autocomplete'))return null;
     const options=listOptions(lists);
-    return {association,options,expanded:e.getAttribute('aria-expanded')==='true'||lists.some(visible),selectedLabels:cache.combo(e)?.values??[]};
+    return {association,options,expanded:e.getAttribute('aria-expanded')==='true'||lists.some(visible),selectedLabels:cache.combo(e)?.values??[],
+      ...(selectOnly?{editable:false,searchable:false}:{})};
   };
   const suggestionOwners=new Map();
   for(const e of candidates){

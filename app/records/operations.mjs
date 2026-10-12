@@ -61,11 +61,7 @@ export function recordOperationError(
     if (!item.assessment) return 'Score it first for an automatic application';
     if (savedBeforeAutoApply(a, item))
       return 'Saved before Find and apply was turned on; apply it yourself';
-    const error = automaticAssessmentError(
-      item.assessment,
-      a.revision,
-      autoApplyThreshold(a.criteria),
-    );
+    const error = automaticAssessmentError(item.assessment, autoApplyThreshold(a.criteria));
     if (error) return error;
   }
   void digest;
@@ -568,6 +564,18 @@ export function recordOperationState(
             workerId: task.workerId,
             at: task.startedAt ?? task.createdAt,
             manual: task.request?.manual === true,
+            ...(task.retryAt > db.now() ? {retryAt: task.retryAt} : {}),
+            // Applications run one at a time; name the wait instead of a free agent.
+            ...(task.state === 'pending' &&
+            task.lockKey === 'submit' &&
+            tasks.some(
+              (t) =>
+                t.id !== task.id &&
+                t.lockKey === 'submit' &&
+                ['running', 'reported', 'paused'].includes(t.state),
+            )
+              ? {waitingForApplication: true}
+              : {}),
           }
         : null,
     operation: operation
