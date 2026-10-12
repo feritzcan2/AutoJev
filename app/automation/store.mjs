@@ -39,11 +39,14 @@ const integer = (value, label, min, max) => {
     throw Error(`${label}: a whole number between ${min} and ${max} is required`);
   return value;
 };
+// Score thresholds only decide what is saved or applied to; they do not change
+// how records are scored, so they never start a new revision or stale old scores.
+const scoringCriteria = ({score_threshold, save_score_threshold, ...criteria} = {}) => criteria;
 const planKey = (value) =>
   JSON.stringify([
     value.title,
     value.goal,
-    value.criteria,
+    scoringCriteria(value.criteria),
     value.sources,
     value.instructions,
     value.facts,
@@ -266,14 +269,40 @@ export class AutomationStore {
       if (input.agentSettings) a.agentSettings = agentSettings(input.agentSettings);
     }
     if (changed) {
-      for (const task of this.store.workspaces.tasks.list(id, {states: ['pending']}))
-        this.store.workspaces.tasks.finish(id, task.id, 'cancelled', 'Plan changed');
-      a.batchId = null;
+      const tasks = this.store.workspaces.tasks;
+      // Scan progress restarts, but a plan change never starts a scan before it
+      // is due. A batch whose scan tasks all completed waits its interval like a
+      // finished scan; an unfinished or interrupted scan resumes right away.
+      const nextRun = (url, {batchId, nextRunAt}) => {
+        if (!batchId) return nextRunAt;
+        const batch = tasks.list(id, {batchId});
+        if (!batch.length || batch.some((t) => t.state !== 'completed' || t.operation === 'trial'))
+          return null;
+        return (
+          this.now() +
+          (previous.sourceSettings?.[url]?.intervalMinutes ?? previous.intervalMinutes) * 60000
+        );
+      };
       a.sourceState = Object.fromEntries(
         a.sources
-          .filter((url) => previous.sources.includes(url) && previous.sourceState?.[url]?.trial)
-          .map((url) => [url, {trial: previous.sourceState[url].trial}]),
+          .filter((url) => previous.sources.includes(url) && previous.sourceState?.[url])
+          .map((url) => {
+            const state = previous.sourceState[url],
+              nextRunAt = nextRun(url, state);
+            return [
+              url,
+              {
+                ...(state.trial ? {trial: state.trial} : {}),
+                ...(state.lastRunAt ? {lastRunAt: state.lastRunAt} : {}),
+                ...(nextRunAt ? {nextRunAt} : {}),
+              },
+            ];
+          })
+          .filter(([, state]) => Object.keys(state).length),
       );
+      for (const task of tasks.list(id, {states: ['pending']}))
+        tasks.finish(id, task.id, 'cancelled', 'Plan changed');
+      a.batchId = null;
       a.revision++;
       a.reviewedRevision = null;
       // Profile edits retain the existing trial decision; its original run stays unchanged.

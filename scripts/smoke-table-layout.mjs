@@ -58,14 +58,15 @@ try {
       detailHeight: d.clientHeight,
       line: parseFloat(getComputedStyle(d).lineHeight),
       dateWidth: time.parentElement.clientWidth,
-      dateTop: time.children[0].getBoundingClientRect().top,
-      timeTop: time.children[1].getBoundingClientRect().top,
+      dateText: time.textContent,
+      dateTitle: time.title,
     };
   });
   assert.ok(layout.height < 190);
   assert.ok(layout.detailHeight <= layout.line * 3 + 2);
   assert.ok(layout.dateWidth < 140);
-  assert.ok(layout.timeTop > layout.dateTop);
+  assert.match(layout.dateText, /ago|just now/);
+  assert.ok(layout.dateTitle);
   assert.equal(await detail.getAttribute('title'), text.trim());
   await detail.hover();
   await app.evaluate(({ipcMain}, item) => {
@@ -104,7 +105,7 @@ try {
   await app.evaluate(
     ({ipcMain, BrowserWindow}, {snapshot, id}) => {
       globalThis.recordSnapshot = snapshot;
-      snapshot.results.find((r) => r.id === id).summary = 'Updated while the menu is open';
+      snapshot.results.find((r) => r.id === id).title = 'Updated while the menu is open';
       ipcMain.removeHandler('workspace-snapshot');
       ipcMain.handle('workspace-snapshot', () => globalThis.recordSnapshot);
       BrowserWindow.getAllWindows()[0].webContents.send('automation-changed', {
@@ -116,7 +117,7 @@ try {
   await page.waitForFunction(
     (id) =>
       document
-        .querySelector('#automation-result-detail-' + id)
+        .querySelector(`[data-result-id="${id}"]`)
         ?.textContent.includes('Updated while the menu is open'),
     item.id,
   );
@@ -180,7 +181,7 @@ try {
   );
   await row.locator('.record-tab-choices button').last().focus();
   await app.evaluate(({BrowserWindow}, id) => {
-    globalThis.recordSnapshot.results.find((r) => r.id === id).summary =
+    globalThis.recordSnapshot.results.find((r) => r.id === id).title =
       'Updated with the tab chooser open';
     BrowserWindow.getAllWindows()[0].webContents.send('automation-changed', {
       automationId: globalThis.recordSnapshot.automation.id,
@@ -189,7 +190,7 @@ try {
   await page.waitForFunction(
     (id) =>
       document
-        .querySelector('#automation-result-detail-' + id)
+        .querySelector(`[data-result-id="${id}"]`)
         ?.textContent.includes('Updated with the tab chooser open'),
     item.id,
   );

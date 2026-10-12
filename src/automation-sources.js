@@ -1,18 +1,19 @@
 import {scanPageLabel} from '../app/sources/scan-page.mjs';
 import {currentWork} from '../app/automation/current-work.mjs';
-import {recipeSummary, recipePageCap, RECIPE_PAGINATION_KINDS} from '../app/sources/recipe.mjs';
+import {
+  recipeSummary,
+  SCAN_SEARCH_LISTINGS,
+  SCAN_SEARCH_PAGES,
+  RECIPE_PAGINATION_KINDS,
+} from '../app/sources/recipe.mjs';
 import {
   searchFilterValues,
   withSearchFilters,
   searchFilterLabels,
 } from '../app/site-extensions/search.mjs';
 import {workspaceSourceTabs} from './workspace-tabs.js';
+import {positionMenu} from './popover-menu.js';
 
-const modes = {
-  observe: 'Only find',
-  prepare: 'Find, apply when I say (older setting)',
-  auto: 'Find and apply',
-};
 const paginationLabels = {
   auto: 'Detect automatically',
   url_param: 'Page parameter (page=2)',
@@ -36,6 +37,7 @@ const runOutcomes = {
   interrupted: 'Stopped',
   partial: 'Partially completed',
 };
+const plural = (count, word, many = word + 's') => `${count} ${count === 1 ? word : many}`;
 const el = (tag, text, cls) => {
   const n = document.createElement(tag);
   if (text != null) n.textContent = text;
@@ -141,6 +143,9 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
           : (run.sources ?? data.automation.sources).includes(url)),
     );
 
+  // The workspace goal is the usual scope; a row repeats it only when it differs.
+  const sameScope = (source) => source.query?.trim() === data.automation.goal?.trim();
+
   // Header actions: add a source or ask the agent to find one.
   const add = button(
     '＋ Add source',
@@ -157,30 +162,26 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     headActions.append(discover);
   }
 
-  // Bulk settings fold away; a single form applies mode and interval to every source.
+  // Bulk settings fold away; a single form applies the interval to every source.
   const bulk = el('details', null, 'source-bulk');
   bulk.innerHTML = '<summary>Apply to all sources</summary>';
   const bulkForm = el('form', null, 'source-bulk-form');
   bulkForm.innerHTML =
-    '<label>Action mode<select name="mode"><option value="">Do not change</option></select></label><label for="automation-sources-interval">Scan interval (min)<input id="automation-sources-interval" name="intervalMinutes" type="number" min="1" max="10080" step="1" placeholder="Do not change"></label><button type="submit" class="quiet">Apply to all</button><small role="status"></small>';
-  for (const [mode, label] of Object.entries(modes))
-    bulkForm.elements.mode.append(new Option(label, mode));
+    '<label for="automation-sources-interval">Scan interval (min)<input id="automation-sources-interval" name="intervalMinutes" type="number" min="1" max="10080" step="1" placeholder="Do not change"></label><button type="submit" class="quiet">Apply to all</button><small role="status"></small>';
   bulk.append(bulkForm);
   host.append(bulk);
   bulkForm.onsubmit = action(async () => {
     if (!owner || !data?.sources?.length || !bulkForm.reportValidity()) return;
     const scope = owner,
-      mode = bulkForm.elements.mode.value,
       interval = bulkForm.elements.intervalMinutes.value;
-    if (!mode && !interval) {
+    if (!interval) {
       notice('Choose a setting to change.');
       return;
     }
     bulkSaving = true;
     render();
     try {
-      if (mode) await api.automationSourceModes(scope, mode);
-      if (interval) await api.automationSourcesInterval(scope, Number(interval));
+      await api.automationSourcesInterval(scope, Number(interval));
       if (owner === scope && host.isConnected) {
         bulkForm.reset();
         await refresh();
@@ -270,14 +271,41 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       actions: el('div', null, 'source-actions'),
       tabHost: el('div', null, 'source-tabs-control'),
       run: button('', () => {}),
-      restart: button('Start over', () => {}, 'quiet source-restart'),
-      edit: button('', () => {}, 'quiet source-edit'),
-      memoryButton: button('', () => {}, 'quiet source-memory-toggle'),
+      menuToggle: el('button', '⋯', 'quiet source-row-menu'),
+      menu: el('div', null, 'source-row-actions'),
+      restart: button('Start over', () => {}, 'source-restart'),
+      edit: button('', () => {}, 'source-edit'),
+      memoryButton: button('', () => {}, 'source-memory-toggle'),
       pending: null,
     };
     view.toggle.type = 'checkbox';
     view.row.dataset.sourceId = url;
-    view.actions.append(view.run, view.restart, view.edit, view.memoryButton, view.tabHost);
+    // Secondary actions live in a popover; each closes it before acting.
+    const {menu, menuToggle} = view;
+    menuToggle.type = 'button';
+    menuToggle.title = 'More actions';
+    menu.popover = 'auto';
+    menu.id = 'source-row-actions-' + rows.size;
+    menuToggle.setAttribute('aria-controls', menu.id);
+    menuToggle.setAttribute('aria-expanded', 'false');
+    menuToggle.onclick = () => {
+      if (menu.matches(':popover-open')) return menu.hidePopover();
+      menu.showPopover();
+      positionMenu(menu, menuToggle);
+    };
+    menu.ontoggle = () =>
+      menuToggle.setAttribute('aria-expanded', String(menu.matches(':popover-open')));
+    menu.addEventListener('click', (event) => {
+      if (event.target.closest('button') && menu.matches(':popover-open')) menu.hidePopover();
+    });
+    menu.append(view.edit, view.memoryButton, view.restart);
+    // Clicking the row's text opens its details, like the Details action.
+    view.main.addEventListener('click', (event) => {
+      if (event.target.closest('button,a,input,select,textarea') || getSelection()?.toString())
+        return;
+      view.memoryButton.click();
+    });
+    view.actions.append(view.run, view.tabHost, menuToggle, menu);
     view.row.append(view.toggle, view.main, view.actions);
     rows.set(url, view);
     return view;
@@ -333,9 +361,9 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
                   ? 'Scan could not finish'
                   : 'Source blocked'
                 : source.lastStatus === 'partial'
-                  ? `Partial scan · ${source.scan?.pendingUrls.length ?? 0} address(es) left`
+                  ? `Partial scan · ${plural(source.scan?.pendingUrls.length ?? 0, 'address', 'addresses')} left`
                   : (source.lastRun?.finishedAt ?? source.lastRunAt)
-                    ? `${source.resultCount ?? source.lastFound ?? 0} record(s) in total`
+                    ? `${plural(source.resultCount ?? source.lastFound ?? 0, 'record')} in total`
                     : 'Not scanned yet';
     if (source.siteWait && !source.siteWait.exhausted) status.dataset.state = 'waiting';
     status.append(el('b', state));
@@ -359,26 +387,23 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     }
     return {status, outcome};
   }
+  // Meta: the schedule only. The status line above already names the state, so
+  // the last round shows here only when it says something the status does not.
   function metaLine(source, outcome) {
     const meta = el('div', null, 'source-meta');
     const plan = el('span', null, 'source-plan');
-    plan.append(
-      el('b', `Every ${source.intervalMinutes} min`),
-      document.createTextNode(' · ' + modes[source.mode]),
-    );
+    plan.append(el('b', `Every ${source.intervalMinutes} min`));
     meta.append(plan);
     const timing = el('span', null, 'source-timing'),
       nextRun = el(
         'b',
         !source.enabled
           ? 'Off'
-          : source.scanning
-            ? 'Scanning now'
-            : source.blocked
-              ? 'Waiting for a restart'
-              : data.automation.status !== 'enabled'
-                ? 'Tracking paused'
-                : 'Next scan',
+          : source.blocked
+            ? 'Paused until a retry'
+            : data.automation.status !== 'enabled'
+              ? 'Tracking paused'
+              : 'Next scan',
       );
     const nextAt = source.enabled
       ? (source.siteWait?.retryAt ??
@@ -393,23 +418,22 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       updateNextRun(nextRun);
     }
     timing.append(nextRun);
-    meta.append(timing);
+    if (!source.scanning) meta.append(timing);
     const outcomeLabel = runOutcomes[outcome.status],
-      lastRun = el(
-        'span',
-        outcomeLabel
-          ? `Last round: ${outcomeLabel}`
-          : source.scanning
-            ? 'Last round: first scan in progress'
-            : 'Last round: not run yet',
-        'source-last-run',
-      );
-    lastRun.dataset.status = outcomeLabel ? outcome.status : 'none';
-    if (outcomeLabel)
+      stated =
+        source.scanning ||
+        source.blocked ||
+        source.siteWait ||
+        source.recovery ||
+        source.lastStatus === 'partial';
+    if (outcomeLabel && outcome.status !== 'completed' && !stated) {
+      const lastRun = el('span', `Last round: ${outcomeLabel}`, 'source-last-run');
+      lastRun.dataset.status = outcome.status;
       lastRun.title = [outcome.finishedAt ? time(outcome.finishedAt) : null, outcome.summary]
         .filter(Boolean)
         .join(' · ');
-    meta.append(lastRun);
+      meta.append(lastRun);
+    }
     if (!source.trial || source.trial.status === 'failed') {
       const trial = el(
         'small',
@@ -515,6 +539,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       facts.append(fact);
     }
     section.append(facts);
+    const reader = extensionKinds[source.extension?.kind];
     const note = (label, text) => {
       const group = el('div', null, 'source-progress-note');
       group.append(el('b', label), el('p', text));
@@ -548,7 +573,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
           (source.recipe.ordering === 'newest_first'
             ? ' · Newest first; repeat scans stop at known listings'
             : '') +
-          ` · Each search reads the first ${recipePageCap(source.recipe)} pages (at most 30 pages per scan in total)`,
+          ` · Each search reads up to ${SCAN_SEARCH_LISTINGS} new listings or ${SCAN_SEARCH_PAGES} pages`,
       );
     if (rs?.verifiedAt)
       lines.push(
@@ -560,6 +585,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       );
     recipe.append(el('p', lines.join('\n')));
     section.append(recipe);
+    if (reader) note('How listings are read', reader[1]);
     const reasons = {
       initial: 'The first successful full scan has not happened yet.',
       periodic: 'A regular full scan is due.',
@@ -804,7 +830,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     form.innerHTML = `<fieldset class="source-editor-section"><legend>Source</legend>
 <label>Source name<input name="name" required maxlength="120"></label><label>Start address<input name="url" type="url" required></label>
 <label class="source-editor-wide">Search scope<textarea name="query" required maxlength="2000"></textarea><small>If the recipe has no search terms, this text fills the {query} placeholder.</small></label>
-<label>Scan interval (min)<input name="intervalMinutes" type="number" min="1" max="10080" required></label><label>Action mode<select name="mode"></select></label></fieldset>
+<label>Scan interval (min)<input name="intervalMinutes" type="number" min="1" max="10080" required></label></fieldset>
 <fieldset class="source-editor-section source-recipe-editor"><legend>Search recipe <small class="source-recipe-legend"></small></legend>
 <label class="source-editor-wide">Search method<select name="method"></select><small>In the trial round the agent works out the site and saves the recipe itself. If you know it, you can also write it by hand; the app verifies it in the first scan.</small></label>
 <label class="source-editor-wide" data-recipe-template>URL template<input name="template" maxlength="2000" placeholder="https://site/jobs?q={query}&l={location}&sort=date" spellcheck="false"><small>{query} takes the search term or the scope. Other placeholders such as {location} are filled from the criteria field of the same name. A fixed address without placeholders also works.</small></label>
@@ -819,12 +845,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     const f = form.elements,
       footer = form.querySelector('.source-editor-foot'),
       scope = owner;
-    for (const [mode, label] of Object.entries(modes)) {
-      const option = new Option(label, mode);
-      option.disabled =
-        Object.keys(modes).indexOf(mode) > Object.keys(modes).indexOf(data.automation.mode);
-      f.mode.append(option);
-    }
     for (const [value, label] of Object.entries(methodLabels))
       f.method.append(new Option(label, value));
     for (const value of RECIPE_PAGINATION_KINDS)
@@ -834,7 +854,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     f.url.disabled = Boolean(source);
     f.query.value = source?.query ?? data.automation.goal;
     f.intervalMinutes.value = source?.intervalMinutes ?? data.automation.intervalMinutes;
-    f.mode.value = source?.mode ?? data.automation.mode;
     f.instructions.value = source?.instructions ?? '';
     siteSearchFields(form, source?.extension?.search ?? null);
     recipeFields(form, source?.recipe ?? null);
@@ -884,7 +903,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         instructions: f.instructions.value,
         recipe: readRecipe(form, source?.recipe ?? null),
         intervalMinutes: Number(f.intervalMinutes.value),
-        mode: f.mode.value,
       };
       submit.disabled = true;
       try {
@@ -976,7 +994,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
   function render() {
     if (!data) return;
     const sources = data.sources ?? [],
-      active = Boolean(data.activeRuns?.length),
       enabled = sources.filter((s) => s.enabled),
       blocked = enabled.filter((s) => s.blocked),
       upcoming = enabled
@@ -984,7 +1001,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         .sort((a, b) => a.nextRunAt - b.nextRunAt)[0];
     const verified = sources.filter((s) => s.recipeState?.status === 'verified').length;
     const overview = head.querySelector('p');
-    overview.textContent = `${enabled.length} active source(s)${sources.length - enabled.length ? `, ${sources.length - enabled.length} off` : ''}${blocked.length ? `, ${blocked.length} blocked` : ''}${sources.length ? ` · ${verified} recipe(s) verified` : ''}. `;
+    overview.textContent = `${plural(enabled.length, 'active source')}${sources.length - enabled.length ? `, ${sources.length - enabled.length} off` : ''}${blocked.length ? `, ${blocked.length} blocked` : ''}${sources.length ? ` · ${plural(verified, 'recipe')} verified` : ''}. `;
     if (data.automation.status === 'enabled' && upcoming) {
       const next = el('span');
       next.dataset.sourceNextAt = String(upcoming.nextRunAt);
@@ -995,13 +1012,9 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       overview.append(next);
     } else overview.append(document.createTextNode('Each source is tracked at its own interval.'));
     for (const control of bulkForm.querySelectorAll('input,select,button'))
-      control.disabled = bulkSaving || (active && control.name === 'mode') || !sources.length;
+      control.disabled = bulkSaving || !sources.length;
     bulkForm.setAttribute('aria-busy', String(bulkSaving));
-    bulkForm.querySelector('[role=status]').textContent = bulkSaving
-      ? 'Saving…'
-      : active && sources.length
-        ? 'The action mode can be changed when the running round ends.'
-        : '';
+    bulkForm.querySelector('[role=status]').textContent = bulkSaving ? 'Saving…' : '';
     bulk.hidden = !sources.length;
     list.inert = bulkSaving;
     addHost.inert = bulkSaving;
@@ -1071,10 +1084,10 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       query.title = source.query;
       const {status, outcome} = statusLine(source),
         meta = metaLine(source, outcome);
-      meta.append(recipeChip(source));
-      const extension = extensionChip(source);
-      if (extension) meta.append(extension);
-      main.replaceChildren(name, query, status, meta);
+      // A working recipe and the reader kind are in Details; the row flags only a broken recipe.
+      if (recipeSummary(source.recipe ?? null, source.recipeState ?? null).status === 'stale')
+        meta.append(recipeChip(source));
+      main.replaceChildren(name, ...(sameScope(source) ? [] : [query]), status, meta);
       const closing =
         (data.activeRuns ?? []).some(
           (r) => r.sourceUrl === source.url && !r.recordId && !r.recordOperation,
@@ -1124,13 +1137,14 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         event.preventDefault();
         if (!restart.disabled) void scanAction(view, scope, source.url, false, true);
       };
-      edit.textContent = open ? 'Close' : 'Edit';
+      edit.textContent = open ? 'Close editor' : 'Edit';
       edit.onclick = action(() => {
         editing = open ? null : source.url;
         render();
       });
       edit.setAttribute('aria-expanded', String(open));
-      memoryButton.textContent = memoryOpen ? 'Close details' : 'Details';
+      memoryButton.textContent = memoryOpen ? 'Hide details' : 'Details';
+      view.menuToggle.setAttribute('aria-label', source.name + ' · More actions');
       memoryButton.onclick = action(() => {
         memory = memoryOpen ? null : source.url;
         render();

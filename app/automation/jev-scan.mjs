@@ -1,6 +1,11 @@
 // @ts-check
 import {jevDetailKey} from '../jev/detail-urls.mjs';
-import {scanWork, hasUnblockedScanWork} from '../sources/scan-work.mjs';
+import {
+  scanWork,
+  activeSearch,
+  hasUnblockedScanWork,
+  searchNewListings,
+} from '../sources/scan-work.mjs';
 import {scanIssue, clearScanIssue} from '../sources/scan-issues.mjs';
 import {scanPageReport} from '../sources/scan-page.mjs';
 
@@ -59,6 +64,7 @@ export function saveJevCheckpoint(scan, {sourceUrl, now}, page, urls, options = 
     {
       pendingUrls: [],
       processedUrls: [page.url],
+      newListings: {url: page.url, count: cards.length + rejected.length},
       reason: 'Links from the results page are saved; the listings are waiting for assessment.',
     },
     snapshot,
@@ -78,7 +84,11 @@ export function saveJevCheckpoint(scan, {sourceUrl, now}, page, urls, options = 
       'Jev found a clear mismatch on the listing card.',
     );
   retire(scan, knownUrls, 'Listings already recorded or excluded earlier; not read again.');
-  return {saved: true, pageReport};
+  return {
+    saved: true,
+    pageReport,
+    newListings: searchNewListings(activeSearch(scanWork(db.activeRun(id, runId)))),
+  };
 }
 
 // After a detail task: retire queued details that stay unreadable after Jev's

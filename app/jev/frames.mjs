@@ -39,7 +39,9 @@ export async function captureEmbeddedForms(slot) {
         url,
         inPlace: true,
         hasForm: kind.form,
-        nextAction: 'browser_open url',
+        // The fields of an embedded form have no ids in the parent page.
+        nextAction:
+          'To fill this form, browser_open its url in a new tab; it is the same form, not a second application.',
       });
     } catch {
     } finally {

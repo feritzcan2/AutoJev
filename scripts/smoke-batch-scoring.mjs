@@ -39,6 +39,7 @@ const server = createServer(async (req, res) => {
   const api={workspaceTabs:async()=>[],automationRecordsScore:async(workspace,ids)=>{calls.push({workspace,ids});document.querySelector('#request').textContent='Toplu istek: '+ids.length+' kayıt · '+calls.length+' çağrı';if(fail)throw Error('Örnek bağlantı hatası');await new Promise(resolve=>{release=resolve;});},automationStar:async()=>{},openLink:()=>{}};
   const table=automationResultsTable(root,{button,badge:text=>document.createTextNode(text),time:()=> '02.10.2026',api,refresh:async()=>table.update(snapshot,false)});
   table.update(snapshot,false);
+  const pageSize=document.querySelector('#automation-result-page-size');pageSize.value='10';pageSize.dispatchEvent(new Event('change'));root.querySelector('[data-result-sort="updatedAt"]').click();
   const check=(condition,message)=>{if(!condition)throw Error(message);},select=id=>root.querySelector('[data-record-select="'+id+'"]'),bulk=()=>root.querySelector('[data-records-score]'),page=()=>root.querySelector('[data-records-select-page]'),findButton=text=>[...root.querySelectorAll('button')].find(b=>b.textContent===text),pause=()=>new Promise(resolve=>setTimeout(resolve,0));
   try{
    check(root.querySelectorAll('[data-record-select]').length===10,'Sayfa boyutu');select('r1').click();select('r2').click();check(page().indeterminate,'Kısmi seçim');
@@ -59,8 +60,8 @@ const server = createServer(async (req, res) => {
    table.update(snapshot,false);
    check(!root.querySelector('[data-result-id="r1"]').textContent.includes('Operation blocked'),'Kaydedilen puan başarısız görünmez');
    check(root.querySelector('[data-result-id="r2"]').textContent.includes('2 left'),'Kalan kaydın açıklaması görünür');
-   const minimum=document.querySelector('#automation-result-score-minimum'),comparison=document.querySelector('#automation-result-score-comparison'),search=document.querySelector('#automation-result-search'),filter=document.querySelector('#automation-result-filter');
-   const input=(field,value)=>{field.value=value;field.dispatchEvent(new Event(field===filter||field===comparison?'change':'input'));};
+   const minimum=document.querySelector('#automation-result-score-minimum'),comparison=document.querySelector('#automation-result-score-comparison'),search=document.querySelector('#automation-result-search'),filter={};
+   const input=(field,value)=>{if(field===filter)return root.querySelector('[data-filter="'+value+'"]').click();field.value=value;field.dispatchEvent(new Event(field===comparison?'change':'input'));};
    snapshot.results[1].assessment={score:null,summary:'Değerlendirilemedi'};
    snapshot.results[2].cells.score='';snapshot.results[3].cells.score=0;snapshot.results[4].cells.score=60;snapshot.results[5].cells.score=61;snapshot.results[6].cells.score=100;delete snapshot.results[7].cells.score;
    table.update(snapshot,false);findButton('Next').click();input(minimum,'60');
@@ -101,11 +102,21 @@ const server = createServer(async (req, res) => {
    snapshot={...makeSnapshot('generic'),definition:{records:definition.records},automation:{...makeSnapshot('generic').automation,table:{columns:[{key:'title',label:'Kayıt',type:'text'}]}}};table.update(snapshot,false);
    select('r1').click();check(bulk().hidden&&!remove().disabled&&minimum.parentElement.hidden,'Puanlamasız çalışma alanında da silme kullanılabilir');
    window.confirm=nativeConfirm;
+   // Filter chips count records; details open in the side panel; keys move and act.
+   snapshot=makeSnapshot('keys');snapshot.results[2].recordAction.lastTask={kind:'apply',state:'completed',at:1790900000000,summary:'Application stopped before submit'};table.update(snapshot,false);
+   check(root.querySelector('[data-filter="completed"] .record-filter-count').textContent==='1','Chip count');
+   check(root.querySelector('[data-filter="starred"]').hidden,'Empty chip hidden');
+   const key=k=>document.body.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true}));
+   key('j');key('j');check(root.querySelector('[data-result-id="r2"]').dataset.cursor==='true','j moves to the second row');
+   key('Enter');check(document.querySelector('#record-drawer').matches(':popover-open')&&document.querySelector('#automation-result-detail-r2'),'Enter opens the side panel');
+   key('j');check(document.querySelector('#automation-result-detail-r3')?.textContent.includes('Application stopped before submit')&&document.querySelector('#record-drawer-title').textContent===snapshot.results[2].title,'j moves the open panel; a record with a past operation shows its own details');
+   key('x');check(select('r3').checked,'x selects');key('x');
+   key('Escape');check(!document.querySelector('#record-drawer').matches(':popover-open'),'Escape closes the panel');
    snapshot=makeSnapshot('preview');table.update(snapshot,false);select('r1').click();select('r2').click();select('r3').click();
    api.automationRecordsDelete=async(workspace,ids)=>{snapshot={...snapshot,results:snapshot.results.filter(result=>!ids.includes(result.id))};};
    // Keep manual interaction functional after the automatic checks.
    api.automationRecordsScore=async(workspace,ids)=>{document.querySelector('#request').textContent='Tek toplu istek alındı: '+ids.length+' kayıt ('+ids.join(', ')+')';};
-   status.textContent='PASS · Toplu silme, onay, hata, sayfalama, puan > / < filtresi, seçim ve çalışma alanı kapsamı doğrulandı.';
+   status.textContent='PASS · Batch delete, confirmation, errors, pagination, score > / < filter, filter chips, side panel, keys, selection and workspace scope verified.';
   }catch(error){status.textContent='FAIL · '+error.message;console.error(error);}
   </script></body></html>`);
   } catch (error) {

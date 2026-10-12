@@ -2,6 +2,7 @@
 import {setTimeout as delay} from 'node:timers/promises';
 import {findTurnstileCheckbox} from './turnstile-checkbox.mjs';
 import {captchaProvider} from './provider.mjs';
+import {acquireTabRendering} from '../jev/rendering.mjs';
 
 // The site-wait card is the only place a user sees why the one native attempt
 // ended. Keep the reason code too; it names the exact discovery/click step.
@@ -102,17 +103,17 @@ export async function clickCloudflareCheckbox(slot, check) {
   const target = slot.cloudflareCheckbox;
   delete slot.cloudflareCheckbox;
   if (!target || slot.cloudflareAttempt) return false;
-  let focus = false,
+  let release = null,
     timer;
   try {
     check();
     // CDP input needs the iframe's compositor hit-test region as well as DOM
-    // geometry. Wait for two real paints; a newly loaded iframe can have its
-    // correct rectangle before Chrome can route a mouse event into it.
-    if (await slot.page.evaluate(() => document.visibilityState === 'hidden')) {
-      focus = true;
-      await slot.cdp.send('Emulation.setFocusEmulationEnabled', {enabled: true});
-    }
+    // geometry. A background tab never paints, so bring it forward for the
+    // click as write tools do, then wait for two real paints; a newly loaded
+    // iframe can have its correct rectangle before Chrome can route a mouse
+    // event into it.
+    release = await acquireTabRendering(slot, {foreground: true}).catch(() => null);
+    check();
     const painted = await Promise.race([
       slot.page.evaluate(
         () =>
@@ -175,8 +176,7 @@ export async function clickCloudflareCheckbox(slot, check) {
     return true;
   } finally {
     clearTimeout(timer);
-    if (focus)
-      await slot.cdp.send('Emulation.setFocusEmulationEnabled', {enabled: false}).catch(() => {});
+    await release?.();
     await target.dispose();
   }
 }

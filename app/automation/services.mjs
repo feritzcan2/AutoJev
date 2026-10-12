@@ -6,7 +6,6 @@ import path from 'node:path';
 import {readFile, rm, writeFile} from 'node:fs/promises';
 import {WebTasks} from './web-template.mjs';
 import {webUrl} from '../templates/catalog.mjs';
-import {sourceInput} from '../sources/automation-sources.mjs';
 import {launchAutomationWorker} from './worker.mjs';
 import {automationBrowser} from '../browser/automation-browser.mjs';
 import {webWorkspaceView} from '../workspaces/view.mjs';
@@ -212,15 +211,6 @@ export function registerAutomationServices({
   handle('automation-sources-interval', (id, intervalMinutes) =>
     runtime.saveSourcesInterval(id, intervalMinutes),
   );
-  handle('automation-source-modes', (id, mode) => {
-    db.assertIdle(id);
-    const a = db.get(id);
-    for (const url of a.sources) sourceInput(a, url, {mode});
-    db.store.workspaces.tasks.atomic(() => {
-      for (const url of a.sources) db.saveSource(id, url, {mode});
-    });
-    changed(id);
-  });
   handle('automation-source-run', (id, url, options) =>
     runtime.runSource(id, url, {fresh: options?.fresh === true}),
   );

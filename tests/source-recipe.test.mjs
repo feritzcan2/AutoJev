@@ -13,8 +13,7 @@ import {
   advanceRecipeState,
   recipeStatus,
   recipeSummary,
-  recipePageCap,
-  scanPageCap,
+  SCAN_SEARCH_PAGES,
   jevListingItem,
 } from '../app/sources/recipe.mjs';
 import {sourceScanScope} from '../app/sources/scan.mjs';
@@ -59,20 +58,6 @@ test('recipes are validated as data: placeholders, form fields and pagination ki
     undefined,
     'the scan page budget replaces per-recipe page limits',
   );
-  // Every scan reads at most 30 pages shared by its searches, at least 2 per search.
-  assert.equal(recipePageCap(null), 30);
-  assert.equal(recipePageCap(normalizeSourceRecipe({entry: {kind: 'discovery'}})), 30);
-  assert.equal(
-    recipePageCap({entry: {kind: 'url_template', template}, ordering: 'newest_first'}),
-    30,
-    'a newest-first board is capped too',
-  );
-  assert.equal(recipePageCap({entry: {kind: 'url_template', template}, terms: ['a', 'b']}), 15);
-  assert.equal(
-    recipePageCap({entry: {kind: 'url_template', template}, terms: ['a', 'b', 'c', 'd', 'e']}),
-    6,
-  );
-  assert.equal(scanPageCap(20), 2, 'each search keeps at least two pages');
   assert.deepEqual(
     normalizeSourceRecipe({entry: {kind: 'url_template', template: 'https://board.test/jobs'}})
       .entry,
@@ -382,8 +367,8 @@ function jevBrowser(expected, {listings = 2, pages = 1, leads = false} = {}) {
               title: 'Results',
               text: `Jobs for you, page ${n}\nLink: Job A — ${view(n + 'a')}\nLink: Job B — ${view(n + 'b')}`,
               links: Array.from({length: listings}, (_, i) => ({
-                url: view(n + 'ab'[i]),
-                text: 'Job ' + n + 'ab'[i],
+                url: view(n + ('ab'[i] ?? 'x' + i)),
+                text: 'Job ' + n + ('ab'[i] ?? 'x' + i),
               })),
               pagination: n < pages ? [{text: 'Next', url: pageUrl(n + 1), kind: 'link'}] : [],
             }
@@ -1091,14 +1076,15 @@ test('on a board the recipe orders newest-first, a repeat scan stops after two p
   );
 });
 
-test('a single search reads at most the 30-page scan budget and ends there', async (t) => {
+// A scan run after a trial that saved and verified the board's recipe.
+async function scanAfterTrial(t, board) {
   const f = fixture(t);
   f.db.enable(f.id);
   await f.runtime.tick();
   await settle();
   const trial = f.launches[0],
     expected = 'https://board.test/jobs/search?q=Find+homes&l=Berlin&sort=date',
-    {browser, opened} = jevBrowser(expected, {pages: 31});
+    {browser, opened} = jevBrowser(expected, board);
   const trialFlow = automationWorkflow({
     db: f.db,
     run: trial,
@@ -1123,7 +1109,6 @@ test('a single search reads at most the 30-page scan budget and ends there', asy
   await settle();
   const scan = f.launches[1];
   assert.equal(scan.kind, 'run');
-  assert.equal(f.db.run(scan.id).scanPlan.pageCap, 30);
   const flow = automationWorkflow({
     db: f.db,
     run: scan,
@@ -1138,14 +1123,20 @@ test('a single search reads at most the 30-page scan budget and ends there', asy
     scan.id,
     await flow.call(f.id, scan.id, 'browser_jev_run', {operation: 'scan_results', url: expected}),
   );
+  return {f, scan, flow, opened, expected, capped};
+}
+
+test('a single search reads at most its 10-page limit and ends there', async (t) => {
+  const {f, scan, flow, opened, expected, capped} = await scanAfterTrial(t, {pages: 11});
+  assert.equal(f.db.run(scan.id).scanPlan.pageCap, SCAN_SEARCH_PAGES);
   assert.equal(capped.status, 'completed');
   assert.equal(capped.pageCapReached, true);
-  assert.equal(capped.pageCount, 30);
-  assert.match(capped.next, /Recipe page limit reached/);
+  assert.equal(capped.pageCount, 10);
+  assert.match(capped.next, /Search limit reached/);
   assert.equal(
     opened.filter((u) => u.startsWith(expected)).length,
-    30,
-    'the thirty-first page was never opened',
+    10,
+    'the eleventh page was never opened',
   );
   await reviewQueue(flow, f, scan, expected + '&start=10');
   assert.equal(
@@ -1174,6 +1165,13 @@ test('a single search reads at most the 30-page scan budget and ends there', asy
   assert.ok(state.lastFullScanAt);
 });
 
+test('a search ends with the page that brings its new listings to 100', async (t) => {
+  const {opened, expected, capped} = await scanAfterTrial(t, {pages: 6, listings: 40});
+  assert.equal(capped.pageCapReached, true);
+  assert.equal(capped.pageCount, 3, '40 + 40 + 40 new listings reach the limit on page 3');
+  assert.equal(opened.filter((u) => u.startsWith(expected)).length, 3);
+});
+
 test('each recipe term is its own search: completing one opens the next with a fresh page cap', async (t) => {
   const f = fixture(t);
   f.db.enable(f.id);
@@ -1181,7 +1179,7 @@ test('each recipe term is its own search: completing one opens the next with a f
   await settle();
   const ops = replayUrl(template, {query: 'ops', location: 'Berlin'}),
     dev = replayUrl(template, {query: 'dev', location: 'Berlin'});
-  const boards = [jevBrowser(ops, {pages: 8}), jevBrowser(dev, {pages: 8})];
+  const boards = [jevBrowser(ops, {pages: 12}), jevBrowser(dev, {pages: 12})];
   let last = ops;
   const browser = {
     hasPage: () => true,
@@ -1243,7 +1241,7 @@ test('each recipe term is its own search: completing one opens the next with a f
       await flow.call(f.id, scan.id, 'browser_jev_run', {operation: 'scan_results', url}),
     );
     assert.equal(capped.pageCapReached, true);
-    assert.equal(capped.pageCount, 7, 'two searches share the 15-page budget');
+    assert.equal(capped.pageCount, 10, 'each search has its own 10-page limit');
     const queue = await flow.call(f.id, scan.id, 'get_scan_queue', {view: 'entries'});
     f.db.saveScanProgress(
       f.id,

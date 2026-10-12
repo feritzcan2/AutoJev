@@ -82,8 +82,13 @@ try {
   assert.equal(await page.locator('#question-badge').innerText(), '2 answer(s)');
   assert.equal(await page.locator('#agent-nav-status').isVisible(), false);
   await page.locator('#question-badge').click();
-  assert.equal(await page.locator('#automation-result-filter').inputValue(), 'waiting');
-  await page.selectOption('#automation-result-filter', 'all');
+  assert.equal(
+    await page.locator('#automation-result-filter [aria-pressed=true]').getAttribute('data-filter'),
+    'attention',
+  );
+  await page.locator('#automation-result-filter [data-filter=all]').click();
+  // Job tables open sorted by fit score; activity sorting starts with the newest.
+  await page.locator('[data-result-sort=updatedAt]').click();
   assert.deepEqual((await ids()).slice(0, 2), [records[1].id, records[0].id]);
   await page.locator('[data-result-sort=updatedAt]').click();
   assert.deepEqual((await ids()).slice(0, 2), [records[0].id, records[1].id]);
@@ -92,7 +97,7 @@ try {
   await page.locator('[data-result-sort=title]').click();
   assert.deepEqual((await ids()).slice(0, 2), [records[0].id, records[1].id]);
   assert.equal(await page.locator('tr[data-needs-answer=true] .record-question-badge').count(), 2);
-  await page.selectOption('#automation-result-filter', 'waiting');
+  await page.locator('#automation-result-filter [data-filter=attention]').click();
   assert.equal((await ids()).length, 2);
   await page.locator(`[data-record-question="${questions[0].id}"]`).click();
   const card = page.locator('dialog.record-question-dialog');
@@ -117,13 +122,16 @@ try {
   await card.waitFor({state: 'hidden'});
   await page.locator('[data-view=board]').click();
   assert.deepEqual(await ids(), [records[1].id]);
-  await page.selectOption('#automation-result-filter', 'all');
+  await page.locator('#automation-result-filter [data-filter=all]').click();
   assert.equal((await ids())[0], records[1].id);
   await page.screenshot({path: path.join(data, 'question-pinned.png')});
   await page.locator('[data-view=agent]').click();
   assert.equal(await page.locator('#agent .candidate-question-form').count(), 0);
   await page.getByRole('button', {name: 'Show unanswered questions', exact: true}).click();
-  assert.equal(await page.locator('#automation-result-filter').inputValue(), 'waiting');
+  assert.equal(
+    await page.locator('#automation-result-filter [aria-pressed=true]').getAttribute('data-filter'),
+    'attention',
+  );
   await page.locator(`[data-record-question="${questions[1].id}"]`).click();
   await card
     .getByRole('textbox', {name: 'Your answer', exact: true})

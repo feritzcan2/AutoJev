@@ -2,7 +2,8 @@ import {blockedRepeat, rememberProgress, progressKey, stalled} from './navigatio
 import {revealInView} from './rendering.mjs';
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const normalize = (value) => value.replace(/\s+/g, ' ').trim();
-const stale = {
+// The control id itself no longer matches the page.
+export const stale = {
   status: 'stale',
   executed: false,
   message:
@@ -110,7 +111,12 @@ export async function selectAutocomplete(slot, args, owner, reader) {
     // An open popup may cover its own trigger; only a closed one needs a click.
     if (!current || !same(current.identity, initial.identity)) return stale;
     if (!current.expanded) {
-      if (!current.point) return stale;
+      if (!current.point)
+        return {
+          status: 'stale',
+          executed: false,
+          message: 'The control is covered; nothing was clicked. Close what covers it, then retry.',
+        };
       opened = true;
       await slot.page.mouse.click(current.point.x, current.point.y);
     }
@@ -173,6 +179,32 @@ export async function selectAutocomplete(slot, args, owner, reader) {
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     } while (Date.now() < deadline);
+    // A failed or leftover query can filter every option away. Clear it once
+    // and read the unfiltered list, so the result names the real choices.
+    let cleared = false;
+    if (
+      !match &&
+      !current.options.length &&
+      current.editable !== false &&
+      normalize(String(current.value ?? ''))
+    ) {
+      wrote = cleared = true;
+      await input.fill('', {timeout: 2000});
+      const until = Date.now() + 1500;
+      do {
+        current = await read();
+        if (!current || !same(current.identity, initial.identity))
+          return await stop('stale', 'The field changed; nothing was selected.');
+        if (!listOnly) {
+          const matches = current.options.filter(
+            (o) => normalize(o.label) === normalize(args.option),
+          );
+          if (matches.length === 1) match = matches[0];
+        }
+        if (match || current.options.length) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } while (Date.now() < until);
+    }
     // The wanted option, or the full list, may lie below the rendered part.
     // Scroll the popup list from its top in bounded steps; never past its end.
     const seen = new Set(current.options.map((o) => o.label));
@@ -212,10 +244,14 @@ export async function selectAutocomplete(slot, args, owner, reader) {
     if (!match)
       return await stop(
         'needs_selection',
-        'No option matches exactly, also after scrolling the whole list. Pick the returned option with the same meaning as the proven answer; do not repeat the same query.',
-        {suggestions: [...seen].slice(0, 300)},
+        cleared && seen.size
+          ? `No option matches "${args.text ?? args.option}"; the query was cleared and suggestions is the full list this field offers. Pick the option with the same meaning as the proven answer, or ask/report if none fits; do not search again for a value that is not offered.`
+          : 'No option matches exactly, also after scrolling the whole list. Pick the returned option with the same meaning as the proven answer; do not repeat the same query.',
+        {suggestions: [...seen].slice(0, 300), ...(cleared ? {query: ''} : {})},
       );
-    if (current.editable === false) {
+    // A dropdown list, or an option outside the visible part of the popup
+    // (a long list opened without a query), is scrolled into view first.
+    if (current.editable === false || !match.point) {
       const optionHandle = await slot.page.evaluateHandle(
         (node) => window.__jevFast.nodes.get(node),
         match.node,
@@ -249,14 +285,19 @@ export async function selectAutocomplete(slot, args, owner, reader) {
       verified = false;
     do {
       const state = await read();
-      actual = state?.selectedLabels?.[0] || state?.value;
+      // A multiple choice adds a chip and may keep its list open.
+      const chip = state?.selectedLabels?.find((l) => normalize(l) === normalize(match.label));
+      actual = chip || state?.selectedLabels?.[0] || state?.value;
       verified =
         !!state &&
         same(state.identity, initial.identity) &&
         normalize(actual) === normalize(match.label) &&
         state.valid &&
-        !state.expanded;
-      if (verified) break;
+        (!state.expanded || Boolean(chip));
+      if (verified) {
+        if (state.expanded) await input.press('Escape');
+        break;
+      }
       await new Promise((resolve) => setTimeout(resolve, 100));
     } while (Date.now() < verifyUntil);
     // Some widgets display a shortened value (e.g. +49 for Germany +49).

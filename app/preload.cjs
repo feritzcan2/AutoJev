@@ -46,7 +46,6 @@ contextBridge.exposeInMainWorld('jobloop', {
   automationSourceSave: (id, url, input) => invoke('automation-source-save', id, url, input),
   automationSourcesInterval: (id, intervalMinutes) =>
     invoke('automation-sources-interval', id, intervalMinutes),
-  automationSourceModes: (id, mode) => invoke('automation-source-modes', id, mode),
   automationSourceRun: (id, url, options) => invoke('automation-source-run', id, url, options),
   automationSourceRelearn: (id, url) => invoke('automation-source-relearn', id, url),
   automationSourceResume: (id, url, runId, response) =>

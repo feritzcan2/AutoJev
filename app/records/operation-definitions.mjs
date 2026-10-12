@@ -32,6 +32,8 @@ export const recordOperationDefaults = {
   },
 };
 
+export const UNSTATED_CHECK = 'Do not apply until checked',
+  UNSTATED_MET = 'Treat as met';
 // Every workspace scores its records. The setup agent writes the rubric for the
 // workspace's own goal; templates do not define scoring criteria themselves.
 export const scoringFields = [
@@ -49,6 +51,15 @@ export const scoringFields = [
     question: 'Lowest score for automatic action, 1–100 (default 60)',
     required: false,
     type: 'number',
+  },
+  {
+    id: 'unstated_conditions',
+    label: 'When a listing does not mention a required condition',
+    question:
+      'Treat it as met, or do not apply automatically until it is checked (default). An explicit restriction always excludes the listing.',
+    required: false,
+    type: 'choice',
+    options: [UNSTATED_CHECK, UNSTATED_MET],
   },
   {
     id: 'save_score_threshold',

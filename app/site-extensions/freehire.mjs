@@ -218,9 +218,8 @@ export default {
     }),
   },
   // The API search address and its common filters (openapi.yaml, 2026-10).
-  // sort=created_at is strictly newest first, but no ordering is declared: a
-  // newest-first collector reads every page of a search (up to 400 here),
-  // while without it a scan reads the newest pages of its page budget.
+  // sort=created_at is strictly newest first, so a scan reads the newest pages
+  // of its page budget. No ordering is declared yet.
   search: {
     template: `${ORIGIN}${API_PATH}?q=%22{query}%22&q_fields=title&sort=created_at`,
     pagination: 'url_param',

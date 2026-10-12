@@ -24,6 +24,8 @@ const el = (tag, text, cls) => {
   if (cls) node.className = cls;
   return node;
 };
+// TypeSafe jev-latest list price (docs.typesafe.ai/models, 2026-10-09).
+const JEV_USD_PER_MILLION_TOKENS = 0.042;
 const statusNames = {
   draft: 'Setup',
   ready: 'Ready for trial',
@@ -157,6 +159,9 @@ export function automationsPage(
   const find = (selector) =>
     host.querySelector(selector) ?? agentConversation.querySelector(selector);
   let progressSignature = '';
+  let runTab = 'all',
+    runPhase = 'all',
+    runTabOwner = null;
   let templates = [],
     selected = null,
     data = null,
@@ -197,7 +202,7 @@ export function automationsPage(
   profileSaveDialog.setAttribute('aria-labelledby', 'automation-profile-save-title');
   profileSaveDialog.setAttribute('aria-describedby', 'automation-profile-save-warning');
   profileSaveDialog.innerHTML =
-    '<form method="dialog"><h2 id="automation-profile-save-title">Save the profile and restart the agents?</h2><p id="automation-profile-save-warning"></p><div class="workspace-dialog-actions"><button class="quiet" value="cancel" autofocus>Cancel</button><button class="primary" value="save">Confirm and save</button></div></form>';
+    '<form method="dialog"><h2 id="automation-profile-save-title">Restart the running agents?</h2><p id="automation-profile-save-warning"></p><div class="workspace-dialog-actions"><button class="quiet" value="cancel">Cancel</button><button class="quiet" value="later" autofocus>Save, don’t restart</button><button class="primary" value="restart">Save and restart</button></div></form>';
   document.body.append(profileSaveDialog);
   const queueExistingDialog = el('dialog');
   queueExistingDialog.id = 'automation-queue-existing-dialog';
@@ -209,7 +214,7 @@ export function automationsPage(
   function askQueueExisting(count, threshold) {
     return new Promise((resolve) => {
       queueExistingDialog.querySelector('p').textContent =
-        `${count} saved listing(s) have not been applied to yet. Queue those scoring ${threshold} or more for automatic applying, or apply only to listings found from now on?`;
+        `${count} saved listing(s) have not been applied to yet. Queue those scoring ${threshold} or more whose required conditions are met, or apply only to listings found from now on?`;
       queueExistingDialog.returnValue = 'cancel';
       queueExistingDialog.addEventListener(
         'close',
@@ -219,14 +224,15 @@ export function automationsPage(
       queueExistingDialog.showModal();
     });
   }
+  // Resolves true (restart now), false (apply after current tasks) or null (cancel).
   function confirmProfileSave(count) {
     return new Promise((resolve) => {
       profileSaveDialog.querySelector('p').textContent =
-        `${count} active agent(s) in this workspace will be stopped and restarted with the new profile. Do you confirm?`;
+        `${count} agent(s) are working in this workspace. The profile is saved either way. Restart them now, or let them continue: their current task keeps going and their next read uses the new profile.`;
       profileSaveDialog.returnValue = 'cancel';
       profileSaveDialog.addEventListener(
         'close',
-        () => resolve(profileSaveDialog.returnValue === 'save'),
+        () => resolve({restart: true, later: false}[profileSaveDialog.returnValue] ?? null),
         {once: true},
       );
       profileSaveDialog.showModal();
@@ -387,9 +393,9 @@ export function automationsPage(
       const activeCount = (snapshot.activeRuns ?? []).filter(
         (run) => run.kind !== 'interview',
       ).length;
-      if (activeCount && !(await confirmProfileSave(activeCount))) return;
-      if (owner !== selected || isDeleting()) return;
-      const options = {expectedRevision};
+      const restart = activeCount ? await confirmProfileSave(activeCount) : true;
+      if (restart === null || owner !== selected || isDeleting()) return;
+      const options = {expectedRevision, restart};
       if (input.mode === 'auto' && snapshot.automation.mode !== 'auto') {
         const existing = (snapshot.results ?? []).filter(
           (r) => !r.trial && ['found', 'prepared'].includes(r.status),
@@ -399,12 +405,16 @@ export function automationsPage(
           if (options.queueExisting === null || owner !== selected || isDeleting()) return;
         } else options.queueExisting = true;
       }
-      await api.automationProfileSave(owner, input, options);
+      const result = await api.automationProfileSave(owner, input, options);
       if (owner !== selected) return;
       dirty = false;
       formRevision = '';
       await refresh();
-      notice('Profile saved and applied.');
+      notice(
+        result?.restarted === false
+          ? 'Profile saved. Running agents use it from their next read.'
+          : 'Profile saved and applied.',
+      );
     });
     $('automation-add-document').onclick = attempt(async () => {
       await api.pickDocument(selected);
@@ -536,7 +546,7 @@ export function automationsPage(
     form.replaceChildren(...profileSections, footer);
     history.className = 'automation-history-section';
     history.innerHTML =
-      '<div id="automation-current-work" class="current-work"></div><div class="section-title"><h2>Run history</h2></div><div id="automation-runs" class="run-list"></div>';
+      '<div id="automation-current-work" class="current-work"></div><div class="section-title"><h2>Run history</h2></div><div id="automation-run-tabs" class="run-tabs" role="tablist" aria-label="Run history by source"></div><div id="automation-run-phases" class="run-tabs" role="tablist" aria-label="Source runs by phase" hidden></div><div id="automation-runs" class="run-list"></div>';
     const pipeline = el('div', null, 'pipeline');
     pipeline.id = 'automation-pipeline';
     const top = el('div', null, 'pipeline-top');
@@ -670,7 +680,7 @@ export function automationsPage(
     stop.textContent = data.activeRun ? 'Stop round' : 'Pause tracking';
     restart.hidden = true;
     for (const id of ['candidates', 'new']) document.querySelector('#' + id).disabled = locked;
-    document.querySelector('#rename-workspace').disabled = locked || Boolean(data.activeRun);
+    document.querySelector('#rename-workspace').disabled = locked;
     document.querySelector('#delete-workspace').disabled = locked;
     find('#automation-delete').disabled = locked;
     questionDialog.update(data);
@@ -981,6 +991,8 @@ export function automationsPage(
       criteria = find('#automation-criteria');
     form.dataset.revision = String(saved.revision);
     criteria.replaceChildren();
+    // The minimum score field lives under Find and apply; drop the old copy first.
+    form.querySelector('.authorization-score')?.replaceChildren();
     templateFields(
       criteria,
       (data.definition?.fields ?? templates.find((t) => t.id === a.templateId).fields).filter(
@@ -990,10 +1002,19 @@ export function automationsPage(
     );
     for (const key of ['title', 'goal', 'instructions', 'facts', 'mode']) f[key].value = a[key];
     const score = f['criteria-score_threshold']?.closest('label'),
+      unstated = f['criteria-unstated_conditions'],
       slot = form.querySelector('.authorization-score');
     if (score && slot) {
       score.firstChild.textContent = 'Minimum score to apply';
       slot.replaceChildren(score);
+    }
+    if (unstated && slot) {
+      // An empty value is the default: wait until the condition is checked.
+      for (const option of [...unstated.options])
+        if (option.value === 'Do not apply until checked' && unstated.value !== option.value)
+          option.remove();
+        else if (option.value === '') option.textContent = 'Do not apply until checked (default)';
+      slot.append(unstated.closest('label'));
     }
     syncApplyScore();
     formBaseline = readForm();
@@ -1047,7 +1068,7 @@ export function automationsPage(
       draft = Boolean(a.planDraft),
       working = (data.activeRuns ?? []).some((run) => run.kind !== 'interview');
     const changeNote = working
-      ? ' When you save, scans will stop and restart with the new criteria. The chat stays open.'
+      ? ' When you save, you choose whether running agents restart. The chat stays open.'
       : '';
     const text = a.profileUpdate?.error
       ? 'The profile could not be applied: ' + a.profileUpdate.error + ' You can save again.'
@@ -1073,15 +1094,15 @@ export function automationsPage(
       formBaseline.criteria.save_score_threshold = a.criteria.save_score_threshold ?? '';
     for (const button of [find('#automation-profile-save'), form.querySelector('[type=submit]')])
       if (button) {
-        button.disabled = busy || (pending && !a.profileUpdate.error) || !profileNeedsSave();
-        button.textContent =
-          pending && !a.profileUpdate.error
-            ? 'Applying profile…'
-            : busy
-              ? 'Saving…'
-              : a.profileUpdate?.error
-                ? 'Save again'
-                : 'Save profile';
+        const applying = pending && !a.profileUpdate.error;
+        button.disabled = busy || applying || !profileNeedsSave();
+        button.textContent = applying
+          ? 'Applying profile…'
+          : busy
+            ? 'Saving…'
+            : a.profileUpdate?.error
+              ? 'Save again'
+              : 'Save profile';
       }
   }
   function renderDetail() {
@@ -1220,10 +1241,88 @@ export function automationsPage(
       if (owner === selected) notice(error.message);
     }
   }
+  // One tab per source; runs without a single source go under Other.
+  function runSourceUrl(run) {
+    if (run.kind === 'interview') return null;
+    return run.sourceUrl ?? (run.sources?.length === 1 ? run.sources[0] : null);
+  }
+  // Within a source, runs that prepare, send or verify an application are the
+  // application phase; scans, trials and listing scoring are the search phase.
+  function runPhaseOf(run) {
+    return ['prepare', 'execute', 'verify'].includes(run.recordOperation)
+      ? 'application'
+      : 'search';
+  }
+  function tabButtons(tabs, current, choose) {
+    return tabs.map(([key, label, count]) => {
+      const button = el('button', `${label} (${count})`);
+      button.type = 'button';
+      button.setAttribute('role', 'tab');
+      button.setAttribute('aria-selected', String(key === current));
+      button.onclick = () => {
+        choose(key);
+        renderRuns();
+      };
+      return button;
+    });
+  }
+  function renderRunTabs() {
+    const bar = find('#automation-run-tabs');
+    if (!bar) return;
+    if (runTabOwner !== selected) {
+      runTabOwner = selected;
+      runTab = 'all';
+      runPhase = 'all';
+    }
+    const counts = new Map();
+    for (const run of data.runs) {
+      const key = runSourceUrl(run) ?? 'other';
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const tabs = [['all', 'All', data.runs.length]];
+    for (const source of data.sources)
+      tabs.push([source.url, source.name, counts.get(source.url) ?? 0]);
+    for (const [key, count] of counts)
+      if (key !== 'other' && !data.sources.some((source) => source.url === key))
+        tabs.push([key, new URL(key).hostname.replace(/^www\./, ''), count]);
+    if (counts.has('other')) tabs.push(['other', 'Other', counts.get('other')]);
+    if (!tabs.some(([key]) => key === runTab)) runTab = 'all';
+    bar.hidden = tabs.length < 3;
+    const buttons = tabButtons(tabs, runTab, (key) => (runTab = key));
+    tabs.forEach(([key], index) => {
+      if (key !== 'all' && key !== 'other') buttons[index].title = key;
+    });
+    bar.replaceChildren(...buttons);
+  }
+  function renderRunPhases(sourceRuns) {
+    const bar = find('#automation-run-phases');
+    if (!bar) return;
+    bar.hidden = !sourceRuns.length;
+    const count = (phase) => sourceRuns.filter((run) => runPhaseOf(run) === phase).length;
+    bar.replaceChildren(
+      ...tabButtons(
+        [
+          ['all', 'All', sourceRuns.length],
+          ['search', 'Search', count('search')],
+          ['application', 'Application', count('application')],
+        ],
+        runPhase,
+        (key) => (runPhase = key),
+      ),
+    );
+  }
   function renderRuns() {
+    renderRunTabs();
     const root = find('#automation-runs');
     root.replaceChildren();
-    for (const run of data.runs) {
+    const sourceRuns =
+      runTab === 'all'
+        ? data.runs
+        : data.runs.filter((run) => (runSourceUrl(run) ?? 'other') === runTab);
+    renderRunPhases(sourceRuns);
+    const runs =
+      runPhase === 'all' ? sourceRuns : sourceRuns.filter((run) => runPhaseOf(run) === runPhase);
+    for (const run of runs) {
       const row = el('div', null, 'run-row');
       row.dataset.status = run.status;
       row.dataset.runId = run.id;
@@ -1261,15 +1360,17 @@ export function automationsPage(
       if (run.status !== 'running') {
         const usage = run.tokenUsage,
           known = Number.isSafeInteger(usage?.totalTokens) && usage.totalTokens >= 0;
+        // Jev is billed per token; the cost is a list-price estimate, not the invoice.
+        const jevCost = known ? (usage.jevTokens / 1e6) * JEV_USD_PER_MILLION_TOKENS : 0;
         const tokens = el(
           'span',
           known
-            ? `${usage.totalTokens.toLocaleString('en-GB')} tokens in total`
+            ? `${usage.totalTokens.toLocaleString('en-GB')} tokens in total · Jev ${usage.jevTokens.toLocaleString('en-GB')} (≈ $${jevCost.toFixed(jevCost > 0 && jevCost < 0.01 ? 4 : 2)})`
             : 'Token usage unknown',
           'run-tokens',
         );
         tokens.title = known
-          ? `Agent: ${usage.agentTokens.toLocaleString('en-GB')} · Jev: ${usage.jevTokens.toLocaleString('en-GB')}`
+          ? `Agent: ${usage.agentTokens.toLocaleString('en-GB')} · Jev: ${usage.jevTokens.toLocaleString('en-GB')}. Jev cost estimated at $${JEV_USD_PER_MILLION_TOKENS} per million tokens; the TypeSafe account shows the billed amount.`
           : 'Total token usage for this round could not be recorded.';
         row.append(tokens);
       }
@@ -1282,7 +1383,7 @@ export function automationsPage(
       );
       root.append(row);
     }
-    if (!data.runs.length) root.append(el('p', 'No runs yet.', 'run-history-empty'));
+    if (!runs.length) root.append(el('p', 'No runs yet.', 'run-history-empty'));
   }
   async function refresh() {
     if (isDeleting()) return;

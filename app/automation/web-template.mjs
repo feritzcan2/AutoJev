@@ -3,7 +3,7 @@ import {continueRecordRun, unreportedRecordRun, requeueRecordRun} from '../recor
 import {taskHasRecord, batchScoring} from '../records/task-scope.mjs';
 import {SourceRetryChecks} from '../sources/retry-check.mjs';
 import {CONVERSATION_WORKER, isConversation} from '../workspaces/conversation.mjs';
-import {queueProfileUpdate, applyProfileUpdate} from './profile-updates.mjs';
+import {queueProfileUpdate, applyProfileUpdate, applyProfileInPlace} from './profile-updates.mjs';
 import {automationRunHistory} from './continuation.mjs';
 import {
   enqueueScoreBatch,
@@ -36,11 +36,19 @@ import {conversationMethods} from './web-template/conversation.mjs';
 // Template definitions select operations; the common queue owns dependencies,
 // worker leases and record/source exclusivity. No template-name dispatch here.
 export class WebTasks extends TaskRuns {
-  async saveProfile(id, input, options) {
+  async saveProfile(id, input, options = {}) {
     this.assertNotStopping(id);
     if (this.restarting.has(id)) throw Error('The workspace is being updated.');
     const saved = queueProfileUpdate(this.db, id, input, options);
     if (!saved.profileUpdate) return {saved: true, applied: true};
+    // Without a restart the profile is saved at once; running agents keep their
+    // task and read the new profile from their next context read.
+    if (options.restart === false && this.slots(id).some((slot) => slot.run.kind !== 'interview')) {
+      applyProfileInPlace(this.db, id);
+      this.changed(id);
+      await this.tick();
+      return {saved: true, applied: true, restarted: false};
+    }
     this.restarting.add(id);
     this.changed(id);
     try {

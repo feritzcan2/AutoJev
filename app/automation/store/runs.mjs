@@ -12,7 +12,7 @@ import {
   replayMatches,
   recipeRunOutcome,
   advanceRecipeState,
-  recipePageCap,
+  SCAN_SEARCH_PAGES,
 } from '../../sources/recipe.mjs';
 import {collectorRun} from '../../sources/collectors.mjs';
 import {randomUUID} from 'node:crypto';
@@ -88,7 +88,7 @@ export const runMethods = {
         kind === 'run' && task.sourceUrl && !task.recordId
           ? beginSourceScan(state.scanState, scopeKey, this.now(), {
               ordering,
-              pageCap: recipePageCap(recipe),
+              pageCap: SCAN_SEARCH_PAGES,
             })
           : null;
       if (scanState) {

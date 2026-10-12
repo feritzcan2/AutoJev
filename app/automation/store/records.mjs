@@ -129,8 +129,8 @@ export const recordMethods = {
     });
   },
   rename(id, title) {
-    this.assertIdle(id);
-    return this.put({...this.get(id), title: boundedText(title, 'Ad', 150)});
+    // A title change does not affect a running round, so it is allowed mid-run.
+    return this.put({...this.get(id), title: boundedText(title, 'Name', 150)});
   },
   updateCells(id, itemId, input) {
     return this.store.workspaces.updateCells(id, itemId, input);
@@ -512,11 +512,7 @@ export const recordMethods = {
       if (!item.assessment) throw Error('Score first before applying automatically');
       if (savedBeforeAutoApply(a, item))
         throw Error('Saved before Find and apply was turned on; apply it yourself');
-      const error = automaticAssessmentError(
-        item.assessment,
-        a.revision,
-        autoApplyThreshold(a.criteria),
-      );
+      const error = automaticAssessmentError(item.assessment, autoApplyThreshold(a.criteria));
       if (error) throw Error(error);
     }
     if (item.trial || !['found', 'prepared'].includes(item.status))

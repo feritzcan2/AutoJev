@@ -133,13 +133,16 @@ export function unreportedRecordRun(db, id, runId, reason) {
 }
 // A record run that stopped on a shared site wait (rate limit, verification
 // cooldown with a known end) before anything was reserved resumes after the
-// wait, at most twice per task. Waits without an end need the user.
+// wait, at most twice per task. Waits without an end need the user. The run's
+// last browser step must have been stopped by the wait: a run that read the
+// page after the wait and stopped for another reason needs the user instead.
 const SITE_WAIT_REQUEUES = 2;
 function siteWaitRequeue(run, task, item) {
   const wait = run.siteWait;
   return (
     ['blocked', 'failed'].includes(run.status) &&
     wait &&
+    run.siteWaitBlocked &&
     !wait.exhausted &&
     Number.isFinite(wait.retryAt) &&
     !run.actionId &&

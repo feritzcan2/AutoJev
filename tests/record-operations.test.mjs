@@ -1620,13 +1620,14 @@ test('a high fit score cannot authorize automatic execution with unmet or unknow
     recordOperationError(a, {...prepared, assessment: {...verified, scoringVersion: 3}}, 'execute'),
     /re-score/i,
   );
-  assert.match(
+  // A profile revision never invalidates a saved score.
+  assert.equal(
     recordOperationError(
       a,
       {...prepared, assessment: {...verified, revision: a.revision - 1}},
       'execute',
     ),
-    /re-score/i,
+    null,
   );
   // Recheck at reservation: eligibility may change after a task was queued.
   f.db.putResult({...prepared, assessment: verified});
@@ -2114,6 +2115,7 @@ test('an application stopped by a shared site wait resumes after the wait, at mo
     f.db.putRun({
       ...f.db.run(run.id),
       siteWait: {site: 'example.com', retryAt: f.db.now() + 60000, exhausted: false},
+      siteWaitBlocked: true,
     });
   let run = f.launches.at(-1);
   const taskId = run.taskId,
@@ -2135,6 +2137,28 @@ test('an application stopped by a shared site wait resumes after the wait, at mo
   await f.runtime.finish(f.id, 'blocked', 'Rate limited', run.workerId);
   assert.equal(task().state, 'blocked');
   assert.equal(f.db.result(f.id, item.id).status, 'prepared');
+});
+
+test('a run that read the page after a site wait and stopped for another reason is not requeued', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  f.db.putRun({
+    ...f.db.run(run.id),
+    siteWait: {site: 'example.com', retryAt: f.db.now() + 60000, exhausted: false},
+    siteWaitBlocked: false,
+  });
+  await f.runtime.finish(
+    f.id,
+    'blocked',
+    'The listing conflicts with a hard constraint',
+    run.workerId,
+  );
+  const task = f.db.store.workspaces.tasks.get(f.id, run.taskId);
+  assert.equal(task.state, 'blocked');
+  assert.equal(task.recordRecovery?.siteWaits, undefined);
 });
 
 test('a reserved application is never requeued by a site wait', async (t) => {

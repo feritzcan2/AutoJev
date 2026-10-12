@@ -805,6 +805,7 @@ test('interviews can research and interact without activating sources or schedul
     'introduction',
     'ranking',
     'score_threshold',
+    'unstated_conditions',
     'save_score_threshold',
   ]);
   assert.doesNotThrow(() =>

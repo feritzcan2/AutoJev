@@ -9,26 +9,22 @@ test('unknown source URLs never inherit automatic workspace authority', () => {
     'https://example.test/?query=engineer',
     'https://other.test/catalog?type=home',
   ]) {
-    const a = {mode: 'auto', sources: [source], sourceSettings: {[source]: {mode: 'observe'}}};
+    const a = {mode: 'auto', sources: [source]};
     for (const url of [
       source.replace(/\/$/, ''),
       source + '/',
       source + '#old',
       'https://removed.test/list',
     ])
-      assert.equal(sourceMode(a, url), 'observe');
+      assert.equal(sourceMode(a, url), url === source ? 'auto' : 'observe');
   }
 });
-test('known source permissions respect the workspace ceiling and disabled sources', () => {
+test('known sources follow the profile permission; a saved source mode is ignored', () => {
   const source = 'https://example.test/jobs';
   for (const workspace of ['observe', 'prepare', 'auto'])
     for (const mode of ['observe', 'prepare', 'auto']) {
       const a = {mode: workspace, sources: [source], sourceSettings: {[source]: {mode}}};
-      const modes = ['observe', 'prepare', 'auto'];
-      assert.equal(
-        sourceMode(a, source),
-        modes[Math.min(modes.indexOf(workspace), modes.indexOf(mode))],
-      );
+      assert.equal(sourceMode(a, source), workspace);
       a.sourceSettings[source].enabled = false;
       assert.equal(sourceMode(a, source), 'observe');
     }

@@ -34,7 +34,7 @@ import {JevCdpTransport} from './cdp.mjs';
 import {acquireChromeConnection} from './connection-queue.mjs';
 import {JevTabs, restoredTargets, sameBrowserInstance} from './tabs.mjs';
 import {disposableResearchTab} from './tab-lifecycle.mjs';
-import {selectAutocomplete} from './autocomplete.mjs';
+import {selectAutocomplete, stale as staleControl} from './autocomplete.mjs';
 import {selectChoice, verifyChoice, choiceKey} from './choice.mjs';
 import {captureClickTargets, takeClickTarget} from './click.mjs';
 import {
@@ -1674,7 +1674,9 @@ export class JevBrowser {
                   'The same invalid controlId was sent again; nothing was done. Drop this id. Choose the current target for the right question from availableTargets; if there is none, make it visible or report the unsupported control as a technical blocker.',
               }
             : await selectAutocomplete(slot, args, owner, this.reader);
-          if (result.status === 'stale') {
+          // Only an id that no longer matches its control is refused again; a
+          // missed option click leaves the control and its id valid.
+          if (result === staleControl) {
             slot.rejectedControlIds.add(args.controlId);
             if (slot.rejectedControlIds.size > 100)
               slot.rejectedControlIds.delete(slot.rejectedControlIds.values().next().value);

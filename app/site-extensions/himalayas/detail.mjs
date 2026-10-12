@@ -45,7 +45,9 @@ export async function readHimalayasDetail(
       description = text.split(/^## Job Description\s*$/m)[1]?.trim();
     if (result.isError || !title || !description || text.length > 8 * 1024 * 1024)
       throw Error('The Himalayas listing detail could not be read; the address stays pending.');
-    return {url, title: title.slice(0, 300), description: text, company: '', location: ''};
+    // The detail's Location line is the applicant location restriction.
+    const location = text.match(/^\*\*Location:\*\*[ \t]*([^\n]+)/m)?.[1]?.trim() ?? '';
+    return {url, title: title.slice(0, 300), description: text, company: '', location};
   } finally {
     await client.close();
   }

@@ -1,3 +1,4 @@
+import {positionMenu} from './popover-menu.js';
 import {eligibilityLabels, assessmentEligibility, oldScoringMethod} from './scoring-state.js';
 import {recordTable, recordCell, recordState, recordActions} from './record-table.js';
 import {
@@ -5,6 +6,7 @@ import {
   recordActivityAt,
   recordIsWorking,
   recordNeedsAnswer,
+  recordProblem,
 } from './record-operation-status.js';
 import {recordTabs} from './workspace-tabs.js';
 import {scoreBreakdown} from './score-breakdown.js';
@@ -38,16 +40,25 @@ const menuControlKey = (control) => {
   ])
     if (control?.dataset[key]) return key + ':' + control.dataset[key];
 };
-const positionMenu = (panel, toggle) => {
-  const trigger = toggle.getBoundingClientRect(),
-    width = panel.offsetWidth,
-    height = panel.offsetHeight;
-  panel.style.left = Math.max(8, Math.min(trigger.right - width, innerWidth - width - 8)) + 'px';
-  panel.style.top =
-    (trigger.bottom + height + 8 <= innerHeight
-      ? trigger.bottom + 4
-      : Math.max(8, trigger.top - height - 4)) + 'px';
+// Short relative time; the exact time stays in the element title.
+const relativeTime = (at, now = Date.now()) => {
+  const minutes = Math.round((now - at) / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return minutes + ' min ago';
+  if (minutes < 24 * 60) return Math.round(minutes / 60) + ' h ago';
+  if (minutes < 7 * 24 * 60) return Math.round(minutes / 1440) + ' d ago';
+  return new Date(at).toLocaleDateString('en-GB', {day: 'numeric', month: 'short'});
 };
+const storedPageSize = () => {
+  try {
+    return [10, 25, 50].find((size) => size === Number(localStorage.getItem('recordPageSize')));
+  } catch {
+    return undefined;
+  }
+};
+const editable = (node) =>
+  node instanceof HTMLElement &&
+  (node.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(node.tagName));
 
 export function automationResultsTable(
   root,
@@ -56,8 +67,13 @@ export function automationResultsTable(
   let data,
     busy = false,
     page = 1,
-    sort = 'updatedAt',
+    // null picks the default: fit score when the table has one, otherwise activity.
+    sort = null,
     direction = -1,
+    filterValue = 'all',
+    detailId = null,
+    cursorId = null,
+    pageSize = storedPageSize() ?? 25,
     scrollLeft = 0,
     disposeTable = () => {};
   let batchSubmitting = null,
@@ -73,10 +89,8 @@ export function automationResultsTable(
     changed = (node, key) => renderKeys.get(node) !== key && (renderKeys.set(node, key), true),
     rows = new Map();
   const selectedIds = new Set(),
-    expanded = new Set(),
     requests = new Set(),
-    visibleTabButtons = new Map(),
-    pageSize = 10;
+    visibleTabButtons = new Map();
   const review = el('dialog', null, 'automation-record-review'),
     reviewTitle = el('h2'),
     reviewSummary = el('p'),
@@ -136,17 +150,48 @@ export function automationResultsTable(
   };
   const toolbar = el('div', null, 'automation-results-toolbar'),
     search = el('input'),
-    filter = el('select'),
+    filter = el('div', null, 'record-filter-chips'),
+    filterChips = new Map(),
+    pageSizeSelect = el('select'),
     pagination = el('div', null, 'jobs-pagination'),
     content = el('div'),
-    activity = el('div', null, 'record-activity-summary');
+    activity = el('div', null, 'record-activity-summary'),
+    notice = el('p', null, 'record-notice');
   activity.setAttribute('role', 'status');
+  notice.setAttribute('role', 'alert');
+  notice.hidden = true;
+  let noticeTimer = 0;
+  // Action errors show here instead of a blocking alert.
+  const showNotice = (message) => {
+    notice.textContent = message;
+    notice.hidden = false;
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => (notice.hidden = true), 8000);
+  };
   search.type = 'search';
   search.id = 'automation-result-search';
   search.placeholder = 'Search results…';
   search.setAttribute('aria-label', 'Search results');
   filter.id = 'automation-result-filter';
-  filter.setAttribute('aria-label', 'Filter result status');
+  filter.setAttribute('role', 'group');
+  filter.setAttribute('aria-label', 'Filter records');
+  pageSizeSelect.id = 'automation-result-page-size';
+  pageSizeSelect.setAttribute('aria-label', 'Records per page');
+  for (const size of [10, 25, 50]) pageSizeSelect.add(new Option(size + ' per page', String(size)));
+  pageSizeSelect.value = String(pageSize);
+  pageSizeSelect.onchange = () => {
+    pageSize = Number(pageSizeSelect.value);
+    try {
+      localStorage.setItem('recordPageSize', String(pageSize));
+    } catch {}
+    page = 1;
+    render();
+  };
+  const setFilter = (value) => {
+    filterValue = value;
+    page = 1;
+    render();
+  };
   const scoreFilter = el('div', null, 'record-score-filter'),
     scoreComparison = el('select'),
     scoreMinimum = el('input');
@@ -161,24 +206,38 @@ export function automationResultsTable(
   scoreMinimum.placeholder = 'All';
   scoreMinimum.setAttribute('aria-label', 'Score limit');
   scoreFilter.append(el('span', 'Score'), scoreComparison, scoreMinimum);
-  for (const [value, label] of [
-    ['all', 'All records'],
-    ['starred', '★ Starred'],
-    ['found', 'Found'],
-    ['prepared', 'Ready to apply'],
-    ['completed', 'Completed'],
-    ['uncertain', 'Awaiting verification'],
-    ['dismissed', 'Skipped'],
-    ['trial', 'Research and trial samples'],
-  ])
-    filter.add(new Option(label, value));
-  toolbar.append(search, filter, scoreFilter);
+  toolbar.append(search, scoreFilter, pageSizeSelect);
   root.previousElementSibling.append(toolbar);
-  root.replaceChildren(activity, pagination, content, review);
+  // Details open in a side panel so the table keeps its layout.
+  const drawer = el('aside', null, 'record-drawer'),
+    drawerHead = el('header', null, 'record-drawer-head'),
+    drawerTitle = el('h2'),
+    drawerMeta = el('p', null, 'record-drawer-meta'),
+    drawerBody = el('div', null, 'record-drawer-body'),
+    drawerTools = el('div', null, 'record-drawer-tools');
+  drawer.id = 'record-drawer';
+  drawer.popover = 'manual';
+  drawer.setAttribute('aria-labelledby', 'record-drawer-title');
+  drawerTitle.id = 'record-drawer-title';
+  const closeDrawer = () => {
+    const id = detailId;
+    detailId = null;
+    render();
+    root.querySelector(`[data-result-id="${id}"]`)?.focus({preventScroll: true});
+  };
+  const drawerClose = button('×', closeDrawer, 'record-drawer-close');
+  drawerClose.setAttribute('aria-label', 'Close details');
+  drawerHead.append(drawerTitle, drawerClose);
+  drawer.append(drawerHead, drawerMeta, drawerTools, drawerBody);
+  const toggleDetail = (id) => {
+    detailId = detailId === id ? null : id;
+    cursorId = id;
+    render();
+  };
+  root.replaceChildren(filter, activity, pagination, notice, content, review, drawer);
   search.oninput =
     scoreMinimum.oninput =
     scoreComparison.onchange =
-    filter.onchange =
       () => {
         page = 1;
         render();
@@ -259,10 +318,8 @@ export function automationResultsTable(
       try {
         await api.automationRecordsDelete(workspace, ids);
         if (selectionOwner === workspace) {
-          for (const id of ids) {
-            selectedIds.delete(id);
-            expanded.delete(id);
-          }
+          for (const id of ids) selectedIds.delete(id);
+          if (ids.includes(detailId)) detailId = null;
           if (ids.includes(reviewed?.id)) {
             review.close();
             reviewed = null;
@@ -280,7 +337,51 @@ export function automationResultsTable(
     'danger',
   );
   deleteSelected.dataset.recordsDelete = '';
-  selection.append(selectionCount, scoreSelected, deleteSelected, clearSelection, selectionError);
+  const skippable = (result) =>
+    Boolean(
+      api.automationDismiss &&
+        ['found', 'prepared'].includes(result.status) &&
+        !result.recordAction?.task &&
+        !requests.has(data.automation.id + ':' + result.id),
+    );
+  const skipSelected = button('Skip selected', async () => {
+    if (
+      batchSubmitting ||
+      busy ||
+      !selectedIds.size ||
+      data.results.some((result) => selectedIds.has(result.id) && !skippable(result))
+    )
+      return;
+    const workspace = data.automation.id,
+      ids = [...selectedIds];
+    batchSubmitting = 'skip';
+    selectionError.textContent = '';
+    for (const id of ids) requests.add(workspace + ':' + id);
+    render();
+    try {
+      for (const id of ids) {
+        await api.automationDismiss(workspace, id);
+        if (selectionOwner === workspace) selectedIds.delete(id);
+      }
+      await refresh();
+    } catch (error) {
+      if (selectionOwner === workspace) selectionError.textContent = error.message;
+      await refresh();
+    } finally {
+      for (const id of ids) requests.delete(workspace + ':' + id);
+      batchSubmitting = null;
+      render();
+    }
+  });
+  skipSelected.dataset.recordsSkip = '';
+  selection.append(
+    selectionCount,
+    scoreSelected,
+    skipSelected,
+    deleteSelected,
+    clearSelection,
+    selectionError,
+  );
   root.insertBefore(selection, pagination);
 
   function syncTabButtons() {
@@ -304,12 +405,66 @@ export function automationResultsTable(
     else syncTabButtons();
   }
   const tabTimer = setInterval(() => {
-    if (root.isConnected && root.getClientRects().length) void refreshTabs();
+    const visible = root.isConnected && root.getClientRects().length > 0;
+    if (visible) void refreshTabs();
+    // The side panel sits in the top layer, so it follows the table's visibility.
+    if (!visible && drawer.matches(':popover-open')) drawer.hidePopover();
+    else if (visible && detailId && !drawer.matches(':popover-open')) renderDrawer();
   }, 1000);
   function positionOpenMenu() {
     const panel = content.querySelector('.record-row-actions:popover-open');
     if (panel)
       positionMenu(panel, panel.closest('[data-result-id]').querySelector('.record-row-menu'));
+  }
+
+  // The record's summary, assessment and notes, shown in the side panel.
+  function detailContent(result) {
+    const cell = el('div');
+    cell.append(el('p', result.summary));
+    if (result.assessment) {
+      const assessment = result.assessment;
+      cell.append(
+        el(
+          'h3',
+          assessment.score === null
+            ? 'Scoring · Could not be assessed'
+            : `Fit score · ${assessment.score}/100`,
+        ),
+        scoreBreakdown(assessment),
+        el('p', assessment.summary),
+      );
+      if (oldScoringMethod(assessment))
+        cell.append(
+          el(
+            'p',
+            'This score was saved with the previous method; a fixed cap may have been applied. Rescore for a current fit score.',
+            'record-score-stale',
+          ),
+        );
+      for (const [key, label] of [
+        ['strengths', 'Matches'],
+        ['gaps', 'Gaps'],
+        ['uncertainties', 'Uncertainties'],
+      ])
+        if (assessment[key]?.length) {
+          const list = el('ul');
+          for (const note of assessment[key]) list.append(el('li', note));
+          cell.append(el('h4', label), list);
+        }
+      if (assessment.rubric)
+        cell.append(el('h4', 'Scoring criteria used'), el('p', assessment.rubric));
+      cell.append(
+        el('blockquote', assessment.evidence),
+        button('Assessed listing ↗', () => api.openLink(assessment.evidenceUrl)),
+        el('small', `Assessed: ${time(assessment.scoredAt)} · Not a probability of success.`),
+      );
+    }
+    if (result.proposal) cell.append(el('h3', 'Last work note'), el('pre', result.proposal));
+    if (result.recordAction?.lastTask?.summary)
+      cell.append(el('h3', 'Last record operation'), el('p', result.recordAction.lastTask.summary));
+    if (result.evidence)
+      cell.append(el('h3', 'Outcome evidence'), el('blockquote', result.evidence));
+    return cell;
   }
 
   function render() {
@@ -323,24 +478,37 @@ export function automationResultsTable(
     const active = data.results.filter((r) => recordOperationStatus(r)?.active),
       queued = active.filter((r) => r.recordAction?.task?.state === 'pending').length,
       waiting = data.results.filter(recordNeedsAnswer).length;
-    if (
-      changed(activity, JSON.stringify([active.length, queued, waiting, filter.value === 'active']))
-    ) {
+    if (changed(activity, JSON.stringify([active.length, queued, waiting]))) {
       activity.replaceChildren();
       activity.hidden = !active.length;
     }
-    if (active.length && !activity.childElementCount) {
+    if (active.length && !activity.childElementCount)
       activity.append(
         el(
           'span',
           `${active.length} record(s) in progress · ${queued} queued${waiting ? ` · ${waiting} awaiting an answer` : ''}`,
         ),
-        button(filter.value === 'active' ? 'Show all records' : 'Show records in progress', () => {
-          filter.value = filter.value === 'active' ? 'all' : 'active';
-          page = 1;
-          render();
-        }),
       );
+    // Filter chips carry their counts; empty ones hide unless selected.
+    const matchesFilter = (r, value) =>
+      value === 'all' ||
+      (value === 'attention'
+        ? recordNeedsAnswer(r) || Boolean(recordProblem(r))
+        : value === 'active'
+          ? recordOperationStatus(r)?.active
+          : value === 'trial'
+            ? r.trial
+            : value === 'starred'
+              ? r.starred
+              : !r.trial && recordState(r, data.definition).id === value);
+    if (!filterChips.has(filterValue)) filterValue = 'all';
+    for (const [value, chip] of filterChips) {
+      const count = data.results.filter((r) => matchesFilter(r, value)).length,
+        selected = value === filterValue;
+      chip.hidden = !count && !selected && value !== 'all';
+      chip.setAttribute('aria-pressed', String(selected));
+      chip.lastChild.textContent = String(count);
+      chip.dataset.attention = String(value === 'attention' && count > 0);
     }
     const query = search.value.trim().toLocaleLowerCase('en-GB').split(/\s+/).filter(Boolean);
     const hasScore = Boolean(
@@ -363,16 +531,7 @@ export function automationResultsTable(
     const results = data.results.filter(
       (r) =>
         matchesScore(r) &&
-        (filter.value === 'all' ||
-          (filter.value === 'waiting'
-            ? recordNeedsAnswer(r)
-            : filter.value === 'active'
-              ? recordOperationStatus(r)?.active
-              : filter.value === 'trial'
-                ? r.trial
-                : filter.value === 'starred'
-                  ? r.starred
-                  : !r.trial && recordState(r, data.definition).id === filter.value)) &&
+        matchesFilter(r, filterValue) &&
         query.every((q) =>
           [
             r.title,
@@ -398,25 +557,45 @@ export function automationResultsTable(
       {key: 'source', label: 'Source', type: 'text'},
       {key: 'title', label: 'Record', type: 'text'},
     ];
-    if (!['status', 'updatedAt', ...columns.map((c) => c.key)].includes(sort)) {
-      sort = 'updatedAt';
+    // Source and short text columns read as one line under the title, so the
+    // table needs fewer columns and rarely scrolls sideways.
+    const hasTitle = columns.some((c) => c.key === 'title'),
+      folded = hasTitle
+        ? columns.filter((c) => c.key === 'source' || (c.type === 'text' && c.key !== 'title'))
+        : [],
+      shown = columns.filter((c) => !folded.includes(c));
+    if (!['status', 'updatedAt', ...shown.map((c) => c.key)].includes(sort)) {
+      sort = shown.some((c) => c.key === 'score') ? 'score' : 'updatedAt';
       direction = -1;
     }
     const value = (r) =>
-      sort === 'source'
-        ? source(r)
-        : sort === 'status'
-          ? (recordOperationStatus(r)?.label ?? recordState(r, data.definition).label ?? r.status)
-          : sort === 'updatedAt'
-            ? recordActivityAt(r)
-            : sort === 'title'
-              ? r[sort]
+      sort === 'status'
+        ? (recordOperationStatus(r)?.label ?? recordState(r, data.definition).label ?? r.status)
+        : sort === 'updatedAt'
+          ? recordActivityAt(r)
+          : sort === 'title'
+            ? r[sort]
+            : sort === 'score' && r.assessment
+              ? (r.assessment.score ?? '')
               : (r.cells?.[sort] ?? '');
     const numeric =
       sort === 'updatedAt' ||
       ['number', 'money'].includes(columns.find((c) => c.key === sort)?.type);
+    // Queued applications sit right under the running ones.
+    const queuedApplication = (result) =>
+      result.status !== 'dismissed' &&
+      result.recordAction?.task?.state === 'pending' &&
+      result.recordAction.task.kind === 'execute';
     const priority = (result) =>
-      recordNeedsAnswer(result) ? 0 : openIds.has(result.id) ? 1 : recordIsWorking(result) ? 2 : 3;
+      recordNeedsAnswer(result)
+        ? 0
+        : openIds.has(result.id)
+          ? 1
+          : recordIsWorking(result)
+            ? 2
+            : queuedApplication(result)
+              ? 3
+              : 4;
     results.sort((a, b) => {
       const rank = priority(a) - priority(b);
       if (rank) return rank;
@@ -464,6 +643,14 @@ export function automationResultsTable(
     deleteSelected.title = !allDeletable
       ? 'Stop the queued or running operations of the selected records before deleting.'
       : '';
+    const allSkippable = selectedResults.every(skippable);
+    skipSelected.hidden = !api.automationDismiss;
+    skipSelected.textContent =
+      batchSubmitting === 'skip' ? 'Skipping…' : `Skip selected (${selectedIds.size})`;
+    skipSelected.disabled = busy || Boolean(batchSubmitting) || !selectedIds.size || !allSkippable;
+    skipSelected.title = !allSkippable
+      ? 'Only found or ready records without a running operation can be skipped.'
+      : 'Skip the selected records and close their pending questions';
     clearSelection.disabled = Boolean(batchSubmitting);
     const selectCheckbox = (label, checked, change) => {
       const input = el('input');
@@ -479,7 +666,13 @@ export function automationResultsTable(
       pagination,
       JSON.stringify([start, visible.length, results.length, page, pages]),
     );
-    if (paginationChanged)
+    if (paginationChanged) {
+      const keys = el(
+        'span',
+        'Keys: j/k move · Enter details · a next step · s skip · x select · o open',
+        'record-shortcuts',
+      );
+      keys.title = 'Keyboard shortcuts work while the table is visible and no field has focus.';
       pagination.replaceChildren(
         el(
           'span',
@@ -488,7 +681,9 @@ export function automationResultsTable(
             : '0 records',
           'pagination-count',
         ),
+        ...(visible.length ? [keys] : []),
       );
+    }
     if (paginationChanged && pages > 1) {
       const previous = button('Previous', () => {
           page--;
@@ -505,8 +700,8 @@ export function automationResultsTable(
     visibleTabButtons.clear();
     const tableColumns = [
       ...(selectable ? [{key: 'selection', label: 'Select'}] : []),
-      {key: 'updatedAt', label: 'Last activity'},
-      ...columns,
+      ...shown,
+      {key: 'updatedAt', label: 'Activity'},
       {key: 'status', label: 'Status'},
     ];
     const tableKey = JSON.stringify([data.automation.id, tableColumns]),
@@ -525,9 +720,7 @@ export function automationResultsTable(
       renderKeys.set(mounted.table, tableKey);
       disposeTable = mounted.dispose;
       mounted.table.setAttribute('aria-label', 'Tracked records and results');
-      mounted.table.style.minWidth =
-        (columns.length > 5 ? 820 + (columns.length - 5) * 110 : columns.length > 2 ? 720 : 560) +
-        'px';
+      mounted.table.style.minWidth = 600 + Math.max(0, shown.length - 2) * 110 + 'px';
       content.append(mounted.element);
     }
     const {element, table, body} = mounted,
@@ -593,7 +786,7 @@ export function automationResultsTable(
               busy,
               batchSubmitting,
               selectedIds.has(result.id),
-              expanded.has(result.id),
+              detailId === result.id,
               openIds.has(result.id),
               data.workers?.find((w) => w.id === result.recordAction?.task?.workerId)?.name,
               data.automation.revision,
@@ -605,7 +798,7 @@ export function automationResultsTable(
       placed = new Set();
     for (const [id, key] of rowKeys) {
       const cached = rows.get(id);
-      if (cached?.key === key) kept.add(cached.row).add(cached.detailRow);
+      if (cached?.key === key) kept.add(cached.row);
       else rows.delete(id);
     }
     for (const id of rows.keys()) if (!rowKeys.has(id)) rows.delete(id);
@@ -621,7 +814,6 @@ export function automationResultsTable(
       const cached = rows.get(id);
       if (!cached) return false;
       place(cached.row);
-      if (cached.detailRow) place(cached.detailRow);
       if (cached.tab) visibleTabButtons.set(id, cached.tab);
       return true;
     };
@@ -629,7 +821,7 @@ export function automationResultsTable(
       if (!reuse('')) {
         const row = el('tr'),
           cell = el('td', null, 'empty');
-        cell.colSpan = columns.length + 2 + Number(selectable);
+        cell.colSpan = tableColumns.length;
         cell.append(
           el(
             'strong',
@@ -650,11 +842,15 @@ export function automationResultsTable(
     for (const result of visible) {
       if (reuse(result.id)) continue;
       const progress = recordOperationStatus(result),
-        requesting = requests.has(data.automation.id + ':' + result.id);
+        requesting = requests.has(data.automation.id + ':' + result.id),
+        // The reason and its actions live under the record title.
+        problem =
+          requesting || !columns.some((c) => c.key === 'title') ? null : recordProblem(result),
+        problemActions = el('div', null, 'record-problem-actions');
       const keepMenu = openRow?.dataset.resultId === result.id;
       const row = el('tr'),
         state = el('td'),
-        updated = el('td', null, 'automation-result-time'),
+        updated = el('td'),
         actionsPanel = keepMenu ? openMenu : el('div', null, 'record-row-actions'),
         actions = el('div', null, 'table-actions'),
         actionsToggle = keepMenu
@@ -676,6 +872,7 @@ export function automationResultsTable(
       row.dataset.working = String(recordIsWorking(result));
       row.dataset.openTab = String(openIds.has(result.id));
       row.dataset.outcome = !progress && !requesting ? result.status : '';
+      row.dataset.problem = String(Boolean(problem));
       actionsPanel.popover = 'auto';
       actionsPanel.id = 'record-row-actions-' + result.id;
       actionsToggle.setAttribute('aria-controls', actionsPanel.id);
@@ -706,14 +903,25 @@ export function automationResultsTable(
         cell.append(checkbox);
         row.append(cell);
       }
-      row.append(updated);
-      for (const column of columns) {
+      for (const column of shown) {
         const cell = el('td');
         cell.dataset.column = column.key;
-        if (column.key === 'source') {
-          cell.className = 'company-cell';
-          const heading = el('div', null, 'company-heading'),
-            star = button(
+        if (column.key === 'title') {
+          cell.className = 'role-cell';
+          const heading = el('strong', result.title);
+          heading.title = result.title;
+          cell.append(heading);
+          const meta = el('div', null, 'record-meta');
+          for (const column of folded) {
+            const text =
+              column.key === 'source' ? source(result) : String(result.cells?.[column.key] ?? '');
+            if (!text.trim()) continue;
+            const part = el('span', text);
+            part.title = column.label + ': ' + text;
+            meta.append(part);
+          }
+          if (folded.some((c) => c.key === 'source')) {
+            const star = button(
               result.starred ? '★' : '☆',
               async () => {
                 await api.automationStar(data.automation.id, result.id, !result.starred);
@@ -721,17 +929,11 @@ export function automationResultsTable(
               },
               'job-star',
             );
-          star.setAttribute('aria-label', result.starred ? 'Remove star' : 'Star');
-          star.setAttribute('aria-pressed', String(Boolean(result.starred)));
-          const name = el('span', source(result));
-          name.title = source(result);
-          heading.append(star, name);
-          cell.append(heading);
-        } else if (column.key === 'title') {
-          cell.className = 'role-cell';
-          const heading = el('strong', result.title);
-          heading.title = result.title;
-          cell.append(heading);
+            star.setAttribute('aria-label', result.starred ? 'Remove star' : 'Star');
+            star.setAttribute('aria-pressed', String(Boolean(result.starred)));
+            meta.prepend(star);
+          }
+          if (meta.childElementCount) cell.append(meta);
           if (recordIsWorking(result)) {
             const worker = data.workers?.find((w) => w.id === result.recordAction.task.workerId),
               mark = el(
@@ -755,18 +957,25 @@ export function automationResultsTable(
             reply.setAttribute('aria-label', result.title + ' · Answer question');
             cell.append(mark, preview, reply);
           }
+          if (problem) {
+            const box = el('div', null, 'record-problem'),
+              reason = el('span', problem.reason, 'record-problem-reason');
+            reason.title = problem.reason;
+            box.append(el('span', problem.label, 'record-problem-badge'), reason, problemActions);
+            cell.append(box);
+          }
         } else if (column.key === 'score' && result.assessment) {
           const assessment = result.assessment,
             score = button(
               assessment.score === null ? 'Could not be assessed' : `${assessment.score}/100`,
-              () => {
-                expanded.has(result.id) ? expanded.delete(result.id) : expanded.add(result.id);
-                render();
-              },
-              'sort-button',
+              () => toggleDetail(result.id),
+              'record-score-chip',
             );
           score.title = assessment.summary;
-          score.setAttribute('aria-expanded', String(expanded.has(result.id)));
+          score.setAttribute('aria-expanded', String(detailId === result.id));
+          score.setAttribute('aria-controls', drawer.id);
+          score.dataset.tone =
+            assessment.score === null ? 'none' : assessmentEligibility(assessment);
           score.setAttribute('aria-label', result.title + ' · Scoring rationale');
           score.dataset.recordScore = result.id;
           cell.append(
@@ -779,8 +988,6 @@ export function automationResultsTable(
           );
           if (oldScoringMethod(assessment))
             cell.append(el('small', 'Old method · rescore', 'record-score-stale'));
-          if (assessment.revision !== data.automation.revision)
-            cell.append(el('small', 'Outdated assessment', 'record-score-stale'));
         } else {
           row.append(
             recordCell(column, result.cells?.[column.key], {openLink: (url) => api.openLink(url)}),
@@ -802,7 +1009,7 @@ export function automationResultsTable(
           'automation-badge ' + (requesting ? 'queued' : (progress?.tone ?? result.status)),
         ),
       );
-      if (progress?.detail) {
+      if (progress?.detail && !problem) {
         const detail = el('span', progress.detail, 'record-operation-detail');
         detail.title = progress.detail;
         state.append(detail);
@@ -817,25 +1024,20 @@ export function automationResultsTable(
             'automation-trial-label',
           ),
         );
-      const activityDate = new Date(recordActivityAt(result)),
-        date = el('time');
-      date.dateTime = activityDate.toISOString();
-      date.title = time(recordActivityAt(result));
-      date.append(
-        el('span', activityDate.toLocaleDateString('en-GB')),
-        el('span', activityDate.toLocaleTimeString('en-GB'), 'automation-result-clock'),
-      );
+      const activityAt = recordActivityAt(result),
+        date = el('time', relativeTime(activityAt));
+      date.dateTime = new Date(activityAt).toISOString();
+      date.dataset.at = String(activityAt);
+      date.title = time(activityAt);
       updated.append(date);
-      const detailsId = 'automation-result-detail-' + result.id,
-        detail = button(expanded.has(result.id) ? 'Close' : 'Details', () => {
-          expanded.has(result.id) ? expanded.delete(result.id) : expanded.add(result.id);
-          render();
-          root.querySelector(`[data-result-detail="${result.id}"]`)?.focus();
-        });
+      const detail = button(detailId === result.id ? 'Close details' : 'Details', () => {
+        if (actionsPanel.matches(':popover-open')) actionsPanel.hidePopover();
+        toggleDetail(result.id);
+      });
       detail.dataset.resultDetail = result.id;
       detail.dataset.recordMenuAction = 'detail';
-      detail.setAttribute('aria-expanded', String(expanded.has(result.id)));
-      detail.setAttribute('aria-controls', detailsId);
+      detail.setAttribute('aria-expanded', String(detailId === result.id));
+      detail.setAttribute('aria-controls', drawer.id);
       const open = button('Open ↗', () => {
         if (actionsPanel.matches(':popover-open')) actionsPanel.hidePopover();
         api.openLink(result.url);
@@ -904,10 +1106,13 @@ export function automationResultsTable(
           await api.workspaceTransition(data.automation.id, result.id, action);
           await refresh();
         } catch (error) {
-          window.alert(error.message);
+          showNotice(error.message);
         }
       });
-      const recordAction = result.recordAction;
+      const recordAction = result.recordAction,
+        // The record's next step stays visible in the row; the rest is in the menu.
+        next = el('div', null, 'record-next-action'),
+        nextStep = !problem && !recordAction?.task && !recordNeedsAnswer(result);
       if (recordAction?.scoreOperation) {
         const op = recordAction.scoreOperation,
           score = button(
@@ -920,7 +1125,7 @@ export function automationResultsTable(
               try {
                 await sendOperation(result, 'score');
               } catch (error) {
-                window.alert(error.message);
+                showNotice(error.message);
               }
             },
           );
@@ -928,7 +1133,7 @@ export function automationResultsTable(
         score.disabled = busy || requesting || op.disabled;
         score.title =
           op.reason ?? 'Assess the listing against the saved scoring criteria, profile and CV.';
-        actions.append(score);
+        (nextStep && !result.assessment && !recordAction.operation ? next : actions).append(score);
       }
       if (recordAction?.retryOperation) {
         const op = recordAction.retryOperation,
@@ -938,7 +1143,7 @@ export function automationResultsTable(
               try {
                 await sendOperation(result, op.kind, op.direct ? {direct: true} : {});
               } catch (error) {
-                window.alert(error.message);
+                showNotice(error.message);
               }
             },
             'record-retry',
@@ -950,7 +1155,7 @@ export function automationResultsTable(
           (op.kind === 'verify'
             ? 'Verify the outcome of the action before resending it.'
             : 'Retry the last unfinished action.');
-        state.append(retry);
+        (problem ? problemActions : state).append(retry);
       }
       if (recordAction?.directOperation && !recordAction.task) {
         const op = recordAction.directOperation,
@@ -960,7 +1165,7 @@ export function automationResultsTable(
               try {
                 await sendOperation(result, 'execute', {direct: true});
               } catch (error) {
-                window.alert(error.message);
+                showNotice(error.message);
               }
             },
             'primary',
@@ -983,7 +1188,7 @@ export function automationResultsTable(
               try {
                 await sendOperation(result, op.kind, op.kind === 'execute' ? {direct: true} : {});
               } catch (error) {
-                window.alert(error.message);
+                showNotice(error.message);
               }
             },
             recordAction.directOperation && !recordAction.task ? '' : 'primary',
@@ -995,7 +1200,13 @@ export function automationResultsTable(
           (op.kind === 'execute'
             ? 'The agent fills the form with the saved information and submits the application. If anything is missing, it asks all at once.'
             : '');
-        actions.append(action);
+        // Verifying is the way out of an unclear outcome, so it stays next to the reason.
+        (problem && op.kind === 'verify' && !recordAction.retryOperation
+          ? problemActions
+          : nextStep
+            ? next
+            : actions
+        ).append(action);
       }
       if (['found', 'prepared', 'uncertain'].includes(result.status)) {
         const submitted = button('Applied', async () => {
@@ -1008,7 +1219,7 @@ export function automationResultsTable(
           try {
             await api.automationMarkSubmitted(data.automation.id, result.id);
           } catch (error) {
-            window.alert(error.message);
+            showNotice(error.message);
           }
           await refresh();
         });
@@ -1016,7 +1227,7 @@ export function automationResultsTable(
         submitted.disabled = busy || requesting;
         submitted.title =
           'If you verified that the application was submitted, mark the record as completed';
-        actions.append(submitted);
+        (problem ? problemActions : actions).append(submitted);
       }
       if (['found', 'prepared'].includes(result.status)) {
         const dismiss = button('Skip', async () => {
@@ -1030,8 +1241,18 @@ export function automationResultsTable(
       }
       for (const control of actions.querySelectorAll('[data-idle]'))
         control.disabled = busy || requesting || Boolean(recordAction?.task);
+      if (problem) {
+        const why = button(detailId === result.id ? 'Hide details' : 'Details', () =>
+          toggleDetail(result.id),
+        );
+        why.dataset.recordProblemDetail = result.id;
+        why.setAttribute('aria-expanded', String(detailId === result.id));
+        why.setAttribute('aria-controls', drawer.id);
+        problemActions.append(why);
+      }
+      if (next.childElementCount) state.append(next);
       if (!keepMenu) state.append(actionsToggle);
-      row.append(state);
+      row.append(updated, state);
       place(row);
       if (keepMenu) {
         // Keep the connected native popover in the top layer while rebuilding the table.
@@ -1049,66 +1270,7 @@ export function automationResultsTable(
         actionsPanel.append(actions, tabChoices, tabFeedback);
         state.append(actionsPanel);
       }
-      const detailRow = el('tr', null, 'automation-result-detail'),
-        cell = el('td');
-      detailRow.id = detailsId;
-      detailRow.hidden = !expanded.has(result.id);
-      cell.colSpan = columns.length + 2 + Number(selectable);
-      cell.append(el('p', result.summary));
-      if (result.assessment) {
-        const assessment = result.assessment;
-        cell.append(
-          el(
-            'h3',
-            assessment.score === null
-              ? 'Scoring · Could not be assessed'
-              : `Fit score · ${assessment.score}/100`,
-          ),
-          scoreBreakdown(assessment),
-          el('p', assessment.summary),
-        );
-        if (oldScoringMethod(assessment))
-          cell.append(
-            el(
-              'p',
-              'This score was saved with the previous method; a fixed cap may have been applied. Rescore for a current fit score.',
-              'record-score-stale',
-            ),
-          );
-        if (assessment.revision !== data.automation.revision)
-          cell.append(
-            el(
-              'p',
-              'The profile or criteria changed. This assessment is based on outdated information.',
-              'record-score-stale',
-            ),
-          );
-        for (const [key, label] of [
-          ['strengths', 'Matches'],
-          ['gaps', 'Gaps'],
-          ['uncertainties', 'Uncertainties'],
-        ])
-          if (assessment[key]?.length) {
-            const list = el('ul');
-            for (const note of assessment[key]) list.append(el('li', note));
-            cell.append(el('h4', label), list);
-          }
-        if (assessment.rubric)
-          cell.append(el('h4', 'Scoring criteria used'), el('p', assessment.rubric));
-        cell.append(
-          el('blockquote', assessment.evidence),
-          button('Assessed listing ↗', () => api.openLink(assessment.evidenceUrl)),
-          el('small', `Assessed: ${time(assessment.scoredAt)} · Not a probability of success.`),
-        );
-      }
-      if (result.proposal) cell.append(el('h3', 'Last work note'), el('pre', result.proposal));
-      if (recordAction?.lastTask?.summary)
-        cell.append(el('h3', 'Last record operation'), el('p', recordAction.lastTask.summary));
-      if (result.evidence)
-        cell.append(el('h3', 'Outcome evidence'), el('blockquote', result.evidence));
-      detailRow.append(cell);
-      place(detailRow);
-      rows.set(result.id, {key: rowKeys.get(result.id), row, detailRow, tab});
+      rows.set(result.id, {key: rowKeys.get(result.id), row, tab});
     }
     for (const node of [...body.children]) if (!placed.has(node)) node.remove();
     previousTable?.element.remove();
@@ -1116,13 +1278,103 @@ export function automationResultsTable(
       element.querySelector('.jobs-table-wrap').scrollLeft = scrollLeft;
       positionOpenMenu();
     }
+    if (!visible.some((result) => result.id === cursorId)) cursorId = null;
+    for (const result of visible) {
+      const row = rows.get(result.id)?.row;
+      if (!row) continue;
+      row.tabIndex = -1;
+      row.dataset.cursor = String(result.id === cursorId);
+      row.dataset.detailOpen = String(result.id === detailId);
+    }
+    renderDrawer();
   }
+  function renderDrawer() {
+    const result = detailId && data.results.find((item) => item.id === detailId);
+    if (!result) {
+      detailId = null;
+      changed(drawer, '');
+      if (drawer.matches(':popover-open')) drawer.hidePopover();
+      return;
+    }
+    if (changed(drawer, JSON.stringify([result, data.automation.revision]))) {
+      // Build the body first: the title and meta change only with it.
+      const body = detailContent(result);
+      body.id = 'automation-result-detail-' + result.id;
+      drawerTitle.textContent = result.title;
+      const columns = data.automation.table?.columns ?? [];
+      drawerMeta.textContent = [
+        source(result),
+        ...columns
+          .filter((c) => !['source', 'title'].includes(c.key) && result.cells?.[c.key] != null)
+          .map((c) => c.label + ': ' + result.cells[c.key]),
+        recordOperationStatus(result)?.label ?? recordState(result, data.definition).label,
+      ]
+        .filter((part) => String(part).trim())
+        .join(' · ');
+      drawerTools.replaceChildren(button('Open ↗', () => api.openLink(result.url)));
+      drawerBody.replaceChildren(body);
+      drawerBody.scrollTop = 0;
+    }
+    if (!drawer.matches(':popover-open')) drawer.showPopover();
+  }
+  // Keyboard review: j/k move through the page, the other keys act on the
+  // highlighted record. Typing in a field or an open menu or dialog is left alone.
+  const onKey = (event) => {
+    if (
+      event.defaultPrevented ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.altKey ||
+      !data ||
+      !root.isConnected ||
+      !root.getClientRects().length ||
+      editable(event.target) ||
+      document.querySelector('dialog[open], .record-row-actions:popover-open')
+    )
+      return;
+    const rowsOnPage = [...content.querySelectorAll('tr[data-result-id]')],
+      index = rowsOnPage.findIndex((row) => row.dataset.resultId === cursorId),
+      row = rowsOnPage[index],
+      key = event.key;
+    const move = (to) => {
+      const target = rowsOnPage[Math.max(0, Math.min(rowsOnPage.length - 1, to))];
+      if (!target) return;
+      cursorId = target.dataset.resultId;
+      if (detailId) detailId = cursorId;
+      render();
+      target.focus({preventScroll: true});
+      target.scrollIntoView({block: 'nearest'});
+    };
+    if (key === 'Escape' && detailId) closeDrawer();
+    else if (key === 'j') move(index + 1);
+    else if (key === 'k') move(index < 0 ? 0 : index - 1);
+    else if (!row) return;
+    else if (key === 'Enter' && !(event.target instanceof HTMLButtonElement))
+      toggleDetail(cursorId);
+    else if (key === 'o') api.openLink(data.results.find((r) => r.id === cursorId)?.url);
+    else if (key === 'a')
+      row
+        .querySelector(
+          '[data-record-question], .record-next-action button:not(:disabled), .record-problem-actions button:not(:disabled)',
+        )
+        ?.click();
+    else if (key === 's') row.querySelector('[data-record-dismiss]:not(:disabled)')?.click();
+    else if (key === 'x') row.querySelector('[data-record-select]:not(:disabled)')?.click();
+    else return;
+    event.preventDefault();
+  };
+  document.addEventListener('keydown', onKey);
+  // Relative activity times age without rebuilding rows.
+  const clockTimer = setInterval(() => {
+    for (const node of content.querySelectorAll('time[data-at]'))
+      node.textContent = relativeTime(Number(node.dataset.at));
+  }, 30000);
   return {
     showQuestions() {
       search.value = '';
       scoreMinimum.value = '';
       scoreComparison.value = 'gt';
-      filter.value = 'waiting';
+      filterValue = 'attention';
       page = 1;
       render();
       root.scrollIntoView({block: 'start', behavior: 'smooth'});
@@ -1130,6 +1382,10 @@ export function automationResultsTable(
     dispose: () => {
       content.querySelector('.record-row-actions:popover-open')?.hidePopover();
       clearInterval(tabTimer);
+      clearInterval(clockTimer);
+      clearTimeout(noticeTimer);
+      document.removeEventListener('keydown', onKey);
+      if (drawer.matches(':popover-open')) drawer.hidePopover();
       tabOwner = null;
       tabVersion++;
       disposeTable();
@@ -1147,6 +1403,9 @@ export function automationResultsTable(
         scoreComparison.value = 'gt';
         selectedIds.clear();
         selectionError.textContent = '';
+        filterValue = 'all';
+        detailId = cursorId = null;
+        notice.hidden = true;
       }
       if (tabOwner !== snapshot.automation.id) {
         liveTabs = [];
@@ -1161,18 +1420,23 @@ export function automationResultsTable(
       for (const id of selectedIds)
         if (!currentIds.has(id) && !requests.has(selectionOwner + ':' + id)) selectedIds.delete(id);
       const options = [
-        ['All records', 'all'],
-        ['★ Starred', 'starred'],
-        ['Records in progress', 'active'],
-        ['Awaiting answer', 'waiting'],
+        ['All', 'all'],
+        ['Needs you', 'attention'],
+        ['In progress', 'active'],
         ...(data.definition?.records.states ?? []).map((s) => [s.label, s.id]),
-        ['Research and trial samples', 'trial'],
+        ['★ Starred', 'starred'],
+        ['Trial samples', 'trial'],
       ];
-      // Replacing the options would close the list while the user has it open.
+      // Chips are rebuilt only when the workflow states change; counts update in place.
       if (changed(filter, JSON.stringify(options))) {
-        const selected = filter.value;
-        filter.replaceChildren(...options.map(([label, value]) => new Option(label, value)));
-        if (options.some(([, value]) => value === selected)) filter.value = selected;
+        filterChips.clear();
+        for (const [label, value] of options) {
+          const chip = button('', () => setFilter(value), 'record-filter-chip');
+          chip.dataset.filter = value;
+          chip.append(el('span', label), el('span', '0', 'record-filter-count'));
+          filterChips.set(value, chip);
+        }
+        filter.replaceChildren(...filterChips.values());
       }
       render();
       void refreshTabs();

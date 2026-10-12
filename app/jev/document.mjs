@@ -375,6 +375,9 @@ export function documentReadiness() {
     reason,
     hidden: document.visibilityState === 'hidden',
   });
+  // A freshly loaded document can still add content (choices, buttons) after
+  // its first render; its age and content size let the wait see it settle.
+  const age = globalThis.performance?.now?.();
   if (!body || document.readyState === 'loading') return result('document_loading');
   if (body.querySelector('[hidden][id^="S:"]')) return result('stream_pending');
   const busy = [...body.querySelectorAll('[aria-busy="true"]')].filter(visible);
@@ -389,8 +392,18 @@ export function documentReadiness() {
         globalThis.performance?.getEntriesByType?.('resource').length ?? 0,
       ].join(':'),
     };
+  if (age < 4000)
+    return {
+      ...result(null),
+      age,
+      contentKey: [body.getElementsByTagName?.('*').length, body.textContent?.length].join(':'),
+    };
   return result(null);
 }
+
+// A document younger than 4 seconds is read once its content stayed unchanged
+// for QUIET_DOCUMENT_MS; an older document is read right away.
+export const QUIET_DOCUMENT_MS = 750;
 
 // A busy marker that stays set while the page around it stops changing belongs
 // to a stuck widget, not to content still loading. Only that exact unchanged
@@ -418,11 +431,20 @@ export async function waitForDocument(
 ) {
   let releaseRendering;
   try {
-    let busy = null;
+    let busy = null,
+      quiet = null;
     for (let i = 0; i < attempts; i++) {
       signal?.throwIfAborted();
       const state = settledBusy(slot, await slot.page.evaluate(documentReadiness));
       signal?.throwIfAborted();
+      if (!state.loading && state.contentKey !== undefined && i + 1 < attempts) {
+        if (quiet?.url !== state.url || quiet.key !== state.contentKey)
+          quiet = {url: state.url, key: state.contentKey, since: now()};
+        if (now() - quiet.since < QUIET_DOCUMENT_MS) {
+          await wait(delay);
+          continue;
+        }
+      }
       if (!state.loading) {
         slot.documentWait = null;
         return state;

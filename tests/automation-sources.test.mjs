@@ -442,10 +442,12 @@ test('one-off scans finish every independent source without scheduling repeats',
   assert.equal(db.get(id).status, 'paused');
 });
 
-test('source scope and permission reach the agent, cannot exceed profile authority, and cannot be raised mid-run', async (t) => {
+test('source scope reaches the agent and the action permission comes only from the profile', async (t) => {
   const {db, id, runtime, launches} = fixture(t);
-  db.save(id, {mode: 'auto'});
-  db.saveSource(id, urls[0], {name: 'First', query: 'Only two-room apartments', mode: 'observe'});
+  db.save(id, {mode: 'observe'});
+  // A per-source mode from older versions is ignored, never a wider permission.
+  db.saveSource(id, urls[0], {name: 'First', query: 'Only two-room apartments', mode: 'auto'});
+  assert.equal(db.get(id).sourceSettings[urls[0]].mode, undefined);
   db.enable(id);
   await runtime.tick();
   await settle();
@@ -469,10 +471,8 @@ test('source scope and permission reach the agent, cannot exceed profile authori
   });
   assert.equal(record.sourceUrl, urls[0]);
   assert.throws(() => db.reserve(id, run.id, record.id), /cannot submit/);
-  assert.throws(() => db.saveSource(id, urls[0], {mode: 'auto'}), /Stop this source/);
+  assert.throws(() => db.saveSource(id, urls[0], {query: 'Changed'}), /Stop this source/);
   await runtime.pause(id);
-  db.save(id, {mode: 'observe'});
-  assert.throws(() => db.saveSource(id, urls[0], {mode: 'auto'}), /cannot exceed/);
   assert.throws(() => db.saveSource(id, 'https://other.test/', {enabled: true}), /does not belong/);
 });
 

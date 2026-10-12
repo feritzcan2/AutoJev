@@ -44,7 +44,7 @@ try {
   assert.ok(field?.autocomplete);
   await assert.rejects(
     () => call('browser_jev_list_suggestions', {tabId, controlId: field.controlId}, 'other'),
-    /oturuma/,
+    /current controlId of this session/,
   );
   let r = await call('browser_jev_autocomplete', {
     tabId,
