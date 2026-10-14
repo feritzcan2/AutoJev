@@ -148,13 +148,13 @@ test('verified duplicate rows retain receipts and documents, resolve old IDs and
   assert.equal(merged.status, 'completed');
   assert.deepEqual(merged.evidence, receipt);
   assert.deepEqual(merged.documents, b.documents);
-  assert.equal(f.db.results(f.id, {all: true}).length, 1);
+  assert.equal(f.db.results(f.id).length, 1);
   assert.equal(f.db.resultCounts(f.id).resultCount, 1);
   assert.equal(f.core.workspaces.records.count(f.id), 1);
   assert.equal(f.core.workspaces.records.search(f.id, {query: 'Home'}).total, 1);
   assert.equal(
     recordOperationError(f.db.get(f.id), merged, 'execute', {manual: true, direct: true}),
-    'Bu kayıt yeniden gönderilemez',
+    'This record cannot be submitted again',
   );
   assert.equal(
     f.core.workspaces.tasks.put(f.core.workspaces.tasks.get(f.id, task.id)).recordId,
@@ -162,7 +162,7 @@ test('verified duplicate rows retain receipts and documents, resolve old IDs and
   );
   assert.equal(f.db.get(f.id).questions[0].recordId, b.id);
   assert.equal(f.db.get(f.id).questions[0].originalRecordId, a.id);
-  assert.throws(() => f.db.putResult({...a, status: 'found'}), /birleştirildi/);
+  assert.throws(() => f.db.putResult({...a, status: 'found'}), /was merged/);
   const archived = JSON.parse(
     f.core.db.prepare('SELECT data FROM workspace_records WHERE id=?').get(a.id).data,
   );
@@ -193,7 +193,7 @@ test('migration honors established legacy relationships and isolates workspaces'
   assert.equal(f.core.workspaces.records.find(other.id, base).id, foreign.id);
   assert.throws(
     () => f.core.workspaces.records.identities.merge(f.id, [b.id, foreign.id]),
-    /çalışma alanına/,
+    /does not belong to this workspace/,
   );
   assert.equal(f.core.workspaces.records.get(other.id, foreign.id).status, 'found');
 });
@@ -207,7 +207,7 @@ test('uncertain attempts are retained and merging cannot steal an active worker'
   queue.claim(f.id, task.id, 'record-worker');
   assert.throws(
     () => f.core.workspaces.records.identities.merge(f.id, [a.id, b.id]),
-    /çalışan görevlerini/,
+    /running tasks/,
   );
   queue.finish(f.id, task.id);
   f.db.putResult({...a, status: 'uncertain', attemptRunId: 'uncertain-attempt'});
@@ -218,8 +218,8 @@ test('uncertain attempts are retained and merging cannot steal an active worker'
   const one = queue.enqueue(f.id, {recordId: a.id, lockKey: 'record:' + a.id}),
     two = queue.enqueue(f.id, {recordId: b.id, lockKey: 'record:' + b.id});
   queue.claim(f.id, one.id, 'one');
-  assert.throws(() => queue.claim(f.id, two.id, 'two'), /başka bir worker/);
-  assert.throws(() => f.db.assertRecordIdle(f.id, b.id), /sırada veya çalışıyor/);
+  assert.throws(() => queue.claim(f.id, two.id, 'two'), /another worker/);
+  assert.throws(() => f.db.assertRecordIdle(f.id, b.id), /queued or running/);
   const batch = queue.enqueue(f.id, {recordIds: [a.id, b.id]});
   assert.deepEqual(batch.recordIds, [merged.id]);
 });

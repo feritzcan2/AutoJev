@@ -7,7 +7,7 @@ import {templateContract} from './contract.mjs';
 export const automationTemplates = [jobSearchTemplate, ...exampleTemplates];
 export function automationTemplate(id) {
   const template = automationTemplates.find((t) => t.id === id);
-  if (!template) throw Error('Template bulunamadı');
+  if (!template) throw Error('Template not found');
   return templateContract(structuredClone(template));
 }
 export const defaultAutomationSettings = withAgentDefaults();
@@ -17,30 +17,30 @@ export function webUrl(value) {
   try {
     url = new URL(value);
   } catch {
-    throw Error('Geçerli bir web adresi gir');
+    throw Error('Enter a valid web address');
   }
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
-    throw Error('Kullanıcı bilgisi içermeyen HTTP veya HTTPS adresi gerekli');
+    throw Error('An HTTP or HTTPS address without user credentials is required');
   if (!url.hash) url.hash = '';
   return url.toString();
 }
 export function boundedText(value, label, max = 12000, {empty = false} = {}) {
   if (typeof value !== 'string' || (!empty && !value.trim()) || value.length > max)
-    throw Error(`${label}: ${empty ? '0' : '1'}–${max} karakter gerekli`);
+    throw Error(`${label}: ${empty ? '0' : '1'}–${max} characters required`);
   return value.trim();
 }
 export function normalizeSourceUrls(sources) {
-  if (!Array.isArray(sources) || sources.length > 20) throw Error('En fazla 20 kaynak ekle');
+  if (!Array.isArray(sources) || sources.length > 20) throw Error('Add at most 20 sources');
   return [...new Set(sources.map(webUrl))];
 }
 export function planInput(template, input, previous = {}) {
   const criteria = input.criteria ?? previous.criteria ?? {};
   if (!criteria || typeof criteria !== 'object' || Array.isArray(criteria))
-    throw Error('Kriterler geçersiz');
+    throw Error('Invalid criteria');
   const allowed = new Set(template.fields.map((f) => f.id));
   for (const key of Object.keys(criteria))
     if (!allowed.has(key))
-      throw Error('Bilinmeyen kriter: ' + key + '. Geçerli alanlar: ' + [...allowed].join(', '));
+      throw Error('Unknown criterion: ' + key + '. Valid fields: ' + [...allowed].join(', '));
   saveScoreThreshold(criteria);
   const sources = normalizeSourceUrls(input.sources ?? previous.sources ?? []);
   for (const f of template.fields) {
@@ -50,23 +50,23 @@ export function planInput(template, input, previous = {}) {
       ['number', 'money'].includes(f.type) &&
       (!Number.isFinite(Number(value)) || String(value).trim() === '')
     )
-      throw Error(f.label + ': sayı gerekli');
+      throw Error(f.label + ': a number is required');
     if (f.type === 'boolean' && !['true', 'false'].includes(value))
-      throw Error(f.label + ': evet/hayır gerekli');
+      throw Error(f.label + ': yes/no is required');
     if (f.type === 'choice' && !f.options?.includes(value))
-      throw Error(f.label + ': geçerli seçenek gerekli');
+      throw Error(f.label + ': a valid option is required');
     if (
       f.type === 'date' &&
       (!/^\d{4}-\d{2}-\d{2}$/.test(value) ||
         !Number.isFinite(Date.parse(value)) ||
         new Date(value).toISOString().slice(0, 10) !== value)
     )
-      throw Error(f.label + ': geçerli tarih gerekli');
+      throw Error(f.label + ': a valid date is required');
     if (f.type === 'url') webUrl(value);
   }
   return {
-    title: boundedText(input.title ?? previous.title ?? template.title, 'Ad', 150),
-    goal: boundedText(input.goal ?? previous.goal ?? '', 'Amaç', 6000, {empty: true}),
+    title: boundedText(input.title ?? previous.title ?? template.title, 'Name', 150),
+    goal: boundedText(input.goal ?? previous.goal ?? '', 'Goal', 6000, {empty: true}),
     criteria: Object.fromEntries(
       Object.entries(criteria).map(([key, value]) => [
         key,
@@ -74,10 +74,15 @@ export function planInput(template, input, previous = {}) {
       ]),
     ),
     sources,
-    instructions: boundedText(input.instructions ?? previous.instructions ?? '', 'İşleyiş', 12000, {
-      empty: true,
-    }),
-    facts: boundedText(input.facts ?? previous.facts ?? '', 'Kişisel bilgiler', 12000, {
+    instructions: boundedText(
+      input.instructions ?? previous.instructions ?? '',
+      'Instructions',
+      12000,
+      {
+        empty: true,
+      },
+    ),
+    facts: boundedText(input.facts ?? previous.facts ?? '', 'Personal facts', 12000, {
       empty: true,
     }),
   };
@@ -87,7 +92,7 @@ export function missingProfileFields(
   template = automationTemplate(automation.templateId),
 ) {
   return [
-    ...(!automation.goal ? ['Amaç'] : []),
+    ...(!automation.goal ? ['Goal'] : []),
     ...template.fields.filter((f) => f.required && !automation.criteria[f.id]).map((f) => f.label),
   ];
 }
@@ -97,11 +102,11 @@ export function missingPlanFields(
 ) {
   return [
     ...missingProfileFields(automation, template),
-    ...(!automation.sources.length ? ['En az bir kaynak adresi'] : []),
+    ...(!automation.sources.length ? ['At least one source address'] : []),
   ];
 }
 export function reusableTemplate(input, normalize = templateContract) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Error('Template geçersiz');
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw Error('Invalid template');
   if (
     !Array.isArray(input.fields) ||
     input.fields.length > 20 ||
@@ -109,23 +114,23 @@ export function reusableTemplate(input, normalize = templateContract) {
     input.steps.length < 1 ||
     input.steps.length > 12
   )
-    throw Error('Template soruları ve adımları eksik');
+    throw Error('Template questions and steps are missing');
   const fields = input.fields.map((f) => {
     if (!/^[a-z][a-z0-9_]{0,49}$/.test(f.id) || typeof f.required !== 'boolean')
-      throw Error('Geçersiz soru alanı');
+      throw Error('Invalid question field');
     return {
       id: f.id,
-      label: boundedText(f.label, 'Alan adı', 150),
-      question: boundedText(f.question, 'Soru', 1000),
+      label: boundedText(f.label, 'Field name', 150),
+      question: boundedText(f.question, 'Question', 1000),
       required: f.required,
       type: ['text', 'number', 'money', 'date', 'url', 'boolean', 'choice'].includes(f.type)
         ? f.type
         : 'text',
-      ...(f.options ? {options: f.options.map((v) => boundedText(v, 'Seçenek', 150))} : {}),
+      ...(f.options ? {options: f.options.map((v) => boundedText(v, 'Option', 150))} : {}),
     };
   });
   if (new Set(fields.map((f) => f.id)).size !== fields.length)
-    throw Error('Soru alanları benzersiz olmalı');
+    throw Error('Question fields must be unique');
   return normalize({
     version: 2,
     kind: input.kind ?? 'web',
@@ -136,13 +141,13 @@ export function reusableTemplate(input, normalize = templateContract) {
     mail: input.mail,
     defaultSources: input.defaultSources,
     icon: '✳',
-    title: boundedText(input.title, 'Template adı', 150),
-    description: boundedText(input.description, 'Açıklama', 1000),
+    title: boundedText(input.title, 'Template name', 150),
+    description: boundedText(input.description, 'Description', 1000),
     fields,
-    steps: input.steps.map((step) => boundedText(step, 'Adım', 500)),
-    guidance: boundedText(input.guidance ?? '', 'İşleyiş', 12000, {empty: true}),
+    steps: input.steps.map((step) => boundedText(step, 'Step', 500)),
+    guidance: boundedText(input.guidance ?? '', 'Instructions', 12000, {empty: true}),
     ...(input.assessmentHints
-      ? {assessmentHints: boundedText(input.assessmentHints, 'Değerlendirme ipuçları', 2000)}
+      ? {assessmentHints: boundedText(input.assessmentHints, 'Assessment hints', 2000)}
       : {}),
     defaultMode: 'observe',
     ...(input.table ? {table: automationTable(input.table)} : {}),
@@ -165,11 +170,11 @@ export function defaultAutomationTable(templateId) {
   const template = automationTemplates.find((t) => t.id === templateId);
   return structuredClone(
     template?.table ?? {
-      title: 'İşlem akışı',
+      title: 'Workflow',
       columns: [
-        column('source', 'Kaynak'),
-        column('title', 'İlan'),
-        column('score', 'Puan', 'number'),
+        column('source', 'Source'),
+        column('title', 'Listing'),
+        column('score', 'Score', 'number'),
       ],
     },
   );
@@ -182,7 +187,7 @@ export function automationTable(input) {
     input.columns.length < 2 ||
     input.columns.length > 10
   )
-    throw Error('Tablo 2–10 sütun içermeli');
+    throw Error('The table must have 2–10 columns');
   const keys = new Set();
   const columns = input.columns.map((c) => {
     if (
@@ -192,15 +197,15 @@ export function automationTable(input) {
       reserved.has(c.key) ||
       keys.has(c.key)
     )
-      throw Error('Geçersiz veya yinelenen sütun anahtarı');
+      throw Error('Invalid or duplicate column key');
     keys.add(c.key);
     if (!types.has(c.type) || (builtins.has(c.key) && c.type !== 'text'))
-      throw Error('Geçersiz sütun türü');
-    return {key: c.key, label: boundedText(c.label, 'Sütun adı', 60), type: c.type};
+      throw Error('Invalid column type');
+    return {key: c.key, label: boundedText(c.label, 'Column name', 60), type: c.type};
   });
   if (![...builtins].every((key) => keys.has(key)))
-    throw Error('Kaynak ve başlık sütunları korunmalı');
-  return {title: boundedText(input.title, 'Tablo adı', 120), columns};
+    throw Error('The source and title columns must be kept');
+  return {title: boundedText(input.title, 'Table name', 120), columns};
 }
 // Collector display values may be shortened; callers retain full evidence in RAM.
 // Explicit cell updates still pass through the strict validator below.
@@ -219,7 +224,7 @@ export function automationTextCells(values, table) {
     });
 }
 export function automationCells(input, table) {
-  if (!Array.isArray(input) || input.length > 10) throw Error('En fazla 10 hücre güncellenebilir');
+  if (!Array.isArray(input) || input.length > 10) throw Error('At most 10 cells can be updated');
   const cells = {},
     columns = new Map(table.columns.map((c) => [c.key, c]));
   for (const entry of input) {
@@ -227,15 +232,15 @@ export function automationCells(input, table) {
     const c = columns.get(entry?.key);
     if (!c || builtins.has(c.key) || Object.hasOwn(cells, c.key))
       throw Error(
-        `Hücre için tanımlı, benzersiz bir özel sütun gerekli. Geçersiz anahtar: ${String(entry?.key)}. source ve title uygulama tarafından doldurulur; cells içine ekleme. Yazılabilir sütunlar: ${table.columns
+        `Each cell needs a defined, unique custom column. Invalid key: ${String(entry?.key)}. The app fills source and title; do not add them to cells. Writable columns: ${table.columns
           .filter((column) => !builtins.has(column.key))
           .map((column) => column.key)
-          .join(', ')}. Kaydı bu sütunlarla tekrar gönder.`,
+          .join(', ')}. Send the record again with these columns.`,
       );
-    let value = boundedText(entry.value, 'Hücre değeri', cellTextLimit, {empty: true});
+    let value = boundedText(entry.value, 'Cell value', cellTextLimit, {empty: true});
     if (value && ['number', 'money'].includes(c.type)) {
       if (!/^-?\d+(?:\.\d+)?$/.test(value) || !Number.isFinite(Number(value)))
-        throw Error('Sayısal hücre noktalı ondalık sayı olmalı');
+        throw Error('A numeric cell must be a decimal number with a dot');
       value = String(Number(value));
     }
     if (
@@ -245,7 +250,7 @@ export function automationCells(input, table) {
         !Number.isFinite(Date.parse(value)) ||
         new Date(value).toISOString().slice(0, 10) !== value)
     )
-      throw Error('Tarih YYYY-MM-DD biçiminde olmalı');
+      throw Error('The date must be in YYYY-MM-DD format');
     if (value && c.type === 'url') value = webUrl(value);
     cells[c.key] = value;
   }

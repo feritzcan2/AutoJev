@@ -124,7 +124,7 @@ export class BrowserTools {
       .catch(() => {})
       .then(() => {
         if (checkActive && this.isActive && !this.isActive())
-          throw Error('Worker oturumu kapandı.');
+          throw Error('The worker session has closed.');
         return run();
       });
     this.operations.set(candidateId, operation);
@@ -155,11 +155,12 @@ export class BrowserTools {
     if (!this.prepare(candidateId).ready)
       return {content: [{type: 'text', text: JSON.stringify(browserWaitResult())}]};
     const {client} = await this.connect(candidateId);
-    if (this.isActive && !this.isActive()) throw Error('Worker oturumu kapandı.');
+    if (this.isActive && !this.isActive()) throw Error('The worker session has closed.');
     if (name === 'browser_target_press') {
       const url = client.tab(args.tabId).page.url();
       try {
-        if (/^https?:/.test(url)) this.siteAccess?.assertAction(url);
+        const token = /^https?:/.test(url) ? this.siteAccess?.assertAction(url) : null;
+        if (token) client.tab(args.tabId).accessProbe = {url, token};
       } catch (error) {
         if (error.code !== 'SITE_WAIT') throw error;
         return {
@@ -289,14 +290,14 @@ export class BrowserTools {
       typeof tabId !== 'string' ||
       !(await this.workspaceTabs(id)).some((tab) => tab.tabId === tabId)
     )
-      throw Object.assign(Error('Bu çalışma alanının açık sekmesi bulunamadı.'), {
+      throw Object.assign(Error('No open tab was found for this workspace.'), {
         code: 'TAB_MISSING',
       });
     const connection = this.clients.get(id),
       client = (await connection?.pending)?.client,
       slot = client?.tabs.get(tabId);
     if (this.clients.get(id) !== connection || !slot || slot.page.isClosed())
-      throw Object.assign(Error('Sekme kapandı.'), {code: 'TAB_MISSING'});
+      throw Object.assign(Error('The tab was closed.'), {code: 'TAB_MISSING'});
     await slot.page.bringToFront();
     return {focused: true};
   }
@@ -309,7 +310,7 @@ export class BrowserTools {
       ) ||
       new Set(selection.map((tab) => tab.tabId)).size !== selection.length
     )
-      throw Error('Kapatılacak sekmeler geçersiz.');
+      throw Error('The tabs to close are invalid.');
     return this.enqueue(
       id,
       async () => {
@@ -320,13 +321,13 @@ export class BrowserTools {
             return !live || live.url !== tab.url || live.sourceUrl !== tab.sourceUrl;
           })
         )
-          throw Object.assign(Error('Sekmeler değişti. Listeyi yenileyip tekrar dene.'), {
+          throw Object.assign(Error('The tabs changed. Refresh the list and try again.'), {
             code: 'TAB_CHANGED',
           });
         const connection = this.clients.get(id),
           client = (await connection?.pending)?.client;
         if (this.clients.get(id) !== connection || !client)
-          throw Object.assign(Error('Chrome bağlantısı kapandı.'), {code: 'TAB_MISSING'});
+          throw Object.assign(Error('The Chrome connection closed.'), {code: 'TAB_MISSING'});
         const closed = [],
           failed = [];
         for (const tab of selection) {
@@ -398,9 +399,9 @@ export class BrowserTools {
           const result = await client.close({closeTabs});
           if (closeTabs && result?.closed?.length) this.onTabsClosed?.(key, result.closed);
           if (result?.failed?.length)
-            console.warn(`Chrome sekmeleri kapatılamadı: ${result.failed.join(', ')}`);
+            console.warn(`Could not close Chrome tabs: ${result.failed.join(', ')}`);
         } catch (error) {
-          console.warn('Tarayıcı bağlantısı kapatılamadı:', error);
+          console.warn('Could not close the browser connection:', error);
         }
       }),
     );

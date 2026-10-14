@@ -5,9 +5,14 @@ import {sourceMode} from '../sources/automation-sources.mjs';
 import {automationReady} from '../sources/trial.mjs';
 import {workerKey} from '../automation/worker-key.mjs';
 import {boundedText} from '../templates/catalog.mjs';
+import {autoApplyThreshold} from '../scoring/thresholds.mjs';
 
 const live = ['pending', 'running', 'reported', 'paused'];
-const waitingForAnswer = 'Önce bu kayıt için bekleyen soruları yanıtla';
+const waitingForAnswer = 'Answer the pending questions for this record first';
+// When the user switched to Find and apply without queueing existing records,
+// only records saved after the switch are applied to automatically.
+export const savedBeforeAutoApply = (a, item) =>
+  Boolean(a.autoApplyAfter) && (item.createdAt ?? 0) < a.autoApplyAfter;
 export function recordSource(a, item) {
   if (item.sourceUrl) return item.sourceUrl;
   const sources = a.sources.filter((url) => new URL(url).origin === new URL(item.url).origin);
@@ -30,29 +35,33 @@ export function recordOperationError(
   kind,
   {manual = false, digest, direct = false, now = Date.now()} = {},
 ) {
-  if (item.trial) return 'Araştırma örneği üzerinde işlem yapılamaz';
+  if (item.trial) return 'No action can run on a research sample';
   if (kind === 'verify')
-    return item.status === 'uncertain' ? null : 'Yalnızca sonucu belirsiz bir işlem doğrulanabilir';
+    return item.status === 'uncertain'
+      ? null
+      : 'Only an action with an uncertain outcome can be verified';
   if (['completed', 'executing', 'uncertain', 'dismissed'].includes(item.status))
-    return 'Bu kayıt yeniden gönderilemez';
-  if (!automationReady(a)) return 'Önce kurulumu kontrol edip kaydet';
+    return 'This record cannot be submitted again';
+  if (!automationReady(a)) return 'Check and save the setup first';
   if (pendingRecordQuestion(a, item)) return waitingForAnswer;
   if (kind === 'score') return null;
   if (!manual && item.collectedBy && !Number.isInteger(item.assessment?.score))
-    return 'Toplanan ilanı otomatik işlemeden önce puanla';
+    return 'Score the collected listing before acting on it automatically';
   const source = recordSource(a, item),
     mode = source ? sourceMode(a, source) : 'observe';
-  if (!manual && mode === 'observe') return 'Kaynak yalnızca bul modunda';
+  if (!manual && mode === 'observe') return 'The source is in find-only mode';
   if (kind === 'prepare') return null;
-  if (kind !== 'execute') return 'Bilinmeyen kayıt işlemi';
+  if (kind !== 'execute') return 'Unknown record operation';
   // There is no draft approval step: a user's execute request applies the
   // record directly, and auto mode applies scored records on its own.
   if (!manual) {
-    if (mode !== 'auto') return 'Başvuru için kullanıcı isteği gerekli';
+    if (mode !== 'auto') return 'An application needs a user request';
     // Without a draft review in between, an automatic submission needs a
     // current score; an unscored record is never applied to on its own.
-    if (!item.assessment) return 'Otomatik başvuru için önce puanla';
-    const error = automaticAssessmentError(item.assessment, a.revision);
+    if (!item.assessment) return 'Score it first for an automatic application';
+    if (savedBeforeAutoApply(a, item))
+      return 'Saved before Find and apply was turned on; apply it yourself';
+    const error = automaticAssessmentError(item.assessment, autoApplyThreshold(a.criteria));
     if (error) return error;
   }
   void digest;
@@ -72,7 +81,7 @@ export function enqueueRecordOperation(
   if (kind === 'execute') direct = true;
   // The user's requested changes to a reviewed draft go to a new preparation.
   if (changes !== undefined)
-    changes = kind === 'prepare' ? boundedText(changes, 'Değişiklik isteği', 2000) : undefined;
+    changes = kind === 'prepare' ? boundedText(changes, 'Change request', 2000) : undefined;
   const {db, queue} = runtime;
   const wake = (task) => {
     // Explicit record requests use the existing worker pool. Background
@@ -119,7 +128,7 @@ export function enqueueRecordOperation(
     const a = db.get(id),
       item = db.result(id, itemId),
       op = db.template(a.templateId).recordOperations?.[kind];
-    if (!op) throw Error('Template bu kayıt işlemini desteklemiyor');
+    if (!op) throw Error('The template does not support this record operation');
     const error = recordOperationError(a, item, kind, {manual, digest, direct, now: runtime.now()});
     if (error) throw Error(error);
     const existing = recordTask(db, id, itemId);
@@ -138,7 +147,7 @@ export function enqueueRecordOperation(
           });
         return existing;
       }
-      throw Error('Bu kayıt için başka bir görev zaten sırada veya çalışıyor');
+      throw Error('Another task for this record is already queued or running');
     }
     const sourceUrl = recordSource(a, item),
       request = {
@@ -178,14 +187,14 @@ export function enqueueScoreBatch(runtime, id, itemIds) {
     itemIds.length > 100 ||
     itemIds.some((value) => typeof value !== 'string' || !value.trim())
   )
-    throw Error('Puanlamak için 1–100 kayıt seç');
+    throw Error('Select 1–100 records to score');
   const recordIds = [...new Set(itemIds)],
     {db, queue} = runtime;
   if (recordIds.length === 1) return enqueueRecordOperation(runtime, id, recordIds[0], 'score');
   const task = queue.atomic(() => {
     const a = db.get(id),
       op = db.template(a.templateId).recordOperations?.score;
-    if (!op) throw Error('Template bu kayıt işlemini desteklemiyor');
+    if (!op) throw Error('The template does not support this record operation');
     const items = recordIds.map((itemId) => db.result(id, itemId));
     for (const item of items) {
       const error = recordOperationError(a, item, 'score', {manual: true});
@@ -199,7 +208,7 @@ export function enqueueScoreBatch(runtime, id, itemIds) {
     )
       return existing;
     if (recordIds.some((itemId) => recordTask(db, id, itemId)))
-      throw Error('Seçilen kayıtlardan biri için başka bir görev zaten sırada veya çalışıyor');
+      throw Error('Another task is already queued or running for one of the selected records');
     const task = queue.enqueue(id, {
       recordOperation: 'score',
       operation: op.id,
@@ -238,7 +247,7 @@ export function validateRecordTask(db, id, task, now) {
   const a = db.get(id),
     request = task.request ?? {};
   if (request.revision !== a.revision && task.recordOperation !== 'verify')
-    throw Error('Görev sıradayken kurulum değişti; işlemi yeniden hazırla');
+    throw Error('The setup changed while the task was queued; prepare the action again');
   for (const itemId of taskRecordIds(task)) {
     const item = db.result(id, itemId);
     if (
@@ -352,7 +361,10 @@ export async function dispatchRecordOperations(runtime, id, {manualOnly = false}
     const originTask = origin.taskId && queue.get(id, origin.taskId);
     if (
       originTask?.stopRequested ||
-      /Kullanıcı|Worker durduruldu/.test(origin.summary ?? '') ||
+      // The Turkish alternatives match summaries stored by earlier versions.
+      /Kullanıcı|Worker durduruldu|^Stopped by the user|^The user |^Worker stopped/.test(
+        origin.summary ?? '',
+      ) ||
       (request.direct !== true && request.digest !== item.digest)
     )
       continue;
@@ -366,7 +378,7 @@ export async function dispatchRecordOperations(runtime, id, {manualOnly = false}
       db.message(
         id,
         'system',
-        'Gönderilmediği doğrulandı. Devam için kayıt işlemini kontrol et: ' + error.message,
+        'Verified as not submitted. Check the record operation to continue: ' + error.message,
       );
     }
   }
@@ -383,7 +395,7 @@ export async function dispatchRecordOperations(runtime, id, {manualOnly = false}
       try {
         resumeRecordOperation(runtime, id, item, task);
       } catch (error) {
-        db.message(id, 'system', 'Yanıt kaydedildi. Kayıt işlemi: ' + error.message);
+        db.message(id, 'system', 'Answer saved. Record operation: ' + error.message);
       }
     }
   }
@@ -393,7 +405,7 @@ export async function dispatchRecordOperations(runtime, id, {manualOnly = false}
       activeRecords = new Set(
         previous.filter((t) => live.includes(t.state)).flatMap(taskRecordIds),
       );
-    for (const item of db.results(id, {all: true})) {
+    for (const item of db.results(id)) {
       // Scheduling needs source permissions, not the UI projection that loads
       // every result and run. Read those settings once with the workspace.
       if (
@@ -488,7 +500,7 @@ export function recordOperationState(
   const scoreOperation = scoreOp
     ? {
         kind: 'score',
-        label: item.assessment ? 'Yeniden puanla' : scoreOp.label,
+        label: item.assessment ? 'Rescore' : scoreOp.label,
         disabled: Boolean(scoreError || task),
         reason: scoreError,
       }
@@ -530,7 +542,7 @@ export function recordOperationState(
     scoringComplete,
     scoreOperation,
     retryOperation,
-    // "Başvur" is the record's own operation now; no separate direct button.
+    // "Apply" is the record's own operation now; no separate direct button.
     directOperation: null,
     question: question ? {id: question.id, text: question.text} : null,
     lastTask:
@@ -552,6 +564,18 @@ export function recordOperationState(
             workerId: task.workerId,
             at: task.startedAt ?? task.createdAt,
             manual: task.request?.manual === true,
+            ...(task.retryAt > db.now() ? {retryAt: task.retryAt} : {}),
+            // Applications run one at a time; name the wait instead of a free agent.
+            ...(task.state === 'pending' &&
+            task.lockKey === 'submit' &&
+            tasks.some(
+              (t) =>
+                t.id !== task.id &&
+                t.lockKey === 'submit' &&
+                ['running', 'reported', 'paused'].includes(t.state),
+            )
+              ? {waitingForApplication: true}
+              : {}),
           }
         : null,
     operation: operation

@@ -199,5 +199,5 @@ test('current observations take precedence and a new task still needs its own ev
     null,
   );
   f.db.put({...f.db.get(f.id), revision: run.revision + 1});
-  assert.throws(() => f.record(), /Profil değişti/);
+  assert.throws(() => f.record(), /The profile changed/);
 });

@@ -189,7 +189,7 @@ test('failed provider shutdown prevents another start until closure is confirmed
   await start(agents, 'workspace');
   created[0].failClose = true;
   await assert.rejects(agents.stop('workspace'), /Still alive/);
-  await assert.rejects(start(agents, 'workspace'), /kapanıyor/);
+  await assert.rejects(start(agents, 'workspace'), /closing/);
   assert.equal(created.length, 1);
   created[0].failClose = false;
   await agents.stop('workspace');

@@ -117,6 +117,8 @@ class FakeExtension {
         case 'debugger.send': {
           const {target, url} = tab(params.tabId);
           if (!this.attached.has(params.tabId)) throw Error('Debugger is not attached');
+          if (params.method === 'Page.getFrameTree' && this.frameTrees?.[params.sessionId])
+            return reply({result: this.frameTrees[params.sessionId]});
           if (params.method === 'Target.getTargetInfo')
             return reply({
               result: {
@@ -190,7 +192,10 @@ test('connecting opens the connect page once and reuses a connection the extensi
   });
   t.after(() => again.close());
   assert.equal(again.instanceId, 'run-1');
-  await assert.rejects(relay.connect({open: async () => {}, timeout: 20}), /eklentisi bağlanmadı/);
+  await assert.rejects(
+    relay.connect({open: async () => {}, timeout: 20}),
+    /extension did not connect/,
+  );
   const abort = new AbortController();
   const cancelled = assert.rejects(relay.connect({open: async () => {}, signal: abort.signal}), {
     name: 'AbortError',
@@ -240,11 +245,12 @@ test('owned tabs attach when Playwright enables auto-attach, with their out-of-p
     sent.map((c) => c.params.method),
     ['Target.getTargetInfo', 'Target.setAutoAttach'],
   );
-  assert.equal(sent[1].params.params.waitForDebuggerOnStart, true);
-  assert.deepEqual(sent[1].params.params.filter, [
-    {type: 'iframe', exclude: false},
-    {exclude: true},
-  ]);
+  // Playwright's own parameters: a filter that leaves out workers keeps them paused.
+  assert.deepEqual(sent[1].params.params, {
+    autoAttach: true,
+    waitForDebuggerOnStart: true,
+    flatten: true,
+  });
   const attachedEvent = forwarded.find((m) => m.method === 'Target.attachedToTarget');
   assert.equal(attachedEvent.params.sessionId, `jev-tab-${saved.id}`);
   assert.equal(attachedEvent.params.targetInfo.targetId, saved.target);
@@ -374,6 +380,42 @@ test('owned tabs attach when Playwright enables auto-attach, with their out-of-p
   });
 });
 
+test('an out-of-process frame that loaded before the attach gets its URL', async (t) => {
+  const {extension, forwarded, call} = await transportFixture(t);
+  await call({id: 1, method: 'Target.setAutoAttach', params: {autoAttach: true}});
+  await call({id: 2, method: 'Target.createTarget', params: {url: 'https://jobs.example/apply'}});
+  const tabId = [...extension.attached][0];
+  const socket = extension.sockets.at(-1);
+  const attached = (sessionId, waitingForDebugger) =>
+    extension.emit(socket, {
+      event: 'debugger.event',
+      tabId,
+      method: 'Target.attachedToTarget',
+      params: {sessionId, waitingForDebugger, targetInfo: {targetId: sessionId, type: 'iframe'}},
+    });
+  attached('loaded', false);
+  attached('new', true);
+  await flush();
+  await flush();
+  extension.frameTrees = {
+    loaded: {frameTree: {frame: {id: 'F1', url: 'https://forms.example/apply'}}},
+    new: {frameTree: {frame: {id: 'F2', url: 'https://forms.example/apply'}}},
+  };
+  await call({id: 3, sessionId: 'loaded', method: 'Page.getFrameTree'});
+  await call({id: 4, sessionId: 'new', method: 'Page.getFrameTree'});
+  await call({id: 5, sessionId: 'loaded', method: 'Page.getFrameTree'});
+  assert.deepEqual(
+    forwarded.filter((m) => m.method === 'Page.navigatedWithinDocument'),
+    [
+      {
+        sessionId: 'loaded',
+        method: 'Page.navigatedWithinDocument',
+        params: {frameId: 'F1', url: 'https://forms.example/apply', navigationType: 'other'},
+      },
+    ],
+  );
+});
+
 test('new tabs and popups of owned tabs join the connection; closing a tab retires it', async (t) => {
   const {extension, transport, forwarded, call} = await transportFixture(t);
   const destroyed = [];
@@ -441,7 +483,7 @@ test('cancelling the Chrome infobar ends the connection and waits for an explici
   await closed;
   assert.equal(transport.cancelled, true);
   assert.equal(transport.connected, false);
-  await assert.rejects(transport.createWindow('about:blank'), /kapandı/);
+  await assert.rejects(transport.createWindow('about:blank'), /closed/);
   let now = 0,
     attempts = 0;
   const connections = new BrowserConnections({
@@ -454,7 +496,7 @@ test('cancelling the Chrome infobar ends the connection and waits for an explici
   connections.prepare('candidate');
   await flush();
   connections.disconnected('candidate', {manual: true});
-  assert.match(connections.status('candidate').message, /iptal edildi/);
+  assert.match(connections.status('candidate').message, /cancelled in Chrome/);
   now += 3600000;
   connections.prepare('candidate');
   await flush();

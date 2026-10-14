@@ -14,6 +14,11 @@ import {randomUUID} from 'node:crypto';
 import {normalizeSourceUrls, webUrl} from '../../templates/catalog.mjs';
 import {automationSources, sourceInput} from '../../sources/automation-sources.mjs';
 import {sourceScanScope} from '../../sources/scan.mjs';
+import {
+  sourceSearchChoice,
+  sourceSearchOptions,
+  sourceSearchRecipe,
+} from '../../sources/source-search.mjs';
 import {json, finishedSourceRun, runSource} from './rows.mjs';
 // Only a different search method changes a recipe; notes, the pagination
 // hint, the page cap and the login flag are advisory.
@@ -140,8 +145,8 @@ export const sourceMethods = {
     });
   },
   // The template's ready sources whose site is not in the workspace yet, for
-  // one-click adding. Country copies of one board ("Indeed (Almanya)", "Indeed
-  // (Fransa)") form one entry with a country choice. The workspace country
+  // one-click adding. Country copies of one board ("Indeed (Germany)", "Indeed
+  // (France)") form one entry with a country choice. The workspace country
   // comes first, then the sources for every country, then the others.
   sourceCatalog(id, a = this.get(id)) {
     const added = new Set(a.sources.map(siteKey)),
@@ -150,7 +155,7 @@ export const sourceMethods = {
       groups = new Map();
     const sources = (this.template(a.templateId).defaultSources ?? [])
       .filter((s) => !added.has(siteKey(s.url)))
-      .sort((x, y) => rank(x) - rank(y) || x.name.localeCompare(y.name, 'tr'));
+      .sort((x, y) => rank(x) - rank(y) || x.name.localeCompare(y.name, 'en'));
     for (const s of sources) {
       const [, base, label] = s.name.match(/^(.*?)\s*\(([^)]*)\)$/) ?? [, s.name, null],
         countries = s.countries ?? [];
@@ -164,10 +169,75 @@ export const sourceMethods = {
         url: s.url,
         name: s.name,
         countries,
-        label: label ?? (countries.join(', ') || 'Tüm ülkeler'),
+        label: label ?? (countries.join(', ') || 'All countries'),
       });
     }
     return [...groups.values()];
+  },
+  // The agent names only the changes; every other saved or already suggested
+  // source is kept, so a partial list never reads as removals.
+  proposedSources(id, add = [], remove = []) {
+    const a = this.get(id),
+      base = a.sourceDraft?.sources ?? a.sources,
+      dropped = normalizeSourceUrls(remove);
+    const unknown = dropped.filter((url) => !base.includes(url));
+    if (unknown.length)
+      throw Error(
+        'Not a saved or suggested source: ' +
+          unknown.join(', ') +
+          '. Current sources: ' +
+          base.join(', '),
+      );
+    return normalizeSourceUrls([
+      ...base.filter((url) => !dropped.includes(url)),
+      ...normalizeSourceUrls(add),
+    ]);
+  },
+  // A source's recipe, or the starting source's recipe it gets when added.
+  sourceRecipeBase(a, url) {
+    return (
+      a.sourceSettings?.[url]?.recipe ??
+      (a.sourceSettings?.[url]
+        ? null
+        : startingSource(this.template(a.templateId).defaultSources, url)?.recipe)
+    );
+  },
+  // Search choices for the listed sources whose site extension knows the
+  // results address, with the draft's choices applied.
+  sourceSearchOptions(id, sources) {
+    const a = this.get(id),
+      draft = a.sourceDraft?.searches ?? {};
+    return sources.flatMap((url) => {
+      const search = siteExtensionKind(url, a.templateId)?.search;
+      if (!search) return [];
+      const recipe = this.sourceRecipeBase(a, url);
+      return [
+        {
+          url,
+          ...sourceSearchOptions(
+            search,
+            draft[url] ? sourceSearchRecipe(search, recipe, draft[url]) : recipe,
+          ),
+        },
+      ];
+    });
+  },
+  // The agent names only the sources whose search changes; earlier choices of
+  // the draft stay while their source is in the list.
+  proposedSourceSearches(id, sources, input = []) {
+    const a = this.get(id),
+      searches = Object.fromEntries(
+        Object.entries(a.sourceDraft?.searches ?? {}).filter(([url]) => sources.includes(url)),
+      );
+    for (const {url: address, ...choice} of input) {
+      const url = webUrl(address),
+        search = siteExtensionKind(url, a.templateId)?.search;
+      if (!sources.includes(url))
+        throw Error(`Not a saved or suggested source: ${url}. Add it with addSources first.`);
+      if (!search) throw Error(`${url} has no site extension search; its trial learns the search.`);
+      searches[url] = sourceSearchChoice(search, this.sourceRecipeBase(a, url), choice);
+    }
+    return Object.keys(searches).length ? searches : null;
   },
   saveSources(id, sources, {acceptDraft = false} = {}) {
     const a = this.get(id),
@@ -186,11 +256,11 @@ export const sourceMethods = {
         .list(id, {states: ['running', 'reported']})
         .some((task) => task.operation !== 'interview' && usesRemoved(task))
     )
-      throw Error('Kaldırılacak kaynağın çalışan görevini önce durdur.');
+      throw Error('Stop the running task of the source you want to remove first.');
     return this.store.workspaces.tasks.atomic(() => {
       for (const task of this.store.workspaces.tasks.list(id, {states: ['pending', 'paused']}))
         if (removed.includes(task.sourceUrl))
-          this.store.workspaces.tasks.finish(id, task.id, 'cancelled', 'Kaynak kaldırıldı');
+          this.store.workspaces.tasks.finish(id, task.id, 'cancelled', 'Source removed');
       const keep = (values) =>
         Object.fromEntries(Object.entries(values ?? {}).filter(([url]) => urls.includes(url)));
       // A starting source added later (for example a country source proposed in
@@ -217,8 +287,18 @@ export const sourceMethods = {
         const proposed = [
           ...new Set([...a.sourceDraft.sources.filter((url) => !removed.includes(url)), ...added]),
         ];
-        if (JSON.stringify(proposed) === JSON.stringify(urls)) delete next.sourceDraft;
-        else next.sourceDraft = {...a.sourceDraft, id: randomUUID(), sources: proposed};
+        const searches = Object.entries(a.sourceDraft.searches ?? {}).filter(([url]) =>
+          proposed.includes(url),
+        );
+        if (JSON.stringify(proposed) === JSON.stringify(urls) && !searches.length)
+          delete next.sourceDraft;
+        else
+          next.sourceDraft = {
+            ...a.sourceDraft,
+            id: randomUUID(),
+            sources: proposed,
+            searches: searches.length ? Object.fromEntries(searches) : undefined,
+          };
       }
       return this.put(next);
     });
@@ -226,7 +306,7 @@ export const sourceMethods = {
   addSource(id, input) {
     const a = this.get(id),
       url = webUrl(input.url);
-    if (a.sources.includes(url)) throw Error('Bu kaynak zaten kayıtlı');
+    if (a.sources.includes(url)) throw Error('This source is already saved');
     // An address of a template starting source's site gets its recipe and
     // instructions when the add form leaves them empty.
     const starting = startingSource(this.template(a.templateId).defaultSources, url);
@@ -251,7 +331,7 @@ export const sourceMethods = {
   },
   removeSource(id, url) {
     const a = this.get(id);
-    if (!a.sources.includes(url)) throw Error('Kaynak bu çalışma alanına ait değil');
+    if (!a.sources.includes(url)) throw Error('The source does not belong to this workspace');
     return this.saveSources(
       id,
       a.sources.filter((source) => source !== url),
@@ -260,14 +340,26 @@ export const sourceMethods = {
   resolveSourceDraft(id, draftId, accept) {
     const a = this.get(id);
     if (!a.sourceDraft || a.sourceDraft.id !== draftId)
-      throw Error('Kaynak önerileri değişti. Güncel önerileri inceleyip tekrar dene.');
-    if (accept) return this.saveSources(id, a.sourceDraft.sources, {acceptDraft: true});
+      throw Error('The source suggestions changed. Review the current suggestions and try again.');
+    if (accept)
+      return this.store.workspaces.tasks.atomic(() => {
+        let next = this.saveSources(id, a.sourceDraft.sources, {acceptDraft: true});
+        for (const [url, choice] of Object.entries(a.sourceDraft.searches ?? {}))
+          next = this.saveSource(id, url, {
+            recipe: sourceSearchRecipe(
+              siteExtensionKind(url, next.templateId).search,
+              next.sourceSettings?.[url]?.recipe,
+              choice,
+            ),
+          });
+        return next;
+      });
     delete a.sourceDraft;
     return this.put(a);
   },
   saveSourcesInterval(id, intervalMinutes) {
     if (!Number.isInteger(intervalMinutes) || intervalMinutes < 1 || intervalMinutes > 10080)
-      throw Error('Tarama aralığı: 1–10080 arasında tam sayı gerekli');
+      throw Error('Scan interval: a whole number between 1 and 10080 is required');
     return this.store.workspaces.tasks.atomic(() => {
       const a = this.get(id);
       for (const url of a.sources) this.saveSource(id, url, {intervalMinutes});
@@ -287,15 +379,14 @@ export const sourceMethods = {
           (r.sourceUrl === url || r.kind === 'interview' || !r.sourceUrl),
       )
     )
-      throw Error('Önce bu kaynağın çalışan görevini durdur');
+      throw Error('Stop this source’s running task first');
     const old = a.sourceSettings?.[url] ?? {};
     a.sourceSettings = {...a.sourceSettings, [url]: settings};
     const methodChanged =
       (old.instructions ?? '') !== (settings.instructions ?? '') ||
       (old.tool ?? '') !== (settings.tool ?? '') ||
       (old.skill ?? '') !== (settings.skill ?? '');
-    if (old.query !== settings.query || old.mode !== settings.mode || methodChanged)
-      this.clearApprovals(id);
+    if (old.query !== settings.query || methodChanged) this.clearApprovals(id);
     const scopeChanged =
       sourceScanScope({...a, sourceSettings: {...a.sourceSettings, [url]: old}}, url) !==
       sourceScanScope(a, url);
@@ -308,8 +399,8 @@ export const sourceMethods = {
           lastStatus: null,
           lastFound: 0,
           lastResult: methodChanged
-            ? 'Kaynak yöntemi değişti. Yeniden denenecek.'
-            : 'Arama kapsamı değişti. Yeni tam tarama bekleniyor.',
+            ? 'The source method changed. It will be tried again.'
+            : 'The search scope changed. Waiting for a new full scan.',
         }
       : (a.sourceState?.[url] ?? {});
     if (scopeChanged)
@@ -319,7 +410,7 @@ export const sourceMethods = {
             id,
             task.id,
             'cancelled',
-            'Kaynak arama kapsamı değişti',
+            'Source search scope changed',
           );
     // An edited recipe is a new candidate; the next scan verifies it.
     // Only a different search method invalidates verification; notes, the
@@ -355,7 +446,7 @@ export const sourceMethods = {
   // already checked it. Never resets the trial or the scan scope.
   learnSourceRecipe(id, url, recipe, {runId, verified, listings = 0, pages = 0}) {
     const a = this.get(id);
-    if (!a.sources.includes(url)) throw Error('Kaynak bu çalışma alanına ait değil');
+    if (!a.sources.includes(url)) throw Error('The source does not belong to this workspace');
     const settings = sourceInput(a, url, {recipe});
     const previous = a.sourceState?.[url]?.recipeState ?? {};
     const recipeState =
@@ -391,7 +482,7 @@ export const sourceMethods = {
     // The running scan continues with the new recipe's searches; the search the
     // agent is on stays until it completes it.
     const run = changed ? this.runs(id).find((r) => r.id === runId) : null;
-    if (run?.status === 'running' && run.sourceUrl === url && run.scan?.work) {
+    if (run?.status === 'running' && run.sourceUrl === url && run.scan?.work && !run.collector) {
       const oldReplay = recipeReplay(old, recipeValues(a, url)),
         kept = dropRecipeSearches(
           run.scan,
@@ -426,11 +517,11 @@ export const sourceMethods = {
   // the trial agent. The saved recipe stays as a candidate for comparison.
   relearnSource(id, url) {
     const a = this.get(id);
-    if (!a.sources.includes(url)) throw Error('Kaynak bu çalışma alanına ait değil');
+    if (!a.sources.includes(url)) throw Error('The source does not belong to this workspace');
     if (
       this.runs(id).some((r) => !isConversation(r) && r.status === 'running' && r.sourceUrl === url)
     )
-      throw Error('Önce bu kaynağın çalışan görevini durdur');
+      throw Error('Stop this source’s running task first');
     const state = a.sourceState?.[url] ?? {},
       recipe = a.sourceSettings?.[url]?.recipe;
     return this.put({
@@ -443,7 +534,7 @@ export const sourceMethods = {
           blocked: false,
           nextRunAt: this.now(),
           recipeState: recipe ? {...state.recipeState, status: 'candidate', failCount: 0} : null,
-          lastResult: 'Kaynak yeniden öğrenilecek. Sıradaki tur deneme olacak.',
+          lastResult: 'The source will be learned again. The next round will be a trial.',
         },
       },
     });

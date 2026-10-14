@@ -6,28 +6,28 @@ const action = (id, label) => ({id, label});
 const failures = new Set(['failed', 'blocked', 'timeout']);
 export const runKindLabel = (kind) =>
   ({
-    'record-score': 'İlan puanlanıyor',
-    'record-prepare': 'İşlem hazırlanıyor',
-    'record-execute': 'İşlem uygulanıyor',
-    'record-verify': 'Sonuç doğrulanıyor',
-    interview: 'Kurulum konuşması',
-    trial: 'Deneme',
-    run: 'Kaynak taraması',
-  })[kind] ?? 'Çalışma';
+    'record-score': 'Scoring listing',
+    'record-prepare': 'Preparing action',
+    'record-execute': 'Executing action',
+    'record-verify': 'Verifying result',
+    interview: 'Setup conversation',
+    trial: 'Trial',
+    run: 'Source scan',
+  })[kind] ?? 'Run';
 // Task operations are queue identifiers; people see what the worker is doing, not the id.
 export const runOperationLabel = (operation, kind) =>
   ({
-    'record-score': 'İlan puanlanıyor',
-    'record-prepare': 'İşlem hazırlanıyor',
-    'record-execute': 'İşlem uygulanıyor',
-    'record-verify': 'Sonuç doğrulanıyor',
-    interview: 'Kurulum konuşması',
-    trial: 'Deneme taraması',
-    run: 'Kaynak taraması',
-    scan: 'Kaynak taraması',
-    detail: 'İlan ayrıntısı okunuyor',
-    inspect: 'İlan ayrıntısı okunuyor',
-    verify: 'Sonuç doğrulanıyor',
+    'record-score': 'Scoring listing',
+    'record-prepare': 'Preparing action',
+    'record-execute': 'Executing action',
+    'record-verify': 'Verifying result',
+    interview: 'Setup conversation',
+    trial: 'Trial scan',
+    run: 'Source scan',
+    scan: 'Source scan',
+    detail: 'Reading listing details',
+    inspect: 'Reading listing details',
+    verify: 'Verifying result',
   })[operation] ?? runKindLabel(kind);
 
 // One presentation of the durable run outcome and the next allowed step.
@@ -56,11 +56,11 @@ export function automationProgress(snapshot, {dirty = false} = {}) {
   const result = {
     stage: 0,
     tone: 'neutral',
-    title: 'Ne yapmak istediğini anlat',
-    label: 'Kurulum',
-    detail: 'Agent sorularla kriterlerini ve kaynaklarını hazırlayacak.',
-    next: 'İlk mesajını Agent sayfasına yaz; gerisini agent sorar.',
-    primary: action('message', 'Agent’a yaz'),
+    title: 'Describe what you want to do',
+    label: 'Setup',
+    detail: 'The agent will ask questions to prepare your criteria and sources.',
+    next: 'Write your first message on the Agent page; the agent asks the rest.',
+    primary: action('message', 'Message the agent'),
     secondary: [],
     running: Boolean(current),
     finishedRun: !current && latest?.finishedAt ? latest : null,
@@ -75,24 +75,24 @@ export function automationProgress(snapshot, {dirty = false} = {}) {
     set({
       stage: reviewed ? 2 : 0,
       tone: waiting ? 'neutral' : 'active',
-      label: waiting ? 'Mesaj bekliyor' : 'Çalışıyor',
-      title: waiting ? 'Sohbet açık' : 'Agent yanıtını hazırlıyor',
+      label: waiting ? 'Waiting for message' : 'Running',
+      title: waiting ? 'Conversation open' : 'Agent is preparing a reply',
       detail: waiting
-        ? 'Yeni mesajını aynı sohbetten gönderebilirsin.'
-        : 'Agent mesajını inceliyor. Kaynaklar kendi görevlerine devam eder.',
-      next: 'Sohbeti kapatana kadar oturum açık kalır.',
+        ? 'You can send your next message in the same conversation.'
+        : 'The agent is reviewing your message. Sources continue their own tasks.',
+      next: 'The session stays open until you close the conversation.',
       running: !waiting,
-      primary: waiting ? action('message', 'Mesaj yaz') : null,
+      primary: waiting ? action('message', 'Write a message') : null,
       secondary: [],
     });
     if (current.usageLimit) {
       const limit = providerLimitAttention(current.usageLimit);
       set({
         tone: 'waiting',
-        label: 'Kullanım limiti',
+        label: 'Usage limit',
         title: limit.title,
         detail: limit.detail,
-        primary: action('terminal', 'Terminale git'),
+        primary: action('terminal', 'Go to terminal'),
       });
     }
   } else if (current) {
@@ -101,68 +101,68 @@ export function automationProgress(snapshot, {dirty = false} = {}) {
     set({
       stage: current.kind === 'interview' ? 0 : 2,
       tone: waiting ? 'waiting' : 'active',
-      label: closing ? 'Sonuç kaydedildi' : waiting ? 'Giriş / onay gerekiyor' : 'Çalışıyor',
+      label: closing ? 'Result saved' : waiting ? 'Sign-in / approval needed' : 'Running',
       title: closing
-        ? 'Oturum kapanıyor…'
+        ? 'Session closing…'
         : waiting
-          ? 'Devam etmek için terminali kontrol et'
+          ? 'Check the terminal to continue'
           : {
-              interview: 'Agent kurulumu hazırlıyor',
-              trial: 'Deneme sürüyor',
-              run: 'Kaynaklar taranıyor',
+              interview: 'Agent is preparing the setup',
+              trial: 'Trial running',
+              run: 'Scanning sources',
             }[current.kind],
       detail: closing
         ? current.summary
         : current.kind === 'trial'
-          ? 'Bu kaynağın okunabildiği kontrol ediliyor. Denemede işlem gönderilmez.'
+          ? 'Checking that this source can be read. A trial submits nothing.'
           : current.kind === 'interview'
-            ? 'Template ve kayıtlı bilgiler inceleniyor; kurulum soruları, profil ve kaynaklar hazırlanıyor.'
+            ? 'Reviewing the template and saved information; preparing setup questions, profile and sources.'
             : a.goal,
       next: closing
-        ? 'Sonraki adım oturum kapandığında açılacak.'
+        ? 'The next step opens when the session closes.'
         : waiting
-          ? 'Sağlayıcının giriş veya araç izni isteğini aşağıdaki canlı terminalde yanıtla.'
-          : 'Bu tur bittiğinde sonucu ve sonraki adımı burada göreceksin.',
-      primary: waiting ? action('terminal', 'Terminale git') : null,
-      secondary: closing ? [] : [action('stop', 'Durdur')],
+          ? 'Answer the provider’s sign-in or tool permission request in the live terminal below.'
+          : 'When this round ends you will see the result and the next step here.',
+      primary: waiting ? action('terminal', 'Go to terminal') : null,
+      secondary: closing ? [] : [action('stop', 'Stop')],
     });
     if (!closing && current.usageLimit) {
       const limit = providerLimitAttention(current.usageLimit);
       set({
         tone: 'waiting',
-        label: 'Kullanım limiti',
+        label: 'Usage limit',
         title: limit.title,
         detail: limit.detail,
-        next: 'Görev ve kaydedilen ilerleme korunuyor.',
-        primary: action('terminal', 'Terminale git'),
+        next: 'The task and saved progress are kept.',
+        primary: action('terminal', 'Go to terminal'),
       });
     }
   } else if (dirty) {
     set({
-      title: 'Profil değişiklikleri kaydedilmedi',
-      label: 'Kaydetmen gerekiyor',
-      detail: 'Yeni bilgiler kaydedilince takip ayarları güncellenecek.',
-      next: 'Çalışma alanı profilini kontrol edip kaydet.',
-      primary: action('profile', 'Profili aç'),
+      title: 'Profile changes not saved',
+      label: 'Save needed',
+      detail: 'Tracking settings update once the new information is saved.',
+      next: 'Review and save the workspace profile.',
+      primary: action('profile', 'Open profile'),
     });
   } else if ((a.questions ?? []).some((q) => q.answer == null)) {
     set({
       tone: 'waiting',
-      title: 'Sorularını yanıtla',
-      label: 'Yanıt bekliyor',
-      detail: 'Agent devam etmek için formdaki bilgileri bekliyor.',
-      next: 'Formu gönderince agent kayıtlı yanıtlarınla otomatik devam eder.',
-      primary: action('questions', 'Formu doldur'),
+      title: 'Answer the questions',
+      label: 'Waiting for answer',
+      detail: 'The agent needs the information in the form to continue.',
+      next: 'After you submit the form, the agent continues automatically with your saved answers.',
+      primary: action('questions', 'Fill in the form'),
     });
   } else if (a.status === 'complete') {
     set({
       stage: 3,
       tone: 'success',
-      title: 'Takip tamamlandı',
-      label: 'Tamamlandı',
-      detail: latest?.summary ?? 'Çalışma alanının bitiş koşuluna ulaşıldı.',
-      next: 'Kaydedilen sonuçları inceleyebilirsin.',
-      primary: action('results', 'Sonuçları gör'),
+      title: 'Tracking complete',
+      label: 'Complete',
+      detail: latest?.summary ?? 'The workspace reached its end condition.',
+      next: 'You can review the saved results.',
+      primary: action('results', 'View results'),
     });
   } else if (
     relevant &&
@@ -177,25 +177,25 @@ export function automationProgress(snapshot, {dirty = false} = {}) {
       stage: setup ? 0 : 2,
       tone: 'waiting',
       title: trial
-        ? 'Deneme tamamlanamadı'
+        ? 'Trial could not complete'
         : setup
-          ? 'Kurulum konuşması tamamlanamadı'
-          : 'Çalışma tamamlanamadı',
-      label: relevant.status === 'timeout' ? 'Süre doldu' : 'İşlem gerekiyor',
+          ? 'Setup conversation could not complete'
+          : 'Run could not complete',
+      label: relevant.status === 'timeout' ? 'Timed out' : 'Action needed',
       detail: relevant.summary,
       next: trial
-        ? 'Kaynaklar sayfasından engelli kaynağı kontrol edip tekrar çalıştırabilirsin.'
+        ? 'Check the blocked source on the Sources page and run it again.'
         : setup
-          ? 'Kayıtlı bilgiler ve yanıtlarla kurulumu sürdürebilirsin.'
-          : 'Sonuçları kontrol et; engel giderildikten sonra yeniden çalıştırabilirsin.',
+          ? 'You can continue setup with the saved information and answers.'
+          : 'Check the results; you can run again once the blocker is resolved.',
       primary: setup
-        ? action('setup', 'Kuruluma devam et')
+        ? action('setup', 'Continue setup')
         : trial
-          ? action('sources', 'Kaynakları gör')
-          : action('run', 'Tekrar çalıştır'),
+          ? action('sources', 'View sources')
+          : action('run', 'Run again'),
       secondary: setup
         ? []
-        : [action('browser', 'Tarayıcıyı aç'), action('message', 'Agent ile düzelt')],
+        : [action('browser', 'Open browser'), action('message', 'Fix with agent')],
     });
     if (
       !setup &&
@@ -206,73 +206,72 @@ export function automationProgress(snapshot, {dirty = false} = {}) {
       (snapshot.sources ?? []).some((s) => s.enabled && !s.blocked)
     )
       set({
-        title: 'Diğer kaynakların takibi kapalı',
-        next: 'Düzenli takibi açınca engelli olmayan kaynaklar kendi aralıklarında çalışır. Engelli kaynağı Kaynaklar sayfasından ayrıca yönetebilirsin.',
-        primary: action('enable', 'Düzenli takibi sürdür'),
-        secondary: [action('sources', 'Kaynakları gör'), action('message', 'Agent ile düzelt')],
+        title: 'Tracking of other sources is off',
+        next: 'When you turn on regular tracking, unblocked sources run at their own intervals. Manage the blocked source separately on the Sources page.',
+        primary: action('enable', 'Resume regular tracking'),
+        secondary: [action('sources', 'View sources'), action('message', 'Fix with agent')],
       });
   } else if (fresh) {
     // keep the blank-page invitation
   } else if (!reviewed) {
     if (missing.length)
       set({
-        title:
-          latest?.kind === 'interview' ? 'Kurulum için yanıtın gerekiyor' : 'Kurulumu tamamlayalım',
-        label: 'Bilgi bekliyor',
+        title: latest?.kind === 'interview' ? 'Setup needs your answer' : 'Let’s finish setup',
+        label: 'Waiting for information',
         detail: reply?.text ?? result.detail,
-        next: 'Eksik bilgiler: ' + missing.join(', '),
-        primary: action('message', 'Yanıt yaz'),
+        next: 'Missing information: ' + missing.join(', '),
+        primary: action('message', 'Write a reply'),
       });
     else
       set({
-        title: 'Kurulum taslağı hazır',
-        label: 'İncelemen gerekiyor',
+        title: 'Setup draft ready',
+        label: 'Review needed',
         detail:
           latest?.kind === 'interview'
             ? latest.summary
-            : 'Agent kriterleri ve kaynakları hazırladı.',
-        next: 'Profili ve işlem yetkisini kontrol edip kaydet. Her kaynak ilk işlendiği turda otomatik denenir.',
-        primary: action('profile', 'Profili incele ve kaydet'),
+            : 'The agent prepared the criteria and sources.',
+        next: 'Review and save the profile and action permission. Each source gets an automatic trial in its first round.',
+        primary: action('profile', 'Review and save profile'),
       });
   } else if (a.sources?.length === 0) {
     set({
-      title: 'Kaynak ekle',
-      label: 'Kaynak bekliyor',
-      detail: 'Profil kaydedildi. Takip için bir kaynak gerekli.',
-      next: 'Kaynaklar ekranından adres ekle veya agent’ın önerilerini incele.',
-      primary: action('sources', 'Kaynakları aç'),
+      title: 'Add a source',
+      label: 'Waiting for a source',
+      detail: 'Profile saved. Tracking needs a source.',
+      next: 'Add an address on the Sources screen or review the agent’s suggestions.',
+      primary: action('sources', 'Open sources'),
       secondary: [],
     });
   } else if (a.status === 'enabled') {
     set({
       stage: 2,
       tone: 'success',
-      title: 'Düzenli takip açık',
-      label: latest?.status === 'completed' ? 'Son tur tamamlandı' : 'Sıradaki kontrol bekleniyor',
+      title: 'Regular tracking on',
+      label: latest?.status === 'completed' ? 'Last round complete' : 'Waiting for the next check',
       detail:
         latest?.kind === 'run'
           ? latest.summary
-          : 'Kaynaklar belirlediğin aralıklarla kontrol edilecek.',
-      next: `Kaynaklar kendi tarama aralıklarında kontrol edilir. Sonraki kontrol: ${a.nextRunAt ? new Date(a.nextRunAt).toLocaleString('tr-TR') : 'sırada'}. Uygulama açık kalmalı.`,
-      primary: action('results', 'Sonuçları gör'),
-      secondary: [action('stop', 'Takibi duraklat')],
+          : 'Sources will be checked at the intervals you set.',
+      next: `Sources are checked at their own scan intervals. Next check: ${a.nextRunAt ? new Date(a.nextRunAt).toLocaleString('en-GB') : 'queued'}. The app must stay open.`,
+      primary: action('results', 'View results'),
+      secondary: [action('stop', 'Pause tracking')],
     });
     const sources = snapshot.sources ?? [],
       blocked = sources.filter((s) => s.enabled && s.blocked);
     if (sources.length)
       set({
-        next: `Kaynaklar kendi tarama aralıklarında çalışır. Sonraki kontrol: ${a.nextRunAt ? new Date(a.nextRunAt).toLocaleString('tr-TR') : 'planlanmış kontrol yok'}. Uygulama açık kalmalı.`,
+        next: `Sources run at their own scan intervals. Next check: ${a.nextRunAt ? new Date(a.nextRunAt).toLocaleString('en-GB') : 'no check scheduled'}. The app must stay open.`,
       });
     if (blocked.length)
       set({
         tone: 'waiting',
-        label: `${blocked.length} kaynak engelli`,
+        label: `${blocked.length} ${blocked.length === 1 ? 'source' : 'sources'} blocked`,
         title:
           blocked.length === sources.filter((s) => s.enabled).length
-            ? 'Kaynaklar müdahale bekliyor'
-            : 'Diğer kaynakların takibi sürüyor',
-        detail: blocked.map((s) => `${s.name}: ${s.lastResult ?? 'Erişim engeli'}`).join('\n'),
-        next: 'Engelli kaynaklar otomatik tekrar denenmez. Kaynaklar sayfasından her birini ayrı çalıştırabilirsin.',
+            ? 'Sources need attention'
+            : 'Other sources are still tracked',
+        detail: blocked.map((s) => `${s.name}: ${s.lastResult ?? 'Access blocked'}`).join('\n'),
+        next: 'Blocked sources are not retried automatically. You can run each one separately from the Sources page.',
       });
   } else {
     const ran = relevant?.kind === 'run',
@@ -280,18 +279,18 @@ export function automationProgress(snapshot, {dirty = false} = {}) {
     set({
       stage: 2,
       tone: ran || paused ? 'neutral' : 'success',
-      title: paused ? 'Takip duraklatıldı' : ran ? 'Bu tur tamamlandı' : 'Kurulum tamamlandı',
-      label: paused ? 'Duraklatıldı' : ran ? 'Tur bitti' : 'Çalışmaya hazır',
-      detail: relevant?.summary ?? 'Kriterlerin ve kaynakların kaydedildi.',
-      next: `Düzenli takip kapalı. Her kaynağın ilk turu denemedir; işlem göndermez. Bir kez çalıştırabilir veya kaynakların kendi tarama aralıklarıyla düzenli takibi açabilirsin.`,
-      primary: action('enable', paused ? 'Düzenli takibi sürdür' : 'Düzenli takibi başlat'),
-      secondary: [action('run', 'Bir kez çalıştır'), action('results', 'Sonuçları gör')],
+      title: paused ? 'Tracking paused' : ran ? 'This round is complete' : 'Setup complete',
+      label: paused ? 'Paused' : ran ? 'Round finished' : 'Ready to run',
+      detail: relevant?.summary ?? 'Your criteria and sources are saved.',
+      next: `Regular tracking is off. Each source’s first round is a trial and submits nothing. Run once, or turn on regular tracking at each source’s own scan interval.`,
+      primary: action('enable', paused ? 'Resume regular tracking' : 'Start regular tracking'),
+      secondary: [action('run', 'Run once'), action('results', 'View results')],
     });
   }
   result.steps = [
-    {label: 'Kurulum', state: reviewed ? 'done' : result.stage === 0 ? 'current' : 'pending'},
+    {label: 'Setup', state: reviewed ? 'done' : result.stage === 0 ? 'current' : 'pending'},
     {
-      label: 'Takip',
+      label: 'Tracking',
       state: a.status === 'complete' ? 'done' : result.stage >= 2 ? 'current' : 'pending',
     },
   ];

@@ -5,18 +5,22 @@
 // while .co.uk, .fr and .ch each list one country, so a workspace joins the
 // site of its own country and does not spend its page budget on the others.
 const ARBEITNOW_SITES = [
-  ['www.arbeitnow.com', 'DE', 'Almanya', 'Almanya ağırlıklı; akış Avrupa ilanlarını da içerir'],
-  ['www.arbeitnow.co.uk', 'GB', 'Birleşik Krallık', 'Birleşik Krallık'],
-  ['www.arbeitnow.fr', 'FR', 'Fransa', 'Fransa'],
-  ['www.arbeitnow.ch', 'CH', 'İsviçre', 'İsviçre'],
+  [
+    'www.arbeitnow.com',
+    'DE',
+    'Germany',
+    'Mostly Germany; the feed also includes other European listings',
+  ],
+  ['www.arbeitnow.co.uk', 'GB', 'United Kingdom', 'United Kingdom'],
+  ['www.arbeitnow.fr', 'FR', 'France', 'France'],
+  ['www.arbeitnow.ch', 'CH', 'Switzerland', 'Switzerland'],
 ];
 export const arbeitnowSources = ARBEITNOW_SITES.map(([host, country, name, scope]) => ({
   url: `https://${host}/`,
   name: `Arbeitnow (${name})`,
   countries: [country],
-  intervalMinutes: 180,
   enabled: true,
-  instructions: `${scope}. Arbeitnow extension'ı açık API akışını okur: ilanlar tam açıklamalarıyla gelir, arama yoktur. collect_source_page ile bir sayfa al; Jev profille eler, kalanları puanlayıp kaydet. Bu talimat işlem yetkisi vermez.`,
+  instructions: `${scope}. The Arbeitnow extension reads the public API feed: listings arrive with their full descriptions, and there is no search. Fetch one page with collect_source_page; Jev filters against the profile, then score and save the rest. These instructions grant no permission to act.`,
   recipe: {
     entry: {kind: 'url_template', template: `https://${host}/api/job-board-api`},
     pagination: 'url_param',

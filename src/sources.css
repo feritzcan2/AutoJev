@@ -58,6 +58,9 @@
   font-size: 13px;
   overflow-wrap: anywhere;
 }
+.source-proposal li small {
+  display: block;
+}
 .source-proposal .actions {
   margin-top: 18px;
 }
@@ -266,6 +269,7 @@
   display: grid;
   gap: 6px;
   min-width: 0;
+  cursor: pointer;
 }
 
 .source-name {
@@ -487,23 +491,63 @@
   box-shadow: inset 0 0 0 1.5px var(--text-muted);
 }
 
+/* One primary action per row; the rest sit behind the ⋯ menu. */
 .source-actions {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 7px;
-  min-width: 120px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
 }
-.source-actions button {
+.source-actions > button {
   white-space: nowrap;
-  font-size: 11px;
-}
-.source-actions button[hidden] {
-  display: none;
-}
-.source-edit {
-  padding: 6px 10px;
   font-size: 12px;
+}
+.source-actions > button:not(.source-row-menu) {
+  min-width: 96px;
+}
+.source-actions > .source-row-menu {
+  display: grid;
+  place-items: center;
+  align-self: stretch;
+  width: 34px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+.source-row-menu[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.source-row-actions:popover-open {
+  position: fixed;
+  inset: auto;
+  display: grid;
+  gap: 2px;
+  width: 180px;
+  margin: 0;
+  padding: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: 0 12px 28px #0008;
+}
+.source-row-actions button {
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: left;
+}
+.source-row-actions button:hover:not(:disabled),
+.source-row-actions button:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.source-row-actions button[hidden] {
+  display: none;
 }
 
 /* Editor and add form share one layout: two sections, two columns. */
@@ -868,8 +912,7 @@
   }
   .source-actions {
     grid-column: 2;
-    flex-direction: row;
-    flex-wrap: wrap;
+    justify-content: flex-start;
   }
   .source-editor,
   .source-memory {

@@ -15,12 +15,12 @@ export function activityPanels(single, {openLink, notice}) {
     const disclosure = document.createElement('details'),
       summary = document.createElement('summary');
     disclosure.className = 'activity-description';
-    summary.textContent = 'Açıklamayı göster';
+    summary.textContent = 'Show description';
     disclosure.append(summary);
     card.parts.detail.before(disclosure);
     card.disclosure = disclosure;
     disclosure.ontoggle = () => {
-      summary.textContent = disclosure.open ? 'Açıklamayı gizle' : 'Açıklamayı göster';
+      summary.textContent = disclosure.open ? 'Hide description' : 'Show description';
     };
     card.parts.link.onclick = async () => {
       try {
@@ -49,7 +49,7 @@ export function activityPanels(single, {openLink, notice}) {
       if (p.detail.parentElement !== card.disclosure) card.disclosure.append(p.detail);
     } else if (p.detail.parentElement === card.disclosure) card.disclosure.after(p.detail);
     p.age.textContent = view.running && view.at ? elapsedLabel(view.at) : ageLabel(view.at);
-    p.age.title = view.at ? new Date(view.at).toLocaleString('tr-TR') : '';
+    p.age.title = view.at ? new Date(view.at).toLocaleString('en-GB') : '';
     p.link.hidden = !view.url;
     if (!history) return;
     p.events.replaceChildren(
@@ -57,7 +57,7 @@ export function activityPanels(single, {openLink, notice}) {
         const li = document.createElement('li'),
           time = document.createElement('time'),
           label = document.createElement('span');
-        time.textContent = new Date(event.at).toLocaleTimeString('tr-TR');
+        time.textContent = new Date(event.at).toLocaleTimeString('en-GB');
         label.textContent = event.data.message;
         li.append(time, label);
         return li;
@@ -65,7 +65,7 @@ export function activityPanels(single, {openLink, notice}) {
     );
     if (!view.history.length) {
       const li = document.createElement('li');
-      li.textContent = 'Henüz kaydedilmiş işlem yok.';
+      li.textContent = 'No recorded activity yet.';
       p.events.append(li);
     }
   }

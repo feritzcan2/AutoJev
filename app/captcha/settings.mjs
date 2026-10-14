@@ -34,7 +34,7 @@ export class CaptchaSettings {
     } catch {
       throw new CaptchaError(
         'CAPTCHA_KEY',
-        'CapSolver anahtarı açılamadı. Sistem anahtarlığını aç veya anahtarı yeniden kaydet.',
+        'Could not unlock the CapSolver key. Unlock the system keychain or save the key again.',
       );
     }
   }
@@ -69,7 +69,7 @@ export class CaptchaSettings {
       Array.isArray(input) ||
       Object.keys(input).some((k) => !['apiKey', 'enabled', 'dailyLimit'].includes(k))
     )
-      throw Error('Geçersiz CAPTCHA ayarı.');
+      throw Error('Invalid CAPTCHA setting.');
     const previous = this.row(),
       enabled = input.enabled ?? !!previous?.enabled,
       dailyLimit = input.dailyLimit ?? previous?.daily_limit ?? 100;
@@ -79,17 +79,17 @@ export class CaptchaSettings {
       dailyLimit < 1 ||
       dailyLimit > 10000
     )
-      throw Error('Günlük çözüm isteği sınırı 1–10000 arasında olmalı.');
+      throw Error('The daily solve request limit must be between 1 and 10000.');
     if (input.apiKey !== undefined && typeof input.apiKey !== 'string')
-      throw Error('Geçerli bir CapSolver anahtarı gir.');
+      throw Error('Enter a valid CapSolver key.');
     const key = input.apiKey?.trim();
     let ciphertext = previous?.ciphertext;
     if (key) {
       if (key.length < 8 || key.length > 4096 || /\s/.test(key))
-        throw Error('Geçerli bir CapSolver anahtarı gir.');
+        throw Error('Enter a valid CapSolver key.');
       ciphertext = this.encrypt(key);
     }
-    if (!ciphertext) throw Error('CapSolver API anahtarını gir.');
+    if (!ciphertext) throw Error('Enter the CapSolver API key.');
     this.db
       .prepare(
         'INSERT INTO captcha_settings VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET ciphertext=excluded.ciphertext,enabled=excluded.enabled,daily_limit=excluded.daily_limit',
@@ -108,32 +108,32 @@ export class CaptchaSettings {
   reserve() {
     const config = this.config();
     if (!config.enabled || !config.apiKey)
-      throw new CaptchaError('CAPTCHA_DISABLED', 'Otomatik CAPTCHA çözümü kapalı.');
+      throw new CaptchaError('CAPTCHA_DISABLED', 'Automatic CAPTCHA solving is off.');
     const result = this.db
       .prepare(
         'INSERT INTO captcha_usage(day,requests) VALUES(?,1) ON CONFLICT(day) DO UPDATE SET requests=requests+1 WHERE requests<?',
       )
       .run(this.day(), config.dailyLimit);
     if (!result.changes)
-      throw new CaptchaError('CAPTCHA_LIMIT', 'Günlük CAPTCHA çözüm isteği sınırına ulaşıldı.');
+      throw new CaptchaError('CAPTCHA_LIMIT', 'The daily CAPTCHA solve request limit was reached.');
     this.db
       .prepare('DELETE FROM captcha_usage WHERE day<?')
       .run(new Date(this.now() - 31 * 86400000).toISOString().slice(0, 10));
     return config.apiKey;
   }
   async testConnection() {
-    if (this.checking) throw Error('CapSolver bağlantısı kontrol ediliyor.');
+    if (this.checking) throw Error('The CapSolver connection is being checked.');
     this.checking = true;
     const revision = this.revision;
     try {
       const {apiKey} = this.config();
-      if (!apiKey) throw Error('Önce CapSolver anahtarını kaydet.');
+      if (!apiKey) throw Error('Save the CapSolver key first.');
       const balance = await this.client.balance(apiKey, this.changes.signal);
       const value = {
         ok: true,
         balance,
         checkedAt: this.now(),
-        message: `Bağlantı doğrulandı. Bakiye: $${balance.toFixed(2)}`,
+        message: `Connection verified. Balance: $${balance.toFixed(2)}`,
       };
       if (revision === this.revision) this.lastCheck = value;
       return value;
@@ -144,7 +144,7 @@ export class CaptchaSettings {
         message:
           revision === this.revision
             ? error.message
-            : 'Ayar değişti; bağlantıyı yeniden kontrol et.',
+            : 'The setting changed; check the connection again.',
       };
       if (revision === this.revision) this.lastCheck = value;
       return value;

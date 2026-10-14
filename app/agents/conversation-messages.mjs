@@ -14,7 +14,10 @@ export function conversationMessages(snapshot, native = []) {
   const runs = snapshot.runs ?? [],
     questions = (snapshot.automation?.questions ?? []).filter((q) => conversationQuestion(q, runs));
   const answers = new Set(
-    questions.filter((q) => q.answer != null).map((q) => q.text + '\nYanıt: ' + q.answer),
+    // Earlier versions saved answers with the Turkish label "Yanıt:".
+    questions
+      .filter((q) => q.answer != null)
+      .flatMap((q) => ['\nAnswer: ', '\nYanıt: '].map((label) => q.text + label + q.answer)),
   );
   const saved = (snapshot.messages ?? []).filter((m) => {
     if (m.role === 'system') return false;

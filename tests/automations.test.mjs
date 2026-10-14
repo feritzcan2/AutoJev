@@ -68,10 +68,10 @@ const settle = () => new Promise((r) => setImmediate(r));
 
 test('explicit trial skip permits execution only for the reviewed revision without starting work', (t) => {
   const {db, id} = fixture(t);
-  assert.throws(() => db.skipTrial(id), /kurulum kartını/);
+  assert.throws(() => db.skipTrial(id), /setup card/);
   db.review(id);
   const trialRun = db.begin(id, 'trial');
-  assert.throws(() => db.skipTrial(id), /çalışan otomasyonu/);
+  assert.throws(() => db.skipTrial(id), /running automation/);
   db.finish(id, trialRun.id, 'blocked', 'Access unavailable');
   const before = db.runs(id).length,
     a = db.skipTrial(id);
@@ -86,8 +86,8 @@ test('explicit trial skip permits execution only for the reviewed revision witho
   db.finish(id, run.id, 'completed', 'Done');
   db.save(id, {goal: 'Updated search'});
   assert.equal(db.get(id).trial.status, 'skipped');
-  assert.throws(() => db.enable(id), /kurulumu/);
-  assert.throws(() => db.skipTrial(id), /kurulum kartını/);
+  assert.throws(() => db.enable(id), /Save the setup/);
+  assert.throws(() => db.skipTrial(id), /setup card/);
   db.review(id);
   assert.equal(db.begin(id, 'run').kind, 'run');
 });
@@ -114,7 +114,7 @@ test('profile fields preserve trial history while requiring review and clearing 
     assert.equal(saved.reviewedRevision, null);
     assert.equal(saved.nextRunAt, null);
     assert.equal(db.result(id, item.id).approvedDigest, undefined);
-    assert.throws(() => db.enable(id), /kurulumu/);
+    assert.throws(() => db.enable(id), /Save the setup/);
     db.review(id);
     assert.equal(db.enable(id).status, 'enabled');
     db.pause(id);
@@ -202,9 +202,9 @@ test('agent table edits persist without changing plan review, action authority o
     otherRun = db.begin(other.id, 'interview');
   await assert.rejects(
     flow.call(other.id, otherRun.id, 'configure_workspace_table', table),
-    /geçersiz/,
+    /Invalid/,
   );
-  assert.throws(() => db.updateCells(other.id, item.id, []), /bu çalışma alanına/);
+  assert.throws(() => db.updateCells(other.id, item.id, []), /this workspace/);
   const template = db.saveTemplate({...automationTemplate('housing'), table});
   assert.deepEqual(reusableTemplate(template).table, table);
   db.finish(id, interview.id, 'completed', 'Table updated');
@@ -230,7 +230,7 @@ test('table schema and cells reject authority fields, unsafe URLs and ambiguous 
     assert.throws(() =>
       automationTable({...table, columns: [...table.columns, {key, label: 'X', type: 'text'}]}),
     );
-  assert.throws(() => automationTable({...table, columns: table.columns.slice(1)}), /korunmalı/);
+  assert.throws(() => automationTable({...table, columns: table.columns.slice(1)}), /must be kept/);
   for (const [key, value] of [
     ['price', '1.400,50'],
     ['price', 'NaN'],
@@ -250,7 +250,7 @@ test('table schema and cells reject authority fields, unsafe URLs and ambiguous 
         ],
         table,
       ),
-    /benzersiz/,
+    /unique custom column/,
   );
 });
 
@@ -265,7 +265,7 @@ test('incomplete interview drafts preserve source requests without granting them
   assert.match(pending.message, /sen bul/);
   assert.throws(
     () => prepareAutomationChat('Randevu bul', {sources: ['https://user:secret@example.com']}),
-    /Kullanıcı/,
+    /user credentials/,
   );
   assert.throws(
     () => prepareAutomationChat('Randevu bul', {sources: ['file:///etc/passwd']}),
@@ -288,10 +288,10 @@ test('Agent settings can be saved during a run without changing its plan or acti
     assert.deepEqual(after[key], before[key]);
   assert.deepEqual(after.trial, before.trial);
   assert.equal(db.run(run.id).status, 'running');
-  assert.throws(() => db.save(id, {agentSettings: settings, goal: 'Changed'}), /durdur/);
+  assert.throws(() => db.save(id, {agentSettings: settings, goal: 'Changed'}), /Stop the running/);
   assert.throws(
     () => db.save(id, {agentSettings: {...settings, provider: 'unknown'}}),
-    /sağlayıcı/,
+    /Unsupported provider/,
   );
 });
 
@@ -312,7 +312,7 @@ test('Chrome profile selection persists, pauses the workspace and keeps the plan
     /profil/,
   );
   const run = db.begin(id, 'trial');
-  assert.throws(() => db.save(id, {chromeProfile: null}), /durdur/);
+  assert.throws(() => db.save(id, {chromeProfile: null}), /Stop the running/);
   db.finish(id, run.id, 'interrupted', 'Stopped');
 });
 
@@ -343,7 +343,7 @@ test('Chrome profile changes preserve the successful trial and allow restarting 
   });
   assert.deepEqual(changed.trial, {...before.trial, revision: changed.revision});
   assert.equal(changed.reviewedRevision, null);
-  assert.throws(() => db.enable(id), /kurulumu/);
+  assert.throws(() => db.enable(id), /Save the setup/);
 });
 
 test('trial retries cannot repeat a historical blocker without a new browser attempt', async (t) => {
@@ -367,7 +367,7 @@ test('trial retries cannot repeat a historical blocker without a new browser att
   for (const status of ['blocked', 'failed', 'completed'])
     await assert.rejects(
       flow.call(id, run.id, 'finish_automation_run', {status, summary: 'Old IP block'}),
-      /henüz kaynak kontrolü yapılmadı/,
+      /has not checked the source yet/,
     );
   assert.equal(reports.length, 0);
   assert.equal(db.run(run.id).status, 'running');
@@ -424,7 +424,7 @@ test('reusable templates carry questions and workflow, never instance data or ac
   assert.equal(db.get(id).title, setup.title);
   assert.throws(
     () => db.saveTemplate({...base, fields: [...base.fields, base.fields[0]]}),
-    /benzersiz/,
+    /must be unique/,
   );
 });
 test('completed goals stop scheduling; timeouts block retries and respect concurrency', async (t) => {
@@ -436,7 +436,7 @@ test('completed goals stop scheduling; timeouts block retries and respect concur
   await runtime.start(id);
   const other = db.create('housing', setup);
   trial(db, other.id);
-  await assert.rejects(runtime.start(other.id), /en fazla/);
+  await assert.rejects(runtime.start(other.id), /At most/);
   runtime.report(
     id,
     runtime.active.get(id).run.id,
@@ -457,8 +457,8 @@ test('completed goals stop scheduling; timeouts block retries and respect concur
 });
 test('profile edits require review but preserve a successful trial', (t) => {
   const {db, id} = fixture(t);
-  assert.throws(() => db.enable(id), /kurulumu/);
-  assert.throws(() => db.begin(id, 'trial'), /kurulum/);
+  assert.throws(() => db.enable(id), /Save the setup/);
+  assert.throws(() => db.begin(id, 'trial'), /setup/);
   db.review(id);
   let run = db.begin(id, 'trial');
   const result = db.finish(id, run.id, 'completed', 'No actual browser');
@@ -493,13 +493,13 @@ test('optional action tracking respects the saved mode and the explicit submissi
   db.save(id, {mode: 'observe'});
   let run = db.begin(id, 'run'),
     item = scoredRecord(db, id, run);
-  assert.throws(() => db.reserve(id, run.id, item.id), /gözlem/);
+  assert.throws(() => db.reserve(id, run.id, item.id), /observe/);
   db.finish(id, run.id, 'completed', 'Found');
   db.save(id, {mode: 'prepare'});
   run = db.begin(id, 'run');
   item = scoredRecord(db, id, run, '1', 'Changed message');
   // No draft approval: outside auto mode only the user's execute request submits.
-  assert.throws(() => db.reserve(id, run.id, item.id), /kullanıcı isteği/);
+  assert.throws(() => db.reserve(id, run.id, item.id), /user request/);
   db.finish(id, run.id, 'completed', 'Review');
   const execute = db.template('housing').recordOperations.execute,
     task = db.store.workspaces.tasks.enqueue(id, {
@@ -523,7 +523,7 @@ test('optional action tracking respects the saved mode and the explicit submissi
   assert.equal(db.result(id, item.id).status, 'completed');
   run = db.begin(id, 'trial');
   item = record(db, id, run, '2');
-  assert.throws(() => db.reserve(id, run.id, item.id), /gözlem/);
+  assert.throws(() => db.reserve(id, run.id, item.id), /observe/);
   db.finish(id, run.id, 'blocked', 'Test');
 });
 test('interrupted attempts stay protected while other listings have no daily quota', (t) => {
@@ -563,7 +563,7 @@ test('interrupted attempts stay protected while other listings have no daily quo
   db.finish(id, run.id, 'completed', 'Verified');
   assert.equal(db.result(id, item.id).status, 'completed');
 });
-test('counts, export data and approval invalidation cover results older than the UI window', (t) => {
+test('counts, export data and approval invalidation cover every result', (t) => {
   const {db, id} = fixture(t);
   trial(db, id);
   const run = db.begin(id, 'run');
@@ -574,8 +574,7 @@ test('counts, export data and approval invalidation cover results older than the
   }
   db.finish(id, run.id, 'completed', 'Prepared');
   db.approve(id, first.id);
-  assert.equal(db.results(id).length, 500);
-  assert.equal(db.results(id, {all: true}).length, 503);
+  assert.equal(db.results(id).length, 503);
   assert.equal(db.resultCounts(id).resultCount, 503);
   assert.equal(db.resultCounts(id).pendingCount, 502);
   db.save(id, {goal: 'Find a different home'});
@@ -603,7 +602,7 @@ test('scheduler reserves once and holds a blocked source until an explicit retry
   await runtime.tick();
   await settle();
   assert.equal(launches, 1);
-  await assert.rejects(runtime.start(id), /zaten/);
+  await assert.rejects(runtime.start(id), /already/);
   const run = runtime.active.get(id).run;
   runtime.report(id, run.id, 'blocked', 'Login expired');
   await runtime.finish(id);
@@ -716,7 +715,7 @@ test('a failed process close retains the slot until a later stop confirms termin
   await assert.rejects(runtime.pause(id), /Still running/);
   assert.equal(runtime.active.size, 1);
   assert.equal(db.get(id).status, 'blocked');
-  await assert.rejects(runtime.start(id), /zaten/);
+  await assert.rejects(runtime.start(id), /already/);
   await runtime.pause(id);
   assert.equal(runtime.active.size, 0);
   assert.equal(stops, 2);
@@ -748,8 +747,8 @@ test('browser tools enforce session ownership without imposing step limits', asy
     browser,
     report: (id, runId, status, summary) => db.finish(id, runId, status, summary),
   });
-  await assert.rejects(flow.call('foreign', run.id, 'get_automation_context', {}), /geçersiz/);
-  await assert.rejects(flow.call(id, run.id, 'save_automation_plan', {}), /kurulum/);
+  await assert.rejects(flow.call('foreign', run.id, 'get_automation_context', {}), /Invalid/);
+  await assert.rejects(flow.call(id, run.id, 'save_automation_plan', {}), /setup/);
   await flow.call(id, run.id, 'browser_open', {url: 'https://other.example/'});
   await flow.call(id, run.id, 'browser_interact', {operation: 'click', ref: 'e1'});
   assert.equal(writes, 1);
@@ -775,7 +774,7 @@ test('browser tools enforce session ownership without imposing step limits', asy
   while (db.run(run.id).browserSteps < 8) await flow.call(id, run.id, 'browser_read', {});
   assert.equal(db.run(run.id).browserSteps, 8);
   controller.abort();
-  await assert.rejects(flow.call(id, run.id, 'get_automation_context', {}), /geçersiz/);
+  await assert.rejects(flow.call(id, run.id, 'get_automation_context', {}), /Invalid/);
 });
 test('interviews can research and interact without activating sources or scheduling work', async (t) => {
   const {db, id} = fixture(t),
@@ -806,6 +805,7 @@ test('interviews can research and interact without activating sources or schedul
     'introduction',
     'ranking',
     'score_threshold',
+    'unstated_conditions',
     'save_score_threshold',
   ]);
   assert.doesNotThrow(() =>
@@ -829,7 +829,7 @@ test('interviews can research and interact without activating sources or schedul
   assert.equal(calls, previous + 3);
   await assert.rejects(
     flow.call(id, run.id, 'research_automation_source', {url: 'http://127.0.0.1/private'}),
-    /herkese açık/,
+    /public web domain/,
   );
   while (db.run(run.id).browserSteps < 12) await flow.call(id, run.id, 'browser_read', {});
   await flow.call(id, run.id, 'browser_read', {});
@@ -855,7 +855,7 @@ test('interviews can research and interact without activating sources or schedul
     trialFlow.call(id, trialRun.id, 'research_automation_source', {
       url: 'https://unapproved.example/',
     }),
-    /kurulum/,
+    /setup/,
   );
 });
 test('complete navigation history survives excerpt rotation without bloating agent context', async (t) => {
@@ -922,12 +922,12 @@ test('interview samples require an observed source detail and cannot authorize o
   };
   await assert.rejects(
     flow.call(id, run.id, 'record_automation_result', sample),
-    /önce bu turda gözlemle/,
+    /in this round first/,
   );
   await flow.call(id, run.id, 'research_automation_source', {url: sample.url});
   await assert.rejects(
     flow.call(id, run.id, 'record_automation_result', {...sample, proposal: 'Send a message'}),
-    /işlem taslağı/,
+    /action draft/,
   );
   await flow.call(id, run.id, 'research_automation_source', {url: 'https://outside.example/home'});
   const linked = await flow.call(id, run.id, 'record_automation_result', {
@@ -944,13 +944,13 @@ test('interview samples require an observed source detail and cannot authorize o
   assert.equal(db.result(id, saved.id).proposal, '');
   assert.equal(db.resultCounts(id).storedCount, 2);
   assert.equal(db.resultCounts(id).resultCount, 0);
-  assert.throws(() => db.reserve(id, run.id, saved.id), /gözlem/);
+  assert.throws(() => db.reserve(id, run.id, saved.id), /observe/);
   db.finish(id, run.id, 'completed', 'Sources and examples observed');
   assert.equal(db.get(id).reviewedRevision, null);
   assert.equal(db.get(id).trial, null);
   assert.equal(db.get(id).nextRunAt, null);
-  assert.throws(() => db.approve(id, saved.id), /Güncel/);
-  assert.throws(() => db.enable(id), /kurulumu/);
+  assert.throws(() => db.approve(id, saved.id), /current run result/);
+  assert.throws(() => db.enable(id), /Save the setup/);
   trial(db, id);
   const liveRun = db.begin(id, 'run'),
     live = record(db, id, liveRun);

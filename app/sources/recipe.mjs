@@ -5,7 +5,7 @@
 // This module is also bundled into the renderer; keep it free of app imports.
 function boundedText(value, label, max) {
   if (typeof value !== 'string' || !value.trim() || value.length > max)
-    throw Error(`${label}: 1–${max} karakter gerekli`);
+    throw Error(`${label}: 1–${max} characters required`);
   return value.trim();
 }
 
@@ -23,13 +23,12 @@ export const RECIPE_FIELD_KEYS = ['query', 'location'];
 // newest_first lets repeat scans stop once consecutive pages hold only known listings.
 export const RECIPE_ORDERING_KINDS = ['unknown', 'newest_first'];
 export const RECIPE_STALE_FAILURES = 2;
-// User rule (2026-10-05), for every source scan: all searches of a scan
-// together read at most SCAN_PAGE_BUDGET result pages, shared evenly, and each
-// search reads at least SCAN_MIN_SEARCH_PAGES.
-export const SCAN_PAGE_BUDGET = 15;
-export const SCAN_MIN_SEARCH_PAGES = 2;
-export const scanPageCap = (searches) =>
-  Math.max(SCAN_MIN_SEARCH_PAGES, Math.floor(SCAN_PAGE_BUDGET / Math.max(1, searches)));
+// User rule (2026-10-11), for every source scan and every kind of source: each
+// search (one per recipe term) reads at most SCAN_SEARCH_PAGES result pages and
+// ends with the page that brings its new listings to SCAN_SEARCH_LISTINGS. New
+// listings are those the workspace had not recorded or rejected before.
+export const SCAN_SEARCH_PAGES = 10;
+export const SCAN_SEARCH_LISTINGS = 100;
 export const RECIPE_TERM_LIMIT = 5;
 const placeholderPattern = /\{([a-z_][a-z0-9_]*)\}/g;
 
@@ -38,54 +37,55 @@ const webAddress = (value, label) => {
   try {
     url = new URL(String(value));
   } catch {
-    throw Error(`${label}: geçerli bir web adresi gerekli`);
+    throw Error(`${label}: a valid web address is required`);
   }
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
-    throw Error(`${label}: kullanıcı bilgisi içermeyen HTTP(S) adresi gerekli`);
+    throw Error(`${label}: an HTTP(S) address without user credentials is required`);
   url.hash = '';
   return url.href;
 };
 
 export function normalizeSourceRecipe(input) {
   if (input === null || input === undefined) return null;
-  if (typeof input !== 'object' || Array.isArray(input)) throw Error('Geçersiz kaynak reçetesi');
+  if (typeof input !== 'object' || Array.isArray(input)) throw Error('Invalid source recipe');
   const entry = input.entry;
   if (!entry || typeof entry !== 'object' || !RECIPE_ENTRY_KINDS.includes(entry.kind))
-    throw Error('Reçete yöntemi url_template, search_form veya discovery olmalı');
+    throw Error('The recipe method must be url_template, search_form or discovery');
   const recipe = {entry: {kind: entry.kind}};
   if (entry.kind === 'url_template') {
-    const template = boundedText(entry.template, 'URL şablonu', 2000);
+    const template = boundedText(entry.template, 'URL template', 2000);
     // A template without {query} is a fixed results address.
-    webAddress(template.replace(placeholderPattern, 'x'), 'URL şablonu');
+    webAddress(template.replace(placeholderPattern, 'x'), 'URL template');
     recipe.entry.template = template;
   } else if (entry.kind === 'search_form') {
-    recipe.entry.url = webAddress(entry.url, 'Arama formu adresi');
+    recipe.entry.url = webAddress(entry.url, 'Search form address');
     if (!Array.isArray(entry.fields) || !entry.fields.length || entry.fields.length > 6)
-      throw Error('Arama formu için 1–6 alan gerekli');
+      throw Error('A search form needs 1–6 fields');
     const seen = new Set();
     recipe.entry.fields = entry.fields.map((field) => {
       if (!field || typeof field !== 'object' || !RECIPE_FIELD_KEYS.includes(field.key))
-        throw Error('Form alanı anahtarı query veya location olmalı');
-      if (seen.has(field.key)) throw Error('Form alanı anahtarları benzersiz olmalı');
+        throw Error('A form field key must be query or location');
+      if (seen.has(field.key)) throw Error('Form field keys must be unique');
       seen.add(field.key);
-      return {key: field.key, label: boundedText(field.label, 'Form alanı etiketi', 120)};
+      return {key: field.key, label: boundedText(field.label, 'Form field label', 120)};
     });
-    if (!seen.has('query')) throw Error('Arama formunda query alanı gerekli');
+    if (!seen.has('query')) throw Error('The search form needs a query field');
   }
   const pagination = input.pagination ?? 'auto';
-  if (!RECIPE_PAGINATION_KINDS.includes(pagination)) throw Error('Geçersiz sayfalama türü');
+  if (!RECIPE_PAGINATION_KINDS.includes(pagination)) throw Error('Invalid pagination type');
   recipe.pagination = pagination;
   if (input.ordering !== undefined && input.ordering !== null && input.ordering !== 'unknown') {
     if (!RECIPE_ORDERING_KINDS.includes(input.ordering))
-      throw Error('Sıralama unknown veya newest_first olmalı');
+      throw Error('Ordering must be unknown or newest_first');
     if (recipe.entry.kind !== 'discovery') recipe.ordering = input.ordering;
   }
   if (input.loginRequired !== undefined && input.loginRequired !== null) {
-    if (typeof input.loginRequired !== 'boolean') throw Error('loginRequired doğru/yanlış olmalı');
+    if (typeof input.loginRequired !== 'boolean')
+      throw Error('loginRequired must be true or false');
     recipe.loginRequired = input.loginRequired;
   }
   if (input.notes !== undefined && input.notes !== null && input.notes !== '') {
-    recipe.notes = boundedText(input.notes, 'Reçete notu', 1000);
+    recipe.notes = boundedText(input.notes, 'Recipe note', 1000);
   }
   // Search terms replace {query} when the source query is a description rather
   // than a keyword. Each term is its own search on the same results pattern.
@@ -95,10 +95,10 @@ export function normalizeSourceRecipe(input) {
       !input.terms.length ||
       input.terms.length > RECIPE_TERM_LIMIT
     )
-      throw Error(`Arama terimleri: 1–${RECIPE_TERM_LIMIT} öğe gerekli`);
-    recipe.terms = [...new Set(input.terms.map((term) => boundedText(term, 'Arama terimi', 80)))];
+      throw Error(`Search terms: 1–${RECIPE_TERM_LIMIT} items required`);
+    recipe.terms = [...new Set(input.terms.map((term) => boundedText(term, 'Search term', 80)))];
     if (recipe.entry.kind === 'url_template' && !hasQueryPlaceholder(recipe.entry.template))
-      throw Error('Arama terimleri için URL şablonu {query} yer tutucusunu içermeli');
+      throw Error('For search terms, the URL template must contain the {query} placeholder');
   }
   return recipe;
 }
@@ -167,13 +167,6 @@ export function replayMatches(replay, url) {
     );
   });
 }
-
-// How many result pages a scan reads per search when the board's order is unknown.
-// Each recipe term is one search; a scan without terms or recipe is one search.
-export const recipePageCap = (recipe) =>
-  scanPageCap(
-    recipe?.entry?.kind !== 'discovery' && recipe?.terms?.length ? recipe.terms.length : 1,
-  );
 
 export const recipeStatus = (recipe, state) =>
   !recipe
@@ -297,32 +290,32 @@ export function advanceRecipeState(state, outcome, {runId, now, reason = null, u
 export function recipeSummary(recipe, state) {
   const status = recipeStatus(recipe, state);
   if (status === 'none')
-    return {status, label: 'Reçete yok', detail: 'İlk deneme turunda öğrenilecek.'};
+    return {status, label: 'No recipe', detail: 'It will be learned in the first trial turn.'};
   if (status === 'discovery')
     return {
       status,
-      label: 'Keşif modu',
-      detail: recipe.notes ?? 'Agent her turda aramayı kendisi yapar.',
+      label: 'Discovery mode',
+      detail: recipe.notes ?? 'The agent runs the search itself every turn.',
     };
   if (status === 'verified')
     return {
       status,
-      label: 'Reçete doğrulandı',
-      detail: `${state.successCount} başarılı tur${state.failCount ? `, ${state.failCount} başarısız` : ''}${recipe.terms?.length ? ` · ${recipe.terms.length} arama terimi` : ''}${recipe.ordering === 'newest_first' ? ' · yalnızca yeniler' : ''} · arama başına ilk ${recipePageCap(recipe)} sayfa`,
+      label: 'Recipe verified',
+      detail: `${state.successCount} successful turns${state.failCount ? `, ${state.failCount} failed` : ''}${recipe.terms?.length ? ` · ${recipe.terms.length} search terms` : ''}${recipe.ordering === 'newest_first' ? ' · new listings only' : ''} · up to ${SCAN_SEARCH_LISTINGS} new listings or ${SCAN_SEARCH_PAGES} pages per search`,
     };
   if (status === 'stale')
     return {
       status,
-      label: 'Reçete bozuldu',
+      label: 'Recipe broken',
       detail: state.lastFailure?.reason
-        ? `Son hata: ${state.lastFailure.reason}. Yeniden öğrenilecek.`
-        : 'Yeniden öğrenilecek.',
+        ? `Last error: ${state.lastFailure.reason}. It will be learned again.`
+        : 'It will be learned again.',
     };
   return {
     status,
-    label: 'Reçete bekliyor',
+    label: 'Recipe pending',
     detail: state?.lastFailure?.reason
-      ? `Doğrulanamadı: ${state.lastFailure.reason}`
-      : 'İlk taramada doğrulanacak.',
+      ? `Could not be verified: ${state.lastFailure.reason}`
+      : 'It will be verified in the first scan.',
   };
 }

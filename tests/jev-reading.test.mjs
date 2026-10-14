@@ -177,9 +177,9 @@ test('research scrolling stays public and requires an active run', async (t) => 
   await scroll();
   assert.equal(f.db.run(f.run.id).browserSteps, 1);
   f.redirect('http://localhost/private');
-  await assert.rejects(scroll(), /herkese açık/);
+  await assert.rejects(scroll(), /public web domain/);
   f.controller.abort();
-  await assert.rejects(scroll(), /geçersiz/);
+  await assert.rejects(scroll(), /Invalid/);
 });
 
 test('read navigation uses an app-owned stable scope, never URL-matched foreign tabs', async () => {
@@ -261,6 +261,6 @@ test('source tab changes preserve historical text and remain unavailable to othe
   assert.ok(!recordFlow.tools.some((tool) => tool.name === 'browser_jev_close_tab'));
   await assert.rejects(
     recordFlow.call(f.a.id, run.id, 'browser_jev_close_tab', {tabId: 'retained'}),
-    /kaynak taraması/,
+    /source scan/,
   );
 });

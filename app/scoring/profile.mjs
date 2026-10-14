@@ -37,7 +37,7 @@ export function scoringSources(automation, documents) {
 }
 async function documentText(file) {
   const info = await stat(file);
-  if (info.size > 10 * 1024 * 1024) throw Error('metin kontrolü için en fazla 10 MB olmalı');
+  if (info.size > 10 * 1024 * 1024) throw Error('must be at most 10 MB for the text check');
   const key = JSON.stringify([file, info.size, info.mtimeMs]);
   if (cache.has(key)) return cache.get(key);
   let text;
@@ -53,7 +53,7 @@ async function documentText(file) {
     });
     try {
       const pdf = await loading.promise;
-      if (pdf.numPages > 40) throw Error('en fazla 40 sayfa olmalı');
+      if (pdf.numPages > 40) throw Error('must have at most 40 pages');
       const pages = [];
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i),
@@ -69,7 +69,7 @@ async function documentText(file) {
     } finally {
       await loading.destroy();
     }
-  } else throw Error('bu biçimden metin alınamadı');
+  } else throw Error('no text could be extracted from this format');
   if (cache.size >= 32) cache.delete(cache.keys().next().value);
   cache.set(key, text);
   return text;
@@ -81,7 +81,9 @@ export async function loadScoringDocuments(db, id) {
     Boolean,
   );
   if (!saved.length)
-    return source('', {unavailable: 'Kayıtlı belge yok; doğrulanmayan bilgiyi unknown bırak.'});
+    return source('', {
+      unavailable: 'No saved documents; leave unverified information as unknown.',
+    });
   const root = await realpath(workspaceDirectory(db.store.directory, db.store.workspaces.get(id))),
     files = [...new Set(saved.map((file) => path.resolve(root, file)))];
   const parts = [],
@@ -96,19 +98,19 @@ export async function loadScoringDocuments(db, id) {
       const requested = await realpath(file),
         safe = await documentPath(root, path.relative(root, requested)),
         text = (await documentText(safe)).trim();
-      if (length + text.length > MAX_TEXT) throw Error('toplam belge metni sınırı aşıldı');
+      if (length + text.length > MAX_TEXT) throw Error('total document text limit exceeded');
       parts.push(`## ${label}\n${text}`);
       paths.push(label);
       length += text.length;
     } catch (error) {
-      skipped.push(`${label} (${error.code === 'ENOENT' ? 'dosya bulunamadı' : error.message})`);
+      skipped.push(`${label} (${error.code === 'ENOENT' ? 'file not found' : error.message})`);
     }
   }
   return source(parts.join('\n\n'), {
     paths,
     ...(skipped.length
       ? {
-          unavailable: `Okunamayan belgeler: ${skipped.join('; ')}. Bu belgelerdeki bilgiler unknown kalır.`,
+          unavailable: `Unreadable documents: ${skipped.join('; ')}. Information from these documents stays unknown.`,
         }
       : {}),
   });

@@ -123,15 +123,12 @@ test('launch uses the discovered installation and selected profile as arguments,
     const url = 'chrome-extension://jmpiibcgkhgcbjgnncpicngllpppiiel/connect.html?relay=x';
     await openChromeUrl(url, {directory: 'Profile 1'}, options);
     assert.equal(called, 1);
-    await assert.rejects(
-      () => openChromeUrl(url, {directory: '../outside'}, options),
-      /bulunamadı/,
-    );
+    await assert.rejects(() => openChromeUrl(url, {directory: '../outside'}, options), /not found/);
     assert.equal(called, 1);
     await assert.rejects(
       () =>
         openChromeUrl(url, {directory: 'Default'}, {...options, findChromeImpl: async () => null}),
-      /Chrome bulunamadı/,
+      /Chrome was not found/,
     );
   } finally {
     await rm(directory, {recursive: true, force: true});

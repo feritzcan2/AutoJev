@@ -209,7 +209,7 @@ test('foreign worker tabs are rejected before rendering or inspecting their DOM'
     client.callTool({name: 'browser_jev_observe', arguments: {tabId: slot.id}}, 'worker', {
       multiWorker: true,
     }),
-    /başka bir worker/,
+    /another worker/,
   );
 });
 
@@ -250,6 +250,8 @@ test('revealing a control in a background tab runs with rendering enabled and re
       scrollIntoViewIfNeeded: async (options) => {
         scrolled.push({...options, during: [...commands]});
       },
+      // The covered-element check runs in the page; nothing covers it here.
+      evaluate: async () => {},
     });
     assert.deepEqual(scrolled, [{timeout: 2000, during: hidden ? [true] : []}]);
     assert.deepEqual(commands, hidden ? [true, false] : []);

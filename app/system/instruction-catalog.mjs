@@ -22,7 +22,7 @@ export function webInstructionCatalog(db, id, role = 'web-interview') {
     ...fileInstructionParts('AGENTS.md', AUTOMATION_INSTRUCTIONS),
     ...values.map((part) => ({
       ...part,
-      when: 'Agent get_automation_context çağırdığında döner. Kaynak ve görev kapsamı sonucu daraltabilir.',
+      when: 'Returned when the agent calls get_automation_context. Source and task scope can narrow the result.',
     })),
   ];
 }
@@ -43,11 +43,11 @@ export async function instructionSnapshot({id, options = {}, log, agents, worksp
     parts.unshift(
       instructionPart(
         'agent-profile:' + selected.id,
-        selected.name + ' agent talimatı',
+        selected.name + ' agent instructions',
         'system',
         selected.instructions,
         {
-          when: 'Oturum açılırken doğrudan sistem/geliştirici talimatı olarak verilir.',
+          when: 'Given directly as a system/developer instruction when the session opens.',
           agentProfile: true,
         },
       ),

@@ -5,17 +5,20 @@ import {automationPrompt} from '../automation/prompts.mjs';
 
 export function webPromptCatalog(plan) {
   const tasks = [
-    ['interview', 'Kurulum sohbeti'],
-    ['trial', 'Kaynak denemesi'],
-    ['run', 'Atanmış görevi çalıştır'],
+    ['interview', 'Setup chat'],
+    ['trial', 'Source trial'],
+    ['run', 'Run the assigned task'],
   ].map(([kind, title]) => ({
     id: kind,
     title,
     when:
       kind === 'run'
-        ? 'Kaynak taraması veya kayıt işlemi başladığında.'
-        : 'İlgili agent oturumu başladığında.',
-    text: automationPrompt({kind, ...(kind === 'run' ? {operation: '{{atanmış işlem}}'} : {})}),
+        ? 'When a source scan or record operation starts.'
+        : 'When the related agent session starts.',
+    text: automationPrompt({
+      kind,
+      ...(kind === 'run' ? {operation: '{{assigned operation}}'} : {}),
+    }),
   }));
   const tools = automationTools.map((t) => ({
     name: t.name,
@@ -43,7 +46,7 @@ export async function configurationCatalog({id, workspaces, profiles}) {
     ...library.agents.map((p) =>
       instructionPart(
         'agent-profile:' + p.id,
-        p.name + ' agent talimatı',
+        p.name + ' agent instructions',
         'system',
         p.instructions,
         {when: p.when},

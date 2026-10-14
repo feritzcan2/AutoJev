@@ -200,11 +200,11 @@ export default {
     ordering: 'newest_first',
     pagination: 'url_param',
     filters: [
-      {param: 'f_WT', label: 'Çalışma şekli', values: {1: 'Ofis', 2: 'Uzaktan', 3: 'Hibrit'}},
+      {param: 'f_WT', label: 'Work mode', values: {1: 'On-site', 2: 'Remote', 3: 'Hybrid'}},
       {
         param: 'f_TPR',
-        label: 'Yayın tarihi',
-        values: {r86400: 'Son 24 saat', r604800: 'Son hafta', r2592000: 'Son ay'},
+        label: 'Posted',
+        values: {r86400: 'Last 24 hours', r604800: 'Last week', r2592000: 'Last month'},
       },
     ],
     notes: 'sortBy=DD orders newest first. 10 cards per page, pages via &start=10,20,…',

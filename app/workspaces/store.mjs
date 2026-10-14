@@ -39,7 +39,7 @@ export class WorkspaceStore {
   }
   get(id) {
     const value = parse(this.db.prepare('SELECT data FROM workspaces WHERE id=?').get(id));
-    if (!value) throw Error('Çalışma alanı bulunamadı');
+    if (!value) throw Error('Workspace not found');
     return {...value, agentSettings: withAgentDefaults(value.agentSettings)};
   }
   templateInput(templateId) {
@@ -54,7 +54,7 @@ export class WorkspaceStore {
   }
   template(templateId) {
     const input = this.templateInput(templateId);
-    if (!input) throw Error('Template bulunamadı');
+    if (!input) throw Error('Template not found');
     return this.registry.normalize(structuredClone(input));
   }
   definition(id) {
@@ -67,7 +67,7 @@ export class WorkspaceStore {
     const previous = this.has(id) ? this.get(id) : {},
       s = withAgentDefaults(value.agentSettings ?? previous.agentSettings);
     if (previous.templateId && previous.templateId !== templateId)
-      throw Error('Çalışma alanı kimliği farklı bir template’e ait');
+      throw Error('The workspace id belongs to a different template');
     const workspace = {
       ...previous,
       id,
@@ -85,10 +85,10 @@ export class WorkspaceStore {
       table: previous.table ??
         value.table ??
         this.template(templateId).table ?? {
-          title: 'İşlem akışı',
+          title: 'Workflow',
           columns: [
-            {key: 'source', label: 'Kaynak', type: 'text'},
-            {key: 'title', label: 'Başlık', type: 'text'},
+            {key: 'source', label: 'Source', type: 'text'},
+            {key: 'title', label: 'Title', type: 'text'},
           ],
         },
     };
@@ -102,10 +102,11 @@ export class WorkspaceStore {
   transition(id, itemId, actionId) {
     const definition = this.definition(id),
       action = definition.records.actions.find((a) => a.id === actionId);
-    if (!action) throw Error('Template işlemi bulunamadı');
+    if (!action) throw Error('Template action not found');
     return this.records.update(id, itemId, (item) => {
       const state = item.workflowState ?? item.status;
-      if (!action.from.includes(state)) throw Error('İşlem bu kayıt durumunda kullanılamaz');
+      if (!action.from.includes(state))
+        throw Error('The action is not available in this record state');
       return {
         ...item,
         workflowState: action.to,
@@ -133,7 +134,7 @@ export class WorkspaceStore {
   }
   updateCells(id, itemId, input) {
     if (this.records.get(id, itemId).assessment && input.some((cell) => cell.key === 'score'))
-      throw Error('Puan değerlendirmeden hesaplanır; değiştirmek için kaydı yeniden puanla.');
+      throw Error('The score is computed from the evaluation; rescore the record to change it.');
     const w = this.get(id);
     return this.records.update(id, itemId, (item) => ({
       ...item,
@@ -196,7 +197,7 @@ export class WorkspaceStore {
           !nativeId.trim() ||
           nativeId.length > 256
         )
-          throw Error('Geçersiz sağlayıcı oturumu');
+          throw Error('Invalid provider session');
         const saved = {nativeId, settings: settings ?? null},
           data = read(provider) ?? {};
         write(provider, {

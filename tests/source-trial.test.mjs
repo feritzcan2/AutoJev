@@ -14,9 +14,16 @@ function fixture(t, {workers = 1} = {}) {
   const db = new AutomationStore(store, {now: () => now}),
     a = db.create('housing', {
       goal: 'Find homes',
-      criteria: {location: 'Germany', budget: '2000', requirements: 'Two rooms'},
+      criteria: {
+        location: 'Germany',
+        budget: '2000',
+        requirements: 'Two rooms',
+        score_threshold: '60',
+      },
       sources: urls,
     });
+  // These tests step the clock past a 30-minute scan interval.
+  db.saveSourcesInterval(a.id, 30);
   db.review(a.id);
   db.save(a.id, {mode: 'auto'});
   for (let n = 1; n < workers; n++) store.workspaces.workers.add(a.id);
@@ -92,7 +99,7 @@ test('reviewed setup starts source trials without a workspace trial, then schedu
     proposal: 'Sample draft',
   });
   assert.equal(sample.trial, true);
-  assert.throws(() => f.db.reserve(f.id, first.id, sample.id), /gözlem/);
+  assert.throws(() => f.db.reserve(f.id, first.id, sample.id), /observe/);
   await f.finish(first);
   await f.runtime.tick();
   await settle();
@@ -102,12 +109,10 @@ test('reviewed setup starts source trials without a workspace trial, then schedu
   assert.equal(second.kind, 'trial');
   assert.equal(second.sourceUrl, urls[1]);
   await f.finish(second);
-  await f.runtime.tick();
-  assert.equal(f.launches.length, 2);
-  assert.equal(f.store.workspaces.tasks.list(f.id, {batchId: first.batchId}).length, 1);
-  f.advance();
+  // A passed trial queues the source's first scan without waiting for its interval.
   await f.runtime.tick();
   await settle();
+  assert.equal(f.store.workspaces.tasks.list(f.id, {batchId: first.batchId}).length, 1);
   const scan = f.launches[2];
   assert.equal(scan.kind, 'run');
   assert.equal(scan.sourceUrl, urls[0]);

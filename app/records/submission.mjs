@@ -91,16 +91,16 @@ export function assertSubmitAllowed(run, label) {
   const name = JSON.stringify(String(label ?? '').slice(0, 80));
   if (run.recordOperation !== 'execute')
     throw Error(
-      `${name} bir gönderim düğmesi olabilir. Yalnızca başvuru (execute) görevi gönderebilir; bu görevde tıklama.`,
+      `${name} may be a submit button. Only an application (execute) task may submit; do not click it in this task.`,
     );
   if (!run.actionId)
     throw Error(
-      `${name} bir gönderim düğmesi olabilir. Önce reserve_automation_action çağır, sonra bu düğmeye bir kez tıkla.`,
+      `${name} may be a submit button. Call reserve_automation_action first, then click this button once.`,
     );
   const previous = run.submission;
   if (previous && previous.outcome !== 'validation')
     throw Error(
-      `Gönderim zaten denendi (sonuç: ${previous.outcome}). Tekrar tıklama. Sayfayı oku ve record_automation_outcome ile kaydet: onay görüldüyse completed, görülmediyse uncertain.`,
+      `Submission was already attempted (outcome: ${previous.outcome}). Do not click again. Read the page and record it with record_automation_outcome: completed if a confirmation is visible, otherwise uncertain.`,
     );
 }
 
@@ -110,6 +110,8 @@ export const SUBMIT_SCREENSHOT_NOTE =
   'The attached image shows the visible page right after the click. Judge it together with the text: a visible confirmation message means the application went through; a visible field error means that field needs a fix. Evidence quotes come from the page text (browser_search), not from the image. If the image and the text disagree, record uncertain. Never click submit again.';
 
 export function submissionGuidance(submission) {
+  if (submission.verification)
+    return 'A verification challenge (CAPTCHA) appeared after the click. Do not solve it, do not click submit again. Call record_automation_outcome with status=uncertain, then finish_automation_run with status=blocked; the app asks the user to solve it in the open tab and to report the outcome.';
   switch (submission.outcome) {
     case 'confirmed':
       return 'The page shows a confirmation. Call record_automation_outcome with status=completed and this quote as evidence.';

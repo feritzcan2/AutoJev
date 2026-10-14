@@ -2,7 +2,8 @@ import {captchaHash, detectCaptcha, gridSelector} from './detection.mjs';
 import {CaptchaError} from './capsolver-client.mjs';
 import {turnstileBridge} from './turnstile-registration.mjs';
 
-const stale = () => new CaptchaError('CAPTCHA_STALE', 'Doğrulama değişti; eski çözüm uygulanmadı.');
+const stale = () =>
+  new CaptchaError('CAPTCHA_STALE', 'The verification changed; the old solution was not applied.');
 export async function captureCaptcha(page, target) {
   if (target.provider === 'image') {
     const image = await target.frame
@@ -28,21 +29,24 @@ export async function captureCaptcha(page, target) {
     };
   }
   if (!target.sitekey || target.enterprise)
-    throw new CaptchaError('CAPTCHA_UNSUPPORTED', 'Bu CAPTCHA için yeterli çözüm bilgisi yok.');
+    throw new CaptchaError(
+      'CAPTCHA_UNSUPPORTED',
+      'There is not enough information to solve this CAPTCHA.',
+    );
   if (target.managed)
     throw new CaptchaError(
       'CAPTCHA_UNSUPPORTED',
-      'Cloudflare Challenge verisi Turnstile token API’sine gönderilemez.',
+      'Cloudflare Challenge data cannot be sent to the Turnstile token API.',
     );
   if (target.fullPage && !target.callback)
     throw new CaptchaError(
       'CAPTCHA_UNSUPPORTED',
-      'Doğrulama sonucunun siteye aktarılacağı callback okunamadı.',
+      'Could not read the callback that passes the verification result to the site.',
     );
   if (!target.fullPage && target.tokenCount !== 1)
     throw new CaptchaError(
       'CAPTCHA_UNSUPPORTED',
-      'CAPTCHA cevap alanı tekil olarak doğrulanamadı.',
+      'Could not verify a single CAPTCHA answer field.',
     );
   if (target.provider === 'turnstile')
     return {
@@ -72,7 +76,10 @@ export async function captureCaptcha(page, target) {
         ...(target.dataS ? {recaptchaDataSValue: target.dataS} : {}),
       },
     };
-  throw new CaptchaError('CAPTCHA_UNSUPPORTED', 'Bu CAPTCHA türü otomatik çözüm kapsamı dışında.');
+  throw new CaptchaError(
+    'CAPTCHA_UNSUPPORTED',
+    'This CAPTCHA type is outside the scope of automatic solving.',
+  );
 }
 
 // Called only in the workspace queue, with ownership/authority revalidated by
@@ -104,7 +111,10 @@ export async function applyCaptcha(
       solution.objects.some((i) => !Number.isInteger(i) || i < 0 || i >= target.count) ||
       new Set(solution.objects).size !== solution.objects.length
     )
-      throw new CaptchaError('CAPTCHA_RESPONSE', 'CapSolver görsel seçim yanıtı geçersiz.');
+      throw new CaptchaError(
+        'CAPTCHA_RESPONSE',
+        'The CapSolver image selection response is invalid.',
+      );
     const table = current.frame.locator(gridSelector),
       image = await table.screenshot({type: 'png', timeout: 2500});
     if (captchaHash(image.toString('base64')) !== capture.imageHash) throw stale();
@@ -125,7 +135,7 @@ export async function applyCaptcha(
   }
   if (capture.kind === 'image') {
     if (typeof solution.text !== 'string' || !solution.text.trim() || solution.text.length > 100)
-      throw new CaptchaError('CAPTCHA_RESPONSE', 'CapSolver metin yanıtı geçersiz.');
+      throw new CaptchaError('CAPTCHA_RESPONSE', 'The CapSolver text response is invalid.');
     const image = await current.frame
       .locator('img')
       .nth(current.imageIndex)
@@ -140,12 +150,12 @@ export async function applyCaptcha(
     return {
       state: 'answer_applied',
       message:
-        'CAPTCHA cevabı yazıldı; form gönderilmedi. Site sonucu normal görev akışında doğrulanmalı.',
+        'The CAPTCHA answer was typed; the form was not submitted. Verify the site result in the normal task flow.',
     };
   }
   const token = solution.gRecaptchaResponse ?? solution.token;
   if (typeof token !== 'string' || token.length < 20 || token.length > 20000)
-    throw new CaptchaError('CAPTCHA_RESPONSE', 'CapSolver token yanıtı geçersiz.');
+    throw new CaptchaError('CAPTCHA_RESPONSE', 'The CapSolver token response is invalid.');
   check();
   if (capture.kind === 'turnstile_callback') {
     if (
@@ -157,7 +167,7 @@ export async function applyCaptcha(
     )
       throw new CaptchaError(
         'CAPTCHA_AUTHORITY',
-        'Callback yalnızca doğrulanmış okuma sekmesi erişim kontrolünde çalışabilir.',
+        'The callback may only run during an access check of a verified reading tab.',
       );
     beforeCallback();
     const delivered = await current.parent.evaluate(
@@ -168,7 +178,7 @@ export async function applyCaptcha(
     return {
       state: 'answer_applied',
       callbackInvoked: true,
-      message: 'Çözüm site doğrulamasına aktarıldı; erişimin açılması bekleniyor.',
+      message: 'The solution was passed to the site verification; waiting for access to open.',
     };
   }
   const applied = await current.parent.evaluate(
@@ -190,7 +200,7 @@ export async function applyCaptcha(
   return {
     state: 'answer_applied',
     message:
-      'CAPTCHA cevabı yerleştirildi; site kabulü henüz doğrulanmadı. Gönderim yetkisi varsa normal akışta devam et; önceki gönderimi tekrarlama.',
+      'The CAPTCHA answer was placed; the site has not confirmed acceptance yet. If you are authorized to submit, continue in the normal flow; do not repeat the earlier submission.',
   };
 }
 
@@ -204,7 +214,7 @@ export async function verifyCaptchaGrid(page, target, {check = () => {}} = {}) {
     return 'changed';
   const button = current.target.frame.locator('#recaptcha-verify-button');
   if ((await button.count()) !== 1 || !(await button.isVisible()) || !(await button.isEnabled()))
-    throw new CaptchaError('CAPTCHA_UNSUPPORTED', 'CAPTCHA doğrulama düğmesi hazır değil.');
+    throw new CaptchaError('CAPTCHA_UNSUPPORTED', 'The CAPTCHA verify button is not ready.');
   check();
   await button.click({timeout: 2000});
   return 'checking';

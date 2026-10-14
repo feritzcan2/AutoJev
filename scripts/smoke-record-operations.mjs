@@ -171,15 +171,12 @@ try {
     await waitStart();
     await row
       .locator('[data-column=status] .automation-badge')
-      .getByText('Hazırlanıyor', {exact: true})
+      .getByText('Preparing', {exact: true})
       .waitFor();
-    assert.equal(
-      await row.locator('[data-record-operation=prepare]').textContent(),
-      'Hazırlanıyor',
-    );
-    await page.getByRole('button', {name: 'İşlemdeki kayıtları göster', exact: true}).click();
-    assert.equal(await page.locator('#automation-result-filter').inputValue(), 'active');
-    await page.getByRole('button', {name: 'Tüm kayıtları göster', exact: true}).click();
+    assert.equal(await row.locator('[data-record-operation=prepare]').textContent(), 'Preparing');
+    await page.locator('#automation-result-filter [data-filter=active]').click();
+    assert.equal(await page.locator('[data-filter=active]').getAttribute('aria-pressed'), 'true');
+    await page.locator('#automation-result-filter [data-filter=all]').click();
     const context = await tool('get_automation_context');
     assert.equal(context.assignedRecord.id, item.id);
     assert.equal(context.assignedOperation.kind, 'prepare');
@@ -198,7 +195,7 @@ try {
             evidence: 'Send application',
           },
         }),
-        /giriş formu/,
+        /no sign-in form/,
       );
       const checked = await tool('get_automation_context');
       assert.equal(checked.questions.length, 0);
@@ -211,12 +208,10 @@ try {
       await finish();
       await page.locator('[data-view=board]').click();
       await row.locator('[data-record-question]').click();
-      await page
-        .getByRole('button', {name: 'Giriş durumunu yeniden kontrol et', exact: true})
-        .click();
+      await page.getByRole('button', {name: 'Recheck sign-in status', exact: true}).click();
       await waitStart();
       const resumed = await tool('get_automation_context');
-      assert.match(resumed.questions.at(-1).answer, /gönderme onayı değildir/);
+      assert.match(resumed.questions.at(-1).answer, /does not approve submitting/);
       assert.equal(resumed.assignedRecord.id, item.id);
       await page.locator('[data-view=board]').click();
     }
@@ -234,15 +229,13 @@ try {
     const dialog = page.locator('dialog.automation-record-review');
     await dialog.waitFor({state: 'visible'});
     assert.equal(await dialog.locator('pre').textContent(), proposal);
-    const label = ['Onayla ve başvur', 'Onayla ve mesaj gönder', 'Onayla ve rezervasyon yap'][
-      index
-    ];
+    const label = ['Approve and apply', 'Approve and send message', 'Approve and book'][index];
     await dialog.getByRole('button', {name: label, exact: true}).waitFor();
     await page.screenshot({
       path: path.join(data, workspaces[index].item.title.split(' ')[0] + '-review.png'),
     });
     if (index !== 0) {
-      await dialog.getByRole('button', {name: 'Vazgeç'}).click();
+      await dialog.getByRole('button', {name: 'Cancel', exact: true}).click();
       continue;
     }
     await dialog.getByRole('button', {name: label, exact: true}).click();
@@ -261,7 +254,7 @@ try {
   await page.selectOption('#candidates', id);
   await page.locator('[data-view=board]').click();
   const directRow = page.locator(`[data-result-id="${directItem.id}"]`);
-  assert.equal(await directRow.locator('[data-record-direct=execute]').textContent(), 'Başvur');
+  assert.equal(await directRow.locator('[data-record-direct=execute]').textContent(), 'Apply');
   await directRow.locator('[data-record-operation=prepare]').waitFor({state: 'attached'});
   await directRow.locator('.record-row-menu').click();
   await directRow.locator('[data-record-direct=execute]').click();
@@ -273,7 +266,7 @@ try {
   assert.equal(directContext.assignedOperation.kind, 'execute');
   await assert.rejects(
     tool('reserve_automation_action', {itemId: directItem.id}),
-    /taslağı gerekli/,
+    /action draft from a current run result is required/,
   );
   await tool('browser_open', {url: directItem.url});
   await tool('record_automation_result', {

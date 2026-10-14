@@ -7,12 +7,13 @@ import {readJevBrief} from '../jev/brief.mjs';
 import {jevWaitMsFor, observeClientAbort} from '../jev/execution.mjs';
 import {withAgentDefaults} from '../agents/settings.mjs';
 import {otherScanSearchesPending, scanWork} from '../sources/scan-work.mjs';
-import {siteKey} from '../browser/site-access.mjs';
-import {collectorRun} from '../sources/collectors.mjs';
+import {siteKey, sameSite} from '../browser/site-access.mjs';
+import {collectorRun, collectorExtension} from '../sources/collectors.mjs';
 import {
   collectSourcePage,
   collectorSaved,
   collectorProgress,
+  prepareCollection,
 } from '../sources/collector-worker.mjs';
 import {siteReaderFor, siteExtensionKind} from '../site-extensions/index.mjs';
 import {siteSearchRecipe} from '../site-extensions/search.mjs';
@@ -82,6 +83,7 @@ import {
   recipeValues,
   jevListingItem,
   replayMatches,
+  SCAN_SEARCH_LISTINGS,
 } from '../sources/recipe.mjs';
 import {scopedAutomationTools, collectorHidden, scoreWrites} from './tools.mjs';
 import {pageObservation, researchUrl, unchangedPageContent} from './page-content.mjs';
@@ -91,8 +93,25 @@ import {saveJevCheckpoint, settleJevDetails, releaseBlockedSource} from './jev-s
 import {saveJevProfile, jevProfileView} from '../jev/qualification-profile.mjs';
 // A recipe check reads this many uncertain leads when discovery confirms none.
 const RECIPE_CHECK_DETAILS = 3;
+// One collect_source_page call reads on past at most this many pages that held
+// only listings the workspace already recorded or rejected.
+const KNOWN_COLLECTOR_PAGES = 20;
 // A trial checks access and learns the recipe; it never scans a whole board.
+const samePath = (a, b) => {
+  try {
+    const x = new URL(a),
+      y = new URL(b);
+    return x.origin === y.origin && x.pathname.replace(/\/$/, '') === y.pathname.replace(/\/$/, '');
+  } catch {
+    return false;
+  }
+};
 const TRIAL_SCAN_PAGE_LIMIT = 2;
+// Click targets keep the page's raw spacing; form inspection collapses it.
+const spaced = (label) =>
+  String(label ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 export function automationWorkflow({
   workspace,
@@ -103,6 +122,7 @@ export function automationWorkflow({
   report,
   changed = () => {},
   jevWaitMs = 30000,
+  submitSettleMs = 2000,
   collectorReadPage,
   collectorReadDetail,
 }) {
@@ -137,7 +157,7 @@ export function automationWorkflow({
           (!otherScanSearchesPending(current) &&
             pendingUrls.every((url) => issues.some((i) => i.url === url && i.verified)))
         ) {
-          const summary = `Sayfa yüklenemedi; yeniden denenecek: ${url}`;
+          const summary = `Page failed to load; will retry: ${url}`;
           const retry = holdForTechnicalRetry(db, id, run.id, {
             stop: {
               kind: 'technical',
@@ -152,8 +172,8 @@ export function automationWorkflow({
             report(id, run.id, retry.status, retry.summary, false);
             error.message +=
               retry.status === 'blocked'
-                ? ' Otomatik deneme durduruldu; yeniden başlatmak için kullanıcı müdahalesi gerekli.'
-                : ' Tarama beklemeye alındı; bu turda başka işlem yapma.';
+                ? ' Automatic retries stopped; restarting needs user action.'
+                : ' The scan is on hold; take no other action this round.';
           }
         }
       }
@@ -166,7 +186,7 @@ export function automationWorkflow({
     const issue = db.activeRun(id, run.id).scanIssues?.[attemptedUrl];
     if (issue?.kind === 'browser_error' && issue.attempts >= 3)
       throw Error(
-        `Bu adres tekrar tekrar yüklenemedi: ${attemptedUrl}. Uygulama bu adresi sonra yeniden deneyecek; diğer bekleyen adresleri işle.`,
+        `This address repeatedly failed to load: ${attemptedUrl}. The app will retry it later; process the other pending addresses.`,
       );
     try {
       const response = await browser.call(owner, name, args, session, options);
@@ -177,6 +197,14 @@ export function automationWorkflow({
             .map((c) => c.text)
             .join('\n'),
         );
+      // Whether the latest browser step was stopped by this run's shared site
+      // wait; record recovery only resumes runs that ended on that wait.
+      const wait = response.siteWait ?? response.jevPage?.siteWait,
+        waitBlocked = Boolean(
+          wait && (!run.sourceUrl || sameSite(run.sourceUrl, 'https://' + wait.site)),
+        );
+      if (Boolean(db.run(run.id).siteWaitBlocked) !== waitBlocked)
+        db.putRun({...db.run(run.id), siteWaitBlocked: waitBlocked});
       return name === 'browser_navigate' && response.pageContext
         ? {...response, pageContext: {...response.pageContext, requestedUrl: args.url}}
         : response;
@@ -192,7 +220,9 @@ export function automationWorkflow({
       return null;
     }
   };
-  let lastSnapshot = null;
+  let lastSnapshot = null,
+    lastVerification = null,
+    formSubmits = null;
   // The last page a site reader returned is the Jev task's current page; it
   // has no browser tab, so observing it returns the same read.
   let readerPage = null;
@@ -204,15 +234,24 @@ export function automationWorkflow({
   });
   // Jev pages report their scan position through its own checkpoint. A detail
   // or company page read by Jev never moves the search position or its page cap.
+  // A shared site wait reported by any browser step belongs to this run when it
+  // is the run's own site; the app resumes record work after the wait.
+  const noteSiteWait = (response) => {
+    if (
+      response?.siteWait &&
+      (!run.sourceUrl || sameSite(run.sourceUrl, 'https://' + response.siteWait.site))
+    )
+      db.putRun({...db.run(run.id), siteWait: response.siteWait});
+  };
   const inspect = async ({research = false, response: provided, jev = false} = {}) => {
     snapshots.invalidate();
     const response =
         provided ??
         (await callBrowser(id, 'browser_snapshot', {}, run.id, {completeSnapshot: true})),
       observation = pageObservation(response);
+    lastVerification = response.jevPage?.verification ?? null;
     if (response.siteWait) {
-      if (!run.sourceUrl || siteKey(run.sourceUrl) === response.siteWait.site)
-        db.putRun({...db.run(run.id), siteWait: response.siteWait});
+      noteSiteWait(response);
       const saved = db.get(id),
         sourceState = {...saved.sourceState};
       for (const url of saved.sources)
@@ -221,7 +260,7 @@ export function automationWorkflow({
       db.put({...saved, sourceState});
     }
     if (!observation)
-      return browserError(Error('Sayfa gözlemi alınamadı; tarayıcı bağlantısını kontrol et'));
+      return browserError(Error('Could not get a page observation; check the browser connection'));
     attemptedUrl = observation.url;
     if (research) researchUrl(observation.url);
     else webUrl(observation.url);
@@ -326,9 +365,9 @@ export function automationWorkflow({
       !sourceScan(active) ||
       operationFor(db.template(a.templateId), active.operation).effect !== 'read'
     )
-      throw Error('Sayfa yeniden kontrolü yalnızca salt okuma kaynak taramasında kullanılabilir.');
+      throw Error('Page rechecks are only available in a read-only source scan.');
     let result = await inspect();
-    if (result.url !== url) throw Error('Sekme adresi değişti. Güncel sayfayı kontrol et.');
+    if (result.url !== url) throw Error('The tab address changed. Check the current page.');
     if (
       (result.readiness?.loading || alwaysReopen) &&
       !rechecked.has(url) &&
@@ -460,29 +499,31 @@ export function automationWorkflow({
                 operation !== 'collect_details')
             )
               throw Error(
-                'Bu kaynakta collect_source_page ile CLI verisini al; yalnızca dönen Jev görevini incele.',
+                'For this source, get the CLI data with collect_source_page; review only the returned Jev task.',
               );
             if (
               ['score', 'verify'].includes(active.recordOperation) &&
               !['collect_details', 'classify_results'].includes(operation)
             )
-              throw Error('Bu kayıt görevi yalnızca okuma ve ön değerlendirme yapabilir.');
+              throw Error('This record task can only read and pre-assess.');
             if (active.recordId && ['prepare_search', 'scan_results'].includes(operation))
-              throw Error('Atanmış kayıt görevinde kaynak taraması yapılamaz.');
+              throw Error('An assigned record task cannot scan sources.');
             if (operation === 'fill_form' && (research || (active.sourceUrl && !active.recordId)))
-              throw Error('Form doldurma atanmış kayıt işinde kullanılmalı.');
+              throw Error('Form filling must be used in an assigned record task.');
           },
           assertActive: () => {
             signal.throwIfAborted();
             const current = db.activeRun(id, run.id);
             if ((current.scan?.work?.activeSearchId ?? 'default') !== searchId)
-              throw Error('Etkin arama değişti; Jev görevi durduruldu.');
+              throw Error('The active search changed; the Jev task was stopped.');
           },
           evaluate: (state, questions, abort) => browser.evaluateJev(id, state, questions, abort),
           browser: async (action, parameters) => {
             if (collecting)
-              throw Error('CLI ilan içeriği değerlendirilemedi; API sayfası yeniden alınmalı.');
-            if (!actions[action]) throw Error('Desteklenmeyen Jev işlemi');
+              throw Error(
+                'The CLI listing content could not be assessed; fetch the API page again.',
+              );
+            if (!actions[action]) throw Error('Unsupported Jev operation');
             if (parameters.url) (research ? researchUrl : webUrl)(parameters.url);
             db.spendStep(id, run.id, {research});
             // A site extension's HTTP reader serves its addresses without a tab.
@@ -509,7 +550,7 @@ export function automationWorkflow({
             }
             readerPage = null;
             let response = await callBrowser(id, actions[action], parameters, run.id);
-            if (!response.jevPage) throw Error('Jev görev gözlemi alınamadı');
+            if (!response.jevPage) throw Error('Could not get the Jev task observation');
             if (
               operation === 'scan_results' &&
               ['scroll', 'reveal', 'click'].includes(action) &&
@@ -525,7 +566,7 @@ export function automationWorkflow({
               );
               db.spendStep(id, run.id, {research});
               response = await callBrowser(id, 'browser_snapshot', {}, run.id);
-              if (!response.jevPage) throw Error('Jev görev gözlemi alınamadı');
+              if (!response.jevPage) throw Error('Could not get the Jev task observation');
               response = {...response, jevPage: {...response.jevPage, ...actionState}};
             }
             await inspect({research, response, jev: true});
@@ -589,6 +630,7 @@ export function automationWorkflow({
           ...(active.kind === 'run' && operation === 'scan_results' && active.scanPlan?.pageCap
             ? {
                 pageCap: active.scanPlan.pageCap,
+                listingLimit: SCAN_SEARCH_LISTINGS,
                 pageCapReached: (page) => db.markPageCap(id, run.id, page.url),
               }
             : {}),
@@ -629,7 +671,7 @@ export function automationWorkflow({
       db.get(id).revision !== before.revision ||
       db.get(id).referenceData?.profile?.cvPath !== before.referenceData?.profile?.cvPath
     )
-      throw Error('Profil değişti; güncel puanlama bağlamını oku.');
+      throw Error('The profile changed; read the current scoring context.');
     return value;
   };
   // Recipe check: open the first replayed search with Jev and require at least
@@ -640,7 +682,7 @@ export function automationWorkflow({
     let result = first,
       polls = 0;
     while (result.status === 'running') {
-      if (++polls > 40) throw Error('Reçete kontrolü zaman aşımına uğradı.');
+      if (++polls > 40) throw Error('The recipe check timed out.');
       signal.throwIfAborted();
       result = await executeJev({taskId: result.taskId});
     }
@@ -672,6 +714,16 @@ export function automationWorkflow({
       : null;
   };
   const leadOrder = {listing: 0, uncertain: 1, other: 2};
+  // A collector recipe is checked through the site's API: its first search
+  // must return listings.
+  const checkCollectorRecipe = async (replay) => {
+    const collector = collectorExtension(db.get(id), run.sourceUrl).collector,
+      url = collector.searchUrl(replay.searches[0].url),
+      page = await (collectorReadPage ?? collector.readPage)(url, {signal});
+    return page.jobs.length
+      ? {ok: true, listings: page.jobs.length, pages: 1, url, term: replay.searches[0].term}
+      : {ok: false, reason: 'the first page has no listings', url};
+  };
   const checkRecipe = async (replay, scope) => {
     const first = replay.searches[0];
     let url = first.url;
@@ -691,7 +743,8 @@ export function automationWorkflow({
       );
       if (prepared.issue?.reason === 'access_barrier')
         throw Error(
-          'Erişim engeli: reçete kontrolü yapılamadı. ' + (prepared.issue.siteWait?.message ?? ''),
+          'Access blocked: the recipe check could not run. ' +
+            (prepared.issue.siteWait?.message ?? ''),
         );
       if (prepared.status !== 'completed')
         return {
@@ -707,7 +760,7 @@ export function automationWorkflow({
     );
     if (scan.issue?.reason === 'access_barrier')
       throw Error(
-        'Erişim engeli: reçete kontrolü yapılamadı. ' + (scan.issue.siteWait?.message ?? ''),
+        'Access blocked: the recipe check could not run. ' + (scan.issue.siteWait?.message ?? ''),
       );
     const task = scan.taskId ? db.jevTasks.get(id, scope, scan.taskId) : null,
       items = task?.items ?? [],
@@ -731,7 +784,8 @@ export function automationWorkflow({
       );
       if (details.issue?.reason === 'access_barrier')
         throw Error(
-          'Erişim engeli: reçete kontrolü yapılamadı. ' + (details.issue.siteWait?.message ?? ''),
+          'Access blocked: the recipe check could not run. ' +
+            (details.issue.siteWait?.message ?? ''),
         );
       const read =
           (details.taskId ? db.jevTasks.get(id, scope, details.taskId)?.items : null) ?? [],
@@ -770,7 +824,7 @@ export function automationWorkflow({
       current = db.activeRun(id, run.id);
     if (collecting) {
       if (!saved.skipped && saved.assessment?.runId !== run.id)
-        throw Error('Kayıt başka bir görevde; bu değerlendirme henüz kaydedilmedi.');
+        throw Error('The record is in another task; this assessment was not saved yet.');
       collectorSaved(db, current, input.url, {skipped: saved.skipped});
     } else if (sourceScan(current) && current.kind === 'run') {
       const done = [input.url, saved.url, saved.key].filter((url) =>
@@ -783,7 +837,7 @@ export function automationWorkflow({
           {
             pendingUrls: [],
             processedUrls: done,
-            reason: saved.skipped ? saved.message : 'Kayıt kaydedildi.',
+            reason: saved.skipped ? saved.message : 'Record saved.',
             ...(current.scanPlan?.checkpoint?.cursor
               ? {cursor: current.scanPlan.checkpoint.cursor}
               : {}),
@@ -793,33 +847,54 @@ export function automationWorkflow({
     }
     return recordReceipt(saved);
   };
+  // A page of already known listings leaves nothing to review. Read on in the
+  // same call so an empty result never looks like a stalled collector.
   const collectNextPage = async () => {
-    let collected;
-    try {
-      collected = await collectSourcePage(db, run.id, {
-        signal,
-        readPage: collectorReadPage,
-        readDetail: collectorReadDetail,
-      });
-    } catch (error) {
-      signal.throwIfAborted();
-      const current = db.activeRun(id, run.id);
-      db.putRun({...current, collectorError: String(error.message).slice(0, 2000)});
-      throw error;
+    for (let page = 1; ; page++) {
+      let collected;
+      try {
+        collected = await collectSourcePage(db, run.id, {
+          signal,
+          readPage: collectorReadPage,
+          readDetail: collectorReadDetail,
+        });
+      } catch (error) {
+        signal.throwIfAborted();
+        const current = db.activeRun(id, run.id);
+        db.putRun({...current, collectorError: String(error.message).slice(0, 2000)});
+        throw error;
+      }
+      if (!collected.issue && db.run(run.id).collectorError)
+        db.putRun({...db.run(run.id), collectorError: null});
+      changed(id);
+      if (collected.complete || !collected.taskId) return collected;
+      const result = {
+        ...(await executeJev({taskId: collected.taskId})),
+        collector: db.activeRun(id, run.id).collector,
+        progress: collectorProgress(db.run(run.id)),
+      };
+      // Listings whose details stayed unreadable remain pending in the collector;
+      // a page holding nothing else to review is read on like a known page.
+      const unreadable =
+        result.unavailable > 0 && result.unavailable === result.total && !result.classified;
+      if (!unreadable && (result.status !== 'completed' || result.total || result.issue))
+        return result.unavailable
+          ? {
+              ...result,
+              next: `${result.next} Unreadable listings stay pending in the collector; after this batch call collect_source_page for the next page.`,
+            }
+          : result;
+      if (page >= KNOWN_COLLECTOR_PAGES)
+        return {
+          ...result,
+          issue: undefined,
+          next: `The last ${page} pages held no new listings to review. Call collect_source_page again for the next page.`,
+        };
     }
-    if (!collected.issue && db.run(run.id).collectorError)
-      db.putRun({...db.run(run.id), collectorError: null});
-    changed(id);
-    if (collected.complete || !collected.taskId) return collected;
-    return {
-      ...(await executeJev({taskId: collected.taskId})),
-      collector: db.activeRun(id, run.id).collector,
-      progress: collectorProgress(db.run(run.id)),
-    };
   };
   const performCall = async (owner, session, name, args) => {
     if (owner !== id || session !== run.id || signal.aborted)
-      throw Error('Otomasyon oturumu geçersiz');
+      throw Error('Invalid automation session');
     let active = db.activeRun(id, run.id);
     const a = db.get(id),
       sourceTask =
@@ -829,7 +904,9 @@ export function automationWorkflow({
         !active.recordOperation;
     let result;
     if (collecting && collectorHidden.has(name))
-      throw Error('Bu kaynakta veriyi collect_source_page üzerinden al ve Jev grubunu incele.');
+      throw Error(
+        'For this source, get the data through collect_source_page and review the Jev batch.',
+      );
     // Jev owns the browser and selected queue while its request is pending.
     // Read-only inspection stays available; mutations wait for the same task.
     if (
@@ -860,7 +937,7 @@ export function automationWorkflow({
       changed(id);
     }
     if (active.recordOperation === 'score' && scoreWrites.has(name))
-      throw Error('Puanlama görevi yalnızca değerlendirme kaydedebilir');
+      throw Error('A scoring task can only save assessments');
     if (workspaceTableTools.some((t) => t.name === name)) {
       const value = workspaceTableCall(db.store, id, name, args);
       changed(id);
@@ -868,14 +945,14 @@ export function automationWorkflow({
     }
     switch (name) {
       case 'collect_source_page': {
-        if (!collecting) throw Error('Bu kaynak için CLI extension atanmadı.');
+        if (!collecting) throw Error('No CLI extension is assigned to this source.');
         result = await collectNextPage();
         break;
       }
       case 'read_scoring_profile': {
         const source =
           args.source === 'documents' ? await scoringDocuments() : scoringSources(a)[args.source];
-        if (!source) throw Error('Geçerli puanlama kaynağı seç.');
+        if (!source) throw Error('Choose a valid scoring source.');
         const offset = args.offset ?? 0,
           limit = args.limit ?? 6000;
         if (
@@ -886,7 +963,7 @@ export function automationWorkflow({
           limit < 1 ||
           limit > 6000
         )
-          throw Error('Geçersiz kaynak metin aralığı.');
+          throw Error('Invalid source text range.');
         return {
           ...source,
           source: args.source,
@@ -930,7 +1007,7 @@ export function automationWorkflow({
             .list(id, scope)
             .find((t) => t.items.some((i) => i.evidenceId === evidence.id));
           if (!task || task.searchId !== searchId)
-            throw Error('Jev özeti etkin aramadaki bir ilana ait olmalı.');
+            throw Error('The Jev brief must belong to a listing in the active search.');
           return readJevBrief({
             store: db.jevTasks,
             owner: id,
@@ -943,7 +1020,7 @@ export function automationWorkflow({
             assertActive: () => {
               const current = db.activeRun(id, run.id);
               if ((current.scan?.work?.activeSearchId ?? 'default') !== searchId)
-                throw Error('Etkin arama değişti; özet durduruldu.');
+                throw Error('The active search changed; the brief was stopped.');
             },
             evaluate: (state, questions, abort) => browser.evaluateJev(id, state, questions, abort),
           });
@@ -1002,22 +1079,22 @@ export function automationWorkflow({
         break;
       case 'ask_workspace_question': {
         if (batchScoring(active) && !args.recordId)
-          throw Error('Toplu puanlamada soru için recordId belirt');
+          throw Error('In batch scoring, give a recordId for the question');
         if (active.recordId && args.recordId && !taskHasRecord(active, args.recordId))
-          throw Error('Soru atanmış kayda ait olmalı');
+          throw Error('The question must belong to an assigned record');
         let accessCheck;
         if (active.kind !== 'interview' && asksForLogin(args)) {
           const previous = args.accessCheck && snapshots.get(args.accessCheck.snapshotId);
           if (!previous)
             throw Error(
-              'Giriş sorusundan önce gerçek başvuru/görev bağlantısını takip et, browser_read ile kontrol et ve accessCheck ekle.',
+              'Before a login question, follow the actual apply/task link, check it with browser_read and add accessCheck.',
             );
           validateLoginQuestion(previous, args.accessCheck);
           const fresh = await inspect(),
             page = snapshots.get(fresh.snapshot.id);
           if (page.url !== previous.url)
             throw Error(
-              'Giriş kontrolü sırasında sayfa değişti. Güncel sayfayı browser_read ile incele ve göreve devam et; eski giriş engelini tekrarlama.',
+              'The page changed during the login check. Inspect the current page with browser_read and continue the task; do not repeat the old login blocker.',
             );
           accessCheck = {
             ...validateLoginQuestion(page, {...args.accessCheck, snapshotId: page.id}),
@@ -1050,19 +1127,19 @@ export function automationWorkflow({
         });
       case 'complete_scan_search': {
         const page = args.snapshotId ? snapshots.get(args.snapshotId) : snapshots.current;
-        if (!page) throw Error('Önce son sonuç sayfasını gözle.');
+        if (!page) throw Error('Observe the latest results page first.');
         result = db.completeScanSearch(id, run.id, args.completion, page);
         break;
       }
       case 'save_jev_profile': {
-        if (!sourceTask) throw Error('Jev profili yalnızca kaynak görevinde yazılır.');
+        if (!sourceTask) throw Error('The Jev profile is only written in a source task.');
         result = saveJevProfile(db, id, args.profile, 'agent', await scoringDocuments());
         changed(id);
         break;
       }
       case 'save_source_recipe': {
         if (!active.sourceUrl || active.recordId || !['trial', 'run'].includes(active.kind))
-          throw Error('Reçete yalnızca atanmış kaynak görevinde kaydedilir.');
+          throw Error('A recipe is only saved in an assigned source task.');
         const sourceUrl = active.sourceUrl,
           siteSearch = siteExtensionKind(sourceUrl, a.templateId)?.search ?? null;
         let recipe = normalizeSourceRecipe(args),
@@ -1072,10 +1149,14 @@ export function automationWorkflow({
         // pagination and ordering. Discovery stays open for a changed site.
         if (siteSearch && recipe.entry.kind === 'search_form')
           throw Error(
-            'Bu sitenin sonuç adresi site eklentisinde tanımlı. Reçeteyi siteSearch.template ile url_template olarak kaydet; yalnızca terimleri ve siteSearch.filters değerlerini seç.',
+            'This site’s results address is defined in its site extension. Save the recipe as url_template with siteSearch.template; choose only the terms and siteSearch.filters values.',
           );
         if (siteSearch && recipe.entry.kind === 'url_template')
           ({recipe, changed: adjusted} = siteSearchRecipe(siteSearch, recipe));
+        if (collecting && recipe.entry.kind !== 'url_template')
+          throw Error(
+            'This source is read by its collector: save a url_template recipe from siteSearch.template.',
+          );
         if (recipe.entry.kind === 'discovery') {
           db.learnSourceRecipe(id, sourceUrl, recipe, {runId: run.id, verified: false});
           db.putRun({...db.activeRun(id, run.id), recipeSaved: true});
@@ -1089,14 +1170,16 @@ export function automationWorkflow({
         const checks = active.recipeChecks ?? 0;
         if (checks >= 3)
           throw Error(
-            'Bu turda 3 reçete kontrolü yapıldı. Doğrulanamıyorsa entry.kind=discovery ile kısa bir not kaydet ve turu normal şekilde bitir.',
+            '3 recipe checks were done this round. If it cannot be verified, save a short note with entry.kind=discovery and finish the round normally.',
           );
         db.putRun({...db.activeRun(id, run.id), recipeChecks: checks + 1});
         const replay = recipeReplay(recipe, recipeValues(a, sourceUrl)),
-          check = await checkRecipe(replay, active.taskId ?? run.id);
+          check = collecting
+            ? await checkCollectorRecipe(replay)
+            : await checkRecipe(replay, active.taskId ?? run.id);
         if (!check.ok)
           throw Error(
-            `Reçete doğrulanamadı: ${check.reason} (${check.url}). ${2 - checks} kontrol hakkı kaldı. ${recipe.terms ? '' : 'Kaynak sorgusu bir anahtar kelime değilse terms ile somut arama terimleri ver. '}Şablonu veya form etiketlerini düzelt; kalıcı bir yöntem yoksa entry.kind=discovery kaydet.`,
+            `Recipe could not be verified: ${check.reason} (${check.url}). ${2 - checks} check(s) left. ${recipe.terms ? '' : 'If the source query is not a keyword, give concrete search terms with terms. '}Fix the template or form labels; if there is no stable method, save entry.kind=discovery.`,
           );
         db.learnSourceRecipe(id, sourceUrl, recipe, {
           runId: run.id,
@@ -1105,6 +1188,8 @@ export function automationWorkflow({
           pages: check.pages,
         });
         db.putRun({...db.activeRun(id, run.id), recipeSaved: true});
+        // The collection restarts with the saved searches; known listings are skipped.
+        if (collecting) prepareCollection(db, db.activeRun(id, run.id), db.get(id));
         result = {
           saved: true,
           status: 'verified',
@@ -1129,8 +1214,9 @@ export function automationWorkflow({
                 note: 'Discovery could not confirm the result links; reading details proved them.',
               }
             : {}),
-          next:
-            active.kind === 'trial'
+          next: collecting
+            ? 'Recipe verified and saved. Call collect_source_page; the scan starts over with the saved searches.'
+            : active.kind === 'trial'
               ? 'Recipe verified and saved. Read one representative detail from the found listings, then finish the trial.'
               : 'Recipe verified and saved. Continue the scan from the found listings with collect_details using the returned scan task.',
         };
@@ -1156,11 +1242,14 @@ export function automationWorkflow({
         return context.capture(db.result(id, args.itemId));
       case 'save_automation_plan': {
         if (active.kind !== 'interview')
-          throw Error('Plan yalnızca kurulum sohbetinde değişebilir');
-        const plan = {
-          ...args,
-          criteria: Object.fromEntries(args.criteria.map((f) => [f.key, f.value])),
-        };
+          throw Error('The plan can only change in the setup conversation');
+        const {addSources, removeSources, ...fields} = args,
+          plan = {
+            ...fields,
+            criteria: Object.fromEntries(args.criteria.map((f) => [f.key, f.value])),
+          };
+        if (addSources?.length || removeSources?.length)
+          plan.sources = db.proposedSources(id, addSources, removeSources);
         result = isConversation(active)
           ? db.saveConversationPlan(id, run.id, plan)
           : db.save(id, plan, {agent: true});
@@ -1179,7 +1268,8 @@ export function automationWorkflow({
         const response = await callBrowser(id, 'browser_navigate', {url}, run.id);
         if (response.isError)
           throw Error(
-            'Araştırma sayfası açılamadı: ' + JSON.stringify(response.content).slice(0, 1000),
+            'The research page could not be opened: ' +
+              JSON.stringify(response.content).slice(0, 1000),
           );
         result = await inspect({research: true, ...(response.pageContext ? {response} : {})});
         break;
@@ -1225,12 +1315,21 @@ export function automationWorkflow({
         // The app knows the assigned record and the observed page; the agent
         // names them only when it reports on something else.
         args = {itemId: active.recordId ?? undefined, url: snapshots.current?.url, ...args};
-        if (!args.itemId) throw Error('itemId gerekli: bu görevde atanmış tek kayıt yok');
-        if (!args.url) throw Error('Önce sonuç sayfasını tarayıcıda gözlemle');
+        // The current page named without its query or hash is still that page.
+        if (snapshots.current?.url && args.url && samePath(args.url, snapshots.current.url))
+          args.url = snapshots.current.url;
+        if (!args.itemId)
+          throw Error('itemId is required: this task has no single assigned record');
+        if (!args.url) throw Error('Observe the results page in the browser first');
+        if (args.status === 'closed') {
+          result = db.closeRecord(id, run.id, args.itemId, args, snapshots.current);
+          break;
+        }
         let page, fresh;
         if (args.status === 'not_submitted') {
           const previous = snapshots.get(args.notSubmittedProof?.snapshotId);
-          if (previous.url !== args.url) throw Error('Kanıt adresi güncel sayfayla eşleşmiyor');
+          if (previous.url !== args.url)
+            throw Error('The evidence address does not match the current page');
           fresh = await inspect();
           page = snapshots.get(fresh.snapshot.id);
         }
@@ -1244,7 +1343,7 @@ export function automationWorkflow({
             saved: false,
             error: error.message,
             message:
-              'Kanıt kabul edilmedi; kayıt değiştirilmedi. Dönen güncel sayfayı ve snapshot.id değerini kullan. Alıntıyı görünür metinden aynen al; ayraç veya eksik metin ekleme.',
+              'Evidence not accepted; the record was not changed. Use the returned current page and snapshot.id. Copy the quote verbatim from the visible text; do not add separators or partial text.',
           };
         }
         break;
@@ -1256,7 +1355,9 @@ export function automationWorkflow({
         snapshots.invalidate();
         const response = await callBrowser(id, 'browser_navigate', {url}, run.id);
         if (response.isError)
-          throw Error('Sayfa açılamadı: ' + JSON.stringify(response.content).slice(0, 1000));
+          throw Error(
+            'The page could not be opened: ' + JSON.stringify(response.content).slice(0, 1000),
+          );
         result = await inspect({research, ...(response.pageContext ? {response} : {})});
         if (
           result.readiness?.loading &&
@@ -1275,12 +1376,10 @@ export function automationWorkflow({
             (active.recordOperation && name !== 'browser_jev_close_tab')
           )
         )
-          throw Error(
-            'Sekme devri yalnızca kaynak taraması veya atanmış kayıt görevinde kullanılabilir',
-          );
+          throw Error('Tab handover is only available in a source scan or an assigned record task');
         if (name !== 'browser_jev_tabs') snapshots.invalidate();
         const response = await callBrowser(id, name, args, run.id);
-        if (response.isError) throw Error('Kaynak sekmesi işlemi tamamlanamadı');
+        if (response.isError) throw Error('The source tab operation could not complete');
         result = name === 'browser_jev_use_tab' ? await inspect({response}) : response;
         break;
       }
@@ -1306,14 +1405,24 @@ export function automationWorkflow({
         db.spendStep(id, run.id, {research});
         snapshots.invalidate();
         result = await callBrowser(id, name, {}, run.id);
+        // The submit buttons Jev found on an application form (required fields
+        // or uploads): a click on one of them on this page is the submission,
+        // also when its label is "Apply" or "Bewerben".
+        formSubmits =
+          result.fields?.some((field) => field.required) || result.uploads?.length
+            ? {
+                url: result.url,
+                labels: new Set((result.submitControls ?? []).map((c) => spaced(c.label))),
+              }
+            : null;
         break;
       }
       case 'browser_upload_document': {
         if (active.recordOperation !== 'execute' || !active.recordId)
-          throw Error('Belge yalnızca bir kayıt başvuru görevinde yüklenebilir');
+          throw Error('A document can only be uploaded in a record application task');
         const item = db.result(id, active.recordId),
           base = workspace && (await realpath(workspace));
-        if (!base) throw Error('Çalışma alanı dosya dizini bulunamadı');
+        if (!base) throw Error('Workspace file directory not found');
         const file = await realpath(path.resolve(base, args.filePath)),
           relative = path.relative(base, file);
         if (
@@ -1321,7 +1430,7 @@ export function automationWorkflow({
           path.isAbsolute(relative) ||
           !(await stat(file)).isFile()
         )
-          throw Error('Yalnızca bu çalışma alanındaki belgeler yüklenebilir');
+          throw Error('Only documents in this workspace can be uploaded');
         // Any document the user added to this workspace may be uploaded; there
         // is no draft that has to name it first.
         void item;
@@ -1334,7 +1443,10 @@ export function automationWorkflow({
           run.id,
         );
         if (response.isError)
-          throw Error('Belge yüklenemedi: ' + JSON.stringify(response.content).slice(0, 1000));
+          throw Error(
+            'The document could not be uploaded: ' +
+              JSON.stringify(response.content).slice(0, 1000),
+          );
         result = {...(await inspect()), action: response.action};
         break;
       }
@@ -1362,7 +1474,8 @@ export function automationWorkflow({
           const response = await callBrowser(id, tool, parameters, run.id);
           if (response.isError)
             throw Error(
-              'Tarayıcı adımı tamamlanamadı: ' + JSON.stringify(response.content).slice(0, 1000),
+              'The browser step could not complete: ' +
+                JSON.stringify(response.content).slice(0, 1000),
             );
           result =
             args.operation === 'options'
@@ -1375,7 +1488,7 @@ export function automationWorkflow({
         let operation;
         if (args.operation === 'click') operation = 'browser_click';
         else if (args.operation === 'type') {
-          if (typeof args.text !== 'string') throw Error('Yazılacak metin gerekli');
+          if (typeof args.text !== 'string') throw Error('Text to type is required');
           operation = 'browser_type';
           parameters.text = args.text;
           parameters.submit = false;
@@ -1383,43 +1496,93 @@ export function automationWorkflow({
           const value = typeof args.text === 'string' ? args.text : args.option;
           if (typeof value !== 'string')
             throw Error(
-              'select için text gerekli: seçeneğin tam etiketi veya değeri (browser_interact operation=options ile listele)',
+              'select requires text: the option’s exact label or value (list them with browser_interact operation=options)',
             );
           operation = 'browser_select_option';
           parameters.values = [value];
         } else if (args.operation === 'press') {
-          if (!args.key?.trim()) throw Error('Tuş gerekli');
+          if (!args.key?.trim()) throw Error('A key is required');
           operation = 'browser_target_press';
           parameters.ref = args.ref;
           parameters.key = args.key;
         } else if (args.operation === 'autocomplete') {
+          // Text alone names the wanted option; without an exact match the
+          // tool returns the full suggestion list and selects nothing.
+          const option = args.option ?? (args.text?.trim() ? args.text : undefined);
           operation =
-            args.option === undefined ? 'browser_jev_list_suggestions' : 'browser_jev_autocomplete';
+            option === undefined ? 'browser_jev_list_suggestions' : 'browser_jev_autocomplete';
           parameters.controlId = args.ref;
           if (args.text !== undefined) parameters.text = args.text;
-          if (args.option !== undefined) parameters.option = args.option;
-        } else throw Error('Desteklenmeyen etkileşim');
+          if (option !== undefined) parameters.option = option;
+        } else throw Error('Unsupported interaction');
         // The final submit click is gated by the app: execute task, reservation
         // first, one click. The fresh page is then classified from evidence.
         const submitLabel =
           args.operation === 'click' ? clickTargetLabel(snapshots.current, args.ref) : null;
-        if (isSubmitLabel(submitLabel)) assertSubmitAllowed(db.activeRun(id, run.id), submitLabel);
-        const beforeSubmit = isSubmitLabel(submitLabel) ? (snapshots.current?.text ?? '') : '';
+        const submitClick =
+          isSubmitLabel(submitLabel) ||
+          (Boolean(submitLabel) &&
+            formSubmits?.labels.has(spaced(submitLabel)) &&
+            formSubmits.url === (await browser.currentUrl(id)));
+        if (submitClick) assertSubmitAllowed(db.activeRun(id, run.id), submitLabel);
+        const beforeSubmit = submitClick ? (snapshots.current?.text ?? '') : '';
         snapshots.invalidate();
         const response = await callBrowser(id, operation, parameters, run.id);
         if (response.isError)
           throw Error(
-            'Tarayıcı adımı tamamlanamadı; sonucu kontrol et: ' +
+            'The browser step could not complete; check the result: ' +
               JSON.stringify(response.content).slice(0, 1000),
           );
-        result = {
-          ...(await inspect({research})),
-          ...(response.action ? {action: response.action} : {}),
-        };
-        if (isSubmitLabel(submitLabel)) {
-          const active = db.run(run.id),
+        noteSiteWait(response);
+        const openedTab = response.action?.openedTab;
+        if (openedTab?.tabId) {
+          // The click opened the next page in a new tab; continue there.
+          const switched = await callBrowser(
+            id,
+            'browser_jev_use_tab',
+            {tabId: openedTab.tabId},
+            run.id,
+          );
+          result = {
+            ...(await inspect({research, response: switched})),
+            action: {
+              ...response.action,
+              message:
+                'The click opened a new tab. This observation is that new tab; continue here. The previous tab stays open.',
+            },
+          };
+        } else
+          result = {
+            ...(await inspect({research})),
+            ...(response.action ? {action: response.action} : {}),
+          };
+        if (response.siteWait && active.recordId)
+          result.siteWaitGuidance =
+            'This site asked to slow down, so the step was not executed. Do not retry it now. Call finish_automation_run with status=blocked; the app resumes this record after the wait from the same tab.';
+        if (submitClick) {
+          let outcome = classifySubmission(snapshots.current?.text ?? '', beforeSubmit);
+          // A confirmation often renders a moment after the click: look twice more.
+          for (
+            let i = 0;
+            i < 2 && outcome.outcome === 'unknown' && !openedTab?.tabId && !response.siteWait;
+            i++
+          ) {
+            await pause(submitSettleMs, undefined, {signal});
+            result = {
+              ...(await inspect({research})),
+              ...(response.action ? {action: response.action} : {}),
+            };
+            outcome = classifySubmission(snapshots.current?.text ?? '', beforeSubmit);
+          }
+          // A CAPTCHA the user must solve stopped the submission on this page.
+          const challenge =
+              outcome.outcome !== 'confirmed' && lastVerification?.state === 'required'
+                ? String(lastVerification.evidence ?? 'CAPTCHA')
+                : null,
+            active = db.run(run.id),
             submission = {
-              ...classifySubmission(snapshots.current?.text ?? '', beforeSubmit),
+              ...outcome,
+              ...(challenge ? {verification: challenge} : {}),
               label: submitLabel,
               attempts: (active.submission?.attempts ?? 0) + 1,
               at: db.now(),
@@ -1451,7 +1614,7 @@ export function automationWorkflow({
           report,
         });
       default:
-        throw Error('Bilinmeyen otomasyon aracı');
+        throw Error('Unknown automation tool');
     }
     changed(id);
     return name === 'complete_scan_search' ? scanToolOutput(result, {summary: true}) : result;
@@ -1463,7 +1626,7 @@ export function automationWorkflow({
         ? recordToolGuard({db, run, report, changed})
         : undefined,
     assertOwner: (owner) => {
-      if (owner !== id) throw Error('Otomasyon oturumu geçersiz');
+      if (owner !== id) throw Error('Invalid automation session');
       db.get(owner);
     },
     tools: scopedTools,
@@ -1509,7 +1672,7 @@ export async function launchAutomationWorker({
     token;
   const close = async () => {
     if (closed) return;
-    if (closing) throw Error('Oturum kapanışı sürüyor');
+    if (closing) throw Error('The session is closing');
     closing = true;
     try {
       await agents.stop(automation.id, workerId, {
@@ -1563,7 +1726,7 @@ export async function launchAutomationWorker({
     // A tool call the client dropped before the answer teaches the real limit.
     flow.clientAborted = (elapsedMs) => observeClientAbort(provider, elapsedMs);
     token = mcp.grant(automation.id, run.id, workerId, flow);
-    if (signal.aborted) throw Error('Çalışma iptal edildi');
+    if (signal.aborted) throw Error('Run cancelled');
     const protocol = persistent
       ? null
       : automationProtocol(flow.tools, [

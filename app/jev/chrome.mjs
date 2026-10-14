@@ -20,8 +20,8 @@ const exec = (file, args, {signal, windowsHide}) =>
 
 export function extensionMissingMessage(directory = extensionDirectory()) {
   return (
-    'AutoJev Chrome eklentisi seçili profilde kurulu ve etkin değil. Chrome’da chrome://extensions ' +
-    'sayfasını aç, Geliştirici modunu aç ve “Paketlenmemiş öğe yükle” ile şu klasörü seç: ' +
+    'The AutoJev Chrome extension is not installed and enabled in the selected profile. In Chrome, open ' +
+    'chrome://extensions, turn on Developer mode and choose “Load unpacked” with this folder: ' +
     directory
   );
 }
@@ -49,7 +49,7 @@ export async function extensionInstalledInProfile(
 
 export async function resolveChromeProfile(selected) {
   if (selected?.directory) {
-    if (!/^[\w -]{1,100}$/.test(selected.directory)) throw Error('Geçersiz Chrome profili.');
+    if (!/^[\w -]{1,100}$/.test(selected.directory)) throw Error('Invalid Chrome profile.');
     return selected.directory;
   }
   const state = JSON.parse(
@@ -74,10 +74,11 @@ export async function openChromeUrl(
   const state = JSON.parse(await readFile(path.join(directory, 'Local State'), 'utf8'));
   const profile = selected?.directory ?? state.profile?.last_used ?? 'Default';
   if (!/^[\w -]{1,100}$/.test(profile) || !state.profile?.info_cache?.[profile])
-    throw Error('Seçili mevcut Chrome profili bulunamadı.');
+    throw Error('The selected existing Chrome profile was not found.');
   const args = [`--profile-directory=${profile}`, url];
   const executable = await findChromeImpl();
-  if (!executable) throw Error('Google Chrome bulunamadı. Chrome’u kur ve en az bir kez aç.');
+  if (!executable)
+    throw Error('Google Chrome was not found. Install Chrome and open it at least once.');
   signal?.throwIfAborted();
   await execImpl(executable, args, {windowsHide: true, signal});
 }

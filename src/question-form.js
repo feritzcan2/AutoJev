@@ -16,10 +16,10 @@ export function questionForm(candidate, q, submit) {
   formFields.className = 'question-fields';
   const freeBox = node('div'),
     freeInput = node('textarea'),
-    freeLabel = node('label', 'Yanıtını yazarak ver');
-  freeInput.setAttribute('aria-label', 'Yanıtını yazarak ver');
+    freeLabel = node('label', 'Write your answer');
+  freeInput.setAttribute('aria-label', 'Write your answer');
   freeInput.maxLength = 10000;
-  freeInput.placeholder = 'Cevabını kendi cümlelerinle yaz…';
+  freeInput.placeholder = 'Write your answer in your own words…';
   freeLabel.append(freeInput);
   freeBox.append(freeLabel);
   let mode = 'form';
@@ -65,18 +65,16 @@ export function questionForm(candidate, q, submit) {
       const select = node('select');
       select.setAttribute('aria-label', f.label);
       select.required = f.required;
-      select.append(new Option('Seçiniz…', ''));
-      for (const option of f.type === 'boolean' ? ['Evet', 'Hayır'] : f.options)
-        select.append(
-          new Option(option, f.type === 'boolean' ? String(option === 'Evet') : option),
-        );
+      select.append(new Option('Select…', ''));
+      for (const option of f.type === 'boolean' ? ['Yes', 'No'] : f.options)
+        select.append(new Option(option, f.type === 'boolean' ? String(option === 'Yes') : option));
       let customValue = '__custom_answer__';
       while ([...select.options].some((option) => option.value === customValue)) customValue += '_';
-      select.append(new Option('Kendim yazacağım', customValue));
+      select.append(new Option('I’ll write my own', customValue));
       const state = (customDraft[f.id] ??= {enabled: false, text: ''}),
         customInput = node('textarea');
-      customInput.setAttribute('aria-label', `${f.label} — kendi yanıtın`);
-      customInput.placeholder = 'Cevabını kendi cümlelerinle yaz…';
+      customInput.setAttribute('aria-label', `${f.label} — your own answer`);
+      customInput.placeholder = 'Write your answer in your own words…';
       customInput.maxLength = 5000;
       customInput.value = state.text ?? '';
       if (state.enabled) select.value = customValue;
@@ -88,7 +86,7 @@ export function questionForm(candidate, q, submit) {
         customInput.disabled = !state.enabled;
         customInput.required = !!f.required && state.enabled;
         customInput.setCustomValidity(
-          state.enabled && f.required && !customInput.value.trim() ? 'Yanıtını yaz.' : '',
+          state.enabled && f.required && !customInput.value.trim() ? 'Write your answer.' : '',
         );
       };
       select.onchange = () => {
@@ -130,14 +128,14 @@ export function questionForm(candidate, q, submit) {
   const error = node('p');
   error.className = 'question-form-error';
   error.setAttribute('role', 'alert');
-  const button = node('button', q.fields ? 'Yanıtları gönder' : 'Yanıtla');
+  const button = node('button', q.fields ? 'Send answers' : 'Answer');
   button.className = 'primary';
   button.type = 'submit';
   if (q.fields) {
     const modes = node('div');
     modes.className = 'question-answer-modes';
-    const structured = node('button', 'Formu doldur'),
-      written = node('button', 'Yazarak yanıtla');
+    const structured = node('button', 'Fill in the form'),
+      written = node('button', 'Answer in writing');
     for (const b of [structured, written]) b.type = 'button';
     const setMode = (value) => {
       mode = value;
@@ -149,7 +147,7 @@ export function questionForm(candidate, q, submit) {
       freeInput.required = mode === 'text';
       structured.setAttribute('aria-pressed', String(mode === 'form'));
       written.setAttribute('aria-pressed', String(mode === 'text'));
-      button.textContent = mode === 'text' ? 'Yanıtı gönder' : 'Yanıtları gönder';
+      button.textContent = mode === 'text' ? 'Send answer' : 'Send answers';
       error.textContent = '';
       try {
         localStorage.setItem(modeKey, mode);
@@ -179,7 +177,7 @@ export function questionForm(candidate, q, submit) {
     const values = Object.fromEntries([...readers].map(([id, read]) => [id, read()]));
     for (const f of fields)
       if (mode !== 'text' && f.required && Array.isArray(values[f.id]) && !values[f.id].length) {
-        error.textContent = `${f.label}: en az bir seçenek seç`;
+        error.textContent = `${f.label}: select at least one option`;
         return;
       }
     // Mixed choice/written replies use the existing free-text answer path so a
@@ -190,7 +188,7 @@ export function questionForm(candidate, q, submit) {
           .filter((f) => values[f.id] !== null && values[f.id] !== undefined && values[f.id] !== '')
           .map((f) => {
             const value = values[f.id];
-            return `${f.label}: ${typeof value === 'boolean' ? (value ? 'Evet' : 'Hayır') : Array.isArray(value) ? value.join(', ') : value}`;
+            return `${f.label}: ${typeof value === 'boolean' ? (value ? 'Yes' : 'No') : Array.isArray(value) ? value.join(', ') : value}`;
           })
           .join('\n');
     button.disabled = true;
@@ -216,7 +214,7 @@ export function questionForm(candidate, q, submit) {
     }
   };
   if (asksForLogin(q)) {
-    const recheck = node('button', 'Giriş durumunu yeniden kontrol et');
+    const recheck = node('button', 'Recheck sign-in status');
     recheck.type = 'button';
     recheck.className = 'quiet';
     recheck.onclick = async () => {
@@ -226,7 +224,7 @@ export function questionForm(candidate, q, submit) {
       error.textContent = '';
       try {
         await submit(
-          'Güncel giriş durumunu yeniden kontrol et. İlanı aç, gerçek başvuru bağlantısını takip et ve ulaşılan sayfayı yeniden oku. Eski giriş engelini varsayma. Bu yanıt giriş yapıldığına dair doğrulama veya başvuru gönderme onayı değildir.',
+          'Recheck the current sign-in status. Open the listing, follow the real application link and read the page you reach again. Do not assume the earlier sign-in block still applies. This reply does not confirm that sign-in happened and does not approve submitting the application.',
         );
         localStorage.removeItem(key);
         localStorage.removeItem(modeKey);

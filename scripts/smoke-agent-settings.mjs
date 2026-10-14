@@ -27,7 +27,7 @@ try {
   await page.locator('[data-view=agent]').click();
   const form = page.locator('#agent-settings-form'),
     field = form.locator('[name=contextCompactTokens]'),
-    save = form.getByRole('button', {name: 'Kaydet', exact: true});
+    save = form.getByRole('button', {name: 'Save', exact: true});
   const snapshot = () => page.evaluate((id) => window.jobloop.workspaceSnapshot(id), owner.id);
   const initial = await snapshot();
   // Periodic snapshots must not overwrite the draft, and editing must not save it.
@@ -44,7 +44,7 @@ try {
   await page.waitForFunction(
     () =>
       !document.querySelector('#agent-settings-form').inert &&
-      document.querySelector('#agent-settings-status').textContent.startsWith('Kaydedildi.'),
+      document.querySelector('#agent-settings-status').textContent.startsWith('Saved.'),
   );
   assert.equal((await snapshot()).workspace.agentSettings.contextCompactTokens, 60);
   assert.equal(await page.locator('#agent-settings-restart-dialog').isVisible(), false);
@@ -62,7 +62,7 @@ try {
   await page.waitForFunction(
     () =>
       !document.querySelector('#agent-settings-form').inert &&
-      document.querySelector('#agent-settings-status').textContent.startsWith('Kaydedildi.'),
+      document.querySelector('#agent-settings-status').textContent.startsWith('Saved.'),
   );
   assert.equal((await snapshot()).workspace.agentSettings.provider, 'opencode');
   await page.reload();
@@ -70,6 +70,28 @@ try {
   assert.equal(await form.locator('[name=provider]').inputValue(), 'opencode');
   assert.equal(await form.locator('[name=model]').inputValue(), 'opencode-go/kimi-k2.7-code');
   console.log('OPENCODE_SETTINGS_UI_PASS');
+  await form.locator('[name=provider]').selectOption('claude');
+  assert.equal(await form.locator('[name=model]').inputValue(), 'haiku');
+  assert.equal(await form.locator('[name=trialModel]').inputValue(), 'opus[1m]');
+  assert.equal(await form.locator('[name=permission]').inputValue(), 'auto');
+  assert.equal(await form.locator('[name=reasoning]').inputValue(), 'medium');
+  assert.equal(await field.inputValue(), '200,000');
+  assert.equal(await form.locator('[name=contextRestartTokens]').inputValue(), '0');
+  await save.click();
+  await page.waitForFunction(() => !document.querySelector('#agent-settings-form').inert);
+  await page.reload();
+  await page.locator('[data-view=agent]').click();
+  assert.equal(await form.locator('[name=model]').inputValue(), 'haiku');
+  assert.equal(await form.locator('[name=trialModel]').inputValue(), 'opus[1m]');
+  await page.screenshot({path: path.join(data, 'claude-default-settings.png'), fullPage: true});
+  // An explicit trial-model opt-out must survive normalization and reload.
+  await form.locator('[name=trialModel]').selectOption('');
+  await save.click();
+  await page.waitForFunction(() => !document.querySelector('#agent-settings-form').inert);
+  await page.reload();
+  await page.locator('[data-view=agent]').click();
+  assert.equal(await form.locator('[name=trialModel]').inputValue(), '');
+  console.log('CLAUDE_DEFAULT_SETTINGS_UI_PASS');
   // Simulate active workers without launching any provider or touching real workspaces.
   await app.evaluate(
     ({ipcMain}, {initial}) => {
@@ -134,10 +156,10 @@ try {
   await page.waitForFunction(
     () =>
       !document.querySelector('#agent-settings-form').inert &&
-      document.querySelector('#agent-settings-status').textContent.startsWith('Kaydedildi.'),
+      document.querySelector('#agent-settings-status').textContent.startsWith('Saved.'),
   );
   assert.equal(await dialog.isVisible(), false);
-  assert.equal(await field.inputValue(), '120.000');
+  assert.equal(await field.inputValue(), '120,000');
   assert.deepEqual((await app.evaluate(() => globalThis.settingsTest)).restarts, []);
   assert.equal(
     (await app.evaluate(() => globalThis.settingsTest)).input.agentSettings.contextCompactTokens,
@@ -149,10 +171,10 @@ try {
   await page.waitForFunction(
     () =>
       !document.querySelector('#agent-settings-form').inert &&
-      document.querySelector('#agent-settings-status').textContent.startsWith('Kaydedildi.'),
+      document.querySelector('#agent-settings-status').textContent.startsWith('Saved.'),
   );
   assert.equal(await dialog.isVisible(), false);
-  assert.equal(await restartField.inputValue(), '220.000');
+  assert.equal(await restartField.inputValue(), '220,000');
   assert.deepEqual((await app.evaluate(() => globalThis.settingsTest)).restarts, []);
   assert.equal(
     (await app.evaluate(() => globalThis.settingsTest)).input.agentSettings.contextRestartTokens,
@@ -168,22 +190,20 @@ try {
     (await app.evaluate(() => globalThis.settingsTest)).input.agentSettings.permission,
     'plan',
   );
-  await dialog.getByRole('button', {name: 'Daha sonra', exact: true}).click();
+  await dialog.getByRole('button', {name: 'Later', exact: true}).click();
   await page.waitForFunction(
     () =>
       !document.querySelector('#agent-settings-form').inert &&
-      document.querySelector('#agent-settings-status').textContent.startsWith('Kaydedildi.'),
+      document.querySelector('#agent-settings-status').textContent.startsWith('Saved.'),
   );
   assert.deepEqual((await app.evaluate(() => globalThis.settingsTest)).restarts, []);
   await permission.selectOption('bypassPermissions');
   await save.click();
-  await dialog.getByRole('button', {name: 'Yeniden başlat', exact: true}).click();
+  await dialog.getByRole('button', {name: 'Restart', exact: true}).click();
   await page.waitForFunction(
     () =>
       !document.querySelector('#agent-settings-form').inert &&
-      document
-        .querySelector('#agent-settings-status')
-        .textContent.includes('2 agent yeniden başlatıldı'),
+      document.querySelector('#agent-settings-status').textContent.includes('2 agent(s) restarted'),
   );
   assert.deepEqual((await app.evaluate(() => globalThis.settingsTest)).restarts, [
     {id: owner.id, worker: 'main'},
@@ -197,7 +217,7 @@ try {
   await page.waitForFunction(
     () =>
       !document.querySelector('#agent-settings-form').inert &&
-      document.querySelector('#agent-settings-status').textContent.startsWith('Kaydedilemedi:'),
+      document.querySelector('#agent-settings-status').textContent.startsWith('Could not save:'),
   );
   assert.equal(await dialog.isVisible(), false);
   assert.equal(await permission.inputValue(), 'plan');
@@ -207,13 +227,13 @@ try {
     globalThis.settingsTest.restarts = [];
   });
   await save.click();
-  await dialog.getByRole('button', {name: 'Yeniden başlat', exact: true}).click();
+  await dialog.getByRole('button', {name: 'Restart', exact: true}).click();
   await page.waitForFunction(
     () =>
       !document.querySelector('#agent-settings-form').inert &&
       document
         .querySelector('#agent-settings-status')
-        .textContent.includes('Yeniden başlatılamayan'),
+        .textContent.includes('could not be restarted'),
   );
   assert.equal(
     (await app.evaluate(() => globalThis.settingsTest)).restarts.length,

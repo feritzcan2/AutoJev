@@ -17,7 +17,7 @@ export class WorkspaceRecords {
   get(id, recordId) {
     this.workspaces.get(id);
     const record = this.identities.resolve(id, recordId);
-    if (!record) throw Error('Kayıt bu çalışma alanına ait değil');
+    if (!record) throw Error('The record does not belong to this workspace');
     return record;
   }
   usesUrl(id) {
@@ -88,14 +88,14 @@ export class WorkspaceRecords {
           .prepare('SELECT workspace_id FROM workspace_records WHERE id=?')
           .get(record.id);
       if (existing && existing.workspace_id !== id)
-        throw Error('Kayıt bu çalışma alanına ait değil');
+        throw Error('The record does not belong to this workspace');
       if (existing && this.get(id, record.id).id !== record.id)
-        throw Error('Bu kayıt birleştirildi; güncel ana kaydı yeniden oku');
+        throw Error('This record was merged; read the current main record again');
       if (this.usesUrl(id))
         for (const url of this.identities.urls(record)) {
           const other = this.identities.find(id, url);
           if (other && other.id !== record.id)
-            throw Error('Bu ilan zaten kayıtlı; mevcut kaydı kullan');
+            throw Error('This listing is already recorded; use the existing record');
         }
       this.db
         .prepare(
@@ -110,7 +110,7 @@ export class WorkspaceRecords {
     return this.identities.atomic(() => {
       const before = this.get(id, recordId),
         value = change(before);
-      if (value.id !== before.id) throw Error('Kayıt kimliği değiştirilemez');
+      if (value.id !== before.id) throw Error('The record id cannot be changed');
       return this.put(
         id,
         value.key ??

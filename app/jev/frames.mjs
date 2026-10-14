@@ -39,7 +39,9 @@ export async function captureEmbeddedForms(slot) {
         url,
         inPlace: true,
         hasForm: kind.form,
-        nextAction: 'browser_open url',
+        // The fields of an embedded form have no ids in the parent page.
+        nextAction:
+          'To fill this form, browser_open its url in a new tab; it is the same form, not a second application.',
       });
     } catch {
     } finally {
@@ -51,9 +53,9 @@ export async function captureEmbeddedForms(slot) {
 export async function embeddedFormTarget(slot, frameId, owner) {
   const saved = slot.embeddedFrames?.get(frameId);
   if (!saved || saved.owner !== owner)
-    throw Error('Güncel embeddedForms listesindeki frameId gerekli.');
+    throw Error('A frameId from the current embeddedForms list is required.');
   await captureEmbeddedForms(slot);
   if (!slot.embeddedFrames.has(frameId))
-    throw Error('Gömülü form değişti veya erişilebilir değil; yeniden açılmadı.');
+    throw Error('The embedded form changed or is not accessible; it was not reopened.');
   return saved.url;
 }

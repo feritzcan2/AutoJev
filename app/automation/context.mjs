@@ -34,10 +34,10 @@ export class AutomationContext {
     const saved = this.current;
     if (!saved || saved.id !== contextId)
       throw Error(
-        'Bağlam eski veya bu çalışmaya ait değil. get_automation_context ile güncel bağlamı al.',
+        'The context is stale or belongs to another run. Get the current context with get_automation_context.',
       );
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > saved.text.length)
-      throw Error('Geçersiz bağlam aralığı. Dönen context.nextOffset değerini kullan.');
+      throw Error('Invalid context range. Use the returned context.nextOffset value.');
     const build = (end) => ({
       context: {
         id: saved.id,

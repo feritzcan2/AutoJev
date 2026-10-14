@@ -115,7 +115,7 @@ export function workspaceSourceTabs(api, {notice, sourceForTab} = {}) {
       button.type = 'button';
       button.disabled = closingKey === key;
       button.title = tab.url;
-      button.setAttribute('aria-label', `${tab.url} sekmesine git`);
+      button.setAttribute('aria-label', `Go to the ${tab.url} tab`);
       button.append(address);
       button.onclick = async () => {
         button.disabled = true;
@@ -134,17 +134,10 @@ export function workspaceSourceTabs(api, {notice, sourceForTab} = {}) {
       menu.append(item);
     }
     const closeItem = el('li'),
-      close = el(
-        'button',
-        closingKey === key ? 'Kapatılıyor…' : 'Hepsini kapat',
-        'source-tabs-close',
-      );
+      close = el('button', closingKey === key ? 'Closing…' : 'Close all', 'source-tabs-close');
     close.type = 'button';
     close.disabled = closingKey === key;
-    close.setAttribute(
-      'aria-label',
-      `${label} listesindeki ${items.length} sekmenin hepsini kapat`,
-    );
+    close.setAttribute('aria-label', `Close all ${items.length} tabs in the ${label} list`);
     close.onclick = async () => {
       const id = owner;
       closingKey = key;
@@ -155,7 +148,10 @@ export function workspaceSourceTabs(api, {notice, sourceForTab} = {}) {
           items.map(({tabId, url, sourceUrl}) => ({tabId, url, sourceUrl})),
         );
         if (owner === id) tabs = tabs.filter((tab) => !result.closed.includes(tab.tabId));
-        if (result.failed.length) notice(`${result.failed.length} sekme kapatılamadı.`);
+        if (result.failed.length)
+          notice(
+            `${result.failed.length} tab${result.failed.length === 1 ? '' : 's'} could not be closed.`,
+          );
         else if (owner === id) openKey = null;
       } catch (error) {
         notice(error.message);
@@ -173,8 +169,8 @@ export function workspaceSourceTabs(api, {notice, sourceForTab} = {}) {
   }
   function render() {
     const {grouped, other} = groupWorkspaceTabs(tabs, sources, sourceForTab);
-    for (const [id, target] of hosts) control(target, id, 'Sekmeler', grouped.get(id) ?? []);
-    if (otherHost) control(otherHost, 'other', 'Diğer sekmeler', other);
+    for (const [id, target] of hosts) control(target, id, 'Tabs', grouped.get(id) ?? []);
+    if (otherHost) control(otherHost, 'other', 'Other tabs', other);
   }
   async function refresh() {
     if (!owner || loading) return;

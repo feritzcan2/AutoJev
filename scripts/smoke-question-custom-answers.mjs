@@ -45,11 +45,11 @@ try {
   await open();
   const card = page.locator(`[data-issue-id="${q.id}"]`),
     city = card.getByLabel('Şehir', {exact: true}),
-    custom = card.getByLabel('Şehir — kendi yanıtın', {exact: true}),
+    custom = card.getByLabel('Şehir — your own answer', {exact: true}),
     permit = card.getByLabel('Çalışma izni', {exact: true}),
-    send = card.getByRole('button', {name: 'Yanıtları gönder', exact: true});
+    send = card.getByRole('button', {name: 'Send answers', exact: true});
   assert.equal(await custom.isVisible(), false);
-  await city.selectOption({label: 'Kendim yazacağım'});
+  await city.selectOption({label: 'I’ll write my own'});
   assert.equal(await custom.isVisible(), true);
   await permit.selectOption('false');
   await card.getByLabel('Maaş', {exact: true}).fill('95000');
@@ -69,13 +69,13 @@ try {
   await city.selectOption('Berlin');
   assert.equal(await custom.isVisible(), false);
   assert.equal(await custom.isDisabled(), true);
-  await city.selectOption({label: 'Kendim yazacağım'});
+  await city.selectOption({label: 'I’ll write my own'});
   assert.equal(await custom.inputValue(), 'Yalnızca Berlin’den uzaktan çalışabilirim.');
-  await permit.selectOption({label: 'Kendim yazacağım'});
-  const customPermit = card.getByLabel('Çalışma izni — kendi yanıtın', {exact: true});
+  await permit.selectOption({label: 'I’ll write my own'});
+  const customPermit = card.getByLabel('Çalışma izni — your own answer', {exact: true});
   await customPermit.fill('İzin yenilemem sürüyor.');
-  await card.getByRole('button', {name: 'Yazarak yanıtla', exact: true}).click();
-  await card.getByRole('button', {name: 'Formu doldur', exact: true}).click();
+  await card.getByRole('button', {name: 'Answer in writing', exact: true}).click();
+  await card.getByRole('button', {name: 'Fill in the form', exact: true}).click();
   assert.equal(await customPermit.inputValue(), 'İzin yenilemem sürüyor.');
   await page.screenshot({path: path.join(data, 'custom-answers.png')});
   await send.click();

@@ -38,9 +38,9 @@ export function recordQuestionDialog(api, {refresh}) {
     dialog.dataset.questionId = id;
     const head = el('header', null, 'record-question-head'),
       heading = el('div'),
-      title = el('h2', record?.title ?? 'Kayıt için soru');
+      title = el('h2', record?.title ?? 'Question about a record');
     title.id = 'record-question-title';
-    heading.append(el('span', 'YANIT BEKLİYOR', 'record-question-eyebrow'), title);
+    heading.append(el('span', 'AWAITING ANSWER', 'record-question-eyebrow'), title);
     if (record?.url) {
       const source = el(
         'p',
@@ -50,7 +50,7 @@ export function recordQuestionDialog(api, {refresh}) {
       heading.append(source);
     }
     const close = button('×', () => dialog.close(), 'record-question-close');
-    close.setAttribute('aria-label', 'Kapat');
+    close.setAttribute('aria-label', 'Close');
     head.append(heading, close);
     const body = el('div', null, 'record-question-body'),
       message = el('p', issue.message, 'record-question-message');
@@ -71,7 +71,7 @@ export function recordQuestionDialog(api, {refresh}) {
       feedback = el('p', null, 'record-question-feedback'),
       choices = el('div', null, 'record-question-tabs');
     feedback.setAttribute('role', 'status');
-    const tab = button('Sekmeye git ↗', async () => {
+    const tab = button('Go to tab ↗', async () => {
       tab.disabled = true;
       feedback.textContent = '';
       try {
@@ -81,12 +81,12 @@ export function recordQuestionDialog(api, {refresh}) {
           snapshot?.sources ?? [],
         );
         if (current !== session) return;
-        if (!tabs.length) throw Error('Bu kayda ait açık sekme bulunamadı.');
+        if (!tabs.length) throw Error('No open tab was found for this record.');
         if (tabs.length === 1) {
           await api.focusWorkspaceTab(workspace, tabs[0].tabId);
           return;
         }
-        choices.replaceChildren(el('p', 'Açık sekmeyi seç:'));
+        choices.replaceChildren(el('p', 'Choose the open tab:'));
         for (const item of tabs)
           choices.append(
             button(item.url, async () => {
@@ -104,13 +104,14 @@ export function recordQuestionDialog(api, {refresh}) {
         tab.disabled = false;
       }
     });
-    const attach = button('Belge ekle', async () => {
+    const attach = button('Add document', async () => {
       attach.disabled = true;
       feedback.textContent = '';
       try {
         const added = await api.pickDocument(workspace);
         if (added && current === session) {
-          feedback.textContent = 'Belge eklendi. Yanıtını gönderdiğinde agent inceleyecek.';
+          feedback.textContent =
+            'Document added. The agent will review it when you send your answer.';
           await refresh();
         }
       } catch (error) {
@@ -122,7 +123,7 @@ export function recordQuestionDialog(api, {refresh}) {
     tools.append(tab, attach);
     if (issue.canDismissRecord) {
       const dismiss = button(
-        'Atla',
+        'Skip',
         async () => {
           const controls = [...dialog.querySelectorAll('button,input,textarea,select')],
             disabled = controls.map((c) => c.disabled);
@@ -141,7 +142,7 @@ export function recordQuestionDialog(api, {refresh}) {
         'quiet record-question-dismiss',
       );
       dismiss.dataset.recordDismiss = issue.recordId;
-      dismiss.title = 'Bu kaydı atla ve bu kayda ait bekleyen soruları kapat';
+      dismiss.title = 'Skip this record and close its pending questions';
       tools.append(dismiss);
     }
     footer.append(tools, choices, feedback);

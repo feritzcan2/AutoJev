@@ -3,10 +3,9 @@ import {deleteRecords} from '../records/deletion.mjs';
 import {workspaceDirectory} from '../workspaces/paths.mjs';
 import {withAgentDefaults} from '../agents/settings.mjs';
 import path from 'node:path';
-import {readFile, rm, writeFile, stat} from 'node:fs/promises';
+import {readFile, rm, writeFile} from 'node:fs/promises';
 import {WebTasks} from './web-template.mjs';
-import {reusableTemplate, webUrl} from '../templates/catalog.mjs';
-import {sourceInput} from '../sources/automation-sources.mjs';
+import {webUrl} from '../templates/catalog.mjs';
 import {launchAutomationWorker} from './worker.mjs';
 import {automationBrowser} from '../browser/automation-browser.mjs';
 import {webWorkspaceView} from '../workspaces/view.mjs';
@@ -149,49 +148,6 @@ export function registerAutomationServices({
     );
   };
   handle('automation-templates', () => db.catalog());
-  handle('automation-template-save', (id, input) => {
-    const a = db.get(id),
-      base = db.template(a.templateId),
-      template = db.saveTemplate({
-        ...base,
-        title: input.title,
-        description: input.description,
-        guidance: input.guidance,
-        table: a.table,
-      });
-    changed(null);
-    return template;
-  });
-  handle('automation-template-export', async (id) => {
-    const t = db.template(id);
-    const template = reusableTemplate(t, (value) => db.store.workspaces.registry.normalize(value)),
-      result = await dialog.showSaveDialog(window(), {
-        defaultPath: t.title.replace(/[^\p{L}\p{N} _-]/gu, '') + '.loop-template.json',
-        filters: [{name: 'Loop template', extensions: ['json']}],
-      });
-    if (result.canceled) return;
-    await writeFile(
-      result.filePath,
-      JSON.stringify({format: 'loop-template', version: 2, template}, null, 2) + '\n',
-      {mode: 0o600},
-    );
-    return result.filePath;
-  });
-  handle('automation-template-import', async () => {
-    const picked = await dialog.showOpenDialog(window(), {
-      properties: ['openFile'],
-      filters: [{name: 'Loop template', extensions: ['json']}],
-    });
-    if (picked.canceled) return null;
-    const file = picked.filePaths[0];
-    if ((await stat(file)).size > 2 * 1024 * 1024) throw Error('Template dosyası çok büyük');
-    const input = JSON.parse(await readFile(file, 'utf8'));
-    if (input.format !== 'loop-template' || ![1, 2].includes(input.version))
-      throw Error('Desteklenmeyen template dosyası');
-    const template = db.saveTemplate(input.template);
-    changed(null);
-    return template;
-  });
   const snapshot = async (id) => {
     const activeRuns = runtime.slots(id).map((s) => runSnapshot(s.run));
     return webWorkspaceView(
@@ -244,6 +200,7 @@ export function registerAutomationServices({
   });
   handle('workspace-answer', (id, question, value) => runtime.answer(id, question, value));
   handle('automation-setup', (id) => runtime.setup(id));
+  handle('automation-onboarding', (id, input) => runtime.onboard(id, input));
   handle('setup-agent-settings', async (id, input) => {
     const settings = {...withAgentDefaults(input), contextRestartTokens: 0};
     await validateSettings(settings);
@@ -254,15 +211,6 @@ export function registerAutomationServices({
   handle('automation-sources-interval', (id, intervalMinutes) =>
     runtime.saveSourcesInterval(id, intervalMinutes),
   );
-  handle('automation-source-modes', (id, mode) => {
-    db.assertIdle(id);
-    const a = db.get(id);
-    for (const url of a.sources) sourceInput(a, url, {mode});
-    db.store.workspaces.tasks.atomic(() => {
-      for (const url of a.sources) db.saveSource(id, url, {mode});
-    });
-    changed(id);
-  });
   handle('automation-source-run', (id, url, options) =>
     runtime.runSource(id, url, {fresh: options?.fresh === true}),
   );
@@ -289,7 +237,7 @@ export function registerAutomationServices({
     await runtime.tick();
   });
   handle('automation-source-draft', async (id, draftId, accept) => {
-    if (typeof accept !== 'boolean') throw Error('Geçersiz kaynak işlemi');
+    if (typeof accept !== 'boolean') throw Error('Invalid source action');
     db.resolveSourceDraft(id, draftId, accept);
     changed(id);
     await runtime.tick();
@@ -300,14 +248,14 @@ export function registerAutomationServices({
     return a;
   });
   handle('automation-skip-trial', (id) => {
-    if (runtime.slots(id).length) throw Error('Önce çalışan otomasyonu durdur');
+    if (runtime.slots(id).length) throw Error('Stop the running automation first');
     const a = db.skipTrial(id);
     changed(id);
     return a;
   });
   handle('automation-message', (id, text) => runtime.message(id, text));
   handle('automation-run', async (id, kind) => {
-    if (!['trial', 'run'].includes(kind)) throw Error('Geçersiz çalışma');
+    if (!['trial', 'run'].includes(kind)) throw Error('Invalid run');
     return runtime.runOnce(id);
   });
   handle('automation-records-score', (id, itemIds) => runtime.runRecords(id, itemIds));
@@ -355,11 +303,12 @@ export function registerAutomationServices({
     if (!status.ready || runtime.slots(id).length > 0) return status;
     db.assertIdle(id);
     const a = db.get(id);
-    if (!a.sources.length) throw Error('Önce en az bir kaynak adresi kaydet');
+    if (!a.sources.length) throw Error('Save at least one source address first');
     return automationBrowser(browsers).call(id, 'browser_navigate', {url: a.sources[0]}, 'user');
   });
   handle('automation-terminal', async (id, runId) => {
-    if (db.run(runId).automationId !== id) throw Error('Çalışma bu otomasyona ait değil');
+    if (db.run(runId).automationId !== id)
+      throw Error('The run does not belong to this automation');
     return [
       ...(outputs.get(runId) ??
         (await readFile(path.join(data, 'automations', 'runs', runId, 'terminal.log')).catch(() =>
@@ -371,7 +320,7 @@ export function registerAutomationServices({
     const a = db.get(id),
       result = await dialog.showSaveDialog(window(), {
         defaultPath: a.title.replace(/[^\p{L}\p{N} _-]/gu, '') + '.json',
-        filters: [{name: 'Sonuçlar', extensions: ['json']}],
+        filters: [{name: 'Results', extensions: ['json']}],
       });
     if (result.canceled) return;
     await writeFile(
@@ -382,7 +331,7 @@ export function registerAutomationServices({
           templateId: a.templateId,
           table: a.table,
           exportedAt: new Date().toISOString(),
-          results: db.results(id, {all: true}),
+          results: db.results(id),
         },
         null,
         2,

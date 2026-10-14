@@ -145,7 +145,7 @@ test('page findings and remaining details survive restart; saved findings leave 
   const duplicate = await call('record_automation_result', finding);
   assert.equal(duplicate.id, receipt.id);
   assert.equal(db.results(id).length, 1);
-  await assert.rejects(call('complete_scan_search', {completion: 'end'}), /bekleyen|gözle/);
+  await assert.rejects(call('complete_scan_search', {completion: 'end'}), /pending|Observe/);
   await call('record_automation_result', {
     ...finding,
     key: remainingUrl,

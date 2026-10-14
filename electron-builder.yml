@@ -5,6 +5,7 @@ directories:
   buildResources: build
 files:
   - app/**
+  - src/scoring-state.js
   - dist/**
   - vendor/jev-ultrafast/**
   - package.json
@@ -29,7 +30,7 @@ extraResources:
   - from: vendor/termloop/clients/terminal-surface/src/assets/fonts/OFL.txt
     to: licenses/JetBrains-Mono-OFL.txt
 npmRebuild: false
-afterPack: scripts/verify-universal-inputs.cjs
+afterPack: scripts/prepare-macos-bundle.cjs
 publish:
   provider: github
   owner: feritzcan2
@@ -37,6 +38,8 @@ publish:
   releaseType: release
 mac:
   mergeASARs: false
+  # Canvas selects the matching native package at runtime; retain both architectures.
+  x64ArchFiles: '**/node_modules/@napi-rs/canvas-darwin-{arm64,x64}/skia.darwin-*.node'
   artifactName: jobloop-macos-${arch}-${version}.${ext}
   category: public.app-category.productivity
   target: [dmg, zip]

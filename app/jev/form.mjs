@@ -49,19 +49,91 @@ export async function inspectApplicationForm(page, slot = null) {
             const r = n.getBoundingClientRect();
             return r.width > 1 && r.height > 1;
           });
+        // Same rule as the page reader: only a layer over the page scopes the
+        // form, never a closed <dialog>, an inline widget or a field's popup.
+        const fixedLayer = (n) => getComputedStyle(n).position === 'fixed';
+        const ids = (c) =>
+          [c.getAttribute('aria-controls'), c.getAttribute('aria-owns')].join(' ').split(/\s+/);
+        const ownedPopup = (d) =>
+          !d.matches('[aria-modal="true"]') &&
+          queryAll(document, '[aria-controls],[aria-owns]').some(
+            (c) =>
+              !d.contains(c) &&
+              ids(c).some((id) => {
+                const t =
+                  id && (c.getRootNode().getElementById?.(id) ?? document.getElementById(id));
+                return Boolean(t) && d.contains(t);
+              }),
+          );
+        const overlay = (e) => {
+          if (e.tagName === 'DIALOG' && !e.open) return false;
+          if (e.matches('dialog:modal')) return true;
+          if (ownedPopup(e)) return false;
+          for (let p = e; p?.nodeType === 1; p = p.parentElement ?? p.getRootNode()?.host)
+            if (fixedLayer(p)) return true;
+          const r = e.getBoundingClientRect();
+          return (
+            (r.width <= 1 || r.height <= 1) &&
+            queryAll(e, '*').some((n) => visible(n) && fixedLayer(n))
+          );
+        };
         const modal = queryAll(document, 'dialog[open],[role="dialog"],[aria-modal="true"]')
-            .filter(modalSurface)
+            .filter((e) => modalSurface(e) && overlay(e))
             .at(-1),
           root = modal ?? document;
         // Styled checkboxes and radios often hide the native input behind a visible label.
+        // A transparent combobox input counts when the box around it is shown.
         const shown = (e) =>
           visible(e) ||
-          (['checkbox', 'radio'].includes(e.type) && [...(e.labels ?? [])].some(visible));
+          Boolean(window.__jobloopFileSurface(e)) ||
+          (['checkbox', 'radio'].includes(e.type) && [...(e.labels ?? [])].some(visible)) ||
+          Boolean(
+            window.__jevFast?.combo?.(e)?.control && visible(window.__jevFast.combo(e).control),
+          );
+        // Custom dropdowns: a non-input combobox, or a labelled button that
+        // opens a listbox/tree popup. Its answer is the trigger's own text.
+        const trigger = (e) =>
+          !['INPUT', 'TEXTAREA', 'SELECT'].includes(e.tagName) &&
+          (e.getAttribute('role') === 'combobox' ||
+            ((e.tagName === 'BUTTON' || e.getAttribute('role') === 'button') &&
+              ['listbox', 'tree', 'true'].includes(e.getAttribute('aria-haspopup')) &&
+              (e.hasAttribute('aria-labelledby') || e.labels?.length > 0)));
+        const caption = (e) => {
+          const text = clean(
+            [...e.childNodes]
+              .map((n) =>
+                n.nodeType === Node.TEXT_NODE
+                  ? n.textContent
+                  : n.nodeType === Node.ELEMENT_NODE &&
+                      visible(n) &&
+                      !n.matches('[role="listbox"],[role="tree"]')
+                    ? n.innerText
+                    : '',
+              )
+              .join(' '),
+          );
+          const placeholders = [
+            e,
+            ...e.querySelectorAll('[data-placeholder],[aria-placeholder],[placeholder]'),
+          ].flatMap((n) =>
+            ['aria-placeholder', 'data-placeholder', 'placeholder'].map((a) => n.getAttribute(a)),
+          );
+          return placeholders.includes(text) ? '' : text;
+        };
         const nodes = queryAll(
           root,
-          'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),textarea,select,[role="combobox"],[role="checkbox"],[role="radio"]',
+          'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]),textarea,select,[role="combobox"],[role="checkbox"],[role="radio"],[aria-haspopup],button[type="button"],[role="button"]',
         ).filter(
-          (e) => shown(e) && !e.matches(':disabled') && e.getAttribute('aria-disabled') !== 'true',
+          (e) =>
+            shown(e) &&
+            (!e.matches('button[type="button"],[role="button"]') ||
+              trigger(e) ||
+              window.__jobloopPicker(e)) &&
+            !e.matches(':disabled') &&
+            e.getAttribute('aria-disabled') !== 'true' &&
+            (!e.matches('[aria-haspopup]:not([role="combobox"])') ||
+              ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.tagName) ||
+              trigger(e)),
         );
         return {
           documentOrigin: performance.timeOrigin,
@@ -82,11 +154,23 @@ export async function inspectApplicationForm(page, slot = null) {
           fields: nodes.slice(0, 200).map((e) => {
             const semantic = window.__jobloopFieldContext(e),
               label = semantic.label;
-            const type = e.getAttribute('role') || e.type || e.tagName.toLowerCase();
+            const dropdown = trigger(e),
+              picker = !dropdown && window.__jobloopPicker(e);
+            const type = dropdown
+              ? 'combobox'
+              : picker
+                ? 'picker'
+                : e.getAttribute('role') || e.type || e.tagName.toLowerCase();
             const required = semantic.required;
-            const message = clean(e.validationMessage || refs(e, 'aria-errormessage'));
+            // Visible error text first: it is what the page shows after a failed submit.
+            const shownError = window.__jobloopFieldError(e);
+            const message = clean(
+              shownError || e.validationMessage || refs(e, 'aria-errormessage'),
+            );
             const invalid =
-              e.getAttribute('aria-invalid') === 'true' || e.validity?.valid === false;
+              Boolean(shownError) ||
+              e.getAttribute('aria-invalid') === 'true' ||
+              e.validity?.valid === false;
             const field = {
               node: window.__jevFast?.ids.get(e),
               ...semantic,
@@ -96,6 +180,7 @@ export async function inspectApplicationForm(page, slot = null) {
               invalid,
               ...(message ? {validationMessage: message} : {}),
             };
+            if (picker) field.value = caption(e);
             if (type === 'file') {
               field.files = [...(e.files ?? [])].map((f) => ({name: f.name, size: f.size}));
               field.accept = e.accept || null;
@@ -106,14 +191,25 @@ export async function inspectApplicationForm(page, slot = null) {
             const language =
               e.closest('[lang]')?.getAttribute('lang') || document.documentElement.lang;
             if (language) field.language = language;
+            // A searchable combobox input is empty after a choice; the choice
+            // shows next to it.
             if (type !== 'password')
-              field.filled = ['checkbox', 'radio'].includes(type)
-                ? Boolean(e.checked || e.getAttribute('aria-checked') === 'true')
-                : type === 'file'
-                  ? Boolean(e.files?.length)
-                  : typeof e.value === 'string'
-                    ? Boolean(e.value.trim())
-                    : null;
+              field.filled = dropdown
+                ? Boolean(caption(e))
+                : picker
+                  ? // Page vocabulary for an unchosen picker caption.
+                    !/^(?:select|choose|pick|please (?:select|choose)|bitte (?:wählen|auswählen)|auswählen|wählen sie|seçiniz|seçin|sélectionnez|choisissez|seleccione|selecciona)\b/i.test(
+                      caption(e),
+                    ) && Boolean(caption(e))
+                  : window.__jevFast?.combo?.(e)?.values.length
+                    ? true
+                    : ['checkbox', 'radio'].includes(type)
+                      ? Boolean(e.checked || e.getAttribute('aria-checked') === 'true')
+                      : type === 'file'
+                        ? Boolean(e.files?.length)
+                        : typeof e.value === 'string'
+                          ? Boolean(e.value.trim())
+                          : null;
             return field;
           }),
         };
@@ -173,16 +269,30 @@ export async function inspectApplicationForm(page, slot = null) {
   return {
     ...compact,
     missingRequired: compact.fields
-      .filter((f) => f.required === true && f.filled === false)
-      .map(({label, question, type, frameUrl}) => ({label, question, type, frameUrl})),
+      .filter(
+        (f) => (f.required === true && f.filled === false) || (f.invalid && f.validationMessage),
+      )
+      .map(({label, question, type, frameUrl, validationMessage}) => ({
+        label,
+        question,
+        type,
+        frameUrl,
+        ...(validationMessage ? {validationMessage} : {}),
+      })),
     submitControls: submitControls.map(({frameUrl, ...c}) =>
       frameUrl === page.url() ? c : {...c, frameUrl},
     ),
     unavailableFrames,
     truncated,
     readOnly: true,
+    ...(compact.fields.some((f) => f.frameUrl)
+      ? {
+          embedded:
+            'Fields with a frameUrl sit in a form embedded from another page and cannot be filled from this tab. Open that frameUrl with browser_open and fill and submit the form in the new tab. It is this same application form, not a second application.',
+        }
+      : {}),
     notice:
-      'Rendered fields on the current step only. A field without required is unknown, not optional. Radio and checkbox options are grouped under their question; click an option with its controlId. A submit control with targetId is clickable now; with only controlId, browser_interact reveal it first and inspect again. Later steps may add fields. This inspection is not submission-outcome evidence.',
+      'Rendered fields on the current step only. A field without required is unknown, not optional. missingRequired also lists fields that show a validation message; fix those before submitting again. Radio and checkbox options are grouped under their question; click an option with its controlId. A combobox is a custom dropdown: choose with autocomplete, its controlId and the exact option. A picker is a button that opens a list: click it, then click the option. A submit control with targetId is clickable now; with only controlId, browser_interact reveal it first and inspect again. Later steps may add fields. This inspection is not submission-outcome evidence.',
   };
 }
 
@@ -455,7 +565,7 @@ export async function fillKnownFields(slot, fields, owner, reader) {
       status: 'invalid_target',
       results: fields.map(({fieldId}) => ({fieldId, status: 'not_attempted'})),
       message:
-        'controlId yazılabilir fieldId değildir. Dönen controls içinde alanı bul; görünür değilse browser_interact reveal ile görünür yap, ardından güncel fillFields içindeki fieldId değerini kullan. Aynı controlId ile yazmayı tekrar deneme.',
+        'A controlId is not a writable fieldId. Find the field in the returned controls; if it is not visible, make it visible with browser_interact reveal, then use the fieldId from the current fillFields. Do not retry typing with the same controlId.',
     };
   // Removed, consumed or foreign-session IDs cannot write.
   if (fields.some((field) => !slot.fillFields?.has(field.fieldId)))
@@ -463,14 +573,14 @@ export async function fillKnownFields(slot, fields, owner, reader) {
       status: 'stale',
       results: fields.map(({fieldId}) => ({fieldId, status: 'not_attempted'})),
       message:
-        'Alan kimlikleri eski; dönen güncel fillFields listesini kullan. Ek observe gerekmez.',
+        'The field ids are stale; use the returned current fillFields list. No extra observe is needed.',
     };
   // Validate the complete mapping before touching any field, then consume it.
   const entries = fields.map((field) => {
     const saved = slot.fillFields?.get(field.fieldId);
     if (!saved || saved.owner !== owner)
       throw Error(
-        'Bu oturuma ait güncel alan kimliği gerekli; son gözlemdeki fillFields listesini kullan.',
+        'A current field id of this session is required; use the fillFields list from the last observation.',
       );
     if (saved.details.type === 'date') {
       const valid =
@@ -479,16 +589,16 @@ export async function fillKnownFields(slot, fields, owner, reader) {
         new Date(field.text).toISOString().slice(0, 10) === field.text;
       if (!valid)
         throw Error(
-          'Tarih YYYY-MM-DD biçiminde geçerli bir takvim tarihi olmalı; hiçbir alan doldurulmadı.',
+          'The date must be a valid calendar date in YYYY-MM-DD format; no field was filled.',
         );
       if (
         (saved.details.min && field.text < saved.details.min) ||
         (saved.details.max && field.text > saved.details.max)
       )
-        throw Error('Tarih alanın min/max sınırları dışında; hiçbir alan doldurulmadı.');
+        throw Error('The date is outside the min/max limits of the field; no field was filled.');
     }
     if (saved.details.maxLength >= 0 && field.text.length > saved.details.maxLength)
-      throw Error('Metin alanın izin verdiği uzunluğu aşıyor; hiçbir alan doldurulmadı.');
+      throw Error('The text exceeds the length the field allows; no field was filled.');
     return {...saved, ...field};
   });
   const handles = new Map(fields.map(({fieldId}) => [fieldId, slot.fillFields.get(fieldId)]));
@@ -622,8 +732,8 @@ export async function fillKnownFields(slot, fields, owner, reader) {
       formChanged,
       message:
         status === 'ready'
-          ? 'İstenen alan değerleri doğrulandı. Dönen güncel gözlemi kullan; bu alanları tekrar doldurma. Gönderim yapılmadı.'
-          : `${verifiedCount}/${results.length} alan doğrulandı. Yalnızca doğrulanmayan veya not_attempted alanları incele; filled/unchanged alanları tekrar doldurma. Güncel alan haritası bu sonuçta var.`,
+          ? 'The requested field values were verified. Use the returned current observation; do not fill these fields again. Nothing was submitted.'
+          : `${verifiedCount}/${results.length} fields verified. Inspect only the unverified or not_attempted fields; do not fill filled/unchanged fields again. The current field map is in this result.`,
     };
   } finally {
     await Promise.all(

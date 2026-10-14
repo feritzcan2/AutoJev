@@ -86,7 +86,7 @@ export class JevExecution {
           }, next);
           if (value.status !== 'continue') return value;
           if (!value.taskId || value.taskId !== task.taskId)
-            throw Error('Jev devam görevi değişti.');
+            throw Error('The Jev continuation task changed.');
           next = {taskId: value.taskId};
           // Yield to cancellation and other workers between transport slices. No
           // main-model turn is needed to advance the same helper.

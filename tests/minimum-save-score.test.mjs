@@ -65,7 +65,7 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
         assert.equal(receipt.assessment.score, score);
       }
     }
-    assert.equal(f.db.results(f.id, {all: true}).length, 3);
+    assert.equal(f.db.results(f.id).length, 3);
     assert.deepEqual(f.db.seenListingUrls(f.id, source, urls), [urls[0]]);
     assert.deepEqual(f.db.seenListingUrls(f.id, 'https://other-source.test/', urls), []);
     const other = f.db.create('custom', {goal: 'Other workspace', sources: [source]});
@@ -106,7 +106,7 @@ test('mixed and entirely skipped batches count saved records correctly and retir
   assert.equal(skipped.skipped, 1);
   assert.deepEqual(skipped.records, []);
   assert.equal(f.db.scanQueue(f.id, f.run.id).total, 0);
-  assert.equal(f.db.results(f.id, {all: true}).length, 1);
+  assert.equal(f.db.results(f.id).length, 1);
 });
 
 test('review accepts score exclusions without saving fake records or skipping incomplete details', async (t) => {
@@ -132,13 +132,13 @@ test('review accepts score exclusions without saving fake records or skipping in
   f.db.jevTasks.save(task);
   assert.throws(
     () => reviewJevBatch(f.db, f.id, f.run.id, task.id, 'batch'),
-    /İnceleme tamamlanmadı/,
+    /Review not complete/,
   );
   await f.call('record_automation_result', finding(url, 59));
   assert.deepEqual(reviewJevBatch(f.db, f.id, f.run.id, task.id, 'batch'), []);
   task.items[0].error = 'page_not_ready';
   f.db.jevTasks.save(task);
-  assert.throws(() => reviewJevBatch(f.db, f.id, f.run.id, task.id, 'batch'), /Eksik ilan/);
+  assert.throws(() => reviewJevBatch(f.db, f.id, f.run.id, task.id, 'batch'), /missing listing/);
 });
 
 test('empty or zero thresholds keep low scores and invalid assessments cannot become exclusions', async (t) => {
@@ -153,7 +153,7 @@ test('empty or zero thresholds keep low scores and invalid assessments cannot be
     await assert.rejects(
       f.call('record_automation_result', finding('https://catalog.test/invalid', score)),
     );
-  assert.equal(f.db.results(f.id, {all: true}).length, 0);
+  assert.equal(f.db.results(f.id).length, 0);
   assert.deepEqual(f.db.seenListingUrls(f.id, source, ['https://catalog.test/invalid']), []);
 });
 
@@ -203,7 +203,7 @@ test('changing the minimum during a scan preserves workers, revisions and checkp
   assert.ok(saved.id);
   assert.equal(f.db.run(f.run.id).status, 'running');
   assert.equal(saved.assessment.revision, before.revision);
-  assert.throws(() => f.db.setSaveScoreThreshold(f.id, '90', {expectedValue: '80'}), /değişti/);
+  assert.throws(() => f.db.setSaveScoreThreshold(f.id, '90', {expectedValue: '80'}), /changed/);
   for (const value of ['101', '-1', '60.5', true, {}])
     assert.throws(() => f.db.setSaveScoreThreshold(f.id, value));
   assert.equal(f.db.get(f.id).criteria.save_score_threshold, '50');

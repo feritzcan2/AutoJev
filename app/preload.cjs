@@ -46,7 +46,6 @@ contextBridge.exposeInMainWorld('jobloop', {
   automationSourceSave: (id, url, input) => invoke('automation-source-save', id, url, input),
   automationSourcesInterval: (id, intervalMinutes) =>
     invoke('automation-sources-interval', id, intervalMinutes),
-  automationSourceModes: (id, mode) => invoke('automation-source-modes', id, mode),
   automationSourceRun: (id, url, options) => invoke('automation-source-run', id, url, options),
   automationSourceRelearn: (id, url) => invoke('automation-source-relearn', id, url),
   automationSourceResume: (id, url, runId, response) =>
@@ -64,11 +63,9 @@ contextBridge.exposeInMainWorld('jobloop', {
   automationSourceAdd: (id, input) => invoke('automation-source-add', id, input),
   automationSourceRemove: (id, url) => invoke('automation-source-remove', id, url),
   terminalMessage: (id, text, worker = 'main') => invoke('terminal-message', id, text, worker),
-  automationTemplateSave: (id, input) => invoke('automation-template-save', id, input),
-  automationTemplateExport: (id) => invoke('automation-template-export', id),
-  automationTemplateImport: () => invoke('automation-template-import'),
   automationSkipTrial: (id) => invoke('automation-skip-trial', id),
   automationSetup: (id) => invoke('automation-setup', id),
+  automationOnboarding: (id, input) => invoke('automation-onboarding', id, input),
   automationTemplates: () => invoke('automation-templates'),
   workspaceCreate: (templateId, input) => invoke('workspace-create', templateId, input),
   automationSave: (id, input) => invoke('automation-save', id, input),

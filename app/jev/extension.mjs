@@ -11,7 +11,7 @@ export const EXTENSION_ID = 'jmpiibcgkhgcbjgnncpicngllpppiiel';
 export const EXTENSION_PROTOCOL = 1;
 const TARGET_ID = /^[A-Fa-f0-9]{32}$/;
 const CONTROL_TIMEOUT = 15000;
-const CONNECTION_CLOSED = 'Chrome bağlantısı kapandı.';
+const CONNECTION_CLOSED = 'The Chrome connection closed.';
 
 export const connectPageUrl = (relayUrl, extensionId = EXTENSION_ID) =>
   `chrome-extension://${extensionId}/connect.html?relay=${encodeURIComponent(relayUrl)}`;
@@ -103,7 +103,7 @@ export class ExtensionRelay {
   // connect page in the selected profile once and wait for the extension.
   async connect({open, signal, timeout = 30000} = {}) {
     signal?.throwIfAborted();
-    if (this.closed) throw Error('Jev bağlantı sunucusu kapandı.');
+    if (this.closed) throw Error('The Jev connection server closed.');
     if (!this.available) {
       await open(connectPageUrl(this.url, this.extensionId));
       signal?.throwIfAborted();
@@ -130,7 +130,7 @@ export class ExtensionRelay {
         () =>
           finish(
             Error(
-              'AutoJev Chrome eklentisi bağlanmadı. Eklentinin seçili profilde kurulu ve etkin olduğunu kontrol et.',
+              'The AutoJev Chrome extension did not connect. Check that it is installed and enabled in the selected profile.',
             ),
           ),
         timeout,
@@ -141,7 +141,7 @@ export class ExtensionRelay {
   }
   close() {
     this.closed = true;
-    for (const waiter of [...this.waiters]) waiter(Error('Jev bağlantı sunucusu kapandı.'));
+    for (const waiter of [...this.waiters]) waiter(Error('The Jev connection server closed.'));
     for (const socket of this.sockets) socket.terminate();
     this.websockets?.close();
     this.server?.close();
@@ -173,6 +173,8 @@ export class JevExtensionTransport {
     this.attaching = new Map();
     this.browserSessions = new Set();
     this.virtual = new Map();
+    // Out-of-process iframes that were already loaded when they got attached.
+    this.loadedFrames = new Set();
     this.sessions = 0;
     this.pending = new Map();
     this.sequence = 0;
@@ -210,7 +212,7 @@ export class JevExtensionTransport {
         timer = timeout
           ? setTimeout(() => {
               this.pending.delete(id);
-              reject(Error(`Chrome ${method} zaman aşımı.`));
+              reject(Error(`Chrome ${method} timed out.`));
             }, timeout)
           : null;
       this.pending.set(id, {resolve, reject, timer});
@@ -270,7 +272,7 @@ export class JevExtensionTransport {
   // Restore a saved tab by id. The extension only accepts ids it handed out
   // in this Chrome run, so no personal tab can be adopted.
   async adopt(targetId, tabId) {
-    if (!TARGET_ID.test(targetId) || !Number.isInteger(tabId)) throw Error('Geçersiz Jev sekmesi.');
+    if (!TARGET_ID.test(targetId) || !Number.isInteger(tabId)) throw Error('Invalid Jev tab.');
     await this.control('tabs.claim', {tabId});
     this.owned.add(targetId);
     this.targets.set(targetId, this.entry(tabId));
@@ -299,7 +301,7 @@ export class JevExtensionTransport {
     try {
       ({targetInfo} = await this.cdp(tabId, 'Target.getTargetInfo'));
       if (expect && targetInfo.targetId !== expect)
-        throw Error('Kayıtlı Jev sekmesi başka bir sayfa gösteriyor; sekme korunuyor.');
+        throw Error('The saved Jev tab shows another page; the tab is kept.');
     } catch (error) {
       await this.control('debugger.detach', {tabId}).catch(() => {});
       throw error;
@@ -322,15 +324,18 @@ export class JevExtensionTransport {
     // Cross-origin application forms run as out-of-process iframes. Attach
     // them from the owned tab before Playwright initializes the page, so a
     // frame that exists at attach time is paused and initialized rather than
-    // missed with its URL and visible controls.
+    // missed with its URL and visible controls. Use Playwright's own
+    // parameters: its call replaces this one, and a filter that leaves out
+    // workers keeps every worker the page starts paused, so uploads and other
+    // worker code hang.
     await this.cdp(tabId, 'Target.setAutoAttach', {
       autoAttach: true,
       waitForDebuggerOnStart: true,
       flatten: true,
-      filter: [{type: 'iframe', exclude: false}, {exclude: true}],
     });
     // The tab may have closed meanwhile; a forgotten target stays forgotten.
-    if (this.targets.get(targetId) !== entry) throw Error('Jev sekmesi bağlanırken kapandı.');
+    if (this.targets.get(targetId) !== entry)
+      throw Error('The Jev tab closed while it was being attached.');
     this.attached.add(targetId);
     this.emit({
       method: 'Target.attachedToTarget',
@@ -378,6 +383,7 @@ export class JevExtensionTransport {
     if (wasAttached) this.detached(entry, targetId);
   }
   detached(entry, targetId) {
+    for (const id of entry.children) this.loadedFrames.delete(id);
     for (const [id, session] of [...this.virtual])
       if (session.entry === entry) this.dropVirtual(id);
     this.emit({
@@ -450,10 +456,13 @@ export class JevExtensionTransport {
     if (!entry) return;
     if (method === 'Target.attachedToTarget' && params?.sessionId) {
       entry.children.add(params.sessionId);
+      if (params.targetInfo?.type === 'iframe' && !params.waitingForDebugger)
+        this.loadedFrames.add(params.sessionId);
       if (params.targetInfo?.targetId)
         entry.childTargets.set(params.targetInfo.targetId, params.sessionId);
     } else if (method === 'Target.detachedFromTarget' && params?.sessionId) {
       entry.children.delete(params.sessionId);
+      this.loadedFrames.delete(params.sessionId);
       for (const [target, session] of entry.childTargets)
         if (session === params.sessionId) entry.childTargets.delete(target);
       for (const [id, virtual] of [...this.virtual])
@@ -491,8 +500,23 @@ export class JevExtensionTransport {
   // ---- Playwright → extension (ConnectionTransport)
   send(message) {
     const session = message.sessionId ? {sessionId: message.sessionId} : {};
+    const loadedFrame =
+      message.method === 'Page.getFrameTree' && this.loadedFrames.delete(message.sessionId);
     this.handle(message).then(
-      (result) => this.onmessage?.({id: message.id, ...session, result}),
+      (result) => {
+        this.onmessage?.({id: message.id, ...session, result});
+        // Playwright learns an out-of-process frame's URL only from its next
+        // navigation, so a frame that loaded before the attach keeps an empty
+        // URL. Report the URL from its frame tree as a same-document
+        // navigation, which sets only that URL.
+        const frame = loadedFrame && result?.frameTree?.frame;
+        if (frame?.url)
+          this.onmessage?.({
+            sessionId: message.sessionId,
+            method: 'Page.navigatedWithinDocument',
+            params: {frameId: frame.id, url: frame.url, navigationType: 'other'},
+          });
+      },
       (error) =>
         this.onmessage?.({
           id: message.id,

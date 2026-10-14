@@ -58,14 +58,15 @@ try {
       detailHeight: d.clientHeight,
       line: parseFloat(getComputedStyle(d).lineHeight),
       dateWidth: time.parentElement.clientWidth,
-      dateTop: time.children[0].getBoundingClientRect().top,
-      timeTop: time.children[1].getBoundingClientRect().top,
+      dateText: time.textContent,
+      dateTitle: time.title,
     };
   });
   assert.ok(layout.height < 190);
   assert.ok(layout.detailHeight <= layout.line * 3 + 2);
   assert.ok(layout.dateWidth < 140);
-  assert.ok(layout.timeTop > layout.dateTop);
+  assert.match(layout.dateText, /ago|just now/);
+  assert.ok(layout.dateTitle);
   assert.equal(await detail.getAttribute('title'), text.trim());
   await detail.hover();
   await app.evaluate(({ipcMain}, item) => {
@@ -100,11 +101,11 @@ try {
   await page.evaluate(() => {
     globalThis.openRecordMenu = document.querySelector('.record-row-actions:popover-open');
   });
-  await row.getByRole('button', {name: /Kaynağı aç/}).focus();
+  await row.getByRole('button', {name: /Open source/}).focus();
   await app.evaluate(
     ({ipcMain, BrowserWindow}, {snapshot, id}) => {
       globalThis.recordSnapshot = snapshot;
-      snapshot.results.find((r) => r.id === id).summary = 'Updated while the menu is open';
+      snapshot.results.find((r) => r.id === id).title = 'Updated while the menu is open';
       ipcMain.removeHandler('workspace-snapshot');
       ipcMain.handle('workspace-snapshot', () => globalThis.recordSnapshot);
       BrowserWindow.getAllWindows()[0].webContents.send('automation-changed', {
@@ -116,7 +117,7 @@ try {
   await page.waitForFunction(
     (id) =>
       document
-        .querySelector('#automation-result-detail-' + id)
+        .querySelector(`[data-result-id="${id}"]`)
         ?.textContent.includes('Updated while the menu is open'),
     item.id,
   );
@@ -129,12 +130,12 @@ try {
   );
   assert.equal(
     await row
-      .getByRole('button', {name: /Kaynağı aç/})
+      .getByRole('button', {name: /Open source/})
       .evaluate((control) => control === document.activeElement),
     true,
     'background updates must preserve menu keyboard focus',
   );
-  await row.getByRole('button', {name: /Kaynağı aç/}).evaluate((control) => {
+  await row.getByRole('button', {name: /Open source/}).evaluate((control) => {
     globalThis.previousMenuAction = control;
   });
   const tabReads = await app.evaluate(() => {
@@ -146,7 +147,7 @@ try {
     await page.waitForTimeout(100);
   assert.equal(
     await row
-      .getByRole('button', {name: /Kaynağı aç/})
+      .getByRole('button', {name: /Open source/})
       .evaluate((control) => control === globalThis.previousMenuAction),
     true,
     'an unrelated tab must not rebuild the open menu',
@@ -160,7 +161,7 @@ try {
   );
   assert.equal(
     await row
-      .getByRole('button', {name: /Kaynağı aç/})
+      .getByRole('button', {name: /Open source/})
       .evaluate((control) => control === document.activeElement),
     true,
   );
@@ -171,7 +172,7 @@ try {
       url: 'https://example.test/other',
     });
   }, item.id);
-  await row.getByRole('button', {name: 'Sekmeye git', exact: true}).click();
+  await row.getByRole('button', {name: 'Go to tab', exact: true}).click();
   await row.locator('.record-tab-choices button').first().waitFor();
   assert.equal(
     await row.locator('.record-tab-choices button').count(),
@@ -180,7 +181,7 @@ try {
   );
   await row.locator('.record-tab-choices button').last().focus();
   await app.evaluate(({BrowserWindow}, id) => {
-    globalThis.recordSnapshot.results.find((r) => r.id === id).summary =
+    globalThis.recordSnapshot.results.find((r) => r.id === id).title =
       'Updated with the tab chooser open';
     BrowserWindow.getAllWindows()[0].webContents.send('automation-changed', {
       automationId: globalThis.recordSnapshot.automation.id,
@@ -189,7 +190,7 @@ try {
   await page.waitForFunction(
     (id) =>
       document
-        .querySelector('#automation-result-detail-' + id)
+        .querySelector(`[data-result-id="${id}"]`)
         ?.textContent.includes('Updated with the tab chooser open'),
     item.id,
   );
@@ -239,14 +240,14 @@ try {
   await page.locator('#automation-result-search').fill('');
   await row.waitFor();
   const controls = page.locator('.record-table-scroll-controls'),
-    slider = page.getByRole('slider', {name: 'Tablonun yatay kaydırma konumu'});
+    slider = page.getByRole('slider', {name: 'Horizontal scroll position of the table'});
   await controls.waitFor();
   await slider.focus();
   await slider.press('Home');
   await page.waitForFunction(
     () => document.querySelector('.record-table-scroller').dataset.left === 'false',
   );
-  await page.getByRole('button', {name: 'Tabloyu sağa kaydır', exact: true}).click();
+  await page.getByRole('button', {name: 'Scroll the table right', exact: true}).click();
   await page.waitForFunction(() => document.querySelector('.jobs-table-wrap').scrollLeft > 50);
   await slider.focus();
   await slider.press('End');
@@ -254,7 +255,7 @@ try {
     () => document.querySelector('.record-table-scroller').dataset.right === 'false',
   );
   assert.equal(
-    await page.getByRole('button', {name: 'Tabloyu sağa kaydır', exact: true}).isDisabled(),
+    await page.getByRole('button', {name: 'Scroll the table right', exact: true}).isDisabled(),
     true,
   );
   await page.locator('[data-result-sort=status]').click();

@@ -17,7 +17,7 @@ export function workerScreenshot(api, pane) {
   }
   function status(message) {
     pane.screenshotStatus.textContent =
-      message + (last ? ' · ' + new Date(last.capturedAt).toLocaleTimeString('tr-TR') : '');
+      message + (last ? ' · ' + new Date(last.capturedAt).toLocaleTimeString('en-GB') : '');
     if (!last) pane.screenshotEmpty.textContent = message;
   }
   function update() {
@@ -31,10 +31,11 @@ export function workerScreenshot(api, pane) {
         pane.screenshotImage.hidden = true;
         pane.screenshotEmpty.hidden = false;
         pane.screenshotUrl.textContent = '';
-        status('Görüntü bekleniyor…');
+        status('Waiting for a screenshot…');
       }
     }
-    if (!session) status(last ? 'Worker durdu · Son görüntü' : 'Worker’ın aktif tarayıcı işi yok.');
+    if (!session)
+      status(last ? 'Worker stopped · Last screenshot' : 'The worker has no active browser work.');
   }
   async function refresh() {
     update();
@@ -53,11 +54,13 @@ export function workerScreenshot(api, pane) {
         pane.screenshotEmpty.hidden = true;
         pane.screenshotUrl.textContent = result.url;
         pane.screenshotUrl.title = result.title ? `${result.title}\n${result.url}` : result.url;
-        status(result.captcha?.message ?? 'Son güncelleme');
+        status(result.captcha?.message ?? 'Last update');
       } else
-        status((last ? 'Son görüntü · ' : '') + (result.message ?? 'Yeni görüntü bekleniyor…'));
+        status(
+          (last ? 'Last screenshot · ' : '') + (result.message ?? 'Waiting for a new screenshot…'),
+        );
     } catch (error) {
-      if (!dead && request === version) status((last ? 'Son görüntü · ' : '') + error.message);
+      if (!dead && request === version) status((last ? 'Last screenshot · ' : '') + error.message);
     } finally {
       pending = false;
     }

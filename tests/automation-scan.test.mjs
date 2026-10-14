@@ -104,7 +104,7 @@ test('template-free custom automations enforce source coverage too', async (t) =
       status: 'completed',
       summary: 'First page checked',
     }),
-    /Tarama kapsamı gerekli/,
+    /Scan coverage required/,
   );
 });
 
@@ -124,7 +124,7 @@ test('source coverage is required and partial work cannot voluntarily rotate age
     });
   await assert.rejects(
     flow.call(id, run.id, 'finish_automation_run', {status: 'completed', summary: 'Two found'}),
-    /Tarama kapsamı gerekli/,
+    /Scan coverage required/,
   );
   await assert.rejects(
     flow.call(id, run.id, 'finish_automation_run', {
@@ -137,7 +137,7 @@ test('source coverage is required and partial work cannot voluntarily rotate age
         evidenceUrl: source,
       },
     }),
-    /Bekleyen/,
+    /pages or listings are pending/,
   );
   await assert.rejects(
     flow.call(id, run.id, 'finish_automation_run', {
@@ -145,7 +145,7 @@ test('source coverage is required and partial work cannot voluntarily rotate age
       summary: 'Stop here',
       scan: {complete: false, pendingUrls: [second], reason: 'More remain', evidenceUrl: source},
     }),
-    /Süre veya adım sınırı yok/,
+    /no time or step limit/,
   );
   assert.equal(db.run(run.id).status, 'running');
   assert.equal(launches.length, 1);
@@ -297,7 +297,7 @@ test('page reports accept descriptions while retaining observed-page ownership a
         run.id,
         scanPageReport({url: third}, {currentPage: 3, totalPages: 3, evidence: 'Page 3 of 3'}, 1),
       ),
-    /gözlenmedi/,
+    /not observed/,
   );
   db.reportPage(
     id,
@@ -314,8 +314,8 @@ test('page reports accept descriptions while retaining observed-page ownership a
     {currentPage: 2, totalPages: null, evidence: 'Page 2'},
     1,
   );
-  assert.equal(scanPageLabel(progress), '2. sayfa');
-  assert.equal(scanPageLabel({...progress, totalPages: 71}), 'Sayfa 2 / 71');
+  assert.equal(scanPageLabel(progress), 'Page 2');
+  assert.equal(scanPageLabel({...progress, totalPages: 71}), 'Page 2 / 71');
   assert.equal(scanPageLabel(null), '');
   assert.throws(
     () =>
@@ -324,7 +324,7 @@ test('page reports accept descriptions while retaining observed-page ownership a
         {currentPage: 2, totalPages: 1, evidence: 'Page 2'},
         1,
       ),
-    /Geçerli/,
+    /valid page number/,
   );
 });
 
@@ -361,8 +361,8 @@ test('numbered Jev titles save page progress when pagination controls are absent
       {...snapshot, activeRun: run, activeRuns: [run]},
       {sessions: new Map()},
     );
-  assert.equal(scanPageLabel(snapshot.sources[0].pageProgress), '8. sayfa');
-  assert.equal(scanPageLabel(view.workers[0].presentation.pageProgress), '8. sayfa');
+  assert.equal(scanPageLabel(snapshot.sources[0].pageProgress), 'Page 8');
+  assert.equal(scanPageLabel(view.workers[0].presentation.pageProgress), 'Page 8');
   assert.deepEqual(snapshot.sources[0].scan.pendingUrls, [url]);
   assert.equal(db.run(run.id).pageProgress.evidence, title);
 });
@@ -444,8 +444,8 @@ test('scan evidence and continuation URLs must be observed, scoped and consisten
   assert.deepEqual(scanCheckpoint(run, base), base);
   for (const pendingUrls of [[third], ['https://other.test/page'], []])
     assert.throws(() => scanCheckpoint(run, {...base, pendingUrls}));
-  assert.throws(() => scanCheckpoint(run, {...base, evidenceUrl: second}), /bu turda/);
-  assert.throws(() => scanCheckpoint({...run, recordId: 'one'}, base), /kaynak görevine/);
+  assert.throws(() => scanCheckpoint(run, {...base, evidenceUrl: second}), /in this turn/);
+  assert.throws(() => scanCheckpoint({...run, recordId: 'one'}, base), /source task/);
   const response = {
     content: [
       {type: 'text', text: `Page URL: ${source}\n- link "Next":\n  - /url: /results?page=2`},

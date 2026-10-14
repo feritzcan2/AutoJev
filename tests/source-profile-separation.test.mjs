@@ -5,6 +5,7 @@ import {AutomationStore} from '../app/automation/store.mjs';
 import {WebTasks} from '../app/automation/web-template.mjs';
 import {automationTaskContext} from '../app/automation/task-context.mjs';
 import {automationProgress} from '../app/automation/progress.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
 import {prepareAutomationChat} from '../src/automation-chat.js';
 
 const first = 'https://one.test/homes',
@@ -68,7 +69,7 @@ test('removing an idle source only cancels its queued tasks and rejects removal 
     sourceUrl: second,
     sources: [second],
   });
-  assert.throws(() => db.removeSource(id, first), /çalışan görevini/);
+  assert.throws(() => db.removeSource(id, first), /running task/);
   assert.deepEqual(db.get(id), before);
   db.removeSource(id, second);
   assert.equal(core.workspaces.tasks.get(id, removedTask.id).state, 'cancelled');
@@ -127,6 +128,40 @@ test('source-only suggestions appear in conversation context without becoming a 
   assert.deepEqual(db.get(id).sources, [first, second]);
 });
 
+test('the plan tool changes only the sources it names', async (t) => {
+  const {db, runtime, id} = fixture(t),
+    chat = await runtime.message(id, 'Kaynak öner.'),
+    flow = automationWorkflow({db, run: chat, signal: {aborted: false}, browser: {}}),
+    a = db.get(id);
+  const plan = (input) =>
+    flow.call(id, chat.id, 'save_automation_plan', {
+      title: a.title,
+      goal: a.goal,
+      criteria: Object.entries(a.criteria).map(([key, value]) => ({key, value})),
+      instructions: a.instructions,
+      facts: a.facts,
+      ...input,
+    });
+  await plan({});
+  assert.equal(db.get(id).sourceDraft, undefined, 'A profile-only save suggests no source change');
+  await plan({addSources: [third]});
+  assert.deepEqual(db.get(id).sourceDraft.sources, [first, second, third]);
+  assert.deepEqual(db.get(id).sources, [first, second]);
+  await plan({addSources: ['https://four.test/homes']});
+  assert.deepEqual(db.get(id).sourceDraft.sources, [
+    first,
+    second,
+    third,
+    'https://four.test/homes',
+  ]);
+  await plan({removeSources: [second]});
+  assert.deepEqual(db.get(id).sourceDraft.sources, [first, third, 'https://four.test/homes']);
+  await assert.rejects(
+    plan({removeSources: ['https://unknown.test/']}),
+    /Not a saved or suggested source/,
+  );
+});
+
 test('manual source changes preserve profile drafts and newer source choices, stale proposals are rejected', async (t) => {
   const {db, runtime, id} = fixture(t),
     chat = await runtime.message(id, 'Değişiklik öner.');
@@ -134,7 +169,7 @@ test('manual source changes preserve profile drafts and newer source choices, st
   const draft = db.get(id).sourceDraft;
   db.addSource(id, {url: 'https://manual.test/homes'});
   assert.equal(db.get(id).planDraft.plan.instructions, 'Yeni işleyiş');
-  assert.throws(() => db.resolveSourceDraft(id, draft.id, true), /önerileri değişti/);
+  assert.throws(() => db.resolveSourceDraft(id, draft.id, true), /suggestions changed/);
   db.resolveSourceDraft(id, db.get(id).sourceDraft.id, true);
   assert.deepEqual(db.get(id).sources, [first, third, 'https://manual.test/homes']);
   assert.equal(db.get(id).instructions, '');
@@ -250,7 +285,7 @@ test('a reported source stays protected until its provider session finishes clos
   await settle();
   try {
     assert.notEqual(db.run(run.id).status, 'running');
-    assert.throws(() => db.removeSource(id, first), /çalışan görevini/);
+    assert.throws(() => db.removeSource(id, first), /running task/);
   } finally {
     release();
   }

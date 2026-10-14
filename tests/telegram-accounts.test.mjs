@@ -185,7 +185,7 @@ test('a shared Telegram user cannot use pairing, answer or delete callbacks thro
   assert.equal(answers.length, 0);
   const before = store.job(p.id, job.id),
     completed = await service.worker(p.id).deleteNotification(callback);
-  assert.equal(completed.text, 'Mesaj silindi.');
+  assert.equal(completed.text, 'Message deleted.');
   assert.deepEqual(store.job(p.id, job.id), before);
   const deleted = calls.filter((call) => call.method === 'deleteMessage');
   assert.equal(deleted.length, 1);
@@ -274,7 +274,7 @@ test('shared bots have one poller while enablement remains per candidate and tok
   assert.equal(service.status(p.id).running, false);
   assert.equal(service.status(other.id).running, true);
   assert.equal(service.worker(other.id).db.sender(11, 11), null);
-  assert.throws(() => service.pairing(p.id), /kaydedip aç/);
+  assert.throws(() => service.pairing(p.id), /Save and enable/);
   const a = store.addRecord(p.id, input('Disabled')).job,
     b = store.addRecord(other.id, input('Enabled')).job;
   await flush();

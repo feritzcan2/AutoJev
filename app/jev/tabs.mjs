@@ -28,7 +28,7 @@ export class JevTabs {
       saved = JSON.parse(await readFile(this.file, 'utf8'));
     } catch (error) {
       if (error.code === 'ENOENT') return null;
-      throw Error('Jev sekme kaydı okunamadı; mevcut formlar korunuyor.');
+      throw Error('Could not read the Jev tab record; existing forms are kept.');
     }
     // Records of the former remote-debugging connection name no extension tab.
     if (saved?.version === 1) return null;
@@ -42,7 +42,7 @@ export class JevTabs {
       typeof saved.tabIds !== 'object' ||
       !Object.values(saved.tabIds).every((id) => Number.isInteger(id))
     )
-      throw Error('Jev sekme kaydı geçersiz; mevcut formlar korunuyor.');
+      throw Error('The Jev tab record is invalid; existing forms are kept.');
     return saved;
   }
   save(instanceId, targets, tabIds, metadata = {}) {

@@ -16,12 +16,18 @@ for (const [provider, permission] of [
     const db = new AutomationStore(store),
       profile = db.create('job-search', {agentSettings: {provider}});
     assert.equal(profile.agentSettings.permission, permission);
-    assert.equal(profile.agentSettings.contextCompactTokens, 150000);
+    assert.equal(profile.agentSettings.model, provider === 'claude' ? 'haiku' : 'default');
+    assert.equal(profile.agentSettings.trialModel, provider === 'claude' ? 'opus[1m]' : undefined);
+    assert.equal(profile.agentSettings.reasoning, provider === 'claude' ? 'medium' : 'default');
+    assert.equal(
+      profile.agentSettings.contextCompactTokens,
+      provider === 'claude' ? 200000 : 150000,
+    );
     assert.equal(profile.agentSettings.contextRestartTokens, 0);
     assert.equal(db.get(profile.id).agentSettings.permission, permission);
     const automation = new AutomationStore(store).create('housing', {agentSettings: {provider}});
     assert.equal(automation.agentSettings.permission, permission);
-    assert.equal(automation.agentSettings.contextCompactTokens, 150000);
+    assert.deepEqual(automation.agentSettings, profile.agentSettings);
     assert.equal(automation.agentSettings.contextRestartTokens, 0);
   });
   for (const permission of provider === 'opencode'
@@ -45,7 +51,7 @@ const runningWorkers = [
 ];
 for (const provider of ['codex', 'claude', 'opencode'])
   test(`${provider}: saving context thresholds preserves running sessions without a restart prompt`, async () => {
-    let settings = withAgentDefaults({provider}),
+    let settings = withAgentDefaults({provider, trialModel: null}),
       saved = 0,
       notified = 0;
     const unexpected = () => assert.fail('Context changes must not ask for or perform a restart');

@@ -1,10 +1,10 @@
 import {formatTokens, parseTokenInput, setupTokenInput} from './token-input.js';
-import {DEFAULT_COMPACT_TOKENS} from '../app/agents/context-compaction.mjs';
-import {defaultPermission} from '../app/agents/settings.mjs';
+import {withAgentDefaults} from '../app/agents/settings.mjs';
 import {coalesceRefresh} from './refresh-queue.js';
 import {saveAgentSettings, createAgentRestartDialog} from './agent-settings-save.js';
 import {instructionsPanel} from './instructions.js';
 import {automationsPage} from './automations.js';
+import {onboardingScreen, wantsOnboarding} from './onboarding.js';
 import {createChromeProfileDialog} from './chrome-profile-dialog.js';
 import {workspaceSwitcher} from './workspace-switcher.js';
 import {workerTerminals} from './worker-terminals.js';
@@ -57,20 +57,20 @@ function element(tag, cls, value) {
 function relativeTime(value) {
   const minutes = Math.round(Math.abs(Date.now() - new Date(value).getTime()) / 60000);
   return minutes < 1
-    ? 'az önce'
+    ? 'just now'
     : minutes < 60
-      ? `${minutes} dk önce`
-      : `${Math.round(minutes / 60)} sa önce`;
+      ? `${minutes} min ago`
+      : `${Math.round(minutes / 60)} h ago`;
 }
 const workspaceMenu = workspaceSwitcher($('candidates'));
 const actions = element('div', 'workspace-actions');
 actions.innerHTML =
-  '<button id="rename-workspace" class="quiet" type="button">Yeniden adlandır</button><button id="delete-workspace" class="quiet danger" type="button">Sil</button>';
+  '<button id="rename-workspace" class="quiet" type="button">Rename</button><button id="delete-workspace" class="quiet danger" type="button">Delete</button>';
 $('new').after(actions);
 const renameDialog = document.createElement('dialog');
 renameDialog.id = 'rename-workspace-dialog';
 renameDialog.innerHTML =
-  '<form><h2>Çalışma alanını yeniden adlandır</h2><label>Yeni ad<input name="workspaceName" maxlength="150" required></label><div class="workspace-dialog-actions"><button class="quiet" type="button" data-cancel>Vazgeç</button><button class="primary" type="submit">Kaydet</button></div></form>';
+  '<form><h2>Rename workspace</h2><label>New name<input name="workspaceName" maxlength="150" required></label><div class="workspace-dialog-actions"><button class="quiet" type="button" data-cancel>Cancel</button><button class="primary" type="submit">Save</button></div></form>';
 document.body.append(renameDialog);
 renameDialog.querySelector('[data-cancel]').onclick = () => renameDialog.close();
 const selectedWorkspace = () => ({
@@ -93,13 +93,13 @@ renameDialog.querySelector('form').onsubmit = attempt(async (event) => {
   );
   renameDialog.close();
   await refresh();
-  notice('Çalışma alanı yeniden adlandırıldı.');
+  notice('Workspace renamed.');
 });
 async function deleteWorkspace(owner = selectedWorkspace()) {
   if (!owner.id || deletingWorkspace || automationUI.busy) return;
   if (
     !confirm(
-      `“${owner.title}” çalışma alanı silinsin mi? Kayıtlar, belgeler ve çalışma geçmişi kalıcı olarak kaldırılacak.`,
+      `Delete the “${owner.title}” workspace? Its records, documents and run history will be removed permanently.`,
     )
   )
     return;
@@ -111,8 +111,8 @@ async function deleteWorkspace(owner = selectedWorkspace()) {
     automationUI.deselect();
     deletingWorkspace = null;
     await refresh();
-    switchView('templates');
-    notice(`“${owner.title}” çalışma alanı silindi.`);
+    switchView('start');
+    notice(`The “${owner.title}” workspace was deleted.`);
   } catch (error) {
     notice(error.message);
   } finally {
@@ -136,6 +136,37 @@ const automationUI = automationsPage(api, {
   refreshWorkspaces: refresh,
   deleteWorkspace,
   isDeleting: () => Boolean(deletingWorkspace),
+  openOnboarding: (id, data) => {
+    if (!wantsOnboarding(data)) return false;
+    onboardingUI.open(id).catch((error) => notice(error.message));
+    return true;
+  },
+});
+// Leaving the welcome screen of a new profile returns to the profile open before it.
+let workspaceBeforeNew = null;
+const onboardingUI = onboardingScreen(api, {
+  getCatalog: () => catalog,
+  created: async (id) => {
+    localStorage.setItem('selected-workspace', id);
+    await refresh();
+  },
+  finish: async (id) => {
+    await automationUI.select(id, {onboarding: false});
+    switchView('board');
+    await refresh();
+  },
+  chat: async (id) => {
+    await automationUI.select(id, {onboarding: false});
+    if (automationUI.selected === id) switchView('setup-agent');
+    await refresh();
+  },
+  cancel: async (id, {remove}) => {
+    const items = (await api.workspaces()).filter((item) => item.id !== id),
+      other = items.find((item) => item.id === workspaceBeforeNew) ?? items[0];
+    if (other) await automationUI.select(other.id);
+    if (id && remove) await api.deleteWorkspace(id);
+    await refresh();
+  },
 });
 await document.fonts.ready;
 const terminalSection = document.querySelector('#agent .terminal-section');
@@ -149,7 +180,7 @@ const terminals = workerTerminals(api, {
     await settingsQueue;
     if (automationUI.dirty && ['startWorker', 'restartWorker'].includes(method)) {
       switchView('profile');
-      throw Error('Önce profil değişikliklerini kaydet.');
+      throw Error('Save the profile changes first.');
     }
     if (method === 'startWorker' && worker === 'main' && !automationUI.data.progress.reviewed) {
       await automationUI.start();
@@ -170,11 +201,11 @@ chromeStatus.setAttribute('role', 'status');
 chromeStatus.setAttribute('aria-live', 'polite');
 const chromeTitle = element('b'),
   chromeDetail = element('small'),
-  chromeReconnect = element('button', 'quiet chrome-reconnect', 'Yeniden bağlan');
+  chromeReconnect = element('button', 'quiet chrome-reconnect', 'Reconnect');
 chromeReconnect.type = 'button';
 chromeStatus.append(chromeTitle, chromeDetail, chromeReconnect);
 document.querySelector('.sidebar-bottom').before(chromeStatus);
-const chromeProfileChange = element('button', 'quiet chrome-profile-change', 'Profili değiştir');
+const chromeProfileChange = element('button', 'quiet chrome-profile-change', 'Change profile');
 chromeProfileChange.type = 'button';
 chromeStatus.append(chromeProfileChange);
 const jevStatus = element('div', 'jev-status');
@@ -193,7 +224,7 @@ const chromeProfileDialog = createChromeProfileDialog({
     await api.workspaceSettings(owner.id, {chromeProfile});
     await api.browserReconnect(owner.id);
     await refresh();
-    notice('Chrome profili kaydedildi.');
+    notice('Chrome profile saved.');
   },
 });
 document.body.append(chromeProfileDialog.element);
@@ -205,10 +236,10 @@ chromeReconnect.onclick = attempt(() => automationUI.reconnectBrowser());
 const sourcesNav = element('button');
 sourcesNav.dataset.view = 'sources';
 sourcesNav.innerHTML =
-  '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Kaynaklar</span><span id="sources-nav-status" class="agent-nav-status sources-nav-status" data-tone="active" aria-hidden="true" hidden></span>';
+  '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Sources</span><span id="sources-nav-status" class="agent-nav-status sources-nav-status" data-tone="active" aria-hidden="true" hidden></span>';
 document.querySelector('nav button[data-view="agent"]').before(sourcesNav);
 function switchView(name, options = {}) {
-  const global = ['automations', 'templates'].includes(name),
+  const global = name === 'start',
     selected = automationUI.selected;
   document.querySelector('main>header>.actions').hidden =
     global || !selected || name === 'setup-agent';
@@ -217,8 +248,8 @@ function switchView(name, options = {}) {
     if ($(id)) $(id).hidden = true;
   automationUI.element.hidden = false;
   if (global) {
-    $('heading').textContent = 'Yeni çalışma alanı';
-    if (!options.detail) automationUI.show('templates').catch((error) => notice(error.message));
+    $('heading').textContent = 'New workspace';
+    if (!options.detail) automationUI.show().catch((error) => notice(error.message));
   } else if (selected) {
     automationUI.renderShell();
     if (name === 'config') {
@@ -244,17 +275,13 @@ function switchView(name, options = {}) {
 function settingsOptions(saved) {
   const current = catalog.find((a) => a.id === $('provider').value);
   if (!current) return;
-  const fields = $('agent-settings-form').elements;
+  const fields = $('agent-settings-form').elements,
+    settings = withAgentDefaults({...saved, provider: current.id});
   fields.network.disabled = current.id !== 'codex';
-  for (const [name, fallback] of [
-    ['contextCompactTokens', DEFAULT_COMPACT_TOKENS],
-    ['contextRestartTokens', 0],
-  ]) {
+  for (const name of ['contextCompactTokens', 'contextRestartTokens']) {
     const field = fields[name];
-    if (saved) {
-      field.value = formatTokens(saved[name] ?? fallback);
-      field.setCustomValidity('');
-    }
+    field.value = formatTokens(settings[name]);
+    field.setCustomValidity('');
   }
   for (const [key, list] of [
     ['model', current.models],
@@ -262,29 +289,25 @@ function settingsOptions(saved) {
     ['reasoning', current.reasoning],
   ]) {
     $(key).replaceChildren(...list.map((value) => new Option(value, value)));
-    $(key).value = list.includes(saved?.[key])
-      ? saved[key]
-      : key === 'permission'
-        ? defaultPermission(current.id)
-        : 'default';
+    $(key).value = list.includes(settings[key]) ? settings[key] : 'default';
   }
   $('trialModel').replaceChildren(
-    new Option('Ana modelle aynı', ''),
+    new Option('Same as main model', ''),
     ...current.models
       .filter((value) => value !== 'default')
       .map((value) => new Option(value, value)),
   );
-  $('trialModel').value = current.models.includes(saved?.trialModel) ? saved.trialModel : '';
+  $('trialModel').value = current.models.includes(settings.trialModel) ? settings.trialModel : '';
 }
 function chromeProfileOptions(selected = workspaceAgent?.workspace?.chromeProfile) {
   const select = $('agent-settings-form').elements.chromeProfile;
   select.replaceChildren(
-    new Option('Profil belirtme', ''),
+    new Option('No profile', ''),
     ...chromeProfiles.map((p) => new Option(`${p.name} — ${p.directory}`, p.directory)),
   );
   if (selected && !chromeProfiles.some((p) => p.directory === selected.directory))
     select.add(
-      new Option(`${selected.name} — ${selected.directory} (bulunamadı)`, selected.directory),
+      new Option(`${selected.name} — ${selected.directory} (not found)`, selected.directory),
     );
   select.value = selected?.directory ?? '';
   chromeProfileVisibility();
@@ -293,8 +316,8 @@ function chromeProfileVisibility() {
   $('chrome-profile-hint').textContent =
     chromeProfilesError ||
     (chromeProfiles.length
-      ? 'Jev mevcut girişini kullanır; ilanları tek AutoJev penceresinde sekmeler olarak açar.'
-      : 'Chrome profili bulunamadı.');
+      ? 'Jev uses your existing sign-in and opens listings as tabs in a single AutoJev window.'
+      : 'No Chrome profile found.');
 }
 function fillAgentSettings(profile, id) {
   const changedOwner = agentSettingsOwner !== id;
@@ -308,9 +331,9 @@ function fillAgentSettings(profile, id) {
   const form = $('agent-settings-form');
   chromeProfileOptions(p.chromeProfile);
   $('agent-settings').classList.toggle('is-off', !id);
-  if (!id) $('agent-settings-status').textContent = 'Önce bir çalışma alanı seç';
-  else if (changedOwner || $('agent-settings-status').textContent === 'Önce bir çalışma alanı seç')
-    $('agent-settings-status').textContent = 'Değişiklikleri Kaydet ile uygula';
+  if (!id) $('agent-settings-status').textContent = 'Select a workspace first';
+  else if (changedOwner || $('agent-settings-status').textContent === 'Select a workspace first')
+    $('agent-settings-status').textContent = 'Apply changes with Save';
   $('provider').value = p.agentSettings?.provider ?? 'codex';
   settingsOptions(p.agentSettings ?? {});
   form.elements.network.value =
@@ -350,31 +373,31 @@ function renderContext(value) {
     compact = value?.active?.compaction;
   $('context-compact-status').textContent =
     {
-      sending: '/compact gönderiliyor…',
-      submitted: '/compact gönderildi; sağlayıcıdan compaction bekleniyor.',
-      running_command: 'Sağlayıcı /compact komutunu işliyor…',
-      verified: 'Compaction tamamlandı.',
-      compacting: 'Context sıkıştırılıyor…',
-      awaiting_usage: 'Compaction turu bitti; yeni context ölçümü bekleniyor.',
-      completed: 'Context kullanımı eşik altına indi.',
-      waiting: 'Terminalin komut almaya hazır olması bekleniyor.',
-      unconfirmed: 'Compaction doğrulanamadı. ' + (compact?.error ?? ''),
+      sending: 'Sending /compact…',
+      submitted: '/compact sent; waiting for the provider to compact.',
+      running_command: 'The provider is processing /compact…',
+      verified: 'Compaction finished.',
+      compacting: 'Compacting context…',
+      awaiting_usage: 'Compaction turn finished; waiting for a new context measurement.',
+      completed: 'Context usage dropped below the threshold.',
+      waiting: 'Waiting for the terminal to accept commands.',
+      unconfirmed: 'Compaction could not be verified. ' + (compact?.error ?? ''),
     }[compact?.state] ??
     (compactThreshold
-      ? `Otomatik compaction: ${formatTokens(compactThreshold)} token.`
-      : 'Otomatik compaction kapalı.');
+      ? `Automatic compaction: ${formatTokens(compactThreshold)} tokens.`
+      : 'Automatic compaction off.');
   if (value?.workspace.agentSettings.provider === 'opencode' && !compact?.state)
     $('context-compact-status').textContent = compactThreshold
-      ? `OpenCode otomatik compaction: ${formatTokens(compactThreshold)} token. Eşik değişikliği sonraki agent oturumunda uygulanır.`
-      : 'Uygulamanın compaction eşiği kapalı; OpenCode kendi varsayılanını kullanır.';
+      ? `OpenCode automatic compaction: ${formatTokens(compactThreshold)} tokens. A threshold change applies from the next agent session.`
+      : 'The app’s compaction threshold is off; OpenCode uses its own default.';
   $('context-usage-status').textContent =
     !threshold && !compactThreshold
-      ? 'Otomatik context yönetimi kapalı.'
+      ? 'Automatic context management off.'
       : !value?.active
-        ? 'Sonraki oturumda context izlenecek.'
+        ? 'Context will be tracked in the next session.'
         : usage?.tokens == null
-          ? 'Context token ölçümü bekleniyor.'
-          : `Context kullanımı: ${formatTokens(usage.tokens)} token.${threshold > 0 && usage.peakTokens >= threshold ? ' Eşiğe ulaşıldı; görev bitince yeni agent oturumu açılacak.' : ''}`;
+          ? 'Waiting for a context token measurement.'
+          : `Context usage: ${formatTokens(usage.tokens)} tokens.${threshold > 0 && usage.peakTokens >= threshold ? ' Threshold reached; a new agent session opens when the task finishes.' : ''}`;
 }
 async function refreshWorkspace() {
   if (deletingWorkspace) return;
@@ -382,7 +405,7 @@ async function refreshWorkspace() {
     items = await api.workspaces();
   if (version !== refreshVersion) return;
   $('candidates').replaceChildren(
-    new Option('Çalışma alanı seç', ''),
+    new Option('Select workspace', ''),
     ...items.map((item) => new Option(item.title, item.id)),
   );
   if (automationUI.selected && !items.some((item) => item.id === automationUI.selected))
@@ -393,8 +416,11 @@ async function refreshWorkspace() {
   }
   workspaceMenu.sync();
 }
-$('new').textContent = 'Yeni çalışma alanı';
-$('new').onclick = () => switchView('templates');
+$('new').textContent = 'New workspace';
+$('new').onclick = () => {
+  workspaceBeforeNew = automationUI.selected;
+  return automationUI.create();
+};
 $('candidates').onchange = attempt(async () => {
   const id = $('candidates').value;
   notice('');
@@ -433,7 +459,7 @@ chromeProfiles = await api.chromeProfiles().catch((error) => {
 catalog = await api.catalog();
 $('provider').replaceChildren(
   ...catalog.map((item) => {
-    const option = new Option(item.label + (item.supported ? '' : ' — MCP henüz yok'), item.id);
+    const option = new Option(item.label + (item.supported ? '' : ' — no MCP yet'), item.id);
     option.disabled = !item.supported;
     return option;
   }),
@@ -467,8 +493,8 @@ function markAgentSettingsDirty() {
   agentSettingsDirty = JSON.stringify(readAgentSettings()) !== agentSettingsBaseline;
   $('agent-settings-save').disabled = !agentSettingsDirty;
   $('agent-settings-status').textContent = agentSettingsDirty
-    ? 'Kaydedilmemiş değişiklikler var.'
-    : 'Değişiklik yok.';
+    ? 'There are unsaved changes.'
+    : 'No changes.';
 }
 for (const name of ['contextCompactTokens', 'contextRestartTokens'])
   setupTokenInput($('agent-settings-form').elements[name]);
@@ -487,7 +513,7 @@ $('agent-settings-form').onsubmit = (event) => {
   agentSettingsSaving = true;
   form.inert = true;
   $('agent-settings-save').disabled = true;
-  status.textContent = 'Kaydediliyor…';
+  status.textContent = 'Saving…';
   let saved = false;
   settingsQueue = settingsQueue
     .then(async () => {
@@ -501,24 +527,24 @@ $('agent-settings-form').onsubmit = (event) => {
           if (automationUI.selected === owner) {
             agentSettingsDirty = false;
             agentSettingsSignature = '';
-            status.textContent = 'Kaydedildi.';
+            status.textContent = 'Saved.';
           }
         },
       });
       if (automationUI.selected === owner) {
         await automationUI.refresh();
         status.textContent = result.failed.length
-          ? `Ayarlar kaydedildi. Yeniden başlatılamayan agent’ler: ${result.failed.join('; ')}`
+          ? `Settings saved. Agents that could not be restarted: ${result.failed.join('; ')}`
           : result.restarted
-            ? `Kaydedildi. ${result.restarted} agent yeniden başlatıldı.`
+            ? `Saved. ${result.restarted} agent(s) restarted.`
             : input.agentSettings.provider === 'opencode'
-              ? 'Kaydedildi. Yeni oturum eşiği hemen, compaction ve diğer ayarlar sonraki başlatmada uygulanır.'
-              : 'Kaydedildi. Context eşikleri hemen, diğer ayarlar sonraki başlatmada uygulanır.';
+              ? 'Saved. The new session threshold applies now; compaction and other settings apply at the next start.'
+              : 'Saved. Context thresholds apply now; other settings apply at the next start.';
       }
     })
     .catch((error) => {
       if (automationUI.selected === owner)
-        status.textContent = (saved ? 'Ayarlar kaydedildi. ' : 'Kaydedilemedi: ') + error.message;
+        status.textContent = (saved ? 'Settings saved. ' : 'Could not save: ') + error.message;
     })
     .finally(() => {
       agentSettingsSaving = false;
@@ -555,7 +581,10 @@ if (selected) {
         ? initialView
         : 'board',
   );
-} else switchView('templates');
+} else {
+  switchView('start');
+  await onboardingUI.open();
+}
 localStorage.removeItem('selected-candidate');
 localStorage.removeItem('selected-automation');
 api.onAutomationChange?.((event) => {

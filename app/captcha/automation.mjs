@@ -65,7 +65,7 @@ export async function resolveBrowserCaptcha(browser, id, result, owner, options)
     (!browser.isActive || browser.isActive());
   const queued = (run) =>
     browser.enqueue(id, async () => {
-      if (!active()) throw Error('CAPTCHA görevi artık etkin değil.');
+      if (!active()) throw Error('The CAPTCHA task is no longer active.');
       return run();
     });
   const allowed = (target) => {
@@ -92,7 +92,7 @@ export async function resolveBrowserCaptcha(browser, id, result, owner, options)
             fresh.target?.identity !== target.identity ||
             fresh.target?.round !== target.round
           )
-            throw Error('CAPTCHA değişti.');
+            throw Error('The CAPTCHA changed.');
           return captureCaptcha(page, fresh.target);
         }),
       apply: (target, capture, solution, check) =>
@@ -101,7 +101,7 @@ export async function resolveBrowserCaptcha(browser, id, result, owner, options)
             check: () => {
               check();
               if (!active() || !allowed(target))
-                throw Error('Doğrulama görevi veya gönderim yetkisi değişti.');
+                throw Error('The verification task or the submit authorization changed.');
             },
           }),
         ),
@@ -111,7 +111,7 @@ export async function resolveBrowserCaptcha(browser, id, result, owner, options)
             check: () => {
               check();
               if (!active() || !allowed(target))
-                throw Error('Doğrulama görevi veya gönderim yetkisi değişti.');
+                throw Error('The verification task or the submit authorization changed.');
             },
           }),
         ),
@@ -128,7 +128,7 @@ export async function resolveBrowserCaptcha(browser, id, result, owner, options)
               status: 'verification_cancelled',
               executed: value.executed ?? false,
               message:
-                'Doğrulama görevi veya sayfa değişti; eski çözüm uygulanmadı. Güncel sekmeyi gözlemle, önceki gönderimi tekrarlama.',
+                'The verification task or the page changed; the old solution was not applied. Observe the current tab and do not repeat the earlier submission.',
             }),
           },
         ],

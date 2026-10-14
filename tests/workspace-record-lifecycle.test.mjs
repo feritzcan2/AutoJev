@@ -134,7 +134,7 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
       assert.ok(Buffer.byteLength(button.callback_data) <= 64);
       const result = await f.bot.queueNotification(f.callback(button.callback_data));
       await settle();
-      assert.match(result.text, /işlem sırasına/);
+      assert.match(result.text, /action queue/);
       assert.equal(f.launches.length, 1);
       assert.equal(f.launches[0].recordId, f.item.id);
       assert.equal(f.launches[0].recordOperation, 'execute');
@@ -157,10 +157,7 @@ test('pending Telegram work is durable, shown as queued and pinned before a work
   await f.bot.flush();
   assert.ok(f.calls.some((call) => call.method === 'pinChatMessage' && call.body.message_id === 1));
   assert.equal(f.button(), undefined);
-  assert.match(
-    f.bot.delivery(f.card, f.bot.db.link(f.id), {edit: true}).text,
-    /görev zaten sırada/,
-  );
+  assert.match(f.bot.delivery(f.card, f.bot.db.link(f.id), {edit: true}).text, /already queued/);
 });
 
 test('old or changed Telegram buttons refresh without granting new authority', async (t) => {
@@ -180,7 +177,7 @@ test('Telegram dispatches uncertain records only to verification and respects di
   f.db.put({...f.db.get(f.id), reviewedRevision: null, trial: null, endAt: 1});
   const result = await f.bot.queueNotification(f.callback(f.button().callback_data));
   await settle();
-  assert.match(result.text, /doğrulama sırasına/);
+  assert.match(result.text, /verification queue/);
   assert.equal(f.launches[0].recordOperation, 'verify');
   assert.throws(() => f.db.reserve(f.id, f.launches[0].id, f.item.id));
   await f.runtime.pause(f.id);
@@ -201,7 +198,7 @@ test('Telegram dismissal stops its worker, resolves its questions and renders re
   const run = f.launches[0];
   const q = f.db.askQuestion(f.id, {recordId: f.item.id, text: 'Missing fact?'}, {runId: run.id});
   const reply = await f.bot.deleteNotification(f.callback('d:' + f.card.id));
-  assert.match(reply.text, /kayıt elendi/);
+  assert.match(reply.text, /record dismissed/);
   assert.equal(f.runtime.slots(f.id).length, 0);
   assert.equal(f.db.result(f.id, f.item.id).status, 'dismissed');
   assert.equal(f.bot.db.question(f.id, q.id).resolution, 'record_dismissed');
@@ -221,20 +218,20 @@ test('an old Telegram delete button preserves a user-confirmed application and i
     outcome: true,
     fields: [OUTCOME_FIELD],
   });
-  f.db.answerQuestion(f.id, question.id, {[OUTCOME_FIELD.id]: 'Gönderildi'});
+  f.db.answerQuestion(f.id, question.id, {[OUTCOME_FIELD.id]: 'Submitted'});
   const before = f.db.result(f.id, f.item.id),
     questions = f.db.get(f.id).questions,
     tasks = f.core.workspaces.tasks.list(f.id);
   assert.equal(before.status, 'completed');
-  assert.equal(before.evidence, 'Kullanıcı kaydın gönderildiğini onayladı.');
+  assert.equal(before.evidence, 'The user confirmed the record was submitted.');
   const completed = f.bot.delivery(
     {...f.card, data: {kind: 'submission', jobId: f.item.id}},
     f.bot.db.link(f.id),
   );
-  assert.match(completed.text, /✅ İş arama · Başvuruldu/);
+  assert.match(completed.text, /✅ Job search · Applied/);
   // Click the original listing card before Telegram has received its status edit.
   const result = await f.bot.deleteNotification(f.callback('d:' + f.card.id));
-  assert.equal(result.text, 'Mesaj silindi.');
+  assert.equal(result.text, 'Message deleted.');
   assert.equal(f.bot.db.delivery(f.card.id).status, 'deleted');
   assert.deepEqual(f.db.result(f.id, f.item.id), before);
   assert.deepEqual(f.db.get(f.id).questions, questions);
@@ -262,12 +259,12 @@ for (const template of ['housing', 'appointment', 'custom'])
       f.bot.db.link(f.id),
     );
     assert.match(completed.text, new RegExp(f.db.template(template).title));
-    assert.match(completed.text, /Tamamlandı/);
+    assert.match(completed.text, /Completed/);
     assert.doesNotMatch(completed.text, /Başvurun gönderildi/);
     const before = f.db.result(f.id, f.item.id);
     assert.equal(
       (await f.bot.deleteNotification(f.callback('d:' + f.card.id))).text,
-      'Mesaj silindi.',
+      'Message deleted.',
     );
     assert.deepEqual(f.db.result(f.id, f.item.id), before);
   });

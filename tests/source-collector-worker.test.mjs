@@ -14,6 +14,7 @@ import {
   collectSourcePage,
 } from '../app/sources/collector-worker.mjs';
 import {parseHimalayasPage} from '../app/site-extensions/himalayas/api.mjs';
+import {SCAN_SEARCH_PAGES} from '../app/sources/recipe.mjs';
 import {
   readCollectorCliPage,
   readCollectorCliDetail,
@@ -44,12 +45,19 @@ const jobs = [
     excerpt: 'Platform role',
   },
 ];
+// Listing URLs whose full text Jev assessed.
+const detailReads = [];
 const evaluate = async (state, questions) => ({
   answers: Object.fromEntries(
     Object.entries(questions).map(([name, q]) => {
       const text = JSON.stringify(state);
-      let choice =
-        name === 'fit'
+      if (name === 'fit' && state.listing) detailReads.push(state.listing.url);
+      const card = /^fit\d+$/.test(name) && state.links?.['link' + name.slice(3)];
+      let choice = card
+        ? card.context.includes('CARD_CONFLICT_MARKER')
+          ? 'hard_constraint'
+          : 'keep'
+        : name === 'fit'
           ? text.includes('DENTIST_MARKER')
             ? 'mismatch'
             : text.includes('IMAGE_ONLY_MARKER')
@@ -84,6 +92,7 @@ function fixture(
       throw Error('Synthetic detail unavailable');
     },
     terms,
+    ordering,
     saveScoreThreshold,
   } = {},
 ) {
@@ -104,6 +113,7 @@ function fixture(
         entry: {kind: 'url_template', template: 'https://himalayas.app/jobs/api/search?q={query}'},
         terms,
         pagination: 'url_param',
+        ...(ordering ? {ordering} : {}),
       },
     });
   db.review(a.id);
@@ -131,10 +141,10 @@ function fixture(
           totalCount: 21,
         });
   };
-  const makeFlow = (store = db, signal = new AbortController().signal) =>
+  const makeFlow = (store = db, signal = new AbortController().signal, runId = run.id) =>
     automationWorkflow({
       db: store,
-      run: store.run(run.id),
+      run: store.run(runId),
       signal,
       collectorReadPage: reader,
       collectorReadDetail: readDetail,
@@ -194,7 +204,7 @@ function restart(f) {
 test('CLI pages enter Jev triage, the agent scores retained items, and review gates page advancement', async (t) => {
   const f = fixture(t),
     first = await f.call('collect_source_page');
-  assert.equal(f.db.results(f.id, {all: true}).length, 0);
+  assert.equal(f.db.results(f.id).length, 0);
   assert.equal(f.reads(), 1);
   assert.equal(helper(f, first).items.length, 3);
   assert.ok(
@@ -209,7 +219,7 @@ test('CLI pages enter Jev triage, the agent scores retained items, and review ga
   assert.equal(f.reads(), 1);
   await assert.rejects(
     f.call('finish_automation_run', {status: 'completed', summary: 'Premature'}),
-    /bitmedi/,
+    /not finished/,
   );
   await assert.rejects(
     f.call('browser_jev_run', {operation: 'scan_results', url: source}),
@@ -224,9 +234,9 @@ test('CLI pages enter Jev triage, the agent scores retained items, and review ga
       title: good.title,
       summary: 'Missing score',
     }),
-    /puanlama/,
+    /scoring/,
   );
-  await assert.rejects(save(f, helper(f, first).items[1]), /uyumsuz/);
+  await assert.rejects(save(f, helper(f, first).items[1]), /mismatch/);
   await save(f, good);
   const stored = f.db.results(f.id)[0];
   assert.equal(stored.assessment.score, 42);
@@ -235,7 +245,7 @@ test('CLI pages enter Jev triage, the agent scores retained items, and review ga
   const evidence = f.db.jevTasks.fullEvidence(f.id, f.run.taskId, good.evidenceId);
   assert.ok(evidence.text.includes('Synthetic country 199'));
   assert.ok(evidence.listing, 'API text is the listing itself; the brief needs no Jev filter');
-  await assert.rejects(review(f, first), /İnceleme tamamlanmadı/);
+  await assert.rejects(review(f, first), /Review not complete/);
   await save(f, helper(f, first).items[2]);
   const acknowledged = await review(f, first);
   assert.equal(acknowledged.acknowledged.status, 'completed');
@@ -244,10 +254,7 @@ test('CLI pages enter Jev triage, the agent scores retained items, and review ga
   assert.equal(helper(f, second).id, (await f.call('collect_source_page')).taskId);
   assert.equal(f.reads(), 2);
   await handle(f, second);
-  assert.throws(
-    () => f.db.jevTasks.fullEvidence(f.id, f.run.taskId, good.evidenceId),
-    /süresi doldu/,
-  );
+  assert.throws(() => f.db.jevTasks.fullEvidence(f.id, f.run.taskId, good.evidenceId), /expired/);
   const done = await f.call('collect_source_page');
   assert.equal(done.complete, true);
   assert.deepEqual(done.progress, {
@@ -257,7 +264,7 @@ test('CLI pages enter Jev triage, the agent scores retained items, and review ga
     saved: 3,
     pending: 0,
   });
-  assert.equal(f.db.results(f.id, {all: true}).length, 3);
+  assert.equal(f.db.results(f.id).length, 3);
   assert.equal(f.browserCalls(), 0);
   assert.ok(
     !JSON.stringify(f.core.db.prepare('SELECT data FROM workspace_records').all()).includes(
@@ -277,7 +284,7 @@ test('CLI pages enter Jev triage, the agent scores retained items, and review ga
   assert.equal(f.db.run(f.run.id).status, 'completed');
   assert.match(
     f.db.get(f.id).sourceState[source].scan.reason,
-    /Toplanan: 4.*Jev eledi: 1.*Kaydedilen: 3/,
+    /Collected: 4.*Rejected by Jev: 1.*Saved: 3/,
   );
 });
 
@@ -299,9 +306,9 @@ test('legacy unscored CLI records are reviewed in place and confirmed exclusions
       createdAt: 1,
     });
   const first = await f.call('collect_source_page');
-  await assert.rejects(review(f, first), /İnceleme tamamlanmadı/);
+  await assert.rejects(review(f, first), /Review not complete/);
   await handle(f, first);
-  const records = f.db.results(f.id, {all: true});
+  const records = f.db.results(f.id);
   assert.equal(records.length, 3);
   assert.equal(records.find((r) => r.id === 'legacy-0').assessment.score, 42);
   assert.equal(records.find((r) => r.id === 'legacy-1').status, 'dismissed');
@@ -347,7 +354,7 @@ test('minimum save score excludes CLI findings, allows batch review, and survive
     saved: 1,
     pending: 0,
   });
-  assert.equal(db.results(f.id, {all: true}).length, 1);
+  assert.equal(db.results(f.id).length, 1);
   assert.equal(db.jevTasks.bodies.size, 0);
 });
 
@@ -365,7 +372,7 @@ test('restart refetches the unfinished page without rescoring saved items or per
     db.jevTasks.get(f.id, f.run.taskId, receipt.taskId).items.map((i) => i.url),
     [url('reject'), url('uncertain')],
   );
-  assert.equal(db.results(f.id, {all: true}).length, 1);
+  assert.equal(db.results(f.id).length, 1);
   assert.equal(db.run(f.run.id).scan.reviewStats.collected, 3);
 });
 
@@ -497,6 +504,37 @@ test('a listing Jev cannot assess stays pending without holding its page', async
   assert.deepEqual(end.issue.urls, [url('image')]);
 });
 
+test('a page holding only an unreadable listing is read on, and that listing is not re-read per page', async (t) => {
+  const image = {guid: url('image'), title: 'Werkstudent', description: '<p>IMAGE_ONLY_MARKER</p>'};
+  const page = (value, list, offset) =>
+    parseHimalayasPage(value, {jobs: list, offset, limit: 20, totalCount: 41});
+  let detailReads = 0;
+  const f = fixture(t, {
+    readPage: (value) => {
+      const n = new URL(value).searchParams.get('page') ?? '1';
+      return n === '1'
+        ? page(value, [image], 0)
+        : page(value, [{...jobs[0], guid: url(`p${n}`)}], n === '2' ? 20 : 40);
+    },
+    readDetail: async () => {
+      detailReads++;
+      return page('https://himalayas.app/jobs/api/search?page=1', [image], 0).jobs[0];
+    },
+  });
+  const first = await f.call('collect_source_page');
+  assert.equal(f.reads(), 2, 'the unreadable-only page is read on in the same call');
+  assert.deepEqual(
+    helper(f, first).items.map((i) => i.url),
+    [url('p2')],
+  );
+  await handle(f, first);
+  await handle(f, await f.call('collect_source_page'));
+  const end = await f.call('collect_source_page');
+  assert.equal(end.issue.reason, 'collector_details_unavailable');
+  assert.deepEqual(end.issue.urls, [url('image')]);
+  assert.equal(detailReads, 0, 'the unreadable listing is not re-read on later pages');
+});
+
 test('cancellation during missing-detail recovery preserves every pending address', async (t) => {
   let changed = false,
     entered;
@@ -535,13 +573,44 @@ test('all recipe searches must finish, including empty results, before completio
     terms: ['backend', 'platform'],
     readPage: (value) => parseHimalayasPage(value, {jobs: [], offset: 0, limit: 20, totalCount: 0}),
   });
-  await f.call('collect_source_page');
-  assert.equal(f.db.run(f.run.id).scan.complete, false);
-  await f.call('collect_source_page');
-  assert.equal(f.db.run(f.run.id).scan.complete, false);
+  // Empty pages need no review, so one call reads both searches to their end.
   const done = await f.call('collect_source_page');
   assert.equal(done.complete, true);
   assert.equal(f.reads(), 2);
+});
+
+// Pages whose listings are all already known: none reaches review.
+const knownPages = (total) => (value) => {
+  const page = Number(new URL(value).searchParams.get('page')),
+    next = new URL(value);
+  next.searchParams.set('page', String(page + 1));
+  return {
+    url: value,
+    jobs: [],
+    page,
+    totalPages: total,
+    nextUrl: page < total ? next.href : null,
+    complete: page >= total,
+  };
+};
+
+test('pages without new listings are read on within one bounded call', async (t) => {
+  const f = fixture(t, {terms: ['backend', 'platform', 'staff'], readPage: knownPages(25)});
+  const first = await f.call('collect_source_page');
+  assert.equal(f.reads(), 20);
+  assert.equal(f.db.run(f.run.id).scan.complete, false);
+  assert.match(first.next, /no new listings.*collect_source_page again/);
+  assert.equal((await f.call('collect_source_page')).complete, true);
+  assert.equal(f.reads(), 3 * SCAN_SEARCH_PAGES, 'each of the three searches reads its 10 pages');
+});
+
+test('a single collector search closed by its page budget finishes completed', async (t) => {
+  const f = fixture(t, {terms: ['backend'], readPage: knownPages(40)});
+  await f.call('collect_source_page');
+  assert.equal((await f.call('collect_source_page')).complete, true);
+  assert.equal(f.reads(), SCAN_SEARCH_PAGES);
+  await f.call('finish_automation_run', {status: 'completed', summary: 'Page budget read'});
+  assert.equal(f.db.run(f.run.id).status, 'completed');
 });
 
 test('HTTP errors and cancellation leave checkpoints incomplete, with no production records', async (t) => {
@@ -684,31 +753,86 @@ test('cancelling an active CLI request terminates its child', async () => {
   assert.ok(child.exitCode !== null || child.signalCode !== null);
 });
 
-test('reviewed duplicates and confirmed exclusions do not return in the next scan', async (t) => {
-  const f = fixture(t),
-    first = await f.call('collect_source_page');
-  await handle(f, first);
-  const second = await f.call('collect_source_page');
-  await handle(f, second);
-  await f.call('collect_source_page');
-  const before = f.db.results(f.id, {all: true}).length;
+test('a continuation reports the finished scan, and the next task skips reviewed listings', async (t) => {
+  const f = fixture(t);
+  await handle(f, await f.call('collect_source_page'));
+  await handle(f, await f.call('collect_source_page'));
+  assert.equal((await f.call('collect_source_page')).complete, true);
+  const reads = f.reads(),
+    before = f.db.results(f.id).length;
+  // The turn ended before the report: the task's next run starts with the
+  // finished scan and no page of its own, and collector runs have no browser.
+  f.db.putRun({...f.db.run(f.run.id), navigation: null, observations: []});
   prepareCollection(f.db, f.db.run(f.run.id), f.db.get(f.id));
-  const again = await f.call('collect_source_page');
-  assert.equal(helper(f, again).items.length, 0);
-  assert.equal(f.db.results(f.id, {all: true}).length, before);
+  assert.equal((await f.call('collect_source_page')).complete, true);
+  assert.equal(f.reads(), reads);
+  await f.call('finish_automation_run', {status: 'completed', summary: 'All pages reviewed'});
+  assert.equal(f.db.run(f.run.id).status, 'completed');
+  const task = f.core.workspaces.tasks.enqueue(f.id, {
+      sourceUrl: source,
+      operation: 'scan',
+      sources: [source],
+      lockKey: 'source:' + source,
+    }),
+    run = f.db.begin(f.id, {kind: 'run', taskId: task.id});
+  prepareCollection(f.db, run, f.db.get(f.id));
+  const again = await f.makeFlow(f.db, undefined, run.id).call(f.id, run.id, 'collect_source_page');
+  assert.equal(again.complete, true);
+  assert.equal(f.reads(), reads + 2);
+  assert.equal(f.db.results(f.id).length, before);
 });
 
 test('opaque pagination cycles fail without certifying completion', async (t) => {
   const f = fixture(t, {
+    terms: ['backend'],
     readPage: (value) => ({
       ...parseHimalayasPage(value, {jobs: [], offset: 0, limit: 20, totalCount: 0}),
       complete: false,
       nextUrl: value,
     }),
   });
-  await f.call('collect_source_page');
-  await assert.rejects(f.call('collect_source_page'), /aynı sayfaya/);
+  await assert.rejects(f.call('collect_source_page'), /returned the same page/);
+  assert.equal(f.reads(), 1);
   assert.equal(f.db.run(f.run.id).scan.complete, false);
+});
+
+test('an empty first page without search terms asks for terms; a saved recipe restarts the collection', async (t) => {
+  const f = fixture(t, {
+    readPage: (value) =>
+      parseHimalayasPage(
+        value,
+        new URL(value).searchParams.get('q') === 'platform'
+          ? {jobs, offset: 0, limit: 20, totalCount: jobs.length}
+          : {jobs: [], offset: 0, limit: 20, totalCount: 0},
+      ),
+  });
+  await assert.rejects(
+    f.call('collect_source_page'),
+    /no search terms, so \{query\} was filled with the source query "Current listings matching.*save_source_recipe/s,
+  );
+  assert.equal(f.db.run(f.run.id).scan.complete, false, 'an empty page is not a finished scan');
+  const recipe = (terms) => ({
+    entry: {kind: 'url_template', template: 'https://himalayas.app/jobs/api/search?q={query}'},
+    terms,
+    pagination: 'url_param',
+    loginRequired: false,
+  });
+  await assert.rejects(
+    f.call('save_source_recipe', recipe(['nothing'])),
+    /could not be verified: the first page has no listings/,
+  );
+  const saved = await f.call('save_source_recipe', recipe(['platform']));
+  assert.equal(saved.status, 'verified');
+  assert.equal(saved.listings, jobs.length);
+  assert.match(saved.next, /collect_source_page/);
+  assert.deepEqual(
+    f.db.run(f.run.id).scan.work.searches.map((s) => new URL(s.url).searchParams.get('q')),
+    ['platform'],
+    'the running collection uses the saved terms',
+  );
+  const receipt = await f.call('collect_source_page');
+  assert.ok(receipt.taskId);
+  assert.equal(f.browserCalls(), 0, 'the recipe was checked through the API, not a browser');
 });
 
 test('standalone CLI still emits NDJSON and exit 2 for an incomplete page budget', async () => {
@@ -743,4 +867,101 @@ test('standalone CLI still emits NDJSON and exit 2 for an incomplete page budget
   const lines = stdout.trim().split('\n').map(JSON.parse);
   assert.equal(lines[0].page.jobs.length, 1);
   assert.equal(lines[1].result.complete, false);
+});
+
+test('a collector card with a confident conflict is rejected without reading its full text', async (t) => {
+  const conflict = {
+    guid: url('us-only'),
+    title: 'Staff backend engineer',
+    companyName: 'Synthetic Co',
+    locationRestrictions: ['CARD_CONFLICT_MARKER'],
+    description: '<p>Backend role for residents only.</p>',
+  };
+  const f = fixture(t, {
+    terms: ['backend'],
+    readPage: (value) =>
+      parseHimalayasPage(value, {jobs: [jobs[0], conflict], offset: 0, limit: 20, totalCount: 2}),
+  });
+  detailReads.length = 0;
+  const receipt = await f.call('collect_source_page'),
+    items = helper(f, receipt).items;
+  const rejected = items.find((i) => i.url === conflict.guid);
+  assert.equal(rejected.assessment.decision, 'mismatch');
+  assert.deepEqual(
+    [rejected.assessment.exclusion.basis, rejected.assessment.exclusion.reason],
+    ['card', 'hard_constraint'],
+  );
+  assert.deepEqual(detailReads, [jobs[0].guid], 'only the kept card got a full read');
+  await handle(f, receipt);
+  assert.equal(f.db.run(f.run.id).scan.reviewStats.jevRejected, 1);
+  assert.deepEqual(f.db.knownListingUrls(f.id, f.run.id, [conflict.guid]), [conflict.guid]);
+});
+
+test('a collector search ends with the page that brings its new listings to 100', async (t) => {
+  const listing = (page, i) => ({
+    guid: url(`new-${page}-${i}`),
+    title: 'Backend engineer',
+    description: '<p>Backend role.</p>',
+  });
+  const f = fixture(t, {
+    terms: ['backend'],
+    readPage: (value) => {
+      const page = Number(new URL(value).searchParams.get('page') ?? 1);
+      return parseHimalayasPage(value, {
+        jobs: Array.from({length: 20}, (_, i) => listing(page, i)),
+        offset: (page - 1) * 20,
+        limit: 20,
+        totalCount: 400,
+      });
+    },
+  });
+  let receipt = await f.call('collect_source_page');
+  for (let i = 0; i < 10 && !receipt.complete; i++) {
+    await handle(f, receipt);
+    receipt = await f.call('collect_source_page');
+  }
+  assert.equal(receipt.complete, true);
+  assert.equal(f.reads(), 5, 'five pages of 20 new listings reach the limit');
+});
+
+test('a newest-first collector reads its page budget and stops after two pages of known listings', async (t) => {
+  const budget = fixture(t, {
+    terms: ['backend'],
+    ordering: 'newest_first',
+    readPage: knownPages(40),
+  });
+  await budget.call('collect_source_page');
+  assert.equal((await budget.call('collect_source_page')).complete, true);
+  assert.equal(
+    budget.reads(),
+    SCAN_SEARCH_PAGES,
+    'the first scan of a newest-first feed keeps the page limit',
+  );
+
+  const listing = (page) => ({
+    guid: url('page-' + page),
+    title: 'Backend engineer',
+    description: '<p>Backend role.</p>',
+  });
+  const f = fixture(t, {
+    terms: ['backend'],
+    ordering: 'newest_first',
+    readPage: (value) => {
+      const page = Number(new URL(value).searchParams.get('page') ?? 1);
+      return parseHimalayasPage(value, {
+        jobs: [listing(page)],
+        offset: (page - 1) * 20,
+        limit: 20,
+        totalCount: 500,
+      });
+    },
+  });
+  f.db.rememberSeenListings(
+    f.id,
+    source,
+    Array.from({length: 25}, (_, i) => listing(i + 1).guid),
+    'Seen in an earlier scan',
+  );
+  assert.equal((await f.call('collect_source_page')).complete, true);
+  assert.equal(f.reads(), 2, 'new listings come first, so known pages end the search');
 });

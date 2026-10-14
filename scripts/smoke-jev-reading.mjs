@@ -115,7 +115,7 @@ try {
       operation: 'click',
       ref: page.clickTargets.find((c) => c.label === 'Send message')?.targetId ?? 'send',
     }),
-    /taslak ayır/,
+    /may be a submit button/,
   );
   assert.equal(submits, 0);
   const lazyFirst = await call('browser_open', {url: url + 'lazy'}),

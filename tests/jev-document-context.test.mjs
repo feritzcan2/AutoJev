@@ -75,7 +75,7 @@ test('viewport-only facts, frame content and changed consent wording remain verb
 test('document reading refuses a redirect rather than combining stale action IDs with another page', async () => {
   const f = fixture('Role', 'Role');
   f.document.url = 'https://other.example/';
-  await assert.rejects(documentObservation(f.slot, f.value), /yönlendi/);
+  await assert.rejects(documentObservation(f.slot, f.value), /redirected while being read/);
 });
 
 test('only visible substantive or unreadable frames count as missing document content', async () => {
@@ -281,7 +281,7 @@ test('document observation preserves new busy state and refuses readiness from a
   assert.equal((await documentObservation(f.slot, f.value)).reading.readiness.loading, true);
   f.slot.page.evaluate = async (fn) =>
     fn === documentReadiness ? {url: 'https://different.test', loading: false} : f.document;
-  await assert.rejects(documentObservation(f.slot, f.value), /yönlendi/);
+  await assert.rejects(documentObservation(f.slot, f.value), /redirected while being read/);
 });
 
 test('background rendering is scoped to the pending document and restored on timeout, failure or cancellation', async () => {
@@ -323,6 +323,45 @@ test('background rendering is scoped to the pending document and restored on tim
       ['Emulation.setFocusEmulationEnabled', false],
     ]);
   }
+});
+
+test('a fresh document is read once its content stops changing', async () => {
+  let time = 0,
+    keys = ['10:100', '12:140', '12:140', '12:140', '12:140', '12:140'];
+  const url = 'https://jobs.test/apply';
+  const slot = {
+    page: {
+      evaluate: async () => ({url, loading: false, age: 900 + time, contentKey: keys.shift()}),
+    },
+  };
+  const options = {
+    delay: 250,
+    now: () => time,
+    wait: async (ms) => {
+      time += ms;
+    },
+  };
+  const ready = await waitForDocument(slot, options);
+  assert.equal(ready.contentKey, '12:140', 'late content is part of the first read');
+  assert.equal(time, 250 + 750, 'one quiet period after the last change');
+  time = 0;
+  slot.page.evaluate = async () => ({
+    url,
+    loading: false,
+    age: 900 + time,
+    contentKey: String(time),
+  });
+  const changing = await waitForDocument(slot, {...options, attempts: 4});
+  assert.equal(
+    changing.loading,
+    false,
+    'a page that never settles is still read when the wait ends',
+  );
+  assert.equal(time, 750);
+  time = 0;
+  slot.page.evaluate = async () => ({url, loading: false});
+  assert.equal((await waitForDocument(slot, options)).loading, false);
+  assert.equal(time, 0, 'an older document is read without waiting');
 });
 
 test('ready or foreground documents need no emulation, and abort interrupts a long polling delay', async () => {

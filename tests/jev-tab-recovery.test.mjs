@@ -46,5 +46,5 @@ test('the tab registry keeps Chrome tab ids per target and ignores records of th
   );
   assert.equal(await registry.read(), null);
   await writeFile(registry.file, JSON.stringify({version: 2, profile: 'Profile 2'}));
-  await assert.rejects(registry.read(), /geçersiz/);
+  await assert.rejects(registry.read(), /invalid/);
 });

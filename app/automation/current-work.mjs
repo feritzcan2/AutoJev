@@ -19,7 +19,10 @@ export function currentWork(view) {
     if (work.recordId) {
       const record = results.find((r) => r.id === work.recordId),
         more = (work.recordIds?.length ?? 1) - 1;
-      return (record?.title || record?.url || 'Kayıt') + (more > 0 ? ` +${more} kayıt` : '');
+      return (
+        (record?.title || record?.url || 'Record') +
+        (more > 0 ? ` +${more} ${more === 1 ? 'record' : 'records'}` : '')
+      );
     }
     const url = sourceUrl(work);
     return url ? (sourceOf(url)?.name ?? url) : null;
@@ -38,10 +41,10 @@ export function currentWork(view) {
       worker: workerName(run.workerId),
       state:
         run.status !== 'running'
-          ? 'Sonlanıyor'
+          ? 'Finishing'
           : source?.scanIssue
-            ? 'Sayfa yüklenemedi'
-            : 'Çalışıyor',
+            ? 'Page failed to load'
+            : 'Running',
       tone: source?.scanIssue ? 'blocked' : 'running',
       progress: source ? scanProgress(source, run) : null,
       startedAt: run.startedAt ?? null,
@@ -61,7 +64,7 @@ export function currentWork(view) {
       title: runOperationLabel(task.operation),
       subject: subject(task),
       worker: task.workerId ? workerName(task.workerId) : null,
-      state: task.state === 'paused' ? 'Durakladı' : 'Sırada',
+      state: task.state === 'paused' ? 'Paused' : 'Queued',
       tone: task.state === 'paused' ? 'blocked' : 'queued',
       progress: null,
       queuedAt: task.createdAt ?? null,
@@ -70,7 +73,7 @@ export function currentWork(view) {
   if (queued.length > QUEUED_ROWS)
     rows.push({
       id: 'queued-more',
-      title: `${queued.length - QUEUED_ROWS} görev daha sırada`,
+      title: `${queued.length - QUEUED_ROWS} more ${queued.length - QUEUED_ROWS === 1 ? 'task' : 'tasks'} queued`,
       tone: 'queued',
     });
   for (const source of sources) {
@@ -79,9 +82,9 @@ export function currentWork(view) {
     if (!wait && !(source.recovery && a.status === 'enabled')) continue;
     rows.push({
       id: 'wait:' + source.url,
-      title: wait ? 'Erişim beklemesi' : 'Otomatik devam bekleniyor',
+      title: wait ? 'Access wait' : 'Waiting to resume automatically',
       subject: source.name,
-      state: 'Bekliyor',
+      state: 'Waiting',
       tone: 'waiting',
       progress: wait?.message ?? null,
       resumesAt: wait ? (wait.retryAt ?? null) : (source.recovery.readyAt ?? null),
@@ -91,9 +94,9 @@ export function currentWork(view) {
     const record = question.recordId && results.find((r) => r.id === question.recordId);
     rows.push({
       id: 'question:' + question.id,
-      title: 'Yanıtın bekleniyor',
+      title: 'Waiting for your answer',
       subject: record?.title || sourceOf(question.sourceUrl)?.name || null,
-      state: 'Bekliyor',
+      state: 'Waiting',
       tone: 'blocked',
       progress: question.text,
       queuedAt: question.createdAt ?? null,
@@ -102,7 +105,7 @@ export function currentWork(view) {
   return rows;
 }
 
-// "Arama 4/5 (platform engineer) · sayfa 3/4 · 12 adres bekliyor · 47 elendi · 0 yeni kayıt"
+// "Search 4/5 (platform engineer) · page 3/4 · 12 addresses pending · 47 excluded · 0 new records"
 function scanProgress(source, run) {
   const work = source.scan?.work,
     searches = work?.searches ?? [],
@@ -112,15 +115,18 @@ function scanProgress(source, run) {
   if (searches.length > 1) {
     const done = searches.filter((s) => s.status === 'completed').length;
     parts.push(
-      `Arama ${Math.min(done + 1, searches.length)}/${searches.length}` +
+      `Search ${Math.min(done + 1, searches.length)}/${searches.length}` +
         (active?.label ? ` (${active.label})` : ''),
     );
   }
   if (page?.currentPage)
-    parts.push(`sayfa ${page.currentPage}${page.totalPages ? '/' + page.totalPages : ''}`);
-  if (active?.pendingUrls?.length) parts.push(`${active.pendingUrls.length} adres bekliyor`);
+    parts.push(`page ${page.currentPage}${page.totalPages ? '/' + page.totalPages : ''}`);
+  if (active?.pendingUrls?.length)
+    parts.push(
+      `${active.pendingUrls.length} ${active.pendingUrls.length === 1 ? 'address' : 'addresses'} pending`,
+    );
   const excluded = searches.reduce((n, s) => n + (s.excluded?.length ?? 0), 0);
-  if (excluded) parts.push(`${excluded} elendi`);
-  parts.push(`${run.foundCount ?? 0} yeni kayıt`);
+  if (excluded) parts.push(`${excluded} excluded`);
+  parts.push(`${run.foundCount ?? 0} new ${run.foundCount === 1 ? 'record' : 'records'}`);
   return parts.join(' · ');
 }

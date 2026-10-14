@@ -59,17 +59,17 @@ export function providerLimit(screen, provider) {
 export function providerLimitAttention(limit) {
   if (!limit) return null;
   const provider =
-    limit.provider === 'claude' ? 'Claude' : limit.provider === 'codex' ? 'Codex' : 'Sağlayıcı';
+    limit.provider === 'claude' ? 'Claude' : limit.provider === 'codex' ? 'Codex' : 'The provider';
   return {
     kind: 'usage_limit',
-    title: `${provider} kullanım limitine ulaştı`,
+    title: `${provider} reached its usage limit`,
     detail: [
       limit.resetLabel
-        ? `Limitin yenilenmesi: ${limit.resetLabel}.`
-        : 'Yenilenme saati henüz bildirilmedi.',
+        ? `Limit resets: ${limit.resetLabel}.`
+        : 'The reset time has not been reported yet.',
       limit.automaticResume
-        ? 'Sağlayıcı bu oturumda otomatik devam edeceğini bildiriyor.'
-        : 'Devam etmek için sağlayıcının terminaldeki açıklamasını kontrol et.',
+        ? 'The provider reports that this session will continue automatically.'
+        : 'Check the provider’s message in the terminal to continue.',
     ].join(' '),
   };
 }

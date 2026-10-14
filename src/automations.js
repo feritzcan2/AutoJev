@@ -24,30 +24,32 @@ const el = (tag, text, cls) => {
   if (cls) node.className = cls;
   return node;
 };
+// TypeSafe jev-latest list price (docs.typesafe.ai/models, 2026-10-09).
+const JEV_USD_PER_MILLION_TOKENS = 0.042;
 const statusNames = {
-  draft: 'Kurulum',
-  ready: 'Denemeye hazır',
-  enabled: 'Düzenli çalışıyor',
-  paused: 'Duraklatıldı',
-  blocked: 'Yardım bekliyor',
-  complete: 'Tamamlandı',
-  running: 'Çalışıyor',
-  completed: 'Tamamlandı',
-  partial: 'Kısmi · devam edecek',
-  failed: 'Tamamlanamadı',
-  interrupted: 'Durduruldu',
-  timeout: 'Süre doldu',
-  found: 'Bulundu',
-  prepared: 'Başvuruya hazır',
-  executing: 'İşleniyor',
-  uncertain: 'Sonuç doğrulanmalı',
-  dismissed: 'Atlandı',
+  draft: 'Setup',
+  ready: 'Ready for trial',
+  enabled: 'Running regularly',
+  paused: 'Paused',
+  blocked: 'Needs help',
+  complete: 'Completed',
+  running: 'Running',
+  completed: 'Completed',
+  partial: 'Partial · will continue',
+  failed: 'Could not finish',
+  interrupted: 'Stopped',
+  timeout: 'Timed out',
+  found: 'Found',
+  prepared: 'Ready to apply',
+  executing: 'In progress',
+  uncertain: 'Outcome needs verification',
+  dismissed: 'Skipped',
 };
-const time = (value) => (value ? new Date(value).toLocaleString('tr-TR') : '—');
+const time = (value) => (value ? new Date(value).toLocaleString('en-GB') : '—');
 const modeNames = {
-  observe: 'Bul ve bildir',
-  prepare: 'Hazırla, onayımı bekle',
-  auto: 'Otomatik uygula',
+  observe: 'Only find',
+  prepare: 'Find, apply when I say (older setting)',
+  auto: 'Find and apply',
 };
 
 export function automationsPage(
@@ -62,6 +64,7 @@ export function automationsPage(
     focusAgent = () => {},
     syncWorkspaceMenu = () => {},
     refreshWorkspaces = async () => {},
+    openOnboarding = () => false,
   },
 ) {
   let sourcePanel, chatPanel, saveScoreSettings;
@@ -82,7 +85,7 @@ export function automationsPage(
   setupPage.append(setupSettings.element);
   const setupTabs = el('div', null, 'agent-view-tabs setup-agent-tabs');
   setupTabs.setAttribute('role', 'tablist');
-  setupTabs.setAttribute('aria-label', 'Kurulum agenti görünümü');
+  setupTabs.setAttribute('aria-label', 'Setup agent view');
   setupPage.append(setupTabs);
   const agentConversation = el('div', null, 'workspace-conversation');
   setupPage.append(agentConversation);
@@ -92,7 +95,7 @@ export function automationsPage(
   chatTerminal.append(
     el(
       'p',
-      'Sohbet henüz başlatılmadı. Sohbet sekmesinden mesaj gönderdiğinde terminal burada görünecek.',
+      'The chat has not started yet. The terminal appears here once you send a message from the Chat tab.',
       'setup-terminal-empty',
     ),
   );
@@ -100,7 +103,7 @@ export function automationsPage(
   agentConversation.id = 'setup-agent-chat';
   const setupViews = new Map();
   for (const [view, label, panel] of [
-    ['chat', 'Sohbet', agentConversation],
+    ['chat', 'Chat', agentConversation],
     ['terminal', 'Terminal', chatTerminal],
   ]) {
     const tab = el('button', label);
@@ -143,12 +146,12 @@ export function automationsPage(
   setupNav.type = 'button';
   setupNav.dataset.view = 'setup-agent';
   setupNav.innerHTML =
-    '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 1-8 8H4l-2 3V11a9 9 0 0 1 18 0Z"/><path d="M7 9h8M7 13h5"/></svg><span>Kurulum agenti</span><span id="setup-agent-status" class="agent-nav-status" aria-hidden="true" hidden></span>';
+    '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 1-8 8H4l-2 3V11a9 9 0 0 1 18 0Z"/><path d="M7 9h8M7 13h5"/></svg><span>Setup agent</span><span id="setup-agent-status" class="agent-nav-status" aria-hidden="true" hidden></span>';
   document.querySelector('aside nav button[data-view=agent]').after(setupNav);
   const progressBox = el('div', null, 'workspace-progress');
   progressBox.dataset.webOnly = '';
   progressBox.innerHTML =
-    '<ol id="automation-steps" aria-label="Kurulum ilerlemesi"></ol><p id="automation-next-step"></p><div id="automation-next-actions" class="actions"></div><section id="automation-agent-reply" aria-label="Agent’ın son yanıtı"><b>Agent’ın yanıtı</b><p></p></section>';
+    '<ol id="automation-steps" aria-label="Setup progress"></ol><p id="automation-next-step"></p><div id="automation-next-actions" class="actions"></div><section id="automation-agent-reply" aria-label="Agent’s last reply"><b>Agent’s reply</b><p></p></section>';
   document.querySelector('#now-history').before(progressBox);
   const steps = progressBox.querySelector('#automation-steps');
   steps.dataset.webOnly = '';
@@ -156,12 +159,9 @@ export function automationsPage(
   const find = (selector) =>
     host.querySelector(selector) ?? agentConversation.querySelector(selector);
   let progressSignature = '';
-  const templateNav = el('button');
-  templateNav.type = 'button';
-  templateNav.dataset.view = 'templates';
-  templateNav.innerHTML =
-    '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span>Template’ler</span>';
-  document.querySelector('aside nav button[data-view=config]').before(templateNav);
+  let runTab = 'all',
+    runPhase = 'all',
+    runTabOwner = null;
   let templates = [],
     selected = null,
     data = null,
@@ -202,16 +202,37 @@ export function automationsPage(
   profileSaveDialog.setAttribute('aria-labelledby', 'automation-profile-save-title');
   profileSaveDialog.setAttribute('aria-describedby', 'automation-profile-save-warning');
   profileSaveDialog.innerHTML =
-    '<form method="dialog"><h2 id="automation-profile-save-title">Profili kaydet ve agent’ları yeniden başlat?</h2><p id="automation-profile-save-warning"></p><div class="workspace-dialog-actions"><button class="quiet" value="cancel" autofocus>Vazgeç</button><button class="primary" value="save">Onayla ve kaydet</button></div></form>';
+    '<form method="dialog"><h2 id="automation-profile-save-title">Restart the running agents?</h2><p id="automation-profile-save-warning"></p><div class="workspace-dialog-actions"><button class="quiet" value="cancel">Cancel</button><button class="quiet" value="later" autofocus>Save, don’t restart</button><button class="primary" value="restart">Save and restart</button></div></form>';
   document.body.append(profileSaveDialog);
+  const queueExistingDialog = el('dialog');
+  queueExistingDialog.id = 'automation-queue-existing-dialog';
+  queueExistingDialog.setAttribute('aria-labelledby', 'automation-queue-existing-title');
+  queueExistingDialog.innerHTML =
+    '<form method="dialog"><h2 id="automation-queue-existing-title">Apply to listings you already have?</h2><p></p><div class="workspace-dialog-actions"><button class="quiet" value="cancel">Cancel</button><button class="quiet" value="new">Only new listings</button><button class="primary" value="queue" autofocus>Queue them too</button></div></form>';
+  document.body.append(queueExistingDialog);
+  // Resolves true (queue existing), false (only new) or null (cancel the save).
+  function askQueueExisting(count, threshold) {
+    return new Promise((resolve) => {
+      queueExistingDialog.querySelector('p').textContent =
+        `${count} saved listing(s) have not been applied to yet. Queue those scoring ${threshold} or more whose required conditions are met, or apply only to listings found from now on?`;
+      queueExistingDialog.returnValue = 'cancel';
+      queueExistingDialog.addEventListener(
+        'close',
+        () => resolve({queue: true, new: false}[queueExistingDialog.returnValue] ?? null),
+        {once: true},
+      );
+      queueExistingDialog.showModal();
+    });
+  }
+  // Resolves true (restart now), false (apply after current tasks) or null (cancel).
   function confirmProfileSave(count) {
     return new Promise((resolve) => {
       profileSaveDialog.querySelector('p').textContent =
-        `Bu çalışma alanındaki ${count} aktif agent durdurulup yeni profille yeniden başlatılacaktır. Onaylıyor musunuz?`;
+        `${count} agent(s) are working in this workspace. The profile is saved either way. Restart them now, or let them continue: their current task keeps going and their next read uses the new profile.`;
       profileSaveDialog.returnValue = 'cancel';
       profileSaveDialog.addEventListener(
         'close',
-        () => resolve(profileSaveDialog.returnValue === 'save'),
+        () => resolve({restart: true, later: false}[profileSaveDialog.returnValue] ?? null),
         {once: true},
       );
       profileSaveDialog.showModal();
@@ -264,62 +285,33 @@ export function automationsPage(
     const current = ++generation;
     await catalog();
     if (current !== generation || selected) return;
-    renderList();
+    renderStart();
   }
-  async function create(template) {
-    const a = await api.workspaceCreate(template.id, {});
+  // Job search is the only workspace type, so a new workspace starts from it directly.
+  async function create() {
+    const a = await api.workspaceCreate('job-search', {});
     await select(a.id);
   }
-  function renderList() {
+  function renderStart() {
     if (selected || host.hidden) return;
     host.replaceChildren();
     const heading = el('div', null, 'automation-heading');
     heading.append(
       sectionTitle(
-        'Nasıl başlamak istersin?',
-        'Hazır bir template seç. Agent sorularla çalışma alanını sana göre düzenler.',
+        'Start a job search',
+        'Pick a workspace on the left or open a new job search. The setup agent asks questions to tailor the search to you.',
       ),
     );
-    heading.append(
-      button('Template içe aktar', async () => {
-        const result = await api.automationTemplateImport();
-        if (result) {
-          templates = [];
-          await loadList();
-          notice('Template eklendi. Başlamak için kartını seç.');
-        }
-      }),
-    );
-    host.append(heading);
-    const grid = el('div', null, 'automation-grid template-grid');
-    for (const t of templates.filter((template) => !template.example)) {
-      const card = el('article', null, 'automation-card template-card');
-      card.append(el('span', t.icon, 'automation-icon'), el('h3', t.title), el('p', t.description));
-      const steps = el('ol');
-      for (const step of t.steps) steps.append(el('li', step));
-      card.append(steps);
-      const choose = button('Bu template ile başla →', () => create(t), 'primary');
-      choose.dataset.template = t.id;
-      card.append(choose);
-      card.append(
-        button(
-          'Template’i dışa aktar',
-          () => api.automationTemplateExport(t.id),
-          'automation-export-template',
-        ),
-      );
-      grid.append(card);
-    }
-    host.append(grid);
+    host.append(heading, button('Start a new job search →', create, 'primary'));
     host.append(
       el(
         'p',
-        'Bu bilgisayarda çalışır. Düzenli kontroller için uygulamayı ve bilgisayarı açık tut.',
+        'Runs on this computer. Keep the app and the computer on for regular checks.',
         'automation-local-note',
       ),
     );
   }
-  async function select(id) {
+  async function select(id, {onboarding = true} = {}) {
     questionDialog.update(null);
     notice('');
     selected = id;
@@ -338,6 +330,7 @@ export function automationsPage(
       if (selected !== id) return;
       renderDetail();
     }
+    if (onboarding && openOnboarding(id, data)) return;
     if (automationProgress(data).fresh) {
       openConversation();
       if (data.automation.templateId !== 'custom') {
@@ -354,10 +347,10 @@ export function automationsPage(
     agentConversation.replaceChildren();
     progressSignature = '';
     host.innerHTML = `<div id="automation-controls" class="actions"></div><p id="automation-runtime-note" class="automation-runtime-note" role="status"></p>
-<div class="automation-setup-grid"><section class="automation-conversation"><div class="automation-section-head"><h2>Asistanla kur</h2><p>İhtiyacını anlat, soruları yanıtla veya yapmak istediğin değişikliği yaz.</p></div><div id="automation-messages" class="automation-messages" role="log" aria-label="Kurulum konuşması"></div><form id="automation-chat"><label for="automation-message">Mesajın</label><textarea id="automation-message" placeholder="Örneğin: Berlin’de 1.500 euroya kadar iki odalı ev arıyorum…" maxlength="12000" required></textarea><div class="actions"><button id="automation-send" data-idle type="submit" class="primary">Gönder</button><button id="automation-add-document" data-idle type="button" class="quiet">Belge ekle</button></div><small>Değişiklik konuşması düzenli çalışmayı duraklatır. Yeni bilgiler çalışma alanı profilinde görünür.</small></form></section>
-<section class="automation-plan"><div class="automation-section-head"><h2>Kurulum kartı</h2><p>Asistanın hazırladıklarını incele ve düzenle. Yetkiyi buradan sen seçersin.</p></div><form id="automation-plan-form"><label>Ad<input name="title" required maxlength="150"></label><label>Amaç<textarea name="goal" required maxlength="6000"></textarea></label><div id="automation-criteria"></div><label>İşleyiş<textarea name="instructions" maxlength="12000"></textarea></label><details><summary>Kişisel bilgiler ve belgeler</summary><label>Bu otomasyonun kullanabileceği bilgiler<textarea name="facts" maxlength="12000" placeholder="Yalnızca bu iş için gereken bilgiler. Şifreleri burada paylaşma."></textarea></label><div id="automation-documents"></div><div id="automation-jev-profile" class="jev-profile"></div></details><label>İşlem yetkisi<select name="mode"><option value="observe">Bul ve bildir</option><option value="prepare">Hazırla, onayımı bekle</option><option value="auto">Otomatik uygula</option></select></label><div class="automation-plan-footer"><small id="automation-save-state" role="status"></small><button data-idle type="submit" class="primary">Kurulumu kaydet</button></div></form></section></div>
-<section class="automation-results-section"><div class="automation-heading"><div><h2>Sonuçlar</h2><p id="automation-results-summary"></p></div><button id="automation-export" type="button" class="quiet">Sonuçları dışa aktar</button></div><div id="automation-results"></div></section>
-<section class="automation-history-section"><div class="automation-section-head"><h2>Çalışma geçmişi</h2><p>Her turun sonucu ve gerektiğinde agent ekranı.</p></div><div id="automation-runs"></div></section><div class="automation-bottom-actions"><button id="automation-delete" type="button" class="quiet danger">Otomasyonu sil</button></div>`;
+<div class="automation-setup-grid"><section class="automation-conversation"><div class="automation-section-head"><h2>Set up with the assistant</h2><p>Describe what you need, answer the questions or write the change you want.</p></div><div id="automation-messages" class="automation-messages" role="log" aria-label="Setup conversation"></div><form id="automation-chat"><label for="automation-message">Your message</label><textarea id="automation-message" placeholder="For example: I am looking for a two-room flat in Berlin up to 1,500 euros…" maxlength="12000" required></textarea><div class="actions"><button id="automation-send" data-idle type="submit" class="primary">Send</button><button id="automation-add-document" data-idle type="button" class="quiet">Add document</button></div><small>A change conversation pauses regular runs. New details appear in the workspace profile.</small></form></section>
+<section class="automation-plan"><div class="automation-section-head"><h2>Setup card</h2><p>Review and edit what the assistant prepared. You choose the permission here.</p></div><form id="automation-plan-form"><label>Name<input name="title" required maxlength="150"></label><label>Goal<textarea name="goal" required maxlength="6000"></textarea></label><div id="automation-criteria"></div><label>Workflow<textarea name="instructions" maxlength="12000"></textarea></label><details><summary>Personal details and documents</summary><label>Details this automation may use<textarea name="facts" maxlength="12000" placeholder="Only the details needed for this work. Do not share passwords here."></textarea></label><div id="automation-documents"></div><div id="automation-jev-profile" class="jev-profile"></div></details><label>Action permission<select name="mode"><option value="observe">Only find</option><option value="auto">Find and apply</option></select></label><div class="automation-plan-footer"><small id="automation-save-state" role="status"></small><button data-idle type="submit" class="primary">Save setup</button></div></form></section></div>
+<section class="automation-results-section"><div class="automation-heading"><div><h2>Results</h2></div><button id="automation-export" type="button" class="quiet">Export results</button></div><div id="automation-results"></div></section>
+<section class="automation-history-section"><div class="automation-section-head"><h2>Run history</h2><p>The outcome of each round and, when needed, the agent screen.</p></div><div id="automation-runs"></div></section><div class="automation-bottom-actions"><button id="automation-delete" type="button" class="quiet danger">Delete automation</button></div>`;
     const $ = (id) => find('#' + id),
       form = $('automation-plan-form');
     resultsTable = automationResultsTable($('automation-results'), {
@@ -382,16 +375,6 @@ export function automationsPage(
     chatFeedback.setAttribute('role', 'status');
     chatFeedback.setAttribute('aria-live', 'polite');
     $('automation-chat').querySelector('.actions').after(chatFeedback);
-    const saveTemplate = button('Template olarak kaydet', () => {
-      const a = data.automation;
-      templateDialog.querySelector('[name=title]').value = a.title + ' template';
-      templateDialog.querySelector('[name=description]').value = templates.find(
-        (t) => t.id === a.templateId,
-      ).description;
-      templateDialog.querySelector('[name=guidance]').value = a.instructions;
-      templateDialog.showModal();
-    });
-    find('.automation-bottom-actions').prepend(saveTemplate);
     const profileEdited = () => {
       dirty = profileChanged(readForm(), formBaseline ?? data.automation);
       notice('');
@@ -410,14 +393,28 @@ export function automationsPage(
       const activeCount = (snapshot.activeRuns ?? []).filter(
         (run) => run.kind !== 'interview',
       ).length;
-      if (activeCount && !(await confirmProfileSave(activeCount))) return;
-      if (owner !== selected || isDeleting()) return;
-      await api.automationProfileSave(owner, input, {expectedRevision});
+      const restart = activeCount ? await confirmProfileSave(activeCount) : true;
+      if (restart === null || owner !== selected || isDeleting()) return;
+      const options = {expectedRevision, restart};
+      if (input.mode === 'auto' && snapshot.automation.mode !== 'auto') {
+        const existing = (snapshot.results ?? []).filter(
+          (r) => !r.trial && ['found', 'prepared'].includes(r.status),
+        ).length;
+        if (existing) {
+          options.queueExisting = await askQueueExisting(existing, input.criteria.score_threshold);
+          if (options.queueExisting === null || owner !== selected || isDeleting()) return;
+        } else options.queueExisting = true;
+      }
+      const result = await api.automationProfileSave(owner, input, options);
       if (owner !== selected) return;
       dirty = false;
       formRevision = '';
       await refresh();
-      notice('Profil kaydedildi ve uygulandı.');
+      notice(
+        result?.restarted === false
+          ? 'Profile saved. Running agents use it from their next read.'
+          : 'Profile saved and applied.',
+      );
     });
     $('automation-add-document').onclick = attempt(async () => {
       await api.pickDocument(selected);
@@ -433,7 +430,7 @@ export function automationsPage(
       history = find('.automation-history-section');
     plan.dataset.automationPane = 'profile';
     plan.className = 'profile automation-plan';
-    plan.querySelector('h2').textContent = 'Çalışma alanı profili';
+    plan.querySelector('h2').textContent = 'Workspace profile';
     form.classList.add('profile-form');
     results.dataset.automationPane = 'board';
     history.dataset.automationPane = 'background';
@@ -473,9 +470,9 @@ export function automationsPage(
     profileCopy.append(...profileHead.children);
     profileHead.replaceChildren(profileCopy);
     profileHead.className = 'profile-head';
-    const improve = button('Agent ile geliştir', openConversation);
+    const improve = button('Improve with the agent', openConversation);
     plan.querySelector('.profile-head').append(improve);
-    const profileSave = el('button', 'Profili kaydet', 'primary');
+    const profileSave = el('button', 'Save profile', 'primary');
     profileSave.id = 'automation-profile-save';
     profileSave.type = 'submit';
     profileSave.setAttribute('form', form.id);
@@ -485,11 +482,15 @@ export function automationsPage(
     profileState.setAttribute('role', 'status');
     profileHead.after(profileState);
     const sections = [
-      ['Çalışma alanı', 'Bu otomasyonun adı ve amacı.', ['title', 'goal']],
-      ['Ne arıyorsun', 'Agent sonuçları bu kriterlere göre değerlendirir.', ['criteria']],
-      ['İşleyiş', 'Agent’ın takip edeceği adımlar.', ['instructions']],
-      ['Kişisel bilgiler', 'Agent yalnızca burada verdiğin bilgileri kullanır.', ['facts']],
-      ['İşlem yetkisi', 'Hangi işlemleri yapabileceğini sen seçersin.', ['mode']],
+      ['Workspace', 'The name and goal of this automation.', ['title', 'goal']],
+      [
+        'What you are looking for',
+        'The agent evaluates results against these criteria.',
+        ['criteria'],
+      ],
+      ['Workflow', 'The steps the agent follows.', ['instructions']],
+      ['Personal details', 'The agent uses only the details you give here.', ['facts']],
+      ['Action permission', 'You choose which actions it may take.', ['mode']],
     ];
     const profileSections = [];
     for (const [title, description, names] of sections) {
@@ -514,15 +515,14 @@ export function automationsPage(
     for (const [value, title, description] of [
       [
         'observe',
-        'Bul ve bildir',
-        'Ara, filtrele ve uygun sonuçları kaydet; mesaj veya başvuru gönderme.',
+        'Only find',
+        'Search, score and save suitable listings; never apply on its own. You can still press "Apply".',
       ],
       [
-        'prepare',
-        'Bul, başvuruyu bana bırak',
-        'Uygun sonuçları kaydet; ben "Başvur" dediğimde doğrudan başvur.',
+        'auto',
+        'Find and apply',
+        'Also applies on its own to listings that reach the minimum score.',
       ],
-      ['auto', 'Otomatik uygula', 'Kaydettiğim kurallara göre işlemleri uygula.'],
     ]) {
       const choice = el('label', null, 'choice'),
         input = el('input'),
@@ -530,19 +530,23 @@ export function automationsPage(
       input.type = 'radio';
       input.name = 'mode';
       input.value = value;
+      input.required = true;
       copy.append(el('b', title), el('small', description));
       choice.append(input, copy);
       authorization.append(choice);
     }
+    // fillForm moves the criteria's minimum score field here.
+    authorization.append(el('div', null, 'authorization-score'));
+    authorization.addEventListener('change', syncApplyScore);
     mode.closest('label').replaceWith(authorization);
     const footer = form.querySelector('.automation-plan-footer');
     footer.className = 'profile-foot';
-    footer.querySelector('button').textContent = 'Profili kaydet';
+    footer.querySelector('button').textContent = 'Save profile';
     footer.querySelector('button').removeAttribute('data-idle');
     form.replaceChildren(...profileSections, footer);
     history.className = 'automation-history-section';
     history.innerHTML =
-      '<div id="automation-current-work" class="current-work"></div><div class="section-title"><h2>Çalışma geçmişi</h2></div><div id="automation-runs" class="run-list"></div>';
+      '<div id="automation-current-work" class="current-work"></div><div class="section-title"><h2>Run history</h2></div><div id="automation-run-tabs" class="run-tabs" role="tablist" aria-label="Run history by source"></div><div id="automation-run-phases" class="run-tabs" role="tablist" aria-label="Source runs by phase" hidden></div><div id="automation-runs" class="run-list"></div>';
     const pipeline = el('div', null, 'pipeline');
     pipeline.id = 'automation-pipeline';
     const top = el('div', null, 'pipeline-top');
@@ -562,15 +566,15 @@ export function automationsPage(
         const input = find('#automation-message');
         if (!input.value.trim())
           input.value =
-            'Hedefime uygun kaynakları araştırıp öner ve takip planımı hazırlamama yardımcı ol.';
+            'Research and suggest sources that fit my goal and help me prepare my tracking plan.';
       },
     });
     const files = el('section');
     files.dataset.automationPane = 'files';
     files.innerHTML =
-      '<div class="section-title"><h2>Dosyalar</h2><span>Çalışma alanının belgeleri</span></div><div id="automation-file-list"></div>';
+      '<div class="section-title"><h2>Files</h2><span>The workspace’s documents</span></div><div id="automation-file-list"></div>';
     files.querySelector('.section-title').append(
-      button('Belge ekle', async () => {
+      button('Add document', async () => {
         await api.pickDocument(selected);
         await refresh();
       }),
@@ -579,38 +583,24 @@ export function automationsPage(
     setupGrid.remove();
     find('.automation-bottom-actions').dataset.automationPane = 'profile';
   }
-  const templateDialog = el('dialog');
-  templateDialog.className = 'automation-template-dialog';
-  templateDialog.innerHTML =
-    '<form><h2>Tekrar kullanılabilir template</h2><p>Sorular ve aşağıdaki işleyiş yeni otomasyonlarda kullanılacak. Paylaşılacak metni kontrol et.</p><label>Template adı<input name="title" maxlength="150" required></label><label>Açıklama<textarea name="description" maxlength="1000" required></textarea></label><label>Paylaşılacak işleyiş<textarea name="guidance" maxlength="12000"></textarea></label><small>Kriter cevapları, kişisel bilgiler, kaynak adresleri, belgeler ve hesaplar template’e eklenmez. İşleyiş metnindeki kişisel ayrıntıları kendin çıkar.</small><div class="actions"><button type="button" class="quiet" data-cancel>Vazgeç</button><button type="submit" class="primary">Template’i kaydet</button></div></form>';
-  document.body.append(templateDialog);
-  templateDialog.querySelector('[data-cancel]').onclick = () => templateDialog.close();
-  templateDialog.querySelector('form').onsubmit = attempt(async (event) => {
-    const input = Object.fromEntries(new FormData(event.target));
-    await api.automationTemplateSave(selected, input);
-    templateDialog.close();
-    templates = [];
-    await catalog();
-    notice('Template kaydedildi. Template’ler sayfasından kullanabilir veya dışa aktarabilirsin.');
-  });
   // Initial setup and later conversations share the dedicated setup page.
   function buildIntro(chat) {
     const intro = el('div', null, 'workspace-intro');
     intro.hidden = true;
     intro.append(
-      el('span', 'YENİ ÇALIŞMA ALANI', 'workspace-intro-eyebrow'),
-      el('h2', 'Bu çalışma alanı ne yapsın?'),
+      el('span', 'NEW WORKSPACE', 'workspace-intro-eyebrow'),
+      el('h2', 'What should this workspace do?'),
       el(
         'p',
-        'Tek cümle yeter. Agent eksik olanı sorar; kaynakları, kriterleri ve işlem yetkisini birlikte belirlersiniz.',
+        'One sentence is enough. The agent asks for what is missing; you decide the sources, criteria and action permission together.',
       ),
     );
     const steps = el('ol', null, 'workspace-intro-steps');
-    steps.setAttribute('aria-label', 'Kurulum adımları');
+    steps.setAttribute('aria-label', 'Setup steps');
     for (const [index, text] of [
-      'Ne istediğini anlat',
-      'Agent soruları sorar',
-      'Profili onayla ve başlat',
+      'Describe what you want',
+      'The agent asks questions',
+      'Confirm the profile and start',
     ].entries()) {
       const step = el('li');
       if (!index) step.className = 'current';
@@ -618,11 +608,11 @@ export function automationsPage(
       steps.append(step);
     }
     const examples = el('div', null, 'workspace-intro-examples');
-    examples.setAttribute('aria-label', 'Örnekler');
+    examples.setAttribute('aria-label', 'Examples');
     for (const text of [
-      'Berlin’de 1.500 €’ya kadar iki odalı kiralık ev bul, uygun olanları listele.',
-      'İstanbul’da uzaktan çalışılabilen ürün yöneticisi ilanlarını takip et ve puanla.',
-      'Tokyo–İstanbul uçuşlarında fiyat 600 €’nun altına düşünce haber ver.',
+      'Find a two-room rental flat in Berlin up to €1,500 and list the suitable ones.',
+      'Track and score remote-friendly product manager listings in Istanbul.',
+      'Let me know when Tokyo–Istanbul flights drop below €600.',
     ]) {
       const chip = el('button', text);
       chip.type = 'button';
@@ -648,8 +638,8 @@ export function automationsPage(
     if (intro) intro.hidden = !fresh;
     if (message)
       message.placeholder = fresh
-        ? 'Ne yapmak istediğini bir cümleyle anlat…'
-        : 'Agent’a mesaj yaz…';
+        ? 'Describe in one sentence what you want to do…'
+        : 'Write a message to the agent…';
     chatPanel?.update(data);
   }
   function setPane(name) {
@@ -686,11 +676,11 @@ export function automationsPage(
     start.disabled = locked || hasUnsaved();
     stop.disabled = locked;
     restart.disabled = locked || hasUnsaved() || !ready;
-    start.textContent = p.primary?.label ?? 'Çalışıyor';
-    stop.textContent = data.activeRun ? 'Turu durdur' : 'Takibi duraklat';
+    start.textContent = p.primary?.label ?? 'Running';
+    stop.textContent = data.activeRun ? 'Stop round' : 'Pause tracking';
     restart.hidden = true;
     for (const id of ['candidates', 'new']) document.querySelector('#' + id).disabled = locked;
-    document.querySelector('#rename-workspace').disabled = locked || Boolean(data.activeRun);
+    document.querySelector('#rename-workspace').disabled = locked;
     document.querySelector('#delete-workspace').disabled = locked;
     find('#automation-delete').disabled = locked;
     questionDialog.update(data);
@@ -701,8 +691,8 @@ export function automationsPage(
         (run) => run.kind !== 'interview',
       ).length;
     questionBadge.hidden = !questionCount;
-    questionBadge.textContent = questionCount ? `${questionCount} yanıt` : '';
-    questionBadge.title = `${questionCount} yanıt bekliyor`;
+    questionBadge.textContent = questionCount ? `${questionCount} answer(s)` : '';
+    questionBadge.title = `${questionCount} awaiting an answer`;
     const work = activeRecordOperations(data),
       workSummary = work.map(({count, label}) => `${count} ${label}`);
     recordWork.hidden = !work.length;
@@ -716,17 +706,17 @@ export function automationsPage(
     );
     boardNav.title = [
       ...workSummary,
-      ...(questionCount ? [`${questionCount} yanıt bekliyor`] : []),
+      ...(questionCount ? [`${questionCount} awaiting an answer`] : []),
     ].join(' · ');
     boardNav.setAttribute(
       'aria-label',
-      ['Takip tablosu', boardNav.title].filter(Boolean).join(' · '),
+      ['Tracking table', boardNav.title].filter(Boolean).join(' · '),
     );
     const status = document.querySelector('#agent-nav-status');
     status.textContent = agentHelpCount
-      ? `${agentHelpCount} müdahale`
+      ? `${agentHelpCount} issue(s)`
       : running
-        ? `${running} çalışıyor`
+        ? `${running} running`
         : '';
     status.hidden = !status.textContent;
     status.dataset.tone = agentHelpCount ? 'waiting' : 'active';
@@ -738,16 +728,16 @@ export function automationsPage(
       : interviewBusy(data)
         ? ''
         : chatRun
-          ? 'Açık'
+          ? 'Open'
           : '';
     chatStatus.hidden = !attention.conversationCount && !chatRun;
     setupNav.title = attention.conversationCount
-      ? `${attention.conversationCount} yanıt bekleniyor`
+      ? `${attention.conversationCount} awaiting an answer`
       : interviewBusy(data)
-        ? 'Yanıt hazırlanıyor'
+        ? 'Preparing a reply'
         : chatRun
-          ? 'Sohbet açık'
-          : 'Kurulum agenti ile konuş';
+          ? 'Chat open'
+          : 'Talk to the setup agent';
     chatStatus.dataset.tone = attention.conversationCount
       ? 'waiting'
       : interviewBusy(data)
@@ -772,30 +762,30 @@ export function automationsPage(
         (url) => data.sources.find((s) => s.url === url)?.name ?? new URL(url).hostname,
       );
       sourceStatus.hidden = !scanning.size;
-      sourceStatus.textContent = scanning.size ? `${scanning.size} taranıyor` : '';
+      sourceStatus.textContent = scanning.size ? `${scanning.size} scanning` : '';
       sourcesNav.title = names.join(', ');
       sourcesNav.setAttribute(
         'aria-label',
         scanning.size
-          ? `Kaynaklar · ${scanning.size} kaynak taranıyor: ${names.join(', ')}`
-          : 'Kaynaklar',
+          ? `Sources · ${scanning.size} source(s) scanning: ${names.join(', ')}`
+          : 'Sources',
       );
     }
-    document.querySelector('[data-view=profile] span').textContent = 'Çalışma alanı profili';
-    document.querySelector('[data-view=board] span').textContent = 'Takip tablosu';
+    document.querySelector('[data-view=profile] span').textContent = 'Workspace profile';
+    document.querySelector('[data-view=board] span').textContent = 'Tracking table';
     const chrome = document.querySelector('.chrome-status'),
       connection = data.browserStatus ?? {};
     chrome.hidden = false;
     chrome.dataset.state = connection.state ?? 'idle';
     chrome.querySelector('b').textContent = connection.ready
-      ? 'Chrome bağlı'
+      ? 'Chrome connected'
       : connection.state === 'connecting'
-        ? 'Chrome’a bağlanıyor…'
-        : 'Chrome bağlantısı';
+        ? 'Connecting to Chrome…'
+        : 'Chrome connection';
     chrome.querySelector('small').textContent = connection.ready
-      ? (a.chromeProfile?.name ?? 'Seçili Chrome oturumu')
+      ? (a.chromeProfile?.name ?? 'Selected Chrome session')
       : (connection.message ??
-        'AutoJev eklentisi seçili Chrome profilinde kurulu olmalı. Bağlıyken Chrome üst çubuğunda “AutoJev” uyarısı görünür.');
+        'The AutoJev extension must be installed in the selected Chrome profile. While connected, Chrome shows an “AutoJev” notice at the top.');
     chrome.querySelector('.chrome-reconnect').hidden = Boolean(connection.ready);
     chrome.querySelector('.chrome-reconnect').disabled =
       locked || connection.state === 'connecting';
@@ -806,13 +796,13 @@ export function automationsPage(
     if (issue) {
       const [title, detail] =
         issue.status === 402
-          ? ['Jev kredisi bitti', 'TypeSafe kredisi ekleyince taramayı sürdür.']
+          ? ['Jev credit ran out', 'Add TypeSafe credit to resume scanning.']
           : [401, 403].includes(issue.status)
-            ? ['Jev anahtarı reddedildi', 'Yapılandırma → Jev bölümünden anahtarı kontrol et.']
-            : ['Jev yanıt vermiyor', 'Jev görevleri ilerlemiyor.'];
+            ? ['Jev key rejected', 'Check the key under Configuration → Jev.']
+            : ['Jev is not responding', 'Jev tasks are not progressing.'];
       jev.querySelector('b').textContent = title;
       jev.querySelector('small').textContent =
-        `TypeSafe HTTP ${issue.status} · ${new Date(issue.at).toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})}. ${detail}`;
+        `TypeSafe HTTP ${issue.status} · ${new Date(issue.at).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})}. ${detail}`;
     }
     syncWorkspaceMenu();
   }
@@ -852,7 +842,7 @@ export function automationsPage(
     if (id === 'stop') return stop();
     if (hasUnsaved()) {
       navigate('profile');
-      notice('Önce profil değişikliklerini kaydet.');
+      notice('Save the profile changes first.');
       return;
     }
     if (id === 'enable') await api.workspaceStart(selected);
@@ -931,13 +921,13 @@ export function automationsPage(
     recordWork.replaceChildren();
     boardNav.title = '';
     questionBadge.hidden = true;
-    document.querySelector('[data-view=board]').setAttribute('aria-label', 'Takip tablosu');
+    document.querySelector('[data-view=board]').setAttribute('aria-label', 'Tracking table');
     const sourceStatus = document.querySelector('#sources-nav-status');
     if (sourceStatus) sourceStatus.hidden = true;
     const sourcesNav = document.querySelector('[data-view=sources]');
     if (sourcesNav) {
       sourcesNav.title = '';
-      sourcesNav.setAttribute('aria-label', 'Kaynaklar');
+      sourcesNav.setAttribute('aria-label', 'Sources');
     }
     resultsTable?.dispose();
     attention.update(null, null);
@@ -954,8 +944,8 @@ export function automationsPage(
     host.hidden = true;
     onSnapshot(null);
     document.body.classList.remove('automation-workspace');
-    document.querySelector('[data-view=profile] span').textContent = 'Çalışma alanı profili';
-    document.querySelector('[data-view=board] span').textContent = 'Takip tablosu';
+    document.querySelector('[data-view=profile] span').textContent = 'Workspace profile';
+    document.querySelector('[data-view=board] span').textContent = 'Tracking table';
   }
   function readForm() {
     const f = find('#automation-plan-form').elements,
@@ -1001,6 +991,8 @@ export function automationsPage(
       criteria = find('#automation-criteria');
     form.dataset.revision = String(saved.revision);
     criteria.replaceChildren();
+    // The minimum score field lives under Find and apply; drop the old copy first.
+    form.querySelector('.authorization-score')?.replaceChildren();
     templateFields(
       criteria,
       (data.definition?.fields ?? templates.find((t) => t.id === a.templateId).fields).filter(
@@ -1009,7 +1001,34 @@ export function automationsPage(
       a.criteria,
     );
     for (const key of ['title', 'goal', 'instructions', 'facts', 'mode']) f[key].value = a[key];
+    const score = f['criteria-score_threshold']?.closest('label'),
+      unstated = f['criteria-unstated_conditions'],
+      slot = form.querySelector('.authorization-score');
+    if (score && slot) {
+      score.firstChild.textContent = 'Minimum score to apply';
+      slot.replaceChildren(score);
+    }
+    if (unstated && slot) {
+      // An empty value is the default: wait until the condition is checked.
+      for (const option of [...unstated.options])
+        if (option.value === 'Do not apply until checked' && unstated.value !== option.value)
+          option.remove();
+        else if (option.value === '') option.textContent = 'Do not apply until checked (default)';
+      slot.append(unstated.closest('label'));
+    }
+    syncApplyScore();
     formBaseline = readForm();
+  }
+  // Find and apply only runs with an explicit minimum score.
+  function syncApplyScore() {
+    const form = find('#automation-plan-form'),
+      input = form?.elements['criteria-score_threshold'],
+      slot = form?.querySelector('.authorization-score');
+    if (!input || !slot) return;
+    const auto = form.elements.mode.value === 'auto';
+    Object.assign(input, {required: auto, min: '1', max: '100', step: '1'});
+    input.placeholder = '1–100, required for Find and apply';
+    slot.hidden = !auto;
   }
   function renderControls() {
     if (!data || !find('#automation-controls')) return;
@@ -1023,13 +1042,13 @@ export function automationsPage(
       controls.append(b);
     };
     action(
-      'Tarayıcıyı aç',
+      'Open browser',
       () => api.automationBrowser(selected),
       'automation-browser',
       !a.sources.length || hasUnsaved(),
     );
     action(
-      'Bir kez çalıştır',
+      'Run once',
       () => performAction('run'),
       'automation-run',
       hasUnsaved() || !automationReady(a),
@@ -1049,21 +1068,21 @@ export function automationsPage(
       draft = Boolean(a.planDraft),
       working = (data.activeRuns ?? []).some((run) => run.kind !== 'interview');
     const changeNote = working
-      ? ' Kaydettiğinde taramalar durdurulup yeni kriterlerle yeniden başlayacak. Sohbet açık kalacak.'
+      ? ' When you save, you choose whether running agents restart. The chat stays open.'
       : '';
     const text = a.profileUpdate?.error
-      ? 'Profil uygulanamadı: ' + a.profileUpdate.error + ' Tekrar kaydedebilirsin.'
+      ? 'The profile could not be applied: ' + a.profileUpdate.error + ' You can save again.'
       : pending
-        ? 'Profil kaydedildi; uygulanıyor. Taramalar durdurulup yeni kriterlerle yeniden başlatılıyor.'
+        ? 'Profile saved; applying. Scans are stopping and restarting with the new criteria.'
         : hasUnsaved()
-          ? 'Kaydedilmemiş değişiklikler.' + changeNote
+          ? 'Unsaved changes.' + changeNote
           : draft && profileNeedsSave()
-            ? 'Agent’ın profil taslağı hazır. İncele ve Profili kaydet düğmesine bas.' + changeNote
+            ? 'The agent’s profile draft is ready. Review it and press Save profile.' + changeNote
             : a.reviewedRevision === a.revision
-              ? 'Profil kaydedildi.'
+              ? 'Profile saved.'
               : data.missing.length
-                ? 'Eksikler: ' + data.missing.join(', ')
-                : 'Profili kontrol edip kaydet.';
+                ? 'Missing: ' + data.missing.join(', ')
+                : 'Check and save the profile.';
     form.inert = busy;
     for (const status of [find('#automation-save-state'), find('#automation-profile-state')])
       if (status) {
@@ -1075,15 +1094,15 @@ export function automationsPage(
       formBaseline.criteria.save_score_threshold = a.criteria.save_score_threshold ?? '';
     for (const button of [find('#automation-profile-save'), form.querySelector('[type=submit]')])
       if (button) {
-        button.disabled = busy || (pending && !a.profileUpdate.error) || !profileNeedsSave();
-        button.textContent =
-          pending && !a.profileUpdate.error
-            ? 'Profil uygulanıyor…'
-            : busy
-              ? 'Kaydediliyor…'
-              : a.profileUpdate?.error
-                ? 'Tekrar kaydet'
-                : 'Profili kaydet';
+        const applying = pending && !a.profileUpdate.error;
+        button.disabled = busy || applying || !profileNeedsSave();
+        button.textContent = applying
+          ? 'Applying profile…'
+          : busy
+            ? 'Saving…'
+            : a.profileUpdate?.error
+              ? 'Save again'
+              : 'Save profile';
       }
   }
   function renderDetail() {
@@ -1102,7 +1121,8 @@ export function automationsPage(
       const b = button(doc.name + ' ↗', () => api.openDocument(selected, doc.path));
       docs.append(b);
     }
-    if (!data.documents.length) docs.append(el('small', 'Bu otomasyona henüz belge eklenmedi.'));
+    if (!data.documents.length)
+      docs.append(el('small', 'No documents have been added to this automation yet.'));
     renderJevProfile($('automation-jev-profile'), data.jevProfile, async (text) => {
       await api.saveJevProfile(selected, text);
       await refresh();
@@ -1119,22 +1139,22 @@ export function automationsPage(
   function renderWorkspacePages() {
     const a = data.automation,
       counts = data.resultCounts;
-    find('#automation-table-title').textContent = a.table?.title ?? 'Takip akışı';
+    find('#automation-table-title').textContent = a.table?.title ?? 'Tracking flow';
     find('#automation-pipeline').dataset.status = data.activeRun ? 'running' : a.status;
     const metrics = find('.automation-metrics');
     metrics.replaceChildren();
     const bar = el('div', null, 'pipeline-bar'),
       legend = el('div', null, 'pipeline-legend');
     for (const [key, value, label] of [
-      ['submitted', counts.completedCount, 'tamamlandı'],
-      ['waiting', counts.pendingCount + counts.uncertainCount, 'bekliyor'],
+      ['submitted', counts.completedCount, 'completed'],
+      ['waiting', counts.pendingCount + counts.uncertainCount, 'waiting'],
       [
         'found',
         Math.max(
           0,
           counts.resultCount - counts.completedCount - counts.pendingCount - counts.uncertainCount,
         ),
-        'bulundu',
+        'found',
       ],
     ]) {
       if (value) {
@@ -1151,7 +1171,7 @@ export function automationsPage(
     const samples = Math.max(0, counts.storedCount - counts.resultCount);
     if (samples) {
       const entry = el('span');
-      entry.append(el('b', String(samples)), document.createTextNode(' araştırma / deneme örneği'));
+      entry.append(el('b', String(samples)), document.createTextNode(' research / trial samples'));
       legend.append(entry);
     }
     metrics.append(bar, legend);
@@ -1162,23 +1182,20 @@ export function automationsPage(
       const row = el('div', null, 'document-row');
       row.append(
         el('strong', doc.name),
-        button('Aç ↗', () => api.openDocument(selected, doc.path)),
+        button('Open ↗', () => api.openDocument(selected, doc.path)),
       );
       files.append(row);
     }
     if (!data.documents.length)
-      files.append(el('p', 'Çalışma alanına eklediğin belgeler burada görünür.', 'empty'));
+      files.append(el('p', 'Documents you add to the workspace appear here.', 'empty'));
   }
   function renderResults() {
-    const summary = find('#automation-results-summary');
-    summary.hidden = data.resultCounts.storedCount <= data.results.length;
-    summary.textContent = `Son ${data.results.length} kayıt gösteriliyor; dışa aktarma tüm kayıtları içerir.`;
     resultsTable.update(data, busy);
   }
   async function sendMessage(text) {
     if (data?.activeRun && !data?.capabilities?.concurrentConversation)
       throw Error(
-        'Bağımsız sohbet için uygulama güncellemesi bekleniyor. Çalışan tur bittikten sonra uygulamayı yeniden aç.',
+        'Independent chat needs an app update. Reopen the app after the running round finishes.',
       );
     const owner = selected,
       form = find('#automation-plan-form'),
@@ -1191,7 +1208,7 @@ export function automationsPage(
     if (pending.draft) {
       if (hasBlockingRun(data) || data.automation.profileUpdate)
         pending.message +=
-          '\n\nProfilde düzenlediğim, henüz onaylamadığım taslak (JSON):\n' +
+          '\n\nDraft I edited in the profile and have not confirmed yet (JSON):\n' +
           JSON.stringify(pending.draft);
       else {
         await api.automationSave(owner, pending.draft);
@@ -1224,10 +1241,88 @@ export function automationsPage(
       if (owner === selected) notice(error.message);
     }
   }
+  // One tab per source; runs without a single source go under Other.
+  function runSourceUrl(run) {
+    if (run.kind === 'interview') return null;
+    return run.sourceUrl ?? (run.sources?.length === 1 ? run.sources[0] : null);
+  }
+  // Within a source, runs that prepare, send or verify an application are the
+  // application phase; scans, trials and listing scoring are the search phase.
+  function runPhaseOf(run) {
+    return ['prepare', 'execute', 'verify'].includes(run.recordOperation)
+      ? 'application'
+      : 'search';
+  }
+  function tabButtons(tabs, current, choose) {
+    return tabs.map(([key, label, count]) => {
+      const button = el('button', `${label} (${count})`);
+      button.type = 'button';
+      button.setAttribute('role', 'tab');
+      button.setAttribute('aria-selected', String(key === current));
+      button.onclick = () => {
+        choose(key);
+        renderRuns();
+      };
+      return button;
+    });
+  }
+  function renderRunTabs() {
+    const bar = find('#automation-run-tabs');
+    if (!bar) return;
+    if (runTabOwner !== selected) {
+      runTabOwner = selected;
+      runTab = 'all';
+      runPhase = 'all';
+    }
+    const counts = new Map();
+    for (const run of data.runs) {
+      const key = runSourceUrl(run) ?? 'other';
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const tabs = [['all', 'All', data.runs.length]];
+    for (const source of data.sources)
+      tabs.push([source.url, source.name, counts.get(source.url) ?? 0]);
+    for (const [key, count] of counts)
+      if (key !== 'other' && !data.sources.some((source) => source.url === key))
+        tabs.push([key, new URL(key).hostname.replace(/^www\./, ''), count]);
+    if (counts.has('other')) tabs.push(['other', 'Other', counts.get('other')]);
+    if (!tabs.some(([key]) => key === runTab)) runTab = 'all';
+    bar.hidden = tabs.length < 3;
+    const buttons = tabButtons(tabs, runTab, (key) => (runTab = key));
+    tabs.forEach(([key], index) => {
+      if (key !== 'all' && key !== 'other') buttons[index].title = key;
+    });
+    bar.replaceChildren(...buttons);
+  }
+  function renderRunPhases(sourceRuns) {
+    const bar = find('#automation-run-phases');
+    if (!bar) return;
+    bar.hidden = !sourceRuns.length;
+    const count = (phase) => sourceRuns.filter((run) => runPhaseOf(run) === phase).length;
+    bar.replaceChildren(
+      ...tabButtons(
+        [
+          ['all', 'All', sourceRuns.length],
+          ['search', 'Search', count('search')],
+          ['application', 'Application', count('application')],
+        ],
+        runPhase,
+        (key) => (runPhase = key),
+      ),
+    );
+  }
   function renderRuns() {
+    renderRunTabs();
     const root = find('#automation-runs');
     root.replaceChildren();
-    for (const run of data.runs) {
+    const sourceRuns =
+      runTab === 'all'
+        ? data.runs
+        : data.runs.filter((run) => (runSourceUrl(run) ?? 'other') === runTab);
+    renderRunPhases(sourceRuns);
+    const runs =
+      runPhase === 'all' ? sourceRuns : sourceRuns.filter((run) => runPhaseOf(run) === runPhase);
+    for (const run of runs) {
       const row = el('div', null, 'run-row');
       row.dataset.status = run.status;
       row.dataset.runId = run.id;
@@ -1255,38 +1350,40 @@ export function automationsPage(
           name.title = sourceUrl;
           results.append(name);
         }
-        const count = el('span', `Bu turda ${run.foundCount ?? 0} yeni kayıt`, 'run-found');
+        const count = el('span', `${run.foundCount ?? 0} new record(s) this round`, 'run-found');
         count.dataset.empty = String(!run.foundCount);
         count.title =
-          'Bu turda ilk kez kaydedilen sonuçlar. Tekrar görülen kayıtlar ve deneme örnekleri dahil değildir.';
+          'Results saved for the first time in this round. Records seen again and trial samples are not included.';
         results.append(count);
         row.append(results);
       }
       if (run.status !== 'running') {
         const usage = run.tokenUsage,
           known = Number.isSafeInteger(usage?.totalTokens) && usage.totalTokens >= 0;
+        // Jev is billed per token; the cost is a list-price estimate, not the invoice.
+        const jevCost = known ? (usage.jevTokens / 1e6) * JEV_USD_PER_MILLION_TOKENS : 0;
         const tokens = el(
           'span',
           known
-            ? `Toplam ${usage.totalTokens.toLocaleString('tr-TR')} token`
-            : 'Token kullanımı bilinmiyor',
+            ? `${usage.totalTokens.toLocaleString('en-GB')} tokens in total · Jev ${usage.jevTokens.toLocaleString('en-GB')} (≈ $${jevCost.toFixed(jevCost > 0 && jevCost < 0.01 ? 4 : 2)})`
+            : 'Token usage unknown',
           'run-tokens',
         );
         tokens.title = known
-          ? `Agent: ${usage.agentTokens.toLocaleString('tr-TR')} · Jev: ${usage.jevTokens.toLocaleString('tr-TR')}`
-          : 'Bu tur için toplam token kullanımı kaydedilemedi.';
+          ? `Agent: ${usage.agentTokens.toLocaleString('en-GB')} · Jev: ${usage.jevTokens.toLocaleString('en-GB')}. Jev cost estimated at $${JEV_USD_PER_MILLION_TOKENS} per million tokens; the TypeSafe account shows the billed amount.`
+          : 'Total token usage for this round could not be recorded.';
         row.append(tokens);
       }
       row.append(
         el(
           'span',
-          run.summary || {interview: 'Kurulum sohbeti', trial: 'Deneme', run: 'Çalışma'}[run.kind],
+          run.summary || {interview: 'Setup chat', trial: 'Trial', run: 'Run'}[run.kind],
           'run-summary',
         ),
       );
       root.append(row);
     }
-    if (!data.runs.length) root.append(el('p', 'Henüz çalışma yok.', 'run-history-empty'));
+    if (!runs.length) root.append(el('p', 'No runs yet.', 'run-history-empty'));
   }
   async function refresh() {
     if (isDeleting()) return;
@@ -1305,11 +1402,10 @@ export function automationsPage(
       if (!stale()) throw error;
     }
   }
-  async function show(name = 'templates', {detail = false} = {}) {
+  async function show() {
     host.hidden = false;
-    if (detail && selected) return;
     questionBadge.hidden = true;
-    document.querySelector('[data-view=board]').setAttribute('aria-label', 'Takip tablosu');
+    document.querySelector('[data-view=board]').setAttribute('aria-label', 'Tracking table');
     resultsTable?.dispose();
     agentNavLabel(false);
     chatPanel?.dispose();
@@ -1321,7 +1417,7 @@ export function automationsPage(
     dirty = false;
     formRevision = '';
     localStorage.removeItem('selected-workspace');
-    navigate('templates', {detail: true});
+    navigate('start', {detail: true});
     await loadList();
   }
   api.onAutomationChange((event) => {
@@ -1332,6 +1428,7 @@ export function automationsPage(
     element: host,
     show,
     select,
+    create: attempt(create),
     refresh,
     start,
     stop,

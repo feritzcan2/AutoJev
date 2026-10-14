@@ -77,7 +77,7 @@ test('workspace chat uses its own session and leaves both occupied workers and t
   for (const task of queue) assert.deepEqual(core.workspaces.tasks.get(id, task.id), task);
   for (const scan of before) assert.equal(db.run(scan.id).status, 'running');
   const count = db.messages(id).length;
-  await assert.rejects(runtime.message(id, 'İkinci mesaj'), /yanıtını hazırlıyor/);
+  await assert.rejects(runtime.message(id, 'İkinci mesaj'), /preparing its reply/);
   assert.equal(db.messages(id).length, count);
   await runtime.stopWorker(id, CONVERSATION_WORKER);
   assert.deepEqual(closed, [run.id]);
@@ -157,18 +157,18 @@ test('chat waits in the same live session after replies and only closes when the
   assert.deepEqual(closed, []);
   let snapshot = {...db.snapshot(id), activeRuns: runtime.slots(id).map((s) => s.run)};
   assert.equal(interviewBusy(snapshot), false);
-  assert.equal(automationProgress(snapshot).title, 'Kaynaklar taranıyor');
+  assert.equal(automationProgress(snapshot).title, 'Scanning sources');
   assert.equal(
     webWorkspaceView(snapshot, {sessions: new Map()}).workers.find((w) => w.conversation)
       .presentation.status,
-    'Mesaj bekliyor',
+    'Waiting for a message',
   );
   const next = await runtime.message(id, 'Sen mi puanladın?');
   assert.equal(next.id, chat.id);
   assert.equal(started.length, 3);
   assert.equal(sent.at(-1).text, 'Sen mi puanladın?');
   assert.equal(conversationWaiting(db.run(chat.id)), false);
-  await assert.rejects(runtime.message(id, 'Aynı anda ikinci mesaj'), /yanıtını hazırlıyor/);
+  await assert.rejects(runtime.message(id, 'Aynı anda ikinci mesaj'), /preparing its reply/);
   await flow.call(id, chat.id, 'finish_automation_run', {
     status: 'completed',
     summary: 'İkinci yanıt hazır.',
@@ -245,14 +245,14 @@ test('provider idle leaves chat open even without a finish call and another mess
   assert.deepEqual(closed, []);
   assert.equal(
     automationProgress({...db.snapshot(id), activeRuns: [db.run(chat.id)]}).title,
-    'Sohbet açık',
+    'Conversation open',
   );
   const view = webWorkspaceView(
     {...db.snapshot(id), activeRun: db.run(chat.id), activeRuns: [db.run(chat.id)]},
     {sessions: new Map()},
   );
   assert.equal(view.activity.running, false);
-  assert.equal(view.workers.find((w) => w.id === 'main').presentation.status, 'Kapalı');
+  assert.equal(view.workers.find((w) => w.id === 'main').presentation.status, 'Off');
   await runtime.message(id, 'Devam edelim');
   assert.equal(started.length, 1);
   assert.equal(conversationWaiting(db.run(chat.id)), false);
@@ -281,7 +281,6 @@ test('profile suggestions are persisted as drafts without changing active criter
       key,
       value,
     })),
-    sources: before.sources,
     instructions: before.instructions,
     facts: before.facts,
   };

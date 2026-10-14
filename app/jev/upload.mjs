@@ -27,6 +27,8 @@ export function uploadDetails(e) {
     p = p.parentElement, depth++
   ) {
     if (p.querySelectorAll('input[type=file]').length !== 1) break;
+    // A drop zone: the focusable or clickable box around a hidden input.
+    localTrigger ||= rendered(p) && (p.tabIndex >= 0 || p.matches('label,[role=button]'));
     localTrigger ||= [...p.querySelectorAll('button,[role=button],a,[role=link]')].some(
       (n) =>
         rendered(n) &&
@@ -42,10 +44,12 @@ export function uploadDetails(e) {
     labels.map((l) => l.innerText).join(' ') ||
     e.name ||
     'File upload';
+  // Short text around the input (its group's name, often a few levels up)
+  // tells a CV field from a cover-letter field.
   let context = '';
   for (
     let p = e.parentElement, depth = 0;
-    p && depth < 4 && !p.matches('form,body');
+    p && depth < 6 && !p.matches('form,body');
     p = p.parentElement, depth++
   ) {
     const text = (p.innerText || '').replace(/\s+/g, ' ').trim();
@@ -100,10 +104,14 @@ export function validateUploadPurpose(label, filename) {
     /cover\s*letter|anschreiben|ön\s*yazı/i.test(label) &&
     /^(?:cv|resume|résumé)(?:[\s._-]|$)/i.test(name)
   )
-    throw Error('CV dosyası ön yazı alanına yüklenemez; doğru ön yazı belgesini seç.');
+    throw Error(
+      'A CV file cannot be uploaded to the cover letter field; choose the correct cover letter document.',
+    );
   if (
     /\b(?:resume|résumé|curriculum vitae|cv)\b/i.test(label) &&
     /^(?:cover[\s._-]*letter|anschreiben|ön[\s._-]*yazı)(?:[\s._-]|$)/i.test(name)
   )
-    throw Error('Ön yazı dosyası CV alanına yüklenemez; doğru CV belgesini seç.');
+    throw Error(
+      'A cover letter file cannot be uploaded to the CV field; choose the correct CV document.',
+    );
 }

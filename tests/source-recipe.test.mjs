@@ -13,8 +13,7 @@ import {
   advanceRecipeState,
   recipeStatus,
   recipeSummary,
-  recipePageCap,
-  scanPageCap,
+  SCAN_SEARCH_PAGES,
   jevListingItem,
 } from '../app/sources/recipe.mjs';
 import {sourceScanScope} from '../app/sources/scan.mjs';
@@ -59,20 +58,6 @@ test('recipes are validated as data: placeholders, form fields and pagination ki
     undefined,
     'the scan page budget replaces per-recipe page limits',
   );
-  // Every scan reads at most 15 pages shared by its searches, at least 2 per search.
-  assert.equal(recipePageCap(null), 15);
-  assert.equal(recipePageCap(normalizeSourceRecipe({entry: {kind: 'discovery'}})), 15);
-  assert.equal(
-    recipePageCap({entry: {kind: 'url_template', template}, ordering: 'newest_first'}),
-    15,
-    'a newest-first board is capped too',
-  );
-  assert.equal(recipePageCap({entry: {kind: 'url_template', template}, terms: ['a', 'b']}), 7);
-  assert.equal(
-    recipePageCap({entry: {kind: 'url_template', template}, terms: ['a', 'b', 'c', 'd', 'e']}),
-    3,
-  );
-  assert.equal(scanPageCap(8), 2, 'each search keeps at least two pages');
   assert.deepEqual(
     normalizeSourceRecipe({entry: {kind: 'url_template', template: 'https://board.test/jobs'}})
       .entry,
@@ -109,7 +94,7 @@ test('recipes are validated as data: placeholders, form fields and pagination ki
   );
   assert.throws(
     () => normalizeSourceRecipe({entry: {kind: 'url_template', template}, pagination: 'magic'}),
-    /sayfalama/,
+    /pagination/,
   );
   assert.equal(normalizeSourceRecipe(null), null);
   const form = normalizeSourceRecipe({
@@ -299,7 +284,7 @@ test('scan outcomes verify, tolerate barriers and mark a recipe stale after two 
       {entry: {kind: 'url_template', template}},
       {status: 'verified', successCount: 2, failCount: 0},
     ).label,
-    'Reçete doğrulandı',
+    'Recipe verified',
   );
 });
 
@@ -312,6 +297,8 @@ function fixture(t) {
     criteria: {location: 'Berlin', budget: '2000', requirements: '2 rooms'},
     sources: [source],
   });
+  // These tests step the clock past a 30-minute scan interval.
+  db.saveSourcesInterval(a.id, 30);
   db.review(a.id);
   const launches = [],
     runtime = new WebTasks(db, {
@@ -380,8 +367,8 @@ function jevBrowser(expected, {listings = 2, pages = 1, leads = false} = {}) {
               title: 'Results',
               text: `Jobs for you, page ${n}\nLink: Job A — ${view(n + 'a')}\nLink: Job B — ${view(n + 'b')}`,
               links: Array.from({length: listings}, (_, i) => ({
-                url: view(n + 'ab'[i]),
-                text: 'Job ' + n + 'ab'[i],
+                url: view(n + ('ab'[i] ?? 'x' + i)),
+                text: 'Job ' + n + ('ab'[i] ?? 'x' + i),
               })),
               pagination: n < pages ? [{text: 'Next', url: pageUrl(n + 1), kind: 'link'}] : [],
             }
@@ -615,7 +602,7 @@ test('a trial agent saves a recipe that the app verifies with Jev before accepti
     flow.call(f.id, trial.id, 'save_source_recipe', {
       entry: {kind: 'url_template', template: 'https://board.test/other?q={query}'},
     }),
-    /doğrulanamadı: no_listing_links/,
+    /could not be verified: no_listing_links/,
   );
   assert.equal(f.db.sources(f.id)[0].recipe, undefined, 'a failed check saves nothing');
   const saved = await flow.call(f.id, trial.id, 'save_source_recipe', {
@@ -685,7 +672,7 @@ test('a passed trial without a saved recipe leaves the source in discovery mode'
   assert.equal(after.trial.status, 'passed');
   assert.equal(after.recipe.entry.kind, 'discovery');
   assert.equal(after.recipeState.status, 'discovery');
-  assert.equal(recipeSummary(after.recipe, after.recipeState).label, 'Keşif modu');
+  assert.equal(recipeSummary(after.recipe, after.recipeState).label, 'Discovery mode');
 });
 
 test('a trial reads the notes of an unverified recipe as claims to re-check', async (t) => {
@@ -844,7 +831,7 @@ test('relearning and settings carry recipes without touching scan state', async 
   assert.equal(settings.trialModel, 'gpt-5-pro');
   assert.equal(
     f.db.save(f.id, {agentSettings: {...settings, trialModel: null}}).agentSettings.trialModel,
-    undefined,
+    null,
   );
 });
 
@@ -1089,14 +1076,15 @@ test('on a board the recipe orders newest-first, a repeat scan stops after two p
   );
 });
 
-test('a single search reads at most the 15-page scan budget and ends there', async (t) => {
+// A scan run after a trial that saved and verified the board's recipe.
+async function scanAfterTrial(t, board) {
   const f = fixture(t);
   f.db.enable(f.id);
   await f.runtime.tick();
   await settle();
   const trial = f.launches[0],
     expected = 'https://board.test/jobs/search?q=Find+homes&l=Berlin&sort=date',
-    {browser, opened} = jevBrowser(expected, {pages: 16});
+    {browser, opened} = jevBrowser(expected, board);
   const trialFlow = automationWorkflow({
     db: f.db,
     run: trial,
@@ -1121,7 +1109,6 @@ test('a single search reads at most the 15-page scan budget and ends there', asy
   await settle();
   const scan = f.launches[1];
   assert.equal(scan.kind, 'run');
-  assert.equal(f.db.run(scan.id).scanPlan.pageCap, 15);
   const flow = automationWorkflow({
     db: f.db,
     run: scan,
@@ -1136,14 +1123,20 @@ test('a single search reads at most the 15-page scan budget and ends there', asy
     scan.id,
     await flow.call(f.id, scan.id, 'browser_jev_run', {operation: 'scan_results', url: expected}),
   );
+  return {f, scan, flow, opened, expected, capped};
+}
+
+test('a single search reads at most its 10-page limit and ends there', async (t) => {
+  const {f, scan, flow, opened, expected, capped} = await scanAfterTrial(t, {pages: 11});
+  assert.equal(f.db.run(scan.id).scanPlan.pageCap, SCAN_SEARCH_PAGES);
   assert.equal(capped.status, 'completed');
   assert.equal(capped.pageCapReached, true);
-  assert.equal(capped.pageCount, 15);
-  assert.match(capped.next, /Recipe page limit reached/);
+  assert.equal(capped.pageCount, 10);
+  assert.match(capped.next, /Search limit reached/);
   assert.equal(
     opened.filter((u) => u.startsWith(expected)).length,
-    15,
-    'the sixteenth page was never opened',
+    10,
+    'the eleventh page was never opened',
   );
   await reviewQueue(flow, f, scan, expected + '&start=10');
   assert.equal(
@@ -1172,6 +1165,13 @@ test('a single search reads at most the 15-page scan budget and ends there', asy
   assert.ok(state.lastFullScanAt);
 });
 
+test('a search ends with the page that brings its new listings to 100', async (t) => {
+  const {opened, expected, capped} = await scanAfterTrial(t, {pages: 6, listings: 40});
+  assert.equal(capped.pageCapReached, true);
+  assert.equal(capped.pageCount, 3, '40 + 40 + 40 new listings reach the limit on page 3');
+  assert.equal(opened.filter((u) => u.startsWith(expected)).length, 3);
+});
+
 test('each recipe term is its own search: completing one opens the next with a fresh page cap', async (t) => {
   const f = fixture(t);
   f.db.enable(f.id);
@@ -1179,7 +1179,7 @@ test('each recipe term is its own search: completing one opens the next with a f
   await settle();
   const ops = replayUrl(template, {query: 'ops', location: 'Berlin'}),
     dev = replayUrl(template, {query: 'dev', location: 'Berlin'});
-  const boards = [jevBrowser(ops, {pages: 8}), jevBrowser(dev, {pages: 8})];
+  const boards = [jevBrowser(ops, {pages: 12}), jevBrowser(dev, {pages: 12})];
   let last = ops;
   const browser = {
     hasPage: () => true,
@@ -1241,7 +1241,7 @@ test('each recipe term is its own search: completing one opens the next with a f
       await flow.call(f.id, scan.id, 'browser_jev_run', {operation: 'scan_results', url}),
     );
     assert.equal(capped.pageCapReached, true);
-    assert.equal(capped.pageCount, 7, 'two searches share the 15-page budget');
+    assert.equal(capped.pageCount, 10, 'each search has its own 10-page limit');
     const queue = await flow.call(f.id, scan.id, 'get_scan_queue', {view: 'entries'});
     f.db.saveScanProgress(
       f.id,
@@ -1273,7 +1273,7 @@ test('each recipe term is its own search: completing one opens the next with a f
         completion: 'end',
       },
     }),
-    /aramaların tamamı/,
+    /Not all saved searches/,
   );
   const second = await cover(dev);
   assert.equal(second.next, undefined);
@@ -1427,7 +1427,7 @@ test('a saved single-search scan gains the recipe searches it is missing', () =>
       searches: [
         {
           id: 'default',
-          label: 'Kaynak taraması',
+          label: 'Source scan',
           status: 'completed',
           completion: 'end',
           pendingUrls: [],
@@ -1475,7 +1475,7 @@ test('a changed search method restarts the results pages but keeps queued listin
     checkpoint: {url: oldPage, pendingUrls: [...details, oldPage], at: 2},
     order: {url: oldPage},
     boundary: null,
-    pageCap: 15,
+    pageCap: 30,
   };
   const scan = {
     pendingUrls: [...details, oldPage],
@@ -1484,7 +1484,7 @@ test('a changed search method restarts the results pages but keeps queued listin
       searches: [
         {
           id: 'default',
-          label: 'Kaynak taraması',
+          label: 'Source scan',
           status: 'pending',
           pendingUrls: [...details, oldPage],
           processedUrls: [],
@@ -1547,7 +1547,7 @@ test('a changed search method restarts the results pages but keeps queued listin
     'the next turn starts the new recipe at its first page',
   );
   assert.equal(state.scanState.active.mode, 'full');
-  assert.equal(state.scanState.active.pageCap, 15);
+  assert.equal(state.scanState.active.pageCap, 30);
   assert.equal(state.scanState.active.order, null);
   const pending = queue.get(f.id, task.id);
   assert.deepEqual(pending.scan.pendingUrls, details);

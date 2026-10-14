@@ -131,7 +131,7 @@ test('pairing is private, expires, is one-use and cannot replace a linked candid
   await bot.conversation.handle(message('/start ' + first.token));
   assert.equal(bot.db.link(p.id).user_id, '11');
   assert.equal(bot.db.bind(first.token, 12, 12, 'Other'), null);
-  assert.throws(() => bot.db.pair(p.id), /zaten bağlı/);
+  assert.throws(() => bot.db.pair(p.id), /already linked/);
   const second = bot.db.pair(other.id);
   assert.equal(bot.db.bind(second.token, 11, 11, 'Same'), null);
   advance(10 * 60 * 1000);
@@ -164,7 +164,7 @@ test('submission and question events enqueue once; prior submissions are not bac
   );
   store.saveRecord({...job, status: 'submitted'}, 'candidate_submission_recorded');
   await flush();
-  assert.match(calls.at(-1).body.text, /✅ İş arama · Başvuruldu/);
+  assert.match(calls.at(-1).body.text, /✅ Job search · Applied/);
   store.saveRecord({...job, status: 'submitted'}, 'submission_recorded');
   await flush();
   assert.equal(calls.filter((c) => c.method === 'sendMessage').length, 2);
@@ -287,8 +287,8 @@ test('desktop answers edit the original question card with the saved answer and 
   assert.equal(edit.body.message_id, row.message_id);
   assert.equal(edit.body.chat_id, '11');
   assert.equal(edit.body.parse_mode, 'HTML');
-  assert.match(edit.body.text, /✅ Yanıtlandı/);
-  assert.match(edit.body.text, /Çalışma izni: Hayır/);
+  assert.match(edit.body.text, /✅ Answered/);
+  assert.match(edit.body.text, /Çalışma izni: No/);
   assert.match(edit.body.text, /Remote &lt;Berlin&gt; &amp; hybrid/);
   assert.ok(
     edit.body.reply_markup.inline_keyboard
@@ -343,8 +343,8 @@ test('desktop answers update repeated question cards and sent form prompts, clea
   const edits = calls.filter((call) => call.method === 'editMessageText');
   assert.equal(edits.length, 3);
   for (const edit of edits) {
-    assert.match(edit.body.text, /✅ Yanıtlandı/);
-    assert.match(edit.body.text, /Çalışma izni: Hayır/);
+    assert.match(edit.body.text, /✅ Answered/);
+    assert.match(edit.body.text, /Çalışma izni: No/);
     assert.ok(
       edit.body.reply_markup.inline_keyboard
         .flat()
@@ -412,7 +412,7 @@ test('answered questions are never initially delivered; closed application quest
   await flush();
   assert.equal(calls.at(-1).method, 'editMessageText');
   assert.equal(calls.at(-1).body.message_id, row.message_id);
-  assert.match(calls.at(-1).body.text, /bu kaydı eledi/);
+  assert.match(calls.at(-1).body.text, /rejected this record/);
   assert.ok(
     !calls
       .at(-1)
@@ -735,14 +735,13 @@ test('all new jobs notify their own candidate, including unranked and low scores
   assert.equal(sent.length, 3);
   const own = sent.filter((call) => call.body.chat_id === '11');
   assert.equal(own.length, 2);
-  assert.ok(own.every((call) => call.body.text.startsWith('<b>İş arama · Bulundu</b>')));
+  assert.ok(own.every((call) => call.body.text.startsWith('<b>Job search · Found</b>')));
   assert.ok(
     own.some(
-      (call) =>
-        call.body.text.includes('New Company') && !call.body.text.includes('Uygunluk puanı'),
+      (call) => call.body.text.includes('New Company') && !call.body.text.includes('Fit score'),
     ),
   );
-  assert.ok(own.some((call) => call.body.text.includes('Uygunluk puanı:</b> 5')));
+  assert.ok(own.some((call) => call.body.text.includes('Fit score:</b> 5')));
   assert.deepEqual(
     own.map((call) => call.body.reply_markup.inline_keyboard[0][0].url).sort(),
     [unranked.url, low.url].sort(),
@@ -778,7 +777,7 @@ test('new job preference suppresses queued cards independently and persists acro
   assert.equal(calls.length, 0);
   assert.throws(
     () => bot.preferences(p.id, {newJobs: 'true', notifications: true, questions: true}),
-    /Geçersiz/,
+    /Invalid/,
   );
   bot.preferences(p.id, {newJobs: true, notifications: true, questions: true});
   store.addRecord(p.id, {...input, url: 'https://example.com/enabled', company: 'Enabled'});
@@ -869,7 +868,7 @@ test('automatic threshold changes recheck waiting cards and validate saved prefe
   for (const value of ['65', false, -1, 101, NaN, Infinity])
     assert.throws(
       () => bot.preferences(p.id, {...preferences, newJobsMinScore: value}),
-      /minimum puan/,
+      /minimum score/,
     );
   assert.deepEqual(bot.db.link(p.id), before);
   bot.preferences(p.id, {...preferences, newJobs: false});
@@ -1016,14 +1015,14 @@ test('delete button withdraws the application, resolves its questions and preven
   await flush();
   const sent = calls.at(-1),
     button = sent.body.reply_markup.inline_keyboard.at(-1)[0];
-  assert.equal(button.text, '🗑 Sil · Kaydı ele');
+  assert.equal(button.text, '🗑 Delete · Dismiss record');
   assert.equal(button.style, 'danger');
   const row = bot.db.delivery(button.callback_data.slice(2));
   assert.equal(row.status, 'sent');
   const q = store.askQuestion(p.id, {jobId: job.id, question: 'Application question'});
   assert.equal(
     (await bot.deleteNotification(deleteCallback(row))).text,
-    'Mesaj silindi; kayıt elendi.',
+    'Message deleted; record dismissed.',
   );
   assert.deepEqual(calls.at(-1), {
     method: 'deleteMessage',
@@ -1037,7 +1036,7 @@ test('delete button withdraws the application, resolves its questions and preven
   restarted.api = bot.api;
   assert.equal(
     (await restarted.deleteNotification(deleteCallback(row))).text,
-    'Mesaj zaten silindi.',
+    'Message already deleted.',
   );
   assert.deepEqual(store.job(p.id, job.id), withdrawn);
   bot.retry(p.id);
@@ -1073,8 +1072,8 @@ for (const kind of ['new_job', 'submission'])
     await flush();
     const sent = bot.db.delivery(row.id),
       button = calls[0].body.reply_markup.inline_keyboard.at(-1)[0];
-    assert.match(calls[0].body.text, /İş arama · Başvuruldu/);
-    assert.equal(button.text, '🗑 Mesajı sil');
+    assert.match(calls[0].body.text, /Job search · Applied/);
+    assert.equal(button.text, '🗑 Delete message');
     const q = store.askQuestion(p.id, {jobId: job.id, question: 'Follow-up question'}),
       before = store.job(p.id, job.id),
       questions = store.questions(p.id);
@@ -1092,8 +1091,8 @@ for (const kind of ['new_job', 'submission'])
       };
       const failed = await bot.deleteNotification(deleteCallback(sent));
       assert.equal(failed.show_alert, true);
-      assert.match(failed.text, /Mesaj silinemedi/);
-      assert.doesNotMatch(failed.text, /elendi|elenemedi/);
+      assert.match(failed.text, /Could not delete the message/);
+      assert.doesNotMatch(failed.text, /dismissed|Could not dismiss/);
       assert.equal(bot.db.delivery(row.id).status, 'sent');
       assert.deepEqual(store.job(p.id, job.id), before);
     }
@@ -1101,18 +1100,24 @@ for (const kind of ['new_job', 'submission'])
     const expired = deleteCallback(sent);
     expired.message.date = 1000;
     advance(48 * 60 * 60 * 1000);
-    assert.match((await bot.deleteNotification(expired)).text, /^Telegram botları 48 saat/);
+    assert.match(
+      (await bot.deleteNotification(expired)).text,
+      /^Telegram bots cannot delete messages older than 48 hours/,
+    );
     assert.equal(calls.filter((c) => c.method === 'deleteMessage').length, 0);
     // Message-only deletion must also work without a desktop dismissal handler.
     bot.withdrawApplication = undefined;
-    assert.equal((await bot.deleteNotification(deleteCallback(sent))).text, 'Mesaj silindi.');
+    assert.equal((await bot.deleteNotification(deleteCallback(sent))).text, 'Message deleted.');
     assert.equal(bot.db.delivery(row.id).status, 'deleted');
     assert.deepEqual(store.job(p.id, job.id), before);
     assert.deepEqual(store.questions(p.id), questions);
     assert.equal(store.questions(p.id).find((item) => item.id === q.id).answer, null);
     assert.equal(withdrawals, 0);
     assert.equal(changes, 0);
-    assert.equal((await bot.deleteNotification(deleteCallback(sent))).text, 'Mesaj zaten silindi.');
+    assert.equal(
+      (await bot.deleteNotification(deleteCallback(sent))).text,
+      'Message already deleted.',
+    );
     assert.equal(calls.filter((c) => c.method === 'deleteMessage').length, 1);
     if (kind === 'new_job') assert.equal(bot.db.jobSent(p.id, bot.config.bot.id, job.id), true);
   });
@@ -1203,7 +1208,7 @@ test('expired and failed deletions show feedback and never mark a message as del
     expired = deleteCallback(row);
   expired.message.date = 1000;
   advance(48 * 60 * 60 * 1000);
-  assert.match((await bot.deleteNotification(expired)).text, /48 saat/);
+  assert.match((await bot.deleteNotification(expired)).text, /48 hours/);
   assert.equal(calls.filter((call) => call.method === 'deleteMessage').length, 0);
   for (const code of [400, 403, 0, 429]) {
     api.call = async () => {
@@ -1240,13 +1245,13 @@ test('a failed Telegram deletion keeps the withdrawal and updates the surviving 
   };
   const result = await bot.deleteNotification(deleteCallback(row));
   assert.equal(result.show_alert, true);
-  assert.match(result.text, /Kayıt elendi..*Mesaj silinemedi/);
+  assert.match(result.text, /Record dismissed..*Could not delete the message/);
   assert.equal(store.job(p.id, job.id).status, 'skipped');
   assert.equal(bot.db.delivery(row.id).status, 'sent');
   await flush();
   assert.equal(calls.at(-1).method, 'editMessageText');
   assert.equal(calls.at(-1).body.message_id, row.message_id);
-  assert.match(calls.at(-1).body.text, /Atlandı/);
+  assert.match(calls.at(-1).body.text, /Skipped/);
   api.call = original;
   await bot.deleteNotification(deleteCallback(row));
   assert.equal(withdrawals, 1);
@@ -1271,12 +1276,12 @@ test('old job cards still withdraw the application when Telegram cannot delete t
   action.message.date = 1000;
   advance(48 * 60 * 60 * 1000);
   const result = await bot.deleteNotification(action);
-  assert.match(result.text, /Kayıt elendi..*48 saat/);
+  assert.match(result.text, /Record dismissed..*48 hours/);
   assert.equal(result.show_alert, true);
   assert.equal(store.job(p.id, job.id).status, 'skipped');
   assert.equal(calls.filter((call) => call.method === 'deleteMessage').length, 0);
   await flush();
-  assert.match(calls.at(-1).body.text, /Atlandı/);
+  assert.match(calls.at(-1).body.text, /Skipped/);
   assert.equal(calls.at(-1).body.message_id, row.message_id);
 });
 
@@ -1299,7 +1304,7 @@ test('a failed desktop withdrawal leaves both the job and Telegram message avail
   };
   const result = await bot.deleteNotification(deleteCallback(row));
   assert.equal(result.show_alert, true);
-  assert.match(result.text, /elenemedi; mesaj silinmedi/);
+  assert.match(result.text, /Could not dismiss the record; the message was not deleted/);
   assert.equal(store.job(p.id, job.id).status, 'found');
   assert.equal(bot.db.delivery(row.id).status, 'sent');
   assert.equal(calls.filter((call) => call.method === 'deleteMessage').length, 0);
@@ -1321,12 +1326,12 @@ test('formatted cards escape listing text, emphasize titles and refresh the orig
   assert.equal(sent.parse_mode, 'HTML');
   assert.match(
     sent.text,
-    /<b>Pozisyon:<\/b> Engineer &lt;a href="https:\/\/fake.test"&gt;click&lt;\/a&gt;/,
+    /<b>Position:<\/b> Engineer &lt;a href="https:\/\/fake.test"&gt;click&lt;\/a&gt;/,
   );
   assert.ok(
-    sent.text.includes('<b>Şirket:</b> R&amp;D &lt;Labs&gt;\n<b>Konum:</b> Berlin &gt; Remote'),
+    sent.text.includes('<b>Company:</b> R&amp;D &lt;Labs&gt;\n<b>Location:</b> Berlin &gt; Remote'),
   );
-  assert.doesNotMatch(sent.text, /Uygunluk puanı/);
+  assert.doesNotMatch(sent.text, /Fit score/);
   assert.equal(sent.reply_markup.inline_keyboard[0][0].style, 'primary');
   assert.equal(sent.reply_markup.inline_keyboard.at(-1)[0].style, 'danger');
   store.scoreRecord(p.id, job.id, 62);
@@ -1335,7 +1340,7 @@ test('formatted cards escape listing text, emphasize titles and refresh the orig
   assert.equal(edit.method, 'editMessageText');
   assert.equal(edit.body.message_id, row.message_id);
   assert.equal(edit.body.parse_mode, 'HTML');
-  assert.match(edit.body.text, /<b>Uygunluk puanı:<\/b> 62/);
+  assert.match(edit.body.text, /<b>Fit score:<\/b> 62/);
   assert.ok(!edit.body.text.includes('Henüz puanlanmadı'));
   assert.ok(!edit.body.text.includes('<a '));
   assert.equal(calls.filter((call) => call.method === 'sendMessage').length, 1);
@@ -1376,7 +1381,7 @@ test('polling routes deletion callbacks and reports the outcome without sending 
   assert.equal(bot.db.meta('offset'), '81');
   assert.deepEqual(calls.at(-1), {
     method: 'answerCallbackQuery',
-    body: {callback_query_id: 'callback', text: 'Mesaj silindi.'},
+    body: {callback_query_id: 'callback', text: 'Message deleted.'},
   });
   assert.equal(calls.filter((call) => call.method === 'sendMessage').length, 1);
 });
@@ -1452,7 +1457,7 @@ test('manual batch includes every incomplete job, skips completed and delivered 
 
 test('backfill respects bot availability and skips applications completed before delivery', async (t) => {
   const {bot, store, p, other, pair, flush, calls} = await fixture(t);
-  assert.throws(() => bot.sendUnsentJobs(p.id), /adayı Telegram/);
+  assert.throws(() => bot.sendUnsentJobs(p.id), /candidate to Telegram/);
   pair();
   bot.preferences(p.id, {notifications: false, questions: true});
   const job = store.addRecord(p.id, {
@@ -1463,9 +1468,9 @@ test('backfill respects bot availability and skips applications completed before
     fit: 'Match',
   }).job;
   bot.config.enabled = false;
-  assert.throws(() => bot.sendUnsentJobs(p.id), /botunu kaydedip aç/);
+  assert.throws(() => bot.sendUnsentJobs(p.id), /Save and enable the Telegram bot/);
   bot.config.enabled = true;
-  assert.throws(() => bot.sendUnsentJobs(other.id), /adayı Telegram/);
+  assert.throws(() => bot.sendUnsentJobs(other.id), /candidate to Telegram/);
   assert.equal(bot.sendUnsentJobs(p.id).queued, 1);
   store.setRecordState(p.id, job.id, 'completed');
   await flush();
@@ -1552,7 +1557,7 @@ test('batch score boundary is validated and rechecked after restart while resend
     {minScore: 101},
     {resend: 'true'},
   ])
-    assert.throws(() => bot.sendUnsentJobs(p.id, input), /Geçersiz|Minimum puan/);
+    assert.throws(() => bot.sendUnsentJobs(p.id, input), /Invalid|minimum score/);
   assert.equal(bot.db.pending().length, 0);
   assert.equal(bot.sendUnsentJobs(p.id, {minScore: 100, resend: true}).queued, 0);
   assert.equal(bot.sendUnsentJobs(p.id, {minScore: 70, resend: true}).queued, 3);
@@ -1709,13 +1714,13 @@ test('job cards show each application state and change the delete label on compl
   const row = bot.db.delivery(
     original.reply_markup.inline_keyboard.at(-1)[0].callback_data.slice(2),
   );
-  assert.match(original.text, /^<b>İş arama · Bulundu<\/b>/);
+  assert.match(original.text, /^<b>Job search · Found<\/b>/);
   const cases = [
-    [{status: 'prepared'}, 'Başvuruya hazır'],
-    [{status: 'executing'}, 'İşlem sürüyor'],
-    [{status: 'uncertain'}, 'Doğrulama bekliyor'],
-    [{status: 'completed'}, 'Başvuruldu'],
-    [{status: 'dismissed'}, 'Atlandı'],
+    [{status: 'prepared'}, 'Ready to apply'],
+    [{status: 'executing'}, 'In progress'],
+    [{status: 'uncertain'}, 'Awaiting verification'],
+    [{status: 'completed'}, 'Applied'],
+    [{status: 'dismissed'}, 'Skipped'],
   ];
   for (const [changes, label] of cases) {
     store.saveRecord({...job, ...changes}, 'job_updated');
@@ -1726,7 +1731,8 @@ test('job cards show each application state and change the delete label on compl
     assert.equal(edit.body.message_id, row.message_id);
     assert.ok(edit.body.text.includes(label), edit.body.text);
     const expected = structuredClone(original.reply_markup);
-    if (changes.status === 'completed') expected.inline_keyboard.at(-1)[0].text = '🗑 Mesajı sil';
+    if (changes.status === 'completed')
+      expected.inline_keyboard.at(-1)[0].text = '🗑 Delete message';
     assert.deepEqual(edit.body.reply_markup, expected);
   }
   const count = calls.length;
@@ -1764,8 +1770,8 @@ test('updates coalesce, include ranking and catch changes made during the origin
   await flush();
   assert.equal(calls.filter((call) => call.method === 'sendMessage').length, 1);
   assert.equal(calls.filter((call) => call.method === 'editMessageText').length, 1);
-  assert.match(calls.at(-1).body.text, /İşlem sürüyor/);
-  assert.match(calls.at(-1).body.text, /Uygunluk puanı:<\/b> 80/);
+  assert.match(calls.at(-1).body.text, /In progress/);
+  assert.match(calls.at(-1).body.text, /Fit score:<\/b> 80/);
 });
 
 test('manually sent backlog cards stay current after completion even with new notifications disabled', async (t) => {
@@ -1785,7 +1791,7 @@ test('manually sent backlog cards stay current after completion even with new no
   await flush();
   assert.equal(calls.length, 2);
   assert.equal(calls[1].method, 'editMessageText');
-  assert.match(calls[1].body.text, /Başvuruldu/);
+  assert.match(calls[1].body.text, /Applied/);
   assert.ok(!calls[1].body.text.includes('tamamlanmamış'));
   assert.equal(bot.sendUnsentJobs(p.id).queued, 0);
 });
@@ -1828,7 +1834,7 @@ test('status edit retry survives restart, respects global rate limits and render
   await restarted.flush();
   const edit = calls.at(-1);
   assert.equal(edit.method, 'editMessageText');
-  assert.match(edit.body.text, /İşlem sürüyor/);
+  assert.match(edit.body.text, /In progress/);
   assert.equal(restarted.status(p.id).candidate.pending, 1);
   advance(2000);
   await restarted.flush();

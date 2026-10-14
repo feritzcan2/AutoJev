@@ -2,21 +2,25 @@
 import {setTimeout as delay} from 'node:timers/promises';
 import {findTurnstileCheckbox} from './turnstile-checkbox.mjs';
 import {captchaProvider} from './provider.mjs';
+import {acquireTabRendering} from '../jev/rendering.mjs';
 
 // The site-wait card is the only place a user sees why the one native attempt
 // ended. Keep the reason code too; it names the exact discovery/click step.
 const outcomes = {
-  barrier_after_click: 'Doğrulama kutusuna bir kez tıklandı; Cloudflare erişimi açmadı.',
-  document_changed: 'Doğrulama sayfası deneme sırasında yenilendi; kutuya yeniden tıklanmadı.',
-  paint_pending: 'Sekme arka planda çizilemediği için kutuya tıklanamadı.',
-  target_changed: 'Doğrulama kutusu tıklamadan hemen önce değişti; tıklanmadı.',
-  frame_obscured: 'Doğrulama kutusunun üstü kapalıydı; tıklanmadı.',
-  multiple_checkboxes: 'Birden fazla doğrulama kutusu bulundu; tıklanmadı.',
+  barrier_after_click:
+    'The verification checkbox was clicked once; Cloudflare did not open access.',
+  document_changed:
+    'The verification page reloaded during the attempt; the checkbox was not clicked again.',
+  paint_pending:
+    'The checkbox could not be clicked because the tab could not render in the background.',
+  target_changed: 'The verification checkbox changed just before the click; it was not clicked.',
+  frame_obscured: 'The verification checkbox was covered; it was not clicked.',
+  multiple_checkboxes: 'More than one verification checkbox was found; none was clicked.',
 };
 export function cloudflareCheckboxMessage(diagnostic) {
   if (!diagnostic) return null;
   const reason = diagnostic.reason ?? 'unknown';
-  return `${outcomes[reason] ?? `Doğrulama kutusu ${Math.round((diagnostic.elapsedMs ?? 0) / 1000)} sn içinde tıklanabilir hale gelmedi.`} (${reason})`;
+  return `${outcomes[reason] ?? `The verification checkbox did not become clickable within ${Math.round((diagnostic.elapsedMs ?? 0) / 1000)} s.`} (${reason})`;
 }
 
 // A real challenge can run its own checks for 10+ seconds before it renders a
@@ -99,17 +103,17 @@ export async function clickCloudflareCheckbox(slot, check) {
   const target = slot.cloudflareCheckbox;
   delete slot.cloudflareCheckbox;
   if (!target || slot.cloudflareAttempt) return false;
-  let focus = false,
+  let release = null,
     timer;
   try {
     check();
     // CDP input needs the iframe's compositor hit-test region as well as DOM
-    // geometry. Wait for two real paints; a newly loaded iframe can have its
-    // correct rectangle before Chrome can route a mouse event into it.
-    if (await slot.page.evaluate(() => document.visibilityState === 'hidden')) {
-      focus = true;
-      await slot.cdp.send('Emulation.setFocusEmulationEnabled', {enabled: true});
-    }
+    // geometry. A background tab never paints, so bring it forward for the
+    // click as write tools do, then wait for two real paints; a newly loaded
+    // iframe can have its correct rectangle before Chrome can route a mouse
+    // event into it.
+    release = await acquireTabRendering(slot, {foreground: true}).catch(() => null);
+    check();
     const painted = await Promise.race([
       slot.page.evaluate(
         () =>
@@ -172,8 +176,7 @@ export async function clickCloudflareCheckbox(slot, check) {
     return true;
   } finally {
     clearTimeout(timer);
-    if (focus)
-      await slot.cdp.send('Emulation.setFocusEmulationEnabled', {enabled: false}).catch(() => {});
+    await release?.();
     await target.dispose();
   }
 }
@@ -201,7 +204,7 @@ export async function resolveCloudflareCheckbox(browser, id, result, owner, opti
       !browser.captcha?.settings.status().enabled ||
       client.automationTabs.get(slot.id)?.startsWith('record:')
     )
-      throw Error('Doğrulama görevi değişti.');
+      throw Error('The verification task changed.');
   };
   const observe = () =>
     browser.enqueue(id, () => {
@@ -218,7 +221,7 @@ export async function resolveCloudflareCheckbox(browser, id, result, owner, opti
     try {
       slot.captchaProgress = {
         state: 'checking',
-        message: 'Cloudflare doğrulama kutusu kontrol ediliyor…',
+        message: 'Checking the Cloudflare verification checkbox…',
       };
       browser.onCaptchaProgress?.(id);
       // Discovery and post-click waiting are outside the workspace queue. A late

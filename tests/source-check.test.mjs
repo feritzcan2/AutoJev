@@ -145,7 +145,7 @@ test('a page that fails three checks is skipped once the source itself loads', a
   assert.deepEqual(task.scan.pendingUrls, []);
   assert.ok(task.scan.work.searches[0].processedUrls.includes(run.broken));
   assert.deepEqual(run.automation().sourceState[run.source].scan, task.scan);
-  assert.match(run.automation().sourceState[run.source].lastResult, /atlandı/);
+  assert.match(run.automation().sourceState[run.source].lastResult, /were skipped/);
 });
 
 test('the next page is checked 30 s after one is given up', async () => {

@@ -55,6 +55,18 @@ db.putRun({
   tokenUsage: {agentTokens: 0, jevTokens: 0, totalTokens: 0},
 });
 db.putRun({
+  id: 'apply-fixture',
+  automationId: workspace.id,
+  kind: 'run',
+  sourceUrl,
+  recordId: db.results(workspace.id)[1].id,
+  recordOperation: 'execute',
+  status: 'completed',
+  startedAt: Date.now(),
+  finishedAt: Date.now(),
+  summary: 'Application sent.',
+});
+db.putRun({
   id: 'record-fixture',
   automationId: workspace.id,
   kind: 'run',
@@ -96,30 +108,47 @@ try {
   await history.waitFor({state: 'visible'});
   const found = history.locator('[data-run-id="history-fixture"]');
   await found.waitFor({state: 'visible'});
-  assert.deepEqual(await history.locator('h2').allTextContents(), ['Çalışma geçmişi']);
-  assert.equal(await history.locator('.run-row').count(), 3);
+  assert.deepEqual(await history.locator('h2').allTextContents(), ['Run history']);
+  assert.equal(await history.locator('.run-row').count(), 4);
   assert.ok((await history.textContent()).includes('Berlin ilanları kontrol edildi.'));
-  assert.equal(await found.locator('.run-found').textContent(), 'Bu turda 3 yeni kayıt');
+  assert.equal(await found.locator('.run-found').textContent(), '3 new record(s) this round');
   assert.equal(await found.locator('.run-source').textContent(), 'Berlin ilanları');
   assert.equal(
     await history.locator('[data-run-id="empty-fixture"] .run-found').textContent(),
-    'Bu turda 0 yeni kayıt',
+    '0 new record(s) this round',
   );
   assert.equal(await history.locator('[data-run-id="record-fixture"] .run-found').count(), 0);
-  assert.equal(await found.locator('.run-tokens').textContent(), 'Toplam 13.500 token');
+  assert.equal(
+    await found.locator('.run-tokens').textContent(),
+    '13,500 tokens in total · Jev 1,500 (≈ $0.0001)',
+  );
   assert.equal(
     await found.locator('.run-tokens').getAttribute('title'),
-    'Agent: 12.000 · Jev: 1.500',
+    'Agent: 12,000 · Jev: 1,500. Jev cost estimated at $0.042 per million tokens; the TypeSafe account shows the billed amount.',
   );
   assert.equal(
     await history.locator('[data-run-id="empty-fixture"] .run-tokens').textContent(),
-    'Toplam 0 token',
+    '0 tokens in total · Jev 0 (≈ $0.00)',
   );
   assert.equal(
     await history.locator('[data-run-id="record-fixture"] .run-tokens').textContent(),
-    'Token kullanımı bilinmiyor',
+    'Token usage unknown',
   );
-  assert.equal(await history.locator('button,form,textarea').count(), 0);
+  assert.equal(await history.locator('button:not([role=tab]),form,textarea').count(), 0);
+  const phases = history.locator('#automation-run-phases');
+  assert.deepEqual(await phases.locator('button').allTextContents(), [
+    'All (4)',
+    'Search (3)',
+    'Application (1)',
+  ]);
+  await phases.getByText('Application (1)').click();
+  assert.deepEqual(
+    await history.locator('.run-row').evaluateAll((rows) => rows.map((row) => row.dataset.runId)),
+    ['apply-fixture'],
+  );
+  await phases.getByText('Search (3)').click();
+  assert.equal(await history.locator('.run-row').count(), 3);
+  await phases.getByText('All (4)').click();
   assert.equal(
     await page
       .locator(
@@ -150,14 +179,17 @@ try {
   await page.screenshot({path: path.join(data, 'history.png'), fullPage: true});
   await page.locator('#candidates').selectOption(other.id);
   await page.locator('[data-view=background]').click();
-  await history.getByText('Henüz çalışma yok.', {exact: true}).waitFor();
+  await history.getByText('No runs yet.', {exact: true}).waitFor();
   assert.equal(await history.locator('.run-row').count(), 0);
   await page.locator('#candidates').selectOption(workspace.id);
   await page.locator('[data-view=background]').click();
   await page.reload();
   await history.waitFor({state: 'visible'});
   await history.getByText('Berlin ilanları kontrol edildi.', {exact: true}).waitFor();
-  assert.equal(await found.locator('.run-tokens').textContent(), 'Toplam 13.500 token');
+  assert.equal(
+    await found.locator('.run-tokens').textContent(),
+    '13,500 tokens in total · Jev 1,500 (≈ $0.0001)',
+  );
   const sqlite = new DatabaseSync(path.join(data, 'jobloop.sqlite'), {readOnly: true});
   try {
     const tables = sqlite
@@ -166,7 +198,7 @@ try {
       .map((row) => row.name);
     assert.ok(!tables.includes('background_runs'));
     assert.ok(!tables.includes('mail_signals'));
-    assert.equal(sqlite.prepare('SELECT count(*) AS n FROM automation_runs').get().n, 3);
+    assert.equal(sqlite.prepare('SELECT count(*) AS n FROM automation_runs').get().n, 4);
   } finally {
     sqlite.close();
   }

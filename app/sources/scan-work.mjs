@@ -10,7 +10,7 @@ export function scanWork(run) {
     searches: [
       {
         id: 'default',
-        label: 'Kaynak taraması',
+        label: 'Source scan',
         status: 'pending',
         pendingUrls: [...(run.scan?.pendingUrls ?? [])],
         processedUrls: [],
@@ -89,7 +89,7 @@ export function withScanWork(run, work, patch = {}) {
 export function scanQueue(run, {searchId = undefined, offset = 0, limit = 100} = {}) {
   const work = scanWork(run),
     search = work.searches.find((s) => s.id === (searchId ?? work.activeSearchId));
-  if (!search) throw Error('Tarama araması bulunamadı.');
+  if (!search) throw Error('Scan search not found.');
   if (
     !Number.isInteger(offset) ||
     offset < 0 ||
@@ -97,7 +97,7 @@ export function scanQueue(run, {searchId = undefined, offset = 0, limit = 100} =
     limit < 1 ||
     limit > 100
   )
-    throw Error('Kuyruk aralığı geçersiz; en fazla 100 adres oku.');
+    throw Error('Invalid queue range; read at most 100 addresses.');
   return {
     searchId: search.id,
     label: search.label,
@@ -135,7 +135,8 @@ export function reportWorkPage(run, pageProgress) {
     search = activeSearch(work),
     previous = search.pageProgress;
   // A lower page can be visited to recover access. It is not a new checkpoint.
-  if (search.status === 'completed') throw Error('Bu arama tamamlandı; kalan aramayı seç.');
+  if (search.status === 'completed')
+    throw Error('This search is complete; choose a remaining search.');
   const revisiting = Boolean(previous && pageProgress.currentPage < previous.currentPage);
   if (!revisiting) {
     search.pageProgress = pageProgress;
@@ -151,22 +152,33 @@ export function updateScanQueue(run, input) {
   const work = scanWork(run),
     search = activeSearch(work);
   if (search.status === 'completed')
-    throw Error('Tamamlanan aramaya yeni iş eklenemez. Kalan aramayı seç.');
+    throw Error('No new work can be added to a completed search. Choose a remaining search.');
   const processed = input.processedUrls ?? [];
   if (!Array.isArray(processed) || processed.length > 100)
-    throw Error('Bir seferde en fazla 100 işlenmiş adres kaydet.');
+    throw Error('Save at most 100 processed addresses at a time.');
   const additions = [...new Set(input.pendingUrls.map(webUrl))],
     done = [...new Set(processed.map(webUrl))];
   if (done.some((url) => additions.includes(url)))
-    throw Error('Bir adres aynı anda bekleyen ve işlenmiş olamaz.');
+    throw Error('An address cannot be both pending and processed.');
   search.processedUrls = [...new Set([...search.processedUrls, ...done])];
   search.pendingUrls = [...new Set([...search.pendingUrls, ...additions])].filter(
     (url) => !search.processedUrls.includes(url),
   );
   if (input.excluded?.length) noteExcluded(search, input.excluded);
   if (input.cards?.length) noteCards(search, input.cards);
+  // New listings by results page; a page read again after a restart keeps its count.
+  if (input.newListings)
+    search.newListings = {
+      ...search.newListings,
+      [input.newListings.url]: Math.max(
+        search.newListings?.[input.newListings.url] ?? 0,
+        input.newListings.count,
+      ),
+    };
   return work;
 }
+export const searchNewListings = (search) =>
+  Object.values(search?.newListings ?? {}).reduce((sum, count) => sum + count, 0);
 // Jev's card reading of a waiting listing: its title, the probability it is
 // kept, and the closest exclusion. Only waiting listings keep a note.
 const EXCLUSIONS = ['hard_constraint', 'qualification', 'unrelated_role'];
@@ -208,7 +220,9 @@ export function completeScanSearch(run, completion, evidenceUrl) {
   const work = scanWork(run),
     search = activeSearch(work);
   if (search.pendingUrls.length)
-    throw Error(`${search.pendingUrls.length} bekleyen adres var; arama tamamlanamaz.`);
+    throw Error(
+      `${search.pendingUrls.length} addresses are still pending; the search cannot be completed.`,
+    );
   validateScanCompletion(
     run.scanPlan,
     {complete: true, pendingUrls: [], completion, evidenceUrl},
@@ -227,19 +241,22 @@ export function assertScanWorkFinished(run) {
   if (!run.scan?.work) return;
   const work = scanWork(run);
   if (pendingScanUrls(work).length)
-    throw Error('Bekleyen sayfa veya kayıtlar var. İşlenen adresleri processedUrls ile kaydet.');
+    throw Error(
+      'Pages or records are still pending. Save the processed addresses with processedUrls.',
+    );
   if (work.searches.length > 1 && work.searches.some((s) => s.status !== 'completed'))
     throw Error(
-      'Kayıtlı aramaların tamamı bitmedi; kalan aramayı complete_scan_search ile tamamla.',
+      'Not all saved searches are finished; complete the remaining search with complete_scan_search.',
     );
 }
-// Every saved search was closed by complete_scan_search and nothing is queued:
-// the app has verified the whole scan itself.
+// Every saved search was closed by complete_scan_search, or by a collector
+// from its own API pages, and nothing is queued: the app has verified the
+// whole scan itself.
 export function scanWorkVerified(run) {
   const work = run.scan?.work;
   return Boolean(
     work &&
-      work.searches.length > 1 &&
+      (work.searches.length > 1 || run.scan.collector) &&
       work.searches.every((s) => s.status === 'completed') &&
       !pendingScanUrls(scanWork(run)).length,
   );
@@ -324,13 +341,13 @@ export function scanPlanView(plan) {
   };
 }
 export function validateWorkCompletion(run, scan) {
-  if ((run.scan?.work?.searches.length ?? 0) <= 1) {
+  if ((run.scan?.work?.searches.length ?? 0) <= 1 && !run.scan?.collector) {
     const completion = validateScanCompletion(run.scanPlan, scan, run.pageProgress, run.id);
     assertScanWorkFinished(run);
     return completion;
   }
   assertScanWorkFinished(run);
-  // Each search was verified by complete_scan_search; the agent's own
+  // Each search was verified by complete_scan_search or its collector; the agent's own
   // completion word adds nothing and weak agents guessed it wrong.
   const completions = run.scan.work.searches.map((s) => s.completion);
   return completions.includes('user_stop')

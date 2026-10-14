@@ -102,7 +102,7 @@ export class SiteAccess {
       exhausted,
       probing,
       waiting: exhausted || retryAt > this.now(),
-      message: `${row.site}: ${row.reason === 'ip_block' ? 'IP engeli' : row.reason === 'verification' ? 'Erişim doğrulaması' : row.reason === 'unreachable' ? 'siteye ulaşılamaması' : 'İstek sınırı'} nedeniyle ortak bekleme. ${exhausted ? 'Üçüncü erişim hatası; otomatik deneme durduruldu. Devam etmek için müdahale gerekiyor.' : probing ? 'Tek bir erişim kontrolü sürüyor.' : `Otomatik devam: ${new Date(retryAt).toLocaleString('tr-TR')}.`} Diğer siteler çalışmaya devam edebilir.`,
+      message: `${row.site}: shared wait because of ${row.reason === 'ip_block' ? 'an IP block' : row.reason === 'verification' ? 'an access verification' : row.reason === 'unreachable' ? 'the site being unreachable' : 'a rate limit'}. ${exhausted ? 'Third access failure; automatic retries stopped. Intervention is needed to continue.' : probing ? 'A single access check is in progress.' : `Resumes automatically: ${new Date(retryAt).toLocaleString('en-GB')}.`} Other sites can keep working.`,
     };
   }
   begin(url) {
@@ -113,9 +113,11 @@ export class SiteAccess {
     this.save({...this.row(url), token, leaseUntil: this.now() + minute});
     return token;
   }
+  // Once the wait is over, the first action on a page of that site is its one
+  // access probe, as a navigation would be. The page observed after the action
+  // completes the probe with the returned token.
   assertAction(url) {
-    const wait = this.status(url);
-    if (wait) throw new SiteWaitError(wait);
+    return this.status(url) ? this.begin(url) : null;
   }
   // Only the explicit user-response path may retire an old cooldown early.
   // A later incident or an in-flight probe must not be cleared by a stale card.
@@ -123,7 +125,7 @@ export class SiteAccess {
     for (const wait of waits) {
       const row = this.row('https://' + wait.site);
       if (row && (row.blockedAt !== wait.blockedAt || row.leaseUntil > this.now()))
-        throw Error('Bu sitede yeni bir erişim beklemesi var. Güncel müdahale kartını kontrol et.');
+        throw Error('This site has a new access wait. Check the current intervention card.');
     }
     for (const wait of waits)
       this.db.prepare('DELETE FROM browser_site_waits WHERE site=?').run(wait.site);
@@ -196,6 +198,21 @@ export class SiteAccess {
       return null;
     this.failures.delete(site);
     return this.block(url, 'unreachable');
+  }
+  // A verification challenge that the same tab got past (a new successful
+  // document of that site without a barrier) proves access again. Rate limits
+  // and IP blocks keep their wait: one page view says nothing about pacing.
+  recoverVerification(url, blockedAt) {
+    const previous = this.row(url);
+    if (
+      !previous ||
+      previous.recovered ||
+      previous.reason !== 'verification' ||
+      previous.blockedAt !== blockedAt
+    )
+      return false;
+    this.save({...previous, recovered: true, token: null, leaseUntil: 0, retryAt: null});
+    return true;
   }
   complete(url, token, {status, reason, retryAfter} = {}) {
     if (!reason && status >= 200 && status < 400) this.failures.delete(siteKey(url));

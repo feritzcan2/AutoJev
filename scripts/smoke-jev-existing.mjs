@@ -68,10 +68,10 @@ try {
     (await call(b, 'browser_jev_tabs')).tabs.map((t) => t.tabId),
     [third.tabId],
   );
-  await assert.rejects(() => call(b, 'browser_jev_observe', {tabId: first.tabId}), /bulunamadı/);
+  await assert.rejects(() => call(b, 'browser_jev_observe', {tabId: first.tabId}), /not found/);
   await assert.rejects(
     () => b.callTool({name: 'browser_jev_screenshot', arguments: {tabId: first.tabId}}),
-    /bulunamadı/,
+    /not found/,
   );
   // Pages opened by a Jev tab join the same task; personal tabs never do.
   const known = new Set(a.tabs.keys());
@@ -112,7 +112,7 @@ try {
         decisionId: decision.decisionId,
         text: 'must not execute',
       }),
-    /geçerli bir Jev kararı yok/,
+    /no valid Jev decision/,
   );
   assert.equal(await a.tab(first.tabId).page.locator('#query').inputValue(), 'unsent draft');
   assert.equal(chrome.opened, 3);
@@ -126,13 +126,13 @@ try {
   assert.equal(chrome.opened, 4);
   await assert.rejects(
     () => call(restarted, 'browser_jev_observe', {tabId: third.tabId}),
-    /bulunamadı/,
+    /not found/,
   );
   // A tab closed in Chrome cannot be confused with another open copy of the same URL.
   await restarted.tab(second.tabId).page.close();
   await assert.rejects(
     () => call(restarted, 'browser_jev_observe', {tabId: second.tabId}),
-    /bulunamadı|closed/,
+    /not found|closed/,
   );
   const {BrowserTools} = await import('../app/browser/tools.mjs');
   coldTools = new BrowserTools(directory, () =>

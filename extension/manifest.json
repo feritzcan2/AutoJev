@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoJev",
-  "description": "AutoJev masaüstü uygulamasının bu Chrome profilinde yalnızca kendi açtığı sekmeleri yönetmesini sağlar.",
+  "description": "Lets the AutoJev desktop app manage only the tabs it opens in this Chrome profile.",
   "version": "1.0.0",
   "minimum_chrome_version": "125",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAySya+JC9/sZ17VwaQ5ov3P0oPzo5fArQ1XQwT46c9w24n/o5yttEiF4QUas9TMG0WfJISf+ODNP2dpjvR/XeLQH3uCoyz1cJF48cLdLaaPaFy8sKl/xjuZ1F/b5I9uthGNBrYx0sOsc6sAQOLDps4aPbxxwSCrRNJiDylo51fIvCngaBcVRvWfRZBrwEBuDUnng3btMsBuBH3vrZKVVWcVGHMM+r+TsJpKncudMx0zoghg4v9gBQzmHszpZXZpWEndYDADmZZoC5xwqBfhG7dshbesMafS7FSyKJGIHli0h8CnQGoVB/8e3Mlqzh8dKFC9bCJPvea2BWycjH34dMewIDAQAB",

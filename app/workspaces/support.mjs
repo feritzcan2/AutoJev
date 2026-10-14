@@ -43,7 +43,7 @@ export class WorkspaceSupport {
     };
   }
   jobs(id) {
-    return this.automation.results(id, {all: true}).map((item) => this.project(item));
+    return this.automation.results(id).map((item) => this.project(item));
   }
   visibleJobs(id) {
     return this.jobs(id).filter((item) => !item.trial && !item.hidden);
@@ -132,32 +132,32 @@ export class WorkspaceSupport {
           ? 'available'
           : 'unavailable',
       verificationOnly,
-      actionLabel: operation?.label ?? 'İşlem kullanılamıyor',
+      actionLabel: operation?.label ?? 'Action unavailable',
       request,
       token,
       message: state.task
         ? state.task.state === 'pending'
-          ? 'Kayıt için görev zaten sırada.'
-          : 'Agent bu kaydı zaten işliyor.'
+          ? 'A task for this record is already queued.'
+          : 'The agent is already working on this record.'
         : (operation?.reason ??
           (operation
-            ? 'Bu kayıt için ' + operation.label.toLocaleLowerCase('tr') + '.'
-            : 'Önce çalışma alanındaki kaydı kontrol et.')),
+            ? operation.label + ' is available for this record.'
+            : 'Check the record in the workspace first.')),
     };
   }
   async queueRecord(id, itemId, token) {
     const state = this.queueState(id, {id: itemId});
     if (state.state !== 'available') throw Error(state.message);
     if (!token || token !== state.token)
-      throw Error('Kayıt değişti. Güncellenen karttaki işlemi yeniden seç.');
+      throw Error('The record changed. Choose the action again on the updated card.');
     const {kind, ...input} = state.request,
       task = await this.runtime.runRecord(id, itemId, kind, input);
     return {
       queued: true,
       taskId: task.id,
       message: state.verificationOnly
-        ? 'Kayıt doğrulama sırasına alındı.'
-        : 'Kayıt işlem sırasına alındı.',
+        ? 'Record added to the verification queue.'
+        : 'Record added to the action queue.',
     };
   }
   maxEventSeq() {
@@ -182,7 +182,7 @@ export function rebindWorkspaceOwners(db) {
   db.exec('PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE');
   try {
     for (const {name, sql} of tables) {
-      if (!/^[a-z_]+$/.test(name)) throw Error('Geçersiz tablo');
+      if (!/^[a-z_]+$/.test(name)) throw Error('Invalid table');
       const indexes = db
         .prepare(
           "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL",
@@ -202,7 +202,7 @@ export function rebindWorkspaceOwners(db) {
       for (const index of indexes) db.exec(index.sql);
     }
     if (db.prepare('PRAGMA foreign_key_check').get())
-      throw Error('Çalışma alanı ilişkileri taşınamadı');
+      throw Error('Could not move workspace relations');
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');

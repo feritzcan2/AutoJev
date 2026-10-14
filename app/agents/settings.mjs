@@ -7,10 +7,11 @@ export const defaultPermission = (provider) =>
 export function withAgentDefaults(settings = {}) {
   const provider = settings.provider ?? 'codex';
   return {
-    model: 'default',
-    reasoning: 'default',
+    model: provider === 'claude' ? 'haiku' : 'default',
+    ...(provider === 'claude' ? {trialModel: 'opus[1m]'} : {}),
+    reasoning: provider === 'claude' ? 'medium' : 'default',
     network: null,
-    contextCompactTokens: DEFAULT_COMPACT_TOKENS,
+    contextCompactTokens: provider === 'claude' ? 200000 : DEFAULT_COMPACT_TOKENS,
     contextRestartTokens: 0,
     ...settings,
     provider,

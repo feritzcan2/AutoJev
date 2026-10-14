@@ -1,6 +1,6 @@
 // @ts-check
 const value = (result) => {
-  if (result?.isError) throw Error('Sayfa kontrolü başarısız.');
+  if (result?.isError) throw Error('Page check failed.');
   const text = result?.content?.find((p) => p.type === 'text')?.text;
   return JSON.parse(text);
 };
@@ -57,12 +57,12 @@ export async function checkSourceBrowser(client, id, task) {
       await client.callTool({name: 'browser_jev_open', arguments: {url}}, owner, state),
     );
     if (page.siteWait)
-      return {ready: false, evidence: page.siteWait.message ?? 'Kaynak erişimi bekleniyor.'};
+      return {ready: false, evidence: page.siteWait.message ?? 'Waiting for source access.'};
     if (page.tabId && !before.has(page.tabId)) shown = page.tabId;
     if (page.navigationError) throw Error(page.navigationError);
-    if (!page.tabId) throw Error('Kontrol sekmesi açılamadı.');
+    if (!page.tabId) throw Error('Could not open the check tab.');
     const tab = client.tabs.get(page.tabId);
-    if (!tab || before.has(tab.id)) throw Error('Ayrı kontrol sekmesi oluşturulamadı.');
+    if (!tab || before.has(tab.id)) throw Error('Could not create a separate check tab.');
     page = value(
       await client.callTool(
         {
@@ -84,8 +84,8 @@ export async function checkSourceBrowser(client, id, task) {
     return {
       ready,
       evidence: ready
-        ? 'Kaydedilen adres yönetilen tarayıcıda tekrar okunabiliyor.'
-        : 'Kaydedilen adres hâlâ yüklenemiyor.',
+        ? 'The saved address can be read again in the managed browser.'
+        : 'The saved address still does not load.',
     };
   } catch (error) {
     return {ready: false, evidence: error.message};

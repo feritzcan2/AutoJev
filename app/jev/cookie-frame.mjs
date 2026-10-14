@@ -91,7 +91,7 @@ export async function captureCookieFrameTargets(slot) {
 export async function clickCookieFrameTarget(slot, targetId, owner) {
   const saved = slot.cookieFrameTargets?.get(targetId);
   if (!saved) return null;
-  if (saved.owner !== owner) throw Error('Bu oturuma ait güncel çerez hedefi gerekli.');
+  if (saved.owner !== owner) throw Error('A current cookie target of this session is required.');
   slot.cookieFrameTargets.delete(targetId);
   try {
     if (
@@ -102,7 +102,7 @@ export async function clickCookieFrameTarget(slot, targetId, owner) {
       return {
         status: 'stale',
         executed: false,
-        message: 'Çerez penceresi değişti; dönen güncel hedefleri kullan.',
+        message: 'The cookie dialog changed; use the returned current targets.',
       };
     // Playwright enforces visibility, stability and hit testing through the frame.
     await saved.input.click({timeout: 2000});
@@ -110,14 +110,14 @@ export async function clickCookieFrameTarget(slot, targetId, owner) {
       status: 'ready',
       executed: true,
       message:
-        'Çerez tercihine tıklandı; dönen sayfada pencerenin kapandığını veya güncellendiğini kontrol et.',
+        'The cookie preference was clicked; check in the returned page that the dialog closed or updated.',
     };
   } catch {
     return {
       status: 'uncertain',
       executed: 'unknown',
       message:
-        'Çerez tıklaması doğrulanamadı. Pencere taşınmış, kapanmış veya üzeri örtülmüş olabilir; sonucu kontrol et, aynı işlemi körlemesine tekrarlama.',
+        'Could not verify the cookie click. The dialog may have moved, closed or been covered; check the result and do not blindly repeat the action.',
     };
   } finally {
     await saved.input.dispose().catch(() => {});

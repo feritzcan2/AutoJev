@@ -1,0 +1,331 @@
+/* Welcome screen of a new job search; covers the sidebar until the profile is saved. */
+body.onboarding-open {
+  overflow: hidden;
+}
+.onboarding {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  justify-items: center;
+  gap: 24px;
+  padding: 28px 16px 40px;
+  overflow-y: auto;
+  background: var(--bg-app);
+  color: var(--text);
+  --onboarding-width: 640px;
+}
+/* The reading step shows the agent terminal, which needs room for its columns. */
+.onboarding[data-step='reading'] {
+  --onboarding-width: 880px;
+}
+.onboarding[hidden] {
+  display: none;
+}
+.onboarding-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: min(var(--onboarding-width), 100%);
+}
+.onboarding-brand {
+  font-size: 18px;
+  letter-spacing: -0.4px;
+}
+.onboarding-steps {
+  display: flex;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.onboarding-steps li {
+  counter-increment: step;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.onboarding-steps li::before {
+  content: counter(step);
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  font-size: 11px;
+}
+.onboarding-steps li[data-state='current'] {
+  color: var(--accent-strong);
+}
+.onboarding-steps li[data-state='current']::before {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+.onboarding-steps li[data-state='done'] {
+  color: var(--text-secondary);
+}
+.onboarding-steps li[data-state='done']::before {
+  content: '✓';
+  border-color: var(--success);
+  color: var(--success);
+}
+.onboarding-card {
+  display: grid;
+  align-self: start;
+  align-content: start;
+  gap: 18px;
+  width: min(var(--onboarding-width), 100%);
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-raised);
+}
+.onboarding-card h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.5px;
+}
+.onboarding-card h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.onboarding-lead,
+.onboarding-reply {
+  margin: -6px 0 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.onboarding-hint {
+  margin-top: -10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.onboarding fieldset {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.onboarding legend {
+  margin-bottom: 10px;
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.onboarding .choice small {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.onboarding-agents .choice[data-state='error'] small {
+  color: var(--warning);
+}
+.onboarding-notes {
+  gap: 7px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.onboarding-notes textarea {
+  width: 100%;
+  min-height: 84px;
+  max-height: 280px;
+  field-sizing: content;
+  line-height: 1.55;
+}
+.onboarding-cv {
+  justify-self: start;
+  min-width: 180px;
+  padding: 13px 22px;
+  font-size: 14px;
+}
+.onboarding-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+.onboarding button.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-strong);
+  font-size: 13px;
+}
+.onboarding button.link:hover {
+  text-decoration: underline;
+  filter: none;
+}
+.onboarding-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.onboarding-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: onboarding-spin 0.9s linear infinite;
+}
+@keyframes onboarding-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-spinner {
+    animation: none;
+  }
+}
+.onboarding .onboarding-terminal {
+  min-width: 0;
+  height: 380px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.onboarding-attention,
+.onboarding-failure p {
+  margin: 0;
+  color: var(--warning);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.onboarding-failure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.onboarding-failure:empty {
+  display: none;
+}
+.onboarding-error {
+  width: min(var(--onboarding-width), 100%);
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(225, 117, 126, 0.4);
+  border-radius: 10px;
+  color: var(--danger);
+  font-size: 13px;
+}
+.onboarding .onboarding-form {
+  max-width: none;
+  gap: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.onboarding-fields {
+  display: grid;
+  gap: 16px;
+}
+.onboarding-fields label {
+  gap: 7px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.onboarding-fields input,
+.onboarding-fields textarea,
+.onboarding-key input {
+  width: 100%;
+}
+.onboarding-fields textarea {
+  min-height: 72px;
+  max-height: 280px;
+  field-sizing: content;
+  line-height: 1.55;
+}
+.onboarding-more summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.onboarding-more[open] summary {
+  margin-bottom: 10px;
+}
+.onboarding-checks {
+  display: grid;
+  gap: 8px;
+}
+.onboarding-checks .check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.onboarding-checks .check span {
+  display: grid;
+  gap: 2px;
+}
+.onboarding-checks .check b {
+  font-weight: 550;
+}
+.onboarding-checks .check small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.onboarding-readiness {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(217, 170, 95, 0.35);
+  border-radius: 10px;
+}
+.onboarding-readiness[hidden] {
+  display: none;
+}
+.onboarding-check {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+.onboarding-check span {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.onboarding-check[data-state='error'] b {
+  color: var(--warning);
+}
+.onboarding-key {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.onboarding-readiness > button.link {
+  justify-self: start;
+}
+.onboarding-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+@media (max-width: 560px) {
+  .onboarding-card {
+    padding: 20px 16px;
+  }
+  .onboarding-foot button {
+    flex: 1 1 100%;
+  }
+}

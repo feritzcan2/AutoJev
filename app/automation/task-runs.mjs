@@ -33,10 +33,10 @@ export class TaskRuns {
   }
   async start(id, input, workerId = 'main') {
     const key = workerKey(id, workerId);
-    if (this.closed) throw Error('Uygulama kapanıyor');
-    if (this.active.has(key)) throw Error('Bu worker’ın görevi zaten çalışıyor');
+    if (this.closed) throw Error('The app is closing');
+    if (this.active.has(key)) throw Error('This worker’s task is already running');
     if (!this.policy.separateCapacity?.(workerId) && this.capacityUsed >= this.concurrency)
-      throw Error(`Aynı anda en fazla ${this.concurrency} görev çalışabilir`);
+      throw Error(`At most ${this.concurrency} tasks can run at the same time`);
     const run = this.policy.begin(id, input, workerId),
       task = this.policy.config(id),
       slot = {
@@ -56,7 +56,7 @@ export class TaskRuns {
         void this.finish(
           id,
           'timeout',
-          'Tur süresi doldu. Devam etmek için sonucu kontrol et.',
+          'The round timed out. Check the result to continue.',
           workerId,
         ).catch(() => {});
       }, task.timeoutMinutes * 60000);
@@ -100,7 +100,7 @@ export class TaskRuns {
       return this.finish(
         slot.id,
         'blocked',
-        `${issue.title}. ${issue.detail} Agent oturumu kapandı.`,
+        `${issue.title}. ${issue.detail} The agent session closed.`,
         slot.workerId,
       ).catch(() => {});
     }
@@ -138,8 +138,8 @@ export class TaskRuns {
       status: 'failed',
       summary:
         reason === 'idle'
-          ? 'Agent sonuç bildirmeden durdu. Agent ekranını kontrol et.'
-          : 'Agent oturumu sonuç bildirmeden kapandı.',
+          ? 'The agent stopped without reporting a result. Check the agent screen.'
+          : 'The agent session closed without reporting a result.',
     };
     return this.finish(slot.id, outcome.status, outcome.summary, slot.workerId).catch(() => {});
   }
@@ -169,7 +169,7 @@ export class TaskRuns {
     const slot = this.slot(id, runId);
     if (!slot || slot.finishing) return;
     if (event.event === 'provider_error' && !slot.completionRequested) {
-      const summary = event.summary || 'Model sağlayıcısı isteği tamamlayamadı.';
+      const summary = event.summary || 'The model provider could not complete the request.';
       slot.run = {
         ...this.policy.run(slot.run.id),
         state: 'Error',
@@ -222,7 +222,7 @@ export class TaskRuns {
   }
   interactive(id) {
     const slot = this.active.get(id);
-    if (!slot || slot.finishing) throw Error('Etkin görev bulunamadı');
+    if (!slot || slot.finishing) throw Error('No active task found');
     slot.run = {...this.policy.run(slot.run.id), interactive: true};
     slot.completionRequested = false;
     clearTimeout(slot.timer);
@@ -234,8 +234,7 @@ export class TaskRuns {
   }
   complete(id, runId, status, summary, {goalReached = false} = {}) {
     const slot = this.slot(id, runId);
-    if (!slot || slot.finishing || slot.completionRequested)
-      throw Error('Etkin çalışma bulunamadı');
+    if (!slot || slot.finishing || slot.completionRequested) throw Error('No active run found');
     if (slot.run.interactive) {
       slot.run = {...this.policy.run(runId), summary, lastResult: status, awaitingMessage: true};
       clearTimeout(slot.idleTimer);
@@ -263,7 +262,7 @@ export class TaskRuns {
     }, 150);
     return {saved: true, status: result?.status ?? status, stop: true};
   }
-  finish(id, status = 'interrupted', summary = 'Kullanıcı durdurdu.', workerId = 'main') {
+  finish(id, status = 'interrupted', summary = 'Stopped by the user.', workerId = 'main') {
     const slot = this.active.get(workerKey(id, workerId));
     if (!slot) return Promise.resolve();
     if (slot.finishing) return slot.finishPromise;
@@ -286,7 +285,7 @@ export class TaskRuns {
       try {
         await this.policy.afterFinish?.(id, slot.run.id);
       } catch (error) {
-        console.warn('Görev sekmeleri temizlenemedi:', error);
+        console.warn('Could not clean up task tabs:', error);
       }
       this.active.delete(slot.key);
       this.changed(id);
@@ -297,7 +296,7 @@ export class TaskRuns {
     this.closed = true;
     await Promise.all(
       [...this.active.values()].map((s) =>
-        this.finish(s.id, 'interrupted', 'Uygulama kapatıldı.', s.workerId),
+        this.finish(s.id, 'interrupted', 'App closed.', s.workerId),
       ),
     );
   }

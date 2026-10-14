@@ -8,7 +8,7 @@ export function missingAgentMessage(provider) {
       : provider === 'codex'
         ? 'codex login'
         : 'claude auth login';
-  return `AutoJev ${label} komutunu bulamadı. Terminalde ${provider} --version ile kontrol et. Komut çalışıyorsa AutoJev’i tamamen kapatıp aynı terminalden aç. AutoJev bu aracı içermez; kurulu değilse ayrıca kur ve ${login} ile oturum aç. Ardından kuruluma devam et. Kayıtlı bilgilerin korunur.`;
+  return `AutoJev could not find the ${label} command. Check with ${provider} --version in a terminal. If the command works, quit AutoJev completely and open it from the same terminal. AutoJev does not include this tool; if it is not installed, install it separately and sign in with ${login}. Then continue the setup. Your saved information is kept.`;
 }
 
 export function engineErrorMessage(message) {

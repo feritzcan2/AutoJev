@@ -10,28 +10,28 @@ export function jevSettingsPanel(api, root, {notice = () => {}} = {}) {
     version = 0,
     errorMessage = '';
   root.classList.add('jev-settings');
-  root.innerHTML = `<div class="jev-settings-heading"><h4>Jev bağlantısı</h4><span data-state role="status">Yükleniyor…</span></div>
- <p>Jev’i tarayıcı olarak seçen bütün adaylar bu TypeSafe bağlantısını kullanır. Adayların site üyelik şifreleri Aday profili bölümünde ayrı tutulur.</p>
- <form><label>TypeSafe API anahtarı<input name="apiKey" type="password" autocomplete="new-password" spellcheck="false" maxlength="4096" placeholder="TypeSafe konsolundaki API anahtarın"></label><label>Model<input name="model" value="jev-latest" maxlength="100" required spellcheck="false" autocomplete="off"></label><div class="jev-settings-actions"><button class="primary" type="submit">Kaydet</button><button class="quiet" type="button" data-test>Bağlantıyı test et</button><button class="quiet" type="button" data-remove>Kaydedilen anahtarı kaldır</button></div></form>
- <p class="jev-settings-hint">Anahtar bu bilgisayarda sistem anahtarlığıyla şifrelenir ve kaydettikten sonra gösterilmez. Test yalnızca TypeSafe’ten model listesini ister; aday belgesi veya tarayıcı içeriği göndermez ve model görevi başlatmaz.</p><p class="jev-settings-message" data-message role="status"></p>`;
+  root.innerHTML = `<div class="jev-settings-heading"><h4>Jev connection</h4><span data-state role="status">Loading…</span></div>
+ <p>Every candidate that uses Jev as the browser uses this TypeSafe connection. Candidates’ site account passwords are kept separately in the Candidate profile section.</p>
+ <form><label>TypeSafe API key<input name="apiKey" type="password" autocomplete="new-password" spellcheck="false" maxlength="4096" placeholder="The API key from your TypeSafe console"></label><label>Model<input name="model" value="jev-latest" maxlength="100" required spellcheck="false" autocomplete="off"></label><div class="jev-settings-actions"><button class="primary" type="submit">Save</button><button class="quiet" type="button" data-test>Test connection</button><button class="quiet" type="button" data-remove>Remove saved key</button></div></form>
+ <p class="jev-settings-hint">The key is encrypted on this computer with the system keychain and is not shown after saving. The test only requests the model list from TypeSafe; it sends no candidate documents or browser content and starts no model task.</p><p class="jev-settings-message" data-message role="status"></p>`;
   const $ = (selector) => root.querySelector(selector),
     form = $('form'),
     key = form.elements.apiKey;
   function render() {
     $('[data-state]').textContent = status?.error
-      ? 'Anahtar açılamadı'
+      ? 'Key could not be decrypted'
       : status?.configured
-        ? 'Anahtar yapılandırıldı'
-        : 'Anahtar gerekli';
+        ? 'Key configured'
+        : 'Key required';
     key.placeholder = status?.saved
-      ? 'Değiştirmek için yeni anahtar gir'
-      : 'TypeSafe konsolundaki API anahtarın';
+      ? 'Enter a new key to replace it'
+      : 'The API key from your TypeSafe console';
     for (const control of form.elements) control.disabled = busy;
     $('[data-test]').disabled = busy || !status?.configured;
     $('[data-remove]').disabled = busy || !status?.saved;
     const source =
       status?.source === 'environment'
-        ? 'TYPESAFE_API_KEY ortam değişkeni veya geliştirme dosyası kullanılıyor. Kaydettiğin anahtar bunun yerine kullanılır. '
+        ? 'The TYPESAFE_API_KEY environment variable or a development file is in use. A key you save is used instead. '
         : '';
     $('[data-message]').textContent =
       source + (errorMessage || status?.error || status?.lastCheck?.message || '');
@@ -72,7 +72,7 @@ export function jevSettingsPanel(api, root, {notice = () => {}} = {}) {
       key.value = '';
       try {
         status = await api.saveJevSettings(input);
-        notice('Jev ayarları kaydedildi.');
+        notice('Jev settings saved.');
       } finally {
         input.apiKey = '';
       }
@@ -85,8 +85,8 @@ export function jevSettingsPanel(api, root, {notice = () => {}} = {}) {
       form.elements.model.value = status.model;
       notice(
         status.configured
-          ? 'Kaydedilen anahtar kaldırıldı. Geliştirme ortamındaki anahtar etkin.'
-          : 'Jev anahtarı kaldırıldı.',
+          ? 'Saved key removed. The development environment key is active.'
+          : 'Jev key removed.',
       );
     });
   $('[data-test]').onclick = () =>
@@ -100,5 +100,5 @@ export function jevSettingsPanel(api, root, {notice = () => {}} = {}) {
 
 export function dataDisclosure(root) {
   root.classList.add('data-disclosure');
-  root.innerHTML = `<h4>Verilerin nerede işlenir?</h4><ul><li><b>Bu bilgisayarda:</b> Aday profilleri, CV ve belgeler, başvuru geçmişi, tarayıcı profilleri ve uygulama kayıtları saklanır.</li><li><b>Seçtiğin AI sağlayıcısında:</b> Agent çalışırken görev talimatları, aday bilgileri, okuduğu belgeler, tarayıcı gözlemleri ve araç sonuçları işlenir. Sağlayıcı hesabının veri tercihleri geçerlidir.</li><li><b>TypeSafe / Jev’de:</b> Jev’den karar istendiğinde sayfa adresi, başlığı, metni, form alanlarının mevcut değerleri ve son işlemler paylaşılır. Formlardaki kişisel bilgiler de bu içeriğe girebilir.</li><li><b>CapSolver’da:</b> Otomatik CAPTCHA çözümünü açarsan sayfa adresi, doğrulama bilgileri ve gerektiğinde CAPTCHA görseli CapSolver ile paylaşılır.</li><li><b>Telegram’da:</b> Botu etkinleştirdiğinde seçtiğin ilan, başvuru ve soru bildirimleri, bunlara verdiğin yanıtlar ve sohbet kimliği Telegram üzerinden işlenir.</li><li><b>İş sitelerinde:</b> İzin verdiğin başvuru akışında doldurulan bilgiler ve yüklenen belgeler ilgili siteye gönderilir.</li></ul><p>Uygulamaya kaydettiğin portal şifreleri ve API anahtarları sistem anahtarlığıyla şifrelenir. Jev’in şifre doldurma aracı şifreyi doğrudan siteye aktarır; sohbet yanıtında göstermez. Yedeklerini ve dışa aktardığın aday belgelerini kişisel veri olarak koru.</p>`;
+  root.innerHTML = `<h4>Where is your data processed?</h4><ul><li><b>On this computer:</b> Candidate profiles, CVs and documents, application history, browser profiles and app records are stored.</li><li><b>At the AI provider you choose:</b> While the agent works, task instructions, candidate details, documents it reads, browser observations and tool results are processed. Your provider account’s data preferences apply.</li><li><b>At TypeSafe / Jev:</b> When Jev is asked for a decision, the page address, title, text, current form field values and recent actions are shared. Personal details in forms can be part of this content.</li><li><b>At CapSolver:</b> If you turn on automatic CAPTCHA solving, the page address, challenge details and, when needed, the CAPTCHA image are shared with CapSolver.</li><li><b>On Telegram:</b> When you enable the bot, the listing, application and question notifications you choose, your replies to them and the chat id are processed through Telegram.</li><li><b>On job sites:</b> In application flows you allow, the details filled in and the documents uploaded are sent to that site.</li></ul><p>Portal passwords and API keys you save in the app are encrypted with the system keychain. Jev’s password fill tool passes the password straight to the site and never shows it in a chat reply. Protect your backups and exported candidate documents as personal data.</p>`;
 }

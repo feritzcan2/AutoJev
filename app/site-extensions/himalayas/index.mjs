@@ -31,13 +31,20 @@ export default {
         description: job.description,
         fields: {
           company: job.company,
-          location: job.location,
+          applicantLocation: job.location,
           employmentType: job.employmentType,
           publishedAt: job.publishedAt,
           expiresAt: job.expiresAt,
           salary: salaryText(job.salary),
           timezoneRestrictions: job.timezoneRestrictions,
         },
+        // Himalayas lists only remote roles; its location is a restriction on
+        // where applicants may live, not where the employer is.
+        notes: job.location
+          ? [
+              'applicantLocation is the Himalayas restriction on where candidates must be based; Worldwide means no country restriction.',
+            ]
+          : [],
       }),
       cells: {company: job.company, location: job.location},
     }),
@@ -48,10 +55,10 @@ export default {
     ordering: 'newest_first',
     pagination: 'url_param',
     filters: [
-      {param: 'country', label: 'Ülke (ISO kodu)'},
-      {param: 'worldwide', label: 'Dünya geneli', values: {true: 'Yalnızca dünya geneli'}},
-      {param: 'seniority', label: 'Kıdem'},
-      {param: 'employment_type', label: 'Çalışma türü'},
+      {param: 'country', label: 'Country (ISO code)'},
+      {param: 'worldwide', label: 'Worldwide', values: {true: 'Worldwide only'}},
+      {param: 'seniority', label: 'Seniority'},
+      {param: 'employment_type', label: 'Employment type'},
     ],
     notes: 'sort=recent orders newest first. Pages via &page=N.',
   },

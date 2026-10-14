@@ -39,7 +39,7 @@ createInterface({input:process.stdin}).on('line',line=>{
                 : 'claude auth login',
           ),
         );
-        assert.match(detail, /AutoJev bu aracı içermez/);
+        assert.match(detail, /AutoJev does not include this tool/);
         await assert.rejects(
           engine.request('launch', {provider}),
           (error) => error.message === detail,

@@ -113,7 +113,7 @@ try {
   const improve = () =>
     page
       .locator('[data-automation-pane=profile]')
-      .getByRole('button', {name: 'Agent ile geliştir', exact: true});
+      .getByRole('button', {name: 'Improve with the agent', exact: true});
   await page.locator('[data-view=profile]').click();
   assert.equal(
     await page.locator('#automation-profile-save').isEnabled(),
@@ -352,7 +352,7 @@ try {
   await page.waitForFunction(() =>
     document
       .querySelector('.workspace-chat-thinking')
-      .textContent.includes('Kayıtlı sonuçları inceliyor'),
+      .textContent.includes('Reviewing saved results'),
   );
   await app.evaluate(() => {
     globalThis.chatStream[0].text = 'Tercihini inceliyorum. Uzaktan çalışmaya odaklanabiliriz.';
@@ -373,7 +373,6 @@ try {
       key,
       value,
     })),
-    sources: workspace.sources,
     instructions: 'Uzaktan çalışılan ilanları değerlendir.',
     facts: '',
   });
@@ -418,7 +417,7 @@ try {
   assert.equal(after.activeRuns.find((run) => run.id === chatId).awaitingMessage, true);
   assert.equal(
     after.workers.find((worker) => worker.id === 'conversation').presentation.status,
-    'Mesaj bekliyor',
+    'Waiting for a message',
   );
   assert.equal(await page.locator('#automation-message').isVisible(), true);
   assert.equal(await page.locator('#automation-send').isEnabled(), true);
@@ -427,7 +426,7 @@ try {
     'Başka hangi kaynaklar işime yarar?',
     'Incoming replies preserve the next draft',
   );
-  const reviewProfile = page.getByRole('button', {name: 'Taslağı incele ve kaydet', exact: true});
+  const reviewProfile = page.getByRole('button', {name: 'Review and save the draft', exact: true});
   await reviewProfile.waitFor({state: 'visible'});
   assert.ok(
     await reviewProfile.evaluate((el) => {
@@ -475,7 +474,7 @@ try {
   await tool('reply_to_user', {message: 'Aynı sohbetten devam ediyorum.'});
   await tool('finish_automation_run', {status: 'completed', summary: 'İkinci yanıt hazır.'});
   await page.waitForFunction(
-    () => document.querySelector('#automation-chat-state').textContent === 'Sohbet açık',
+    () => document.querySelector('#automation-chat-state').textContent === 'Chat open',
   );
   await page.screenshot({path: path.join(data, 'independent-conversation.png')});
   await tool('ask_workspace_question', {
@@ -520,7 +519,7 @@ try {
   await page.locator('[data-view=board]').click();
   await page
     .locator('.automation-attention-banner')
-    .getByRole('button', {name: 'Formu aç', exact: true})
+    .getByRole('button', {name: 'Open form', exact: true})
     .click();
   assert.equal(await threshold.inputValue(), '65', 'Form drafts survive navigation');
   assert.ok(
@@ -532,7 +531,7 @@ try {
     'The form button reveals the question heading inside chat',
   );
   await page.screenshot({path: path.join(data, 'inline-questions.png')});
-  await question.getByRole('button', {name: 'Yanıtları gönder', exact: true}).click();
+  await question.getByRole('button', {name: 'Send answers', exact: true}).click();
   await threshold.waitFor({state: 'detached'});
   assert.match(
     await page.locator('#automation-messages').textContent(),
@@ -543,11 +542,11 @@ try {
   await remaining
     .getByRole('textbox', {name: 'Kaynak notu', exact: true})
     .fill('Yalnızca resmi ilan kaynakları.');
-  await remaining.getByRole('button', {name: 'Yanıtları gönder', exact: true}).click();
+  await remaining.getByRole('button', {name: 'Send answers', exact: true}).click();
   await page.locator('.workspace-chat-questions').waitFor({state: 'hidden'});
   await tool('finish_automation_run', {status: 'completed', summary: 'Form yanıtları alındı.'});
   await page.waitForFunction(
-    () => document.querySelector('#automation-chat-state').textContent === 'Sohbet açık',
+    () => document.querySelector('#automation-chat-state').textContent === 'Chat open',
   );
   assert.deepEqual(
     (
@@ -573,12 +572,12 @@ try {
   );
   assert.match(
     await page.locator('#automation-chat-feedback').textContent(),
-    /Tekrar gönderebilirsin/,
+    /You can send it again/,
   );
   await page.locator('#automation-send').click();
   await tool('finish_automation_run', {status: 'completed', summary: 'Tekrar yanıtlandı.'});
   await page.waitForFunction(
-    () => document.querySelector('#automation-chat-state').textContent === 'Sohbet açık',
+    () => document.querySelector('#automation-chat-state').textContent === 'Chat open',
   );
   const setupSettings = page.locator('#setup-agent-settings');
   assert.equal(await setupSettings.isVisible(), true);
@@ -603,7 +602,7 @@ try {
   await page.waitForFunction(
     () =>
       document.querySelector('#setup-agent-settings [data-status]').textContent ===
-      'Kurulum agenti ayarları kaydedildi.',
+      'Setup agent settings saved.',
   );
   assert.equal(
     await app.evaluate(() => globalThis.profileStarts.length),
@@ -630,7 +629,7 @@ try {
   await page.waitForFunction(
     () =>
       document.querySelector('#setup-agent-settings [data-status]').textContent ===
-      'Yeni sohbet oturumu açıldı.',
+      'New chat session opened.',
   );
   assert.equal(await app.evaluate(() => globalThis.profileStarts.length), settingsStartCount + 2);
   assert.equal(
@@ -649,10 +648,7 @@ try {
   await profileSave.click();
   const saveDialog = page.locator('#automation-profile-save-dialog');
   await saveDialog.waitFor({state: 'visible'});
-  assert.match(
-    await saveDialog.textContent(),
-    /2 aktif agent.*yeniden başlatılacaktır.*Onaylıyor musunuz/,
-  );
+  assert.match(await saveDialog.textContent(), /2 active agent\(s\).*restarted.*Do you confirm/);
   assert.equal(
     await saveDialog.locator('[value=cancel]').evaluate((el) => el === document.activeElement),
     true,
@@ -673,7 +669,7 @@ try {
     'Workers keep running while confirmation is open',
   );
   await page.screenshot({path: path.join(data, 'profile-save-confirmation.png')});
-  await saveDialog.getByRole('button', {name: 'Vazgeç', exact: true}).click();
+  await saveDialog.getByRole('button', {name: 'Cancel', exact: true}).click();
   await saveDialog.waitFor({state: 'hidden'});
   await page.waitForFunction(() => !document.querySelector('#automation-profile-save').disabled);
   awaitingConfirm = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), workspace.id);
@@ -695,10 +691,10 @@ try {
   await page.waitForFunction(() => !document.querySelector('#automation-profile-save').disabled);
   await profileSave.click();
   await saveDialog.waitFor({state: 'visible'});
-  await saveDialog.getByRole('button', {name: 'Onayla ve kaydet', exact: true}).click();
+  await saveDialog.getByRole('button', {name: 'Confirm and save', exact: true}).click();
   await page.waitForFunction(
     () =>
-      document.querySelector('#notice').textContent === 'Profil kaydedildi ve uygulandı.' &&
+      document.querySelector('#notice').textContent === 'Profile saved and applied.' &&
       document.querySelector('#automations').getAttribute('aria-busy') === 'false',
   );
   await page.waitForFunction(async (id) => {
@@ -734,7 +730,7 @@ try {
   await page.waitForFunction(
     () =>
       document.querySelector('#automation-profile-save').disabled &&
-      document.querySelector('#automation-profile-state').textContent === 'Profil kaydedildi.',
+      document.querySelector('#automation-profile-state').textContent === 'Profile saved.',
   );
   assert.equal(
     await page.locator('#automation-plan-form .profile-foot [type=submit]').isEnabled(),
@@ -769,7 +765,7 @@ try {
   await nativeOnly.waitFor({state: 'visible'});
   await page.locator('#automation-chat-stop').click();
   await page.waitForFunction(
-    () => document.querySelector('#automation-chat-state').textContent === 'Hazır',
+    () => document.querySelector('#automation-chat-state').textContent === 'Ready',
   );
   assert.equal(
     await nativeOnly.count(),
@@ -826,7 +822,7 @@ try {
   await profileSave.click();
   await page.waitForFunction(
     () =>
-      document.querySelector('#automation-profile-state').textContent === 'Profil kaydedildi.' &&
+      document.querySelector('#automation-profile-state').textContent === 'Profile saved.' &&
       !document.querySelector('#automations').matches('[aria-busy=true]'),
   );
   assert.equal(
@@ -841,8 +837,13 @@ try {
     conversationOnly.map((run) => run.id),
   );
   await page.evaluate((id) => window.jobloop.workspaceStop(id), workspace.id);
-  await page.locator('#new').click();
-  await page.locator('[data-template=custom]').click();
+  // The new-workspace button always creates a job search; open a fresh custom one directly.
+  const fresh = await page.evaluate(() => window.jobloop.workspaceCreate('custom', {}));
+  await page.evaluate((id) => {
+    localStorage.setItem('selected-workspace', id);
+    localStorage.setItem('selected-view', 'board');
+  }, fresh.id);
+  await page.reload();
   await page.locator('#setup-agent').waitFor({state: 'visible'});
   const freshId = await page.locator('#candidates').inputValue();
   assert.notEqual(freshId, workspace.id);

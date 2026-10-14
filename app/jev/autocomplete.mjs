@@ -2,11 +2,35 @@ import {blockedRepeat, rememberProgress, progressKey, stalled} from './navigatio
 import {revealInView} from './rendering.mjs';
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const normalize = (value) => value.replace(/\s+/g, ' ').trim();
-const stale = {
+// The control id itself no longer matches the page.
+export const stale = {
   status: 'stale',
   executed: false,
-  message: 'Kontrol kimliği eski; dönen güncel controls listesini kullan. Ek observe gerekmez.',
+  message:
+    'The control id is stale; use the returned current controls list. No extra observe is needed.',
 };
+
+// Scroll the open popup list one step from an option inside it. Long or
+// virtualized lists render only part of their options at a time.
+async function scrollOptions(page, node, {top = false} = {}) {
+  return page.evaluate(
+    ({node, top}) => {
+      for (let p = window.__jevFast.nodes.get(node)?.parentElement; p; p = p.parentElement) {
+        if (p === document.body || p === document.documentElement) return false;
+        if (
+          p.scrollHeight <= p.clientHeight + 1 ||
+          !/auto|scroll/.test(getComputedStyle(p).overflowY)
+        )
+          continue;
+        const before = p.scrollTop;
+        p.scrollTop = top ? 0 : before + Math.max(p.clientHeight * 0.8, 40);
+        return p.scrollTop !== before;
+      }
+      return false;
+    },
+    {node, top},
+  );
+}
 
 // Query + bounded wait + exact selection. No model, selectors from the caller,
 // hidden-field writes, keyboard submission, or fuzzy candidate answers.
@@ -14,7 +38,7 @@ export async function selectAutocomplete(slot, args, owner, reader) {
   const listOnly = args.option === undefined;
   const saved = slot.controls?.get(args.controlId);
   if (!saved) return stale;
-  if (saved.owner !== owner) throw Error('Bu oturuma ait güncel controlId gerekli.');
+  if (saved.owner !== owner) throw Error('A current controlId of this session is required.');
   const observed = await slot.page.evaluate(reader);
   if (saved.kind !== 'control' || !same(observed?.control_guards?.[saved.node], saved.guard))
     return stale;
@@ -68,28 +92,62 @@ export async function selectAutocomplete(slot, args, owner, reader) {
   };
   try {
     const initial = await read();
-    if (initial?.editable === false && args.text !== undefined)
+    if (initial?.editable === false && !initial.searchable && args.text !== undefined && listOnly)
       return {
         status: 'unsupported',
         executed: false,
         message:
-          'Bu liste yazı alanı değil; text göndermeden seçenekleri listele veya option ile seç.',
+          'This list has no text field; omit text to list its options, or select one with option.',
       };
     if (!initial)
       return {
         status: 'unsupported',
         executed: false,
         message:
-          'Bu kontrol için ilişkilendirilmiş autocomplete bulunamadı; native select veya normal gözlenen hedefi kullan.',
+          'No suggestion list is associated with this control; use a native select or an observed click target.',
       };
     await revealInView(slot, input);
     let current = await read();
-    if (!current?.point || !same(current.identity, initial.identity)) return stale;
+    // An open popup may cover its own trigger; only a closed one needs a click.
+    if (!current || !same(current.identity, initial.identity)) return stale;
     if (!current.expanded) {
+      if (!current.point)
+        return {
+          status: 'stale',
+          executed: false,
+          message: 'The control is covered; nothing was clicked. Close what covers it, then retry.',
+        };
       opened = true;
       await slot.page.mouse.click(current.point.x, current.point.y);
     }
-    if (args.text !== undefined) {
+    if (args.text !== undefined && initial.editable === false) {
+      // A dropdown button: type into the search box its open popup shows.
+      const until = Date.now() + 1500;
+      while (!(current = await read())?.search && Date.now() < until)
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      if (!current || !same(current.identity, initial.identity))
+        return await stop('stale', 'The control changed; nothing was selected.');
+      if (!current.search && listOnly)
+        return await stop(
+          'unsupported',
+          'This dropdown has no search box. Omit text and pass option with the exact label; the tool scrolls a long list to find it. The suggestions below may be only the first part of the list.',
+          {suggestions: current.options.map((o) => o.label).slice(0, 20)},
+        );
+      // With a wanted option the text only aids the search; without a search
+      // box the option is picked from the (scrolled) list below.
+      if (current.search) {
+        const search = await slot.page.evaluateHandle(
+          (node) => window.__jevFast.nodes.get(node),
+          current.search,
+        );
+        try {
+          wrote = true;
+          await search.asElement().fill(args.text, {timeout: 2000});
+        } finally {
+          await search.dispose();
+        }
+      }
+    } else if (args.text !== undefined) {
       if (current.value !== args.text) {
         wrote = true;
         await input.fill(args.text, {timeout: 2000});
@@ -100,7 +158,7 @@ export async function selectAutocomplete(slot, args, owner, reader) {
     do {
       current = await read();
       if (!current || !same(current.identity, initial.identity))
-        return await stop('stale', 'Alan değişti; seçim yapılmadı.');
+        return await stop('stale', 'The field changed; nothing was selected.');
       if (listOnly) {
         if (current.options.length) break;
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -108,15 +166,67 @@ export async function selectAutocomplete(slot, args, owner, reader) {
       }
       const matches = current.options.filter((o) => normalize(o.label) === normalize(args.option));
       if (matches.length > 1)
-        return await stop('ambiguous', 'Birden fazla aynı adlı seçenek var; seçim yapılmadı.', {
-          suggestions: current.options.map((o) => o.label).slice(0, 20),
-        });
+        return await stop(
+          'ambiguous',
+          'More than one option has the same name; nothing was selected.',
+          {
+            suggestions: current.options.map((o) => o.label).slice(0, 20),
+          },
+        );
       if (matches.length === 1) {
         match = matches[0];
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     } while (Date.now() < deadline);
+    // A failed or leftover query can filter every option away. Clear it once
+    // and read the unfiltered list, so the result names the real choices.
+    let cleared = false;
+    if (
+      !match &&
+      !current.options.length &&
+      current.editable !== false &&
+      normalize(String(current.value ?? ''))
+    ) {
+      wrote = cleared = true;
+      await input.fill('', {timeout: 2000});
+      const until = Date.now() + 1500;
+      do {
+        current = await read();
+        if (!current || !same(current.identity, initial.identity))
+          return await stop('stale', 'The field changed; nothing was selected.');
+        if (!listOnly) {
+          const matches = current.options.filter(
+            (o) => normalize(o.label) === normalize(args.option),
+          );
+          if (matches.length === 1) match = matches[0];
+        }
+        if (match || current.options.length) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } while (Date.now() < until);
+    }
+    // The wanted option, or the full list, may lie below the rendered part.
+    // Scroll the popup list from its top in bounded steps; never past its end.
+    const seen = new Set(current.options.map((o) => o.label));
+    if (!match && current.options.length) {
+      await scrollOptions(slot.page, current.options[0].node, {top: true}).catch(() => false);
+      for (let step = 0; step < 60; step++) {
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        current = await read();
+        if (!current || !same(current.identity, initial.identity))
+          return await stop('stale', 'The control changed; nothing was selected.');
+        for (const o of current.options) seen.add(o.label);
+        if (!listOnly) {
+          const matches = current.options.filter(
+            (o) => normalize(o.label) === normalize(args.option),
+          );
+          if (matches.length === 1) match = matches[0];
+        }
+        if (match || !current.options.length) break;
+        if (!(await scrollOptions(slot.page, current.options.at(-1).node).catch(() => false)))
+          break;
+      }
+    }
     if (listOnly)
       return {
         status: 'ready',
@@ -124,20 +234,24 @@ export async function selectAutocomplete(slot, args, owner, reader) {
         selected: false,
         query: current.value,
         expanded: current.expanded,
-        optionCount: current.options.length,
-        suggestions: current.options.map((o) => o.label),
+        optionCount: seen.size,
+        suggestions: [...seen],
         options: current.options.map(({label, selected}) => ({label, selected})),
-        message: current.options.length
-          ? 'Gerçek seçenek etiketlerini kayıtlı yanıtla eşleştir; seçim yapılmadı.'
-          : 'Bu sorgu için ilişkilendirilmiş seçenek görünmüyor. Tahmin yürütme; gerekiyorsa text="" ile geçici sorguyu temizleyip listeyi oku.',
+        message: seen.size
+          ? 'Nothing was selected. Call again with option set to the exact label (from suggestions) that matches the proven answer; typed text alone is cleared when the field loses focus.'
+          : 'No option is shown for this query. Do not guess; clear the query with text="" to read the list.',
       };
     if (!match)
       return await stop(
         'needs_selection',
-        'Tam eşleşen seçenek bulunamadı; dönen seçeneklerden kanıtlanan yanıtı kullan. Aynı sorguyu tekrarlama.',
-        {suggestions: current.options.map((o) => o.label).slice(0, 20)},
+        cleared && seen.size
+          ? `No option matches "${args.text ?? args.option}"; the query was cleared and suggestions is the full list this field offers. Pick the option with the same meaning as the proven answer, or ask/report if none fits; do not search again for a value that is not offered.`
+          : 'No option matches exactly, also after scrolling the whole list. Pick the returned option with the same meaning as the proven answer; do not repeat the same query.',
+        {suggestions: [...seen].slice(0, 300), ...(cleared ? {query: ''} : {})},
       );
-    if (current.editable === false) {
+    // A dropdown list, or an option outside the visible part of the popup
+    // (a long list opened without a query), is scrolled into view first.
+    if (current.editable === false || !match.point) {
       const optionHandle = await slot.page.evaluateHandle(
         (node) => window.__jevFast.nodes.get(node),
         match.node,
@@ -149,7 +263,7 @@ export async function selectAutocomplete(slot, args, owner, reader) {
       }
       const fresh = await read();
       if (!fresh || !same(fresh.identity, initial.identity))
-        return await stop('stale', 'Liste değişti; seçim yapılmadı.');
+        return await stop('stale', 'The list changed; nothing was selected.');
     }
     // Recheck the same option immediately before clicking. Never use an old point.
     const point = await input.evaluate((e, {node, label}) => {
@@ -159,7 +273,10 @@ export async function selectAutocomplete(slot, args, owner, reader) {
       return option ? c.clickPoint(c.nodes.get(node)) : null;
     }, match);
     if (!point)
-      return await stop('stale', 'Seçeneğin üzeri kapalı veya hedef değişti; tıklanmadı.');
+      return await stop(
+        'stale',
+        'The option is covered or the target changed; it was not clicked.',
+      );
     clicked = true;
     await slot.page.mouse.click(point.x, point.y);
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -168,14 +285,19 @@ export async function selectAutocomplete(slot, args, owner, reader) {
       verified = false;
     do {
       const state = await read();
-      actual = state?.selectedLabels?.[0] || state?.value;
+      // A multiple choice adds a chip and may keep its list open.
+      const chip = state?.selectedLabels?.find((l) => normalize(l) === normalize(match.label));
+      actual = chip || state?.selectedLabels?.[0] || state?.value;
       verified =
         !!state &&
         same(state.identity, initial.identity) &&
         normalize(actual) === normalize(match.label) &&
         state.valid &&
-        !state.expanded;
-      if (verified) break;
+        (!state.expanded || Boolean(chip));
+      if (verified) {
+        if (state.expanded) await input.press('Escape');
+        break;
+      }
       await new Promise((resolve) => setTimeout(resolve, 100));
     } while (Date.now() < verifyUntil);
     // Some widgets display a shortened value (e.g. +49 for Germany +49).
@@ -222,7 +344,7 @@ export async function selectAutocomplete(slot, args, owner, reader) {
     if (!verified)
       return await stop(
         'uncertain',
-        'Seçenek tıklandı fakat kabul edildiği doğrulanamadı. Dönen form kanıtını incele; işlemi körlemesine tekrarlama.',
+        'The option was clicked, but its acceptance could not be verified. Inspect the returned form evidence; do not blindly repeat the action.',
         {selection},
       );
     return {
@@ -230,13 +352,14 @@ export async function selectAutocomplete(slot, args, owner, reader) {
       executed: true,
       selection,
       message:
-        'Autocomplete seçimi doğrulandı. Dönen güncel gözlemi kullan; ek observe veya screenshot gerekmez.',
+        'The autocomplete selection was verified. Use the returned current observation; no extra observe or screenshot is needed.',
     };
   } catch (error) {
     if (!wrote && !clicked && !opened) throw error;
     return await stop(
       'uncertain',
-      'Autocomplete sonucu doğrulanamadı; dönen gözlemi incele. ' + error.message.split('\n')[0],
+      'Could not verify the autocomplete result; inspect the returned observation. ' +
+        error.message.split('\n')[0],
     );
   } finally {
     await handle.dispose();

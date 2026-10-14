@@ -30,10 +30,10 @@ export function createUpdateManager({
       snapshot: () => ({...state}),
       check: async () => ({...state}),
       download: async () => {
-        throw Error('Bu kurulumda otomatik güncelleme desteklenmiyor.');
+        throw Error('Automatic updates are not supported in this installation.');
       },
       install: async () => {
-        throw Error('Bu kurulumda otomatik güncelleme desteklenmiyor.');
+        throw Error('Automatic updates are not supported in this installation.');
       },
       dispose: () => {
         disposed = true;
@@ -68,7 +68,7 @@ export function createUpdateManager({
   };
   for (const [event, listener] of Object.entries(listeners)) client.on(event, listener);
   async function action(fn) {
-    if (busy) throw Error('Güncelleme işlemi devam ediyor.');
+    if (busy) throw Error('An update is in progress.');
     busy = true;
     try {
       await fn();
@@ -85,15 +85,14 @@ export function createUpdateManager({
     check: () => action(() => client.checkForUpdates()),
     download: () =>
       action(async () => {
-        if (state.status !== 'available') throw Error('İndirilecek güncelleme bulunamadı.');
+        if (state.status !== 'available') throw Error('No update available to download.');
         publish({status: 'downloading', progress: 0, error: null});
         await client.downloadUpdate();
       }),
     install: () =>
       action(async () => {
-        if (state.status !== 'downloaded') throw Error('Önce güncellemeyi indir.');
-        if (typeof beforeInstall !== 'function')
-          throw Error('Güncelleme öncesi yedekleme hazır değil.');
+        if (state.status !== 'downloaded') throw Error('Download the update first.');
+        if (typeof beforeInstall !== 'function') throw Error('The pre-update backup is not ready.');
         try {
           releaseInstall = await beforeInstall();
           publish({status: 'installing', error: null});

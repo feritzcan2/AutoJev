@@ -117,7 +117,10 @@ export function answerContinuation(db, id, task, kind) {
       previous.conversation &&
       !previous.stopRequested &&
       !previous.actionId &&
-      !/Kullanıcı|Worker durduruldu/.test(previous.summary ?? '')
+      // User stops are not retried (Turkish summaries come from earlier versions).
+      !/Kullanıcı|Worker durduruldu|^Stopped by the user|^The user |^Worker stopped/.test(
+        previous.summary ?? '',
+      )
     )
       return {
         reason: 'task_retry',

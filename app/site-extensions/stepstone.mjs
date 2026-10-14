@@ -128,8 +128,8 @@ const search = {
   ordering: 'newest_first',
   pagination: 'url_param',
   filters: [
-    {param: 'fdl', label: 'İlan dili', values: {en: 'İngilizce', de: 'Almanca'}},
-    {param: 'radius', label: 'Yarıçap (km, şehirle)', values: {10: '10', 30: '30', 50: '50'}},
+    {param: 'fdl', label: 'Listing language', values: {en: 'English', de: 'German'}},
+    {param: 'radius', label: 'Radius (km, with a city)', values: {10: '10', 30: '30', 50: '50'}},
   ],
   notes:
     'sort=2&action=sort_publish orders by date. Pages via &page=N. For one city use /jobs/{query}/in-<city>; radius applies only with a city.',

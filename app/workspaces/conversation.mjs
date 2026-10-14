@@ -25,10 +25,14 @@ export function conversationRequest(db, id, run) {
         "SELECT data FROM automation_messages WHERE automation_id=? AND id=? AND json_extract(data,'$.role')='user'",
       )
       .get(id, run.messageId);
-    if (!row) throw Error('Sohbet mesajı bu çalışma alanında bulunamadı.');
+    if (!row) throw Error('Chat message not found in this workspace.');
     const {text, at} = JSON.parse(row.data);
-    return {message: text, at};
+    // Notes typed with the CV on the welcome screen go with the CV task.
+    return run.onboarding
+      ? {task: db.template(db.get(id).templateId).onboarding, userNotes: text}
+      : {message: text, at};
   }
+  if (run.onboarding) return {task: db.template(db.get(id).templateId).onboarding};
   const ids = run.inputQuestionIds ?? run.continuation?.questionIds ?? [];
   const answers = (db.get(id).questions ?? [])
     .filter((q) => q.conversation && ids.includes(q.id) && q.answer != null)
@@ -55,16 +59,16 @@ export function workspaceHistory(
 ) {
   const table =
     kind === 'messages' ? 'automation_messages' : kind === 'runs' ? 'automation_runs' : null;
-  if (!table) throw Error('Geçmiş türü messages veya runs olmalı.');
+  if (!table) throw Error('History kind must be messages or runs.');
   if (
     !Number.isSafeInteger(limit) ||
     limit < 1 ||
     limit > 10 ||
     (before !== undefined && (!Number.isSafeInteger(before) || before < 1))
   )
-    throw Error('Geçersiz geçmiş aralığı.');
-  if (typeof query !== 'string' || query.length > 200) throw Error('Geçersiz geçmiş araması.');
-  if (recordId && kind !== 'runs') throw Error('Kayıt geçmişi için runs kullan.');
+    throw Error('Invalid history range.');
+  if (typeof query !== 'string' || query.length > 200) throw Error('Invalid history search.');
+  if (recordId && kind !== 'runs') throw Error('Use runs for record history.');
   db.get(id);
   const conditions = ['automation_id=?'],
     args = [id];

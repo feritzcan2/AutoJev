@@ -8,7 +8,7 @@ import {installNoTranslate} from './translation.mjs';
 import {prepareTurnstileBarrier, turnstileBarrierResult} from '../captcha/barrier.mjs';
 import {privateJevPage, retryJevRead} from './page.mjs';
 import {acquireTabRendering} from './rendering.mjs';
-import {accessBarrier, SiteWaitError} from '../browser/site-access.mjs';
+import {accessBarrier, SiteWaitError, siteKey} from '../browser/site-access.mjs';
 import {observeFormFrame, actFormFrame, usableFormFrame} from './frame-actions.mjs';
 import {captureCookieFrameTargets, clickCookieFrameTarget} from './cookie-frame.mjs';
 import {documentObservation, waitForDocument} from './document.mjs';
@@ -34,7 +34,7 @@ import {ExtensionRelay} from './extension.mjs';
 import {acquireChromeConnection} from './connection-queue.mjs';
 import {JevTabs, restoredTargets} from './tabs.mjs';
 import {disposableResearchTab} from './tab-lifecycle.mjs';
-import {selectAutocomplete} from './autocomplete.mjs';
+import {selectAutocomplete, stale as staleControl} from './autocomplete.mjs';
 import {selectChoice, verifyChoice, choiceKey} from './choice.mjs';
 import {captureClickTargets, takeClickTarget} from './click.mjs';
 import {
@@ -58,6 +58,8 @@ import {validateJevArgs} from './tools.mjs';
 const require = createRequire(import.meta.url);
 const urlHash = (url) => createHash('sha256').update(url).digest('hex');
 // Tools that write to or scroll the page need a rendering tab (see rendering.mjs).
+const UPLOAD_BUTTON =
+  /upload|attach|browse|(?:add|select|choose) files?|resume|\bcv\b|lebenslauf|hochladen|anhängen|datei|yükle|dosya|document|unterlagen/i;
 const WRITE_TOOLS = new Set([
   'browser_jev_act',
   'browser_jev_autocomplete',
@@ -75,7 +77,7 @@ const WRITE_TOOLS = new Set([
 // Served by the extension relay on loopback: chrome.debugger cannot navigate a
 // tab to a data: URL.
 const homePage =
-  '<!doctype html><html lang="tr"><meta charset="utf-8"><title>AutoJev</title><h1>AutoJev</h1><p>İlanlar ve başvuru formları bu pencerede sekmeler olarak açılır.</p>';
+  '<!doctype html><html lang="en"><meta charset="utf-8"><title>AutoJev</title><h1>AutoJev</h1><p>Listings and application forms open as tabs in this window.</p>';
 const isHomeUrl = (url) => /^http:\/\/127\.0\.0\.1:\d+\/jev\/[\w-]+\/home$/.test(url);
 const checkedUrl = (value) => {
   const url = new URL(value);
@@ -214,7 +216,7 @@ export class JevBrowser {
             this.tracking = new WeakMap();
             this.tabs.clear();
             const context = browser.contexts()[0];
-            if (!context) throw Error('Chrome tarayıcı bağlamı bulunamadı.');
+            if (!context) throw Error('The Chrome browser context was not found.');
             browser.on('disconnected', () => {
               if (this.browser !== browser) return;
               this.browser = null;
@@ -224,7 +226,7 @@ export class JevBrowser {
               this.tracking = new WeakMap();
               if (!this.closed) this.onDisconnect(transport.cancelled ? {manual: true} : {});
             });
-            for (const page of context.pages()) await this.track(context, page);
+            for (const page of context.pages()) await this.track(context, page).catch(() => {});
             context.on('page', (page) => this.track(context, page).catch(() => {}));
             await this.home();
             await this.persistTabs();
@@ -238,7 +240,7 @@ export class JevBrowser {
               this.tabs.clear();
             }
             throw Object.assign(
-              Error(`Chrome bağlantısı kurulamadı: ${error.message.split('\n')[0]}`),
+              Error(`Could not connect to Chrome: ${error.message.split('\n')[0]}`),
               {code: 'BROWSER_DISCONNECTED'},
             );
           } finally {
@@ -257,7 +259,7 @@ export class JevBrowser {
           headless: this.headless,
           viewport: {width: 1120, height: 780},
         });
-        for (const page of context.pages()) await this.track(context, page);
+        for (const page of context.pages()) await this.track(context, page).catch(() => {});
         context.on('page', (page) => this.track(context, page).catch(() => {}));
         return context;
       })().catch((error) => {
@@ -284,12 +286,13 @@ export class JevBrowser {
     for (let i = 0; i < 100; i++) {
       for (const context of this.browser.contexts())
         for (const page of context.pages()) {
-          const slot = await this.track(context, page);
-          if (slot.id === id) return page;
+          // Another tab that cannot be tracked right now must not hide this one.
+          const slot = await this.track(context, page).catch(() => null);
+          if (slot?.id === id) return page;
         }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    throw Error('Yeni Jev penceresi bağlantıya eklenemedi; mevcut formlar korunuyor.');
+    throw Error('Could not add the new Jev window to the connection; existing forms are kept.');
   }
   async track(context, page) {
     if (this.tracking?.has(page)) return this.tracking.get(page);
@@ -338,7 +341,12 @@ export class JevBrowser {
       await this.persistTabs();
       return slot;
     })();
+    // A failed setup (for example a page navigating mid-install) must not stay
+    // cached: the next call tracks that page again.
     this.tracking.set(page, pending);
+    pending.catch(() => {
+      if (this.tracking?.get(page) === pending) this.tracking.delete(page);
+    });
     return pending;
   }
   async claimAutomationTab(slot, owner, state) {
@@ -493,7 +501,7 @@ export class JevBrowser {
     if (/^\d+$/.test(id))
       throw Object.assign(
         Error(
-          'Bu sayısal sekme kimliği mevcut Chrome aracına ait, Jev CDP kimliği değil. Kayıtlı taslağı orijinal Chrome aracıyla sürdür; Jev bağlantısını yenileme veya yeni sekme açma.',
+          'This numeric tab id belongs to the existing Chrome tool, not a Jev CDP id. Continue the saved draft with the original Chrome tool; do not refresh the Jev connection or open a new tab.',
         ),
         {code: 'TAB_BACKEND_MISMATCH'},
       );
@@ -501,11 +509,82 @@ export class JevBrowser {
     if (!slot || slot.page.isClosed())
       throw Object.assign(
         Error(
-          'Jev sekmesi bulunamadı: kayıtlı sekme kapatılmış veya seçili Chrome oturumunda artık mevcut değil. browser_jev_tabs ile kurtarılan sekmeleri kontrol et. Kaydı yeniden açmadan önce kayıtlı sonucu doğrula; gönderildiği belirsiz bir işlemi tekrar gönderme.',
+          'Jev tab not found: the saved tab was closed or no longer exists in the selected Chrome session. Check the recovered tabs with browser_jev_tabs. Verify the saved result before reopening the record; do not resubmit an action whose submission is uncertain.',
         ),
         {code: 'TAB_MISSING'},
       );
     return slot;
+  }
+  // Some forms create their file input only when the upload button is
+  // clicked. Click that observed button while catching the file chooser it
+  // opens and hand the workspace file to it; no native dialog is shown.
+  async uploadThroughChooser(slot, args, owner) {
+    if (!path.isAbsolute(args.filePath)) throw Error('The file path must be absolute.');
+    const label = slot.clickTargets.get(args.uploadId)?.action?.label ?? '';
+    if (!UPLOAD_BUTTON.test(label))
+      throw Error(
+        'This target is not a file upload button. Use an uploads[].uploadId or the targetId of the upload button.',
+      );
+    const {realpath, stat} = await import('node:fs/promises');
+    const file = await realpath(args.filePath),
+      workspace = await realpath(this.workspace ?? this.directory);
+    if (!file.startsWith(workspace + path.sep) || !(await stat(file)).isFile())
+      throw Error('Only files in the workspace of this candidate can be uploaded.');
+    validateUploadPurpose(label, path.basename(file));
+    const info = await stat(file);
+    if (
+      !takeUploadAttempt(
+        slot,
+        JSON.stringify([slot.page.url(), label, file, info.size, info.mtimeMs]),
+      )
+    )
+      return {
+        tabId: slot.id,
+        status: 'no_progress',
+        executed: false,
+        message:
+          'The limit of two attempts or 60 seconds for the same file/button was reached. Report the actual technical blocker.',
+      };
+    const target = takeClickTarget(slot, args.uploadId, owner);
+    const chooser = slot.page.waitForEvent('filechooser', {timeout: 8000}).catch(() => null);
+    const clicked = await this.execute(slot, target);
+    const opened = await chooser;
+    if (!opened)
+      return {
+        ...clicked,
+        status: 'no_progress',
+        executed: false,
+        message:
+          'The button did not open a file chooser. If a menu or option opened, use browser_upload_document with the targetId of its upload option; otherwise report the actual technical blocker.',
+      };
+    await opened.setFiles(file, {timeout: 10000});
+    return {
+      ...(await this.observe(slot)),
+      status: 'ready',
+      executed: true,
+      message:
+        'The file was given to the file chooser the button opened. Check that the file name or upload status appears on the page.',
+    };
+  }
+  // A click that opens a new tab (target=_blank, window.open) leaves the
+  // clicked page unchanged; report the child tab so the caller can continue
+  // there. Bounded: tabs announce themselves within a few hundred ms.
+  async withOpenedTab(slot, before, value) {
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      const child = [...this.tabs.values()].find(
+        (t) => !before.has(t.id) && t.openerId === slot.id && !t.page.isClosed(),
+      );
+      if (child)
+        return {
+          ...value,
+          openedTab: {tabId: child.id, url: child.page.url()},
+          message: 'This click opened a new tab; use that tab to continue.',
+        };
+      if (value?.status !== 'uncertain' && value?.status !== 'no_progress') return value;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return value;
   }
   async navigate(slot, url) {
     if (this.autoVerify()) await installTurnstileRegistration(slot.page);
@@ -566,7 +645,7 @@ export class JevBrowser {
     const previousUploads = slot.uploads;
     slot.uploads = new Map();
     const observed = await slot.page.evaluate(this.reader);
-    if (!observed) throw Error('Sayfa yükleniyor; tekrar gözlemle.');
+    if (!observed) throw Error('The page is loading; observe again.');
     if (this.siteAccess && /^https?:/.test(observed.url)) {
       const verificationPage =
         accessBarrier({title: observed.title, text: observed.text}) === 'verification';
@@ -613,7 +692,7 @@ export class JevBrowser {
           state: 'checking',
           capability: 'pending',
           handoff: false,
-          message: 'Cloudflare doğrulama kutusu kontrol ediliyor…',
+          message: 'Checking the Cloudflare verification checkbox…',
         };
         return {
           browser: 'Jev Chrome',
@@ -644,7 +723,22 @@ export class JevBrowser {
         this.siteAccess.complete(probe?.url ?? observed.url, probe?.token, {...slot.http, reason});
       slot.accessProbe = null;
       slot.accessChecked = slot.http;
+      if (
+        !wait &&
+        !reason &&
+        slot.accessBlocked &&
+        slot.http &&
+        slot.http !== slot.accessBlocked.http &&
+        slot.http.status >= 200 &&
+        slot.http.status < 400 &&
+        siteKey(observed.url) === slot.accessBlocked.site
+      ) {
+        this.siteAccess.recoverVerification(observed.url, slot.accessBlocked.blockedAt);
+        delete slot.accessBlocked;
+      }
       if (wait) {
+        if (wait.reason === 'verification' && siteKey(observed.url) === wait.site)
+          slot.accessBlocked = {site: wait.site, blockedAt: wait.blockedAt, http: slot.http};
         const diagnostic = slot.cloudflareDiagnostic;
         if (diagnostic) {
           diagnostic.phase = 'handoff';
@@ -811,14 +905,14 @@ export class JevBrowser {
       return {
         ...verificationHandoff(slot),
         message:
-          'Site doğrulaması çözümlenmedi. Başvuruyu tekrar gönderme; mevcut doğrulama adımını veya belirsiz sonucu işle.',
+          'The site verification was not resolved. Do not resubmit the application; handle the current verification step or the uncertain result.',
       };
     if (!(await this.fresh(slot, observed, action)))
       return {
         ...(await this.observe(slot)),
         status: 'stale',
         executed: false,
-        message: 'Sayfa değişti. Yeni bir Jev kararı al.',
+        message: 'The page changed. Get a new Jev decision.',
       };
     if (!action)
       return {
@@ -840,7 +934,7 @@ export class JevBrowser {
             status: 'upload_required',
             executed: false,
             message:
-              'Dosya seçici açılmadı. Güncel uploads listesindeki uploadId ve çalışma alanındaki belge yolu ile browser_upload_document (doğrudan Jev: browser_jev_upload) kullan. Normal tıklamayı tekrarlama.',
+              'No file chooser opened. Use browser_upload_document (direct Jev: browser_jev_upload) with the uploadId from the current uploads list and the document path in the workspace. Do not repeat the normal click.',
           };
       }
     const repeatKey = JSON.stringify([action.kind, action.node, action.value, action.delta, text]),
@@ -878,7 +972,7 @@ export class JevBrowser {
             ...(await this.observe(slot)),
             status: 'stale',
             executed: false,
-            message: 'Hedef değişti veya üzeri kapandı. Yeni bir karar al.',
+            message: 'The target changed or became covered. Get a new decision.',
           };
         began = true;
         if (action.kind === 'select')
@@ -987,7 +1081,7 @@ export class JevBrowser {
               message:
                 action.kind === 'scroll'
                   ? stalled.message
-                  : 'Eylem gönderildi fakat etkisi doğrulanamadı. Aynı işlemi tekrarlama; özellikle gönderimden sonra mevcut sonuç kanıtını kontrol et.',
+                  : 'The action was sent, but its effect could not be verified. Do not repeat the same action; especially after a submission, check the current result evidence.',
             }
           : {}),
         ...(controlState ? {controlState} : {}),
@@ -1004,13 +1098,13 @@ export class JevBrowser {
         status: began ? 'uncertain' : 'error',
         executed: began ? 'unknown' : false,
         message:
-          'İşlem sonrası durum doğrulanamadı. Önce browser_jev_observe çağır; özellikle gönderim işlemini tekrar etme.',
+          'Could not verify the state after the action. Call browser_jev_observe first; in particular, do not repeat a submission.',
       };
     }
   }
   async callTool({name, arguments: args}, owner = 'local', state = {}) {
     validateJevArgs(name, args);
-    if (this.busy) throw Error('Jev işlem yapıyor; mevcut çağrının sonucunu bekle.');
+    if (this.busy) throw Error('Jev is busy; wait for the result of the current call.');
     this.busy = true;
     let releaseRendering;
     try {
@@ -1026,8 +1120,10 @@ export class JevBrowser {
         args.tabId &&
         !['browser_jev_observe', 'browser_jev_screenshot', 'browser_jev_close_tab'].includes(name)
       ) {
-        const url = this.tab(args.tabId).page.url();
-        if (/^https?:/.test(url)) this.siteAccess?.assertAction(url);
+        const slot = this.tab(args.tabId),
+          url = slot.page.url();
+        const token = /^https?:/.test(url) ? this.siteAccess?.assertAction(url) : null;
+        if (token) slot.accessProbe = {url, token};
       }
       const context = await this.context();
       let value;
@@ -1113,9 +1209,9 @@ export class JevBrowser {
       else if (name === 'browser_jev_close_tab') {
         const slot = this.tab(args.tabId);
         if (!sourceScope || !accessible(slot))
-          throw Error('Yalnızca devraldığın kaynağın tarama sekmesi kapatılabilir.');
+          throw Error('Only the scan tab of the source you took over can be closed.');
         if (this.urlHashes.get(slot.id) !== urlHash(slot.page.url()))
-          throw Error('Sekme değişti. Kapatmadan önce güncel sayfayı gözlemle.');
+          throw Error('The tab changed. Observe the current page before closing it.');
         await slot.page.close();
         this.forgetTab(slot.id);
         await this.persistTabs();
@@ -1163,7 +1259,9 @@ export class JevBrowser {
               try {
                 await failed.page.close({runBeforeUnload: false});
               } catch {
-                throw Error('Önceki hata sekmesi kapatılamadı; yeni kontrol sekmesi açılmadı.');
+                throw Error(
+                  'Could not close the previous error tab; no new control tab was opened.',
+                );
               }
               this.forgetTab(failed.id);
               closed.push(failed.id);
@@ -1214,7 +1312,7 @@ export class JevBrowser {
             tabId: slot.id,
             url: slot.page.url(),
             status: 'loading',
-            message: 'Gezinme tamamlanmadı; aynı sekmeyi gözlemle.',
+            message: 'Navigation did not complete; observe the same tab.',
             ...(sourceScope && !recordScope
               ? {navigationError: String(error.message ?? error), requestedUrl: args.url}
               : {}),
@@ -1243,13 +1341,13 @@ export class JevBrowser {
             tabId: slot.id,
             url: page.url(),
             status: 'loading',
-            message: 'Gezinme tamamlanmadı; aynı sekmeyi gözlemle.',
+            message: 'Navigation did not complete; observe the same tab.',
           };
         }
       } else {
         const slot = this.tab(args.tabId);
         if (!accessible(slot))
-          throw Error('Sekme başka bir worker’ın görevine ait. Kendi görev sekmeni kullan.');
+          throw Error('The tab belongs to the task of another worker. Use your own task tab.');
         slot.owner = owner;
         await this.claimAutomationTab(slot, owner, state);
         if (state.automationWorkspaceId && !this.automationWorkspaces.has(slot.id)) {
@@ -1296,7 +1394,7 @@ export class JevBrowser {
                   text: JSON.stringify({
                     ...verificationHandoff(slot),
                     message:
-                      'Bu doğrulama adımı için görüntü zaten alındı. Aynı ekranı tekrar isteme; bilinen araç kısıtına göre ilerle veya tek teknik soru ile turu bitir.',
+                      'A screenshot was already taken for this verification step. Do not request the same screen again; proceed according to the known tool limitation or end the turn with a single technical question.',
                   }),
                 },
               ],
@@ -1334,11 +1432,13 @@ export class JevBrowser {
           let result = {};
           if (name === 'browser_jev_frame_act') {
             if (slot.verification)
-              throw Error('Önce mevcut doğrulama adımını tamamla; formu tekrar gönderme.');
+              throw Error(
+                'Complete the current verification step first; do not resubmit the form.',
+              );
             const frame = slot.embeddedFrames?.get(args.frameId),
               target = slot.frameActionTargets?.get(args.targetId);
             if (!frame || !target || target.frame !== frame.frame)
-              throw Error('Hedef bu frameId alanına ait değil.');
+              throw Error('The target does not belong to this frameId.');
             result = await actFormFrame(slot, args, owner);
           }
           let observed;
@@ -1347,14 +1447,16 @@ export class JevBrowser {
           } catch {
             observed = {
               ...(await this.observe(slot)),
-              message: 'Gömülü form kapandı veya yönlendi; dönen sayfa durumunu kontrol et.',
+              message: 'The embedded form closed or redirected; check the returned page state.',
             };
           }
           return {content: [{type: 'text', text: JSON.stringify({...observed, ...result})}]};
         }
         if (name === 'browser_jev_open_frame') {
           if (slot.verification)
-            throw Error('Doğrulama/gönderim beklerken gömülü form yeniden açılamaz.');
+            throw Error(
+              'The embedded form cannot be reopened while a verification/submission is pending.',
+            );
           const url = await embeddedFormTarget(slot, args.frameId, owner);
           const openedId = slot.openedFrames?.get(url),
             opened = openedId ? this.tabs.get(openedId) : null;
@@ -1409,7 +1511,8 @@ export class JevBrowser {
                     status: 'loading',
                     tabId: child.id,
                     parentTabId: slot.id,
-                    message: 'Gömülü sayfa açılıyor; aynı yeni sekmeyi gözlemle, tekrar açma.',
+                    message:
+                      'The embedded page is opening; observe the same new tab, do not open it again.',
                   }),
                 },
               ],
@@ -1435,21 +1538,22 @@ export class JevBrowser {
             (await clickCookieFrameTarget(slot, args.targetId, owner));
           if (cookie) value = {...(await this.observe(slot)), ...cookie};
           else {
-            const target = takeClickTarget(slot, args.targetId, owner);
+            const target = takeClickTarget(slot, args.targetId, owner),
+              tabsBefore = new Set(this.tabs.keys());
             // A radio/checkbox controlId from inspect_form selects that answer.
             const choice =
               !target && slot.controls?.get(args.targetId)?.kind === 'control'
                 ? await selectChoice(slot, {controlId: args.targetId}, owner, this.reader)
                 : null;
             value = target
-              ? await this.execute(slot, target)
+              ? await this.withOpenedTab(slot, tabsBefore, await this.execute(slot, target))
               : choice
                 ? {...(await this.observe(slot)), ...choice}
                 : {
                     ...(await this.observe(slot)),
                     status: 'stale',
                     executed: false,
-                    message: 'Tıklama hedefi eski; güncel clickTargets listesini kullan.',
+                    message: 'The click target is stale; use the current clickTargets list.',
                   };
           }
         }
@@ -1480,7 +1584,25 @@ export class JevBrowser {
             'browser_jev_list_options',
           ].includes(name)
         ) {
-          const result = await navigateObserved(slot, name, args, owner, this.reader);
+          // A custom dropdown (no native SELECT) lists and selects through its popup.
+          const saved = slot.controls?.get(args.controlId),
+            dropdown =
+              ['browser_jev_select_option', 'browser_jev_list_options'].includes(name) &&
+              saved?.kind === 'control' &&
+              slot.observed?.controls?.some(
+                (c) => c.node === saved.node && c.autocomplete && !c.nativeSelect,
+              );
+          const result = dropdown
+            ? await selectAutocomplete(
+                slot,
+                {
+                  controlId: args.controlId,
+                  ...(args.option !== undefined ? {option: args.option} : {}),
+                },
+                owner,
+                this.reader,
+              )
+            : await navigateObserved(slot, name, args, owner, this.reader);
           value = {...(await this.observe(slot)), ...result};
         }
         if (['browser_jev_autocomplete', 'browser_jev_list_suggestions'].includes(name)) {
@@ -1492,10 +1614,12 @@ export class JevBrowser {
                 executed: false,
                 retryable: false,
                 message:
-                  'Aynı geçersiz controlId yeniden gönderildi; işlem yapılmadı. Bu kimliği bırak. availableTargets içinden doğru soruya ait güncel hedefi seç; hedef yoksa görünür kıl veya desteklenmeyen kontrolü teknik engel olarak raporla.',
+                  'The same invalid controlId was sent again; nothing was done. Drop this id. Choose the current target for the right question from availableTargets; if there is none, make it visible or report the unsupported control as a technical blocker.',
               }
             : await selectAutocomplete(slot, args, owner, this.reader);
-          if (result.status === 'stale') {
+          // Only an id that no longer matches its control is refused again; a
+          // missed option click leaves the control and its id valid.
+          if (result === staleControl) {
             slot.rejectedControlIds.add(args.controlId);
             if (slot.rejectedControlIds.size > 100)
               slot.rejectedControlIds.delete(slot.rejectedControlIds.values().next().value);
@@ -1595,36 +1719,48 @@ export class JevBrowser {
         if (name === 'browser_jev_act') {
           const pending = slot.pending;
           if (!pending || pending.owner !== owner || pending.decisionId !== args.decisionId)
-            throw Error('Bu oturuma ait geçerli bir Jev kararı yok. Önce browser_jev_next çağır.');
+            throw Error(
+              'There is no valid Jev decision for this session. Call browser_jev_next first.',
+            );
           if (pending.operation === 'TYPE_TEXT' && typeof args.text !== 'string')
             throw Error(
-              'Yazılacak text değerini AutoJev agent’ı sağlamalı. Ayrı API anahtarı gerekmez.',
+              'The AutoJev agent must supply the text value to type. No separate API key is needed.',
             );
           if (pending.operation !== 'TYPE_TEXT' && args.text !== undefined)
-            throw Error('Bu işlem metin kabul etmiyor.');
+            throw Error('This action does not accept text.');
           slot.pending = null;
           value = await this.execute(slot, pending, args.text);
         }
-        if (name === 'browser_jev_upload') {
-          if (!path.isAbsolute(args.filePath)) throw Error('Dosya yolu mutlak olmalı.');
+        if (
+          name === 'browser_jev_upload' &&
+          !slot.uploads.has(args.uploadId) &&
+          slot.clickTargets?.has(args.uploadId)
+        )
+          value = await this.uploadThroughChooser(slot, args, owner);
+        else if (name === 'browser_jev_upload') {
+          if (!path.isAbsolute(args.filePath)) throw Error('The file path must be absolute.');
           const upload = slot.uploads.get(args.uploadId);
-          if (!upload || upload.owner !== owner || upload.url !== slot.page.url())
-            throw Error('Dosya alanı değişti; tekrar gözlemle.');
+          if (!upload)
+            throw Error(
+              'This id is not a file upload on the current page. Use an uploads[].uploadId, or the targetId (from clickTargets) of the upload button.',
+            );
+          if (upload.owner !== owner || upload.url !== slot.page.url())
+            throw Error('The file field changed; observe the page again.');
           if (
             upload.frame &&
             (upload.frame.url() !== upload.frameUrl ||
               (upload.frame !== slot.page.mainFrame() &&
                 !(await usableFormFrame(upload.frame, slot.page))))
           )
-            throw Error('Dosya alanının çerçevesi değişti; tekrar gözlemle.');
+            throw Error('The frame of the file field changed; observe again.');
           const current = await upload.input.evaluate(uploadDetails);
           if (JSON.stringify(current) !== JSON.stringify(upload.details))
-            throw Error('Dosya alanı değişti; tekrar gözlemle.');
+            throw Error('The file field changed; observe the page again.');
           const {realpath, stat} = await import('node:fs/promises');
           const file = await realpath(args.filePath),
             workspace = await realpath(this.workspace ?? this.directory);
           if (!file.startsWith(workspace + path.sep) || !(await stat(file)).isFile())
-            throw Error('Yalnızca bu adayın çalışma alanındaki dosyalar yüklenebilir.');
+            throw Error('Only files in the workspace of this candidate can be uploaded.');
           validateUploadPurpose(upload.details.label, path.basename(file));
           slot.pending = null;
           slot.uploads.delete(args.uploadId);
@@ -1649,7 +1785,7 @@ export class JevBrowser {
                 status: 'ready',
                 executed: false,
                 message:
-                  'Dosya zaten seçili; yeniden yüklenmedi. Bu, sunucunun dosyayı kabul ettiğinin kanıtı değildir; mevcut site yükleme durumunu kontrol et.',
+                  'The file is already selected; it was not uploaded again. This is not proof that the server accepted the file; check the current upload status on the site.',
               };
             else if (!takeUploadAttempt(slot, key))
               value = {
@@ -1657,7 +1793,7 @@ export class JevBrowser {
                 status: 'no_progress',
                 executed: false,
                 message:
-                  'Aynı dosya/alan için iki deneme veya 60 saniye sınırına ulaşıldı. Taslağı koru ve gerçek teknik engeli raporla; dosya seçiciyi tekrar açma.',
+                  'The limit of two attempts or 60 seconds for the same file/field was reached. Keep the draft and report the actual technical blocker; do not open the file chooser again.',
               };
             else {
               await upload.input.setInputFiles(file, {timeout: 10000});
@@ -1668,7 +1804,7 @@ export class JevBrowser {
               tabId: slot.id,
               status: 'uncertain',
               message:
-                'Yükleme doğrulanamadı; yeniden denemeden önce sayfayı gözlemle. Aynı dosya/alan için en fazla iki deneme ve 60 saniye.',
+                'Could not verify the upload; observe the page before retrying. At most two attempts and 60 seconds for the same file/field.',
             };
           } finally {
             await upload.input.dispose().catch(() => {});
@@ -1757,7 +1893,7 @@ export class JevBrowser {
         try {
           await this.persistTabs();
         } catch (error) {
-          console.warn('Kapatılan Chrome sekmeleri kaydedilemedi:', error);
+          console.warn('Could not save the closed Chrome tabs:', error);
         }
     }
     this.transport?.close();

@@ -25,7 +25,7 @@ export function automationAttention(snapshot, {includeDismissed = false} = {}) {
       issues.push({
         id: question.id,
         kind: 'question',
-        name: 'Yanıt bekleniyor',
+        name: 'Waiting for answer',
         message: question.text,
         recordId: question.recordId,
         canDismissRecord: question.canDismissRecord,
@@ -138,7 +138,7 @@ export function automationAttention(snapshot, {includeDismissed = false} = {}) {
         source.siteWait?.message ??
         source.lastResult ??
         run?.summary ??
-        'Bu kaynakta devam etmek için müdahale gerekiyor.',
+        'This source needs your attention to continue.',
       url: saved.url ?? run?.observations?.at(-1)?.url ?? source.scan?.evidenceUrl ?? source.url,
       tabId: saved.tabId,
       retry: !uncertain && automationReady(automation) ? 'source' : null,
@@ -163,7 +163,7 @@ export function automationAttention(snapshot, {includeDismissed = false} = {}) {
       issues.push({
         id: conversation.id,
         kind: 'conversation',
-        name: 'Sohbet',
+        name: 'Chat',
         message: conversation.summary,
         workerId: conversation.workerId,
         retry: null,
@@ -199,7 +199,7 @@ export function automationAttention(snapshot, {includeDismissed = false} = {}) {
           : latest.toolFailure || latest.stop?.kind === 'technical'
             ? 'technical'
             : undefined,
-      name: latest.kind === 'trial' ? 'Kaynak denemesi' : 'Agent',
+      name: latest.kind === 'trial' ? 'Source trial' : 'Agent',
       message: latest.summary,
       workerId: latest.workerId,
       ...(latest.kind !== 'interview'
@@ -224,7 +224,7 @@ export function dismissAutomationAttention(db, id, issueId, dismissKey) {
     issues = automationAttention(snapshot, {includeDismissed: true}),
     issue = issues.find((item) => item.id === issueId);
   if (!issue?.dismissKey || issue.dismissKey !== dismissKey || issue.retryAt)
-    throw Error('Bu müdahale değişti veya artık kapatılamıyor. Listeyi yenileyip tekrar dene.');
+    throw Error('This item changed or can no longer be dismissed. Refresh the list and try again.');
   // Keep only acknowledgements for current incidents. New failures get a new key.
   const dismissedAttention = Object.fromEntries(
     issues

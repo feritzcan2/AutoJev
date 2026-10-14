@@ -1,13 +1,13 @@
-import {defaultPermission} from '../app/agents/settings.mjs';
+import {withAgentDefaults} from '../app/agents/settings.mjs';
 import './setup-agent-settings.css';
 
 export function setupAgentSettingsPanel({api, getCatalog, refresh}) {
   const root = document.createElement('form');
   root.id = 'setup-agent-settings';
   root.className = 'setup-agent-settings';
-  root.setAttribute('aria-label', 'Kurulum agenti ayarları');
+  root.setAttribute('aria-label', 'Setup agent settings');
   root.innerHTML =
-    '<div class="setup-agent-settings-row"><label>Sağlayıcı<select name="provider" aria-label="Kurulum sağlayıcısı"></select></label><label class="setup-agent-model">Model<select name="model" aria-label="Kurulum modeli"></select></label><label>Düşünme düzeyi<select name="reasoning" aria-label="Kurulum düşünme düzeyi"></select></label><button type="submit" class="primary" data-save disabled>Kaydet</button><button type="button" class="quiet" data-restart title="Yalnızca kurulum sohbetini yeni bir oturumla başlat">Yeniden başlat</button></div><details><summary>Diğer agent ayarları</summary><div class="setup-agent-settings-row"><label>İzin modu<select name="permission" aria-label="Kurulum izin modu"></select></label><label>Ağ erişimi<select name="network"><option value="inherit">Sağlayıcı varsayılanı</option><option value="true">Açık</option><option value="false">Kapalı</option></select></label></div></details><p data-hint>Mesajlarda ve uygulamayı yeniden açtığında aynı sohbetten devam eder. Agent ayarlarını değiştirmek veya Yeniden başlat yeni oturum açar.</p><p data-status role="status" hidden></p>';
+    '<div class="setup-agent-settings-row"><label>Provider<select name="provider" aria-label="Setup provider"></select></label><label class="setup-agent-model">Model<select name="model" aria-label="Setup model"></select></label><label>Reasoning level<select name="reasoning" aria-label="Setup reasoning level"></select></label><button type="submit" class="primary" data-save disabled>Save</button><button type="button" class="quiet" data-restart title="Restart only the setup chat in a new session">Restart</button></div><details><summary>Other agent settings</summary><div class="setup-agent-settings-row"><label>Permission mode<select name="permission" aria-label="Setup permission mode"></select></label><label>Network access<select name="network"><option value="inherit">Provider default</option><option value="true">On</option><option value="false">Off</option></select></label></div></details><p data-hint>Messages, and reopening the app, continue the same chat. Changing the agent settings or pressing Restart opens a new session.</p><p data-status role="status" hidden></p>';
   const fields = root.elements,
     save = root.querySelector('[data-save]'),
     restart = root.querySelector('[data-restart]'),
@@ -21,7 +21,8 @@ export function setupAgentSettingsPanel({api, getCatalog, refresh}) {
   const providers = () =>
     getCatalog().filter((p) => p.supported && ['codex', 'claude', 'opencode'].includes(p.id));
   function options(saved = {}) {
-    const provider = providers().find((p) => p.id === fields.provider.value);
+    const provider = providers().find((p) => p.id === fields.provider.value),
+      defaults = withAgentDefaults({provider: fields.provider.value});
     for (const name of ['model', 'reasoning', 'permission']) {
       const values = provider?.[
         name === 'model' ? 'models' : name === 'permission' ? 'permissions' : 'reasoning'
@@ -32,8 +33,8 @@ export function setupAgentSettingsPanel({api, getCatalog, refresh}) {
         fields[name].add(new Option(saved[name], saved[name]));
       fields[name].value =
         saved[name] ??
-        (name === 'permission'
-          ? defaultPermission(fields.provider.value)
+        (values.includes(defaults[name])
+          ? defaults[name]
           : values.includes('default')
             ? 'default'
             : values[0]);
@@ -61,10 +62,11 @@ export function setupAgentSettingsPanel({api, getCatalog, refresh}) {
     restart.disabled = busy || dirty;
     status.hidden = false;
     status.textContent = dirty
-      ? 'Kaydettiğinde kurulum agenti bu ayarlarla yeni bir sohbet oturumu açar.'
-      : 'Değişiklik yok.';
+      ? 'When you save, the setup agent opens a new chat session with these settings.'
+      : 'No changes.';
   }
   fields.provider.onchange = () => {
+    settings = withAgentDefaults({provider: fields.provider.value});
     options();
     mark();
   };
@@ -75,7 +77,7 @@ export function setupAgentSettingsPanel({api, getCatalog, refresh}) {
     busy = true;
     root.inert = true;
     status.hidden = false;
-    status.textContent = reset ? 'Yeni sohbet açılıyor…' : 'Ayarlar kaydediliyor…';
+    status.textContent = reset ? 'Opening a new chat…' : 'Saving settings…';
     try {
       if (reset) await api.setupAgentRestart(id);
       else await api.setupAgentSettings(id, read());
@@ -83,9 +85,7 @@ export function setupAgentSettingsPanel({api, getCatalog, refresh}) {
         dirty = false;
         signature = '';
         await refresh();
-        status.textContent = reset
-          ? 'Yeni sohbet oturumu açıldı.'
-          : 'Kurulum agenti ayarları kaydedildi.';
+        status.textContent = reset ? 'New chat session opened.' : 'Setup agent settings saved.';
       }
     } catch (error) {
       if (owner === id) status.textContent = error.message;

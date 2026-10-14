@@ -79,3 +79,8 @@ export function listingPage({url, title, description, fields = {}, notes = [], b
     ...(body ? {listing: {fields: facts}} : {}),
   };
 }
+
+// The card of a listingPage: its title, fields and notes without the
+// description, for a confident exclusion before the full text is read.
+export const listingCard = (page) =>
+  page.listing ? page.text.split('\n\n')[0].slice(0, 2000) : null;

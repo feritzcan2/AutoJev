@@ -23,7 +23,7 @@ export async function prepareTurnstileBarrier(slot) {
     slot.turnstileDiagnostic = {
       kind: 'turnstile_token',
       state: 'unsupported',
-      message: detection.reason ?? 'Turnstile çözüm bilgileri doğrulanamadı.',
+      message: detection.reason ?? 'Could not verify the Turnstile solving details.',
     };
     return false;
   }
@@ -37,7 +37,7 @@ export function turnstileBarrierResult(slot, observed) {
     state: 'checking',
     capability: 'pending',
     handoff: false,
-    message: 'Turnstile API çözümü ve site sonucu kontrol ediliyor…',
+    message: 'Checking the Turnstile API solution and the site result…',
   };
   return {
     browser: 'Jev Chrome',
@@ -90,7 +90,7 @@ export async function resolveTurnstileBarrier(browser, id, result, owner, option
     (callbackStarted ? new URL(page.url()).origin === origin : page.url() === url);
   const check = () => {
     signal.throwIfAborted();
-    if (!active()) throw Error('Doğrulama görevi veya sekme değişti.');
+    if (!active()) throw Error('The verification task or the tab changed.');
   };
   const closed = () => cancel.abort(),
     navigated = (frame) => {
@@ -138,7 +138,7 @@ export async function resolveTurnstileBarrier(browser, id, result, owner, option
               !fresh.target.fullPage ||
               fresh.target.requiresSubmissionPermission
             )
-              throw Error('Doğrulama veya işlem yetkisi değişti.');
+              throw Error('The verification or the action authorization changed.');
             return captureCaptcha(page, fresh.target);
           }),
         apply: (target, capture, solution, guard) =>
@@ -162,7 +162,7 @@ export async function resolveTurnstileBarrier(browser, id, result, owner, option
       if (callbackStarted) {
         slot.captchaProgress = {
           state: 'checking',
-          message: 'CapSolver cevabı aktarıldı; sayfanın açılması kontrol ediliyor…',
+          message: 'The CapSolver answer was passed on; checking whether the page opens…',
         };
         browser.onCaptchaProgress?.(id);
         for (let n = 0; n < 16; n++) {
@@ -181,8 +181,8 @@ export async function resolveTurnstileBarrier(browser, id, result, owner, option
               kind: 'turnstile_token',
               state: accepted ? 'cleared' : 'handoff',
               message: accepted
-                ? 'Doğrulama engeli kalktı ve sayfa içeriği okundu.'
-                : 'Çözüm aktarıldı; sitenin erişimi açtığı doğrulanamadı.',
+                ? 'The verification barrier cleared and the page content was read.'
+                : 'The solution was passed on; could not verify that the site opened access.',
             };
             current.content.find((p) => p.type === 'text').text = JSON.stringify(fresh);
             return current;
@@ -193,12 +193,14 @@ export async function resolveTurnstileBarrier(browser, id, result, owner, option
         outcome?.state === 'handoff'
           ? outcome.message
           : callbackStarted
-            ? 'CapSolver cevabı siteye aktarıldı ancak doğrulama engeli kalkmadı. Aynı cevap tekrar gönderilmedi.'
-            : 'Aktif doğrulama değişti; API çözümü uygulanmadı.',
+            ? 'The CapSolver answer was passed to the site, but the verification barrier did not clear. The same answer was not sent again.'
+            : 'The active verification changed; the API solution was not applied.',
       );
       return await observe();
     } catch (error) {
-      fail('Doğrulama görevi durdu veya sayfa değişti; eski cevap yeniden uygulanmadı.');
+      fail(
+        'The verification task stopped or the page changed; the old answer was not applied again.',
+      );
       if (signal.aborted) throw error;
       if (active()) return await observe();
       return {

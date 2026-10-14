@@ -5,10 +5,10 @@ export const defaultMailContract = {
   instructions:
     'Read messages related to this workspace and its saved records from the last 90 days. Match by record title, source, URLs, identifiers and observed action evidence. Include pending unmatched messages for reconsideration. Do not treat unrelated recommendations as confirmations.',
   outcomes: [
-    outcome('confirmation', 'Onay'),
-    outcome('reply', 'Yanıt'),
-    outcome('update', 'Güncelleme'),
-    outcome('rejection', 'Olumsuz dönüş'),
+    outcome('confirmation', 'Confirmation'),
+    outcome('reply', 'Reply'),
+    outcome('update', 'Update'),
+    outcome('rejection', 'Rejection'),
   ],
 };
 export function normalizeMailContract(input = defaultMailContract) {
@@ -19,13 +19,13 @@ export function normalizeMailContract(input = defaultMailContract) {
     !input.outcomes.length ||
     input.outcomes.length > 20
   )
-    throw Error('Geçersiz posta sonuçları');
+    throw Error('Invalid mail outcomes');
   if (
     typeof input.instructions !== 'string' ||
     !input.instructions.trim() ||
     input.instructions.length > 6000
   )
-    throw Error('Geçersiz posta talimatı');
+    throw Error('Invalid mail instructions');
   const ids = new Set(['unmatched', 'ignored', 'constructor', 'prototype', '__proto__']);
   const outcomes = input.outcomes.map((value) => {
     const {id, label} = value ?? {};
@@ -37,7 +37,7 @@ export function normalizeMailContract(input = defaultMailContract) {
       !label.trim() ||
       label.length > 100
     )
-      throw Error('Geçersiz posta sonucu');
+      throw Error('Invalid mail outcome');
     ids.add(id);
     return {id, label: label.trim()};
   });

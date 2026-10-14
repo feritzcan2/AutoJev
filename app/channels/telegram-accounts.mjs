@@ -3,7 +3,8 @@ import path from 'node:path';
 import {TelegramStore} from './telegram-store.mjs';
 import {TelegramBot, TelegramApi} from './telegram.mjs';
 
-const unreadable = 'Kayıtlı Telegram ayarı okunamadı. Bu adayın bot token’ını yeniden kaydet.';
+const unreadable =
+  'Could not read the saved Telegram settings. Save this candidate’s bot token again.';
 
 export class Telegram {
   constructor({
@@ -125,26 +126,26 @@ export class Telegram {
   }
   async configure(candidate, input) {
     this.store.profile(candidate);
-    if (this.configuring) throw Error('Telegram ayarı kaydediliyor.');
+    if (this.configuring) throw Error('Telegram settings are being saved.');
     this.configuring = true;
     let affected = [];
     try {
-      if (!input || typeof input.enabled !== 'boolean') throw Error('Geçersiz Telegram ayarı');
+      if (!input || typeof input.enabled !== 'boolean') throw Error('Invalid Telegram settings');
       const previous = this.db.config(candidate),
         typed = typeof input.token === 'string' ? input.token.trim() : '';
       const token = typed || (previous ? this.decrypt(previous.data.secret) : '');
       if (!/^\d{5,20}:[A-Za-z0-9_-]{20,200}$/.test(token))
-        throw Error('BotFather’dan aldığın bot token’ını gir.');
+        throw Error('Enter the bot token you got from BotFather.');
       const api = this.apiFactory(token);
       let bot = previous?.data.bot;
       if (input.enabled || typed || !bot) {
         bot = await api.call('getMe');
         if (!bot?.is_bot || !bot.username || !Number.isSafeInteger(bot.id))
-          throw Error('Geçerli bir Telegram botu gerekli.');
+          throw Error('A valid Telegram bot is required.');
         const webhook = await api.call('getWebhookInfo');
         if (webhook?.url)
           throw Error(
-            'Bu botta webhook etkin. AutoJev için ayrı bir bot oluştur veya mevcut webhook’u kaldır.',
+            'This bot has a webhook enabled. Create a separate bot for AutoJev or remove the existing webhook.',
           );
       }
       const config = {
@@ -184,16 +185,16 @@ export class Telegram {
     this.store.profile(candidate);
     const config = this.db.config(candidate),
       worker = config && this.workers.get(config.bot_id);
-    if (this.configuring) throw Error('Telegram ayarı kaydediliyor.');
+    if (this.configuring) throw Error('Telegram settings are being saved.');
     if (!worker || (enabled && !config.data.enabled))
-      throw Error('Önce bu adayın Telegram botunu kaydedip aç.');
+      throw Error('Save and enable this candidate’s Telegram bot first.');
     return worker;
   }
   pairing(candidate) {
     return this.worker(candidate, {enabled: true}).pairing(candidate);
   }
   unlink(candidate) {
-    if (this.configuring) throw Error('Telegram ayarı kaydediliyor.');
+    if (this.configuring) throw Error('Telegram settings are being saved.');
     this.db.unlink(candidate);
     this.changed(candidate);
     return this.status(candidate);
@@ -211,7 +212,7 @@ export class Telegram {
     return this.worker(candidate, {enabled: true}).sendUnsentJobs(candidate, input);
   }
   async removeCandidate(candidate) {
-    if (this.configuring) throw Error('Telegram ayarı kaydediliyor.');
+    if (this.configuring) throw Error('Telegram settings are being saved.');
     const botId = this.db.config(candidate)?.bot_id;
     if (!botId) return;
     this.configuring = true;

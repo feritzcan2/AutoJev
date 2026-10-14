@@ -54,7 +54,12 @@ try {
     },
     pathToFileURL(path.resolve('app/agents/engine.mjs')).href,
   );
+  // A new job search opens the welcome screen; choose the chat setup.
   await page.locator('#new').click();
+  await page
+    .locator('#onboarding')
+    .getByRole('button', {name: 'I want to set it up in a chat'})
+    .click();
   await page.locator('[data-view=agent]').click();
   await page.locator('.worker-idle').waitFor({state: 'visible'});
   assert.equal(await page.locator('#terminal').isVisible(), false);

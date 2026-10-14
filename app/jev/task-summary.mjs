@@ -108,7 +108,7 @@ function taskNext(task) {
   )
     return `Descriptions are missing. Call browser_jev_run operation=collect_details with fromTaskId=${task.id}; collected details will be classified automatically.`;
   return task.input.operation === 'scan_results'
-    ? `${task.pageLimitReached ? 'Page limit for this turn reached; the board continues beyond the read pages. ' : ''}${task.knownBoundary ? 'Known boundary reached: consecutive pages held only listings this workspace already has, and the recipe orders the board newest-first. Empty the queue, then complete_scan_search with completion=cutoff. ' : ''}${task.pageCapReached ? 'Recipe page limit reached: the board has no known newest-first order, so this search reads only its first pages. Empty the queue, then complete_scan_search with completion=end. ' : ''}Collect details using fromTaskId=${task.id}. Confirmed listing links are first; uncertain leads remain explicit. Listings this workspace already recorded or rejected are retired without a read (lastPage.knownListings). Reuse lastPage/pages for exact pagination and saved checkpoint facts; do not reread the board or repeat saved page reports. Unverified chronology requires full coverage, not an inferred cutoff. This result does not certify complete source coverage.`
+    ? `${task.pageLimitReached ? 'Page limit for this turn reached; the board continues beyond the read pages. ' : ''}${task.knownBoundary ? 'Known boundary reached: consecutive pages held only listings this workspace already has, and the recipe orders the board newest-first. Empty the queue, then complete_scan_search with completion=cutoff. ' : ''}${task.pageCapReached ? 'Search limit reached: this search read its maximum pages or new listings. Empty the queue, then complete_scan_search with completion=end. ' : ''}Collect details using fromTaskId=${task.id}. Confirmed listing links are first; uncertain leads remain explicit. Listings this workspace already recorded or rejected are retired without a read (lastPage.knownListings). Reuse lastPage/pages for exact pagination and saved checkpoint facts; do not reread the board or repeat saved page reports. Unverified chronology requires full coverage, not an inferred cutoff. This result does not certify complete source coverage.`
     : task.input.operation === 'collect_details'
       ? 'Details are already classified. Use the compact assessments and relevant original listing evidence for final assessment. Do not classify this same evidence again or read result-page bodies as listings.'
       : 'Review results and continue the assigned parent task.';
@@ -132,11 +132,11 @@ export function jevTaskSummary(
     limit < 1 ||
     (pageOffset !== undefined && (!Number.isSafeInteger(pageOffset) || pageOffset < 0))
   )
-    throw Error('Geçersiz Jev sonuç aralığı.');
+    throw Error('Invalid Jev result range.');
   limit = Math.min(limit, 20);
   if (batchId && batchId !== task.batch?.id)
     throw jevReviewRequired(
-      'İnceleme grubu eski; read_jev_task(taskId) ile güncel grubu ve item numaralarını oku.',
+      'The review batch is stale; read the current batch and item numbers with read_jev_task(taskId).',
     );
   const scan = task.input.operation === 'scan_results',
     all = scan ? listingFirst(task.items) : task.items,

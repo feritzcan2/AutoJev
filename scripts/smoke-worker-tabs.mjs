@@ -122,7 +122,7 @@ try {
   );
   const toggle = page.locator('[data-worker-tab="main"]');
   await page.waitForFunction(
-    () => document.querySelector('[data-worker-tab="main"]').textContent === 'Sekmeler (2)',
+    () => document.querySelector('[data-worker-tab="main"]').textContent === 'Tabs (2)',
   );
   await toggle.click();
   assert.equal(await page.locator('.worker-tab-link').count(), 2);
@@ -134,7 +134,7 @@ try {
   await page.evaluate(() => (window.current.runs[0].status = 'completed'));
   await page.locator('.worker-tab-link').last().click();
   assert.equal((await page.evaluate(() => window.focused)).length, 1);
-  assert.match((await page.evaluate(() => window.notices))[0], /aktif işine ait değil/);
+  assert.match((await page.evaluate(() => window.notices))[0], /no longer belongs to the worker/);
   await page.evaluate(() => {
     window.current.runs[0].status = 'running';
     window.openTabs = window.openTabs.filter((t) => t.url.endsWith('/form'));
@@ -142,7 +142,7 @@ try {
   await toggle.click();
   await toggle.click();
   await page.waitForFunction(
-    () => document.querySelector('[data-worker-tab="main"]').textContent === 'Sekmeler (1)',
+    () => document.querySelector('[data-worker-tab="main"]').textContent === 'Tabs (1)',
   );
   assert.equal(await page.locator('.worker-tab-link').count(), 1);
   await page.screenshot({path: '/tmp/worker-tabs-menu.png'});

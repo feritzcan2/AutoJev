@@ -15,25 +15,32 @@ export function sourceStop(run, input) {
   const stop = input.stop,
     verified = Object.values(run.scanIssues ?? {}).filter((issue) => issue.verified);
   if (stop && ['access', 'user_input'].includes(stop.kind))
-    return {kind: stop.kind, evidence: boundedText(stop.evidence, 'Gerçek engelin kanıtı', 2000)};
+    return {
+      kind: stop.kind,
+      evidence: boundedText(stop.evidence, 'Evidence of the actual blocker', 2000),
+    };
   if (stop && stop.kind !== 'technical')
     throw Error(
-      'Kaynak duruşu için stop.kind access veya user_input gerekli. Eksik kapsam engel değildir; kalan sayfa ve detayları aynı görevde işle.',
+      'Stopping a source requires stop.kind access or user_input. Incomplete coverage is not a blocker; process the remaining pages and details in the same task.',
     );
   if (!verified.length)
     throw Error(
-      'Doğrulanmış bir yükleme hatası yok. Erişim engeli için stop.kind=access, eksik kullanıcı bilgisi için user_input bildir; aksi halde kalan işe devam et.',
+      'No verified loading failure. Report stop.kind=access for an access barrier or stop.kind=user_input for missing user information; otherwise continue the remaining work.',
     );
   const remaining = (run.scan?.pendingUrls ?? []).filter(
     (url) => !verified.some((issue) => issue.global || issue.url === url),
   );
   if (remaining.length)
     throw Error(
-      `Sorun tüm kaynağı durdurmuyor. Önce erişilebilir ${remaining.length} bekleyen adresi işle: ${remaining.slice(0, 3).join(', ')}.`,
+      `The issue does not stop the whole source. First process the ${remaining.length} reachable pending address(es): ${remaining.slice(0, 3).join(', ')}.`,
     );
   return {
     kind: 'technical',
-    evidence: boundedText(stop?.evidence ?? verified[0].evidence, 'Gerçek engelin kanıtı', 2000),
+    evidence: boundedText(
+      stop?.evidence ?? verified[0].evidence,
+      'Evidence of the actual blocker',
+      2000,
+    ),
     issueIds: verified.map((issue) => issue.id),
   };
 }

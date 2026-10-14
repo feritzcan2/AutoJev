@@ -10,7 +10,7 @@ export function deleteRecords(db, id, itemIds) {
       !itemIds.length ||
       itemIds.some((value) => typeof value !== 'string' || !value.trim())
     )
-      throw Error('Silinecek kayıtları seç');
+      throw Error('Select the records to delete');
     const a = db.get(id),
       records = db.store.workspaces.records,
       queue = db.store.workspaces.tasks;
@@ -34,7 +34,7 @@ export function deleteRecords(db, id, itemIds) {
         .runs(id)
         .some((run) => run.status === 'running' && [...taskRecordIds(run), run.actionId].some(owns))
     )
-      throw Error('Silmeden önce seçili kayıtların sıradaki veya çalışan işlemlerini durdur');
+      throw Error('Stop the queued or running actions of the selected records before deleting');
     // Remove merged aliases too, so old keys cannot resolve to a missing survivor.
     const ids = db.db
       .prepare('SELECT id FROM workspace_records WHERE workspace_id=?')

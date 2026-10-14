@@ -57,13 +57,13 @@ try {
   await page.selectOption('#candidates', workspace.id);
   await page.locator('[data-view=board]').click();
   const board = page.locator('[data-automation-pane=board]'),
-    minimum = board.getByLabel('Minimum kayıt puanı', {exact: true});
+    minimum = board.getByLabel('Minimum save score', {exact: true});
   await minimum.waitFor({state: 'visible'});
   assert.equal(await minimum.inputValue(), '');
   assert.equal(
     await page
       .locator('[data-automation-pane=profile]')
-      .getByLabel('Minimum kayıt puanı', {exact: true})
+      .getByLabel('Minimum save score', {exact: true})
       .count(),
     0,
   );
@@ -75,13 +75,13 @@ try {
       {id: workspace.id, value},
     );
   await minimum.fill('60');
-  await board.getByRole('button', {name: 'Kaydet', exact: true}).click();
+  await board.getByRole('button', {name: 'Save', exact: true}).click();
   await saved('60');
   await page.locator('[data-view=profile]').click();
   await page.locator('#automation-plan-form [name=goal]').fill('Güncellenmiş sentetik amaç');
   await page.locator('[data-view=board]').click();
   await minimum.fill('65');
-  await board.getByRole('button', {name: 'Kaydet', exact: true}).click();
+  await board.getByRole('button', {name: 'Save', exact: true}).click();
   await saved('65');
   assert.equal(
     (await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), workspace.id)).automation
@@ -106,13 +106,13 @@ try {
   );
   await page.locator('[data-view=board]').click();
   await minimum.fill('');
-  await board.getByRole('button', {name: 'Kaydet', exact: true}).click();
+  await board.getByRole('button', {name: 'Save', exact: true}).click();
   await saved('');
   await page.reload();
   await minimum.waitFor({state: 'visible'});
   assert.equal(await minimum.inputValue(), '');
   await minimum.fill('60');
-  await board.getByRole('button', {name: 'Kaydet', exact: true}).click();
+  await board.getByRole('button', {name: 'Save', exact: true}).click();
   await saved('60');
   await page.evaluate((id) => window.jobloop.automationRun(id, 'run'), workspace.id);
   await page.waitForFunction(
@@ -124,7 +124,7 @@ try {
   );
   const before = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), workspace.id);
   await minimum.fill('70');
-  await board.getByRole('button', {name: 'Kaydet', exact: true}).click();
+  await board.getByRole('button', {name: 'Save', exact: true}).click();
   await saved('70');
   const after = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), workspace.id);
   assert.deepEqual(

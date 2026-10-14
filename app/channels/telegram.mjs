@@ -3,11 +3,11 @@ import {TelegramStore, applicationCompleted, matchesTelegramScore} from './teleg
 import {TelegramConversation, clip} from './telegram-conversation.mjs';
 
 const errors = {
-  400: 'Telegram isteği kabul etmedi.',
-  401: 'Bot token’ı geçersiz. Yapılandırmadan güncelle.',
-  403: 'Aday botu engellemiş olabilir. Telegram’da botu açıp yeniden dene.',
-  409: 'Bu bot başka bir uygulama veya webhook tarafından kullanılıyor.',
-  429: 'Telegram gönderim sınırına ulaşıldı; yeniden denenecek.',
+  400: 'Telegram rejected the request.',
+  401: 'The bot token is invalid. Update it in Configuration.',
+  403: 'The candidate may have blocked the bot. Open the bot in Telegram and try again.',
+  409: 'This bot is used by another app or a webhook.',
+  429: 'Telegram sending limit reached; will retry.',
 };
 const deletable = (data) =>
   ['new_job', 'submission', 'question'].includes(data.kind) ||
@@ -28,10 +28,10 @@ const withDeleteButton = (row, body, dismissRecord) =>
             [
               {
                 text: dismissRecord
-                  ? '🗑 Sil · Kaydı ele'
+                  ? '🗑 Delete · Dismiss record'
                   : jobCard(row.data)
-                    ? '🗑 Mesajı sil'
-                    : '🗑 Sil',
+                    ? '🗑 Delete message'
+                    : '🗑 Delete',
                 style: 'danger',
                 callback_data: `d:${row.id}`,
               },
@@ -67,7 +67,7 @@ export class TelegramApi {
       result = await response.json();
     } catch {
       throw Object.assign(
-        Error('Telegram’a ulaşılamıyor. İnternet bağlantısını kontrol et; yeniden denenecek.'),
+        Error('Cannot reach Telegram. Check the internet connection; will retry.'),
         {code: 0},
       );
     }
@@ -84,7 +84,7 @@ export class TelegramApi {
           ? 'missing'
           : null;
       throw Object.assign(
-        Error(errors[code] ?? 'Telegram geçici bir hata döndürdü; yeniden denenecek.'),
+        Error(errors[code] ?? 'Telegram returned a temporary error; will retry.'),
         {code, editResult, retryAfter: Math.max(0, Number(result.parameters?.retry_after) || 0)},
       );
     }
@@ -103,7 +103,7 @@ export class TelegramBot {
     changed = () => {},
     now = Date.now,
   }) {
-    if (botId == null) throw Error('Telegram bot kimliği gerekli.');
+    if (botId == null) throw Error('A Telegram bot id is required.');
     Object.assign(this, {store, queueApplication, withdrawApplication, changed, now});
     this.db = new TelegramStore(store, now, botId);
     this.conversation = new TelegramConversation(this.db, {answer, changed});
@@ -125,7 +125,7 @@ export class TelegramBot {
     };
   }
   pairing(candidate) {
-    if (!this.api || !this.config.enabled) throw Error('Önce Telegram botunu kaydedip aç.');
+    if (!this.api || !this.config.enabled) throw Error('Save and enable the Telegram bot first.');
     const {token, expires} = this.db.pair(candidate);
     return {url: `https://t.me/${this.config.bot.username}?start=${token}`, expires};
   }
@@ -147,7 +147,7 @@ export class TelegramBot {
   }
   sendUnsentJobs(candidate, input) {
     if (!this.api || !this.config.enabled || !this.config.bot)
-      throw Error('Önce Telegram botunu kaydedip aç.');
+      throw Error('Save and enable the Telegram bot first.');
     const result = this.db.queueUnsentJobs(candidate, this.config.bot.id, input);
     this.changed(candidate);
     return result;
@@ -157,12 +157,13 @@ export class TelegramBot {
     this.controller = new AbortController();
     const {signal} = this.controller;
     this.pollPromise = this.poll(signal).catch(() => {
-      if (!signal.aborted) this.error = 'Telegram bağlantısı durdu. Ayarlardan kapatıp yeniden aç.';
+      if (!signal.aborted)
+        this.error = 'The Telegram connection stopped. Turn it off and on again in Settings.';
     });
     const tick = () => {
       if (!this.flushPromise)
         this.flush(signal).catch(() => {
-          if (!signal.aborted) this.error = 'Telegram mesaj kuyruğu işlenemedi.';
+          if (!signal.aborted) this.error = 'Could not process the Telegram message queue.';
         });
     };
     tick();
@@ -244,7 +245,7 @@ export class TelegramBot {
         }
       } catch (error) {
         if (signal.aborted) return;
-        this.error = errors[error.code] ?? 'Telegram bağlantısı kesildi; yeniden denenecek.';
+        this.error = errors[error.code] ?? 'The Telegram connection dropped; will retry.';
         await delay(Math.max(5000, Math.min(300000, (error.retryAfter ?? 5) * 1000)), null, {
           signal,
         }).catch(() => {});
@@ -288,7 +289,7 @@ export class TelegramBot {
       this.db.prioritizeEdit(row.id);
       if (!signal?.aborted) await this.flush(signal);
     } catch {
-      if (!signal?.aborted) this.error = 'Telegram mesajı güncellenemedi; yeniden denenecek.';
+      if (!signal?.aborted) this.error = 'Could not update the Telegram message; will retry.';
     }
   }
   async queueNotification(callback, signal) {
@@ -298,12 +299,11 @@ export class TelegramBot {
       notification.row.status !== 'sent' ||
       notification.row.data.kind !== 'new_job'
     )
-      return {text: 'Bu ilan bu bağlantı üzerinden sıraya alınamıyor.', show_alert: true};
+      return {text: 'This listing cannot be queued through this link.', show_alert: true};
     const {row, link} = notification,
       candidate = link.candidate_id;
     try {
-      if (!this.queueApplication)
-        throw Error('Sıraya alma kullanılamıyor. AutoJev’i yeniden başlat.');
+      if (!this.queueApplication) throw Error('Queueing is unavailable. Restart AutoJev.');
       const job = this.store.job(candidate, row.data.jobId),
         state = this.store.queueState(candidate, job);
       if (state.state !== 'available') {
@@ -316,7 +316,10 @@ export class TelegramBot {
       if (notification.token !== state.token) {
         this.db.refreshJobMessages(candidate, job.id);
         await this.updateNotification(row, signal);
-        return {text: 'Kayıt değişti. Güncellenen karttaki işlemi yeniden seç.', show_alert: true};
+        return {
+          text: 'The record changed. Choose the action again on the updated card.',
+          show_alert: true,
+        };
       }
       const application = this.queueApplication(candidate, job.id, notification.token);
       this.db.refreshJobMessages(candidate, job.id);
@@ -330,9 +333,9 @@ export class TelegramBot {
       this.db.refreshJobMessages(candidate, job.id);
       this.changed(candidate);
       await this.updateNotification(row, signal);
-      return {text: clip(result?.message || 'İlan başvuru sırasına alındı.', 200)};
+      return {text: clip(result?.message || 'Listing added to the application queue.', 200)};
     } catch (error) {
-      return {text: clip('Sıraya alınamadı: ' + error.message, 200), show_alert: true};
+      return {text: clip('Could not queue: ' + error.message, 200), show_alert: true};
     }
   }
   dismissesRecord(row) {
@@ -343,20 +346,20 @@ export class TelegramBot {
   }
   async deleteNotification(callback, signal) {
     const notification = this.notification(callback, 'd'),
-      denied = {text: 'Bu mesaj bu bağlantı üzerinden silinemiyor.', show_alert: true};
+      denied = {text: 'This message cannot be deleted through this link.', show_alert: true};
     if (!notification || !deletable(notification.row.data)) return denied;
     const {row, link} = notification,
       message = callback.message;
-    if (row.status === 'deleted') return {text: 'Mesaj zaten silindi.'};
+    if (row.status === 'deleted') return {text: 'Message already deleted.'};
     if (row.status !== 'sent') return denied;
     let withdrawn = false;
     if (jobCard(row.data)) {
       try {
-        // Recheck current completion even for old cards still labelled "Kaydı ele".
+        // Recheck current completion even for old cards still labelled "Dismiss record".
         if (this.dismissesRecord(row)) {
           const job = this.store.job(link.candidate_id, row.data.jobId);
           if (job.status !== 'skipped' && job.manualOutcome !== 'withdrawn') {
-            if (!this.withdrawApplication) throw Error('AutoJev’i yeniden başlat.');
+            if (!this.withdrawApplication) throw Error('Restart AutoJev.');
             // Use the desktop action so an active application is stopped before withdrawal.
             await this.withdrawApplication(link.candidate_id, job.id);
           }
@@ -366,12 +369,12 @@ export class TelegramBot {
         }
       } catch {
         return {
-          text: 'Kayıt elenemedi; mesaj silinmedi. AutoJev’den kontrol edip yeniden dene.',
+          text: 'Could not dismiss the record; the message was not deleted. Check in AutoJev and try again.',
           show_alert: true,
         };
       }
     }
-    const prefix = withdrawn ? 'Kayıt elendi. ' : '';
+    const prefix = withdrawn ? 'Record dismissed. ' : '';
     if (
       Number.isFinite(message.date) &&
       message.date > 0 &&
@@ -380,7 +383,7 @@ export class TelegramBot {
       return {
         text:
           prefix +
-          'Telegram botları 48 saatten eski mesajları silemez. Mesaja basılı tutup Telegram’dan silebilirsin.',
+          'Telegram bots cannot delete messages older than 48 hours. Long-press the message to delete it in Telegram.',
         show_alert: true,
       };
     try {
@@ -391,14 +394,14 @@ export class TelegramBot {
       );
       // Keep the delivery receipt so collecting events or retrying cannot send it again.
       this.db.deleted(row.id);
-      return {text: withdrawn ? 'Mesaj silindi; kayıt elendi.' : 'Mesaj silindi.'};
+      return {text: withdrawn ? 'Message deleted; record dismissed.' : 'Message deleted.'};
     } catch (error) {
       return {
         text:
           prefix +
           ([400, 403].includes(error.code)
-            ? 'Mesaj silinemedi. Telegram’da mesaja basılı tutup silebilirsin.'
-            : 'Mesaj silinemedi. Biraz sonra Sil düğmesine yeniden bas.'),
+            ? 'Could not delete the message. Long-press the message in Telegram to delete it.'
+            : 'Could not delete the message. Press Delete again in a moment.'),
         show_alert: true,
       };
     }
@@ -426,7 +429,7 @@ export class TelegramBot {
 
       const view = this.store.recordNotification(link.candidate_id, job.id);
       const queue = this.queueApplication ? this.store.queueState(link.candidate_id, job) : null,
-        buttons = [[{text: 'Kaydı aç', style: 'primary', url: job.url}]];
+        buttons = [[{text: 'Open record', style: 'primary', url: job.url}]];
       if (queue?.state === 'available')
         buttons.push([
           {
@@ -454,7 +457,7 @@ export class TelegramBot {
       return {
         text: `<b>✅ ${html(view.title)} · ${html(view.completed)}</b>\n\n${recordHeading(view)}`,
         parse_mode: 'HTML',
-        reply_markup: {inline_keyboard: [[{text: 'Kaydı aç', style: 'primary', url: job.url}]]},
+        reply_markup: {inline_keyboard: [[{text: 'Open record', style: 'primary', url: job.url}]]},
       };
     }
     if (data.questionId) {
@@ -462,13 +465,13 @@ export class TelegramBot {
       if (!q || q.answer !== null || q.resolution) {
         if (!edit) return null;
         const answered = q?.answer != null,
-          title = answered ? '✅ Yanıtlandı' : '⚪ Soru kapandı';
+          title = answered ? '✅ Answered' : '⚪ Question closed';
         const question = q
           ? `<b>${html(this.conversation.jobTitle(link, q))}</b>\n\n${html(clip(q.question, 1800))}`
           : '';
         const result = answered
-          ? `<b>Yanıtın:</b>\n${html(clip(q.answer, 1400))}`
-          : 'Bu soru artık yanıt beklemiyor.';
+          ? `<b>Your answer:</b>\n${html(clip(q.answer, 1400))}`
+          : 'This question no longer needs an answer.';
         return {
           text: `<b>${title}</b>\n\n${question}\n\n${result}`,
           parse_mode: 'HTML',
@@ -479,7 +482,7 @@ export class TelegramBot {
       if (data.kind === 'question' || !data.promptId)
         return {
           text: clip(`${this.conversation.jobTitle(link, q)}\n\n${q.question}`, 3900),
-          reply_markup: {inline_keyboard: [[{text: 'Yanıtla', callback_data: `q:${q.id}`}]]},
+          reply_markup: {inline_keyboard: [[{text: 'Reply', callback_data: `q:${q.id}`}]]},
         };
     }
     if (data.promptId && link.data.dialog?.promptId !== data.promptId) return null;

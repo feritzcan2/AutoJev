@@ -55,7 +55,7 @@ try {
   });
   await page.locator('aside nav [data-view=agent]').click();
   const card = page.locator(`[data-issue-id="${q.id}"]`),
-    open = card.getByRole('button', {name: 'Sekmeyi göster ↗', exact: true});
+    open = card.getByRole('button', {name: 'Show tab ↗', exact: true});
   await open.click();
   assert.deepEqual(await app.evaluate(() => globalThis.tabFocus), [{id: a.id, tabId: 'exact'}]);
   assert.equal(await card.locator('select').inputValue(), '');
@@ -63,7 +63,7 @@ try {
     globalThis.testTabs = [];
   });
   await open.click();
-  await card.getByText(/İlgili açık sekme bulunamadı/).waitFor();
+  await card.getByText(/The related open tab was not found/).waitFor();
   assert.equal(await card.locator('select').inputValue(), '');
   assert.equal(await open.isEnabled(), true);
   await app.evaluate(() => {

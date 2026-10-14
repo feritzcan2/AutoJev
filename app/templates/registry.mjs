@@ -17,10 +17,10 @@ export class TemplateRegistry {
   }
   register(driver) {
     if (!/^[a-z][a-z0-9_-]*$/.test(driver.id) || this.drivers.has(driver.id))
-      throw Error('Yürütücü kimliği benzersiz olmalı');
+      throw Error('Driver id must be unique');
     this.drivers.set(driver.id, driver);
     for (const template of driver.templates ?? []) {
-      if (this.templates.has(template.id)) throw Error('Template kimliği benzersiz olmalı');
+      if (this.templates.has(template.id)) throw Error('Template id must be unique');
       this.templates.set(template.id, {
         ...template,
         execution: {...template.execution, driver: driver.id},
@@ -34,7 +34,7 @@ export class TemplateRegistry {
         ? [...this.drivers.values()].find((d) => d.kind === input.kind)?.id
         : browserDefinition.id);
     const driver = this.drivers.get(id);
-    if (!driver) throw Error('Template uzantısı yüklü değil: ' + (id ?? input.kind));
+    if (!driver) throw Error('Template extension is not installed: ' + (id ?? input.kind));
     return driver;
   }
   supports(input) {
@@ -50,7 +50,7 @@ export class TemplateRegistry {
   }
   template(id) {
     const template = this.templates.get(id);
-    if (!template) throw Error('Template bulunamadı');
+    if (!template) throw Error('Template not found');
     return this.normalize(structuredClone(template));
   }
   catalog() {

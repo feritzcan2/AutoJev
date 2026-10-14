@@ -5,28 +5,28 @@ import {jobUrlKey} from './job-urls.mjs';
 const LIMIT = 3,
   ARGUMENT_LIMIT = 6;
 const operationNames = {
-  score: 'Puanlama',
-  prepare: 'Hazırlama',
-  execute: 'Uygulama',
-  verify: 'Doğrulama',
+  score: 'Scoring',
+  prepare: 'Preparation',
+  execute: 'Execution',
+  verify: 'Verification',
 };
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const category = (message) =>
   /arguments[.:\[]/.test(message)
     ? 'arguments'
-    : /Serbest toplam|scorecard|alıntısı|candidateQuote|listingQuote/.test(message)
+    : /scorecard|candidateQuote|listingQuote/.test(message)
       ? 'scorecard'
-      : /Sayfa gözlemi eski/.test(message)
+      : /page observation is stale/i.test(message)
         ? 'snapshot'
         : null;
 const recoveryHint = (kind) =>
   kind === 'arguments'
-    ? 'Listelenen tüm alan hatalarını tek çağrıda düzelt; diğer geçerli alanları koruyarak tam argümanları yeniden gönder. Bu hata için sayfayı tekrar okuman gerekmez.'
+    ? 'Fix all listed field errors in one call; resend the full arguments, keeping the other valid fields. You do not need to read the page again for this error.'
     : kind === 'scorecard'
-      ? 'Güncel araç şemasını ve scoringPolicy bölümünü kullan; eksik alanları tek seferde düzelt.'
+      ? 'Use the current tool schema and the scoringPolicy section; fix the missing fields in one go.'
       : kind === 'snapshot'
-        ? 'Güncel bağlamdaki savedListing veya son snapshot.id ile devam et; kayıtlı metin yoksa browser_read kullan.'
-        : 'Hata nedenini düzeltmeden aynı işlemi yineleme.';
+        ? 'Continue with savedListing from the current context or the latest snapshot.id; if there is no saved text, use browser_read.'
+        : 'Do not repeat the same operation without fixing the cause of the error.';
 function operationKey(run, name, args) {
   let target = run.recordId;
   if (name.startsWith('browser_')) {
@@ -68,7 +68,7 @@ export function recordToolGuard({db, run, report, changed}) {
       queue.put({...task, toolFailures: failures});
       if (count >= limit) {
         const failure = {tool: name, message, count, runId: run.id, at: db.now()};
-        summary = `${operationNames[run.recordOperation] ?? (run.sourceUrl ? 'Kaynak taraması' : 'Kayıt işlemi')} durduruldu: aynı işlem ${limit} kez aynı hata türüyle başarısız oldu. Son hata: ${message}`;
+        summary = `${operationNames[run.recordOperation] ?? (run.sourceUrl ? 'Source scan' : 'Record operation')} stopped: the same operation failed ${limit} times with the same kind of error. Last error: ${message}`;
         queue.put({...queue.get(id, run.taskId), toolFailure: failure});
         db.putRun({
           ...db.run(run.id),
@@ -81,11 +81,11 @@ export function recordToolGuard({db, run, report, changed}) {
     if (summary) {
       report(id, run.id, 'blocked', summary, false);
       changed(id);
-      return summary + ' Görev durduruldu; başka araç çağırma.';
+      return summary + ' The task was stopped; do not call any other tool.';
     }
     if (kind === 'arguments')
-      return `${message}\nArgüman hatası ${count}/${limit}. ${recoveryHint(kind)} Yalnızca araç şemasındaki alan adlarını kullan (browser_interact: operation, ref, text, option, key). ${limit}. hatada görev durdurulur.`;
-    return `${message}\nAynı işlem aynı hata türüyle ${count}/${limit} kez başarısız oldu. ${recoveryHint(kind)} Üçüncü hatada görev otomatik durdurulur.`;
+      return `${message}\nArgument error ${count}/${limit}. ${recoveryHint(kind)} Use only the field names in the tool schema (browser_interact: operation, ref, text, option, key). The task stops at error ${limit}.`;
+    return `${message}\nThe same operation failed ${count}/${limit} times with the same kind of error. ${recoveryHint(kind)} The task stops automatically at the third error.`;
   };
   const call = async (name, args, execute) => {
     name = typeof name === 'string' ? name : 'unknown';
@@ -93,9 +93,9 @@ export function recordToolGuard({db, run, report, changed}) {
       task = queue.get(id, run.taskId);
     if (task.toolFailure)
       throw Error(
-        'Tekrarlanan hata nedeniyle görev durduruldu. Kaynak veya kayıt görevindeki hata açıklamasını kontrol et.',
+        'The task was stopped because of a repeated error. Check the error description on the source or record task.',
       );
-    if (active.status !== 'running') throw Error('Görev artık çalışmıyor.');
+    if (active.status !== 'running') throw Error('The task is no longer running.');
     const operation = operationKey(active, name, args);
     let value;
     try {

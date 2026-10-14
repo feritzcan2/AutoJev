@@ -1,6 +1,11 @@
 // @ts-check
 import {jevDetailKey} from '../jev/detail-urls.mjs';
-import {scanWork, hasUnblockedScanWork} from '../sources/scan-work.mjs';
+import {
+  scanWork,
+  activeSearch,
+  hasUnblockedScanWork,
+  searchNewListings,
+} from '../sources/scan-work.mjs';
 import {scanIssue, clearScanIssue} from '../sources/scan-issues.mjs';
 import {scanPageReport} from '../sources/scan-page.mjs';
 
@@ -51,7 +56,7 @@ export function saveJevCheckpoint(scan, {sourceUrl, now}, page, urls, options = 
   if (pageReport) db.reportPage(id, runId, pageReport);
   saveInChunks(scan, 'pendingUrls', urls, () => ({
     cards,
-    reason: 'Jev tarafından bulunan ilanlar değerlendirme bekliyor.',
+    reason: 'Listings found by Jev are waiting for assessment.',
   }));
   db.saveScanProgress(
     id,
@@ -59,15 +64,16 @@ export function saveJevCheckpoint(scan, {sourceUrl, now}, page, urls, options = 
     {
       pendingUrls: [],
       processedUrls: [page.url],
-      reason: 'Sonuç sayfasındaki bağlantılar kaydedildi; ilanların değerlendirmesi bekliyor.',
+      newListings: {url: page.url, count: cards.length + rejected.length},
+      reason: 'Links from the results page are saved; the listings are waiting for assessment.',
     },
     snapshot,
   );
-  retire(scan, navigationUrls, 'Gözlenen gezinme ve filtre bağlantıları ilan değil.');
+  retire(scan, navigationUrls, 'Observed navigation and filter links are not listings.');
   retire(
     scan,
     rejectedUrls,
-    'Jev ilan kartında açık uyumsuzluğu en az %85 güvenle belirledi; kayıt oluşturmadan elendi.',
+    'Jev found a clear mismatch on the listing card with at least 85% confidence; excluded without creating a record.',
     (offset) => (offset ? {} : {excluded: rejected}),
   );
   if (rejectedUrls.length)
@@ -75,10 +81,14 @@ export function saveJevCheckpoint(scan, {sourceUrl, now}, page, urls, options = 
       id,
       sourceUrl,
       rejectedUrls,
-      'Jev ilan kartında açık uyumsuzluk belirledi.',
+      'Jev found a clear mismatch on the listing card.',
     );
-  retire(scan, knownUrls, 'Daha önce kaydedilmiş veya elenmiş ilanlar; yeniden okunmadı.');
-  return {saved: true, pageReport};
+  retire(scan, knownUrls, 'Listings already recorded or excluded earlier; not read again.');
+  return {
+    saved: true,
+    pageReport,
+    newListings: searchNewListings(activeSearch(scanWork(db.activeRun(id, runId)))),
+  };
 }
 
 // After a detail task: retire queued details that stay unreadable after Jev's
@@ -107,7 +117,7 @@ export function settleJevDetails(scan, {scope, searchId}, result) {
     retire(
       scan,
       unreadable,
-      `${unreadable.length} detay adresi sınırlı yeniden okumadan sonra da okunamadı; kuyruktan çıkarıldı.`,
+      `${unreadable.length} detail address(es) could not be read even after bounded rereads; removed from the queue.`,
     );
     for (const url of unreadable) clearScanIssue(db, id, runId, url);
     result = {
@@ -130,7 +140,7 @@ export function settleJevDetails(scan, {scope, searchId}, result) {
         scanIssue(db, id, runId, {
           url,
           kind: 'render_pending',
-          evidence: `Jev: ${item.readUrl ?? url} sınırlı bekleme ve yeniden okumadan sonra da yüklenmedi.`,
+          evidence: `Jev: ${item.readUrl ?? url} did not load even after a bounded wait and reread.`,
           verified: true,
         });
     } else if (item.collected) clearScanIssue(db, id, runId, url);
@@ -142,7 +152,7 @@ export function settleJevDetails(scan, {scope, searchId}, result) {
     retire(
       scan,
       boards,
-      `${boards.length} adres ilan değil sonuç/kategori sayfası; kuyruktan çıkarıldı.`,
+      `${boards.length} address(es) are results/category pages, not listings; removed from the queue.`,
     );
     result = {
       ...result,

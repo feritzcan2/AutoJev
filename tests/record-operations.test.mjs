@@ -128,17 +128,17 @@ test('retry of a blocked execution is a direct execution again and pending answe
   assert.equal(retry().direct, true);
   f.db.askQuestion(f.id, {recordId: item.id, text: 'Required answer'});
   assert.equal(retry().disabled, true);
-  assert.match(retry().reason, /soruları yanıtla/);
+  assert.match(retry().reason, /Answer the pending questions/);
   f.db.putResult({...f.db.result(f.id, item.id), status: 'completed'});
   assert.equal(retry(), null);
 });
 
 test('template labels, operation instructions and success criteria round-trip through export/import', () => {
   for (const [id, label] of [
-    ['job-search', 'Başvur'],
-    ['housing', 'Mesaj gönder'],
-    ['appointment', 'Rezervasyon yap'],
-    ['custom', 'Uygula'],
+    ['job-search', 'Apply'],
+    ['housing', 'Send message'],
+    ['appointment', 'Book'],
+    ['custom', 'Run'],
   ]) {
     const template = automationTemplate(id),
       copy = reusableTemplate(template);
@@ -165,7 +165,7 @@ test('template labels, operation instructions and success criteria round-trip th
         ...automationTemplate('custom'),
         recordOperations: {erase: {label: 'Erase'}},
       }),
-    /Bilinmeyen/,
+    /Unknown record operation/,
   );
 });
 
@@ -217,7 +217,7 @@ test('manual preparation runs on a paused workspace with a blocked source and do
   assert.equal(f.db.get(f.id).status, 'paused');
   assert.equal(f.launches[0].recordOperation, 'prepare');
   assert.equal(f.launches[0].recordId, f.item.id);
-  assert.equal(f.db.snapshot(f.id).results[0].recordAction.operation.label, 'Başvur');
+  assert.equal(f.db.snapshot(f.id).results[0].recordAction.operation.label, 'Apply');
 });
 
 test('draft preparation keeps its tab; verified submission closes the completed task tab', async (t) => {
@@ -251,7 +251,7 @@ test('a manual execute request needs no draft and keeps observe permissions; dup
   // needs more than observe mode.
   assert.equal(f.item.status, 'found');
   assert.equal(recordOperationError(a, f.item, 'execute', {manual: true, digest: 'stale'}), null);
-  assert.match(recordOperationError(a, f.item, 'execute'), /yalnızca bul modunda/);
+  assert.match(recordOperationError(a, f.item, 'execute'), /find-only mode/);
   const task = await f.runtime.runRecord(f.id, f.item.id, 'execute', {digest: 'stale'});
   await settle();
   assert.equal(task.request.direct, true);
@@ -273,7 +273,10 @@ test('a manual execute request needs no draft and keeps observe permissions; dup
   await f.finish(run);
   assert.equal(f.db.result(f.id, f.item.id).status, 'completed');
   assert.equal(f.db.snapshot(f.id).results[0].recordAction.operation, null);
-  await assert.rejects(f.runtime.runRecord(f.id, f.item.id, 'execute'), /yeniden gönderilemez/);
+  await assert.rejects(
+    f.runtime.runRecord(f.id, f.item.id, 'execute'),
+    /cannot be submitted again/,
+  );
 });
 
 test('changed proposals do not invalidate a queued execute; the running execute request covers its own proposal edits', async (t) => {
@@ -349,13 +352,24 @@ test('preparation sees general answers the user gave for other records', async (
     accessCheck: {kind: 'login', url: 'https://portal.test', evidence: 'Sign in', snapshotId: 's'},
   });
   f.db.answerQuestion(f.id, login.id, {[LOGGED_IN_FIELD.id]: true});
+  // Many later answers must not push the old fact out of view; repeats collapse.
+  for (let n = 0; n < 25; n++) {
+    const later = ask({
+      text: 'Form question ' + n,
+      fields: [
+        {id: 'years', label: 'Years with tool ' + n, type: 'number'},
+        {id: 'hours', label: 'Weekly hours', type: 'number'},
+      ],
+    });
+    f.db.answerQuestion(f.id, later.id, {years: n, hours: 40});
+  }
   await f.runtime.runRecord(f.id, f.item.id, 'prepare');
   await settle();
-  const context = automationTaskContext(f.db, f.id, f.db.run(f.launches.at(-1).id));
-  assert.deepEqual(
-    context.earlierAnswers.answers.map((a) => a.answer),
-    ['Email: me@example.test'],
-  );
+  const answers = automationTaskContext(f.db, f.id, f.db.run(f.launches.at(-1).id)).earlierAnswers
+    .answers;
+  assert.deepEqual(answers.at(-1), {question: 'Email', answer: 'me@example.test'});
+  assert.equal(answers.filter((a) => a.question === 'Weekly hours').length, 1);
+  assert.equal(answers.length, 27);
 });
 
 test('requested changes to a reviewed draft reach the next preparation', async (t) => {
@@ -364,7 +378,7 @@ test('requested changes to a reviewed draft reach the next preparation', async (
   assert.equal(prepared.status, 'prepared');
   await assert.rejects(
     f.runtime.runRecord(f.id, f.item.id, 'prepare', {changes: '  '}),
-    /Değişiklik isteği/,
+    /Change request/,
   );
   await f.runtime.runRecord(f.id, f.item.id, 'prepare', {changes: 'Use the shorter cover letter'});
   await settle();
@@ -461,7 +475,7 @@ test('dismissing a record closes only its questions and worker, and prevents lat
   assert.equal(f.db.result(f.id, f.item.id).status, 'dismissed');
   assert.throws(
     () => f.db.askQuestion(f.id, {recordId: f.item.id, text: 'Late question'}),
-    /Elenen/,
+    /rejected record/,
   );
   assert.equal(
     f.db.record(f.id, run.id, {
@@ -473,7 +487,10 @@ test('dismissing a record closes only its questions and worker, and prevents lat
     }).status,
     'dismissed',
   );
-  await assert.rejects(f.runtime.runRecord(f.id, f.item.id, 'prepare'), /yeniden gönderilemez/);
+  await assert.rejects(
+    f.runtime.runRecord(f.id, f.item.id, 'prepare'),
+    /cannot be submitted again/,
+  );
   release();
   await dismissing;
   for (const id of [q.id, q2.id])
@@ -483,7 +500,7 @@ test('dismissing a record closes only its questions and worker, and prevents lat
   assert.equal(f.runtime.queue.get(f.id, otherTask.id).state, 'running');
   assert.equal(f.db.result(f.id, other.id).status, 'found');
   assert.equal(f.runtime.slots(f.id).length, 0);
-  await assert.rejects(f.runtime.answer(f.id, q.id, 'Late answer'), /zaten/);
+  await assert.rejects(f.runtime.answer(f.id, q.id, 'Late answer'), /already answered/);
 });
 
 test('dismissal cancels queued work and rejects foreign or already attempted records without mutations', async (t) => {
@@ -495,11 +512,11 @@ test('dismissal cancels queued work and rejects foreign or already attempted rec
       resumeRecordAfterAnswer: true,
     });
   const other = f.db.create('custom');
-  await assert.rejects(f.runtime.dismissRecord(other.id, f.item.id), /ait değil/);
+  await assert.rejects(f.runtime.dismissRecord(other.id, f.item.id), /does not belong/);
   assert.equal(queue.get(f.id, task.id).state, 'pending');
   for (const status of ['executing', 'completed', 'uncertain']) {
     f.db.putResult({...f.item, status});
-    await assert.rejects(f.runtime.dismissRecord(f.id, f.item.id), /geçmişi/);
+    await assert.rejects(f.runtime.dismissRecord(f.id, f.item.id), /history/);
     assert.equal(f.db.result(f.id, f.item.id).status, status);
     assert.equal(queue.get(f.id, task.id).state, 'pending');
   }
@@ -507,9 +524,12 @@ test('dismissal cancels queued work and rejects foreign or already attempted rec
   await f.runtime.dismissRecord(f.id, f.item.id);
   assert.equal(queue.get(f.id, task.id).state, 'cancelled');
   assert.equal(queue.get(f.id, task.id).resumeRecordAfterAnswer, false);
-  assert.equal(f.db.template('job-search').records.dismissLabel, 'Başvuruyu ele');
-  assert.equal(reusableTemplate(f.db.template('job-search')).records.dismissLabel, 'Başvuruyu ele');
-  assert.equal(f.db.template('housing').records.dismissLabel, 'Kaydı ele');
+  assert.equal(f.db.template('job-search').records.dismissLabel, 'Dismiss application');
+  assert.equal(
+    reusableTemplate(f.db.template('job-search')).records.dismissLabel,
+    'Dismiss application',
+  );
+  assert.equal(f.db.template('housing').records.dismissLabel, 'Dismiss record');
 });
 
 test('working records and question dismissal remain available outside the latest 500 records', async (t) => {
@@ -541,15 +561,15 @@ test('preparation and execution cannot claim success without their durable resul
   await f.runtime.runRecord(f.id, f.item.id, 'prepare');
   await settle();
   const run = f.launches.at(-1);
-  assert.throws(() => f.db.finish(f.id, run.id, 'completed', 'Done'), /taslağı/);
-  assert.throws(() => f.db.reserve(f.id, run.id, f.item.id), /gönderim/);
+  assert.throws(() => f.db.finish(f.id, run.id, 'completed', 'Done'), /draft/);
+  assert.throws(() => f.db.reserve(f.id, run.id, f.item.id), /cannot submit/);
   await f.finish(run, 'blocked');
   const prepared = await f.prepare();
   await f.runtime.runRecord(f.id, f.item.id, 'execute', {digest: prepared.digest});
   await settle();
   assert.throws(
     () => f.db.finish(f.id, f.launches.at(-1).id, 'completed', 'Clicked'),
-    /tamamlanmadı/,
+    /application is not finished/,
   );
 });
 
@@ -567,7 +587,7 @@ test('automatic execution is independent of source completion, and prepare mode 
   assert.equal(f.launches.length, 0);
   assert.match(
     recordOperationError(f.db.get(f.id), f.db.result(f.id, f.item.id), 'execute'),
-    /kullanıcı isteği/,
+    /user request/,
   );
   f.db.put({...f.db.get(f.id), mode: 'auto'});
   f.db.enable(f.id);
@@ -721,7 +741,7 @@ test('document uploads need an execute task, not a reservation or a draft, and a
   let flow = automationWorkflow({workspace, db: f.db, run, signal: {aborted: false}, browser});
   await assert.rejects(
     flow.call(f.id, run.id, 'browser_upload_document', {ref: 'file', filePath: 'cv.pdf'}),
-    /başvuru görevinde/,
+    /application task/,
   );
   f.db.record(f.id, run.id, {
     url: f.item.url,
@@ -737,7 +757,7 @@ test('document uploads need an execute task, not a reservation or a draft, and a
   await symlink(new URL(import.meta.url).pathname, path.join(workspace, 'outside.pdf'));
   await assert.rejects(
     flow.call(f.id, run.id, 'browser_upload_document', {ref: 'file', filePath: 'outside.pdf'}),
-    /çalışma alanındaki/,
+    /in this workspace/,
   );
   await flow.call(f.id, run.id, 'browser_upload_document', {ref: 'file', filePath: 'cv.pdf'});
   assert.equal(calls[0].name, 'browser_upload_document');
@@ -884,21 +904,21 @@ test('table projection exposes queued, running, answered and stopped record acti
   const scan = f.launches.at(-1);
   await f.runtime.runRecord(f.id, f.item.id, 'prepare');
   let row = f.db.snapshot(f.id).results.find((r) => r.id === f.item.id);
-  assert.equal(recordOperationStatus(row).label, 'Hazırlama sırada');
+  assert.equal(recordOperationStatus(row).label, 'Preparation queued');
   assert.equal(recordOperationStatus(row).active, true);
   assert.ok(recordActivityAt(row) >= row.updatedAt);
   await f.finish(scan);
   await f.runtime.tick();
   await settle();
   row = f.db.snapshot(f.id).results.find((r) => r.id === f.item.id);
-  assert.equal(recordOperationStatus(row).label, 'Hazırlanıyor');
+  assert.equal(recordOperationStatus(row).label, 'Preparing');
   const q = f.db.askQuestion(f.id, {recordId: f.item.id, text: 'Availability?'});
   row = f.db.snapshot(f.id).results.find((r) => r.id === f.item.id);
-  assert.equal(recordOperationStatus(row).label, 'Yanıt bekliyor');
+  assert.equal(recordOperationStatus(row).label, 'Awaiting answer');
   f.db.answerQuestion(f.id, q.id, 'Next month');
   await f.finish(f.launches.at(-1), 'blocked');
   row = f.db.snapshot(f.id).results.find((r) => r.id === f.item.id);
-  assert.equal(recordOperationStatus(row).label, 'İşlem engellendi');
+  assert.equal(recordOperationStatus(row).label, 'Operation blocked');
   assert.equal(recordOperationStatus(row).active, false);
   assert.equal(recordOperationStatus({...row, status: 'completed'}), null);
 });
@@ -932,7 +952,7 @@ test('repeating a queued request wakes a worker and more preparation work starts
   const {enqueueRecordOperation} = await import('../app/records/operations.mjs');
   f.runtime.workers.setEnabled(f.id, 'main', false);
   // A rejected request (verify on a record that is not uncertain) wakes nobody.
-  await assert.rejects(f.runtime.runRecord(f.id, f.item.id, 'verify'), /belirsiz/);
+  await assert.rejects(f.runtime.runRecord(f.id, f.item.id, 'verify'), /uncertain outcome/);
   assert.equal(f.runtime.workers.get(f.id, 'main').enabled, false);
   const pending = enqueueRecordOperation(f.runtime, f.id, f.item.id, 'prepare');
   f.runtime.workers.setEnabled(f.id, 'main', false);
@@ -1048,7 +1068,7 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
     });
     assert.throws(
       () => f.db.finish(f.id, run.id, 'completed', 'Only filled the form'),
-      /Gönderim tamamlanmadı/,
+      /application is not finished/,
     );
     f.db.reserve(f.id, run.id, f.item.id);
     assert.equal(f.db.reserve(f.id, run.id, f.item.id).alreadyReserved, true);
@@ -1063,7 +1083,7 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
     assert.equal(f.db.get(f.id).mode, originalMode);
     await assert.rejects(
       f.runtime.runRecord(f.id, f.item.id, 'execute', {direct: true}),
-      /yeniden gönderilemez/,
+      /cannot be submitted again/,
     );
   });
 
@@ -1075,7 +1095,7 @@ test('direct execution is explicit, record-scoped, and a queued request still re
   assert.throws(
     () =>
       enqueueRecordOperation(f.runtime, f.id, f.item.id, 'execute', {manual: false, direct: true}),
-    /kullanıcı isteği/,
+    /user request/,
   );
   await f.runtime.runRecord(f.id, f.item.id, 'execute', {direct: true});
   await settle();
@@ -1086,7 +1106,7 @@ test('direct execution is explicit, record-scoped, and a queued request still re
     key: 'not-assigned',
     url: source + '/not-assigned',
   });
-  assert.throws(() => f.db.reserve(f.id, run.id, other.id), /ait değil/);
+  assert.throws(() => f.db.reserve(f.id, run.id, other.id), /does not belong/);
   await f.finish(run, 'blocked');
   // Hold the only worker with a source scan, then queue a new request. A setup
   // change while it waits cancels it instead of applying the record.
@@ -1101,7 +1121,7 @@ test('direct execution is explicit, record-scoped, and a queued request still re
   await settle();
   const cancelled = f.runtime.queue.get(f.id, queued.id);
   assert.equal(cancelled.state, 'cancelled');
-  assert.match(cancelled.summary, /kurulum değişti/);
+  assert.match(cancelled.summary, /setup changed/);
   assert.equal(f.launches.filter((r) => r.recordOperation === 'execute').length, 1);
 });
 
@@ -1167,7 +1187,7 @@ test('uncertain direct execution cannot be retried as another submission', async
   assert.equal(f.db.result(f.id, f.item.id).status, 'uncertain');
   await assert.rejects(
     f.runtime.runRecord(f.id, f.item.id, 'execute', {direct: true}),
-    /yeniden gönderilemez/,
+    /cannot be submitted again/,
   );
   assert.equal(f.db.snapshot(f.id).results[0].recordAction.directOperation, null);
 });
@@ -1186,7 +1206,7 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
       summary: 'Form inspected',
       proposal: 'Exact form answers',
     };
-    assert.throws(() => f.db.record(f.id, run.id, input), /önce bu görevde/);
+    assert.throws(() => f.db.record(f.id, run.id, input), /in this task first/);
     f.db.observe(f.id, run.id, form, 'Application form for the assigned listing');
     const saved = f.db.record(f.id, run.id, input);
     assert.equal(saved.id, f.item.id);
@@ -1195,7 +1215,7 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
     assert.equal(saved.actionUrl, form);
     assert.equal(f.store.workspaces.records.find(f.id, f.item.key).id, f.item.id);
     assert.equal(f.store.workspaces.records.find(f.id, form), null);
-    assert.equal(f.db.results(f.id, {all: true}).length, 1);
+    assert.equal(f.db.results(f.id).length, 1);
     // Legacy clients sometimes use the form URL for both key and url.
     assert.equal(f.db.record(f.id, run.id, {...input, key: form}).id, f.item.id);
     assert.equal(f.db.reserve(f.id, run.id, f.item.id).url, form);
@@ -1233,7 +1253,7 @@ test('explicit destination changes invalidate reviewed consent and cannot target
     {url: other.url},
     {actionUrl: other.url},
   ])
-    assert.throws(() => f.db.record(f.id, run.id, {...input, ...change}), /ait değil/);
+    assert.throws(() => f.db.record(f.id, run.id, {...input, ...change}), /does not belong/);
   assert.equal(f.db.result(f.id, other.id).proposal, '');
   assert.equal(f.db.result(f.id, f.item.id).actionUrl, form);
 });
@@ -1265,7 +1285,7 @@ test('rediscovering a listing keeps its form destination and does not create a d
   assert.equal(rediscovered.id, f.item.id);
   assert.equal(rediscovered.actionUrl, form);
   assert.equal(rediscovered.digest, saved.digest);
-  assert.equal(f.db.results(f.id, {all: true}).length, 1);
+  assert.equal(f.db.results(f.id).length, 1);
   f.db.finish(f.id, scan.id, 'completed', 'Done');
 });
 
@@ -1466,7 +1486,7 @@ test('not-submitted tool rechecks the live page and does not trust an earlier dr
   const rejected = await flow.call(f.id, verify.id, 'record_automation_outcome', args);
   assert.equal(rejected.status, 'evidence_rejected');
   assert.equal(rejected.saved, false);
-  assert.match(rejected.error, /taslak/);
+  assert.match(rejected.error, /draft/);
   assert.ok(rejected.snapshot.id);
   assert.notEqual(rejected.snapshot.id, observed.snapshot.id);
   assert.equal(f.db.result(f.id, f.item.id).status, 'uncertain');
@@ -1512,7 +1532,7 @@ test('verify outcome defaults itemId and url to the assigned record and the obse
       status: 'completed',
       evidence: 'Confirmation shown',
     }),
-    /gözlemle/,
+    /Observe the results page/,
   );
   await flow.call(f.id, verify.id, 'browser_read', {});
   const saved = await flow.call(f.id, verify.id, 'record_automation_outcome', {
@@ -1587,7 +1607,7 @@ test('a high fit score cannot authorize automatic execution with unmet or unknow
   for (const eligibility of ['mismatch', 'unverified']) {
     const assessment = {score: 95, scoringVersion: 4, revision: a.revision, eligibility};
     const item = f.db.putResult({...prepared, assessment});
-    assert.match(recordOperationError(a, item, 'execute'), /Zorunlu şart/);
+    assert.match(recordOperationError(a, item, 'execute'), /required criteri/i);
     assert.equal(recordOperationError(a, item, 'score'), null);
     assert.equal(
       recordOperationError(a, item, 'execute', {manual: true, digest: item.digest}),
@@ -1598,15 +1618,16 @@ test('a high fit score cannot authorize automatic execution with unmet or unknow
   assert.equal(recordOperationError(a, {...prepared, assessment: verified}, 'execute'), null);
   assert.match(
     recordOperationError(a, {...prepared, assessment: {...verified, scoringVersion: 3}}, 'execute'),
-    /yeniden puanla/,
+    /re-score/i,
   );
-  assert.match(
+  // A profile revision never invalidates a saved score.
+  assert.equal(
     recordOperationError(
       a,
       {...prepared, assessment: {...verified, revision: a.revision - 1}},
       'execute',
     ),
-    /yeniden puanla/,
+    null,
   );
   // Recheck at reservation: eligibility may change after a task was queued.
   f.db.putResult({...prepared, assessment: verified});
@@ -1617,7 +1638,7 @@ test('a high fit score cannot authorize automatic execution with unmet or unknow
   const run = f.launches.find((r) => r.recordOperation === 'execute');
   assert.ok(run);
   f.db.putResult({...prepared, assessment: {...verified, eligibility: 'mismatch'}});
-  assert.throws(() => f.db.reserve(f.id, run.id, prepared.id), /Zorunlu şart/);
+  assert.throws(() => f.db.reserve(f.id, run.id, prepared.id), /required criteri/i);
   assert.equal(f.db.result(f.id, prepared.id).status, 'prepared');
   await f.finish(run, 'blocked');
 });
@@ -1673,7 +1694,7 @@ for (const oldSource of ['https://example.test/list/', 'https://removed.test/job
     assert.equal(f.launches.length, 0);
     assert.match(
       recordOperationError(f.db.get(f.id), f.db.result(f.id, f.item.id), 'prepare'),
-      /yalnızca bul/,
+      /find-only/,
     );
     // Explicit manual preparation is still authorized for the selected record.
     assert.equal(
@@ -1690,18 +1711,18 @@ test('a user can mark a found, prepared or uncertain record as submitted', async
   f.db.askQuestion(f.id, {recordId: prepared.id, text: 'Pending detail'});
   const saved = f.runtime.markRecordSubmitted(f.id, prepared.id);
   assert.equal(saved.status, 'completed');
-  assert.match(saved.evidence, /gönderildiğini onayladı/);
+  assert.match(saved.evidence, /confirmed the record was submitted/);
   assert.ok(f.db.get(f.id).questions.every((q) => q.recordId !== prepared.id || q.answer != null));
   const state = f.db.snapshot(f.id).results.find((r) => r.id === prepared.id);
   assert.equal(state.status, 'completed');
   assert.equal(state.recordAction?.task ?? null, null);
-  assert.throws(() => f.db.markSubmitted(f.id, prepared.id), /işaretlenemez/);
-  assert.throws(() => f.db.dismiss(f.id, prepared.id), /değiştirilemez/);
+  assert.throws(() => f.db.markSubmitted(f.id, prepared.id), /cannot be marked/);
+  assert.throws(() => f.db.dismiss(f.id, prepared.id), /cannot be changed/);
   // A queued or running operation blocks the manual mark.
   const other = f.db.putResult({...f.item, id: undefined, key: source + '/2', url: source + '/2'});
   await f.runtime.runRecord(f.id, other.id, 'execute', {direct: true});
   await settle();
-  assert.throws(() => f.db.markSubmitted(f.id, other.id), /sırada veya çalışıyor/);
+  assert.throws(() => f.db.markSubmitted(f.id, other.id), /queued or running/);
 });
 
 test('an unconfirmed submit click attaches one viewport image; a confirmed one attaches nothing', async (t) => {
@@ -1742,7 +1763,8 @@ test('an unconfirmed submit click attaches one viewport image; a confirmed one a
     const flow = automationWorkflow({
       db: f.db,
       run,
-      signal: {aborted: false},
+      signal: new AbortController().signal,
+      submitSettleMs: 0,
       browser,
       report: (...args) => f.runtime.report(...args),
     });
@@ -1752,6 +1774,8 @@ test('an unconfirmed submit click attaches one viewport image; a confirmed one a
       ref: 'e1',
     });
     assert.equal(calls.filter((name) => name === 'browser_screenshot').length, confirmed ? 0 : 1);
+    // An unconfirmed click is observed twice more before it is judged.
+    assert.equal(calls.filter((name) => name === 'browser_snapshot').length, confirmed ? 3 : 5);
     if (confirmed) {
       assert.equal(result.submission.outcome, 'confirmed');
       assert.equal(result.attachments, undefined);
@@ -1765,4 +1789,462 @@ test('an unconfirmed submit click attaches one viewport image; a confirmed one a
     // The stored run keeps the classification only, never the image.
     assert.equal(f.db.run(run.id).submission.screenshot, undefined);
   }
+});
+
+test('a confirmation that renders shortly after the submit click is still recognized', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  f.db.reserve(f.id, run.id, item.id);
+  const calls = [];
+  let clicked = false,
+    afterClick = 0;
+  const browser = {
+    currentUrl: async () => item.url,
+    call: async (_id, name) => {
+      calls.push(name);
+      if (name === 'browser_click') clicked = true;
+      else if (clicked && name === 'browser_snapshot') afterClick++;
+      const page = clicked
+        ? {
+            url: item.url + '?step=done',
+            text:
+              afterClick < 2
+                ? 'Job Application\nSubmitting…'
+                : 'Job Application\nYour application was successfully submitted.',
+            fillFields: [{fieldId: 'f1'}],
+            clickTargets: [],
+          }
+        : {
+            url: item.url + '?step=form',
+            text: 'Job Application',
+            fillFields: [{fieldId: 'f1'}],
+            clickTargets: [{targetId: 'e1', label: 'Submit application'}],
+          };
+      return {
+        content: [{type: 'text', text: `Page URL: ${page.url}\n${JSON.stringify(page)}`}],
+        action: {executed: true},
+      };
+    },
+  };
+  const flow = automationWorkflow({
+    db: f.db,
+    run,
+    signal: new AbortController().signal,
+    submitSettleMs: 0,
+    browser,
+    report: (...args) => f.runtime.report(...args),
+  });
+  await flow.call(f.id, run.id, 'browser_open', {url: item.url + '?step=form'});
+  const result = await flow.call(f.id, run.id, 'browser_interact', {operation: 'click', ref: 'e1'});
+  assert.equal(result.submission.outcome, 'confirmed');
+  assert.match(result.submission.quote, /successfully submitted/);
+  assert.equal(result.attachments, undefined);
+  assert.equal(f.db.run(run.id).submission.outcome, 'confirmed');
+  // The agent may name the confirmation page without its query string.
+  const saved = await flow.call(f.id, run.id, 'record_automation_outcome', {
+    status: 'completed',
+    evidence: 'Your application was successfully submitted.',
+    url: item.url,
+  });
+  assert.equal(saved.status, 'completed');
+});
+
+test('autocomplete text alone asks for the option with exactly that label', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  const calls = [];
+  const browser = {
+    currentUrl: async () => item.url,
+    call: async (_id, name, args) => {
+      calls.push([name, args]);
+      const page = {url: item.url, text: 'Job Application', fillFields: [], clickTargets: []};
+      return {
+        content: [{type: 'text', text: `Page URL: ${page.url}\n${JSON.stringify(page)}`}],
+        action: {executed: true},
+      };
+    },
+  };
+  const flow = automationWorkflow({
+    db: f.db,
+    run,
+    signal: new AbortController().signal,
+    browser,
+    report: (...args) => f.runtime.report(...args),
+  });
+  await flow.call(f.id, run.id, 'browser_open', {url: item.url});
+  await flow.call(f.id, run.id, 'browser_interact', {
+    operation: 'autocomplete',
+    ref: 'c1',
+    text: 'Yes',
+  });
+  await flow.call(f.id, run.id, 'browser_interact', {operation: 'autocomplete', ref: 'c2'});
+  const sent = calls
+    .filter(([name]) => name.includes('suggestions') || name.includes('autocomplete'))
+    .map(([name, {controlId, text, option}]) => [
+      name,
+      Object.fromEntries(
+        Object.entries({controlId, text, option}).filter(([, v]) => v !== undefined),
+      ),
+    ]);
+  assert.deepEqual(sent, [
+    ['browser_jev_autocomplete', {controlId: 'c1', text: 'Yes', option: 'Yes'}],
+    ['browser_jev_list_suggestions', {controlId: 'c2'}],
+  ]);
+});
+
+test('a CAPTCHA after the submit click asks the user to solve it before reporting the outcome', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  f.db.reserve(f.id, run.id, item.id);
+  let clicked = false;
+  const browser = {
+    currentUrl: async () => item.url,
+    call: async (_id, name) => {
+      if (name === 'browser_click') clicked = true;
+      const page = clicked
+        ? {
+            url: item.url,
+            text: 'Job Application\nPlease verify you are human',
+            verification: {state: 'required', evidence: 'hCaptcha challenge is visible.'},
+            fillFields: [{fieldId: 'f1'}],
+            clickTargets: [{targetId: 'e1', label: 'Submit application'}],
+          }
+        : {
+            url: item.url,
+            text: 'Job Application',
+            fillFields: [{fieldId: 'f1'}],
+            clickTargets: [{targetId: 'e1', label: 'Submit application'}],
+          };
+      return {
+        jevPage: page,
+        content: [{type: 'text', text: `Page URL: ${page.url}\n${JSON.stringify(page)}`}],
+        action: {executed: true},
+      };
+    },
+  };
+  const flow = automationWorkflow({
+    db: f.db,
+    run,
+    signal: new AbortController().signal,
+    submitSettleMs: 0,
+    browser,
+    report: (...args) => f.runtime.report(...args),
+  });
+  await flow.call(f.id, run.id, 'browser_open', {url: item.url});
+  const result = await flow.call(f.id, run.id, 'browser_interact', {operation: 'click', ref: 'e1'});
+  assert.equal(result.submission.verification, 'hCaptcha challenge is visible.');
+  assert.match(result.submission.guidance, /CAPTCHA/);
+  await flow.call(f.id, run.id, 'record_automation_outcome', {
+    status: 'uncertain',
+    evidence: 'A CAPTCHA appeared after the click.',
+    url: item.url,
+  });
+  await flow.call(f.id, run.id, 'finish_automation_run', {
+    status: 'blocked',
+    summary: 'Submitted once; a CAPTCHA is shown.',
+  });
+  const question = f.db.get(f.id).questions.find((q) => q.recordId === item.id && q.outcome);
+  assert.match(question.text, /Solve it/);
+  assert.equal(
+    question.fields[0].label,
+    'After solving the verification: was this record submitted?',
+  );
+});
+
+test('a click on the submit button the form inspection found is the submission, also labelled Apply', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  const page = {
+    url: item.url,
+    text: 'Job Application',
+    fillFields: [{fieldId: 'f1'}],
+    clickTargets: [{targetId: 'e1', label: 'Apply'}],
+  };
+  const browser = {
+    currentUrl: async () => item.url,
+    call: async (_id, name) =>
+      name === 'browser_jev_inspect_form'
+        ? {
+            url: item.url,
+            fields: [{label: 'Email', required: true}],
+            uploads: [],
+            submitControls: [{label: 'Apply', controlId: 'c9'}],
+          }
+        : {
+            jevPage: page,
+            content: [{type: 'text', text: `Page URL: ${page.url}\n${JSON.stringify(page)}`}],
+            action: {executed: true},
+          },
+  };
+  const flow = automationWorkflow({
+    db: f.db,
+    run,
+    signal: new AbortController().signal,
+    submitSettleMs: 0,
+    browser,
+    report: (...args) => f.runtime.report(...args),
+  });
+  await flow.call(f.id, run.id, 'browser_open', {url: item.url});
+  // Before an inspection found a form, "Apply" may open the form: no reservation needed.
+  const entry = await flow.call(f.id, run.id, 'browser_interact', {operation: 'click', ref: 'e1'});
+  assert.equal(entry.submission, undefined);
+  await flow.call(f.id, run.id, 'browser_jev_inspect_form', {});
+  await assert.rejects(
+    flow.call(f.id, run.id, 'browser_interact', {operation: 'click', ref: 'e1'}),
+    /reserve_automation_action/,
+  );
+  f.db.reserve(f.id, run.id, item.id);
+  const result = await flow.call(f.id, run.id, 'browser_interact', {operation: 'click', ref: 'e1'});
+  assert.equal(result.submission.label, 'Apply');
+  assert.equal(result.submission.outcome, 'unknown');
+  assert.equal(f.db.run(run.id).submission.attempts, 1);
+});
+
+test('an execute run retires a record whose page says it is gone, only with a quote from that page', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  const gone = 'The job you are looking for is no longer open';
+  const browser = {
+    currentUrl: async () => item.url,
+    call: async () => ({
+      content: [
+        {
+          type: 'text',
+          text: `Page URL: ${item.url}\n${JSON.stringify({url: item.url, text: 'Careers\n' + gone})}`,
+        },
+      ],
+    }),
+  };
+  const flow = automationWorkflow({
+    db: f.db,
+    run,
+    signal: {aborted: false},
+    browser,
+    report: (...args) => f.runtime.report(...args),
+  });
+  await flow.call(f.id, run.id, 'browser_open', {url: item.url});
+  await assert.rejects(
+    flow.call(f.id, run.id, 'record_automation_outcome', {
+      status: 'closed',
+      evidence: 'This position has been filled already',
+    }),
+    /quote is not in the current page text/,
+  );
+  assert.equal(f.db.result(f.id, item.id).status, 'prepared');
+  const saved = await flow.call(f.id, run.id, 'record_automation_outcome', {
+    status: 'closed',
+    evidence: gone,
+  });
+  assert.equal(saved.status, 'dismissed');
+  assert.equal(saved.closed.evidence, gone);
+  assert.equal(saved.closed.url, item.url);
+  // A closed record lets its execute run finish completed.
+  await flow.call(f.id, run.id, 'finish_automation_run', {
+    status: 'completed',
+    summary: 'The listing is closed.',
+  });
+  // A reserved (possibly submitted) record can never be closed.
+  const f2 = fixture(t);
+  const item2 = await f2.prepare();
+  await f2.runtime.runRecord(f2.id, item2.id, 'execute', {direct: true});
+  await settle();
+  const run2 = f2.launches.at(-1);
+  f2.db.reserve(f2.id, run2.id, item2.id);
+  assert.throws(
+    () =>
+      f2.db.closeRecord(
+        f2.id,
+        run2.id,
+        item2.id,
+        {evidence: gone, url: item2.url},
+        {url: item2.url, text: gone},
+      ),
+    /uncertain/,
+  );
+  // The listing redirected to another host of the same site is still the record
+  // page; a page on a different site is not.
+  const f3 = fixture(t);
+  const item3 = await f3.prepare();
+  await f3.runtime.runRecord(f3.id, item3.id, 'execute', {direct: true});
+  await settle();
+  const run3 = f3.launches.at(-1),
+    listing = new URL(item3.url),
+    host = listing.hostname.replace(/^www\./, '');
+  assert.throws(
+    () =>
+      f3.db.closeRecord(
+        f3.id,
+        run3.id,
+        item3.id,
+        {evidence: gone, url: item3.url},
+        {url: `https://elsewhere.test${listing.pathname}`, text: gone},
+      ),
+    /observe the record page/,
+  );
+  const redirected = f3.db.closeRecord(
+    f3.id,
+    run3.id,
+    item3.id,
+    {evidence: gone, url: item3.url},
+    {url: `https://de.${host}${listing.pathname}/`, text: gone},
+  );
+  assert.equal(redirected.status, 'dismissed');
+});
+
+test('an application stopped by a shared site wait resumes after the wait, at most twice', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const wait = (run) =>
+    f.db.putRun({
+      ...f.db.run(run.id),
+      siteWait: {site: 'example.com', retryAt: f.db.now() + 60000, exhausted: false},
+      siteWaitBlocked: true,
+    });
+  let run = f.launches.at(-1);
+  const taskId = run.taskId,
+    task = () => f.db.store.workspaces.tasks.get(f.id, taskId);
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    wait(run);
+    await f.runtime.finish(f.id, 'blocked', 'Rate limited', run.workerId);
+    assert.equal(task().state, 'pending', 'requeued after wait ' + attempt);
+    assert.ok(task().retryAt > f.db.now() + 50000);
+    assert.equal(task().recordRecovery.siteWaits, attempt);
+    // The scheduler starts it again once the wait is over.
+    f.db.store.workspaces.tasks.put({...task(), retryAt: f.db.now() - 1});
+    await f.runtime.tick();
+    await settle();
+    run = f.launches.at(-1);
+    assert.equal(run.taskId, taskId);
+  }
+  wait(run);
+  await f.runtime.finish(f.id, 'blocked', 'Rate limited', run.workerId);
+  assert.equal(task().state, 'blocked');
+  assert.equal(f.db.result(f.id, item.id).status, 'prepared');
+});
+
+test('a run that read the page after a site wait and stopped for another reason is not requeued', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  f.db.putRun({
+    ...f.db.run(run.id),
+    siteWait: {site: 'example.com', retryAt: f.db.now() + 60000, exhausted: false},
+    siteWaitBlocked: false,
+  });
+  await f.runtime.finish(
+    f.id,
+    'blocked',
+    'The listing conflicts with a hard constraint',
+    run.workerId,
+  );
+  const task = f.db.store.workspaces.tasks.get(f.id, run.taskId);
+  assert.equal(task.state, 'blocked');
+  assert.equal(task.recordRecovery?.siteWaits, undefined);
+});
+
+test('a reserved application is never requeued by a site wait', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  f.db.reserve(f.id, run.id, item.id);
+  f.db.putRun({
+    ...f.db.run(run.id),
+    siteWait: {site: 'example.com', retryAt: f.db.now() + 60000, exhausted: false},
+  });
+  await f.runtime.finish(f.id, 'blocked', 'Rate limited', run.workerId);
+  const task = f.db.store.workspaces.tasks.get(f.id, run.taskId);
+  assert.notEqual(task.state, 'pending');
+  assert.equal(task.recordRecovery?.siteWaits, undefined);
+  assert.equal(f.db.result(f.id, item.id).status, 'uncertain');
+});
+
+test('a click that opens a new tab continues the run in that tab', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1),
+    calls = [];
+  const page = (url, text) => ({
+    content: [{type: 'text', text: `Page URL: ${url}\n${JSON.stringify({url, text})}`}],
+    pageContext: {url, tabId: url.endsWith('/apply') ? 'child' : 'main'},
+  });
+  const browser = {
+    currentUrl: async () => item.url,
+    call: async (_id, name, args) => {
+      calls.push({name, args});
+      if (name === 'browser_click')
+        return {
+          ...page(item.url, 'Listing'),
+          action: {status: 'uncertain', executed: true, openedTab: {tabId: 'child'}},
+        };
+      if (name === 'browser_jev_use_tab') return page(item.url + '/apply', 'Employer form');
+      return page(item.url, 'Listing');
+    },
+  };
+  const flow = automationWorkflow({
+    db: f.db,
+    run,
+    signal: {aborted: false},
+    browser,
+    report: (...args) => f.runtime.report(...args),
+  });
+  await flow.call(f.id, run.id, 'browser_open', {url: item.url});
+  const result = await flow.call(f.id, run.id, 'browser_interact', {
+    operation: 'click',
+    ref: 'e1',
+  });
+  assert.deepEqual(calls.find((c) => c.name === 'browser_jev_use_tab').args, {tabId: 'child'});
+  assert.equal(result.url, item.url + '/apply');
+  assert.match(result.action.message, /new tab/);
+});
+
+test('automatic applying needs the minimum score and skips records kept out when switching to Find and apply', async (t) => {
+  const f = fixture(t),
+    prepared = await f.prepare();
+  f.db.put({...f.db.get(f.id), mode: 'auto'});
+  const a = {...f.db.get(f.id), criteria: {...f.db.get(f.id).criteria, score_threshold: '80'}},
+    assessment = (score) => ({
+      score,
+      scoringVersion: 4,
+      revision: a.revision,
+      eligibility: 'verified',
+    });
+  assert.match(
+    recordOperationError(a, {...prepared, assessment: assessment(79)}, 'execute'),
+    /below the minimum score/,
+  );
+  assert.equal(recordOperationError(a, {...prepared, assessment: assessment(80)}, 'execute'), null);
+  const kept = {...a, autoApplyAfter: (prepared.createdAt ?? 0) + 1},
+    item = {...prepared, assessment: assessment(95)};
+  assert.match(recordOperationError(kept, item, 'execute'), /apply it yourself/);
+  assert.equal(
+    recordOperationError(kept, item, 'execute', {manual: true, digest: item.digest}),
+    null,
+  );
+  assert.equal(
+    recordOperationError({...kept, autoApplyAfter: prepared.createdAt}, item, 'execute'),
+    null,
+  );
 });

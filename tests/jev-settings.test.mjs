@@ -57,9 +57,9 @@ test('encryption failure leaves previous settings intact; unreadable ciphertext 
     };
     const status = await f.settings.status();
     assert.equal(status.configured, false);
-    assert.match(status.error, /yeniden kaydet/);
+    assert.match(status.error, /save the key again/);
     assert.doesNotMatch(JSON.stringify(status), /secret internal/);
-    await assert.rejects(() => f.settings.config(), /yeniden kaydet/);
+    await assert.rejects(() => f.settings.config(), /save the key again/);
   } finally {
     f.close();
   }
@@ -149,7 +149,7 @@ test('a check for a previous key cannot validate a replacement key', async () =>
     await f.settings.save({apiKey: 'first-key'});
     const check = f.settings.testConnection();
     await waiting;
-    await assert.rejects(() => f.settings.testConnection(), /kontrol ediliyor/);
+    await assert.rejects(() => f.settings.testConnection(), /being checked/);
     await f.settings.save({apiKey: 'second-key'});
     finish(new Response('{"models":[{"name":"jev-latest"}]}'));
     await check;

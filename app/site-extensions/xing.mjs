@@ -198,8 +198,8 @@ export default {
     filters: [
       {
         param: 'sincePeriod',
-        label: 'Yayın tarihi',
-        values: {LAST_24_HOURS: 'Son 24 saat', LAST_WEEK: 'Son hafta', LAST_MONTH: 'Son ay'},
+        label: 'Posted',
+        values: {LAST_24_HOURS: 'Last 24 hours', LAST_WEEK: 'Last week', LAST_MONTH: 'Last month'},
       },
     ],
     notes:

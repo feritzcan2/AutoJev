@@ -51,7 +51,7 @@ test('saved agent revisions are isolated by workspace and reject stale editor sa
   assert.equal(profiles.get(b.id, 'web-run').instructions, original.instructions);
   await assert.rejects(
     profiles.update(a.id, 'web-run', {instructions: 'stale', expectedRevision: 0}),
-    /değişti/,
+    /changed/,
   );
   assert.equal(profiles.get(a.id, 'web-interview').version, 1);
 });
@@ -165,7 +165,7 @@ test('interviews resume their conversation; trials start fresh and require a cur
     assert.match(launch.prompt, /managed browser to search/);
     assert.match(launch.prompt, /Previous runs are historical context/);
     assert.match(launch.prompt, /site_wait response is current application evidence/);
-    assert.match(launch.prompt, /Use browser_interact for cookie overlays/);
+    assert.match(launch.prompt, /accept cookie overlays and terms-of-service gates/);
     assert.match(launch.prompt, /actual tool call returns a permission error/);
     assert.doesNotMatch(launch.prompt, /Do not use other browser tools/);
   }

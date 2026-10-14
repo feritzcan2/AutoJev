@@ -110,7 +110,7 @@ export const stalled = {
   status: 'no_progress',
   executed: false,
   message:
-    'Aynı işlem bu sayfa durumunda ilerleme sağlamadı. Tekrarlama; controls içindeki hedefi reveal ile görünür yap veya farklı gözlenen hedef kullan.',
+    'The same action made no progress in this page state. Do not repeat it; make the target in controls visible with reveal or use a different observed target.',
 };
 
 export async function navigateObserved(slot, name, args, owner, reader) {
@@ -120,21 +120,21 @@ export async function navigateObserved(slot, name, args, owner, reader) {
       status: 'stale',
       executed: false,
       message:
-        'Kontrol kimliği eski; dönen güncel controls/scrollTargets listesini kullan. Ek observe gerekmez.',
+        'The control id is stale; use the returned current controls/scrollTargets list. No extra observe is needed.',
     };
   if (saved.owner !== owner)
     throw Error(
-      'Bu oturuma ait güncel controlId gerekli; son controls/scrollTargets listesini kullan.',
+      'A current controlId of this session is required; use the last controls/scrollTargets list.',
     );
   if ((name === 'browser_jev_scroll') !== (saved.kind === 'scroll'))
-    throw Error('Yanlış kontrol türü.');
+    throw Error('Wrong control type.');
   const current = await slot.page.evaluate(reader),
     guards = saved.kind === 'scroll' ? current?.scroll_guards : current?.control_guards;
   if (!same(guards?.[saved.node], saved.guard))
     return {
       status: 'stale',
       executed: false,
-      message: 'Hedef değişti; dönen güncel kontrolü kullan.',
+      message: 'The target changed; use the returned current control.',
     };
   if (name === 'browser_jev_list_options') {
     slot.pending = null;
@@ -159,7 +159,7 @@ export async function navigateObserved(slot, name, args, owner, reader) {
           status: 'unsupported',
           executed: false,
           message:
-            'Native SELECT gerekli; bu kontrol için browser_interact operation=autocomplete kullan: text önerileri okur, option seçer.',
+            'A native SELECT is required; for this control use browser_interact operation=autocomplete: text reads the suggestions, option selects one.',
         };
       list = {
         id: observedId('o'),
@@ -207,8 +207,8 @@ export async function navigateObserved(slot, name, args, owner, reader) {
       nextOffset,
       nextAction: 'select_option',
       message: repeatedFullList
-        ? 'Bu listenin tamamı zaten döndü. Tekrar sorgulama; bilinen yanıtla eşleşen tam etiket/değeri seç.'
-        : 'Dönen seçenekleri sakla; bilinen yanıtı seçmek için ek liste sorgusu veya reveal gerekmez.',
+        ? 'The whole list was already returned. Do not query again; choose the exact label/value that matches the known answer.'
+        : 'Keep the returned options; selecting the known answer needs no extra list query or reveal.',
     };
   }
   const key = JSON.stringify([name, saved.node, args.direction, args.option]),
@@ -229,7 +229,7 @@ export async function navigateObserved(slot, name, args, owner, reader) {
             e.matches(':disabled') ||
             e.closest('[aria-disabled="true"],[inert]')
           )
-            return {error: 'Etkin tek seçimli native SELECT gerekli.'};
+            return {error: 'An enabled single-select native SELECT is required.'};
           const matches = [...e.options].filter(
             (o) => o.value === option || o.label.trim() === option.trim(),
           );
@@ -259,8 +259,8 @@ export async function navigateObserved(slot, name, args, owner, reader) {
           optionCount: match.optionCount,
           reason: match.reason,
           message: known
-            ? 'Tam ve etkin seçenek eşleşmedi. Tam liste zaten döndü; o listedeki gerçek etiket/değeri kullan. Listeyi tekrar isteme veya başka yazım tahmin etme.'
-            : 'Tam ve etkin seçenek eşleşmedi. browser_jev_list_options ile tüm seçenekleri oku; gerçek etiket/değeri kullan. Başka yazım tahmin etme; observe veya screenshot gerekmez.',
+            ? 'No exact, enabled option matched. The full list was already returned; use the actual label/value from that list. Do not request the list again or guess another spelling.'
+            : 'No exact, enabled option matched. Read all options with browser_jev_list_options; use the actual label/value. Do not guess another spelling; no observe or screenshot is needed.',
         };
       }
       if (match.unchanged)
@@ -284,7 +284,7 @@ export async function navigateObserved(slot, name, args, owner, reader) {
           return {
             status: 'stale',
             executed: false,
-            message: 'Seçim alanının üzeri kapalı veya alan değişti.',
+            message: 'The select field is covered or the field changed.',
           };
         began = true;
         await handle.asElement().selectOption({index: match.index}, {timeout: 2000});
@@ -361,7 +361,8 @@ export async function navigateObserved(slot, name, args, owner, reader) {
       status: 'uncertain',
       executed: 'unknown',
       message:
-        'İşlem sonucu doğrulanamadı; güncel gözlemi kontrol et. ' + error.message.split('\n')[0],
+        'Could not verify the action result; check the current observation. ' +
+        error.message.split('\n')[0],
     };
   }
 }

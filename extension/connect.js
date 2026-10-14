@@ -14,7 +14,7 @@ chrome.runtime.sendMessage({type: 'connect', relayUrl}, (response) => {
   if (chrome.runtime.lastError || !response?.ok) {
     show(
       'error',
-      'AutoJev’e bağlanılamadı. Uygulamanın açık olduğundan emin ol ve Yeniden bağlan’a bas. ' +
+      'Could not connect to AutoJev. Make sure the app is open and press Reconnect. ' +
         (response?.error ?? chrome.runtime.lastError?.message ?? ''),
     );
     closeLater();

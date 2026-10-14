@@ -26,7 +26,7 @@ export const conversationMethods = {
   },
   assertConversationAvailable(id) {
     this.assertNotStopping(id);
-    if (this.conversationChanges?.has(id)) throw Error('Kurulum agenti güncelleniyor.');
+    if (this.conversationChanges?.has(id)) throw Error('The setup agent is being updated.');
   },
   async configureConversation(id, settings, {restart = false} = {}) {
     if (settings) settings = this.db.normalizeSetupAgentSettings(settings);
@@ -43,7 +43,7 @@ export const conversationMethods = {
         await this.finish(
           id,
           'interrupted',
-          restart ? 'Kurulum agenti yeniden başlatıldı.' : 'Kurulum agenti ayarları değişti.',
+          restart ? 'The setup agent restarted.' : 'The setup agent settings changed.',
           active.workerId,
         );
       if (settings) this.db.saveSetupAgentSettings(id, settings);
@@ -73,6 +73,40 @@ export const conversationMethods = {
       return {waitingForAnswers: true};
     return this.start(id, 'interview', worker);
   },
+  // The welcome screen starts setup after a document upload. The template's
+  // onboarding text is the request; the user reviews the result on a form.
+  async onboard(id, {notes = ''} = {}) {
+    this.assertConversationAvailable(id);
+    const a = this.db.get(id),
+      task = this.db.template(a.templateId).onboarding;
+    if (!task) throw Error('This workspace does not support setup from a document.');
+    if (typeof notes !== 'string') throw Error('Notes must be text.');
+    const active = this.slots(id).find((s) => s.run.kind === 'interview');
+    if (
+      active &&
+      (!conversationWaiting(this.db.run(active.run.id)) ||
+        active.finishing ||
+        active.worker?.isBusy?.())
+    )
+      throw Error('The setup agent is preparing its reply. Try again when the reply is complete.');
+    // Notes typed with the CV are kept in the chat; reading again reuses the latest ones.
+    const message = notes.trim()
+      ? this.db.message(id, 'user', notes.trim(), {conversation: true, onboardingNotes: true})
+      : this.db.messages(id).findLast((m) => m.onboardingNotes);
+    if (!active)
+      return this.start(
+        id,
+        {kind: 'interview', onboarding: true, ...(message ? {messageId: message.id} : {})},
+        this.conversationWorker(id),
+      );
+    return this.sendConversation(
+      id,
+      active,
+      'Current user request (JSON):\n' +
+        JSON.stringify({task, ...(message ? {userNotes: message.text} : {})}),
+      {messageId: message?.id ?? null, inputQuestionIds: [], onboarding: true},
+    );
+  },
   async answer(id, questionId, value) {
     const answer = await this.answerOne(id, questionId, value);
     // One sign-in serves every task waiting on the same site in this
@@ -89,7 +123,11 @@ export const conversationMethods = {
       for (const q of this.db.get(id).questions ?? [])
         if (q.answer == null && loginSite(q) === site)
           await this.answerOne(id, q.id, {[LOGGED_IN_FIELD.id]: true}).catch((error) =>
-            this.db.message(id, 'system', 'Giriş yanıtı aktarılamadı: ' + error.message),
+            this.db.message(
+              id,
+              'system',
+              'The sign-in answer could not be passed on: ' + error.message,
+            ),
           );
     return answer;
   },
@@ -104,7 +142,7 @@ export const conversationMethods = {
           await this.sendConversation(
             id,
             active,
-            'Kayıtlı sorunun yanıtı: ' +
+            'Answer to the saved question: ' +
               JSON.stringify({
                 question: answer.text,
                 answer: answer.answer,
@@ -115,7 +153,12 @@ export const conversationMethods = {
           );
         else {
           if (active)
-            await this.finish(id, 'interrupted', 'Sohbet yanıtla devam ediyor.', active.workerId);
+            await this.finish(
+              id,
+              'interrupted',
+              'The conversation continues with the answer.',
+              active.workerId,
+            );
           await this.start(
             id,
             {kind: 'interview', inputQuestionIds: [questionId]},
@@ -140,7 +183,7 @@ export const conversationMethods = {
           resumeRecordOperation(this, id, item, origin);
           await this.tick();
         } catch (error) {
-          this.db.message(id, 'system', 'Yanıt kaydedildi. Kayıt işlemi: ' + error.message);
+          this.db.message(id, 'system', 'Answer saved. Record action: ' + error.message);
         }
       }
       return answer;
@@ -177,10 +220,19 @@ export const conversationMethods = {
     try {
       const interview = this.slots(id).find((s) => s.run.kind === 'interview');
       if (interview)
-        await this.finish(id, 'interrupted', 'Kurulum yanıtla devam ediyor.', interview.workerId);
+        await this.finish(
+          id,
+          'interrupted',
+          'Setup continues with the answer.',
+          interview.workerId,
+        );
       await this.setup(id);
     } catch (error) {
-      this.db.message(id, 'system', 'Yanıtın kaydedildi. Agent devam edemedi: ' + error.message);
+      this.db.message(
+        id,
+        'system',
+        'Your answer was saved. The agent could not continue: ' + error.message,
+      );
       this.changed(id);
     }
     return answer;
@@ -195,7 +247,7 @@ export const conversationMethods = {
         active.worker?.isBusy?.()
       )
         throw Error(
-          'Sohbet agent’ı yanıtını hazırlıyor. Yanıt tamamlanınca yeni mesaj gönderebilirsin.',
+          'The chat agent is preparing its reply. You can send a new message when the reply is complete.',
         );
       const message = this.db.message(id, 'user', text, {conversation: true, runId: active.run.id});
       this.changed(id);
@@ -210,12 +262,14 @@ export const conversationMethods = {
     return this.start(id, {kind: 'interview', messageId: message.id}, worker);
   },
   async sendConversation(id, slot, text, input = {}) {
-    if (slot.finishing || this.closed) throw Error('Sohbet kapanıyor.');
+    if (slot.finishing || this.closed) throw Error('The conversation is closing.');
     const before = this.db.run(slot.run.id),
       changed = before.contextVersion !== conversationContextVersion(this.db.get(id));
     slot.seenWorking = false;
     slot.run = this.db.putRun({
       ...before,
+      // A later message or answer is the new request, not the welcome-screen task.
+      onboarding: undefined,
       ...input,
       awaitingMessage: false,
       lastMessageAt: this.now(),

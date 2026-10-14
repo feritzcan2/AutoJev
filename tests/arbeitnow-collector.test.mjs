@@ -9,7 +9,7 @@ import arbeitnow, {
 import {siteExtensionKind} from '../app/site-extensions/index.mjs';
 import {collectorSearches} from '../app/sources/collectors.mjs';
 import {prepareCollection, collectSourcePage} from '../app/sources/collector-worker.mjs';
-import {recipePageCap} from '../app/sources/recipe.mjs';
+import {SCAN_SEARCH_PAGES} from '../app/sources/recipe.mjs';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
 
@@ -111,10 +111,10 @@ test('a feed page maps its postings to listings with the stated facts', () => {
   const last = parseArbeitnowPage(source, response([job('a')], 1, null));
   assert.equal(last.complete, true);
   assert.equal(last.nextUrl, null);
-  assert.throws(() => parseArbeitnowPage(source, response([job('a')], 2)), /farklı bir sayfa/);
+  assert.throws(() => parseArbeitnowPage(source, response([job('a')], 2)), /different page/);
   assert.throws(
     () => parseArbeitnowPage(source, response([job('a', {description: ' '})])),
-    /eksik/,
+    /missing/,
   );
   assert.throws(
     () =>
@@ -122,10 +122,10 @@ test('a feed page maps its postings to listings with the stated facts', () => {
         source,
         response([job('a', {url: 'https://evil.test/jobs/companies/x/y'})]),
       ),
-    /doğrulanamadı/,
+    /could not be verified/,
   );
-  assert.throws(() => parseArbeitnowPage(source, response([])), /boş sayfaya rağmen/);
-  assert.throws(() => parseArbeitnowPage(source, {data: 'x'}), /biçimi geçersiz/);
+  assert.throws(() => parseArbeitnowPage(source, response([])), /despite an empty page/);
+  assert.throws(() => parseArbeitnowPage(source, {data: 'x'}), /response format/);
   const detail = arbeitnow.collector.detail(page.jobs[0]);
   assert.equal(detail.title, 'Senior SAP SD Consultant');
   assert.deepEqual(detail.listing.fields, {
@@ -160,7 +160,7 @@ test('feed and listing reads report failures instead of empty results', async ()
       fetch: async () =>
         new Response('<html>', {status: 200, headers: {'content-type': 'text/html'}}),
     }),
-    /JSON yerine/,
+    /other than JSON/,
   );
   const failure = await readArbeitnowPage(source, {
     fetch: async () => new Response('', {status: 503}),
@@ -203,13 +203,16 @@ test('feed and listing reads report failures instead of empty results', async ()
     readArbeitnowDetail(listing, {
       fetch: async () => new Response('<html><body>Gone</body></html>'),
     }),
-    /güncel ilan verisi yok/,
+    /no current listing data/,
   );
   await assert.rejects(
     readArbeitnowDetail(listing, {fetch: async () => new Response('', {status: 404})}),
     /HTTP 404/,
   );
-  await assert.rejects(readArbeitnowDetail('https://www.arbeitnow.com/jobs', {fetch}), /Tekil/);
+  await assert.rejects(
+    readArbeitnowDetail('https://www.arbeitnow.com/jobs', {fetch}),
+    /single Arbeitnow listing/,
+  );
 });
 
 function workspace(t, recipe) {
@@ -260,18 +263,18 @@ test('one feed is one search, and without a newest-first recipe it reads only it
   for (let i = 0; i < 40 && !result?.complete; i++)
     result = await collectSourcePage(db, run.id, {readPage: endless(reads)});
   assert.equal(result.complete, true);
-  assert.equal(reads.length, recipePageCap(undefined));
+  assert.equal(reads.length, SCAN_SEARCH_PAGES);
   assert.equal(db.run(run.id).scan.work.searches[0].completion, 'end');
 });
 
-test('a newest-first recipe reads a collector feed to its end', async (t) => {
+test('a newest-first recipe reads a collector feed only within the page budget', async (t) => {
   const {db, run} = workspace(t, {
     entry: {kind: 'url_template', template: 'https://www.arbeitnow.com/api/job-board-api'},
     pagination: 'url_param',
     ordering: 'newest_first',
   });
   const reads = [];
-  const limit = recipePageCap(undefined) + 5;
+  const limit = SCAN_SEARCH_PAGES + 5;
   const readPage = async (url) => {
     const page = await endless(reads)(url);
     return page.page >= limit ? {...page, nextUrl: null, complete: true} : page;
@@ -280,5 +283,5 @@ test('a newest-first recipe reads a collector feed to its end', async (t) => {
   for (let i = 0; i < 60 && !result?.complete; i++)
     result = await collectSourcePage(db, run.id, {readPage});
   assert.equal(result.complete, true);
-  assert.equal(reads.length, limit);
+  assert.equal(reads.length, SCAN_SEARCH_PAGES);
 });

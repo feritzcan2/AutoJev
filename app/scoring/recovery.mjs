@@ -45,7 +45,7 @@ function advance(db, id, s, reason, requeue = false) {
   return recovery;
 }
 const progress = (s) =>
-  `${s.total} kaydın ${s.scored.length} puanı kaydedildi; ${s.remaining.length} kayıt kaldı${s.waiting.length ? `, ${s.waiting.length} kayıt yanıt bekliyor` : ''}.`;
+  `Scores saved for ${s.scored.length} of ${s.total} records; ${s.remaining.length} left${s.waiting.length ? `, ${s.waiting.length} awaiting an answer` : ''}.`;
 export function continueScoringRun(db, id, runId) {
   const s = state(db, id, runId);
   if (!s || !s.remaining.length || (s.task.scoreRecovery?.attempt ?? 0) >= MAX_CONTINUATIONS)
@@ -70,7 +70,8 @@ export function unreportedScoringRun(db, id, runId, reason) {
     advance(db, id, s, 'exit', true);
     return {
       status: 'interrupted',
-      summary: progress(s) + ' Agent oturumu kapandı; kalan kayıtlardan devam edilecek.',
+      summary:
+        progress(s) + ' The agent session closed; it will continue with the remaining records.',
     };
   }
   return {
@@ -78,8 +79,8 @@ export function unreportedScoringRun(db, id, runId, reason) {
     summary:
       progress(s) +
       ((s.task.scoreRecovery?.attempt ?? 0) >= MAX_CONTINUATIONS
-        ? ' Agent 3 otomatik devam denemesine rağmen görevi bitirmedi.'
-        : ' Agent ile devam bağlantısı kurulamadı.') +
+        ? ' The agent did not finish the task despite 3 automatic continuation attempts.'
+        : ' Could not reconnect to the agent to continue.') +
       ' Kaydedilen puanlar korundu.',
   };
 }

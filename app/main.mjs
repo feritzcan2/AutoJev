@@ -20,6 +20,7 @@ import {mkdir, rm} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Maintenance} from './system/maintenance.mjs';
+import {startDevControl} from './system/dev-control.mjs';
 import {registerAutomationServices} from './automation/services.mjs';
 import {AutomationStore} from './automation/store.mjs';
 import {registerSettingsServices} from './system/settings-services.mjs';
@@ -94,8 +95,8 @@ async function boot() {
   } catch (error) {
     await cancelDataLocation(bootstrapDirectory);
     dialog.showErrorBox(
-      'Veri klasörü değiştirilemedi',
-      `${error.message}\n\nÖnceki veri konumuyla devam ediliyor: ${data}`,
+      'Could not change the data folder',
+      `${error.message}\n\nContinuing with the previous data location: ${data}`,
     );
   }
   await mkdir(data, {recursive: true, mode: 0o700});
@@ -110,7 +111,7 @@ async function boot() {
       !safeStorage.isEncryptionAvailable() ||
       safeStorage.getSelectedStorageBackend?.() === 'basic_text'
     )
-      throw Error('Güvenli saklama için sistem anahtarlığını aç.');
+      throw Error('Unlock the system keychain for secure storage.');
     return safeStorage.encryptString(value).toString('base64');
   };
   const decryptSecret = (value) => safeStorage.decryptString(Buffer.from(value, 'base64'));
@@ -185,7 +186,7 @@ async function boot() {
         agents.sessions.get(workerKey(grant.workspaceId, grant.workerId))?.sessionId !==
         grant.sessionId
       )
-        throw Error('Worker oturumu kapandı.');
+        throw Error('The worker session closed.');
       return grant.workflow ?? workspaces.template(grant.workspaceId).protocol(grant);
     },
     onHook: (hook) => {
@@ -205,7 +206,7 @@ async function boot() {
   const maintenance = new Maintenance({
     assertIdle() {
       if (agents.sessions.size || agents.starting.size || browser.operations.size || changing.size)
-        throw Error('Önce çalışan agent ve tarayıcı işlemlerini durdur.');
+        throw Error('Stop the running agent and browser operations first.');
       for (const service of services) service.assertIdle?.();
     },
     stop: async () => {
@@ -215,7 +216,9 @@ async function boot() {
       if (!quitting) for (const service of services) await service.resume?.();
     },
   });
+  const handlers = new Map();
   function handle(name, fn) {
+    handlers.set(name, fn);
     ipcMain.handle(name, async (event, ...args) => {
       if (event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame)
         throw Error('Untrusted sender');
@@ -259,7 +262,7 @@ async function boot() {
       automationDb.message(
         id,
         'system',
-        `Kullanıcı bir belge ekledi: ${document.relative} (${document.name}). Yalnızca bu otomasyon kapsamında kullan.`,
+        `The user added a document: ${document.relative} (${document.name}). Use it only within this automation.`,
         {document: document.relative},
       ),
     rename: (id, name) => automationDb.rename(id, name),
@@ -290,7 +293,7 @@ async function boot() {
   services.push({
     ...web,
     assertIdle() {
-      if (web.runtime.active.size) throw Error('Önce çalışan otomasyonları durdur.');
+      if (web.runtime.active.size) throw Error('Stop the running automations first.');
     },
     stop: () => {
       web.runtime.closed = true;
@@ -347,7 +350,7 @@ async function boot() {
   );
   handle('agent-profile-save', async (id, role, input) => {
     if (!workspaces.template(id).agentRoles?.(id).includes(role))
-      throw Error('Bu çalışma alanında agent bulunamadı');
+      throw Error('No agent found in this workspace');
     return profiles.update(id, role, input);
   });
   handle('instruction-event', (id, seq) => instructionLog.detail(id, seq));
@@ -421,7 +424,7 @@ async function boot() {
   handle('chrome-profiles', () => listChromeProfiles());
   handle('open-link', async (url) => {
     const u = new URL(url);
-    if (!['https:', 'http:'].includes(u.protocol)) throw Error('Geçersiz bağlantı');
+    if (!['https:', 'http:'].includes(u.protocol)) throw Error('Invalid link');
     await shell.openExternal(u.toString());
   });
   scheduler.register('agents', async () => {
@@ -458,7 +461,7 @@ async function boot() {
     height: 950,
     minWidth: 1040,
     minHeight: 720,
-    title: 'AutoJev · Web otomasyonları',
+    title: 'AutoJev · Web automations',
     backgroundColor: '#11151b',
     webPreferences: {
       preload: path.join(root, 'app/preload.cjs'),
@@ -471,6 +474,17 @@ async function boot() {
   window.webContents.on('will-navigate', (event) => event.preventDefault());
   await window.loadFile(path.join(root, 'dist/index.html'));
   await completeDataUpgrade({dataDirectory: data, appVersion: app.getVersion()});
+  // Unpackaged builds only: lets a local development script drive the app.
+  const devControl = app.isPackaged
+    ? null
+    : await startDevControl({
+        directory: bootstrapDirectory,
+        handlers,
+        invoke: (name, fn) => maintenance.invoke(name, fn),
+      }).catch((error) => {
+        console.error('Dev control unavailable:', error.message);
+        return null;
+      });
   app.on('second-instance', () => {
     window?.show();
     window?.focus();
@@ -487,6 +501,7 @@ async function boot() {
       await agents.close();
       await browser.close({closeTabs: true});
       await mcp.close();
+      await devControl?.close();
       core.close();
       app.quit();
     })();
@@ -495,9 +510,9 @@ async function boot() {
 boot().catch((error) => {
   console.error(error);
   dialog.showErrorBox(
-    'Loop açılamadı',
+    'Loop could not open',
     String(error.message ?? error) +
-      '\n\nVeri klasörünü silme. Yedekleri koru ve hatayı güvenli destek kanalına bildir.',
+      '\n\nDo not delete the data folder. Keep the backups and report the error through a secure support channel.',
   );
   app.exit(1);
 });

@@ -312,7 +312,7 @@ test('stop scan cannot restart during closure and persists across app recovery',
   assert.equal(db.sources(id)[0].stopping, false);
   assert.ok(db.sources(id)[0].nextRunAt > db.now());
   await recovered.close();
-  await assert.rejects(runtime.stopSource(id, 'https://unknown.test/'), /ait değil/);
+  await assert.rejects(runtime.stopSource(id, 'https://unknown.test/'), /does not belong/);
 });
 
 test('record preparation does not appear as an active source scan', async (t) => {
@@ -371,7 +371,7 @@ for (const spareWorker of [false, true])
     assert.equal(db.get(id).status, 'paused');
     if (spareWorker) store.workspaces.workers.add(id);
     const otherStates = urls.slice(1).map((url) => db.get(id).sourceState[url]);
-    assert.throws(() => db.enable(id), /Önce çalışan otomasyonu durdur/);
+    assert.throws(() => db.enable(id), /Stop the running automation first/);
     await runtime.runSource(id, urls[0]);
     await settle();
     assert.equal(db.run(recordRun.id).status, 'running');
@@ -398,7 +398,7 @@ for (const spareWorker of [false, true])
     assert.equal(resumed.recordId, null);
     assert.deepEqual(resumed.scan.pendingUrls, scan.pendingUrls);
     assert.equal(launches.filter((run) => run.sourceUrl === urls[0] && !run.recordId).length, 2);
-    await assert.rejects(runtime.runSource(id, urls[0]), /kaynak zaten çalışıyor/);
+    await assert.rejects(runtime.runSource(id, urls[0]), /source is already running/);
     await finish(resumed);
     await runtime.tick();
     assert.equal(db.get(id).status, 'paused');
@@ -407,12 +407,12 @@ for (const spareWorker of [false, true])
 test('source retry still requires reviewed setup and an enabled source', async (t) => {
   const {db, id, runtime, launches} = fixture(t);
   db.saveSource(id, urls[0], {enabled: false});
-  await assert.rejects(runtime.runSource(id, urls[0]), /Önce kaynağı aç/);
-  await assert.rejects(runtime.runSource(id, 'https://unknown.test/'), /ait değil/);
+  await assert.rejects(runtime.runSource(id, urls[0]), /Turn on the source first/);
+  await assert.rejects(runtime.runSource(id, 'https://unknown.test/'), /does not belong/);
   db.saveSource(id, urls[0], {enabled: true});
   db.save(id, {goal: 'A changed goal'});
   const before = db.get(id);
-  await assert.rejects(runtime.runSource(id, urls[0]), /Önce kurulumu kaydet/);
+  await assert.rejects(runtime.runSource(id, urls[0]), /Save the setup first/);
   assert.deepEqual(db.get(id), before);
   assert.equal(launches.length, 0);
 });
@@ -442,10 +442,12 @@ test('one-off scans finish every independent source without scheduling repeats',
   assert.equal(db.get(id).status, 'paused');
 });
 
-test('source scope and permission reach the agent, cannot exceed profile authority, and cannot be raised mid-run', async (t) => {
+test('source scope reaches the agent and the action permission comes only from the profile', async (t) => {
   const {db, id, runtime, launches} = fixture(t);
-  db.save(id, {mode: 'auto'});
-  db.saveSource(id, urls[0], {name: 'First', query: 'Only two-room apartments', mode: 'observe'});
+  db.save(id, {mode: 'observe'});
+  // A per-source mode from older versions is ignored, never a wider permission.
+  db.saveSource(id, urls[0], {name: 'First', query: 'Only two-room apartments', mode: 'auto'});
+  assert.equal(db.get(id).sourceSettings[urls[0]].mode, undefined);
   db.enable(id);
   await runtime.tick();
   await settle();
@@ -468,12 +470,10 @@ test('source scope and permission reach the agent, cannot exceed profile authori
     assessment: {score: 70},
   });
   assert.equal(record.sourceUrl, urls[0]);
-  assert.throws(() => db.reserve(id, run.id, record.id), /gönderim/);
-  assert.throws(() => db.saveSource(id, urls[0], {mode: 'auto'}), /durdur/);
+  assert.throws(() => db.reserve(id, run.id, record.id), /cannot submit/);
+  assert.throws(() => db.saveSource(id, urls[0], {query: 'Changed'}), /Stop this source/);
   await runtime.pause(id);
-  db.save(id, {mode: 'observe'});
-  assert.throws(() => db.saveSource(id, urls[0], {mode: 'auto'}), /aşamaz/);
-  assert.throws(() => db.saveSource(id, 'https://other.test/', {enabled: true}), /ait/);
+  assert.throws(() => db.saveSource(id, 'https://other.test/', {enabled: true}), /does not belong/);
 });
 
 test('an uncertain record action leaves the workspace enabled without changing its source result', async (t) => {
@@ -522,8 +522,8 @@ test('source blocking is visible without claiming the whole schedule stopped or 
   await finish(launches[0], 'blocked');
   const snapshot = db.snapshot(id),
     p = automationProgress(snapshot);
-  assert.equal(p.title, 'Diğer kaynakların takibi sürüyor');
-  assert.match(p.next, /otomatik tekrar denenmez/);
+  assert.equal(p.title, 'Other sources are still tracked');
+  assert.match(p.next, /not retried automatically/);
   assert.equal(snapshot.sources[0].lastResult, 'IP range blocked');
 });
 

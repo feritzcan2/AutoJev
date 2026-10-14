@@ -12,8 +12,8 @@ const node = (tag, cls, text) => {
 };
 const size = (text) =>
   text.length >= 1000
-    ? `${(text.length / 1000).toFixed(1).replace('.0', '')}k karakter`
-    : `${text.length} karakter`;
+    ? `${(text.length / 1000).toFixed(1).replace('.0', '')}k characters`
+    : `${text.length} characters`;
 // Text with {{placeholders}} rendered as marks, never as HTML.
 function richText(text) {
   const pre = node('pre');
@@ -26,16 +26,16 @@ function richText(text) {
 }
 function body(text) {
   const wrap = node('div', 'prompt-body');
-  const copy = node('button', 'quiet copy', 'Kopyala');
+  const copy = node('button', 'quiet copy', 'Copy');
   copy.type = 'button';
   copy.onclick = async () => {
     try {
       await navigator.clipboard.writeText(text);
       copy.dataset.done = '';
-      copy.textContent = 'Kopyalandı';
+      copy.textContent = 'Copied';
       setTimeout(() => {
         delete copy.dataset.done;
-        copy.textContent = 'Kopyala';
+        copy.textContent = 'Copy';
       }, 1500);
     } catch {}
   };
@@ -59,19 +59,19 @@ function card({title, when, path, text, open = false}) {
 }
 export function configPage(api, {notice, relativeTime, openNotifications}) {
   const root = document.getElementById('config');
-  root.innerHTML = `<div class="config-head"><div><h2>Yapılandırma</h2><p>Kurulum, yedekler, güncellemeler, bildirimler ve agent’a giden metinler: talimatlar, görev promptları, beceriler ve MCP araçları.</p></div><label class="config-search"><input id="config-search" type="search" placeholder="Metinlerde ara" aria-label="Metinlerde ara"><small id="config-search-note"></small></label></div>
-<div class="config-body"><nav class="config-nav" aria-label="Bölümler"><a href="#config-telegram">Bildirimler<b></b></a><a href="#config-readiness">Kurulum kontrolü<b></b></a><a href="#config-jev">Jev<b></b></a><a href="#config-captcha">CAPTCHA<b></b></a><a href="#config-data">Veriler ve yedekler<b></b></a><a href="#config-updates">Güncellemeler<b></b></a><a href="#config-privacy">Veri paylaşımı<b></b></a><a href="#config-instructions">Talimatlar<b></b></a><a href="#config-tasks">Görev promptları<b></b></a><a href="#config-skills">Beceriler<b></b></a><a href="#config-tools">MCP araçları<b></b></a></nav>
+  root.innerHTML = `<div class="config-head"><div><h2>Configuration</h2><p>Setup, backups, updates, notifications and the text sent to the agent: instructions, task prompts, skills and MCP tools.</p></div><label class="config-search"><input id="config-search" type="search" placeholder="Search text" aria-label="Search text"><small id="config-search-note"></small></label></div>
+<div class="config-body"><nav class="config-nav" aria-label="Sections"><a href="#config-telegram">Notifications<b></b></a><a href="#config-readiness">Setup check<b></b></a><a href="#config-jev">Jev<b></b></a><a href="#config-captcha">CAPTCHA<b></b></a><a href="#config-data">Data and backups<b></b></a><a href="#config-updates">Updates<b></b></a><a href="#config-privacy">Data sharing<b></b></a><a href="#config-instructions">Instructions<b></b></a><a href="#config-tasks">Task prompts<b></b></a><a href="#config-skills">Skills<b></b></a><a href="#config-tools">MCP tools<b></b></a></nav>
 <div class="config-sections">
-<section id="config-telegram" class="config-section"><h3>Bildirimler</h3><p>Telegram bot bağlantısı ve adaya özel bildirim tercihleri Bildirimler sayfasında.</p><button id="open-notifications" class="primary" type="button">Bildirim ayarlarını aç</button></section>
-<section id="config-readiness" class="config-section"><h3>Kurulum kontrolü</h3><div id="config-readiness-panel"></div></section>
+<section id="config-telegram" class="config-section"><h3>Notifications</h3><p>The Telegram bot connection and per-candidate notification preferences are on the Notifications page.</p><button id="open-notifications" class="primary" type="button">Open notification settings</button></section>
+<section id="config-readiness" class="config-section"><h3>Setup check</h3><div id="config-readiness-panel"></div></section>
 <section id="config-captcha" class="config-section"><h3>CAPTCHA</h3><div id="config-captcha-panel"></div></section>
 <section id="config-jev" class="config-section"><h3>Jev</h3><div id="config-jev-panel"></div></section>
 <section id="config-updates" class="config-section"><div id="config-updates-panel"></div></section>
-<section id="config-privacy" class="config-section"><h3>Veri paylaşımı</h3><div id="config-privacy-panel"></div></section>
-<section id="config-instructions" class="config-section"><h3>Talimatlar</h3><p>Seçilen çalışma alanının güncel talimatları, kaynaklarına göre bölümler halinde.</p><div id="config-instructions-list"></div></section>
-<section id="config-tasks" class="config-section"><h3>Görev promptları</h3><p>Agent görevleri bu şablonlarla başlatılır. Mavi alanlar o anda gerçek değerle dolar.</p><div id="config-tasks-list"></div></section>
-<section id="config-skills" class="config-section"><h3>Beceriler</h3><p>Bu çalışma alanı için tanımlı beceri dosyaları. Agent ilgili görevde ihtiyaç duyduğu beceriyi okur.</p><div id="config-skills-list"></div></section>
-<section id="config-tools" class="config-section"><h3>MCP araçları</h3><p>Bu çalışma alanındaki görevlerde kullanılan araçlar ve parametreleri. Oturuma sunulan araçlar göreve ve tarayıcı ayarlarına göre daralabilir. Çerçeveli parametreler zorunlu.</p><div id="config-tools-list" class="tool-list"></div></section>
+<section id="config-privacy" class="config-section"><h3>Data sharing</h3><div id="config-privacy-panel"></div></section>
+<section id="config-instructions" class="config-section"><h3>Instructions</h3><p>The current instructions of the selected workspace, grouped by where they come from.</p><div id="config-instructions-list"></div></section>
+<section id="config-tasks" class="config-section"><h3>Task prompts</h3><p>Agent tasks start from these templates. Blue fields are filled with the real value at that moment.</p><div id="config-tasks-list"></div></section>
+<section id="config-skills" class="config-section"><h3>Skills</h3><p>Skill files defined for this workspace. The agent reads the skill it needs during the relevant task.</p><div id="config-skills-list"></div></section>
+<section id="config-tools" class="config-section"><h3>MCP tools</h3><p>Tools used by tasks in this workspace and their parameters. The tools offered to a session can be narrower depending on the task and browser settings. Framed parameters are required.</p><div id="config-tools-list" class="tool-list"></div></section>
 </div></div>`;
   const $ = (id) => root.querySelector('#' + id);
   let catalog = null,
@@ -149,8 +149,8 @@ export function configPage(api, {notice, relativeTime, openNotifications}) {
     }
     $('config-search-note').textContent = query
       ? shown
-        ? `${shown} / ${total} eşleşme`
-        : 'Eşleşme yok'
+        ? `${shown} / ${total} matches`
+        : 'No matches'
       : '';
     layout();
   }
@@ -158,11 +158,11 @@ export function configPage(api, {notice, relativeTime, openNotifications}) {
   function renderCatalog() {
     lists.instructions.replaceChildren();
     const groups = [
-      ['system', 'Sistem talimatları'],
-      ['template', 'Template kuralları'],
-      ['workspace', 'Çalışma alanı bilgileri'],
-      ['user', 'Kullanıcı mesajları'],
-      ['tool', 'Araç bağlamı'],
+      ['system', 'System instructions'],
+      ['template', 'Template rules'],
+      ['workspace', 'Workspace details'],
+      ['user', 'User messages'],
+      ['tool', 'Tool context'],
     ];
     for (const [source, label] of groups) {
       const parts = catalog.instructions.filter((p) => p.source === source);
@@ -202,8 +202,8 @@ export function configPage(api, {notice, relativeTime, openNotifications}) {
             'span',
             'tool-count',
             t.params.length
-              ? `${t.params.length} parametre${required ? `, ${required} zorunlu` : ''}`
-              : 'parametresiz',
+              ? `${t.params.length} parameter${t.params.length === 1 ? '' : 's'}${required ? `, ${required} required` : ''}`
+              : 'no parameters',
           ),
         );
         el.append(summary);
@@ -230,8 +230,8 @@ export function configPage(api, {notice, relativeTime, openNotifications}) {
             'p',
             'config-empty',
             key === 'skills'
-              ? 'Bu çalışma alanı için ayrı bir beceri dosyası tanımlı değil.'
-              : 'Bu çalışma alanında bu bölüm için içerik tanımlı değil.',
+              ? 'No separate skill file is defined for this workspace.'
+              : 'No content is defined for this section in this workspace.',
           ),
         );
   }
@@ -266,7 +266,7 @@ export function configPage(api, {notice, relativeTime, openNotifications}) {
     $('config-telegram').hidden = true;
     root.querySelector('a[href="#config-telegram"]').hidden = true;
   }
-  function clearCatalog(message = 'İçerikler yükleniyor…') {
+  function clearCatalog(message = 'Loading content…') {
     catalog = null;
     for (const list of Object.values(lists))
       list.replaceChildren(node('p', 'config-empty', message));
@@ -278,7 +278,7 @@ export function configPage(api, {notice, relativeTime, openNotifications}) {
     loadSettings();
     try {
       if (!candidate) {
-        clearCatalog('İçerikleri görmek için bir çalışma alanı seç.');
+        clearCatalog('Select a workspace to see its content.');
         return;
       }
       const next = await api.configurationCatalog(candidate);
@@ -288,7 +288,7 @@ export function configPage(api, {notice, relativeTime, openNotifications}) {
       counts();
     } catch (e) {
       if (request !== version) return;
-      clearCatalog('İçerikler yüklenemedi.');
+      clearCatalog('Content could not be loaded.');
       notice(e.message);
     }
   }

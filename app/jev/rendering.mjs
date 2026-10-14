@@ -12,7 +12,7 @@ async function bounded(operation, {signal, timeoutMs}) {
         reject(
           Object.assign(
             Error(
-              'Sekmenin arka plan çizimi zamanında hazırlanamadı; aynı sekmedeki teknik engeli bildir.',
+              'Background rendering of the tab was not ready in time; report the technical blocker on the same tab.',
             ),
             {code: 'TAB_RENDER_TIMEOUT'},
           ),
@@ -110,6 +110,19 @@ export async function revealInView(slot, handle, {signal, timeoutMs = 2000} = {}
   const release = await acquireTabRendering(slot, {signal, timeoutMs});
   try {
     await handle.scrollIntoViewIfNeeded({timeout: timeoutMs});
+    // An element already inside the viewport can still sit under a sticky
+    // header or bar; scrollIntoViewIfNeeded then does nothing. Center it once.
+    await handle.evaluate((e) => {
+      const r = e.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return;
+      const root = e.getRootNode(),
+        hit = (root.elementFromPoint ? root : document).elementFromPoint(
+          r.x + r.width / 2,
+          r.y + r.height / 2,
+        );
+      if (hit && !e.contains(hit) && !hit.contains(e))
+        e.scrollIntoView({block: 'center', inline: 'nearest', behavior: 'instant'});
+    });
   } finally {
     await release();
   }

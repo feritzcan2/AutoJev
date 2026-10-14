@@ -58,7 +58,7 @@ try {
   const foreign = adapter(null, 'other');
   await assert.rejects(
     foreign.call('workspace', 'browser_jev_use_tab', {tabId: form.id}, 'other'),
-    /başka bir worker/,
+    /another worker/,
   );
   const other = await foreign.call('workspace', 'browser_navigate', {url}, 'other');
   assert.notEqual(other.pageContext.tabId, listing.pageContext.tabId);

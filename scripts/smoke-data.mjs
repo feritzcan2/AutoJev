@@ -134,10 +134,7 @@ try {
       let confirmed = false;
       dialog.showOpenDialog = async () => ({canceled: false, filePaths: [directory]});
       dialog.showMessageBox = async (_window, options) => {
-        if (
-          options.title !== 'Yedeği geri yükle' ||
-          options.buttons[1] !== 'Geri yükle ve yeniden başlat'
-        )
+        if (options.title !== 'Restore backup' || options.buttons[1] !== 'Restore and restart')
           throw Error('Unexpected native confirmation');
         confirmed = true;
         return {response: 1, checkboxChecked: false};

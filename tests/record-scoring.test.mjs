@@ -131,7 +131,7 @@ test('the discovering agent must save the assessment with each new production li
   assert.equal(saved.proposal, '');
   assert.throws(
     () => f.core.workspaces.updateCells(f.id, saved.id, [{key: 'score', value: '99'}]),
-    /yeniden puanla/,
+    /rescore the record/,
   );
   const duplicate = f.db.record(f.id, run.id, input);
   assert.equal(duplicate.id, saved.id);
@@ -168,11 +168,11 @@ test('manual scoring preserves an approved draft and only exposes assessment wri
       workflow.tools.some((tool) => tool.name === name),
       false,
     );
-    await assert.rejects(call(name, {itemId: item.id}), /yalnızca değerlendirme/);
+    await assert.rejects(call(name, {itemId: item.id}), /can only save assessments/);
   }
   assert.throws(() => f.db.record(f.id, run.id, {url}), /record_automation_score/);
-  assert.throws(() => f.db.reserve(f.id, run.id, item.id), /gönderim yapamaz/);
-  assert.throws(() => f.db.finish(f.id, run.id, 'completed', 'No result'), /puanlama sonucunu/);
+  assert.throws(() => f.db.reserve(f.id, run.id, item.id), /cannot submit/);
+  assert.throws(() => f.db.finish(f.id, run.id, 'completed', 'No result'), /scoring result/);
   f.db.observe(f.id, run.id, url, assessment().evidence);
   await call('record_automation_score', {itemId: item.id, ...assessment()});
   await f.finish(run);
@@ -190,7 +190,7 @@ test('manual scoring preserves an approved draft and only exposes assessment wri
     assert.deepEqual(saved[key], item[key], key);
   assert.equal(saved.cells.company, 'Company');
   assert.equal(saved.cells.score, '82');
-  assert.equal(f.db.snapshot(f.id).results[0].recordAction.scoreOperation.label, 'Yeniden puanla');
+  assert.equal(f.db.snapshot(f.id).results[0].recordAction.scoreOperation.label, 'Rescore');
   assert.equal(f.db.snapshot(f.id).results[0].recordAction.operation.kind, 'execute');
 });
 
@@ -340,12 +340,12 @@ test('scoring remains scoped to its record and rejects a changed profile', async
   f.db.observe(f.id, run.id, url, 'Detail');
   await assert.rejects(
     call('record_automation_score', {itemId: other.id, ...assessment()}),
-    /atanmış/,
+    /assigned/,
   );
   f.db.put({...f.db.get(f.id), revision: 2});
   await assert.rejects(
     call('record_automation_score', {itemId: f.item.id, ...assessment()}),
-    /Profil değişti/,
+    /The profile changed/,
   );
   assert.equal(f.db.result(f.id, f.item.id).assessment, undefined);
 });
@@ -368,7 +368,6 @@ test('the source-discovery conversation can draft later rubric changes for revie
     title: a.title,
     goal: a.goal,
     criteria: Object.entries({...a.criteria, ranking}).map(([key, value]) => ({key, value})),
-    sources: a.sources,
     instructions: a.instructions,
     facts: a.facts,
   });
@@ -406,15 +405,15 @@ test('repeated requests share one task, wake an existing worker, and report scor
   assert.equal(first.id, second.id);
   assert.equal(f.launches.length, 1);
   assert.equal(f.runtime.workers.get(f.id, 'main').enabled, true);
-  await assert.rejects(f.runtime.runRecord(f.id, f.item.id, 'prepare'), /başka bir görev/);
+  await assert.rejects(f.runtime.runRecord(f.id, f.item.id, 'prepare'), /Another task/);
   const row = f.db.snapshot(f.id).results[0];
   assert.equal(row.recordAction.scoreOperation.disabled, true);
-  assert.equal(recordOperationStatus(row).label, 'Puanlanıyor');
+  assert.equal(recordOperationStatus(row).label, 'Scoring');
   const run = f.launches[0],
     s = f.db.snapshot(f.id);
   s.activeRuns = [run];
   s.workers = [{id: 'main', active: {sessionId: run.id}, execution: {task: {id: run.id}}}];
-  assert.deepEqual(activeRecordOperations(s), [{kind: 'score', count: 1, label: 'puanlanıyor'}]);
+  assert.deepEqual(activeRecordOperations(s), [{kind: 'score', count: 1, label: 'scoring'}]);
   await f.finish(run, 'blocked');
   assert.equal(f.db.snapshot(f.id).results[0].recordAction.retryOperation.kind, 'score');
 });
@@ -447,7 +446,7 @@ test('trial examples remain unscored and completed records cannot be rescored', 
         summary: 'Research',
         assessment: assessment(),
       }),
-    /puanı kaydedilemez/,
+    /score cannot be saved/,
   );
   const sample = f.db.record(f.id, trial.id, {
     url: source + '/sample',
@@ -456,9 +455,9 @@ test('trial examples remain unscored and completed records cannot be rescored', 
   });
   assert.equal(sample.assessment, undefined);
   f.db.finish(f.id, trial.id, 'completed', 'Checked');
-  await assert.rejects(f.runtime.runRecord(f.id, sample.id, 'score'), /Araştırma örneği/);
+  await assert.rejects(f.runtime.runRecord(f.id, sample.id, 'score'), /research sample/);
   f.db.putResult({...f.item, status: 'completed'});
-  await assert.rejects(f.runtime.runRecord(f.id, f.item.id, 'score'), /yeniden gönderilemez/);
+  await assert.rejects(f.runtime.runRecord(f.id, f.item.id, 'score'), /cannot be submitted again/);
 });
 
 test('score text normalization only accepts unambiguous whole numbers from zero to one hundred', async () => {
@@ -514,7 +513,7 @@ test('fit scores and mandatory eligibility persist independently for scans and r
   }
   await assert.rejects(
     call('record_automation_score', {score: 99, eligibility: 'eligible'}),
-    /durumu/,
+    /eligibility status/,
   );
   assert.equal(f.db.result(f.id, f.item.id).assessment.score, 91);
   await call('record_automation_score', {score: 88});

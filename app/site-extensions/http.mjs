@@ -51,11 +51,11 @@ export async function siteFetch(
       reason: 'rate_limit',
     });
     if (blocked) throw Object.assign(new SiteWaitError(blocked), {url});
-    throw Object.assign(Error(`${site} erişimi reddetti (HTTP ${response.status}).`), {url});
+    throw Object.assign(Error(`${site} denied access (HTTP ${response.status}).`), {url});
   }
   siteAccess?.complete(target, token, {status: response.status});
   if (!response.ok && !MISSING_STATUSES.has(response.status))
-    throw Object.assign(Error(`${site} isteği başarısız oldu (HTTP ${response.status}).`), {url});
+    throw Object.assign(Error(`${site} request failed (HTTP ${response.status}).`), {url});
   return response;
 }
 export const isMissing = (response) => MISSING_STATUSES.has(response.status);

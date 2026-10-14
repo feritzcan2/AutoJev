@@ -35,11 +35,11 @@ export function workerTabControls(api, {notice}) {
     }
     pane.tab.hidden = !available;
     pane.tab.disabled = !running || pane.busy;
-    pane.tab.textContent = `Sekmeler (${items.length})`;
-    pane.tab.title = 'Aktif işin açık sekmeleri';
+    pane.tab.textContent = `Tabs (${items.length})`;
+    pane.tab.title = 'Open tabs of the active work';
     pane.tab.setAttribute(
       'aria-label',
-      `${pane.worker.name} aktif işinin sekmeleri (${items.length})`,
+      `Tabs of ${pane.worker.name}'s active work (${items.length})`,
     );
     pane.tab.setAttribute('aria-expanded', String(Boolean(pane.tabsOpen)));
     pane.tabList.hidden = !available || !pane.tabsOpen;
@@ -52,7 +52,7 @@ export function workerTabControls(api, {notice}) {
     ]);
     if (signature === pane.tabsSignature) return;
     pane.tabsSignature = signature;
-    pane.tabList.replaceChildren(node('strong', 'worker-tabs-heading', 'Aktif işin sekmeleri'));
+    pane.tabList.replaceChildren(node('strong', 'worker-tabs-heading', 'Tabs of the active work'));
     if (pane.tabsError) {
       pane.tabList.append(node('p', 'worker-tabs-empty', pane.tabsError));
       return;
@@ -62,7 +62,7 @@ export function workerTabControls(api, {notice}) {
         node(
           'p',
           'worker-tabs-empty',
-          loading ? 'Sekmeler yükleniyor…' : 'Bu işin açık sekmesi henüz yok.',
+          loading ? 'Loading tabs…' : 'This work has no open tabs yet.',
         ),
       );
       return;
@@ -75,7 +75,7 @@ export function workerTabControls(api, {notice}) {
       button.title = tab.url;
       button.dataset.tabId = tab.tabId;
       button.disabled = Boolean(pane.tabBusy);
-      button.setAttribute('aria-label', `${tabTitle(tab)} sekmesine git`);
+      button.setAttribute('aria-label', `Go to the ${tabTitle(tab)} tab`);
       button.append(
         node('span', 'worker-tab-title', tabTitle(tab)),
         node('small', 'worker-tab-url', tab.url),
@@ -91,7 +91,9 @@ export function workerTabControls(api, {notice}) {
           ]);
           if (pane.dead) return;
           if (!workerTabs(current, pane.id, open).some((t) => t.tabId === tab.tabId))
-            throw Error('Bu sekme artık worker’ın aktif işine ait değil veya kapandı.');
+            throw Error(
+              'This tab no longer belongs to the worker’s active work, or it was closed.',
+            );
           await api.focusWorkspaceTab(pane.candidate, tab.tabId);
         } catch (error) {
           if (!pane.dead) notice(error.message);

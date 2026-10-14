@@ -35,7 +35,7 @@ export function automationBrowser(
         response.content
           ?.filter((p) => p.type === 'text')
           .map((p) => p.text)
-          .join('\n') || 'Jev adımı tamamlanamadı',
+          .join('\n') || 'Jev step could not be completed',
       );
     for (const part of response?.content ?? []) {
       if (part.type !== 'text') continue;
@@ -43,7 +43,7 @@ export function automationBrowser(
         return JSON.parse(part.text);
       } catch {}
     }
-    throw Error('Jev sayfa yanıtı okunamadı');
+    throw Error('Could not read the Jev page response');
   };
   const ready = async (id) => {
     const state = browser.prepare(id);
@@ -52,7 +52,7 @@ export function automationBrowser(
     const current = browser.status(id);
     if (!current.ready)
       throw Error(
-        current.message || 'Jev için Chrome bağlantısını aç ve bağlantı isteğine izin ver.',
+        current.message || 'Open the Chrome connection for Jev and allow the connection request.',
       );
   };
   const native = async (id, name, args, session, options) => {
@@ -72,7 +72,9 @@ export function automationBrowser(
       }),
       page = value(response);
     if (page.status === 'browser_wait')
-      throw Error('Jev Chrome bağlantısı bekliyor. Tarayıcıyı aç düğmesinden yeniden bağlan.');
+      throw Error(
+        'Jev is waiting for the Chrome connection. Reconnect with the Open browser button.',
+      );
     return {response, page};
   };
   const observed = ({response, page}) => ({
@@ -89,6 +91,10 @@ export function automationBrowser(
       executed: page.executed,
       verified: page.verified,
       message: page.message,
+      ...(page.openedTab ? {openedTab: page.openedTab} : {}),
+      // An autocomplete result names the offered options and what was chosen.
+      ...(page.suggestions ? {suggestions: page.suggestions} : {}),
+      ...(page.selection ? {selection: page.selection} : {}),
     },
   });
   const document = async (id, result, session) => {
@@ -119,14 +125,14 @@ export function automationBrowser(
     },
     async currentUrl(id) {
       await ready(id);
-      if (!tabId) throw Error('Önce bir sayfa aç');
+      if (!tabId) throw Error('Open a page first');
       // Reading the URL must not invalidate Jev's one-use pending decision.
       return (await browser.connect(id)).client.tab(tabId).page.url();
     },
     async call(id, name, args, session, options) {
       if (name === 'browser_reopen_readonly') {
         if (!sourceUrl || !readTabKey)
-          throw Error('Yeni kontrol sekmesi yalnızca kaynak taramasında açılabilir.');
+          throw Error('A new control tab can only be opened during a source scan.');
         const result = await native(id, 'browser_jev_open', {url: args.url}, session, {
           automationFreshTab: true,
         });
@@ -171,7 +177,7 @@ export function automationBrowser(
           }
           tabId = result.page.tabId;
           restoreRecord = false;
-          if (!tabId) throw Error('Jev sekmesi açılamadı');
+          if (!tabId) throw Error('Could not open the Jev tab');
           return document(id, result, session);
         }
         const {page: tabs} = await native(id, 'browser_jev_tabs', {}, session),
@@ -186,12 +192,12 @@ export function automationBrowser(
         );
         tabId = result.page.tabId;
         restoreRecord = false;
-        if (!tabId) throw Error('Jev sekmesi açılamadı');
+        if (!tabId) throw Error('Could not open the Jev tab');
         return document(id, result, session);
       }
       if (!tabId)
         throw Error(
-          'Önce bu tur için browser_open veya research_automation_source ile bir sayfa aç',
+          'First open a page for this turn with browser_open or research_automation_source',
         );
       if (
         [
@@ -252,7 +258,7 @@ export function automationBrowser(
         parameters.controlId = args.controlId;
         if (args.text !== undefined) parameters.text = args.text;
         if (args.option !== undefined) parameters.option = args.option;
-      } else throw Error('Desteklenmeyen tarayıcı işlemi: ' + name);
+      } else throw Error('Unsupported browser operation: ' + name);
       const result = await native(id, tool, parameters, session, options);
       tabId = result.page.tabId ?? tabId;
       restoreRecord = false;

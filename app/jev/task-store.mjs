@@ -93,7 +93,7 @@ export class JevTaskStore {
     const task = this.tasks.get(id);
     if (!task || task.automationId !== owner || task.taskId !== taskId)
       throw Error(
-        'Jev görevi bu çalışma alanına ve atanmış işe ait değil veya uygulama kapanınca süresi doldu. Bekleyen adresler için yeni bir Jev okuma görevi başlat.',
+        'The Jev task does not belong to this workspace and assigned work, or it expired when the app closed. Start a new Jev read task for the pending addresses.',
       );
     return copy(task);
   }
@@ -103,9 +103,9 @@ export class JevTaskStore {
       previous &&
       (previous.automationId !== task.automationId || previous.taskId !== task.taskId)
     )
-      throw Error('Jev görevinin sahibi değiştirilemez.');
+      throw Error('The owner of a Jev task cannot be changed.');
     if (!this.db.prepare('SELECT 1 FROM automations WHERE id=?').get(task.automationId))
-      throw Error('Otomasyon bulunamadı');
+      throw Error('Automation not found');
     task.updatedAt = this.now();
     this.tasks.set(task.id, copy(task));
     return task;
@@ -262,7 +262,7 @@ export class JevTaskStore {
       limit < 1 ||
       limit > 6000
     )
-      throw Error('Geçersiz kanıt aralığı.');
+      throw Error('Invalid evidence range.');
     return {
       id,
       url: value.url,
@@ -285,7 +285,7 @@ export class JevTaskStore {
       (jevTaskId && body.jevTaskId !== jevTaskId)
     )
       throw Error(
-        'Jev kanıtı bu göreve ait değil veya uygulama kapanınca süresi doldu. İlanı yeniden oku.',
+        'The Jev evidence does not belong to this task, or it expired when the app closed. Read the listing again.',
       );
     return copy(body.value);
   }
