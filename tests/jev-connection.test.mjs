@@ -382,6 +382,20 @@ test('owned tabs attach when Playwright enables auto-attach, with their out-of-p
   });
 });
 
+test('a request that reaches the relay after it closed is refused without throwing', async () => {
+  const relay = await ExtensionRelay.listen({homePage: '<p>home</p>'});
+  const home = new URL(relay.homeUrl);
+  relay.close();
+  let status;
+  const res = {writeHead: (code) => (status = code), end: () => {}};
+  relay.server.emit(
+    'request',
+    {method: 'GET', url: home.pathname, headers: {host: home.host}},
+    res,
+  );
+  assert.equal(status, 404);
+});
+
 test('events a tab raises while it attaches reach Playwright after its own attachment', async (t) => {
   const {extension, forwarded, call} = await transportFixture(t);
   // Chrome reports already existing frames as soon as auto-attach is enabled.

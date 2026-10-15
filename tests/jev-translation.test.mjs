@@ -95,3 +95,20 @@ test('a reveal on a control the page keeps hidden names the concealment instead 
   assert.doesNotMatch(concealedMessage, /[çğışöü]/i, 'agent-facing text is English');
   assert.notEqual(concealedMessage, stalled.message);
 });
+
+test('a current document whose script context never answers does not hold the tab setup', async (t) => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  let initScripts = 0;
+  const page = {
+    addInitScript: async () => initScripts++,
+    evaluate: () => new Promise(() => {}),
+  };
+  let done = false;
+  const setup = installNoTranslate(page).then(() => (done = true));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(initScripts, 1);
+  assert.equal(done, false);
+  t.mock.timers.tick(5000);
+  await setup;
+  assert.equal(done, true);
+});

@@ -2,6 +2,7 @@
 // No token/key is logged or persisted. Capturing a render never starts a solve.
 export const turnstileBridge = '__autoJevTurnstileRegistration';
 const installed = new WeakMap();
+const CURRENT_DOCUMENT_MS = 5000;
 
 export function captureTurnstileRegistration(key) {
   if (globalThis[key]) return;
@@ -179,8 +180,12 @@ export async function installTurnstileRegistration(page) {
   pending = (async () => {
     await page.addInitScript(captureTurnstileRegistration, turnstileBridge);
     // The init script covers the next document; a page that is navigating
-    // right now gets it there, so a failed read of the old one is harmless.
-    await page.evaluate(captureTurnstileRegistration, turnstileBridge).catch(() => {});
+    // right now gets it there, so a failed or unanswered read of the old one
+    // is harmless.
+    await Promise.race([
+      page.evaluate(captureTurnstileRegistration, turnstileBridge).catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, CURRENT_DOCUMENT_MS).unref?.()),
+    ]);
   })().catch((error) => {
     installed.delete(page);
     throw error;
