@@ -110,6 +110,11 @@ export function validateChoice(answer, choices) {
     invalid('the chosen option does not have the highest probability');
   return answer;
 }
+// Page text is cut to length in many places, which can split a surrogate pair
+// (an emoji in a title). TypeSafe rejects such text with HTTP 400, so every
+// string is made well-formed at the boundary.
+export const typesafeBody = (value) =>
+  JSON.stringify(value, (key, item) => (typeof item === 'string' ? item.toWellFormed() : item));
 // Last TypeSafe HTTP failure. The key is app-wide, so every workspace shows it.
 export const jevProvider = {issue: null, changed: () => {}};
 function providerResponse(response) {
@@ -135,7 +140,7 @@ export async function askJev(
     const response = await fetchImpl('https://api.typesafe.ai/v1/systemone', {
       method: 'POST',
       headers: {'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`},
-      body: JSON.stringify({model, state, questions: pending}),
+      body: typesafeBody({model, state, questions: pending}),
       signal: signal
         ? AbortSignal.any([signal, AbortSignal.timeout(15000)])
         : AbortSignal.timeout(15000),
@@ -233,7 +238,7 @@ export async function chooseJev(
     response = await fetchImpl('https://api.typesafe.ai/v1/systemone', {
       method: 'POST',
       headers: {'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`},
-      body: JSON.stringify({
+      body: typesafeBody({
         model,
         state: {
           page: fields(page, ['url', 'title', 'text']),
