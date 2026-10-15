@@ -4,6 +4,10 @@
 // Jev tabs opt out with the notranslate meta Chrome checks before it offers or
 // auto-applies a translation. The user's own tabs stay untouched.
 const installed = new WeakMap();
+// Marking the current document is best effort: a page whose script context
+// never answers (for example an error page restored from an earlier run)
+// must not hold the tab's setup. The init script covers its next document.
+const CURRENT_DOCUMENT_MS = 5000;
 
 export function markNoTranslate() {
   const mark = () => {
@@ -40,7 +44,10 @@ export async function installNoTranslate(page) {
   if (pending) return pending;
   pending = (async () => {
     await page.addInitScript(markNoTranslate);
-    await page.evaluate(markNoTranslate).catch(() => {});
+    await Promise.race([
+      page.evaluate(markNoTranslate).catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, CURRENT_DOCUMENT_MS).unref?.()),
+    ]);
   })().catch((error) => {
     installed.delete(page);
     throw error;
