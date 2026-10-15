@@ -872,7 +872,15 @@ body.jl-simple {
   margin-bottom: 6px;
   padding: 0;
 }
-.jl-question :is(input[type='text'], input[type='number'], input[type='date'], input:not([type]), textarea, select),
+.jl-question
+  :is(
+    input[type='text'],
+    input[type='number'],
+    input[type='date'],
+    input:not([type]),
+    textarea,
+    select
+  ),
 .jl-field :is(input, textarea, select) {
   width: 100%;
   border: 1px solid var(--jl-line-strong);

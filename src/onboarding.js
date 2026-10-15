@@ -404,7 +404,8 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         missing.firstChild.textContent = `${missingList.childElementCount} more not installed on this computer`;
         list.append(missing);
       }
-      if (!providers.size) list.append(el('p', 'Looking for AI assistants on this computer…', 'onboarding-hint'));
+      if (!providers.size)
+        list.append(el('p', 'Looking for AI assistants on this computer…', 'onboarding-hint'));
       const blocked = !provider || ['checking', 'error'].includes(providers.get(provider)?.state),
         pick = card.querySelector('[data-action=pick-cv]');
       pick.disabled = busy || blocked;

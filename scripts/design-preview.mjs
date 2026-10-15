@@ -119,7 +119,10 @@ try {
       const list = await window.jobloop.workspaces();
       return window.jobloop.workspaceSnapshot(list[0].id);
     });
-    (await import('node:fs')).writeFileSync(path.join(out, 'snapshot.json'), JSON.stringify(snap, null, 1));
+    (await import('node:fs')).writeFileSync(
+      path.join(out, 'snapshot.json'),
+      JSON.stringify(snap, null, 1),
+    );
   }
   if (args.includes('--review')) {
     await page.evaluate(async () => {
@@ -138,7 +141,9 @@ try {
     for (const [i, label] of navs.entries()) {
       await page.locator('.jl-nav').nth(i).click();
       await page.waitForTimeout(500);
-      await shot(String(i + 1).padStart(2, '0') + '-' + label.replace(/[^a-z]+/gi, '-').toLowerCase());
+      await shot(
+        String(i + 1).padStart(2, '0') + '-' + label.replace(/[^a-z]+/gi, '-').toLowerCase(),
+      );
       if (i === 0)
         for (const tab of ['In progress', 'Applied', 'Skipped']) {
           await page.locator('.jl-tab', {hasText: tab}).click();

@@ -15,9 +15,9 @@ const executable =
   path.join(
     root,
     platform === 'darwin'
-      ? 'release/mac-universal/AutoJev.app/Contents/MacOS/AutoJev'
+      ? 'release/mac-universal/JobLoop.app/Contents/MacOS/JobLoop'
       : platform === 'win32'
-        ? 'release/win-unpacked/AutoJev.exe'
+        ? 'release/win-unpacked/JobLoop.exe'
         : 'release/linux-unpacked/jobloop',
   );
 const data = await mkdtemp(path.join(os.tmpdir(), 'jobloop-packaged-')),

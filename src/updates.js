@@ -1,6 +1,6 @@
 export function updatesPanel(api, root, {notice = () => {}} = {}) {
   root.classList.add('jev-settings');
-  root.innerHTML = `<h3>App updates</h3><p data-version></p><p data-status role="status"></p><div class="jev-settings-actions"><button type="button" data-check>Check for updates</button><button type="button" data-download hidden>Download</button><button type="button" data-install hidden>Back up and restart</button><button type="button" class="quiet" data-releases>Open the releases page</button></div><p>Stop running tasks before installing an update. Your data is backed up automatically, then AutoJev restarts. Checking and downloading only start from these buttons.</p>`;
+  root.innerHTML = `<h3>App updates</h3><p data-version></p><p data-status role="status"></p><div class="jev-settings-actions"><button type="button" data-check>Check for updates</button><button type="button" data-download hidden>Download</button><button type="button" data-install hidden>Back up and restart</button><button type="button" class="quiet" data-releases>Open the releases page</button></div><p>Stop running tasks before installing an update. Your data is backed up automatically, then JobLoop restarts. Checking and downloading only start from these buttons.</p>`;
   const $ = (selector) => root.querySelector(selector);
   let state = null,
     busy = false;

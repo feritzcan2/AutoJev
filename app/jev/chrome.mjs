@@ -56,7 +56,7 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
       'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; connect-src 'self'`,
     });
     res.end(
-      '<!doctype html><title>AutoJev · Jev</title><p>AutoJev is connecting to the existing Chrome session…</p>' +
+      '<!doctype html><title>JobLoop · Jev</title><p>JobLoop is connecting to the existing Chrome session…</p>' +
         (observeFocus
           ? `<script nonce="${nonce}">
       let previous;
@@ -98,7 +98,7 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
             () =>
               finish(
                 Error(
-                  'The selected Chrome profile is not ready. Bring the opened AutoJev window to the front and reconnect.',
+                  'The selected Chrome profile is not ready. Bring the opened JobLoop window to the front and reconnect.',
                 ),
               ),
             timeout,

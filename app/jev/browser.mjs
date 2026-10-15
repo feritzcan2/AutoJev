@@ -77,7 +77,7 @@ const WRITE_TOOLS = new Set([
 const homeUrl =
   'data:text/html;charset=utf-8,' +
   encodeURIComponent(
-    '<!doctype html><title>AutoJev</title><h1>AutoJev</h1><p>Listings and application forms open as tabs in this window.</p>',
+    '<!doctype html><title>JobLoop</title><h1>JobLoop</h1><p>Listings and application forms open as tabs in this window.</p>',
   );
 const checkedUrl = (value) => {
   const url = new URL(value);
@@ -444,7 +444,7 @@ export class JevBrowser {
       );
       if (parent.windowId !== child.windowId) {
         await page.close();
-        throw Error('Could not open the new tab in the AutoJev window.');
+        throw Error('Could not open the new tab in the JobLoop window.');
       }
       return page;
     } finally {
@@ -1781,7 +1781,7 @@ export class JevBrowser {
             );
           if (pending.operation === 'TYPE_TEXT' && typeof args.text !== 'string')
             throw Error(
-              'The AutoJev agent must supply the text value to type. No separate API key is needed.',
+              'The JobLoop agent must supply the text value to type. No separate API key is needed.',
             );
           if (pending.operation !== 'TYPE_TEXT' && args.text !== undefined)
             throw Error('This action does not accept text.');

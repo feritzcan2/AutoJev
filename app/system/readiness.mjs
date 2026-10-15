@@ -136,11 +136,11 @@ export async function collectReadiness(input = {}, options = {}) {
     checks.push(
       item(
         'engine',
-        'AutoJev engine',
+        'JobLoop engine',
         usable ? 'ready' : 'error',
         usable
           ? 'The app engine is ready.'
-          : 'The app engine was not found. Reinstall AutoJev; if you run from source, run the engine:build command.',
+          : 'The app engine was not found. Reinstall JobLoop; if you run from source, run the engine:build command.',
       ),
     );
   }

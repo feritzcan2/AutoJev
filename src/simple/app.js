@@ -223,10 +223,7 @@ function render() {
   }
   who.replaceChildren();
   const name = a?.title && a.title !== data?.definition?.title ? a.title : 'Your job search';
-  who.append(
-    el('span', 'jl-avatar', initials(name)),
-    Object.assign(el('div'), {}),
-  );
+  who.append(el('span', 'jl-avatar', initials(name)), Object.assign(el('div'), {}));
   who.lastChild.append(el('b', null, name), el('small', null, 'Switch search'));
 
   if (!state.id || !a) return renderWelcome();
@@ -242,14 +239,20 @@ function render() {
 function noticeBar(message) {
   const bar = el('div', 'jl-notice');
   bar.setAttribute('role', 'alert');
-  bar.append(el('span', null, message), button('Dismiss', () => ((state.error = ''), render()), 'jl-btn ghost small'));
+  bar.append(
+    el('span', null, message),
+    button('Dismiss', () => ((state.error = ''), render()), 'jl-btn ghost small'),
+  );
   return bar;
 }
 
 function renderTop(data, g, asks) {
   const titles = {
     jobs: ['Jobs', `${g.review.length} to review · ${g.applied.length} applied`],
-    questions: ['Questions', asks.length ? 'Answer once. JobLoop reuses it everywhere.' : 'All caught up'],
+    questions: [
+      'Questions',
+      asks.length ? 'Answer once. JobLoop reuses it everywhere.' : 'All caught up',
+    ],
     profile: ['Profile & CV', 'What JobLoop knows about you'],
     settings: ['Settings', 'Autopilot, AI and browser'],
   };
@@ -284,7 +287,11 @@ function renderJobs(data, g, asks) {
       el('b', null, `${plural(asks.length, 'question')} waiting for you`),
       el('small', null, 'Answer once and JobLoop keeps applying with it.'),
     );
-    banner.append(el('span', 'jl-banner-icon', '?'), copy, button('Answer now', () => go('questions'), 'jl-btn primary small'));
+    banner.append(
+      el('span', 'jl-banner-icon', '?'),
+      copy,
+      button('Answer now', () => go('questions'), 'jl-btn primary small'),
+    );
     page.append(banner);
   }
   for (const issue of otherIssues(data)) page.append(issueBanner(issue));
@@ -340,14 +347,26 @@ function renderJobs(data, g, asks) {
     bulk.hidden = !ids.length;
     bulk.append(
       el('b', null, `${ids.length} selected`),
-      button('Skip', act('bulk-skip', async () => {
-        for (const id of ids) await api.automationDismiss(state.id, id);
-        state.selected.clear();
-      }), 'jl-btn small'),
-      button(`Apply to ${ids.length}`, act('bulk-apply', async () => {
-        for (const id of ids) await applyTo(data, list.find((r) => r.id === id));
-        state.selected.clear();
-      }), 'jl-btn small accent'),
+      button(
+        'Skip',
+        act('bulk-skip', async () => {
+          for (const id of ids) await api.automationDismiss(state.id, id);
+          state.selected.clear();
+        }),
+        'jl-btn small',
+      ),
+      button(
+        `Apply to ${ids.length}`,
+        act('bulk-apply', async () => {
+          for (const id of ids)
+            await applyTo(
+              data,
+              list.find((r) => r.id === id),
+            );
+          state.selected.clear();
+        }),
+        'jl-btn small accent',
+      ),
     );
     page.append(bulk);
   }
@@ -363,23 +382,47 @@ function emptyJobs(data, tab, g) {
     if (p.running) {
       box.append(
         el('h2', null, 'Looking for jobs that fit you'),
-        el('p', null, 'New matches show up here as soon as they are scored. You can close this window; JobLoop keeps going while the app is open.'),
+        el(
+          'p',
+          null,
+          'New matches show up here as soon as they are scored. You can close this window; JobLoop keeps going while the app is open.',
+        ),
       );
     } else {
       box.append(
         el('h2', null, g.applied.length ? 'Nothing new to review' : 'Ready when you are'),
-        el('p', null, 'Start autopilot and JobLoop searches your sources, scores every listing against your CV, and lists the best ones here.'),
-        button('Start autopilot', act('pilot', () => api.workspaceStart(state.id)), 'jl-btn accent big'),
+        el(
+          'p',
+          null,
+          'Start autopilot and JobLoop searches your sources, scores every listing against your CV, and lists the best ones here.',
+        ),
+        button(
+          'Start autopilot',
+          act('pilot', () => api.workspaceStart(state.id)),
+          'jl-btn accent big',
+        ),
       );
     }
   } else
     box.append(
-      el('h2', null, {progress: 'Nothing in progress', applied: 'No applications yet', skipped: 'Nothing skipped'}[tab]),
-      el('p', null, {
-        progress: 'When you press Apply, the application is filled and sent from here.',
-        applied: 'Sent applications appear here with their confirmation.',
-        skipped: 'Jobs you skip land here, so you can change your mind.',
-      }[tab]),
+      el(
+        'h2',
+        null,
+        {
+          progress: 'Nothing in progress',
+          applied: 'No applications yet',
+          skipped: 'Nothing skipped',
+        }[tab],
+      ),
+      el(
+        'p',
+        null,
+        {
+          progress: 'When you press Apply, the application is filled and sent from here.',
+          applied: 'Sent applications appear here with their confirmation.',
+          skipped: 'Jobs you skip land here, so you can change your mind.',
+        }[tab],
+      ),
     );
   return box;
 }
@@ -404,7 +447,10 @@ function jobCard(data, r) {
     card.append(check);
   } else card.append(el('span'));
   // Score
-  const ring = el('div', 'jl-score ' + (score == null ? 'none' : score >= 80 ? '' : score >= 60 ? 'mid' : 'low'));
+  const ring = el(
+    'div',
+    'jl-score ' + (score == null ? 'none' : score >= 80 ? '' : score >= 60 ? 'mid' : 'low'),
+  );
   ring.style.setProperty('--p', String(score ?? 0));
   ring.append(el('b', null, score == null ? '–' : String(score)));
   ring.title = score == null ? 'Not scored yet' : `Fit score ${score} of 100`;
@@ -433,18 +479,33 @@ function jobCard(data, r) {
   if (state.tab === 'review') {
     const k = 'rec:' + r.id,
       busy = state.busy.has(k),
-      applyOp = r.recordAction?.directOperation ?? (r.recordAction?.operation?.kind === 'execute' ? r.recordAction.operation : null);
-    const skip = button('Skip', act(k, async () => {
-      card.classList.add('leaving');
-      await api.automationDismiss(state.id, r.id);
-    }), 'jl-btn ghost small');
-    const apply = button(busy ? 'Starting…' : 'Apply', act(k, () => applyTo(data, r)), 'jl-btn primary small');
+      applyOp =
+        r.recordAction?.directOperation ??
+        (r.recordAction?.operation?.kind === 'execute' ? r.recordAction.operation : null);
+    const skip = button(
+      'Skip',
+      act(k, async () => {
+        card.classList.add('leaving');
+        await api.automationDismiss(state.id, r.id);
+      }),
+      'jl-btn ghost small',
+    );
+    const apply = button(
+      busy ? 'Starting…' : 'Apply',
+      act(k, () => applyTo(data, r)),
+      'jl-btn primary small',
+    );
     skip.disabled = apply.disabled = busy;
     if (applyOp?.disabled) apply.title = applyOp.reason ?? '';
     side.append(skip, apply);
   } else if (state.tab === 'progress') {
     const s = el('span', 'jl-state ' + (problem || op?.tone === 'blocked' ? 'blocked' : 'running'));
-    s.append(el('i'), problem?.label ?? op?.label ?? (r.status === 'uncertain' ? 'Checking if it was sent' : 'Working'));
+    s.append(
+      el('i'),
+      problem?.label ??
+        op?.label ??
+        (r.status === 'uncertain' ? 'Checking if it was sent' : 'Working'),
+    );
     side.append(s);
     if (op?.id === 'waiting') side.append(button('Answer', () => go('questions'), 'jl-btn small'));
   } else if (state.tab === 'applied') {
@@ -479,12 +540,29 @@ async function applyTo(data, r) {
 function issueBanner(issue) {
   const banner = el('div', 'jl-banner info'),
     copy = el('div');
-  copy.append(el('b', null, issue.title ?? issue.name ?? 'Needs your attention'), el('small', null, issue.message ?? ''));
+  copy.append(
+    el('b', null, issue.title ?? issue.name ?? 'Needs your attention'),
+    el('small', null, issue.message ?? ''),
+  );
   banner.append(el('span', 'jl-banner-icon', '!'), copy);
   if (['login', 'access', 'captcha', 'browser'].some((k) => String(issue.kind).includes(k)))
-    banner.append(button('Open browser', act('browser', () => api.automationBrowser(state.id)), 'jl-btn small'));
+    banner.append(
+      button(
+        'Open browser',
+        act('browser', () => api.automationBrowser(state.id)),
+        'jl-btn small',
+      ),
+    );
   if (issue.dismissKey || issue.dismissable)
-    banner.append(button('Dismiss', act('dismiss:' + issue.id, () => api.automationAttentionDismiss(state.id, issue.id, issue.dismissKey)), 'jl-btn ghost small'));
+    banner.append(
+      button(
+        'Dismiss',
+        act('dismiss:' + issue.id, () =>
+          api.automationAttentionDismiss(state.id, issue.id, issue.dismissKey),
+        ),
+        'jl-btn ghost small',
+      ),
+    );
   return banner;
 }
 
@@ -494,7 +572,15 @@ function renderQuestions(data, asks) {
     const box = el('div', 'jl-empty jl-card');
     const mark = el('div');
     mark.innerHTML = markInline(44);
-    box.append(mark, el('h2', null, 'No open questions'), el('p', null, 'When a form asks something your CV does not say, it shows up here once. Your answer is saved and reused for every future application.'));
+    box.append(
+      mark,
+      el('h2', null, 'No open questions'),
+      el(
+        'p',
+        null,
+        'When a form asks something your CV does not say, it shows up here once. Your answer is saved and reused for every future application.',
+      ),
+    );
     page.append(box);
   }
   const titles = new Map((data.results ?? []).map((r) => [r.id, r.title]));
@@ -504,18 +590,36 @@ function renderQuestions(data, asks) {
       copy = el('div');
     copy.append(
       el('b', null, issue.message),
-      el('small', null, issue.recordId ? 'For ' + (titles.get(issue.recordId) ?? 'one application') : 'Used for all applications'),
+      el(
+        'small',
+        null,
+        issue.recordId
+          ? 'For ' + (titles.get(issue.recordId) ?? 'one application')
+          : 'Used for all applications',
+      ),
     );
     head.append(el('span', 'jl-banner-icon', '?'), copy);
-    head.firstChild.style.cssText = 'flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:99px;background:var(--jl-warn-soft);color:var(--jl-warn);font-weight:700';
-    const form = questionForm(state.id, {id: issue.id, question: issue.message, fields: issue.fields}, async (value) => {
-      await api.workspaceAnswer(state.id, issue.id, value);
-      await load();
-    });
-    card.append(head, form, el('p', 'jl-remember', 'Saved to your profile. You will not be asked again.'));
+    head.firstChild.style.cssText =
+      'flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:99px;background:var(--jl-warn-soft);color:var(--jl-warn);font-weight:700';
+    const form = questionForm(
+      state.id,
+      {id: issue.id, question: issue.message, fields: issue.fields},
+      async (value) => {
+        await api.workspaceAnswer(state.id, issue.id, value);
+        await load();
+      },
+    );
+    card.append(
+      head,
+      form,
+      el('p', 'jl-remember', 'Saved to your profile. You will not be asked again.'),
+    );
     page.append(card);
   }
-  const answered = (data.automation.questions ?? []).filter((q) => q.answer != null).slice(-12).reverse();
+  const answered = (data.automation.questions ?? [])
+    .filter((q) => q.answer != null)
+    .slice(-12)
+    .reverse();
   if (answered.length) {
     page.append(el('h2', null, 'Saved answers'));
     page.lastChild.style.cssText = 'font-size:15px;margin-top:12px';
@@ -523,7 +627,10 @@ function renderQuestions(data, asks) {
     list.style.margin = '0';
     for (const q of answered) {
       const row = el('div');
-      row.append(el('dt', null, q.text), el('dd', null, typeof q.answer === 'string' ? q.answer : JSON.stringify(q.answer)));
+      row.append(
+        el('dt', null, q.text),
+        el('dd', null, typeof q.answer === 'string' ? q.answer : JSON.stringify(q.answer)),
+      );
       list.append(row);
     }
     page.append(list);
@@ -532,31 +639,72 @@ function renderQuestions(data, asks) {
 
 // ---- Profile ---------------------------------------------------------------
 const profileFields = [
-  ['goal', 'What you are looking for', 'e.g. Senior backend roles in Berlin or remote in the EU', true],
+  [
+    'goal',
+    'What you are looking for',
+    'e.g. Senior backend roles in Berlin or remote in the EU',
+    true,
+  ],
   ['preferences', 'Roles, places and work mode', 'Target roles, cities, remote or hybrid'],
   ['location', 'Main search location', 'As job sites spell it, e.g. Berlin, Germany', false, true],
   ['experience', 'Experience and skills', 'Years, main skills, languages and levels'],
   ['constraints', 'Must-haves', 'Salary floor, work permit, language, start date'],
-  ['application_facts', 'Details forms ask for', 'Phone, notice period, LinkedIn, salary expectation'],
+  [
+    'application_facts',
+    'Details forms ask for',
+    'Phone, notice period, LinkedIn, salary expectation',
+  ],
 ];
 function renderProfile(data) {
   const a = data.automation,
     form = el('form', 'jl-card');
   form.oninput = () => (state.profileDirty = true);
   // CV
-  const cv = section('Your CV', 'JobLoop reads it to fill your profile and tailor every application.');
+  const cv = section(
+    'Your CV',
+    'JobLoop reads it to fill your profile and tailor every application.',
+  );
   const docs = data.documents ?? [],
     file = el('div', 'jl-file');
   const doc = docs.find((d) => /cv|resume|lebenslauf/i.test(d.name ?? d.file ?? '')) ?? docs[0];
   file.append(icon('file'));
   const fcopy = el('div');
-  fcopy.append(el('b', null, doc ? (doc.name ?? doc.file) : 'No CV yet'), el('small', null, doc ? 'Stays on this computer' : 'PDF or DOCX'));
-  file.append(fcopy, button(doc ? 'Replace' : 'Upload CV', act('cv', () => api.pickDocument(state.id)), 'jl-btn small'));
+  fcopy.append(
+    el('b', null, doc ? (doc.name ?? doc.file) : 'No CV yet'),
+    el('small', null, doc ? 'Stays on this computer' : 'PDF or DOCX'),
+  );
+  file.append(
+    fcopy,
+    button(
+      doc ? 'Replace' : 'Upload CV',
+      act('cv', () => api.pickDocument(state.id)),
+      'jl-btn small',
+    ),
+  );
   cv.lastChild.append(file);
-  if (doc) cv.lastChild.append(button('Refill profile from CV', act('refill', () => api.automationOnboarding(state.id)), 'jl-link'));
+  if (doc)
+    cv.lastChild.append(
+      button(
+        'Refill profile from CV',
+        act('refill', () => api.automationOnboarding(state.id)),
+        'jl-link',
+      ),
+    );
   // Basics
-  const basics = section('About you', 'Fix anything that is wrong. The more precise, the better the matches.');
-  basics.lastChild.append(field('title', 'Full name', a.title === data.definition?.title ? '' : a.title, 'Your first and last name', false, true));
+  const basics = section(
+    'About you',
+    'Fix anything that is wrong. The more precise, the better the matches.',
+  );
+  basics.lastChild.append(
+    field(
+      'title',
+      'Full name',
+      a.title === data.definition?.title ? '' : a.title,
+      'Your first and last name',
+      false,
+      true,
+    ),
+  );
   for (const [key, label, placeholder, required, single] of profileFields) {
     const value = key === 'goal' ? a.goal : a.criteria?.[key];
     basics.lastChild.append(field(key, label, value, placeholder, required, single));
@@ -565,20 +713,29 @@ function renderProfile(data) {
   const mode = section('Autopilot', 'How far JobLoop may go on its own.');
   mode.lastChild.append(levels(a));
   const footer = el('div', 'jl-form-foot');
-  footer.append(el('small', null, 'Saved on this computer. Shared with your AI only while it works.'), el('button', 'jl-btn primary', state.busy.has('profile') ? 'Saving…' : 'Save profile'));
+  footer.append(
+    el('small', null, 'Saved on this computer. Shared with your AI only while it works.'),
+    el('button', 'jl-btn primary', state.busy.has('profile') ? 'Saving…' : 'Save profile'),
+  );
   footer.lastChild.type = 'submit';
   form.append(cv, basics, mode, footer);
   form.onsubmit = (event) => {
     event.preventDefault();
     const f = form.elements,
       criteria = {...a.criteria};
-    for (const [key] of profileFields) if (key !== 'goal' && f[key]) criteria[key] = f[key].value.trim();
+    for (const [key] of profileFields)
+      if (key !== 'goal' && f[key]) criteria[key] = f[key].value.trim();
     const auto = f.level.value === 'auto';
     if (auto) criteria.score_threshold = f.threshold.value;
     act('profile', async () => {
       await api.automationProfileSave(
         state.id,
-        {title: f.title.value.trim() || a.title, goal: f.goal.value.trim(), criteria, mode: auto ? 'auto' : 'observe'},
+        {
+          title: f.title.value.trim() || a.title,
+          goal: f.goal.value.trim(),
+          criteria,
+          mode: auto ? 'auto' : 'observe',
+        },
         {expectedRevision: a.revision},
       );
       state.profileDirty = false;
@@ -620,8 +777,16 @@ function levels(a) {
     return l;
   };
   grid.append(
-    option('observe', 'I pick, JobLoop applies', 'Finds and scores jobs. Applies only to the ones you press Apply on.'),
-    option('auto', 'Full autopilot', 'Also applies on its own to jobs above your fit score. You can still skip anything.'),
+    option(
+      'observe',
+      'I pick, JobLoop applies',
+      'Finds and scores jobs. Applies only to the ones you press Apply on.',
+    ),
+    option(
+      'auto',
+      'Full autopilot',
+      'Also applies on its own to jobs above your fit score. You can still skip anything.',
+    ),
   );
   const range = el('label', 'jl-threshold'),
     input = el('input'),
@@ -647,14 +812,28 @@ function renderSettings(data) {
   const ai = section('AI', 'The assistant that reads listings and fills forms.'),
     provider = data.automation.agentSettings?.provider ?? 'not set',
     rows = el('div', 'jl-rows');
-  rows.append(row(`Using ${providerLabel(provider)}`, 'Runs with your own account. Change the model in Advanced view.'));
+  rows.append(
+    row(
+      `Using ${providerLabel(provider)}`,
+      'Runs with your own account. Change the model in Advanced view.',
+    ),
+  );
   ai.lastChild.append(rows);
   const browser = section('Browser', 'JobLoop opens job sites in Chrome to read and apply.'),
     b = data.browserStatus ?? {},
     brows = el('div', 'jl-rows');
   brows.append(
-    row(b.ready ? 'Chrome connected' : 'Chrome not connected', b.ready ? 'Sign-ins in that Chrome are used for applying.' : 'Open the browser once and sign in to the job sites you use.',
-      button('Open browser', act('browser', () => api.automationBrowser(state.id)), 'jl-btn small')),
+    row(
+      b.ready ? 'Chrome connected' : 'Chrome not connected',
+      b.ready
+        ? 'Sign-ins in that Chrome are used for applying.'
+        : 'Open the browser once and sign in to the job sites you use.',
+      button(
+        'Open browser',
+        act('browser', () => api.automationBrowser(state.id)),
+        'jl-btn small',
+      ),
+    ),
   );
   browser.lastChild.append(brows);
   const sources = section('Where to search', 'Job boards and company sites JobLoop checks.'),
@@ -665,7 +844,9 @@ function renderSettings(data) {
     toggle.checked = s.enabled;
     toggle.setAttribute('aria-label', 'Search ' + s.name);
     toggle.style.cssText = 'width:18px;height:18px;accent-color:var(--jl-accent)';
-    toggle.onchange = act('src:' + s.url, () => api.automationSourceSave(state.id, s.url, {enabled: toggle.checked}));
+    toggle.onchange = act('src:' + s.url, () =>
+      api.automationSourceSave(state.id, s.url, {enabled: toggle.checked}),
+    );
     srows.append(row(s.name, host(s.url), toggle));
   }
   sources.lastChild.append(srows);
@@ -682,7 +863,8 @@ function row(title, text, control) {
   if (control) r.append(control);
   return r;
 }
-const providerLabel = (id) => ({claude: 'Claude', codex: 'ChatGPT (Codex)', opencode: 'OpenCode'})[id] ?? id;
+const providerLabel = (id) =>
+  ({claude: 'Claude', codex: 'ChatGPT (Codex)', opencode: 'OpenCode'})[id] ?? id;
 
 // ---- Welcome (no search yet) -----------------------------------------------------
 function renderWelcome() {
@@ -695,7 +877,11 @@ function renderWelcome() {
   box.append(
     mark,
     el('h2', null, 'Your job search, on autopilot'),
-    el('p', null, 'Upload your CV. JobLoop finds jobs that fit, you pick the ones you like, and it applies for you.'),
+    el(
+      'p',
+      null,
+      'Upload your CV. JobLoop finds jobs that fit, you pick the ones you like, and it applies for you.',
+    ),
     button('Upload your CV', () => document.getElementById('new')?.click(), 'jl-btn accent big'),
   );
   box.querySelector('h2').style.fontSize = '28px';

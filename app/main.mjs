@@ -53,7 +53,7 @@ import {resolveLaunchEnvironment} from './agents/launch-environment.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 async function boot() {
-  // The internal name keeps the JobLoop data folder and keychain entry; users see AutoJev.
+  // The internal name keeps the JobLoop data folder and keychain entry; users see JobLoop.
   app.setName('JobLoop');
   if (process.env.JOBLOOP_DATA_DIR) app.setPath('userData', process.env.JOBLOOP_DATA_DIR);
   if (!app.requestSingleInstanceLock()) {
@@ -63,22 +63,22 @@ async function boot() {
   await app.whenReady();
   if (process.platform !== 'win32') process.env.PATH = (await resolveLaunchEnvironment()).PATH;
   if (process.platform === 'darwin') {
-    app.setAboutPanelOptions({applicationName: 'AutoJev'});
+    app.setAboutPanelOptions({applicationName: 'JobLoop'});
     if (!app.isPackaged) app.dock.setIcon(path.join(root, 'build/icon.png'));
     Menu.setApplicationMenu(
       Menu.buildFromTemplate([
         {
-          label: 'AutoJev',
+          label: 'JobLoop',
           submenu: [
-            {role: 'about', label: 'About AutoJev'},
+            {role: 'about', label: 'About JobLoop'},
             {type: 'separator'},
             {role: 'services'},
             {type: 'separator'},
-            {role: 'hide', label: 'Hide AutoJev'},
+            {role: 'hide', label: 'Hide JobLoop'},
             {role: 'hideOthers'},
             {role: 'unhide'},
             {type: 'separator'},
-            {role: 'quit', label: 'Quit AutoJev'},
+            {role: 'quit', label: 'Quit JobLoop'},
           ],
         },
         {role: 'editMenu'},
@@ -461,7 +461,7 @@ async function boot() {
     height: 950,
     minWidth: 1040,
     minHeight: 720,
-    title: 'AutoJev · Web automations',
+    title: 'JobLoop',
     backgroundColor: '#11151b',
     webPreferences: {
       preload: path.join(root, 'app/preload.cjs'),

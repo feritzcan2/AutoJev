@@ -317,7 +317,7 @@ function chromeProfileVisibility() {
   $('chrome-profile-hint').textContent =
     chromeProfilesError ||
     (chromeProfiles.length
-      ? 'Jev uses your existing sign-in and opens listings as tabs in a single AutoJev window.'
+      ? 'Jev uses your existing sign-in and opens listings as tabs in a single JobLoop window.'
       : 'No Chrome profile found.');
 }
 function fillAgentSettings(profile, id) {
