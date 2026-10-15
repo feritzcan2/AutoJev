@@ -57,6 +57,11 @@ import {
 import {validateJevArgs} from './tools.mjs';
 const require = createRequire(import.meta.url);
 const urlHash = (url) => createHash('sha256').update(url).digest('hex');
+// Playwright protocol calls such as evaluate have no timeout of their own. A
+// tool call that outlives these bounds holds Jev and the workspace's browser
+// queue, so the connection is dropped and the task waits for a reconnect.
+export const TOOL_CALL_LIMIT_MS = 120000;
+export const TOOL_CANCEL_GRACE_MS = 5000;
 // Tools that write to or scroll the page need a rendering tab (see rendering.mjs).
 const UPLOAD_BUTTON =
   /upload|attach|browse|(?:add|select|choose) files?|resume|\bcv\b|lebenslauf|hochladen|anhängen|datei|yükle|dosya|document|unterlagen/i;
@@ -453,8 +458,7 @@ export class JevBrowser {
       (this.connection === 'existing' && !this.browser?.isConnected())
     )
       return {deferred: true};
-    this.busy = true;
-    try {
+    return this.exclusive('closeFinishedAutomationRunTabs', this.abort.signal, async () => {
       const closed = [],
         retained = [],
         pending = new Set(pendingTabIds);
@@ -493,9 +497,7 @@ export class JevBrowser {
       if (closed.length) await this.onTabsClosed(closed);
       await this.persistTabs();
       return {closed, retained};
-    } finally {
-      this.busy = false;
-    }
+    });
   }
   tab(id) {
     if (/^\d+$/.test(id))
@@ -1105,12 +1107,73 @@ export class JevBrowser {
   async callTool({name, arguments: args}, owner = 'local', state = {}) {
     validateJevArgs(name, args);
     if (this.busy) throw Error('Jev is busy; wait for the result of the current call.');
-    this.busy = true;
+    const signal = state.signal
+      ? AbortSignal.any([this.abort.signal, state.signal])
+      : this.abort.signal;
+    return this.exclusive(name, signal, () =>
+      this.runTool({name, arguments: args}, owner, state, signal),
+    );
+  }
+  // Holds Jev for one operation. Playwright protocol calls such as evaluate
+  // have no timeout of their own, so an operation that outlives its bound (or
+  // its cancellation) drops the connection instead of holding Jev forever.
+  async exclusive(name, signal, operation) {
+    const call = {name};
+    this.busy = call;
+    let timer, onAbort;
+    const running = Promise.resolve().then(operation);
+    const stuck = new Promise((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), this.toolCallLimitMs ?? TOOL_CALL_LIMIT_MS);
+      onAbort = () => {
+        clearTimeout(timer);
+        timer = setTimeout(
+          () => resolve('cancelled'),
+          this.toolCancelGraceMs ?? TOOL_CANCEL_GRACE_MS,
+        );
+      };
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, {once: true});
+    });
+    try {
+      const outcome = await Promise.race([
+        running.then(
+          () => null,
+          () => null,
+        ),
+        stuck,
+      ]);
+      if (!outcome) return await running;
+      running.catch(() => {});
+      console.warn(`Jev ${name} did not finish (${outcome}); dropping the Chrome connection.`);
+      this.dropConnection();
+      if (outcome === 'cancelled') throw signal.reason;
+      throw Object.assign(
+        Error(`Chrome did not answer ${name} in time; the connection is reset.`),
+        {code: 'BROWSER_DISCONNECTED'},
+      );
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      if (this.busy === call) this.busy = false;
+    }
+  }
+  // Ends a connection whose protocol calls stopped answering. The pending call
+  // may never settle; Jev forgets it and connects again on the next call.
+  dropConnection() {
+    if (this.connection === 'existing') {
+      this.transport?.close();
+      return;
+    }
+    const opening = this.opening;
+    this.opening = null;
+    this.tabs.clear();
+    this.tracking = new WeakMap();
+    opening?.then((context) => context.close()).catch(() => {});
+  }
+  async runTool({name, arguments: args}, owner, state, signal) {
     let releaseRendering;
     try {
-      this.readSignal = state.signal
-        ? AbortSignal.any([this.abort.signal, state.signal])
-        : this.abort.signal;
+      this.readSignal = signal;
       this.readSignal.throwIfAborted();
       if (name === 'browser_jev_open') {
         checkedUrl(args.url);
@@ -1860,8 +1923,7 @@ export class JevBrowser {
       };
     } finally {
       await releaseRendering?.();
-      this.readSignal = null;
-      this.busy = false;
+      if (this.readSignal === signal) this.readSignal = null;
     }
   }
   async focus(id) {

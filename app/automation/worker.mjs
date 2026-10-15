@@ -91,6 +91,7 @@ import {automationPrompt} from './prompts.mjs';
 import {finishAutomationRun} from './finish.mjs';
 import {saveJevCheckpoint, settleJevDetails, releaseBlockedSource} from './jev-scan.mjs';
 import {saveJevProfile, jevProfileView} from '../jev/qualification-profile.mjs';
+const BROWSER_SETTLE_LIMIT_MS = 30000;
 // A recipe check reads this many uncertain leads when discovery confirms none.
 const RECIPE_CHECK_DETAILS = 3;
 // One collect_source_page call reads on past at most this many pages that held
@@ -1675,8 +1676,13 @@ export async function launchAutomationWorker({
     if (closing) throw Error('The session is closing');
     closing = true;
     try {
+      // A browser operation that never settles must not keep the worker slot.
       await agents.stop(automation.id, workerId, {
-        settle: () => browser.waitForOperations?.(automation.id),
+        settle: () =>
+          Promise.race([
+            browser.waitForOperations?.(automation.id),
+            pause(BROWSER_SETTLE_LIMIT_MS, undefined, {ref: false}),
+          ]),
       });
       const agentTokens =
         (await agents.tokenUsage?.(automation.id, workerId, {

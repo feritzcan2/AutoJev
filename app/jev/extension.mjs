@@ -222,13 +222,12 @@ export class JevExtensionTransport {
   control(method, params) {
     return this.rpc(method, params, {timeout: CONTROL_TIMEOUT});
   }
-  async cdp(tabId, method, params = {}, sessionId) {
-    const {result} = await this.rpc('debugger.send', {
-      tabId,
-      ...(sessionId ? {sessionId} : {}),
-      method,
-      params,
-    });
+  async cdp(tabId, method, params = {}, sessionId, options) {
+    const {result} = await this.rpc(
+      'debugger.send',
+      {tabId, ...(sessionId ? {sessionId} : {}), method, params},
+      options,
+    );
     return result;
   }
   // ---- ownership
@@ -299,7 +298,9 @@ export class JevExtensionTransport {
     await this.control('debugger.attach', {tabId});
     let targetInfo;
     try {
-      ({targetInfo} = await this.cdp(tabId, 'Target.getTargetInfo'));
+      ({targetInfo} = await this.cdp(tabId, 'Target.getTargetInfo', {}, undefined, {
+        timeout: CONTROL_TIMEOUT,
+      }));
       if (expect && targetInfo.targetId !== expect)
         throw Error('The saved Jev tab shows another page; the tab is kept.');
     } catch (error) {
@@ -317,6 +318,9 @@ export class JevExtensionTransport {
       attached: true,
       ...(entry.openerId ? {openerId: entry.openerId} : {}),
     };
+    // Playwright drops events of a session it has not seen attach, so the
+    // tab's own events wait until its attachment is reported, as over CDP.
+    entry.held = [];
     this.owned.add(targetId);
     this.targets.set(targetId, entry);
     this.tabIds.set(tabId, targetId);
@@ -328,19 +332,29 @@ export class JevExtensionTransport {
     // parameters: its call replaces this one, and a filter that leaves out
     // workers keeps every worker the page starts paused, so uploads and other
     // worker code hang.
-    await this.cdp(tabId, 'Target.setAutoAttach', {
-      autoAttach: true,
-      waitForDebuggerOnStart: true,
-      flatten: true,
-    });
-    // The tab may have closed meanwhile; a forgotten target stays forgotten.
-    if (this.targets.get(targetId) !== entry)
-      throw Error('The Jev tab closed while it was being attached.');
+    try {
+      await this.cdp(
+        tabId,
+        'Target.setAutoAttach',
+        {autoAttach: true, waitForDebuggerOnStart: true, flatten: true},
+        undefined,
+        {timeout: CONTROL_TIMEOUT},
+      );
+      // The tab may have closed meanwhile; a forgotten target stays forgotten.
+      if (this.targets.get(targetId) !== entry)
+        throw Error('The Jev tab closed while it was being attached.');
+    } catch (error) {
+      entry.held = null;
+      throw error;
+    }
     this.attached.add(targetId);
     this.emit({
       method: 'Target.attachedToTarget',
       params: {sessionId: entry.sessionId, targetInfo: entry.info, waitingForDebugger: false},
     });
+    const held = entry.held;
+    entry.held = null;
+    for (const event of held) this.forward(entry, event);
     return targetId;
   }
   async createTab({windowId, openerTargetId = null, url = 'about:blank'} = {}) {
@@ -468,6 +482,10 @@ export class JevExtensionTransport {
       for (const [id, virtual] of [...this.virtual])
         if (virtual.entry === entry && virtual.real === params.sessionId) this.dropVirtual(id);
     }
+    if (entry.held) entry.held.push({sessionId, method, params});
+    else this.forward(entry, {sessionId, method, params});
+  }
+  forward(entry, {sessionId, method, params}) {
     this.emit({sessionId: sessionId ?? entry.sessionId, method, params});
     for (const [id, virtual] of this.virtual)
       if (virtual.entry === entry && virtual.real === sessionId)
