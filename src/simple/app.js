@@ -5,7 +5,7 @@
 import {automationAttention} from '../../app/automation/attention.mjs';
 import {recordOperationStatus, recordProblem} from '../record-operation-status.js';
 import {questionForm} from '../question-form.js';
-import {BRAND, markIcon, markInline} from './brand.js';
+import {BRAND, markIcon} from './brand.js';
 import {el, button, icon, plural, scoreOf, relative, host} from './ui.js';
 import './simple.css';
 import './onboarding.css';
@@ -65,7 +65,7 @@ main.append(top, scroll);
 root.append(rail, main);
 
 const brand = el('div', 'jl-brand');
-brand.innerHTML = markIcon(28) + `<span>${BRAND}</span>`;
+brand.innerHTML = markIcon(32) + `<span>${BRAND}</span>`;
 const navItems = [
   ['jobs', 'Jobs', 'jobs'],
   ['questions', 'Questions', 'question'],
@@ -376,7 +376,7 @@ function emptyJobs(data, tab, g) {
   const p = pilot(data),
     box = el('div', 'jl-empty jl-card');
   const mark = el('div', p.running && tab === 'review' ? 'jl-spin' : '');
-  mark.innerHTML = markInline(44);
+  mark.innerHTML = markIcon(52);
   box.append(mark);
   if (tab === 'review') {
     if (p.running) {
@@ -571,7 +571,7 @@ function renderQuestions(data, asks) {
   if (!asks.length) {
     const box = el('div', 'jl-empty jl-card');
     const mark = el('div');
-    mark.innerHTML = markInline(44);
+    mark.innerHTML = markIcon(52);
     box.append(
       mark,
       el('h2', null, 'No open questions'),
@@ -843,7 +843,7 @@ function renderSettings(data) {
     toggle.type = 'checkbox';
     toggle.checked = s.enabled;
     toggle.setAttribute('aria-label', 'Search ' + s.name);
-    toggle.style.cssText = 'width:18px;height:18px;accent-color:var(--jl-accent)';
+    toggle.style.cssText = 'width:18px;height:18px;accent-color:var(--jl-check)';
     toggle.onchange = act('src:' + s.url, () =>
       api.automationSourceSave(state.id, s.url, {enabled: toggle.checked}),
     );

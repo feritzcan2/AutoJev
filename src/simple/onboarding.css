@@ -10,8 +10,8 @@ body.jl-simple .onboarding {
   --text-secondary: var(--jl-muted);
   --text-muted: var(--jl-faint);
   --accent: var(--jl-accent);
-  --accent-strong: var(--jl-accent);
-  --accent-wash: var(--jl-accent-soft);
+  --accent-strong: var(--jl-accent-text);
+  --accent-wash: var(--jl-accent-wash);
   --success: var(--jl-good);
   --warning: var(--jl-warn);
   --danger: var(--jl-bad);
@@ -91,13 +91,17 @@ body.jl-simple .onboarding-drop {
     background 0.15s;
 }
 body.jl-simple .onboarding-drop:hover:not(:disabled) {
-  border-color: var(--jl-accent);
-  background: var(--jl-accent-soft);
+  border-color: var(--jl-ink);
+  background: var(--jl-accent-wash);
   filter: none;
 }
 body.jl-simple .onboarding-drop svg {
-  color: var(--jl-accent);
-  margin-bottom: 4px;
+  box-sizing: content-box;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--jl-accent);
+  color: var(--jl-accent-ink);
+  margin-bottom: 6px;
 }
 body.jl-simple .onboarding-drop b {
   font-size: 16px;
@@ -121,7 +125,7 @@ body.jl-simple .onboarding .choice {
   font-size: 14px;
 }
 body.jl-simple .onboarding .choice:has(:checked) {
-  box-shadow: inset 3px 0 var(--jl-accent);
+  box-shadow: inset 3px 0 var(--jl-ink);
 }
 body.jl-simple .onboarding-missing {
   padding: 10px 16px;
@@ -141,7 +145,7 @@ body.jl-simple .onboarding-missing .choice small {
 }
 body.jl-simple :is(.onboarding-notes-box, .onboarding-live, .onboarding-more) summary {
   cursor: pointer;
-  color: var(--jl-accent);
+  color: var(--jl-accent-text);
   font-weight: 500;
   font-size: 13px;
 }
@@ -161,8 +165,8 @@ body.jl-simple .onboarding :is(input, textarea, select) {
 }
 body.jl-simple .onboarding :is(input, textarea, select):focus {
   outline: none;
-  border-color: var(--jl-accent);
-  box-shadow: 0 0 0 3px var(--jl-accent-soft);
+  border-color: var(--jl-ink);
+  box-shadow: 0 0 0 3px var(--jl-accent);
 }
 body.jl-simple .onboarding :is(input[type='radio'], input[type='checkbox']) {
   padding: 0;
@@ -177,11 +181,16 @@ body.jl-simple .onboarding label {
 body.jl-simple .onboarding button {
   border-radius: 10px;
 }
+body.jl-simple .onboarding input[type='radio'],
+body.jl-simple .onboarding input[type='checkbox'] {
+  accent-color: var(--jl-check);
+}
 body.jl-simple .onboarding button.primary {
+  box-shadow: inset 0 0 0 1px var(--jl-accent-edge);
   min-height: 48px;
   padding: 0 24px;
-  background: var(--jl-ink);
-  color: var(--jl-bg);
+  background: var(--jl-accent);
+  color: var(--jl-accent-ink);
   font-size: 15px;
   font-weight: 600;
 }

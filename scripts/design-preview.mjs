@@ -89,6 +89,42 @@ const application = await electron.launch({
   env: {...process.env, JOBLOOP_DATA_DIR: data},
 });
 const shots = [];
+// Text contrast audit (WCAG 2.1): every visible text element against its painted background.
+const audit = () => {
+  const parse = (c) => (c.match(/[\d.]+/g) ?? []).map(Number);
+  const lum = ([r, g, b]) =>
+    [r, g, b]
+      .map((v) => v / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+      .reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const bg = (el) => {
+    for (let n = el; n; n = n.parentElement) {
+      const c = parse(getComputedStyle(n).backgroundColor);
+      if (c.length >= 3 && (c[3] ?? 1) > 0.5) return c;
+    }
+    return [255, 255, 255];
+  };
+  const out = [];
+  for (const el of document.querySelectorAll('#jl-root *, .onboarding *')) {
+    const own = [...el.childNodes].some((t) => t.nodeType === 3 && t.textContent.trim());
+    if (!own || !el.offsetParent) continue;
+    const st = getComputedStyle(el),
+      fg = parse(st.color),
+      b = bg(el),
+      a = fg[3] ?? 1,
+      mix = fg.slice(0, 3).map((v, i) => v * a + b[i] * (1 - a)),
+      [l1, l2] = [lum(mix), lum(b)].sort((x, y) => y - x),
+      ratio = (l1 + 0.05) / (l2 + 0.05),
+      size = parseFloat(st.fontSize),
+      large = size >= 24 || (size >= 18.66 && Number(st.fontWeight) >= 700),
+      need = large ? 3 : 4.5;
+    if (ratio < need * (globalThis.__auditScale ?? 1))
+      out.push(
+        `${ratio.toFixed(2)} < ${need} · ${el.tagName.toLowerCase()}.${el.className} · "${el.textContent.trim().slice(0, 40)}"`,
+      );
+  }
+  return [...new Set(out)];
+};
 try {
   const page = await application.firstWindow({timeout: 30000});
   page.on('pageerror', (e) => console.error('UI_ERROR', e.message));
@@ -108,11 +144,16 @@ try {
     pathToFileURL(path.join(root, 'app/agents/engine.mjs')).href,
   );
   await page.setViewportSize({width: 1440, height: 900});
+  if (args.includes('--dark')) await page.emulateMedia({colorScheme: 'dark'});
   await page.waitForTimeout(2500);
   const shot = async (name) => {
     const file = path.join(out, name + '.png');
     await page.screenshot({path: file, fullPage: false});
     shots.push(file);
+    if (args.includes('--audit')) {
+      if (args.includes('--audit-all')) await page.evaluate(() => (globalThis.__auditScale = 10));
+      for (const line of await page.evaluate(audit)) console.log('CONTRAST', name, line);
+    }
   };
   if (args.includes('--dump')) {
     const snap = await page.evaluate(async () => {
@@ -158,6 +199,10 @@ try {
     await page.locator('.jl-check').nth(1).check();
     await page.waitForTimeout(300);
     await shot('10-jobs-selected');
+    await page.locator('.jl-nav', {hasText: 'Profile'}).click();
+    await page.locator('.jl-scroll').evaluate((n) => (n.scrollTop = n.scrollHeight));
+    await page.waitForTimeout(300);
+    await shot('11-profile-bottom');
   } else {
     const views = await page.$$eval('aside nav button[data-view]', (b) =>
       b.filter((n) => !n.hidden && n.offsetParent).map((n) => n.dataset.view),

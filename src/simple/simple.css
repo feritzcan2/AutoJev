@@ -14,26 +14,32 @@
 }
 
 :root {
-  --jl-bg: #f5f4ef;
-  --jl-rail: #fbfaf7;
+  /* JobLoop palette: one signature color (Volt) on ink and paper.
+     Volt is a fill, never text on a light ground; text accents use --jl-accent-text. */
+  --jl-bg: #f4f4ef;
+  --jl-rail: #fafaf6;
   --jl-panel: #ffffff;
-  --jl-sunk: #f1f0eb;
-  --jl-line: #e4e2da;
-  --jl-line-strong: #d6d3c9;
-  --jl-ink: #15171c;
-  --jl-muted: #5d6069;
-  --jl-faint: #8a8d95;
-  --jl-accent: #3346e0;
-  --jl-accent-ink: #ffffff;
-  --jl-accent-soft: #eceeff;
-  --jl-accent-line: #c9cce9;
-  --jl-good: #17784c;
-  --jl-good-soft: #e3f3ea;
+  --jl-sunk: #edede6;
+  --jl-line: #e2e2da;
+  --jl-line-strong: #cfcfc5;
+  --jl-ink: #0e0f12;
+  --jl-muted: #55575e;
+  --jl-faint: #686a71;
+  --jl-check: #0e0f12;
+  --jl-accent-wash: #f7fbe7;
+  --jl-accent-edge: rgb(14 15 18 / 0.16);
+  --jl-accent: #c6f432;
+  --jl-accent-ink: #0e0f12;
+  --jl-accent-soft: #eef8c9;
+  --jl-accent-line: #c9e36a;
+  --jl-accent-text: #4a6600;
+  --jl-good: #4a6600;
+  --jl-good-soft: #eef8c9;
   --jl-warn: #9a5b07;
   --jl-warn-soft: #fbf0dc;
   --jl-bad: #b42318;
   --jl-bad-soft: #fde8e6;
-  --jl-shadow: 0 1px 2px rgb(21 23 28 / 0.04), 0 8px 24px rgb(21 23 28 / 0.06);
+  --jl-shadow: 0 1px 2px rgb(14 15 18 / 0.04), 0 8px 24px rgb(14 15 18 / 0.06);
   --jl-radius: 14px;
   --jl-font: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --jl-mono: 'Geist Mono', ui-monospace, 'SF Mono', monospace;
@@ -43,21 +49,25 @@
     color-scheme: dark;
   }
   :root {
-    --jl-bg: #111317;
-    --jl-rail: #15171c;
-    --jl-panel: #1b1e24;
-    --jl-sunk: #22252d;
-    --jl-line: #2a2e37;
-    --jl-line-strong: #383c47;
-    --jl-ink: #eceae4;
-    --jl-muted: #a3a6ae;
-    --jl-faint: #7c808a;
-    --jl-accent: #8b98ff;
-    --jl-accent-ink: #0b0d2a;
-    --jl-accent-soft: #242a52;
-    --jl-accent-line: #3a427a;
-    --jl-good: #5fd39a;
-    --jl-good-soft: #17322a;
+    --jl-bg: #0e0f12;
+    --jl-rail: #121317;
+    --jl-panel: #17181c;
+    --jl-sunk: #1f2026;
+    --jl-line: #26282e;
+    --jl-line-strong: #34363d;
+    --jl-ink: #f1f2ea;
+    --jl-muted: #a4a6ad;
+    --jl-faint: #8b8e95;
+    --jl-check: #c6f432;
+    --jl-accent-wash: #1a1f0e;
+    --jl-accent-edge: transparent;
+    --jl-accent: #c6f432;
+    --jl-accent-ink: #0e0f12;
+    --jl-accent-soft: #263011;
+    --jl-accent-line: #4a5a17;
+    --jl-accent-text: #c6f432;
+    --jl-good: #c6f432;
+    --jl-good-soft: #263011;
     --jl-warn: #f2b544;
     --jl-warn-soft: #362a14;
     --jl-bad: #ff8a80;
@@ -157,7 +167,7 @@ body.jl-simple {
   padding: 0;
 }
 #jl-root :focus-visible {
-  outline: 2px solid var(--jl-accent);
+  outline: 2px solid var(--jl-accent-text);
   outline-offset: 2px;
 }
 #jl-root h1,
@@ -211,6 +221,9 @@ body.jl-simple {
   background: var(--jl-accent);
   border-color: var(--jl-accent);
   color: var(--jl-accent-ink);
+  font-weight: 600;
+  /* Volt barely differs from paper, so its edge is drawn in ink. */
+  box-shadow: inset 0 0 0 1px var(--jl-accent-edge);
 }
 .jl-btn.accent:hover {
   opacity: 0.9;
@@ -241,7 +254,7 @@ body.jl-simple {
   background: none;
   border: 0;
   padding: 0;
-  color: var(--jl-accent);
+  color: var(--jl-accent-text);
   cursor: pointer;
   font-weight: 500;
 }
@@ -345,7 +358,7 @@ body.jl-simple {
   height: 32px;
   border-radius: 99px;
   background: var(--jl-accent-soft);
-  color: var(--jl-accent);
+  color: var(--jl-accent-text);
   font-weight: 700;
   font-size: 13px;
 }
@@ -438,8 +451,10 @@ body.jl-simple {
   background: var(--jl-faint);
 }
 .jl-pilot[data-state='on'] .jl-pilot-dot {
-  background: var(--jl-good);
-  box-shadow: 0 0 0 4px var(--jl-good-soft);
+  background: var(--jl-accent);
+  box-shadow:
+    0 0 0 2px var(--jl-ink),
+    0 0 0 5px var(--jl-accent-soft);
   animation: jl-pulse 2.4s ease-in-out infinite;
 }
 .jl-pilot[data-state='waiting'] .jl-pilot-dot {
@@ -448,7 +463,9 @@ body.jl-simple {
 }
 @keyframes jl-pulse {
   50% {
-    box-shadow: 0 0 0 7px transparent;
+    box-shadow:
+      0 0 0 2px var(--jl-ink),
+      0 0 0 8px transparent;
   }
 }
 .jl-pilot-copy {
@@ -594,8 +611,9 @@ body.jl-simple {
   box-shadow: var(--jl-shadow);
 }
 .jl-job[data-selected='true'] {
-  border-color: var(--jl-accent);
-  box-shadow: 0 0 0 1px var(--jl-accent);
+  border-color: var(--jl-ink);
+  background: var(--jl-accent-wash);
+  box-shadow: inset 0 0 0 1px var(--jl-ink);
 }
 .jl-job.leaving {
   opacity: 0;
@@ -605,12 +623,12 @@ body.jl-simple {
   margin-top: 13px;
   width: 18px;
   height: 18px;
-  accent-color: var(--jl-accent);
+  accent-color: var(--jl-check);
   cursor: pointer;
 }
 .jl-score {
   --p: 0;
-  --c: var(--jl-good);
+  --c: var(--jl-ink);
   position: relative;
   display: grid;
   place-items: center;
@@ -699,7 +717,7 @@ body.jl-simple {
 }
 .jl-chip.accent {
   background: var(--jl-accent-soft);
-  color: var(--jl-accent);
+  color: var(--jl-accent-text);
 }
 .jl-job-actions {
   display: flex;
@@ -824,11 +842,11 @@ body.jl-simple {
   margin-bottom: 6px;
 }
 .jl-spin .jl-mark {
-  animation: jl-turn 2.4s linear infinite;
+  animation: jl-fly 2.4s ease-in-out infinite;
 }
-@keyframes jl-turn {
-  to {
-    transform: rotate(360deg);
+@keyframes jl-fly {
+  50% {
+    transform: translate(4px, -6px);
   }
 }
 
@@ -896,8 +914,8 @@ body.jl-simple {
 .jl-question :is(input, textarea, select):focus,
 .jl-field :is(input, textarea, select):focus {
   outline: none;
-  border-color: var(--jl-accent);
-  box-shadow: 0 0 0 3px var(--jl-accent-soft);
+  border-color: var(--jl-ink);
+  box-shadow: 0 0 0 3px var(--jl-accent);
 }
 .jl-question label:has(input[type='radio'], input[type='checkbox']) {
   display: flex;
@@ -1082,7 +1100,7 @@ body.jl-simple {
   background: var(--jl-panel);
 }
 .jl-level:has(input:checked) {
-  border: 2px solid var(--jl-accent);
+  border: 2px solid var(--jl-ink);
   padding: 15px;
   background: var(--jl-accent-soft);
 }
@@ -1106,7 +1124,7 @@ body.jl-simple {
 }
 .jl-threshold input[type='range'] {
   flex: 1;
-  accent-color: var(--jl-accent);
+  accent-color: var(--jl-check);
 }
 .jl-threshold output {
   font-family: var(--jl-mono);

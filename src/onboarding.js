@@ -71,7 +71,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     card = el('section', null, 'onboarding-card'),
     error = el('p', null, 'onboarding-error');
   const brand = el('b', null, 'onboarding-brand');
-  brand.innerHTML = markIcon(26);
+  brand.innerHTML = markIcon(32);
   brand.append(BRAND);
   head.append(brand, steps);
   for (const label of ['Upload CV', 'Check details', 'Start']) steps.append(el('li', label));

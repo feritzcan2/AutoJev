@@ -1,13 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
 <defs>
- <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#23262E"/><stop offset="1" stop-color="#121418"/></linearGradient>
- <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset=".35" stop-color="#fff" stop-opacity="0"/></linearGradient>
+ <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1A1C21"/><stop offset="1" stop-color="#0B0C0E"/></linearGradient>
+ <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".14"/><stop offset=".35" stop-color="#fff" stop-opacity="0"/></linearGradient>
  <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceAlpha" stdDeviation="18"/><feOffset dy="16"/><feComponentTransfer><feFuncA type="linear" slope=".4"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
 </defs>
 <g filter="url(#shadow)"><rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/></g>
 <rect x="100" y="100" width="824" height="824" rx="185" fill="none" stroke="url(#rim)" stroke-width="6"/>
+<!-- JobLoop mark: a paper plane that has just flown a loop. Volt plane, paper trail. -->
 <g transform="translate(512 512) scale(0.92) translate(-512 -512)">
- <path d="M743.8 418.3 A250 250 0 1 1 564 267.5" fill="none" stroke="#F5F4EF" stroke-width="100" stroke-linecap="round"/>
- <circle cx="672.7" cy="320.5" r="62" fill="#8B98FF"/>
+ <path d="M214 762 C318 770 432 736 488 652 C540 574 506 474 424 478 C338 482 324 600 410 632 C496 664 566 604 600 548" fill="none" stroke="#F4F4EF" stroke-width="54" stroke-linecap="round" stroke-linejoin="round"/>
+ <path d="M826 232 L524 376 L646 438 Z" fill="#C6F432" stroke="#C6F432" stroke-width="26" stroke-linejoin="round"/>
+ <path d="M826 232 L646 438 L694 558 Z" fill="#8DB10F" stroke="#8DB10F" stroke-width="26" stroke-linejoin="round"/>
 </g>
 </svg>
