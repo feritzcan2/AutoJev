@@ -13,6 +13,7 @@ import {
 } from '../app/jev/extension.mjs';
 import {BrowserConnections} from '../app/browser/connection.mjs';
 import {BrowserTools} from '../app/browser/tools.mjs';
+import {JevBrowser} from '../app/jev/browser.mjs';
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 const relayUrlOf = (connectUrl) => new URL(connectUrl).searchParams.get('relay');
@@ -117,6 +118,9 @@ class FakeExtension {
         case 'debugger.send': {
           const {target, url} = tab(params.tabId);
           if (!this.attached.has(params.tabId)) throw Error('Debugger is not attached');
+          if (params.method === 'Target.setAutoAttach') this.onAutoAttach?.(socket, params.tabId);
+          if (params.method === 'Page.getFrameTree' && this.frameTrees?.[params.sessionId])
+            return reply({result: this.frameTrees[params.sessionId]});
           if (params.method === 'Target.getTargetInfo')
             return reply({
               result: {
@@ -190,7 +194,10 @@ test('connecting opens the connect page once and reuses a connection the extensi
   });
   t.after(() => again.close());
   assert.equal(again.instanceId, 'run-1');
-  await assert.rejects(relay.connect({open: async () => {}, timeout: 20}), /eklentisi bağlanmadı/);
+  await assert.rejects(
+    relay.connect({open: async () => {}, timeout: 20}),
+    /extension did not connect/,
+  );
   const abort = new AbortController();
   const cancelled = assert.rejects(relay.connect({open: async () => {}, signal: abort.signal}), {
     name: 'AbortError',
@@ -240,11 +247,12 @@ test('owned tabs attach when Playwright enables auto-attach, with their out-of-p
     sent.map((c) => c.params.method),
     ['Target.getTargetInfo', 'Target.setAutoAttach'],
   );
-  assert.equal(sent[1].params.params.waitForDebuggerOnStart, true);
-  assert.deepEqual(sent[1].params.params.filter, [
-    {type: 'iframe', exclude: false},
-    {exclude: true},
-  ]);
+  // Playwright's own parameters: a filter that leaves out workers keeps them paused.
+  assert.deepEqual(sent[1].params.params, {
+    autoAttach: true,
+    waitForDebuggerOnStart: true,
+    flatten: true,
+  });
   const attachedEvent = forwarded.find((m) => m.method === 'Target.attachedToTarget');
   assert.equal(attachedEvent.params.sessionId, `jev-tab-${saved.id}`);
   assert.equal(attachedEvent.params.targetInfo.targetId, saved.target);
@@ -374,6 +382,101 @@ test('owned tabs attach when Playwright enables auto-attach, with their out-of-p
   });
 });
 
+test('events a tab raises while it attaches reach Playwright after its own attachment', async (t) => {
+  const {extension, forwarded, call} = await transportFixture(t);
+  // Chrome reports already existing frames as soon as auto-attach is enabled.
+  extension.onAutoAttach = (socket, tabId) =>
+    extension.emit(socket, {
+      event: 'debugger.event',
+      tabId,
+      method: 'Target.attachedToTarget',
+      params: {
+        sessionId: 'frame-early',
+        waitingForDebugger: true,
+        targetInfo: {targetId: 'E'.repeat(32), type: 'iframe'},
+      },
+    });
+  await call({id: 1, method: 'Target.setAutoAttach', params: {autoAttach: true}});
+  await call({id: 2, method: 'Target.createTarget', params: {url: 'https://jobs.example/apply'}});
+  await flush();
+  const attached = forwarded.filter((m) => m.method === 'Target.attachedToTarget');
+  assert.deepEqual(
+    attached.map((m) => [m.sessionId, m.params.sessionId]),
+    [
+      [undefined, attached[0].params.sessionId],
+      [attached[0].params.sessionId, 'frame-early'],
+    ],
+  );
+});
+
+test('a Jev call that never settles drops the connection and frees Jev', async (t) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'jev-stuck-'));
+  t.after(() => rm(directory, {recursive: true, force: true}));
+  const jev = new JevBrowser(directory, {connection: 'existing'});
+  let closed = 0;
+  jev.transport = {close: () => closed++};
+  jev.toolCallLimitMs = 30;
+  jev.toolCancelGraceMs = 10;
+  jev.runTool = () => new Promise(() => {});
+  await assert.rejects(jev.callTool({name: 'browser_jev_tabs', arguments: {}}), {
+    code: 'BROWSER_DISCONNECTED',
+  });
+  assert.equal(jev.busy, false);
+  assert.equal(closed, 1);
+  // A cancelled call is given a short grace period, not the whole limit.
+  jev.toolCallLimitMs = 60000;
+  const abort = new AbortController(),
+    started = Date.now(),
+    pending = jev.callTool({name: 'browser_jev_tabs', arguments: {}}, 'local', {
+      signal: abort.signal,
+    });
+  abort.abort(Error('stopped'));
+  await assert.rejects(pending, /stopped/);
+  assert.equal(Date.now() - started < 1000, true);
+  assert.equal(jev.busy, false);
+  assert.equal(closed, 2);
+  // A call that answers in time keeps the connection.
+  jev.runTool = async () => ({content: []});
+  assert.deepEqual(await jev.callTool({name: 'browser_jev_tabs', arguments: {}}), {content: []});
+  assert.equal(closed, 2);
+});
+
+test('an out-of-process frame that loaded before the attach gets its URL', async (t) => {
+  const {extension, forwarded, call} = await transportFixture(t);
+  await call({id: 1, method: 'Target.setAutoAttach', params: {autoAttach: true}});
+  await call({id: 2, method: 'Target.createTarget', params: {url: 'https://jobs.example/apply'}});
+  const tabId = [...extension.attached][0];
+  const socket = extension.sockets.at(-1);
+  const attached = (sessionId, waitingForDebugger) =>
+    extension.emit(socket, {
+      event: 'debugger.event',
+      tabId,
+      method: 'Target.attachedToTarget',
+      params: {sessionId, waitingForDebugger, targetInfo: {targetId: sessionId, type: 'iframe'}},
+    });
+  attached('loaded', false);
+  attached('new', true);
+  await flush();
+  await flush();
+  extension.frameTrees = {
+    loaded: {frameTree: {frame: {id: 'F1', url: 'https://forms.example/apply'}}},
+    new: {frameTree: {frame: {id: 'F2', url: 'https://forms.example/apply'}}},
+  };
+  await call({id: 3, sessionId: 'loaded', method: 'Page.getFrameTree'});
+  await call({id: 4, sessionId: 'new', method: 'Page.getFrameTree'});
+  await call({id: 5, sessionId: 'loaded', method: 'Page.getFrameTree'});
+  assert.deepEqual(
+    forwarded.filter((m) => m.method === 'Page.navigatedWithinDocument'),
+    [
+      {
+        sessionId: 'loaded',
+        method: 'Page.navigatedWithinDocument',
+        params: {frameId: 'F1', url: 'https://forms.example/apply', navigationType: 'other'},
+      },
+    ],
+  );
+});
+
 test('new tabs and popups of owned tabs join the connection; closing a tab retires it', async (t) => {
   const {extension, transport, forwarded, call} = await transportFixture(t);
   const destroyed = [];
@@ -441,7 +544,7 @@ test('cancelling the Chrome infobar ends the connection and waits for an explici
   await closed;
   assert.equal(transport.cancelled, true);
   assert.equal(transport.connected, false);
-  await assert.rejects(transport.createWindow('about:blank'), /kapandı/);
+  await assert.rejects(transport.createWindow('about:blank'), /closed/);
   let now = 0,
     attempts = 0;
   const connections = new BrowserConnections({
@@ -454,7 +557,7 @@ test('cancelling the Chrome infobar ends the connection and waits for an explici
   connections.prepare('candidate');
   await flush();
   connections.disconnected('candidate', {manual: true});
-  assert.match(connections.status('candidate').message, /iptal edildi/);
+  assert.match(connections.status('candidate').message, /cancelled in Chrome/);
   now += 3600000;
   connections.prepare('candidate');
   await flush();
