@@ -1129,6 +1129,25 @@ test('lazy results update the saved page receipt after scrolling without losing 
   );
 });
 
+test('page text cut inside an emoji reaches Jev as well-formed Unicode', async () => {
+  const questions = {fit: {type: 'choice', criteria: {keep: 'Keep', unknown: 'Unknown'}}},
+    cut = 'Senior .NET Engineer \u{1F680}'.slice(0, -1);
+  let body;
+  await askJev({links: {link0: {title: cut}}}, questions, {
+    apiKey: 'test',
+    fetchImpl: async (_, args) => {
+      body = args.body;
+      return {
+        ok: true,
+        json: async () => ({answers: {fit: answer('keep', questions.fit.criteria)}}),
+      };
+    },
+  });
+  assert.equal(body.isWellFormed(), true);
+  assert.doesNotMatch(body, /\\ud[89ab]/i);
+  assert.equal(JSON.parse(body).state.links.link0.title, 'Senior .NET Engineer \uFFFD');
+});
+
 test('generic Jev requests validate every returned choice and propagate cancellation', async () => {
   const questions = {fit: {type: 'choice', criteria: {keep: 'Keep', unknown: 'Unknown'}}},
     controller = new AbortController();
