@@ -1,0 +1,250 @@
+/* First-run flow in the JobLoop look. The onboarding logic and markup stay in
+   src/onboarding.js; this sheet re-themes it by remapping the classic tokens. */
+body.jl-simple .onboarding {
+  --bg-app: var(--jl-bg);
+  --bg-raised: var(--jl-panel);
+  --bg-hover: var(--jl-sunk);
+  --border: var(--jl-line);
+  --border-strong: var(--jl-line-strong);
+  --text: var(--jl-ink);
+  --text-secondary: var(--jl-muted);
+  --text-muted: var(--jl-faint);
+  --accent: var(--jl-accent);
+  --accent-strong: var(--jl-accent);
+  --accent-wash: var(--jl-accent-soft);
+  --success: var(--jl-good);
+  --warning: var(--jl-warn);
+  --danger: var(--jl-bad);
+  --onboarding-width: 600px;
+  color-scheme: light;
+  font-family: var(--jl-font);
+  font-size: 14px;
+  padding-top: 40px;
+  -webkit-font-smoothing: antialiased;
+}
+@media (prefers-color-scheme: dark) {
+  body.jl-simple .onboarding {
+    color-scheme: dark;
+  }
+}
+body.jl-simple .onboarding-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+body.jl-simple .onboarding-steps {
+  gap: 6px;
+  font-size: 13px;
+}
+body.jl-simple .onboarding-steps li {
+  padding: 6px 12px 6px 6px;
+  border-radius: 99px;
+  background: var(--jl-panel);
+  border: 1px solid var(--jl-line);
+}
+body.jl-simple .onboarding-steps li[data-state='current'] {
+  background: var(--jl-ink);
+  border-color: var(--jl-ink);
+  color: var(--jl-bg);
+}
+body.jl-simple .onboarding-steps li[data-state='current']::before {
+  background: var(--jl-bg);
+  border-color: var(--jl-bg);
+  color: var(--jl-ink);
+}
+body.jl-simple .onboarding-steps li[data-state='done'] {
+  background: var(--jl-good-soft);
+  border-color: transparent;
+  color: var(--jl-good);
+}
+body.jl-simple .onboarding-card {
+  gap: 20px;
+  padding: 36px;
+  border-radius: 20px;
+  box-shadow: var(--jl-shadow);
+}
+body.jl-simple .onboarding-card h1 {
+  font-size: 28px;
+  letter-spacing: -0.03em;
+}
+body.jl-simple .onboarding-lead {
+  font-size: 15px;
+}
+/* The CV picker is the one big target on the first screen. */
+body.jl-simple .onboarding-drop {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 36px 20px;
+  border: 2px dashed var(--jl-line-strong);
+  border-radius: 16px;
+  background: var(--jl-sunk);
+  color: var(--jl-ink);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+body.jl-simple .onboarding-drop:hover:not(:disabled) {
+  border-color: var(--jl-accent);
+  background: var(--jl-accent-soft);
+  filter: none;
+}
+body.jl-simple .onboarding-drop svg {
+  color: var(--jl-accent);
+  margin-bottom: 4px;
+}
+body.jl-simple .onboarding-drop b {
+  font-size: 16px;
+  font-weight: 600;
+}
+body.jl-simple .onboarding-drop small {
+  color: var(--jl-muted);
+  font-size: 13px;
+}
+body.jl-simple .onboarding legend {
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--jl-ink);
+}
+body.jl-simple .onboarding .authorization {
+  border-radius: 12px;
+}
+body.jl-simple .onboarding .choice {
+  padding: 14px 16px;
+  font-size: 14px;
+}
+body.jl-simple .onboarding .choice:has(:checked) {
+  box-shadow: inset 3px 0 var(--jl-accent);
+}
+body.jl-simple .onboarding-missing {
+  padding: 10px 16px;
+  border-top: 1px solid var(--jl-line);
+  font-size: 13px;
+  color: var(--jl-muted);
+}
+body.jl-simple .onboarding-missing summary {
+  cursor: pointer;
+}
+body.jl-simple .onboarding-missing .choice {
+  padding-inline: 0;
+  opacity: 0.8;
+}
+body.jl-simple .onboarding-missing .choice small {
+  font-size: 12px;
+}
+body.jl-simple :is(.onboarding-notes-box, .onboarding-live, .onboarding-more) summary {
+  cursor: pointer;
+  color: var(--jl-accent);
+  font-weight: 500;
+  font-size: 13px;
+}
+body.jl-simple .onboarding-notes-box[open] summary {
+  margin-bottom: 10px;
+}
+body.jl-simple .onboarding-live .onboarding-terminal {
+  margin-top: 12px;
+  color-scheme: dark;
+}
+body.jl-simple .onboarding :is(input, textarea, select) {
+  border: 1px solid var(--jl-line-strong);
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: var(--jl-panel);
+  color: var(--jl-ink);
+}
+body.jl-simple .onboarding :is(input, textarea, select):focus {
+  outline: none;
+  border-color: var(--jl-accent);
+  box-shadow: 0 0 0 3px var(--jl-accent-soft);
+}
+body.jl-simple .onboarding :is(input[type='radio'], input[type='checkbox']) {
+  padding: 0;
+  box-shadow: none;
+}
+body.jl-simple .onboarding-fields label,
+body.jl-simple .onboarding label {
+  color: var(--jl-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+body.jl-simple .onboarding button {
+  border-radius: 10px;
+}
+body.jl-simple .onboarding button.primary {
+  min-height: 48px;
+  padding: 0 24px;
+  background: var(--jl-ink);
+  color: var(--jl-bg);
+  font-size: 15px;
+  font-weight: 600;
+}
+body.jl-simple .onboarding button:not(.primary, .link, .onboarding-drop) {
+  background: var(--jl-panel);
+  border: 1px solid var(--jl-line-strong);
+  color: var(--jl-ink);
+}
+body.jl-simple .onboarding button.link {
+  color: var(--jl-muted);
+}
+body.jl-simple .onboarding-spinner {
+  border-color: var(--jl-line);
+  border-top-color: var(--jl-accent);
+}
+body.jl-simple .onboarding-error {
+  color: var(--jl-bad);
+}
+body.jl-simple .onboarding :is(input, textarea, select),
+body.jl-simple .onboarding .choice small,
+body.jl-simple .onboarding .check small {
+  font-weight: 400;
+}
+body.jl-simple .onboarding .choice small,
+body.jl-simple .onboarding .check small {
+  color: var(--jl-muted);
+}
+body.jl-simple .onboarding-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+body.jl-simple .onboarding-fields > :is(label, details) {
+  grid-column: 1 / -1;
+}
+body.jl-simple .onboarding-fields > label:has(input[name='country']),
+body.jl-simple .onboarding-fields > label:has(input[name='location']) {
+  grid-column: auto;
+}
+body.jl-simple .onboarding-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+body.jl-simple .onboarding-checks .check {
+  padding: 10px 12px;
+  border: 1px solid var(--jl-line);
+  border-radius: 10px;
+  background: var(--jl-panel);
+}
+body.jl-simple .onboarding-checks .check:has(:checked) {
+  border-color: var(--jl-accent-line);
+  background: var(--jl-accent-soft);
+}
+body.jl-simple .onboarding-readiness {
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--jl-warn-soft);
+}
+body.jl-simple .onboarding-foot {
+  position: sticky;
+  bottom: -40px;
+  padding: 16px 0;
+  border-top: 1px solid var(--jl-line);
+  background: var(--jl-panel);
+}

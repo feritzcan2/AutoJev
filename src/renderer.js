@@ -19,6 +19,7 @@ import './activity.css';
 import './sources.css';
 import './board.css';
 import './profile.css';
+import './simple/app.js';
 const api = window.jobloop,
   $ = (id) => document.getElementById(id);
 let catalog = [],

@@ -8,6 +8,7 @@ import {withAgentDefaults} from '../app/agents/settings.mjs';
 import {WorkerTerminalSurface} from './worker-terminal-surface.js';
 import {terminalAttention} from './agent-attention.js';
 import './onboarding.css';
+import {BRAND, markIcon} from './simple/brand.js';
 
 // Welcome screen of a new job search: the user picks the agent and the CV, the
 // setup agent fills the profile from the CV, the user reviews it and starts.
@@ -18,12 +19,13 @@ const readinessIds = ['chrome', 'chrome-profile', 'chrome-debug', 'jev', 'failed
 const modes = [
   [
     'observe',
-    'Only find',
-    'Finds and scores suitable listings; applies only when you say "Apply".',
+    'I pick, JobLoop applies',
+    'Finds and scores jobs for you. Applies only to the ones you press Apply on.',
   ],
-  ['auto', 'Find and apply', 'Also applies on its own to listings that reach the minimum score.'],
+  ['auto', 'Full autopilot', 'Also applies on its own to jobs at or above your minimum fit score.'],
 ];
 const flagKey = (id) => 'onboarding:' + id;
+const providerNames = {claude: 'Claude', codex: 'ChatGPT (Codex)', opencode: 'OpenCode'};
 
 const el = (tag, text, cls) => {
   const node = document.createElement(tag);
@@ -68,8 +70,11 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     steps = el('ol', null, 'onboarding-steps'),
     card = el('section', null, 'onboarding-card'),
     error = el('p', null, 'onboarding-error');
-  head.append(el('b', 'AutoJev', 'onboarding-brand'), steps);
-  for (const label of ['CV', 'Profile', 'Start']) steps.append(el('li', label));
+  const brand = el('b', null, 'onboarding-brand');
+  brand.innerHTML = markIcon(26);
+  brand.append(BRAND);
+  head.append(brand, steps);
+  for (const label of ['Upload CV', 'Check details', 'Start']) steps.append(el('li', label));
   error.setAttribute('role', 'alert');
   error.hidden = true;
   root.append(head, card, error);
@@ -208,52 +213,53 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
 
   function startStep() {
     const intro = [
-      el('h1', 'Let’s start your job search from your CV'),
+      el('h1', 'Let’s find your next job'),
       el(
         'p',
-        'Choose your CV. The agent builds your profile from it; you review it and start the search.',
+        'Upload your CV. JobLoop reads it, you check the details, and it starts finding jobs that fit you.',
         'onboarding-lead',
       ),
     ];
     const agents = el('fieldset', null, 'onboarding-agents');
-    agents.append(el('legend', 'Which AI agent should run?'), el('div', null, 'authorization'));
-    const notes = el('label', 'Notes for the agent (optional)', 'onboarding-notes'),
+    agents.append(el('legend', 'The AI that does the work'), el('div', null, 'authorization'));
+    const notesBox = el('details', null, 'onboarding-notes-box'),
+      notes = el('label', 'Anything your CV does not say? (optional)', 'onboarding-notes'),
       input = el('textarea');
+    notesBox.append(el('summary', 'Add a note for JobLoop'), notes);
     input.name = 'notes';
     input.maxLength = 12000;
     input.placeholder =
       'Where do you want to work, which roles, remote or on-site, salary, start date, anything your CV does not say.';
     notes.append(input);
-    const pick = button('Choose CV', () => attempt(pickCv), 'primary onboarding-cv');
+    const pick = button('', () => attempt(pickCv), 'onboarding-cv onboarding-drop');
     pick.dataset.action = 'pick-cv';
-    const hint = el(
-      'small',
-      'PDF, DOCX or TXT. The file stays on this computer; your notes go to the agent with it.',
-      'onboarding-hint',
-    );
+    pick.innerHTML =
+      '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M12 18v-6M9 15l3-3 3 3"/></svg><b>Choose your CV</b><small>PDF, DOCX or TXT · it stays on this computer</small>';
     const links = el('div', null, 'onboarding-links');
-    links.append(button('I want to set it up in a chat', () => attempt(skip), 'link'));
-    return [...intro, agents, notes, pick, hint, links];
+    links.append(button('Set it up in a chat instead', () => attempt(skip), 'link'));
+    return [...intro, pick, agents, notesBox, links];
   }
   function readingStep() {
     const status = el('div', null, 'onboarding-progress');
     status.append(el('span', null, 'onboarding-spinner'), el('span', '0:00', 'onboarding-elapsed'));
     const attention = el('p', null, 'onboarding-attention');
     attention.hidden = true;
-    const screen = el('div', null, 'worker-terminal onboarding-terminal');
+    const screen = el('div', null, 'worker-terminal onboarding-terminal'),
+      live = el('details', null, 'onboarding-live');
+    live.append(el('summary', 'Show what the AI is doing'), screen);
     screen.setAttribute('aria-label', 'Setup agent terminal');
     const links = el('div', null, 'onboarding-links');
     links.append(button('Open the agent screen', () => chat(id), 'link'));
     return [
-      el('h1', 'Reading your CV'),
+      el('h1', 'Reading your CV…'),
       el(
         'p',
-        'The agent is building your profile from your CV. This usually takes a minute or two; the screen moves on by itself.',
+        'JobLoop is filling in your profile from your CV. This takes a minute or two; the next step opens by itself.',
         'onboarding-lead',
       ),
       status,
       attention,
-      screen,
+      live,
       links,
     ];
   }
@@ -343,7 +349,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       if (event.target.name === 'country') renderSources(form);
     };
     return [
-      el('h1', 'Review your profile'),
+      el('h1', 'Check your details'),
       el('p', null, 'onboarding-reply'),
       el('div', null, 'onboarding-failure'),
       form,
@@ -363,6 +369,10 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     if (step === 'start') {
       const list = card.querySelector('.onboarding-agents .authorization');
       list.replaceChildren();
+      // Usable assistants are the choice; missing ones fold away with their install hint.
+      const missing = el('details', null, 'onboarding-missing'),
+        missingList = el('div');
+      missing.append(el('summary'), missingList);
       for (const [value, p] of providers) {
         const choice = el('label', null, 'choice'),
           input = el('input'),
@@ -376,29 +386,36 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
           render();
         };
         copy.append(
-          el('b', p.label),
+          el('b', providerNames[value] ?? p.label),
           el(
             'small',
             p.state === 'checking'
               ? 'Checking…'
               : p.state === 'ready'
-                ? 'Ready'
+                ? 'Ready · uses your own account'
                 : p.detail || 'Unavailable',
           ),
         );
         choice.dataset.state = p.state;
         choice.append(input, copy);
-        list.append(choice);
+        (p.state === 'error' ? missingList : list).append(choice);
       }
-      if (!providers.size) list.append(el('p', 'Loading the agent list…', 'onboarding-hint'));
-      const blocked = !provider || ['checking', 'error'].includes(providers.get(provider)?.state);
-      card.querySelector('[data-action=pick-cv]').disabled = busy || blocked;
-      card.querySelector('[data-action=pick-cv]').textContent = busy ? 'Adding CV…' : 'Choose CV';
+      if (missingList.childElementCount) {
+        missing.firstChild.textContent = `${missingList.childElementCount} more not installed on this computer`;
+        list.append(missing);
+      }
+      if (!providers.size) list.append(el('p', 'Looking for AI assistants on this computer…', 'onboarding-hint'));
+      const blocked = !provider || ['checking', 'error'].includes(providers.get(provider)?.state),
+        pick = card.querySelector('[data-action=pick-cv]');
+      pick.disabled = busy || blocked;
+      pick.querySelector('b').textContent = busy ? 'Adding your CV…' : 'Choose your CV';
     } else if (step === 'reading') {
       const run = interviewRun(data),
         prompt = terminal?.prompt,
         attention = card.querySelector('.onboarding-attention');
       attention.hidden = !(prompt || run?.state === 'AwaitingInput' || run?.usageLimit);
+      // An approval is answered in the live terminal, so it opens with the notice.
+      if (!attention.hidden) card.querySelector('.onboarding-live')?.setAttribute('open', '');
       attention.textContent = run?.usageLimit
         ? 'The agent reached its usage limit. Check the status in the terminal below.'
         : prompt === 'trust'
@@ -498,7 +515,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     }
     const mode = el('fieldset', null, 'onboarding-section'),
       choices = el('div', null, 'authorization');
-    mode.append(el('legend', 'Agent permissions'), choices);
+    mode.append(el('legend', 'How far should JobLoop go?'), choices);
     for (const [value, title, description] of modes) {
       const choice = el('label', null, 'choice'),
         input = el('input'),
@@ -533,12 +550,12 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     };
     choices.addEventListener('change', syncScore);
     const sources = el('fieldset', null, 'onboarding-section onboarding-sources');
-    sources.append(el('legend', 'Where should we search?'), el('div', null, 'onboarding-checks'));
+    sources.append(el('legend', 'Where to search'), el('div', null, 'onboarding-checks'));
     const checks = el('section', null, 'onboarding-readiness');
     checks.setAttribute('aria-label', 'Before you start');
     const foot = el('div', null, 'onboarding-foot'),
       again = button('Refill from CV', () => attempt(readAgain)),
-      submit = el('button', 'Save and start the search', 'primary');
+      submit = el('button', 'Start finding jobs', 'primary');
     again.dataset.action = 'read-again';
     submit.type = 'submit';
     foot.append(again, submit);
