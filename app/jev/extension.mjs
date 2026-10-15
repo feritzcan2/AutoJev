@@ -32,9 +32,16 @@ export class ExtensionRelay {
     return relay;
   }
   async listen() {
+    // The port is read once: a request still open on a kept-alive socket can
+    // arrive after close(), when the server no longer has an address.
     this.server = createServer((req, res) => {
-      const host = `127.0.0.1:${this.server.address().port}`;
-      if (req.method === 'GET' && req.url === `${this.path}/home` && req.headers.host === host) {
+      const host = `127.0.0.1:${this.port}`;
+      if (
+        !this.closed &&
+        req.method === 'GET' &&
+        req.url === `${this.path}/home` &&
+        req.headers.host === host
+      ) {
         res.writeHead(200, {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'no-store',
@@ -48,7 +55,7 @@ export class ExtensionRelay {
     });
     this.websockets = new WebSocketServer({noServer: true, maxPayload: 256 * 1024 * 1024});
     this.server.on('upgrade', (request, socket, head) => {
-      const host = `127.0.0.1:${this.server.address().port}`;
+      const host = `127.0.0.1:${this.port}`;
       if (
         this.closed ||
         request.headers.host !== host ||
@@ -65,13 +72,14 @@ export class ExtensionRelay {
       this.server.once('error', reject);
       this.server.listen(0, '127.0.0.1', resolve);
     });
+    this.port = this.server.address().port;
   }
   get url() {
-    return `ws://127.0.0.1:${this.server.address().port}${this.path}`;
+    return `ws://127.0.0.1:${this.port}${this.path}`;
   }
   // The AutoJev window's own tab; owned tabs open beside it.
   get homeUrl() {
-    return `http://127.0.0.1:${this.server.address().port}${this.path}/home`;
+    return `http://127.0.0.1:${this.port}${this.path}/home`;
   }
   accept(socket) {
     this.sockets.add(socket);
@@ -145,6 +153,7 @@ export class ExtensionRelay {
     for (const socket of this.sockets) socket.terminate();
     this.websockets?.close();
     this.server?.close();
+    this.server?.closeAllConnections();
   }
 }
 
