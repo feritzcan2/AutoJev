@@ -257,3 +257,102 @@ body.jl-simple .onboarding-foot {
   border-top: 1px solid var(--jl-line);
   background: var(--jl-panel);
 }
+
+/* Reading step: the agent screen is an engineer tool; the live log stays one click away. */
+body.jl-simple .onboarding [data-agent-screen] {
+  display: none;
+}
+/* Sources: a calm checked state, no large tinted blocks. */
+body.jl-simple .onboarding-checks .check:has(:checked) {
+  border-color: var(--jl-line-strong);
+  background: var(--jl-panel);
+}
+body.jl-simple .onboarding-checks .check:not(:has(:checked)) {
+  background: var(--jl-sunk);
+}
+body.jl-simple .onboarding-checks .check:not(:has(:checked)) b {
+  color: var(--jl-muted);
+}
+/* Setup checklist */
+body.jl-simple .onboarding-readiness {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--jl-line);
+  background: var(--jl-panel);
+}
+body.jl-simple .onboarding-readiness[data-blocking='true'] {
+  border-color: var(--jl-warn);
+  background: var(--jl-warn-soft);
+}
+body.jl-simple .onboarding-readiness h2 {
+  font-size: 15px;
+}
+body.jl-simple .onboarding-check-lead {
+  margin: -6px 0 2px;
+  color: var(--jl-muted);
+  font-size: 13px;
+}
+body.jl-simple .onboarding-check {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--jl-panel);
+  border: 1px solid var(--jl-line);
+}
+body.jl-simple .onboarding-check-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+body.jl-simple .onboarding-check-head b {
+  color: var(--jl-ink);
+  font-size: 14px;
+}
+body.jl-simple .onboarding-check > span {
+  color: var(--jl-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+body.jl-simple .onboarding-check-tag {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--jl-sunk);
+  color: var(--jl-muted);
+}
+body.jl-simple .onboarding-check[data-state='error'] .onboarding-check-tag {
+  background: var(--jl-warn-soft);
+  color: var(--jl-warn);
+}
+body.jl-simple .onboarding-check button.link {
+  justify-self: start;
+  color: var(--jl-accent-text);
+  font-weight: 500;
+}
+body.jl-simple .onboarding-key button {
+  white-space: nowrap;
+}
+body.jl-simple .onboarding-no-ai {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  background: var(--jl-warn-soft);
+}
+body.jl-simple .onboarding-no-ai span {
+  color: var(--jl-muted);
+  font-size: 13px;
+}
+body.jl-simple .onboarding-no-ai button {
+  justify-self: start;
+}
+body.jl-simple .onboarding-error {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--jl-bad-soft);
+  font-weight: 500;
+}

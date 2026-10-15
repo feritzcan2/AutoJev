@@ -26,6 +26,27 @@ const modes = [
 ];
 const flagKey = (id) => 'onboarding:' + id;
 const providerNames = {claude: 'Claude', codex: 'ChatGPT (Codex)', opencode: 'OpenCode'};
+// Plain-language setup items; the checks themselves come from the app.
+const friendlyChecks = {
+  chrome: {
+    title: 'Install Google Chrome',
+    text: 'JobLoop opens job sites in Chrome. Install it, open it once, then press Check again.',
+    link: ['Download Chrome', 'https://www.google.com/chrome/'],
+  },
+  'chrome-profile': {
+    title: 'Choose a Chrome profile',
+    text: 'Open Chrome once so it creates a profile. Sign in there to the job sites you use.',
+  },
+  'chrome-debug': {
+    title: 'Let JobLoop use Chrome',
+    text: 'In Chrome, open chrome://inspect/#remote-debugging and turn on remote debugging. Chrome asks once to allow JobLoop.',
+  },
+  jev: {
+    title: 'Add your TypeSafe key',
+    text: 'JobLoop uses TypeSafe to fill application forms. Paste your API key here; it is stored encrypted on this computer.',
+    link: ['Get a TypeSafe key', 'https://typesafe.ai'],
+  },
+};
 
 const el = (tag, text, cls) => {
   const node = document.createElement(tag);
@@ -96,6 +117,8 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
   const showError = (message = '') => {
     error.textContent = message;
     error.hidden = !message;
+    // The message sits under the card; bring it into view so it is never missed.
+    if (message) requestAnimationFrame(() => error.scrollIntoView({block: 'center'}));
   };
   async function attempt(fn) {
     if (busy) return;
@@ -249,7 +272,9 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     live.append(el('summary', 'Show what the AI is doing'), screen);
     screen.setAttribute('aria-label', 'Setup agent terminal');
     const links = el('div', null, 'onboarding-links');
-    links.append(button('Open the agent screen', () => chat(id), 'link'));
+    const agentLink = button('Open the agent screen', () => chat(id), 'link');
+    agentLink.dataset.agentScreen = '';
+    links.append(agentLink);
     return [
       el('h1', 'Reading your CV…'),
       el(
@@ -400,7 +425,27 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         choice.append(input, copy);
         (p.state === 'error' ? missingList : list).append(choice);
       }
-      if (missingList.childElementCount) {
+      const none = providers.size && [...providers.values()].every((p) => p.state === 'error');
+      if (none) {
+        // Nothing usable yet: say what to do instead of a disabled button.
+        const help = el('div', null, 'onboarding-no-ai');
+        help.append(
+          el('b', 'JobLoop needs an AI assistant on this computer'),
+          el(
+            'span',
+            'Install Claude Code (or ChatGPT’s Codex), sign in once, then press Check again. Your CV stays here.',
+          ),
+          button(
+            'How to install Claude Code',
+            () => api.openLink('https://code.claude.com/docs/en/overview'),
+            'link',
+          ),
+          button('Check again', () => checkProviders()),
+        );
+        list.append(help);
+        missing.firstChild.textContent = 'Details for each assistant';
+        list.append(missing);
+      } else if (missingList.childElementCount) {
         missing.firstChild.textContent = `${missingList.childElementCount} more not installed on this computer`;
         list.append(missing);
       }
@@ -560,7 +605,8 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     again.dataset.action = 'read-again';
     submit.type = 'submit';
     foot.append(again, submit);
-    form.append(profile, mode, sources, checks, foot);
+    // Setup items that block the start come before the long source list.
+    form.append(profile, mode, checks, sources, foot);
     syncScore();
     renderSources(form);
     renderReadiness(form);
@@ -601,11 +647,29 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     );
     root.hidden = !open.length;
     if (!open.length) return;
-    root.append(el('h2', 'Before you start'));
+    const blocking = open.some((c) => c.state === 'error');
+    root.dataset.blocking = String(blocking);
+    root.append(
+      el('h2', blocking ? 'One more thing before you start' : 'Before you start'),
+      el(
+        'p',
+        blocking
+          ? 'JobLoop needs the items marked Required to find and apply to jobs.'
+          : 'Recommended, so JobLoop can apply on job sites for you.',
+        'onboarding-check-lead',
+      ),
+    );
     for (const check of open) {
-      const item = el('div', null, 'onboarding-check');
+      const item = el('div', null, 'onboarding-check'),
+        copy = friendlyChecks[check.id],
+        head = el('div', null, 'onboarding-check-head');
       item.dataset.state = check.state;
-      item.append(el('b', check.label), el('span', check.detail));
+      head.append(
+        el('b', copy?.title ?? check.label),
+        el('span', check.state === 'error' ? 'Required' : 'Recommended', 'onboarding-check-tag'),
+      );
+      item.append(head, el('span', copy?.text ?? check.detail));
+      if (copy?.link) item.append(button(copy.link[0], () => api.openLink(copy.link[1]), 'link'));
       if (check.id === 'jev') {
         const key = el('div', null, 'onboarding-key'),
           input = el('input');
@@ -700,7 +764,12 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     const owner = id,
       f = form.elements;
     const jev = await api.jevSettingsStatus();
-    if (!jev.configured) throw Error(jev.error ?? 'Save the TypeSafe API key to start the search.');
+    if (!jev.configured) {
+      const key = form.querySelector('[name=jevKey]');
+      key?.scrollIntoView({block: 'center'});
+      key?.focus();
+      throw Error(jev.error ?? 'Add your TypeSafe key above to start the search.');
+    }
     const chosen = new Set(
       [...form.querySelectorAll('input[name=source]')].filter((i) => i.checked).map((i) => i.value),
     );
