@@ -15,6 +15,7 @@ import {
   shell,
   safeStorage,
   Notification,
+  nativeTheme,
 } from 'electron';
 import {mkdir, rm} from 'node:fs/promises';
 import path from 'node:path';
@@ -462,7 +463,8 @@ async function boot() {
     minWidth: 1040,
     minHeight: 720,
     title: 'JobLoop',
-    backgroundColor: '#11151b',
+    // Matches the first frame the app paints, so opening never flashes.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0e0f12' : '#f4f4ef',
     webPreferences: {
       preload: path.join(root, 'app/preload.cjs'),
       contextIsolation: true,

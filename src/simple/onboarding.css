@@ -717,3 +717,45 @@ body.jl-simple .onboarding .onboarding-once legend {
 .onboarding-echo-rest.in {
   opacity: 1;
 }
+
+/* The AI that does the work: one quiet line when only one assistant works. */
+.onboarding-agent-one {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  font-size: 14px;
+  color: var(--jl-ink);
+}
+.onboarding-agent-one small {
+  color: var(--jl-muted);
+  font-size: 13px;
+}
+.onboarding-agent-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--jl-good);
+}
+.onboarding-missing-rows {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+.onboarding-missing-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.onboarding-missing-row b {
+  color: var(--jl-ink);
+  font-weight: 500;
+}
+.onboarding-missing-row small {
+  color: var(--jl-muted);
+}
+.onboarding-missing-row .link {
+  margin-left: auto;
+}

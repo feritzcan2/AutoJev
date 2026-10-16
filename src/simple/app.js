@@ -6,6 +6,7 @@ import {automationAttention} from '../../app/automation/attention.mjs';
 import {recordOperationStatus, recordProblem} from '../record-operation-status.js';
 import {questionForm} from '../question-form.js';
 import {BRAND, markIcon} from './brand.js';
+import {playIntro} from './intro.js';
 import {el, button, icon, plural, scoreOf, relative, host} from './ui.js';
 import {checkmark, flyPlane, reduced, rollingNumber} from './motion.js';
 import {LESS, NEVER, listOf, setFactLine, withItem, withoutItem} from './facts.js';
@@ -122,7 +123,9 @@ async function load() {
   const version = ++state.loading;
   let id = candidates?.value || state.id;
   try {
-    if (!id) id = (await api.workspaces())[0]?.id ?? null;
+    // A search that was just removed (Start over, Cancel) falls back to another.
+    const list = await api.workspaces();
+    if (!id || !list.some((w) => w.id === id)) id = list[0]?.id ?? null;
     const data = id ? await api.workspaceSnapshot(id) : null;
     if (version !== state.loading) return;
     if (id !== state.id) {
@@ -1221,4 +1224,5 @@ const initials = (name) =>
 
 // ---- Boot ------------------------------------------------------------------------
 document.body.classList.toggle('jl-simple', simpleOn());
+if (simpleOn()) playIntro();
 load();

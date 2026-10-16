@@ -90,6 +90,11 @@ const choiceLabel = (label, tone, trust) =>
     ? ({go: 'Allow', stop: 'Don’t allow'}[tone] ?? label)
     : ({go: 'Allow', always: 'Always allow', stop: 'Don’t allow'}[tone] ?? label);
 const providerNames = {claude: 'Claude', codex: 'ChatGPT (Codex)', opencode: 'OpenCode'};
+const installLinks = {
+  claude: 'https://code.claude.com/docs/en/overview',
+  codex: 'https://developers.openai.com/codex/cli',
+  opencode: 'https://opencode.ai/docs/',
+};
 // Plain-language setup items; the checks themselves come from the app.
 const friendlyChecks = {
   chrome: {
@@ -176,6 +181,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     readiness = null,
     reviewKey = '',
     reviewDirty = false,
+    showMissing = false,
     terminal = null;
 
   const showError = (message = '') => {
@@ -323,7 +329,9 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     pick.innerHTML =
       '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M12 18v-6M9 15l3-3 3 3"/></svg><b>Choose your CV</b><small>PDF, DOCX or TXT · it stays on this computer</small>';
     const links = el('div', null, 'onboarding-links');
-    links.append(button('Set it up in a chat instead', () => attempt(skip), 'link'));
+    const chatSetup = button('Set it up in a chat instead', () => attempt(skip), 'link');
+    chatSetup.dataset.action = 'chat-setup';
+    links.append(chatSetup);
     return [...intro, pick, agents, notesBox, links];
   }
   // While the AI reads the CV the user sees a calm progress screen. The agent's
@@ -581,38 +589,56 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     if (step === 'start') {
       const list = card.querySelector('.onboarding-agents .authorization');
       list.replaceChildren();
-      // Usable assistants are the choice; missing ones fold away with their install hint.
-      const missing = el('details', null, 'onboarding-missing'),
-        missingList = el('div');
-      missing.append(el('summary'), missingList);
-      for (const [value, p] of providers) {
-        const choice = el('label', null, 'choice'),
-          input = el('input'),
-          copy = el('span');
-        input.type = 'radio';
-        input.name = 'onboarding-provider';
-        input.value = value;
-        input.checked = value === provider;
-        input.onchange = () => {
-          provider = value;
-          render();
-        };
-        copy.append(
+      // Only assistants that work here can be chosen. One usable assistant is a
+      // single quiet line; the ones not installed fold away with an install link.
+      const entries = [...providers],
+        usable = entries.filter(([, p]) => ['ready', 'warning'].includes(p.state)),
+        checking = entries.filter(([, p]) => p.state === 'checking'),
+        missingEntries = entries.filter(([, p]) => p.state === 'error');
+      if (usable.length === 1 && !checking.length) {
+        const [value, p] = usable[0],
+          one = el('div', null, 'onboarding-agent-one');
+        one.append(
+          el('span', null, 'onboarding-agent-dot'),
           el('b', providerNames[value] ?? p.label),
           el(
             'small',
-            p.state === 'checking'
-              ? 'Checking…'
-              : p.state === 'ready'
-                ? 'Ready · uses your own account'
-                : p.detail || 'Unavailable',
+            p.state === 'warning'
+              ? p.detail || 'Sign-in may be needed'
+              : 'Ready · uses your own account',
           ),
         );
-        choice.dataset.state = p.state;
-        choice.append(input, copy);
-        (p.state === 'error' ? missingList : list).append(choice);
-      }
-      const none = providers.size && [...providers.values()].every((p) => p.state === 'error');
+        list.append(one);
+      } else
+        for (const [value, p] of [...usable, ...checking]) {
+          const choice = el('label', null, 'choice'),
+            input = el('input'),
+            copy = el('span');
+          input.type = 'radio';
+          input.name = 'onboarding-provider';
+          input.value = value;
+          input.checked = value === provider;
+          input.disabled = p.state === 'checking';
+          input.onchange = () => {
+            provider = value;
+            update();
+          };
+          copy.append(
+            el('b', providerNames[value] ?? p.label),
+            el(
+              'small',
+              p.state === 'checking'
+                ? 'Checking…'
+                : p.state === 'ready'
+                  ? 'Ready · uses your own account'
+                  : p.detail || 'Sign-in may be needed',
+            ),
+          );
+          choice.dataset.state = p.state;
+          choice.append(input, copy);
+          list.append(choice);
+        }
+      const none = providers.size && !usable.length && !checking.length;
       if (none) {
         // Nothing usable yet: say what to do instead of a disabled button.
         const help = el('div', null, 'onboarding-no-ai');
@@ -622,18 +648,31 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
             'span',
             'Install Claude Code (or ChatGPT’s Codex), sign in once, then press Check again. Your CV stays here.',
           ),
-          button(
-            'How to install Claude Code',
-            () => api.openLink('https://code.claude.com/docs/en/overview'),
-            'link',
-          ),
           button('Check again', () => checkProviders()),
         );
         list.append(help);
-        missing.firstChild.textContent = 'Details for each assistant';
-        list.append(missing);
-      } else if (missingList.childElementCount) {
-        missing.firstChild.textContent = `${missingList.childElementCount} more not installed on this computer`;
+      }
+      if (missingEntries.length) {
+        const missing = el('details', null, 'onboarding-missing'),
+          rows = el('div', null, 'onboarding-missing-rows');
+        missing.open = showMissing;
+        missing.ontoggle = () => (showMissing = missing.open);
+        missing.append(
+          el(
+            'summary',
+            none
+              ? 'Which assistants work with JobLoop'
+              : `Other assistants (${missingEntries.length} not installed)`,
+          ),
+          rows,
+        );
+        for (const [value, p] of missingEntries) {
+          const row = el('div', null, 'onboarding-missing-row');
+          row.append(el('b', providerNames[value] ?? p.label), el('small', 'Not installed'));
+          if (installLinks[value])
+            row.append(button('How to install', () => api.openLink(installLinks[value]), 'link'));
+          rows.append(row);
+        }
         list.append(missing);
       }
       if (!providers.size)
@@ -641,6 +680,8 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       const blocked = !provider || ['checking', 'error'].includes(providers.get(provider)?.state),
         pick = card.querySelector('[data-action=pick-cv]');
       pick.disabled = busy || blocked;
+      const chatLink = card.querySelector('[data-action=chat-setup]');
+      if (chatLink) chatLink.disabled = busy || blocked;
       pick.querySelector('b').textContent = busy ? 'Adding your CV…' : 'Choose your CV';
     } else if (step === 'reading') {
       renderAsk(interviewRun(data));
