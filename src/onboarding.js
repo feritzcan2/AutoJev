@@ -133,7 +133,9 @@ const button = (text, onclick, cls = 'quiet') => {
 export function onboardingStep(data) {
   const run = interviewRun(data);
   if (run && !conversationWaiting(run)) return 'reading';
-  return (data.runs ?? []).some((r) => r.kind === 'interview') ? 'review' : 'start';
+  if ((data.runs ?? []).some((r) => r.kind === 'interview')) return 'review';
+  // No CV: the user fills in the details themselves.
+  return localStorage.getItem(flagKey(data.automation?.id)) === 'manual' ? 'review' : 'start';
 }
 
 // A blank workspace, or one whose CV was uploaded but whose profile is not saved yet.
@@ -144,7 +146,7 @@ export function wantsOnboarding(data) {
     Boolean(data.definition?.onboarding) &&
     flag !== 'skip' &&
     a.reviewedRevision == null &&
-    (flag === 'cv' || automationProgress(data).fresh)
+    (flag === 'cv' || flag === 'manual' || automationProgress(data).fresh)
   );
 }
 
@@ -181,7 +183,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     readiness = null,
     reviewKey = '',
     reviewDirty = false,
-    showMissing = false,
+    missingFocus = null,
     terminal = null;
 
   const showError = (message = '') => {
@@ -313,26 +315,37 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         'onboarding-lead',
       ),
     ];
-    const agents = el('fieldset', null, 'onboarding-agents');
-    agents.append(el('legend', 'The AI that does the work'), el('div', null, 'authorization'));
+    const pick = button('', () => attempt(pickCv), 'onboarding-cv onboarding-drop');
+    pick.dataset.action = 'pick-cv';
+    pick.innerHTML =
+      '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><g class="onboarding-drop-arrow"><path d="M12 18v-6M9 15l3-3 3 3"/></g></svg><b>Choose your CV</b><small>PDF, DOCX or TXT · it stays on this computer</small>';
+    // The assistant: one pill per assistant; ones not installed explain themselves.
+    const agents = el('div', null, 'onboarding-agents');
+    agents.setAttribute('role', 'group');
+    agents.setAttribute('aria-labelledby', 'onboarding-ai-title');
+    const agentsTitle = el('span', 'Your AI assistant', 'onboarding-agents-title');
+    agentsTitle.id = 'onboarding-ai-title';
+    agents.append(
+      agentsTitle,
+      el('div', null, 'onboarding-ai-pills'),
+      el('div', null, 'onboarding-ai-note'),
+    );
     const notesBox = el('details', null, 'onboarding-notes-box'),
       notes = el('label', 'Anything your CV does not say? (optional)', 'onboarding-notes'),
       input = el('textarea');
-    notesBox.append(el('summary', 'Add a note for JobLoop'), notes);
+    notesBox.append(el('summary', 'Add a note (optional)'), notes);
     input.name = 'notes';
     input.maxLength = 12000;
     input.placeholder =
       'Where do you want to work, which roles, remote or on-site, salary, start date, anything your CV does not say.';
     notes.append(input);
-    const pick = button('', () => attempt(pickCv), 'onboarding-cv onboarding-drop');
-    pick.dataset.action = 'pick-cv';
-    pick.innerHTML =
-      '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M12 18v-6M9 15l3-3 3 3"/></svg><b>Choose your CV</b><small>PDF, DOCX or TXT · it stays on this computer</small>';
-    const links = el('div', null, 'onboarding-links');
-    const chatSetup = button('Set it up in a chat instead', () => attempt(skip), 'link');
-    chatSetup.dataset.action = 'chat-setup';
-    links.append(chatSetup);
-    return [...intro, pick, agents, notesBox, links];
+    const foot = el('div', null, 'onboarding-start-foot'),
+      manualLink = button('No CV? Fill in your details yourself', () => attempt(manual), 'link'),
+      go = button('Choose CV and continue', () => attempt(pickCv), 'primary');
+    manualLink.dataset.action = 'manual';
+    go.dataset.action = 'continue';
+    foot.append(manualLink, go);
+    return [...intro, pick, agents, notesBox, foot, el('div', null, 'onboarding-links')];
   }
   // While the AI reads the CV the user sees a calm progress screen. The agent's
   // terminal stays mounted off screen: its choice prompts are shown as cards
@@ -587,101 +600,79 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       links.append(node);
     }
     if (step === 'start') {
-      const list = card.querySelector('.onboarding-agents .authorization');
-      list.replaceChildren();
-      // Only assistants that work here can be chosen. One usable assistant is a
-      // single quiet line; the ones not installed fold away with an install link.
+      const pills = card.querySelector('.onboarding-ai-pills'),
+        note = card.querySelector('.onboarding-ai-note');
+      pills.replaceChildren();
+      note.replaceChildren();
       const entries = [...providers],
-        usable = entries.filter(([, p]) => ['ready', 'warning'].includes(p.state)),
-        checking = entries.filter(([, p]) => p.state === 'checking'),
-        missingEntries = entries.filter(([, p]) => p.state === 'error');
-      if (usable.length === 1 && !checking.length) {
-        const [value, p] = usable[0],
-          one = el('div', null, 'onboarding-agent-one');
-        one.append(
-          el('span', null, 'onboarding-agent-dot'),
-          el('b', providerNames[value] ?? p.label),
-          el(
-            'small',
-            p.state === 'warning'
-              ? p.detail || 'Sign-in may be needed'
-              : 'Ready · uses your own account',
-          ),
-        );
-        list.append(one);
-      } else
-        for (const [value, p] of [...usable, ...checking]) {
-          const choice = el('label', null, 'choice'),
-            input = el('input'),
-            copy = el('span');
-          input.type = 'radio';
-          input.name = 'onboarding-provider';
-          input.value = value;
-          input.checked = value === provider;
-          input.disabled = p.state === 'checking';
-          input.onchange = () => {
-            provider = value;
+        usable = entries.filter(([, p]) => ['ready', 'warning'].includes(p.state));
+      for (const [value, p] of entries) {
+        const pill = button(providerNames[value] ?? p.label, null, 'onboarding-ai-pill');
+        pill.dataset.state = p.state;
+        const chosen = value === provider && p.state !== 'error';
+        pill.setAttribute('aria-pressed', String(chosen));
+        if (p.state === 'checking') {
+          pill.disabled = true;
+          pill.title = 'Checking…';
+        } else if (p.state === 'error') {
+          pill.title = 'Not installed on this computer';
+          pill.onclick = () => {
+            missingFocus = missingFocus === value ? null : value;
             update();
           };
-          copy.append(
-            el('b', providerNames[value] ?? p.label),
-            el(
-              'small',
-              p.state === 'checking'
-                ? 'Checking…'
-                : p.state === 'ready'
-                  ? 'Ready · uses your own account'
-                  : p.detail || 'Sign-in may be needed',
-            ),
-          );
-          choice.dataset.state = p.state;
-          choice.append(input, copy);
-          list.append(choice);
+        } else
+          pill.onclick = () => {
+            provider = value;
+            missingFocus = null;
+            update();
+          };
+        if (chosen) {
+          const tick = el('span', null, 'onboarding-ai-tick');
+          tick.setAttribute('aria-hidden', 'true');
+          pill.prepend(tick);
         }
-      const none = providers.size && !usable.length && !checking.length;
-      if (none) {
-        // Nothing usable yet: say what to do instead of a disabled button.
-        const help = el('div', null, 'onboarding-no-ai');
-        help.append(
-          el('b', 'JobLoop needs an AI assistant on this computer'),
+        pills.append(pill);
+      }
+      if (!providers.size) note.append(el('span', 'Looking for AI assistants on this computer…'));
+      else if (missingFocus && providers.get(missingFocus)?.state === 'error') {
+        note.append(
+          el('span', `${providerNames[missingFocus]} isn’t installed on this computer.`),
+          button('How to install', () => api.openLink(installLinks[missingFocus]), 'link'),
+          button('Check again', () => checkProviders(), 'link'),
+        );
+      } else if (
+        providers.size &&
+        !usable.length &&
+        ![...providers.values()].some((p) => p.state === 'checking')
+      ) {
+        note.dataset.tone = 'warn';
+        note.append(
           el(
             'span',
-            'Install Claude Code (or ChatGPT’s Codex), sign in once, then press Check again. Your CV stays here.',
+            'JobLoop needs Claude Code or ChatGPT’s Codex on this computer. Install one, sign in once, then check again.',
           ),
-          button('Check again', () => checkProviders()),
+          button('How to install Claude Code', () => api.openLink(installLinks.claude), 'link'),
+          button('Check again', () => checkProviders(), 'link'),
         );
-        list.append(help);
-      }
-      if (missingEntries.length) {
-        const missing = el('details', null, 'onboarding-missing'),
-          rows = el('div', null, 'onboarding-missing-rows');
-        missing.open = showMissing;
-        missing.ontoggle = () => (showMissing = missing.open);
-        missing.append(
+      } else if (provider && providers.get(provider)) {
+        const p = providers.get(provider);
+        note.append(
           el(
-            'summary',
-            none
-              ? 'Which assistants work with JobLoop'
-              : `Other assistants (${missingEntries.length} not installed)`,
+            'span',
+            p.state === 'warning'
+              ? p.detail || 'Sign-in may be needed.'
+              : `${providerNames[provider]} reads your CV and applies for you, with your own account.`,
           ),
-          rows,
         );
-        for (const [value, p] of missingEntries) {
-          const row = el('div', null, 'onboarding-missing-row');
-          row.append(el('b', providerNames[value] ?? p.label), el('small', 'Not installed'));
-          if (installLinks[value])
-            row.append(button('How to install', () => api.openLink(installLinks[value]), 'link'));
-          rows.append(row);
-        }
-        list.append(missing);
       }
-      if (!providers.size)
-        list.append(el('p', 'Looking for AI assistants on this computer…', 'onboarding-hint'));
+      if (!note.dataset.tone || usable.length) delete note.dataset.tone;
       const blocked = !provider || ['checking', 'error'].includes(providers.get(provider)?.state),
         pick = card.querySelector('[data-action=pick-cv]');
       pick.disabled = busy || blocked;
-      const chatLink = card.querySelector('[data-action=chat-setup]');
-      if (chatLink) chatLink.disabled = busy || blocked;
+      for (const action of ['continue', 'manual']) {
+        const node = card.querySelector(`[data-action=${action}]`);
+        if (node) node.disabled = busy || blocked;
+      }
       pick.querySelector('b').textContent = busy ? 'Adding your CV…' : 'Choose your CV';
     } else if (step === 'reading') {
       renderAsk(interviewRun(data));
@@ -747,8 +738,10 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         .find((m) => m.role === 'assistant' && m.conversation && m.runId),
       latest = data.runs.find((r) => r.kind === 'interview'),
       failed = !interviewRun(data) && ['failed', 'timeout', 'interrupted'].includes(latest?.status);
-    card.querySelector('.onboarding-reply').textContent =
-      reply?.text ?? 'Check the details the agent filled in and complete anything missing.';
+    const manualMode = !latest && localStorage.getItem(flagKey(a.id)) === 'manual';
+    card.querySelector('.onboarding-reply').textContent = manualMode
+      ? 'Tell JobLoop what you’re looking for. You can add your CV later from Profile & CV.'
+      : (reply?.text ?? 'Check the details the agent filled in and complete anything missing.');
     renderEcho(card.querySelector('.onboarding-echo'), a);
     const failure = card.querySelector('.onboarding-failure');
     failure.replaceChildren();
@@ -792,15 +785,20 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         placeholder: 'Your first and last name',
         multiline: false,
       }),
-      text('goal', 'The job you are looking for', a.goal, {
-        placeholder: 'E.g. senior backend engineering in Berlin or remote',
-        required: true,
-      }),
+      text(
+        'goal',
+        'The job you are looking for',
+        a.goal || sessionStorage.getItem('jl-manual-notes:' + a.id) || '',
+        {
+          placeholder: 'E.g. senior backend engineering in Berlin or remote',
+          required: true,
+        },
+      ),
     );
     // The main fields stay open; the long free-text ones fold into "More details".
     const more = el('details', null, 'onboarding-more'),
       moreBody = el('div', null, 'onboarding-more-body');
-    more.append(el('summary', 'More details from your CV'), moreBody);
+    more.append(el('summary', 'More details: experience, requirements, form answers'), moreBody);
     for (const key of reviewFields) {
       const field = fields.get(key);
       if (!field) continue;
@@ -931,7 +929,10 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     const checks = el('section', null, 'onboarding-readiness');
     checks.setAttribute('aria-label', 'Before you start');
     const foot = el('div', null, 'onboarding-foot'),
-      again = button('Refill from CV', () => attempt(readAgain)),
+      noCv = !data.runs.some((r) => r.kind === 'interview'),
+      again = noCv
+        ? button('Add my CV instead', () => attempt(pickCv))
+        : button('Refill from CV', () => attempt(readAgain)),
       submit = el('button', 'Start finding jobs', 'primary');
     again.dataset.action = 'read-again';
     submit.type = 'submit';
@@ -1072,15 +1073,15 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     await api.automationOnboarding(id);
     await load();
   }
-  async function skip() {
+  // No CV: go straight to Check details and fill it in by hand.
+  async function manual() {
     const notes = (card.querySelector('[name=notes]')?.value ?? '').trim(),
       owner = await prepare();
-    localStorage.setItem(flagKey(owner), 'skip');
-    // Notes start the chat setup as its first message.
-    if (notes) await api.automationMessage(owner, notes);
-    await chat(owner);
-    close();
+    localStorage.setItem(flagKey(owner), 'manual');
+    if (notes) sessionStorage.setItem('jl-manual-notes:' + owner, notes);
+    await load();
   }
+
   // Before the CV only an untouched workspace is removed; after it, leaving
   // discards the unfinished profile together with its setup agent.
   async function leaveOnboarding() {
