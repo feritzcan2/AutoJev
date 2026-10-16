@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import {chromeWindowMarker} from '../app/jev/chrome.mjs';
 import {JevBrowser} from '../app/jev/browser.mjs';
 
@@ -23,6 +24,51 @@ test('window readiness requires focus from its own page, and a late focus can re
   await assert.rejects(marker.waitForReady({timeout: 20}), /profile is not ready/);
   await focus(marker);
   await marker.waitForReady({timeout: 20});
+});
+
+test('a visible window whose page never had focus is ready until the page loses focus', async (t) => {
+  const marker = await chromeWindowMarker({observeFocus: true});
+  t.after(() => marker.close());
+  const html = await (await fetch(marker.url)).text(),
+    script = html.match(/<script nonce="[^"]+">([\s\S]*)<\/script>/)[1];
+  const page = {visibility: 'visible', focused: false},
+    listeners = {},
+    on = (type, listener) => (listeners[type] = listener),
+    reports = [];
+  let delivered = Promise.resolve();
+  vm.runInNewContext(script, {
+    location: {pathname: new URL(marker.url).pathname},
+    document: {
+      get visibilityState() {
+        return page.visibility;
+      },
+      hasFocus: () => page.focused,
+      addEventListener: on,
+    },
+    addEventListener: on,
+    fetch: (url, options) => {
+      reports.push(url.split('/').at(-1));
+      // Deliver in order, as one page's reports would arrive.
+      delivered = delivered.then(() => focus(marker, url.endsWith('/focused')));
+      return delivered;
+    },
+  });
+  // Browser UI kept keyboard focus in the new window; the page is still the active one.
+  assert.deepEqual(reports, ['focused']);
+  await delivered;
+  await marker.waitForReady({timeout: 1000});
+  page.visibility = 'hidden';
+  listeners.visibilitychange();
+  page.visibility = 'visible';
+  listeners.visibilitychange();
+  assert.deepEqual(reports, ['focused', 'blurred', 'focused']);
+  page.focused = true;
+  listeners.focus();
+  page.focused = false;
+  listeners.blur();
+  assert.deepEqual(reports, ['focused', 'blurred', 'focused', 'blurred']);
+  await delivered;
+  await assert.rejects(marker.waitForReady({timeout: 20}), /profile is not ready/);
 });
 
 test('window readiness is cancellable and markers cannot complete one another', async (t) => {
@@ -67,4 +113,38 @@ test('a failed connection retries the same selected window instead of opening mo
   assert.equal(windows, 1);
   await browser.close();
   await assert.rejects(fetch(marker.url));
+});
+
+test('a retry whose reused window is not ready still reports why the previous attempt failed', async (t) => {
+  let marker,
+    attempts = 0;
+  const browser = new JevBrowser('/unused', {
+    profile: {directory: 'Profile 2'},
+    readyTimeout: 50,
+    openWindow: async (url) => {
+      marker = {url};
+      await focus(marker);
+    },
+    endpoint: async () => {
+      if (++attempts === 1) throw Error('Synthetic tab record failure');
+      throw Error('Synthetic endpoint unavailable');
+    },
+  });
+  t.after(() => browser.close());
+  await assert.rejects(
+    browser.context(),
+    /Could not connect to Chrome: Synthetic tab record failure$/,
+  );
+  // The user switched away: the reused window now reports that it lost focus.
+  await focus(marker, false);
+  await assert.rejects(
+    browser.context(),
+    /profile is not ready\..* The previous attempt failed: Synthetic tab record failure$/,
+  );
+  await focus(marker);
+  await assert.rejects(
+    browser.context(),
+    /Could not connect to Chrome: Synthetic endpoint unavailable$/,
+  );
+  assert.equal(attempts, 2);
 });
