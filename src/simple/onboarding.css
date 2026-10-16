@@ -390,37 +390,6 @@ body.jl-simple .onboarding-error {
   border-radius: 28px;
   background: var(--jl-accent-wash);
 }
-.onboarding-reading-mark svg {
-  border-radius: 16px;
-  box-shadow: 0 10px 24px rgb(14 15 18 / 0.16);
-  animation: jl-hover 3.2s ease-in-out infinite;
-}
-/* The paper trail redraws itself, the plane rides on top. */
-.onboarding-reading-mark svg g path:first-child {
-  stroke-dasharray: 100 100;
-  animation: jl-trail 2.8s cubic-bezier(0.65, 0, 0.35, 1) infinite;
-}
-@keyframes jl-trail {
-  0% {
-    stroke-dashoffset: 100;
-  }
-  55%,
-  75% {
-    stroke-dashoffset: 0;
-  }
-  100% {
-    stroke-dashoffset: -100;
-  }
-}
-@keyframes jl-hover {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-4px);
-  }
-}
 .onboarding-file {
   max-width: 100%;
   overflow: hidden;
@@ -496,7 +465,7 @@ body.jl-simple .onboarding-error {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
-.onboarding-reading.paused :is(svg, svg g path:first-child, li::before) {
+.onboarding-reading.paused li::before {
   animation-play-state: paused;
 }
 /* A question from the AI, as an app card. */
@@ -544,8 +513,6 @@ body.jl-simple .onboarding .onboarding-ask button.primary {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .onboarding-reading-mark svg,
-  .onboarding-reading-mark svg g path:first-child,
   .onboarding-stages li::before,
   .onboarding-ask {
     animation: none !important;
@@ -706,4 +673,47 @@ body.jl-simple .onboarding .onboarding-once legend {
   display: flex;
   justify-content: center;
   gap: 20px;
+}
+
+/* "I read you": facts from the CV, ticked and typed in. */
+.onboarding-echo {
+  display: grid;
+  gap: 12px;
+  padding: 18px 20px;
+  border: 1px solid var(--jl-line);
+  border-radius: 14px;
+  background: var(--jl-panel);
+}
+.onboarding-echo h2 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+.onboarding-echo ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.onboarding-echo li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  color: var(--jl-ink);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.onboarding-echo li .jl-lottie {
+  margin-top: 0;
+}
+.onboarding-echo b {
+  font-weight: 600;
+}
+.onboarding-echo-rest {
+  opacity: 0;
+  transition: opacity 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.onboarding-echo-rest.in {
+  opacity: 1;
 }

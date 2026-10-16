@@ -10,6 +10,8 @@ import {terminalAttention} from './agent-attention.js';
 import './onboarding.css';
 import {BRAND, markIcon} from './simple/brand.js';
 import {readChoicePrompt, choiceKeys} from './simple/terminal-prompt.js';
+import {NEVER, factLine, setFactLine, cvFacts} from './simple/facts.js';
+import {docScan, checkmark, typewrite} from './simple/motion.js';
 
 // Welcome screen of a new job search: the user picks the agent and the CV, the
 // setup agent fills the profile from the CV, the user reviews it and starts.
@@ -68,31 +70,10 @@ const quickQuestions = [
     placeholder: 'e.g. English C1, Turkish B2',
   },
 ];
-const NEVER = 'Never apply to';
-const lineRe = (label) =>
-  new RegExp('^\\s*' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*:\\s*(.*)$', 'im');
-const factLine = (text, label) =>
-  String(text ?? '')
-    .match(lineRe(label))?.[1]
-    .trim() ?? '';
-// Replace or remove one "Label: value" line, keeping everything else.
-const setFactLine = (text, label, value) => {
-  const lines = String(text ?? '')
-    .split('\n')
-    .filter((line) => !lineRe(label).test(line));
-  if (value) lines.push(`${label}: ${value}`);
-  return lines.join('\n').trim();
-};
 const languagesFrom = (experience) =>
   String(experience ?? '')
     .match(/languages?\s*[:：]\s*([^\n·;]+)/i)?.[1]
     .trim() ?? '';
-// Files are stored under generated names; the name the user picked is in the
-// "added a document" message.
-const uploadedName = (data) => {
-  const added = [...(data?.messages ?? [])].reverse().find((m) => m.document);
-  return added?.text.match(/\(([^()]+)\)\. Use it/)?.[1] ?? '';
-};
 const readingStages = ['Opening your CV', 'Reading your experience', 'Filling in your profile'];
 // Terminal choices, worded for people: continue first, refuse last.
 const choiceTone = (label) =>
@@ -350,10 +331,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
   // here and answered with keystrokes, so nobody has to use a terminal.
   function readingStep() {
     const visual = el('div', null, 'onboarding-reading-mark');
-    visual.innerHTML = markIcon(64);
-    // Lets the CSS draw the paper trail as a fraction of its length.
-    visual.querySelector('g path')?.setAttribute('pathLength', '100');
-    const file = el('span', uploadedName(data) || 'Your CV', 'onboarding-file');
+    visual.append(docScan(72));
     const stages = el('ol', null, 'onboarding-stages');
     for (const label of readingStages) stages.append(el('li', label));
     const meta = el('p', null, 'onboarding-reading-meta');
@@ -378,7 +356,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     agentLink.dataset.agentScreen = '';
     links.append(details, agentLink);
     const hero = el('div', null, 'onboarding-reading');
-    hero.append(visual, el('h1', 'Reading your CV'), file, stages, meta);
+    hero.append(visual, el('h1', 'Reading your CV'), stages, meta);
     return [hero, ask, live, links];
   }
   function toggleDetails(force) {
@@ -583,6 +561,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     };
     return [
       el('h1', 'Check your details'),
+      el('section', null, 'onboarding-echo'),
       el('p', null, 'onboarding-reply'),
       el('div', null, 'onboarding-failure'),
       form,
@@ -688,6 +667,38 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     if (details && seconds > 150) details.hidden = false;
   }
 
+  // "I read you": three facts from the CV come back, each ticked and typed in.
+  // The animation plays once per profile in a session; afterwards it is static.
+  function renderEcho(box, a) {
+    const facts = cvFacts(a.criteria?.experience);
+    box.hidden = !facts.length;
+    const key = JSON.stringify(facts);
+    if (!facts.length || box.dataset.key === key) return;
+    box.dataset.key = key;
+    const seen = sessionStorage.getItem('jl-echo:' + a.id) === key;
+    sessionStorage.setItem('jl-echo:' + a.id, key);
+    const list = el('ul');
+    box.replaceChildren(el('h2', 'Here’s what I took from your CV'), list);
+    facts.forEach((fact, i) => {
+      const item = el('li'),
+        check = checkmark(22, {play: false}),
+        text = el('span'),
+        lead = el('b'),
+        rest = el('span', fact.rest, 'onboarding-echo-rest');
+      text.append(lead, ' ', rest);
+      item.append(check, text);
+      list.append(item);
+      const show = () => {
+        check.play();
+        typewrite(lead, fact.lead, {speed: seen ? 0 : 24, done: () => rest.classList.add('in')});
+      };
+      if (seen) {
+        lead.textContent = fact.lead;
+        rest.classList.add('in');
+        check.play();
+      } else setTimeout(show, 250 + i * 950);
+    });
+  }
   function updateReview() {
     const a = data.automation,
       reply = [...data.messages]
@@ -697,6 +708,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       failed = !interviewRun(data) && ['failed', 'timeout', 'interrupted'].includes(latest?.status);
     card.querySelector('.onboarding-reply').textContent =
       reply?.text ?? 'Check the details the agent filled in and complete anything missing.';
+    renderEcho(card.querySelector('.onboarding-echo'), a);
     const failure = card.querySelector('.onboarding-failure');
     failure.replaceChildren();
     if (failed)

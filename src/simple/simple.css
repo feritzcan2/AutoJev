@@ -617,7 +617,11 @@ body.jl-simple {
 }
 .jl-job.leaving {
   opacity: 0;
-  transform: translateX(24px);
+  transform: translateX(-28px);
+}
+.jl-job.asking {
+  border-color: var(--jl-ink);
+  box-shadow: var(--jl-shadow);
 }
 .jl-check {
   margin-top: 13px;
@@ -652,11 +656,11 @@ body.jl-simple {
   position: relative;
   font-weight: 600;
 }
-.jl-score.mid {
-  --c: var(--jl-warn);
+.jl-score.good {
+  --c: var(--jl-muted);
 }
-.jl-score.low {
-  --c: var(--jl-faint);
+.jl-score.partial {
+  --c: var(--jl-warn);
 }
 .jl-score.none {
   --c: var(--jl-faint);
@@ -1179,5 +1183,400 @@ body.jl-simple {
   #jl-root * {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* ---- Fit score: ring + what it means ---------------------------------- */
+.jl-fit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 64px;
+}
+.jl-fit small {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+.jl-fit.strong small {
+  color: var(--jl-good);
+}
+.jl-fit.good small {
+  color: var(--jl-ink);
+}
+.jl-fit.partial small {
+  color: var(--jl-warn);
+}
+.jl-fit.none small {
+  color: var(--jl-muted);
+}
+.jl-job-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.jl-why {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--jl-accent-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.jl-why:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.jl-job-detail.opening,
+.jl-ask.opening {
+  animation: jl-open 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes jl-open {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.jl-why-lines {
+  display: grid;
+  gap: 8px;
+}
+.jl-why-line {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  color: var(--jl-ink);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.jl-why-tag {
+  flex: none;
+  margin-top: 1px;
+  padding: 1px 8px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.jl-why-tag.good {
+  background: var(--jl-accent);
+  color: var(--jl-accent-ink);
+}
+.jl-why-tag.warn {
+  background: var(--jl-warn-soft);
+  color: var(--jl-warn);
+}
+
+/* ---- Skip: ask why, inside the card ----------------------------------- */
+.jl-ask {
+  grid-column: 3 / -1;
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--jl-line);
+}
+.jl-ask p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--jl-ink);
+}
+.jl-ask p span {
+  color: var(--jl-muted);
+}
+.jl-ask-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.jl-reason {
+  min-height: 36px;
+  padding: 0 13px;
+  border: 1px solid var(--jl-line-strong);
+  border-radius: 99px;
+  background: var(--jl-panel);
+  color: var(--jl-ink);
+  font: 500 13px var(--jl-font);
+  cursor: pointer;
+  transition:
+    border-color 120ms,
+    transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.jl-reason:hover {
+  border-color: var(--jl-ink);
+}
+.jl-reason:active {
+  transform: scale(0.96);
+}
+.jl-reason.plain {
+  border-color: transparent;
+  background: var(--jl-sunk);
+  color: var(--jl-muted);
+}
+.jl-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--jl-sunk);
+  color: var(--jl-muted);
+  cursor: pointer;
+}
+.jl-icon-btn:hover {
+  color: var(--jl-ink);
+}
+.jl-skip-note {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 2px 4px;
+  color: var(--jl-muted);
+  font-size: 13px;
+  animation: jl-open 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.jl-quiet-link {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--jl-muted);
+  font: 500 13px var(--jl-font);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.jl-quiet-link:hover {
+  color: var(--jl-ink);
+}
+
+/* ---- Learned from skips (Profile) ------------------------------------- */
+.jl-learned {
+  display: grid;
+  gap: 6px;
+}
+.jl-rule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 10px;
+  background: var(--jl-sunk);
+  color: var(--jl-ink);
+  font-size: 14px;
+}
+.jl-rule span {
+  flex: 1;
+}
+.jl-rule .jl-icon-btn {
+  width: 30px;
+  height: 30px;
+  background: none;
+}
+.jl-rule.new {
+  animation: jl-slide-in 280ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes jl-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+}
+.jl-hint {
+  margin: 0;
+  color: var(--jl-muted);
+  font-size: 13px;
+}
+
+/* ---- Weekly recap ------------------------------------------------------ */
+.jl-recap {
+  display: grid;
+  gap: 14px;
+  padding: 18px 22px;
+}
+.jl-recap-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: end;
+}
+@media (max-width: 900px) {
+  .jl-recap-body {
+    grid-template-columns: 1fr;
+  }
+}
+.jl-recap-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.jl-recap-head h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.jl-recap-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.jl-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--jl-sunk);
+  font: 500 24px/1 var(--jl-mono);
+  letter-spacing: -0.04em;
+  color: var(--jl-ink);
+}
+.jl-stat.accent {
+  background: var(--jl-accent);
+  color: var(--jl-accent-ink);
+  box-shadow: inset 0 0 0 1px var(--jl-accent-edge);
+}
+.jl-stat small {
+  font: 400 13px var(--jl-font);
+  letter-spacing: 0;
+  color: var(--jl-muted);
+}
+.jl-stat.accent small {
+  color: var(--jl-accent-ink);
+}
+.jl-recap-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 92px;
+}
+.jl-day {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.jl-day b {
+  font: 500 12px var(--jl-mono);
+  color: var(--jl-ink);
+}
+.jl-day i {
+  display: block;
+  width: 100%;
+  max-width: 32px;
+  border-radius: 6px;
+  background: var(--jl-ink);
+  transform-origin: bottom;
+}
+.jl-day i.zero {
+  background: var(--jl-line);
+}
+.jl-day i.zero ~ small,
+.jl-day:has(i.zero) b {
+  color: var(--jl-faint);
+}
+.jl-day small {
+  font-size: 12px;
+  color: var(--jl-muted);
+}
+.jl-day.rising i {
+  animation: jl-grow 380ms var(--delay, 0ms) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.jl-day.rising b {
+  animation: jl-open 220ms calc(var(--delay, 0ms) + 260ms) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes jl-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+.jl-recap-learned {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--jl-accent-wash);
+  font-size: 14px;
+  color: var(--jl-ink);
+}
+.jl-recap-learned b {
+  color: var(--jl-accent-text);
+  font-size: 13px;
+}
+
+/* ---- Motion kit -------------------------------------------------------- */
+.jl-lottie {
+  display: inline-block;
+  flex: none;
+  line-height: 0;
+}
+.jl-odo {
+  display: inline-flex;
+  height: 1em;
+  line-height: 1;
+  overflow: hidden;
+  vertical-align: -0.1em;
+}
+.jl-odo-col {
+  display: inline-block;
+  height: 1em;
+  overflow: hidden;
+}
+.jl-odo-col > span {
+  display: flex;
+  flex-direction: column;
+  transition: transform 1100ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.jl-odo-col > span > span {
+  display: block;
+  height: 1em;
+  line-height: 1;
+}
+.jl-typing::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: -0.15em;
+  background: currentColor;
+  animation: jl-blink 0.9s steps(1) infinite;
+}
+.jl-flight {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  color: var(--jl-ink);
+}
+.jl-flight > svg:first-child {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.jl-flight-plane {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 44px;
+  height: 44px;
+  offset-rotate: auto;
+  offset-anchor: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .jl-job-detail.opening,
+  .jl-ask.opening,
+  .jl-rule.new,
+  .jl-skip-note,
+  .jl-day.rising i,
+  .jl-day.rising b {
+    animation: none;
+  }
+  .jl-odo-col > span {
+    transition: none;
   }
 }

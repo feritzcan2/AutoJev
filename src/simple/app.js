@@ -7,6 +7,8 @@ import {recordOperationStatus, recordProblem} from '../record-operation-status.j
 import {questionForm} from '../question-form.js';
 import {BRAND, markIcon} from './brand.js';
 import {el, button, icon, plural, scoreOf, relative, host} from './ui.js';
+import {checkmark, flyPlane, reduced, rollingNumber} from './motion.js';
+import {LESS, NEVER, listOf, setFactLine, withItem, withoutItem} from './facts.js';
 import './simple.css';
 import './onboarding.css';
 
@@ -25,6 +27,15 @@ const state = {
   loading: 0,
   error: '',
   profileDirty: false,
+  // Motion state: what just opened or changed, so an animation plays once.
+  asking: null,
+  justAsked: null,
+  justOpened: new Set(),
+  justLearned: null,
+  flying: new Set(),
+  note: null,
+  noteTimer: null,
+  counts: null,
 };
 
 // ---- Mode switch -------------------------------------------------------
@@ -118,6 +129,9 @@ async function load() {
       state.selected.clear();
       state.open.clear();
       state.profileDirty = false;
+      state.counts = null;
+      state.asking = null;
+      state.note = null;
     }
     state.id = id;
     state.data = data;
@@ -234,6 +248,10 @@ function render() {
   else if (state.view === 'questions') renderQuestions(data, asks);
   else if (state.view === 'profile') renderProfile(data);
   else renderSettings(data);
+  // Entrance animations play once: the next render draws these at rest.
+  state.justOpened.clear();
+  state.justAsked = null;
+  state.justLearned = null;
 }
 
 function noticeBar(message) {
@@ -295,6 +313,8 @@ function renderJobs(data, g, asks) {
     page.append(banner);
   }
   for (const issue of otherIssues(data)) page.append(issueBanner(issue));
+  const recap = weekRecap(data, g);
+  if (recap) page.append(recap);
 
   const tabs = el('div', 'jl-tabs');
   tabs.setAttribute('role', 'tablist');
@@ -304,12 +324,20 @@ function renderJobs(data, g, asks) {
     ['applied', 'Applied', g.applied],
     ['skipped', 'Skipped', g.skipped],
   ];
+  const before = state.counts;
+  state.counts = Object.fromEntries(tabDefs.map(([id, , list]) => [id, list.length]));
   for (const [id, label, list] of tabDefs) {
     const t = el('button', 'jl-tab');
     t.type = 'button';
+    t.dataset.tab = id;
     t.setAttribute('role', 'tab');
     t.setAttribute('aria-selected', String(state.tab === id));
-    t.append(label, el('span', null, String(list.length)));
+    // A count that just went up rolls to its new value.
+    const count = el('span'),
+      was = before?.[id];
+    if (was != null && list.length > was) count.append(rollingNumber(list.length, {from: was}));
+    else count.textContent = String(list.length);
+    t.append(label, count);
     t.onclick = () => {
       state.tab = id;
       state.selected.clear();
@@ -335,6 +363,15 @@ function renderJobs(data, g, asks) {
     bar.append(all);
   }
   page.append(bar);
+  if (state.note) {
+    const note = el('div', 'jl-skip-note');
+    note.setAttribute('role', 'status');
+    note.append(
+      el('span', null, `${state.note.text} It’s in Skipped if you change your mind.`),
+      button('Dismiss', () => ((state.note = null), render()), 'jl-quiet-link'),
+    );
+    page.append(note);
+  }
 
   if (!list.length) return page.append(emptyJobs(data, state.tab, g));
   const box = el('div', 'jl-list');
@@ -370,6 +407,103 @@ function renderJobs(data, g, asks) {
     );
     page.append(bulk);
   }
+}
+
+// This week at a glance: what was found and sent, per day, and what JobLoop
+// changed because of the user's own choices. Only real numbers; hidden on request.
+const DAY = 86400000;
+const weekKey = () => new Date(Date.now() - new Date().getDay() * DAY).toISOString().slice(0, 10);
+function weekRecap(data, g) {
+  const a = data.automation,
+    since = Date.now() - 7 * DAY,
+    results = (data.results ?? []).filter((r) => !r.trial);
+  if (!results.length) return null;
+  const hideKey = 'jl-recap-hidden:' + a.id;
+  try {
+    if (localStorage.getItem(hideKey) === weekKey()) return null;
+  } catch {}
+  const found = results.filter((r) => (r.createdAt ?? 0) >= since).length,
+    sent = g.applied.filter((r) => (r.updatedAt ?? 0) >= since);
+  const learned = [
+    ...listOf(a.criteria?.preferences, LESS).map((x) => 'fewer ' + x),
+    ...listOf(a.criteria?.constraints, NEVER).map((x) => 'never ' + x),
+  ];
+  const seenKey = 'jl-recap:' + a.id,
+    first = sessionStorage.getItem(seenKey) !== String(found + ':' + sent.length);
+  sessionStorage.setItem(seenKey, String(found + ':' + sent.length));
+  const card = el('section', 'jl-card jl-recap'),
+    head = el('div', 'jl-recap-head');
+  head.append(
+    el('h2', null, 'Your last 7 days'),
+    button(
+      'Hide this week',
+      () => {
+        try {
+          localStorage.setItem(hideKey, weekKey());
+        } catch {}
+        render();
+      },
+      'jl-quiet-link',
+    ),
+  );
+  const stats = el('div', 'jl-recap-stats');
+  for (const [value, label, accent] of [
+    [found, 'jobs found', false],
+    [sent.length, 'applied', true],
+    [g.progress.length, 'in progress', false],
+  ]) {
+    const stat = el('div', 'jl-stat' + (accent ? ' accent' : ''));
+    stat.append(rollingNumber(value, {animate: first}), el('small', null, label));
+    stats.append(stat);
+  }
+  // Applications sent on each of the last seven days.
+  const bars = el('div', 'jl-recap-bars'),
+    days = [...Array(7)].map((_, i) => {
+      const start = new Date(Date.now() - (6 - i) * DAY);
+      start.setHours(0, 0, 0, 0);
+      return start;
+    }),
+    perDay = days.map(
+      (d) =>
+        sent.filter((r) => r.updatedAt >= d.getTime() && r.updatedAt < d.getTime() + DAY).length,
+    ),
+    most = Math.max(1, ...perDay);
+  bars.setAttribute('role', 'img');
+  bars.setAttribute(
+    'aria-label',
+    'Applications per day: ' +
+      days
+        .map((d, i) => `${d.toLocaleDateString(undefined, {weekday: 'short'})} ${perDay[i]}`)
+        .join(', '),
+  );
+  days.forEach((d, i) => {
+    const col = el('div', 'jl-day'),
+      bar = el('i', perDay[i] ? '' : 'zero');
+    bar.style.height = Math.max(4, Math.round((perDay[i] / most) * 52)) + 'px';
+    if (first) {
+      col.classList.add('rising');
+      col.style.setProperty('--delay', i * 110 + 'ms');
+    }
+    col.setAttribute('aria-hidden', 'true');
+    col.append(
+      el('b', null, String(perDay[i])),
+      bar,
+      el('small', null, d.toLocaleDateString(undefined, {weekday: 'short'})),
+    );
+    bars.append(col);
+  });
+  const bodyRow = el('div', 'jl-recap-body');
+  bodyRow.append(stats, bars);
+  card.append(head, bodyRow);
+  if (learned.length) {
+    const changed = el('div', 'jl-recap-learned');
+    changed.append(
+      el('b', null, 'What I changed because of you'),
+      el('span', null, 'From your skips: ' + learned.slice(0, 4).join('; ') + '.'),
+    );
+    card.append(changed);
+  }
+  return card;
 }
 
 function emptyJobs(data, tab, g) {
@@ -427,13 +561,71 @@ function emptyJobs(data, tab, g) {
   return box;
 }
 
+// Fit score: a ring with the number, and its meaning in words underneath.
+const tierOf = (score) =>
+  score == null ? null : score >= 80 ? 'strong' : score >= 60 ? 'good' : 'partial';
+const tierText = {strong: 'Strong fit', good: 'Good fit', partial: 'Partial fit'};
+function scoreBadge(score) {
+  const tier = tierOf(score),
+    box = el('div', 'jl-fit ' + (tier ?? 'none'));
+  const ring = el('div', 'jl-score ' + (tier ?? 'none'));
+  ring.style.setProperty('--p', String(score ?? 0));
+  ring.append(el('b', null, score == null ? '–' : String(score)));
+  box.append(ring, el('small', null, tier ? tierText[tier] : 'Not scored'));
+  box.setAttribute('role', 'img');
+  box.setAttribute(
+    'aria-label',
+    score == null ? 'Not scored yet' : `Fit score ${score} of 100, ${tierText[tier].toLowerCase()}`,
+  );
+  return box;
+}
+
+// Reasons to skip, each turned into something JobLoop learns. The job's own
+// details make the rule specific; "Just skip" teaches nothing.
+function skipReasons(r) {
+  const cells = r.cells ?? {},
+    place = cells.location?.split(/[·,(]/)[0].trim(),
+    company = cells.company?.trim();
+  return [
+    ['Wrong kind of role', {line: LESS, item: `roles like “${r.title}”`}],
+    place && ['Wrong location', {line: LESS, item: `jobs in ${place}`}],
+    ['Too junior', {line: LESS, item: 'roles below my level'}],
+    ['Pay too low', {line: LESS, item: 'roles that list low pay'}],
+    company && ['Not this company', {line: NEVER, item: company}],
+  ].filter(Boolean);
+}
+const learnedReply = (rule) =>
+  rule.line === NEVER ? `Got it: I won’t apply to ${rule.item}.` : `Got it: fewer ${rule.item}.`;
+
+// Adds or removes one item of a learned line and saves the profile.
+async function saveLearned(rule, remove = false) {
+  const a = state.data.automation,
+    key = rule.line === NEVER ? 'constraints' : 'preferences',
+    criteria = {...a.criteria},
+    items = listOf(criteria[key], rule.line);
+  criteria[key] = setFactLine(
+    criteria[key],
+    rule.line,
+    remove ? withoutItem(items, rule.item, rule.line) : withItem(items, rule.item, rule.line),
+  );
+  await api.automationProfileSave(
+    state.id,
+    {title: a.title, goal: a.goal, criteria, mode: a.mode},
+    {expectedRevision: a.revision},
+  );
+}
+
 function jobCard(data, r) {
   const card = el('article', 'jl-job'),
     score = scoreOf(r),
     op = recordOperationStatus(r),
     problem = recordProblem(r),
-    selectable = state.tab === 'review';
+    selectable = state.tab === 'review',
+    asking = state.asking === r.id,
+    flying = state.flying.has(r.id);
+  card.dataset.id = r.id;
   card.dataset.selected = String(state.selected.has(r.id));
+  if (asking) card.classList.add('asking');
   // Select
   if (selectable) {
     const check = el('input', 'jl-check');
@@ -446,33 +638,37 @@ function jobCard(data, r) {
     };
     card.append(check);
   } else card.append(el('span'));
-  // Score
-  const ring = el(
-    'div',
-    'jl-score ' + (score == null ? 'none' : score >= 80 ? '' : score >= 60 ? 'mid' : 'low'),
-  );
-  ring.style.setProperty('--p', String(score ?? 0));
-  ring.append(el('b', null, score == null ? '–' : String(score)));
-  ring.title = score == null ? 'Not scored yet' : `Fit score ${score} of 100`;
-  card.append(ring);
+  card.append(scoreBadge(score));
   // Body
   const body = el('div', 'jl-job-body'),
-    title = el('button', 'jl-job-title', r.title);
+    title = el('button', 'jl-job-title', r.title),
+    as = r.assessment ?? {},
+    open = state.open.has(r.id);
   title.type = 'button';
-  title.setAttribute('aria-expanded', String(state.open.has(r.id)));
-  title.onclick = () => {
-    state.open.has(r.id) ? state.open.delete(r.id) : state.open.add(r.id);
+  title.setAttribute('aria-expanded', String(open));
+  const toggle = () => {
+    if (open) state.open.delete(r.id);
+    else {
+      state.open.add(r.id);
+      state.justOpened.add(r.id);
+    }
     render();
   };
+  title.onclick = toggle;
   const cells = r.cells ?? {},
-    meta = [cells.company, cells.location, host(r.url)].filter(Boolean).join(' · ');
-  body.append(title, el('div', 'jl-job-meta', meta));
-  const chips = el('div', 'jl-chips'),
-    as = r.assessment ?? {};
-  for (const s of (as.strengths ?? []).slice(0, 2)) chips.append(el('span', 'jl-chip good', s));
-  for (const s of (as.gaps ?? []).slice(0, 2)) chips.append(el('span', 'jl-chip warn', s));
-  if (as.eligibility === 'mismatch') chips.append(el('span', 'jl-chip bad', 'Requirement not met'));
-  if (chips.childElementCount) body.append(chips);
+    meta = el('div', 'jl-job-meta');
+  meta.append([cells.company, cells.location, host(r.url)].filter(Boolean).join(' · '));
+  if (as.strengths?.length || as.gaps?.length || as.summary) {
+    const why = button(open ? 'Hide' : 'Why it fits', toggle, 'jl-why');
+    why.setAttribute('aria-expanded', String(open));
+    meta.append(why);
+  }
+  body.append(title, meta);
+  if (as.eligibility === 'mismatch') {
+    const chips = el('div', 'jl-chips');
+    chips.append(el('span', 'jl-chip bad', 'Requirement not met'));
+    body.append(chips);
+  }
   card.append(body);
   // Actions / state
   const side = el('div', 'jl-job-actions');
@@ -482,22 +678,30 @@ function jobCard(data, r) {
       applyOp =
         r.recordAction?.directOperation ??
         (r.recordAction?.operation?.kind === 'execute' ? r.recordAction.operation : null);
-    const skip = button(
-      'Skip',
-      act(k, async () => {
-        card.classList.add('leaving');
-        await api.automationDismiss(state.id, r.id);
-      }),
-      'jl-btn ghost small',
-    );
-    const apply = button(
-      busy ? 'Starting…' : 'Apply',
-      act(k, () => applyTo(data, r)),
-      'jl-btn primary small',
-    );
-    skip.disabled = apply.disabled = busy;
-    if (applyOp?.disabled) apply.title = applyOp.reason ?? '';
-    side.append(skip, apply);
+    if (flying) side.append(sentCheck(r.id));
+    else if (asking) {
+      const close = button('', () => ((state.asking = null), render()), 'jl-icon-btn');
+      close.innerHTML =
+        '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+      close.setAttribute('aria-label', 'Keep this job');
+      close.title = 'Keep this job';
+      side.append(close);
+    } else {
+      const skip = button(
+        'Skip',
+        () => {
+          state.asking = r.id;
+          state.justAsked = r.id;
+          render();
+        },
+        'jl-btn ghost small',
+      );
+      const apply = button(busy ? 'Starting…' : 'Apply', null, 'jl-btn primary small');
+      apply.onclick = () => flyApply(data, r, apply);
+      skip.disabled = apply.disabled = busy;
+      if (applyOp?.disabled) apply.title = applyOp.reason ?? '';
+      side.append(skip, apply);
+    }
   } else if (state.tab === 'progress') {
     const s = el('span', 'jl-state ' + (problem || op?.tone === 'blocked' ? 'blocked' : 'running'));
     s.append(
@@ -518,15 +722,96 @@ function jobCard(data, r) {
     side.append(s);
   }
   card.append(side);
-  // Detail
-  const detail = el('div', 'jl-job-detail');
-  detail.hidden = !state.open.has(r.id);
-  if (as.summary) detail.append(el('p', null, as.summary));
-  if (problem?.reason || op?.detail) detail.append(el('p', null, problem?.reason ?? op.detail));
-  const open = button('Open listing ↗', () => api.openLink(r.url), 'jl-link');
-  detail.append(open);
-  card.append(detail);
+  // Why it fits
+  if (open) {
+    const detail = el('div', 'jl-job-detail');
+    if (state.justOpened.has(r.id)) detail.classList.add('opening');
+    const lines = el('div', 'jl-why-lines');
+    for (const s of (as.strengths ?? []).slice(0, 2)) lines.append(whyLine('Fits', 'good', s));
+    for (const s of (as.gaps ?? []).slice(0, 2)) lines.append(whyLine('Gap', 'warn', s));
+    if (lines.childElementCount) detail.append(lines);
+    if (as.summary) detail.append(el('p', null, as.summary));
+    if (problem?.reason || op?.detail) detail.append(el('p', null, problem?.reason ?? op.detail));
+    detail.append(button('Open listing ↗', () => api.openLink(r.url), 'jl-link'));
+    card.append(detail);
+  }
+  // Why skip it?
+  if (asking) {
+    const ask = el('div', 'jl-ask');
+    if (state.justAsked === r.id) ask.classList.add('opening');
+    const q = el('p');
+    q.append(
+      el('b', null, 'Why skip it?'),
+      ' ',
+      el('span', null, 'I’ll use this to find better matches.'),
+    );
+    const chips = el('div', 'jl-ask-chips');
+    for (const [label, rule] of skipReasons(r))
+      chips.append(button(label, () => skipWith(r, rule, card), 'jl-reason'));
+    chips.append(button('Just skip', () => skipWith(r, null, card), 'jl-reason plain'));
+    ask.append(q, chips);
+    card.append(ask);
+  }
   return card;
+}
+function whyLine(label, tone, text) {
+  const line = el('div', 'jl-why-line');
+  line.append(el('span', 'jl-why-tag ' + tone, label), el('span', null, text));
+  return line;
+}
+
+// Skipping: the card slides away, then the rule is saved and the job dismissed.
+async function skipWith(r, rule, card) {
+  const k = 'rec:' + r.id;
+  if (state.busy.has(k)) return;
+  state.busy.add(k);
+  card.classList.add('leaving');
+  await new Promise((done) => setTimeout(done, reduced() ? 0 : 220));
+  state.asking = null;
+  try {
+    if (rule) await saveLearned(rule);
+    await api.automationDismiss(state.id, r.id);
+    state.note = {text: rule ? learnedReply(rule) : 'Skipped.', title: r.title, at: Date.now()};
+    if (rule) state.justLearned = rule.item;
+    clearTimeout(state.noteTimer);
+    state.noteTimer = setTimeout(() => ((state.note = null), render()), 6000);
+  } catch (error) {
+    state.error = error.message;
+  } finally {
+    state.busy.delete(k);
+    await load();
+  }
+}
+
+// One checkmark per job, kept across re-renders so it plays only once.
+const checks = new Map();
+function sentCheck(id) {
+  if (!checks.has(id)) checks.set(id, checkmark(32, {play: false, label: 'Sent to apply'}));
+  return checks.get(id);
+}
+
+// Apply: the plane flies from the button to the In progress tab, the tab's
+// count rolls up and a check replaces the buttons. The request runs meanwhile.
+async function flyApply(data, r, from) {
+  const k = 'rec:' + r.id;
+  if (state.busy.has(k)) return;
+  state.busy.add(k);
+  state.error = '';
+  const target = page.querySelector('.jl-tab[data-tab="progress"]');
+  const flight = flyPlane(from, target);
+  state.flying.add(r.id);
+  render();
+  let failed = null;
+  const request = applyTo(data, r).catch((error) => (failed = error));
+  await flight;
+  if (!failed) sentCheck(r.id).play();
+  await request;
+  await new Promise((done) => setTimeout(done, failed || reduced() ? 0 : 650));
+  state.flying.delete(r.id);
+  checks.delete(r.id);
+  state.busy.delete(k);
+  if (failed) state.error = failed.message;
+  await load();
 }
 
 async function applyTo(data, r) {
@@ -709,6 +994,35 @@ function renderProfile(data) {
     const value = key === 'goal' ? a.goal : a.criteria?.[key];
     basics.lastChild.append(field(key, label, value, placeholder, required, single));
   }
+  // What JobLoop learned from skips; each item can be removed.
+  const rules = [
+      ...listOf(a.criteria?.preferences, LESS).map((item) => ({line: LESS, item})),
+      ...listOf(a.criteria?.constraints, NEVER).map((item) => ({line: NEVER, item})),
+    ],
+    learned = section(
+      'What I’ve learned',
+      'From your skips and answers. Remove anything I got wrong.',
+    );
+  if (!rules.length)
+    learned.lastChild.append(
+      el('p', 'jl-hint', 'Nothing yet. When you skip a job, tell me why and it shows up here.'),
+    );
+  const ruleList = el('div', 'jl-learned');
+  for (const rule of rules) {
+    const item = el('div', 'jl-rule' + (state.justLearned === rule.item ? ' new' : ''));
+    item.append(el('span', null, (rule.line === NEVER ? 'Never apply to ' : 'Fewer ') + rule.item));
+    const remove = button(
+      '',
+      act('rule:' + rule.item, () => saveLearned(rule, true)),
+      'jl-icon-btn',
+    );
+    remove.innerHTML =
+      '<svg width="12" height="12" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+    remove.setAttribute('aria-label', 'Remove: ' + rule.item);
+    item.append(remove);
+    ruleList.append(item);
+  }
+  if (rules.length) learned.lastChild.append(ruleList);
   // Autopilot
   const mode = section('Autopilot', 'How far JobLoop may go on its own.');
   mode.lastChild.append(levels(a));
@@ -718,7 +1032,7 @@ function renderProfile(data) {
     el('button', 'jl-btn primary', state.busy.has('profile') ? 'Saving…' : 'Save profile'),
   );
   footer.lastChild.type = 'submit';
-  form.append(cv, basics, mode, footer);
+  form.append(cv, basics, learned, mode, footer);
   form.onsubmit = (event) => {
     event.preventDefault();
     const f = form.elements,

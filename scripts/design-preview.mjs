@@ -177,6 +177,32 @@ try {
   if (fresh || args.includes('--review')) {
     await page.setViewportSize({width: 1440, height: 1400});
     await shot('00-start-tall');
+  } else if (args.includes('--moments')) {
+    // The five moments, driven through the real UI.
+    await shot('m1-jobs-recap');
+    await page.locator('.jl-why').first().click();
+    await page.waitForTimeout(400);
+    await shot('m2-why-it-fits');
+    await page.locator('.jl-job .jl-btn.ghost', {hasText: 'Skip'}).nth(1).click();
+    await page.waitForTimeout(400);
+    await shot('m4-skip-ask');
+    await page.locator('.jl-reason').first().click();
+    await page.waitForTimeout(1500);
+    await shot('m4-skip-done');
+    await page.locator('.jl-job .jl-btn.primary', {hasText: 'Apply'}).first().click();
+    await page.waitForTimeout(280);
+    await shot('m3-apply-loop');
+    await page.waitForTimeout(370);
+    await shot('m3-apply-flight');
+    await page.waitForTimeout(900);
+    await shot('m3-apply-landed');
+    await page.waitForTimeout(1500);
+    await shot('m3-apply-after');
+    await page.locator('.jl-nav', {hasText: 'Profile'}).click();
+    await page.waitForTimeout(400);
+    await page.locator('.jl-scroll').evaluate((n) => (n.scrollTop = n.scrollHeight * 0.55));
+    await page.waitForTimeout(300);
+    await shot('m5-profile-learned');
   } else if (await page.evaluate(() => document.body.classList.contains('jl-simple'))) {
     const navs = await page.$$eval('.jl-nav', (b) => b.map((n) => n.textContent.trim()));
     for (const [i, label] of navs.entries()) {
