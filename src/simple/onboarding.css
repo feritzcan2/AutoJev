@@ -356,3 +356,354 @@ body.jl-simple .onboarding-error {
   background: var(--jl-bad-soft);
   font-weight: 500;
 }
+
+/* Reading step: a calm progress screen. The agent terminal is kept mounted
+   off screen so its prompts can be read and answered from app cards. */
+.onboarding .onboarding-live:not(.open) {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: 960px;
+  height: 480px;
+  opacity: 0;
+  pointer-events: none;
+}
+.onboarding .onboarding-live.open .onboarding-terminal {
+  height: 320px;
+  color-scheme: dark;
+}
+.onboarding-reading {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 12px 0 4px;
+  text-align: center;
+}
+.onboarding-reading h1 {
+  margin: 6px 0 0;
+}
+.onboarding-reading-mark {
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 28px;
+  background: var(--jl-accent-wash);
+}
+.onboarding-reading-mark svg {
+  border-radius: 16px;
+  box-shadow: 0 10px 24px rgb(14 15 18 / 0.16);
+  animation: jl-hover 3.2s ease-in-out infinite;
+}
+/* The paper trail redraws itself, the plane rides on top. */
+.onboarding-reading-mark svg g path:first-child {
+  stroke-dasharray: 100 100;
+  animation: jl-trail 2.8s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+@keyframes jl-trail {
+  0% {
+    stroke-dashoffset: 100;
+  }
+  55%,
+  75% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -100;
+  }
+}
+@keyframes jl-hover {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+.onboarding-file {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 5px 12px;
+  border: 1px solid var(--jl-line);
+  border-radius: 99px;
+  background: var(--jl-sunk);
+  color: var(--jl-muted);
+  font: 500 12px/1.4 var(--jl-mono, ui-monospace, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.onboarding-stages {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+.onboarding-stages li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--jl-faint);
+  font-size: 14px;
+  transition: color 0.4s ease;
+}
+.onboarding-stages li::before {
+  content: '';
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--jl-line-strong);
+  border-radius: 50%;
+  box-sizing: border-box;
+  transition:
+    background 0.3s ease,
+    border-color 0.3s ease;
+}
+.onboarding-stages li[data-state='current'] {
+  color: var(--jl-ink);
+  font-weight: 500;
+}
+.onboarding-stages li[data-state='current']::before {
+  border: 2px solid var(--jl-ink);
+  background: var(--jl-accent);
+  animation: jl-breathe 1.6s ease-in-out infinite;
+}
+.onboarding-stages li[data-state='done'] {
+  color: var(--jl-muted);
+}
+.onboarding-stages li[data-state='done']::before {
+  border-color: var(--jl-ink);
+  background: var(--jl-ink)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' fill='none' stroke='%23c6f432' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / 14px no-repeat;
+}
+@keyframes jl-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(198 244 50 / 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgb(198 244 50 / 0);
+  }
+}
+.onboarding-reading-meta {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0 0;
+  color: var(--jl-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.onboarding-reading.paused :is(svg, svg g path:first-child, li::before) {
+  animation-play-state: paused;
+}
+/* A question from the AI, as an app card. */
+.onboarding-ask {
+  display: grid;
+  gap: 8px;
+  padding: 18px 20px;
+  border: 1px solid var(--jl-ink);
+  border-radius: 14px;
+  background: var(--jl-panel);
+  box-shadow: var(--jl-shadow);
+  animation: jl-rise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.onboarding-ask b {
+  color: var(--jl-ink);
+  font-size: 15px;
+}
+.onboarding-ask p {
+  margin: 0;
+  color: var(--jl-muted);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.onboarding-ask-actions,
+.onboarding-ask-reply {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.onboarding-ask-reply input {
+  flex: 1;
+  min-width: 0;
+}
+body.jl-simple .onboarding .onboarding-ask button.primary {
+  min-height: 40px;
+  padding: 0 18px;
+  font-size: 14px;
+}
+@keyframes jl-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-reading-mark svg,
+  .onboarding-reading-mark svg g path:first-child,
+  .onboarding-stages li::before,
+  .onboarding-ask {
+    animation: none !important;
+  }
+}
+
+/* Review: answer once, never-apply list, folded details and sources. */
+.onboarding-section-lead {
+  margin: -2px 0 14px;
+  color: var(--jl-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.onboarding .onboarding-once {
+  gap: 0;
+  padding: 20px;
+  border: 1px solid var(--jl-line);
+  border-radius: 14px;
+  background: var(--jl-accent-wash);
+}
+body.jl-simple .onboarding .onboarding-once legend {
+  float: left;
+  width: 100%;
+  margin-bottom: 6px;
+  font-size: 15px;
+}
+.onboarding-once-grid {
+  clear: both;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.onboarding-once-grid > label:last-child {
+  grid-column: 1 / -1;
+}
+.onboarding-once-choice {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  align-items: end;
+  gap: 8px;
+}
+.onboarding-once-title {
+  color: var(--jl-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.onboarding-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.onboarding .onboarding-pill {
+  position: relative;
+  display: inline-flex;
+  font-weight: 500 !important;
+  cursor: pointer;
+}
+.onboarding-pill input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.onboarding-pill span {
+  padding: 8px 14px;
+  border: 1px solid var(--jl-line-strong);
+  border-radius: 99px;
+  background: var(--jl-panel);
+  color: var(--jl-ink);
+  font-size: 13px;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+.onboarding-pill:hover span {
+  border-color: var(--jl-ink);
+}
+.onboarding-pill:active span {
+  transform: scale(0.97);
+}
+.onboarding-pill input:checked + span {
+  border-color: var(--jl-ink);
+  background: var(--jl-ink);
+  color: var(--jl-bg);
+}
+.onboarding-pill input:focus-visible + span {
+  box-shadow: 0 0 0 3px var(--jl-accent);
+}
+.onboarding-never {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+}
+.onboarding-never small {
+  color: var(--jl-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.onboarding-more-body {
+  display: grid;
+  gap: 16px;
+  margin-top: 14px;
+}
+.onboarding-sources {
+  border: 1px solid var(--jl-line);
+  border-radius: 14px;
+  background: var(--jl-panel);
+}
+.onboarding-sources > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  list-style: none;
+  cursor: pointer;
+}
+.onboarding-sources > summary::-webkit-details-marker {
+  display: none;
+}
+.onboarding-sources-title {
+  color: var(--jl-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+.onboarding-sources-count {
+  color: var(--jl-muted);
+  font-size: 13px;
+}
+.onboarding-sources-edit {
+  margin-left: auto;
+  color: var(--jl-accent-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.onboarding-sources[open] > summary {
+  border-bottom: 1px solid var(--jl-line);
+}
+.onboarding-sources .onboarding-checks {
+  padding: 14px 16px 16px;
+}
+@media (max-width: 640px) {
+  .onboarding-once-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.onboarding-ask-context {
+  display: block;
+  max-height: 96px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--jl-sunk);
+  color: var(--jl-ink);
+  font: 12px/1.5 var(--jl-mono);
+  overflow-wrap: anywhere;
+}
+.onboarding[data-step='reading'] .onboarding-links {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+}
