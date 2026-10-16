@@ -101,6 +101,7 @@ export class JevBrowser {
       profile,
       endpoint = existingChromeEndpoint,
       openWindow = openChromeWindow,
+      readyTimeout = 10000,
       checkpoints = [],
       accountVault = null,
       onDisconnect = () => {},
@@ -123,6 +124,7 @@ export class JevBrowser {
     this.profile = profile;
     this.endpoint = endpoint;
     this.openWindow = openWindow;
+    this.readyTimeout = readyTimeout;
     this.tabs = new Map();
     this.automationTabs = new Map();
     this.automationRuns = new Map();
@@ -153,7 +155,7 @@ export class JevBrowser {
             const marker = await this.prepareProfileWindow();
             const endpoint = await this.endpoint(),
               saved = await this.registry.read();
-            await marker.waitForReady({signal: this.abort.signal});
+            await marker.waitForReady({signal: this.abort.signal, timeout: this.readyTimeout});
             transport = await JevCdpTransport.connect(endpoint, {signal: this.abort.signal});
             this.transport = transport;
             transport.onTargetDestroyed = (id) => {
@@ -243,6 +245,7 @@ export class JevBrowser {
             if (this.homeId === markerId) await this.tab(markerId).page.goto(homeUrl);
             marker.close();
             this.profileWindow = null;
+            this.lastConnectError = null;
             if (contextId) await this.persistTabs();
             return context;
           } catch (error) {
@@ -257,10 +260,15 @@ export class JevBrowser {
               this.profileWindow?.close();
               this.profileWindow = null;
             }
-            throw Object.assign(
-              Error(`Could not connect to Chrome: ${error.message.split('\n')[0]}`),
-              {code: 'BROWSER_DISCONNECTED'},
-            );
+            // A retry reuses the profile window, which may no longer be in front.
+            // Its readiness timeout must not hide why the previous attempt failed.
+            let message = error.message.split('\n')[0];
+            if (error.code !== 'PROFILE_NOT_READY') this.lastConnectError = message;
+            else if (this.lastConnectError)
+              message += ` The previous attempt failed: ${this.lastConnectError}`;
+            throw Object.assign(Error(`Could not connect to Chrome: ${message}`), {
+              code: 'BROWSER_DISCONNECTED',
+            });
           } finally {
             release?.();
           }
@@ -305,7 +313,10 @@ export class JevBrowser {
     }
     // A slow load or a denied connection reuses this window on retry.
     this.abort.signal.throwIfAborted();
-    await this.profileWindow.waitForReady({signal: this.abort.signal});
+    await this.profileWindow.waitForReady({
+      signal: this.abort.signal,
+      timeout: this.readyTimeout,
+    });
     return this.profileWindow;
   }
   async findOwnedPage(id) {

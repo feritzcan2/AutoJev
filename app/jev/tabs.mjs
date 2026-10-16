@@ -44,6 +44,10 @@ export class JevTabs {
       if (error.code === 'ENOENT') return null;
       throw Error('Could not read the Jev tab record; existing forms are kept.');
     }
+    // Another AutoJev version can share this data directory and write its own
+    // format. Its tabs cannot be restored here, but they must not block the
+    // connection: connect without restoring them; they stay open in Chrome.
+    if (Number.isInteger(saved?.version) && saved.version !== 1) return null;
     if (
       saved.version !== 1 ||
       saved.profile !== this.profile ||
