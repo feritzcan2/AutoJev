@@ -884,3 +884,12 @@ body.jl-simple .onboarding-notes-box summary:hover {
     animation: none;
   }
 }
+
+/* Dark mode: marks that sit on ink keep an ink base and a visible edge. */
+.onboarding-stages li[data-state='done']::before {
+  background-color: #0e0f12;
+  border-color: var(--jl-line-strong);
+}
+.onboarding-ai-tick {
+  box-shadow: 0 0 0 2px #0e0f12;
+}

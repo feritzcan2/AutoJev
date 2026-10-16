@@ -72,7 +72,7 @@ const quickQuestions = [
 ];
 const languagesFrom = (experience) =>
   String(experience ?? '')
-    .match(/languages?\s*[:：]\s*([^\n·;]+)/i)?.[1]
+    .match(/languages?\s*[:：]\s*(.+?)(?=\.\s|[\n·;]|$)/i)?.[1]
     .trim() ?? '';
 const readingStages = ['Opening your CV', 'Reading your experience', 'Filling in your profile'];
 // Terminal choices, worded for people: continue first, refuse last.
@@ -217,6 +217,8 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     showError();
     root.hidden = false;
     document.body.classList.add('onboarding-open');
+    // The app behind the onboarding is out of reach for keyboard and screen readers.
+    for (const node of document.querySelectorAll('#jl-root, body > main')) node.inert = true;
     unsubscribe ??= api.onAutomationChange((event) => {
       if (id && (!event.automationId || event.automationId === id)) load();
     });
@@ -230,6 +232,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     closeTerminal();
     root.hidden = true;
     document.body.classList.remove('onboarding-open');
+    for (const node of document.querySelectorAll('#jl-root, body > main')) node.inert = false;
     unsubscribe?.();
     unsubscribe = null;
     clearInterval(timer);
@@ -554,7 +557,9 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
           : null,
       choice = prompt ? menu : null,
       // The profile is being written once the agent calls its save tool.
-      saving = t.saving || /save_automation_plan|reply_to_user/.test(screen);
+      // A tool call line ("⏺ jobloop - save_automation_plan (MCP)"), not the
+      // request text that names the tool.
+      saving = t.saving || /⏺[^\n]*(?:save_automation_plan|reply_to_user)/.test(screen);
     const key = JSON.stringify([prompt, choice, saving]);
     if (key === t.key) return;
     t.key = key;
@@ -705,7 +710,8 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     const facts = cvFacts(a.criteria?.experience);
     box.hidden = !facts.length;
     const key = JSON.stringify(facts);
-    if (!facts.length || box.dataset.key === key) return;
+    if (!facts.length) return false;
+    if (box.dataset.key === key) return true;
     box.dataset.key = key;
     const seen = sessionStorage.getItem('jl-echo:' + a.id) === key;
     sessionStorage.setItem('jl-echo:' + a.id, key);
@@ -730,6 +736,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         check.play();
       } else setTimeout(show, 250 + i * 950);
     });
+    return true;
   }
   function updateReview() {
     const a = data.automation,
@@ -742,7 +749,10 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     card.querySelector('.onboarding-reply').textContent = manualMode
       ? 'Tell JobLoop what you’re looking for. You can add your CV later from Profile & CV.'
       : (reply?.text ?? 'Check the details the agent filled in and complete anything missing.');
-    renderEcho(card.querySelector('.onboarding-echo'), a);
+    // With the CV echo shown, the AI's own (often technical) note gives way to one plain line.
+    if (renderEcho(card.querySelector('.onboarding-echo'), a) && !manualMode)
+      card.querySelector('.onboarding-reply').textContent =
+        'Check the details below and add anything your CV doesn’t say, like salary or notice period.';
     const failure = card.querySelector('.onboarding-failure');
     failure.replaceChildren();
     if (failed)
