@@ -13,6 +13,7 @@ import {
 } from '../app/site-extensions/search.mjs';
 import {workspaceSourceTabs} from './workspace-tabs.js';
 import {positionMenu} from './popover-menu.js';
+import {extensionBenchAvailable, extensionBenchPanel} from './extension-bench.js';
 
 const paginationLabels = {
   auto: 'Detect automatically',
@@ -89,7 +90,10 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     memory = null,
     adding = false,
     saving = false,
-    bulkSaving = false;
+    bulkSaving = false,
+    benchAvailable = false,
+    benchSource = null,
+    headBench = null;
   host.innerHTML =
     '<div class="sources-head"><div><h2>Sources</h2><p></p></div><div class="sources-head-actions"></div></div><div data-add></div><ul class="source-list"></ul>';
   const head = host.querySelector('.sources-head'),
@@ -161,6 +165,42 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     discover.dataset.sourceDiscover = '';
     headActions.append(discover);
   }
+  // Development builds: the extension test bench, for any address or one source.
+  const benches = new Map();
+  const benchFor = (url) => {
+    if (!benches.has(url))
+      benches.set(
+        url,
+        extensionBenchPanel(api, {
+          scope: () => owner,
+          url,
+          onClose: () => {
+            benchSource = null;
+            render();
+          },
+        }),
+      );
+    return benches.get(url);
+  };
+  extensionBenchAvailable(api).then((available) => {
+    if (!available || !host.isConnected) return;
+    benchAvailable = true;
+    const toggle = button('Test bench', () => {
+      if (headBench?.element.isConnected) {
+        headBench.element.remove();
+        return;
+      }
+      headBench ??= extensionBenchPanel(api, {
+        scope: () => owner,
+        onClose: () => headBench.element.remove(),
+      });
+      head.after(headBench.element);
+      headBench.focus();
+    });
+    toggle.title = 'Read an address with the site extensions, without agents or records.';
+    headActions.append(toggle);
+    if (data) render();
+  });
 
   // Bulk settings fold away; a single form applies the interval to every source.
   const bulk = el('details', null, 'source-bulk');
@@ -276,6 +316,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       restart: button('Start over', () => {}, 'source-restart'),
       edit: button('', () => {}, 'source-edit'),
       memoryButton: button('', () => {}, 'source-memory-toggle'),
+      bench: button('Test extension', () => {}, 'source-bench-toggle'),
       pending: null,
     };
     view.toggle.type = 'checkbox';
@@ -298,7 +339,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     menu.addEventListener('click', (event) => {
       if (event.target.closest('button') && menu.matches(':popover-open')) menu.hidePopover();
     });
-    menu.append(view.edit, view.memoryButton, view.restart);
+    menu.append(view.edit, view.memoryButton, view.bench, view.restart);
     // Clicking the row's text opens its details, like the Details action.
     view.main.addEventListener('click', (event) => {
       if (event.target.closest('button,a,input,select,textarea') || getSelection()?.toString())
@@ -1150,6 +1191,15 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         render();
       });
       memoryButton.setAttribute('aria-expanded', String(memoryOpen));
+      const benchOpen = benchAvailable && benchSource === source.url;
+      view.bench.hidden = !benchAvailable;
+      view.bench.textContent = benchOpen ? 'Close test bench' : 'Test extension';
+      view.bench.onclick = (event) => {
+        event.preventDefault();
+        benchSource = benchOpen ? null : source.url;
+        render();
+        if (!benchOpen) benchFor(source.url).open(source.url);
+      };
       tabHosts.set(source.url, tabHost);
       row.querySelector(':scope > .source-memory')?.remove();
       if (!open) row.querySelector(':scope > .source-editor')?.remove();
@@ -1166,8 +1216,14 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
               : null,
           pending = details.querySelector('.source-progress-pending');
         if (previousPending && pending) pending.open = previousPending.open;
-        row.append(details);
+        // Before an open bench, which is never moved: moving it would drop its focus.
+        const bench = benches.get(source.url)?.element;
+        row.insertBefore(details, bench?.parentElement === row ? bench : null);
       }
+      if (benchOpen) {
+        const panel = benchFor(source.url).element;
+        if (panel.parentElement !== row) row.append(panel);
+      } else benches.get(source.url)?.element.remove();
     }
     if (!sources.length) {
       if (!empty.isConnected) list.insertBefore(empty, otherHost);
@@ -1188,6 +1244,11 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         adding = false;
         addHost.replaceChildren();
         bulkForm.reset();
+        benchSource = null;
+        for (const bench of benches.values()) bench.element.remove();
+        benches.clear();
+        headBench?.element.remove();
+        headBench = null;
         for (const view of rows.values()) view.row.remove();
         rows.clear();
       }

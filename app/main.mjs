@@ -21,6 +21,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Maintenance} from './system/maintenance.mjs';
 import {startDevControl} from './system/dev-control.mjs';
+import {registerExtensionBench} from './sources/extension-bench.mjs';
 import {registerAutomationServices} from './automation/services.mjs';
 import {AutomationStore} from './automation/store.mjs';
 import {registerSettingsServices} from './system/settings-services.mjs';
@@ -249,6 +250,14 @@ async function boot() {
         notification.show();
       }
     },
+  });
+  // Unpackaged builds only: the Sources screen's extension test bench.
+  registerExtensionBench({
+    enabled: !app.isPackaged,
+    handle,
+    browser,
+    db: automationDb,
+    changed: (id) => emit('automation-changed', {automationId: id}),
   });
   workspaces.templates[browserDefinition.id] = {
     agentRoles: () => WEB_AGENT_ROLES,

@@ -934,3 +934,213 @@
     width: 100%;
   }
 }
+
+/* Extension test bench (development builds only) */
+.extension-bench {
+  min-width: 0;
+  margin: 0 0 20px;
+  padding: 18px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.source-row > .extension-bench {
+  grid-column: 2 / -1;
+  margin: 14px 0 0;
+}
+.extension-bench-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.extension-bench-head h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+.extension-bench-head p {
+  margin: 4px 0 0;
+}
+.extension-bench-actions,
+.extension-bench-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.extension-bench-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  color: var(--text-secondary);
+}
+.extension-bench-picker select {
+  flex: 1;
+  min-width: 0;
+}
+.extension-bench-picker[hidden] {
+  display: none;
+}
+.extension-bench-form {
+  display: flex;
+  gap: 8px;
+  max-width: none;
+  margin-top: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.extension-bench-form input {
+  flex: 1;
+  min-width: 0;
+}
+.extension-bench-reload-info,
+.extension-bench-muted {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.extension-bench-state {
+  margin: 8px 0 0;
+}
+.extension-bench-state:empty {
+  display: none;
+}
+.extension-bench-state[data-tone='error'],
+.extension-bench-warning {
+  color: var(--danger);
+}
+.extension-bench-output {
+  display: grid;
+  gap: 14px;
+  margin-top: 12px;
+  min-width: 0;
+}
+.extension-bench-output:empty {
+  display: none;
+}
+.extension-bench-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.extension-bench-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+}
+.extension-bench-chip[data-tone='accent'] {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+.extension-bench-chip[data-tone='success'] {
+  border-color: var(--success);
+  color: var(--success);
+}
+.extension-bench-chip[data-tone='warning'] {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+.extension-bench-notes {
+  margin: 0;
+  padding: 10px 12px 10px 28px;
+  border: 1px solid var(--warning);
+  border-radius: 8px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.extension-bench-pagination,
+.extension-bench-listings {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.extension-bench-pagination > b,
+.extension-bench-listings > b {
+  color: var(--text);
+  font-weight: 600;
+}
+.extension-bench-listings ol,
+.extension-bench-links {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 0;
+  padding-left: 26px;
+}
+.extension-bench-listings li[data-repeat='true'] {
+  opacity: 0.6;
+}
+.extension-bench-listing-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.extension-bench-listing-row > div {
+  min-width: 0;
+}
+.extension-bench-listing-row span,
+.extension-bench-listing-row small,
+.extension-bench-links span {
+  display: block;
+}
+.extension-bench-listing-row span,
+.extension-bench-links span {
+  color: var(--text);
+}
+.extension-bench-listing {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-app);
+}
+.extension-bench-listing strong {
+  color: var(--text);
+}
+.extension-bench-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+.extension-bench-facts dt {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.extension-bench-facts dd {
+  margin: 2px 0 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.extension-bench-fold summary {
+  color: var(--text);
+  cursor: pointer;
+}
+.extension-bench-fold pre {
+  max-height: 360px;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-app);
+  color: var(--text);
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 900px) {
+  .source-row > .extension-bench {
+    grid-column: 1 / -1;
+  }
+}

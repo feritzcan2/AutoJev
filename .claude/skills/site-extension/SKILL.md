@@ -261,8 +261,22 @@ their output.
 
 ## Step 5 — Hand over to the user for a live check
 
-Tell the user to restart the app (never restart it yourself) and run a scan on
-the source. What to look for:
+First check: the **extension test bench** (development builds only; Sources →
+row menu → "Test extension", or "Test bench" in the header for any address,
+`app/sources/extension-bench.mjs`). It reads an address the way the
+workspace's scans do — DOM reader in the managed Chrome, HTTP reader or API
+collector — without agents, Jev model calls or records, and shows the
+extension that matched, whether the DOM reader was applied (and, when not,
+what `dom.collect` returned and why `dom.results` gave `null`), the listings,
+the links marked as not a listing, the pagination with "Next page →"
+(repeats across pages are flagged) and one listing's `fields` and own
+description. "Reload extensions" imports every module in
+`app/site-extensions/` again (`reload.mjs`), so after an edit the user only
+reloads and reads again; a new module registered in `index.mjs` is picked up
+too. Changes outside that folder still need a restart.
+
+Then tell the user to restart the app (never restart it yourself) and run a
+scan on the source. What to look for:
 - the source's Details panel: the pending list has no company/category/filter
   URLs; page numbers advance as "N / M" and stop at the page budget (15 pages
   per scan, at least 2 per search); red "Excluded · On card · …" entries appear for

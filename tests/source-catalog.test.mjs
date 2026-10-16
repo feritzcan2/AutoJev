@@ -49,7 +49,8 @@ test('the catalog lists each ready board once, with its countries as choices', (
       label: 'DE, AT, CH',
     },
   ]);
-  assert.equal(catalog.find((g) => g.name === 'We Work Remotely').extension, null);
+  assert.equal(catalog.find((g) => g.name === 'We Work Remotely').extension, 'browser');
+  assert.equal(catalog.find((g) => g.name === 'Company career pages').extension, null);
   const firstGlobal = catalog.findIndex((g) => !g.choices[0].countries.length);
   assert.ok(firstGlobal > 0);
   assert.ok(catalog.slice(0, firstGlobal).every((g) => g.choices[0].countries.includes('DE')));

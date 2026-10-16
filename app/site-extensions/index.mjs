@@ -31,6 +31,7 @@ import workable from './workable.mjs';
 import simplyhired from './simplyhired.mjs';
 import hnHiring from './hn-hiring.mjs';
 import themuse from './themuse.mjs';
+import weWorkRemotely from './weworkremotely.mjs';
 
 export const SITE_EXTENSIONS = [
   stepstone,
@@ -47,6 +48,7 @@ export const SITE_EXTENSIONS = [
   simplyhired,
   hnHiring,
   themuse,
+  weWorkRemotely,
 ];
 export const siteExtensionFor = (url) => SITE_EXTENSIONS.find((e) => e.matches(url)) ?? null;
 // What reads this source for the source list: api (collector, only for its
