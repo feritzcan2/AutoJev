@@ -14,6 +14,7 @@ import {minimumSaveScoreSettings} from './minimum-save-score.js';
 import {automationSourcesPanel} from './automation-sources.js';
 import {automationAttentionPanel} from './automation-attention.js';
 import {renderCurrentWork} from './current-work.js';
+import {devToolsAvailable, openAgentTrace} from './agent-trace.js';
 import './automation-attention.css';
 import './automations.css';
 import './run-history.css';
@@ -1311,6 +1312,12 @@ export function automationsPage(
       ),
     );
   }
+  // Development builds: each run row opens what its agent received.
+  let traceAvailable = false;
+  void devToolsAvailable(api).then((available) => {
+    traceAvailable = available;
+    if (available && data?.runs && find('#automation-runs')) renderRuns();
+  });
   function renderRuns() {
     renderRunTabs();
     const root = find('#automation-runs');
@@ -1331,6 +1338,14 @@ export function automationsPage(
         el('b', runKindLabel(run.kind) + ' · ' + (statusNames[run.status] ?? run.status)),
         el('time', time(run.startedAt)),
       );
+      if (traceAvailable) {
+        const trace = el('button', 'Trace', 'quiet run-trace');
+        trace.type = 'button';
+        trace.title =
+          'Everything this run’s agent received: instructions, tool calls and outputs, Jev requests.';
+        trace.onclick = () => openAgentTrace(api, data.automation.id, run.id);
+        head.append(trace);
+      }
       row.append(head);
       if (
         run.kind === 'run' &&

@@ -50,7 +50,8 @@
     "release:assets": "node scripts/release-assets.mjs",
     "test:readiness:ui": "node scripts/smoke-readiness.mjs",
     "test:data:ui": "node scripts/smoke-data.mjs",
-    "test:extension-bench": "node scripts/smoke-extension-bench.mjs"
+    "test:extension-bench": "node scripts/smoke-extension-bench.mjs",
+    "test:dev-tools": "node scripts/smoke-dev-tools.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.1",

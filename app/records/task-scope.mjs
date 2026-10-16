@@ -1,4 +1,5 @@
 // @ts-check
+import {dryRunTask, dryScore} from '../scoring/trial-scores.mjs';
 // Batch scoring keeps a primary recordId for existing record-task routing.
 // Ownership and score writes always use the complete assignment.
 export const taskRecordIds = (task) => task?.recordIds ?? (task?.recordId ? [task.recordId] : []);
@@ -8,6 +9,13 @@ export const batchScoring = (task) =>
 
 // Score provenance, not its numeric value, proves completion of this task.
 export function recordScoredInTask(db, task, item) {
+  // A developer trial score is kept outside the record.
+  if (dryRunTask(task))
+    return (
+      task.recordOperation === 'score' &&
+      taskHasRecord(task, item.id) &&
+      Boolean(dryScore(task.taskId ?? task.id, item.id))
+    );
   if (task?.recordOperation !== 'score' || !taskHasRecord(task, item.id) || !item.assessment?.runId)
     return false;
   const revision = task.revision ?? task.request?.revision;
