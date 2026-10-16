@@ -270,7 +270,10 @@ extension that matched, whether the DOM reader was applied (and, when not,
 what `dom.collect` returned and why `dom.results` gave `null`), the listings,
 the links marked as not a listing, the pagination with "Next page →"
 (repeats across pages are flagged) and one listing's `fields` and own
-description. "Reload extensions" imports every module in
+description. A listing's "Jev triage" asks Jev the scan's card and detail
+questions with the workspace's criteria and shows each answer, the decision
+and the exclusion proof (uses Jev tokens, no agent); for an exclusion it also asks a
+bench-only question that picks the saved rule or fact and the listing passage it rests on. "Reload extensions" imports every module in
 `app/site-extensions/` again (`reload.mjs`), so after an edit the user only
 reloads and reads again; a new module registered in `index.mjs` is picked up
 too. Changes outside that folder still need a restart.

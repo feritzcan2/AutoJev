@@ -8,6 +8,75 @@ const el = (tag, text, cls) => {
   if (cls) n.className = cls;
   return n;
 };
+// An explanation box on hover or keyboard focus. The window does not show
+// native title tooltips, so the bench draws its own; a click keeps it open
+// so its text can be selected, and Escape or a click elsewhere closes it.
+let tip = null,
+  pinned = null,
+  anchor = null;
+function tipBox() {
+  if (tip?.isConnected) return tip;
+  tip = el('div', null, 'extension-bench-tip');
+  tip.id = 'extension-bench-tip';
+  tip.setAttribute('role', 'tooltip');
+  tip.hidden = true;
+  document.body.append(tip);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') hideTip(true);
+  });
+  document.addEventListener(
+    'pointerdown',
+    (event) => {
+      if (pinned && !pinned.contains(event.target) && !tip.contains(event.target)) hideTip(true);
+    },
+    true,
+  );
+  // The box follows its chip while the page scrolls.
+  document.addEventListener(
+    'scroll',
+    () => (anchor?.isConnected && !tip.hidden ? place(anchor) : hideTip(true)),
+    true,
+  );
+  return tip;
+}
+function place(node) {
+  const box = tipBox(),
+    r = node.getBoundingClientRect(),
+    width = Math.min(560, innerWidth - 32);
+  box.style.maxWidth = width + 'px';
+  box.style.left = Math.max(16, Math.min(r.left, innerWidth - width - 16)) + 'px';
+  const height = box.offsetHeight;
+  box.style.top =
+    (r.bottom + 8 + height <= innerHeight ? r.bottom + 8 : Math.max(8, r.top - 8 - height)) + 'px';
+}
+function showTip(node) {
+  const box = tipBox();
+  anchor = node;
+  box.textContent = node.dataset.tip;
+  box.hidden = false;
+  box.dataset.pinned = String(pinned === node);
+  place(node);
+}
+function hideTip(force = false) {
+  if (pinned && !force) return;
+  pinned = null;
+  anchor = null;
+  if (tip) tip.hidden = true;
+}
+function explain(node, text) {
+  node.dataset.tip = text;
+  node.dataset.explained = 'true';
+  node.tabIndex = 0;
+  node.setAttribute('aria-describedby', 'extension-bench-tip');
+  node.addEventListener('mouseenter', () => !pinned && showTip(node));
+  node.addEventListener('mouseleave', () => hideTip());
+  node.addEventListener('focus', () => !pinned && showTip(node));
+  node.addEventListener('blur', () => hideTip());
+  node.addEventListener('click', () => {
+    pinned = pinned === node ? null : node;
+    showTip(node);
+  });
+}
 const transports = {
   api: 'API collector',
   http: 'HTTP reader',
@@ -58,7 +127,7 @@ export function extensionBenchPanel(api, {scope, url = '', onClose}) {
     el('h3', 'Extension test bench'),
     el(
       'p',
-      'Development build. Reads the address the way this workspace’s scans do — no agent, no Jev model calls, no records.',
+      'Development build. Reads the address the way this workspace’s scans do — no agent and no records; Jev is asked only by “Jev triage”.',
     ),
   );
   const reloadInfo = el('small', null, 'extension-bench-reload-info'),
@@ -181,7 +250,7 @@ export function extensionBenchPanel(api, {scope, url = '', onClose}) {
       chip = (text, tone, tip) => {
         const c = el('span', text, 'extension-bench-chip');
         if (tone) c.dataset.tone = tone;
-        if (tip) c.title = tip;
+        if (tip) explain(c, tip);
         line.append(c);
       };
     chip(
@@ -342,6 +411,7 @@ export function extensionBenchPanel(api, {scope, url = '', onClose}) {
           'extension-bench-warning',
         ),
         fold(`Page text (${result.text.length} characters)`, el('pre', result.text.text)),
+        jevSection(result),
       );
       return box;
     }
@@ -375,6 +445,243 @@ export function extensionBenchPanel(api, {scope, url = '', onClose}) {
     );
     if (result.fromCache)
       box.append(el('small', 'From the last API page read, not fetched again.'));
+    box.append(jevSection(result));
+    return box;
+  }
+
+  // Jev triage of this listing with the workspace's criteria: the card and
+  // detail decisions a scan would take, each answer, and what Jev was asked.
+  const percent = (x) => (Number.isFinite(x) ? Math.round(x * 100) + '%' : '—');
+  const answerText = (a) =>
+    `${a.choice} ${percent(a.confidence)}` +
+    (a.probabilities
+      ? ' (' +
+        Object.entries(a.probabilities)
+          .sort((x, y) => y[1] - x[1])
+          .map(([k, v]) => `${k} ${percent(v)}`)
+          .join(', ') +
+        ')'
+      : '');
+  const decisionText = {
+    possible: 'Kept for the agent to assess',
+    uncertain: 'Uncertain · left to the agent',
+    mismatch: 'Excluded (proven mismatch)',
+    incomplete: 'Incomplete · a scan waits and reads again',
+    results_page: 'A results page, not a listing',
+    no_text: 'No text to classify',
+  };
+  const reasonText = {
+    hard_constraint: 'an explicit hard rule in your criteria (only / must / no) is contradicted',
+    qualification: 'a requirement of the listing contradicts a known fact about you',
+    unrelated_role: 'what the listing offers is clearly outside your goal and field',
+    not_listing: 'the page is not an individual listing (or the listing is gone)',
+    none: 'no exclusion reason is supported',
+  };
+  const probabilities = (a) =>
+    a.probabilities
+      ? Object.entries(a.probabilities)
+          .sort((x, y) => y[1] - x[1])
+          .map(([k, v]) => `${k} ${percent(v)}`)
+          .join(', ')
+      : 'not given';
+  // Hover text of the card chip: what was judged, the answer and the rule applied.
+  function cardTip(j) {
+    const c = j.card,
+      t = j.thresholds,
+      lines = [
+        'CARD STAGE — the first, cheap filter.',
+        `Jev judged only the card: the title and the facts the site states, not the description.`,
+        `Card: ${c.text.split('\n').slice(0, 4).join(' · ')}`,
+        '',
+        `Jev's answer: ${c.answer.choice} (its confidence ${percent(c.answer.confidence)}).`,
+        `Probabilities: ${probabilities(c.answer)}.`,
+        `Keep: ${percent(c.keep)}. Most likely exclusion: ${c.reason} — ${reasonText[c.reason] ?? c.reason}.`,
+        '',
+        c.rule === 'results_page'
+          ? `Rule for cards on a results page: eliminated when Jev names an exclusion with at least ${percent(t.confidence)} confidence, or keep falls below ${percent(t.keepFloor)}.`
+          : `Rule for listings a site reader or API delivers whole: eliminated when the exclusion likelihood (the named exclusion's confidence, or 100% − keep) reaches ${percent(t.confidence)}.`,
+        `Here the exclusion likelihood is ${percent(c.confidence)}.`,
+        '',
+        c.eliminated
+          ? `→ ELIMINATED at the card. In a scan the detail is never read and the agent never sees this listing; Scan memory lists it as "Excluded · On card · ${c.reason}".`
+          : `→ KEPT: ${percent(c.confidence)} is below the threshold, so the full text goes to the detail stage.`,
+      ];
+    return lines.join('\n');
+  }
+  // Hover text of the detail chip: each fragment's answer, the proof and the outcome.
+  function detailTip(j) {
+    const d = j.detail,
+      t = j.thresholds,
+      lines = [
+        'DETAIL STAGE — Jev reads the listing’s full text.',
+        `${d.characters} characters, asked in ${d.fragments.length} fragment(s) of up to 30,000 characters.`,
+      ];
+    for (const f of d.fragments)
+      lines.push(
+        `• Text ${f.offset}–${f.end}: ${f.answer.choice} ${percent(f.answer.confidence)} (${probabilities(f.answer)}) → counted as ${f.decision}.`,
+      );
+    lines.push(
+      `A mismatch counts only at ${percent(t.confidence)} or more; below that it becomes uncertain. Every fragment must agree, otherwise the result is uncertain.`,
+      '',
+    );
+    if (d.proof) {
+      const {support, exclusion} = d.proof.answers;
+      lines.push(
+        'EXCLUSION PROOF — a mismatch only removes a listing when a separate question confirms it.',
+        `Is an exclusion supported? ${support.choice} ${percent(support.confidence)} (${probabilities(support)}).`,
+        `Which reason? ${exclusion.choice} ${percent(exclusion.confidence)} — ${reasonText[exclusion.choice] ?? exclusion.choice}.`,
+        `Needed: "supported" with at least ${percent(t.confidence)} and a reason other than none.`,
+        '',
+      );
+    }
+    const raw = d.fragments.some(
+        (f) => f.answer.choice === 'mismatch' && f.answer.confidence < t.confidence,
+      ),
+      split =
+        new Set(d.fragments.map((f) => f.decision).filter((x) => x !== 'incomplete')).size > 1;
+    lines.push(
+      {
+        mismatch: `→ EXCLUDED. In a scan the listing is closed here without the agent: it is not scored or saved, and Scan memory lists it as "Excluded · Detail · ${d.proof?.answers.exclusion.choice ?? ''}". Check "Profile and rules Jev was given" for the rule it broke.`,
+        possible:
+          '→ KEPT as potentially relevant. In a scan the agent reads Jev’s brief of the listing and scores it.',
+        uncertain: `→ UNCERTAIN, so it goes to the agent, who reads the brief and decides. Why: ${
+          d.proof && !d.proof.supported
+            ? 'Jev said mismatch, but the proof did not confirm it.'
+            : raw
+              ? `Jev leaned to mismatch but below ${percent(t.confidence)}.`
+              : split
+                ? 'the fragments disagreed.'
+                : 'Jev found facts missing, ambiguous or conflicting.'
+        }`,
+        incomplete:
+          '→ INCOMPLETE: Jev saw only a page shell or loading content. A scan waits and reads the page again before deciding.',
+        results_page:
+          '→ A RESULTS PAGE with several listings, not one listing. A scan defers it to be scanned as a results page.',
+        no_text: '→ The page had no text, so nothing was asked.',
+      }[d.decision] ?? d.decision,
+    );
+    if (j.why) lines.push('', ...whyLines(j.why));
+    if (j.notes.length) lines.push('', ...j.notes);
+    return lines.join('\n');
+  }
+  // The bench-only "why" question: the saved rule or fact and the listing
+  // passage Jev picks for the exclusion, with the runners-up.
+  const whyChoice = (top) =>
+    top.key === 'none'
+      ? `none of the offered options (${percent(top.probability)})`
+      : `${percent(top.probability)} · ${top.source ? top.source + ': ' : ''}${top.text}`;
+  function whyLines(why) {
+    return [
+      `WHY (bench-only question, not asked in scans; Jev chose among ${why.offered.rules} rule/fact options and ${why.offered.passages} ${why.basis === 'card' ? 'card' : 'listing'} passages):`,
+      `Rule or fact contradicted: ${whyChoice(why.rule.top[0])}`,
+      `Listing passage: ${whyChoice(why.passage.top[0])}`,
+    ];
+  }
+  function whyView(why) {
+    const box = el('div', null, 'extension-bench-why');
+    box.append(
+      el(
+        'b',
+        `Why: ${why.reason} · bench-only question (${why.basis === 'card' ? 'card' : 'detail'}), not asked in scans`,
+      ),
+    );
+    for (const [label, part] of [
+      ['Rule or fact it contradicts', why.rule],
+      ['Passage of the listing', why.passage],
+    ]) {
+      const [first, ...rest] = part.top,
+        line = el('div', null, 'extension-bench-why-line');
+      line.append(el('small', label), el('p', whyChoice(first)));
+      if (rest.length)
+        line.append(
+          el('small', 'Next: ' + rest.map(whyChoice).join(' | '), 'extension-bench-muted'),
+        );
+      box.append(line);
+    }
+    return box;
+  }
+  function jevSection(result) {
+    const box = el('div', null, 'extension-bench-jev'),
+      host = el('div');
+    const run = button('Jev triage', async () => {
+      const read = await api.extensionBenchJev(scope(), result.url);
+      if (read.tabId) closeTab.hidden = false;
+      host.replaceChildren(jevView(read.jev));
+    });
+    run.title =
+      'Asks Jev the card and detail questions of a scan with this workspace’s profile and criteria. Uses Jev tokens; no agent, no records.';
+    box.append(run, host);
+    return box;
+  }
+  function jevView(j) {
+    const box = el('div', null, 'extension-bench-jev-result'),
+      chips = el('div', null, 'extension-bench-chips'),
+      chip = (text, tone, tip) => {
+        const c = el('span', text, 'extension-bench-chip');
+        if (tone) c.dataset.tone = tone;
+        explain(c, tip);
+        chips.append(c);
+      };
+    chip(
+      j.card.eliminated ? `Card: eliminated · ${j.card.reason}` : 'Card: kept',
+      j.card.eliminated ? 'warning' : 'success',
+      cardTip(j),
+    );
+    chip(
+      'Detail: ' + (decisionText[j.detail.decision] ?? j.detail.decision),
+      j.detail.decision === 'mismatch'
+        ? 'warning'
+        : j.detail.decision === 'possible'
+          ? 'success'
+          : null,
+      detailTip(j),
+    );
+    box.append(chips);
+    const rows = el('dl', null, 'extension-bench-facts');
+    const row = (label, value) => {
+      const fact = el('div');
+      fact.append(el('dt', label), el('dd', value));
+      rows.append(fact);
+    };
+    row(
+      'Card answer',
+      `${answerText(j.card.answer)} · keep ${percent(j.card.keep)} · most likely exclusion ${j.card.reason}`,
+    );
+    row(
+      'Card rule',
+      j.card.rule === 'results_page'
+        ? `Results page: eliminated when an exclusion reaches ${percent(j.thresholds.confidence)} or keep falls below ${percent(j.thresholds.keepFloor)}`
+        : `Extension card: eliminated when exclusion confidence reaches ${percent(j.thresholds.confidence)} (here ${percent(j.card.confidence)})`,
+    );
+    for (const f of j.detail.fragments)
+      row(`Detail ${f.offset}–${f.end}`, `${answerText(f.answer)} → ${f.decision}`);
+    if (j.detail.proof)
+      row(
+        'Exclusion proof',
+        `${j.detail.proof.supported ? 'supported' : 'not proven'} · support ${answerText(j.detail.proof.answers.support)} · reason ${answerText(j.detail.proof.answers.exclusion)}`,
+      );
+    box.append(rows);
+    if (j.why) box.append(whyView(j.why));
+    if (j.notes.length) {
+      const list = el('ul', null, 'extension-bench-notes');
+      for (const note of j.notes) list.append(el('li', note));
+      box.append(list);
+    }
+    const asked = el('div');
+    for (const q of j.asked)
+      asked.append(
+        fold(
+          `${q.step} · ${q.ms} ms · ${(q.usage?.input_tokens ?? 0) + (q.usage?.output_tokens ?? 0)} tokens`,
+          el(
+            'pre',
+            JSON.stringify({state: q.state, questions: q.questions, answers: q.answers}, null, 2),
+          ),
+        ),
+      );
+    box.append(
+      fold('Profile and rules Jev was given', el('pre', JSON.stringify(j.criteria, null, 2))),
+      fold(`Every Jev request (${j.asked.length})`, asked),
+    );
     return box;
   }
 

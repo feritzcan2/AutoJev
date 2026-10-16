@@ -1144,3 +1144,57 @@
     grid-column: 1 / -1;
   }
 }
+.extension-bench-jev {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+.extension-bench-jev > div {
+  justify-self: stretch;
+}
+.extension-bench-jev-result {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+.extension-bench-chip[data-explained='true'] {
+  cursor: help;
+}
+.extension-bench-why {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning);
+  border-radius: 8px;
+}
+.extension-bench-why > b {
+  color: var(--text);
+}
+.extension-bench-why-line p {
+  margin: 2px 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.extension-bench-tip {
+  position: fixed;
+  z-index: 1000;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+.extension-bench-tip[data-pinned='true'] {
+  border-color: var(--accent);
+  pointer-events: auto;
+  user-select: text;
+}
+.extension-bench-tip[hidden] {
+  display: none;
+}

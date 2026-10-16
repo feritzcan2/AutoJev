@@ -140,7 +140,7 @@ export async function startToolServer({
       if (protocol.callResult) {
         const value = await protocol.callResult(name, args);
         result(value);
-        observe(grant, {name, result: value});
+        observe(grant, {name, args, result: value, ms: Date.now() - started});
         return;
       }
       const execute = () => {
@@ -155,14 +155,16 @@ export async function startToolServer({
           : execute()),
         response = toolResponse(value);
       result(response);
-      observe(grant, {name, result: response});
+      observe(grant, {name, args, result: response, ms: Date.now() - started});
       return;
     } catch (error) {
       const value = {isError: true, content: [{type: 'text', text: error.message}]};
       result(value);
       observe(grant, {
         name: rpc.params?.name ?? '',
+        args: rpc.params?.arguments ?? {},
         result: value,
+        ms: Date.now() - started,
         validationIssues: error.validationIssues,
       });
     }

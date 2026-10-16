@@ -18,6 +18,7 @@ import {
 import {siteReaderFor, siteExtensionKind} from '../site-extensions/index.mjs';
 import {siteSearchRecipe} from '../site-extensions/search.mjs';
 import {setTimeout as pause} from 'node:timers/promises';
+import {readRecordListings} from '../records/listing-reader.mjs';
 import {jevDetailKey} from '../jev/detail-urls.mjs';
 import {
   recordResultInput,
@@ -1737,6 +1738,9 @@ export async function launchAutomationWorker({
         ]);
     const evidenceExpired = !persistent && automationEvidenceExpired(db, run);
     if (protocol) run = prepareAutomationProtocol(db, run, protocol);
+    // Records a site extension reads are scored from its text, like a scan.
+    if (run.recordOperation === 'score')
+      await readRecordListings(db, run, {signal, wait: (ms) => pause(ms, undefined, {signal})});
     await agents.start({
       agentProfile: webAgentProfile(run.kind, settings),
       taskType: 'automation',
