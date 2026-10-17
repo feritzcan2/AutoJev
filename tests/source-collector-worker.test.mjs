@@ -649,6 +649,9 @@ test('scheduled Himalayas starts an agent without a browser trial, and stopping 
       criteria: {preferences: 'Germany'},
       sources: [source, 'https://other.test/jobs'],
     });
+  db.saveSource(a.id, source, {
+    recipe: {...db.get(a.id).sourceSettings[source].recipe, terms: ['backend']},
+  });
   db.review(a.id);
   db.enable(a.id);
   let agents = 0,
@@ -680,6 +683,43 @@ test('scheduled Himalayas starts an agent without a browser trial, and stopping 
   await runtime.stopSource(a.id, source);
   assert.ok(closed);
   assert.equal(runtime.slots(a.id).length, 0);
+});
+
+test('a collector whose {query} search has no terms waits for terms instead of scanning', async (t) => {
+  const core = new WorkspaceDatabase(':memory:'),
+    db = new AutomationStore(core),
+    a = db.create('job-search', {
+      goal: 'backend',
+      criteria: {preferences: 'Germany'},
+      sources: [source],
+    });
+  db.review(a.id);
+  db.enable(a.id);
+  let agents = 0;
+  const runtime = new WebTasks(db, {
+    browserReady: () => false,
+    launch: async () => {
+      agents++;
+      return {close: async () => {}};
+    },
+  });
+  t.after(async () => {
+    await runtime.close();
+    core.close();
+  });
+  assert.equal(db.sources(a.id)[0].termsRequired, true);
+  await runtime.tick();
+  await new Promise(setImmediate);
+  assert.equal(agents, 0, 'no scan searches for the source scope');
+  assert.equal(db.get(a.id).nextRunAt, null, 'a held source schedules no turn');
+  await assert.rejects(runtime.runSource(a.id, source), /Search terms required/);
+  db.saveSource(a.id, source, {
+    recipe: {...db.get(a.id).sourceSettings[source].recipe, terms: ['backend']},
+  });
+  assert.equal(db.sources(a.id)[0].termsRequired, false);
+  await runtime.tick();
+  await new Promise(setImmediate);
+  assert.equal(agents, 1);
 });
 
 test('CLI page transport uses a real child process and exits after one page', async () => {

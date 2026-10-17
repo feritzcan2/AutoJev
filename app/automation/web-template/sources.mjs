@@ -1,5 +1,5 @@
 // @ts-check
-import {sourceInput} from '../../sources/automation-sources.mjs';
+import {sourceInput, TERMS_REQUIRED} from '../../sources/automation-sources.mjs';
 import {automationAttention, dismissAutomationAttention} from '../attention.mjs';
 // WebTasks methods: per-source state, retries, runs and settings.
 export const sourceMethods = {
@@ -92,6 +92,7 @@ export const sourceMethods = {
     const source = this.db.sources(id).find((s) => s.url === url);
     if (!source) throw Error('The source does not belong to this workspace');
     if (!source.enabled) throw Error('Turn on the source first');
+    if (source.termsRequired) throw Error(TERMS_REQUIRED);
     if (this.slots(id).some((s) => s.run.sourceUrl === url))
       throw Error('This source is already running');
     if (source.siteWait?.exhausted) {

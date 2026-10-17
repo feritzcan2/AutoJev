@@ -29,6 +29,7 @@ import {AutomationStore} from './automation/store.mjs';
 import {registerSettingsServices} from './system/settings-services.mjs';
 import {JevSettings} from './jev/settings.mjs';
 import {CaptchaSettings} from './captcha/settings.mjs';
+import {SiteCredentials, useSiteCredentials} from './sources/site-credentials.mjs';
 import {CaptchaCoordinator} from './captcha/coordinator.mjs';
 import {
   applyPendingRestore,
@@ -123,6 +124,11 @@ async function boot() {
     encrypt: encryptSecret,
     decrypt: decryptSecret,
   });
+  const siteCredentials = new SiteCredentials(core.db, {
+    encrypt: encryptSecret,
+    decrypt: decryptSecret,
+  });
+  useSiteCredentials(siteCredentials);
   let window,
     quitting = false;
   const emit = (channel, value) => {
@@ -477,6 +483,7 @@ async function boot() {
     store: core,
     jevSettings,
     captchaSettings,
+    siteCredentials,
     handle,
     window: () => window,
     maintenance,

@@ -80,6 +80,7 @@ import {jevTaskSummary, jevTaskReceipt} from '../jev/task-summary.mjs';
 import {JEV_LAUNCH_INSTRUCTIONS} from '../jev/task-tools.mjs';
 import {
   normalizeSourceRecipe,
+  recipeNeedsTerms,
   recipeReplay,
   recipeValues,
   jevListingItem,
@@ -1157,6 +1158,11 @@ export function automationWorkflow({
         if (collecting && recipe.entry.kind !== 'url_template')
           throw Error(
             'This source is read by its collector: save a url_template recipe from siteSearch.template.',
+          );
+        // Without terms {query} holds the source scope and later scans wait for terms.
+        if (recipeNeedsTerms(recipe))
+          throw Error(
+            `The template takes {query} but the recipe has no terms, so {query} would be the source scope "${recipeValues(a, sourceUrl).query}". Save concrete search terms with terms${siteSearch?.notes ? ' as siteSearch.notes describes {query}' : ''}. If that scope is itself the right search, save it as the only term.`,
           );
         if (recipe.entry.kind === 'discovery') {
           db.learnSourceRecipe(id, sourceUrl, recipe, {runId: run.id, verified: false});

@@ -18,13 +18,17 @@ const pick = (value, keys) =>
   Object.fromEntries(
     keys.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]),
   );
-// Setup proposes starting sources by address and country; the store copies a
+// Setup proposes starting sources by address, country and remote work; the store copies a
 // source's recipe and instructions when one is added, so the agent never
 // needs them (a template may list dozens of country boards).
 const templateContext = (definition) => ({
   ...definition,
   ...(definition.defaultSources
-    ? {defaultSources: definition.defaultSources.map((s) => pick(s, ['url', 'name', 'countries']))}
+    ? {
+        defaultSources: definition.defaultSources.map((s) =>
+          pick(s, ['url', 'name', 'countries', 'remote']),
+        ),
+      }
     : {}),
 });
 function contextRun(run) {

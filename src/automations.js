@@ -277,6 +277,10 @@ export function automationsPage(
       renderControls();
       renderProfileState();
       chatPanel?.update(data);
+      // Table actions run through attempt() and refresh while busy, so the table
+      // must see busy end. Not on start: rebuilding rows there would replace the
+      // control that was just clicked, such as the row menu it is about to open.
+      if (!busy) resultsTable?.update(data, busy);
     }
   }
   async function catalog() {

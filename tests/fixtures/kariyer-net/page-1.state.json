@@ -1,0 +1,152 @@
+{
+ "state": {
+  "advertisement": {
+   "adCount": 269,
+   "withoutSponsoredAdCount": 267,
+   "searchUrl": "/is-ilanlari/yazilim",
+   "list": [
+    {
+     "title": "Bilgisayar Mühendisi",
+     "subTitle": "B.Bilişim",
+     "location": "Adana +1 il daha",
+     "time": "1 gün",
+     "sponsored": true,
+     "isRealSponsored": true,
+     "locations": [
+      {
+       "countryId": "65",
+       "countryName": "Türkiye",
+       "cityId": "1",
+       "cityName": "Adana",
+       "jobTownLocationList": []
+      },
+      {
+       "countryId": "65",
+       "countryName": "Türkiye",
+       "cityId": "2",
+       "cityName": "Adıyaman",
+       "jobTownLocationList": []
+      }
+     ],
+     "badges": [
+      {
+       "type": "default",
+       "text": "Tam zamanlı"
+      }
+     ],
+     "url": "/is-ilani/b-bilisim-bilgisayar-muhendisi-4580270",
+     "jobId": 4580270,
+     "workModelText": "İş Yerinde",
+     "workTypeText": "Tam zamanlı",
+     "jobDateStatus": "Default"
+    },
+    {
+     "title": "Temizlik Görevlisi",
+     "subTitle": "Negmar Denizcilik Yatırım A.Ş.",
+     "location": "İstanbul(Asya)",
+     "time": "2 gün",
+     "sponsored": false,
+     "isRealSponsored": false,
+     "locations": [
+      {
+       "countryId": "65",
+       "countryName": "Türkiye",
+       "cityId": "82",
+       "cityName": "İstanbul(Asya)",
+       "jobTownLocationList": [
+        {
+         "townId": "465",
+         "townName": "Üsküdar"
+        }
+       ]
+      }
+     ],
+     "badges": [
+      {
+       "type": "default",
+       "text": "Tam zamanlı"
+      }
+     ],
+     "url": "/is-ilani/negmar-denizcilik-yatirim-a-s-temizlik-gorevlisi-4541967",
+     "jobId": 4541967,
+     "workModelText": "İş Yerinde",
+     "workTypeText": "Tam zamanlı",
+     "jobDateStatus": "Updated"
+    },
+    {
+     "title": "Operasyon Destek Uzmanı",
+     "subTitle": "Logo Yazılım San Ve Tic A.Ş.",
+     "location": "İstanbul(Asya)",
+     "time": "2 gün",
+     "sponsored": false,
+     "isRealSponsored": false,
+     "locations": [
+      {
+       "countryId": "65",
+       "countryName": "Türkiye",
+       "cityId": "82",
+       "cityName": "İstanbul(Asya)",
+       "jobTownLocationList": []
+      }
+     ],
+     "badges": [
+      {
+       "type": "default",
+       "text": "Tam zamanlı"
+      }
+     ],
+     "url": "/is-ilani/logo-yazilim-san-ve-tic-a-s-operasyon-destek-uzmani-4577826",
+     "jobId": 4577826,
+     "workModelText": "Hibrit",
+     "workTypeText": "Tam zamanlı",
+     "jobDateStatus": "Updated"
+    },
+    {
+     "title": "Full Stack PHP Developer – Startup / Marketplace",
+     "subTitle": "BAŞAK YAZILIM A.Ş.",
+     "location": "İstanbul (Tümü), Kocaeli",
+     "time": "4 gün",
+     "sponsored": false,
+     "isRealSponsored": false,
+     "locations": [
+      {
+       "countryId": "65",
+       "countryName": "Türkiye",
+       "cityId": "34",
+       "cityName": "İstanbul(Avr.)",
+       "jobTownLocationList": []
+      },
+      {
+       "countryId": "65",
+       "countryName": "Türkiye",
+       "cityId": "41",
+       "cityName": "Kocaeli",
+       "jobTownLocationList": []
+      },
+      {
+       "countryId": "65",
+       "countryName": "Türkiye",
+       "cityId": "82",
+       "cityName": "İstanbul(Asya)",
+       "jobTownLocationList": []
+      }
+     ],
+     "badges": [
+      {
+       "type": "default",
+       "text": "Yarı zamanlı"
+      }
+     ],
+     "url": "/is-ilani/basak-yazilim-a-s-full-stack-php-developer-startup-marketplace-4574071",
+     "jobId": 4574071,
+     "workModelText": "Hibrit",
+     "workTypeText": "Yarı zamanlı",
+     "jobDateStatus": "Updated"
+    }
+   ]
+  },
+  "filters": {
+   "currentPage": 1
+  }
+ }
+}

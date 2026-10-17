@@ -1,0 +1,79 @@
+{
+ "jobAds": [
+  {
+   "country": "Danmark",
+   "municipality": "Aarhus",
+   "postalCode": 8200,
+   "postalDistrictName": "Aarhus N",
+   "hiringOrgName": "Region Midtjylland",
+   "occupation": "IT-ingeniør",
+   "conceptUriDa": "http://data.star.dk/esco/occupation/93c9c217-48a0-4e70-9f1e-01a859665578",
+   "jobAnnouncementTypeName": "Almindelige vilkår",
+   "workHourPartTime": false,
+   "jobAdId": "92a3c0e3-0182-4ee8-ac64-9b563e65aa83",
+   "jobAdUrl": "",
+   "hasLogo": true,
+   "workPlaceAddress": "",
+   "cvr": "29190925",
+   "title": "AI-udvikler søges til Dansk Center for Partikelterapi, AUH",
+   "description": "<p>Dansk Center for Partikelterapi (DCPT) søger en fysiker, hospitalsfysiker, datalog, softwareingeniør eller lignende profil til softwareudvikling inden for adaptiv protonterapi. DCPT er et nationalt center, der giver strålebehandling med protonterapi. Vores mission er at levere protonterapi af højest mulig kvalitet til alle relevante danske kræftpatienter. Alle vores udviklingsopgaver er forankret i brede tværfaglige, lokale, nationale og/eller internationale udviklings- og forskningsgrupper.</p><p>I denne nyoprettede stilling er der fokus på at løse de kliniske behov bl.a. gennem forskning, som bliver en vigtig del af din dagligdag. Du vil blive tilknyttet gruppen af fysikere og dosimetrister, hvis driftsopgave er at planlægge individuelle protonbehandlinger og kvalitetssikre behandlinger og tilhørende udstyr. Gruppen udvikler behandlingsteknikker i tæt samarbejde med læger, sygeplejersker, radiografer, m.fl., samt de ansatte i vores forskningsafdeling. DCPT har udviklet kunstig intelligens til at forbedre billedkvaliteten af de billeder vi anvender til at adaptere patientbehandlingen, samt til segmentering af medicinske billeder. Vi ønsker at styrke denne indsats og målrette den mod udviklingen af adaptiv protonterapi, hvor den individuelle tilpasning af behandlingen sker hurtigere og på daglig basis.&nbsp;</p><p><strong>Det er afgørende, at du har følgende kompetencer</strong></p>",
+   "applicationDeadline": "2026-11-08T22:59:00+01:00",
+   "applicationDeadlineSort": "2026-11-08T22:59:00+01:00",
+   "applicationDeadlineStatus": "ExpirationDate",
+   "isSeen": false,
+   "isFavorite": false,
+   "isJoblogged": false,
+   "isExternal": false,
+   "publicationDate": "2026-10-16T00:00:00+02:00"
+  },
+  {
+   "country": "Danmark",
+   "hiringOrgName": "Forsvarsministeriets Materiel- og Indkøbsstyrelse",
+   "occupation": "IT-arkitekt",
+   "conceptUriDa": "http://data.star.dk/esco/occupation/7ef0d988-1c47-4658-97da-d395309199ce",
+   "jobAnnouncementTypeName": "Almindelige vilkår",
+   "workHourPartTime": false,
+   "jobAdId": "7a5563f8-6cea-4a36-b975-723fa19807a9",
+   "jobAdUrl": "https://www.it-jobbank.dk/c?t=e6304797&ctx=w",
+   "hasLogo": false,
+   "workPlaceAddress": "   ",
+   "cvr": "16287180",
+   "title": "Senior specialister (Datacenter Network) til Forsvarets nye Digitale Backbone",
+   "description": "<p><em>Vil du designe datacenter-netværk til en af Danmarks mest samfundskritiske digitale transformationer? Har du solid erfaring med komplekse netværksmiljøer, og motiveres du af at omsætte teknisk dybde til robuste, skalerbare og sikre løsninger?</em></p><p><em>Hvis ja, så er det dig vi mangler!</em></p><p><strong>Om os</strong></p>",
+   "applicationDeadline": "2026-11-02T00:00:00+01:00",
+   "applicationDeadlineSort": "2026-11-02T00:00:00+01:00",
+   "applicationDeadlineStatus": "ExpirationDate",
+   "isSeen": false,
+   "isFavorite": false,
+   "isJoblogged": false,
+   "isExternal": true,
+   "publicationDate": "2026-10-16T00:00:00+02:00"
+  }
+ ],
+ "searchFacets": {
+  "regions": [
+   {
+    "type": "HovedstadenOgBornholm",
+    "jobAdCount": 221
+   },
+   {
+    "type": "Midtjylland",
+    "jobAdCount": 80
+   },
+   {
+    "type": "Syddanmark",
+    "jobAdCount": 38
+   },
+   {
+    "type": "Nordjylland",
+    "jobAdCount": 14
+   },
+   {
+    "type": "OevrigeSjaelland",
+    "jobAdCount": 7
+   }
+  ]
+ },
+ "totalJobAdCount": 472,
+ "searchString": "udvikler"
+}

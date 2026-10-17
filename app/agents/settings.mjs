@@ -18,3 +18,10 @@ export function withAgentDefaults(settings = {}) {
     permission: settings.permission ?? defaultPermission(provider),
   };
 }
+
+// A new profile's setup chat starts on each provider's strongest model.
+export const SETUP_MODELS = {claude: 'opus', codex: 'gpt-6-astra'};
+export function withSetupAgentDefaults(settings = {}) {
+  const s = withAgentDefaults(settings);
+  return {...s, model: settings.model ?? SETUP_MODELS[s.provider] ?? s.model};
+}

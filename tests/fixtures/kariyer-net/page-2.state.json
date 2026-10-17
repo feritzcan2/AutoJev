@@ -1,0 +1,148 @@
+{
+ "state": {
+  "advertisement": {
+   "adCount": 267,
+   "withoutSponsoredAdCount": 264,
+   "searchUrl": "/is-ilanlari/yazilim-2",
+   "list": [
+    {
+     "title": "Bilgisayar Mühendisi",
+     "subTitle": "B.Bilişim",
+     "location": "Adana +1 il daha",
+     "time": "1 gün",
+     "sponsored": true,
+     "isRealSponsored": true,
+     "locations": [
+      {
+       "countryId": "65",
+       "countryName": "Türkiye",
+       "cityId": "1",
+       "cityName": "Adana",
+       "jobTownLocationList": []
+      },
+      {
+       "countryId": "65",
+       "countryName": "Türkiye",
+       "cityId": "2",
+       "cityName": "Adıyaman",
+       "jobTownLocationList": []
+      }
+     ],
+     "badges": [
+      {
+       "type": "default",
+       "text": "Tam zamanlı"
+      }
+     ],
+     "url": "/is-ilani/b-bilisim-bilgisayar-muhendisi-4580270",
+     "jobId": 4580270,
+     "workModelText": "İş Yerinde",
+     "workTypeText": "Tam zamanlı",
+     "jobDateStatus": "Default"
+    },
+    {
+     "title": "Çevre Mühendisi",
+     "subTitle": "Mitto Consultancy Danışmanlık Anonim Şirketi",
+     "location": "Ankara",
+     "time": "1 gün",
+     "sponsored": true,
+     "isRealSponsored": true,
+     "locations": [
+      {
+       "countryId": "65",
+       "countryName": "Türkiye",
+       "cityId": "6",
+       "cityName": "Ankara",
+       "jobTownLocationList": [
+        {
+         "townId": "1698",
+         "townName": "Çankaya"
+        }
+       ]
+      }
+     ],
+     "badges": [
+      {
+       "type": "default",
+       "text": "Tam zamanlı"
+      }
+     ],
+     "url": "/is-ilani/mitto-consultancy-danismanlik-anonim-sirketi-cevre-muhendisi-4579428",
+     "jobId": 4579428,
+     "workModelText": "İş Yerinde",
+     "workTypeText": "Tam zamanlı",
+     "jobDateStatus": "Updated"
+    },
+    {
+     "title": "AR-GE Elektronik Mühendisi",
+     "subTitle": "ROBOLEGO TEKNOLOJİ YAZLIM LİMİTED ŞİRKETİ",
+     "location": "Ankara",
+     "time": "20 gün",
+     "sponsored": false,
+     "isRealSponsored": false,
+     "locations": [
+      {
+       "countryId": "65",
+       "countryName": "Türkiye",
+       "cityId": "6",
+       "cityName": "Ankara",
+       "jobTownLocationList": [
+        {
+         "townId": "1924",
+         "townName": "Yenimahalle"
+        }
+       ]
+      }
+     ],
+     "badges": [
+      {
+       "type": "default",
+       "text": "Tam zamanlı"
+      }
+     ],
+     "url": "/is-ilani/robolego-teknoloji-yazlim-limited-sirketi-ar-ge-elektronik-muhendisi-4357633",
+     "jobId": 4357633,
+     "workModelText": "İş Yerinde",
+     "workTypeText": "Tam zamanlı",
+     "jobDateStatus": "Default"
+    },
+    {
+     "title": "Yazılım Geliştirme Uzmanı",
+     "subTitle": "ECHO Yönetim ve Bilişim Hizmetleri  A.Ş.",
+     "location": "İstanbul(Avr.)",
+     "time": "16 saat",
+     "sponsored": false,
+     "isRealSponsored": false,
+     "locations": [
+      {
+       "countryId": "65",
+       "countryName": "Türkiye",
+       "cityId": "34",
+       "cityName": "İstanbul(Avr.)",
+       "jobTownLocationList": [
+        {
+         "townId": "443",
+         "townName": "Esenler"
+        }
+       ]
+      }
+     ],
+     "badges": [
+      {
+       "type": "default",
+       "text": "Tam zamanlı"
+      }
+     ],
+     "url": "/is-ilani/echo-yonetim-ve-bilisim-hizmetleri-a-s-yazilim-gelistirme-uzmani-4564033",
+     "jobId": 4564033,
+     "workModelText": "Hibrit",
+     "workTypeText": "Tam zamanlı",
+     "jobDateStatus": "Updated"
+    }
+   ]
+  },
+  "filters": {
+   "currentPage": 2
+  }
+ }
+}

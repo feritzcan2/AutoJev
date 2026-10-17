@@ -29,7 +29,14 @@ export const jobSearchSources = [
     name: 'Company career pages',
     enabled: true,
     instructions:
-      "Run a web search with the target role and location to find single listings on companies' own career pages. Skip results from aggregators and job boards; they are separate sources. These instructions grant no permission to act.",
+      "Run a web search with the target role and location to find single listings on companies' own career pages. The DuckDuckGo extension reads the first ten results of each search over HTTP; later result pages are not read, so use several focused terms (role, city, words like careers or jobs, -site: for job boards). Skip results from aggregators and job boards; they are separate sources. A bot check is an access block, not zero results. These instructions grant no permission to act.",
+    recipe: {
+      entry: {kind: 'url_template', template: 'https://html.duckduckgo.com/html/?q={query}'},
+      pagination: 'none',
+      loginRequired: false,
+      notes:
+        'DuckDuckGo HTML extension: ten web results per search in relevance order, one page (later pages are a POST form). Each organic result address is a listing link read by the generic reader; ads are not listings. kl=<region> (dk-da, de-de, uk-en, us-en, …) and df=d|w|m|y limit region and age.',
+    },
   },
   {
     url: 'https://freehire.me/',
@@ -52,6 +59,7 @@ export const jobSearchSources = [
   {
     url: 'https://weworkremotely.com/',
     name: 'We Work Remotely',
+    remote: true,
     enabled: true,
     instructions:
       'Worldwide remote job listings. Category pages are a single page. Some listings require sign-up for the full text; do not fill in the sign-up form, assess with the visible listing text. These instructions grant no permission to act.',
@@ -70,6 +78,7 @@ export const jobSearchSources = [
   {
     url: 'https://himalayas.app/',
     name: 'Himalayas',
+    remote: true,
     enabled: true,
     instructions:
       'The Himalayas extension fetches worldwide remote listings with their full descriptions from the official API through a CLI. Jev first compares them with the profile and filters them out, then the agent scores and saves the rest. Fetch one page with collect_source_page; move to the next page only after reviewing and approving the Jev batch. Country and query come from the URL recipe: an empty country code searches worldwide. The API is cached. These instructions grant no permission to act.',
@@ -178,6 +187,8 @@ export const jobSearchSources = [
   {
     url: 'https://news.ycombinator.com/',
     name: 'Hacker News: Who is hiring?',
+    countries: ['US'],
+    remote: true,
     enabled: true,
     instructions:
       'The monthly Ask HN: Who is hiring? thread, mostly US tech companies, many remote. The Hacker News extension reads the newest thread through the public Algolia API; every top-level comment is one job. Fetch one page with collect_source_page; Jev narrows the listings by the profile, then score and save the rest. These instructions grant no permission to act.',
@@ -252,15 +263,14 @@ export const jobSearchSources = [
     countries: ['DK'],
     enabled: true,
     instructions:
-      'Denmark. Use the current criteria and the source query; on the /jobsoegning search page, process the date-sorted results page by page and keep track of the total result count. Use search terms suited to Denmark. Do not read an access block as zero results. These instructions grant no permission to act.',
+      "Denmark. The Jobindex extension reads each search from the site's RSS feed over HTTP: the 20 newest listings, newest first, on one page. Jobindex's robots.txt disallows paging, sorting and filters, so use several short terms (one or two words, a phrase in quotes) instead of one long one. Listings hosted by Jobindex arrive with their full text; others open on the employer's site. Do not read a refused or blocked search as zero results. These instructions grant no permission to act.",
     recipe: {
-      entry: {
-        kind: 'url_template',
-        template: 'https://www.jobindex.dk/jobsoegning?q={query}',
-      },
-      pagination: 'url_param',
+      entry: {kind: 'url_template', template: 'https://www.jobindex.dk/jobsoegning?q={query}'},
+      pagination: 'none',
+      ordering: 'newest_first',
       loginRequired: false,
-      notes: 'Paginated with page=2; results come sorted by date.',
+      notes:
+        'Jobindex site extension: robots.txt is followed, so page=, sort=, jobage= and other filters are refused and so is a query with two \'+\' (three or more words). Each search reads /jobsoegning.rss?q=<term>: the 20 newest listings by publication day, one page. Two words match either word; quotes ("data engineer") match the phrase. Listings are /jobannonce/<tid>; hosted ads give full text and stated facts, external ones redirect to the employer, expired ones say so.',
     },
   },
   {
@@ -269,20 +279,17 @@ export const jobSearchSources = [
     countries: ['DK'],
     enabled: true,
     instructions:
-      'Denmark. Use the current criteria and the source query; the search page has occupation, region and working hours filters. Sort by publication date and process every result page. When an external listing shows only a summary, read the missing requirements from the actual listing. These instructions grant no permission to act.',
+      'Denmark. Use the current criteria and the source query; Jobnet is the public employment service and lists both its own and relayed (external) postings with full text. Search with short Danish or English role words (each search term must match every word), add the region, working-hours or employment filters the criteria call for, and process every result page. Postings without a fixed workplace are the closest thing to remote. For an external posting, applyUrl is where to apply. These instructions grant no permission to act.',
     recipe: {
       entry: {
-        kind: 'search_form',
-        url: 'https://job.jobnet.dk/CV/FindWork',
-        fields: [
-          {
-            key: 'query',
-            label: 'Søg på stilling, fag, firma',
-          },
-        ],
+        kind: 'url_template',
+        template: 'https://jobnet.dk/find-job?searchString={query}&orderType=PublicationDate',
       },
-      pagination: 'auto',
+      pagination: 'url_param',
+      ordering: 'newest_first',
       loginRequired: false,
+      notes:
+        'Jobnet site extension: public search API, 20 listings per page with full descriptions (external postings included), pages via pageNumber=N, at most 10000 results per search, newest first by publication day. Filters: regions=Nordjylland|Midtjylland|Syddanmark|HovedstadenOgBornholm|OevrigeSjaelland (repeatable), workplaceFilter=NonFixed (no fixed workplace), workHoursType=FullTime|PartTime, employmentDurationType=Permanent|Temporary, postalCode=NNNN with kmRadius (default 50), countries=DK|SE|…. Listings are https://jobnet.dk/find-job/<id>.',
     },
   },
   {
@@ -291,7 +298,17 @@ export const jobSearchSources = [
     countries: ['DK'],
     enabled: true,
     instructions:
-      'Denmark. Use the current criteria and the source query; search with the text, municipality and category filters and follow the pagination to the end. Do not skip the remaining records on the same page. These instructions grant no permission to act.',
+      "Danish listings of all kinds. The Jobdanmark extension reads the search over HTTP and each listing's own text, company, workplace, job type, dates and apply link. Use the current criteria and the source query; narrow with the municipality, region, category and job type parameters, and follow the pagination to the last page. Do not record an access error or a failed search as an empty result. These instructions grant no permission to act.",
+    recipe: {
+      entry: {
+        kind: 'url_template',
+        template: 'https://jobdanmark.dk/jobsoeger/find-job?freetext={query}',
+      },
+      pagination: 'url_param',
+      loginRequired: false,
+      notes:
+        "Jobdanmark site extension: the page address becomes the site's JSON search, 30 listings per page via &p=N with the page count stated. freetext matches title and text, also word prefixes; repeated parameters of one filter are ORed. municipality takes a name (Aarhus, København), administrativeRegion a region (Region Hovedstaden), region a part of the country (Fyn, Nordsjælland), zip a postcode, category an id (227978 = IT, engineering and energy), jobtype fuldtid|deltid|fleksjob|elev|studiejob|praktik; an unknown municipality gives no results. Promoted listings come first on page 1, then the newest; no sort parameter. Listings are https://jobdanmark.dk/job/<slug>; a removed one redirects to the search.",
+    },
   },
   {
     url: 'https://jobbank.dk/',
@@ -299,7 +316,215 @@ export const jobSearchSources = [
     countries: ['DK'],
     enabled: true,
     instructions:
-      'Danish listings for academics and university-educated candidates. Use the current criteria and the source query; there are type, location, field and education filters. Process the /job/ result pages to the end. Do not record an access error as an empty result. These instructions grant no permission to act.',
+      'Danish listings for academics and university-educated candidates. The Akademikernes Jobbank extension reads the result pages in Chrome: 20 listings per page with the result count and page count stated; listings are read from their structured data. Use the current criteria and the source query; narrow with the job type, education, area, field of work and remote parameters, and follow the pagination to the last page. Results are not in date order. Do not record an access error, a Cloudflare check or a page that has not loaded as an empty result. These instructions grant no permission to act.',
+    recipe: {
+      entry: {kind: 'url_template', template: 'https://jobbank.dk/job/?key={query}'},
+      pagination: 'url_param',
+      loginRequired: false,
+      notes:
+        'Akademikernes Jobbank site extension (DOM, plain HTTP gets a Cloudflare challenge): 20 cards per page via &page=N; the heading states the result count and the page links the last page. Search form parameters of /job/: key keywords, antikey words to exclude, cvtype job type (3 full time, 6 graduate/trainee, 13 part time, 9 internship, 4 student job, 12 PhD & postdoc), udd education (24 = IT), amt area (2 Greater Copenhagen, 8 East Jutland (Aarhus), 13 Funen, 6 North Jutland, …), erf field of work (31 = IT - software), branche industry, fjernarbejde=helt|delvist remote, andet relevance group (2 = recent graduates), virk company id, oprettet posted since (a date; format not verified). No sort parameter; page 1 opens with promoted listings. Listings are /job/<id>/<company>/<title>/ and carry a schema.org JobPosting.',
+    },
+  },
+  {
+    url: 'https://www.reed.co.uk/',
+    name: 'Reed',
+    countries: ['GB'],
+    enabled: true,
+    instructions:
+      'United Kingdom, all sectors. The Reed extension reads search pages and listings over HTTP: 25 results per page with the total stated. Results are in relevance order, not by date; dateCreatedOffSet keeps to recent postings. Training courses are listed among the jobs unless hideTrainingJobs=true. These instructions grant no permission to act.',
+    recipe: {
+      entry: {
+        kind: 'url_template',
+        template:
+          'https://www.reed.co.uk/jobs?keywords={query}&location={location}&dateCreatedOffSet=lastweek&hideTrainingJobs=true',
+      },
+      pagination: 'url_param',
+      loginRequired: false,
+      notes:
+        'Reed site extension: 25 results per page via &pageno=N; the page states its total and the page after the last is HTTP 404. Relevance order; there is no newest-first sort (robots.txt disallows sortBy), so dateCreatedOffSet=today|lastthreedays|lastweek|lasttwoweeks limits to recent postings. workingOption=remote|hybrid|onSite, perm|contract|temp|partTime=true, salaryFrom=<£> and proximity=<miles> (default 10) also work. /jobs?keywords=&location= redirects to the SEO path with the same filters. Location is free text; empty searches the UK. Listings are /jobs/<slug>/<id>; a promoted listing repeats above every page.',
+    },
+  },
+  {
+    url: 'https://portal.gupy.io/',
+    name: 'Gupy',
+    countries: ['BR'],
+    enabled: true,
+    instructions:
+      'Brazil. The Gupy extension reads the public JSON API of portal.gupy.io, the job portal of companies that recruit through Gupy: listings arrive with their full descriptions, newest first. Search with Portuguese role titles (desenvolvedor, analista, engenheiro de software). Fetch one page with collect_source_page; Jev narrows the listings by the profile, then score and save the rest. Do not read an API error as zero results. These instructions grant no permission to act.',
+    recipe: {
+      entry: {
+        kind: 'url_template',
+        template:
+          'https://portal.gupy.io/api/job-search/jobs?jobName={query}&sortBy=publishedDate&sortOrder=desc',
+      },
+      pagination: 'url_param',
+      ordering: 'newest_first',
+      loginRequired: false,
+      notes:
+        'Gupy site extension: public JSON API, 10 listings per page with full descriptions via offset=10,20,… (offset+limit at most 10000); a page with fewer than 10 is the last. {query} matches words of the title. sortBy=publishedDate&sortOrder=desc is strictly newest first. workplaceType=remote|hybrid|on-site and type=vacancy_type_effective|vacancy_legal_entity|vacancy_type_internship|… take a comma list; state and city are exact, accented names (São Paulo). Repeated or unknown parameters are refused because the API would ignore them. Listings are https://<company>.gupy.io/jobs/<id>.',
+    },
+  },
+  {
+    url: 'https://www.werk.nl/',
+    name: 'Werk.nl (UWV)',
+    countries: ['NL'],
+    enabled: true,
+    instructions:
+      "Netherlands. Werk.nl is UWV, the Dutch public employment service. The Werk.nl extension reads the site's vacancy search over HTTP, newest first, and each vacancy's own text, employer, place, contract, hours, salary indication, deadline and apply link. Use the current criteria and the source query; search with short Dutch or English role words, add a place with a distance or the contract and education filters the criteria call for, and follow the pagination to the last page. Some descriptions are shortened by the site; the full posting is at applyUrl. Do not record an access error or a refused search as an empty result. These instructions grant no permission to act.",
+    recipe: {
+      entry: {
+        kind: 'url_template',
+        template:
+          'https://www.werk.nl/werkzoekenden/mijn-werkmap/kia/publiek/zoekenvacatures/api/search?keywords={query}&sort=newest',
+      },
+      pagination: 'url_param',
+      ordering: 'newest_first',
+      loginRequired: false,
+      notes:
+        "Werk.nl site extension: the address becomes the site's JSON search (keywords, location, distance and facet parameters), 20 vacancies per page via &page=N with the total stated, newest first. location takes a Dutch place or postcode the site knows and needs distance=5|10|25|50|75|100|125|150|300 (km); an unknown place is refused. Facets repeat: JOB_CONTRACT_TYPE=1|2|3 (permanent, either, temporary), JOB_EDUCATION=4|5|6|7 (MBO, HBO/bachelor, WO/master, not stated), JOB_UWV_PLAATSNAAM=<TOWN> (exact, upper case), JOB_CATEGORY=<occupation>. Unknown parameters stop the read. Vacancies are https://www.werk.nl/nl/vacatures/<reference>.",
+    },
+  },
+  {
+    url: 'https://www.wantedly.com/',
+    name: 'Wantedly',
+    countries: ['JP'],
+    enabled: true,
+    instructions:
+      'Japan. The Wantedly extension reads search pages and listings over HTTP: 10 results per page with the total stated. Most listings are in Japanese, so use Japanese search terms alongside English ones. Keep order=recent in the address; the order is not strictly by date, so process the pages in order. Do not read an access block as zero results. These instructions grant no permission to act.',
+    recipe: {
+      entry: {
+        kind: 'url_template',
+        template: 'https://www.wantedly.com/projects?new=true&keywords={query}&order=recent',
+      },
+      pagination: 'url_param',
+      loginRequired: false,
+      notes:
+        'Wantedly site extension: 10 results per page via &page=N; the page states its total, but the site serves at most 100 pages. order=recent must stay, because without an order the site ignores the search terms. It restarts at the newest postings after a block of results, so it is not strictly newest first. A keywords value is one term (a space makes a phrase); repeat &keywords= to require several. Filters: hiringTypes=mid_career|newgrad|internship|part_time|freelance|side_job, areas=tokyo|osaka|kanto|…, occupationTypes=jp__engineering|…, featureTags=international|remote_visit|…; unknown values are ignored silently. Listings are /projects/<id>.',
+    },
+  },
+  {
+    url: 'https://www.jobbank.gc.ca/',
+    name: 'Job Bank',
+    countries: ['CA'],
+    enabled: true,
+    instructions:
+      "Canada, the Government of Canada's national job board. The Job Bank extension reads search pages and postings over HTTP: 25 results per page with the result count stated, newest first. Narrow by province with fprov; a location in the search text is ignored. Most postings come from partner boards such as Talent.com, and some of them show no description on Job Bank; then assess with the stated facts and the partner link. Do not read an access block as zero results. These instructions grant no permission to act.",
+    recipe: {
+      entry: {
+        kind: 'url_template',
+        template: 'https://www.jobbank.gc.ca/jobsearch/jobsearch?searchstring={query}&sort=D',
+      },
+      pagination: 'url_param',
+      loginRequired: false,
+      notes:
+        "Job Bank site extension: 25 results per page via &page=N; the page states its result count. sort=D is newest first by posting date (sort=M is best match). Use searchstring; term= alone ignores the keyword and locationstring is ignored, so narrow with fprov=AB|BC|MB|NB|NL|NS|NT|NU|ON|PE|QC|SK|YT. fage=2|30 keeps the last 48 hours or 30 days; fskl=15141 remote, fskl=100000 hybrid; fper=F|P; fter=P|T|S|C; flg=E|F|B; fsrc=16 keeps Job Bank's own verified postings. Postings are /jobsearch/jobposting/<id>; expired ones answer 410. robots.txt asks for a 5-second crawl delay.",
+    },
+  },
+  {
+    url: 'https://www.naukri.com/',
+    name: 'Naukri',
+    countries: ['IN'],
+    enabled: true,
+    instructions:
+      "India, all sectors. The Naukri extension reads the result pages in Chrome; listings are read from their structured data. Search with the role as a lowercase hyphenated slug in the path (software-developer, data-analyst), save concrete slugs as the recipe's terms, and add wfhType=2 for remote roles only. Pages are /<slug>-jobs-2, -3, … with 20 results each, in relevance order. Do not record an access block, a CAPTCHA or a page that has not loaded as an empty result. These instructions grant no permission to act.",
+    recipe: {
+      entry: {kind: 'url_template', template: 'https://www.naukri.com/{query}-jobs'},
+      pagination: 'url_param',
+      loginRequired: false,
+      notes:
+        'Naukri site extension (DOM; plain HTTP is an empty Next.js shell and the job API asks for reCAPTCHA): {query} is a hyphenated role slug. 20 results per page via the -N path suffix; the header states the total ("1 - 20 of N"). Relevance order. An address past the last page shows page 1, which the extension does not read as page N. wfhType=2 keeps remote roles. Listings are /job-listings-<slug>-<id> and carry a schema.org JobPosting.',
+    },
+  },
+  {
+    url: 'https://www.kariyer.net/',
+    name: 'Kariyer.net',
+    countries: ['TR'],
+    enabled: true,
+    instructions:
+      "Türkiye. The Kariyer.net extension reads result pages in Chrome: each card is one listing, and sponsored listings come first and repeat on later pages. Use the current criteria and the source query as the site's path slug, and follow the pages in order. PerimeterX may show a human check; report it as an access block, not as zero results, and do not try to get past it. These instructions grant no permission to act.",
+    recipe: {
+      entry: {kind: 'url_template', template: 'https://www.kariyer.net/is-ilanlari/{query}'},
+      pagination: 'next_link',
+      loginRequired: false,
+      notes:
+        'Kariyer.net DOM extension. {query} is the search slug: lowercase, Turkish letters folded to ASCII, words joined with + (bilgisayar+muhendisi); a city goes first with a hyphen (adana-bilgisayar+muhendisi). Page N is the same path with -N (/is-ilanlari/yazilim-2), 50 listings per page plus sponsored ones. Default order is recommended, not by date. Listings are /is-ilani/<slug>-<id>.',
+    },
+  },
+  {
+    url: 'https://www.nationalevacaturebank.nl/',
+    name: 'Nationale Vacaturebank',
+    countries: ['NL'],
+    enabled: true,
+    instructions:
+      'Netherlands, a large Dutch job board (DPG Media). The Nationale Vacaturebank extension reads the result cards in Chrome; listings are read from their structured data. A DPG Media privacy gate (myprivacy.dpgmedia.nl) can appear before the search; treat it like any other consent prompt. Results load ten at a time as the page is scrolled; the address has no page parameter. Two promoted "Topbaan" listings stay on top of every search. Tell an empty result apart from the privacy gate or an access block, and report a block without trying to get past it. These instructions grant no permission to act.',
+    recipe: {
+      entry: {
+        kind: 'url_template',
+        template: 'https://www.nationalevacaturebank.nl/vacature/zoeken?query={query}',
+      },
+      pagination: 'infinite_scroll',
+      loginRequired: false,
+      notes:
+        'Nationale Vacaturebank DOM extension: result cards are /vacature/<id>/<slug> links; preview company/place links and menu pages are not listings. ?page=N is ignored (same first results), so more results come only from scrolling. Listing pages carry a schema.org JobPosting read by the generic reader. The page orders by date through its API, but no ordering is declared. Plain HTTP is blocked by the Akamai WAF.',
+    },
+  },
+  {
+    url: 'https://candidat.francetravail.fr/',
+    name: 'France Travail',
+    countries: ['FR'],
+    // Needs the user's own API application (Configuration → Site accounts).
+    enabled: false,
+    instructions:
+      "France. The France Travail extension reads the official Offres d'emploi API with the user's own application: listings arrive with their full descriptions, newest first. Enable this source after saving the client ID and secret under Configuration → Site accounts; without them a scan stops with that message. Use French search terms. Fetch one page with collect_source_page; Jev narrows the listings by the profile, then score and save the rest. These instructions grant no permission to act.",
+    recipe: {
+      entry: {
+        kind: 'url_template',
+        template: 'https://candidat.francetravail.fr/offres/recherche?motsCles={query}&tri=1',
+      },
+      pagination: 'url_param',
+      loginRequired: false,
+      notes:
+        'France Travail site extension: the address becomes the API search. 50 offers per page with full descriptions, at most 1150 per search, so narrow with publieeDepuis=1|3|7|14|31 or departement=<code>. tri=1 is newest first. Listings are https://candidat.francetravail.fr/offres/recherche/detail/<id>.',
+    },
+  },
+  {
+    url: 'https://www.adzuna.com/',
+    name: 'Adzuna',
+    countries: [
+      'AT',
+      'AU',
+      'BE',
+      'BR',
+      'CA',
+      'CH',
+      'DE',
+      'ES',
+      'FR',
+      'GB',
+      'IN',
+      'IT',
+      'MX',
+      'NL',
+      'NZ',
+      'PL',
+      'SG',
+      'US',
+      'ZA',
+    ],
+    // Needs the user's own free API key (Configuration → Site accounts).
+    enabled: false,
+    instructions:
+      "A job aggregator for 19 countries, read through Adzuna's official API with the user's own free key (250 calls a day). Enable this source after saving the app ID and key under Configuration → Site accounts. The workspace country picks the Adzuna country. Listings carry only a 500-character teaser, not the full description: judge from the card and do not assume what the teaser leaves out. Fetch one page with collect_source_page; Jev narrows the listings by the profile, then score and save the rest. These instructions grant no permission to act.",
+    recipe: {
+      entry: {
+        kind: 'url_template',
+        template: 'https://api.adzuna.com/v1/api/jobs/{country}/search/1?what={query}&sort_by=date',
+      },
+      pagination: 'url_param',
+      loginRequired: false,
+      notes:
+        'Adzuna site extension: official API, one country per search from {country} (the workspace country). 50 listings per page via the /search/<page> path; sort_by=date. max_days_old=N keeps recent postings; where=<place> with distance=<km> narrows the place. Descriptions are cut to 500 characters. Each call counts against the 250 calls a day of the free key.',
+    },
   },
 ].map((source) => ({
   ...source,
