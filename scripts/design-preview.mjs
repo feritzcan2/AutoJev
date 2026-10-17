@@ -174,7 +174,24 @@ try {
     await page.waitForTimeout(2500);
   }
   await shot('00-start');
-  if (fresh || args.includes('--review')) {
+  if (args.includes('--widths')) {
+    // The same pages at phone, tablet, laptop and big-screen widths.
+    for (const [w, h] of [
+      [390, 844],
+      [700, 900],
+      [900, 900],
+      [1100, 900],
+      [1440, 900],
+      [2200, 1300],
+    ]) {
+      await page.setViewportSize({width: w, height: h});
+      for (const nav of ['Jobs', 'Questions', 'Profile', 'Settings']) {
+        await page.locator('.jl-nav', {hasText: nav}).click();
+        await page.waitForTimeout(400);
+        await shot(`w${w}-${nav.toLowerCase()}`);
+      }
+    }
+  } else if (fresh || args.includes('--review')) {
     await page.setViewportSize({width: 1440, height: 1400});
     await shot('00-start-tall');
   } else if (args.includes('--moments')) {
