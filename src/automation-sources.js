@@ -397,15 +397,17 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
                 : 'Scanning'
             : source.recovery && data.automation.status === 'enabled'
               ? 'Waiting to continue automatically'
-              : source.blocked
-                ? source.lastStatus === 'failed' || source.blocker?.stop?.kind === 'technical'
-                  ? 'Scan could not finish'
-                  : 'Source blocked'
-                : source.lastStatus === 'partial'
-                  ? `Partial scan · ${plural(source.scan?.pendingUrls.length ?? 0, 'address', 'addresses')} left`
-                  : (source.lastRun?.finishedAt ?? source.lastRunAt)
-                    ? `${plural(source.resultCount ?? source.lastFound ?? 0, 'record')} in total`
-                    : 'Not scanned yet';
+              : source.termsRequired
+                ? 'Search terms required'
+                : source.blocked
+                  ? source.lastStatus === 'failed' || source.blocker?.stop?.kind === 'technical'
+                    ? 'Scan could not finish'
+                    : 'Source blocked'
+                  : source.lastStatus === 'partial'
+                    ? `Partial scan · ${plural(source.scan?.pendingUrls.length ?? 0, 'address', 'addresses')} left`
+                    : (source.lastRun?.finishedAt ?? source.lastRunAt)
+                      ? `${plural(source.resultCount ?? source.lastFound ?? 0, 'record')} in total`
+                      : 'Not scanned yet';
     if (source.siteWait && !source.siteWait.exhausted) status.dataset.state = 'waiting';
     status.append(el('b', state));
     const outcome = source.lastRun ?? {
@@ -420,7 +422,12 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
           (scanPageLabel(source.pageProgress)
             ? 'Last verified: ' + scanPageLabel(source.pageProgress)
             : null))
-      : (source.siteWait?.message ?? outcome.summary ?? null);
+      : (source.siteWait?.message ??
+        (source.termsRequired
+          ? 'The search address takes {query}. Add search terms to the recipe, or ask the setup chat to choose them.'
+          : null) ??
+        outcome.summary ??
+        null);
     if (detail) {
       const small = el('small', detail);
       small.title = source.scanIssue?.evidence ?? detail;
@@ -440,15 +447,20 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         'b',
         !source.enabled
           ? 'Off'
-          : source.blocked
-            ? 'Paused until a retry'
-            : data.automation.status !== 'enabled'
-              ? 'Tracking paused'
-              : 'Next scan',
+          : source.termsRequired
+            ? 'On hold'
+            : source.blocked
+              ? 'Paused until a retry'
+              : data.automation.status !== 'enabled'
+                ? 'Tracking paused'
+                : 'Next scan',
       );
     const nextAt = source.enabled
       ? (source.siteWait?.retryAt ??
-        (!source.scanning && !source.blocked && data.automation.status === 'enabled'
+        (!source.scanning &&
+        !source.blocked &&
+        !source.termsRequired &&
+        data.automation.status === 'enabled'
           ? source.nextRunAt
           : null))
       : null;
@@ -464,6 +476,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       stated =
         source.scanning ||
         source.blocked ||
+        source.termsRequired ||
         source.siteWait ||
         source.recovery ||
         source.lastStatus === 'partial';

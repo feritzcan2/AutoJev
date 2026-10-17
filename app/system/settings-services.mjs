@@ -22,6 +22,7 @@ export async function registerSettingsServices({
   store,
   jevSettings,
   captchaSettings,
+  siteCredentials,
   handle,
   window,
   maintenance,
@@ -45,6 +46,11 @@ export async function registerSettingsServices({
     handle('captcha-settings-save', (input) => captchaSettings.save(input));
     handle('captcha-settings-remove', () => captchaSettings.remove());
     handle('captcha-settings-test', () => captchaSettings.testConnection());
+  }
+  if (siteCredentials) {
+    handle('site-credentials-status', () => siteCredentials.status());
+    handle('site-credentials-save', (site, input) => siteCredentials.save(site, input));
+    handle('site-credentials-remove', (site) => siteCredentials.remove(site));
   }
   handle('data-status', async () => ({...(await dataManagementStatus(params)), directory: data}));
   handle('data-open-directory', async () => {

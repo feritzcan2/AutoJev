@@ -453,6 +453,7 @@ test('a recipe check reuses listings the trial already proved at the replayed ad
   const before = opened.length;
   const saved = await flow.call(f.id, trial.id, 'save_source_recipe', {
     entry: {kind: 'url_template', template},
+    terms: ['Find homes'],
     pagination: 'url_param',
   });
   assert.equal(saved.status, 'verified');
@@ -480,6 +481,7 @@ test('a recipe check proves redirect-style result links by reading a few details
   });
   const saved = await flow.call(f.id, trial.id, 'save_source_recipe', {
     entry: {kind: 'url_template', template},
+    terms: ['Find homes'],
     pagination: 'url_param',
   });
   assert.equal(saved.status, 'verified');
@@ -601,12 +603,19 @@ test('a trial agent saves a recipe that the app verifies with Jev before accepti
   await assert.rejects(
     flow.call(f.id, trial.id, 'save_source_recipe', {
       entry: {kind: 'url_template', template: 'https://board.test/other?q={query}'},
+      terms: ['Find homes'],
     }),
     /could not be verified: no_listing_links/,
   );
   assert.equal(f.db.sources(f.id)[0].recipe, undefined, 'a failed check saves nothing');
+  await assert.rejects(
+    flow.call(f.id, trial.id, 'save_source_recipe', {entry: {kind: 'url_template', template}}),
+    /no terms, so \{query\} would be the source scope "Find homes"/,
+    'a {query} search without terms would search for the scope',
+  );
   const saved = await flow.call(f.id, trial.id, 'save_source_recipe', {
     entry: {kind: 'url_template', template},
+    terms: ['Find homes'],
     pagination: 'url_param',
   });
   assert.equal(saved.status, 'verified');
@@ -713,7 +722,9 @@ test('a trial reads the notes of an unverified recipe as claims to re-check', as
 
 test('replayed scans verify or invalidate the recipe; a stale recipe sends the source back to a trial', async (t) => {
   const f = fixture(t);
-  f.db.saveSource(f.id, source, {recipe: {entry: {kind: 'url_template', template}}});
+  f.db.saveSource(f.id, source, {
+    recipe: {entry: {kind: 'url_template', template}, terms: ['Find homes']},
+  });
   assert.equal(f.db.sources(f.id)[0].recipeState.status, 'candidate');
   const trial = f.db.begin(f.id, 'trial');
   f.db.observe(f.id, trial.id, source, 'Listings');
@@ -952,6 +963,7 @@ test('on a board the recipe orders newest-first, a repeat scan stops after two p
   });
   const saved = await trialFlow.call(f.id, trial.id, 'save_source_recipe', {
     entry: {kind: 'url_template', template},
+    terms: ['Find homes'],
     pagination: 'url_param',
     ordering: 'newest_first',
   });
@@ -1094,6 +1106,7 @@ async function scanAfterTrial(t, board) {
   });
   const saved = await trialFlow.call(f.id, trial.id, 'save_source_recipe', {
     entry: {kind: 'url_template', template},
+    terms: ['Find homes'],
     pagination: 'url_param',
   });
   assert.equal(saved.status, 'verified');
@@ -1334,6 +1347,7 @@ test('a detail page with its own page counter does not move the search or lift i
     (
       await trialFlow.call(f.id, trial.id, 'save_source_recipe', {
         entry: {kind: 'url_template', template},
+        terms: ['Find homes'],
         pagination: 'url_param',
       })
     ).status,

@@ -4,7 +4,7 @@ import {
   CONVERSATION_WORKER,
 } from '../app/workspaces/conversation.mjs';
 import {automationProgress} from '../app/automation/progress.mjs';
-import {withAgentDefaults} from '../app/agents/settings.mjs';
+import {withAgentDefaults, withSetupAgentDefaults} from '../app/agents/settings.mjs';
 import {WorkerTerminalSurface} from './worker-terminal-surface.js';
 import {terminalAttention} from './agent-attention.js';
 import './onboarding.css';
@@ -547,7 +547,8 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     renderSources(form);
     renderReadiness(form);
   }
-  // Saved sources, plus the template boards for the country typed on the form.
+  // Saved sources, the template boards for the country typed on the form, and
+  // the remote work boards for the user to tick.
   function renderSources(form) {
     const list = form.querySelector('.onboarding-checks'),
       country = (form.elements.country?.value ?? '').trim().toUpperCase(),
@@ -573,6 +574,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       for (const choice of group.choices)
         if (country && choice.countries.includes(country))
           row(choice.url, choice.name, 'Suggested · ' + choice.label, true);
+        else if (choice.remote) row(choice.url, choice.name, 'Optional · ' + choice.label, false);
   }
   function renderReadiness(form) {
     const root = form.querySelector('.onboarding-readiness');
@@ -633,7 +635,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     if (provider) {
       const settings = withAgentDefaults({provider});
       await api.automationSave(id, {agentSettings: settings});
-      await api.setupAgentSettings(id, settings);
+      await api.setupAgentSettings(id, withSetupAgentDefaults({provider}));
     }
     return id;
   }

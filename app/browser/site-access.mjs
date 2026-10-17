@@ -173,14 +173,17 @@ export class SiteAccess {
   }
   // Milliseconds the caller should wait before navigating to this site. Each
   // call reserves the next slot, so concurrent workers queue instead of bursting.
-  pace(url) {
+  // minGap is the site's own minimum spacing (a robots.txt crawl delay); after
+  // an incident the larger gap applies.
+  pace(url, minGap = 0) {
     const site = siteKey(url),
       now = this.now(),
       row = this.incidents.has(site) ? null : this.row(url);
     const incident =
       this.incidents.get(site) ?? (row ? {at: row.blockedAt, count: row.attempts} : null);
-    if (!incident || now - incident.at > PACE_WINDOW) return 0;
-    const gap = Math.min(PACE_STEP * incident.count, PACE_MAX),
+    const recent = incident && now - incident.at <= PACE_WINDOW;
+    if (!recent && !minGap) return 0;
+    const gap = Math.max(recent ? Math.min(PACE_STEP * incident.count, PACE_MAX) : 0, minGap),
       next = Math.max(now, (this.paced.get(site) ?? 0) + gap);
     this.paced.set(site, next);
     return next - now;

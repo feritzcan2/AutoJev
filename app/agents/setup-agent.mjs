@@ -1,4 +1,4 @@
-import {withAgentDefaults} from './settings.mjs';
+import {SETUP_MODELS, withAgentDefaults} from './settings.mjs';
 import {CONVERSATION_WORKER} from '../workspaces/conversation.mjs';
 
 const providers = ['codex', 'claude', 'opencode'];
@@ -26,7 +26,11 @@ export function setupAgentSettings(db, id) {
       }
     }
   }
-  saved ??= a.agentSettings;
+  // Without its own settings, the setup chat follows the profile's provider on the setup model.
+  saved ??= {
+    ...a.agentSettings,
+    model: SETUP_MODELS[a.agentSettings.provider] ?? a.agentSettings.model,
+  };
   const {agentProfileDigest, ...settings} = withAgentDefaults(saved);
   return {...settings, contextRestartTokens: 0};
 }

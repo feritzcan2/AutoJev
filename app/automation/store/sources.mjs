@@ -147,11 +147,12 @@ export const sourceMethods = {
   // The template's ready sources whose site is not in the workspace yet, for
   // one-click adding. Country copies of one board ("Indeed (Germany)", "Indeed
   // (France)") form one entry with a country choice. The workspace country
-  // comes first, then the sources for every country, then the others.
+  // comes first, then the sources for every country or remote work, then the
+  // others.
   sourceCatalog(id, a = this.get(id)) {
     const added = new Set(a.sources.map(siteKey)),
       country = String(a.criteria?.country ?? '').toUpperCase(),
-      rank = (s) => (!s.countries?.length ? 1 : s.countries.includes(country) ? 0 : 2),
+      rank = (s) => (s.countries?.includes(country) ? 0 : !s.countries?.length || s.remote ? 1 : 2),
       groups = new Map();
     const sources = (this.template(a.templateId).defaultSources ?? [])
       .filter((s) => !added.has(siteKey(s.url)))
@@ -165,11 +166,15 @@ export const sourceMethods = {
           extension: siteExtensionKind(s.url, a.templateId)?.kind ?? null,
           choices: [],
         });
+      const served = countries.join(', ');
       groups.get(base).choices.push({
         url: s.url,
         name: s.name,
         countries,
-        label: label ?? (countries.join(', ') || 'All countries'),
+        ...(s.remote ? {remote: true} : {}),
+        label:
+          label ??
+          (s.remote ? (served ? served + ' or remote' : 'Remote only') : served || 'All countries'),
       });
     }
     return [...groups.values()];

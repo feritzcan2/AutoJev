@@ -9,7 +9,7 @@ import {automationWorkflow} from '../app/automation/worker.mjs';
 const dice = 'https://www.dice.com/',
   other = 'https://other.test/jobs';
 
-async function fixture(t) {
+async function fixture(t, {onboarding = false} = {}) {
   const core = new WorkspaceDatabase(':memory:'),
     db = new AutomationStore(core),
     a = db.create('job-search', {
@@ -17,7 +17,7 @@ async function fixture(t) {
       criteria: {preferences: 'Remote staff backend roles', country: 'US'},
       sources: [other],
     });
-  db.review(a.id);
+  if (!onboarding) db.review(a.id);
   const runtime = new WebTasks(db, {
     launch: async () => ({close: async () => {}, message: async () => {}}),
   });
@@ -125,4 +125,17 @@ test('the setup agent chooses search terms and filters of extension sources in t
     'Staff Backend Engineer',
     'Principal Engineer',
   ]);
+});
+
+test('the initial setup applies its sources and search terms without a draft', async (t) => {
+  const {db, id, plan} = await fixture(t, {onboarding: true});
+  const result = await plan({
+    addSources: [dice],
+    sourceSearches: [{url: dice, terms: ['Staff Backend Engineer']}],
+  });
+  assert.equal(result.applied, true);
+  const a = db.get(id);
+  assert.equal(a.sourceDraft, undefined);
+  assert.deepEqual(a.sources, [other, dice]);
+  assert.deepEqual(a.sourceSettings[dice].recipe.terms, ['Staff Backend Engineer']);
 });

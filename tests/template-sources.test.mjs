@@ -15,7 +15,7 @@ test('job template creates its worldwide sources; country sources wait for setup
     a = db.create('job-search'),
     sources = db.sources(a.id),
     template = db.template('job-search');
-  const global = template.defaultSources.filter((s) => !s.countries);
+  const global = template.defaultSources.filter((s) => !s.countries && !s.remote);
   assert.deepEqual(
     sources.map((s) => s.url),
     global.map((s) => s.url),
@@ -31,6 +31,8 @@ test('job template creates its worldwide sources; country sources wait for setup
     'a Danish board does not join a workspace searching elsewhere',
   );
   assert.equal(a.sourceSettings[linked.url].countries, undefined);
+  for (const name of ['Himalayas', 'We Work Remotely', 'Hacker News: Who is hiring?'])
+    assert.ok(!sources.some((s) => s.name === name), `${name} serves remote work; setup adds it`);
   assert.ok(
     template.defaultSources
       .filter((s) => s.countries)
@@ -57,6 +59,34 @@ test('a country source added in setup keeps its template recipe and instructions
     db.get(a.id).sourceSettings[jobindex.url].instructions,
     'My own rule',
     'an existing source keeps its edits',
+  );
+});
+test('a remote source joins when setup adds it and keeps its template settings', (t) => {
+  const base = automationTemplate('custom'),
+    db = fixture(t),
+    a = db.create('job-search'),
+    sources = db.template('job-search').defaultSources,
+    himalayas = sources.find((s) => s.name === 'Himalayas'),
+    hn = sources.find((s) => s.name === 'Hacker News: Who is hiring?');
+  assert.equal(himalayas.remote, true);
+  assert.equal(himalayas.countries, undefined);
+  assert.deepEqual([hn.countries, hn.remote], [['US'], true]);
+  db.saveSources(a.id, [...a.sources, himalayas.url]);
+  const saved = db.get(a.id).sourceSettings[himalayas.url];
+  assert.deepEqual(saved.recipe, himalayas.recipe);
+  assert.equal(saved.remote, undefined);
+  assert.throws(
+    () =>
+      reusableTemplate({
+        ...base,
+        defaultSources: [{url: 'https://example.test', remote: 'yes'}],
+      }),
+    /remote must be true or false/,
+  );
+  assert.equal(
+    reusableTemplate({...base, defaultSources: [{url: 'https://example.test', remote: false}]})
+      .defaultSources[0].remote,
+    undefined,
   );
 });
 test('template source countries are two-letter codes', () => {
@@ -162,7 +192,7 @@ test('the setup agent sees starting sources by address and country only', (t) =>
   assert.ok(template.defaultSources.length > 40);
   for (const source of template.defaultSources) {
     assert.deepEqual(
-      Object.keys(source).filter((k) => !['url', 'name', 'countries'].includes(k)),
+      Object.keys(source).filter((k) => !['url', 'name', 'countries', 'remote'].includes(k)),
       [],
     );
   }
@@ -179,6 +209,7 @@ test('Arbeitnow joins a workspace through the feed of its own country', () => {
       ['www.arbeitnow.co.uk', ['GB']],
       ['www.arbeitnow.fr', ['FR']],
       ['www.arbeitnow.ch', ['CH']],
+      ['www.arbeitnow.nl', ['NL']],
     ],
   );
   for (const feed of feeds)

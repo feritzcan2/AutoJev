@@ -75,6 +75,7 @@ test('a feed page maps its postings to listings with the stated facts', () => {
         remote: false,
         created_at: null,
       }),
+      job('c-3', {url: 'https://www.arbeitnow.nl/jobs/companies/x/c-3'}),
     ]),
   );
   assert.equal(page.url, feed);
@@ -94,6 +95,7 @@ test('a feed page maps its postings to listings with the stated facts', () => {
     'https://www.arbeitnow.co.uk/jobs/companies/x/b-2',
     'the .com feed mixes country sites',
   );
+  assert.equal(page.jobs[2].url, 'https://www.arbeitnow.nl/jobs/companies/x/c-3');
   assert.equal(page.jobs[1].publishedAt, null);
   assert.deepEqual(
     [page.page, page.totalPages, page.nextUrl, page.complete],

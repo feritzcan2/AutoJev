@@ -10,6 +10,10 @@
 //   addresses it handles and returns ordinary Jev page objects.
 // - collector: {templateId,searchUrl,acceptsQuery,readPage,readDetail,detail}
 //   reads an API; the shared source worker queues its listings for Jev.
+// Optionally `credentials` ({label, help, signupUrl, fields:[{key,label}]}) for
+// an API that needs the user's own account: the values are entered under Site
+// accounts (../sources/site-credentials.mjs) and reach the collector's reads
+// as `options.credentials`.
 // Optionally `search` (./search.mjs), or search(url) for a site with one host
 // per country: the results address, its order and the filters the site
 // accepts, so recipes are built from known parameters.
@@ -32,6 +36,21 @@ import simplyhired from './simplyhired.mjs';
 import hnHiring from './hn-hiring.mjs';
 import themuse from './themuse.mjs';
 import weWorkRemotely from './weworkremotely.mjs';
+import franceTravail from './france-travail.mjs';
+import adzuna from './adzuna.mjs';
+import jobdanmark from './jobdanmark.mjs';
+import jobnet from './jobnet.mjs';
+import reed from './reed.mjs';
+import gupy from './gupy.mjs';
+import werkNl from './werk-nl.mjs';
+import jobindex from './jobindex.mjs';
+import duckduckgo from './duckduckgo.mjs';
+import wantedly from './wantedly.mjs';
+import jobbankCa from './jobbank-ca.mjs';
+import jobbankDk from './jobbank-dk.mjs';
+import naukri from './naukri.mjs';
+import kariyerNet from './kariyer-net.mjs';
+import nationaleVacaturebank from './nationale-vacaturebank.mjs';
 
 export const SITE_EXTENSIONS = [
   stepstone,
@@ -49,6 +68,21 @@ export const SITE_EXTENSIONS = [
   hnHiring,
   themuse,
   weWorkRemotely,
+  franceTravail,
+  adzuna,
+  jobdanmark,
+  jobnet,
+  reed,
+  gupy,
+  werkNl,
+  jobindex,
+  duckduckgo,
+  wantedly,
+  jobbankCa,
+  jobbankDk,
+  naukri,
+  kariyerNet,
+  nationaleVacaturebank,
 ];
 export const siteExtensionFor = (url) => SITE_EXTENSIONS.find((e) => e.matches(url)) ?? null;
 // What reads this source for the source list: api (collector, only for its

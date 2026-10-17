@@ -202,18 +202,16 @@ test('legacy combined drafts are split without applying their source list', asyn
   assert.deepEqual(db.get(id).sourceDraft.sources, [third]);
 });
 
-test('initial setup can save a profile before accepting source suggestions', async (t) => {
+test('initial setup applies its sources right away', async (t) => {
   const {db, runtime, id} = fixture(t, {fresh: true}),
     chat = await runtime.message(id, 'Kaynak bul.');
-  db.saveConversationPlan(id, chat.id, {sources: [first]});
-  assert.deepEqual(db.get(id).sources, []);
-  await runtime.saveProfile(id, {goal: 'Ev bul'});
-  assert.equal(automationProgress(db.snapshot(id)).primary.id, 'sources');
-  const revision = db.get(id).revision;
-  db.resolveSourceDraft(id, db.get(id).sourceDraft.id, true);
-  assert.equal(db.get(id).reviewedRevision, revision);
+  const result = db.saveConversationPlan(id, chat.id, {sources: [first]});
+  assert.equal(result.applied, true);
   assert.deepEqual(db.get(id).sources, [first]);
+  assert.equal(db.get(id).sourceDraft, undefined);
   assert.equal(db.get(id).sourceState[first], undefined);
+  await runtime.saveProfile(id, {goal: 'Ev bul'});
+  assert.deepEqual(db.get(id).sources, [first]);
 });
 
 test('sending a profile form to chat does not introduce an empty source list', () => {

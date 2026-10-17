@@ -345,7 +345,8 @@ export class AutomationStore {
       a.planDraft = {plan: profile, baseRevision: a.revision, runId, updatedAt};
     else delete a.planDraft;
     const searches = this.proposedSourceSearches(id, plan.sources, input.sourceSearches);
-    if (JSON.stringify(plan.sources) !== JSON.stringify(a.sources) || searches)
+    const changed = JSON.stringify(plan.sources) !== JSON.stringify(a.sources) || searches;
+    if (changed)
       a.sourceDraft = {
         id: randomUUID(),
         sources: plan.sources,
@@ -355,6 +356,19 @@ export class AutomationStore {
       };
     else delete a.sourceDraft;
     this.put(a);
+    // The initial setup applies its sources and searches right away, like its
+    // profile; the user reviews them on the onboarding form.
+    if (onboarding) {
+      if (changed) this.resolveSourceDraft(id, a.sourceDraft.id, true);
+      return {
+        saved: true,
+        draft: false,
+        plan,
+        applied: true,
+        message:
+          'Saved. During the initial setup the profile, sources and source searches apply right away; the user reviews them on the onboarding form.',
+      };
+    }
     return {
       saved: true,
       draft: true,
