@@ -101,3 +101,20 @@ test('a form accepts a free-text reply without fabricating structured answers', 
     core.close();
   }
 });
+
+test('an instruction replaces the answer and is marked as an instruction', () => {
+  const core = new WorkspaceDatabase(':memory:'),
+    s = new AutomationStore(core);
+  try {
+    const p = s.create('job-search'),
+      q = s.askQuestion(p.id, {text: 'Cover letter file?', fields});
+    assert.throws(() => s.answerQuestion(p.id, q.id, {instruction: '   '}));
+    const result = s.answerQuestion(p.id, q.id, {instruction: 'Write a cover letter from my CV.'});
+    assert.equal(result.instruction, true);
+    assert.equal(result.answerValues, null);
+    assert.equal(result.answer, 'Write a cover letter from my CV.');
+    assert.match(s.messages(p.id).at(-1).text, /Instruction: Write a cover letter/);
+  } finally {
+    core.close();
+  }
+});

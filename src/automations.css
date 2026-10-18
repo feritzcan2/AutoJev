@@ -1148,6 +1148,12 @@
     width: 100px;
   }
 }
+.automation-results-table .record-quick-tab {
+  display: block;
+  margin-top: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
 .record-tab-feedback:not(:empty) {
   display: block;
   margin-top: 8px;

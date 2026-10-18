@@ -24,6 +24,14 @@ const paginationLabels = {
   infinite_scroll: 'Infinite scroll',
   none: 'Single page',
 };
+// A site extension's results address sets the pagination and ordering of a
+// url_template recipe whatever the recipe says; a collector pages its API itself.
+const pagedByExtension = (source) =>
+  source.extension?.kind === 'api' || Boolean(source.extension?.search?.pagination);
+const readsNewestFirst = (source) =>
+  (source.extension?.search && source.recipe?.entry.kind === 'url_template'
+    ? source.extension.search.ordering
+    : source.recipe?.ordering) === 'newest_first';
 const methodLabels = {
   none: 'None yet · learned in the trial round',
   url_template: 'URL template',
@@ -565,12 +573,22 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     return meta;
   }
 
-  // Scan details (development builds): scan memory, recipe and the pending queue.
+  // Scan details (development builds): this round, its searches with the
+  // queue, and the recipe, each as one labelled list.
   const exclusionLabels = {
     hard_constraint: 'Hard constraint',
     qualification: 'Qualification conflict',
     unrelated_role: 'Unrelated role',
     not_listing: 'Not a listing',
+  };
+  const scopeReasons = {
+    initial: 'The first successful full scan has not happened yet.',
+    periodic: 'A regular full scan is due.',
+    ordering_unverified: 'Newest-first ordering could not be verified; all pages will be scanned.',
+    start_unverified:
+      'It could not be verified that the scan started on the first page; all pages will be scanned.',
+    dates_unverified: 'Listing dates are missing or unclear; all pages will be scanned.',
+    ordering_changed: 'The date order of the listings is inconsistent; all pages will be scanned.',
   };
   function progressDetails(source) {
     const section = el('section', null, 'source-progress-details source-memory'),
@@ -578,12 +596,35 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       scan = source.scan,
       state = source.scanState,
       cycle = state?.active ?? state?.lastCompleted,
-      pending = scan?.complete === false ? (scan.pendingUrls ?? []) : [];
+      pending = scan?.complete === false ? (scan.pendingUrls ?? []) : [],
+      searches = scan?.work?.searches ?? [],
+      pct = (p) => `${Math.round(p * 100)}%`,
+      link = (url, text = url) => button(text, () => api.openLink(url), 'source-progress-url');
     section.dataset.sourceId = source.url;
     section.setAttribute('aria-label', 'Scan details');
-    section.append(el('h3', 'Scan details'));
-    const facts = el('dl', null, 'source-progress-facts');
-    for (const [label, value] of [
+    // One group: a heading and label/value rows; empty values are skipped.
+    const group = (title, rows, always = false) => {
+      const shown = rows.filter(([, value]) => value != null && value !== '');
+      if (!shown.length && !always) return null;
+      const block = el('div', null, 'source-progress-group');
+      block.append(el('h4', title));
+      if (shown.length) {
+        const list = el('dl', null, 'source-progress-facts');
+        for (const [label, value] of shown) {
+          const row = el('div'),
+            dd = el('dd');
+          dd.append(value);
+          row.append(el('dt', label), dd);
+          list.append(row);
+        }
+        block.append(list);
+      }
+      section.append(block);
+      return block;
+    };
+
+    const resumeUrl = page?.url ?? cycle?.checkpoint?.url;
+    group('This round', [
       [
         'Scan type',
         cycle?.mode === 'incremental'
@@ -594,160 +635,99 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
               ? 'All pages in the first scan'
               : 'Source trial in the first round',
       ],
-      ['Last full scan', time(state?.lastFullScanAt)],
-      ['Start of this round', time(cycle?.startedAt)],
+      ['Why this scope', scopeReasons[cycle?.reason]],
+      ['Started', cycle?.startedAt ? time(cycle.startedAt) : null],
+      ['New records since', cycle?.mode === 'incremental' ? time(cycle.cutoffAt) : null],
+      ['Last full scan', state?.lastFullScanAt ? time(state.lastFullScanAt) : null],
       [
-        'Date cutoff for new records',
-        cycle?.mode === 'incremental' ? time(cycle.cutoffAt) : 'Up to the last page',
+        page ? 'Reported page' : 'Resume page',
+        resumeUrl
+          ? link(
+              resumeUrl,
+              page
+                ? `Page ${page.currentPage}${page.totalPages ? ` / ${page.totalPages}` : ''}`
+                : resumeUrl,
+            )
+          : null,
       ],
-      ['Total records', source.resultCount ?? 0],
       [
-        'Last reported page',
-        page
-          ? `Page ${page.currentPage}${page.totalPages ? ` / ${page.totalPages}` : ''}`
-          : 'Not reported yet',
+        'Last opened page',
+        source.observedPage && page && source.observedPage.currentPage !== page.currentPage
+          ? `Page ${source.observedPage.currentPage}. Saved progress and remaining addresses are kept.`
+          : null,
       ],
-    ]) {
-      const fact = el('div');
-      fact.append(el('dt', label), el('dd', String(value)));
-      facts.append(fact);
-    }
-    section.append(facts);
-    const note = (label, text) => {
-      const group = el('div', null, 'source-progress-note');
-      group.append(el('b', label), el('p', text));
-      section.append(group);
-    };
-    const address = (url) => button(url, () => api.openLink(url), 'source-progress-url');
-    const recipe = el('div', null, 'source-progress-note source-progress-recipe'),
-      summary = recipeSummary(source.recipe ?? null, source.recipeState ?? null),
-      rs = source.recipeState;
-    recipe.append(el('b', 'Search recipe'));
-    const lines = [summary.label + ' · ' + summary.detail];
-    if (source.recipe?.entry.kind === 'url_template') {
-      lines.push('Template: ' + source.recipe.entry.template);
-      const filters = source.extension?.search
-        ? searchFilterLabels(source.extension.search, source.recipe.entry.template)
-        : [];
-      if (filters.length) lines.push('Site filters: ' + filters.join(' · '));
-    }
-    if (source.recipe?.entry.kind === 'search_form')
-      lines.push(
-        'Form: ' +
-          source.recipe.entry.url +
-          ' · ' +
-          source.recipe.entry.fields.map((f) => `${f.key}=“${f.label}”`).join(', '),
-      );
-    if (source.recipe?.terms?.length) lines.push('Search terms: ' + source.recipe.terms.join(', '));
-    if (source.recipe && source.recipe.entry.kind !== 'discovery')
-      lines.push(
-        'Pagination: ' +
-          paginationLabels[source.recipe.pagination ?? 'auto'] +
-          ' · Newest first; repeat scans stop at known listings' +
-          ` · Each search reads up to ${SCAN_SEARCH_LISTINGS} new listings or ${SCAN_SEARCH_PAGES} pages`,
-      );
-    if (rs?.verifiedAt)
-      lines.push(
-        `Last verification ${time(rs.verifiedAt)} · ${rs.successCount} succeeded, ${rs.failCount} failed`,
-      );
-    if (rs?.lastFailure)
-      lines.push(
-        `Last error ${time(rs.lastFailure.at)}: ${rs.lastFailure.reason}${rs.lastFailure.url ? ' · ' + rs.lastFailure.url : ''}`,
-      );
-    recipe.append(el('p', lines.join('\n')));
-    section.append(recipe);
-    const reasons = {
-      initial: 'The first successful full scan has not happened yet.',
-      periodic: 'A regular full scan is due.',
-      ordering_unverified:
-        'Newest-first ordering could not be verified; all pages will be scanned.',
-      start_unverified:
-        'It could not be verified that the scan started on the first page; all pages will be scanned.',
-      dates_unverified: 'Listing dates are missing or unclear; all pages will be scanned.',
-      ordering_changed:
-        'The date order of the listings is inconsistent; all pages will be scanned.',
-    };
-    if (reasons[cycle?.reason]) note('Reason for the scope', reasons[cycle.reason]);
-    if (page?.url) {
-      const group = el('div', null, 'source-progress-note');
-      group.append(el('b', 'Last reported results page'), address(page.url));
-      section.append(group);
-    } else if (cycle?.checkpoint?.url) {
-      const group = el('div', null, 'source-progress-note');
-      group.append(el('b', 'Resume page'), address(cycle.checkpoint.url));
-      section.append(group);
-    }
-    if (cycle?.checkpoint?.cursor) note('Saved resume marker', cycle.checkpoint.cursor);
-    if (source.recovery)
-      note(
-        'Automatic resume',
-        `${time(source.recovery.readyAt)} · The agent session was interrupted; the same source and resume point will be picked up again.`,
-      );
-    if (cycle?.boundary)
-      note(
+      ['Resume marker', cycle?.checkpoint?.cursor],
+      [
         'Date cutoff',
-        'All records on this page were reported and verified as older than the date cutoff.',
-      );
-    if (scan?.reason) note(scan.complete ? 'Completion note' : 'Resume note', scan.reason);
-    if (source.observedPage && page && source.observedPage.currentPage !== page.currentPage)
-      note(
-        'Last opened results page',
-        `Page ${source.observedPage.currentPage}. Saved progress and remaining addresses are kept.`,
-      );
-    if (scan?.work?.searches.length > 1) {
-      const searches = el('div', null, 'source-progress-note');
-      searches.append(el('b', 'Searches'));
-      for (const search of scan.work.searches)
-        searches.append(
-          el(
-            'p',
-            `${search.label} · ${search.status === 'completed' ? 'Completed' : `${search.pendingUrls.length} address(es) waiting`}${search.pageProgress ? ` · page ${search.pageProgress.currentPage}` : ''}${search.id === scan.work.activeSearchId ? ' · Selected search' : ''}`,
-          ),
-        );
-      section.append(searches);
-    }
-    // Waiting addresses first, then what Jev eliminated (card or detail) in red.
-    const excluded = (scan?.work?.searches ?? []).flatMap((s) => s.excluded ?? []).reverse();
-    const cards = Object.assign({}, ...(scan?.work?.searches ?? []).map((s) => s.cards ?? {})),
-      pct = (p) => `${Math.round(p * 100)}%`;
+        cycle?.boundary
+          ? 'All records on the last page were verified as older than the cutoff.'
+          : null,
+      ],
+      [
+        'Automatic resume',
+        source.recovery
+          ? `${time(source.recovery.readyAt)} · the interrupted session picks up at the same point.`
+          : null,
+      ],
+      [scan?.complete ? 'Completion note' : 'Resume note', scan?.reason],
+      [
+        'Last result',
+        source.lastResult && source.lastResult !== 'Scan finished normally.'
+          ? source.lastResult
+          : null,
+      ],
+    ]);
+
+    // Searches, then the addresses waiting and what Jev dropped.
+    const searchRows = searches.map((search) => [
+      search.label + (search.id === scan.work.activeSearchId ? ' (current)' : ''),
+      search.status === 'completed'
+        ? 'Completed'
+        : `${search.pendingUrls.length} waiting${search.pageProgress ? ` · page ${search.pageProgress.currentPage}` : ''}`,
+    ]);
+    const excluded = searches.flatMap((s) => s.excluded ?? []).reverse(),
+      cards = Object.assign({}, ...searches.map((s) => s.cards ?? {}));
+    const queue = group(
+      'Searches',
+      searchRows.length > 1 ? searchRows : [],
+      Boolean(pending.length || excluded.length),
+    );
     if (pending.length || excluded.length) {
-      const details = el('details', null, 'source-progress-pending'),
-        urls = el('ol');
+      const details = el('details', null, 'source-progress-pending');
       details.open = pending.length === 1;
       details.append(
         el(
           'summary',
-          `Addresses to continue with (${pending.length}${excluded.length ? ` · ${excluded.length} excluded` : ''})`,
+          `${plural(pending.length, 'address', 'addresses')} waiting${excluded.length ? ` · ${excluded.length} excluded` : ''}`,
         ),
       );
-      const rows = [...pending.map((url) => ({url})), ...excluded];
+      const rows = [...pending.map((url) => ({url})), ...excluded],
+        urls = el('ol');
       let shown = 0;
       const more = button('Show the next 100 addresses', () => append());
       const append = () => {
         for (const row of rows.slice(shown, shown + 100)) {
-          const item = el('li');
+          const item = el('li'),
+            card = cards[row.url],
+            title = row.title ?? card?.title;
+          const address = new URL(row.url);
+          item.append(link(row.url, title ?? address.pathname + address.search));
           if (row.stage) {
             item.className = 'source-progress-excluded';
             item.append(
               el(
-                'b',
-                `Excluded · ${row.stage === 'detail' ? 'On detail' : 'On card'} · ${exclusionLabels[row.reason] ?? row.reason}${row.confidence != null ? ` · Jev ${pct(row.confidence)}` : ''}`,
+                'small',
+                `Excluded ${row.stage === 'detail' ? 'on detail' : 'on card'}: ${exclusionLabels[row.reason] ?? row.reason}${row.confidence != null ? ` · Jev ${pct(row.confidence)}` : ''}`,
               ),
             );
-            if (row.title) item.append(el('span', row.title));
-          } else if (cards[row.url]) {
-            const card = cards[row.url];
-            item.className = 'source-progress-card';
-            if (card.title) item.append(el('span', card.title));
-            if (card.keep != null)
-              item.append(
-                el(
-                  'small',
-                  `Jev card: keep ${pct(card.keep)}${card.risk?.p >= 0.1 ? ` · closest exclusion ${exclusionLabels[card.risk.reason]} ${pct(card.risk.p)}` : ''}`,
-                ),
-              );
-          }
-          item.append(address(row.url));
+          } else if (card?.keep != null)
+            item.append(
+              el(
+                'small',
+                `Keep ${pct(card.keep)}${card.risk?.p >= 0.1 ? ` · ${exclusionLabels[card.risk.reason]} ${pct(card.risk.p)}` : ''}`,
+              ),
+            );
+          item.title = row.url;
           urls.append(item);
         }
         shown = Math.min(shown + 100, rows.length);
@@ -755,9 +735,63 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       };
       append();
       details.append(urls, more);
-      section.append(details);
+      queue.append(details);
     }
-    if (source.lastResult) note('Last run result', source.lastResult);
+
+    const recipe = source.recipe,
+      summary = recipeSummary(recipe ?? null, source.recipeState ?? null),
+      rs = source.recipeState,
+      filters =
+        recipe?.entry.kind === 'url_template' && source.extension?.search
+          ? searchFilterLabels(source.extension.search, recipe.entry.template)
+          : [];
+    group('Search recipe', [
+      [
+        'Status',
+        summary.label +
+          (rs?.verifiedAt
+            ? ` · ${rs.successCount} succeeded, ${rs.failCount} failed · checked ${time(rs.verifiedAt)}`
+            : ''),
+      ],
+      ['Method', recipe ? methodLabels[recipe.entry.kind] : null],
+      [
+        'Address',
+        recipe?.entry.kind === 'url_template'
+          ? el('code', recipe.entry.template)
+          : recipe?.entry.kind === 'search_form'
+            ? el(
+                'code',
+                `${recipe.entry.url} · ${recipe.entry.fields.map((f) => `${f.key}=“${f.label}”`).join(', ')}`,
+              )
+            : null,
+      ],
+      ['Site filters', filters.join(' · ')],
+      ['Search terms', recipe?.terms?.join(', ')],
+      [
+        'Pagination',
+        !recipe || recipe.entry.kind === 'discovery'
+          ? null
+          : pagedByExtension(source)
+            ? 'Set by the site extension'
+            : paginationLabels[recipe.pagination ?? 'auto'],
+      ],
+      ['Note', recipe?.notes],
+      [
+        'Last error',
+        rs?.lastFailure
+          ? `${time(rs.lastFailure.at)}: ${rs.lastFailure.reason}${rs.lastFailure.url ? ' · ' + rs.lastFailure.url : ''}`
+          : null,
+      ],
+    ]);
+    section.append(
+      el(
+        'small',
+        readsNewestFirst(source)
+          ? `Each search reads newest first, up to ${SCAN_SEARCH_LISTINGS} new listings or ${SCAN_SEARCH_PAGES} pages, and repeat scans stop at known listings.`
+          : `Each search reads up to ${SCAN_SEARCH_LISTINGS} new listings or ${SCAN_SEARCH_PAGES} pages.`,
+        'source-progress-rule',
+      ),
+    );
     return section;
   }
 
@@ -788,6 +822,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     form.querySelector('[data-recipe-terms]').hidden = form.querySelector(
       '[data-recipe-pagination]',
     ).hidden = !['url_template', 'search_form'].includes(method);
+    if (form.pagedByExtension) form.querySelector('[data-recipe-pagination]').hidden = true;
     form.querySelector('[data-recipe-notes]').hidden = method === 'none';
     form.querySelector('[data-recipe-site]').hidden = method !== 'url_template' || !form.siteSearch;
     form.elements.template.required = method === 'url_template';
@@ -890,7 +925,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
 <label data-recipe-terms>Search terms<input name="terms" maxlength="500" placeholder="Backend Engineer, .NET, Platform Engineer" spellcheck="false"><small>Comma-separated, up to 5. Each term is its own search on this site.</small></label></div>
 <details class="source-advanced"><summary>Advanced: search recipe and instructions</summary>
 <div class="source-editor-section">
-<label class="source-editor-wide">Search method <small class="source-recipe-legend"></small><select name="method"></select><small>The trial round learns this by itself. A recipe written here is verified in the next scan.</small></label>
+<label class="source-editor-wide">Search method <small class="source-recipe-legend"></small><select name="method"></select><small data-method-help>The trial round learns this by itself. A recipe written here is verified in the next scan.</small></label>
 <label class="source-editor-wide" data-recipe-template>URL template<input name="template" maxlength="2000" placeholder="https://site/jobs?q={query}&l={location}&sort=date" spellcheck="false"><small>{query} takes each search term, or the search scope when there are none. Other placeholders such as {location} come from the criteria field of the same name.</small></label>
 <div class="source-editor-wide source-site-search" data-recipe-site><b>Site filters</b><small></small><div class="source-recipe-form source-site-filters"></div></div>
 <div class="source-editor-wide source-recipe-form" data-recipe-form><label>Search form page<input name="formUrl" type="url" placeholder="https://site/jobs"></label><label>Search field label<input name="queryLabel" maxlength="120" placeholder="Stichwort"></label><label>Location field label (optional)<input name="locationLabel" maxlength="120" placeholder="Ort"></label></div>
@@ -903,8 +938,20 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     const f = form.elements,
       footer = form.querySelector('.source-editor-foot'),
       scope = owner;
+    // A site extension's known results address takes a URL template; a
+    // collector reads nothing else. The saved method always stays selectable.
+    const ext = source.extension,
+      fixed = Boolean(ext?.search) || ext?.kind === 'api',
+      offered = (value) =>
+        !fixed ||
+        value === source.recipe?.entry.kind ||
+        ['none', 'url_template', ...(ext.kind === 'api' ? [] : ['discovery'])].includes(value);
     for (const [value, label] of Object.entries(methodLabels))
-      f.method.append(new Option(label, value));
+      if (offered(value)) f.method.append(new Option(label, value));
+    if (fixed)
+      form.querySelector('[data-method-help]').textContent =
+        'The site extension defines the results address: choose the search terms and site filters. A recipe written here is verified in the next scan.';
+    form.pagedByExtension = pagedByExtension(source);
     for (const value of RECIPE_PAGINATION_KINDS)
       f.pagination.append(new Option(paginationLabels[value], value));
     f.name.value = source.name;
@@ -1172,7 +1219,10 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         (source.scan?.complete === false || Boolean(source.scanState?.active));
       if (resumable)
         run.title = 'Continues from the page where it stopped and the remaining addresses.';
-      restart.hidden = !resumable || runDisabled || Boolean(source.siteWait);
+      // Stopped retries resume at the page that kept failing; starting over is
+      // the other way out, so it stays available then.
+      restart.hidden =
+        !resumable || runDisabled || Boolean(source.siteWait && !source.siteWait.exhausted);
       restart.disabled = Boolean(view.pending);
       restart.title =
         'Clears the saved page position and remaining addresses and starts the scan from the first results page. Saved listings are not read again.';
@@ -1186,6 +1236,8 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         render();
       });
       edit.setAttribute('aria-expanded', String(open));
+      // A site extension defines how this site is searched; there is nothing to relearn.
+      relearn.hidden = Boolean(source.extension);
       relearn.disabled = remove.disabled = locked;
       relearn.title = locked
         ? 'Stop the scan first.'

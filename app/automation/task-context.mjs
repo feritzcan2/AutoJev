@@ -76,6 +76,13 @@ const questionContext = (q) => ({
     'taskId',
     'resolution',
   ]),
+  ...(q.instruction
+    ? {
+        instruction: true,
+        instructionNote:
+          'The user did not answer this question. answer is their instruction for this task: carry it out within the saved policy and your tools. If it cannot be done, ask again and say why.',
+      }
+    : {}),
   ...(q.answer != null && Array.isArray(q.fields)
     ? {fields: q.fields.map((f) => pick(f, ['id', 'label', 'type']))}
     : {}),
@@ -257,6 +264,7 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
           q.answer != null &&
           q.recordId &&
           q.recordId !== assignedRecord.id &&
+          !q.instruction &&
           !q.accessCheck &&
           !q.outcome &&
           !q.resolution,

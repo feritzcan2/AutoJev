@@ -410,10 +410,10 @@ export function automationResultsTable(
   root.insertBefore(selection, pagination);
 
   function syncTabButtons() {
-    for (const {result, control, place} of visibleTabButtons.values()) {
+    for (const {result, control, place, remove} of visibleTabButtons.values()) {
       if (recordTabs(result, liveTabs, data).length) {
         if (!control.isConnected) place();
-      } else control.remove();
+      } else remove();
     }
   }
   async function refreshTabs() {
@@ -1159,7 +1159,7 @@ export function automationResultsTable(
           void refreshTabs();
         }
       };
-      const goToTab = button('Go to tab', async () => {
+      const showTab = async () => {
         tabFeedback.textContent = '';
         tabChoices.replaceChildren();
         try {
@@ -1190,15 +1190,43 @@ export function automationResultsTable(
           tabFeedback.textContent = error.message;
           void refreshTabs();
         }
-      });
+      };
+      const goToTab = button('Go to tab', showTab);
       goToTab.dataset.recordTab = result.id;
       goToTab.dataset.recordMenuAction = 'tab';
       actions.append(open, detail);
       // A problem card shows its open tab next to the reason.
       if (problem) goToTab.textContent = 'Show page ↗';
-      const placeTab = () =>
-        problem ? problemActions.prepend(goToTab) : actions.insertBefore(goToTab, open);
-      const tab = {result, control: goToTab, place: placeTab};
+      // A row with an open tab also shows the button outside the menu. Several
+      // tabs open the menu, where the tab chooser lives.
+      const quickTab = problem
+        ? null
+        : button(
+            'Go to tab ↗',
+            async () => {
+              await showTab();
+              if (tabChoices.childElementCount && !actionsPanel.matches(':popover-open')) {
+                actionsPanel.showPopover();
+                positionMenu(actionsPanel, actionsToggle);
+              }
+            },
+            'quiet record-quick-tab',
+          );
+      quickTab?.setAttribute('aria-label', result.title + ' · Go to tab');
+      const placeTab = () => {
+        if (problem) return problemActions.prepend(goToTab);
+        actions.insertBefore(goToTab, open);
+        state.insertBefore(quickTab, actionsToggle.parentNode === state ? actionsToggle : null);
+      };
+      const tab = {
+        result,
+        control: goToTab,
+        place: placeTab,
+        remove: () => {
+          goToTab.remove();
+          quickTab?.remove();
+        },
+      };
       visibleTabButtons.set(result.id, tab);
       if (openIds.has(result.id)) placeTab();
       recordActions(actions, result, data.definition, async (action) => {
