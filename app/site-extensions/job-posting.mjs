@@ -21,6 +21,31 @@ const words = (value) =>
     .trim()} `;
 const named = (value) => (value && typeof value === 'object' ? (value.name ?? value.value) : value);
 
+// Some sites write raw line breaks and tabs inside the strings of a block.
+// Browsers and search engines still read it, so escape them before giving up.
+function escapeControls(text) {
+  let out = '',
+    inString = false,
+    escaped = false;
+  for (const ch of text) {
+    if (inString && !escaped && ch < ' ') {
+      out += '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0');
+      continue;
+    }
+    if (ch === '"' && !escaped) inString = !inString;
+    escaped = inString && !escaped && ch === '\\';
+    out += ch;
+  }
+  return out;
+}
+const parseBlock = (block) => {
+  try {
+    return JSON.parse(block);
+  } catch {
+    return JSON.parse(escapeControls(block));
+  }
+};
+
 function postings(blocks) {
   const found = [];
   const walk = (value) => {
@@ -32,9 +57,40 @@ function postings(blocks) {
   };
   for (const block of blocks)
     try {
-      walk(JSON.parse(block));
+      walk(parseBlock(block));
     } catch {}
   return found;
+}
+
+// ISO 3166-1 alpha-2: the officially assigned country codes.
+const ISO_COUNTRIES = new Set(
+  (
+    'AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS ' +
+    'BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE ' +
+    'EG EH ER ES ET FI FJ FK FM FO FR GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM ' +
+    'HN HR HT HU ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ LA LB LC ' +
+    'LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ NA ' +
+    'NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW ' +
+    'SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO ' +
+    'TR TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW'
+  ).split(' '),
+);
+// Some postings list nearly every country code one by one for a role open
+// anywhere. Name the few that are left out instead; a shorter list stays whole.
+const NEARLY_ALL = 25;
+function regions(values) {
+  const list = [...new Set(values.filter(Boolean))],
+    codes = list.map((value) => value.toUpperCase());
+  if (list.length < 100 || !codes.every((code) => /^[A-Z]{2}$/.test(code))) return list;
+  const given = new Set(codes),
+    missing = [...ISO_COUNTRIES].filter((code) => !given.has(code)),
+    other = codes.filter((code) => !ISO_COUNTRIES.has(code));
+  if (missing.length > NEARLY_ALL) return list;
+  return [
+    (missing.length ? `All ISO countries except ${missing.join(', ')}` : 'All ISO countries') +
+      (other.length ? ` and ${other.join(', ')}` : '') +
+      ` (${list.length} listed)`,
+  ];
 }
 
 const place = (locations) =>
@@ -91,10 +147,12 @@ export function jobPostingDetail({title, headings = [], jobPostings = []}, now =
       company,
       location: place(job.jobLocation),
       workMode: [].concat(job.jobLocationType ?? []).includes('TELECOMMUTE') ? 'remote' : null,
-      remoteRegion: []
-        .concat(job.applicantLocationRequirements ?? [])
-        .map(named)
-        .map(plain),
+      remoteRegion: regions(
+        []
+          .concat(job.applicantLocationRequirements ?? [])
+          .map(named)
+          .map(plain),
+      ),
       employmentType: job.employmentType,
       salary: salary(job.baseSalary),
       postedAt: job.datePosted,

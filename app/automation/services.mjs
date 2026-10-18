@@ -32,6 +32,7 @@ export function registerAutomationServices({
   mcp,
   notify = () => {},
   launch = launchAutomationWorker,
+  trace = null,
 }) {
   const outputs = new Map();
   browsers.siteAccess = db.siteAccess;
@@ -99,6 +100,13 @@ export function registerAutomationServices({
             recordId: run.recordOperation && !batchScoring(run) ? run.recordId : undefined,
             sourceUrl: run.recordOperation ? undefined : run.sourceUrl,
             sourceUrls: automation.sources,
+            // Development builds keep every Jev request of the run in the agent trace.
+            ...(trace
+              ? {
+                  traceJev: (entry) =>
+                    trace.jev(automation.id, run.id, {...entry, workerId: run.workerId}),
+                }
+              : {}),
             readTabKey: batchScoring(run)
               ? `score-batch:${run.taskId}`
               : run.recordOperation

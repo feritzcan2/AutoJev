@@ -1,6 +1,7 @@
 import './config.css';
 import {jevSettingsPanel, dataDisclosure} from './jev-settings.js';
 import {captchaSettingsPanel} from './captcha-settings.js';
+import {siteCredentialsPanel} from './site-credentials.js';
 import {readinessPanel} from './readiness.js';
 import {createDataManagement} from './data-management.js';
 import {updatesPanel} from './updates.js';
@@ -60,11 +61,12 @@ function card({title, when, path, text, open = false}) {
 export function configPage(api, {notice, relativeTime, openNotifications}) {
   const root = document.getElementById('config');
   root.innerHTML = `<div class="config-head"><div><h2>Configuration</h2><p>Setup, backups, updates, notifications and the text sent to the agent: instructions, task prompts, skills and MCP tools.</p></div><label class="config-search"><input id="config-search" type="search" placeholder="Search text" aria-label="Search text"><small id="config-search-note"></small></label></div>
-<div class="config-body"><nav class="config-nav" aria-label="Sections"><a href="#config-telegram">Notifications<b></b></a><a href="#config-readiness">Setup check<b></b></a><a href="#config-jev">Jev<b></b></a><a href="#config-captcha">CAPTCHA<b></b></a><a href="#config-data">Data and backups<b></b></a><a href="#config-updates">Updates<b></b></a><a href="#config-privacy">Data sharing<b></b></a><a href="#config-instructions">Instructions<b></b></a><a href="#config-tasks">Task prompts<b></b></a><a href="#config-skills">Skills<b></b></a><a href="#config-tools">MCP tools<b></b></a></nav>
+<div class="config-body"><nav class="config-nav" aria-label="Sections"><a href="#config-telegram">Notifications<b></b></a><a href="#config-readiness">Setup check<b></b></a><a href="#config-jev">Jev<b></b></a><a href="#config-captcha">CAPTCHA<b></b></a><a href="#config-site-accounts">Site accounts<b></b></a><a href="#config-data">Data and backups<b></b></a><a href="#config-updates">Updates<b></b></a><a href="#config-privacy">Data sharing<b></b></a><a href="#config-instructions">Instructions<b></b></a><a href="#config-tasks">Task prompts<b></b></a><a href="#config-skills">Skills<b></b></a><a href="#config-tools">MCP tools<b></b></a></nav>
 <div class="config-sections">
 <section id="config-telegram" class="config-section"><h3>Notifications</h3><p>The Telegram bot connection and per-candidate notification preferences are on the Notifications page.</p><button id="open-notifications" class="primary" type="button">Open notification settings</button></section>
 <section id="config-readiness" class="config-section"><h3>Setup check</h3><div id="config-readiness-panel"></div></section>
 <section id="config-captcha" class="config-section"><h3>CAPTCHA</h3><div id="config-captcha-panel"></div></section>
+<section id="config-site-accounts" class="config-section"><h3>Site accounts</h3><div id="config-site-accounts-panel"></div></section>
 <section id="config-jev" class="config-section"><h3>Jev</h3><div id="config-jev-panel"></div></section>
 <section id="config-updates" class="config-section"><div id="config-updates-panel"></div></section>
 <section id="config-privacy" class="config-section"><h3>Data sharing</h3><div id="config-privacy-panel"></div></section>
@@ -236,13 +238,18 @@ export function configPage(api, {notice, relativeTime, openNotifications}) {
         );
   }
   const captcha = captchaSettingsPanel(api, $('config-captcha-panel'), {notice});
+  const siteAccounts = siteCredentialsPanel(api, $('config-site-accounts-panel'), {notice});
   const jev = jevSettingsPanel(api, $('config-jev-panel'), {notice});
   const readiness = readinessPanel(api, $('config-readiness-panel'), {
     getSettings: async () => {
       if (!candidate) return {};
       const snapshot = await api.workspaceSnapshot(candidate),
         profile = snapshot.workspace;
-      return {provider: profile.agentSettings.provider, chromeProfile: profile.chromeProfile};
+      return {
+        provider: profile.agentSettings.provider,
+        chromeProfile: profile.chromeProfile,
+        decisions: profile.agentSettings.decisions ?? 'jev',
+      };
     },
   });
   const dataPanel = api.dataStatus ? createDataManagement(api, {notice}) : null;
@@ -256,6 +263,7 @@ export function configPage(api, {notice, relativeTime, openNotifications}) {
   dataDisclosure($('config-privacy-panel'));
   function loadSettings() {
     captcha.load();
+    siteAccounts.load();
     jev.load();
     readiness.load();
     dataPanel?.load();

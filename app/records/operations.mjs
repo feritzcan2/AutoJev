@@ -33,9 +33,19 @@ export function recordOperationError(
   a,
   item,
   kind,
-  {manual = false, digest, direct = false, now = Date.now()} = {},
+  {manual = false, digest, direct = false, now = Date.now(), dryRun = false} = {},
 ) {
   if (item.trial) return 'No action can run on a research sample';
+  // A developer trial score changes nothing, so it also reads closed records;
+  // only a record being submitted keeps its tab to itself.
+  if (kind === 'score' && dryRun)
+    return item.status === 'executing'
+      ? 'This record is being submitted; run the trial score after the submission'
+      : !automationReady(a)
+        ? 'Check and save the setup first'
+        : pendingRecordQuestion(a, item)
+          ? waitingForAnswer
+          : null;
   if (kind === 'verify')
     return item.status === 'uncertain'
       ? null
@@ -74,7 +84,7 @@ export function enqueueRecordOperation(
   id,
   itemId,
   kind,
-  {manual = true, digest, direct = false, changes = undefined} = {},
+  {manual = true, digest, direct = false, changes = undefined, dryRun = false} = {},
 ) {
   runtime.assertNotStopping(id);
   // Every execute is direct: the agent fills and submits in one task.
@@ -129,7 +139,13 @@ export function enqueueRecordOperation(
       item = db.result(id, itemId),
       op = db.template(a.templateId).recordOperations?.[kind];
     if (!op) throw Error('The template does not support this record operation');
-    const error = recordOperationError(a, item, kind, {manual, digest, direct, now: runtime.now()});
+    const error = recordOperationError(a, item, kind, {
+      manual,
+      digest,
+      direct,
+      now: runtime.now(),
+      dryRun,
+    });
     if (error) throw Error(error);
     const existing = recordTask(db, id, itemId);
     if (existing) {
@@ -138,6 +154,7 @@ export function enqueueRecordOperation(
         !changes &&
         existing.recordOperation === kind &&
         (existing.request?.direct === true) === (direct === true) &&
+        (existing.request?.dryRun === true) === (dryRun === true) &&
         (!digest || existing.request?.digest === digest)
       ) {
         if (manual && existing.state === 'pending' && !existing.request?.manual)
@@ -155,6 +172,8 @@ export function enqueueRecordOperation(
         revision: a.revision,
         ...(kind === 'execute' ? {direct: true} : {}),
         ...(changes ? {changes} : {}),
+        // Development trial score: the record keeps its assessment.
+        ...(dryRun && kind === 'score' ? {dryRun: true} : {}),
         at: runtime.now(),
       };
     const task = queue.enqueue(id, {
@@ -262,6 +281,7 @@ export function validateRecordTask(db, id, task, now) {
       digest: request.digest,
       direct: request.direct,
       now,
+      dryRun: request.dryRun === true,
     });
     if (error)
       throw Object.assign(

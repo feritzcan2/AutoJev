@@ -145,13 +145,16 @@ test('first scan covers all pages, subsequent scan uses start watermark with ove
   assert.equal(db.sources(id)[1].scanState, undefined);
 });
 
-test('incremental finish needs current full-page chronology, not known results or a claimed cutoff', async (t) => {
+test('incremental scans always stop at known listings; page dates or a claimed cutoff never end them', async (t) => {
   const {db, id, start, finish, flow, setNow} = fixture(t);
   await finish(start());
   setNow(epoch + 3600000);
   const run = start(),
     worker = flow(run),
     call = (name, args) => worker.call(id, run.id, name, args);
+  // Every source is scanned newest first, whatever its recipe says.
+  assert.equal(db.sources(id)[0].scanState.active.mode, 'incremental');
+  assert.equal(db.sources(id)[0].scanState.active.ordering, 'recipe');
   await call('browser_open', {url: source});
   db.reportPage(
     id,
@@ -178,29 +181,20 @@ test('incremental finish needs current full-page chronology, not known results o
     call('finish_automation_run', {...done, scan: {...done.scan, completion: 'end'}}),
     /last page has not been reached/,
   );
-  // Chronology is app-level checkpoint data, never an agent report.
-  const args = {
-    pendingUrls: [],
-    processedUrls: [source],
-    reason: 'Every card on this page was checked',
-    chronology,
-  };
-  const saved = db.saveScanProgress(id, run.id, args, {url: source, text: snapshot.text});
-  assert.ok(saved.scanPlan.boundary);
+  const saved = db.saveScanProgress(
+    id,
+    run.id,
+    {
+      pendingUrls: [],
+      processedUrls: [source],
+      reason: 'Every card on this page was checked',
+      chronology,
+    },
+    {url: source, text: snapshot.text},
+  );
+  assert.equal(saved.scanPlan.boundary, null, 'page dates never set a cutoff');
   await call('browser_read', {});
   await assert.rejects(call('finish_automation_run', done), /date cutoff was not verified/);
-  assert.equal(db.sources(id)[0].scanState.active.boundary, null);
-  await call('browser_read', {});
-  db.saveScanProgress(id, run.id, args, {url: source, text: snapshot.text});
-  await assert.rejects(
-    call('finish_automation_run', {...done, goalReached: true}),
-    /goal is finished/,
-  );
-  await call('finish_automation_run', done);
-  const state = db.sources(id)[0].scanState;
-  assert.equal(state.lastSuccessfulStartAt, epoch + 3600000);
-  assert.equal(state.lastFullScanAt, epoch);
-  assert.equal(state.active, null);
 });
 
 test('failed, interrupted and restarted workers preserve the exact cycle and cutoff in the database', async (t) => {

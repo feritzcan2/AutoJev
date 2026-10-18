@@ -59,6 +59,47 @@ export function resolveJevReview(items, decisions = []) {
   });
 }
 
+// The agent's answer to a link selection, keyed by detail URL: selected links
+// are read, rejected listings are excluded with the reason, the rest are not
+// listings. Numbers refer to the selection's order.
+export function resolveLinkSelection(links, selected = [], review = []) {
+  const fail = (message) => {
+    throw jevReviewRequired(
+      `${message} Read the current linkSelection with read_jev_task(taskId); send selected=[item numbers] and review=[{item,decision:"reject",reason}].`,
+    );
+  };
+  if (!Array.isArray(selected) || !Array.isArray(review))
+    fail('selected and review must be lists.');
+  const decisions = {},
+    key = (item, field) => {
+      if (!Number.isInteger(item) || item < 1 || item > links.length)
+        fail(
+          `${field}: item must be within 1–${links.length}; given: ${String(item).slice(0, 30)}.`,
+        );
+      const value = jevDetailKey(links[item - 1].url);
+      if (decisions[value]) fail(`${field}: item ${item} was already chosen; send one decision.`);
+      return value;
+    };
+  for (const [position, item] of selected.entries())
+    decisions[key(item, `selected[${position}]`)] = {kind: 'read'};
+  for (const [position, decision] of review.entries()) {
+    if (!decision || typeof decision !== 'object' || decision.url !== undefined)
+      fail(`review[${position}]: choose the link by its item number.`);
+    if (
+      decision.decision !== 'reject' ||
+      typeof decision.reason !== 'string' ||
+      !decision.reason.trim() ||
+      decision.reason.length > 1500
+    )
+      fail(`review[${position}]: a link is rejected with decision "reject" and a reason.`);
+    decisions[key(decision.item, `review[${position}]`)] = {
+      kind: 'reject',
+      reason: decision.reason.trim(),
+    };
+  }
+  return decisions;
+}
+
 // A local review can retire saved records or explicitly acknowledged exclusions.
 // It cannot manufacture a new browser observation or complete source coverage.
 export function reviewJevBatch(db, owner, runId, taskId, batchId, decisions = []) {

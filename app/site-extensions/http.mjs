@@ -15,7 +15,10 @@ const BLOCKED_STATUSES = new Set([403, 429, 999]);
 const MISSING_STATUSES = new Set([404, 410]);
 
 /**
- * Fetches `target` for the page requested as `url`. Resolves with the response
+ * Fetches `target` for the page requested as `url` (a GET, or the `method` and
+ * `body` a site's own search endpoint needs). `minIntervalMs` is the site's
+ * stated minimum spacing between requests (a robots.txt crawl delay), applied by
+ * the shared pacing. Resolves with the response
  * (status 404/410 included, so the reader can say the listing is gone); any
  * other failure is an error carrying `url`.
  */
@@ -30,16 +33,21 @@ export async function siteFetch(
     url = target,
     headers = READER_HEADERS,
     timeoutMs = 15000,
+    method = 'GET',
+    body = undefined,
+    minIntervalMs = 0,
   } = {},
 ) {
   const token = siteAccess?.begin(target) ?? null;
-  const delay = siteAccess?.pace(target) ?? 0;
+  const delay = siteAccess?.pace(target, minIntervalMs) ?? 0;
   if (delay) {
     await wait(delay);
     signal?.throwIfAborted();
   }
   const response = await fetch(target, {
+    method,
     headers,
+    body,
     redirect: 'follow',
     signal: signal
       ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])

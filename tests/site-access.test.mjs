@@ -383,6 +383,31 @@ test('every site keeps eight seconds between navigations; one that rate-limited 
   }
 });
 
+test("a site's own minimum spacing (crawl delay) paces every request, not only after an incident", () => {
+  const db = new DatabaseSync(':memory:');
+  let now = 1_000_000;
+  const gate = new SiteAccess(db, {now: () => now});
+  try {
+    // A stated gap above the minimum gap every site keeps.
+    assert.equal(gate.pace('https://slow.test/a', 20000), 0, 'the first request leaves at once');
+    assert.equal(gate.pace('https://slow.test/b', 20000), 20000, 'the next keeps the stated gap');
+    assert.equal(gate.pace('https://slow.test/c', 20000), 40000, 'concurrent callers queue');
+    assert.equal(gate.pace('https://other.test/', 0), 0, 'other sites never wait');
+    now += 60000;
+    assert.equal(gate.pace('https://slow.test/d', 20000), 0, 'elapsed time frees the slot');
+    gate.block('https://slow.test/', 'rate_limit');
+    now += 6 * minute;
+    gate.pace('https://slow.test/e', 20000);
+    assert.equal(
+      gate.pace('https://slow.test/f', 1000),
+      10000,
+      'after an incident the larger gap applies',
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test('repeated transport failures across a site start a shared wait; one address or a success does not', () => {
   const db = new DatabaseSync(':memory:');
   let now = 100000;

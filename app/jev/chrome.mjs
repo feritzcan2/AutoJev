@@ -58,10 +58,13 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
     res.end(
       '<!doctype html><title>AutoJev · Jev</title><p>AutoJev is connecting to the existing Chrome session…</p>' +
         (observeFocus
-          ? `<script nonce="${nonce}">
-      let previous;
-      const report=()=>{const active=document.visibilityState==='visible'&&document.hasFocus();if(active===previous)return;previous=active;fetch(location.pathname+(active?'/focused':'/blurred'),{method:'POST',keepalive:true}).catch(()=>{previous=undefined;});};
-      addEventListener('focus',report);addEventListener('blur',report);document.addEventListener('visibilitychange',report);
+          ? // Browser UI (address bar, an extension bubble or panel) can keep keyboard
+            // focus in the new active window, so the page may never get focus. A
+            // visible page that has not lost focus since it opened is ready.
+            `<script nonce="${nonce}">
+      let previous,left=false;
+      const report=()=>{const active=document.visibilityState==='visible'&&(document.hasFocus()||!left);if(active===previous)return;previous=active;fetch(location.pathname+(active?'/focused':'/blurred'),{method:'POST',keepalive:true}).catch(()=>{previous=undefined;});};
+      addEventListener('focus',report);addEventListener('blur',()=>{left=true;report();});document.addEventListener('visibilitychange',report);
       addEventListener('pagehide',()=>fetch(location.pathname+'/blurred',{method:'POST',keepalive:true}).catch(()=>{}));report();
     </script>`
           : ''),
@@ -97,8 +100,11 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
           timer = setTimeout(
             () =>
               finish(
-                Error(
-                  'The selected Chrome profile is not ready. Bring the opened AutoJev window to the front and reconnect.',
+                Object.assign(
+                  Error(
+                    'The selected Chrome profile is not ready. Bring the opened AutoJev window to the front and reconnect.',
+                  ),
+                  {code: 'PROFILE_NOT_READY'},
                 ),
               ),
             timeout,

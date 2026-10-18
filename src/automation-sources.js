@@ -13,6 +13,7 @@ import {
 } from '../app/site-extensions/search.mjs';
 import {workspaceSourceTabs} from './workspace-tabs.js';
 import {positionMenu} from './popover-menu.js';
+import {extensionBenchAvailable, extensionBenchPanel} from './extension-bench.js';
 
 const paginationLabels = {
   auto: 'Detect automatically',
@@ -121,7 +122,10 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     order = null,
     adding = false,
     saving = false,
-    bulkSaving = false;
+    bulkSaving = false,
+    benchAvailable = false,
+    benchSource = null,
+    headBench = null;
   host.innerHTML =
     '<div class="sources-head"><div><h2>Sources</h2><p></p></div><div class="sources-head-actions"></div></div><div data-add></div><ul class="source-list"></ul>';
   const head = host.querySelector('.sources-head'),
@@ -195,6 +199,42 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     discover.dataset.sourceDiscover = '';
     headActions.append(discover);
   }
+  // Development builds: the extension test bench, for any address or one source.
+  const benches = new Map();
+  const benchFor = (url) => {
+    if (!benches.has(url))
+      benches.set(
+        url,
+        extensionBenchPanel(api, {
+          scope: () => owner,
+          url,
+          onClose: () => {
+            benchSource = null;
+            render();
+          },
+        }),
+      );
+    return benches.get(url);
+  };
+  extensionBenchAvailable(api).then((available) => {
+    if (!available || !host.isConnected) return;
+    benchAvailable = true;
+    const toggle = button('Test bench', () => {
+      if (headBench?.element.isConnected) {
+        headBench.element.remove();
+        return;
+      }
+      headBench ??= extensionBenchPanel(api, {
+        scope: () => owner,
+        onClose: () => headBench.element.remove(),
+      });
+      head.after(headBench.element);
+      headBench.focus();
+    });
+    toggle.title = 'Read an address with the site extensions, without agents or records.';
+    headActions.append(toggle);
+    if (data) render();
+  });
 
   // Bulk settings fold away; a single form applies the interval to every source.
   const bulk = el('details', null, 'source-bulk');
@@ -310,6 +350,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       restart: button('Start over', () => {}, 'source-restart'),
       edit: button('', () => {}, 'source-edit'),
       memoryButton: button('', () => {}, 'source-memory-toggle'),
+      bench: button('Test extension', () => {}, 'source-bench-toggle'),
       pending: null,
     };
     view.toggle.type = 'checkbox';
@@ -332,7 +373,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     menu.addEventListener('click', (event) => {
       if (event.target.closest('button') && menu.matches(':popover-open')) menu.hidePopover();
     });
-    menu.append(view.edit, view.memoryButton, view.restart);
+    menu.append(view.edit, view.memoryButton, view.bench, view.restart);
     // Clicking the row's text opens its details, like the Details action.
     view.main.addEventListener('click', (event) => {
       if (event.target.closest('button,a,input,select,textarea') || getSelection()?.toString())
@@ -390,15 +431,17 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
                 : 'Scanning'
             : source.recovery && data.automation.status === 'enabled'
               ? 'Waiting to continue automatically'
-              : source.blocked
-                ? source.lastStatus === 'failed' || source.blocker?.stop?.kind === 'technical'
-                  ? 'Scan could not finish'
-                  : 'Source blocked'
-                : source.lastStatus === 'partial'
-                  ? `Partial scan · ${plural(source.scan?.pendingUrls.length ?? 0, 'address', 'addresses')} left`
-                  : (source.lastRun?.finishedAt ?? source.lastRunAt)
-                    ? `${plural(source.resultCount ?? source.lastFound ?? 0, 'record')} in total`
-                    : 'Not scanned yet';
+              : source.termsRequired
+                ? 'Search terms required'
+                : source.blocked
+                  ? source.lastStatus === 'failed' || source.blocker?.stop?.kind === 'technical'
+                    ? 'Scan could not finish'
+                    : 'Source blocked'
+                  : source.lastStatus === 'partial'
+                    ? `Partial scan · ${plural(source.scan?.pendingUrls.length ?? 0, 'address', 'addresses')} left`
+                    : (source.lastRun?.finishedAt ?? source.lastRunAt)
+                      ? `${plural(source.resultCount ?? source.lastFound ?? 0, 'record')} in total`
+                      : 'Not scanned yet';
     if (source.siteWait && !source.siteWait.exhausted) status.dataset.state = 'waiting';
     status.append(el('b', state));
     const outcome = source.lastRun ?? {
@@ -427,7 +470,12 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
           (scanPageLabel(source.pageProgress)
             ? 'Last verified: ' + scanPageLabel(source.pageProgress)
             : null))
-      : (source.siteWait?.message ?? outcome.summary ?? null);
+      : (source.siteWait?.message ??
+        (source.termsRequired
+          ? 'The search address takes {query}. Add search terms to the recipe, or ask the setup chat to choose them.'
+          : null) ??
+        outcome.summary ??
+        null);
     if (detail) {
       const small = el('small', detail);
       small.title = source.scanIssue?.evidence ?? detail;
@@ -447,15 +495,20 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         'b',
         !source.enabled
           ? 'Off'
-          : source.blocked
-            ? 'Paused until a retry'
-            : data.automation.status !== 'enabled'
-              ? 'Tracking paused'
-              : 'Next scan',
+          : source.termsRequired
+            ? 'On hold'
+            : source.blocked
+              ? 'Paused until a retry'
+              : data.automation.status !== 'enabled'
+                ? 'Tracking paused'
+                : 'Next scan',
       );
     const nextAt = source.enabled
       ? (source.siteWait?.retryAt ??
-        (!source.scanning && !source.blocked && data.automation.status === 'enabled'
+        (!source.scanning &&
+        !source.blocked &&
+        !source.termsRequired &&
+        data.automation.status === 'enabled'
           ? source.nextRunAt
           : null))
       : null;
@@ -479,6 +532,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       stated =
         source.scanning ||
         source.blocked ||
+        source.termsRequired ||
         source.siteWait ||
         source.recovery ||
         source.lastStatus === 'partial';
@@ -653,9 +707,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       lines.push(
         'Pagination: ' +
           paginationLabels[source.recipe.pagination ?? 'auto'] +
-          (source.recipe.ordering === 'newest_first'
-            ? ' · Newest first; repeat scans stop at known listings'
-            : '') +
+          ' · Newest first; repeat scans stop at known listings' +
           ` · Each search reads up to ${SCAN_SEARCH_LISTINGS} new listings or ${SCAN_SEARCH_PAGES} pages`,
       );
     if (rs?.verifiedAt)
@@ -779,7 +831,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       el('summary', 'Tracking rule'),
       el(
         'p',
-        'In the first round the source is tried, the recipe is saved and nothing is submitted. All pages are scanned in the next first scan and every 7 days. In other rounds, if the date ordering is reliable, listings are checked back to 24 hours before the start of the last successful round. If the recipe gives no results in two consecutive rounds, the source is learned again.',
+        'In the first round the source is tried, the recipe is saved and nothing is submitted. All pages are scanned in the next first scan and every 7 days. In other rounds each search reads newest first and stops after two consecutive pages of listings it already knows. If the recipe gives no results in two consecutive rounds, the source is learned again.',
       ),
     );
     section.append(rules);
@@ -802,7 +854,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         : '';
     f.terms.value = recipe?.terms?.join(', ') ?? '';
     f.pagination.value = recipe?.pagination ?? 'auto';
-    f.ordering.value = recipe?.ordering ?? 'unknown';
     f.notes.value = recipe?.notes ?? '';
     syncRecipeFields(form);
   }
@@ -810,10 +861,9 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     const method = form.elements.method.value;
     form.querySelector('[data-recipe-template]').hidden = method !== 'url_template';
     form.querySelector('[data-recipe-form]').hidden = method !== 'search_form';
-    form.querySelector('[data-recipe-terms]').hidden =
-      form.querySelector('[data-recipe-pagination]').hidden =
-      form.querySelector('[data-recipe-ordering]').hidden =
-        !['url_template', 'search_form'].includes(method);
+    form.querySelector('[data-recipe-terms]').hidden = form.querySelector(
+      '[data-recipe-pagination]',
+    ).hidden = !['url_template', 'search_form'].includes(method);
     form.querySelector('[data-recipe-notes]').hidden = method === 'none';
     form.querySelector('[data-recipe-site]').hidden = method !== 'url_template' || !form.siteSearch;
     form.elements.template.required = method === 'url_template';
@@ -841,7 +891,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     const base = {
       pagination: f.pagination.value,
       ...keep,
-      ...(f.ordering.value === 'newest_first' ? {ordering: 'newest_first'} : {}),
       ...(terms.length ? {terms} : {}),
       ...(f.notes.value.trim() ? {notes: f.notes.value.trim()} : {}),
     };
@@ -896,7 +945,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     f.template.addEventListener('input', sync);
     const use = button('Use the site template', () => {
       f.template.value = search.template;
-      f.ordering.value = search.ordering ?? 'unknown';
       f.pagination.value = search.pagination ?? 'auto';
       sync();
     });
@@ -924,7 +972,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
 <div class="source-editor-wide source-recipe-form" data-recipe-form><label>Search form page<input name="formUrl" type="url" placeholder="https://site/jobs"></label><label>Search field label<input name="queryLabel" maxlength="120" placeholder="Stichwort"></label><label>Location field label (optional)<input name="locationLabel" maxlength="120" placeholder="Ort"></label></div>
 <label class="source-editor-wide" data-recipe-terms>Search terms<input name="terms" maxlength="500" placeholder="Compliance, AI Governance, Data Protection" spellcheck="false"><small>If the search scope is not a keyword, write up to 5 comma-separated terms; each term becomes a separate search.</small></label>
 <label data-recipe-pagination>Pagination<select name="pagination"></select></label>
-<label data-recipe-ordering>Ordering<select name="ordering"><option value="unknown">Unknown</option><option value="newest_first">Newest first · stops at known listings</option></select></label>
 <label class="source-editor-wide" data-recipe-notes>Note to the agent<textarea name="notes" maxlength="1000" placeholder="Filters, ordering, things to watch out for…"></textarea></label>
 <label class="source-editor-wide">Working instructions<textarea name="instructions" maxlength="6000" placeholder="Extra rules for this source (optional)"></textarea></label></fieldset>
 <div class="source-editor-foot"></div>`;
@@ -943,7 +990,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     f.instructions.value = source?.instructions ?? '';
     siteSearchFields(form, source?.extension?.search ?? null);
     recipeFields(form, source?.recipe ?? null);
-    f.method.onchange = f.ordering.onchange = () => syncRecipeFields(form);
+    f.method.onchange = () => syncRecipeFields(form);
     if (source) {
       const relearn = button('Relearn', async () => {
         await api.automationSourceRelearn(scope, source.url);
@@ -1252,6 +1299,15 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         render();
       });
       memoryButton.setAttribute('aria-expanded', String(memoryOpen));
+      const benchOpen = benchAvailable && benchSource === source.url;
+      view.bench.hidden = !benchAvailable;
+      view.bench.textContent = benchOpen ? 'Close test bench' : 'Test extension';
+      view.bench.onclick = (event) => {
+        event.preventDefault();
+        benchSource = benchOpen ? null : source.url;
+        render();
+        if (!benchOpen) benchFor(source.url).open(source.url);
+      };
       tabHosts.set(source.url, tabHost);
       row.querySelector(':scope > .source-memory')?.remove();
       if (!open) row.querySelector(':scope > .source-editor')?.remove();
@@ -1268,8 +1324,14 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
               : null,
           pending = details.querySelector('.source-progress-pending');
         if (previousPending && pending) pending.open = previousPending.open;
-        row.append(details);
+        // Before an open bench, which is never moved: moving it would drop its focus.
+        const bench = benches.get(source.url)?.element;
+        row.insertBefore(details, bench?.parentElement === row ? bench : null);
       }
+      if (benchOpen) {
+        const panel = benchFor(source.url).element;
+        if (panel.parentElement !== row) row.append(panel);
+      } else benches.get(source.url)?.element.remove();
     }
     if (!sources.length) {
       if (!empty.isConnected) list.insertBefore(empty, otherHost);
@@ -1290,6 +1352,11 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         adding = false;
         addHost.replaceChildren();
         bulkForm.reset();
+        benchSource = null;
+        for (const bench of benches.values()) bench.element.remove();
+        benches.clear();
+        headBench?.element.remove();
+        headBench = null;
         for (const view of rows.values()) view.row.remove();
         rows.clear();
         order = null;

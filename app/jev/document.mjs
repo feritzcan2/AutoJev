@@ -338,6 +338,7 @@ export async function documentObservation(slot, value) {
     pagination,
     canonicalUrl: document.canonicalUrl,
     ...(document.siteExtension ? {siteExtension: document.siteExtension} : {}),
+    ...(document.paginationBy ? {paginationBy: document.paginationBy} : {}),
     ...(listing ? {listing} : {}),
     reading: {
       scope: 'rendered_document',

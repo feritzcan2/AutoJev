@@ -10,6 +10,8 @@ import {
 } from './record-operation-status.js';
 import {recordTabs} from './workspace-tabs.js';
 import {scoreBreakdown} from './score-breakdown.js';
+import {devToolsAvailable} from './agent-trace.js';
+import {recordDevPanel} from './record-dev-panel.js';
 const el = (tag, text, cls) => {
   const node = document.createElement(tag);
   if (text != null) node.textContent = text;
@@ -417,6 +419,16 @@ export function automationResultsTable(
       positionMenu(panel, panel.closest('[data-result-id]').querySelector('.record-row-menu'));
   }
 
+  // Development builds: a developer section per record, kept across rebuilds.
+  let devAvailable = false;
+  const devPanels = new Map();
+  void devToolsAvailable(api).then((available) => {
+    devAvailable = available;
+    if (available && detailId) {
+      renderKeys.delete(drawer);
+      renderDrawer();
+    }
+  });
   // The record's summary, assessment and notes, shown in the side panel.
   function detailContent(result) {
     const cell = el('div');
@@ -464,6 +476,16 @@ export function automationResultsTable(
       cell.append(el('h3', 'Last record operation'), el('p', result.recordAction.lastTask.summary));
     if (result.evidence)
       cell.append(el('h3', 'Outcome evidence'), el('blockquote', result.evidence));
+    if (devAvailable) {
+      if (!devPanels.has(result.id))
+        devPanels.set(
+          result.id,
+          recordDevPanel(api, {workspace: () => data.automation.id, recordId: result.id}),
+        );
+      const panel = devPanels.get(result.id);
+      panel.update(result);
+      cell.append(panel.element);
+    }
     return cell;
   }
 
