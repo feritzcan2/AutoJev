@@ -223,7 +223,7 @@ test('reads go through the shared site access rules and keep the queued address'
   await assert.rejects(readJobindex('https://www.jobindex.dk/'), /does not handle/);
 });
 
-test('redirects: the archive is not fetched, an employer page keeps the Jobindex address', async () => {
+test('redirects: the archive is not fetched, an employer page is read only for its JobPosting', async () => {
   const requested = [];
   const redirecting = (location, final) => async (url) => {
     requested.push(url);
@@ -247,11 +247,10 @@ test('redirects: the archive is not fetched, an employer page keeps the Jobindex
     ),
   });
   assert.deepEqual(requested, [ad, employer]);
-  assert.equal(external.url, ad);
-  assert.equal(external.listing, undefined);
-  assert.match(
-    external.text,
-    /published on the employer's site: https:\/\/jobs\.example\.com\/job\/42/,
+  assert.equal(
+    external,
+    null,
+    'a page that may render its ad with scripts is left to the browser tab',
   );
 
   const body = 'Build release pipelines for our robots and own the release calendar. '.repeat(4);

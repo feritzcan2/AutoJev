@@ -57,6 +57,9 @@ test('the catalog lists each ready board once, with its countries as choices', (
   const himalayas = catalog.find((g) => g.name === 'Himalayas').choices[0];
   assert.deepEqual([himalayas.remote, himalayas.label], [true, 'Remote only']);
   assert.equal(indeed.choices[0].remote, undefined);
+  const adzuna = catalog.find((g) => g.name === 'Adzuna').choices[0];
+  assert.deepEqual([adzuna.enabled, adzuna.account], [false, true], 'an API needing a key is off');
+  assert.equal(indeed.choices[0].enabled, undefined);
   const firstGlobal = catalog.findIndex((g) => !g.choices[0].countries.length);
   assert.ok(firstGlobal > 0);
   assert.ok(catalog.slice(0, firstGlobal).every((g) => g.choices[0].countries.includes('DE')));

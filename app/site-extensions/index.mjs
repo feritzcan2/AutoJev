@@ -7,7 +7,9 @@
 //   runs inside the page and must be self-contained; results(raw) returns
 //   {listings:[{url,text}],pagination} or null (the generic reader keeps the page).
 // - http: {handles(url), read(url, options)} replaces the browser tab for the
-//   addresses it handles and returns ordinary Jev page objects.
+//   addresses it handles and returns ordinary Jev page objects, or null for an
+//   address it finds it cannot read without a browser (a redirect to another
+//   site that renders its content with scripts); the browser tab reads it then.
 // - collector: {templateId,searchUrl,acceptsQuery,readPage,readDetail,detail}
 //   reads an API; the shared source worker queues its listings for Jev.
 // Optionally `credentials` ({label, help, signupUrl, fields:[{key,label}]}) for

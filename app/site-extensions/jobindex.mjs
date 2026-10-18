@@ -233,7 +233,10 @@ export function parseJobindexAd(html) {
 }
 
 // external: the employer address a listing redirected to; archived: Jobindex
-// redirected it to its archive (expired).
+// redirected it to its archive (expired). An employer page without a
+// JobPosting is left to the browser tab (null): many render the ad with
+// scripts (an HR system's component, observed 2026-10-17), so its fetched HTML
+// holds only the site's menus.
 export function jobindexDetailPage(url, html, {external = null, archived = false} = {}) {
   if (archived || !html.trim())
     return readerPage({
@@ -246,7 +249,8 @@ export function jobindexDetailPage(url, html, {external = null, archived = false
     });
   const posting = jobPostingPage({url, browser: BROWSER, ...jobPostingHtml(html)});
   if (posting) return posting;
-  const ad = external ? null : parseJobindexAd(html);
+  if (external) return null;
+  const ad = parseJobindexAd(html);
   if (ad?.description) {
     const read = listingPage({
       browser: BROWSER,
@@ -258,14 +262,7 @@ export function jobindexDetailPage(url, html, {external = null, archived = false
     if (read.listing) return read;
   }
   const text = htmlPage(html);
-  return readerPage({
-    browser: BROWSER,
-    url,
-    title: htmlTitle(html) || 'Jobindex',
-    text: external
-      ? `This Jobindex listing is published on the employer's site: ${external}\n\n${text}`
-      : text,
-  });
+  return readerPage({browser: BROWSER, url, title: htmlTitle(html) || 'Jobindex', text});
 }
 
 export async function readJobindex(url, options = {}) {
@@ -285,7 +282,7 @@ export async function readJobindex(url, options = {}) {
     return jobindexSearchPage(url, await feedText(response));
   }
   // The first answer's redirect is read here: the archive is not fetched, and
-  // the employer address is kept for the page text. The read keeps `url`.
+  // an employer page is read only for its JobPosting. The read keeps `url`.
   const fetch = options.fetch ?? globalThis.fetch;
   let external = null,
     archived = false;

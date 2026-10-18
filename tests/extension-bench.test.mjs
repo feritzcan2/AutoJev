@@ -157,6 +157,25 @@ test(
   ),
 );
 
+test(
+  'an address the HTTP reader leaves to the browser (null) is read in the tab',
+  withExtension(
+    {
+      id: 'bench-http-moved',
+      matches: host('moved.bench.test'),
+      http: {handles: () => true, read: async () => null},
+    },
+    async () => {
+      const calls = [];
+      const url = 'https://moved.bench.test/job/1';
+      const browser = fakeBrowser({pages: [page({url})], calls});
+      const read = await extensionBench({browser, db: db()}).read('w', url);
+      assert.equal(read.transport, 'browser');
+      assert.equal(calls[0][0], 'browser_jev_open');
+    },
+  ),
+);
+
 const page = ({url, loading = false, siteExtension, links = []}) => ({
   tabId: 'tab-1',
   url,

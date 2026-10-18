@@ -19,6 +19,8 @@ import {domainData} from '../workspaces/store.mjs';
 import {contextCompactTokens} from '../agents/context-compaction.mjs';
 import {contextRestartTokens} from '../agents/context-usage.mjs';
 import {randomUUID} from 'node:crypto';
+import {siteKey} from '../browser/site-key.mjs';
+import {recipeNeedsTerms} from '../sources/recipe.mjs';
 import {
   reusableTemplate,
   planInput,
@@ -334,12 +336,32 @@ export class AutomationStore {
     let a = this.get(id);
     const base = a.profileUpdate ? {...a, ...a.profileUpdate.plan} : a,
       previous = a.planDraft?.baseRevision === a.revision ? {...base, ...a.planDraft.plan} : base;
-    const plan = planInput(this.template(a.templateId), input, {
+    const template = this.template(a.templateId),
+      plan = planInput(template, input, {
         ...previous,
         sources: a.sourceDraft?.sources ?? a.sources,
       }),
       profile = profilePlan(plan),
       updatedAt = this.now();
+    // The initial setup adds the template's sources for a newly saved target
+    // country itself, so they get their search terms in the same setup.
+    const country = String(plan.criteria?.country ?? '').toUpperCase();
+    if (
+      onboarding &&
+      country &&
+      country !== String(previous.criteria?.country ?? '').toUpperCase()
+    ) {
+      const sites = new Set(plan.sources.map(siteKey));
+      for (const source of template.defaultSources ?? [])
+        if (
+          source.enabled &&
+          source.countries?.includes(country) &&
+          !sites.has(siteKey(source.url))
+        ) {
+          sites.add(siteKey(source.url));
+          plan.sources = [...plan.sources, source.url];
+        }
+    }
     if (onboarding) a = this.save(id, profile, {agent: true});
     else if (profileChanged(profile, base))
       a.planDraft = {plan: profile, baseRevision: a.revision, runId, updatedAt};
@@ -360,13 +382,21 @@ export class AutomationStore {
     // profile; the user reviews them on the onboarding form.
     if (onboarding) {
       if (changed) this.resolveSourceDraft(id, a.sourceDraft.id, true);
+      const saved = this.get(id),
+        withoutTerms = this.sourceSearchOptions(id, saved.sources)
+          .filter(({url}) => recipeNeedsTerms(saved.sourceSettings?.[url]?.recipe))
+          .map(({url}) => url);
       return {
         saved: true,
         draft: false,
         plan,
         applied: true,
+        ...(withoutTerms.length ? {sourcesWithoutTerms: withoutTerms} : {}),
         message:
-          'Saved. During the initial setup the profile, sources and source searches apply right away; the user reviews them on the onboarding form.',
+          'Saved. During the initial setup the profile, sources and source searches apply right away; the user reviews them on the onboarding form.' +
+          (withoutTerms.length
+            ? ' sourcesWithoutTerms have no search terms yet and will not scan without them: read get_automation_context section profile (sourceSearch notes say what {query} takes, in the site language) and set their terms with sourceSearches.'
+            : ''),
       };
     }
     return {

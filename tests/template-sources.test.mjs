@@ -218,3 +218,28 @@ test('Arbeitnow joins a workspace through the feed of its own country', () => {
       `https://${new URL(feed.url).hostname}/api/job-board-api`,
     );
 });
+test('a starting source added later takes the search terms the workspace sources share', (t) => {
+  const db = fixture(t),
+    a = db.create('job-search'),
+    sources = db.template('job-search').defaultSources,
+    url = (name) => sources.find((s) => s.name === name).url,
+    withTerms = (name, terms) =>
+      db.saveSource(a.id, url(name), {
+        recipe: {...db.get(a.id).sourceSettings[url(name)].recipe, terms},
+      });
+  withTerms('LinkedIn', ['Staff Engineer', 'Backend Engineer']);
+  withTerms('Workable', ['Staff Engineer', 'Backend Engineer']);
+  withTerms('Company career pages', ['Staff Engineer jobs London']);
+  db.saveSources(a.id, [...db.get(a.id).sources, url('Jobindex')]);
+  assert.deepEqual(db.get(a.id).sourceSettings[url('Jobindex')].recipe.terms, [
+    'Staff Engineer',
+    'Backend Engineer',
+  ]);
+  const fresh = db.create('job-search');
+  db.saveSources(fresh.id, [...fresh.sources, url('Jobindex')]);
+  assert.equal(
+    db.get(fresh.id).sourceSettings[url('Jobindex')].recipe.terms,
+    undefined,
+    'without shared terms the source waits for its own',
+  );
+});
