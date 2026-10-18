@@ -377,6 +377,28 @@ test('a scan retries after five and ten minutes, stops on the third incident, an
   assert.equal(f.launches.at(-1).taskId, blocked.run.taskId);
 });
 
+test('Retry resumes a source whose exhausted wait was already retired elsewhere', async (t) => {
+  const f = fixture(t),
+    blocked = await f.block();
+  const exhausted = {...f.db.siteAccess.status(source), attempts: 3};
+  f.db.siteAccess.save({...f.db.siteAccess.row(source), attempts: 3});
+  f.runtime.sourceState(f.id, source, {
+    accessRecovery: {...f.runtime.sourceAccess.current(f.id, source), retryAt: null},
+  });
+  // A record retry on the same site retires the shared wait first.
+  f.db.siteAccess.acknowledge([exhausted]);
+  assert.equal(f.db.siteAccess.status(source), null);
+  f.setNow(f.now() + 86400000);
+  await f.runtime.tick();
+  await settle();
+  assert.equal(f.launches.filter((r) => r.sourceUrl === source).length, 1, 'no automatic resume');
+  f.store.workspaces.workers.add(f.id);
+  await f.runtime.runSource(f.id, source);
+  await settle();
+  assert.equal(f.launches.at(-1).sourceUrl, source);
+  assert.equal(f.launches.at(-1).taskId, blocked.run.taskId, 'continues from the saved point');
+});
+
 test('pause and source disable cancel automatic access resumption until enabled again', async (t) => {
   for (const pause of [true, false]) {
     const f = fixture(t),

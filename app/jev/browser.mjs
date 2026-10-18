@@ -108,7 +108,7 @@ export class JevBrowser {
       onTabsClosed = () => {},
     } = {},
   ) {
-    this.siteAccess = siteAccess;
+    this.sharedSiteAccess = siteAccess;
     this.autoVerify = autoVerify;
     this.accountVault = accountVault;
     this.directory = directory;
@@ -565,6 +565,13 @@ export class JevBrowser {
       this.busy = false;
     }
   }
+  // Site waits of the lane of the current call (scan or application).
+  get siteAccess() {
+    return this.sharedSiteAccess?.forLane(this.siteLane);
+  }
+  set siteAccess(value) {
+    this.sharedSiteAccess = value;
+  }
   tab(id) {
     if (/^\d+$/.test(id))
       throw Object.assign(
@@ -1005,6 +1012,23 @@ export class JevBrowser {
               'No file chooser opened. Use browser_upload_document (direct Jev: browser_jev_upload) with the uploadId from the current uploads list and the document path in the workspace. Do not repeat the normal click.',
           };
       }
+    if (action.kind === 'click') {
+      // Chrome hands an email or phone link to another app; the page never changes.
+      const external = await slot.page
+        .evaluate((node) => {
+          const href = window.__jevFast?.nodes.get(node)?.closest('a[href]')?.href ?? '';
+          return /^(mailto|tel):/i.test(href) ? href : null;
+        }, action.node)
+        .catch(() => null);
+      if (external)
+        return {
+          ...(await this.observe(slot)),
+          status: 'unsupported',
+          executed: false,
+          external,
+          message: `This link opens ${external} in the computer's email or phone app; no web page or form opens. If it is the apply control, the site takes applications by email to that address: report that as the blocker with the address. Do not click it again.`,
+        };
+    }
     const repeatKey = JSON.stringify([action.kind, action.node, action.value, action.delta, text]),
       before = progressKey(observed);
     if (action.kind !== 'wait' && blockedRepeat(slot, repeatKey, before))
@@ -1180,6 +1204,7 @@ export class JevBrowser {
         ? AbortSignal.any([this.abort.signal, state.signal])
         : this.abort.signal;
       this.readSignal.throwIfAborted();
+      this.siteLane = state.siteLane;
       if (name === 'browser_jev_open') {
         checkedUrl(args.url);
         const wait = this.siteAccess?.status(args.url);
@@ -1929,6 +1954,7 @@ export class JevBrowser {
     } finally {
       await releaseRendering?.();
       this.readSignal = null;
+      this.siteLane = undefined;
       this.busy = false;
     }
   }

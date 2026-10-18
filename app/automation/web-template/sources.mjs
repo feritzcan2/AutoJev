@@ -95,10 +95,25 @@ export const sourceMethods = {
     if (source.termsRequired) throw Error(TERMS_REQUIRED);
     if (this.slots(id).some((s) => s.run.sourceUrl === url))
       throw Error('This source is already running');
+    // A source waiting on an access block continues from its saved point. The
+    // shared wait may already be gone (another workspace or a record retry
+    // retired it); the source still waits for this Retry.
+    if (
+      source.accessRecovery?.state === 'waiting' &&
+      (!source.siteWait?.waiting || source.siteWait.exhausted)
+    )
+      return this.sourceAccess.resume(id, url, source.accessRecovery.runId);
     if (source.siteWait?.exhausted) {
-      if (source.accessRecovery?.state === 'waiting')
-        return this.sourceAccess.resume(id, url, source.accessRecovery.runId);
-      this.db.siteAccess.acknowledge(source.accessRecovery?.waits ?? [source.siteWait]);
+      // The site waits are shared across workspaces, so the recorded wait can be
+      // older than the one on screen. Retry acknowledges the current wait.
+      this.db.siteAccess.acknowledge(
+        [
+          source.siteWait,
+          ...(source.accessRecovery?.waits ?? []).map((w) =>
+            this.db.siteAccess.forLane(w.lane).status('https://' + w.site),
+          ),
+        ].filter(Boolean),
+      );
       this.sourceState(id, url, {accessRecovery: null});
     }
     const a = this.db.get(id);

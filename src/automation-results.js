@@ -58,6 +58,21 @@ const storedPageSize = () => {
     return undefined;
   }
 };
+// The sort is remembered per automation, like the page size.
+const sortStorageKey = (id) => 'recordSort:' + id;
+const storedSort = (id) => {
+  try {
+    const value = JSON.parse(localStorage.getItem(sortStorageKey(id)));
+    return typeof value?.key === 'string' && [1, -1].includes(value.direction) ? value : null;
+  } catch {
+    return null;
+  }
+};
+// Empty or non-numeric values sort last.
+const sortNumber = (value) =>
+  value == null || String(value).trim() === '' || !Number.isFinite(Number(value))
+    ? null
+    : Number(value);
 const editable = (node) =>
   node instanceof HTMLElement &&
   (node.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(node.tagName));
@@ -76,6 +91,8 @@ export function automationResultsTable(
     detailId = null,
     cursorId = null,
     pageSize = storedPageSize() ?? 25,
+    // Record ids in their last shown order; rows keep it while the pointer is on them.
+    shownOrder = [],
     scrollLeft = 0,
     disposeTable = () => {};
   let batchSubmitting = null,
@@ -188,6 +205,12 @@ export function automationResultsTable(
     } catch {}
     page = 1;
     render();
+  };
+  const pinnedNote = (count) => {
+    const note = el('span', `${count} pinned on top`, 'record-pinned-note');
+    note.title =
+      'Records that need your answer, have an open tab, are working or are queued to apply stay above the sorted records.';
+    return note;
   };
   const setFilter = (value) => {
     filterValue = value;
@@ -590,19 +613,26 @@ export function automationResultsTable(
       sort = shown.some((c) => c.key === 'score') ? 'score' : 'updatedAt';
       direction = -1;
     }
-    const value = (r) =>
-      sort === 'status'
-        ? (recordOperationStatus(r)?.label ?? recordState(r, data.definition).label ?? r.status)
-        : sort === 'updatedAt'
+    const numericColumn = (key) =>
+      key === 'updatedAt' || ['number', 'money'].includes(columns.find((c) => c.key === key)?.type);
+    const numeric = numericColumn(sort) || sort === 'status',
+      states = data.definition?.records?.states ?? [];
+    // Status follows the workflow order of the states, not their labels.
+    const value = (r) => {
+      if (sort === 'status') {
+        const index = states.findIndex((s) => s.id === recordState(r, data.definition).id);
+        return index < 0 ? states.length : index;
+      }
+      const raw =
+        sort === 'updatedAt'
           ? recordActivityAt(r)
           : sort === 'title'
-            ? r[sort]
+            ? r.title
             : sort === 'score' && r.assessment
-              ? (r.assessment.score ?? '')
-              : (r.cells?.[sort] ?? '');
-    const numeric =
-      sort === 'updatedAt' ||
-      ['number', 'money'].includes(columns.find((c) => c.key === sort)?.type);
+              ? r.assessment.score
+              : r.cells?.[sort];
+      return numeric ? sortNumber(raw) : String(raw ?? '').trim() || null;
+    };
     // Queued applications sit right under the running ones.
     const queuedApplication = (result) =>
       result.status !== 'dismissed' &&
@@ -618,17 +648,34 @@ export function automationResultsTable(
             : queuedApplication(result)
               ? 3
               : 4;
+    // Missing values stay last in both directions; ties show the latest activity first.
     results.sort((a, b) => {
       const rank = priority(a) - priority(b);
       if (rank) return rank;
       const av = value(a),
         bv = value(b);
-      if (av === '' || bv === '') return av === bv ? 0 : av === '' ? 1 : -1;
-      return (
-        direction * (numeric ? Number(av) - Number(bv) : collator.compare(av, bv)) ||
-        collator.compare(a.id, b.id)
-      );
+      if (av === null || bv === null) {
+        if (av !== bv) return av === null ? 1 : -1;
+      } else {
+        const order = direction * (numeric ? av - bv : collator.compare(av, bv));
+        if (order) return order;
+      }
+      return recordActivityAt(b) - recordActivityAt(a) || collator.compare(a.id, b.id);
     });
+    // While the pointer is on the rows, refreshes do not move the rows that were
+    // already shown; new rows take their sorted place. Leaving the rows re-sorts.
+    if (mounted?.body.matches(':hover')) {
+      const held = new Map(shownOrder.map((id, index) => [id, index])),
+        known = results
+          .filter((r) => held.has(r.id))
+          .sort((a, b) => held.get(a.id) - held.get(b.id));
+      let next = 0;
+      results.forEach((r, index) => {
+        if (held.has(r.id)) results[index] = known[next++];
+      });
+    }
+    shownOrder = results.map((r) => r.id);
+    const pinned = results.filter((r) => priority(r) < 4).length;
     const pages = Math.max(1, Math.ceil(results.length / pageSize));
     page = Math.min(page, pages);
     const start = (page - 1) * pageSize,
@@ -686,7 +733,7 @@ export function automationResultsTable(
 
     const paginationChanged = changed(
       pagination,
-      JSON.stringify([start, visible.length, results.length, page, pages]),
+      JSON.stringify([start, visible.length, results.length, page, pages, pinned]),
     );
     if (paginationChanged) {
       const keys = el(
@@ -703,6 +750,7 @@ export function automationResultsTable(
             : '0 records',
           'pagination-count',
         ),
+        ...(pinned ? [pinnedNote(pinned)] : []),
         ...(visible.length ? [keys] : []),
       );
     }
@@ -744,6 +792,7 @@ export function automationResultsTable(
       mounted.table.setAttribute('aria-label', 'Tracked records and results');
       mounted.table.style.minWidth = 600 + Math.max(0, shown.length - 2) * 110 + 'px';
       content.append(mounted.element);
+      mounted.body.addEventListener('pointerleave', () => render());
     }
     const {element, table, body} = mounted,
       headRow = table.tHead.rows[0];
@@ -778,20 +827,35 @@ export function automationResultsTable(
           selectPage.dataset.recordsSelectPage = '';
           th.replaceChildren(selectPage);
         } else {
+          const active = sort === key;
           th.setAttribute(
             'aria-sort',
-            sort === key ? (direction === 1 ? 'ascending' : 'descending') : 'none',
+            active ? (direction === 1 ? 'ascending' : 'descending') : 'none',
           );
+          // Numbers and activity start with the highest value, text and status with the first.
           const control = button(
-            label + (sort === key ? (direction === 1 ? ' ↑' : ' ↓') : ''),
+            label,
             () => {
-              direction = sort === key ? -direction : key === 'updatedAt' ? -1 : 1;
+              direction = active ? -direction : numericColumn(key) ? -1 : 1;
               sort = key;
               page = 1;
+              shownOrder = [];
+              try {
+                localStorage.setItem(
+                  sortStorageKey(data.automation.id),
+                  JSON.stringify({key: sort, direction}),
+                );
+              } catch {}
               render();
             },
             'sort-button',
           );
+          control.append(
+            el('span', active ? (direction === 1 ? '↑' : '↓') : '↕', 'sort-indicator'),
+          );
+          control.title = active
+            ? `Sorted by ${label}, ${direction === 1 ? 'ascending' : 'descending'}. Click to reverse.`
+            : `Sort by ${label}`;
           control.dataset.resultSort = key;
           th.replaceChildren(control);
         }
@@ -972,20 +1036,17 @@ export function automationResultsTable(
                 question.verification ? 'CAPTCHA to solve' : 'Awaiting answer',
                 'record-question-badge',
               ),
-              preview = el('span', question.text, 'record-question-preview'),
+              // Questions are answered on the Answers page; the row only links there.
               reply = button(
-                question.verification ? 'Solve CAPTCHA' : 'Answer question',
+                'Open in Answers',
                 () => onQuestion(question.id),
                 'record-question-link',
               );
-            preview.title = question.text;
+            mark.title = question.text;
             reply.dataset.recordQuestion = question.id;
-            reply.setAttribute(
-              'aria-label',
-              result.title + (question.verification ? ' · Solve CAPTCHA' : ' · Answer question'),
-            );
+            reply.setAttribute('aria-label', result.title + ' · Open in Answers');
             if (question.verification) mark.dataset.verification = 'true';
-            cell.append(mark, preview, reply);
+            cell.append(mark, reply);
           }
           if (problem) {
             const box = el('div', null, 'record-problem'),
@@ -1134,7 +1195,7 @@ export function automationResultsTable(
       goToTab.dataset.recordMenuAction = 'tab';
       actions.append(open, detail);
       // A problem card shows its open tab next to the reason.
-      if (problem) goToTab.textContent = 'Show tab ↗';
+      if (problem) goToTab.textContent = 'Show page ↗';
       const placeTab = () =>
         problem ? problemActions.prepend(goToTab) : actions.insertBefore(goToTab, open);
       const tab = {result, control: goToTab, place: placeTab};
@@ -1411,15 +1472,6 @@ export function automationResultsTable(
       node.textContent = relativeTime(Number(node.dataset.at));
   }, 30000);
   return {
-    showQuestions() {
-      search.value = '';
-      scoreMinimum.value = '';
-      scoreComparison.value = 'gt';
-      filterValue = 'attention';
-      page = 1;
-      render();
-      root.scrollIntoView({block: 'start', behavior: 'smooth'});
-    },
     dispose: () => {
       content.querySelector('.record-row-actions:popover-open')?.hidePopover();
       clearInterval(tabTimer);
@@ -1440,6 +1492,8 @@ export function automationResultsTable(
         reviewed = null;
         scrollLeft = 0;
         page = 1;
+        ({key: sort, direction} = storedSort(snapshot.automation.id) ?? {key: null, direction: -1});
+        shownOrder = [];
         scoreMinimum.value = '';
         scoreComparison.value = 'gt';
         selectedIds.clear();

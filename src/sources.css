@@ -1,4 +1,4 @@
-/* Sources: a watch list of scheduled scanners. One row = identity, current state, recipe. */
+/* Sources: a watch list of scheduled scanners. One row = name, status, schedule. */
 #sources {
   --source-rail: 46px;
 }
@@ -63,61 +63,6 @@
 }
 .source-proposal .actions {
   margin-top: 18px;
-}
-
-/* Bulk settings fold away under the list head. */
-.source-bulk {
-  margin: 0 0 14px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-.source-bulk[hidden] {
-  display: none;
-}
-.source-bulk > summary {
-  width: fit-content;
-  cursor: pointer;
-  color: var(--text-secondary);
-}
-.source-bulk > summary:hover {
-  color: var(--text);
-}
-#sources .source-bulk-form,
-[data-automation-pane='sources'] .source-bulk-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 10px 14px;
-  max-width: none;
-  margin: 10px 0 0;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-raised);
-}
-.source-bulk-form label {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  font-size: 12px;
-}
-.source-bulk-form input {
-  width: 120px;
-  padding: 8px 10px;
-}
-.source-bulk-form select {
-  width: 200px;
-}
-.source-bulk-form button {
-  padding: 8px 12px;
-  font-size: 12px;
-}
-.source-bulk-form small {
-  flex-basis: 100%;
-  color: var(--text-muted);
-}
-.source-bulk-form small:empty {
-  display: none;
 }
 
 .source-tabs-control {
@@ -267,9 +212,8 @@
 }
 .source-main {
   display: grid;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
-  cursor: pointer;
 }
 
 .source-name {
@@ -300,23 +244,20 @@
   filter: none;
   text-decoration: underline;
 }
-.source-scope {
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
-/* State: one bold line with a dot, one clamped detail line. */
+/* Status: one line that names the state and, when there is one, the reason. */
 .source-status {
-  display: grid;
-  gap: 2px;
-  margin-top: 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-muted);
 }
 .source-status b {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
   color: var(--text);
   font-weight: 550;
 }
@@ -328,54 +269,52 @@
   border-radius: 50%;
   background: var(--text-muted);
 }
-.source-status small {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+.source-detail {
+  min-width: 0;
   overflow: hidden;
-  padding-left: 16px;
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.source-status small.source-stats {
+.source-status[data-tone='idle'] b {
   color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
 }
-.source-status small.source-note {
-  -webkit-line-clamp: 1;
-}
-.source-row[data-tone='found'] .source-status b::before {
-  background: var(--success);
-}
-.source-row[data-tone='found'] .source-status b {
+.source-status[data-tone='found'] b {
   color: var(--success);
 }
-.source-row[data-tone='blocked'] .source-status b::before {
-  background: var(--warning);
+.source-status[data-tone='found'] b::before {
+  background: var(--success);
 }
-.source-row .source-status[data-state='waiting'] b {
+.source-status[data-tone='scanning'] b,
+.source-status[data-tone='waiting'] b {
   color: var(--accent-strong);
 }
-.source-row .source-status[data-state='waiting'] b::before {
+.source-status[data-tone='scanning'] b::before,
+.source-status[data-tone='waiting'] b::before {
   background: var(--accent);
 }
-.source-row[data-tone='scanning'] .source-status b {
-  color: var(--accent-strong);
-}
-.source-row[data-tone='scanning'] .source-status b::before {
-  background: var(--accent);
+.source-status[data-tone='scanning'] b::before {
   box-shadow: 0 0 0 0 rgba(102, 179, 255, 0.55);
   animation: source-pulse 1.6s ease-out infinite;
 }
-.source-row[data-tone='off'] {
-  color: var(--text-muted);
+.source-status[data-tone='warning'] b {
+  color: var(--warning);
+}
+.source-status[data-tone='warning'] b::before {
+  background: var(--warning);
+}
+.source-status[data-tone='danger'] b {
+  color: var(--danger);
+}
+.source-status[data-tone='danger'] b::before {
+  background: var(--danger);
 }
 .source-row[data-tone='off'] .source-name,
-.source-row[data-tone='off'] .source-status b,
-.source-row[data-tone='off'] .source-plan b,
-.source-row[data-tone='off'] .source-timing b {
+.source-row[data-tone='off'] .source-status b {
   color: var(--text-secondary);
+}
+.source-row[data-tone='off'] .source-status b::before {
+  background: var(--text-muted);
+  animation: none;
 }
 @keyframes source-pulse {
   to {
@@ -383,135 +322,53 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .source-row[data-tone='scanning'] .source-status b::before {
+  .source-status[data-tone='scanning'] b::before {
     animation: none;
   }
 }
 
-/* Meta: schedule, next run, last outcome and the recipe chip on one wrapping line. */
+/* Schedule: last scan, next scan and the interval, which reads as text. */
 .source-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 14px;
-  margin-top: 2px;
+  gap: 4px 14px;
+  padding-left: 16px;
   color: var(--text-muted);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
-.source-plan b,
 .source-timing b {
   color: var(--text-secondary);
   font-weight: 500;
 }
-.source-timing {
-  font-variant-numeric: tabular-nums;
-}
-.source-last-run {
-  display: inline-block;
-  padding: 3px 7px;
+.source-interval {
+  width: auto;
+  margin: 0 0 0 -7px;
+  padding: 1px 18px 1px 6px;
+  appearance: none;
+  border: 1px solid transparent;
   border-radius: 6px;
-  background: var(--bg-hover);
+  background: transparent
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0h8L4 5z' fill='%238b949e'/%3E%3C/svg%3E")
+    no-repeat right 6px center;
   color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 600;
+  font: inherit;
+  cursor: pointer;
 }
-.source-last-run[data-status='completed'] {
-  background: color-mix(in srgb, var(--success) 12%, transparent);
-  color: var(--success);
-}
-.source-last-run[data-status='failed'],
-.source-last-run[data-status='timeout'] {
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
-  color: var(--danger);
-}
-.source-last-run[data-status='blocked'],
-.source-last-run[data-status='interrupted'],
-.source-last-run[data-status='partial'] {
-  background: color-mix(in srgb, var(--warning) 12%, transparent);
-  color: var(--warning);
-}
-.source-trial-status {
-  font-size: 11px;
-}
-.source-trial-status[data-status='failed'] {
-  color: var(--danger);
-}
-
-.source-recipe {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 8px 3px 6px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 600;
-}
-.source-recipe::before {
-  content: '';
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--text-muted);
-}
-.source-recipe:hover {
+.source-interval:hover,
+.source-interval:focus-visible {
   border-color: var(--border-strong);
   color: var(--text);
-  filter: none;
 }
-.source-recipe[data-status='verified'] {
-  color: var(--success);
-  border-color: color-mix(in srgb, var(--success) 40%, transparent);
-}
-.source-recipe[data-status='verified']::before {
-  background: var(--success);
-}
-.source-extension {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 8px;
-  border: 1px solid color-mix(in srgb, var(--accent-strong) 40%, transparent);
-  border-radius: 999px;
-  color: var(--accent-strong);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: default;
-}
-/* Each reader kind has its own colour so the source list shows them apart. */
-.source-extension[data-kind='api'] {
-  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+.source-recipe-legend[data-status='verified'] {
   color: var(--success);
 }
-.source-extension[data-kind='browser'] {
-  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+.source-recipe-legend[data-status='stale'] {
   color: var(--warning);
 }
-.source-extension[data-kind='agent'] {
-  border-color: var(--border-strong);
-  color: var(--text-muted);
-}
-.source-name .source-extension {
-  align-self: center;
-}
-.source-recipe[data-status='candidate'] {
+.source-recipe-legend[data-status='candidate'] {
   color: var(--accent-strong);
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-}
-.source-recipe[data-status='candidate']::before {
-  background: var(--accent);
-}
-.source-recipe[data-status='stale'] {
-  color: var(--warning);
-  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
-}
-.source-recipe[data-status='stale']::before {
-  background: var(--warning);
-}
-.source-recipe[data-status='discovery']::before {
-  background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--text-muted);
 }
 
 /* One primary action per row; the rest sit behind the ⋯ menu. */
@@ -573,9 +430,8 @@
   display: none;
 }
 
-/* Editor and add form share one layout: two sections, two columns. */
-.source-editor,
-.source-add {
+/* Editor: name and terms up front, the recipe folded under Advanced. */
+.source-editor {
   grid-column: 2 / -1;
   display: grid;
   gap: 14px;
@@ -585,34 +441,90 @@
   border: 0;
   background: transparent;
 }
-.source-add {
-  grid-column: auto;
+.source-editor-main {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.6fr);
+  gap: 12px 18px;
+}
+.source-editor-main label {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+}
+.source-editor-main label small {
+  color: var(--text-muted);
+}
+.source-editor-main [hidden] {
+  display: none;
+}
+.source-advanced > summary {
+  width: fit-content;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.source-advanced > summary:hover {
+  color: var(--text);
+}
+.source-advanced[open] > summary {
+  margin-bottom: 10px;
+}
+
+/* Adding: the known sites, then one address field. */
+.source-add-panel {
+  display: grid;
+  gap: 14px;
   margin: 0 0 18px;
-  padding: 18px 20px;
+  padding: 16px 20px 18px;
   border: 1px solid rgba(102, 179, 255, 0.32);
   border-radius: 12px;
   background: var(--bg-raised);
 }
+#sources .source-add,
+[data-automation-pane='sources'] .source-add {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.source-add label {
+  display: grid;
+  flex: 1;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.source-add input {
+  width: 100%;
+  font-weight: 400;
+}
 .source-catalog {
   display: grid;
-  gap: 6px;
-  margin: 0 0 12px;
-  padding: 14px 20px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg-raised);
+  gap: 4px;
+}
+.source-catalog[hidden] {
+  display: none;
 }
 .source-catalog h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: 12px;
 }
 .source-catalog > small {
   color: var(--text-muted);
 }
 .source-catalog ul {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 6px 16px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 0 24px;
   margin: 6px 0 0;
   padding: 0;
   list-style: none;
@@ -622,7 +534,7 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 6px 0;
+  padding: 8px 0;
   border-top: 1px solid var(--border);
 }
 .source-catalog li > div {
@@ -654,29 +566,6 @@
   border: 1px solid var(--border);
   border-radius: 10px;
   min-width: 0;
-}
-.source-editor-section legend {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 0 6px;
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 600;
-}
-.source-editor-section legend small {
-  font-weight: 500;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-.source-recipe-legend[data-status='verified'] {
-  color: var(--success);
-}
-.source-recipe-legend[data-status='stale'] {
-  color: var(--warning);
-}
-.source-recipe-legend[data-status='candidate'] {
-  color: var(--accent-strong);
 }
 .source-editor-section label {
   display: grid;
@@ -729,13 +618,8 @@
 .source-editor-foot [data-cancel] {
   margin-left: auto;
 }
-.source-remove {
-  border-color: transparent;
+.source-row-actions .source-remove {
   color: var(--danger);
-}
-.source-remove:hover {
-  background: rgba(225, 117, 126, 0.1);
-  filter: none;
 }
 
 /* Memory panel */
@@ -942,6 +826,7 @@
     grid-column: 1 / -1;
   }
   .source-editor-section,
+  .source-editor-main,
   .source-recipe-form,
   .policy-head {
     grid-template-columns: 1fr;
@@ -956,11 +841,6 @@
   .policy-row select {
     width: 100%;
   }
-}
-
-/* The reader explanation keeps its paragraphs. */
-.source-progress-note[data-reader] p {
-  white-space: pre-line;
 }
 
 /* Extension test bench (development builds only) */

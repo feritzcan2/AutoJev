@@ -48,9 +48,10 @@ try {
   const page = await app.firstWindow();
   await page.locator('aside nav [data-view=board]').click();
   await page.locator(`[data-record-question="${q.id}"]`).click();
-  const card = page.locator('dialog.record-question-dialog');
+  const card = page.locator(`.answer-card[data-question-id="${q.id}"]`);
   await card.getByRole('button', {name: 'Skip', exact: true}).click();
-  await card.waitFor({state: 'hidden'});
+  await card.waitFor({state: 'detached'});
+  await page.locator('aside nav [data-view=board]').click();
   assert.equal(await page.locator(`[data-record-question="${otherQ.id}"]`).isVisible(), true);
   const snapshot = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), a.id);
   assert.equal(snapshot.results.find((r) => r.id === item.id).status, 'dismissed');

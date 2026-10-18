@@ -232,7 +232,7 @@
   // A select-only dropdown: a combobox or a button that opens a listbox/tree
   // popup (not a menu or dialog). Labelled triggers are answer fields.
   cache.popupTrigger=e=>!!e&&!['INPUT','TEXTAREA','SELECT'].includes(e.tagName)&&(e.getAttribute('role')==='combobox'||
-    (role(e)==='button'&&['listbox','tree','true'].includes(e.getAttribute('aria-haspopup'))&&(e.hasAttribute('aria-labelledby')||e.labels?.length>0)));
+    (role(e)==='button'&&['listbox','tree','true'].includes(e.getAttribute('aria-haspopup'))&&(e.hasAttribute('aria-labelledby')||e.hasAttribute('aria-label')||e.labels?.length>0)));
   const fieldContext=e=>e.matches('input,textarea,select,[role="combobox"],[role="textbox"],[role="checkbox"],[role="radio"]')||cache.popupTrigger(e)?window.__jobloopFieldContext?.(e):null;
   // Button-driven picklists isolated in a shadow component, with one local
   // label and one dropdown. Never infer ownership from a whole form/page.

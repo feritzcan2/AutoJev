@@ -1287,16 +1287,6 @@
   background: color-mix(in srgb, var(--danger, #e1757e) 15%, transparent);
   color: var(--danger, #e1757e);
 }
-.record-question-preview {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  margin-top: 6px;
-  color: var(--text-secondary);
-  font-size: 11px;
-  line-height: 1.5;
-}
 .automation-results-table .record-question-link {
   display: block;
   margin-top: 7px;
@@ -1568,55 +1558,92 @@
   align-self: center;
 }
 
-/* A stopped operation or an unclear outcome shows its reason and next steps in the row. */
+/* A stopped operation or an unclear outcome shows its reason and next steps in the row
+   as a thin strip. Its color follows the blocker: yellow when the user can act
+   (login, payment, CAPTCHA, an answer), gray when the listing is out, red for errors. */
+.automation-results-table tr[data-problem='true'],
+.record-problem {
+  --problem-tone: var(--danger, #e5727a);
+}
+.automation-results-table
+  tr[data-problem='true']:has(
+    .record-problem:is(
+      [data-category='needs_login'],
+      [data-category='needs_payment'],
+      [data-category='verification'],
+      [data-category='needs_answer']
+    )
+  ),
+.record-problem:is(
+  [data-category='needs_login'],
+  [data-category='needs_payment'],
+  [data-category='verification'],
+  [data-category='needs_answer']
+) {
+  --problem-tone: var(--warning, #d7a74f);
+}
+.automation-results-table
+  tr[data-problem='true']:has(
+    .record-problem:is([data-category='not_eligible'], [data-category='listing_closed'])
+  ),
+.record-problem:is([data-category='not_eligible'], [data-category='listing_closed']) {
+  --problem-tone: var(--text-muted);
+}
 .automation-results-table tr[data-problem='true'] > td {
-  background: color-mix(in srgb, var(--danger, #e5727a) 7%, var(--bg-raised));
+  background: color-mix(in srgb, var(--problem-tone) 5%, var(--bg-raised));
 }
 .automation-results-table tr[data-problem='true']:hover > td {
-  background: color-mix(in srgb, var(--danger, #e5727a) 11%, var(--bg-raised));
+  background: color-mix(in srgb, var(--problem-tone) 9%, var(--bg-raised));
 }
 .automation-results-table tr[data-problem='true'] > td:first-child {
-  box-shadow: inset 3px 0 var(--danger, #e5727a);
+  box-shadow: inset 3px 0 var(--problem-tone);
 }
 .record-problem {
-  display: grid;
-  gap: 6px;
+  max-width: 460px;
   margin-top: 8px;
-  padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--danger, #e5727a) 45%, transparent);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--danger, #e5727a) 10%, var(--bg-raised));
-  max-width: 420px;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--problem-tone);
+  line-height: 1.5;
 }
 .record-problem-badge {
-  justify-self: start;
-  color: var(--danger, #e5727a);
-  font-size: 11px;
+  color: var(--problem-tone);
+  font-size: 12px;
   font-weight: 650;
 }
 .record-problem-badge::before {
   content: '⚠ ' / '';
 }
+.record-problem[data-category='needs_login'] .record-problem-badge::before {
+  content: '🔒 ' / '';
+}
+.record-problem[data-category='needs_payment'] .record-problem-badge::before {
+  content: '💳 ' / '';
+}
+.record-problem[data-category='verification'] .record-problem-badge::before {
+  content: '🧩 ' / '';
+}
+.record-problem[data-category='needs_answer'] .record-problem-badge::before {
+  content: '? ' / '';
+}
+.record-problem:is([data-category='not_eligible'], [data-category='listing_closed'])
+  .record-problem-badge::before {
+  content: '⊘ ' / '';
+}
+.record-problem-badge::after {
+  content: ' · ' / '';
+  color: var(--text-muted);
+  font-weight: 400;
+}
 .record-problem-reason {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
   color: var(--text);
   font-size: 12px;
-  line-height: 1.5;
-  white-space: normal;
-}
-.record-problem:hover .record-problem-reason,
-.record-problem:focus-within .record-problem-reason {
-  -webkit-line-clamp: unset;
-  overflow: visible;
   overflow-wrap: anywhere;
 }
 .record-problem-next {
-  color: var(--text-muted);
+  display: block;
+  margin-top: 2px;
+  color: var(--text-secondary);
   font-size: 12px;
-  line-height: 1.4;
 }
 .record-problem-next::before {
   content: '→ ' / '';
@@ -1625,9 +1652,10 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  margin-top: 6px;
 }
 .record-problem-actions button {
-  padding: 3px 8px;
+  padding: 2px 8px;
   font-size: 12px;
 }
 
@@ -1745,6 +1773,23 @@
 }
 .automation-results-table tr[data-cursor='true'] > td {
   background: color-mix(in srgb, var(--accent) 6%, var(--bg-raised));
+}
+.record-pinned-note {
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: help;
+}
+.automation-results-table .sort-indicator {
+  margin-left: 5px;
+  opacity: 0;
+}
+.automation-results-table .sort-button:hover .sort-indicator,
+.automation-results-table .sort-button:focus-visible .sort-indicator {
+  opacity: 0.5;
+}
+.automation-results-table th[aria-sort='ascending'] .sort-indicator,
+.automation-results-table th[aria-sort='descending'] .sort-indicator {
+  opacity: 1;
 }
 .record-shortcuts {
   margin-right: auto;

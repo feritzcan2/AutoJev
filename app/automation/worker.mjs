@@ -6,8 +6,8 @@ import {reviewJevBatch} from '../jev/review.mjs';
 import {readJevBrief} from '../jev/brief.mjs';
 import {jevWaitMsFor, observeClientAbort} from '../jev/execution.mjs';
 import {withAgentDefaults, agentDecides} from '../agents/settings.mjs';
-import {otherScanSearchesPending, scanWork} from '../sources/scan-work.mjs';
-import {siteKey, sameSite} from '../browser/site-access.mjs';
+import {otherScanSearchesPending, scanWork, activeSearch} from '../sources/scan-work.mjs';
+import {siteKey, sameSite, runSiteLane} from '../browser/site-access.mjs';
 import {collectorRun, collectorExtension} from '../sources/collectors.mjs';
 import {
   collectSourcePage,
@@ -109,6 +109,20 @@ const samePath = (a, b) => {
   }
 };
 const TRIAL_SCAN_PAGE_LIMIT = 2;
+// Another results page of the active search: same address shape as the last
+// page it served (numbers may differ, as in ?page=7 or /page/7), not that page.
+const laterResultsPage = (run, url) => {
+  const last = activeSearch(scanWork(run))?.pageProgress?.url;
+  if (!last || last === url) return false;
+  try {
+    const shape = (u) => u.origin + u.pathname.replace(/\d+/g, '#').replace(/\/$/, '');
+    return shape(new URL(last)) === shape(new URL(url));
+  } catch {
+    return false;
+  }
+};
+const UNSERVED_PAGE =
+  ' [The site does not serve this results page: it failed to load again while the earlier pages of this search loaded. The app ended this search at the last page served. Finish its queue and call complete_scan_search with completion=end; do not open this page again.]';
 // Click targets keep the page's raw spacing; form inspection collapses it.
 const spaced = (label) =>
   String(label ?? '')
@@ -149,6 +163,16 @@ export function automationWorkflow({
     if (failure && sourceScan(active)) {
       const url = attemptedUrl ?? active.sourceUrl,
         issue = scanIssue(db, id, run.id, {url, ...failure});
+      if (
+        issue.verified &&
+        !issue.global &&
+        laterResultsPage(active, url) &&
+        db.markUnservedPage(id, run.id, url)
+      ) {
+        error.message += UNSERVED_PAGE;
+        changed(id);
+        throw error;
+      }
       error.message +=
         ' [Page load failed. Retry once; the app records repeated failures and retries them later. Continue with other pending work.]';
       if (issue.attempts >= 3) {
@@ -189,7 +213,10 @@ export function automationWorkflow({
   let stepWaited = false;
   const callBrowser = async (owner, name, args, session, options) => {
     if (args.url) attemptedUrl = args.url;
-    const issue = db.activeRun(id, run.id).scanIssues?.[attemptedUrl];
+    const current = db.activeRun(id, run.id);
+    if (args.url && current.scanPlan?.boundary?.unserved === args.url)
+      throw Error(`Not opened: ${args.url}.${UNSERVED_PAGE}`);
+    const issue = current.scanIssues?.[attemptedUrl];
     if (issue?.kind === 'browser_error' && issue.attempts >= 3)
       throw Error(
         `This address repeatedly failed to load: ${attemptedUrl}. The app will retry it later; process the other pending addresses.`,
@@ -564,7 +591,7 @@ export function automationWorkflow({
                 : reader
                   ? await reader.read(parameters.url, {
                       signal,
-                      siteAccess: db.siteAccess,
+                      siteAccess: db.siteAccess.forLane(runSiteLane(run)),
                       wait: (ms) => pause(ms, undefined, {signal}),
                     })
                   : null;

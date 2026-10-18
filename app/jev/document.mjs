@@ -166,6 +166,12 @@ export function renderedDocument() {
         }
         // Place the real link next to its card text as well as in the link index.
         words.push(`Link: ${label ? label + ' — ' : ''}${url.href}`);
+      } else if (url?.protocol === 'mailto:') {
+        // An email link opens the mail app, not a page; name its address.
+        const label = (e.getAttribute('aria-label') || e.innerText || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        words.push(`Email link: ${label ? label + ' — ' : ''}${decodeURIComponent(url.pathname)}`);
       }
     }
     const assigned = e.tagName === 'SLOT' ? e.assignedNodes({flatten: true}) : [];

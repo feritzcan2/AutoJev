@@ -6,6 +6,7 @@ import {BrowserEvidenceStore} from '../browser/evidence-store.mjs';
 import {isConversation, conversationWaiting} from '../workspaces/conversation.mjs';
 import {setupAgentOnboarding} from '../agents/setup-agent.mjs';
 import {recordOperationState} from '../records/operations.mjs';
+import {taskRecordIds} from '../records/task-scope.mjs';
 import {SiteAccess} from '../browser/site-access.mjs';
 import {automationTrialReady} from '../sources/trial.mjs';
 import {removeImportedWorkspace} from '../workspaces/imported.mjs';
@@ -91,6 +92,7 @@ export class AutomationStore {
    CREATE INDEX IF NOT EXISTS automation_runs_status ON automation_runs(automation_id,json_extract(data,'$.status'));
    CREATE INDEX IF NOT EXISTS automation_runs_source_history ON automation_runs(automation_id,${runSource}) WHERE ${finishedSourceRun};
    CREATE INDEX IF NOT EXISTS automation_runs_record ON automation_runs(automation_id,json_extract(data,'$.recordId'));
+   CREATE INDEX IF NOT EXISTS automation_runs_interview ON automation_runs(automation_id) WHERE json_extract(data,'$.kind')='interview';
    CREATE INDEX IF NOT EXISTS automation_messages_owner ON automation_messages(automation_id);
    CREATE TABLE IF NOT EXISTS scan_seen_listings(workspace_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,url_key TEXT NOT NULL,scope_key TEXT NOT NULL,reason TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(workspace_id,url_key));`);
     this.jevTasks = new JevTaskStore(this.db, now);
@@ -101,6 +103,10 @@ export class AutomationStore {
   }
   has(id) {
     return Boolean(this.db.prepare('SELECT 1 FROM automations WHERE id=?').get(id));
+  }
+  // Checks the automation exists without parsing its large body.
+  assertExists(id) {
+    if (!this.has(id)) throw Error('Automation not found');
   }
   conversation(id, provider) {
     return this.store.workspaces.history(id).conversation(id, provider);
@@ -467,7 +473,7 @@ export class AutomationStore {
     return this.put({...a, status, nextRunAt: null, retryPlan: {}, updatedAt: this.now()});
   }
   event(id, kind, data) {
-    this.get(id);
+    this.assertExists(id);
     this.db
       .prepare('INSERT INTO workspace_events(workspace_id,kind,data,at) VALUES(?,?,?,?)')
       .run(id, kind, JSON.stringify(data), this.now());
@@ -480,7 +486,7 @@ export class AutomationStore {
       .run(id);
   }
   message(id, role, text, context = {}) {
-    this.get(id);
+    this.assertExists(id);
     if (!['user', 'assistant', 'system'].includes(role)) throw Error('Invalid message');
     const m = {
       id: randomUUID(),
@@ -505,7 +511,7 @@ export class AutomationStore {
       .map((row) => row.document);
   }
   messages(id) {
-    this.get(id);
+    this.assertExists(id);
     return this.db
       .prepare(
         `SELECT m.data,json_extract(r.data,'$.kind') AS run_kind FROM
@@ -521,7 +527,7 @@ export class AutomationStore {
       });
   }
   runs(id, {summary = false} = {}) {
-    this.get(id);
+    this.assertExists(id);
     const select = summary
       ? "json_remove(data,'$.scan','$.scanPlan','$.navigation','$.observedLinks','$.observations','$.jevTask') AS data,json_extract(data,'$.observations[#-1].url') AS observedUrl"
       : 'data';
@@ -604,7 +610,13 @@ export class AutomationStore {
       definition = db.template(a.templateId),
       tasks = db.store.workspaces.tasks.list(id, {summary: true}),
       results = db.results(id),
-      foundCounts = db.runFoundCounts(id);
+      foundCounts = db.runFoundCounts(id),
+      tasksByRecord = new Map();
+    for (const task of tasks)
+      for (const recordId of taskRecordIds(task)) {
+        if (!tasksByRecord.has(recordId)) tasksByRecord.set(recordId, []);
+        tasksByRecord.get(recordId).push(task);
+      }
     return {
       automation: {...a, questions: (a.questions ?? []).map((q) => db.questionContext(id, q))},
       definition,
@@ -618,7 +630,12 @@ export class AutomationStore {
         .map((run) => ({...run, foundCount: foundCounts.get(run.id) ?? 0})),
       results: results.map((item) => ({
         ...item,
-        recordAction: recordOperationState(db, id, item, {a, definition, tasks}),
+        recordAction: recordOperationState(db, id, item, {
+          a,
+          definition,
+          tasks,
+          recordTasks: tasksByRecord.get(item.id) ?? [],
+        }),
       })),
       resultCounts: db.resultCounts(id),
       missing: missingPlanFields(a, definition),

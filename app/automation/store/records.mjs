@@ -36,11 +36,11 @@ import {sourceMode} from '../../sources/automation-sources.mjs';
 // AutomationStore methods: records: lookup, saving findings, review, reservation and outcomes.
 export const recordMethods = {
   results(id) {
-    this.get(id);
+    this.assertExists(id);
     return this.store.workspaces.records.list(id, {limit: -1});
   },
   runFoundCounts(id) {
-    this.get(id);
+    this.assertExists(id);
     // Count the full table, including records outside the recent-results window.
     return new Map(
       this.db
@@ -53,7 +53,7 @@ export const recordMethods = {
     );
   },
   resultCounts(id) {
-    this.get(id);
+    this.assertExists(id);
     return this.db
       .prepare(
         `SELECT count(*) AS storedCount,
@@ -66,7 +66,7 @@ export const recordMethods = {
       .get(id);
   },
   result(id, itemId) {
-    this.get(id);
+    this.assertExists(id);
     const item = this.store.workspaces.records.identities.resolve(id, itemId);
     if (!item) throw Error('The result does not belong to this automation');
     return item;

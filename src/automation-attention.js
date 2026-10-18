@@ -27,7 +27,7 @@ export function attentionTabs(issue, tabs, sources) {
 
 export function automationAttentionPanel(
   api,
-  {navigate, refresh, getConversation = () => null, showRecordQuestions = () => {}},
+  {navigate, refresh, getConversation = () => null, showRecordQuestions = () => {}, container},
 ) {
   const banner = el('div', null, 'automation-attention-banner');
   banner.hidden = true;
@@ -41,7 +41,9 @@ export function automationAttentionPanel(
   panel.hidden = true;
   panel.dataset.webOnly = '';
   panel.setAttribute('aria-label', 'Sources that need attention');
-  document.querySelector('#now-panel').before(panel);
+  // The workspace UI gives the cards their own page; without one they sit above the agent's work.
+  if (container) container.append(panel);
+  else document.querySelector('#now-panel').before(panel);
   const announcement = el('p', null, 'attention-announcement');
   announcement.setAttribute('role', 'status');
   announcement.setAttribute('aria-live', 'polite');
@@ -122,13 +124,13 @@ export function automationAttentionPanel(
       return;
     }
     const chatIssue = issues.find(isChatIssue);
-    navigate(chatIssue ? 'setup-agent' : 'agent');
+    navigate(chatIssue ? 'setup-agent' : container ? 'attention' : 'agent');
     if (chatIssue) {
       if (chatIssue.kind === 'question' && getConversation()?.showQuestion(chatIssue.id)) return;
       cards.get(chatIssue.id)?.card.scrollIntoView({block: 'start', behavior: 'smooth'});
       return;
     }
-    document.querySelector('#agent-tab-work')?.click();
+    if (!container) document.querySelector('#agent-tab-work')?.click();
     panel.scrollIntoView({block: 'start', behavior: 'smooth'});
     [...cards.values()]
       .find((item) => item.card.parentElement === list)

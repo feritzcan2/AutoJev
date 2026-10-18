@@ -407,8 +407,8 @@ export class WebTasks extends TaskRuns {
         const native = saved.sources.some(
           (url) => saved.sourceSettings?.[url]?.enabled !== false && sourceCollector(saved, url),
         );
-        const automaticRecords =
-          native &&
+        // Loading every record is the costly check, so it runs last.
+        const automaticRecords = () =>
           saved.status === 'enabled' &&
           saved.mode !== 'observe' &&
           this.db.results(saved.id).some((item) => {
@@ -418,11 +418,13 @@ export class WebTasks extends TaskRuns {
           });
         const needsBrowser =
           !native ||
-          automaticRecords ||
           saved.sources.some(
             (url) => saved.sourceSettings?.[url]?.enabled !== false && !sourceCollector(saved, url),
           ) ||
-          this.queue.list(saved.id, {states: ['pending']}).some((t) => t.recordOperation);
+          this.queue
+            .list(saved.id, {states: ['pending'], summary: true})
+            .some((t) => t.recordOperation) ||
+          automaticRecords();
         const browserReady = needsBrowser && this.browserReady(saved.id);
         if (browserReady) canBrowse.add(saved.id);
         if (!browserReady && !native) continue;
@@ -674,7 +676,8 @@ export class WebTasks extends TaskRuns {
       )
       .get(id, itemId);
     const wait = row?.wait && JSON.parse(row.wait),
-      current = wait?.exhausted && this.db.siteAccess.status('https://' + wait.site);
+      current =
+        wait?.exhausted && this.db.siteAccess.forLane(wait.lane).status('https://' + wait.site);
     if (current?.exhausted && current.blockedAt === wait.blockedAt)
       this.db.siteAccess.acknowledge([wait]);
   }

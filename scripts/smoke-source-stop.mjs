@@ -54,6 +54,7 @@ try {
     };
     const api = {
       workspaceTabs: async () => [],
+      extensionBenchStatus: async () => ({available: true}),
       automationSourceStop: async (id, url) => {
         window.stopCalls.push({id, url});
         await new Promise((resolve) => {
@@ -115,7 +116,6 @@ try {
     panel.update(snapshot, 'owner');
   });
   await page.getByText('Access problem persists', {exact: true}).waitFor();
-  await page.getByText('Paused until a retry', {exact: true}).waitFor();
   assert.equal(await page.getByRole('button', {name: 'Retry', exact: true}).isEnabled(), true);
   await page.getByRole('button', {name: 'Retry', exact: true}).click();
   assert.equal(await page.evaluate(() => window.runCalls.length), 2);
@@ -150,7 +150,7 @@ try {
     panel.update(snapshot, 'owner');
   });
   await page.locator('.source-row-menu').click();
-  await page.getByRole('button', {name: 'Details', exact: true}).click();
+  await page.getByRole('button', {name: 'Scan details', exact: true}).click();
   await page
     .getByText('North · 250 address(es) waiting · page 7 · Selected search', {exact: true})
     .waitFor();
@@ -204,9 +204,9 @@ try {
   });
   // The status line already covers success, a running scan and a partial scan.
   assert.deepEqual(await page.locator('.source-last-run').allTextContents(), [
-    'Last round: Blocked',
-    'Last round: Stopped',
-    'Last round: Timed out',
+    'Last scan: Blocked',
+    'Last scan: Stopped',
+    'Last scan: Timed out',
   ]);
   const rows = page.locator('.source-row');
   assert.equal(await rows.nth(1).locator('.source-status b').textContent(), 'Scanning');

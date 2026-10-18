@@ -383,6 +383,88 @@ test('every site keeps eight seconds between navigations; one that rate-limited 
   }
 });
 
+test("a site's request budget parks requests over it as a shared wait that is no incident", () => {
+  const db = new DatabaseSync(':memory:');
+  let now = 1_000_000;
+  const gate = new SiteAccess(db, {now: () => now}),
+    budget = {requests: 2, windowMs: 30 * minute},
+    site = 'https://budget.test/';
+  try {
+    assert.equal(gate.spend(site + 'a', budget), null);
+    now += minute;
+    assert.equal(gate.spend(site + 'b', budget), null);
+    assert.equal(gate.spend('https://other.test/', budget), null, 'other sites keep their own');
+    const held = gate.spend(site + 'c', budget);
+    assert.equal(held.waiting, true);
+    assert.equal(held.reason, 'budget');
+    assert.equal(held.attempts, 0, 'a used budget is no access failure');
+    assert.equal(held.retryAt, 1_000_000 + 30 * minute, 'until the oldest request leaves');
+    assert.match(held.message, /request budget/);
+    assert.throws(() => gate.begin(site + 'c'), {code: 'SITE_WAIT'});
+    assert.equal(gate.pace(site + 'd'), 0, 'the budget wait adds no incident gap');
+    assert.equal(gate.pace(site + 'e'), 8000);
+    now = held.retryAt;
+    const token = gate.begin(site + 'f');
+    assert.equal(gate.spend(site + 'f', budget), null, 'the freed slot is spent');
+    gate.complete(site + 'f', token, {status: 200});
+    gate.finish([held]);
+    assert.equal(gate.status(site), null, 'a successful request retires the wait');
+    // A 429 during a budget wait's probe is a rate limit.
+    now += 30 * minute;
+    gate.spend(site + 'g', budget);
+    gate.spend(site + 'h', budget);
+    const again = gate.spend(site + 'i', budget);
+    now = again.retryAt;
+    gate.complete(site + 'i', gate.begin(site + 'i'), {status: 500});
+    assert.equal(gate.status(site).reason, 'rate_limit');
+    assert.equal(gate.status(site).attempts, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test("a site's own retry delays replace the default cooldown", () => {
+  const db = new DatabaseSync(':memory:');
+  let now = 1_000_000;
+  const gate = new SiteAccess(db, {now: () => now}),
+    retryDelays = [30 * minute, 90 * minute],
+    site = 'https://slow-cooldown.test/';
+  try {
+    const first = gate.complete(site, null, {status: 429, reason: 'rate_limit', retryDelays});
+    assert.equal(first.retryAt, now + 30 * minute);
+    now = first.retryAt;
+    const second = gate.complete(site, gate.begin(site), {
+      status: 429,
+      reason: 'rate_limit',
+      retryDelays,
+    });
+    assert.equal(second.attempts, 2);
+    assert.equal(second.retryAt, now + 90 * minute);
+    now = second.retryAt;
+    const third = gate.complete(site, gate.begin(site), {
+      status: 429,
+      reason: 'rate_limit',
+      retryDelays,
+    });
+    assert.equal(third.exhausted, true, 'after the stated retries the wait needs the user');
+    assert.equal(gate.block('https://default.test/', 'rate_limit').retryAt, now + 5 * minute);
+  } finally {
+    db.close();
+  }
+});
+
+test('jitter adds a random part to the gap', () => {
+  const db = new DatabaseSync(':memory:');
+  const gate = new SiteAccess(db, {now: () => 1_000_000});
+  try {
+    gate.pace('https://jitter.test/a', 15000, 10000);
+    const gap = gate.pace('https://jitter.test/b', 15000, 10000);
+    assert.ok(gap >= 15000 && gap < 25000, String(gap));
+  } finally {
+    db.close();
+  }
+});
+
 test("a site's own minimum spacing (crawl delay) paces every request, not only after an incident", () => {
   const db = new DatabaseSync(':memory:');
   let now = 1_000_000;
@@ -429,6 +511,13 @@ test('repeated transport failures across a site start a shared wait; one address
     );
     for (let i = 0; i < 4; i++)
       assert.equal(gate.unreachable(url, h2), null, 'the same address never blocks the site');
+    for (let i = 0; i < 3; i++)
+      assert.equal(
+        gate.unreachable(url + '?page=7&q=b', h2),
+        null,
+        'two refused pages are those pages, not the site',
+      );
+    gate.failures.clear();
     gate.failures.clear();
     assert.equal(gate.unreachable(url, h2), null);
     now += 1000;

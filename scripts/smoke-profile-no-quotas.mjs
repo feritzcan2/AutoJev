@@ -58,9 +58,7 @@ try {
   await page.locator('[data-view=sources]').click();
   await page.locator('.source-row').first().waitFor();
   assert.ok(
-    (await page.locator('[data-automation-pane=sources]').innerText()).includes(
-      'Scan interval (min)',
-    ),
+    await page.locator('[data-automation-pane=sources] .source-interval').first().isVisible(),
   );
   assert.deepEqual(errors, []);
   console.log('PROFILE_NO_QUOTAS_PASS');

@@ -24,7 +24,13 @@ try {
     slot = await client.track(context, page),
     tabId = slot.id;
   const label = 'Berlin, Berlin, Stadt, Berlin, DEU';
-  const reset = async ({aria = false, duplicate = false, reject = false, delay = 250} = {}) => {
+  const reset = async ({
+    aria = false,
+    duplicate = false,
+    reject = false,
+    delay = 250,
+    keyOnly = false,
+  } = {}) => {
     await page.setContent(`<style>.dropdown-results{cursor:pointer}.dropdown-location{padding:8px}input{display:block} .dropdown-container{display:none}</style>
    <form onsubmit="event.preventDefault();window.submits++"><label>Current location<div class="application-field">
    <input id="location" name="location" required ${aria ? 'role="combobox" aria-controls="options" aria-autocomplete="list"' : ''}>
@@ -33,7 +39,7 @@ try {
    <div style="display:none">No location found. Loading</div></div></div></label>
    <button>Submit</button></form><button id="unrelated">${label}</button>`);
     await page.evaluate(
-      ({aria, duplicate, reject, delay, label}) => {
+      ({aria, duplicate, reject, delay, label, keyOnly}) => {
         window.submits = 0;
         window.selections = 0;
         window.unrelated = 0;
@@ -41,10 +47,13 @@ try {
         const input = document.querySelector('#location'),
           list = document.querySelector('#options'),
           results = list.firstElementChild;
-        input.addEventListener('input', () => {
+        // Some widgets (Lever's location field) search on key events only.
+        input.addEventListener(keyOnly ? 'keydown' : 'input', () => {
           list.style.display = 'none';
           results.replaceChildren();
           setTimeout(() => {
+            // An empty query lists nothing, as on the real widget.
+            if (keyOnly && !input.value) return;
             for (const text of ['Berlin, DEU', label, ...(duplicate ? [label] : [])]) {
               const option = document.createElement('div');
               option.className = 'dropdown-location';
@@ -64,7 +73,7 @@ try {
           }, delay);
         });
       },
-      {aria, duplicate, reject, delay, label},
+      {aria, duplicate, reject, delay, label, keyOnly},
     );
     return call('browser_jev_observe', {tabId});
   };
@@ -90,6 +99,19 @@ try {
     'JEV_AUTOCOMPLETE_ONE_CALL_PASS',
     JSON.stringify({elapsedMs: Date.now() - start, modelCalls: 0, operationCalls: 1}),
   );
+  // A widget that searches on key events only still receives the query.
+  observed = await reset({keyOnly: true});
+  control = observed.controls.find((c) => c.label === 'Current location');
+  result = await call('browser_jev_autocomplete', {
+    tabId,
+    controlId: control.controlId,
+    text: 'Berlin',
+    option: label,
+  });
+  assert.equal(result.status, 'ready', JSON.stringify(result).slice(0, 400));
+  assert.equal(result.selection.verified, true);
+  assert.equal(await page.locator('#selected-location').inputValue(), 'accepted');
+  console.log('JEV_AUTOCOMPLETE_KEY_EVENT_QUERY_PASS');
   // Exact matches only; show options without inventing a city or clicking elsewhere.
   observed = await reset({aria: true});
   control = observed.controls.find((c) => c.label === 'Current location');
