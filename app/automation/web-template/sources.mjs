@@ -87,6 +87,12 @@ export const sourceMethods = {
     }
     return a;
   },
+  // The current state of the shared waits a source's access recovery recorded.
+  currentSourceWaits(source) {
+    return (source.accessRecovery?.waits ?? []).map((w) =>
+      this.db.siteAccess.forLane(w.lane).status('https://' + w.site),
+    );
+  },
   async runSource(id, url, {fresh = false} = {}) {
     this.assertNotStopping(id);
     const source = this.db.sources(id).find((s) => s.url === url);
@@ -95,10 +101,16 @@ export const sourceMethods = {
     if (source.termsRequired) throw Error(TERMS_REQUIRED);
     if (this.slots(id).some((s) => s.run.sourceUrl === url))
       throw Error('This source is already running');
+    // Starting over from an access block drops the stopped run's saved
+    // position, tabs and queue; the stopped wait is retired below.
+    if (fresh && source.accessRecovery?.state === 'waiting') {
+      await this.sourceAccess.reset(id, url, source.accessRecovery.runId);
+      this.sourceState(id, url, {accessRecovery: null});
+    }
     // A source waiting on an access block continues from its saved point. The
     // shared wait may already be gone (another workspace or a record retry
     // retired it); the source still waits for this Retry.
-    if (
+    else if (
       source.accessRecovery?.state === 'waiting' &&
       (!source.siteWait?.waiting || source.siteWait.exhausted)
     )
@@ -107,12 +119,7 @@ export const sourceMethods = {
       // The site waits are shared across workspaces, so the recorded wait can be
       // older than the one on screen. Retry acknowledges the current wait.
       this.db.siteAccess.acknowledge(
-        [
-          source.siteWait,
-          ...(source.accessRecovery?.waits ?? []).map((w) =>
-            this.db.siteAccess.forLane(w.lane).status('https://' + w.site),
-          ),
-        ].filter(Boolean),
+        [source.siteWait, ...this.currentSourceWaits(source)].filter(Boolean),
       );
       this.sourceState(id, url, {accessRecovery: null});
     }

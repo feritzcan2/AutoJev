@@ -26,7 +26,9 @@ export function questionForm(candidate, q, submit) {
   const modeKey = key + ':mode',
     textKey = key + ':text';
   try {
-    mode = localStorage.getItem(modeKey) === 'text' ? 'text' : 'form';
+    mode = ['text', 'instruct'].includes(localStorage.getItem(modeKey))
+      ? localStorage.getItem(modeKey)
+      : 'form';
     freeInput.value = localStorage.getItem(textKey) ?? '';
   } catch {}
   const fields = q.fields ?? [{id: 'answer', label: q.question, type: 'text', required: true}],
@@ -135,19 +137,31 @@ export function questionForm(candidate, q, submit) {
     const modes = node('div');
     modes.className = 'question-answer-modes';
     const structured = node('button', 'Fill in the form'),
-      written = node('button', 'Answer in writing');
-    for (const b of [structured, written]) b.type = 'button';
+      written = node('button', 'Answer in writing'),
+      instruct = node('button', 'Instruct the agent');
+    for (const b of [structured, written, instruct]) b.type = 'button';
+    // An instruction reaches the agent as a request for this task, not as a
+    // saved answer, so it never turns into a fact for other records.
     const setMode = (value) => {
       mode = value;
-      formFields.hidden = mode === 'text';
-      freeBox.hidden = mode !== 'text';
-      for (const fieldset of formFields.querySelectorAll('fieldset'))
-        fieldset.disabled = mode === 'text';
-      freeInput.disabled = mode !== 'text';
-      freeInput.required = mode === 'text';
+      const free = mode !== 'form',
+        label = mode === 'instruct' ? 'Tell the agent what to do' : 'Write your answer';
+      formFields.hidden = free;
+      freeBox.hidden = !free;
+      for (const fieldset of formFields.querySelectorAll('fieldset')) fieldset.disabled = free;
+      freeInput.disabled = !free;
+      freeInput.required = free;
+      freeLabel.firstChild.textContent = label;
+      freeInput.setAttribute('aria-label', label);
+      freeInput.placeholder =
+        mode === 'instruct'
+          ? 'For example: write a cover letter for this listing from my CV and upload it…'
+          : 'Write your answer in your own words…';
       structured.setAttribute('aria-pressed', String(mode === 'form'));
       written.setAttribute('aria-pressed', String(mode === 'text'));
-      button.textContent = mode === 'text' ? 'Send answer' : 'Send answers';
+      instruct.setAttribute('aria-pressed', String(mode === 'instruct'));
+      button.textContent =
+        mode === 'instruct' ? 'Send instruction' : mode === 'text' ? 'Send answer' : 'Send answers';
       error.textContent = '';
       try {
         localStorage.setItem(modeKey, mode);
@@ -163,7 +177,11 @@ export function questionForm(candidate, q, submit) {
         localStorage.setItem(textKey, freeInput.value);
       } catch {}
     };
-    modes.append(structured, written);
+    instruct.onclick = () => {
+      setMode('instruct');
+      freeInput.focus();
+    };
+    modes.append(structured, written, instruct);
     form.append(modes, formFields, freeBox);
     setMode(mode);
   } else {
@@ -176,7 +194,7 @@ export function questionForm(candidate, q, submit) {
     if (button.disabled || !form.reportValidity()) return;
     const values = Object.fromEntries([...readers].map(([id, read]) => [id, read()]));
     for (const f of fields)
-      if (mode !== 'text' && f.required && Array.isArray(values[f.id]) && !values[f.id].length) {
+      if (mode === 'form' && f.required && Array.isArray(values[f.id]) && !values[f.id].length) {
         error.textContent = `${f.label}: select at least one option`;
         return;
       }
@@ -195,13 +213,15 @@ export function questionForm(candidate, q, submit) {
     error.textContent = '';
     try {
       await submit(
-        q.fields && mode === 'text'
-          ? freeInput.value
-          : q.fields
-            ? hasCustom
-              ? writtenAnswers()
-              : values
-            : values.answer,
+        q.fields && mode === 'instruct'
+          ? {instruction: freeInput.value}
+          : q.fields && mode === 'text'
+            ? freeInput.value
+            : q.fields
+              ? hasCustom
+                ? writtenAnswers()
+                : values
+              : values.answer,
       );
       localStorage.removeItem(key);
       localStorage.removeItem(modeKey);

@@ -146,6 +146,7 @@ export const conversationMethods = {
               JSON.stringify({
                 question: answer.text,
                 answer: answer.answer,
+                ...(answer.instruction ? {instruction: true} : {}),
                 values: answer.answerValues,
                 ...(answer.documents ? {documents: answer.documents} : {}),
               }),

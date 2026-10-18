@@ -622,11 +622,11 @@
   color: var(--danger);
 }
 
-/* Memory panel */
+/* Scan details (development builds): labelled groups, one fact per line. */
 .source-progress-details {
   grid-column: 1 / -1;
   min-width: 0;
-  padding: 18px;
+  padding: 2px 18px 14px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg-raised);
@@ -635,109 +635,89 @@
   grid-column: 2 / -1;
   margin-top: 14px;
 }
-.source-progress-details h3 {
-  margin: 0 0 14px;
+.source-progress-group {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.source-progress-group h4 {
+  margin: 0 0 10px;
   color: var(--text);
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 600;
 }
 .source-progress-facts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  gap: 6px;
   margin: 0;
+}
+.source-progress-facts > div {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 16px;
 }
 .source-progress-facts dt {
-  color: var(--text-secondary);
-  font-size: 11px;
+  color: var(--text-muted);
 }
 .source-progress-facts dd {
-  margin: 4px 0 0;
-  color: var(--text);
-  font-weight: 550;
-}
-.source-progress-note {
-  display: grid;
-  gap: 4px;
-  margin-top: 14px;
-  min-width: 0;
-}
-.source-progress-note b {
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 500;
-}
-.source-progress-note p {
   margin: 0;
   color: var(--text);
-  line-height: 1.6;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.source-progress-recipe {
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+.source-progress-facts code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
 }
 .source-progress-url {
-  display: block;
-  width: fit-content;
   max-width: 100%;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--accent-strong);
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.5;
   text-align: left;
   overflow-wrap: anywhere;
 }
 .source-progress-url:hover {
+  filter: none;
   text-decoration: underline;
 }
-.source-progress-pending,
-.source-progress-rules {
+.source-progress-pending {
+  margin-top: 10px;
+}
+.source-progress-facts + .source-progress-pending {
   margin-top: 14px;
 }
-.source-progress-pending summary,
-.source-progress-rules summary {
+.source-progress-pending summary {
+  width: fit-content;
   color: var(--text);
   cursor: pointer;
 }
-.source-progress-rules p {
-  margin: 8px 0 0;
-  color: var(--text-secondary);
-  line-height: 1.6;
-}
 .source-progress-pending ol {
   display: grid;
-  gap: 6px;
+  gap: 8px;
   margin: 10px 0 0;
-  padding-left: 22px;
-}
-.source-progress-excluded {
-  color: var(--danger);
-}
-.source-progress-card span,
-.source-progress-card small {
-  display: block;
-  font-size: 12px;
-  line-height: 1.5;
-}
-.source-progress-card small {
+  padding-left: 26px;
   color: var(--text-muted);
 }
-.source-progress-excluded b,
-.source-progress-excluded span {
+.source-progress-pending li small {
   display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.source-progress-pending > button {
+  margin-top: 10px;
+  padding: 6px 10px;
   font-size: 12px;
-  line-height: 1.5;
 }
-.source-progress-excluded b {
-  font-weight: 600;
-}
-.source-progress-excluded .source-progress-url {
+.source-progress-excluded .source-progress-url,
+.source-progress-excluded small {
   color: var(--danger);
-  opacity: 0.8;
+}
+.source-progress-rule {
+  display: block;
+  padding-top: 12px;
+  color: var(--text-muted);
 }
 
 .source-empty {
@@ -831,8 +811,9 @@
   .policy-head {
     grid-template-columns: 1fr;
   }
-  .source-progress-facts {
+  .source-progress-facts > div {
     grid-template-columns: 1fr;
+    gap: 2px;
   }
   .policy-row {
     flex-direction: column;
