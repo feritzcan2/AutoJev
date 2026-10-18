@@ -279,6 +279,26 @@ test('a manual execute request needs no draft and keeps observe permissions; dup
   );
 });
 
+test('an outcome without a reservation is refused and the record stays sendable', async (t) => {
+  const f = fixture(t);
+  await f.runtime.runRecord(f.id, f.item.id, 'execute', {manual: true});
+  await settle();
+  const run = f.launches.at(-1);
+  // A listing site can mark a job Applied when it only redirects to the employer.
+  f.db.observe(f.id, run.id, f.item.url, 'Applied. Apply on external site');
+  assert.throws(
+    () =>
+      f.db.resolve(f.id, run.id, f.item.id, {
+        status: 'completed',
+        evidence: 'Applied',
+        url: f.item.url,
+      }),
+    /No submission was reserved.*reserve_automation_action/,
+  );
+  assert.equal(f.db.result(f.id, f.item.id).status, 'found');
+  assert.ok(directRecordInstructions.includes('hands the application over to another site'));
+});
+
 test('changed proposals do not invalidate a queued execute; the running execute request covers its own proposal edits', async (t) => {
   const f = fixture(t),
     prepared = await f.prepare();

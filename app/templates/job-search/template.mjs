@@ -36,7 +36,7 @@ export const jobSearchTemplate = {
       label: 'Apply',
       runningLabel: 'Applying',
       successCriteria:
-        'The employer or portal shows confirmation for this exact vacancy and candidate, or its application history lists this application. Save the observed confirmation; an Apply button click is insufficient.',
+        "The employer or portal shows confirmation for this exact vacancy and candidate, or its application history lists this application. Save the observed confirmation; an Apply button click is insufficient. When the listing sends the candidate to the employer's site, a job board's Applied marker or history entry only records that redirect: the confirmation must come from the employer's form.",
     },
   },
   fields: [

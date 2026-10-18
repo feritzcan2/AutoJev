@@ -6,8 +6,14 @@ import {
   dropRecipeSearches,
   replayScanWork,
 } from '../../sources/scan-work.mjs';
-import {recipeValues, recipeReplay, replayMatches, recipeStatus} from '../../sources/recipe.mjs';
-import {siteExtensionKind} from '../../site-extensions/index.mjs';
+import {
+  recipeValues,
+  recipeReplay,
+  replayMatches,
+  recipeStatus,
+  recipeNeedsTerms,
+} from '../../sources/recipe.mjs';
+import {siteExtensionKind, siteExtensionFor} from '../../site-extensions/index.mjs';
 import {templateSourceSettings, startingSource} from '../../templates/sources.mjs';
 import {siteKey} from '../../browser/site-key.mjs';
 import {randomUUID} from 'node:crypto';
@@ -23,6 +29,20 @@ import {json, finishedSourceRun, runSource} from './rows.mjs';
 // Only a different search method changes a recipe; notes, the pagination
 // hint, the page cap and the login flag are advisory.
 const recipeKey = (r) => (r ? JSON.stringify({entry: r.entry, terms: r.terms ?? null}) : null);
+
+// The search terms most sources of the workspace share, for a source added
+// without its own: a {query} search then starts from the workspace's roles
+// instead of waiting. Its trial or the setup chat can change them.
+function sharedTerms(settings = {}) {
+  const counts = new Map();
+  for (const {recipe} of Object.values(settings))
+    if (recipe?.terms?.length) {
+      const key = JSON.stringify(recipe.terms);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  const [best] = [...counts].sort((x, y) => y[1] - x[1]);
+  return best ? JSON.parse(best[0]) : null;
+}
 
 // AutomationStore methods: source list, per-source settings, waits and learned recipes.
 export const sourceMethods = {
@@ -172,6 +192,9 @@ export const sourceMethods = {
         name: s.name,
         countries,
         ...(s.remote ? {remote: true} : {}),
+        // Off in the template, for example an API that needs the user's own key.
+        ...(s.enabled ? {} : {enabled: false}),
+        ...(siteExtensionFor(s.url)?.credentials ? {account: true} : {}),
         label:
           label ??
           (s.remote ? (served ? served + ' or remote' : 'Remote only') : served || 'All countries'),
@@ -272,10 +295,15 @@ export const sourceMethods = {
       // setup), or another address on its site, keeps its template name, recipe
       // and instructions.
       const defaults = this.template(a.templateId).defaultSources ?? [];
+      const terms = sharedTerms(a.sourceSettings);
       const seeded = Object.fromEntries(
         added.flatMap((url) => {
           const source = !a.sourceSettings?.[url] && startingSource(defaults, url);
-          return source ? [[url, templateSourceSettings(source)]] : [];
+          if (!source) return [];
+          const settings = templateSourceSettings(source);
+          if (terms && recipeNeedsTerms(settings.recipe))
+            settings.recipe = {...settings.recipe, terms};
+          return [[url, settings]];
         }),
       );
       const next = {

@@ -232,7 +232,7 @@ export function extensionBench({
   // One listing page as a scan's detail read gets it, with what the page
   // summary adds for its transport.
   async function readListing(id, url) {
-    const base = route(id, url);
+    let base = route(id, url);
     if (base.transport === 'api') {
       const adapter = base.instance.collector,
         cached = jobs.get(base.url);
@@ -257,7 +257,9 @@ export function extensionBench({
         siteAccess: db.siteAccess,
         wait,
       });
-      return {base, page, extra: {}};
+      // null: the reader leaves this address to the browser tab.
+      if (page) return {base, page, extra: {}};
+      base = {...base, transport: 'browser'};
     }
     const {page, tabId, diagnostics} = await readBrowser(id, base);
     return {base, page, extra: {tabId, diagnostics}};
@@ -540,7 +542,7 @@ export function extensionBench({
 
     // A results page (or any page): its listings, other links and pagination.
     async read(id, url) {
-      const base = route(id, url);
+      let base = route(id, url);
       if (base.transport === 'api') {
         const adapter = base.instance.collector,
           apiUrl = adapter.searchUrl(base.url),
@@ -573,7 +575,9 @@ export function extensionBench({
           siteAccess: db.siteAccess,
           wait,
         });
-        return result(base, pageSummary(page, base));
+        // null: the reader leaves this address to the browser tab.
+        if (page) return result(base, pageSummary(page, base));
+        base = {...base, transport: 'browser'};
       }
       const {page, tabId, diagnostics} = await readBrowser(id, base);
       return result(base, {...pageSummary(page, base), tabId, diagnostics});

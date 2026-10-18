@@ -532,20 +532,20 @@ export function automationWorkflow({
             const reader = ['open', 'reopen'].includes(action)
               ? siteReaderFor(parameters.url)
               : null;
-            if (
-              reader ||
-              (action === 'observe' &&
-                readerPage &&
-                (!parameters.url || parameters.url === readerPage.url))
-            ) {
-              const page =
-                action === 'observe'
-                  ? readerPage
-                  : await reader.read(parameters.url, {
+            const page =
+              action === 'observe' &&
+              readerPage &&
+              (!parameters.url || parameters.url === readerPage.url)
+                ? readerPage
+                : reader
+                  ? await reader.read(parameters.url, {
                       signal,
                       siteAccess: db.siteAccess,
                       wait: (ms) => pause(ms, undefined, {signal}),
-                    });
+                    })
+                  : null;
+            // A reader that cannot read this address (null) leaves it to the tab.
+            if (page) {
               readerPage = page;
               await inspect({research, response: readerResponse(page), jev: true});
               return page;

@@ -572,8 +572,16 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       row(source.url, source.name, new URL(source.url).hostname, source.enabled);
     for (const group of data.sourceCatalog ?? [])
       for (const choice of group.choices)
-        if (country && choice.countries.includes(country))
+        if (country && choice.countries.includes(country) && choice.enabled !== false)
           row(choice.url, choice.name, 'Suggested · ' + choice.label, true);
+        else if (country && choice.countries.includes(country))
+          row(
+            choice.url,
+            choice.name,
+            'Optional · ' +
+              (choice.account ? 'needs your API key under Site accounts' : choice.label),
+            false,
+          );
         else if (choice.remote) row(choice.url, choice.name, 'Optional · ' + choice.label, false);
   }
   function renderReadiness(form) {
@@ -694,8 +702,12 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         await api.automationSourceSave(owner, source.url, {enabled: chosen.has(source.url)});
     for (const group of data.sourceCatalog ?? [])
       for (const choice of group.choices)
-        if (chosen.has(choice.url) && !data.sources.some((s) => s.url === choice.url))
+        if (chosen.has(choice.url) && !data.sources.some((s) => s.url === choice.url)) {
           await api.automationSourceAdd(owner, {url: choice.url, name: choice.name});
+          // A board off in the template joins switched on when the user ticks it.
+          if (choice.enabled === false)
+            await api.automationSourceSave(owner, choice.url, {enabled: true});
+        }
     const current = (await api.workspaceSnapshot(owner)).automation,
       criteria = {...current.criteria};
     for (const key of reviewFields) if (f[key]) criteria[key] = f[key].value.trim();
