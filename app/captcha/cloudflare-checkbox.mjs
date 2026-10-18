@@ -3,6 +3,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {findTurnstileCheckbox} from './turnstile-checkbox.mjs';
 import {captchaProvider} from './provider.mjs';
 import {acquireTabRendering} from '../jev/rendering.mjs';
+import {humanClick} from './human-click.mjs';
 
 // The site-wait card is the only place a user sees why the one native attempt
 // ended. Keep the reason code too; it names the exact discovery/click step.
@@ -172,7 +173,7 @@ export async function clickCloudflareCheckbox(slot, check) {
         reason: 'click_dispatched',
         clicked: true,
       });
-    await slot.page.mouse.click(x, y);
+    await humanClick(slot.page, x, y, check);
     return true;
   } finally {
     clearTimeout(timer);

@@ -72,6 +72,37 @@ function timeUntil(at) {
       .join(' ')
   );
 }
+function timeAgo(at) {
+  const minutes = Math.floor((Date.now() - at) / 60000);
+  if (minutes < 1) return 'just now';
+  const parts = [
+    [Math.floor(minutes / 1440), 'd'],
+    [Math.floor(minutes / 60) % 24, 'h'],
+    [minutes % 60, 'min'],
+  ];
+  return (
+    parts
+      .filter(([value]) => value)
+      .slice(0, 2)
+      .map(([value, unit]) => `${value} ${unit}`)
+      .join(' ') + ' ago'
+  );
+}
+function scanStatsLine(stats) {
+  return [
+    plural(stats.searches, 'search', 'searches'),
+    plural(stats.listings, 'new listing'),
+    stats.jevRejected ? `Jev dropped ${stats.jevRejected}` : null,
+    stats.reviewRejected ? `rejected on review ${stats.reviewRejected}` : null,
+    stats.belowThreshold ? `${stats.belowThreshold} below save score` : null,
+    `${stats.saved} saved`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+const updateLastRun = (node) => {
+  node.textContent = 'Last scan ' + timeAgo(Number(node.dataset.sourceLastAt));
+};
 const updateNextRun = (node) => {
   node.textContent =
     node.dataset.sourceNextLabel +
@@ -87,6 +118,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     owner,
     editing = null,
     memory = null,
+    order = null,
     adding = false,
     saving = false,
     bulkSaving = false;
@@ -111,8 +143,10 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       clearInterval(countdown);
       return;
     }
-    if (host.getClientRects().length)
+    if (host.getClientRects().length) {
       for (const node of host.querySelectorAll('[data-source-next-at]')) updateNextRun(node);
+      for (const node of host.querySelectorAll('[data-source-last-at]')) updateLastRun(node);
+    }
   }, 30000);
   const tabsControl = workspaceSourceTabs(api, {notice});
   const action = (fn) => async (event) => {
@@ -372,6 +406,20 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       summary: source.lastResult,
       finishedAt: source.lastRunAt,
     };
+    // A counted scan shows the app's own tallies; the agent's text is a short note.
+    const stats = !source.scanning && !source.siteWait ? source.lastRun?.scanStats : null;
+    if (stats) {
+      const line = el('small', scanStatsLine(stats), 'source-stats');
+      line.title =
+        'Last scan: new listings found, listings dropped by Jev or the agent, and findings saved';
+      status.append(line);
+      if (outcome.summary && outcome.summary !== 'Scan finished normally.') {
+        const note = el('small', outcome.summary, 'source-note');
+        note.title = outcome.summary;
+        status.append(note);
+      }
+      return {status, outcome};
+    }
     const detail = source.scanning
       ? source.scanIssue
         ? `${source.scanIssue.url} · attempt ${source.scanIssue.attempts}`
@@ -418,6 +466,14 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       updateNextRun(nextRun);
     }
     timing.append(nextRun);
+    const lastAt = source.lastRun?.finishedAt ?? source.lastRunAt;
+    if (lastAt) {
+      const lastScan = el('span', null, 'source-last-scan');
+      lastScan.dataset.sourceLastAt = String(lastAt);
+      lastScan.title = 'Last scan ' + time(lastAt);
+      updateLastRun(lastScan);
+      timing.append(document.createTextNode(' · '), lastScan);
+    }
     if (!source.scanning) meta.append(timing);
     const outcomeLabel = runOutcomes[outcome.status],
       stated =
@@ -452,18 +508,45 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
   // Sources a site extension reads carry its kind; the rest use the generic reader.
   const extensionKinds = {
     api: [
-      'API',
-      "Site extension: listings come in full text from the site's API; no browser is opened.",
+      'Collector',
+      [
+        "Collector: a site extension reads this source through the site's own API.",
+        'No browser tab is opened. Each API page returns the listings with their full text, company, location and pay, so nothing has to be read from a web page.',
+        'Jev screens every listing first and drops clear mismatches; the agent only scores the rest and saves the good ones.',
+        'This is the fastest and most reliable kind: no CAPTCHA, login or page layout can get in the way.',
+      ].join('\n\n'),
     ],
-    http: ['HTTP', 'Site extension: pages are read over HTTP without opening a browser.'],
+    http: [
+      'HTTP',
+      [
+        "HTTP: a site extension fetches this site's pages directly over HTTP.",
+        "No browser tab is opened. The extension knows where the listings and the next page are on the results page, and reads each listing's own text without the site menus and ads.",
+        'Jev screens the listings and the agent scores the ones that remain.',
+        'Fast and does not use Chrome, but the site can still change its pages or start blocking requests.',
+      ].join('\n\n'),
+    ],
     browser: [
       'Automation',
-      'Site extension: listings and pagination are read directly from the page opened in Chrome.',
+      [
+        'Automation: the site is opened in Chrome and a site extension reads the open page.',
+        'The extension knows which cards are listings and how this site moves to the next page, so the scan does not have to guess the layout.',
+        'Jev reads the listings in the browser and the agent scores the ones that remain.',
+        'Slower than Collector or HTTP because pages load in a real tab, and the site can ask for a login or a CAPTCHA.',
+      ].join('\n\n'),
+    ],
+    agent: [
+      'Agent',
+      [
+        'Agent: this site has no site extension, so it is read with the generic reader.',
+        'The site is opened in Chrome. In the first round the agent works out how to search the site and saves a recipe; later scans replay that recipe.',
+        'Jev finds the listings and the next page from the page structure alone, and the agent scores what remains.',
+        'The slowest and least predictable kind: a layout change can break the recipe, and the site can ask for a login or a CAPTCHA.',
+      ].join('\n\n'),
     ],
   };
   // A source row carries {kind}; a catalog group carries the kind itself.
   function extensionChip(source) {
-    const kind = source.extension?.kind ?? source.extension;
+    const kind = source.extension?.kind ?? source.extension ?? 'agent';
     const [label, detail] = extensionKinds[kind] ?? [];
     if (!label) return null;
     const chip = el('span', label, 'source-extension');
@@ -539,7 +622,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       facts.append(fact);
     }
     section.append(facts);
-    const reader = extensionKinds[source.extension?.kind];
+    const reader = extensionKinds[source.extension?.kind ?? 'agent'];
     const note = (label, text) => {
       const group = el('div', null, 'source-progress-note');
       group.append(el('b', label), el('p', text));
@@ -585,7 +668,10 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       );
     recipe.append(el('p', lines.join('\n')));
     section.append(recipe);
-    if (reader) note('How listings are read', reader[1]);
+    if (reader) {
+      note('How listings are read', reader[1]);
+      section.lastElementChild.dataset.reader = '';
+    }
     const reasons = {
       initial: 'The first successful full scan has not happened yet.',
       periodic: 'A regular full scan is due.',
@@ -991,9 +1077,25 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       : '';
   }
 
+  // Opening the screen puts active sources first, then the one that works
+  // soonest. The order then holds so rows do not jump while the screen is open;
+  // sources added meanwhile go to the end.
+  const workAt = (source) =>
+    source.scanning ? 0 : (source.siteWait?.retryAt ?? source.nextRunAt ?? Infinity);
+  function ordered(sources) {
+    order ??= [...sources]
+      .sort((a, b) => Number(b.enabled) - Number(a.enabled) || workAt(a) - workAt(b) || 0)
+      .map((source) => source.url);
+    const rank = (source) => {
+      const index = order.indexOf(source.url);
+      return index < 0 ? order.length : index;
+    };
+    return [...sources].sort((a, b) => rank(a) - rank(b));
+  }
+
   function render() {
     if (!data) return;
-    const sources = data.sources ?? [],
+    const sources = ordered(data.sources ?? []),
       enabled = sources.filter((s) => s.enabled),
       blocked = enabled.filter((s) => s.blocked),
       upcoming = enabled
@@ -1079,12 +1181,12 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
           'source-url',
         );
       link.title = source.url;
-      name.append(link);
+      name.append(link, extensionChip(source) ?? '');
       const query = el('p', source.query, 'source-scope');
       query.title = source.query;
       const {status, outcome} = statusLine(source),
         meta = metaLine(source, outcome);
-      // A working recipe and the reader kind are in Details; the row flags only a broken recipe.
+      // A working recipe is in Details; the row flags only a broken recipe.
       if (recipeSummary(source.recipe ?? null, source.recipeState ?? null).status === 'stale')
         meta.append(recipeChip(source));
       main.replaceChildren(name, ...(sameScope(source) ? [] : [query]), status, meta);
@@ -1190,9 +1292,14 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         bulkForm.reset();
         for (const view of rows.values()) view.row.remove();
         rows.clear();
+        order = null;
       }
       owner = id;
       data = snapshot;
+      render();
+    },
+    resort() {
+      order = null;
       render();
     },
   };

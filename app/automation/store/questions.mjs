@@ -21,7 +21,14 @@ export const questionMethods = {
   },
   askQuestion(
     id,
-    {text, recordId = null, fields = null, accessCheck = null, outcome = false},
+    {
+      text,
+      recordId = null,
+      fields = null,
+      accessCheck = null,
+      outcome = false,
+      verification = false,
+    },
     {runId = undefined} = {},
   ) {
     text = boundedText(text, 'Question', 6000);
@@ -51,6 +58,7 @@ export const questionMethods = {
       ...(isConversation(run) ? {conversation: true} : {}),
       ...(accessCheck ? {accessCheck} : {}),
       ...(outcome ? {outcome: true} : {}),
+      ...(verification ? {verification: true} : {}),
       answer: null,
       createdAt: this.now(),
       ...(run ? {runId: run.id} : {}),

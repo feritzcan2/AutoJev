@@ -2,6 +2,7 @@
 import {batchScoring} from '../records/task-scope.mjs';
 import {assessmentSchema, resultScoreFields, recordScoreTool} from '../scoring/record-scoring.mjs';
 import {questionFieldsSchema} from './question-forms.mjs';
+import {blockerSchema} from '../records/blockers.mjs';
 import {workspaceTableTools, workspaceCellsSchema} from '../workspaces/table-tools.mjs';
 import {browserSnapshotTools} from '../browser/snapshot.mjs';
 import {automationContextTools} from './context.mjs';
@@ -148,7 +149,7 @@ export const automationTools = [
   ),
   tool(
     'save_automation_plan',
-    'Interview only: update the plan from known user answers. Missing facts stay empty. Saved sources stay unchanged unless listed: addSources proposes new source URLs, removeSources proposes removing saved sources and is only for sources the user asked to drop. sourceSearches sets the search of a saved or added source listed in get_automation_context section profile sourceSearch: up to 5 terms for {query} as its notes describe, and filter values from its filters ("" removes a filter). Source changes are suggestions the user applies on Sources. Grants no permission and activates nothing.',
+    'Interview only: update the plan from known user answers. Missing facts stay empty. In a chat, criteria you leave out keep their saved values; send an empty value to clear one. Saved sources stay unchanged unless listed: addSources proposes new source URLs, removeSources proposes removing saved sources and is only for sources the user asked to drop. sourceSearches sets the search of a saved or added source listed in get_automation_context section profile sourceSearch: up to 5 terms for {query} as its notes describe, and filter values from its filters ("" removes a filter). Source changes are suggestions the user applies on Sources. Grants no permission and activates nothing.',
     {
       title: str,
       goal: optional,
@@ -256,10 +257,13 @@ export const automationTools = [
   ),
   tool(
     'record_automation_outcome',
-    'Record completed or uncertain. In an execute task before any reservation, closed means the record page itself says it is no longer available (removed, expired, not found, no longer accepting applications); evidence is that exact page sentence; the record is then retired. In a verify task, not_submitted needs notSubmittedProof: the latest snapshotId, kind draft/rejected and recordEvidence (exact title, ID or URL fragment, 6+ characters) showing this record was not sent; an unfinished form or missing success message is insufficient. Verification never submits. itemId defaults to the assigned record, url to the current page.',
+    'Record completed or uncertain. In an execute task before any reservation, closed means the record page itself says it is no longer available (removed, expired, not found, no longer accepting applications); evidence is that exact page sentence; the record is then retired. applied works the same way when the record page itself says the user already applied to it (for example "Application submitted 2 weeks ago"); the record is then completed without a new submission. In a verify task, not_submitted needs notSubmittedProof: the latest snapshotId, kind draft/rejected and recordEvidence (exact title, ID or URL fragment, 6+ characters) showing this record was not sent; an unfinished form or missing success message is insufficient. Verification never submits. itemId defaults to the assigned record, url to the current page.',
     {
       itemId: str,
-      status: {type: 'string', enum: ['completed', 'uncertain', 'not_submitted', 'closed']},
+      status: {
+        type: 'string',
+        enum: ['completed', 'uncertain', 'not_submitted', 'closed', 'applied'],
+      },
       evidence: str,
       url: str,
       notSubmittedProof: object(
@@ -420,8 +424,19 @@ export function scopedAutomationTools({run, template, collecting}) {
   if (run.recordId || run.recordOperation) {
     const finish = scopedTools.find((t) => t.name === 'finish_automation_run');
     delete finish.inputSchema.properties.goalReached;
+    finish.inputSchema.properties.blocker = blockerSchema;
     finish.description =
-      'Finish only this assigned record task after its success criteria are met. For a scoring batch, every assigned record needs a saved assessment or a record-scoped question. Report status and summary. This completes the assigned task; workspace scheduling and other workers continue. Stop after this call.';
+      'Finish only this assigned record task after its success criteria are met. For a scoring batch, every assigned record needs a saved assessment or a record-scoped question. Report status and summary. When blocked or failed, also pass blocker: the record card shows only its category, one-sentence reason and next step for the user; summary keeps the full details. This completes the assigned task; workspace scheduling and other workers continue. Stop after this call.';
+  }
+  // The app counts a scan's listings, rejections and saves for the source row,
+  // so the summary is only a short note.
+  if (run.sourceUrl && !run.recordId && !run.recordOperation) {
+    scopedTools.find((t) => t.name === 'finish_automation_run').inputSchema.properties.summary = {
+      ...str,
+      maxLength: 300,
+      description:
+        'One short sentence, only about what the app cannot count: a problem, a skipped part of the site or an unusual result. The app already shows the searches, listing, rejection and saved counts, so do not repeat numbers or list saved findings. Write "Scan finished normally." when there is nothing else to say.',
+    };
   }
   if (run.recordOperation) {
     const reserve = scopedTools.find((t) => t.name === 'reserve_automation_action');

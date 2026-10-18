@@ -644,6 +644,7 @@ export function automationsPage(
   }
   function setPane(name) {
     const page = {results: 'board', setup: 'profile', history: 'background'}[name] ?? name;
+    if (page === 'sources' && pane !== 'sources') sourcePanel?.resort();
     pane = page;
     localStorage.setItem('selected-view', page);
     for (const b of document.querySelectorAll('aside nav button'))

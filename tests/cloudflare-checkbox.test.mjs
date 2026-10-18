@@ -89,7 +89,15 @@ test('a checkbox in a background tab is clicked after the tab is brought forward
     bringToFront: async () => {
       front = true;
     },
-    mouse: {click: async (x, y) => clicks.push([x, y])},
+    mouse: {
+      at: [0, 0],
+      move: async (x, y) => {
+        page.mouse.at = [x, y];
+        clicks.push(['move']);
+      },
+      down: async () => clicks.push(['down', ...page.mouse.at]),
+      up: async () => clicks.push(['up', ...page.mouse.at]),
+    },
   };
   const slot = {
     page,
@@ -99,6 +107,13 @@ test('a checkbox in a background tab is clicked after the tab is brought forward
   };
   assert.equal(await clickCloudflareCheckbox(slot, () => {}), true);
   assert.equal(front, true);
-  assert.deepEqual(clicks, [[120, 230]]);
+  // A human-like approach, hover, press and release near the checkbox centre.
+  const presses = clicks.filter(([kind]) => kind !== 'move');
+  assert.ok(clicks.filter(([kind]) => kind === 'move').length > 10);
+  assert.deepEqual(
+    presses.map(([kind]) => kind),
+    ['down', 'up'],
+  );
+  for (const [, x, y] of presses) assert.ok(Math.abs(x - 120) <= 2 && Math.abs(y - 230) <= 2);
   assert.equal(slot.cloudflareDiagnostic.reason, 'click_dispatched');
 });

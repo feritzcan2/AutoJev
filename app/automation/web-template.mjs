@@ -651,6 +651,7 @@ export class WebTasks extends TaskRuns {
     return this.queue.get(id, task.id);
   }
   async runRecord(id, itemId, kind, input = {}) {
+    this.retireRecordSiteWait(id, itemId);
     const task = enqueueRecordOperation(this, id, itemId, kind, {
       manual: true,
       digest: input.digest,
@@ -659,6 +660,20 @@ export class WebTasks extends TaskRuns {
     });
     await this.tick();
     return this.queue.get(id, task.id);
+  }
+  // A wait whose automatic retries ran out needs the user. A record retry is
+  // that intervention, as a source run is: it retires the wait the record's
+  // last run stopped on, unless the site has failed again since.
+  retireRecordSiteWait(id, itemId) {
+    const row = this.db.db
+      .prepare(
+        "SELECT json_extract(data,'$.siteWait') AS wait FROM automation_runs WHERE automation_id=? AND json_extract(data,'$.recordId')=? ORDER BY rowid DESC LIMIT 1",
+      )
+      .get(id, itemId);
+    const wait = row?.wait && JSON.parse(row.wait),
+      current = wait?.exhausted && this.db.siteAccess.status('https://' + wait.site);
+    if (current?.exhausted && current.blockedAt === wait.blockedAt)
+      this.db.siteAccess.acknowledge([wait]);
   }
   markRecordSubmitted(id, itemId) {
     const item = this.db.markSubmitted(id, itemId);

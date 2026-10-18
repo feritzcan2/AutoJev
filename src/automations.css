@@ -1283,6 +1283,10 @@
   font-size: 11px;
   font-weight: 600;
 }
+.record-question-badge[data-verification='true'] {
+  background: color-mix(in srgb, var(--danger, #e1757e) 15%, transparent);
+  color: var(--danger, #e1757e);
+}
 .record-question-preview {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -1596,12 +1600,26 @@
 .record-problem-reason {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 2;
   overflow: hidden;
   color: var(--text);
   font-size: 12px;
   line-height: 1.5;
   white-space: normal;
+}
+.record-problem:hover .record-problem-reason,
+.record-problem:focus-within .record-problem-reason {
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+.record-problem-next {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.record-problem-next::before {
+  content: '→ ' / '';
 }
 .record-problem-actions {
   display: flex;

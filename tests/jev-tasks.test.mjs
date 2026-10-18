@@ -2253,6 +2253,7 @@ test('discovery retires explicit card conflicts at 85 percent without opening de
         title: 'Surgeon - AI Trainer',
         reason: 'unrelated_role',
         stage: 'card',
+        by: 'jev',
         confidence: 0.85,
       },
       {
@@ -2260,6 +2261,7 @@ test('discovery retires explicit card conflicts at 85 percent without opening de
         title: 'Truck driver',
         reason: 'unrelated_role',
         stage: 'card',
+        by: 'jev',
         confidence: 0.8,
       },
     ],
@@ -2846,6 +2848,7 @@ test('LinkedIn guest searches and postings are read over HTTP; marked listings s
   const core = new WorkspaceDatabase(':memory:'),
     db = new AutomationStore(core);
   t.after(() => core.close());
+  db.siteAccess.pace = () => 0; // No real gap between the fake responses.
   const search =
     'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=backend&location=Germany&sortBy=DD';
   const a = db.create('housing', {

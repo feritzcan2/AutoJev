@@ -805,6 +805,11 @@ test('a verify that ends without portal proof keeps the record uncertain and ask
   await flow.call(f.id, verify.id, 'finish_automation_run', {
     status: 'blocked',
     summary: 'Form boş, onay sayfası yok.',
+    blocker: {
+      category: 'site_problem',
+      reason: 'The portal shows no confirmation for this application.',
+      userAction: 'Check your email for a confirmation',
+    },
   });
   const launches = f.launches.length;
   await f.runtime.finish(f.id, 'blocked', 'Form boş, onay sayfası yok.', verify.workerId);
@@ -1951,6 +1956,11 @@ test('a CAPTCHA after the submit click asks the user to solve it before reportin
   await flow.call(f.id, run.id, 'finish_automation_run', {
     status: 'blocked',
     summary: 'Submitted once; a CAPTCHA is shown.',
+    blocker: {
+      category: 'verification',
+      reason: 'A CAPTCHA appeared after the submit click.',
+      userAction: 'Solve the CAPTCHA on the open tab',
+    },
   });
   const question = f.db.get(f.id).questions.find((q) => q.recordId === item.id && q.outcome);
   assert.match(question.text, /Solve it/);
@@ -1958,6 +1968,122 @@ test('a CAPTCHA after the submit click asks the user to solve it before reportin
     question.fields[0].label,
     'After solving the verification: was this record submitted?',
   );
+});
+
+test('a CAPTCHA that renders after the submit result still marks the record as a CAPTCHA to solve', async (t) => {
+  const {recordOperationStatus} = await import('../src/record-operation-status.js');
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  f.db.reserve(f.id, run.id, item.id);
+  let clicked = false,
+    late = false;
+  const browser = {
+    currentUrl: async () => item.url,
+    call: async (_id, name) => {
+      if (name === 'browser_click') clicked = true;
+      const page = {
+        url: item.url,
+        text: clicked ? 'Job Application\nSending' : 'Job Application',
+        ...(late ? {verification: {state: 'required', evidence: 'hCaptcha checkbox'}} : {}),
+        fillFields: [{fieldId: 'f1'}],
+        clickTargets: [{targetId: 'e1', label: 'Submit application'}],
+      };
+      return {
+        jevPage: page,
+        content: [{type: 'text', text: `Page URL: ${page.url}\n${JSON.stringify(page)}`}],
+        action: {executed: true},
+      };
+    },
+  };
+  const flow = automationWorkflow({
+    db: f.db,
+    run,
+    signal: new AbortController().signal,
+    submitSettleMs: 0,
+    browser,
+    report: (...args) => f.runtime.report(...args),
+  });
+  await flow.call(f.id, run.id, 'browser_open', {url: item.url});
+  const result = await flow.call(f.id, run.id, 'browser_interact', {operation: 'click', ref: 'e1'});
+  assert.equal(result.submission.verification, undefined);
+  late = true;
+  await flow.call(f.id, run.id, 'browser_read', {});
+  await flow.call(f.id, run.id, 'record_automation_outcome', {
+    status: 'uncertain',
+    evidence: 'A CAPTCHA appeared after the click.',
+    url: item.url,
+  });
+  await flow.call(f.id, run.id, 'finish_automation_run', {
+    status: 'blocked',
+    summary: 'Submitted once; a CAPTCHA is shown.',
+    blocker: {
+      category: 'verification',
+      reason: 'A CAPTCHA appeared after the submit click.',
+      userAction: 'Solve the CAPTCHA on the open tab',
+    },
+  });
+  const question = f.db.get(f.id).questions.find((q) => q.recordId === item.id && q.outcome);
+  assert.equal(question.verification, true);
+  assert.match(question.text, /Solve it/);
+  const row = f.db.snapshot(f.id).results.find((r) => r.id === item.id);
+  assert.equal(recordOperationStatus(row).label, 'CAPTCHA to solve');
+});
+
+test('a blocked application needs a short blocker, which the record card shows instead of the summary', async (t) => {
+  const {recordProblem} = await import('../src/record-operation-status.js');
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  const flow = automationWorkflow({
+    db: f.db,
+    run,
+    signal: new AbortController().signal,
+    browser: {currentUrl: async () => item.url, call: async () => ({content: []})},
+    report: (...args) => f.runtime.report(...args),
+  });
+  const summary =
+    'Not submitted. The listing says worldwide, but the Greenhouse form in tab 12AB asks for US work authorization, which the saved facts deny.';
+  await assert.rejects(
+    flow.call(f.id, run.id, 'finish_automation_run', {status: 'blocked', summary}),
+    /Add blocker/,
+  );
+  await assert.rejects(
+    flow.call(f.id, run.id, 'finish_automation_run', {
+      status: 'blocked',
+      summary,
+      blocker: {category: 'other', reason: 'US only.', userAction: 'Skip this record'},
+    }),
+    /blocker.category must be one of/,
+  );
+  await flow.call(f.id, run.id, 'finish_automation_run', {
+    status: 'blocked',
+    summary,
+    blocker: {
+      category: 'not_eligible',
+      reason: 'The form requires US work authorization; the listing said worldwide.',
+      userAction: 'Skip this record',
+    },
+  });
+  await f.runtime.finish(f.id, 'blocked', summary, run.workerId);
+  await settle();
+  const row = f.db.snapshot(f.id).results.find((r) => r.id === item.id);
+  assert.equal(row.recordAction.lastTask.summary, summary);
+  assert.deepEqual(recordProblem(row), {
+    label: 'Not eligible',
+    category: 'not_eligible',
+    reason: 'The form requires US work authorization; the listing said worldwide.',
+    next: 'Skip this record',
+    skip: true,
+  });
+  // Without a blocker (older runs) the card falls back to the summary.
+  const legacy = structuredClone(row);
+  delete legacy.recordAction.lastTask.blocker;
+  assert.deepEqual(recordProblem(legacy), {label: 'Operation blocked', reason: summary});
 });
 
 test('a click on the submit button the form inspection found is the submission, also labelled Apply', async (t) => {
@@ -2106,6 +2232,70 @@ test('an execute run retires a record whose page says it is gone, only with a qu
   assert.equal(redirected.status, 'dismissed');
 });
 
+test('an execute run completes a record whose page says the user already applied, only with a quote from that page', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  const applied = 'Application submitted 2 weeks ago';
+  const browser = {
+    currentUrl: async () => item.url,
+    call: async () => ({
+      content: [
+        {
+          type: 'text',
+          text: `Page URL: ${item.url}\n${JSON.stringify({url: item.url, text: 'Senior Engineer\n' + applied})}`,
+        },
+      ],
+    }),
+  };
+  const flow = automationWorkflow({
+    db: f.db,
+    run,
+    signal: {aborted: false},
+    browser,
+    report: (...args) => f.runtime.report(...args),
+  });
+  await flow.call(f.id, run.id, 'browser_open', {url: item.url});
+  await assert.rejects(
+    flow.call(f.id, run.id, 'record_automation_outcome', {
+      status: 'applied',
+      evidence: 'You applied to this job',
+    }),
+    /you already applied, word for word/,
+  );
+  assert.equal(f.db.result(f.id, item.id).status, 'prepared');
+  const saved = await flow.call(f.id, run.id, 'record_automation_outcome', {
+    status: 'applied',
+    evidence: applied,
+  });
+  assert.equal(saved.status, 'completed');
+  assert.equal(saved.alreadyApplied.evidence, applied);
+  await flow.call(f.id, run.id, 'finish_automation_run', {
+    status: 'completed',
+    summary: 'The user already applied to this listing.',
+  });
+  // A reserved (possibly submitted) record is never marked applied from the page.
+  const f2 = fixture(t);
+  const item2 = await f2.prepare();
+  await f2.runtime.runRecord(f2.id, item2.id, 'execute', {direct: true});
+  await settle();
+  const run2 = f2.launches.at(-1);
+  f2.db.reserve(f2.id, run2.id, item2.id);
+  assert.throws(
+    () =>
+      f2.db.closeRecord(
+        f2.id,
+        run2.id,
+        item2.id,
+        {status: 'applied', evidence: applied, url: item2.url},
+        {url: item2.url, text: applied},
+      ),
+    /uncertain/,
+  );
+});
+
 test('an application stopped by a shared site wait resumes after the wait, at most twice', async (t) => {
   const f = fixture(t);
   const item = await f.prepare();
@@ -2137,6 +2327,39 @@ test('an application stopped by a shared site wait resumes after the wait, at mo
   await f.runtime.finish(f.id, 'blocked', 'Rate limited', run.workerId);
   assert.equal(task().state, 'blocked');
   assert.equal(f.db.result(f.id, item.id).status, 'prepared');
+});
+
+test('a record retry retires the exhausted site wait its last run stopped on, not a newer one', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const access = f.db.siteAccess,
+    url = 'https://example.com/jobs/1',
+    exhausted = (blockedAt) =>
+      access.save({
+        site: 'example.com',
+        reason: 'rate_limit',
+        attempts: 3,
+        blockedAt,
+        retryAt: null,
+        token: null,
+        leaseUntil: 0,
+      });
+  exhausted(1000);
+  let run = f.launches.at(-1);
+  f.db.putRun({...f.db.run(run.id), siteWait: access.status(url)});
+  await f.runtime.finish(f.id, 'blocked', 'Rate limited', run.workerId);
+  // The site failed again after that run: the user's retry is not about this incident.
+  exhausted(2000);
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  assert.equal(access.status(url).blockedAt, 2000);
+  run = f.launches.at(-1);
+  f.db.putRun({...f.db.run(run.id), siteWait: access.status(url)});
+  await f.runtime.finish(f.id, 'blocked', 'Rate limited', run.workerId);
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  assert.equal(access.status(url), null);
 });
 
 test('a run that read the page after a site wait and stopped for another reason is not requeued', async (t) => {
@@ -2218,6 +2441,40 @@ test('a click that opens a new tab continues the run in that tab', async (t) => 
   assert.deepEqual(calls.find((c) => c.name === 'browser_jev_use_tab').args, {tabId: 'child'});
   assert.equal(result.url, item.url + '/apply');
   assert.match(result.action.message, /new tab/);
+});
+
+test('a click stopped by a site wait stays the run’s last step after the app reads the page', async (t) => {
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1),
+    siteWait = {site: 'example.test', retryAt: f.db.now() + 60000, exhausted: false};
+  const page = (text) => ({
+    content: [{type: 'text', text: `Page URL: ${item.url}\n${JSON.stringify({text})}`}],
+    pageContext: {url: item.url, tabId: 'main'},
+  });
+  const browser = {
+    currentUrl: async () => item.url,
+    call: async (_id, name) =>
+      name === 'browser_click'
+        ? {...page('Listing'), siteWait, action: {status: 'site_wait', executed: false}}
+        : page('Listing'),
+  };
+  const flow = automationWorkflow({
+    db: f.db,
+    run,
+    signal: {aborted: false},
+    browser,
+    report: (...args) => f.runtime.report(...args),
+  });
+  await flow.call(f.id, run.id, 'browser_open', {url: item.url});
+  const result = await flow.call(f.id, run.id, 'browser_interact', {operation: 'click', ref: 'e1'});
+  assert.match(result.siteWaitGuidance, /slow down/);
+  assert.equal(f.db.run(run.id).siteWaitBlocked, true);
+  // A later read by the agent is a new step that was not stopped.
+  await flow.call(f.id, run.id, 'browser_read', {});
+  assert.equal(f.db.run(run.id).siteWaitBlocked, false);
 });
 
 test('automatic applying needs the minimum score and skips records kept out when switching to Find and apply', async (t) => {

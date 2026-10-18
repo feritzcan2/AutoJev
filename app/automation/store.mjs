@@ -334,6 +334,10 @@ export class AutomationStore {
     let a = this.get(id);
     const base = a.profileUpdate ? {...a, ...a.profileUpdate.plan} : a,
       previous = a.planDraft?.baseRevision === a.revision ? {...base, ...a.planDraft.plan} : base;
+    // Criteria the agent leaves out keep their saved values (an empty value
+    // clears one); a partial update must not drop settings such as the
+    // unstated-conditions rule.
+    if (input.criteria) input = {...input, criteria: {...previous.criteria, ...input.criteria}};
     const plan = planInput(this.template(a.templateId), input, {
         ...previous,
         sources: a.sourceDraft?.sources ?? a.sources,
@@ -476,15 +480,21 @@ export class AutomationStore {
       ? "json_remove(data,'$.scan','$.scanPlan','$.navigation','$.observedLinks','$.observations','$.jevTask') AS data,json_extract(data,'$.observations[#-1].url') AS observedUrl"
       : 'data';
     // Select row identities through indexes before reading the large run bodies.
-    // A long-running worker must remain visible even outside recent history.
+    // A long-running worker must remain visible even outside recent history,
+    // and the history keeps each source's latest searches when record work
+    // on other sources fills the recent window.
+    const sourceHistory = summary
+      ? `UNION SELECT rowid FROM (SELECT rowid,row_number() OVER (PARTITION BY ${runSource} ORDER BY rowid DESC) AS n FROM automation_runs WHERE automation_id=? AND ${finishedSourceRun}) WHERE n<=5`
+      : '';
     return this.db
       .prepare(
         `SELECT ${select} FROM automation_runs WHERE rowid IN (
    SELECT rowid FROM automation_runs WHERE automation_id=? AND json_extract(data,'$.status')='running'
    UNION SELECT rowid FROM (SELECT rowid FROM automation_runs WHERE automation_id=? ORDER BY rowid DESC LIMIT 30)
+   ${sourceHistory}
   ) ORDER BY rowid DESC`,
       )
-      .all(id, id)
+      .all(...(summary ? [id, id, id] : [id, id]))
       .map((row) =>
         summary
           ? {...json(row), observations: row.observedUrl ? [{url: row.observedUrl}] : []}
