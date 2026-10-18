@@ -11,6 +11,7 @@ export function automationBrowser(
     resumeContext,
     resumeSource = false,
     isolatedResearch = false,
+    traceJev = null,
   } = {},
 ) {
   let tabId = recordId || resumeSource ? (resumeContext?.tabId ?? null) : null,
@@ -116,12 +117,35 @@ export function automationBrowser(
     hasPage: () => Boolean(tabId),
     waitForOperations: (id) => browser.waitForOperations(id),
     async evaluateJev(id, state, questions, signal) {
-      // Classification of extension/API evidence needs model configuration only.
-      const config = browser.options?.(id)?.config;
-      if (config) return askJev(state, questions, {...(await config()), signal});
-      await ready(id);
-      const {client} = await browser.connect(id);
-      return askJev(state, questions, {...(await client.config()), signal});
+      const ask = async () => {
+        // Classification of extension/API evidence needs model configuration only.
+        const config = browser.options?.(id)?.config;
+        if (config) return askJev(state, questions, {...(await config()), signal});
+        await ready(id);
+        const {client} = await browser.connect(id);
+        return askJev(state, questions, {...(await client.config()), signal});
+      };
+      if (!traceJev) return ask();
+      const started = Date.now();
+      try {
+        const result = await ask();
+        traceJev({
+          state,
+          questions,
+          answers: result.answers,
+          usage: result.usage,
+          ms: Date.now() - started,
+        });
+        return result;
+      } catch (error) {
+        traceJev({
+          state,
+          questions,
+          error: String(error?.message ?? error),
+          ms: Date.now() - started,
+        });
+        throw error;
+      }
     },
     async currentUrl(id) {
       await ready(id);

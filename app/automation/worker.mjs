@@ -5,7 +5,7 @@ import {jevCriteria} from '../jev/triage.mjs';
 import {reviewJevBatch} from '../jev/review.mjs';
 import {readJevBrief} from '../jev/brief.mjs';
 import {jevWaitMsFor, observeClientAbort} from '../jev/execution.mjs';
-import {withAgentDefaults} from '../agents/settings.mjs';
+import {withAgentDefaults, agentDecides} from '../agents/settings.mjs';
 import {otherScanSearchesPending, scanWork} from '../sources/scan-work.mjs';
 import {siteKey, sameSite} from '../browser/site-access.mjs';
 import {collectorRun, collectorExtension} from '../sources/collectors.mjs';
@@ -18,6 +18,7 @@ import {
 import {siteReaderFor, siteExtensionKind} from '../site-extensions/index.mjs';
 import {siteSearchRecipe} from '../site-extensions/search.mjs';
 import {setTimeout as pause} from 'node:timers/promises';
+import {readRecordListings} from '../records/listing-reader.mjs';
 import {jevDetailKey} from '../jev/detail-urls.mjs';
 import {
   recordResultInput,
@@ -76,9 +77,10 @@ import {sourceScan, scanIssue, clearScanIssue, browserFailure} from '../sources/
 import {holdForTechnicalRetry} from './recovery.mjs';
 import {runJevTask, jevDetailItems} from '../jev/tasks.mjs';
 import {jevTaskSummary, jevTaskReceipt} from '../jev/task-summary.mjs';
-import {JEV_LAUNCH_INSTRUCTIONS} from '../jev/task-tools.mjs';
+import {JEV_LAUNCH_INSTRUCTIONS, AGENT_LAUNCH_INSTRUCTIONS} from '../jev/task-tools.mjs';
 import {
   normalizeSourceRecipe,
+  recipeNeedsTerms,
   recipeReplay,
   recipeValues,
   jevListingItem,
@@ -130,10 +132,13 @@ export function automationWorkflow({
     snapshots = new BrowserSnapshot(),
     context = new AutomationContext();
   const collecting = Boolean(collectorRun(db.get(id), run));
+  // Read once per run: changing the setting restarts the worker with new tools.
+  const decideByAgent = agentDecides(db.get(id).agentSettings);
   const scopedTools = scopedAutomationTools({
     run,
     template: db.template(db.get(id).templateId),
     collecting,
+    agentDecides: decideByAgent,
   });
   const rechecked = new Set();
   let calls = Promise.resolve();
@@ -535,7 +540,10 @@ export function automationWorkflow({
             if ((current.scan?.work?.activeSearchId ?? 'default') !== searchId)
               throw Error('The active search changed; the Jev task was stopped.');
           },
-          evaluate: (state, questions, abort) => browser.evaluateJev(id, state, questions, abort),
+          decisions: decideByAgent ? 'agent' : 'jev',
+          evaluate: decideByAgent
+            ? null
+            : (state, questions, abort) => browser.evaluateJev(id, state, questions, abort),
           browser: async (action, parameters) => {
             if (collecting)
               throw Error(
@@ -548,20 +556,20 @@ export function automationWorkflow({
             const reader = ['open', 'reopen'].includes(action)
               ? siteReaderFor(parameters.url)
               : null;
-            if (
-              reader ||
-              (action === 'observe' &&
-                readerPage &&
-                (!parameters.url || parameters.url === readerPage.url))
-            ) {
-              const page =
-                action === 'observe'
-                  ? readerPage
-                  : await reader.read(parameters.url, {
+            const page =
+              action === 'observe' &&
+              readerPage &&
+              (!parameters.url || parameters.url === readerPage.url)
+                ? readerPage
+                : reader
+                  ? await reader.read(parameters.url, {
                       signal,
                       siteAccess: db.siteAccess,
                       wait: (ms) => pause(ms, undefined, {signal}),
-                    });
+                    })
+                  : null;
+            // A reader that cannot read this address (null) leaves it to the tab.
+            if (page) {
               readerPage = page;
               await inspect({research, response: readerResponse(page), jev: true});
               return page;
@@ -710,10 +718,11 @@ export function automationWorkflow({
   // confirmed a link, or a detail of one of its links judged an opportunity.
   const provenListings = (replay, scope) => {
     const tasks = db.jevTasks.list(id, scope),
+      // A scan paused for the agent's next choice already holds its selection.
       scans = tasks.filter(
         (t) =>
           t.input?.operation === 'scan_results' &&
-          t.status === 'completed' &&
+          (t.status === 'completed' || t.decisions === 'agent') &&
           replayMatches(replay, t.input.url),
       );
     if (!scans.length) return null;
@@ -1042,7 +1051,9 @@ export function automationWorkflow({
               if ((current.scan?.work?.activeSearchId ?? 'default') !== searchId)
                 throw Error('The active search changed; the brief was stopped.');
             },
-            evaluate: (state, questions, abort) => browser.evaluateJev(id, state, questions, abort),
+            evaluate: decideByAgent
+              ? null
+              : (state, questions, abort) => browser.evaluateJev(id, state, questions, abort),
           });
         };
         if (!args.evidenceIds)
@@ -1146,7 +1157,11 @@ export function automationWorkflow({
           summary: args.view !== 'entries',
         });
       case 'complete_scan_search': {
-        const page = args.snapshotId ? snapshots.get(args.snapshotId) : snapshots.current;
+        // Detail reads after the last results page replace the live snapshot; the
+        // results page the agent cites stays the completion evidence.
+        const page = args.snapshotId
+          ? {url: snapshots.address(args.snapshotId)}
+          : snapshots.current;
         if (!page) throw Error('Observe the latest results page first.');
         result = db.completeScanSearch(id, run.id, args.completion, page);
         break;
@@ -1177,6 +1192,11 @@ export function automationWorkflow({
           throw Error(
             'This source is read by its collector: save a url_template recipe from siteSearch.template.',
           );
+        // Without terms {query} holds the source scope and later scans wait for terms.
+        if (recipeNeedsTerms(recipe))
+          throw Error(
+            `The template takes {query} but the recipe has no terms, so {query} would be the source scope "${recipeValues(a, sourceUrl).query}". Save concrete search terms with terms${siteSearch?.notes ? ' as siteSearch.notes describes {query}' : ''}. If that scope is itself the right search, save it as the only term.`,
+          );
         if (recipe.entry.kind === 'discovery') {
           db.learnSourceRecipe(id, sourceUrl, recipe, {runId: run.id, verified: false});
           db.putRun({...db.activeRun(id, run.id), recipeSaved: true});
@@ -1186,6 +1206,19 @@ export function automationWorkflow({
             next: 'The source stays in discovery mode: every scan searches the board itself. Continue this turn normally.',
           };
           break;
+        }
+        // With agent decisions the app judges no listing itself: a recipe is
+        // verified from the listings the agent selected at its address.
+        if (decideByAgent && !collecting) {
+          const replay = recipeReplay(recipe, recipeValues(a, sourceUrl));
+          if (replay.kind === 'search_form')
+            throw Error(
+              'With agent decisions the app cannot replay a search form. Save a url_template from the results address the form produced, or entry.kind=discovery with a short note.',
+            );
+          if (!provenListings(replay, active.taskId ?? run.id))
+            throw Error(
+              `Recipe not checked yet: run browser_jev_run scan_results at ${replay.searches[0].url} and select its listings, then save the recipe again. The app verifies the recipe from your selection; no check was used.`,
+            );
         }
         const checks = active.recipeChecks ?? 0;
         if (checks >= 3)
@@ -1245,7 +1278,7 @@ export function automationWorkflow({
       case 'get_automation_context': {
         const value = scanToolOutput(automationTaskContext(db, id, active, args), {summary: true});
         // Source tasks keep the short Jev profile current (save_jev_profile).
-        if (sourceTask && !args.section) {
+        if (sourceTask && !args.section && !decideByAgent) {
           const documents = await scoringDocuments().catch(() => null);
           if (documents) {
             const {status, by, text} = jevProfileView(a, documents);
@@ -1747,16 +1780,20 @@ export async function launchAutomationWorker({
     flow.clientAborted = (elapsedMs) => observeClientAbort(provider, elapsedMs);
     token = mcp.grant(automation.id, run.id, workerId, flow);
     if (signal.aborted) throw Error('Run cancelled');
+    const decideByAgent = agentDecides(automation.agentSettings);
     const protocol = persistent
       ? null
       : automationProtocol(flow.tools, [
           AUTOMATION_INSTRUCTIONS,
-          JEV_LAUNCH_INSTRUCTIONS,
+          decideByAgent ? AGENT_LAUNCH_INSTRUCTIONS : JEV_LAUNCH_INSTRUCTIONS,
           SCORING_INSTRUCTIONS,
           SOURCE_SCAN_INSTRUCTIONS,
         ]);
     const evidenceExpired = !persistent && automationEvidenceExpired(db, run);
     if (protocol) run = prepareAutomationProtocol(db, run, protocol);
+    // Records a site extension reads are scored from its text, like a scan.
+    if (run.recordOperation === 'score')
+      await readRecordListings(db, run, {signal, wait: (ms) => pause(ms, undefined, {signal})});
     await agents.start({
       agentProfile: webAgentProfile(run.kind, settings),
       taskType: 'automation',
@@ -1789,7 +1826,7 @@ export async function launchAutomationWorker({
       prompt: automationPrompt(
         run,
         isConversation(run) ? conversationRequest(db, automation.id, run) : null,
-        {evidenceExpired},
+        {evidenceExpired, agentDecides: decideByAgent},
       ),
       onEvent: (event) => {
         if (event.event === 'output') onOutput(event.bytes);

@@ -567,6 +567,14 @@ export const recordMethods = {
     const run = this.activeRun(id, runId),
       item = this.result(id, itemId);
     if (
+      run.kind === 'run' &&
+      ['completed', 'uncertain'].includes(status) &&
+      ['found', 'prepared'].includes(item.status)
+    )
+      throw Error(
+        'No submission was reserved for this record, so the app counts nothing as sent. A status a site shows without your own final submit click (for example Applied after a redirect to another site) is not a submission. If the page still offers a way to continue (a form, or a link to the site that takes the application), continue there and call reserve_automation_action right before the final submit click.',
+      );
+    if (
       run.kind !== 'run' ||
       !['completed', 'uncertain', 'not_submitted'].includes(status) ||
       !['executing', 'uncertain'].includes(item.status)

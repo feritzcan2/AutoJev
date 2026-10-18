@@ -6,8 +6,15 @@ import {
   dropRecipeSearches,
   replayScanWork,
 } from '../../sources/scan-work.mjs';
-import {recipeValues, recipeReplay, replayMatches, recipeStatus} from '../../sources/recipe.mjs';
-import {siteExtensionKind} from '../../site-extensions/index.mjs';
+import {
+  recipeValues,
+  recipeReplay,
+  replayMatches,
+  recipeStatus,
+  recipeNeedsTerms,
+} from '../../sources/recipe.mjs';
+import {siteExtensionKind, siteExtensionFor} from '../../site-extensions/index.mjs';
+import {siteSearchRecipe} from '../../site-extensions/search.mjs';
 import {templateSourceSettings, startingSource} from '../../templates/sources.mjs';
 import {siteKey} from '../../browser/site-key.mjs';
 import {randomUUID} from 'node:crypto';
@@ -23,6 +30,20 @@ import {json, finishedSourceRun, runSource} from './rows.mjs';
 // Only a different search method changes a recipe; notes, the pagination
 // hint, the page cap and the login flag are advisory.
 const recipeKey = (r) => (r ? JSON.stringify({entry: r.entry, terms: r.terms ?? null}) : null);
+
+// The search terms most sources of the workspace share, for a source added
+// without its own: a {query} search then starts from the workspace's roles
+// instead of waiting. Its trial or the setup chat can change them.
+function sharedTerms(settings = {}) {
+  const counts = new Map();
+  for (const {recipe} of Object.values(settings))
+    if (recipe?.terms?.length) {
+      const key = JSON.stringify(recipe.terms);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  const [best] = [...counts].sort((x, y) => y[1] - x[1]);
+  return best ? JSON.parse(best[0]) : null;
+}
 
 // AutomationStore methods: source list, per-source settings, waits and learned recipes.
 export const sourceMethods = {
@@ -148,11 +169,12 @@ export const sourceMethods = {
   // The template's ready sources whose site is not in the workspace yet, for
   // one-click adding. Country copies of one board ("Indeed (Germany)", "Indeed
   // (France)") form one entry with a country choice. The workspace country
-  // comes first, then the sources for every country, then the others.
+  // comes first, then the sources for every country or remote work, then the
+  // others.
   sourceCatalog(id, a = this.get(id)) {
     const added = new Set(a.sources.map(siteKey)),
       country = String(a.criteria?.country ?? '').toUpperCase(),
-      rank = (s) => (!s.countries?.length ? 1 : s.countries.includes(country) ? 0 : 2),
+      rank = (s) => (s.countries?.includes(country) ? 0 : !s.countries?.length || s.remote ? 1 : 2),
       groups = new Map();
     const sources = (this.template(a.templateId).defaultSources ?? [])
       .filter((s) => !added.has(siteKey(s.url)))
@@ -166,11 +188,18 @@ export const sourceMethods = {
           extension: siteExtensionKind(s.url, a.templateId)?.kind ?? null,
           choices: [],
         });
+      const served = countries.join(', ');
       groups.get(base).choices.push({
         url: s.url,
         name: s.name,
         countries,
-        label: label ?? (countries.join(', ') || 'All countries'),
+        ...(s.remote ? {remote: true} : {}),
+        // Off in the template, for example an API that needs the user's own key.
+        ...(s.enabled ? {} : {enabled: false}),
+        ...(siteExtensionFor(s.url)?.credentials ? {account: true} : {}),
+        label:
+          label ??
+          (s.remote ? (served ? served + ' or remote' : 'Remote only') : served || 'All countries'),
       });
     }
     return [...groups.values()];
@@ -268,10 +297,15 @@ export const sourceMethods = {
       // setup), or another address on its site, keeps its template name, recipe
       // and instructions.
       const defaults = this.template(a.templateId).defaultSources ?? [];
+      const terms = sharedTerms(a.sourceSettings);
       const seeded = Object.fromEntries(
         added.flatMap((url) => {
           const source = !a.sourceSettings?.[url] && startingSource(defaults, url);
-          return source ? [[url, templateSourceSettings(source)]] : [];
+          if (!source) return [];
+          const settings = templateSourceSettings(source);
+          if (terms && recipeNeedsTerms(settings.recipe))
+            settings.recipe = {...settings.recipe, terms};
+          return [[url, settings]];
         }),
       );
       const next = {
@@ -561,7 +595,12 @@ export const sourceMethods = {
   },
   sourceRecipe(id, url) {
     const a = this.get(id),
-      recipe = a.sourceSettings?.[url]?.recipe ?? null,
+      saved = a.sourceSettings?.[url]?.recipe ?? null,
+      search =
+        saved?.entry?.kind === 'url_template' ? siteExtensionKind(url, a.templateId)?.search : null,
+      // The site extension owns the sort, pagination and ordering of its results
+      // address, also for a recipe saved before the extension changed them.
+      recipe = search ? siteSearchRecipe(search, saved).recipe : saved,
       state = a.sourceState?.[url]?.recipeState ?? null;
     return {
       recipe,

@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+
+<rss version="2.0"
+ xmlns:blogChannel="http://backend.userland.com/blogChannelModule"
+>
+
+<channel>
+<title>Jobindex - Ledige job indeholdende ordet python</title>
+<link>https://www.jobindex.dk/jobsoegning?q=python</link>
+<description>Danmarks st&#xF8;rste jobmarked</description>
+<language>da</language>
+<docs>http://blogs.law.harvard.edu/tech/rss</docs>
+<webMaster>support@jobindex.dk (Jobindex)</webMaster>
+<ttl>1440</ttl>
+
+<image>
+<title>Jobindex - Ledige job indeholdende ordet python</title>
+<url>https://www.jobindex.dk/img/jobindex130x30gray.gif</url>
+<link>https://www.jobindex.dk/jobsoegning?q=python</link>
+</image>
+<item>
+<title>Senioranalytiker til T&#xE6;nketanken Mandag Morgen  &#x2013; kvantitativ analyse og projektledelse, Mandag Morgen ApS</title>
+<link>https://www.jobindex.dk/vis-job/h1708450</link>
+<description>
+
+&#x3C;div class=&#x22;jobsearch-result&#x22;&#x3E;
+&#x3C;div class=&#x22;PaidJob&#x22;&#x3E;
+
+
+    &#x3C;div class=&#x22;PaidJob-inner&#x22;&#x3E;
+        
+
+&#x3C;A HREF=&#x22;https://www.jobindex.dk/vis-job/h1708450&#x22; rel=&#x22;noopener&#x22; target=&#x22;_blank&#x22;&#x3E;&#x3C;img src=&#x22;https://www.jobindex.dk/img/logo/mm_taenketanken_logo_sort.png&#x22; ALIGN=&#x22;right&#x22; ALT=&#x22;Mandag Morgen ApS&#x22; style=&#x22;border: 0px; margin: 0 0 5px 20px;&#x22;&#x3E;&#x3C;/a&#x3E;
+&#x3C;h4&#x3E;&#x3C;A HREF=&#x22;https://www.jobindex.dk/vis-job/h1708450&#x22; rel=&#x22;noopener&#x22; target=&#x22;_blank&#x22;&#x3E;Senioranalytiker til T&#xE6;nketanken Mandag Morgen  &#x2013; kvantitativ analyse og projektledelse&#x3C;/a&#x3E;&#x3C;/h4&#x3E;
+
+        &#x3C;div class=&#x22;jobad-element-area&#x22;&#x3E;
+            &#x3C;span class=&#x22;jix_robotjob--area&#x22;&#x3E;K&#xF8;benhavn K&#x3C;/span&#x3E;
+            
+        &#x3C;/div&#x3E;
+
+
+
+&#x3C;p&#x3E;Du vil komme til at arbejde med nogle af de vigtigste samfundsdagsordener inden for demokrati, teknologi, gr&#xF8;n omstilling og fremtidens velf&#xE6;rd.&#x3C;/p&#x3E;&#x3C;p&#x3E;Rollen kombinerer projektledelse med et st&#xE6;rkt kvantitativt fagligt ansvar i de projekter, du arbejder p&#xE5; &#x2013; fra design af analysen og arbejdet med data til kvalitetssikring, fortolkning, formidling og lancering af resultater.&#x3C;/p&#x3E;
+
+
+    &#x3C;/div&#x3E;
+
+&#x3C;/div&#x3E;
+&#x3C;/div&#x3E;
+</description>
+<category>Akademisk og politisk arbejde</category>
+<category>Projektledelse</category>
+<guid isPermaLink="false">https://www.jobindex.dk/1708450</guid>
+<pubDate>Fri, 16 Oct 2026 00:00:00 +0200</pubDate>
+</item>
+<item>
+<title>Software Engineer, Vision and Robotics, BEUMER Group A/S</title>
+<link>https://www.jobindex.dk/vis-job/h1699736</link>
+<description>
+
+&#x3C;div class=&#x22;jobsearch-result&#x22;&#x3E;
+&#x3C;div class=&#x22;PaidJob&#x22;&#x3E;
+
+
+    &#x3C;div class=&#x22;PaidJob-inner&#x22;&#x3E;
+        
+
+&#x3C;CENTER style=&#x22;margin-bottom: 15px;&#x22;&#x3E;&#x3C;A HREF=&#x22;https://www.jobindex.dk/vis-job/h1699736&#x22; rel=&#x22;noopener&#x22; target=&#x22;_blank&#x22;&#x3E;&#x3C;img src=&#x22;https://www.jobindex.dk/img/brand/top_beumer_2.jpg&#x22; ALT=&#x22;BEUMER Group A/S&#x22; style=&#x22;border: 0px; margin: 0;&#x22;&#x3E;&#x3C;/a&#x3E;&#x3C;/CENTER&#x3E;
+&#x3C;h4&#x3E;&#x3C;A HREF=&#x22;https://www.jobindex.dk/vis-job/h1699736&#x22; rel=&#x22;noopener&#x22; target=&#x22;_blank&#x22;&#x3E;Software Engineer, Vision and Robotics&#x3C;/a&#x3E;&#x3C;/h4&#x3E;
+
+        &#x3C;div class=&#x22;jobad-element-area&#x22;&#x3E;
+            &#x3C;span class=&#x22;jix_robotjob--area&#x22;&#x3E;Aarhus N&#x3C;/span&#x3E;
+            
+        &#x3C;/div&#x3E;
+
+
+
+&#x3C;p&#x3E;&#x3C;A HREF=&#x22;https://www.jobindex.dk/vis-job/h1699736&#x22; rel=&#x22;noopener&#x22; target=&#x22;_blank&#x22;&#x3E;&#x3C;img src=&#x22;https://www.jobindex.dk/img/logo/video_beumer.jpg&#x22; align=&#x22;right&#x22; style=&#x22;margin-left:10px;&#x22;&#x3E;&#x3C;/a&#x3E;Develop software solutions for vision and robotics in a multidisciplinary Robot Product Team.&#x3C;/p&#x3E;&#x3C;p&#x3E;Work with C#, Python, 3D vision, point cloud processing and robotic systems while taking responsibility for the full software development process.&#x3C;/p&#x3E;&#x3C;p&#x3E;Contribute to product development, code quality, testing, integration and continuous improvement of automation solutions.&#x3C;/p&#x3E;
+&#x3C;center&#x3E;&#x3C;A HREF=&#x22;https://www.jobindex.dk/vis-job/h1699736&#x22; rel=&#x22;noopener&#x22; target=&#x22;_blank&#x22;&#x3E;&#x3C;img src=&#x22;https://www.jobindex.dk/api/imagescaler/v1/brand/bund_beumer.jpg?max_width=525&#x22; alt=&#x22;BEUMER Group A/S&#x22; style=&#x22;border: 0px; margin-top: 5px;&#x22;&#x3E;&#x3C;/a&#x3E;&#x3C;/center&#x3E;
+
+    &#x3C;/div&#x3E;
+
+&#x3C;/div&#x3E;
+&#x3C;/div&#x3E;
+</description>
+<category>Systemudvikling og programmering</category>
+<guid isPermaLink="false">https://www.jobindex.dk/1699736</guid>
+<pubDate>Fri, 16 Oct 2026 00:00:00 +0200</pubDate>
+</item>
+<item>
+<title>FE s&#xF8;ger DevOps-profiler i Nordjylland til drift og udvikling til afdelingen for Elektronisk Indhentning, Forsvarets Efterretningstjeneste</title>
+<link>https://www.jobindex.dk/vis-job/h1708262</link>
+<description>
+
+&#x3C;div class=&#x22;jobsearch-result&#x22;&#x3E;
+&#x3C;div class=&#x22;PaidJob&#x22;&#x3E;
+
+
+    &#x3C;div class=&#x22;PaidJob-inner&#x22;&#x3E;
+        
+
+&#x3C;CENTER style=&#x22;margin-bottom: 15px;&#x22;&#x3E;&#x3C;A HREF=&#x22;https://www.jobindex.dk/vis-job/h1708262&#x22; rel=&#x22;noopener&#x22; target=&#x22;_blank&#x22;&#x3E;&#x3C;img src=&#x22;https://www.jobindex.dk/img/brand/FE_Billedfreezer_Kombination.jpg&#x22; ALT=&#x22;Forsvarets Efterretningstjeneste&#x22; style=&#x22;border: 0px; margin: 0;&#x22;&#x3E;&#x3C;/a&#x3E;&#x3C;/CENTER&#x3E;
+&#x3C;h4&#x3E;&#x3C;A HREF=&#x22;https://www.jobindex.dk/vis-job/h1708262&#x22; rel=&#x22;noopener&#x22; target=&#x22;_blank&#x22;&#x3E;FE s&#xF8;ger DevOps-profiler i Nordjylland til drift og udvikling til afdelingen for Elektronisk Indhentning&#x3C;/a&#x3E;&#x3C;/h4&#x3E;
+
+
+
+
+&#x3C;p&#x3E;Sidder du med DevOps-erfaring og har lyst til at blive en del af et team med ansvar for monitorering og drift, automatisering, samt videreudvikling af vores tekniske platforme inden for elektronisk indhentning &#x2013; samtidig med du bidrager til en vigtig del af Danmarks sikkerhed? S&#xE5; er det dig vi s&#xF8;ger!&#x3C;/p&#x3E;&#x3C;p&#x3E;Vi tilbyder et l&#xE6;ringsrigt og tv&#xE6;rfagligt milj&#xF8; med t&#xE6;t samarbejde med kolleger p&#xE5; tv&#xE6;rs af teams.&#x3C;/p&#x3E;
+
+
+    &#x3C;/div&#x3E;
+
+&#x3C;/div&#x3E;
+&#x3C;/div&#x3E;
+</description>
+<category>Systemudvikling og programmering</category>
+<category>IT-drift og support</category>
+<category>Database</category>
+<guid isPermaLink="false">https://www.jobindex.dk/1708262</guid>
+<pubDate>Thu, 15 Oct 2026 00:00:00 +0200</pubDate>
+</item>
+</channel>
+</rss>

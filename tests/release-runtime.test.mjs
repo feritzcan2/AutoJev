@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
 import path from 'node:path';
-import {mkdtemp, mkdir, writeFile, rm} from 'node:fs/promises';
+import {mkdtemp, mkdir, writeFile, rm, chmod, stat, symlink} from 'node:fs/promises';
 import os from 'node:os';
 import verifyUniversalInputs from '../scripts/verify-universal-inputs.cjs';
+import prepareMacosBundle from '../scripts/prepare-macos-bundle.cjs';
 import {engineBinaryPath, runtimeResourceRoot} from '../app/system/runtime-paths.mjs';
 import {createUpdateManager} from '../app/system/update-manager.mjs';
 test('packaged engine resolves outside asar and development uses an existing debug binary', () => {
@@ -119,3 +120,37 @@ test('universal packaging refuses mixed source snapshots before creating an ESM-
     await rm(directory, {recursive: true, force: true});
   }
 });
+
+test(
+  'macOS bundles restore distribution permissions without following symlinks',
+  {
+    skip: process.platform === 'win32',
+  },
+  async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'jobloop-package-permissions-'));
+    try {
+      const bundle = path.join(directory, 'AutoJev.app'),
+        binaries = path.join(bundle, 'Contents/MacOS'),
+        executable = path.join(binaries, 'AutoJev'),
+        resource = path.join(bundle, 'Contents/Info.plist'),
+        outside = path.join(directory, 'private-file');
+      await mkdir(binaries, {recursive: true, mode: 0o700});
+      await writeFile(executable, 'synthetic executable');
+      await chmod(executable, 0o700);
+      await writeFile(resource, 'synthetic resource', {mode: 0o600});
+      await writeFile(outside, 'must remain private', {mode: 0o600});
+      await symlink(outside, path.join(bundle, 'external-link'));
+      await prepareMacosBundle({
+        appOutDir: directory,
+        electronPlatformName: 'darwin',
+        packager: {appInfo: {productFilename: 'AutoJev'}},
+      });
+      for (const file of [bundle, path.join(bundle, 'Contents'), binaries, executable])
+        assert.equal((await stat(file)).mode & 0o777, 0o755);
+      assert.equal((await stat(resource)).mode & 0o777, 0o644);
+      assert.equal((await stat(outside)).mode & 0o777, 0o600);
+    } finally {
+      await rm(directory, {recursive: true, force: true});
+    }
+  },
+);

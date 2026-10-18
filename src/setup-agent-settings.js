@@ -1,4 +1,4 @@
-import {withAgentDefaults} from '../app/agents/settings.mjs';
+import {withSetupAgentDefaults} from '../app/agents/settings.mjs';
 import './setup-agent-settings.css';
 
 export function setupAgentSettingsPanel({api, getCatalog, refresh}) {
@@ -22,7 +22,7 @@ export function setupAgentSettingsPanel({api, getCatalog, refresh}) {
     getCatalog().filter((p) => p.supported && ['codex', 'claude', 'opencode'].includes(p.id));
   function options(saved = {}) {
     const provider = providers().find((p) => p.id === fields.provider.value),
-      defaults = withAgentDefaults({provider: fields.provider.value});
+      defaults = withSetupAgentDefaults({provider: fields.provider.value});
     for (const name of ['model', 'reasoning', 'permission']) {
       const values = provider?.[
         name === 'model' ? 'models' : name === 'permission' ? 'permissions' : 'reasoning'
@@ -66,7 +66,7 @@ export function setupAgentSettingsPanel({api, getCatalog, refresh}) {
       : 'No changes.';
   }
   fields.provider.onchange = () => {
-    settings = withAgentDefaults({provider: fields.provider.value});
+    settings = withSetupAgentDefaults({provider: fields.provider.value});
     options();
     mark();
   };

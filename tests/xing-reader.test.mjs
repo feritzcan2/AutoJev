@@ -23,7 +23,7 @@ const job = (id, title, company = 'Acme & Co') => ({
 });
 // The Apollo cache the page embeds: the result list in order, the visible
 // jobs by reference, the bounded total and the page arguments in the key.
-const state = (jobs, {total = 113, limit = XING_PAGE_SIZE, offset = 0} = {}) => {
+const state = (jobs, {total = 113, limit = XING_PAGE_SIZE, offset = 0, hidden = 0} = {}) => {
   const key = `jobSearchByQuery({"consumer":"loggedout.web.jobs.conv_search_results.center","limit":${limit},"offset":${offset},"query":{"keywords":"compliance"}})`;
   const cache = {
     ROOT_QUERY: {
@@ -31,11 +31,19 @@ const state = (jobs, {total = 113, limit = XING_PAGE_SIZE, offset = 0} = {}) => 
       [key]: {
         __typename: 'JobSearchResult',
         total: -1,
-        collection: jobs.map((j, position) => ({
-          __typename: 'JobItemResult',
-          position,
-          jobDetail: {__ref: `VisibleJob:${j.id}.ab`},
-        })),
+        collection: [
+          ...jobs.map((j, position) => ({
+            __typename: 'JobItemResult',
+            position,
+            jobDetail: {__ref: `VisibleJob:${j.id}.ab`},
+          })),
+          // Logged out, Xing withholds part of the page (2026-10-17).
+          ...Array.from({length: hidden}, (_, i) => ({
+            __typename: 'JobItemResult',
+            position: jobs.length + i,
+            jobDetail: {__typename: 'UnauthorizedJob'},
+          })),
+        ],
         boundedTotal: {__typename: 'BoundedTotal', total, bound: 1000},
       },
     },
@@ -176,6 +184,36 @@ test('the last page links no next page; without a total a full page does, a shor
   assert.deepEqual(empty.links, []);
   assert.match(empty.text, /no further results/);
   assert.equal(empty.pagination.length, 1, 'the page still reports its position');
+});
+
+test('results Xing shows only to signed-in users are hidden, not missing', () => {
+  const partial = parseXingSearch(page([job('1', 'A')], {hidden: 13}));
+  assert.deepEqual([partial.jobs.length, partial.hidden], [1, 13]);
+  const read = xingSearchPage(search, partial);
+  assert.equal(read.links.length, 1);
+  assert.match(read.text, /13 more results on this page are shown only to signed-in Xing users/);
+  const locked = xingSearchPage(search, parseXingSearch(page([], {hidden: 20, total: 1000})));
+  assert.deepEqual(locked.links, []);
+  assert.match(locked.text, /All 20 results on this page are shown only to signed-in Xing users/);
+  assert.doesNotMatch(locked.text, /no further results/);
+  assert.equal(
+    new URL(
+      observedNextPage(locked, resultPageSummary(locked, {id: 'e1'}, []).position).url,
+    ).searchParams.get('page'),
+    '2',
+  );
+  const untotalled = xingSearchPage(search, {
+    jobs: [],
+    hidden: XING_PAGE_SIZE,
+    total: null,
+    limit: XING_PAGE_SIZE,
+    offset: null,
+  });
+  assert.deepEqual(
+    untotalled.pagination.map((p) => p.text),
+    ['1', '2'],
+    'a full page of hidden results is still a full page',
+  );
 });
 
 test('a posting reads through its JobPosting; an expired or missing posting does not', () => {

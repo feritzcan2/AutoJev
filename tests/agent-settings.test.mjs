@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
-import {withAgentDefaults} from '../app/agents/settings.mjs';
+import {withAgentDefaults, withSetupAgentDefaults} from '../app/agents/settings.mjs';
+import {setupAgentSettings} from '../app/agents/setup-agent.mjs';
 import {saveAgentSettings} from '../src/agent-settings-save.js';
 
 for (const [provider, permission] of [
@@ -28,6 +29,10 @@ for (const [provider, permission] of [
     const automation = new AutomationStore(store).create('housing', {agentSettings: {provider}});
     assert.equal(automation.agentSettings.permission, permission);
     assert.deepEqual(automation.agentSettings, profile.agentSettings);
+    assert.equal(
+      setupAgentSettings(db, profile.id).model,
+      {claude: 'opus', codex: 'gpt-6-astra'}[provider] ?? 'default',
+    );
     assert.equal(automation.agentSettings.contextRestartTokens, 0);
   });
   for (const permission of provider === 'opencode'
@@ -122,3 +127,11 @@ for (const change of [
     assert.deepEqual(result, {restarted: 2, failed: []});
     assert.deepEqual(calls, ['saved', 'notified', 'confirmed', 'main', 'second']);
   });
+
+test('the setup agent defaults to each provider strongest model', () => {
+  assert.equal(withSetupAgentDefaults({provider: 'claude'}).model, 'opus');
+  assert.equal(withSetupAgentDefaults({provider: 'codex'}).model, 'gpt-6-astra');
+  assert.equal(withSetupAgentDefaults({provider: 'opencode'}).model, 'default');
+  assert.equal(withSetupAgentDefaults({provider: 'claude', model: 'sonnet'}).model, 'sonnet');
+  assert.equal(withSetupAgentDefaults({provider: 'claude'}).reasoning, 'medium');
+});

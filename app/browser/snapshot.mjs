@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 // escaping and multi-byte text also contribute to provider tool output limits.
 export const BROWSER_RESPONSE_BYTES = 16000;
 export const BROWSER_PART_CHARACTERS = 8000;
+const SNAPSHOT_ADDRESSES = 50;
 const size = (value) => Buffer.byteLength(JSON.stringify(value), 'utf8');
 const integer = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
 const schema = (properties) => ({
@@ -162,6 +163,7 @@ function overviewPart(result, text, snapshot) {
 // Each workflow owns its own cache. IDs cannot read another run's pages; a new
 // observation, navigation or attempted interaction invalidates the old one.
 export class BrowserSnapshot {
+  addresses = new Map();
   invalidate() {
     this.current = null;
   }
@@ -179,6 +181,9 @@ export class BrowserSnapshot {
       ...(result.readiness ? {readiness: result.readiness} : {}),
       ...(result.pageNavigation ? {pageNavigation: result.pageNavigation} : {}),
     };
+    this.addresses.set(snapshotId, result.url);
+    if (this.addresses.size > SNAPSHOT_ADDRESSES)
+      this.addresses.delete(this.addresses.keys().next().value);
     const snapshot = {
       id: snapshotId,
       totalCharacters: text.length,
@@ -200,6 +205,11 @@ export class BrowserSnapshot {
         'The page observation is stale or does not belong to this run. Continue with snapshot.id from the last response; if needed, read the current page with browser_read.',
       );
     return this.current;
+  }
+  // An earlier observation of this run keeps only its address: a step that needs
+  // no page content, such as closing a search, may still cite it.
+  address(id) {
+    return this.addresses.get(id) ?? this.get(id).url;
   }
   read({snapshotId, offset = 0, limit = BROWSER_PART_CHARACTERS}) {
     const page = this.get(snapshotId);

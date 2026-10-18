@@ -1,11 +1,17 @@
 import {createHash} from 'node:crypto';
-import {withAgentDefaults} from './settings.mjs';
+import {withAgentDefaults, agentDecides} from './settings.mjs';
 
 export const agentProfileId = (role) => 'builtin.agent-profile.loop-' + role;
-// The Jev browser block is appended after the role instructions, including
-// saved user overrides, so it is never lost or duplicated in edits.
-export const roleInstructions = (definition, instructions) =>
-  definition.jevInstructions ? instructions + '\n\n' + definition.jevInstructions : instructions;
+// The browser block is appended after the role instructions, including saved
+// user overrides, so it is never lost or duplicated in edits. Its text follows
+// who makes the listing decisions (settings.decisions).
+export function roleInstructions(definition, instructions, settings) {
+  const block =
+    agentDecides(settings) && definition.agentInstructions
+      ? definition.agentInstructions
+      : definition.jevInstructions;
+  return block ? instructions + '\n\n' + block : instructions;
+}
 export function personalAgent(definition, settings) {
   const s = withAgentDefaults(settings);
   return {
@@ -14,7 +20,7 @@ export function personalAgent(definition, settings) {
     name: definition.name,
     description: definition.description,
     category: definition.category ?? 'Loop',
-    instructions: roleInstructions(definition, definition.instructions),
+    instructions: roleInstructions(definition, definition.instructions, s),
     agent_id: s.provider,
     selection: {model: s.model, permission: s.permission, reasoning: s.reasoning},
   };
@@ -45,13 +51,14 @@ export class AgentProfiles {
     const definition = this.definitions.get(agentProfileId(role));
     if (!definition) throw Error('Agent definition not found: ' + role);
     const workspace = this.workspaces.get(id),
-      base = personalAgent(definition, settings ?? workspace.agentSettings),
+      current = settings ?? workspace.agentSettings,
+      base = personalAgent(definition, current),
       saved = this.library(id).agents.find((p) => p.id === base.id);
     return saved
       ? {
           ...base,
           version: saved.version,
-          instructions: roleInstructions(definition, saved.instructions),
+          instructions: roleInstructions(definition, saved.instructions, current),
         }
       : base;
   }

@@ -6,10 +6,19 @@
 // - dom: {collect, results} runs on the page already open in Chrome. collect
 //   runs inside the page and must be self-contained; results(raw) returns
 //   {listings:[{url,text}],pagination} or null (the generic reader keeps the page).
+//   pagination holds the current page and, when there is one, the next page
+//   with its url; null when the extension cannot tell. A pagination without a
+//   next page tells the scan that this is the last results page.
 // - http: {handles(url), read(url, options)} replaces the browser tab for the
-//   addresses it handles and returns ordinary Jev page objects.
+//   addresses it handles and returns ordinary Jev page objects, or null for an
+//   address it finds it cannot read without a browser (a redirect to another
+//   site that renders its content with scripts); the browser tab reads it then.
 // - collector: {templateId,searchUrl,acceptsQuery,readPage,readDetail,detail}
 //   reads an API; the shared source worker queues its listings for Jev.
+// Optionally `credentials` ({label, help, signupUrl, fields:[{key,label}]}) for
+// an API that needs the user's own account: the values are entered under Site
+// accounts (../sources/site-credentials.mjs) and reach the collector's reads
+// as `options.credentials`.
 // Optionally `search` (./search.mjs), or search(url) for a site with one host
 // per country: the results address, its order and the filters the site
 // accepts, so recipes are built from known parameters.
@@ -31,6 +40,22 @@ import workable from './workable.mjs';
 import simplyhired from './simplyhired.mjs';
 import hnHiring from './hn-hiring.mjs';
 import themuse from './themuse.mjs';
+import weWorkRemotely from './weworkremotely.mjs';
+import franceTravail from './france-travail.mjs';
+import adzuna from './adzuna.mjs';
+import jobdanmark from './jobdanmark.mjs';
+import jobnet from './jobnet.mjs';
+import reed from './reed.mjs';
+import gupy from './gupy.mjs';
+import werkNl from './werk-nl.mjs';
+import jobindex from './jobindex.mjs';
+import duckduckgo from './duckduckgo.mjs';
+import wantedly from './wantedly.mjs';
+import jobbankCa from './jobbank-ca.mjs';
+import jobbankDk from './jobbank-dk.mjs';
+import naukri from './naukri.mjs';
+import kariyerNet from './kariyer-net.mjs';
+import nationaleVacaturebank from './nationale-vacaturebank.mjs';
 
 export const SITE_EXTENSIONS = [
   stepstone,
@@ -47,6 +72,22 @@ export const SITE_EXTENSIONS = [
   simplyhired,
   hnHiring,
   themuse,
+  weWorkRemotely,
+  franceTravail,
+  adzuna,
+  jobdanmark,
+  jobnet,
+  reed,
+  gupy,
+  werkNl,
+  jobindex,
+  duckduckgo,
+  wantedly,
+  jobbankCa,
+  jobbankDk,
+  naukri,
+  kariyerNet,
+  nationaleVacaturebank,
 ];
 export const siteExtensionFor = (url) => SITE_EXTENSIONS.find((e) => e.matches(url)) ?? null;
 // What reads this source for the source list: api (collector, only for its
@@ -93,6 +134,7 @@ export function applySiteExtension(document, read, id) {
     links,
     pagination: read.pagination ?? document.pagination,
     siteExtension: id,
+    ...(read.pagination ? {paginationBy: id} : {}),
   };
 }
 

@@ -9,7 +9,7 @@ import {recordOperationState} from '../records/operations.mjs';
 import {SiteAccess} from '../browser/site-access.mjs';
 import {automationTrialReady} from '../sources/trial.mjs';
 import {removeImportedWorkspace} from '../workspaces/imported.mjs';
-import {withAgentDefaults} from '../agents/settings.mjs';
+import {withAgentDefaults, DECISION_MODES} from '../agents/settings.mjs';
 import {
   DEFAULT_SCAN_INTERVAL_MINUTES,
   globalTemplateSource,
@@ -19,6 +19,8 @@ import {domainData} from '../workspaces/store.mjs';
 import {contextCompactTokens} from '../agents/context-compaction.mjs';
 import {contextRestartTokens} from '../agents/context-usage.mjs';
 import {randomUUID} from 'node:crypto';
+import {siteKey} from '../browser/site-key.mjs';
+import {recipeNeedsTerms} from '../sources/recipe.mjs';
 import {
   reusableTemplate,
   planInput,
@@ -57,6 +59,7 @@ function agentSettings(input) {
   input = withAgentDefaults(input);
   for (const key of ['model', 'permission', 'reasoning']) boundedText(input[key], key, 120);
   if (![true, false, null].includes(input.network)) throw Error('Invalid network setting');
+  if (!DECISION_MODES.includes(input.decisions)) throw Error('Invalid decision setting');
   const trialModel = input.trialModel ? boundedText(input.trialModel, 'trialModel', 120) : null;
   return {
     provider: input.provider,
@@ -64,6 +67,7 @@ function agentSettings(input) {
     permission: input.permission,
     reasoning: input.reasoning,
     network: input.provider === 'codex' ? input.network : null,
+    decisions: input.decisions,
     ...(trialModel || input.trialModel === null ? {trialModel} : {}),
     contextCompactTokens: contextCompactTokens(input.contextCompactTokens),
     ...(input.contextRestartTokens === undefined
@@ -338,18 +342,39 @@ export class AutomationStore {
     // clears one); a partial update must not drop settings such as the
     // unstated-conditions rule.
     if (input.criteria) input = {...input, criteria: {...previous.criteria, ...input.criteria}};
-    const plan = planInput(this.template(a.templateId), input, {
+    const template = this.template(a.templateId),
+      plan = planInput(template, input, {
         ...previous,
         sources: a.sourceDraft?.sources ?? a.sources,
       }),
       profile = profilePlan(plan),
       updatedAt = this.now();
+    // The initial setup adds the template's sources for a newly saved target
+    // country itself, so they get their search terms in the same setup.
+    const country = String(plan.criteria?.country ?? '').toUpperCase();
+    if (
+      onboarding &&
+      country &&
+      country !== String(previous.criteria?.country ?? '').toUpperCase()
+    ) {
+      const sites = new Set(plan.sources.map(siteKey));
+      for (const source of template.defaultSources ?? [])
+        if (
+          source.enabled &&
+          source.countries?.includes(country) &&
+          !sites.has(siteKey(source.url))
+        ) {
+          sites.add(siteKey(source.url));
+          plan.sources = [...plan.sources, source.url];
+        }
+    }
     if (onboarding) a = this.save(id, profile, {agent: true});
     else if (profileChanged(profile, base))
       a.planDraft = {plan: profile, baseRevision: a.revision, runId, updatedAt};
     else delete a.planDraft;
     const searches = this.proposedSourceSearches(id, plan.sources, input.sourceSearches);
-    if (JSON.stringify(plan.sources) !== JSON.stringify(a.sources) || searches)
+    const changed = JSON.stringify(plan.sources) !== JSON.stringify(a.sources) || searches;
+    if (changed)
       a.sourceDraft = {
         id: randomUUID(),
         sources: plan.sources,
@@ -359,6 +384,27 @@ export class AutomationStore {
       };
     else delete a.sourceDraft;
     this.put(a);
+    // The initial setup applies its sources and searches right away, like its
+    // profile; the user reviews them on the onboarding form.
+    if (onboarding) {
+      if (changed) this.resolveSourceDraft(id, a.sourceDraft.id, true);
+      const saved = this.get(id),
+        withoutTerms = this.sourceSearchOptions(id, saved.sources)
+          .filter(({url}) => recipeNeedsTerms(saved.sourceSettings?.[url]?.recipe))
+          .map(({url}) => url);
+      return {
+        saved: true,
+        draft: false,
+        plan,
+        applied: true,
+        ...(withoutTerms.length ? {sourcesWithoutTerms: withoutTerms} : {}),
+        message:
+          'Saved. During the initial setup the profile, sources and source searches apply right away; the user reviews them on the onboarding form.' +
+          (withoutTerms.length
+            ? ' sourcesWithoutTerms have no search terms yet and will not scan without them: read get_automation_context section profile (sourceSearch notes say what {query} takes, in the site language) and set their terms with sourceSearches.'
+            : ''),
+      };
+    }
     return {
       saved: true,
       draft: true,

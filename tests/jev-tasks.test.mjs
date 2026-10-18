@@ -2492,14 +2492,13 @@ test('unmarked numeric pagination advances via exact observed links without a Je
       ],
     };
   };
-  f.ports.evaluate = async (state, q) => {
+  f.ports.evaluate = async () => {
     questions++;
-    assert.equal(state.position.currentPage, 3);
-    return {answers: {next: answer('end', q.next.criteria)}};
+    throw Error('The last page of a shown page count needs no Jev decision.');
   };
   const result = await f.run({operation: 'scan_results', url: root});
   assert.equal(result.status, 'completed');
-  assert.equal(questions, 1);
+  assert.equal(questions, 0);
   assert.deepEqual(
     f.calls.map((c) => c.args.url),
     [root, root + '&page=2', root + '&page=3'],
@@ -2510,6 +2509,7 @@ test('unmarked numeric pagination advances via exact observed links without a Je
     [1, 2, 3],
   );
   assert.equal(saved.pages[0].continuation.method, 'observed_page_number');
+  assert.equal(saved.pages[2].continuation.method, 'observed_page_count');
 });
 
 test('late job descriptions stay in the same tab and are classified only when ready', async (t) => {

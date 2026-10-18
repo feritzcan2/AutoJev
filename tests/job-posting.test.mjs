@@ -120,3 +120,49 @@ test('fetched HTML gives the same inputs: title, h1s and the posting blocks', ()
     null,
   );
 });
+
+test('a JobPosting with raw line breaks and tabs in its strings is still read', () => {
+  // Seen on a job board (2026-10-16): the block is not strict JSON, but browsers read it.
+  const block = posting({...base, title: 'Software Engineer (m/w/d)'}).replace(
+    '"description":"',
+    '"description":"Line one\n\tLine \\"two\\"\r\n',
+  );
+  assert.throws(() => JSON.parse(block));
+  const listing = jobPostingListing(page(base, {jobPostings: [block]}), NOW);
+  assert.match(listing.text, /Line one\s+Line "two"/);
+  assert.equal(listing.fields.company, 'Arvana GmbH');
+  // A block that is broken otherwise stays unread.
+  assert.equal(jobPostingListing(page(base, {jobPostings: [block.slice(0, -1)]}), NOW), null);
+});
+
+test('a country list of nearly every code names the codes left out; a shorter list stays whole', () => {
+  const dn = new Intl.DisplayNames(['en'], {type: 'region'});
+  const codes = [];
+  for (let a = 65; a < 91; a++)
+    for (let b = 65; b < 91; b++) {
+      const code = String.fromCharCode(a, b);
+      if (dn.of(code) !== code) codes.push(code);
+    }
+  // Every ISO code but North Korea and Iran, one country entry each, plus Kosovo.
+  const all = codes.filter(
+    (c) =>
+      !/^(AC|AN|BU|CP|CQ|CS|DD|DG|DY|EA|EU|EZ|FX|HV|IC|NH|QO|RH|SU|TA|TP|UK|UN|VD|XA|XB|XK|YD|YU|ZR|ZZ)$/.test(
+        c,
+      ),
+  );
+  assert.equal(all.length, 249);
+  const country = (name) => ({'@type': 'Country', name});
+  const region = (list) =>
+    jobPostingListing(page({...base, applicantLocationRequirements: list.map(country)}), NOW).fields
+      .remoteRegion;
+  assert.equal(
+    region([...all.filter((c) => c !== 'KP' && c !== 'IR'), 'XK']),
+    'All ISO countries except IR, KP and XK (248 listed)',
+  );
+  assert.equal(region(all), 'All ISO countries (249 listed)');
+  const eu = ['AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE'];
+  assert.equal(region(eu), eu.join(', '));
+  // Many codes but far from every country: the list itself is the information.
+  const half = all.slice(0, 150);
+  assert.equal(region(half), half.join(', '));
+});

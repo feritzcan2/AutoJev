@@ -3,6 +3,7 @@ import {taskHasRecord, batchScoring} from '../records/task-scope.mjs';
 import {SCORING_VERSION} from './policy.mjs';
 import {boundedText, webUrl} from '../templates/catalog.mjs';
 import {assessmentEvidence} from '../records/evidence.mjs';
+import {dryRunTask, saveDryScore} from './trial-scores.mjs';
 import {normalizeCellToolArgs} from '../workspaces/table-tools.mjs';
 
 const text = {type: 'string', minLength: 1, maxLength: 3000};
@@ -182,9 +183,17 @@ export function saveRecordScore(db, id, runId, input) {
   const item = db.result(id, input.itemId ?? run.recordId);
   if (run.recordOperation !== 'score' || !taskHasRecord(run, item.id))
     throw Error('A score can only be saved in the assigned scoring task');
-  if (item.trial || !['found', 'prepared'].includes(item.status))
+  // A developer trial score may read a closed record; it never writes to it.
+  if (
+    item.trial ||
+    !(dryRunTask(run) ? item.status !== 'executing' : ['found', 'prepared'].includes(item.status))
+  )
     throw Error('This record cannot be scored');
-  const assessment = recordAssessment(db, id, run, input, item.url),
-    cells = assessmentCells(db.get(id).table, item.cells, assessment);
+  const assessment = recordAssessment(db, id, run, input, item.url);
+  if (dryRunTask(run)) {
+    saveDryScore(run.taskId, item.id, {assessment, runId: run.id, at: assessment.scoredAt});
+    return {itemId: item.id, saved: true, score: assessment.score};
+  }
+  const cells = assessmentCells(db.get(id).table, item.cells, assessment);
   return db.putResult({...item, assessment, cells, updatedAt: assessment.scoredAt});
 }

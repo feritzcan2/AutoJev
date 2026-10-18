@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {restoredTargets, sameBrowserInstance} from '../app/jev/tabs.mjs';
+import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {JevTabs, restoredTargets, sameBrowserInstance} from '../app/jev/tabs.mjs';
 test('restore exact saved/checkpoint targets in a verified browser profile, never same-URL personal tabs', () => {
   const a = 'A'.repeat(32),
     b = 'B'.repeat(32),
@@ -39,4 +42,20 @@ test('an address change can preserve browser identity; a new Chrome process cann
     false,
   );
   assert.equal(sameBrowserInstance('ws://localhost', 'ws://localhost'), false);
+});
+test('a tab record from another app version does not block the connection; a damaged one does', async (t) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'jev-tabs-'));
+  t.after(() => rm(directory, {recursive: true, force: true}));
+  const tabs = new JevTabs(directory, 'Default');
+  assert.equal(await tabs.read(), null);
+  const other = {version: 2, profile: 'Default', instanceId: 'x', targets: [], tabIds: {}};
+  await writeFile(tabs.file, JSON.stringify(other));
+  assert.equal(await tabs.read(), null);
+  assert.deepEqual(JSON.parse(await readFile(tabs.file, 'utf8')), other);
+  await tabs.save('ws://127.0.0.1:1/devtools/browser/a', 'context', ['A'.repeat(32)]);
+  assert.deepEqual((await tabs.read()).targets, ['A'.repeat(32)]);
+  await writeFile(tabs.file, JSON.stringify({version: 1, profile: 'Default', targets: ['bad']}));
+  await assert.rejects(tabs.read(), /tab record is invalid/);
+  await writeFile(tabs.file, '{');
+  await assert.rejects(tabs.read(), /Could not read the Jev tab record/);
 });

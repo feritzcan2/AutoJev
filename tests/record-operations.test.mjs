@@ -279,6 +279,26 @@ test('a manual execute request needs no draft and keeps observe permissions; dup
   );
 });
 
+test('an outcome without a reservation is refused and the record stays sendable', async (t) => {
+  const f = fixture(t);
+  await f.runtime.runRecord(f.id, f.item.id, 'execute', {manual: true});
+  await settle();
+  const run = f.launches.at(-1);
+  // A listing site can mark a job Applied when it only redirects to the employer.
+  f.db.observe(f.id, run.id, f.item.url, 'Applied. Apply on external site');
+  assert.throws(
+    () =>
+      f.db.resolve(f.id, run.id, f.item.id, {
+        status: 'completed',
+        evidence: 'Applied',
+        url: f.item.url,
+      }),
+    /No submission was reserved.*reserve_automation_action/,
+  );
+  assert.equal(f.db.result(f.id, f.item.id).status, 'found');
+  assert.ok(directRecordInstructions.includes('hands the application over to another site'));
+});
+
 test('changed proposals do not invalidate a queued execute; the running execute request covers its own proposal edits', async (t) => {
   const f = fixture(t),
     prepared = await f.prepare();
@@ -1037,6 +1057,21 @@ test('record context does not replay another record login blocker from the same 
   );
 });
 
+// The whole automation context, joining its parts when it is too large for one response.
+const fullContext = async (flow, id, runId) => {
+  let page = await flow.call(id, runId, 'get_automation_context', {});
+  if (!page.context?.id) return page;
+  let text = '';
+  while (true) {
+    text += page.text;
+    if (page.context.nextOffset === null) return JSON.parse(text);
+    page = await flow.call(id, runId, 'read_automation_context_part', {
+      contextId: page.context.id,
+      offset: page.context.nextOffset,
+    });
+  }
+};
+
 for (const template of ['job-search', 'housing', 'appointment', 'custom'])
   test(`direct execution needs no prior preparation, preserves authorization and records a verified outcome (${template})`, async (t) => {
     const f = fixture(t, template),
@@ -1059,7 +1094,7 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
     assert.equal(run.recordOperation, 'execute');
     assert.equal(run.request.direct, true);
     assert.equal(run.request.digest, undefined);
-    const context = await f.flow(run).call(f.id, run.id, 'get_automation_context', {});
+    const context = await fullContext(f.flow(run), f.id, run.id);
     assert.equal(context.recordAuthorization.directExecution, true);
     assert.equal(context.recordAuthorization.explicitUserRequest, true);
     assert.equal(context.recordAuthorization.approvedProposalDigest, undefined);
@@ -1309,7 +1344,7 @@ for (const template of ['job-search', 'housing', 'appointment', 'custom'])
     await f.runtime.runRecord(f.id, f.item.id, 'execute', {direct: true});
     await settle();
     const run = f.launches.at(-1);
-    const context = await f.flow(run).call(f.id, run.id, 'get_automation_context', {});
+    const context = await fullContext(f.flow(run), f.id, run.id);
     for (const key of ['maxActionsTotal', 'maxActionsPerDay', 'endAt'])
       assert.equal(key in context.automation, false);
     f.db.record(f.id, run.id, {

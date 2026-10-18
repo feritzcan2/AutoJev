@@ -528,7 +528,7 @@ export class WebTasks extends TaskRuns {
             )
           )
             continue;
-          if (source.siteWait?.waiting) continue;
+          if (source.siteWait?.waiting || source.termsRequired) continue;
           if (source.siteBlocked && !source.blocker?.recordId) {
             this.sourceState(a.id, source.url, {
               blocked: false,
@@ -589,7 +589,7 @@ export class WebTasks extends TaskRuns {
           eligible.every(
             (s) =>
               !s.siteWait &&
-              (s.blocked || s.onceCompleted) &&
+              (s.blocked || s.onceCompleted || s.termsRequired) &&
               !(a.questions ?? []).some(
                 (q) =>
                   !q.conversation &&
@@ -610,7 +610,10 @@ export class WebTasks extends TaskRuns {
           continue;
         }
         const next = sources
-          .filter((s) => s.enabled && !s.siteWait?.exhausted && (!s.blocked || s.siteWait))
+          .filter(
+            (s) =>
+              s.enabled && !s.termsRequired && !s.siteWait?.exhausted && (!s.blocked || s.siteWait),
+          )
           .map((s) => s.siteWait?.retryAt ?? s.nextRunAt ?? this.now());
         const nextRunAt = next.length ? Math.min(...next) : null;
         if (current.nextRunAt !== nextRunAt) this.db.put({...current, nextRunAt});

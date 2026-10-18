@@ -21,11 +21,15 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Maintenance} from './system/maintenance.mjs';
 import {startDevControl} from './system/dev-control.mjs';
+import {registerExtensionBench} from './sources/extension-bench.mjs';
+import {AgentTrace} from './system/agent-trace.mjs';
+import {registerDevTools} from './system/dev-tools.mjs';
 import {registerAutomationServices} from './automation/services.mjs';
 import {AutomationStore} from './automation/store.mjs';
 import {registerSettingsServices} from './system/settings-services.mjs';
 import {JevSettings} from './jev/settings.mjs';
 import {CaptchaSettings} from './captcha/settings.mjs';
+import {SiteCredentials, useSiteCredentials} from './sources/site-credentials.mjs';
 import {CaptchaCoordinator} from './captcha/coordinator.mjs';
 import {
   applyPendingRestore,
@@ -120,6 +124,11 @@ async function boot() {
     encrypt: encryptSecret,
     decrypt: decryptSecret,
   });
+  const siteCredentials = new SiteCredentials(core.db, {
+    encrypt: encryptSecret,
+    decrypt: decryptSecret,
+  });
+  useSiteCredentials(siteCredentials);
   let window,
     quitting = false;
   const emit = (channel, value) => {
@@ -132,10 +141,24 @@ async function boot() {
   const instructionLog = new InstructionLog(core.workspaces, {
     changed: (id) => emit('instructions-changed', {workspaceId: id}),
   });
+  // Unpackaged builds only: everything each agent session received, in RAM.
+  const trace = app.isPackaged
+    ? null
+    : new AgentTrace({changed: (id) => emit('agent-trace-changed', {workspaceId: id})});
+  const sessionInstructions = trace
+    ? Object.assign(Object.create(instructionLog), {
+        record(event) {
+          try {
+            trace.session(event);
+          } catch {}
+          return instructionLog.record(event);
+        },
+      })
+    : instructionLog;
   const agents = new AgentSessions({
       root,
       data,
-      instructions: instructionLog,
+      instructions: sessionInstructions,
       emit: (event) => emit('agent-event', event),
       changed,
     }),
@@ -171,15 +194,19 @@ async function boot() {
     changed(id);
   };
   const mcp = await startToolServer({
-    onExchange: (grant, event) =>
-      instructionLog.tool(
+    onExchange: (grant, event) => {
+      try {
+        trace?.tool(grant, event);
+      } catch {}
+      return instructionLog.tool(
         {
           ...grant,
           agentProfileId: agents.sessions.get(workerKey(grant.workspaceId, grant.workerId))
             ?.agentProfile?.id,
         },
         event,
-      ),
+      );
+    },
     assertOwner: (id) => core.workspaces.get(id),
     resolve(grant) {
       if (
@@ -239,6 +266,7 @@ async function boot() {
     dialog,
     shell,
     window: () => window,
+    trace,
     notify: (title, body) => {
       if (Notification.isSupported() && !window?.isFocused()) {
         const notification = new Notification({title, body: body.slice(0, 300)});
@@ -249,6 +277,16 @@ async function boot() {
         notification.show();
       }
     },
+  });
+  // Unpackaged builds only: agent trace and trial scores.
+  registerDevTools({handle, trace, db: automationDb, runtime: web.runtime});
+  // Unpackaged builds only: the Sources screen's extension test bench.
+  registerExtensionBench({
+    enabled: !app.isPackaged,
+    handle,
+    browser,
+    db: automationDb,
+    changed: (id) => emit('automation-changed', {automationId: id}),
   });
   workspaces.templates[browserDefinition.id] = {
     agentRoles: () => WEB_AGENT_ROLES,
@@ -445,6 +483,7 @@ async function boot() {
     store: core,
     jevSettings,
     captchaSettings,
+    siteCredentials,
     handle,
     window: () => window,
     maintenance,
