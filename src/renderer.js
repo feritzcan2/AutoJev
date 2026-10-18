@@ -338,6 +338,7 @@ function fillAgentSettings(profile, id) {
   settingsOptions(p.agentSettings ?? {});
   form.elements.network.value =
     p.agentSettings?.network == null ? 'inherit' : String(p.agentSettings.network);
+  form.elements.decisions.value = withAgentDefaults(p.agentSettings ?? {}).decisions;
   agentSettingsBaseline = JSON.stringify(readAgentSettings());
   $('agent-settings-save').disabled = true;
 }
@@ -484,6 +485,7 @@ function readAgentSettings() {
         : f.network.value === 'true',
     contextRestartTokens: contextTokens('contextRestartTokens'),
     contextCompactTokens: contextTokens('contextCompactTokens'),
+    decisions: f.decisions.value,
   };
   return {agentSettings, chromeProfile};
 }

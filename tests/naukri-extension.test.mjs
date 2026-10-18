@@ -219,9 +219,9 @@ test('only naukri.com is matched; it reads in the browser with its search', () =
     assert.equal(isNaukriUrl(url), false, url);
   assert.equal(naukri.id, 'naukri');
   assert.equal(naukri.dom.collect, collectNaukriPage);
-  assert.equal(naukri.search.ordering, undefined);
+  assert.equal(naukri.search.ordering, 'newest_first');
   const remote = withSearchFilters(naukri.search.template, {wfhType: '2'});
-  assert.equal(remote, 'https://www.naukri.com/{query}-jobs?wfhType=2');
+  assert.equal(remote, 'https://www.naukri.com/{query}-jobs?sort=f&wfhType=2');
   assert.deepEqual(searchFilterLabels(naukri.search, remote), ['Work mode: Remote']);
 });
 

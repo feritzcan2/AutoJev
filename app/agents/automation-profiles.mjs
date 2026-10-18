@@ -1,10 +1,10 @@
 // @ts-check
-import {JEV_TASK_INSTRUCTIONS} from '../jev/task-tools.mjs';
+import {JEV_TASK_INSTRUCTIONS, AGENT_TASK_INSTRUCTIONS} from '../jev/task-tools.mjs';
 import {personalAgent} from './profiles.mjs';
 
 // Shared rules for every automation session (written to AGENTS.md).
 // Keep this file short and structured: the agents reading it are not experts.
-// Role-specific steps live in WEB_AGENTS; the Jev block is appended to each.
+// Role-specific steps live in WEB_AGENTS; the browser block is appended to each.
 export const AUTOMATION_INSTRUCTIONS = `# AutoJev automation agent
 
 You run one assigned task for one personal web automation inside the AutoJev app. The app owns scheduling, the task queue and all durable state. You own the browser work and the decisions.
@@ -138,10 +138,10 @@ Rules:
 One source scan is one task. Each record operation (score, prepare, execute, verify) is a separate task. Every turn, read the saved task context, criteria, scanPlan and scanProgress from get_automation_context; they are authoritative over the conversation history. Earlier completion or blocker reports are history, not evidence for this turn.
 
 ## Source scan
-- When the task context names a collector extension, follow its scanInstructions: collect_source_page supplies CLI evidence to Jev; review and score it before advancing. The browser discovery instructions below apply to sources without that collector.
+- When the task context names a collector extension, follow its scanInstructions: collect_source_page fetches the next page of listings as a review batch; review and score it before advancing. The browser discovery instructions below apply to sources without that collector.
 - Follow assignedSource.query, assignedSource.instructions and the saved criteria. Detailed coverage rules come in scanInstructions and scanPlan from the context; follow them.
 - If scanProgress has unfinished work, first run browser_jev_run collect_details for the pending queue, then continue from the saved results page. Otherwise start at the newest results. Known listing IDs never authorize stopping.
-- Process one results page at a time with browser_jev_run: scan_results on the page, collect_details for the queue, then read briefs in groups (read_jev_brief evidenceIds), save suitable listings together with record_automation_results and reject the rest in the review. Jev keeps the queue and page number; you never maintain them yourself.
+- Process one results page at a time with browser_jev_run: scan_results on the page, collect_details for the queue, then read briefs in groups (read_jev_brief evidenceIds), save suitable listings together with record_automation_results and reject the rest in the review. The app keeps the queue and page number; you never maintain them yourself.
 - Reject findings only for the user's actual hard constraints. For the configured minimum save score, submit the actual assessment and let the app return a skipped receipt; count it as an exclusion, acknowledge the batch and continue without retrying it. A minimum is not an exact value. A restriction to note is not an exclusion. Missing or conflicting facts stay conditional.
 - Observe mode only records findings. Prepare mode records findings and applies only when the user asks for a record. Auto mode applies scored records within the user's saved scope. There is no draft approval step. These modes guide your decisions; the app enforces only the submit click (reservation first, once).
 - Save a compact coverage summary at the end: pages visited, listings seen, details read, rejections and reasons, duplicates, any remaining page.
@@ -163,7 +163,11 @@ recordAuthorization and assignedOperation define the scope. Read assignedRecord,
 - A page that says it is still preparing, creating or processing, or whose next/submit button has not appeared, is not finished. Call browser_read with waitSeconds 15, up to 4 times, before reporting it as blocked.
 - Never act on records marked completed, uncertain, executing or dismissed. Never invent personal facts.`,
   },
-].map((definition) => ({...definition, jevInstructions: JEV_TASK_INSTRUCTIONS}));
+].map((definition) => ({
+  ...definition,
+  jevInstructions: JEV_TASK_INSTRUCTIONS,
+  agentInstructions: AGENT_TASK_INSTRUCTIONS,
+}));
 export function webAgentProfile(kind, settings) {
   const definition = WEB_AGENTS.find((a) => a.role === 'web-' + kind);
   if (!definition) throw Error('Unknown agent task');

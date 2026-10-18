@@ -307,7 +307,7 @@ export function recipeSummary(recipe, state) {
     return {
       status,
       label: 'Recipe verified',
-      detail: `${state.successCount} successful turns${state.failCount ? `, ${state.failCount} failed` : ''}${recipe.terms?.length ? ` · ${recipe.terms.length} search terms` : ''}${recipe.ordering === 'newest_first' ? ' · new listings only' : ''} · up to ${SCAN_SEARCH_LISTINGS} new listings or ${SCAN_SEARCH_PAGES} pages per search`,
+      detail: `${state.successCount} successful turns${state.failCount ? `, ${state.failCount} failed` : ''}${recipe.terms?.length ? ` · ${recipe.terms.length} search terms` : ''} · new listings only · up to ${SCAN_SEARCH_LISTINGS} new listings or ${SCAN_SEARCH_PAGES} pages per search`,
     };
   if (status === 'stale')
     return {

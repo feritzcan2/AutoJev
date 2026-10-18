@@ -17,6 +17,7 @@ export async function saveAgentSettings({api, owner, input, confirmRestart, onSa
     'permission',
     'reasoning',
     'network',
+    'decisions',
   ].some((key) => (previous[key] ?? null) !== (next[key] ?? null));
   const workers = (before.workers ?? []).filter(
     (worker) =>

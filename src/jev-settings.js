@@ -11,7 +11,7 @@ export function jevSettingsPanel(api, root, {notice = () => {}} = {}) {
     errorMessage = '';
   root.classList.add('jev-settings');
   root.innerHTML = `<div class="jev-settings-heading"><h4>Jev connection</h4><span data-state role="status">Loading…</span></div>
- <p>Every candidate that uses Jev as the browser uses this TypeSafe connection. Candidates’ site account passwords are kept separately in the Candidate profile section.</p>
+ <p>Workspaces whose listing decisions are set to Jev in Agent settings use this TypeSafe connection. With “This agent” no key is needed. Candidates’ site account passwords are kept separately in the Candidate profile section.</p>
  <form><label>TypeSafe API key<input name="apiKey" type="password" autocomplete="new-password" spellcheck="false" maxlength="4096" placeholder="The API key from your TypeSafe console"></label><label>Model<input name="model" value="jev-latest" maxlength="100" required spellcheck="false" autocomplete="off"></label><div class="jev-settings-actions"><button class="primary" type="submit">Save</button><button class="quiet" type="button" data-test>Test connection</button><button class="quiet" type="button" data-remove>Remove saved key</button></div></form>
  <p class="jev-settings-hint">The key is encrypted on this computer with the system keychain and is not shown after saving. The test only requests the model list from TypeSafe; it sends no candidate documents or browser content and starts no model task.</p><p class="jev-settings-message" data-message role="status"></p>`;
   const $ = (selector) => root.querySelector(selector),

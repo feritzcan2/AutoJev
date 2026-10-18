@@ -305,6 +305,7 @@ export const jobSearchSources = [
         template: 'https://jobdanmark.dk/jobsoeger/find-job?freetext={query}',
       },
       pagination: 'url_param',
+      ordering: 'newest_first',
       loginRequired: false,
       notes:
         "Jobdanmark site extension: the page address becomes the site's JSON search, 30 listings per page via &p=N with the page count stated. freetext matches title and text, also word prefixes; repeated parameters of one filter are ORed. municipality takes a name (Aarhus, København), administrativeRegion a region (Region Hovedstaden), region a part of the country (Fyn, Nordsjælland), zip a postcode, category an id (227978 = IT, engineering and energy), jobtype fuldtid|deltid|fleksjob|elev|studiejob|praktik; an unknown municipality gives no results. Promoted listings come first on page 1, then the newest; no sort parameter. Listings are https://jobdanmark.dk/job/<slug>; a removed one redirects to the search.",
@@ -426,13 +427,14 @@ export const jobSearchSources = [
     countries: ['IN'],
     enabled: true,
     instructions:
-      "India, all sectors. The Naukri extension reads the result pages in Chrome; listings are read from their structured data. Search with the role as a lowercase hyphenated slug in the path (software-developer, data-analyst), save concrete slugs as the recipe's terms, and add wfhType=2 for remote roles only. Pages are /<slug>-jobs-2, -3, … with 20 results each, in relevance order. Do not record an access block, a CAPTCHA or a page that has not loaded as an empty result. These instructions grant no permission to act.",
+      "India, all sectors. The Naukri extension reads the result pages in Chrome; listings are read from their structured data. Search with the role as a lowercase hyphenated slug in the path (software-developer, data-analyst), save concrete slugs as the recipe's terms, and add wfhType=2 for remote roles only. Pages are /<slug>-jobs-2, -3, … with 20 results each, newest first. Do not record an access block, a CAPTCHA or a page that has not loaded as an empty result. These instructions grant no permission to act.",
     recipe: {
-      entry: {kind: 'url_template', template: 'https://www.naukri.com/{query}-jobs'},
+      entry: {kind: 'url_template', template: 'https://www.naukri.com/{query}-jobs?sort=f'},
+      ordering: 'newest_first',
       pagination: 'url_param',
       loginRequired: false,
       notes:
-        'Naukri site extension (DOM; plain HTTP is an empty Next.js shell and the job API asks for reCAPTCHA): {query} is a hyphenated role slug. 20 results per page via the -N path suffix; the header states the total ("1 - 20 of N"). Relevance order. An address past the last page shows page 1, which the extension does not read as page N. wfhType=2 keeps remote roles. Listings are /job-listings-<slug>-<id> and carry a schema.org JobPosting.',
+        'Naukri site extension (DOM; plain HTTP is an empty Next.js shell and the job API asks for reCAPTCHA): {query} is a hyphenated role slug. 20 results per page via the -N path suffix; the header states the total ("1 - 20 of N"). sort=f lists the newest first. An address past the last page shows page 1, which the extension does not read as page N. wfhType=2 keeps remote roles. Listings are /job-listings-<slug>-<id> and carry a schema.org JobPosting.',
     },
   },
   {

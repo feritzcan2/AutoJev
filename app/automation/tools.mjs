@@ -5,12 +5,8 @@ import {questionFieldsSchema} from './question-forms.mjs';
 import {workspaceTableTools, workspaceCellsSchema} from '../workspaces/table-tools.mjs';
 import {browserSnapshotTools} from '../browser/snapshot.mjs';
 import {automationContextTools} from './context.mjs';
-import {jevTaskTools} from '../jev/task-tools.mjs';
-import {
-  RECIPE_PAGINATION_KINDS,
-  RECIPE_TERM_LIMIT,
-  RECIPE_ORDERING_KINDS,
-} from '../sources/recipe.mjs';
+import {jevTaskTools, agentDecisionTools} from '../jev/task-tools.mjs';
+import {RECIPE_PAGINATION_KINDS, RECIPE_TERM_LIMIT} from '../sources/recipe.mjs';
 
 const str = {type: 'string'},
   optional = {type: 'string', minLength: 0};
@@ -40,7 +36,7 @@ export const scoreWrites = new Set([
 export const automationTools = [
   tool(
     'collect_source_page',
-    'Site extension: fetch the assigned next page through its CLI and run Jev triage. Review the returned batch, score and save retained listings, then acknowledge the batch before calling again. Takes no URLs; search scope and pagination belong to the app. After restart it re-fetches pending evidence. complete=true means every page and review finished.',
+    'Site extension: fetch the assigned next page through its CLI as a review batch. Review the returned batch, score and save suitable listings, then acknowledge the batch before calling again. Takes no URLs; search scope and pagination belong to the app. After restart it re-fetches pending evidence. complete=true means every page and review finished.',
   ),
   tool(
     'read_scoring_profile',
@@ -101,7 +97,7 @@ export const automationTools = [
   ),
   tool(
     'save_source_recipe',
-    'Source trial or scan: save how this source reaches its results page. url_template: results URL with {query} (optionally {location} or another criteria field id), or a fixed results URL without placeholders; include the newest-first ordering of the board when observed. search_form: the search page url plus the labels of the query/location fields. terms: up to 5 concrete search keywords when the source query is a description rather than a keyword; {query} (or the query field) is filled with each term and every scan runs each search. discovery: no stable method, add a note. The app caps every scan at 15 result pages shared by its searches (at least 2 per search). The app replays the recipe (first term) and accepts it only when it finds a listing; a failed check returns the reason. At most 3 checks per turn.',
+    'Source trial or scan: save how this source reaches its results page. url_template: results URL with {query} (optionally {location} or another criteria field id), or a fixed results URL without placeholders; use the newest-first sort of the board when it offers one. search_form: the search page url plus the labels of the query/location fields. terms: up to 5 concrete search keywords when the source query is a description rather than a keyword; {query} (or the query field) is filled with each term and every scan runs each search. discovery: no stable method, add a note. The app caps every scan at 15 result pages shared by its searches (at least 2 per search). The app replays the recipe (first term) and accepts it only when it finds a listing; a failed check returns the reason. At most 3 checks per turn.',
     {
       entry: object(
         {
@@ -118,7 +114,6 @@ export const automationTools = [
       ),
       terms: {type: 'array', maxItems: RECIPE_TERM_LIMIT, items: str},
       pagination: {type: 'string', enum: RECIPE_PAGINATION_KINDS},
-      ordering: {type: 'string', enum: RECIPE_ORDERING_KINDS},
       loginRequired: {type: 'boolean'},
       notes: optional,
     },
@@ -325,9 +320,12 @@ export const collectorHidden = new Set([
 ]);
 
 // The tools one run may see, with descriptions and schemas narrowed to its task.
-export function scopedAutomationTools({run, template, collecting}) {
+// With agent decisions the Jev profile is unused and browser tasks hand every
+// listing decision to the agent.
+export function scopedAutomationTools({run, template, collecting, agentDecides = false}) {
   const scopedTools = structuredClone(
-      automationTools
+      (agentDecides ? agentDecisionTools(automationTools) : automationTools)
+        .filter((t) => !agentDecides || t.name !== 'save_jev_profile')
         .filter(
           (t) =>
             (t.name !== 'record_automation_score' || run.recordOperation === 'score') &&
@@ -365,11 +363,12 @@ export function scopedAutomationTools({run, template, collecting}) {
   if (resultTool && !run.recordId) {
     for (const key of ['recordId', 'actionUrl', 'proposal'])
       delete resultTool.inputSchema.properties[key];
+    // The store accepts a score here only through the top-level fields of a scored
+    // production run; trial and research samples carry none.
+    delete resultTool.inputSchema.properties.assessment;
     resultTool.description =
-      'Save an observed finding with key, url, title, summary, custom cells and assessment. Use the exact listing URL as key; external site IDs are not application record IDs. Source scans only observe and evaluate. For Jev batches, reject unsuitable findings using browser_jev_run review decisions; do not create zero-score or unavailable records merely to acknowledge a batch. ' +
-      resultTool.description.slice(resultTool.description.indexOf('Fill custom table cells'));
+      'Save an observed finding with key, url, title, summary and custom cells. Use the exact listing URL as key; external site IDs are not application record IDs. Source scans only observe and evaluate. For Jev batches, reject unsuitable findings using browser_jev_run review decisions; do not create zero-score or unavailable records merely to acknowledge a batch. Fill custom cells from observed facts. This task saves no score: trial and research samples carry none. No action is taken.';
     if (run.kind === 'run' && template.recordOperations?.score) {
-      delete resultTool.inputSchema.properties.assessment;
       Object.assign(resultTool.inputSchema.properties, resultScoreFields);
       resultTool.description =
         'Save an observed source finding. Send url, title and summary, plus top-level score for each new listing: an integer 0–100 following criteria.ranking and scoringPolicy, or null if details are inaccessible. Explain the score in optional scoreReason. Report mandatory conditions separately with eligibility and eligibilityReason; missing facts mean unverified. All four scoring fields are top-level values. Use the exact listing URL as key; external site IDs are not application record IDs. Custom cells are optional. Save only verified facts and reuse known records. For Jev batches, reject unsuitable findings with review decisions. New findings below scoringPolicy.saveThreshold return skipped=true without creating a record; do not retry skipped findings. Existing records and unavailable assessments are retained. No action is taken.';

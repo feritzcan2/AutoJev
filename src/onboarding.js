@@ -614,6 +614,19 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
               checkReadiness(form);
             }),
           ),
+          // Without a key the worker agent can make the listing decisions.
+          button(
+            'Let the agent decide instead',
+            () =>
+              attempt(async () => {
+                const agentSettings = {...data.automation.agentSettings, decisions: 'agent'};
+                await api.automationSave(id, {agentSettings});
+                data.automation.agentSettings = agentSettings;
+                readiness = null;
+                checkReadiness(form);
+              }),
+            'link',
+          ),
         );
         item.append(key);
       }
@@ -625,7 +638,10 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     const owner = id;
     readiness = {checks: []};
     try {
-      readiness = await api.readiness({provider: data.automation.agentSettings.provider});
+      readiness = await api.readiness({
+        provider: data.automation.agentSettings.provider,
+        decisions: data.automation.agentSettings.decisions ?? 'jev',
+      });
     } catch (failure) {
       readiness = {
         checks: [{id: 'failed', label: 'Setup check', state: 'error', detail: failure.message}],

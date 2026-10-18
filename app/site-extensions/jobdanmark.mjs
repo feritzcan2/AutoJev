@@ -308,9 +308,13 @@ export default {
   matches: isJobdanmarkUrl,
   http: {handles: (url) => Boolean(jobdanmarkRequest(url)), read: readJobdanmark},
   // The search page's own address parameters (observed 2026-10-16 in its
-  // script and checked against the JSON search). No sort control.
+  // script and checked against the JSON search). No sort control, but the
+  // default order is newest first (checked 2026-10-18 for udvikler, python and
+  // sygeplejerske: publishedDate never stepped back across pages 1, 2, 3 and 20);
+  // only page 1 puts its few promoted, older listings first.
   search: {
     template: `${ORIGIN}/jobsoeger/find-job?freetext={query}`,
+    ordering: 'newest_first',
     pagination: 'url_param',
     filters: [
       {param: 'municipality', label: 'Municipality'},

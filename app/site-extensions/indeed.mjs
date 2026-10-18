@@ -87,11 +87,16 @@ export function indeedResults(raw) {
   return listings.length ? {listings, pagination: pagination(raw)} : null;
 }
 
-// The results address of the Indeed site the source uses. sort=date does not
-// give a date order (checked 2026-10-10: dates mixed on page 1), so there is
-// no ordering. fromage keeps only recent listings.
+// The results address of the Indeed site the source uses. sort=date puts the
+// newest listings first by Indeed's own date (user asked, 2026-10-18; checked
+// on uk. and de.indeed.com), while the default relevance order mixes dates
+// over every page. Without a signed-in session only page 1 is readable, so the
+// sort decides which listings a scan sees. The order is not certain enough for
+// newest_first: posted dates differ from it by a day or two, a few refreshed
+// older listings can lead page 1, and later pages could not be checked.
+// fromage keeps only recent listings.
 const search = (url) => ({
-  template: `${new URL(url).origin}/jobs?q={query}&l={location}`,
+  template: `${new URL(url).origin}/jobs?q={query}&l={location}&sort=date`,
   pagination: 'url_param',
   filters: [
     {

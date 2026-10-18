@@ -6,6 +6,9 @@
 // - dom: {collect, results} runs on the page already open in Chrome. collect
 //   runs inside the page and must be self-contained; results(raw) returns
 //   {listings:[{url,text}],pagination} or null (the generic reader keeps the page).
+//   pagination holds the current page and, when there is one, the next page
+//   with its url; null when the extension cannot tell. A pagination without a
+//   next page tells the scan that this is the last results page.
 // - http: {handles(url), read(url, options)} replaces the browser tab for the
 //   addresses it handles and returns ordinary Jev page objects, or null for an
 //   address it finds it cannot read without a browser (a redirect to another
@@ -131,6 +134,7 @@ export function applySiteExtension(document, read, id) {
     links,
     pagination: read.pagination ?? document.pagination,
     siteExtension: id,
+    ...(read.pagination ? {paginationBy: id} : {}),
   };
 }
 

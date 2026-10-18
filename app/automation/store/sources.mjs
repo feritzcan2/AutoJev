@@ -14,6 +14,7 @@ import {
   recipeNeedsTerms,
 } from '../../sources/recipe.mjs';
 import {siteExtensionKind, siteExtensionFor} from '../../site-extensions/index.mjs';
+import {siteSearchRecipe} from '../../site-extensions/search.mjs';
 import {templateSourceSettings, startingSource} from '../../templates/sources.mjs';
 import {siteKey} from '../../browser/site-key.mjs';
 import {randomUUID} from 'node:crypto';
@@ -593,7 +594,12 @@ export const sourceMethods = {
   },
   sourceRecipe(id, url) {
     const a = this.get(id),
-      recipe = a.sourceSettings?.[url]?.recipe ?? null,
+      saved = a.sourceSettings?.[url]?.recipe ?? null,
+      search =
+        saved?.entry?.kind === 'url_template' ? siteExtensionKind(url, a.templateId)?.search : null,
+      // The site extension owns the sort, pagination and ordering of its results
+      // address, also for a recipe saved before the extension changed them.
+      recipe = search ? siteSearchRecipe(search, saved).recipe : saved,
       state = a.sourceState?.[url]?.recipeState ?? null;
     return {
       recipe,

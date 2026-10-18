@@ -624,9 +624,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       lines.push(
         'Pagination: ' +
           paginationLabels[source.recipe.pagination ?? 'auto'] +
-          (source.recipe.ordering === 'newest_first'
-            ? ' · Newest first; repeat scans stop at known listings'
-            : '') +
+          ' · Newest first; repeat scans stop at known listings' +
           ` · Each search reads up to ${SCAN_SEARCH_LISTINGS} new listings or ${SCAN_SEARCH_PAGES} pages`,
       );
     if (rs?.verifiedAt)
@@ -747,7 +745,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       el('summary', 'Tracking rule'),
       el(
         'p',
-        'In the first round the source is tried, the recipe is saved and nothing is submitted. All pages are scanned in the next first scan and every 7 days. In other rounds, if the date ordering is reliable, listings are checked back to 24 hours before the start of the last successful round. If the recipe gives no results in two consecutive rounds, the source is learned again.',
+        'In the first round the source is tried, the recipe is saved and nothing is submitted. All pages are scanned in the next first scan and every 7 days. In other rounds each search reads newest first and stops after two consecutive pages of listings it already knows. If the recipe gives no results in two consecutive rounds, the source is learned again.',
       ),
     );
     section.append(rules);
@@ -770,7 +768,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         : '';
     f.terms.value = recipe?.terms?.join(', ') ?? '';
     f.pagination.value = recipe?.pagination ?? 'auto';
-    f.ordering.value = recipe?.ordering ?? 'unknown';
     f.notes.value = recipe?.notes ?? '';
     syncRecipeFields(form);
   }
@@ -778,10 +775,9 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     const method = form.elements.method.value;
     form.querySelector('[data-recipe-template]').hidden = method !== 'url_template';
     form.querySelector('[data-recipe-form]').hidden = method !== 'search_form';
-    form.querySelector('[data-recipe-terms]').hidden =
-      form.querySelector('[data-recipe-pagination]').hidden =
-      form.querySelector('[data-recipe-ordering]').hidden =
-        !['url_template', 'search_form'].includes(method);
+    form.querySelector('[data-recipe-terms]').hidden = form.querySelector(
+      '[data-recipe-pagination]',
+    ).hidden = !['url_template', 'search_form'].includes(method);
     form.querySelector('[data-recipe-notes]').hidden = method === 'none';
     form.querySelector('[data-recipe-site]').hidden = method !== 'url_template' || !form.siteSearch;
     form.elements.template.required = method === 'url_template';
@@ -809,7 +805,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     const base = {
       pagination: f.pagination.value,
       ...keep,
-      ...(f.ordering.value === 'newest_first' ? {ordering: 'newest_first'} : {}),
       ...(terms.length ? {terms} : {}),
       ...(f.notes.value.trim() ? {notes: f.notes.value.trim()} : {}),
     };
@@ -864,7 +859,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     f.template.addEventListener('input', sync);
     const use = button('Use the site template', () => {
       f.template.value = search.template;
-      f.ordering.value = search.ordering ?? 'unknown';
       f.pagination.value = search.pagination ?? 'auto';
       sync();
     });
@@ -892,7 +886,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
 <div class="source-editor-wide source-recipe-form" data-recipe-form><label>Search form page<input name="formUrl" type="url" placeholder="https://site/jobs"></label><label>Search field label<input name="queryLabel" maxlength="120" placeholder="Stichwort"></label><label>Location field label (optional)<input name="locationLabel" maxlength="120" placeholder="Ort"></label></div>
 <label class="source-editor-wide" data-recipe-terms>Search terms<input name="terms" maxlength="500" placeholder="Compliance, AI Governance, Data Protection" spellcheck="false"><small>If the search scope is not a keyword, write up to 5 comma-separated terms; each term becomes a separate search.</small></label>
 <label data-recipe-pagination>Pagination<select name="pagination"></select></label>
-<label data-recipe-ordering>Ordering<select name="ordering"><option value="unknown">Unknown</option><option value="newest_first">Newest first · stops at known listings</option></select></label>
 <label class="source-editor-wide" data-recipe-notes>Note to the agent<textarea name="notes" maxlength="1000" placeholder="Filters, ordering, things to watch out for…"></textarea></label>
 <label class="source-editor-wide">Working instructions<textarea name="instructions" maxlength="6000" placeholder="Extra rules for this source (optional)"></textarea></label></fieldset>
 <div class="source-editor-foot"></div>`;
@@ -911,7 +904,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     f.instructions.value = source?.instructions ?? '';
     siteSearchFields(form, source?.extension?.search ?? null);
     recipeFields(form, source?.recipe ?? null);
-    f.method.onchange = f.ordering.onchange = () => syncRecipeFields(form);
+    f.method.onchange = () => syncRecipeFields(form);
     if (source) {
       const relearn = button('Relearn', async () => {
         await api.automationSourceRelearn(scope, source.url);

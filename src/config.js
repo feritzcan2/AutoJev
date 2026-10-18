@@ -245,7 +245,11 @@ export function configPage(api, {notice, relativeTime, openNotifications}) {
       if (!candidate) return {};
       const snapshot = await api.workspaceSnapshot(candidate),
         profile = snapshot.workspace;
-      return {provider: profile.agentSettings.provider, chromeProfile: profile.chromeProfile};
+      return {
+        provider: profile.agentSettings.provider,
+        chromeProfile: profile.chromeProfile,
+        decisions: profile.agentSettings.decisions ?? 'jev',
+      };
     },
   });
   const dataPanel = api.dataStatus ? createDataManagement(api, {notice}) : null;

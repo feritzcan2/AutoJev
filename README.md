@@ -101,7 +101,15 @@ package and open it again. The saved profile and CV are kept; preparation is ret
    and allow the connection request. In the agent's own browser mode, enable the
    tools inside the agent.
 3. If you will use Jev, save the TypeSafe API key under **Configuration → Jev** and
-   test the connection. Sources are scanned through the selected browser.
+   test the connection. Sources are scanned through the selected browser. To work
+   without a TypeSafe key, set **Agent settings → Listing decisions** to **This
+   agent**: the managed browser still reads pages, keeps the queue and follows
+   observed page numbers, but no model is called. Each results page pauses so the
+   worker agent chooses the listings to read, the agent picks the next page when the
+   page numbers do not show it, and every read listing waits in a review batch for
+   the agent's decision. The agent fills search forms itself, and a search recipe is
+   verified from the listings the agent selected at its address (`url_template`
+   only). This uses more of the agent's context than Jev.
 4. Open a job search with the **New workspace** button and check the workspace
    profile. Add the candidate profile and CV; choose the application permission and
    preferences.
