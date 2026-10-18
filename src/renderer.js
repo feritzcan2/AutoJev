@@ -571,6 +571,8 @@ if (selected) {
       ? 'setup-agent'
       : [
             'board',
+            'answers',
+            'attention',
             'agent',
             'setup-agent',
             'profile',

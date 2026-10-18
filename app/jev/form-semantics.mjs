@@ -64,10 +64,21 @@ export function installFormSemantics() {
         n.closest('[aria-hidden="true"]') === hiddenBy &&
         !n.closest('[inert]') &&
         (n.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) || drawnToggle(n)));
+    // A dropdown trigger's name may repeat only its current answer
+    // ("No Required"); that names the value, not the field.
+    const caption = e.matches('input,textarea,select') ? '' : clean(e.innerText);
+    const answerOnly = (s) =>
+      !!caption &&
+      !clean(s.replace(caption, '').replace(/\brequired\b|\*/gi, '')) &&
+      e.matches(
+        '[role="combobox"],[aria-haspopup]:not([aria-haspopup="menu"],[aria-haspopup="false"])',
+      );
     const explicit = clean(
-      refs(e, 'aria-labelledby') ||
-        e.getAttribute('aria-label') ||
+      [
+        refs(e, 'aria-labelledby'),
+        e.getAttribute('aria-label'),
         [...(e.labels ?? [])].map(labelText).join(' '),
+      ].find((s) => clean(s) && !answerOnly(s)) ?? '',
     );
     const choice =
       ['radio', 'checkbox'].includes(e.type) ||

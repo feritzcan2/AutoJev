@@ -18,7 +18,10 @@ const MISSING_STATUSES = new Set([404, 410]);
  * Fetches `target` for the page requested as `url` (a GET, or the `method` and
  * `body` a site's own search endpoint needs). `minIntervalMs` is the site's
  * stated minimum spacing between requests (a robots.txt crawl delay), applied by
- * the shared pacing. Resolves with the response
+ * the shared pacing, `jitterMs` a random addition to that spacing, and
+ * `budget` ({requests, windowMs}) the most requests the site takes in a window
+ * before it gets a shared wait (SiteAccess.spend), `retryDelaysMs` the site's
+ * own cooldown before each automatic retry after a block. Resolves with the response
  * (status 404/410 included, so the reader can say the listing is gone); any
  * other failure is an error carrying `url`.
  */
@@ -36,10 +39,16 @@ export async function siteFetch(
     method = 'GET',
     body = undefined,
     minIntervalMs = 0,
+    jitterMs = 0,
+    budget = undefined,
+    retryDelaysMs = undefined,
   } = {},
 ) {
-  const token = siteAccess?.begin(target) ?? null;
-  const delay = siteAccess?.pace(target, minIntervalMs) ?? 0;
+  const token = siteAccess?.begin(target) ?? null,
+    cooldown = retryDelaysMs ? {retryDelays: retryDelaysMs} : {};
+  const held = budget ? siteAccess?.spend?.(target, budget) : null;
+  if (held) throw Object.assign(new SiteWaitError(held), {url});
+  const delay = siteAccess?.pace(target, minIntervalMs, jitterMs) ?? 0;
   if (delay) {
     await wait(delay);
     signal?.throwIfAborted();
@@ -57,11 +66,12 @@ export async function siteFetch(
     const blocked = siteAccess?.complete(target, token, {
       status: response.status,
       reason: 'rate_limit',
+      ...cooldown,
     });
     if (blocked) throw Object.assign(new SiteWaitError(blocked), {url});
     throw Object.assign(Error(`${site} denied access (HTTP ${response.status}).`), {url});
   }
-  siteAccess?.complete(target, token, {status: response.status});
+  siteAccess?.complete(target, token, {status: response.status, ...cooldown});
   if (!response.ok && !MISSING_STATUSES.has(response.status))
     throw Object.assign(Error(`${site} request failed (HTTP ${response.status}).`), {url});
   return response;

@@ -496,11 +496,14 @@ export function recordOperationState(
   {
     a = db.get(id),
     definition = db.template(a.templateId),
-    tasks = db.store.workspaces.tasks.list(id),
+    // The summary leaves out scan bodies, which this state never reads.
+    tasks = db.store.workspaces.tasks.list(id, {summary: true}),
+    // A caller rendering many records passes each record's tasks, in list order.
+    recordTasks = tasks.filter((t) => taskHasRecord(t, item.id)),
   } = {},
 ) {
-  const task = tasks.find((t) => taskHasRecord(t, item.id) && live.includes(t.state)),
-    last = tasks.findLast((t) => taskHasRecord(t, item.id) && t.recordOperation);
+  const task = recordTasks.find((t) => live.includes(t.state)),
+    last = recordTasks.findLast((t) => t.recordOperation);
   // One action per record: verify an uncertain outcome, otherwise apply
   // directly. There is no separate draft or approval step.
   const kind =

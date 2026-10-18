@@ -147,7 +147,7 @@ try {
     },
   );
   await page.locator('.automation-attention-banner').waitFor({state: 'visible'});
-  assert.equal(await page.locator('#agent-nav-status').textContent(), '1 issue(s)');
+  assert.equal(await page.locator('#attention-nav-status').textContent(), '1');
   await page.getByRole('button', {name: 'Show issues', exact: true}).click();
   const card = page.locator('.automation-help-card');
   await card.waitFor({state: 'visible'});
@@ -217,7 +217,7 @@ try {
   await card.getByRole('button', {name: 'Close', exact: true}).click();
   await card.waitFor({state: 'detached'});
   await page.locator('.automation-attention-banner').waitFor({state: 'hidden'});
-  assert.notEqual(await page.locator('#agent-nav-status').textContent(), '1 issue(s)');
+  assert.equal(await page.locator('#attention-nav-status').isVisible(), false);
   const afterClose = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), a.id);
   assert.deepEqual(afterClose.automation.sourceState, beforeClose.automation.sourceState);
   assert.equal(afterClose.automation.status, beforeClose.automation.status);
@@ -231,12 +231,12 @@ try {
   await app.evaluate(() => globalThis.repeatAttentionFailure());
   await page.reload();
   await card.waitFor({state: 'visible'});
-  assert.equal(await page.locator('#agent-nav-status').textContent(), '1 issue(s)');
+  assert.equal(await page.locator('#attention-nav-status').textContent(), '1');
   const scheduledAt = Date.now();
   await card.getByRole('button', {name: 'Try in 2 hours', exact: true}).click();
   await card.waitFor({state: 'detached'});
   await page.locator('.automation-attention-banner').waitFor({state: 'hidden'});
-  assert.notEqual(await page.locator('#agent-nav-status').textContent(), '1 issue(s)');
+  assert.equal(await page.locator('#attention-nav-status').isVisible(), false);
   await page.locator('.automation-retry-plans').waitFor({state: 'visible'});
   assert.equal(await page.locator('.automation-retry-plans').getAttribute('open'), null);
   const scheduled = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), a.id),

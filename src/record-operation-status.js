@@ -141,7 +141,13 @@ const blockerLabels = {
   technical: 'Technical error',
 };
 // Blockers whose card offers Skip next to the reason.
-const skipCategories = new Set(['not_eligible', 'listing_closed', 'technical']);
+const skipCategories = new Set([
+  'not_eligible',
+  'needs_answer',
+  'listing_closed',
+  'site_problem',
+  'technical',
+]);
 
 // A stopped operation or an unverified outcome the user has to look at.
 export function recordProblem(record) {

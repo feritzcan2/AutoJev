@@ -16,6 +16,7 @@ import {runSnapshot} from '../browser/automation-snapshot.mjs';
 import {jevProvider} from '../jev/policy.mjs';
 import {saveJevProfile, jevProfileView} from '../jev/qualification-profile.mjs';
 import {loadScoringDocuments} from '../scoring/profile.mjs';
+import {runSiteLane} from '../browser/site-access.mjs';
 
 export function registerAutomationServices({
   root,
@@ -76,6 +77,7 @@ export function registerAutomationServices({
             () => !signal.aborted && db.run(run.id).status === 'running',
             {
               signal,
+              siteLane: runSiteLane(run),
               captchaMaySubmit: () => {
                 const current = db.run(run.id);
                 if (

@@ -20,6 +20,7 @@ import {
   advanceSourceScan,
   markKnownBoundary,
   markPageCap,
+  markUnservedPage,
 } from '../../sources/scan.mjs';
 // AutomationStore methods: scan progress of source runs: pages, queue, known listings and observations.
 export const scanMethods = {
@@ -173,6 +174,35 @@ export const scanMethods = {
         scan: withScanWork(run, work, {
           reason: `The search reached its limit of ${scanPlan.pageCap} pages or ${SCAN_SEARCH_LISTINGS} new listings.`,
           evidenceUrl: url,
+        }),
+      });
+      return true;
+    });
+  },
+  // The site refuses a later results page of the active search: the search
+  // ends at the last page it served. The refused address leaves the queue and
+  // its failures, so it holds neither the search nor a technical retry.
+  markUnservedPage(id, runId, url) {
+    return this.store.workspaces.tasks.atomic(() => {
+      const run = this.scanWorkRun(id, runId),
+        work = scanWork(run),
+        search = activeSearch(work),
+        last = search?.pageProgress;
+      if (!last?.url || last.url === url || !run.scanPlan) return false;
+      const scanPlan = markUnservedPage(run.scanPlan, last.url, url, runId, this.now());
+      search.plan = scanPlan;
+      if (search.pendingUrls.includes(url)) {
+        search.pendingUrls = search.pendingUrls.filter((u) => u !== url);
+        search.processedUrls = [...new Set([...search.processedUrls, url])];
+      }
+      const {[url]: _refused, ...scanIssues} = run.scanIssues ?? {};
+      this.persistScan(id, {
+        ...run,
+        scanPlan,
+        scanIssues,
+        scan: withScanWork(run, work, {
+          reason: `The site does not serve ${url}; this search ends at page ${last.currentPage}, the last page it served.`,
+          evidenceUrl: last.url,
         }),
       });
       return true;

@@ -23,8 +23,9 @@ export class BrowserTools {
       changed: (id, state) => this.onStatus?.(id, state),
     });
   }
-  forWorker(workerId = 'main', isActive = () => true, {signal, captchaMaySubmit} = {}) {
+  forWorker(workerId = 'main', isActive = () => true, {signal, captchaMaySubmit, siteLane} = {}) {
     const scoped = Object.create(this);
+    scoped.siteLane = siteLane;
     scoped.workerId = workerId;
     scoped.isActive = isActive;
     scoped.signal = signal;
@@ -159,7 +160,9 @@ export class BrowserTools {
     if (name === 'browser_target_press') {
       const url = client.tab(args.tabId).page.url();
       try {
-        const token = /^https?:/.test(url) ? this.siteAccess?.assertAction(url) : null;
+        const token = /^https?:/.test(url)
+          ? this.siteAccess?.forLane(this.siteLane).assertAction(url)
+          : null;
         if (token) client.tab(args.tabId).accessProbe = {url, token};
       } catch (error) {
         if (error.code !== 'SITE_WAIT') throw error;
@@ -180,7 +183,12 @@ export class BrowserTools {
           ],
         };
       }
-      return pressBrowserTarget(client, true, args, sessionId);
+      client.siteLane = this.siteLane;
+      try {
+        return await pressBrowserTarget(client, true, args, sessionId);
+      } finally {
+        client.siteLane = undefined;
+      }
     }
     if (!jevTools.some((t) => t.name === name)) throw Error('Unknown browser tool');
     let result;
@@ -188,6 +196,7 @@ export class BrowserTools {
       result = await client.callTool({name, arguments: args}, sessionId, {
         ...this.options(candidateId).lifecycle,
         signal: this.signal,
+        ...(this.siteLane ? {siteLane: this.siteLane} : {}),
         ...(automationTabKey ? {automationTabKey} : {}),
         ...(automationWorkspaceId ? {automationWorkspaceId: candidateId} : {}),
         ...(automationSourceUrl ? {automationSourceUrl, automationSourceUrls} : {}),

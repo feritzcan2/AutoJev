@@ -6,11 +6,27 @@
 // the read (known listings, assessment, evidence, queue) stays generic.
 // Card and posting parsing follows github.com/MadsLorentzen/ai-job-search (MIT).
 import {decode, htmlText, inlineText, listingPage} from './listing.mjs';
-import {siteFetch, isMissing, readerPage} from './http.mjs';
+import {siteFetch, isMissing, readerPage, READER_HEADERS} from './http.mjs';
 
 const SEARCH_PATH = '/jobs-guest/jobs/api/seeMoreJobPostings/search';
 const DETAIL_URL = 'https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/';
 export const LINKEDIN_PAGE_SIZE = 10;
+// LinkedIn answers guest reads with 429 after a few dozen requests from one
+// address, even with seconds between them (observed 2026-10-18: about 35
+// requests in 13 minutes at 8+ s spacing). The reference CLI stays low volume:
+// about two result pages per query and postings only for a shortlist. So the
+// guest reads keep 15–25 s apart and at most 25 per half hour; the rest of
+// a scan resumes when the window frees (SiteAccess.spend). A 429 lasts longer
+// than the default 5 and 10 minute retries (2026-10-19: still 429 after 15
+// minutes, which used up all retries), so retries wait 30 and 90 minutes.
+export const LINKEDIN_PACING = {
+  minIntervalMs: 15000,
+  jitterMs: 10000,
+  budget: {requests: 25, windowMs: 30 * 60000},
+  retryDelaysMs: [30 * 60000, 90 * 60000],
+};
+// The guest endpoints serve the page's own XHR calls, which send this header.
+const GUEST_HEADERS = {...READER_HEADERS, 'X-Requested-With': 'XMLHttpRequest'};
 
 const linkedInHost = (host) => host === 'linkedin.com' || host.endsWith('.linkedin.com');
 // Which guest request serves this address: a search page, a posting, or none.
@@ -172,7 +188,13 @@ export async function readLinkedInGuest(url, options = {}) {
   const request = linkedInGuestRequest(url);
   if (!request) throw Error('LinkedIn guest reader does not handle this address');
   const target = request.kind === 'search' ? request.url : DETAIL_URL + request.id;
-  const response = await siteFetch(target, {...options, site: 'LinkedIn', url});
+  const response = await siteFetch(target, {
+    ...LINKEDIN_PACING,
+    headers: GUEST_HEADERS,
+    ...options,
+    site: 'LinkedIn',
+    url,
+  });
   if (isMissing(response))
     return request.kind === 'search' ? linkedInSearchPage(url, []) : linkedInDetailPage(url, '');
   const html = await response.text();

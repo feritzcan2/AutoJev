@@ -71,7 +71,6 @@ try {
   assert.match(await sources.locator('.source-proposal').innerText(), /To remove:.*two\.test/);
   await sources.getByRole('button', {name: '＋ Add source', exact: true}).click();
   const form = sources.locator('.source-add');
-  await form.locator('[name=name]').fill('Ek kaynak');
   await form.locator('[name=url]').fill(manual);
   await form.getByRole('button', {name: 'Add source', exact: true}).click();
   await page.waitForFunction(
@@ -113,8 +112,8 @@ try {
   assert.equal(state.automation.reviewedRevision, state.automation.revision);
   const revision = state.automation.revision;
   const manualRow = sources.locator(`.source-row[data-source-id="${manual}"]`);
+  page.once('dialog', (dialog) => dialog.accept());
   await manualRow.locator('.source-row-menu').click();
-  await manualRow.getByRole('button', {name: 'Edit', exact: true}).click();
   await manualRow.getByRole('button', {name: 'Delete source', exact: true}).click();
   await manualRow.waitFor({state: 'detached'});
   state = await snapshot();

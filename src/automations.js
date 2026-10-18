@@ -1,5 +1,5 @@
 import {activeRecordOperations} from './record-operation-status.js';
-import {recordQuestionDialog} from './record-question-dialog.js';
+import {answersPage} from './answers-page.js';
 import {automationReady} from '../app/sources/trial.mjs';
 import {templateFields} from './template-fields.js';
 import {renderJevProfile} from './jev-profile.js';
@@ -173,15 +173,29 @@ export function automationsPage(
     formRevision = '',
     formBaseline = null,
     resultsTable = null;
-  const questionDialog = recordQuestionDialog(api, {refresh});
+  const answersSection = el('section');
+  answersSection.dataset.automationPane = 'answers';
+  const answers = answersPage(answersSection, api, {refresh});
+  function showAnswers(id) {
+    navigate('answers');
+    answers.focus(id);
+  }
+  const attentionSection = el('section', null, 'attention-page'),
+    attentionEmpty = el(
+      'p',
+      'Nothing needs your attention. Blocked sources and other situations the agent waits on appear here.',
+      'attention-empty',
+    );
+  attentionSection.dataset.automationPane = 'attention';
+  attentionSection.innerHTML =
+    '<div class="section-title"><h2>Attention needed</h2><span>Situations the agent cannot resolve on its own</span></div>';
+  attentionSection.append(attentionEmpty);
   const attention = automationAttentionPanel(api, {
+    container: attentionSection,
     navigate,
     refresh,
     getConversation: () => chatPanel,
-    showRecordQuestions: () => {
-      navigate('board');
-      resultsTable?.showQuestions();
-    },
+    showRecordQuestions: () => showAnswers(),
   });
   const boardNav = document.querySelector('[data-view=board]'),
     recordWork = el('span', null, 'board-nav-work');
@@ -189,14 +203,31 @@ export function automationsPage(
   recordWork.hidden = true;
   recordWork.setAttribute('aria-hidden', 'true');
   boardNav.append(recordWork);
-  const questionBadge = document.querySelector('#question-badge');
-  questionBadge.className = 'agent-nav-status board-nav-status';
+  const answersNav = el('button'),
+    questionBadge = el('span', null, 'agent-nav-status board-nav-status');
+  answersNav.type = 'button';
+  answersNav.dataset.view = 'answers';
+  answersNav.innerHTML =
+    '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.7M12 17h.01"/></svg><span>Answers</span>';
+  questionBadge.id = 'question-badge';
   questionBadge.dataset.tone = 'waiting';
-  questionBadge.onclick = (event) => {
-    event.stopPropagation();
-    navigate('board');
-    resultsTable?.showQuestions();
-  };
+  questionBadge.setAttribute('aria-hidden', 'true');
+  questionBadge.hidden = true;
+  answersNav.append(questionBadge);
+  boardNav.after(answersNav);
+  const attentionNav = el('button'),
+    attentionBadge = el('span', null, 'agent-nav-status');
+  attentionNav.type = 'button';
+  attentionNav.dataset.view = 'attention';
+  attentionNav.innerHTML =
+    '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 4.2 2.6 17.5A2 2 0 0 0 4.3 20.5h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg><span>Attention needed</span>';
+  attentionBadge.id = 'attention-nav-status';
+  attentionBadge.dataset.tone = 'waiting';
+  attentionBadge.setAttribute('aria-hidden', 'true');
+  attentionBadge.hidden = true;
+  attentionNav.append(attentionBadge);
+  attentionNav.onclick = () => navigate('attention');
+  answersNav.after(attentionNav);
   const hasUnsaved = () => dirty;
   const profileSaveDialog = el('dialog');
   profileSaveDialog.id = 'automation-profile-save-dialog';
@@ -317,7 +348,7 @@ export function automationsPage(
     );
   }
   async function select(id, {onboarding = true} = {}) {
-    questionDialog.update(null);
+    answers.update(null);
     notice('');
     selected = id;
     data = null;
@@ -365,7 +396,7 @@ export function automationsPage(
       api,
       refresh,
       statusNames,
-      onQuestion: (id) => questionDialog.open(id),
+      onQuestion: showAnswers,
     });
     saveScoreSettings = minimumSaveScoreSettings({
       save: async (owner, value, options) => {
@@ -584,7 +615,16 @@ export function automationsPage(
         await refresh();
       }),
     );
-    host.append(results, history, files, sources, plan, find('.automation-bottom-actions'));
+    host.append(
+      results,
+      answersSection,
+      attentionSection,
+      history,
+      files,
+      sources,
+      plan,
+      find('.automation-bottom-actions'),
+    );
     setupGrid.remove();
     find('.automation-bottom-actions').dataset.automationPane = 'profile';
   }
@@ -689,7 +729,7 @@ export function automationsPage(
     document.querySelector('#rename-workspace').disabled = locked;
     document.querySelector('#delete-workspace').disabled = locked;
     find('#automation-delete').disabled = locked;
-    questionDialog.update(data);
+    answers.update(data);
     const helpCount = attention.update(selected, data),
       questionCount = (a.questions ?? []).filter((q) => q.recordId && q.answer == null).length,
       agentHelpCount = Math.max(0, helpCount - questionCount - attention.conversationCount),
@@ -697,8 +737,12 @@ export function automationsPage(
         (run) => run.kind !== 'interview',
       ).length;
     questionBadge.hidden = !questionCount;
-    questionBadge.textContent = questionCount ? `${questionCount} answer(s)` : '';
-    questionBadge.title = `${questionCount} awaiting an answer`;
+    questionBadge.textContent = questionCount ? String(questionCount) : '';
+    answersNav.title = questionCount ? `${questionCount} awaiting an answer` : '';
+    answersNav.setAttribute(
+      'aria-label',
+      ['Answers', answersNav.title].filter(Boolean).join(' · '),
+    );
     const work = activeRecordOperations(data),
       workSummary = work.map(({count, label}) => `${count} ${label}`);
     recordWork.hidden = !work.length;
@@ -710,22 +754,23 @@ export function automationsPage(
         return badge;
       }),
     );
-    boardNav.title = [
-      ...workSummary,
-      ...(questionCount ? [`${questionCount} awaiting an answer`] : []),
-    ].join(' · ');
+    boardNav.title = workSummary.join(' · ');
     boardNav.setAttribute(
       'aria-label',
       ['Tracking table', boardNav.title].filter(Boolean).join(' · '),
     );
+    attentionBadge.hidden = !agentHelpCount;
+    attentionBadge.textContent = agentHelpCount ? String(agentHelpCount) : '';
+    attentionEmpty.hidden = agentHelpCount > 0;
+    attentionNav.title = agentHelpCount ? `${agentHelpCount} item(s) need attention` : '';
+    attentionNav.setAttribute(
+      'aria-label',
+      ['Attention needed', attentionNav.title].filter(Boolean).join(' · '),
+    );
     const status = document.querySelector('#agent-nav-status');
-    status.textContent = agentHelpCount
-      ? `${agentHelpCount} issue(s)`
-      : running
-        ? `${running} running`
-        : '';
+    status.textContent = running ? `${running} running` : '';
     status.hidden = !status.textContent;
-    status.dataset.tone = agentHelpCount ? 'waiting' : 'active';
+    status.dataset.tone = 'active';
     agentNavLabel(p.fresh);
     const chatStatus = document.querySelector('#setup-agent-status'),
       chatRun = interviewRun(data);
@@ -927,6 +972,11 @@ export function automationsPage(
     recordWork.replaceChildren();
     boardNav.title = '';
     questionBadge.hidden = true;
+    answersNav.title = '';
+    answersNav.setAttribute('aria-label', 'Answers');
+    attentionBadge.hidden = true;
+    attentionNav.title = '';
+    attentionNav.setAttribute('aria-label', 'Attention needed');
     document.querySelector('[data-view=board]').setAttribute('aria-label', 'Tracking table');
     const sourceStatus = document.querySelector('#sources-nav-status');
     if (sourceStatus) sourceStatus.hidden = true;
@@ -937,7 +987,7 @@ export function automationsPage(
     }
     resultsTable?.dispose();
     attention.update(null, null);
-    questionDialog.update(null);
+    answers.update(null);
     resultsTable?.dispose();
     agentNavLabel(false);
     chatPanel?.dispose();
