@@ -163,7 +163,7 @@ export function reviewJevBatch(db, owner, runId, taskId, batchId, decisions = []
           .flatMap((i) => {
             const d = choices.get(jevDetailKey(i.url));
             return d?.decision === 'reject'
-              ? [{url: i.url, title: i.title, reason: d.reason, stage: 'detail'}]
+              ? [{url: i.url, title: i.title, reason: d.reason, stage: 'detail', by: 'agent'}]
               : i.assessment?.decision === 'mismatch' && !known(i.url)
                 ? [
                     {

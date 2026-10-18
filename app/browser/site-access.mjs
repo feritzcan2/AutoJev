@@ -15,13 +15,18 @@ export const sameSite = (a, b) => {
   return x === y || siteDomain(x) === siteDomain(y);
 };
 const minute = 60000;
-// Adaptive pacing: a site that answered with a rate limit or a verification
-// challenge within the last hours keeps a minimum gap between navigations,
-// growing with its incidents. Sites without incidents are never slowed.
+// Pacing: every site keeps PACE_MIN between navigations, so a scan never
+// bursts. A site that answered with a rate limit or a verification challenge
+// within the last hours keeps a longer gap, growing with its incidents: a
+// few seconds between pages is already enough for some sites to throttle.
 const PACE_WINDOW = 6 * 60 * minute,
-  PACE_STEP = 4000,
-  PACE_MAX = 12000;
+  PACE_MIN = 8000,
+  PACE_STEP = 10000,
+  PACE_MAX = 30000;
 export const siteRetryDelay = (attempt) => [5 * minute, 10 * minute][attempt - 1] ?? null;
+// A site that recovered and then worked for this long starts a new incident
+// with a fresh retry budget instead of continuing the old count.
+const ATTEMPT_RESET = 60 * minute;
 // Repeated transport failures across a site's pages are an outage, not one bad
 // address: three within ten minutes on at least two addresses start the same
 // bounded shared wait as a rate limit. One success clears the count.
@@ -152,8 +157,9 @@ export class SiteAccess {
         (previous.leaseUntil > this.now() && previous.token !== token))
     )
       return this.status(url);
-    const attempts = (previous?.attempts ?? 0) + 1,
-      now = this.now();
+    const now = this.now(),
+      settled = previous?.recovered && now - previous.blockedAt > ATTEMPT_RESET,
+      attempts = (settled ? 0 : (previous?.attempts ?? 0)) + 1;
     // The workspace policy uses fixed delays, independent of Retry-After.
     const delay = siteRetryDelay(attempts);
     this.save({
@@ -179,8 +185,10 @@ export class SiteAccess {
       row = this.incidents.has(site) ? null : this.row(url);
     const incident =
       this.incidents.get(site) ?? (row ? {at: row.blockedAt, count: row.attempts} : null);
-    if (!incident || now - incident.at > PACE_WINDOW) return 0;
-    const gap = Math.min(PACE_STEP * incident.count, PACE_MAX),
+    const gap =
+        !incident || now - incident.at > PACE_WINDOW
+          ? PACE_MIN
+          : Math.min(PACE_STEP * incident.count, PACE_MAX),
       next = Math.max(now, (this.paced.get(site) ?? 0) + gap);
     this.paced.set(site, next);
     return next - now;

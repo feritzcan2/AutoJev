@@ -113,7 +113,9 @@ export async function applyCaptcha(
     )
       throw new CaptchaError(
         'CAPTCHA_RESPONSE',
-        'The CapSolver image selection response is invalid.',
+        `The CapSolver image selection response is invalid for a ${target.count}-tile grid: ${JSON.stringify(
+          {type: solution.type, size: solution.size, objects: solution.objects},
+        ).slice(0, 200)}`,
       );
     const table = current.frame.locator(gridSelector),
       image = await table.screenshot({type: 'png', timeout: 2500});

@@ -325,29 +325,56 @@ test('a healthy probe preserves the scan retry budget until completion and stale
   }
 });
 
-test('a site that rate-limited recently is paced between navigations; other sites never wait', () => {
+test('a site that recovered and worked for an hour starts a new incident with a fresh retry budget', () => {
+  const db = new DatabaseSync(':memory:');
+  let now = 1000000;
+  const gate = new SiteAccess(db, {now: () => now});
+  try {
+    const first = gate.block(url, 'rate_limit');
+    now = first.retryAt;
+    gate.complete(url, gate.begin(url), {status: 200});
+    now += 30 * minute;
+    assert.equal(gate.block(url, 'rate_limit').attempts, 2, 'soon after recovery it continues');
+    now = gate.status(url).retryAt;
+    gate.complete(url, gate.begin(url), {status: 200});
+    now += 2 * 60 * minute;
+    const fresh = gate.block(url, 'rate_limit');
+    assert.equal(fresh.attempts, 1);
+    assert.equal(fresh.retryAt, now + 5 * minute);
+    // A wait that was never probed successfully keeps counting.
+    now = fresh.retryAt + 2 * 60 * minute;
+    gate.complete(url, gate.begin(url), {status: 429, reason: 'rate_limit'});
+    assert.equal(gate.status(url).attempts, 2);
+  } finally {
+    db.close();
+  }
+});
+
+test('every site keeps eight seconds between navigations; one that rate-limited recently waits longer', () => {
   const db = new DatabaseSync(':memory:');
   let now = 1_000_000;
   const gate = new SiteAccess(db, {now: () => now});
   try {
     assert.equal(gate.pace('https://calm.test/a'), 0);
-    assert.equal(gate.pace('https://calm.test/b'), 0);
+    assert.equal(gate.pace('https://calm.test/b'), 8000, 'a calm site keeps the minimum gap');
+    assert.equal(gate.pace('https://other.test/a'), 0, 'other sites do not queue behind it');
     gate.block(url, 'rate_limit');
     now += 6 * minute;
     assert.equal(gate.pace(url), 0, 'the first navigation after the wait leaves immediately');
-    assert.equal(gate.pace(url), 4000, 'the next one keeps a four second gap');
+    assert.equal(gate.pace(url), 10000, 'the next one keeps a ten second gap');
     assert.equal(
       gate.pace('https://kleinanzeigen.de/other'),
-      8000,
+      20000,
       'the same site queues the following slot',
     );
-    now += 20000;
+    now += 40000;
     assert.equal(gate.pace(url), 0, 'elapsed time frees the slot');
     gate.acknowledge([gate.status(url)]);
     assert.equal(gate.status(url), null);
-    assert.equal(gate.pace(url), 4000, 'a user answer clears the wait, not the pacing');
+    assert.equal(gate.pace(url), 10000, 'a user answer clears the wait, not the pacing');
     now += 7 * 60 * minute;
-    assert.equal(gate.pace(url), 0, 'pacing expires hours after the last incident');
+    assert.equal(gate.pace(url), 0, 'the incident gap expires hours after the last incident');
+    assert.equal(gate.pace(url), 8000, 'the minimum gap stays');
     const fresh = new SiteAccess(db, {now: () => now});
     gate.block(url, 'verification');
     assert.ok(fresh.pace(url) >= 0, 'a new process derives pacing from the saved incident');

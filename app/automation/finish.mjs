@@ -11,6 +11,7 @@ import {validateLoginQuestion, LOGGED_IN_FIELD} from './login-question.mjs';
 import {OUTCOME_FIELD} from './question-forms.mjs';
 import {sourceStop} from './stop.mjs';
 import {holdForTechnicalRetry} from './recovery.mjs';
+import {recordBlocker} from '../records/blockers.mjs';
 
 // finish_automation_run: check that the reported status is backed by the saved
 // task state, ask the user what only they can answer, then report the run.
@@ -26,6 +27,8 @@ export function finishAutomationRun({
   report,
 }) {
   const status = args.status;
+  // Checked first: a refused finish must not leave questions or stops behind.
+  const blocker = active.recordOperation ? recordBlocker(status, args.blocker) : null;
   if (collecting && status === 'completed' && !active.scan?.complete)
     throw Error(
       'CLI pages and the Jev/agent review are not finished; continue with collect_source_page.',
@@ -128,6 +131,7 @@ export function finishAutomationRun({
               : OUTCOME_FIELD,
           ],
           outcome: true,
+          ...(challenge ? {verification: true} : {}),
         },
         {runId: run.id},
       );
@@ -175,5 +179,10 @@ export function finishAutomationRun({
     });
     if (retry) return report(id, run.id, retry.status, retry.summary, false);
   } else if (stop) db.putRun({...db.run(run.id), stop});
+  if (active.recordOperation && run.taskId) {
+    const queue = db.store.workspaces.tasks,
+      task = queue.get(id, run.taskId);
+    if (task && (blocker || task.blocker)) queue.put({...task, blocker});
+  }
   return report(id, run.id, status, args.summary, args.goalReached === true);
 }

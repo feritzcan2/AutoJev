@@ -70,7 +70,7 @@ export const sourceMethods = {
     const lastRuns = new Map(
       this.db
         .prepare(
-          `SELECT json_object('id',id,'kind',json_extract(data,'$.kind'),'status',json_extract(data,'$.status'),'summary',json_extract(data,'$.summary'),'finishedAt',json_extract(data,'$.finishedAt'),'sourceUrl',json_extract(data,'$.sourceUrl'),'sources',json_extract(data,'$.sources')) AS data FROM automation_runs WHERE rowid IN (
+          `SELECT json_object('id',id,'kind',json_extract(data,'$.kind'),'status',json_extract(data,'$.status'),'summary',json_extract(data,'$.summary'),'finishedAt',json_extract(data,'$.finishedAt'),'scanStats',json_extract(data,'$.scanStats'),'sourceUrl',json_extract(data,'$.sourceUrl'),'sources',json_extract(data,'$.sources')) AS data FROM automation_runs WHERE rowid IN (
    SELECT max(rowid) FROM automation_runs WHERE automation_id=? AND ${finishedSourceRun} GROUP BY ${runSource}
   )`,
         )
@@ -84,6 +84,7 @@ export const sourceMethods = {
             status: run.status,
             summary: run.summary,
             finishedAt: run.finishedAt,
+            scanStats: run.scanStats ?? null,
           },
         ]),
     );

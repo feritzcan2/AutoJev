@@ -22,8 +22,16 @@
     return hit;
   };
   const safe = e => !['password','file','hidden'].includes(e.type);
+  // A styled checkbox/radio often lays its transparent native input over the
+  // box it draws; that input is still the visible click surface.
+  const drawnToggle = e => e.tagName==='INPUT' && ['checkbox','radio'].includes(e.type) &&
+    e.checkVisibility({checkVisibilityCSS:true}) && getComputedStyle(e).pointerEvents!=='none' &&
+    !!e.parentElement?.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}) && (()=>{
+      const r=e.getBoundingClientRect(),b=e.parentElement.getBoundingClientRect();
+      return r.width>=8&&r.height>=8&&r.left>=b.left-1&&r.right<=b.right+1&&r.top>=b.top-1&&r.bottom<=b.bottom+1;
+    })();
   const visible = e => !closest(e,'[aria-hidden="true"],[inert]') &&
-    e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+    (e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}) || drawnToggle(e));
   // A transparent native select laid over a styled caption still receives the
   // pointer and is operated by value, never by a click on its pixels. Treat it
   // as a control when it is not hidden by CSS and, while in view, a hit at its
@@ -89,10 +97,15 @@
     if(!visible(e)){const combo=cache.combo(e);if(combo&&visible(combo.control))return combo.control;}
     return visible(e)||operableSelect(e)?e:null;
   };
+  // A site may draw the box with the element that names the input
+  // (aria-labelledby) laid over it; a click there is a click on the box.
+  const drawnByName=(e,hit)=>!!hit && e.tagName==='INPUT' && ['checkbox','radio'].includes(e.type) &&
+    (e.getAttribute('aria-labelledby')||'').split(/\s+/).some(id=>{const n=id&&e.getRootNode().getElementById?.(id);return n&&contains(n,hit);}) &&
+    !closest(hit,'a[href],button,input,select,textarea,[role="link"],[role="button"]');
   cache.target=e=>{
     if (!cache.scrollTarget(e)) return null;
     if (e.tagName==='INPUT' && ['checkbox','radio'].includes(e.type)) {
-      if (inView(e)){const r=e.getBoundingClientRect();if(contains(e,hitAt(r.x+r.width/2,r.y+r.height/2)))return e;}
+      if (inView(e)){const r=e.getBoundingClientRect(),hit=hitAt(r.x+r.width/2,r.y+r.height/2);if(contains(e,hit)||drawnByName(e,hit))return e;}
       return labelsFor(e).find(inView) || null;
     }
     return cache.scrollTarget(e);
@@ -106,7 +119,7 @@
       for (const [fx,fy] of proxy ? [[.5,.5],[.1,.5],[.9,.5],[.1,.1],[.9,.9]] : [[.5,.5]]) {
         const x=left+(right-left)*fx,y=top+(bottom-top)*fy,hit=hitAt(x,y);
         // A combobox's chosen value drawn over its input belongs to the same box.
-        if (!hit || !contains(target,hit) && !(target===e && contains(cache.combo(e)?.control,hit))) continue;
+        if (!hit || !contains(target,hit) && !(target===e && (contains(cache.combo(e)?.control,hit) || drawnByName(e,hit)))) continue;
         // Clicking a link/button inside a label must not activate that control.
         const interactive=closest(hit,'a[href],button,input,select,textarea,[role="link"],[role="button"]');
         if (proxy && interactive && interactive!==e && contains(target,interactive)) continue;
@@ -335,8 +348,14 @@
       const node=cache.nodes.get(option.node);if(!candidates.includes(node))candidates.push(node);
     }
   }
+  // An open dropdown may mark the page behind its popup aria-hidden; its
+  // rendered trigger, whose popup is shown, stays the same control.
+  const openTrigger=e=>e.getAttribute('aria-expanded')==='true' &&
+    e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}) && !closest(e,'[inert]') &&
+    (e.getAttribute('aria-controls')||e.getAttribute('aria-owns')||'').split(/\s+/)
+      .some(id=>{const p=id&&(e.getRootNode().getElementById?.(id)||document.getElementById(id));return !!p&&visible(p);});
   cache.controlGuard=e=>{
-    if (!e?.isConnected || !safe(e) || (!visible(e)&&!cache.scrollTarget(e)&&!operableSelect(e))) return null;
+    if (!e?.isConnected || !safe(e) || (!visible(e)&&!cache.scrollTarget(e)&&!operableSelect(e)&&!openTrigger(e))) return null;
     return [performance.timeOrigin,location.href,identity(e),e.tagName,e.type,role(e),choiceLabel(e,cache.choice(e)),
       e.value??null,e.checked??null,e.matches(':disabled'),!!closest(e,'[aria-disabled="true"],[inert]'),e.readOnly??null,
       e.required??null,e.form?identity(e.form):null,e.form?.action??null,

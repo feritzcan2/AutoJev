@@ -385,9 +385,9 @@ export function automationResultsTable(
   root.insertBefore(selection, pagination);
 
   function syncTabButtons() {
-    for (const {result, control, actions, open} of visibleTabButtons.values()) {
+    for (const {result, control, place} of visibleTabButtons.values()) {
       if (recordTabs(result, liveTabs, data).length) {
-        if (!control.isConnected) actions.insertBefore(control, open);
+        if (!control.isConnected) place();
       } else control.remove();
     }
   }
@@ -945,23 +945,33 @@ export function automationResultsTable(
           }
           if (recordNeedsAnswer(result)) {
             const question = result.recordAction.question,
-              mark = el('span', 'Awaiting answer', 'record-question-badge'),
+              mark = el(
+                'span',
+                question.verification ? 'CAPTCHA to solve' : 'Awaiting answer',
+                'record-question-badge',
+              ),
               preview = el('span', question.text, 'record-question-preview'),
               reply = button(
-                'Answer question',
+                question.verification ? 'Solve CAPTCHA' : 'Answer question',
                 () => onQuestion(question.id),
                 'record-question-link',
               );
             preview.title = question.text;
             reply.dataset.recordQuestion = question.id;
-            reply.setAttribute('aria-label', result.title + ' · Answer question');
+            reply.setAttribute(
+              'aria-label',
+              result.title + (question.verification ? ' · Solve CAPTCHA' : ' · Answer question'),
+            );
+            if (question.verification) mark.dataset.verification = 'true';
             cell.append(mark, preview, reply);
           }
           if (problem) {
             const box = el('div', null, 'record-problem'),
               reason = el('span', problem.reason, 'record-problem-reason');
-            reason.title = problem.reason;
-            box.append(el('span', problem.label, 'record-problem-badge'), reason, problemActions);
+            box.dataset.category = problem.category ?? '';
+            box.append(el('span', problem.label, 'record-problem-badge'), reason);
+            if (problem.next) box.append(el('span', problem.next, 'record-problem-next'));
+            box.append(problemActions);
             cell.append(box);
           }
         } else if (column.key === 'score' && result.assessment) {
@@ -1045,13 +1055,16 @@ export function automationResultsTable(
       open.dataset.recordMenuAction = 'open';
       open.setAttribute('aria-label', result.title + ' · Open source');
       const tabWorkspace = data.automation.id,
-        tabFeedback = keepMenu
-          ? actionsPanel.querySelector('.record-tab-feedback')
-          : el('span', null, 'record-tab-feedback'),
-        tabChoices = keepMenu
-          ? actionsPanel.querySelector('.record-tab-choices')
-          : el('div', null, 'record-tab-choices');
+        tabFeedback =
+          keepMenu && !problem
+            ? actionsPanel.querySelector('.record-tab-feedback')
+            : el('span', null, 'record-tab-feedback'),
+        tabChoices =
+          keepMenu && !problem
+            ? actionsPanel.querySelector('.record-tab-choices')
+            : el('div', null, 'record-tab-choices');
       tabFeedback.setAttribute('role', 'status');
+      if (problem) problemActions.after(tabChoices, tabFeedback);
       const focusTab = async (tab) => {
         try {
           await api.focusWorkspaceTab(tabWorkspace, tab.tabId);
@@ -1098,9 +1111,13 @@ export function automationResultsTable(
       goToTab.dataset.recordTab = result.id;
       goToTab.dataset.recordMenuAction = 'tab';
       actions.append(open, detail);
-      const tab = {result, control: goToTab, actions, open};
+      // A problem card shows its open tab next to the reason.
+      if (problem) goToTab.textContent = 'Show tab ↗';
+      const placeTab = () =>
+        problem ? problemActions.prepend(goToTab) : actions.insertBefore(goToTab, open);
+      const tab = {result, control: goToTab, place: placeTab};
       visibleTabButtons.set(result.id, tab);
-      if (openIds.has(result.id)) actions.insertBefore(goToTab, open);
+      if (openIds.has(result.id)) placeTab();
       recordActions(actions, result, data.definition, async (action) => {
         try {
           await api.workspaceTransition(data.automation.id, result.id, action);
@@ -1237,7 +1254,8 @@ export function automationResultsTable(
         dismiss.dataset.recordDismiss = result.id;
         dismiss.disabled = busy || requesting;
         dismiss.title = 'Skip this record and close its pending questions';
-        actions.append(dismiss);
+        // A record that cannot be applied puts Skip next to its reason.
+        (problem?.skip ? problemActions : actions).append(dismiss);
       }
       for (const control of actions.querySelectorAll('[data-idle]'))
         control.disabled = busy || requesting || Boolean(recordAction?.task);
@@ -1267,7 +1285,8 @@ export function automationResultsTable(
         } else if (focusedToggle) actionsToggle.focus({preventScroll: true});
         actionsPanel.scrollTop = menuScroll;
       } else {
-        actionsPanel.append(actions, tabChoices, tabFeedback);
+        actionsPanel.append(actions);
+        if (!problem) actionsPanel.append(tabChoices, tabFeedback);
         state.append(actionsPanel);
       }
       rows.set(result.id, {key: rowKeys.get(result.id), row, tab});

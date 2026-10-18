@@ -1,5 +1,6 @@
 import {observedId} from './ids.mjs';
 import {captchaProvider} from '../captcha/detection.mjs';
+import {humanClick} from '../captcha/human-click.mjs';
 const anchor =
   /https:\/\/(?:www\.)?(?:google\.com|recaptcha\.net)\/recaptcha\/(?:api2|enterprise)\/anchor(?:\?|$)|https:\/\/[^/]*hcaptcha\.com\/.*(?:checkbox|frame=checkbox)/i;
 export async function scanVerificationCheckboxes(page) {
@@ -136,7 +137,20 @@ export async function clickVerificationCheckbox(slot, targetId, owner) {
     );
     if (checked) return {status: 'ready', executed: false, verificationChecked: true};
     slot.verificationCheckboxAttempt = t.frame.url();
-    await t.handle.click({timeout: 2500});
+    // Same pointer path a person takes: move in, hover, press, release. The
+    // centre must still hit the checkbox itself, or nothing is clicked.
+    await t.handle.scrollIntoViewIfNeeded({timeout: 2500});
+    const box = await t.handle.boundingBox();
+    if (
+      !box ||
+      !(await t.handle.evaluate((e) => {
+        const r = e.getBoundingClientRect(),
+          hit = e.getRootNode().elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        return hit === e || e.contains(hit);
+      }))
+    )
+      throw Error('The verification checkbox is not clickable.');
+    await humanClick(slot.page, box.x + box.width / 2, box.y + box.height / 2);
     return {
       status: 'checking',
       executed: true,

@@ -40,7 +40,14 @@ export function recordQuestionDialog(api, {refresh}) {
       heading = el('div'),
       title = el('h2', record?.title ?? 'Question about a record');
     title.id = 'record-question-title';
-    heading.append(el('span', 'AWAITING ANSWER', 'record-question-eyebrow'), title);
+    heading.append(
+      el(
+        'span',
+        issue.verification ? 'CAPTCHA TO SOLVE' : 'AWAITING ANSWER',
+        'record-question-eyebrow',
+      ),
+      title,
+    );
     if (record?.url) {
       const source = el(
         'p',

@@ -2,8 +2,31 @@
 // never borrow the first question from a surrounding form or another field.
 export function installFormSemantics() {
   const clean = (s) => (s ?? '').replace(/\s+/g, ' ').trim().slice(0, 1000);
+  // A styled checkbox/radio often lays its transparent native input over the
+  // box it draws; that input is still the visible click surface.
+  const drawnToggle = (e) => {
+    if (e.tagName !== 'INPUT' || !['checkbox', 'radio'].includes(e.type)) return false;
+    const box = e.parentElement;
+    if (
+      !e.checkVisibility({checkVisibilityCSS: true}) ||
+      getComputedStyle(e).pointerEvents === 'none' ||
+      !box?.checkVisibility({checkOpacity: true, checkVisibilityCSS: true})
+    )
+      return false;
+    const r = e.getBoundingClientRect(),
+      b = box.getBoundingClientRect();
+    return (
+      r.width >= 8 &&
+      r.height >= 8 &&
+      r.left >= b.left - 1 &&
+      r.right <= b.right + 1 &&
+      r.top >= b.top - 1 &&
+      r.bottom <= b.bottom + 1
+    );
+  };
+  window.__jobloopDrawnToggle = drawnToggle;
   const visible = (e) =>
-    e.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) &&
+    (e.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) || drawnToggle(e)) &&
     !e.closest('[inert],[aria-hidden="true"]');
   const controls =
     'input:not([type="hidden"]):not([type="submit"]):not([type="button"]),textarea,select,[role="combobox"],[role="radio"],[role="checkbox"]';
@@ -32,6 +55,15 @@ export function installFormSemantics() {
   // The field's own context; container is the largest ancestor holding no
   // other control, where its question was found.
   const own = (e) => {
+    // An open dropdown may mark the page behind its popup aria-hidden, the
+    // field included; text hidden only with the field still describes it.
+    const hiddenBy = e.closest('[aria-hidden="true"]');
+    const shown = (n) =>
+      visible(n) ||
+      (!!hiddenBy &&
+        n.closest('[aria-hidden="true"]') === hiddenBy &&
+        !n.closest('[inert]') &&
+        (n.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) || drawnToggle(n)));
     const explicit = clean(
       refs(e, 'aria-labelledby') ||
         e.getAttribute('aria-label') ||
@@ -46,7 +78,7 @@ export function installFormSemantics() {
       help = clean(refs(e, 'aria-describedby'));
     for (let p = e.parentElement, depth = 0; p && depth < 5; p = p.parentElement, depth++) {
       if (p.matches('form,body,dialog,[role="dialog"]')) break;
-      const peers = [...p.querySelectorAll(controls)].filter(visible);
+      const peers = [...p.querySelectorAll(controls)].filter(shown);
       const sameGroup =
         choice &&
         peers.every(
@@ -69,7 +101,7 @@ export function installFormSemantics() {
             !n.contains(e) &&
             !n.matches(controls) &&
             !n.querySelector(controls) &&
-            visible(n) &&
+            shown(n) &&
             n.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING,
         );
         const headings = preceding.filter((n) =>
@@ -94,7 +126,25 @@ export function installFormSemantics() {
       }
       if (question) break;
     }
-    const label = explicit || question || clean(e.getAttribute('placeholder')) || '';
+    // A checkbox or radio without a label of its own is named by the text
+    // drawn after it in its own container ("[ ] I agree to the Terms").
+    let trailingNode = null;
+    if (choice && !explicit && container)
+      for (let p = e.parentElement; p && !trailingNode; p = p.parentElement) {
+        trailingNode =
+          [...p.children].find(
+            (n) =>
+              !n.contains(e) &&
+              !n.matches(controls) &&
+              !n.querySelector(controls) &&
+              shown(n) &&
+              e.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING &&
+              clean(labelText(n)),
+          ) ?? null;
+        if (p === container) break;
+      }
+    const named = explicit || clean(labelText(trailingNode));
+    const label = named || question || clean(e.getAttribute('placeholder')) || '';
     const required =
       e.required ||
       e.getAttribute('aria-required') === 'true' ||
@@ -107,11 +157,11 @@ export function installFormSemantics() {
           : null;
     return {
       label,
-      question: question || explicit,
+      question: question || named,
       help,
       required,
-      ...(choice ? {option: explicit || clean(e.value)} : {}),
-      named: Boolean(explicit || question),
+      ...(choice ? {option: named || clean(e.value)} : {}),
+      named: Boolean(named || question),
       explicitLabel: Boolean(explicit),
       choice,
       container,
@@ -119,6 +169,7 @@ export function installFormSemantics() {
         ...refNodes(e, 'aria-labelledby'),
         ...(e.labels ?? []),
         questionNode,
+        trailingNode,
         e.hasAttribute('aria-label') ? e : null,
       ].filter(Boolean),
     };

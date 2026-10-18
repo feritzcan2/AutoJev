@@ -86,6 +86,7 @@ export async function inspectApplicationForm(page, slot = null) {
         const shown = (e) =>
           visible(e) ||
           Boolean(window.__jobloopFileSurface(e)) ||
+          window.__jobloopDrawnToggle(e) ||
           (['checkbox', 'radio'].includes(e.type) && [...(e.labels ?? [])].some(visible)) ||
           Boolean(
             window.__jevFast?.combo?.(e)?.control && visible(window.__jevFast.combo(e).control),

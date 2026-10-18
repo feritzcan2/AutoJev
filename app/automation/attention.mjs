@@ -30,6 +30,7 @@ export function automationAttention(snapshot, {includeDismissed = false} = {}) {
         recordId: question.recordId,
         canDismissRecord: question.canDismissRecord,
         fields: question.fields,
+        ...(question.verification ? {verification: true} : {}),
         ...context,
         conversation,
       });

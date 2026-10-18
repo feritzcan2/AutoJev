@@ -181,6 +181,7 @@ export function automationWorkflow({
     }
     throw error;
   };
+  let stepWaited = false;
   const callBrowser = async (owner, name, args, session, options) => {
     if (args.url) attemptedUrl = args.url;
     const issue = db.activeRun(id, run.id).scanIssues?.[attemptedUrl];
@@ -198,13 +199,14 @@ export function automationWorkflow({
             .join('\n'),
         );
       // Whether the latest browser step was stopped by this run's shared site
-      // wait; record recovery only resumes runs that ended on that wait.
-      const wait = response.siteWait ?? response.jevPage?.siteWait,
-        waitBlocked = Boolean(
-          wait && (!run.sourceUrl || sameSite(run.sourceUrl, 'https://' + wait.site)),
-        );
-      if (Boolean(db.run(run.id).siteWaitBlocked) !== waitBlocked)
-        db.putRun({...db.run(run.id), siteWaitBlocked: waitBlocked});
+      // wait; record recovery only resumes runs that ended on that wait. The
+      // page the app reads after a stopped action belongs to the same step.
+      const wait = response.siteWait ?? response.jevPage?.siteWait;
+      stepWaited ||= Boolean(
+        wait && (!run.sourceUrl || sameSite(run.sourceUrl, 'https://' + wait.site)),
+      );
+      if (Boolean(db.run(run.id).siteWaitBlocked) !== stepWaited)
+        db.putRun({...db.run(run.id), siteWaitBlocked: stepWaited});
       return name === 'browser_navigate' && response.pageContext
         ? {...response, pageContext: {...response.pageContext, requestedUrl: args.url}}
         : response;
@@ -250,6 +252,22 @@ export function automationWorkflow({
         (await callBrowser(id, 'browser_snapshot', {}, run.id, {completeSnapshot: true})),
       observation = pageObservation(response);
     lastVerification = response.jevPage?.verification ?? null;
+    // A CAPTCHA that renders after the submit click stopped that submission too.
+    if (lastVerification?.state === 'required') {
+      const active = db.run(run.id);
+      if (
+        active?.submission &&
+        !active.submission.verification &&
+        active.submission.outcome !== 'confirmed'
+      )
+        db.putRun({
+          ...active,
+          submission: {
+            ...active.submission,
+            verification: String(lastVerification.evidence ?? 'CAPTCHA'),
+          },
+        });
+    }
     if (response.siteWait) {
       noteSiteWait(response);
       const saved = db.get(id),
@@ -895,6 +913,8 @@ export function automationWorkflow({
   const performCall = async (owner, session, name, args) => {
     if (owner !== id || session !== run.id || signal.aborted)
       throw Error('Invalid automation session');
+    // Each agent browser step starts unblocked; other tools keep the last step's state.
+    if (name.startsWith('browser_')) stepWaited = false;
     let active = db.activeRun(id, run.id);
     const a = db.get(id),
       sourceTask =
@@ -1321,7 +1341,7 @@ export function automationWorkflow({
         if (!args.itemId)
           throw Error('itemId is required: this task has no single assigned record');
         if (!args.url) throw Error('Observe the results page in the browser first');
-        if (args.status === 'closed') {
+        if (args.status === 'closed' || args.status === 'applied') {
           result = db.closeRecord(id, run.id, args.itemId, args, snapshots.current);
           break;
         }

@@ -12,6 +12,14 @@ const queued = {
 };
 export function recordOperationStatus(record) {
   const {task, lastTask, question} = record.recordAction ?? {};
+  if (question?.verification)
+    return {
+      id: 'verification',
+      label: 'CAPTCHA to solve',
+      tone: 'blocked',
+      detail: question.text,
+      active: true,
+    };
   if (question)
     return {
       id: 'waiting',
@@ -121,11 +129,34 @@ export function activeRecordOperations(snapshot) {
     }));
 }
 
+// The agent's blocker category, as the card's badge.
+const blockerLabels = {
+  not_eligible: 'Not eligible',
+  needs_answer: 'Needs your answer',
+  needs_login: 'Login needed',
+  needs_payment: 'Payment needed',
+  verification: 'Verification needed',
+  listing_closed: 'Listing closed',
+  site_problem: 'Site problem',
+  technical: 'Technical error',
+};
+// Blockers whose card offers Skip next to the reason.
+const skipCategories = new Set(['not_eligible', 'listing_closed', 'technical']);
+
 // A stopped operation or an unverified outcome the user has to look at.
 export function recordProblem(record) {
   if (record.status === 'dismissed' || record.trial) return null;
   const progress = recordOperationStatus(record),
-    summary = record.recordAction?.lastTask?.summary;
+    summary = record.recordAction?.lastTask?.summary,
+    blocker = record.recordAction?.lastTask?.blocker;
+  if (progress?.id === 'stopped' && blocker?.reason)
+    return {
+      label: blockerLabels[blocker.category] ?? progress.label,
+      category: blocker.category,
+      reason: blocker.reason,
+      next: blocker.userAction,
+      skip: skipCategories.has(blocker.category),
+    };
   if (progress?.id === 'stopped')
     return {label: progress.label, reason: summary || 'The agent did not record a reason.'};
   if (!progress && record.status === 'uncertain')

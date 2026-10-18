@@ -62,6 +62,7 @@ export function prepareCollection(db, run, a) {
     ? scanWork(current)
     : {
         activeSearchId: searches[0].id,
+        counted: true,
         searches: searches.map((s) => ({
           ...s,
           status: 'pending',

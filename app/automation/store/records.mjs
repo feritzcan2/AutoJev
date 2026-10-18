@@ -12,6 +12,7 @@ import {saveScoreThreshold, autoApplyThreshold} from '../../scoring/thresholds.m
 import {activeRecordSql} from '../../records/identity.mjs';
 import {observedRecordAliases} from '../../records/aliases.mjs';
 import {collectorRun} from '../../sources/collectors.mjs';
+import {activeSearch, countScan} from '../../sources/scan-work.mjs';
 import {collectorFindingInput} from '../../sources/collector-worker.mjs';
 import {findOperation, operationFor} from '../../templates/contract.mjs';
 import {randomUUID, createHash} from 'node:crypto';
@@ -272,6 +273,8 @@ export const recordMethods = {
     ) {
       const message = `Score ${assessment.score}/100, minimum record score ${saveThreshold}; excluded without saving.`;
       this.rememberSeenListings(id, run.sourceUrl, [observedUrl, url, ...aliases], message);
+      const counted = this.countScanRecord(id, runId, 'belowThreshold');
+      if (counted) this.putRun(counted);
       return {
         saved: false,
         skipped: true,
@@ -334,7 +337,18 @@ export const recordMethods = {
       item.assessment = assessment;
       item.cells = assessmentCells(this.get(id).table, item.cells, assessment);
     }
-    return this.putResult(item);
+    return this.putResult(item, {
+      run: previous && !previous.trial ? undefined : this.countScanRecord(id, runId, 'saved'),
+    });
+  },
+  // A source scan counts its saved and below-threshold findings for the source row.
+  countScanRecord(id, runId, key) {
+    const run = this.activeRun(id, runId);
+    if (run.kind !== 'run' || !run.sourceUrl || run.recordId || !run.scan?.work?.counted)
+      return undefined;
+    const work = structuredClone(run.scan.work);
+    countScan(activeSearch(work) ?? work.searches[0], key);
+    return {...run, scan: {...run.scan, work}};
   },
   assertRecordIdle(id, itemId) {
     const resolved = this.result(id, itemId).id;
@@ -415,20 +429,22 @@ export const recordMethods = {
   // (removed, expired, not found). The quote must be on the observed page and
   // nothing may have been reserved; the record leaves every queue like a
   // dismissal and keeps the evidence.
-  closeRecord(id, runId, itemId, {evidence, url}, page) {
+  // closed: the record page says the listing is gone. applied: it says the
+  // user already applied, so the record is complete without a new submission.
+  closeRecord(id, runId, itemId, {status = 'closed', evidence, url}, page) {
     return this.store.workspaces.tasks.atomic(() => {
       const run = this.activeRun(id, runId),
         item = this.result(id, itemId);
       if (run.recordOperation !== 'execute' || run.recordId !== item.id)
-        throw Error('closed is only allowed in the execute task of the assigned record.');
+        throw Error(`${status} is only allowed in the execute task of the assigned record.`);
       if (!['found', 'prepared'].includes(item.status) || run.actionId)
         throw Error(
-          'A submission was already started, so the record cannot be closed. Record uncertain.',
+          `A submission was already started, so the record cannot be marked ${status}. Record uncertain.`,
         );
       const proofUrl = webUrl(url);
       if (!page || !samePage(page.url, proofUrl))
         throw Error('First observe the record page in the browser during this task.');
-      const quote = boundedText(evidence, 'Closed evidence', 600),
+      const quote = boundedText(evidence, 'Page evidence', 600),
         flat = (text) =>
           String(text ?? '')
             .replace(/\s+/g, ' ')
@@ -440,8 +456,17 @@ export const recordMethods = {
       } catch {}
       if (flat(quote).length < 8 || !flat(text).includes(flat(quote)))
         throw Error(
-          'The quote is not in the current page text. Quote the page sentence that says the listing is gone, word for word.',
+          `The quote is not in the current page text. Quote the page sentence that says ${status === 'applied' ? 'you already applied' : 'the listing is gone'}, word for word.`,
         );
+      if (status === 'applied')
+        return this.putResult({
+          ...item,
+          status: 'completed',
+          evidence: quote,
+          proofUrl,
+          verifiedAt: this.now(),
+          alreadyApplied: {at: this.now(), url: proofUrl, evidence: quote, runId},
+        });
       return this.excludeRecord(id, item, {
         summary: 'The record is no longer available at its source: ' + quote,
         resolution: 'record_closed',

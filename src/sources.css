@@ -338,6 +338,13 @@
   color: var(--text-muted);
   line-height: 1.45;
 }
+.source-status small.source-stats {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.source-status small.source-note {
+  -webkit-line-clamp: 1;
+}
 .source-row[data-tone='found'] .source-status b::before {
   background: var(--success);
 }
@@ -471,6 +478,22 @@
   font-size: 11px;
   font-weight: 600;
   cursor: default;
+}
+/* Each reader kind has its own colour so the source list shows them apart. */
+.source-extension[data-kind='api'] {
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+  color: var(--success);
+}
+.source-extension[data-kind='browser'] {
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  color: var(--warning);
+}
+.source-extension[data-kind='agent'] {
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+}
+.source-name .source-extension {
+  align-self: center;
 }
 .source-recipe[data-status='candidate'] {
   color: var(--accent-strong);
@@ -933,4 +956,9 @@
   .policy-row select {
     width: 100%;
   }
+}
+
+/* The reader explanation keeps its paragraphs. */
+.source-progress-note[data-reader] p {
+  white-space: pre-line;
 }

@@ -544,7 +544,13 @@ export function recordOperationState(
     retryOperation,
     // "Apply" is the record's own operation now; no separate direct button.
     directOperation: null,
-    question: question ? {id: question.id, text: question.text} : null,
+    question: question
+      ? {
+          id: question.id,
+          text: question.text,
+          ...(question.verification ? {verification: true} : {}),
+        }
+      : null,
     lastTask:
       last && !scoringComplete
         ? {
@@ -553,6 +559,9 @@ export function recordOperationState(
             summary: last.summary,
             at: last.finishedAt ?? last.startedAt ?? last.createdAt,
             ...(last.toolFailure ? {toolFailure: last.toolFailure} : {}),
+            ...(last.blocker && ['blocked', 'failed'].includes(last.state)
+              ? {blocker: last.blocker}
+              : {}),
           }
         : null,
     task:
