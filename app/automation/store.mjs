@@ -9,7 +9,7 @@ import {recordOperationState} from '../records/operations.mjs';
 import {SiteAccess} from '../browser/site-access.mjs';
 import {automationTrialReady} from '../sources/trial.mjs';
 import {removeImportedWorkspace} from '../workspaces/imported.mjs';
-import {withAgentDefaults} from '../agents/settings.mjs';
+import {withAgentDefaults, DECISION_MODES} from '../agents/settings.mjs';
 import {
   DEFAULT_SCAN_INTERVAL_MINUTES,
   globalTemplateSource,
@@ -59,6 +59,7 @@ function agentSettings(input) {
   input = withAgentDefaults(input);
   for (const key of ['model', 'permission', 'reasoning']) boundedText(input[key], key, 120);
   if (![true, false, null].includes(input.network)) throw Error('Invalid network setting');
+  if (!DECISION_MODES.includes(input.decisions)) throw Error('Invalid decision setting');
   const trialModel = input.trialModel ? boundedText(input.trialModel, 'trialModel', 120) : null;
   return {
     provider: input.provider,
@@ -66,6 +67,7 @@ function agentSettings(input) {
     permission: input.permission,
     reasoning: input.reasoning,
     network: input.provider === 'codex' ? input.network : null,
+    decisions: input.decisions,
     ...(trialModel || input.trialModel === null ? {trialModel} : {}),
     contextCompactTokens: contextCompactTokens(input.contextCompactTokens),
     ...(input.contextRestartTokens === undefined

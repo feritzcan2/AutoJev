@@ -2,43 +2,62 @@
 import {batchScoring} from '../records/task-scope.mjs';
 import {COLLECTOR_INSTRUCTIONS} from '../sources/collector-worker.mjs';
 import {isConversation} from '../workspaces/conversation.mjs';
-import {JEV_LAUNCH_INSTRUCTIONS} from '../jev/task-tools.mjs';
+import {JEV_LAUNCH_INSTRUCTIONS, AGENT_LAUNCH_INSTRUCTIONS} from '../jev/task-tools.mjs';
 import {SOURCE_PAGE_INSTRUCTIONS} from '../sources/scan.mjs';
 
-export function automationPrompt(run, request = null, {evidenceExpired = false} = {}) {
+// agentDecides: the workspace lets the agent make the listing decisions (no Jev model).
+export function automationPrompt(
+  run,
+  request = null,
+  {evidenceExpired = false, agentDecides = false} = {},
+) {
   if (run.collector && run.kind === 'run' && !run.recordId)
     return (
-      'Read AGENTS.md and get_automation_context. ' + jevProfilePrompt + COLLECTOR_INSTRUCTIONS
+      'Read AGENTS.md and get_automation_context. ' +
+      (agentDecides ? '' : jevProfilePrompt) +
+      COLLECTOR_INSTRUCTIONS
     );
   const refresh =
     evidenceExpired && !isConversation(run)
       ? 'The app restarted. Continue from the saved task checkpoint and answers. Earlier Jev task IDs, evidence IDs, snapshots and browser control handles have expired. Read get_automation_context, then observe the assigned retained tab once for current content and handles without reloading it. Start new Jev reading tasks for pending details; read pages again before relying on their content. Preserve entered form values and completed work; do not repeat completed searches.\n\n'
       : '';
-  const prompt = refresh + baseAutomationPrompt(run, request);
+  const prompt = refresh + baseAutomationPrompt(run, request, agentDecides);
   return !isConversation(run) && !batchScoring(run)
-    ? prompt + '\n\n' + JEV_LAUNCH_INSTRUCTIONS
+    ? prompt + '\n\n' + (agentDecides ? AGENT_LAUNCH_INSTRUCTIONS : JEV_LAUNCH_INSTRUCTIONS)
     : prompt;
 }
 const jevProfilePrompt =
   'If get_automation_context shows jevProfile.status missing or stale, write it first with save_jev_profile, then continue. ';
-const sourceMethodPrompt =
-  jevProfilePrompt +
-  'Read assignedSource.instructions and assignedSource.recipe. When assignedSource.recipeReplay is present start there and run its searches one after another: for url_template call browser_jev_run scan_results with each search url; for search_form call prepare_search at the search url with its answers, then scan_results on the resulting page. Finish one search before starting the next: when its queue is empty call complete_scan_search; the app then makes the next search active and names its url. Do not look for the results page yourself while a replay exists. Without a replay, use the managed browser to search with the current workspace criteria and assigned source query. ';
-const recipePrompt =
-  'Before finishing a completed trial save the search recipe with save_source_recipe: url_template with {query} (and {location} if the site has it) or search_form with the field labels. When assignedSource.siteSearch is present, build the recipe from its template and filters and skip exploring the board controls. Otherwise prefer a results address ordered newest-first when the board offers one (a date sort option or parameter you observed) and set ordering:"newest_first" only when you saw that order, so later scans stop at already known listings. Sort controls are often dropdowns near the result count: scan_results reports them in lastPage.controls with their option names, and on an open page controls with nativeSelect:true or role combobox list theirs with browser_interact options. Check them before concluding that the board has no date order. Also apply the board filters for anything the criteria or saved profile make decisive, such as a listing language the user cannot work in, an excluded workplace type or seniority, when the board offers them in the results address or search form; name each filter in notes and check that the filtered results still hold matching listings. Each search reads at most 10 result pages and 100 new listings, so pick specific terms. When the source query is a description rather than a search keyword, add terms: up to 5 concrete keywords from the criteria that the site accepts; the app fills {query} with each term. Choose specific terms the board matches, such as exact titles or categories, rather than one generic word that returns hundreds of pages. The app checks the recipe with Jev and reports the result; correct and retry on failure. Only when no stable method exists save entry.kind=discovery with a short note. ';
+const sourceMethodPrompt = (agentDecides, trial = false) =>
+  (agentDecides ? '' : jevProfilePrompt) +
+  'Read assignedSource.instructions and assignedSource.recipe. When assignedSource.recipeReplay is present start there and run its searches one after another: for url_template call browser_jev_run scan_results with each search url; ' +
+  (agentDecides
+    ? 'for search_form open the search url, enter its answers yourself with browser_interact and submit, then call scan_results on the resulting page. '
+    : 'for search_form call prepare_search at the search url with its answers, then scan_results on the resulting page. ') +
+  // complete_scan_search belongs to scheduled scans; a trial has no search queue.
+  (trial
+    ? 'Check the searches one after another. '
+    : 'Finish one search before starting the next: when its queue is empty call complete_scan_search; the app then makes the next search active and names its url. ') +
+  'Do not look for the results page yourself while a replay exists. Without a replay, use the managed browser to search with the current workspace criteria and assigned source query. ';
+const recipePrompt = (agentDecides) =>
+  'Before finishing a completed trial save the search recipe with save_source_recipe: url_template with {query} (and {location} if the site has it) or search_form with the field labels. When assignedSource.siteSearch is present, build the recipe from its template and filters and skip exploring the board controls. Otherwise use the newest-first sort of the board by default whenever it offers one (a date sort option or parameter you observed), so each scan reads the newest listings first and later scans stop at already known listings. Sort controls are often dropdowns near the result count: scan_results reports them in lastPage.controls with their option names, and on an open page controls with nativeSelect:true or role combobox list theirs with browser_interact options. Check them before concluding that the board has no date order. Also apply the board filters for anything the criteria or saved profile make decisive, such as a listing language the user cannot work in, an excluded workplace type or seniority, when the board offers them in the results address or search form; name each filter in notes and check that the filtered results still hold matching listings. Each search reads at most 10 result pages and 100 new listings, so pick specific terms. When the source query is a description rather than a search keyword, add terms: up to 5 concrete keywords from the criteria that the site accepts; the app fills {query} with each term. Choose specific terms the board matches, such as exact titles or categories, rather than one generic word that returns hundreds of pages. ' +
+  (agentDecides
+    ? 'The app verifies the recipe from the listings you selected in a scan_results task at its first search address: run that scan and select its listings before saving. Save a url_template; a search form cannot be replayed with agent decisions. '
+    : 'The app checks the recipe with Jev and reports the result; correct and retry on failure. ') +
+  'Only when no stable method exists save entry.kind=discovery with a short note. ';
 // Users do not know which board filters exist; scans that keep rejecting
 // listings for one decisive reason add the matching filter to the recipe.
 const recipeFilterPrompt =
   'Before finishing, if this scan rejected most listings for the same decisive reason (for example a listing language the user cannot work in or an excluded workplace type) and the board offers a filter for it in the results address or search form, save the recipe again with save_source_recipe adding that filter and naming it in notes, so later scans skip those listings. ';
-function sourceTrialPrompt(run) {
+function sourceTrialPrompt(run, agentDecides) {
   return (
     'This is a new access check. Previous runs are historical context, not current evidence. This turn checks only the assigned source; do not scan other sources. ' +
-    sourceMethodPrompt +
-    recipePrompt +
-    'Check search results and a representative detail. Full scan coverage is not required during a trial: Jev reads at most two result pages per scan here, and pageLimitReached means the board continues. Never enter personal/contact data or send applications, messages, payments or bookings in a trial. Use browser_interact to accept cookie overlays and terms-of-service gates (see the site access gate rule), and for search, filters, scrolling and pagination, and browser_read, browser_search and browser_read_part for observed details. Report a tool permission problem only when an actual tool call returns a permission error; include that error in the report. A site_wait response is current application evidence: report blocked with its retry time; do not force another request or ask the user to fix an automatic wait. Do not finish by repeating an earlier blocker without checking it in this turn. If access is still blocked, report the current evidence and stop.'
+    sourceMethodPrompt(agentDecides, true) +
+    recipePrompt(agentDecides) +
+    'Check search results and a representative detail. Full scan coverage is not required during a trial: scan_results reads at most two result pages per scan here, and pageLimitReached means the board continues. Never enter personal/contact data or send applications, messages, payments or bookings in a trial. Use browser_interact to accept cookie overlays and terms-of-service gates (see the site access gate rule), and for search, filters, scrolling and pagination, and browser_read, browser_search and browser_read_part for observed details. Report a tool permission problem only when an actual tool call returns a permission error; include that error in the report. A site_wait response is current application evidence: report blocked with its retry time; do not force another request or ask the user to fix an automatic wait. Do not finish by repeating an earlier blocker without checking it in this turn. If access is still blocked, report the current evidence and stop.'
   );
 }
-function baseAutomationPrompt(run, request = null) {
+function baseAutomationPrompt(run, request = null, agentDecides = false) {
   if (batchScoring(run))
     return 'Read AGENTS.md and get_automation_context. This is one batch scoring task. Read assignedRecords, assignedOperation, recordAuthorization, criteria.ranking and saved profile/documents once, then assess only records with scoredInThisTask=false. Earlier saved scores from this same task are complete and must not be repeated. For an assigned record with savedListing (text the site reader returned) score from that snapshot with browser_read_part/browser_search and do not open its page; for the others use browser_jev_run collect_details with their URLs and read each relevant Jev brief, or read listing details directly. Keep retained forms intact; use the separate batch reading tab. Save a separate record_automation_score with explicit itemId for every assigned record; use score=null with the reason when a record cannot be assessed. Ask genuinely missing facts with the relevant recordId and continue the other selected records. Do not scan sources, score unrelated records, alter proposals, fill or submit forms. Do not finish after the first score. After every assigned record has a saved assessment or record-scoped question, call finish_automation_run with a short batch summary.';
   if (isConversation(run))
@@ -52,10 +71,10 @@ function baseAutomationPrompt(run, request = null) {
     run.kind === 'interview'
       ? 'Lead setup proactively: identify missing decisions, research and recommend sources even if none are saved, save the draft, and ask the next concrete question or direct the user to review.'
       : run.kind === 'trial'
-        ? sourceTrialPrompt(run)
+        ? sourceTrialPrompt(run, agentDecides)
         : 'Follow assignedOperation instructions and work only on assignedRecord when present, otherwise assigned sources. ' +
           (run.sourceUrl && !run.recordId
-            ? sourceMethodPrompt + SOURCE_PAGE_INSTRUCTIONS + ' ' + recipeFilterPrompt
+            ? sourceMethodPrompt(agentDecides) + SOURCE_PAGE_INSTRUCTIONS + ' ' + recipeFilterPrompt
             : '') +
           'Resume saved pending URLs and scan progress before new discovery. Dependent steps belong to separate queue tasks; do not execute them in this turn.'
   } Use the automation tools. Save user-facing messages with reply_to_user and finish with finish_automation_run.`;

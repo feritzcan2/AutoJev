@@ -3,6 +3,10 @@ import {DEFAULT_COMPACT_TOKENS} from './context-compaction.mjs';
 
 export const defaultPermission = (provider) =>
   provider === 'claude' ? 'auto' : provider === 'codex' ? 'bypassPermissions' : 'default';
+// Who makes the listing decisions inside browser tasks: the Jev model
+// (TypeSafe key) or the worker agent itself, through its next tool call.
+export const DECISION_MODES = ['jev', 'agent'];
+export const agentDecides = (settings) => settings?.decisions === 'agent';
 
 export function withAgentDefaults(settings = {}) {
   const provider = settings.provider ?? 'codex';
@@ -16,6 +20,7 @@ export function withAgentDefaults(settings = {}) {
     ...settings,
     provider,
     permission: settings.permission ?? defaultPermission(provider),
+    decisions: settings.decisions ?? 'jev',
   };
 }
 

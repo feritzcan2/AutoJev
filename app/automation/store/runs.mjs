@@ -82,12 +82,11 @@ export const runMethods = {
           : scopeMatches
             ? state.pageProgress
             : null;
-      const recipe = a.sourceSettings?.[task.sourceUrl]?.recipe,
-        ordering = state.recipeState?.status === 'verified' ? (recipe?.ordering ?? null) : null;
+      // Every source is scanned newest first: a repeat scan stops at known listings.
       const scanState =
         kind === 'run' && task.sourceUrl && !task.recordId
           ? beginSourceScan(state.scanState, scopeKey, this.now(), {
-              ordering,
+              ordering: 'newest_first',
               pageCap: SCAN_SEARCH_PAGES,
             })
           : null;

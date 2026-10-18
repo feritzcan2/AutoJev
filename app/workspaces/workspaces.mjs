@@ -1,4 +1,4 @@
-import {withAgentDefaults} from '../agents/settings.mjs';
+import {withAgentDefaults, DECISION_MODES} from '../agents/settings.mjs';
 // A workspace is a template plus shared settings/state. Domain extensions define
 // eligibility and task instructions; the app exposes one control surface.
 export class Workspaces {
@@ -167,7 +167,8 @@ export class Workspaces {
       input = {...input, agentSettings: s};
       if (
         !['codex', 'claude', 'opencode'].includes(s.provider) ||
-        ![true, false, null].includes(s.network)
+        ![true, false, null].includes(s.network) ||
+        !DECISION_MODES.includes(s.decisions)
       )
         throw Error('Invalid agent settings');
       await this.validateSettings(s);

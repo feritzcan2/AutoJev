@@ -1178,6 +1178,29 @@ test('a single search reads at most its 10-page limit and ends there', async (t)
   assert.ok(state.lastFullScanAt);
 });
 
+test('a search completes with its results page snapshot after detail pages were read', async (t) => {
+  const {f, scan, flow, expected, capped} = await scanAfterTrial(t, {pages: 1});
+  assert.equal(capped.status, 'completed');
+  const resultsSnapshot = capped.snapshot.id;
+  // Reading the details replaces the live page snapshot.
+  await settleTask(
+    flow,
+    f.id,
+    scan.id,
+    await flow.call(f.id, scan.id, 'browser_jev_run', {
+      operation: 'collect_details',
+      fromTaskId: capped.taskId,
+    }),
+  );
+  await reviewQueue(flow, f, scan, expected);
+  const done = await flow.call(f.id, scan.id, 'complete_scan_search', {
+    completion: 'end',
+    snapshotId: resultsSnapshot,
+  });
+  assert.ok(done);
+  assert.equal(f.db.run(scan.id).scan.work.searches[0].status, 'completed');
+});
+
 test('a search ends with the page that brings its new listings to 100', async (t) => {
   const {opened, expected, capped} = await scanAfterTrial(t, {pages: 6, listings: 40});
   assert.equal(capped.pageCapReached, true);

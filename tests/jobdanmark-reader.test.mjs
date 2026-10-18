@@ -314,7 +314,8 @@ test('reads use the shared site access rules and pass the caller signal', async 
 
 test('the search description builds addresses the reader handles', () => {
   const {search: site} = jobdanmark;
-  assert.equal(site.ordering, undefined, 'promoted listings come first; no newest_first');
+  // Promoted listings lead page 1 only; the rest of the board is newest first.
+  assert.equal(site.ordering, 'newest_first');
   assert.equal(site.pagination, 'url_param');
   const template = withSearchFilters(site.template, {
     administrativeRegion: 'Region Hovedstaden',

@@ -170,14 +170,18 @@ export function naukriResults(raw) {
 
 // The results address seen on the site (2026-10-16): /<slug>-jobs with the
 // search words hyphenated; pages are /<slug>-jobs-N. Only wfhType=2 (Remote)
-// appears as a link; the date, sort and experience filters are page controls
-// without a visible address parameter.
+// appears as a link; the date and experience filters are page controls
+// without a visible address parameter. sort=f is the site's "Date" sort (user
+// asked for date order, 2026-10-18): listing ages ran from "Just now" to
+// "1 day ago" without a step back across pages 1, 2 and 8 of two searches,
+// while the default relevance order mixed weeks; the next-page links keep it.
 const search = {
-  template: 'https://www.naukri.com/{query}-jobs',
+  template: 'https://www.naukri.com/{query}-jobs?sort=f',
+  ordering: 'newest_first',
   pagination: 'url_param',
   filters: [{param: 'wfhType', label: 'Work mode', values: {2: 'Remote'}}],
   notes:
-    "{query} is a lowercase hyphenated slug (software-developer, data-analyst). Pages are /{query}-jobs-2, -3, ... with 20 results each; an address past the last page shows page 1. The site's own links also add k=<words> (e.g. /backend-developer-jobs?k=Backend developer). Ordered by relevance; date order is not proven.",
+    "{query} is a lowercase hyphenated slug (software-developer, data-analyst). Pages are /{query}-jobs-2, -3, ... with 20 results each; an address past the last page shows page 1. The site's own links also add k=<words> (e.g. /backend-developer-jobs?k=Backend developer). sort=f lists the newest first.",
 };
 
 export default {

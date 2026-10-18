@@ -38,7 +38,7 @@ const retire = (scan, urls, reason, extra = () => ({})) =>
 // Jev's checkpoint after a results page: discovered listings wait for the
 // parent's assessment; navigation, rejected and known links are retired.
 /**
- * @param {{navigationUrls?: string[], rejectedUrls?: string[], rejected?: object[], cards?: object[], knownUrls?: string[], position?: object}} [options]
+ * @param {{navigationUrls?: string[], rejectedUrls?: string[], rejected?: object[], cards?: object[], knownUrls?: string[], position?: object, decidedBy?: 'jev' | 'agent'}} [options]
  */
 export function saveJevCheckpoint(scan, {sourceUrl, now}, page, urls, options = {}) {
   const {
@@ -48,6 +48,7 @@ export function saveJevCheckpoint(scan, {sourceUrl, now}, page, urls, options = 
     cards = [],
     knownUrls = [],
     position,
+    decidedBy = 'jev',
   } = options;
   const {db, id, runId, snapshot} = scan;
   // Leave discovered details pending until the parent has assessed and
@@ -56,7 +57,7 @@ export function saveJevCheckpoint(scan, {sourceUrl, now}, page, urls, options = 
   if (pageReport) db.reportPage(id, runId, pageReport);
   saveInChunks(scan, 'pendingUrls', urls, () => ({
     cards,
-    reason: 'Listings found by Jev are waiting for assessment.',
+    reason: 'Listings found on the results page are waiting for assessment.',
   }));
   db.saveScanProgress(
     id,
@@ -70,10 +71,13 @@ export function saveJevCheckpoint(scan, {sourceUrl, now}, page, urls, options = 
     snapshot,
   );
   retire(scan, navigationUrls, 'Observed navigation and filter links are not listings.');
+  const agent = decidedBy === 'agent';
   retire(
     scan,
     rejectedUrls,
-    'Jev found a clear mismatch on the listing card with at least 85% confidence; excluded without creating a record.',
+    agent
+      ? 'The agent rejected the listing from its card; excluded without creating a record.'
+      : 'Jev found a clear mismatch on the listing card with at least 85% confidence; excluded without creating a record.',
     (offset) => (offset ? {} : {excluded: rejected}),
   );
   if (rejectedUrls.length)
@@ -81,7 +85,9 @@ export function saveJevCheckpoint(scan, {sourceUrl, now}, page, urls, options = 
       id,
       sourceUrl,
       rejectedUrls,
-      'Jev found a clear mismatch on the listing card.',
+      agent
+        ? 'The agent rejected the listing from its card.'
+        : 'Jev found a clear mismatch on the listing card.',
     );
   retire(scan, knownUrls, 'Listings already recorded or excluded earlier; not read again.');
   return {
