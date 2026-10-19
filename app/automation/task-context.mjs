@@ -267,6 +267,8 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
           !q.outcome &&
           !q.resolution,
       )
+      // Reversed first so answers given in the same millisecond keep newest first.
+      .reverse()
       .sort((x, y) => y.answeredAt - x.answeredAt)) {
       const values = q.answerValues ?? {},
         answered = (q.fields ?? []).filter((f) => values[f.id] != null && values[f.id] !== '');
