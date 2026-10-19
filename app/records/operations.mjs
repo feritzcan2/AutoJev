@@ -205,8 +205,8 @@ export function enqueueRecordOperation(
       subject: item.id,
       sourceUrl,
       sources: [item.url],
-      // Submissions run one at a time: a form tab must stay in the foreground
-      // while it is filled, and one employer never gets two parallel attempts.
+      // Submissions run one at a time: one form is filled at a time, and one
+      // employer never gets two parallel attempts.
       lockKey: kind === 'execute' ? 'submit' : 'record:' + item.id,
       request,
       recordVersion: item.digest ?? String(item.updatedAt),

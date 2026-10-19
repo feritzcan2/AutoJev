@@ -271,3 +271,18 @@ test('revealing a control in a background tab runs with rendering enabled and re
   );
   assert.deepEqual(commands, [true, false], 'a failed reveal still restores the tab');
 });
+
+test('a hidden tab renders through focus emulation without coming forward', async () => {
+  const calls = [];
+  const slot = {
+    page: {
+      evaluate: async () => true,
+      bringToFront: async () => calls.push('bringToFront'),
+    },
+    cdp: {send: async (method, {enabled}) => calls.push(enabled)},
+  };
+  const release = await acquireTabRendering(slot);
+  assert.deepEqual(calls, [true]);
+  await release();
+  assert.deepEqual(calls, [true, false]);
+});
