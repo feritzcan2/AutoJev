@@ -190,7 +190,7 @@ export function automationAttentionPanel(
         issue.cleanupError ??
         (issue.accessExhausted
           ? 'Automatic retries stopped at the third access error. The resume point is kept. After clearing the block, restart with “Resolved, continue”. Other sources keep running.'
-          : `The first error waits 5 minutes, the second 10. This scan will continue automatically where it stopped on ${new Date(issue.accessRetryAt).toLocaleString('en-GB', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}. It stops at the third error. Other sources keep running. If you close the card, the tabs close now and the next attempt starts from scratch.`);
+          : `The first error waits 5 minutes, the second 10. This scan will continue automatically where it stopped on ${new Date(issue.accessRetryAt).toLocaleString('en-GB', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}. It stops at the third error. Other sources keep running. If you close the card, ${issue.browserRequired === false ? '' : 'the tabs close now and '}the next attempt starts from scratch.`);
     const actions = el('div', null, 'automation-help-actions'),
       open = el('button', 'Show tab ↗', 'primary'),
       reply = el('button', 'Reply', 'quiet'),
@@ -201,8 +201,9 @@ export function automationAttentionPanel(
     actions.append(open, reply);
     if (issue.browserRequired === false) {
       open.hidden = true;
-      instructions.textContent =
-        'Saved results and pending addresses are kept. You can continue the scan where it stopped.';
+      if (issue.kind !== 'site_access')
+        instructions.textContent =
+          'Saved results and pending addresses are kept. You can continue the scan where it stopped.';
     }
     if (resume) {
       resume.type = 'button';
@@ -221,7 +222,10 @@ export function automationAttentionPanel(
     close.title = 'Close this notice';
     actions.append(close);
     if (issue.kind === 'site_access') {
-      close.title = 'Close this source’s pending tabs; start from scratch on the next attempt';
+      close.title =
+        issue.browserRequired === false
+          ? 'Start from scratch on the next attempt'
+          : 'Close this source’s pending tabs; start from scratch on the next attempt';
       close.disabled = Boolean(issue.closing);
     }
     if (issue.closing && resume) {
