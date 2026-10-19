@@ -453,6 +453,7 @@ test('a recipe check reuses listings the trial already proved at the replayed ad
   const before = opened.length;
   const saved = await flow.call(f.id, trial.id, 'save_source_recipe', {
     entry: {kind: 'url_template', template},
+    terms: ['Find homes'],
     pagination: 'url_param',
   });
   assert.equal(saved.status, 'verified');
@@ -480,6 +481,7 @@ test('a recipe check proves redirect-style result links by reading a few details
   });
   const saved = await flow.call(f.id, trial.id, 'save_source_recipe', {
     entry: {kind: 'url_template', template},
+    terms: ['Find homes'],
     pagination: 'url_param',
   });
   assert.equal(saved.status, 'verified');
@@ -601,12 +603,19 @@ test('a trial agent saves a recipe that the app verifies with Jev before accepti
   await assert.rejects(
     flow.call(f.id, trial.id, 'save_source_recipe', {
       entry: {kind: 'url_template', template: 'https://board.test/other?q={query}'},
+      terms: ['Find homes'],
     }),
     /could not be verified: no_listing_links/,
   );
   assert.equal(f.db.sources(f.id)[0].recipe, undefined, 'a failed check saves nothing');
+  await assert.rejects(
+    flow.call(f.id, trial.id, 'save_source_recipe', {entry: {kind: 'url_template', template}}),
+    /no terms, so \{query\} would be the source scope "Find homes"/,
+    'a {query} search without terms would search for the scope',
+  );
   const saved = await flow.call(f.id, trial.id, 'save_source_recipe', {
     entry: {kind: 'url_template', template},
+    terms: ['Find homes'],
     pagination: 'url_param',
   });
   assert.equal(saved.status, 'verified');
@@ -713,7 +722,9 @@ test('a trial reads the notes of an unverified recipe as claims to re-check', as
 
 test('replayed scans verify or invalidate the recipe; a stale recipe sends the source back to a trial', async (t) => {
   const f = fixture(t);
-  f.db.saveSource(f.id, source, {recipe: {entry: {kind: 'url_template', template}}});
+  f.db.saveSource(f.id, source, {
+    recipe: {entry: {kind: 'url_template', template}, terms: ['Find homes']},
+  });
   assert.equal(f.db.sources(f.id)[0].recipeState.status, 'candidate');
   const trial = f.db.begin(f.id, 'trial');
   f.db.observe(f.id, trial.id, source, 'Listings');
@@ -952,6 +963,7 @@ test('on a board the recipe orders newest-first, a repeat scan stops after two p
   });
   const saved = await trialFlow.call(f.id, trial.id, 'save_source_recipe', {
     entry: {kind: 'url_template', template},
+    terms: ['Find homes'],
     pagination: 'url_param',
     ordering: 'newest_first',
   });
@@ -1094,6 +1106,7 @@ async function scanAfterTrial(t, board) {
   });
   const saved = await trialFlow.call(f.id, trial.id, 'save_source_recipe', {
     entry: {kind: 'url_template', template},
+    terms: ['Find homes'],
     pagination: 'url_param',
   });
   assert.equal(saved.status, 'verified');
@@ -1163,6 +1176,29 @@ test('a single search reads at most its 10-page limit and ends there', async (t)
   assert.equal(state.active, null);
   assert.equal(state.lastCompleted.completion, 'end');
   assert.ok(state.lastFullScanAt);
+});
+
+test('a search completes with its results page snapshot after detail pages were read', async (t) => {
+  const {f, scan, flow, expected, capped} = await scanAfterTrial(t, {pages: 1});
+  assert.equal(capped.status, 'completed');
+  const resultsSnapshot = capped.snapshot.id;
+  // Reading the details replaces the live page snapshot.
+  await settleTask(
+    flow,
+    f.id,
+    scan.id,
+    await flow.call(f.id, scan.id, 'browser_jev_run', {
+      operation: 'collect_details',
+      fromTaskId: capped.taskId,
+    }),
+  );
+  await reviewQueue(flow, f, scan, expected);
+  const done = await flow.call(f.id, scan.id, 'complete_scan_search', {
+    completion: 'end',
+    snapshotId: resultsSnapshot,
+  });
+  assert.ok(done);
+  assert.equal(f.db.run(scan.id).scan.work.searches[0].status, 'completed');
 });
 
 test('a search ends with the page that brings its new listings to 100', async (t) => {
@@ -1334,6 +1370,7 @@ test('a detail page with its own page counter does not move the search or lift i
     (
       await trialFlow.call(f.id, trial.id, 'save_source_recipe', {
         entry: {kind: 'url_template', template},
+        terms: ['Find homes'],
         pagination: 'url_param',
       })
     ).status,

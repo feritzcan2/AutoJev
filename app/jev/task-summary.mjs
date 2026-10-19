@@ -3,7 +3,12 @@
 import {jevReviewRequired} from './review.mjs';
 import {listingFirst} from './results.mjs';
 import {JEV_CLASSIFICATION_VERSION} from './triage.mjs';
-import {JEV_REVIEW_INSTRUCTIONS} from './task-tools.mjs';
+import {
+  JEV_REVIEW_INSTRUCTIONS,
+  AGENT_REVIEW_INSTRUCTIONS,
+  AGENT_LINK_INSTRUCTIONS,
+  AGENT_PAGINATION_INSTRUCTIONS,
+} from './task-tools.mjs';
 // Version of results-page discovery recorded on scan tasks.
 export const DISCOVERY_VERSION = 3;
 
@@ -52,9 +57,13 @@ function taskNext(task) {
     return 'These assessments use an older classifier. FIRST resume browser_jev_run with this taskId to refresh classification from saved evidence and receive review batches. Do not read individual bodies or score the old assessments yet. Original evidence and queue entries are preserved; no browser reread is needed.';
   if (task.batch)
     return (
-      JEV_REVIEW_INSTRUCTIONS +
+      (task.decisions === 'agent' ? AGENT_REVIEW_INSTRUCTIONS : JEV_REVIEW_INSTRUCTIONS) +
       ' Read read_jev_brief for relevant listings before final scoring; use read_jev_evidence only for missing or conflicting details. For missing details inspect the observed listing URL through the browser; keep unresolved facts uncertain.'
     );
+  if (task.pageWork?.selection)
+    return `${AGENT_LINK_INSTRUCTIONS} The pending choice: reviewedBatchId=${task.pageWork.selection.id}, items 1–${task.pageWork.selection.links.length}.`;
+  if (task.pageWork?.paginationChoice)
+    return `${AGENT_PAGINATION_INSTRUCTIONS} lastPage holds the observed pagination and position.`;
   if (task.issue?.reason === 'discovery_refresh_required')
     return 'This task contains links from an older ambiguous classifier. Its original work is preserved, but do not resume this task or read the whole board. Run NEW scan_results tasks at issue.urls with the current classifier, then collect_details using each NEW fromTaskId. Fresh scan checkpoints retire observed navigation links from the saved queue. Existing collected details/evidence remain usable.';
   if (
@@ -84,6 +93,8 @@ function taskNext(task) {
       ].includes(reason)
     )
       return 'Inspect lastPage pagination/continuation first: observed URLs and guarded targetId/controlId are included. These IDs belong to that observation; after a page change obtain fresh controls before interacting. Read only a specific missing evidence fragment, never the whole board to recover pagination. This is not complete source coverage. Use an actual results/company-board URL or resolve the missing pagination control, then resume discovery. Collect relevant observed listing URLs with collect_details + urls; keep uncertain leads.';
+    if (reason === 'page_changed')
+      return 'The page moved to issue.url instead of issue.expected. On another host this is usually a sign-in, consent or verification page, not more results. Listings found before it stay queued; collect them. Resolve that page (a sign-in needs the user), then run a NEW scan_results at issue.expected; do not resume this task.';
     if (reason === 'search_not_verified')
       return 'The requested filters could not be verified. prepare_search only applies search inputs; use scan_results to discover listings already visible on the current board. Do not repeat prepare_search to extract listings.';
     if (reason === 'task_error')
@@ -96,7 +107,9 @@ function taskNext(task) {
       return (
         (unclassified
           ? classifySaved + ' '
-          : 'Other details were processed and automatically classified. Use their compact assessments; read relevant listing evidence for final assessment. ') +
+          : task.decisions === 'agent'
+            ? 'Other details were read, not judged; assess them from their read_jev_brief text. '
+            : 'Other details were processed and automatically classified. Use their compact assessments; read relevant listing evidence for final assessment. ') +
         'Unavailable details have already had bounded read recovery. A page_not_ready item is incomplete content, not an unsuitable listing. For an assigned scoring record save status=unavailable, score=null and the reason; old record summaries cannot replace missing current details. Keep source-discovery URLs pending and honor each retryAt; do not create immediate retry tasks. Continue reachable details. Results pages are deferred discovery leads: choose any relevant new scan explicitly.'
       );
     return 'Resolve this specific issue using the current page/evidence; do not repeat unchanged input. Resume the task or delegate the remaining supported work once resolved. Parent work is still pending.';
@@ -106,11 +119,13 @@ function taskNext(task) {
     task.input.operation === 'collect_details' &&
     task.items.some((i) => i.detailComplete === false && !i.error && i.pageKind !== 'results')
   )
-    return `Descriptions are missing. Call browser_jev_run operation=collect_details with fromTaskId=${task.id}; collected details will be classified automatically.`;
+    return `Descriptions are missing. Call browser_jev_run operation=collect_details with fromTaskId=${task.id}; collected details will ${task.decisions === 'agent' ? 'wait for your assessment' : 'be classified automatically'}.`;
   return task.input.operation === 'scan_results'
     ? `${task.pageLimitReached ? 'Page limit for this turn reached; the board continues beyond the read pages. ' : ''}${task.knownBoundary ? 'Known boundary reached: consecutive pages held only listings this workspace already has, and the recipe orders the board newest-first. Empty the queue, then complete_scan_search with completion=cutoff. ' : ''}${task.pageCapReached ? 'Search limit reached: this search read its maximum pages or new listings. Empty the queue, then complete_scan_search with completion=end. ' : ''}Collect details using fromTaskId=${task.id}. Confirmed listing links are first; uncertain leads remain explicit. Listings this workspace already recorded or rejected are retired without a read (lastPage.knownListings). Reuse lastPage/pages for exact pagination and saved checkpoint facts; do not reread the board or repeat saved page reports. Unverified chronology requires full coverage, not an inferred cutoff. This result does not certify complete source coverage.`
     : task.input.operation === 'collect_details'
-      ? 'Details are already classified. Use the compact assessments and relevant original listing evidence for final assessment. Do not classify this same evidence again or read result-page bodies as listings.'
+      ? task.decisions === 'agent'
+        ? 'Details are read, not judged. Read the original listing text with read_jev_brief and assess the listings yourself. Do not read result-page bodies as listings.'
+        : 'Details are already classified. Use the compact assessments and relevant original listing evidence for final assessment. Do not classify this same evidence again or read result-page bodies as listings.'
       : 'Review results and continue the assigned parent task.';
 }
 // A review pause returns its whole batch at once: a second read of the same
@@ -199,6 +214,24 @@ export function jevTaskSummary(
         }
       : {}),
     ...(task.batch ? {batch: {id: task.batch.id, total: items.length}, taskTotal: all.length} : {}),
+    ...(task.pageWork?.selection
+      ? {
+          linkSelection: {
+            id: task.pageWork.selection.id,
+            total: task.pageWork.selection.links.length,
+            links: task.pageWork.selection.links.map((link, index) => ({
+              item: index + 1,
+              title: link.text,
+              url: link.url,
+              ...(link.listing ? {listing: true} : {}),
+              ...(link.context ? {card: link.context} : {}),
+            })),
+          },
+        }
+      : {}),
+    ...(task.pageWork?.paginationChoice
+      ? {paginationChoice: {options: task.pageWork.paginationChoice.options}}
+      : {}),
     deferredDiscovery: all.filter((i) => i.pageKind === 'results').length,
     next: taskNext(task),
   };

@@ -3,13 +3,19 @@ import {normalizeSourceRecipe} from '../sources/recipe.mjs';
 import {siteKey} from '../browser/site-key.mjs';
 
 // countries (ISO 3166 alpha-2) marks a source that serves only those
-// countries; it joins a workspace when setup adds it. Untagged sources serve
-// every country and join every new workspace.
+// countries; remote marks one that serves remote work (with countries: those
+// countries or remote work). Setup adds them when the search fits. Untagged
+// sources serve every country and join every new workspace.
 export const TEMPLATE_SOURCE_LIMIT = 100;
 // A new workspace scans each source every 18 hours unless the user changes it.
 export const DEFAULT_SCAN_INTERVAL_MINUTES = 18 * 60;
-export const globalTemplateSource = (source) => !source.countries?.length;
-export function templateSourceSettings({url: _url, countries: _countries, ...settings}) {
+export const globalTemplateSource = (source) => !source.countries?.length && !source.remote;
+export function templateSourceSettings({
+  url: _url,
+  countries: _countries,
+  remote: _remote,
+  ...settings
+}) {
   return settings;
 }
 // The starting source a workspace address belongs to: the same address, or
@@ -72,6 +78,8 @@ export function normalizeTemplateSources(input = []) {
       countries.some((c) => typeof c !== 'string' || !/^[A-Z]{2}$/.test(c))
     )
       throw Error('Source countries must be two-letter ISO codes');
+    if (source.remote !== undefined && typeof source.remote !== 'boolean')
+      throw Error('Source remote must be true or false');
     return {
       url: address,
       name: name.trim(),
@@ -79,6 +87,7 @@ export function normalizeTemplateSources(input = []) {
       intervalMinutes,
       enabled,
       ...(countries.length ? {countries: [...new Set(countries)]} : {}),
+      ...(source.remote ? {remote: true} : {}),
       ...(instructions ? {instructions: instructions.trim()} : {}),
       ...(source.skill !== undefined ? {skill: source.skill} : {}),
       ...(recipe ? {recipe} : {}),

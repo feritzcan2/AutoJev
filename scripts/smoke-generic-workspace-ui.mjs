@@ -120,22 +120,22 @@ try {
   };
 
   for (const [id, minutes] of [
-    [jobs.id, 555],
-    [housing.id, 150],
+    [jobs.id, 240],
+    [housing.id, 120],
   ]) {
     await page.selectOption('#candidates', id);
     await page.locator('[data-view=sources]').click();
-    const panel = page.locator('[data-automation-pane=sources]'),
-      interval = panel.locator('[name=intervalMinutes]');
-    await interval.fill(String(minutes));
-    await panel.getByRole('button', {name: 'Apply to all', exact: true}).click();
-    await page.waitForFunction(
-      (value) =>
-        [...document.querySelectorAll('[data-automation-pane=sources] .source-plan b')].every(
-          (n) => n.textContent === `Every ${value} min`,
-        ),
-      minutes,
-    );
+    const intervals = page.locator('[data-automation-pane=sources] .source-interval');
+    await intervals.first().waitFor();
+    for (let index = 0; index < (await intervals.count()); index++) {
+      await intervals.nth(index).selectOption(String(minutes));
+      await page.waitForFunction(
+        ([index, value]) =>
+          document.querySelectorAll('[data-automation-pane=sources] .source-interval')[index]
+            ?.value === value,
+        [index, String(minutes)],
+      );
+    }
     const snapshot = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), id);
     assert.equal(snapshot.definition.execution.driver, 'browser');
     assert.ok(snapshot.sources.every((s) => s.intervalMinutes === minutes));
@@ -176,8 +176,10 @@ try {
   await page.locator('[data-automation-pane=background]').waitFor({state: 'visible'});
   await page.reload();
   await page.locator('[data-view=sources]').click();
-  await page.waitForFunction(
-    () => document.querySelector('#automation-sources-interval')?.value === '555',
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('[data-automation-pane=sources] .source-interval')].every(
+      (n) => n.value === '240',
+    ),
   );
   for (const template of ['job-search']) {
     const previous = (await current())?.sessionId;

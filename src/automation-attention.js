@@ -27,7 +27,7 @@ export function attentionTabs(issue, tabs, sources) {
 
 export function automationAttentionPanel(
   api,
-  {navigate, refresh, getConversation = () => null, showRecordQuestions = () => {}},
+  {navigate, refresh, getConversation = () => null, showRecordQuestions = () => {}, container},
 ) {
   const banner = el('div', null, 'automation-attention-banner');
   banner.hidden = true;
@@ -36,12 +36,15 @@ export function automationAttentionPanel(
     review = el('button', 'Show issues', 'quiet');
   review.type = 'button';
   banner.append(el('span', '!', 'attention-icon'), bannerText, review);
-  document.querySelector('main>header').after(banner);
+  // With its own page the sidebar badges carry the count, so no banner is shown.
+  if (!container) document.querySelector('main>header').after(banner);
   const panel = el('section', null, 'automation-attention');
   panel.hidden = true;
   panel.dataset.webOnly = '';
   panel.setAttribute('aria-label', 'Sources that need attention');
-  document.querySelector('#now-panel').before(panel);
+  // The workspace UI gives the cards their own page; without one they sit above the agent's work.
+  if (container) container.append(panel);
+  else document.querySelector('#now-panel').before(panel);
   const announcement = el('p', null, 'attention-announcement');
   announcement.setAttribute('role', 'status');
   announcement.setAttribute('aria-live', 'polite');
@@ -122,13 +125,13 @@ export function automationAttentionPanel(
       return;
     }
     const chatIssue = issues.find(isChatIssue);
-    navigate(chatIssue ? 'setup-agent' : 'agent');
+    navigate(chatIssue ? 'setup-agent' : container ? 'attention' : 'agent');
     if (chatIssue) {
       if (chatIssue.kind === 'question' && getConversation()?.showQuestion(chatIssue.id)) return;
       cards.get(chatIssue.id)?.card.scrollIntoView({block: 'start', behavior: 'smooth'});
       return;
     }
-    document.querySelector('#agent-tab-work')?.click();
+    if (!container) document.querySelector('#agent-tab-work')?.click();
     panel.scrollIntoView({block: 'start', behavior: 'smooth'});
     [...cards.values()]
       .find((item) => item.card.parentElement === list)
@@ -187,7 +190,7 @@ export function automationAttentionPanel(
         issue.cleanupError ??
         (issue.accessExhausted
           ? 'Automatic retries stopped at the third access error. The resume point is kept. After clearing the block, restart with “Resolved, continue”. Other sources keep running.'
-          : `The first error waits 5 minutes, the second 10. This scan will continue automatically where it stopped on ${new Date(issue.accessRetryAt).toLocaleString('en-GB', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}. It stops at the third error. Other sources keep running. If you close the card, the tabs close now and the next attempt starts from scratch.`);
+          : `The first error waits 5 minutes, the second 10. This scan will continue automatically where it stopped on ${new Date(issue.accessRetryAt).toLocaleString('en-GB', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}. It stops at the third error. Other sources keep running. If you close the card, ${issue.browserRequired === false ? '' : 'the tabs close now and '}the next attempt starts from scratch.`);
     const actions = el('div', null, 'automation-help-actions'),
       open = el('button', 'Show tab ↗', 'primary'),
       reply = el('button', 'Reply', 'quiet'),
@@ -198,8 +201,9 @@ export function automationAttentionPanel(
     actions.append(open, reply);
     if (issue.browserRequired === false) {
       open.hidden = true;
-      instructions.textContent =
-        'Saved results and pending addresses are kept. You can continue the scan where it stopped.';
+      if (issue.kind !== 'site_access')
+        instructions.textContent =
+          'Saved results and pending addresses are kept. You can continue the scan where it stopped.';
     }
     if (resume) {
       resume.type = 'button';
@@ -218,7 +222,10 @@ export function automationAttentionPanel(
     close.title = 'Close this notice';
     actions.append(close);
     if (issue.kind === 'site_access') {
-      close.title = 'Close this source’s pending tabs; start from scratch on the next attempt';
+      close.title =
+        issue.browserRequired === false
+          ? 'Start from scratch on the next attempt'
+          : 'Close this source’s pending tabs; start from scratch on the next attempt';
       close.disabled = Boolean(issue.closing);
     }
     if (issue.closing && resume) {
@@ -374,7 +381,7 @@ export function automationAttentionPanel(
             await api.automationSourceResume(workspace, issue.sourceUrl, issue.runId);
           else if (issue.retry === 'source')
             await api.automationSourceRun(workspace, issue.sourceUrl);
-          else await api.automationRun(workspace, 'trial');
+          else await api.automationRun(workspace, issue.retry);
           await refresh();
         });
     if (later)

@@ -104,6 +104,12 @@ export function normalizeSourceRecipe(input) {
 }
 const hasQueryPlaceholder = (template) =>
   [...template.matchAll(placeholderPattern)].some((m) => m[1] === 'query');
+// A search address with {query} but no terms would search for the source
+// scope, a description rather than a keyword.
+export const recipeNeedsTerms = (recipe) =>
+  recipe?.entry.kind === 'url_template' &&
+  hasQueryPlaceholder(recipe.entry.template) &&
+  !recipe.terms?.length;
 
 // {query} is the saved source query; other placeholders read the workspace
 // criteria field with the same id. Empty values drop their query parameter.
@@ -301,7 +307,7 @@ export function recipeSummary(recipe, state) {
     return {
       status,
       label: 'Recipe verified',
-      detail: `${state.successCount} successful turns${state.failCount ? `, ${state.failCount} failed` : ''}${recipe.terms?.length ? ` · ${recipe.terms.length} search terms` : ''}${recipe.ordering === 'newest_first' ? ' · new listings only' : ''} · up to ${SCAN_SEARCH_LISTINGS} new listings or ${SCAN_SEARCH_PAGES} pages per search`,
+      detail: `${state.successCount} successful turns${state.failCount ? `, ${state.failCount} failed` : ''}${recipe.terms?.length ? ` · ${recipe.terms.length} search terms` : ''} · new listings only · up to ${SCAN_SEARCH_LISTINGS} new listings or ${SCAN_SEARCH_PAGES} pages per search`,
     };
   if (status === 'stale')
     return {

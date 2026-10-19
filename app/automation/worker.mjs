@@ -5,19 +5,28 @@ import {jevCriteria} from '../jev/triage.mjs';
 import {reviewJevBatch} from '../jev/review.mjs';
 import {readJevBrief} from '../jev/brief.mjs';
 import {jevWaitMsFor, observeClientAbort} from '../jev/execution.mjs';
-import {withAgentDefaults} from '../agents/settings.mjs';
-import {otherScanSearchesPending, scanWork} from '../sources/scan-work.mjs';
-import {siteKey, sameSite} from '../browser/site-access.mjs';
+import {withAgentDefaults, agentDecides} from '../agents/settings.mjs';
+import {otherScanSearchesPending, scanWork, activeSearch} from '../sources/scan-work.mjs';
+import {
+  siteKey,
+  sameSite,
+  runSiteLane,
+  SiteWaitError,
+  siteDomainOf,
+} from '../browser/site-access.mjs';
 import {collectorRun, collectorExtension} from '../sources/collectors.mjs';
 import {
   collectSourcePage,
   collectorSaved,
   collectorProgress,
+  collectorPageReady,
+  prefetchCollectorPage,
   prepareCollection,
 } from '../sources/collector-worker.mjs';
 import {siteReaderFor, siteExtensionKind} from '../site-extensions/index.mjs';
 import {siteSearchRecipe} from '../site-extensions/search.mjs';
 import {setTimeout as pause} from 'node:timers/promises';
+import {readRecordListings} from '../records/listing-reader.mjs';
 import {jevDetailKey} from '../jev/detail-urls.mjs';
 import {
   recordResultInput,
@@ -58,6 +67,13 @@ import {workspaceTableTools, workspaceTableCall} from '../workspaces/table-tools
 import {BrowserSnapshot, BROWSER_RESPONSE_BYTES} from '../browser/snapshot.mjs';
 import {AutomationContext} from './context.mjs';
 import {
+  requestCoverLetter,
+  coverLetterBrief,
+  saveCoverLetter,
+  finishCoverLetter,
+} from './cover-letters.mjs';
+import {renderCoverLetterPdf} from './cover-letter-pdf.mjs';
+import {
   recordReceipt,
   scanToolOutput,
   documentToolContent,
@@ -76,9 +92,10 @@ import {sourceScan, scanIssue, clearScanIssue, browserFailure} from '../sources/
 import {holdForTechnicalRetry} from './recovery.mjs';
 import {runJevTask, jevDetailItems} from '../jev/tasks.mjs';
 import {jevTaskSummary, jevTaskReceipt} from '../jev/task-summary.mjs';
-import {JEV_LAUNCH_INSTRUCTIONS} from '../jev/task-tools.mjs';
+import {JEV_LAUNCH_INSTRUCTIONS, AGENT_LAUNCH_INSTRUCTIONS} from '../jev/task-tools.mjs';
 import {
   normalizeSourceRecipe,
+  recipeNeedsTerms,
   recipeReplay,
   recipeValues,
   jevListingItem,
@@ -107,6 +124,28 @@ const samePath = (a, b) => {
   }
 };
 const TRIAL_SCAN_PAGE_LIMIT = 2;
+// Listings a card collector opens in the user's (logged-in) browser: at least
+// 25 s apart and at most 60 an hour per site, counted apart from the site's
+// API budget, since these views belong to the user's account.
+const BROWSER_LISTING_GAP_MS = 25000,
+  BROWSER_LISTING_JITTER_MS = 10000,
+  BROWSER_LISTING_BUDGET = {requests: 60, windowMs: 60 * 60000};
+const BACKGROUND_READ =
+  'The app reads the next result page and its listings itself, at the pace this site allows; that can take many minutes. End this turn now: do not call finish_automation_run or any other tool. The app resumes you with the ready review batch.';
+// Another results page of the active search: same address shape as the last
+// page it served (numbers may differ, as in ?page=7 or /page/7), not that page.
+const laterResultsPage = (run, url) => {
+  const last = activeSearch(scanWork(run))?.pageProgress?.url;
+  if (!last || last === url) return false;
+  try {
+    const shape = (u) => u.origin + u.pathname.replace(/\d+/g, '#').replace(/\/$/, '');
+    return shape(new URL(last)) === shape(new URL(url));
+  } catch {
+    return false;
+  }
+};
+const UNSERVED_PAGE =
+  ' [The site does not serve this results page: it failed to load again while the earlier pages of this search loaded. The app ended this search at the last page served. Finish its queue and call complete_scan_search with completion=end; do not open this page again.]';
 // Click targets keep the page's raw spacing; form inspection collapses it.
 const spaced = (label) =>
   String(label ?? '')
@@ -125,15 +164,19 @@ export function automationWorkflow({
   submitSettleMs = 2000,
   collectorReadPage,
   collectorReadDetail,
+  renderPdf = renderCoverLetterPdf,
 }) {
   const id = run.automationId,
     snapshots = new BrowserSnapshot(),
     context = new AutomationContext();
   const collecting = Boolean(collectorRun(db.get(id), run));
+  // Read once per run: changing the setting restarts the worker with new tools.
+  const decideByAgent = agentDecides(db.get(id).agentSettings);
   const scopedTools = scopedAutomationTools({
     run,
     template: db.template(db.get(id).templateId),
     collecting,
+    agentDecides: decideByAgent,
   });
   const rechecked = new Set();
   let calls = Promise.resolve();
@@ -144,6 +187,16 @@ export function automationWorkflow({
     if (failure && sourceScan(active)) {
       const url = attemptedUrl ?? active.sourceUrl,
         issue = scanIssue(db, id, run.id, {url, ...failure});
+      if (
+        issue.verified &&
+        !issue.global &&
+        laterResultsPage(active, url) &&
+        db.markUnservedPage(id, run.id, url)
+      ) {
+        error.message += UNSERVED_PAGE;
+        changed(id);
+        throw error;
+      }
       error.message +=
         ' [Page load failed. Retry once; the app records repeated failures and retries them later. Continue with other pending work.]';
       if (issue.attempts >= 3) {
@@ -181,9 +234,13 @@ export function automationWorkflow({
     }
     throw error;
   };
+  let stepWaited = false;
   const callBrowser = async (owner, name, args, session, options) => {
     if (args.url) attemptedUrl = args.url;
-    const issue = db.activeRun(id, run.id).scanIssues?.[attemptedUrl];
+    const current = db.activeRun(id, run.id);
+    if (args.url && current.scanPlan?.boundary?.unserved === args.url)
+      throw Error(`Not opened: ${args.url}.${UNSERVED_PAGE}`);
+    const issue = current.scanIssues?.[attemptedUrl];
     if (issue?.kind === 'browser_error' && issue.attempts >= 3)
       throw Error(
         `This address repeatedly failed to load: ${attemptedUrl}. The app will retry it later; process the other pending addresses.`,
@@ -198,13 +255,14 @@ export function automationWorkflow({
             .join('\n'),
         );
       // Whether the latest browser step was stopped by this run's shared site
-      // wait; record recovery only resumes runs that ended on that wait.
-      const wait = response.siteWait ?? response.jevPage?.siteWait,
-        waitBlocked = Boolean(
-          wait && (!run.sourceUrl || sameSite(run.sourceUrl, 'https://' + wait.site)),
-        );
-      if (Boolean(db.run(run.id).siteWaitBlocked) !== waitBlocked)
-        db.putRun({...db.run(run.id), siteWaitBlocked: waitBlocked});
+      // wait; record recovery only resumes runs that ended on that wait. The
+      // page the app reads after a stopped action belongs to the same step.
+      const wait = response.siteWait ?? response.jevPage?.siteWait;
+      stepWaited ||= Boolean(
+        wait && (!run.sourceUrl || sameSite(run.sourceUrl, 'https://' + wait.site)),
+      );
+      if (Boolean(db.run(run.id).siteWaitBlocked) !== stepWaited)
+        db.putRun({...db.run(run.id), siteWaitBlocked: stepWaited});
       return name === 'browser_navigate' && response.pageContext
         ? {...response, pageContext: {...response.pageContext, requestedUrl: args.url}}
         : response;
@@ -250,6 +308,22 @@ export function automationWorkflow({
         (await callBrowser(id, 'browser_snapshot', {}, run.id, {completeSnapshot: true})),
       observation = pageObservation(response);
     lastVerification = response.jevPage?.verification ?? null;
+    // A CAPTCHA that renders after the submit click stopped that submission too.
+    if (lastVerification?.state === 'required') {
+      const active = db.run(run.id);
+      if (
+        active?.submission &&
+        !active.submission.verification &&
+        active.submission.outcome !== 'confirmed'
+      )
+        db.putRun({
+          ...active,
+          submission: {
+            ...active.submission,
+            verification: String(lastVerification.evidence ?? 'CAPTCHA'),
+          },
+        });
+    }
     if (response.siteWait) {
       noteSiteWait(response);
       const saved = db.get(id),
@@ -517,7 +591,10 @@ export function automationWorkflow({
             if ((current.scan?.work?.activeSearchId ?? 'default') !== searchId)
               throw Error('The active search changed; the Jev task was stopped.');
           },
-          evaluate: (state, questions, abort) => browser.evaluateJev(id, state, questions, abort),
+          decisions: decideByAgent ? 'agent' : 'jev',
+          evaluate: decideByAgent
+            ? null
+            : (state, questions, abort) => browser.evaluateJev(id, state, questions, abort),
           browser: async (action, parameters) => {
             if (collecting)
               throw Error(
@@ -530,20 +607,20 @@ export function automationWorkflow({
             const reader = ['open', 'reopen'].includes(action)
               ? siteReaderFor(parameters.url)
               : null;
-            if (
-              reader ||
-              (action === 'observe' &&
-                readerPage &&
-                (!parameters.url || parameters.url === readerPage.url))
-            ) {
-              const page =
-                action === 'observe'
-                  ? readerPage
-                  : await reader.read(parameters.url, {
+            const page =
+              action === 'observe' &&
+              readerPage &&
+              (!parameters.url || parameters.url === readerPage.url)
+                ? readerPage
+                : reader
+                  ? await reader.read(parameters.url, {
                       signal,
-                      siteAccess: db.siteAccess,
+                      siteAccess: db.siteAccess.forLane(runSiteLane(run)),
                       wait: (ms) => pause(ms, undefined, {signal}),
-                    });
+                    })
+                  : null;
+            // A reader that cannot read this address (null) leaves it to the tab.
+            if (page) {
               readerPage = page;
               await inspect({research, response: readerResponse(page), jev: true});
               return page;
@@ -692,10 +769,11 @@ export function automationWorkflow({
   // confirmed a link, or a detail of one of its links judged an opportunity.
   const provenListings = (replay, scope) => {
     const tasks = db.jevTasks.list(id, scope),
+      // A scan paused for the agent's next choice already holds its selection.
       scans = tasks.filter(
         (t) =>
           t.input?.operation === 'scan_results' &&
-          t.status === 'completed' &&
+          (t.status === 'completed' || t.decisions === 'agent') &&
           replayMatches(replay, t.input.url),
       );
     if (!scans.length) return null;
@@ -719,7 +797,13 @@ export function automationWorkflow({
   const checkCollectorRecipe = async (replay) => {
     const collector = collectorExtension(db.get(id), run.sourceUrl).collector,
       url = collector.searchUrl(replay.searches[0].url),
-      page = await (collectorReadPage ?? collector.readPage)(url, {signal});
+      // Only the listing count matters here: a card site reads no listings.
+      page = await (collectorReadPage ?? collector.readPage)(url, {
+        signal,
+        wanted: () => [],
+        siteAccess: db.siteAccess,
+        wait: (ms) => pause(ms, undefined, {signal}),
+      });
     return page.jobs.length
       ? {ok: true, listings: page.jobs.length, pages: 1, url, term: replay.searches[0].term}
       : {ok: false, reason: 'the first page has no listings', url};
@@ -849,14 +933,78 @@ export function automationWorkflow({
   };
   // A page of already known listings leaves nothing to review. Read on in the
   // same call so an empty result never looks like a stalled collector.
+  // A card site's next page needs one request per listing at the site's pace.
+  // The app reads it between agent turns, so the agent ends its turn instead
+  // of waiting in a tool call. A site wait parks the source as usual. After a
+  // failed background read the call reads the page itself and reports the error.
+  const backgroundRead = () => {
+    const current = db.activeRun(id, run.id);
+    if (
+      !collectorExtension(db.get(id), current.sourceUrl)?.collector.cards ||
+      current.collectorError ||
+      collectorPageReady(db, run.id)
+    )
+      return null;
+    const search = activeSearch(scanWork(current)),
+      next = search?.collector?.page?.url ?? search?.collector?.nextUrl ?? current.sourceUrl,
+      wait = db.siteAccess.status(next);
+    if (wait?.waiting)
+      return releaseBlockedSource({db, id, runId: run.id, report}, current.sourceUrl, {
+        issue: {reason: 'access_barrier', url: next, siteWait: wait, sites: [wait.site]},
+      });
+    db.putRun({...current, collectorReading: true});
+    return {status: 'background_read', progress: collectorProgress(current), next: BACKGROUND_READ};
+  };
+  // A card site that reads its listings in the browser: open the posting in
+  // this source's tab and take the listing text its posting reader found.
+  // Waits for the budget and pacing in place; this runs before the agent.
+  const readListingInBrowser = async (url) => {
+    // One budget and pace for the whole site, whichever host serves a posting.
+    const site = siteDomainOf(url);
+    for (
+      let delay;
+      (delay = db.siteAccess.reserve(site + ' browser', BROWSER_LISTING_BUDGET)) > 0;
+
+    )
+      await pause(Math.min(delay, 60000), undefined, {signal});
+    const gap = db.siteAccess.pace(
+      'https://' + site,
+      BROWSER_LISTING_GAP_MS,
+      BROWSER_LISTING_JITTER_MS,
+    );
+    if (gap) await pause(gap, undefined, {signal});
+    let response = await browser.call(id, 'browser_navigate', {url}, run.id);
+    for (let i = 0; i < 3 && response.jevPage?.reading?.readiness?.loading; i++) {
+      await pause(2000, undefined, {signal});
+      response = await browser.call(id, 'browser_snapshot', {}, run.id);
+    }
+    const page = response.jevPage;
+    if (page?.siteWait) throw new SiteWaitError(page.siteWait);
+    // A posting that lands elsewhere (a sign-in or home page) is no listing.
+    if (page?.url && new URL(page.url).pathname !== new URL(url).pathname)
+      throw Error(
+        `The posting opened as ${page.url}; this browser may need to sign in to the site.`,
+      );
+    if (!page?.listing?.text)
+      throw Error('The opened posting gave no listing text (login prompt, loading or new layout).');
+    return {
+      url,
+      description: page.listing.text,
+      ...(page.listing.fields?.company ? {company: page.listing.fields.company} : {}),
+      ...(page.listing.fields?.location ? {location: page.listing.fields.location} : {}),
+    };
+  };
   const collectNextPage = async () => {
     for (let page = 1; ; page++) {
+      const background = backgroundRead();
+      if (background) return background;
       let collected;
       try {
         collected = await collectSourcePage(db, run.id, {
           signal,
           readPage: collectorReadPage,
           readDetail: collectorReadDetail,
+          readListing: readListingInBrowser,
         });
       } catch (error) {
         signal.throwIfAborted();
@@ -895,6 +1043,8 @@ export function automationWorkflow({
   const performCall = async (owner, session, name, args) => {
     if (owner !== id || session !== run.id || signal.aborted)
       throw Error('Invalid automation session');
+    // Each agent browser step starts unblocked; other tools keep the last step's state.
+    if (name.startsWith('browser_')) stepWaited = false;
     let active = db.activeRun(id, run.id);
     const a = db.get(id),
       sourceTask =
@@ -1022,7 +1172,9 @@ export function automationWorkflow({
               if ((current.scan?.work?.activeSearchId ?? 'default') !== searchId)
                 throw Error('The active search changed; the brief was stopped.');
             },
-            evaluate: (state, questions, abort) => browser.evaluateJev(id, state, questions, abort),
+            evaluate: decideByAgent
+              ? null
+              : (state, questions, abort) => browser.evaluateJev(id, state, questions, abort),
           });
         };
         if (!args.evidenceIds)
@@ -1126,7 +1278,11 @@ export function automationWorkflow({
           summary: args.view !== 'entries',
         });
       case 'complete_scan_search': {
-        const page = args.snapshotId ? snapshots.get(args.snapshotId) : snapshots.current;
+        // Detail reads after the last results page replace the live snapshot; the
+        // results page the agent cites stays the completion evidence.
+        const page = args.snapshotId
+          ? {url: snapshots.address(args.snapshotId)}
+          : snapshots.current;
         if (!page) throw Error('Observe the latest results page first.');
         result = db.completeScanSearch(id, run.id, args.completion, page);
         break;
@@ -1157,6 +1313,11 @@ export function automationWorkflow({
           throw Error(
             'This source is read by its collector: save a url_template recipe from siteSearch.template.',
           );
+        // Without terms {query} holds the source scope and later scans wait for terms.
+        if (recipeNeedsTerms(recipe))
+          throw Error(
+            `The template takes {query} but the recipe has no terms, so {query} would be the source scope "${recipeValues(a, sourceUrl).query}". Save concrete search terms with terms${siteSearch?.notes ? ' as siteSearch.notes describes {query}' : ''}. If that scope is itself the right search, save it as the only term.`,
+          );
         if (recipe.entry.kind === 'discovery') {
           db.learnSourceRecipe(id, sourceUrl, recipe, {runId: run.id, verified: false});
           db.putRun({...db.activeRun(id, run.id), recipeSaved: true});
@@ -1166,6 +1327,19 @@ export function automationWorkflow({
             next: 'The source stays in discovery mode: every scan searches the board itself. Continue this turn normally.',
           };
           break;
+        }
+        // With agent decisions the app judges no listing itself: a recipe is
+        // verified from the listings the agent selected at its address.
+        if (decideByAgent && !collecting) {
+          const replay = recipeReplay(recipe, recipeValues(a, sourceUrl));
+          if (replay.kind === 'search_form')
+            throw Error(
+              'With agent decisions the app cannot replay a search form. Save a url_template from the results address the form produced, or entry.kind=discovery with a short note.',
+            );
+          if (!provenListings(replay, active.taskId ?? run.id))
+            throw Error(
+              `Recipe not checked yet: run browser_jev_run scan_results at ${replay.searches[0].url} and select its listings, then save the recipe again. The app verifies the recipe from your selection; no check was used.`,
+            );
         }
         const checks = active.recipeChecks ?? 0;
         if (checks >= 3)
@@ -1225,7 +1399,7 @@ export function automationWorkflow({
       case 'get_automation_context': {
         const value = scanToolOutput(automationTaskContext(db, id, active, args), {summary: true});
         // Source tasks keep the short Jev profile current (save_jev_profile).
-        if (sourceTask && !args.section) {
+        if (sourceTask && !args.section && !decideByAgent) {
           const documents = await scoringDocuments().catch(() => null);
           if (documents) {
             const {status, by, text} = jevProfileView(a, documents);
@@ -1321,7 +1495,7 @@ export function automationWorkflow({
         if (!args.itemId)
           throw Error('itemId is required: this task has no single assigned record');
         if (!args.url) throw Error('Observe the results page in the browser first');
-        if (args.status === 'closed') {
+        if (args.status === 'closed' || args.status === 'applied') {
           result = db.closeRecord(id, run.id, args.itemId, args, snapshots.current);
           break;
         }
@@ -1448,6 +1622,31 @@ export function automationWorkflow({
               JSON.stringify(response.content).slice(0, 1000),
           );
         result = {...(await inspect()), action: response.action};
+        break;
+      }
+      case 'request_cover_letter': {
+        if (active.recordOperation !== 'execute' || !active.recordId)
+          throw Error('A cover letter can only be requested in a record application task');
+        const item = db.result(id, active.recordId),
+          question = requestCoverLetter(db, id, active, {
+            notes: args.notes,
+            listing: db.browserEvidence.latest(active, item.url),
+          });
+        result = {
+          questionId: question.id,
+          next: 'Leave the cover letter field empty and keep the tab. Call finish_automation_run with status blocked and blocker category needs_answer now; the approved letter resumes this application.',
+        };
+        break;
+      }
+      case 'read_cover_letter_brief':
+        if (active.recordOperation !== 'cover_letter')
+          throw Error('Only a cover letter task has a brief');
+        return coverLetterBrief(db, id, active);
+      case 'save_cover_letter': {
+        if (active.recordOperation !== 'cover_letter')
+          throw Error('Only a cover letter task can save a cover letter');
+        if (!workspace) throw Error('Workspace file directory not found');
+        result = await saveCoverLetter(db, id, active, args.text, {workspace, renderPdf});
         break;
       }
       case 'browser_interact': {
@@ -1602,6 +1801,8 @@ export function automationWorkflow({
         break;
       }
       case 'finish_automation_run':
+        if (active.recordOperation === 'cover_letter')
+          finishCoverLetter(db, id, active, args.status, args.summary);
         return finishAutomationRun({
           db,
           id,
@@ -1620,6 +1821,9 @@ export function automationWorkflow({
     return name === 'complete_scan_search' ? scanToolOutput(result, {summary: true}) : result;
   };
   return {
+    // Reads the next review batch of a card collector before the agent starts.
+    prefetchCollector: () =>
+      prefetchCollectorPage(db, run.id, {signal, readListing: readListingInBrowser}),
     normalizeToolArgs: normalizeRecordToolArgs,
     guardToolCall:
       run.taskId && run.kind !== 'interview'
@@ -1703,8 +1907,11 @@ export async function launchAutomationWorker({
   };
   try {
     // A trial may use a stronger model: it discovers the source once; scans replay the recipe.
+    // A cover letter is written once and read by an employer, so it gets the same model.
     const trialSettings = (s) =>
-      run.kind === 'trial' && s?.trialModel ? {...s, model: s.trialModel} : s;
+      (run.kind === 'trial' || run.recordOperation === 'cover_letter') && s?.trialModel
+        ? {...s, model: s.trialModel}
+        : s;
     const persistent = run.kind === 'interview',
       history = persistent
         ? setupAgentHistory(db, automation.id)
@@ -1727,16 +1934,26 @@ export async function launchAutomationWorker({
     flow.clientAborted = (elapsedMs) => observeClientAbort(provider, elapsedMs);
     token = mcp.grant(automation.id, run.id, workerId, flow);
     if (signal.aborted) throw Error('Run cancelled');
+    const decideByAgent = agentDecides(automation.agentSettings);
     const protocol = persistent
       ? null
       : automationProtocol(flow.tools, [
           AUTOMATION_INSTRUCTIONS,
-          JEV_LAUNCH_INSTRUCTIONS,
+          decideByAgent ? AGENT_LAUNCH_INSTRUCTIONS : JEV_LAUNCH_INSTRUCTIONS,
           SCORING_INSTRUCTIONS,
           SOURCE_SCAN_INSTRUCTIONS,
         ]);
     const evidenceExpired = !persistent && automationEvidenceExpired(db, run);
     if (protocol) run = prepareAutomationProtocol(db, run, protocol);
+    // Records a site extension reads are scored from its text, like a scan.
+    if (run.recordOperation === 'score')
+      await readRecordListings(db, run, {signal, wait: (ms) => pause(ms, undefined, {signal})});
+    // A card site's next batch is read here, before the agent starts.
+    if (
+      collectorRun(automation, run) &&
+      collectorExtension(automation, run.sourceUrl)?.collector.cards
+    )
+      await flow.prefetchCollector();
     await agents.start({
       agentProfile: webAgentProfile(run.kind, settings),
       taskType: 'automation',
@@ -1769,7 +1986,7 @@ export async function launchAutomationWorker({
       prompt: automationPrompt(
         run,
         isConversation(run) ? conversationRequest(db, automation.id, run) : null,
-        {evidenceExpired},
+        {evidenceExpired, agentDecides: decideByAgent},
       ),
       onEvent: (event) => {
         if (event.event === 'output') onOutput(event.bytes);

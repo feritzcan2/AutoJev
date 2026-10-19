@@ -2,7 +2,7 @@
 // Arbeitnow feeds for the job-search template, one per country site. The .com
 // feed mixes Germany with the UK, France and Switzerland (page 1 on
 // 2026-10-09: Munich 36, London 36, France 30, Paris 23, Berlin 18 of 325),
-// while .co.uk, .fr and .ch each list one country, so a workspace joins the
+// while .co.uk, .fr, .ch and .nl (observed 2026-10-17) each list one country, so a workspace joins the
 // site of its own country and does not spend its page budget on the others.
 const ARBEITNOW_SITES = [
   [
@@ -14,6 +14,7 @@ const ARBEITNOW_SITES = [
   ['www.arbeitnow.co.uk', 'GB', 'United Kingdom', 'United Kingdom'],
   ['www.arbeitnow.fr', 'FR', 'France', 'France'],
   ['www.arbeitnow.ch', 'CH', 'Switzerland', 'Switzerland'],
+  ['www.arbeitnow.nl', 'NL', 'Netherlands', 'Netherlands'],
 ];
 export const arbeitnowSources = ARBEITNOW_SITES.map(([host, country, name, scope]) => ({
   url: `https://${host}/`,

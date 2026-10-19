@@ -62,8 +62,11 @@ const salaryText = (salary) =>
     : '';
 const SEARCH_KEY = 'jobSearchByQuery(';
 
-// {jobs, total, limit, offset} of a results page: from the state's result list
-// in its order, or from the rendered result cards when the state is missing.
+// {jobs, hidden, total, limit, offset} of a results page: from the state's
+// result list in its order, or from the rendered result cards when the state is
+// missing. Logged out, Xing lists part of a page (all of it for a search
+// without a location, observed 2026-10-17) as UnauthorizedJob without address
+// or title; those count as hidden, not as missing results.
 export function parseXingSearch(html) {
   const state = xingState(html);
   const key = Object.keys(state?.ROOT_QUERY ?? {}).find((k) => k.startsWith(SEARCH_KEY));
@@ -73,23 +76,23 @@ export function parseXingSearch(html) {
     try {
       args = JSON.parse(key.slice(SEARCH_KEY.length, -1));
     } catch {}
-    const jobs = (result.collection ?? [])
-      .map((item) => state[item?.jobDetail?.__ref])
-      .filter((job) => typeof job?.url === 'string' && job.title)
-      .map((job) => ({
-        url: job.url,
-        title: String(job.title),
-        company: job.companyInfo?.companyNameOverride ?? '',
-        locations: [...new Set((job.locations ?? [job.location]).map((l) => l?.city ?? ''))].filter(
-          Boolean,
-        ),
-        employmentType: job.employmentType?.localizationValue ?? '',
-        salary: salaryText(job.salary),
-        refreshedAt: typeof job.refreshedAt === 'string' ? job.refreshedAt.slice(0, 10) : '',
-      }));
+    const items = (result.collection ?? []).map((item) => state[item?.jobDetail?.__ref]),
+      readable = items.filter((job) => typeof job?.url === 'string' && job.title);
+    const jobs = readable.map((job) => ({
+      url: job.url,
+      title: String(job.title),
+      company: job.companyInfo?.companyNameOverride ?? '',
+      locations: [...new Set((job.locations ?? [job.location]).map((l) => l?.city ?? ''))].filter(
+        Boolean,
+      ),
+      employmentType: job.employmentType?.localizationValue ?? '',
+      salary: salaryText(job.salary),
+      refreshedAt: typeof job.refreshedAt === 'string' ? job.refreshedAt.slice(0, 10) : '',
+    }));
     const total = result.boundedTotal?.total;
     return {
       jobs,
+      hidden: items.length - readable.length,
       total: Number.isSafeInteger(total) && total >= 0 ? total : null,
       limit: Number.isSafeInteger(args.limit) && args.limit > 0 ? args.limit : XING_PAGE_SIZE,
       offset: Number.isSafeInteger(args.offset) && args.offset >= 0 ? args.offset : null,
@@ -108,13 +111,13 @@ export function parseXingSearch(html) {
       salary: '',
       refreshedAt: '',
     });
-  return {jobs, total: null, limit: XING_PAGE_SIZE, offset: null};
+  return {jobs, hidden: 0, total: null, limit: XING_PAGE_SIZE, offset: null};
 }
 
 // A results page lists its postings as listing links and numbers itself from
 // the state's offset (or the page parameter); the next page exists while the
 // stated total is not reached, or, without a total, while the page is full.
-export function xingSearchPage(url, {jobs, total, limit, offset}) {
+export function xingSearchPage(url, {jobs, hidden = 0, total, limit, offset}) {
   const address = new URL(url),
     requested = Number(address.searchParams.get('page') ?? 1) || 1,
     number = offset === null ? requested : Math.floor(offset / limit) + 1,
@@ -132,9 +135,15 @@ export function xingSearchPage(url, {jobs, total, limit, offset}) {
     ].filter(Boolean);
     if (facts.length) lines.push(facts.join(' · '));
   }
-  if (!unique.length)
+  if (hidden)
+    lines.push(
+      unique.length
+        ? `${hidden} more results on this page are shown only to signed-in Xing users and cannot be read here.`
+        : `All ${hidden} results on this page are shown only to signed-in Xing users and cannot be read here; this is not the end of the search. A search with a location shows part of them.`,
+    );
+  else if (!unique.length)
     lines.push('This results page has no job cards: the search has no further results.');
-  const more = pages ? number < pages : jobs.length >= limit;
+  const more = pages ? number < pages : jobs.length + hidden >= limit;
   const next = new URL(address);
   next.searchParams.set('page', String(number + 1));
   return readerPage({
@@ -169,7 +178,7 @@ export async function readXing(url, options = {}) {
   const response = await siteFetch(request.url, {...options, site: 'Xing', url});
   if (isMissing(response))
     return request.kind === 'search'
-      ? xingSearchPage(url, {jobs: [], total: null, limit: XING_PAGE_SIZE, offset: null})
+      ? xingSearchPage(url, {jobs: [], hidden: 0, total: null, limit: XING_PAGE_SIZE, offset: null})
       : xingDetailPage(url, '');
   const html = await response.text();
   return request.kind === 'search'
@@ -203,6 +212,6 @@ export default {
       },
     ],
     notes:
-      '20 results per page via &page=N; the page states its total. Relevance order, no date sort. sincePeriod=LAST_24_HOURS|LAST_WEEK|LAST_MONTH limits results to recent postings (backend engineer in Berlin on 2026-10-09: 142 in all, 80 last month, 25 last week, 5 last 24 hours), so a frequent scan reads only recent listings. Postings are /jobs/<slug>-<id>.',
+      '20 results per page via &page=N; the page states its total. Logged out, Xing hides part of each page from the reader (about half for developer in Berlin on 2026-10-17) and all of it when location is empty, so set a location. Relevance order, no date sort. sincePeriod=LAST_24_HOURS|LAST_WEEK|LAST_MONTH limits results to recent postings (backend engineer in Berlin on 2026-10-09: 142 in all, 80 last month, 25 last week, 5 last 24 hours), so a frequent scan reads only recent listings. Postings are /jobs/<slug>-<id>.',
   },
 };

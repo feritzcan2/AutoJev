@@ -8,6 +8,7 @@ import {boundedText} from '../templates/catalog.mjs';
 import {autoApplyThreshold} from '../scoring/thresholds.mjs';
 
 const live = ['pending', 'running', 'reported', 'paused'];
+const automaticRecordScanInterval = 10_000;
 const waitingForAnswer = 'Answer the pending questions for this record first';
 // When the user switched to Find and apply without queueing existing records,
 // only records saved after the switch are applied to automatically.
@@ -33,13 +34,29 @@ export function recordOperationError(
   a,
   item,
   kind,
-  {manual = false, digest, direct = false, now = Date.now()} = {},
+  {manual = false, digest, direct = false, now = Date.now(), dryRun = false} = {},
 ) {
   if (item.trial) return 'No action can run on a research sample';
+  // A developer trial score changes nothing, so it also reads closed records;
+  // only a record being submitted keeps its tab to itself.
+  if (kind === 'score' && dryRun)
+    return item.status === 'executing'
+      ? 'This record is being submitted; run the trial score after the submission'
+      : !automationReady(a)
+        ? 'Check and save the setup first'
+        : pendingRecordQuestion(a, item)
+          ? waitingForAnswer
+          : null;
   if (kind === 'verify')
     return item.status === 'uncertain'
       ? null
       : 'Only an action with an uncertain outcome can be verified';
+  // The writer answers the record's own cover letter question, so that open
+  // question does not hold it back.
+  if (kind === 'cover_letter')
+    return ['completed', 'executing', 'uncertain', 'dismissed'].includes(item.status)
+      ? 'This record is closed'
+      : null;
   if (['completed', 'executing', 'uncertain', 'dismissed'].includes(item.status))
     return 'This record cannot be submitted again';
   if (!automationReady(a)) return 'Check and save the setup first';
@@ -74,7 +91,7 @@ export function enqueueRecordOperation(
   id,
   itemId,
   kind,
-  {manual = true, digest, direct = false, changes = undefined} = {},
+  {manual = true, digest, direct = false, changes = undefined, dryRun = false} = {},
 ) {
   runtime.assertNotStopping(id);
   // Every execute is direct: the agent fills and submits in one task.
@@ -129,7 +146,13 @@ export function enqueueRecordOperation(
       item = db.result(id, itemId),
       op = db.template(a.templateId).recordOperations?.[kind];
     if (!op) throw Error('The template does not support this record operation');
-    const error = recordOperationError(a, item, kind, {manual, digest, direct, now: runtime.now()});
+    const error = recordOperationError(a, item, kind, {
+      manual,
+      digest,
+      direct,
+      now: runtime.now(),
+      dryRun,
+    });
     if (error) throw Error(error);
     const existing = recordTask(db, id, itemId);
     if (existing) {
@@ -138,6 +161,7 @@ export function enqueueRecordOperation(
         !changes &&
         existing.recordOperation === kind &&
         (existing.request?.direct === true) === (direct === true) &&
+        (existing.request?.dryRun === true) === (dryRun === true) &&
         (!digest || existing.request?.digest === digest)
       ) {
         if (manual && existing.state === 'pending' && !existing.request?.manual)
@@ -155,6 +179,8 @@ export function enqueueRecordOperation(
         revision: a.revision,
         ...(kind === 'execute' ? {direct: true} : {}),
         ...(changes ? {changes} : {}),
+        // Development trial score: the record keeps its assessment.
+        ...(dryRun && kind === 'score' ? {dryRun: true} : {}),
         at: runtime.now(),
       };
     const task = queue.enqueue(id, {
@@ -262,6 +288,7 @@ export function validateRecordTask(db, id, task, now) {
       digest: request.digest,
       direct: request.direct,
       now,
+      dryRun: request.dryRun === true,
     });
     if (error)
       throw Object.assign(
@@ -400,7 +427,20 @@ export async function dispatchRecordOperations(runtime, id, {manualOnly = false}
     }
   }
   const customRecordWorkflow = db.template(a.templateId).workflow.some((s) => s.scope === 'record');
-  if (!manualOnly && a.status === 'enabled' && a.mode !== 'observe' && !customRecordWorkflow) {
+  // Automatic scheduling reads every record and record task. A few seconds of
+  // delay does not matter, so it runs at most once per interval per workspace,
+  // or at once after the setup changes.
+  const scans = (runtime.automaticRecordScans ??= new Map()),
+    scanKey = JSON.stringify([a.revision, a.mode, a.status]),
+    lastScan = scans.get(id);
+  if (
+    !manualOnly &&
+    a.status === 'enabled' &&
+    a.mode !== 'observe' &&
+    !customRecordWorkflow &&
+    (lastScan?.key !== scanKey || lastScan.next <= runtime.now())
+  ) {
+    scans.set(id, {key: scanKey, next: runtime.now() + automaticRecordScanInterval});
     const previous = queue.list(id, {summary: true}),
       activeRecords = new Set(
         previous.filter((t) => live.includes(t.state)).flatMap(taskRecordIds),
@@ -476,11 +516,14 @@ export function recordOperationState(
   {
     a = db.get(id),
     definition = db.template(a.templateId),
-    tasks = db.store.workspaces.tasks.list(id),
+    // The summary leaves out scan bodies, which this state never reads.
+    tasks = db.store.workspaces.tasks.list(id, {summary: true}),
+    // A caller rendering many records passes each record's tasks, in list order.
+    recordTasks = tasks.filter((t) => taskHasRecord(t, item.id)),
   } = {},
 ) {
-  const task = tasks.find((t) => taskHasRecord(t, item.id) && live.includes(t.state)),
-    last = tasks.findLast((t) => taskHasRecord(t, item.id) && t.recordOperation);
+  const task = recordTasks.find((t) => live.includes(t.state)),
+    last = recordTasks.findLast((t) => t.recordOperation);
   // One action per record: verify an uncertain outcome, otherwise apply
   // directly. There is no separate draft or approval step.
   const kind =
@@ -544,7 +587,13 @@ export function recordOperationState(
     retryOperation,
     // "Apply" is the record's own operation now; no separate direct button.
     directOperation: null,
-    question: question ? {id: question.id, text: question.text} : null,
+    question: question
+      ? {
+          id: question.id,
+          text: question.text,
+          ...(question.verification ? {verification: true} : {}),
+        }
+      : null,
     lastTask:
       last && !scoringComplete
         ? {
@@ -553,6 +602,9 @@ export function recordOperationState(
             summary: last.summary,
             at: last.finishedAt ?? last.startedAt ?? last.createdAt,
             ...(last.toolFailure ? {toolFailure: last.toolFailure} : {}),
+            ...(last.blocker && ['blocked', 'failed'].includes(last.state)
+              ? {blocker: last.blocker}
+              : {}),
           }
         : null,
     task:

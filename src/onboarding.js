@@ -4,7 +4,7 @@ import {
   CONVERSATION_WORKER,
 } from '../app/workspaces/conversation.mjs';
 import {automationProgress} from '../app/automation/progress.mjs';
-import {withAgentDefaults} from '../app/agents/settings.mjs';
+import {withAgentDefaults, withSetupAgentDefaults} from '../app/agents/settings.mjs';
 import {WorkerTerminalSurface} from './worker-terminal-surface.js';
 import {terminalAttention} from './agent-attention.js';
 import './onboarding.css';
@@ -12,12 +12,13 @@ import {BRAND, markIcon} from './simple/brand.js';
 import {readChoicePrompt, choiceKeys} from './simple/terminal-prompt.js';
 import {NEVER, factLine, setFactLine, cvFacts} from './simple/facts.js';
 import {docScan, checkmark, typewrite} from './simple/motion.js';
+import {rulesField, RULES_HINT} from './template-fields.js';
 
 // Welcome screen of a new job search: the user picks the agent and the CV, the
 // setup agent fills the profile from the CV, the user reviews it and starts.
 const providerOrder = ['claude', 'codex', 'opencode'];
 // The review form shows these criteria; the rest stay on the profile page.
-const reviewFields = ['preferences', 'country', 'location', 'constraints', 'application_facts'];
+const reviewFields = ['preferences', 'country', 'location', 'application_facts'];
 const readinessIds = ['chrome', 'chrome-profile', 'chrome-debug', 'jev', 'failed'];
 const modes = [
   [
@@ -820,6 +821,9 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         }),
       );
     }
+    const rules = fields.get('hard_rules');
+    if (rules)
+      profile.append(rulesField('hard_rules', rules.label, a.criteria.hard_rules, RULES_HINT));
     const experience = fields.get('experience');
     if (experience)
       moreBody.prepend(
@@ -953,7 +957,8 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     renderSources(form);
     renderReadiness(form);
   }
-  // Saved sources, plus the template boards for the country typed on the form.
+  // Saved sources, the template boards for the country typed on the form, and
+  // the remote work boards for the user to tick.
   function renderSources(form) {
     const list = form.querySelector('.onboarding-checks'),
       country = (form.elements.country?.value ?? '').trim().toUpperCase(),
@@ -977,8 +982,17 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       row(source.url, source.name, new URL(source.url).hostname, source.enabled);
     for (const group of data.sourceCatalog ?? [])
       for (const choice of group.choices)
-        if (country && choice.countries.includes(country))
+        if (country && choice.countries.includes(country) && choice.enabled !== false)
           row(choice.url, choice.name, 'Suggested · ' + choice.label, true);
+        else if (country && choice.countries.includes(country))
+          row(
+            choice.url,
+            choice.name,
+            'Optional · ' +
+              (choice.account ? 'needs your API key under Site accounts' : choice.label),
+            false,
+          );
+        else if (choice.remote) row(choice.url, choice.name, 'Optional · ' + choice.label, false);
     countSources(form);
   }
   function countSources(form) {
@@ -1037,6 +1051,19 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
               checkReadiness(form);
             }),
           ),
+          // Without a key the worker agent can make the listing decisions.
+          button(
+            'Let the agent decide instead',
+            () =>
+              attempt(async () => {
+                const agentSettings = {...data.automation.agentSettings, decisions: 'agent'};
+                await api.automationSave(id, {agentSettings});
+                data.automation.agentSettings = agentSettings;
+                readiness = null;
+                checkReadiness(form);
+              }),
+            'link',
+          ),
         );
         item.append(key);
       }
@@ -1048,7 +1075,10 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     const owner = id;
     readiness = {checks: []};
     try {
-      readiness = await api.readiness({provider: data.automation.agentSettings.provider});
+      readiness = await api.readiness({
+        provider: data.automation.agentSettings.provider,
+        decisions: data.automation.agentSettings.decisions ?? 'jev',
+      });
     } catch (failure) {
       readiness = {
         checks: [{id: 'failed', label: 'Setup check', state: 'error', detail: failure.message}],
@@ -1066,7 +1096,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     if (provider) {
       const settings = withAgentDefaults({provider});
       await api.automationSave(id, {agentSettings: settings});
-      await api.setupAgentSettings(id, settings);
+      await api.setupAgentSettings(id, withSetupAgentDefaults({provider}));
     }
     return id;
   }
@@ -1133,8 +1163,12 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         await api.automationSourceSave(owner, source.url, {enabled: chosen.has(source.url)});
     for (const group of data.sourceCatalog ?? [])
       for (const choice of group.choices)
-        if (chosen.has(choice.url) && !data.sources.some((s) => s.url === choice.url))
+        if (chosen.has(choice.url) && !data.sources.some((s) => s.url === choice.url)) {
           await api.automationSourceAdd(owner, {url: choice.url, name: choice.name});
+          // A board off in the template joins switched on when the user ticks it.
+          if (choice.enabled === false)
+            await api.automationSourceSave(owner, choice.url, {enabled: true});
+        }
     const current = (await api.workspaceSnapshot(owner)).automation,
       criteria = {...current.criteria};
     for (const key of reviewFields) if (f[key]) criteria[key] = f[key].value.trim();
@@ -1148,6 +1182,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       criteria.application_facts = setFactLine(criteria.application_facts, q.label, value);
     }
     criteria.constraints = setFactLine(criteria.constraints, NEVER, f.never.value.trim());
+    if (f.hard_rules) criteria.hard_rules = f.hard_rules.value.trim();
     criteria.score_threshold = f.score_threshold.value.trim();
     if (criteria.country) criteria.country = criteria.country.toUpperCase();
     delete criteria.save_score_threshold;

@@ -170,6 +170,14 @@ export function markPageCap(plan, url, runId, now) {
   return {...plan, boundary: {url, runId, pageCap: true, at: now}};
 }
 
+// A later results page the site keeps refusing (transport failures while the
+// search's earlier pages loaded) ends the search at the last page it served,
+// like a page cap: the app, not the agent, verified where reading stops.
+export function markUnservedPage(plan, url, unservedUrl, runId, now) {
+  if (!plan) return plan;
+  return {...plan, boundary: {url, runId, pageCap: true, unserved: unservedUrl, at: now}};
+}
+
 export function validateScanCompletion(plan, scan, pageProgress, runId) {
   const completion = scan.completion ?? 'end';
   if (!['end', 'cutoff', 'user_stop'].includes(completion)) throw Error('Invalid scan completion.');
@@ -223,7 +231,7 @@ export function completeSourceScan(state, plan, completion, now) {
 }
 
 export const SOURCE_PAGE_INSTRUCTIONS =
-  'Page cycle: work one results page at a time. 1) Run browser_jev_run scan_results on the results page; Jev saves its listing links to the pending queue and the page number (checkpointSaved=true). 2) Run browser_jev_run collect_details without URLs; Jev reads the pending queue and classifies each listing. 3) In every review batch read briefs with read_jev_brief evidenceIds and save suitable listings together with record_automation_results (with score, optional scoreReason, eligibility and eligibilityReason when scoring is enabled) and reject or defer the rest. Saved and rejected listings leave the queue automatically. 4) Follow the observed next page and repeat. Never collect all result pages first and evaluate later.';
+  'Page cycle: work one results page at a time. 1) Run browser_jev_run scan_results on the results page; the app saves its listing links to the pending queue and the page number (checkpointSaved=true). 2) Run browser_jev_run collect_details without URLs; it reads the pending queue and pauses with review batches. 3) In every review batch read briefs with read_jev_brief evidenceIds and save suitable listings together with record_automation_results (with score, optional scoreReason, eligibility and eligibilityReason when scoring is enabled) and reject or defer the rest. Saved and rejected listings leave the queue automatically. 4) Follow the observed next page and repeat. Never collect all result pages first and evaluate later.';
 export const SOURCE_SCAN_INSTRUCTIONS =
   SOURCE_PAGE_INSTRUCTIONS +
-  ' Coverage: read assignedSource.instructions first; source guidance never grants outgoing actions. Run scan_results once per saved query or filter set; the pending queue is shared and has no size limit. get_scan_queue shows the pending count. When the queue is empty and the last results page was observed, call complete_scan_search with completion=end, then finish_automation_run. scanPlan may show an incremental plan with cutoffAt; without verified dates the app treats it as a full scan, so cover the board to its observed end. When scan_results ends with knownBoundary=true (recipe ordered newest-first, consecutive pages held only known listings), empty the queue and call complete_scan_search with completion=cutoff. When scan_results ends with pageCapReached=true (each search reads at most scanPlan.pageCap pages and 100 new listings), empty the queue and call complete_scan_search with completion=end; do not open further pages of that search. Known listing IDs never authorize stopping. user_stop is only for an explicit saved user stopping condition. Interrupted work resumes from the saved queue and page. These are coverage rules, not a time or step budget.';
+  ' Coverage: read assignedSource.instructions first; source guidance never grants outgoing actions. Run scan_results once per saved query or filter set; the pending queue is shared and has no size limit. get_scan_queue shows the pending count. When the queue is empty and the last results page was observed, call complete_scan_search with completion=end, then finish_automation_run. scanPlan may show an incremental plan with cutoffAt; without verified dates the app treats it as a full scan, so cover the board to its observed end. When scan_results ends with knownBoundary=true (recipe ordered newest-first, consecutive pages held only known listings), empty the queue and call complete_scan_search with completion=cutoff. When scan_results ends with pageCapReached=true (each search reads at most scanPlan.pageCap pages and 100 new listings), empty the queue and call complete_scan_search with completion=end; do not open further pages of that search. When a results page fails with "the site does not serve this results page", the app has ended that search at the last page served: do the same. Known listing IDs never authorize stopping. user_stop is only for an explicit saved user stopping condition. Interrupted work resumes from the saved queue and page. These are coverage rules, not a time or step budget.';

@@ -3,7 +3,9 @@ import {taskHasRecord, batchScoring} from '../records/task-scope.mjs';
 import {SCORING_VERSION} from './policy.mjs';
 import {boundedText, webUrl} from '../templates/catalog.mjs';
 import {assessmentEvidence} from '../records/evidence.mjs';
+import {dryRunTask, saveDryScore} from './trial-scores.mjs';
 import {normalizeCellToolArgs} from '../workspaces/table-tools.mjs';
+import {parseHardRules, hardRuleEligibility} from '../../src/hard-rules.js';
 
 const text = {type: 'string', minLength: 1, maxLength: 3000};
 const notes = {type: 'array', maxItems: 10, items: text};
@@ -19,9 +21,29 @@ export const assessmentSchema = {
       type: 'string',
       enum: ['verified', 'unverified', 'mismatch'],
       description:
-        'Mandatory conditions only, independent of fit score. Omitted means unverified; missing information is not mismatch.',
+        'Only without scoringPolicy.hardRules: mandatory conditions, independent of fit score. Omitted means unverified; missing information is not mismatch.',
     },
     eligibilityReason: optionalText,
+    rules: {
+      type: 'array',
+      maxItems: 20,
+      description:
+        'Required when scoringPolicy.hardRules is listed: one answer per rule. pass = the record establishes it, fail = the record explicitly contradicts it, unknown = the record does not say. The app sets eligibility from these answers.',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['rule', 'result'],
+        properties: {
+          rule: {
+            type: 'integer',
+            minimum: 1,
+            description: 'The rule number n from scoringPolicy.hardRules',
+          },
+          result: {type: 'string', enum: ['pass', 'fail', 'unknown']},
+          evidence: {...optionalText, maxLength: 500},
+        },
+      },
+    },
     summary: optionalText,
     evidenceUrl: optionalText,
     evidence: optionalText,
@@ -41,11 +63,12 @@ export const resultScoreFields = {
   scoreReason: optionalText,
   eligibility: assessmentSchema.properties.eligibility,
   eligibilityReason: optionalText,
+  rules: assessmentSchema.properties.rules,
 };
 export const recordScoreTool = {
   name: 'record_automation_score',
   description:
-    'Save the assigned record score: a 0–100 integer per current criteria.ranking; itemId defaults to the assigned record. Notes are optional; no quote or snapshot is needed. Save eligibility and a short eligibilityReason separately; missing information is unverified, not mismatch. Inaccessible record: status=unavailable, score=null. Keeps status, proposal and evidence. Finish the scoring task after saving.',
+    'Save the assigned record score: a 0–100 integer per current criteria.ranking; itemId defaults to the assigned record. Notes are optional; no quote or snapshot is needed. When scoringPolicy.hardRules is listed, answer every rule in rules (pass/fail/unknown) and the app sets eligibility; otherwise save eligibility and a short eligibilityReason, following scoringPolicy.unstatedConditions for conditions the record never mentions. Inaccessible record: status=unavailable, score=null. Keeps status, proposal and evidence. Finish the scoring task after saving.',
   inputSchema: {...assessmentSchema, properties: {itemId: text, ...assessmentSchema.properties}},
 };
 
@@ -102,7 +125,7 @@ export function recordResultInput(args) {
     throw Error(
       'arguments.assessment: Use the top-level score fields together; do not combine them with assessment.',
     );
-  const {score, scoreReason, eligibility, eligibilityReason, ...input} = args;
+  const {score, scoreReason, eligibility, eligibilityReason, rules, ...input} = args;
   return {
     ...input,
     assessment: {
@@ -110,6 +133,7 @@ export function recordResultInput(args) {
       ...(scoreReason !== undefined ? {summary: scoreReason} : {}),
       ...(eligibility !== undefined ? {eligibility} : {}),
       ...(eligibilityReason !== undefined ? {eligibilityReason} : {}),
+      ...(rules !== undefined ? {rules} : {}),
     },
   };
 }
@@ -130,10 +154,16 @@ export function recordAssessment(db, id, run, input, recordUrl) {
     !['verified', 'unverified', 'mismatch'].includes(input.eligibility)
   )
     throw Error('Invalid eligibility status');
-  const eligibility = score === null ? 'unverified' : (input.eligibility ?? 'unverified'),
-    eligibilityReason = boundedText(input.eligibilityReason ?? '', 'Eligibility reason', 3000, {
-      empty: true,
-    });
+  // With elimination rules the agent answers each rule and the app decides.
+  const hardRules = parseHardRules(a.criteria.hard_rules),
+    ruled = score !== null && hardRules.length ? hardRuleEligibility(hardRules, input.rules) : null;
+  const eligibility =
+      ruled?.eligibility ?? (score === null ? 'unverified' : (input.eligibility ?? 'unverified')),
+    eligibilityReason =
+      ruled?.eligibilityReason ??
+      boundedText(input.eligibilityReason ?? '', 'Eligibility reason', 3000, {
+        empty: true,
+      });
   const fallback = recordUrl ?? run.sourceUrl;
   let evidenceUrl = fallback;
   if (input.evidenceUrl?.trim()) {
@@ -155,6 +185,7 @@ export function recordAssessment(db, id, run, input, recordUrl) {
     scoringVersion: SCORING_VERSION,
     eligibility,
     eligibilityReason,
+    ...(ruled ? {ruleResults: ruled.ruleResults} : {}),
     summary: boundedText(input.summary ?? '', 'Score reason', 3000, {empty: true}),
     evidenceUrl: evidenceUrl ?? '',
     evidence: boundedText(input.evidence ?? '', 'Puanlama notu', 3000, {empty: true}),
@@ -182,9 +213,17 @@ export function saveRecordScore(db, id, runId, input) {
   const item = db.result(id, input.itemId ?? run.recordId);
   if (run.recordOperation !== 'score' || !taskHasRecord(run, item.id))
     throw Error('A score can only be saved in the assigned scoring task');
-  if (item.trial || !['found', 'prepared'].includes(item.status))
+  // A developer trial score may read a closed record; it never writes to it.
+  if (
+    item.trial ||
+    !(dryRunTask(run) ? item.status !== 'executing' : ['found', 'prepared'].includes(item.status))
+  )
     throw Error('This record cannot be scored');
-  const assessment = recordAssessment(db, id, run, input, item.url),
-    cells = assessmentCells(db.get(id).table, item.cells, assessment);
+  const assessment = recordAssessment(db, id, run, input, item.url);
+  if (dryRunTask(run)) {
+    saveDryScore(run.taskId, item.id, {assessment, runId: run.id, at: assessment.scoredAt});
+    return {itemId: item.id, saved: true, score: assessment.score};
+  }
+  const cells = assessmentCells(db.get(id).table, item.cells, assessment);
   return db.putResult({...item, assessment, cells, updatedAt: assessment.scoredAt});
 }

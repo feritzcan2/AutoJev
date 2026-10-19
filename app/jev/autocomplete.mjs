@@ -32,6 +32,13 @@ async function scrollOptions(page, node, {top = false} = {}) {
   );
 }
 
+// Write a query, then press End: some widgets search on key events, which
+// fill() alone never sends. End keeps the value and leaves the caret last.
+async function typeQuery(page, element, text) {
+  await element.fill(text, {timeout: 2000});
+  await page.keyboard.press('End');
+}
+
 // Query + bounded wait + exact selection. No model, selectors from the caller,
 // hidden-field writes, keyboard submission, or fuzzy candidate answers.
 export async function selectAutocomplete(slot, args, owner, reader) {
@@ -142,7 +149,7 @@ export async function selectAutocomplete(slot, args, owner, reader) {
         );
         try {
           wrote = true;
-          await search.asElement().fill(args.text, {timeout: 2000});
+          await typeQuery(slot.page, search.asElement(), args.text);
         } finally {
           await search.dispose();
         }
@@ -150,7 +157,7 @@ export async function selectAutocomplete(slot, args, owner, reader) {
     } else if (args.text !== undefined) {
       if (current.value !== args.text) {
         wrote = true;
-        await input.fill(args.text, {timeout: 2000});
+        await typeQuery(slot.page, input, args.text);
       } else await input.focus();
     }
     let match;

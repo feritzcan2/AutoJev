@@ -21,7 +21,16 @@ export const questionMethods = {
   },
   askQuestion(
     id,
-    {text, recordId = null, fields = null, accessCheck = null, outcome = false},
+    {
+      text,
+      recordId = null,
+      fields = null,
+      accessCheck = null,
+      outcome = false,
+      verification = false,
+      code = false,
+      coverLetter = null,
+    },
     {runId = undefined} = {},
   ) {
     text = boundedText(text, 'Question', 6000);
@@ -51,6 +60,10 @@ export const questionMethods = {
       ...(isConversation(run) ? {conversation: true} : {}),
       ...(accessCheck ? {accessCheck} : {}),
       ...(outcome ? {outcome: true} : {}),
+      ...(verification ? {verification: true} : {}),
+      ...(code ? {code: true} : {}),
+      // Answered only by approving the letter on the Files page (cover-letters.mjs).
+      ...(coverLetter ? {coverLetter} : {}),
       answer: null,
       createdAt: this.now(),
       ...(run ? {runId: run.id} : {}),
@@ -77,8 +90,15 @@ export const questionMethods = {
       question = (a.questions ?? []).find((q) => q.id === questionId);
     if (!question) throw Error('The question does not belong to this workspace');
     if (question.answer !== null) throw Error('This question was already answered');
-    const result =
-        question.fields && typeof value !== 'string'
+    // An instruction replaces the answer: the user tells the agent what to do
+    // instead of supplying the asked facts.
+    const instruction =
+      value && typeof value === 'object' && !Array.isArray(value) && 'instruction' in value
+        ? boundedText(value.instruction, 'Instruction', 10000)
+        : null;
+    const result = instruction
+        ? {summary: instruction, values: null}
+        : question.fields && typeof value !== 'string'
           ? validateAnswers(question.fields, value)
           : {summary: boundedText(value, 'Answer', 10000), values: null},
       answer = result.summary;
@@ -90,6 +110,7 @@ export const questionMethods = {
       ...question,
       answer,
       answerValues: result.values,
+      ...(instruction ? {instruction: true} : {}),
       ...(documents.length ? {documents} : {}),
       answeredAt: this.now(),
     };
@@ -140,11 +161,16 @@ export const questionMethods = {
     this.store.workspaces.tasks.atomic(() => {
       this.put({...a, questions: a.questions.map((q) => (q.id === questionId ? updated : q))});
       if (resolved) this.putResult(resolved);
-      this.message(id, 'user', question.text + '\nAnswer: ' + answer, {
-        questionId,
-        conversation,
-        ...(runId ? {runId} : {}),
-      });
+      this.message(
+        id,
+        'user',
+        question.text + (instruction ? '\nInstruction: ' : '\nAnswer: ') + answer,
+        {
+          questionId,
+          conversation,
+          ...(runId ? {runId} : {}),
+        },
+      );
       this.event(id, 'question_answered', {id: questionId});
     });
     return updated;

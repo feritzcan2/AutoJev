@@ -94,6 +94,7 @@ function fixture(
     terms,
     ordering,
     saveScoreThreshold,
+    decisions,
   } = {},
 ) {
   const core = new WorkspaceDatabase(':memory:'),
@@ -107,6 +108,7 @@ function fixture(
     },
     sources: [source],
   });
+  if (decisions) db.save(a.id, {agentSettings: {provider: 'codex', decisions}});
   if (terms)
     db.saveSource(a.id, source, {
       recipe: {
@@ -149,7 +151,10 @@ function fixture(
       collectorReadPage: reader,
       collectorReadDetail: readDetail,
       browser: {
-        evaluateJev: (_id, state, questions) => evaluate(state, questions),
+        evaluateJev: (_id, state, questions) => {
+          if (decisions === 'agent') throw Error('No model may be asked with agent decisions.');
+          return evaluate(state, questions);
+        },
         hasPage: () => false,
         call: () => {
           browserCalls++;
@@ -286,6 +291,30 @@ test('CLI pages enter Jev triage, the agent scores retained items, and review ga
     f.db.get(f.id).sourceState[source].scan.reason,
     /Collected: 4.*Rejected by Jev: 1.*Saved: 3/,
   );
+});
+
+test('with agent decisions CLI pages reach review unjudged and the agent decides every listing', async (t) => {
+  const f = fixture(t, {decisions: 'agent'}),
+    first = await f.call('collect_source_page');
+  const items = helper(f, first).items;
+  assert.deepEqual(
+    items.map((i) => i.assessment.decision),
+    ['uncertain', 'uncertain', 'uncertain'],
+  );
+  assert.match(first.next, /No listing is judged before you/);
+  await save(f, items[0]);
+  await save(f, items[2]);
+  await assert.rejects(review(f, first), /Review not complete/);
+  const acknowledged = await review(f, first, [
+    {item: 2, decision: 'reject', reason: 'Not a backend role.'},
+  ]);
+  assert.equal(acknowledged.acknowledged.status, 'completed');
+  await handle(f, acknowledged.next);
+  const done = await f.call('collect_source_page');
+  assert.equal(done.complete, true);
+  assert.equal(done.progress.jevRejected, 0);
+  assert.equal(done.progress.agentRejected, 1);
+  assert.equal(f.browserCalls(), 0);
 });
 
 test('legacy unscored CLI records are reviewed in place and confirmed exclusions are retained as dismissed', async (t) => {
@@ -474,6 +503,44 @@ test('an unavailable detail does not block other pages, a moved listing is recov
   assert.equal(done.progress.collected, 3);
 });
 
+test('a listing the site reports gone (410) leaves the queue instead of stopping the scan', async (t) => {
+  let changed = false;
+  const reads = [];
+  const f = fixture(t, {
+    readPage: (value) => {
+      const second = new URL(value).searchParams.get('page') === '2';
+      return parseHimalayasPage(value, {
+        jobs: second ? [jobs[2]] : changed ? [jobs[0]] : jobs,
+        offset: second ? 20 : 0,
+        limit: 20,
+        totalCount: 21,
+      });
+    },
+    readDetail: async (value) => {
+      reads.push(value);
+      throw Object.assign(Error('HTTP 410'), {status: 410});
+    },
+  });
+  await f.call('collect_source_page');
+  changed = true;
+  const resumed = restart(f);
+  let result = await resumed.call('collect_source_page');
+  for (let i = 0; i < 6 && !result.complete; i++) {
+    assert.notEqual(
+      result.issue?.reason,
+      'collector_details_unavailable',
+      'a removed listing is not an unreadable one',
+    );
+    await handle(resumed, result);
+    result = await resumed.call('collect_source_page');
+  }
+  assert.equal(result.complete, true);
+  const run = resumed.db.run(f.run.id);
+  assert.deepEqual(run.scan.pendingUrls, []);
+  assert.ok(run.scan.work.searches.some((s) => s.processedUrls.includes(url('reject'))));
+  assert.ok(reads.length >= 1);
+});
+
 test('a listing Jev cannot assess stays pending without holding its page', async (t) => {
   const image = {guid: url('image'), title: 'Werkstudent', description: '<p>IMAGE_ONLY_MARKER</p>'};
   const f = fixture(t, {
@@ -649,6 +716,9 @@ test('scheduled Himalayas starts an agent without a browser trial, and stopping 
       criteria: {preferences: 'Germany'},
       sources: [source, 'https://other.test/jobs'],
     });
+  db.saveSource(a.id, source, {
+    recipe: {...db.get(a.id).sourceSettings[source].recipe, terms: ['backend']},
+  });
   db.review(a.id);
   db.enable(a.id);
   let agents = 0,
@@ -680,6 +750,43 @@ test('scheduled Himalayas starts an agent without a browser trial, and stopping 
   await runtime.stopSource(a.id, source);
   assert.ok(closed);
   assert.equal(runtime.slots(a.id).length, 0);
+});
+
+test('a collector whose {query} search has no terms waits for terms instead of scanning', async (t) => {
+  const core = new WorkspaceDatabase(':memory:'),
+    db = new AutomationStore(core),
+    a = db.create('job-search', {
+      goal: 'backend',
+      criteria: {preferences: 'Germany'},
+      sources: [source],
+    });
+  db.review(a.id);
+  db.enable(a.id);
+  let agents = 0;
+  const runtime = new WebTasks(db, {
+    browserReady: () => false,
+    launch: async () => {
+      agents++;
+      return {close: async () => {}};
+    },
+  });
+  t.after(async () => {
+    await runtime.close();
+    core.close();
+  });
+  assert.equal(db.sources(a.id)[0].termsRequired, true);
+  await runtime.tick();
+  await new Promise(setImmediate);
+  assert.equal(agents, 0, 'no scan searches for the source scope');
+  assert.equal(db.get(a.id).nextRunAt, null, 'a held source schedules no turn');
+  await assert.rejects(runtime.runSource(a.id, source), /Search terms required/);
+  db.saveSource(a.id, source, {
+    recipe: {...db.get(a.id).sourceSettings[source].recipe, terms: ['backend']},
+  });
+  assert.equal(db.sources(a.id)[0].termsRequired, false);
+  await runtime.tick();
+  await new Promise(setImmediate);
+  assert.equal(agents, 1);
 });
 
 test('CLI page transport uses a real child process and exits after one page', async () => {

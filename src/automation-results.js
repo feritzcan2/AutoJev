@@ -9,7 +9,10 @@ import {
   recordProblem,
 } from './record-operation-status.js';
 import {recordTabs} from './workspace-tabs.js';
-import {scoreBreakdown} from './score-breakdown.js';
+import {scoreBreakdown, ruleSummary} from './score-breakdown.js';
+import {decidingRule, shortRule} from './hard-rules.js';
+import {devToolsAvailable} from './agent-trace.js';
+import {recordDevPanel} from './record-dev-panel.js';
 const el = (tag, text, cls) => {
   const node = document.createElement(tag);
   if (text != null) node.textContent = text;
@@ -56,6 +59,21 @@ const storedPageSize = () => {
     return undefined;
   }
 };
+// The sort is remembered per automation, like the page size.
+const sortStorageKey = (id) => 'recordSort:' + id;
+const storedSort = (id) => {
+  try {
+    const value = JSON.parse(localStorage.getItem(sortStorageKey(id)));
+    return typeof value?.key === 'string' && [1, -1].includes(value.direction) ? value : null;
+  } catch {
+    return null;
+  }
+};
+// Empty or non-numeric values sort last.
+const sortNumber = (value) =>
+  value == null || String(value).trim() === '' || !Number.isFinite(Number(value))
+    ? null
+    : Number(value);
 const editable = (node) =>
   node instanceof HTMLElement &&
   (node.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(node.tagName));
@@ -74,6 +92,8 @@ export function automationResultsTable(
     detailId = null,
     cursorId = null,
     pageSize = storedPageSize() ?? 25,
+    // Record ids in their last shown order; rows keep it while the pointer is on them.
+    shownOrder = [],
     scrollLeft = 0,
     disposeTable = () => {};
   let batchSubmitting = null,
@@ -186,6 +206,12 @@ export function automationResultsTable(
     } catch {}
     page = 1;
     render();
+  };
+  const pinnedNote = (count) => {
+    const note = el('span', `${count} pinned on top`, 'record-pinned-note');
+    note.title =
+      'Records that need your answer, have an open tab, are working or are queued to apply stay above the sorted records.';
+    return note;
   };
   const setFilter = (value) => {
     filterValue = value;
@@ -385,10 +411,10 @@ export function automationResultsTable(
   root.insertBefore(selection, pagination);
 
   function syncTabButtons() {
-    for (const {result, control, actions, open} of visibleTabButtons.values()) {
+    for (const {result, control, place, remove} of visibleTabButtons.values()) {
       if (recordTabs(result, liveTabs, data).length) {
-        if (!control.isConnected) actions.insertBefore(control, open);
-      } else control.remove();
+        if (!control.isConnected) place();
+      } else remove();
     }
   }
   async function refreshTabs() {
@@ -417,53 +443,101 @@ export function automationResultsTable(
       positionMenu(panel, panel.closest('[data-result-id]').querySelector('.record-row-menu'));
   }
 
-  // The record's summary, assessment and notes, shown in the side panel.
+  // Development builds: a developer section per record, kept across rebuilds.
+  let devAvailable = false;
+  const devPanels = new Map();
+  void devToolsAvailable(api).then((available) => {
+    devAvailable = available;
+    if (available && detailId) {
+      renderKeys.delete(drawer);
+      renderDrawer();
+    }
+  });
+  // The side panel leads with the verdict and its reasons; the calculation and
+  // the record's history stay folded below.
   function detailContent(result) {
     const cell = el('div');
-    cell.append(el('p', result.summary));
-    if (result.assessment) {
-      const assessment = result.assessment;
-      cell.append(
-        el(
-          'h3',
-          assessment.score === null
-            ? 'Scoring · Could not be assessed'
-            : `Fit score · ${assessment.score}/100`,
-        ),
-        scoreBreakdown(assessment),
-        el('p', assessment.summary),
+    const assessment = result.assessment;
+    if (assessment) {
+      const verdict = el('section', null, 'record-verdict'),
+        score = el('p', null, 'record-verdict-score'),
+        text = el('div');
+      verdict.dataset.tone = assessment.score === null ? 'none' : assessmentEligibility(assessment);
+      score.append(
+        el('strong', assessment.score === null ? '–' : String(assessment.score)),
+        el('span', '/100'),
       );
+      text.append(
+        el(
+          'p',
+          assessment.score === null
+            ? 'Could not be assessed'
+            : eligibilityLabels[assessmentEligibility(assessment)],
+          'record-verdict-label',
+        ),
+      );
+      if (assessment.summary) text.append(el('p', assessment.summary));
+      verdict.append(score, text);
+      cell.append(verdict);
       if (oldScoringMethod(assessment))
         cell.append(
           el(
             'p',
-            'This score was saved with the previous method; a fixed cap may have been applied. Rescore for a current fit score.',
+            'Scored with the previous method; rescore for a current fit score.',
             'record-score-stale',
           ),
         );
-      for (const [key, label] of [
-        ['strengths', 'Matches'],
-        ['gaps', 'Gaps'],
-        ['uncertainties', 'Uncertainties'],
+      const rules = ruleSummary(assessment);
+      if (rules) cell.append(rules);
+      const notes = el('div', null, 'record-fit-notes');
+      for (const [label, items] of [
+        ['Matches', assessment.strengths],
+        ['Gaps', [...(assessment.gaps ?? []), ...(assessment.uncertainties ?? [])]],
       ])
-        if (assessment[key]?.length) {
-          const list = el('ul');
-          for (const note of assessment[key]) list.append(el('li', note));
-          cell.append(el('h4', label), list);
+        if (items?.length) {
+          const column = el('div'),
+            list = el('ul');
+          for (const note of items) list.append(el('li', note));
+          column.dataset.kind = label.toLowerCase();
+          column.append(el('h4', label), list);
+          notes.append(column);
         }
-      if (assessment.rubric)
-        cell.append(el('h4', 'Scoring criteria used'), el('p', assessment.rubric));
-      cell.append(
-        el('blockquote', assessment.evidence),
-        button('Assessed listing ↗', () => api.openLink(assessment.evidenceUrl)),
-        el('small', `Assessed: ${time(assessment.scoredAt)} · Not a probability of success.`),
-      );
+      if (notes.childElementCount) cell.append(notes);
     }
-    if (result.proposal) cell.append(el('h3', 'Last work note'), el('pre', result.proposal));
-    if (result.recordAction?.lastTask?.summary)
-      cell.append(el('h3', 'Last record operation'), el('p', result.recordAction.lastTask.summary));
-    if (result.evidence)
-      cell.append(el('h3', 'Outcome evidence'), el('blockquote', result.evidence));
+    if (result.summary) cell.append(el('h3', 'About the listing'), el('p', result.summary));
+    if (assessment) {
+      const how = el('details', null, 'record-drawer-section');
+      how.append(el('summary', 'How the score was calculated'), scoreBreakdown(assessment));
+      if (assessment.rubric)
+        how.append(el('h4', 'Scoring criteria used'), el('p', assessment.rubric));
+      if (assessment.evidence) how.append(el('blockquote', assessment.evidence));
+      how.append(
+        button('Assessed listing ↗', () => api.openLink(assessment.evidenceUrl)),
+        el('small', `Assessed ${time(assessment.scoredAt)} · Not a probability of success.`),
+      );
+      cell.append(how);
+    }
+    const activity = [
+      ['Work note', result.proposal, 'pre'],
+      ['Last action', result.recordAction?.lastTask?.summary, 'p'],
+      ['Outcome evidence', result.evidence, 'blockquote'],
+    ].filter(([, text]) => text);
+    if (activity.length) {
+      const section = el('details', null, 'record-drawer-section');
+      section.append(el('summary', 'Activity'));
+      for (const [label, text, tag] of activity) section.append(el('h4', label), el(tag, text));
+      cell.append(section);
+    }
+    if (devAvailable) {
+      if (!devPanels.has(result.id))
+        devPanels.set(
+          result.id,
+          recordDevPanel(api, {workspace: () => data.automation.id, recordId: result.id}),
+        );
+      const panel = devPanels.get(result.id);
+      panel.update(result);
+      cell.append(panel.element);
+    }
     return cell;
   }
 
@@ -500,7 +574,11 @@ export function automationResultsTable(
             ? r.trial
             : value === 'starred'
               ? r.starred
-              : !r.trial && recordState(r, data.definition).id === value);
+              : value === 'eliminated' || value === 'held'
+                ? !r.trial &&
+                  ['found', 'prepared'].includes(r.status) &&
+                  decidingRule(r.assessment)?.kind === value
+                : !r.trial && recordState(r, data.definition).id === value);
     if (!filterChips.has(filterValue)) filterValue = 'all';
     for (const [value, chip] of filterChips) {
       const count = data.results.filter((r) => matchesFilter(r, value)).length,
@@ -568,19 +646,26 @@ export function automationResultsTable(
       sort = shown.some((c) => c.key === 'score') ? 'score' : 'updatedAt';
       direction = -1;
     }
-    const value = (r) =>
-      sort === 'status'
-        ? (recordOperationStatus(r)?.label ?? recordState(r, data.definition).label ?? r.status)
-        : sort === 'updatedAt'
+    const numericColumn = (key) =>
+      key === 'updatedAt' || ['number', 'money'].includes(columns.find((c) => c.key === key)?.type);
+    const numeric = numericColumn(sort) || sort === 'status',
+      states = data.definition?.records?.states ?? [];
+    // Status follows the workflow order of the states, not their labels.
+    const value = (r) => {
+      if (sort === 'status') {
+        const index = states.findIndex((s) => s.id === recordState(r, data.definition).id);
+        return index < 0 ? states.length : index;
+      }
+      const raw =
+        sort === 'updatedAt'
           ? recordActivityAt(r)
           : sort === 'title'
-            ? r[sort]
+            ? r.title
             : sort === 'score' && r.assessment
-              ? (r.assessment.score ?? '')
-              : (r.cells?.[sort] ?? '');
-    const numeric =
-      sort === 'updatedAt' ||
-      ['number', 'money'].includes(columns.find((c) => c.key === sort)?.type);
+              ? r.assessment.score
+              : r.cells?.[sort];
+      return numeric ? sortNumber(raw) : String(raw ?? '').trim() || null;
+    };
     // Queued applications sit right under the running ones.
     const queuedApplication = (result) =>
       result.status !== 'dismissed' &&
@@ -596,17 +681,34 @@ export function automationResultsTable(
             : queuedApplication(result)
               ? 3
               : 4;
+    // Missing values stay last in both directions; ties show the latest activity first.
     results.sort((a, b) => {
       const rank = priority(a) - priority(b);
       if (rank) return rank;
       const av = value(a),
         bv = value(b);
-      if (av === '' || bv === '') return av === bv ? 0 : av === '' ? 1 : -1;
-      return (
-        direction * (numeric ? Number(av) - Number(bv) : collator.compare(av, bv)) ||
-        collator.compare(a.id, b.id)
-      );
+      if (av === null || bv === null) {
+        if (av !== bv) return av === null ? 1 : -1;
+      } else {
+        const order = direction * (numeric ? av - bv : collator.compare(av, bv));
+        if (order) return order;
+      }
+      return recordActivityAt(b) - recordActivityAt(a) || collator.compare(a.id, b.id);
     });
+    // While the pointer is on the rows, refreshes do not move the rows that were
+    // already shown; new rows take their sorted place. Leaving the rows re-sorts.
+    if (mounted?.body.matches(':hover')) {
+      const held = new Map(shownOrder.map((id, index) => [id, index])),
+        known = results
+          .filter((r) => held.has(r.id))
+          .sort((a, b) => held.get(a.id) - held.get(b.id));
+      let next = 0;
+      results.forEach((r, index) => {
+        if (held.has(r.id)) results[index] = known[next++];
+      });
+    }
+    shownOrder = results.map((r) => r.id);
+    const pinned = results.filter((r) => priority(r) < 4).length;
     const pages = Math.max(1, Math.ceil(results.length / pageSize));
     page = Math.min(page, pages);
     const start = (page - 1) * pageSize,
@@ -664,7 +766,7 @@ export function automationResultsTable(
 
     const paginationChanged = changed(
       pagination,
-      JSON.stringify([start, visible.length, results.length, page, pages]),
+      JSON.stringify([start, visible.length, results.length, page, pages, pinned]),
     );
     if (paginationChanged) {
       const keys = el(
@@ -681,6 +783,7 @@ export function automationResultsTable(
             : '0 records',
           'pagination-count',
         ),
+        ...(pinned ? [pinnedNote(pinned)] : []),
         ...(visible.length ? [keys] : []),
       );
     }
@@ -722,6 +825,7 @@ export function automationResultsTable(
       mounted.table.setAttribute('aria-label', 'Tracked records and results');
       mounted.table.style.minWidth = 600 + Math.max(0, shown.length - 2) * 110 + 'px';
       content.append(mounted.element);
+      mounted.body.addEventListener('pointerleave', () => render());
     }
     const {element, table, body} = mounted,
       headRow = table.tHead.rows[0];
@@ -756,20 +860,35 @@ export function automationResultsTable(
           selectPage.dataset.recordsSelectPage = '';
           th.replaceChildren(selectPage);
         } else {
+          const active = sort === key;
           th.setAttribute(
             'aria-sort',
-            sort === key ? (direction === 1 ? 'ascending' : 'descending') : 'none',
+            active ? (direction === 1 ? 'ascending' : 'descending') : 'none',
           );
+          // Numbers and activity start with the highest value, text and status with the first.
           const control = button(
-            label + (sort === key ? (direction === 1 ? ' ↑' : ' ↓') : ''),
+            label,
             () => {
-              direction = sort === key ? -direction : key === 'updatedAt' ? -1 : 1;
+              direction = active ? -direction : numericColumn(key) ? -1 : 1;
               sort = key;
               page = 1;
+              shownOrder = [];
+              try {
+                localStorage.setItem(
+                  sortStorageKey(data.automation.id),
+                  JSON.stringify({key: sort, direction}),
+                );
+              } catch {}
               render();
             },
             'sort-button',
           );
+          control.append(
+            el('span', active ? (direction === 1 ? '↑' : '↓') : '↕', 'sort-indicator'),
+          );
+          control.title = active
+            ? `Sorted by ${label}, ${direction === 1 ? 'ascending' : 'descending'}. Click to reverse.`
+            : `Sort by ${label}`;
           control.dataset.resultSort = key;
           th.replaceChildren(control);
         }
@@ -871,7 +990,12 @@ export function automationResultsTable(
       row.dataset.needsAnswer = String(recordNeedsAnswer(result));
       row.dataset.working = String(recordIsWorking(result));
       row.dataset.openTab = String(openIds.has(result.id));
-      row.dataset.outcome = !progress && !requesting ? result.status : '';
+      row.dataset.outcome =
+        !progress && !requesting
+          ? recordState(result, data.definition).closed
+            ? 'closed'
+            : result.status
+          : '';
       row.dataset.problem = String(Boolean(problem));
       actionsPanel.popover = 'auto';
       actionsPanel.id = 'record-row-actions-' + result.id;
@@ -945,23 +1069,34 @@ export function automationResultsTable(
           }
           if (recordNeedsAnswer(result)) {
             const question = result.recordAction.question,
-              mark = el('span', 'Awaiting answer', 'record-question-badge'),
-              preview = el('span', question.text, 'record-question-preview'),
+              mark = el(
+                'span',
+                question.verification
+                  ? 'CAPTCHA to solve'
+                  : question.code
+                    ? 'Code to enter'
+                    : 'Awaiting answer',
+                'record-question-badge',
+              ),
+              // Questions are answered on the Answers page; the row only links there.
               reply = button(
-                'Answer question',
+                'Open in Answers',
                 () => onQuestion(question.id),
                 'record-question-link',
               );
-            preview.title = question.text;
+            mark.title = question.text;
             reply.dataset.recordQuestion = question.id;
-            reply.setAttribute('aria-label', result.title + ' · Answer question');
-            cell.append(mark, preview, reply);
+            reply.setAttribute('aria-label', result.title + ' · Open in Answers');
+            if (question.verification || question.code) mark.dataset.verification = 'true';
+            cell.append(mark, reply);
           }
           if (problem) {
             const box = el('div', null, 'record-problem'),
               reason = el('span', problem.reason, 'record-problem-reason');
-            reason.title = problem.reason;
-            box.append(el('span', problem.label, 'record-problem-badge'), reason, problemActions);
+            box.dataset.category = problem.category ?? '';
+            box.append(el('span', problem.label, 'record-problem-badge'), reason);
+            if (problem.next) box.append(el('span', problem.next, 'record-problem-next'));
+            box.append(problemActions);
             cell.append(box);
           }
         } else if (column.key === 'score' && result.assessment) {
@@ -978,14 +1113,23 @@ export function automationResultsTable(
             assessment.score === null ? 'none' : assessmentEligibility(assessment);
           score.setAttribute('aria-label', result.title + ' · Scoring rationale');
           score.dataset.recordScore = result.id;
-          cell.append(
-            score,
-            el(
-              'small',
-              eligibilityLabels[assessmentEligibility(assessment)],
-              'record-score-eligibility',
-            ),
-          );
+          const decided = decidingRule(assessment);
+          const eligibility = decided
+            ? el(
+                'small',
+                `${decided.kind === 'eliminated' ? 'Eliminated' : 'Hold'}: ${shortRule(decided.rule.text)}`,
+                'record-score-eligibility record-score-rule',
+              )
+            : el(
+                'small',
+                eligibilityLabels[assessmentEligibility(assessment)],
+                'record-score-eligibility',
+              );
+          if (decided) {
+            eligibility.title = decided.rule.text;
+            eligibility.dataset.kind = decided.kind;
+          }
+          cell.append(score, eligibility);
           if (oldScoringMethod(assessment))
             cell.append(el('small', 'Old method · rescore', 'record-score-stale'));
         } else {
@@ -1009,6 +1153,8 @@ export function automationResultsTable(
           'automation-badge ' + (requesting ? 'queued' : (progress?.tone ?? result.status)),
         ),
       );
+      if (result.closed?.evidence && row.dataset.outcome === 'closed')
+        state.lastChild.title = 'Source says: ' + result.closed.evidence;
       if (progress?.detail && !problem) {
         const detail = el('span', progress.detail, 'record-operation-detail');
         detail.title = progress.detail;
@@ -1045,13 +1191,16 @@ export function automationResultsTable(
       open.dataset.recordMenuAction = 'open';
       open.setAttribute('aria-label', result.title + ' · Open source');
       const tabWorkspace = data.automation.id,
-        tabFeedback = keepMenu
-          ? actionsPanel.querySelector('.record-tab-feedback')
-          : el('span', null, 'record-tab-feedback'),
-        tabChoices = keepMenu
-          ? actionsPanel.querySelector('.record-tab-choices')
-          : el('div', null, 'record-tab-choices');
+        tabFeedback =
+          keepMenu && !problem
+            ? actionsPanel.querySelector('.record-tab-feedback')
+            : el('span', null, 'record-tab-feedback'),
+        tabChoices =
+          keepMenu && !problem
+            ? actionsPanel.querySelector('.record-tab-choices')
+            : el('div', null, 'record-tab-choices');
       tabFeedback.setAttribute('role', 'status');
+      if (problem) problemActions.after(tabChoices, tabFeedback);
       const focusTab = async (tab) => {
         try {
           await api.focusWorkspaceTab(tabWorkspace, tab.tabId);
@@ -1063,7 +1212,7 @@ export function automationResultsTable(
           void refreshTabs();
         }
       };
-      const goToTab = button('Go to tab', async () => {
+      const showTab = async () => {
         tabFeedback.textContent = '';
         tabChoices.replaceChildren();
         try {
@@ -1094,13 +1243,45 @@ export function automationResultsTable(
           tabFeedback.textContent = error.message;
           void refreshTabs();
         }
-      });
+      };
+      const goToTab = button('Go to tab', showTab);
       goToTab.dataset.recordTab = result.id;
       goToTab.dataset.recordMenuAction = 'tab';
       actions.append(open, detail);
-      const tab = {result, control: goToTab, actions, open};
+      // A problem card shows its open tab next to the reason.
+      if (problem) goToTab.textContent = 'Show page ↗';
+      // A row with an open tab also shows the button outside the menu. Several
+      // tabs open the menu, where the tab chooser lives.
+      const quickTab = problem
+        ? null
+        : button(
+            'Go to tab ↗',
+            async () => {
+              await showTab();
+              if (tabChoices.childElementCount && !actionsPanel.matches(':popover-open')) {
+                actionsPanel.showPopover();
+                positionMenu(actionsPanel, actionsToggle);
+              }
+            },
+            'quiet record-quick-tab',
+          );
+      quickTab?.setAttribute('aria-label', result.title + ' · Go to tab');
+      const placeTab = () => {
+        if (problem) return problemActions.prepend(goToTab);
+        actions.insertBefore(goToTab, open);
+        state.insertBefore(quickTab, actionsToggle.parentNode === state ? actionsToggle : null);
+      };
+      const tab = {
+        result,
+        control: goToTab,
+        place: placeTab,
+        remove: () => {
+          goToTab.remove();
+          quickTab?.remove();
+        },
+      };
       visibleTabButtons.set(result.id, tab);
-      if (openIds.has(result.id)) actions.insertBefore(goToTab, open);
+      if (openIds.has(result.id)) placeTab();
       recordActions(actions, result, data.definition, async (action) => {
         try {
           await api.workspaceTransition(data.automation.id, result.id, action);
@@ -1237,7 +1418,44 @@ export function automationResultsTable(
         dismiss.dataset.recordDismiss = result.id;
         dismiss.disabled = busy || requesting;
         dismiss.title = 'Skip this record and close its pending questions';
-        actions.append(dismiss);
+        // A record that cannot be applied puts Skip next to its reason.
+        (problem?.skip ? problemActions : actions).append(dismiss);
+      }
+      if (result.status === 'dismissed' && api.automationRestore && !result.trial) {
+        const restore = async () => {
+          await api.automationRestore(data.automation.id, result.id);
+          await refresh();
+        };
+        if (data.definition.recordOperations?.execute) {
+          const apply = button(
+            'Apply',
+            async () => {
+              if (actionsPanel.matches(':popover-open')) actionsPanel.hidePopover();
+              try {
+                await restore();
+                await sendOperation(result, 'execute', {direct: true});
+              } catch (error) {
+                showNotice(error.message);
+              }
+            },
+            'primary',
+          );
+          apply.dataset.recordRestoreApply = result.id;
+          apply.disabled = busy || requesting;
+          apply.title = 'Take back the skip and apply to this record';
+          actions.append(apply);
+        }
+        const unskip = button('Restore', async () => {
+          try {
+            await restore();
+          } catch (error) {
+            showNotice(error.message);
+          }
+        });
+        unskip.dataset.recordRestore = result.id;
+        unskip.disabled = busy || requesting;
+        unskip.title = 'Take back the skip; the record returns to the found list';
+        actions.append(unskip);
       }
       for (const control of actions.querySelectorAll('[data-idle]'))
         control.disabled = busy || requesting || Boolean(recordAction?.task);
@@ -1267,7 +1485,8 @@ export function automationResultsTable(
         } else if (focusedToggle) actionsToggle.focus({preventScroll: true});
         actionsPanel.scrollTop = menuScroll;
       } else {
-        actionsPanel.append(actions, tabChoices, tabFeedback);
+        actionsPanel.append(actions);
+        if (!problem) actionsPanel.append(tabChoices, tabFeedback);
         state.append(actionsPanel);
       }
       rows.set(result.id, {key: rowKeys.get(result.id), row, tab});
@@ -1302,15 +1521,26 @@ export function automationResultsTable(
       body.id = 'automation-result-detail-' + result.id;
       drawerTitle.textContent = result.title;
       const columns = data.automation.table?.columns ?? [];
-      drawerMeta.textContent = [
-        source(result),
-        ...columns
-          .filter((c) => !['source', 'title'].includes(c.key) && result.cells?.[c.key] != null)
-          .map((c) => c.label + ': ' + result.cells[c.key]),
+      const status = el(
+        'span',
         recordOperationStatus(result)?.label ?? recordState(result, data.definition).label,
-      ]
-        .filter((part) => String(part).trim())
-        .join(' · ');
+        'record-drawer-status',
+      );
+      drawerMeta.replaceChildren(
+        ...[
+          ['Source', source(result)],
+          ...columns
+            .filter((c) => !['source', 'title', 'score'].includes(c.key))
+            .map((c) => [c.label, result.cells?.[c.key]]),
+        ]
+          .filter(([, value]) => String(value ?? '').trim())
+          .map(([label, value]) => {
+            const chip = el('span', String(value));
+            chip.title = label;
+            return chip;
+          }),
+        status,
+      );
       drawerTools.replaceChildren(button('Open ↗', () => api.openLink(result.url)));
       drawerBody.replaceChildren(body);
       drawerBody.scrollTop = 0;
@@ -1370,15 +1600,6 @@ export function automationResultsTable(
       node.textContent = relativeTime(Number(node.dataset.at));
   }, 30000);
   return {
-    showQuestions() {
-      search.value = '';
-      scoreMinimum.value = '';
-      scoreComparison.value = 'gt';
-      filterValue = 'attention';
-      page = 1;
-      render();
-      root.scrollIntoView({block: 'start', behavior: 'smooth'});
-    },
     dispose: () => {
       content.querySelector('.record-row-actions:popover-open')?.hidePopover();
       clearInterval(tabTimer);
@@ -1399,6 +1620,8 @@ export function automationResultsTable(
         reviewed = null;
         scrollLeft = 0;
         page = 1;
+        ({key: sort, direction} = storedSort(snapshot.automation.id) ?? {key: null, direction: -1});
+        shownOrder = [];
         scoreMinimum.value = '';
         scoreComparison.value = 'gt';
         selectedIds.clear();
@@ -1424,6 +1647,8 @@ export function automationResultsTable(
         ['Needs you', 'attention'],
         ['In progress', 'active'],
         ...(data.definition?.records.states ?? []).map((s) => [s.label, s.id]),
+        ['Eliminated', 'eliminated'],
+        ['Waiting for my decision', 'held'],
         ['★ Starred', 'starred'],
         ['Trial samples', 'trial'],
       ];

@@ -7,6 +7,7 @@ export function scanWork(run) {
   if (run.scan?.work) return structuredClone(run.scan.work);
   return {
     activeSearchId: 'default',
+    counted: true,
     searches: [
       {
         id: 'default',
@@ -36,7 +37,9 @@ export function replayScanWork(scan, searches) {
     pageProgress: null,
     plan: null,
   });
-  const work = scan?.work ? structuredClone(scan.work) : {activeSearchId: 'replay-1', searches: []};
+  const work = scan?.work
+    ? structuredClone(scan.work)
+    : {activeSearchId: 'replay-1', counted: true, searches: []};
   const held = new Set(work.searches.map((s) => s.url).filter(Boolean)),
     ids = new Set(work.searches.map((s) => s.id));
   for (const [index, search] of searches.entries())
@@ -199,15 +202,20 @@ export function noteCards(search, cards) {
 }
 // Listings Jev eliminated (on the card or after reading the detail), kept so
 // the source memory shows what was dropped and why. Bounded per search.
+// An entry with by:'agent' is the agent's own review rejection; the rest are Jev's.
 export function noteExcluded(search, entries) {
   const fresh = entries.map((e) => ({
     url: webUrl(e.url),
     title: String(e.title ?? '').slice(0, 200),
     reason: String(e.reason ?? '').slice(0, 200),
     stage: e.stage === 'detail' ? 'detail' : 'card',
+    by: e.by === 'agent' ? 'agent' : 'jev',
     ...(typeof e.confidence === 'number' ? {confidence: e.confidence} : {}),
   }));
-  const urls = new Set(fresh.map((e) => e.url));
+  const urls = new Set(fresh.map((e) => e.url)),
+    known = new Set((search.excluded ?? []).map((e) => e.url));
+  for (const e of fresh)
+    if (!known.has(e.url)) countScan(search, e.by === 'agent' ? 'reviewRejected' : 'jevRejected');
   search.excluded = [...(search.excluded ?? []).filter((e) => !urls.has(e.url)), ...fresh].slice(
     -300,
   );
@@ -215,6 +223,30 @@ export function noteExcluded(search, entries) {
     search.cards = Object.fromEntries(
       Object.entries(search.cards).filter(([url]) => !urls.has(url)),
     );
+}
+// Per-search tallies of what the scan did with its listings. The excluded list
+// is bounded, so these counters carry the totals the source row shows.
+export function countScan(search, key) {
+  search.counts = {...search.counts, [key]: (search.counts?.[key] ?? 0) + 1};
+}
+// Totals for a finished scan, or null for work saved before the scan counted.
+export function scanStats(scan) {
+  const work = scan?.work;
+  if (!work?.counted) return null;
+  const sum = (count) => work.searches.reduce((total, search) => total + count(search), 0),
+    tally = (key) => sum((search) => search.counts?.[key] ?? 0);
+  return {
+    searches: work.searches.length,
+    listings: sum(
+      (search) =>
+        searchNewListings(search) +
+        Object.values(search.collector?.newListings ?? {}).reduce((a, b) => a + b, 0),
+    ),
+    jevRejected: tally('jevRejected'),
+    reviewRejected: tally('reviewRejected'),
+    belowThreshold: tally('belowThreshold'),
+    saved: tally('saved'),
+  };
 }
 export function completeScanSearch(run, completion, evidenceUrl) {
   const work = scanWork(run),

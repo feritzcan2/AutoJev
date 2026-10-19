@@ -21,7 +21,7 @@ import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
 import {automationTaskContext} from '../app/automation/task-context.mjs';
 import {runJevTask} from '../app/jev/tasks.mjs';
-import {updateScanQueue, noteExcluded, noteCards} from '../app/sources/scan-work.mjs';
+import {updateScanQueue, noteExcluded, noteCards, scanStats} from '../app/sources/scan-work.mjs';
 
 const results =
   'https://www.stepstone.de/jobs/staff-software-engineer/in-berlin?radius=30&sort=2&action=sort_publish';
@@ -438,7 +438,7 @@ test('eliminated listings are kept per search with their stage and reason', () =
     excluded: [{url: listing(2), title: 'Project Manager', reason: 'unrelated_role'}],
   });
   assert.deepEqual(work.searches[0].excluded, [
-    {url: listing(2), title: 'Project Manager', reason: 'unrelated_role', stage: 'card'},
+    {url: listing(2), title: 'Project Manager', reason: 'unrelated_role', stage: 'card', by: 'jev'},
   ]);
   noteCards(work.searches[0], [
     {
@@ -461,7 +461,27 @@ test('eliminated listings are kept per search with their stage and reason', () =
     [['detail', 'Different profession']],
     'one entry per address, latest decision wins',
   );
+  noteExcluded(work.searches[0], [
+    {url: listing(1), title: 'Role 1', reason: 'Requires relocation', stage: 'detail', by: 'agent'},
+  ]);
+  assert.deepEqual(
+    work.searches[0].counts,
+    {jevRejected: 1, reviewRejected: 1},
+    'each listing counts once, by who rejected it first',
+  );
   assert.deepEqual(work.searches[0].pendingUrls, [listing(1)]);
+  assert.equal(scanStats({work: {...work, counted: false}}), null, 'older work has no counts');
+  work.counted = true;
+  work.searches[0].newListings = {[listing(0)]: 3};
+  work.searches[0].counts.saved = 1;
+  assert.deepEqual(scanStats({work}), {
+    searches: 1,
+    listings: 3,
+    jevRejected: 1,
+    reviewRejected: 1,
+    belowThreshold: 0,
+    saved: 1,
+  });
 });
 
 test('an HTTP reader extension serves only the addresses it handles', () => {
@@ -499,7 +519,7 @@ test('the source list shows which kind of extension reads a source and its searc
     Object.fromEntries(Object.entries(kinds).map(([id, k]) => [id, [k.id, k.kind]])),
     {
       stepstone: ['stepstone', 'browser'],
-      linkedin: ['linkedin', 'http'],
+      linkedin: ['linkedin', 'api'],
       himalayas: ['himalayas', 'api'],
       xing: ['xing', 'http'],
       'berlin-startup-jobs': ['berlin-startup-jobs', 'http'],

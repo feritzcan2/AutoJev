@@ -9,7 +9,7 @@ import {automationWorkflow} from '../app/automation/worker.mjs';
 const dice = 'https://www.dice.com/',
   other = 'https://other.test/jobs';
 
-async function fixture(t) {
+async function fixture(t, {onboarding = false} = {}) {
   const core = new WorkspaceDatabase(':memory:'),
     db = new AutomationStore(core),
     a = db.create('job-search', {
@@ -17,7 +17,7 @@ async function fixture(t) {
       criteria: {preferences: 'Remote staff backend roles', country: 'US'},
       sources: [other],
     });
-  db.review(a.id);
+  if (!onboarding) db.review(a.id);
   const runtime = new WebTasks(db, {
     launch: async () => ({close: async () => {}, message: async () => {}}),
   });
@@ -125,4 +125,40 @@ test('the setup agent chooses search terms and filters of extension sources in t
     'Staff Backend Engineer',
     'Principal Engineer',
   ]);
+});
+
+test('the initial setup applies its sources and search terms without a draft', async (t) => {
+  const {db, id, plan} = await fixture(t, {onboarding: true});
+  const result = await plan({
+    addSources: [dice],
+    sourceSearches: [{url: dice, terms: ['Staff Backend Engineer']}],
+  });
+  assert.equal(result.applied, true);
+  const a = db.get(id);
+  assert.equal(a.sourceDraft, undefined);
+  assert.deepEqual(a.sources, [other, dice]);
+  assert.deepEqual(a.sourceSettings[dice].recipe.terms, ['Staff Backend Engineer']);
+});
+
+test('the initial setup adds the boards of a newly saved country and names those without terms', async (t) => {
+  const {db, id, plan} = await fixture(t, {onboarding: true});
+  const criteria = Object.entries({...db.get(id).criteria, country: 'DK'}).map(([key, value]) => ({
+    key,
+    value,
+  }));
+  const result = await plan({criteria});
+  const a = db.get(id),
+    jobindex = 'https://www.jobindex.dk/';
+  assert.ok(a.sources.includes(jobindex), 'a Danish board joins with the country');
+  assert.ok(a.sources.includes('https://jobnet.dk/'));
+  assert.ok(!a.sources.some((url) => url.includes('france')), 'other countries stay out');
+  assert.ok(result.sourcesWithoutTerms.includes(jobindex));
+  assert.match(result.message, /sourceSearches/);
+  await plan({criteria, sourceSearches: [{url: jobindex, terms: ['backend udvikler']}]});
+  assert.deepEqual(db.get(id).sourceSettings[jobindex].recipe.terms, ['backend udvikler']);
+  assert.equal(
+    db.get(id).sources.filter((url) => url === jobindex).length,
+    1,
+    'saving again adds nothing twice',
+  );
 });

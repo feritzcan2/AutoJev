@@ -1,5 +1,6 @@
 // @ts-check
 import {taskHasRecord, batchScoring, recordScoredInTask} from '../records/task-scope.mjs';
+import {recordListingReads} from '../records/listing-reader.mjs';
 import {scoringPolicy} from '../scoring/policy.mjs';
 import {COLLECTOR_INSTRUCTIONS, collectorProgress} from '../sources/collector-worker.mjs';
 import {jevContextTasks} from '../jev/task-summary.mjs';
@@ -17,13 +18,17 @@ const pick = (value, keys) =>
   Object.fromEntries(
     keys.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]),
   );
-// Setup proposes starting sources by address and country; the store copies a
+// Setup proposes starting sources by address, country and remote work; the store copies a
 // source's recipe and instructions when one is added, so the agent never
 // needs them (a template may list dozens of country boards).
 const templateContext = (definition) => ({
   ...definition,
   ...(definition.defaultSources
-    ? {defaultSources: definition.defaultSources.map((s) => pick(s, ['url', 'name', 'countries']))}
+    ? {
+        defaultSources: definition.defaultSources.map((s) =>
+          pick(s, ['url', 'name', 'countries', 'remote']),
+        ),
+      }
     : {}),
 });
 function contextRun(run) {
@@ -71,6 +76,13 @@ const questionContext = (q) => ({
     'taskId',
     'resolution',
   ]),
+  ...(q.instruction
+    ? {
+        instruction: true,
+        instructionNote:
+          'The user did not answer this question. answer is their instruction for this task: carry it out within the saved policy and your tools. If it cannot be done, ask again and say why.',
+      }
+    : {}),
   ...(q.answer != null && Array.isArray(q.fields)
     ? {fields: q.fields.map((f) => pick(f, ['id', 'label', 'type']))}
     : {}),
@@ -115,6 +127,11 @@ export const conversationContextVersion = (a) =>
 
 // Keep current rules and exact authorizations; old runs and unrelated rows are
 // available through lookup tools instead of replaying them at every start.
+// A listing read through a site extension: the text a scan assesses, without site chrome.
+const readerLabel = (reader) =>
+  `${reader.extension} site extension (${reader.kind === 'api' ? 'API collector' : 'HTTP reader'})`;
+const SITE_READER_LISTING =
+  "The listing's own text (title, stated facts and description), read through the site's reader the way a scan reads it, without site menus. Score from it with browser_read_part or browser_search on its snapshotId; do not open the listing page in the browser to score. It is historical evidence; actions and availability require a current observation.";
 export function automationTaskContext(db, id, active, {section = undefined} = {}) {
   const saved = db.get(id),
     conversation = isConversation(active),
@@ -216,10 +233,20 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
   const assignedRecords = batch
     ? active.recordIds.map((itemId) => {
         const item = db.result(id, itemId);
+        const read = db.browserEvidence.latest(active, item.url);
         return {
           ...pick(item, ['id', 'key', 'url', 'title', 'status']),
           scoredInThisRun: item.assessment?.runId === active.id,
           scoredInThisTask: recordScoredInTask(db, active, item),
+          ...(read?.reader
+            ? {
+                savedListing: {
+                  snapshotId: read.id,
+                  totalCharacters: read.text.length,
+                  readBy: readerLabel(read.reader),
+                },
+              }
+            : {}),
         };
       })
     : null;
@@ -237,6 +264,7 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
           q.answer != null &&
           q.recordId &&
           q.recordId !== assignedRecord.id &&
+          !q.instruction &&
           !q.accessCheck &&
           !q.outcome &&
           !q.resolution,
@@ -404,8 +432,21 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
             url: savedPage.url,
             observedAt: savedPage.at,
             totalCharacters: savedPage.text.length,
-            instructions:
-              'Use browser_read_part or browser_search to reuse this exact listing text for scoring. It is historical evidence; actions and availability require a current observation.',
+            ...(savedPage.reader ? {readBy: readerLabel(savedPage.reader)} : {}),
+            instructions: savedPage.reader
+              ? SITE_READER_LISTING
+              : 'Use browser_read_part or browser_search to reuse this exact listing text for scoring. It is historical evidence; actions and availability require a current observation.',
+          },
+        }
+      : {}),
+    ...(assignedRecords?.some((r) => r.savedListing)
+      ? {savedListings: {instructions: SITE_READER_LISTING}}
+      : {}),
+    ...(recordListingReads(active.id)?.failed.length
+      ? {
+          listingReadIssues: {
+            listings: recordListingReads(active.id).failed,
+            rule: 'The site reader could not read these listings before the task; read them in the browser.',
           },
         }
       : {}),
@@ -507,7 +548,9 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
               ? 'Score only the assigned listing using the current criteria.ranking and saved profile/documents. Save with record_automation_score. Do not change proposals or submit.'
               : active.recordOperation === 'execute'
                 ? directRecordInstructions
-                : 'prepare: no external submission; verify: inspect prior outcome without resubmitting. This request authorizes only this record, without changing workspace or source permissions.',
+                : active.recordOperation === 'cover_letter'
+                  ? 'Write one cover letter for the assigned record and save it with save_cover_letter. Do not fill forms, upload or submit; the user reviews the letter.'
+                  : 'prepare: no external submission; verify: inspect prior outcome without resubmitting. This request authorizes only this record, without changing workspace or source permissions.',
         }
       : null,
     contextScope: {

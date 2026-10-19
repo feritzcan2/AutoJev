@@ -230,6 +230,41 @@ test('repeated page errors block further attempts to that URL but preserve reach
   assert.deepEqual(result.scan.pendingUrls, [next]);
 });
 
+test('a later results page the site keeps refusing ends the search at the last page served', async (t) => {
+  const f = fixture(t);
+  await f.call('browser_open', {url: source});
+  f.db.reportPage(f.id, f.run.id, {currentPage: 2, totalPages: 13, url: source, evidence: '2'});
+  f.queue({pendingUrls: [details[0], next], reason: 'Read the detail and the next page'});
+  f.error('net::ERR_HTTP2_PROTOCOL_ERROR');
+  await assert.rejects(f.call('browser_open', {url: next}), /ERR_HTTP2/);
+  await assert.rejects(f.call('browser_open', {url: next}), /does not serve this results page/);
+  const run = f.db.run(f.run.id);
+  assert.equal(run.status, 'running', 'no technical hold');
+  assert.equal(run.scanPlan.boundary.unserved, next);
+  assert.equal(run.scanPlan.boundary.url, source, 'the last page served');
+  assert.equal(run.scanIssues[next], undefined);
+  assert.ok(!f.db.scanQueue(f.id, f.run.id).pendingUrls.includes(next));
+  const count = f.calls.length;
+  await assert.rejects(f.call('browser_open', {url: next}), /does not serve/);
+  assert.equal(f.calls.length, count, 'the refused page is not opened again');
+  f.error(null);
+  await f.call('browser_open', {url: details[0]});
+  f.queue({pendingUrls: [], processedUrls: [source, details[0]], reason: 'Queue done'});
+  const done = f.db.completeScanSearch(f.id, f.run.id, 'end', {url: source});
+  assert.equal(done.searches[0].status, 'completed', 'the search ends without its last 11 pages');
+});
+
+test('a failing detail page is not taken for a refused results page', async (t) => {
+  const f = fixture(t);
+  await f.call('browser_open', {url: source});
+  f.db.reportPage(f.id, f.run.id, {currentPage: 2, totalPages: 13, url: source, evidence: '2'});
+  f.queue({pendingUrls: [details[0], next], reason: 'Read the detail and the next page'});
+  f.error('net::ERR_HTTP2_PROTOCOL_ERROR');
+  for (let i = 0; i < 2; i++)
+    await assert.rejects(f.call('browser_open', {url: details[0]}), /Page load failed/);
+  assert.equal(f.db.run(f.run.id).scanPlan.boundary, null);
+});
+
 test('a global disconnection pauses without dropping any pending details', async (t) => {
   const f = fixture(t);
   await f.call('browser_open', {url: source});

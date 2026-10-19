@@ -2,15 +2,12 @@
 import {batchScoring} from '../records/task-scope.mjs';
 import {assessmentSchema, resultScoreFields, recordScoreTool} from '../scoring/record-scoring.mjs';
 import {questionFieldsSchema} from './question-forms.mjs';
+import {blockerSchema} from '../records/blockers.mjs';
 import {workspaceTableTools, workspaceCellsSchema} from '../workspaces/table-tools.mjs';
 import {browserSnapshotTools} from '../browser/snapshot.mjs';
 import {automationContextTools} from './context.mjs';
-import {jevTaskTools} from '../jev/task-tools.mjs';
-import {
-  RECIPE_PAGINATION_KINDS,
-  RECIPE_TERM_LIMIT,
-  RECIPE_ORDERING_KINDS,
-} from '../sources/recipe.mjs';
+import {jevTaskTools, agentDecisionTools} from '../jev/task-tools.mjs';
+import {RECIPE_PAGINATION_KINDS, RECIPE_TERM_LIMIT} from '../sources/recipe.mjs';
 
 const str = {type: 'string'},
   optional = {type: 'string', minLength: 0};
@@ -40,7 +37,7 @@ export const scoreWrites = new Set([
 export const automationTools = [
   tool(
     'collect_source_page',
-    'Site extension: fetch the assigned next page through its CLI and run Jev triage. Review the returned batch, score and save retained listings, then acknowledge the batch before calling again. Takes no URLs; search scope and pagination belong to the app. After restart it re-fetches pending evidence. complete=true means every page and review finished.',
+    'Site extension: fetch the assigned next page through its CLI as a review batch. Review the returned batch, score and save suitable listings, then acknowledge the batch before calling again. Takes no URLs; search scope and pagination belong to the app. After restart it re-fetches pending evidence. complete=true means every page and review finished.',
   ),
   tool(
     'read_scoring_profile',
@@ -101,7 +98,7 @@ export const automationTools = [
   ),
   tool(
     'save_source_recipe',
-    'Source trial or scan: save how this source reaches its results page. url_template: results URL with {query} (optionally {location} or another criteria field id), or a fixed results URL without placeholders; include the newest-first ordering of the board when observed. search_form: the search page url plus the labels of the query/location fields. terms: up to 5 concrete search keywords when the source query is a description rather than a keyword; {query} (or the query field) is filled with each term and every scan runs each search. discovery: no stable method, add a note. The app caps every scan at 15 result pages shared by its searches (at least 2 per search). The app replays the recipe (first term) and accepts it only when it finds a listing; a failed check returns the reason. At most 3 checks per turn.',
+    'Source trial or scan: save how this source reaches its results page. url_template: results URL with {query} (optionally {location} or another criteria field id), or a fixed results URL without placeholders; use the newest-first sort of the board when it offers one. search_form: the search page url plus the labels of the query/location fields. terms: up to 5 concrete search keywords when the source query is a description rather than a keyword; {query} (or the query field) is filled with each term and every scan runs each search. discovery: no stable method, add a note. The app caps every scan at 15 result pages shared by its searches (at least 2 per search). The app replays the recipe (first term) and accepts it only when it finds a listing; a failed check returns the reason. At most 3 checks per turn.',
     {
       entry: object(
         {
@@ -118,7 +115,6 @@ export const automationTools = [
       ),
       terms: {type: 'array', maxItems: RECIPE_TERM_LIMIT, items: str},
       pagination: {type: 'string', enum: RECIPE_PAGINATION_KINDS},
-      ordering: {type: 'string', enum: RECIPE_ORDERING_KINDS},
       loginRequired: {type: 'boolean'},
       notes: optional,
     },
@@ -148,7 +144,7 @@ export const automationTools = [
   ),
   tool(
     'save_automation_plan',
-    'Interview only: update the plan from known user answers. Missing facts stay empty. Saved sources stay unchanged unless listed: addSources proposes new source URLs, removeSources proposes removing saved sources and is only for sources the user asked to drop. sourceSearches sets the search of a saved or added source listed in get_automation_context section profile sourceSearch: up to 5 terms for {query} as its notes describe, and filter values from its filters ("" removes a filter). Source changes are suggestions the user applies on Sources. Grants no permission and activates nothing.',
+    'Interview only: update the plan from known user answers. Missing facts stay empty. In a chat, criteria you leave out keep their saved values; send an empty value to clear one. Saved sources stay unchanged unless listed: addSources proposes new source URLs, removeSources proposes removing saved sources and is only for sources the user asked to drop. sourceSearches sets the search of a saved or added source listed in get_automation_context section profile sourceSearch: up to 5 terms for {query} as its notes describe, and filter values from its filters ("" removes a filter). Source changes are suggestions the user applies on Sources. Grants no permission and activates nothing.',
     {
       title: str,
       goal: optional,
@@ -239,6 +235,21 @@ export const automationTools = [
     {ref: str, filePath: str},
   ),
   tool(
+    'request_cover_letter',
+    'Execute tasks only: the form requires a cover letter (upload or text box) and the documents folder has none written for this employer. A separate cover letter agent writes it and the user reviews it; never write one yourself and never put the CV in that field. Fill the other fields first, then call this and finish blocked with blocker category needs_answer. The approval resumes this application with the file path. notes: optional facts the writer needs, such as the language the form asks for or a word limit.',
+    {notes: {type: 'string', minLength: 0, maxLength: 1000}},
+    [],
+  ),
+  tool(
+    'read_cover_letter_brief',
+    'Cover letter tasks only: the listing, the application notes, any user feedback on an earlier letter and the writing rules. Read the CV with read_scoring_profile.',
+  ),
+  tool(
+    'save_cover_letter',
+    'Cover letter tasks only: save the complete letter as plain text (paragraphs separated by blank lines). The app makes the PDF and names the file; the user reviews it before the application continues. A refused letter returns the reason; fix it and save again.',
+    {text: {type: 'string', minLength: 1, maxLength: 6000}},
+  ),
+  tool(
     'browser_interact',
     'Act on the current page with a fresh ref. click: clickTargets.targetId, or a radio/checkbox controlId from browser_jev_inspect_form (selects that option and verifies it). type: fillFields.fieldId + text. select: controls.controlId + text. options: list a dropdown. press: a key. autocomplete: controlId; option selects that exact label (text may search first); text alone selects the option with exactly that label, otherwise returns the full suggestion list; neither lists the suggestions. scroll: scrollTargets.controlId with direction; stop on no_progress. reveal: bring an offscreen controlId into view, then type with the returned fieldId. If action.executed is false or status is stale, repeat once with the fresh ref. Tools do not enforce authority; you decide what the user allowed.',
     {
@@ -256,10 +267,13 @@ export const automationTools = [
   ),
   tool(
     'record_automation_outcome',
-    'Record completed or uncertain. In an execute task before any reservation, closed means the record page itself says it is no longer available (removed, expired, not found, no longer accepting applications); evidence is that exact page sentence; the record is then retired. In a verify task, not_submitted needs notSubmittedProof: the latest snapshotId, kind draft/rejected and recordEvidence (exact title, ID or URL fragment, 6+ characters) showing this record was not sent; an unfinished form or missing success message is insufficient. Verification never submits. itemId defaults to the assigned record, url to the current page.',
+    'Record completed or uncertain. In an execute task before any reservation, closed means the record page itself says it is no longer available (removed, expired, not found, no longer accepting applications); evidence is that exact page sentence; the record is then retired. applied works the same way when the record page itself says the user already applied to it (for example "Application submitted 2 weeks ago"); the record is then completed without a new submission. In a verify task, not_submitted needs notSubmittedProof: the latest snapshotId, kind draft/rejected and recordEvidence (exact title, ID or URL fragment, 6+ characters) showing this record was not sent; an unfinished form or missing success message is insufficient. Verification never submits. itemId defaults to the assigned record, url to the current page.',
     {
       itemId: str,
-      status: {type: 'string', enum: ['completed', 'uncertain', 'not_submitted', 'closed']},
+      status: {
+        type: 'string',
+        enum: ['completed', 'uncertain', 'not_submitted', 'closed', 'applied'],
+      },
       evidence: str,
       url: str,
       notSubmittedProof: object(
@@ -313,6 +327,25 @@ const SCAN_HIDDEN_TOOLS = [
   'configure_workspace_table',
 ];
 const scanRun = (run) => Boolean(run.sourceUrl && !run.recordId);
+// A cover letter writer reads the profile and the listing and saves one letter.
+const COVER_LETTER_TOOLS = new Set([
+  'get_automation_context',
+  'read_automation_context_part',
+  'read_scoring_profile',
+  'read_cover_letter_brief',
+  'save_cover_letter',
+  'browser_open',
+  'browser_read',
+  'browser_read_part',
+  'browser_search',
+  'finish_automation_run',
+]);
+const coverLetterTool = (run, name) =>
+  run.recordOperation === 'cover_letter'
+    ? COVER_LETTER_TOOLS.has(name)
+    : name === 'request_cover_letter'
+      ? run.recordOperation === 'execute'
+      : !['read_cover_letter_brief', 'save_cover_letter'].includes(name);
 // Collector runs fetch pages through the site extension, not the browser.
 export const collectorHidden = new Set([
   'browser_open',
@@ -325,9 +358,12 @@ export const collectorHidden = new Set([
 ]);
 
 // The tools one run may see, with descriptions and schemas narrowed to its task.
-export function scopedAutomationTools({run, template, collecting}) {
+// With agent decisions the Jev profile is unused and browser tasks hand every
+// listing decision to the agent.
+export function scopedAutomationTools({run, template, collecting, agentDecides = false}) {
   const scopedTools = structuredClone(
-      automationTools
+      (agentDecides ? agentDecisionTools(automationTools) : automationTools)
+        .filter((t) => !agentDecides || t.name !== 'save_jev_profile')
         .filter(
           (t) =>
             (t.name !== 'record_automation_score' || run.recordOperation === 'score') &&
@@ -351,6 +387,7 @@ export function scopedAutomationTools({run, template, collecting}) {
                 !run.recordOperation)),
         )
         .filter((t) => !scanRun(run) || !SCAN_HIDDEN_TOOLS.includes(t.name))
+        .filter((t) => coverLetterTool(run, t.name))
         .filter((t) =>
           collecting ? !collectorHidden.has(t.name) : t.name !== 'collect_source_page',
         ),
@@ -365,14 +402,15 @@ export function scopedAutomationTools({run, template, collecting}) {
   if (resultTool && !run.recordId) {
     for (const key of ['recordId', 'actionUrl', 'proposal'])
       delete resultTool.inputSchema.properties[key];
+    // The store accepts a score here only through the top-level fields of a scored
+    // production run; trial and research samples carry none.
+    delete resultTool.inputSchema.properties.assessment;
     resultTool.description =
-      'Save an observed finding with key, url, title, summary, custom cells and assessment. Use the exact listing URL as key; external site IDs are not application record IDs. Source scans only observe and evaluate. For Jev batches, reject unsuitable findings using browser_jev_run review decisions; do not create zero-score or unavailable records merely to acknowledge a batch. ' +
-      resultTool.description.slice(resultTool.description.indexOf('Fill custom table cells'));
+      'Save an observed finding with key, url, title, summary and custom cells. Use the exact listing URL as key; external site IDs are not application record IDs. Source scans only observe and evaluate. For Jev batches, reject unsuitable findings using browser_jev_run review decisions; do not create zero-score or unavailable records merely to acknowledge a batch. Fill custom cells from observed facts. This task saves no score: trial and research samples carry none. No action is taken.';
     if (run.kind === 'run' && template.recordOperations?.score) {
-      delete resultTool.inputSchema.properties.assessment;
       Object.assign(resultTool.inputSchema.properties, resultScoreFields);
       resultTool.description =
-        'Save an observed source finding. Send url, title and summary, plus top-level score for each new listing: an integer 0–100 following criteria.ranking and scoringPolicy, or null if details are inaccessible. Explain the score in optional scoreReason. Report mandatory conditions separately with eligibility and eligibilityReason; missing facts mean unverified. All four scoring fields are top-level values. Use the exact listing URL as key; external site IDs are not application record IDs. Custom cells are optional. Save only verified facts and reuse known records. For Jev batches, reject unsuitable findings with review decisions. New findings below scoringPolicy.saveThreshold return skipped=true without creating a record; do not retry skipped findings. Existing records and unavailable assessments are retained. No action is taken.';
+        'Save an observed source finding. Send url, title and summary, plus top-level score for each new listing: an integer 0–100 following criteria.ranking and scoringPolicy, or null if details are inaccessible. Explain the score in optional scoreReason. When scoringPolicy.hardRules is listed, answer every rule in rules (pass/fail/unknown) and the app sets eligibility; otherwise report mandatory conditions with eligibility and eligibilityReason, following scoringPolicy.unstatedConditions for conditions the listing never mentions. All scoring fields are top-level values. Use the exact listing URL as key; external site IDs are not application record IDs. Custom cells are optional. Save only verified facts and reuse known records. For Jev batches, reject unsuitable findings with review decisions. New findings below scoringPolicy.saveThreshold return skipped=true without creating a record; do not retry skipped findings. Existing records and unavailable assessments are retained. No action is taken.';
     }
   }
   if (resultTool && scanRun(run) && run.kind === 'run')
@@ -420,16 +458,29 @@ export function scopedAutomationTools({run, template, collecting}) {
   if (run.recordId || run.recordOperation) {
     const finish = scopedTools.find((t) => t.name === 'finish_automation_run');
     delete finish.inputSchema.properties.goalReached;
+    finish.inputSchema.properties.blocker = blockerSchema;
     finish.description =
-      'Finish only this assigned record task after its success criteria are met. For a scoring batch, every assigned record needs a saved assessment or a record-scoped question. Report status and summary. This completes the assigned task; workspace scheduling and other workers continue. Stop after this call.';
+      'Finish only this assigned record task after its success criteria are met. For a scoring batch, every assigned record needs a saved assessment or a record-scoped question. Report status and summary. When blocked or failed, also pass blocker: the record card shows only its category, one-sentence reason and next step for the user; summary keeps the full details. This completes the assigned task; workspace scheduling and other workers continue. Stop after this call.';
+  }
+  // The app counts a scan's listings, rejections and saves for the source row,
+  // so the summary is only a short note.
+  if (run.sourceUrl && !run.recordId && !run.recordOperation) {
+    scopedTools.find((t) => t.name === 'finish_automation_run').inputSchema.properties.summary = {
+      ...str,
+      maxLength: 300,
+      description:
+        'One short sentence, only about what the app cannot count: a problem, a skipped part of the site or an unusual result. The app already shows the searches, listing, rejection and saved counts, so do not repeat numbers or list saved findings. Write "Scan finished normally." when there is nothing else to say.',
+    };
   }
   if (run.recordOperation) {
     const reserve = scopedTools.find((t) => t.name === 'reserve_automation_action');
     if (reserve)
       reserve.description =
         'Call right before the final submit click in an execute task. Reserve only the assigned record and saved proposal; obey recordAuthorization and limits. Scoring, preparation and verification cannot reserve or submit.';
-    scopedTools.find((t) => t.name === 'browser_interact').description +=
-      ' For record operations obey recordAuthorization: score, prepare and verify cannot submit; execute reserves right before the final submit.';
+    const interact = scopedTools.find((t) => t.name === 'browser_interact');
+    if (interact)
+      interact.description +=
+        ' For record operations obey recordAuthorization: score, prepare and verify cannot submit; execute reserves right before the final submit.';
   }
   return scopedTools;
 }

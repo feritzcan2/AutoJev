@@ -1,0 +1,116 @@
+.answers-list {
+  display: grid;
+  gap: 16px;
+  max-width: 760px;
+}
+.answers-empty,
+.attention-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.answer-card {
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--bg-raised);
+  scroll-margin-top: 16px;
+}
+.answer-card-head {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.answer-card-eyebrow {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 1.1px;
+  color: var(--warning);
+}
+.answer-card-head h3 {
+  margin: 6px 0 0;
+  font-size: 17px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.answer-card-source {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.answer-card-body {
+  padding: 18px 24px 22px;
+}
+.answer-card-message {
+  margin: 0 0 20px;
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.answer-card .candidate-question-form {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  gap: 20px;
+}
+.answer-card .candidate-question-form textarea {
+  min-height: 112px;
+}
+.answer-card .candidate-question-form > button.primary {
+  justify-self: end;
+  min-width: 140px;
+}
+.answer-card [hidden] {
+  display: none !important;
+}
+.answer-card-footer {
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 14px 14px;
+  background: var(--bg-app);
+}
+.answer-card-tools {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.answer-card-tools button {
+  padding: 8px 12px;
+  font-size: 12px;
+}
+.answer-card-tools .answer-card-dismiss {
+  margin-left: auto;
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+.answer-card-feedback {
+  font-size: 12px;
+  color: var(--warning);
+  line-height: 1.5;
+  margin: 12px 0 0;
+}
+.answer-card-feedback:empty,
+.answer-card-tabs:empty {
+  display: none;
+}
+.answer-card-tabs {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.answer-card-tabs button {
+  text-align: left;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .answer-card-head,
+  .answer-card-body {
+    padding: 16px;
+  }
+  .answer-card-footer {
+    padding: 12px 16px;
+  }
+}

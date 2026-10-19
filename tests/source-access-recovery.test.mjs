@@ -377,6 +377,67 @@ test('a scan retries after five and ten minutes, stops on the third incident, an
   assert.equal(f.launches.at(-1).taskId, blocked.run.taskId);
 });
 
+test('Retry resumes a source whose exhausted wait was already retired elsewhere', async (t) => {
+  const f = fixture(t),
+    blocked = await f.block();
+  const exhausted = {...f.db.siteAccess.status(source), attempts: 3};
+  f.db.siteAccess.save({...f.db.siteAccess.row(source), attempts: 3});
+  f.runtime.sourceState(f.id, source, {
+    accessRecovery: {...f.runtime.sourceAccess.current(f.id, source), retryAt: null},
+  });
+  // A record retry on the same site retires the shared wait first.
+  f.db.siteAccess.acknowledge([exhausted]);
+  assert.equal(f.db.siteAccess.status(source), null);
+  f.setNow(f.now() + 86400000);
+  await f.runtime.tick();
+  await settle();
+  assert.equal(f.launches.filter((r) => r.sourceUrl === source).length, 1, 'no automatic resume');
+  f.store.workspaces.workers.add(f.id);
+  await f.runtime.runSource(f.id, source);
+  await settle();
+  assert.equal(f.launches.at(-1).sourceUrl, source);
+  assert.equal(f.launches.at(-1).taskId, blocked.run.taskId, 'continues from the saved point');
+});
+
+test('Start over after stopped retries drops the saved position and scans from the beginning', async (t) => {
+  const f = fixture(t),
+    blocked = await f.block();
+  f.db.siteAccess.save({...f.db.siteAccess.row(source), attempts: 3});
+  f.runtime.sourceState(f.id, source, {
+    accessRecovery: {...f.runtime.sourceAccess.current(f.id, source), retryAt: null},
+  });
+  assert.equal(f.db.sources(f.id).find((s) => s.url === source).siteWait.exhausted, true);
+  f.store.workspaces.workers.add(f.id);
+  await f.runtime.runSource(f.id, source, {fresh: true});
+  await settle();
+  assert.equal(f.db.siteAccess.status(source), null, 'the stopped wait is retired');
+  const run = f.launches.at(-1);
+  assert.equal(run.sourceUrl, source);
+  assert.notEqual(run.taskId, blocked.run.taskId, 'a new scan, not the stopped one');
+  assert.deepEqual(run.scan?.pendingUrls ?? [], [], 'the saved queue is dropped');
+  const state = f.db.get(f.id).sourceState[source];
+  assert.equal(state.accessRecovery, null);
+  assert.equal(state.blocked, false);
+});
+
+test('Force retry ends a timed site wait now and continues from the saved point', async (t) => {
+  const f = fixture(t),
+    blocked = await f.block(),
+    wait = f.db.sources(f.id).find((s) => s.url === source).siteWait;
+  assert.equal(wait.waiting && !wait.exhausted, true, 'a timed wait');
+  f.store.workspaces.workers.add(f.id);
+  await f.runtime.runSource(f.id, source);
+  await settle();
+  assert.ok(f.db.siteAccess.status(source).waiting, 'a plain run waits behind it');
+  assert.equal(f.launches.length, 1);
+  await f.runtime.runSource(f.id, source, {force: true});
+  await settle();
+  assert.equal(f.db.siteAccess.status(source), null, 'the wait ended');
+  const run = f.launches.at(-1);
+  assert.equal(run.sourceUrl, source);
+  assert.equal(run.taskId, blocked.run.taskId, 'continues the saved scan');
+});
+
 test('pause and source disable cancel automatic access resumption until enabled again', async (t) => {
   for (const pause of [true, false]) {
     const f = fixture(t),

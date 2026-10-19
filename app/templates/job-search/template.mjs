@@ -36,7 +36,7 @@ export const jobSearchTemplate = {
       label: 'Apply',
       runningLabel: 'Applying',
       successCriteria:
-        'The employer or portal shows confirmation for this exact vacancy and candidate, or its application history lists this application. Save the observed confirmation; an Apply button click is insufficient.',
+        "The employer or portal shows confirmation for this exact vacancy and candidate, or its application history lists this application. Save the observed confirmation; an Apply button click is insufficient. When the listing sends the candidate to the employer's site, a job board's Applied marker or history entry only records that redirect: the confirmation must come from the employer's form.",
     },
   },
   fields: [
@@ -71,11 +71,15 @@ export const jobSearchTemplate = {
       type: 'text',
     },
     {
+      // Replaced by the generic Elimination rules; kept so saved profiles stay
+      // valid until the setup agent moves its contents.
       id: 'constraints',
-      label: 'Hard requirements',
-      question: 'What are your salary, work permit, language and start date requirements?',
+      label: 'Hard requirements (old)',
+      question:
+        'Replaced by Elimination rules. The setup agent moves these into rules and application form details.',
       required: false,
       type: 'text',
+      legacy: true,
     },
     {
       id: 'application_policy',
@@ -118,9 +122,9 @@ The user uploaded their CV on the welcome screen. They review your result on a f
    - preferences: target roles, places and work modes from userNotes; otherwise from the CV's recent titles and seniority.
    - experience: years of experience, main skills, languages with levels, education.
    - country (ISO code) and location: from userNotes; otherwise from the CV address when it shows them.
-   - constraints: salary, work permit, language and start date conditions that userNotes state.
-   - application_facts: phone, email, LinkedIn and language levels from the CV, plus facts userNotes state such as notice period or salary expectation.
+   - application_facts: phone, email, LinkedIn and language levels from the CV, plus facts userNotes state such as notice period, earliest start or salary expectation.
    - ranking: your scoring proposal, weights adding up to 100, following userNotes.
+   - hard_rules: your elimination rules proposal (Scoring step 4 format): the target places and work modes, work permit, required languages and a salary floor that userNotes or the CV show.
 3. Leave a field empty when neither userNotes nor the CV show it. Never guess salary, work permit, start date or work mode.
 4. Set the source searches as the Source discovery guidance describes, in a second save_automation_plan call with only sourceSearches.
 5. Do not call ask_workspace_question and do not research sources in this turn.
@@ -130,7 +134,7 @@ The user uploaded their CV on the welcome screen. They review your result on a f
     'Listings are jobs. An unrelated listing is a different profession, judged by its actual responsibilities and professional field. A title naming another specialization is unrelated even when it shares a generic word such as engineer, developer or architect. Salary is a soft preference unless the user makes it mandatory; an omitted salary is not a mismatch. A qualification missing from the CV is unknown, not lacking. Possible home office or hybrid is not full remote. A site salary estimate is not the employer offer.',
   guidance: `## Setup
 1. Ask for the CV and explain the "Add document" control. Ask for target roles, countries and work modes. Save the main target country as its ISO 3166 alpha-2 code in criteria.country (for example "GB"), or leave it empty for a worldwide remote search, and the main search place in criteria.location as job sites spell it (for example "London, United Kingdom"); recipes fill {country} and {location} with them.
-2. Build the criteria.ranking proposal from technical skills, experience, role fit and work preferences, with weights that add up to 100. Ask about hard constraints such as salary, work permit, language and start date.
+2. Build the criteria.ranking proposal from technical skills, experience, role fit and work preferences, with weights that add up to 100. Propose criteria.hard_rules yourself from the CV and the user's answers (places and work modes, work permit, languages, salary floor) and ask only about a rule you cannot derive.
 
 ## Assessing listings
 - Record the exact listing URL, company, role, location and verified requirements.
@@ -142,11 +146,11 @@ The user uploaded their CV on the welcome screen. They review your result on a f
 
 ## Applications
 - Follow criteria.application_policy for consent and approval decisions.
-- Save prepared documents such as cover letters under documents/ and list them in the proposal.
+- A required cover letter is written by the cover letter agent: call request_cover_letter instead of writing one. Approved letters are in documents/cover-letters/.
 
 ## Source discovery
-- template.defaultSources lists the starting sources. Sources without countries are already in the workspace. Sources with countries serve only those countries (ISO codes): propose the ones matching criteria.country and the user's other target countries with save_automation_plan addSources; the existing sources stay. Adding one keeps its saved recipe and instructions. A national board the user names that is not listed is added by its address; its recipe is learned in the trial.
-- Then read get_automation_context section profile. sourceSearch lists the sources whose site extension knows the search: notes say what {query} takes, filters lists the values each filter accepts, terms and current show the present choice. Set them with save_automation_plan sourceSearches: up to 5 terms from the target roles in the form the notes ask for (exact job titles, or a category name where {query} is a category), and only the filter values the criteria decide, such as work mode or seniority. Leave other filters unset. Skip a source when its current choice already fits.
+- template.defaultSources lists the starting sources. Sources without countries or remote are already in the workspace. Sources with countries serve only those countries (ISO codes): propose the ones matching criteria.country and the user's other target countries with save_automation_plan addSources; the existing sources stay. Sources with remote serve remote work (with countries: those countries or remote work): propose them only when the user accepts fully remote work, or for their countries. Adding one keeps its saved recipe and instructions. A national board the user names that is not listed is added by its address; its recipe is learned in the trial.
+- Then read get_automation_context section profile. sourceSearch lists the sources whose site extension knows the search: notes say what {query} takes, filters lists the values each filter accepts, terms and current show the present choice. Set them with save_automation_plan sourceSearches: up to 5 terms from the target roles in the form the notes ask for (exact job titles, or a category name where {query} is a category), and only the filter values the criteria decide, such as work mode or seniority. Leave other filters unset. Skip a source when its current choice already fits. Every source listed in sourceSearch needs terms: without them its scans wait, because {query} would hold the source scope sentence.
 - When the target roles or work preferences change later, update the affected sourceSearches in the same save_automation_plan call.
 `,
 };

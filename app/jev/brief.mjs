@@ -41,6 +41,7 @@ export function briefBlocks(text) {
 
 // Jev selects source blocks; it does not invent a prose summary. Cache and
 // partial progress live beside the original evidence, only in this process.
+// evaluate=null keeps every block (no model is asked).
 export async function buildJevBrief({
   store,
   owner,
@@ -73,8 +74,9 @@ export async function buildJevBrief({
     check();
     const batch = brief.blocks.slice(brief.next, brief.next + 16);
     // Short text and an extension's own listing hold nothing to filter out:
-    // classifying them costs Jev calls and keeps every block anyway.
-    if (evidence.text.length <= 1800 || evidence.listing) {
+    // classifying them costs Jev calls and keeps every block anyway. Without
+    // a model (agent decisions) the agent reads the original text in pages.
+    if (evidence.text.length <= 1800 || evidence.listing || !evaluate) {
       brief.selected = batch.map((b) => ({...b, kind: 'context'}));
       brief.next = brief.blocks.length;
       break;

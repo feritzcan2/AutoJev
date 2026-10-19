@@ -261,6 +261,7 @@ export class WebTasks extends TaskRuns {
     this.restarting = new Set();
     this.pausing = new Map();
     this.browserReady = options?.browserReady ?? (() => true);
+    this.closeRunTabs = options?.onRunFinished;
     this.sourceChecks = new SourceRetryChecks(db, {
       probe: options?.probeSource,
       now: this.now,
@@ -407,8 +408,8 @@ export class WebTasks extends TaskRuns {
         const native = saved.sources.some(
           (url) => saved.sourceSettings?.[url]?.enabled !== false && sourceCollector(saved, url),
         );
-        const automaticRecords =
-          native &&
+        // Loading every record is the costly check, so it runs last.
+        const automaticRecords = () =>
           saved.status === 'enabled' &&
           saved.mode !== 'observe' &&
           this.db.results(saved.id).some((item) => {
@@ -418,11 +419,13 @@ export class WebTasks extends TaskRuns {
           });
         const needsBrowser =
           !native ||
-          automaticRecords ||
           saved.sources.some(
             (url) => saved.sourceSettings?.[url]?.enabled !== false && !sourceCollector(saved, url),
           ) ||
-          this.queue.list(saved.id, {states: ['pending']}).some((t) => t.recordOperation);
+          this.queue
+            .list(saved.id, {states: ['pending'], summary: true})
+            .some((t) => t.recordOperation) ||
+          automaticRecords();
         const browserReady = needsBrowser && this.browserReady(saved.id);
         if (browserReady) canBrowse.add(saved.id);
         if (!browserReady && !native) continue;
@@ -528,7 +531,7 @@ export class WebTasks extends TaskRuns {
             )
           )
             continue;
-          if (source.siteWait?.waiting) continue;
+          if (source.siteWait?.waiting || source.termsRequired) continue;
           if (source.siteBlocked && !source.blocker?.recordId) {
             this.sourceState(a.id, source.url, {
               blocked: false,
@@ -589,7 +592,7 @@ export class WebTasks extends TaskRuns {
           eligible.every(
             (s) =>
               !s.siteWait &&
-              (s.blocked || s.onceCompleted) &&
+              (s.blocked || s.onceCompleted || s.termsRequired) &&
               !(a.questions ?? []).some(
                 (q) =>
                   !q.conversation &&
@@ -610,7 +613,10 @@ export class WebTasks extends TaskRuns {
           continue;
         }
         const next = sources
-          .filter((s) => s.enabled && !s.siteWait?.exhausted && (!s.blocked || s.siteWait))
+          .filter(
+            (s) =>
+              s.enabled && !s.termsRequired && !s.siteWait?.exhausted && (!s.blocked || s.siteWait),
+          )
           .map((s) => s.siteWait?.retryAt ?? s.nextRunAt ?? this.now());
         const nextRunAt = next.length ? Math.min(...next) : null;
         if (current.nextRunAt !== nextRunAt) this.db.put({...current, nextRunAt});
@@ -651,6 +657,7 @@ export class WebTasks extends TaskRuns {
     return this.queue.get(id, task.id);
   }
   async runRecord(id, itemId, kind, input = {}) {
+    this.retireRecordSiteWait(id, itemId);
     const task = enqueueRecordOperation(this, id, itemId, kind, {
       manual: true,
       digest: input.digest,
@@ -660,8 +667,46 @@ export class WebTasks extends TaskRuns {
     await this.tick();
     return this.queue.get(id, task.id);
   }
-  markRecordSubmitted(id, itemId) {
+  // A wait whose automatic retries ran out needs the user. A record retry is
+  // that intervention, as a source run is: it retires the wait the record's
+  // last run stopped on, unless the site has failed again since.
+  retireRecordSiteWait(id, itemId) {
+    const row = this.db.db
+      .prepare(
+        "SELECT json_extract(data,'$.siteWait') AS wait FROM automation_runs WHERE automation_id=? AND json_extract(data,'$.recordId')=? ORDER BY rowid DESC LIMIT 1",
+      )
+      .get(id, itemId);
+    const wait = row?.wait && JSON.parse(row.wait),
+      current =
+        wait?.exhausted && this.db.siteAccess.forLane(wait.lane).status('https://' + wait.site);
+    if (current?.exhausted && current.blockedAt === wait.blockedAt)
+      this.db.siteAccess.acknowledge([wait]);
+  }
+  async markRecordSubmitted(id, itemId) {
     const item = this.db.markSubmitted(id, itemId);
+    this.changed(id);
+    await this.closeRecordTabs(id, itemId);
+    return item;
+  }
+  // A record the user skipped or marked applied needs no page any more: close
+  // the tabs its runs opened. Closing is best effort and never undoes the choice.
+  async closeRecordTabs(id, itemId) {
+    const runs = this.db.db
+      .prepare(
+        "SELECT id, json_extract(data,'$.workerId') AS workerId FROM automation_runs WHERE automation_id=? AND json_extract(data,'$.recordId')=? AND json_extract(data,'$.status')<>'running' ORDER BY rowid DESC",
+      )
+      .all(id, itemId);
+    if (!runs.length) return;
+    try {
+      await this.closeRunTabs?.(id, runs[0], {
+        closeTabs: true,
+        keepForms: false,
+        runIds: runs.map((run) => run.id),
+      });
+    } catch {}
+  }
+  restoreRecord(id, itemId) {
+    const item = this.db.restore(id, itemId);
     this.changed(id);
     return item;
   }
@@ -679,6 +724,7 @@ export class WebTasks extends TaskRuns {
       if (taskHasRecord(task, itemId))
         this.queue.finish(id, task.id, 'cancelled', 'The user rejected this record.');
     this.changed(id);
+    await this.closeRecordTabs(id, itemId);
     return item;
   }
   async runOnce(id) {

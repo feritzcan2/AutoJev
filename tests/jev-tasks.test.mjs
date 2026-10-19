@@ -461,6 +461,18 @@ test('malformed decisions cannot navigate and aborted decisions cannot mutate', 
   assert.equal(f.calls.length, 2);
 });
 
+test('a session stopped mid-slice leaves the task resumable for the next session', async (t) => {
+  const f = fixture(t);
+  f.ports.browser = async () => {
+    f.controller.abort();
+    throw f.controller.signal.reason;
+  };
+  await assert.rejects(f.run({operation: 'scan_results', url}), /abort/i);
+  const [task] = f.db.jevTasks.list(f.a.id, 'assigned');
+  assert.equal(task.status, 'continue', 'not left "running" with nobody driving it');
+  assert.match(jevTaskSummary(task).next, /Continue browser_jev_run with this taskId/);
+});
+
 test('form batches exact values and never clicks; changed earlier fields prevent success', async (t) => {
   for (const clearFirst of [false, true]) {
     const f = fixture(t);
@@ -2253,6 +2265,7 @@ test('discovery retires explicit card conflicts at 85 percent without opening de
         title: 'Surgeon - AI Trainer',
         reason: 'unrelated_role',
         stage: 'card',
+        by: 'jev',
         confidence: 0.85,
       },
       {
@@ -2260,6 +2273,7 @@ test('discovery retires explicit card conflicts at 85 percent without opening de
         title: 'Truck driver',
         reason: 'unrelated_role',
         stage: 'card',
+        by: 'jev',
         confidence: 0.8,
       },
     ],
@@ -2490,14 +2504,13 @@ test('unmarked numeric pagination advances via exact observed links without a Je
       ],
     };
   };
-  f.ports.evaluate = async (state, q) => {
+  f.ports.evaluate = async () => {
     questions++;
-    assert.equal(state.position.currentPage, 3);
-    return {answers: {next: answer('end', q.next.criteria)}};
+    throw Error('The last page of a shown page count needs no Jev decision.');
   };
   const result = await f.run({operation: 'scan_results', url: root});
   assert.equal(result.status, 'completed');
-  assert.equal(questions, 1);
+  assert.equal(questions, 0);
   assert.deepEqual(
     f.calls.map((c) => c.args.url),
     [root, root + '&page=2', root + '&page=3'],
@@ -2508,6 +2521,7 @@ test('unmarked numeric pagination advances via exact observed links without a Je
     [1, 2, 3],
   );
   assert.equal(saved.pages[0].continuation.method, 'observed_page_number');
+  assert.equal(saved.pages[2].continuation.method, 'observed_page_count');
 });
 
 test('late job descriptions stay in the same tab and are classified only when ready', async (t) => {
@@ -2846,6 +2860,7 @@ test('LinkedIn guest searches and postings are read over HTTP; marked listings s
   const core = new WorkspaceDatabase(':memory:'),
     db = new AutomationStore(core);
   t.after(() => core.close());
+  db.siteAccess.pace = () => 0; // No real gap between the fake responses.
   const search =
     'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=backend&location=Germany&sortBy=DD';
   const a = db.create('housing', {

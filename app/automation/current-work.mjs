@@ -106,8 +106,10 @@ export function currentWork(view) {
 }
 
 // "Search 4/5 (platform engineer) · page 3/4 · 12 addresses pending · 47 excluded · 0 new records"
+// The run's own scan is newer than the source's saved one: a collector reads
+// pages and moves to the next search before the agent saves anything.
 function scanProgress(source, run) {
-  const work = source.scan?.work,
+  const work = (run.scan?.work ? run.scan : source.scan)?.work,
     searches = work?.searches ?? [],
     active = searches.find((s) => s.id === work?.activeSearchId),
     page = run.pageProgress ?? active?.pageProgress ?? null,

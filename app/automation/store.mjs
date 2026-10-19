@@ -6,10 +6,11 @@ import {BrowserEvidenceStore} from '../browser/evidence-store.mjs';
 import {isConversation, conversationWaiting} from '../workspaces/conversation.mjs';
 import {setupAgentOnboarding} from '../agents/setup-agent.mjs';
 import {recordOperationState} from '../records/operations.mjs';
+import {taskRecordIds} from '../records/task-scope.mjs';
 import {SiteAccess} from '../browser/site-access.mjs';
 import {automationTrialReady} from '../sources/trial.mjs';
 import {removeImportedWorkspace} from '../workspaces/imported.mjs';
-import {withAgentDefaults} from '../agents/settings.mjs';
+import {withAgentDefaults, DECISION_MODES} from '../agents/settings.mjs';
 import {
   DEFAULT_SCAN_INTERVAL_MINUTES,
   globalTemplateSource,
@@ -19,6 +20,8 @@ import {domainData} from '../workspaces/store.mjs';
 import {contextCompactTokens} from '../agents/context-compaction.mjs';
 import {contextRestartTokens} from '../agents/context-usage.mjs';
 import {randomUUID} from 'node:crypto';
+import {siteKey} from '../browser/site-key.mjs';
+import {recipeNeedsTerms} from '../sources/recipe.mjs';
 import {
   reusableTemplate,
   planInput,
@@ -57,6 +60,7 @@ function agentSettings(input) {
   input = withAgentDefaults(input);
   for (const key of ['model', 'permission', 'reasoning']) boundedText(input[key], key, 120);
   if (![true, false, null].includes(input.network)) throw Error('Invalid network setting');
+  if (!DECISION_MODES.includes(input.decisions)) throw Error('Invalid decision setting');
   const trialModel = input.trialModel ? boundedText(input.trialModel, 'trialModel', 120) : null;
   return {
     provider: input.provider,
@@ -64,6 +68,7 @@ function agentSettings(input) {
     permission: input.permission,
     reasoning: input.reasoning,
     network: input.provider === 'codex' ? input.network : null,
+    decisions: input.decisions,
     ...(trialModel || input.trialModel === null ? {trialModel} : {}),
     contextCompactTokens: contextCompactTokens(input.contextCompactTokens),
     ...(input.contextRestartTokens === undefined
@@ -87,6 +92,7 @@ export class AutomationStore {
    CREATE INDEX IF NOT EXISTS automation_runs_status ON automation_runs(automation_id,json_extract(data,'$.status'));
    CREATE INDEX IF NOT EXISTS automation_runs_source_history ON automation_runs(automation_id,${runSource}) WHERE ${finishedSourceRun};
    CREATE INDEX IF NOT EXISTS automation_runs_record ON automation_runs(automation_id,json_extract(data,'$.recordId'));
+   CREATE INDEX IF NOT EXISTS automation_runs_interview ON automation_runs(automation_id) WHERE json_extract(data,'$.kind')='interview';
    CREATE INDEX IF NOT EXISTS automation_messages_owner ON automation_messages(automation_id);
    CREATE TABLE IF NOT EXISTS scan_seen_listings(workspace_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,url_key TEXT NOT NULL,scope_key TEXT NOT NULL,reason TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(workspace_id,url_key));`);
     this.jevTasks = new JevTaskStore(this.db, now);
@@ -97,6 +103,10 @@ export class AutomationStore {
   }
   has(id) {
     return Boolean(this.db.prepare('SELECT 1 FROM automations WHERE id=?').get(id));
+  }
+  // Checks the automation exists without parsing its large body.
+  assertExists(id) {
+    if (!this.has(id)) throw Error('Automation not found');
   }
   conversation(id, provider) {
     return this.store.workspaces.history(id).conversation(id, provider);
@@ -334,18 +344,43 @@ export class AutomationStore {
     let a = this.get(id);
     const base = a.profileUpdate ? {...a, ...a.profileUpdate.plan} : a,
       previous = a.planDraft?.baseRevision === a.revision ? {...base, ...a.planDraft.plan} : base;
-    const plan = planInput(this.template(a.templateId), input, {
+    // Criteria the agent leaves out keep their saved values (an empty value
+    // clears one); a partial update must not drop settings such as the
+    // unstated-conditions rule.
+    if (input.criteria) input = {...input, criteria: {...previous.criteria, ...input.criteria}};
+    const template = this.template(a.templateId),
+      plan = planInput(template, input, {
         ...previous,
         sources: a.sourceDraft?.sources ?? a.sources,
       }),
       profile = profilePlan(plan),
       updatedAt = this.now();
+    // The initial setup adds the template's sources for a newly saved target
+    // country itself, so they get their search terms in the same setup.
+    const country = String(plan.criteria?.country ?? '').toUpperCase();
+    if (
+      onboarding &&
+      country &&
+      country !== String(previous.criteria?.country ?? '').toUpperCase()
+    ) {
+      const sites = new Set(plan.sources.map(siteKey));
+      for (const source of template.defaultSources ?? [])
+        if (
+          source.enabled &&
+          source.countries?.includes(country) &&
+          !sites.has(siteKey(source.url))
+        ) {
+          sites.add(siteKey(source.url));
+          plan.sources = [...plan.sources, source.url];
+        }
+    }
     if (onboarding) a = this.save(id, profile, {agent: true});
     else if (profileChanged(profile, base))
       a.planDraft = {plan: profile, baseRevision: a.revision, runId, updatedAt};
     else delete a.planDraft;
     const searches = this.proposedSourceSearches(id, plan.sources, input.sourceSearches);
-    if (JSON.stringify(plan.sources) !== JSON.stringify(a.sources) || searches)
+    const changed = JSON.stringify(plan.sources) !== JSON.stringify(a.sources) || searches;
+    if (changed)
       a.sourceDraft = {
         id: randomUUID(),
         sources: plan.sources,
@@ -355,6 +390,27 @@ export class AutomationStore {
       };
     else delete a.sourceDraft;
     this.put(a);
+    // The initial setup applies its sources and searches right away, like its
+    // profile; the user reviews them on the onboarding form.
+    if (onboarding) {
+      if (changed) this.resolveSourceDraft(id, a.sourceDraft.id, true);
+      const saved = this.get(id),
+        withoutTerms = this.sourceSearchOptions(id, saved.sources)
+          .filter(({url}) => recipeNeedsTerms(saved.sourceSettings?.[url]?.recipe))
+          .map(({url}) => url);
+      return {
+        saved: true,
+        draft: false,
+        plan,
+        applied: true,
+        ...(withoutTerms.length ? {sourcesWithoutTerms: withoutTerms} : {}),
+        message:
+          'Saved. During the initial setup the profile, sources and source searches apply right away; the user reviews them on the onboarding form.' +
+          (withoutTerms.length
+            ? ' sourcesWithoutTerms have no search terms yet and will not scan without them: read get_automation_context section profile (sourceSearch notes say what {query} takes, in the site language) and set their terms with sourceSearches.'
+            : ''),
+      };
+    }
     return {
       saved: true,
       draft: true,
@@ -417,7 +473,7 @@ export class AutomationStore {
     return this.put({...a, status, nextRunAt: null, retryPlan: {}, updatedAt: this.now()});
   }
   event(id, kind, data) {
-    this.get(id);
+    this.assertExists(id);
     this.db
       .prepare('INSERT INTO workspace_events(workspace_id,kind,data,at) VALUES(?,?,?,?)')
       .run(id, kind, JSON.stringify(data), this.now());
@@ -430,7 +486,7 @@ export class AutomationStore {
       .run(id);
   }
   message(id, role, text, context = {}) {
-    this.get(id);
+    this.assertExists(id);
     if (!['user', 'assistant', 'system'].includes(role)) throw Error('Invalid message');
     const m = {
       id: randomUUID(),
@@ -455,7 +511,7 @@ export class AutomationStore {
       .map((row) => row.document);
   }
   messages(id) {
-    this.get(id);
+    this.assertExists(id);
     return this.db
       .prepare(
         `SELECT m.data,json_extract(r.data,'$.kind') AS run_kind FROM
@@ -471,20 +527,26 @@ export class AutomationStore {
       });
   }
   runs(id, {summary = false} = {}) {
-    this.get(id);
+    this.assertExists(id);
     const select = summary
       ? "json_remove(data,'$.scan','$.scanPlan','$.navigation','$.observedLinks','$.observations','$.jevTask') AS data,json_extract(data,'$.observations[#-1].url') AS observedUrl"
       : 'data';
     // Select row identities through indexes before reading the large run bodies.
-    // A long-running worker must remain visible even outside recent history.
+    // A long-running worker must remain visible even outside recent history,
+    // and the history keeps each source's latest searches when record work
+    // on other sources fills the recent window.
+    const sourceHistory = summary
+      ? `UNION SELECT rowid FROM (SELECT rowid,row_number() OVER (PARTITION BY ${runSource} ORDER BY rowid DESC) AS n FROM automation_runs WHERE automation_id=? AND ${finishedSourceRun}) WHERE n<=5`
+      : '';
     return this.db
       .prepare(
         `SELECT ${select} FROM automation_runs WHERE rowid IN (
    SELECT rowid FROM automation_runs WHERE automation_id=? AND json_extract(data,'$.status')='running'
    UNION SELECT rowid FROM (SELECT rowid FROM automation_runs WHERE automation_id=? ORDER BY rowid DESC LIMIT 30)
+   ${sourceHistory}
   ) ORDER BY rowid DESC`,
       )
-      .all(id, id)
+      .all(...(summary ? [id, id, id] : [id, id]))
       .map((row) =>
         summary
           ? {...json(row), observations: row.observedUrl ? [{url: row.observedUrl}] : []}
@@ -548,7 +610,13 @@ export class AutomationStore {
       definition = db.template(a.templateId),
       tasks = db.store.workspaces.tasks.list(id, {summary: true}),
       results = db.results(id),
-      foundCounts = db.runFoundCounts(id);
+      foundCounts = db.runFoundCounts(id),
+      tasksByRecord = new Map();
+    for (const task of tasks)
+      for (const recordId of taskRecordIds(task)) {
+        if (!tasksByRecord.has(recordId)) tasksByRecord.set(recordId, []);
+        tasksByRecord.get(recordId).push(task);
+      }
     return {
       automation: {...a, questions: (a.questions ?? []).map((q) => db.questionContext(id, q))},
       definition,
@@ -562,7 +630,12 @@ export class AutomationStore {
         .map((run) => ({...run, foundCount: foundCounts.get(run.id) ?? 0})),
       results: results.map((item) => ({
         ...item,
-        recordAction: recordOperationState(db, id, item, {a, definition, tasks}),
+        recordAction: recordOperationState(db, id, item, {
+          a,
+          definition,
+          tasks,
+          recordTasks: tasksByRecord.get(item.id) ?? [],
+        }),
       })),
       resultCounts: db.resultCounts(id),
       missing: missingPlanFields(a, definition),

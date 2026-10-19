@@ -41,3 +41,18 @@ test('a failed read releases the refresh queue for a later attempt', async () =>
   await refresh();
   assert.equal(calls, 2);
 });
+
+test('a gap separates reads while changes keep arriving', async () => {
+  const reads = [];
+  let refresh;
+  refresh = coalesceRefresh(
+    async () => {
+      reads.push(Date.now());
+      if (reads.length === 1) refresh();
+    },
+    {gap: 50},
+  );
+  await refresh();
+  assert.equal(reads.length, 2);
+  assert.ok(reads[1] - reads[0] >= 45);
+});

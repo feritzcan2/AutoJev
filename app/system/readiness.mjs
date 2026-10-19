@@ -9,6 +9,7 @@ import {existingChromeEndpoint} from '../jev/chrome.mjs';
 import {findChrome, findExecutable} from '../browser/chrome-installation.mjs';
 import {launchEnvironment as readinessEnvironment} from '../agents/launch-environment.mjs';
 import {missingAgentMessage} from '../agents/installation.mjs';
+import {DECISION_MODES} from '../agents/settings.mjs';
 export {findChrome, findExecutable} from '../browser/chrome-installation.mjs';
 export {launchEnvironment as readinessEnvironment} from '../agents/launch-environment.mjs';
 const exec = promisify(execFile);
@@ -118,6 +119,8 @@ export async function collectReadiness(input = {}, options = {}) {
     throw Error('Invalid setup choice.');
   const provider = input.provider ?? 'codex';
   if (!Object.hasOwn(providers, provider)) throw Error('Invalid setup choice.');
+  const decisions = input.decisions ?? 'jev';
+  if (!DECISION_MODES.includes(decisions)) throw Error('Invalid setup choice.');
   const profile = input.chromeProfile?.directory;
   if (profile !== undefined && (typeof profile !== 'string' || !/^[\w -]{1,100}$/.test(profile)))
     throw Error('Invalid Chrome profile.');
@@ -199,18 +202,27 @@ export async function collectReadiness(input = {}, options = {}) {
       ),
     );
     let jev;
-    try {
-      jev = await options.jevStatus?.();
-    } catch {}
+    if (decisions === 'jev')
+      try {
+        jev = await options.jevStatus?.();
+      } catch {}
     checks.push(
-      item(
-        'jev',
-        'Jev key',
-        jev?.configured ? 'ready' : 'error',
-        jev?.configured
-          ? 'Jev key configured. You can test the connection under Configuration → Jev.'
-          : (jev?.error ?? 'Save the TypeSafe API key under Configuration → Jev.'),
-      ),
+      decisions === 'agent'
+        ? item(
+            'jev',
+            'Listing decisions',
+            'ready',
+            'The agent makes the listing decisions; no TypeSafe key is needed.',
+          )
+        : item(
+            'jev',
+            'Jev key',
+            jev?.configured ? 'ready' : 'error',
+            jev?.configured
+              ? 'Jev key configured. You can test the connection under Configuration → Jev.'
+              : (jev?.error ??
+                  'Save the TypeSafe API key under Configuration → Jev, or let the agent make the listing decisions in Agent settings.'),
+          ),
     );
   }
   return {

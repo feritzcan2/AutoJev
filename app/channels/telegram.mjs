@@ -577,6 +577,9 @@ export class TelegramBot {
       const row = this.db.delivery(pending.id),
         link = row && this.db.link(row.candidate_id);
       if (!link || row.status !== 'sent') continue;
+      // Rendering a card reads the workspace and its tasks; skip it while the
+      // chat must wait instead of rendering the same card on every flush.
+      if ((this.nextChatSend.get(link.chat_id) ?? 0) > this.now()) continue;
       const delivery = this.delivery(row, link, {edit: true});
       if (!delivery) {
         this.db.edited(row.id, null);
@@ -587,7 +590,6 @@ export class TelegramBot {
         this.db.edited(row.id, body);
         continue;
       }
-      if ((this.nextChatSend.get(link.chat_id) ?? 0) > this.now()) continue;
       try {
         await this.api.call(
           'editMessageText',

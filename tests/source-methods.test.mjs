@@ -161,7 +161,7 @@ test('another address on a starting source site gets that source template settin
   const sources = db.sources(id);
   assert.equal(
     sources.find((s) => s.url === 'https://uk.indeed.com/').recipe.entry.template,
-    'https://uk.indeed.com/jobs?q={query}&l={location}',
+    'https://uk.indeed.com/jobs?q={query}&l={location}&sort=date',
   );
   assert.equal(sources.find((s) => s.url === 'https://eg.indeed.com/').recipe, undefined);
   assert.equal(sources.find((s) => s.url === 'https://jobs.example.test/').recipe, undefined);

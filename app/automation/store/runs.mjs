@@ -1,7 +1,12 @@
 // @ts-check
 import {taskRecordIds, recordScoredInTask} from '../../records/task-scope.mjs';
 import {CONVERSATION_WORKER} from '../../workspaces/conversation.mjs';
-import {activeSearch, replayScanWork, validateWorkCompletion} from '../../sources/scan-work.mjs';
+import {
+  activeSearch,
+  replayScanWork,
+  validateWorkCompletion,
+  scanStats,
+} from '../../sources/scan-work.mjs';
 import {answerContinuation} from '../continuation.mjs';
 import {validateRecordTask} from '../../records/operations.mjs';
 import {sameSite} from '../../browser/site-access.mjs';
@@ -82,12 +87,11 @@ export const runMethods = {
           : scopeMatches
             ? state.pageProgress
             : null;
-      const recipe = a.sourceSettings?.[task.sourceUrl]?.recipe,
-        ordering = state.recipeState?.status === 'verified' ? (recipe?.ordering ?? null) : null;
+      // Every source is scanned newest first: a repeat scan stops at known listings.
       const scanState =
         kind === 'run' && task.sourceUrl && !task.recordId
           ? beginSourceScan(state.scanState, scopeKey, this.now(), {
-              ordering,
+              ordering: 'newest_first',
               pageCap: SCAN_SEARCH_PAGES,
             })
           : null;
@@ -237,6 +241,9 @@ export const runMethods = {
         summary: boundedText(summary, 'Run summary', 6000),
         finishedAt: this.now(),
         actionId: null,
+        ...(run.sourceUrl && !run.recordId && scanStats(run.scan)
+          ? {scanStats: scanStats(run.scan)}
+          : {}),
       });
       if (run.kind === 'run' && run.sourceUrl && !run.recordId && run.scanPlan) {
         const state = a.sourceState?.[run.sourceUrl] ?? {};

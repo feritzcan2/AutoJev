@@ -231,7 +231,9 @@ try {
   assert.equal(await form.locator('.onboarding-checks').getByText('StepStone').count(), 0);
   assert.ok(await form.locator('.onboarding-checks').getByText('Jobindex').isVisible());
   await form.locator('[name=country]').fill('DE');
-  await form.locator('[name=constraints]').fill('At least 80,000 EUR, EU work permit');
+  await form
+    .locator('[name=application_facts]')
+    .fill('Salary expectation 80,000 EUR, EU work permit');
   await form.getByText('Jev key').waitFor();
   await page.screenshot({path: path.join(data, '3-review.png')});
   await screen.evaluate((node) => node.scrollTo(0, node.scrollHeight));
@@ -248,7 +250,7 @@ try {
   await page.waitForFunction((id) => document.querySelector('#candidates').value === id, id);
   const a = (await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), id)).automation;
   assert.equal(a.title, 'Deniz Yilmaz');
-  assert.equal(a.criteria.constraints, 'At least 80,000 EUR, EU work permit');
+  assert.equal(a.criteria.application_facts, 'Salary expectation 80,000 EUR, EU work permit');
   assert.equal(a.reviewedRevision, a.revision, 'The profile is saved and reviewed');
   assert.equal(a.status, 'enabled', 'The first search starts');
   assert.ok(
@@ -277,7 +279,11 @@ try {
     reply: 'I filled your role and city from your CV.',
   });
   assert.equal(await form.locator('[name=title]').inputValue(), 'Ayse Kaya');
-  assert.equal(await form.locator('[name=constraints]').inputValue(), '', 'No values leak in');
+  assert.equal(
+    await form.locator('[name=application_facts]').inputValue(),
+    '',
+    'No values leak in',
+  );
   assert.ok(await form.locator('.onboarding-checks').getByText('Jobindex').isVisible());
   await form.getByRole('button', {name: 'Save and start the search'}).click();
   await screen.waitFor({state: 'hidden'});

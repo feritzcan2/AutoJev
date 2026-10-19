@@ -30,6 +30,9 @@ export function automationAttention(snapshot, {includeDismissed = false} = {}) {
         recordId: question.recordId,
         canDismissRecord: question.canDismissRecord,
         fields: question.fields,
+        ...(question.verification ? {verification: true} : {}),
+        ...(question.code ? {code: true} : {}),
+        ...(question.coverLetter ? {coverLetter: question.coverLetter} : {}),
         ...context,
         conversation,
       });
@@ -95,17 +98,21 @@ export function automationAttention(snapshot, {includeDismissed = false} = {}) {
     }
     const saved = source.blocker ?? run?.resumeContext ?? {};
     const access = source.accessRecovery;
-    const uncertain =
-      Boolean(saved.recordId ?? run?.recordId) ||
-      snapshot.results?.some(
-        (r) => r.sourceUrl === source.url && ['executing', 'uncertain'].includes(r.status),
-      );
+    // Only a run that was acting on a record could resend that action. A record
+    // of this source with an unclear outcome stays as it is: a new scan skips it.
+    const uncertain = Boolean(saved.recordId ?? run?.recordId);
     issues.push({
       id: source.url,
       sourceUrl: source.url,
       name: source.name,
       workerId: saved.workerId ?? run?.workerId,
-      browserRequired: !(run?.collector || source.scan?.collector),
+      // An API collector or the site extension's HTTP reader scans without a
+      // browser tab; a tab the run recorded still counts.
+      browserRequired: !(
+        run?.collector ||
+        source.scan?.collector ||
+        (['api', 'http'].includes(source.extension?.kind) && !saved.tabId)
+      ),
       dismissKey: JSON.stringify([
         source.lastRunId ?? saved.runId,
         source.lastRunAt,
@@ -208,7 +215,12 @@ export function automationAttention(snapshot, {includeDismissed = false} = {}) {
       retryAt: automation.retryPlan?.[latest.id]?.at ?? null,
       url: latest.resumeContext?.url ?? latest.observations?.at(-1)?.url,
       tabId: latest.resumeContext?.tabId,
-      retry: latest.kind === 'trial' ? 'trial' : null,
+      retry:
+        latest.kind === 'trial'
+          ? 'trial'
+          : latest.kind !== 'interview' && !latest.recordId && automationReady(automation)
+            ? 'run'
+            : null,
     });
   }
   return includeDismissed

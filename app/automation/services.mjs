@@ -16,6 +16,9 @@ import {runSnapshot} from '../browser/automation-snapshot.mjs';
 import {jevProvider} from '../jev/policy.mjs';
 import {saveJevProfile, jevProfileView} from '../jev/qualification-profile.mjs';
 import {loadScoringDocuments} from '../scoring/profile.mjs';
+import {runSiteLane} from '../browser/site-access.mjs';
+import {approveCoverLetter, reviseCoverLetter} from './cover-letters.mjs';
+import {renderCoverLetterPdf} from './cover-letter-pdf.mjs';
 
 export function registerAutomationServices({
   root,
@@ -32,6 +35,7 @@ export function registerAutomationServices({
   mcp,
   notify = () => {},
   launch = launchAutomationWorker,
+  trace = null,
 }) {
   const outputs = new Map();
   browsers.siteAccess = db.siteAccess;
@@ -58,6 +62,7 @@ export function registerAutomationServices({
       return browsers.status(id).ready;
     },
     launch: (run, automation, onEvent, signal) => {
+      const coverLetter = run.recordOperation === 'cover_letter';
       if (run.sourceUrl && run.taskId && !run.recordOperation)
         void browsers.closeSourceCheck(automation.id, run).catch(() => {});
       return launch({
@@ -75,6 +80,7 @@ export function registerAutomationServices({
             () => !signal.aborted && db.run(run.id).status === 'running',
             {
               signal,
+              siteLane: runSiteLane(run),
               captchaMaySubmit: () => {
                 const current = db.run(run.id);
                 if (
@@ -89,25 +95,38 @@ export function registerAutomationServices({
             },
           ),
           {
-            isolatedResearch: isConversation(run) || batchScoring(run),
-            resumeContext: batchScoring(run)
-              ? undefined
-              : (run.continuation?.browserContext ?? run.resumeContext),
+            // A cover letter writer reads the listing in its own tab; the
+            // application's form tab stays as the applicant left it.
+            isolatedResearch: isConversation(run) || batchScoring(run) || coverLetter,
+            resumeContext:
+              batchScoring(run) || coverLetter
+                ? undefined
+                : (run.continuation?.browserContext ?? run.resumeContext),
             resumeSource: ['site_access_response', 'site_access_retry'].includes(
               run.continuation?.reason,
             ),
-            recordId: run.recordOperation && !batchScoring(run) ? run.recordId : undefined,
+            recordId:
+              run.recordOperation && !batchScoring(run) && !coverLetter ? run.recordId : undefined,
             sourceUrl: run.recordOperation ? undefined : run.sourceUrl,
             sourceUrls: automation.sources,
+            // Development builds keep every Jev request of the run in the agent trace.
+            ...(trace
+              ? {
+                  traceJev: (entry) =>
+                    trace.jev(automation.id, run.id, {...entry, workerId: run.workerId}),
+                }
+              : {}),
             readTabKey: batchScoring(run)
               ? `score-batch:${run.taskId}`
-              : run.recordOperation
-                ? `record:${run.recordId}`
-                : run.sourceUrl && !run.recordId
-                  ? `source:${run.sourceUrl}`
-                  : run.kind !== 'run'
-                    ? `read:${run.sourceUrl ?? run.workerId ?? 'main'}`
-                    : undefined,
+              : coverLetter
+                ? `cover-letter:${run.recordId}`
+                : run.recordOperation
+                  ? `record:${run.recordId}`
+                  : run.sourceUrl && !run.recordId
+                    ? `source:${run.sourceUrl}`
+                    : run.kind !== 'run'
+                      ? `read:${run.sourceUrl ?? run.workerId ?? 'main'}`
+                      : undefined,
           },
         ),
         report: (id, runId, status, summary, goalReached) => {
@@ -198,7 +217,21 @@ export function registerAutomationServices({
     changed(id);
     return result;
   });
-  handle('workspace-answer', (id, question, value) => runtime.answer(id, question, value));
+  handle('workspace-answer', (id, question, value) => {
+    if ((db.get(id).questions ?? []).some((q) => q.id === question && q.coverLetter))
+      throw Error('Review this cover letter on the Files page');
+    return runtime.answer(id, question, value);
+  });
+  handle('cover-letter-approve', (id, question, text) =>
+    approveCoverLetter(runtime, id, question, {
+      text,
+      workspace: workspace(id),
+      renderPdf: renderCoverLetterPdf,
+    }),
+  );
+  handle('cover-letter-revise', (id, question, feedback) =>
+    reviseCoverLetter(runtime, id, question, feedback),
+  );
   handle('automation-setup', (id) => runtime.setup(id));
   handle('automation-onboarding', (id, input) => runtime.onboard(id, input));
   handle('setup-agent-settings', async (id, input) => {
@@ -212,7 +245,7 @@ export function registerAutomationServices({
     runtime.saveSourcesInterval(id, intervalMinutes),
   );
   handle('automation-source-run', (id, url, options) =>
-    runtime.runSource(id, url, {fresh: options?.fresh === true}),
+    runtime.runSource(id, url, {fresh: options?.fresh === true, force: options?.force === true}),
   );
   handle('automation-source-relearn', (id, url) => runtime.relearnSource(id, url));
   handle('automation-source-resume', (id, url, runId, response) =>
@@ -273,6 +306,7 @@ export function registerAutomationServices({
     return item;
   });
   handle('automation-dismiss', (id, itemId) => runtime.dismissRecord(id, itemId));
+  handle('automation-restore', (id, itemId) => runtime.restoreRecord(id, itemId));
   handle('automation-mark-submitted', (id, itemId) => runtime.markRecordSubmitted(id, itemId));
   handle('automation-star', (id, itemId, starred) => {
     const item = db.star(id, itemId, starred);

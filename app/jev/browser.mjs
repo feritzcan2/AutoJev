@@ -101,13 +101,14 @@ export class JevBrowser {
       profile,
       endpoint = existingChromeEndpoint,
       openWindow = openChromeWindow,
+      readyTimeout = 10000,
       checkpoints = [],
       accountVault = null,
       onDisconnect = () => {},
       onTabsClosed = () => {},
     } = {},
   ) {
-    this.siteAccess = siteAccess;
+    this.sharedSiteAccess = siteAccess;
     this.autoVerify = autoVerify;
     this.accountVault = accountVault;
     this.directory = directory;
@@ -123,6 +124,7 @@ export class JevBrowser {
     this.profile = profile;
     this.endpoint = endpoint;
     this.openWindow = openWindow;
+    this.readyTimeout = readyTimeout;
     this.tabs = new Map();
     this.automationTabs = new Map();
     this.automationRuns = new Map();
@@ -153,7 +155,7 @@ export class JevBrowser {
             const marker = await this.prepareProfileWindow();
             const endpoint = await this.endpoint(),
               saved = await this.registry.read();
-            await marker.waitForReady({signal: this.abort.signal});
+            await marker.waitForReady({signal: this.abort.signal, timeout: this.readyTimeout});
             transport = await JevCdpTransport.connect(endpoint, {signal: this.abort.signal});
             this.transport = transport;
             transport.onTargetDestroyed = (id) => {
@@ -243,6 +245,7 @@ export class JevBrowser {
             if (this.homeId === markerId) await this.tab(markerId).page.goto(homeUrl);
             marker.close();
             this.profileWindow = null;
+            this.lastConnectError = null;
             if (contextId) await this.persistTabs();
             return context;
           } catch (error) {
@@ -257,10 +260,15 @@ export class JevBrowser {
               this.profileWindow?.close();
               this.profileWindow = null;
             }
-            throw Object.assign(
-              Error(`Could not connect to Chrome: ${error.message.split('\n')[0]}`),
-              {code: 'BROWSER_DISCONNECTED'},
-            );
+            // A retry reuses the profile window, which may no longer be in front.
+            // Its readiness timeout must not hide why the previous attempt failed.
+            let message = error.message.split('\n')[0];
+            if (error.code !== 'PROFILE_NOT_READY') this.lastConnectError = message;
+            else if (this.lastConnectError)
+              message += ` The previous attempt failed: ${this.lastConnectError}`;
+            throw Object.assign(Error(`Could not connect to Chrome: ${message}`), {
+              code: 'BROWSER_DISCONNECTED',
+            });
           } finally {
             release?.();
           }
@@ -305,7 +313,10 @@ export class JevBrowser {
     }
     // A slow load or a denied connection reuses this window on retry.
     this.abort.signal.throwIfAborted();
-    await this.profileWindow.waitForReady({signal: this.abort.signal});
+    await this.profileWindow.waitForReady({
+      signal: this.abort.signal,
+      timeout: this.readyTimeout,
+    });
     return this.profileWindow;
   }
   async findOwnedPage(id) {
@@ -553,6 +564,13 @@ export class JevBrowser {
     } finally {
       this.busy = false;
     }
+  }
+  // Site waits of the lane of the current call (scan or application).
+  get siteAccess() {
+    return this.sharedSiteAccess?.forLane(this.siteLane);
+  }
+  set siteAccess(value) {
+    this.sharedSiteAccess = value;
   }
   tab(id) {
     if (/^\d+$/.test(id))
@@ -994,6 +1012,23 @@ export class JevBrowser {
               'No file chooser opened. Use browser_upload_document (direct Jev: browser_jev_upload) with the uploadId from the current uploads list and the document path in the workspace. Do not repeat the normal click.',
           };
       }
+    if (action.kind === 'click') {
+      // Chrome hands an email or phone link to another app; the page never changes.
+      const external = await slot.page
+        .evaluate((node) => {
+          const href = window.__jevFast?.nodes.get(node)?.closest('a[href]')?.href ?? '';
+          return /^(mailto|tel):/i.test(href) ? href : null;
+        }, action.node)
+        .catch(() => null);
+      if (external)
+        return {
+          ...(await this.observe(slot)),
+          status: 'unsupported',
+          executed: false,
+          external,
+          message: `This link opens ${external} in the computer's email or phone app; no web page or form opens. If it is the apply control, the site takes applications by email to that address: report that as the blocker with the address. Do not click it again.`,
+        };
+    }
     const repeatKey = JSON.stringify([action.kind, action.node, action.value, action.delta, text]),
       before = progressKey(observed);
     if (action.kind !== 'wait' && blockedRepeat(slot, repeatKey, before))
@@ -1169,6 +1204,7 @@ export class JevBrowser {
         ? AbortSignal.any([this.abort.signal, state.signal])
         : this.abort.signal;
       this.readSignal.throwIfAborted();
+      this.siteLane = state.siteLane;
       if (name === 'browser_jev_open') {
         checkedUrl(args.url);
         const wait = this.siteAccess?.status(args.url);
@@ -1918,6 +1954,7 @@ export class JevBrowser {
     } finally {
       await releaseRendering?.();
       this.readSignal = null;
+      this.siteLane = undefined;
       this.busy = false;
     }
   }

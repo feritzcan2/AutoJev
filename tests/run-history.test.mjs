@@ -177,3 +177,58 @@ test('sources retain the last finished source outcome outside recent history whi
   db.finish(id, active.id, 'interrupted', 'Stopped latest scan');
   assert.equal(db.sources(id)[0].lastRun.status, 'interrupted');
 });
+
+test('snapshot history keeps each source search runs when record work fills the recent window', (t) => {
+  const {db, id, start, save} = fixture(t),
+    search = start(sources[1]);
+  db.finish(id, search.id, 'completed', 'Found listings');
+  const item = save(start(), 'one');
+  for (let n = 0; n < 32; n++)
+    db.putRun({
+      id: `record-work-${n}`,
+      automationId: id,
+      kind: 'run',
+      sourceUrl: sources[0],
+      recordId: item.id,
+      recordOperation: 'execute',
+      status: 'blocked',
+      summary: 'Record work blocked',
+    });
+  assert.equal(
+    db.runs(id).some((run) => run.id === search.id),
+    false,
+  );
+  assert.equal(
+    db.snapshot(id).runs.some((run) => run.id === search.id),
+    true,
+  );
+});
+
+test('a counted source scan reports its saved findings with the last source outcome', (t) => {
+  const {db, id, start, save} = fixture(t),
+    run = start();
+  db.putRun({
+    ...db.run(run.id),
+    scan: {
+      complete: false,
+      pendingUrls: [],
+      work: {
+        activeSearchId: 's',
+        counted: true,
+        searches: [{id: 's', pendingUrls: [], processedUrls: [], newListings: {page: 4}}],
+      },
+    },
+  });
+  save(run, 'one');
+  save(run, 'one');
+  save(run, 'two');
+  db.finish(id, run.id, 'completed', 'Scan finished normally.');
+  assert.deepEqual(db.sources(id)[0].lastRun.scanStats, {
+    searches: 1,
+    listings: 4,
+    jevRejected: 0,
+    reviewRejected: 0,
+    belowThreshold: 0,
+    saved: 2,
+  });
+});

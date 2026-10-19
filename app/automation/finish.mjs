@@ -11,6 +11,7 @@ import {validateLoginQuestion, LOGGED_IN_FIELD} from './login-question.mjs';
 import {OUTCOME_FIELD} from './question-forms.mjs';
 import {sourceStop} from './stop.mjs';
 import {holdForTechnicalRetry} from './recovery.mjs';
+import {recordBlocker} from '../records/blockers.mjs';
 
 // finish_automation_run: check that the reported status is backed by the saved
 // task state, ask the user what only they can answer, then report the run.
@@ -26,6 +27,8 @@ export function finishAutomationRun({
   report,
 }) {
   const status = args.status;
+  // Checked first: a refused finish must not leave questions or stops behind.
+  const blocker = active.recordOperation ? recordBlocker(status, args.blocker) : null;
   if (collecting && status === 'completed' && !active.scan?.complete)
     throw Error(
       'CLI pages and the Jev/agent review are not finished; continue with collect_source_page.',
@@ -107,7 +110,9 @@ export function finishAutomationRun({
       uncertain =
         item.status === 'uncertain' || (item.status === 'executing' && active.actionId === item.id);
     // A CAPTCHA after the submit click: the user must act first, so say so up front.
-    const challenge = Boolean(db.run(run.id)?.submission?.verification);
+    const challenge = Boolean(db.run(run.id)?.submission?.verification),
+      // A code sent to the user's email or phone after the submit click.
+      code = !challenge && blocker?.category === 'needs_code';
     if (
       uncertain &&
       !(automation.questions ?? []).some((q) => q.recordId === item.id && q.answer == null)
@@ -117,7 +122,9 @@ export function finishAutomationRun({
         {
           text: challenge
             ? `${item.title ?? item.url}: a verification (CAPTCHA) appeared on the page after submitting. Solve it in the open tab in Chrome. Then choose "${OUTCOME_FIELD.options[0]}" if a confirmation message appears, or "${OUTCOME_FIELD.options[1]}" if the form is still there.\nAgent note: ${String(args.summary ?? '').slice(0, 1500)}`
-            : `The submission result for ${item.title ?? item.url} could not be verified.\nAgent note: ${String(args.summary ?? '').slice(0, 1500)}`,
+            : code
+              ? `${item.title ?? item.url}: the site sent a security code to your email or phone after submitting. Enter the code in the open tab in Chrome. Then choose "${OUTCOME_FIELD.options[0]}" if a confirmation message appears, or "${OUTCOME_FIELD.options[1]}" if the form is still there.\nAgent note: ${String(args.summary ?? '').slice(0, 1500)}`
+              : `The submission result for ${item.title ?? item.url} could not be verified.\nAgent note: ${String(args.summary ?? '').slice(0, 1500)}`,
           recordId: item.id,
           fields: [
             challenge
@@ -125,9 +132,13 @@ export function finishAutomationRun({
                   ...OUTCOME_FIELD,
                   label: 'After solving the verification: was this record submitted?',
                 }
-              : OUTCOME_FIELD,
+              : code
+                ? {...OUTCOME_FIELD, label: 'After entering the code: was this record submitted?'}
+                : OUTCOME_FIELD,
           ],
           outcome: true,
+          ...(challenge ? {verification: true} : {}),
+          ...(code ? {code: true} : {}),
         },
         {runId: run.id},
       );
@@ -135,7 +146,7 @@ export function finishAutomationRun({
   if (
     status === 'completed' &&
     active.siteWait &&
-    db.siteAccess.status('https://' + active.siteWait.site)
+    db.siteAccess.forLane(active.siteWait.lane).status('https://' + active.siteWait.site)
   )
     throw Error('A shared wait for this site is in progress; report this round as blocked.');
   if (active.kind === 'trial' && !active.browserSteps)
@@ -175,5 +186,10 @@ export function finishAutomationRun({
     });
     if (retry) return report(id, run.id, retry.status, retry.summary, false);
   } else if (stop) db.putRun({...db.run(run.id), stop});
+  if (active.recordOperation && run.taskId) {
+    const queue = db.store.workspaces.tasks,
+      task = queue.get(id, run.taskId);
+    if (task && (blocker || task.blocker)) queue.put({...task, blocker});
+  }
   return report(id, run.id, status, args.summary, args.goalReached === true);
 }

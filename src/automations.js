@@ -1,5 +1,6 @@
 import {activeRecordOperations} from './record-operation-status.js';
-import {recordQuestionDialog} from './record-question-dialog.js';
+import {answersPage} from './answers-page.js';
+import {coverLetterReview} from './cover-letter-review.js';
 import {automationReady} from '../app/sources/trial.mjs';
 import {templateFields} from './template-fields.js';
 import {renderJevProfile} from './jev-profile.js';
@@ -14,6 +15,7 @@ import {minimumSaveScoreSettings} from './minimum-save-score.js';
 import {automationSourcesPanel} from './automation-sources.js';
 import {automationAttentionPanel} from './automation-attention.js';
 import {renderCurrentWork} from './current-work.js';
+import {devToolsAvailable, openAgentTrace} from './agent-trace.js';
 import './automation-attention.css';
 import './automations.css';
 import './run-history.css';
@@ -67,7 +69,7 @@ export function automationsPage(
     openOnboarding = () => false,
   },
 ) {
-  let sourcePanel, chatPanel, saveScoreSettings;
+  let sourcePanel, chatPanel, saveScoreSettings, coverLetters;
   const host = el('section', null, 'automations-page');
   host.id = 'automations';
   host.hidden = true;
@@ -172,15 +174,29 @@ export function automationsPage(
     formRevision = '',
     formBaseline = null,
     resultsTable = null;
-  const questionDialog = recordQuestionDialog(api, {refresh});
+  const answersSection = el('section');
+  answersSection.dataset.automationPane = 'answers';
+  const answers = answersPage(answersSection, api, {refresh, openFiles: () => setPane('files')});
+  function showAnswers(id) {
+    navigate('answers');
+    answers.focus(id);
+  }
+  const attentionSection = el('section', null, 'attention-page'),
+    attentionEmpty = el(
+      'p',
+      'Nothing needs your attention. Blocked sources and other situations the agent waits on appear here.',
+      'attention-empty',
+    );
+  attentionSection.dataset.automationPane = 'attention';
+  attentionSection.innerHTML =
+    '<div class="section-title"><h2>Attention needed</h2><span>Situations the agent cannot resolve on its own</span></div>';
+  attentionSection.append(attentionEmpty);
   const attention = automationAttentionPanel(api, {
+    container: attentionSection,
     navigate,
     refresh,
     getConversation: () => chatPanel,
-    showRecordQuestions: () => {
-      navigate('board');
-      resultsTable?.showQuestions();
-    },
+    showRecordQuestions: () => showAnswers(),
   });
   const boardNav = document.querySelector('[data-view=board]'),
     recordWork = el('span', null, 'board-nav-work');
@@ -188,14 +204,50 @@ export function automationsPage(
   recordWork.hidden = true;
   recordWork.setAttribute('aria-hidden', 'true');
   boardNav.append(recordWork);
-  const questionBadge = document.querySelector('#question-badge');
-  questionBadge.className = 'agent-nav-status board-nav-status';
+  const answersNav = el('button'),
+    questionBadge = el('span', null, 'agent-nav-status board-nav-status');
+  answersNav.type = 'button';
+  answersNav.dataset.view = 'answers';
+  answersNav.innerHTML =
+    '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.7M12 17h.01"/></svg><span>Answers</span>';
+  questionBadge.id = 'question-badge';
   questionBadge.dataset.tone = 'waiting';
-  questionBadge.onclick = (event) => {
-    event.stopPropagation();
-    navigate('board');
-    resultsTable?.showQuestions();
-  };
+  questionBadge.setAttribute('aria-hidden', 'true');
+  questionBadge.hidden = true;
+  answersNav.append(questionBadge);
+  boardNav.after(answersNav);
+  const attentionNav = el('button'),
+    attentionBadge = el('span', null, 'agent-nav-status');
+  attentionNav.type = 'button';
+  attentionNav.dataset.view = 'attention';
+  attentionNav.innerHTML =
+    '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 4.2 2.6 17.5A2 2 0 0 0 4.3 20.5h15.4a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg><span>Attention needed</span>';
+  attentionBadge.id = 'attention-nav-status';
+  attentionBadge.dataset.tone = 'waiting';
+  attentionBadge.setAttribute('aria-hidden', 'true');
+  attentionBadge.hidden = true;
+  attentionNav.append(attentionBadge);
+  attentionNav.onclick = () => navigate('attention');
+  answersNav.after(attentionNav);
+  // Pages with something waiting on the user rise to the top of the sidebar and
+  // glow; once handled they return to their place below the Tracking table.
+  function pinPending(questions, issues) {
+    const nav = boardNav.parentElement,
+      items = [
+        [answersNav, questions > 0],
+        [attentionNav, issues > 0],
+      ],
+      pinned = items.filter(([, on]) => on).map(([node]) => node);
+    for (const [node, on] of items) node.toggleAttribute('data-pending', on);
+    // Move nodes only when out of place, so focus and hover are not disturbed.
+    if (pinned.some((node, n) => nav.children[n] !== node)) nav.prepend(...pinned);
+    let anchor = boardNav;
+    for (const [node, on] of items) {
+      if (on) continue;
+      if (anchor.nextElementSibling !== node) anchor.after(node);
+      anchor = node;
+    }
+  }
   const hasUnsaved = () => dirty;
   const profileSaveDialog = el('dialog');
   profileSaveDialog.id = 'automation-profile-save-dialog';
@@ -276,6 +328,10 @@ export function automationsPage(
       renderControls();
       renderProfileState();
       chatPanel?.update(data);
+      // Table actions run through attempt() and refresh while busy, so the table
+      // must see busy end. Not on start: rebuilding rows there would replace the
+      // control that was just clicked, such as the row menu it is about to open.
+      if (!busy) resultsTable?.update(data, busy);
     }
   }
   async function catalog() {
@@ -312,7 +368,7 @@ export function automationsPage(
     );
   }
   async function select(id, {onboarding = true} = {}) {
-    questionDialog.update(null);
+    answers.update(null);
     notice('');
     selected = id;
     data = null;
@@ -360,7 +416,7 @@ export function automationsPage(
       api,
       refresh,
       statusNames,
-      onQuestion: (id) => questionDialog.open(id),
+      onQuestion: showAnswers,
     });
     saveScoreSettings = minimumSaveScoreSettings({
       save: async (owner, value, options) => {
@@ -572,14 +628,24 @@ export function automationsPage(
     const files = el('section');
     files.dataset.automationPane = 'files';
     files.innerHTML =
-      '<div class="section-title"><h2>Files</h2><span>The workspace’s documents</span></div><div id="automation-file-list"></div>';
+      '<div class="section-title"><h2>Files</h2><span>The workspace’s documents</span></div><div class="cover-letter-review" hidden></div><div id="automation-file-list"></div>';
+    coverLetters = coverLetterReview(files.querySelector('.cover-letter-review'), api, {refresh});
     files.querySelector('.section-title').append(
       button('Add document', async () => {
         await api.pickDocument(selected);
         await refresh();
       }),
     );
-    host.append(results, history, files, sources, plan, find('.automation-bottom-actions'));
+    host.append(
+      results,
+      answersSection,
+      attentionSection,
+      history,
+      files,
+      sources,
+      plan,
+      find('.automation-bottom-actions'),
+    );
     setupGrid.remove();
     find('.automation-bottom-actions').dataset.automationPane = 'profile';
   }
@@ -644,6 +710,7 @@ export function automationsPage(
   }
   function setPane(name) {
     const page = {results: 'board', setup: 'profile', history: 'background'}[name] ?? name;
+    if (page === 'sources' && pane !== 'sources') sourcePanel?.resort();
     pane = page;
     localStorage.setItem('selected-view', page);
     for (const b of document.querySelectorAll('aside nav button'))
@@ -683,7 +750,7 @@ export function automationsPage(
     document.querySelector('#rename-workspace').disabled = locked;
     document.querySelector('#delete-workspace').disabled = locked;
     find('#automation-delete').disabled = locked;
-    questionDialog.update(data);
+    answers.update(data);
     const helpCount = attention.update(selected, data),
       questionCount = (a.questions ?? []).filter((q) => q.recordId && q.answer == null).length,
       agentHelpCount = Math.max(0, helpCount - questionCount - attention.conversationCount),
@@ -691,8 +758,13 @@ export function automationsPage(
         (run) => run.kind !== 'interview',
       ).length;
     questionBadge.hidden = !questionCount;
-    questionBadge.textContent = questionCount ? `${questionCount} answer(s)` : '';
-    questionBadge.title = `${questionCount} awaiting an answer`;
+    pinPending(questionCount, agentHelpCount);
+    questionBadge.textContent = questionCount ? String(questionCount) : '';
+    answersNav.title = questionCount ? `${questionCount} awaiting an answer` : '';
+    answersNav.setAttribute(
+      'aria-label',
+      ['Answers', answersNav.title].filter(Boolean).join(' · '),
+    );
     const work = activeRecordOperations(data),
       workSummary = work.map(({count, label}) => `${count} ${label}`);
     recordWork.hidden = !work.length;
@@ -704,22 +776,23 @@ export function automationsPage(
         return badge;
       }),
     );
-    boardNav.title = [
-      ...workSummary,
-      ...(questionCount ? [`${questionCount} awaiting an answer`] : []),
-    ].join(' · ');
+    boardNav.title = workSummary.join(' · ');
     boardNav.setAttribute(
       'aria-label',
       ['Tracking table', boardNav.title].filter(Boolean).join(' · '),
     );
+    attentionBadge.hidden = !agentHelpCount;
+    attentionBadge.textContent = agentHelpCount ? String(agentHelpCount) : '';
+    attentionEmpty.hidden = agentHelpCount > 0;
+    attentionNav.title = agentHelpCount ? `${agentHelpCount} item(s) need attention` : '';
+    attentionNav.setAttribute(
+      'aria-label',
+      ['Attention needed', attentionNav.title].filter(Boolean).join(' · '),
+    );
     const status = document.querySelector('#agent-nav-status');
-    status.textContent = agentHelpCount
-      ? `${agentHelpCount} issue(s)`
-      : running
-        ? `${running} running`
-        : '';
+    status.textContent = running ? `${running} running` : '';
     status.hidden = !status.textContent;
-    status.dataset.tone = agentHelpCount ? 'waiting' : 'active';
+    status.dataset.tone = 'active';
     agentNavLabel(p.fresh);
     const chatStatus = document.querySelector('#setup-agent-status'),
       chatRun = interviewRun(data);
@@ -921,6 +994,12 @@ export function automationsPage(
     recordWork.replaceChildren();
     boardNav.title = '';
     questionBadge.hidden = true;
+    answersNav.title = '';
+    answersNav.setAttribute('aria-label', 'Answers');
+    attentionBadge.hidden = true;
+    pinPending(0, 0);
+    attentionNav.title = '';
+    attentionNav.setAttribute('aria-label', 'Attention needed');
     document.querySelector('[data-view=board]').setAttribute('aria-label', 'Tracking table');
     const sourceStatus = document.querySelector('#sources-nav-status');
     if (sourceStatus) sourceStatus.hidden = true;
@@ -931,7 +1010,7 @@ export function automationsPage(
     }
     resultsTable?.dispose();
     attention.update(null, null);
-    questionDialog.update(null);
+    answers.update(null);
     resultsTable?.dispose();
     agentNavLabel(false);
     chatPanel?.dispose();
@@ -960,7 +1039,7 @@ export function automationsPage(
           field.id,
           field.id === 'save_score_threshold'
             ? (data.automation.criteria.save_score_threshold ?? '')
-            : f['criteria-' + field.id].value,
+            : (f['criteria-' + field.id]?.value ?? ''),
         ]),
       ),
       instructions: f.instructions.value,
@@ -1001,6 +1080,17 @@ export function automationsPage(
       a.criteria,
     );
     for (const key of ['title', 'goal', 'instructions', 'facts', 'mode']) f[key].value = a[key];
+    // Workspaces saved before elimination rules existed get them from the setup agent.
+    const rules = f['criteria-hard_rules']?.closest('fieldset');
+    if (rules && !a.criteria.hard_rules?.trim())
+      rules.append(
+        button('Ask the setup agent to propose rules', async () => {
+          await sendMessage(
+            'Propose elimination rules (criteria.hard_rules) for this workspace from my documents and saved criteria, move the hard conditions out of the other fields as Scoring step 5 says, and save it for my review.',
+          );
+          openConversation();
+        }),
+      );
     const score = f['criteria-score_threshold']?.closest('label'),
       unstated = f['criteria-unstated_conditions'],
       slot = form.querySelector('.authorization-score');
@@ -1176,6 +1266,7 @@ export function automationsPage(
     }
     metrics.append(bar, legend);
     sourcePanel.update(data, selected);
+    coverLetters.update(data);
     const files = find('#automation-file-list');
     files.replaceChildren();
     for (const doc of data.documents) {
@@ -1311,6 +1402,12 @@ export function automationsPage(
       ),
     );
   }
+  // Development builds: each run row opens what its agent received.
+  let traceAvailable = false;
+  void devToolsAvailable(api).then((available) => {
+    traceAvailable = available;
+    if (available && data?.runs && find('#automation-runs')) renderRuns();
+  });
   function renderRuns() {
     renderRunTabs();
     const root = find('#automation-runs');
@@ -1331,6 +1428,14 @@ export function automationsPage(
         el('b', runKindLabel(run.kind) + ' · ' + (statusNames[run.status] ?? run.status)),
         el('time', time(run.startedAt)),
       );
+      if (traceAvailable) {
+        const trace = el('button', 'Trace', 'quiet run-trace');
+        trace.type = 'button';
+        trace.title =
+          'Everything this run’s agent received: instructions, tool calls and outputs, Jev requests.';
+        trace.onclick = () => openAgentTrace(api, data.automation.id, run.id);
+        head.append(trace);
+      }
       row.append(head);
       if (
         run.kind === 'run' &&

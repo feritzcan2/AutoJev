@@ -13,6 +13,7 @@ import {
 } from '../app/site-extensions/search.mjs';
 import {workspaceSourceTabs} from './workspace-tabs.js';
 import {positionMenu} from './popover-menu.js';
+import {extensionBenchAvailable, extensionBenchPanel} from './extension-bench.js';
 
 const paginationLabels = {
   auto: 'Detect automatically',
@@ -23,6 +24,14 @@ const paginationLabels = {
   infinite_scroll: 'Infinite scroll',
   none: 'Single page',
 };
+// A site extension's results address sets the pagination and ordering of a
+// url_template recipe whatever the recipe says; a collector pages its API itself.
+const pagedByExtension = (source) =>
+  source.extension?.kind === 'api' || Boolean(source.extension?.search?.pagination);
+const readsNewestFirst = (source) =>
+  (source.extension?.search && source.recipe?.entry.kind === 'url_template'
+    ? source.extension.search.ordering
+    : source.recipe?.ordering) === 'newest_first';
 const methodLabels = {
   none: 'None yet · learned in the trial round',
   url_template: 'URL template',
@@ -37,6 +46,22 @@ const runOutcomes = {
   interrupted: 'Stopped',
   partial: 'Partially completed',
 };
+// How a source's listings are read, shown as the address tooltip.
+const readerLabels = {
+  api: "Read through the site's own API; no browser tab is opened.",
+  http: 'Read over HTTP by a site extension; no browser tab is opened.',
+  browser: 'Read in a Chrome tab by a site extension.',
+  agent: 'Read in a Chrome tab; the agent learned how to search this site.',
+};
+const intervalChoices = [15, 30, 60, 120, 240, 480, 720, 1440];
+const intervalLabel = (minutes) =>
+  minutes === 1440
+    ? 'Daily'
+    : minutes % 1440 === 0
+      ? `Every ${minutes / 1440} d`
+      : minutes % 60 === 0
+        ? `Every ${minutes / 60} h`
+        : `Every ${minutes} min`;
 const plural = (count, word, many = word + 's') => `${count} ${count === 1 ? word : many}`;
 const el = (tag, text, cls) => {
   const n = document.createElement(tag);
@@ -72,6 +97,37 @@ function timeUntil(at) {
       .join(' ')
   );
 }
+function timeAgo(at) {
+  const minutes = Math.floor((Date.now() - at) / 60000);
+  if (minutes < 1) return 'just now';
+  const parts = [
+    [Math.floor(minutes / 1440), 'd'],
+    [Math.floor(minutes / 60) % 24, 'h'],
+    [minutes % 60, 'min'],
+  ];
+  return (
+    parts
+      .filter(([value]) => value)
+      .slice(0, 2)
+      .map(([value, unit]) => `${value} ${unit}`)
+      .join(' ') + ' ago'
+  );
+}
+function scanStatsLine(stats) {
+  return [
+    plural(stats.searches, 'search', 'searches'),
+    plural(stats.listings, 'new listing'),
+    stats.jevRejected ? `Jev dropped ${stats.jevRejected}` : null,
+    stats.reviewRejected ? `rejected on review ${stats.reviewRejected}` : null,
+    stats.belowThreshold ? `${stats.belowThreshold} below save score` : null,
+    `${stats.saved} saved`,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+const updateLastRun = (node) => {
+  node.textContent = 'Last scan ' + timeAgo(Number(node.dataset.sourceLastAt));
+};
 const updateNextRun = (node) => {
   node.textContent =
     node.dataset.sourceNextLabel +
@@ -80,16 +136,19 @@ const updateNextRun = (node) => {
     (node.dataset.sourceNextSuffix ?? '');
 };
 
-// One row per source: who it is, what it is doing now, and the recipe that
-// lets the next scan skip discovery. Everything else opens on demand.
+// One row per source: its name, one status line and its schedule. Editing,
+// relearning and deleting sit behind the ⋯ menu; scan internals are dev-only.
 export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
   let data,
     owner,
     editing = null,
     memory = null,
+    order = null,
     adding = false,
     saving = false,
-    bulkSaving = false;
+    benchAvailable = false,
+    benchSource = null,
+    headBench = null;
   host.innerHTML =
     '<div class="sources-head"><div><h2>Sources</h2><p></p></div><div class="sources-head-actions"></div></div><div data-add></div><ul class="source-list"></ul>';
   const head = host.querySelector('.sources-head'),
@@ -111,8 +170,10 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       clearInterval(countdown);
       return;
     }
-    if (host.getClientRects().length)
+    if (host.getClientRects().length) {
       for (const node of host.querySelectorAll('[data-source-next-at]')) updateNextRun(node);
+      for (const node of host.querySelectorAll('[data-source-last-at]')) updateLastRun(node);
+    }
   }, 30000);
   const tabsControl = workspaceSourceTabs(api, {notice});
   const action = (fn) => async (event) => {
@@ -142,9 +203,19 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
           ? run.sourceUrl === url
           : (run.sources ?? data.automation.sources).includes(url)),
     );
-
-  // The workspace goal is the usual scope; a row repeats it only when it differs.
-  const sameScope = (source) => source.query?.trim() === data.automation.goal?.trim();
+  const recipeStale = (source) =>
+    recipeSummary(source.recipe ?? null, source.recipeState ?? null).status === 'stale';
+  // A source the user has to look at: it will not scan, or scans without results.
+  const needsAttention = (source) =>
+    source.enabled &&
+    !source.scanning &&
+    Boolean(
+      source.blocked ||
+        source.termsRequired ||
+        source.siteWait?.exhausted ||
+        source.trial?.status === 'failed' ||
+        recipeStale(source),
+    );
 
   // Header actions: add a source or ask the agent to find one.
   const add = button(
@@ -161,36 +232,41 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     discover.dataset.sourceDiscover = '';
     headActions.append(discover);
   }
-
-  // Bulk settings fold away; a single form applies the interval to every source.
-  const bulk = el('details', null, 'source-bulk');
-  bulk.innerHTML = '<summary>Apply to all sources</summary>';
-  const bulkForm = el('form', null, 'source-bulk-form');
-  bulkForm.innerHTML =
-    '<label for="automation-sources-interval">Scan interval (min)<input id="automation-sources-interval" name="intervalMinutes" type="number" min="1" max="10080" step="1" placeholder="Do not change"></label><button type="submit" class="quiet">Apply to all</button><small role="status"></small>';
-  bulk.append(bulkForm);
-  host.append(bulk);
-  bulkForm.onsubmit = action(async () => {
-    if (!owner || !data?.sources?.length || !bulkForm.reportValidity()) return;
-    const scope = owner,
-      interval = bulkForm.elements.intervalMinutes.value;
-    if (!interval) {
-      notice('Choose a setting to change.');
-      return;
-    }
-    bulkSaving = true;
-    render();
-    try {
-      await api.automationSourcesInterval(scope, Number(interval));
-      if (owner === scope && host.isConnected) {
-        bulkForm.reset();
-        await refresh();
-        if (owner === scope && host.isConnected) notice('Setting applied to all sources.');
+  // Development builds: the extension test bench and the scan details.
+  const benches = new Map();
+  const benchFor = (url) => {
+    if (!benches.has(url))
+      benches.set(
+        url,
+        extensionBenchPanel(api, {
+          scope: () => owner,
+          url,
+          onClose: () => {
+            benchSource = null;
+            render();
+          },
+        }),
+      );
+    return benches.get(url);
+  };
+  extensionBenchAvailable(api).then((available) => {
+    if (!available || !host.isConnected) return;
+    benchAvailable = true;
+    const toggle = button('Test bench', () => {
+      if (headBench?.element.isConnected) {
+        headBench.element.remove();
+        return;
       }
-    } finally {
-      bulkSaving = false;
-      render();
-    }
+      headBench ??= extensionBenchPanel(api, {
+        scope: () => owner,
+        onClose: () => headBench.element.remove(),
+      });
+      head.after(headBench.element);
+      headBench.focus();
+    });
+    toggle.title = 'Read an address with the site extensions, without agents or records.';
+    headActions.append(toggle);
+    if (data) render();
   });
 
   const proposal = el('section', null, 'source-proposal');
@@ -248,13 +324,12 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         'primary',
       );
     const busy = [...removed, ...searches.map(([url]) => url)].some(busySource);
-    apply.disabled = busy || bulkSaving;
+    apply.disabled = busy;
     const discard = button('Discard suggestions', async () => {
       await api.automationSourceDraft(scope, draft.id, false);
       await refresh();
       notice('Source suggestions discarded.');
     });
-    discard.disabled = bulkSaving;
     actions.append(apply, discard);
     proposal.append(actions);
     if (busy)
@@ -273,13 +348,17 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       run: button('', () => {}),
       menuToggle: el('button', '⋯', 'quiet source-row-menu'),
       menu: el('div', null, 'source-row-actions'),
-      restart: button('Start over', () => {}, 'source-restart'),
       edit: button('', () => {}, 'source-edit'),
+      restart: button('Start over', () => {}, 'source-restart'),
+      relearn: button('Relearn', () => {}),
+      remove: button('Delete source', () => {}, 'source-remove'),
       memoryButton: button('', () => {}, 'source-memory-toggle'),
+      bench: button('Test extension', () => {}, 'source-bench-toggle'),
       pending: null,
     };
     view.toggle.type = 'checkbox';
     view.row.dataset.sourceId = url;
+    view.relearn.dataset.sourceRelearn = '';
     // Secondary actions live in a popover; each closes it before acting.
     const {menu, menuToggle} = view;
     menuToggle.type = 'button';
@@ -298,19 +377,25 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     menu.addEventListener('click', (event) => {
       if (event.target.closest('button') && menu.matches(':popover-open')) menu.hidePopover();
     });
-    menu.append(view.edit, view.memoryButton, view.restart);
-    // Clicking the row's text opens its details, like the Details action.
-    view.main.addEventListener('click', (event) => {
-      if (event.target.closest('button,a,input,select,textarea') || getSelection()?.toString())
+    menu.append(view.edit, view.restart, view.relearn, view.remove, view.memoryButton, view.bench);
+    view.actions.append(view.run, view.tabHost, menuToggle, menu);
+    view.row.append(view.toggle, view.main, view.actions);
+    // A click on the row itself opens or closes its scan details; controls,
+    // open panels and text selection keep their own behaviour.
+    view.row.addEventListener('click', (event) => {
+      if (view.memoryButton.hidden || getSelection()?.toString()) return;
+      if (
+        event.target.closest(
+          'button, a, input, select, textarea, label, summary, [popover], .source-memory, .source-editor, .extension-bench',
+        )
+      )
         return;
       view.memoryButton.click();
     });
-    view.actions.append(view.run, view.tabHost, menuToggle, menu);
-    view.row.append(view.toggle, view.main, view.actions);
     rows.set(url, view);
     return view;
   }
-  async function scanAction(view, scope, url, stop, fresh = false) {
+  async function scanAction(view, scope, url, stop, fresh = false, force = false) {
     if (view.pending) return;
     const current = () => owner === scope && rows.get(url) === view && host.isConnected;
     view.pending = stop ? 'stop' : 'start';
@@ -319,7 +404,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     try {
       await (stop
         ? api.automationSourceStop(scope, url)
-        : api.automationSourceRun(scope, url, {fresh}));
+        : api.automationSourceRun(scope, url, {fresh, force}));
       if (current()) {
         await refresh();
         if (current())
@@ -339,164 +424,206 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     }
   }
 
-  // Status: one bold state, one supporting line. The recipe chip stands alone.
-  function statusLine(source) {
-    const status = el('div', null, 'source-status');
-    const state = source.blocker?.stop?.retryExhausted
-      ? 'Access problem persists'
-      : source.siteWait?.exhausted
-        ? 'Automatic retries stopped'
-        : source.siteWait
-          ? 'Access wait · continues automatically'
-          : source.scanning
-            ? source.trialRunning
-              ? 'Trial in progress'
-              : source.scanIssue
-                ? 'Page could not load'
-                : 'Scanning'
-            : source.recovery && data.automation.status === 'enabled'
-              ? 'Waiting to continue automatically'
-              : source.blocked
-                ? source.lastStatus === 'failed' || source.blocker?.stop?.kind === 'technical'
-                  ? 'Scan could not finish'
-                  : 'Source blocked'
-                : source.lastStatus === 'partial'
-                  ? `Partial scan · ${plural(source.scan?.pendingUrls.length ?? 0, 'address', 'addresses')} left`
-                  : (source.lastRun?.finishedAt ?? source.lastRunAt)
-                    ? `${plural(source.resultCount ?? source.lastFound ?? 0, 'record')} in total`
-                    : 'Not scanned yet';
-    if (source.siteWait && !source.siteWait.exhausted) status.dataset.state = 'waiting';
-    status.append(el('b', state));
+  // The one state the row reports: a problem when there is one, otherwise
+  // what the last scan brought. `tone` colours it.
+  function sourceState(source) {
     const outcome = source.lastRun ?? {
       status: source.lastStatus,
       summary: source.lastResult,
       finishedAt: source.lastRunAt,
     };
-    const detail = source.scanning
-      ? source.scanIssue
-        ? `${source.scanIssue.url} · attempt ${source.scanIssue.attempts}`
-        : (currentWork(data).find((row) => row.stop?.sourceUrl === source.url)?.progress ??
-          (scanPageLabel(source.pageProgress)
-            ? 'Last verified: ' + scanPageLabel(source.pageProgress)
-            : null))
-      : (source.siteWait?.message ?? outcome.summary ?? null);
-    if (detail) {
-      const small = el('small', detail);
-      small.title = source.scanIssue?.evidence ?? detail;
-      status.append(small);
+    if (source.scanning) {
+      if (source.scanIssue)
+        return {
+          tone: 'warning',
+          label: 'Page could not load',
+          detail: `${source.scanIssue.url} · attempt ${source.scanIssue.attempts}`,
+          title: source.scanIssue.evidence,
+        };
+      if (source.trialRunning)
+        return {
+          tone: 'scanning',
+          label: 'Trying the site',
+          detail: 'First round: the agent learns how to search it. Nothing is submitted.',
+        };
+      const page = scanPageLabel(source.pageProgress);
+      return {
+        tone: 'scanning',
+        label: 'Scanning',
+        detail:
+          currentWork(data).find((row) => row.stop?.sourceUrl === source.url)?.progress ??
+          (page ? 'Last verified: ' + page : null),
+      };
     }
-    return {status, outcome};
+    if (source.blocker?.stop?.retryExhausted)
+      return {
+        tone: 'danger',
+        label: 'Access problem persists',
+        detail: source.siteWait?.message ?? outcome.summary,
+      };
+    if (source.siteWait?.exhausted)
+      return {tone: 'danger', label: 'Automatic retries stopped', detail: source.siteWait.message};
+    if (source.siteWait)
+      return {tone: 'waiting', label: 'Waiting for site access', detail: source.siteWait.message};
+    if (source.recovery && data.automation.status === 'enabled')
+      return {tone: 'waiting', label: 'Continues automatically', detail: null};
+    if (source.termsRequired)
+      return {
+        tone: 'warning',
+        label: 'Needs search terms',
+        detail: 'Add them with Edit, or ask the setup chat to choose them.',
+      };
+    if (source.blocked)
+      return source.lastStatus === 'failed' || source.blocker?.stop?.kind === 'technical'
+        ? {tone: 'danger', label: 'Scan could not finish', detail: outcome.summary}
+        : {tone: 'warning', label: 'Blocked', detail: outcome.summary};
+    if (source.trial?.status === 'failed')
+      return {tone: 'danger', label: 'First try failed', detail: outcome.summary};
+    if (recipeStale(source))
+      return {
+        tone: 'warning',
+        label: 'Search stopped working',
+        detail: recipeSummary(source.recipe, source.recipeState).detail,
+      };
+    if (source.lastStatus === 'partial')
+      return {
+        tone: 'warning',
+        label: `Partial scan · ${plural(source.scan?.pendingUrls.length ?? 0, 'address', 'addresses')} left`,
+        detail: null,
+      };
+    if (outcome.status && outcome.status !== 'completed')
+      return {
+        tone: ['failed', 'timeout'].includes(outcome.status) ? 'danger' : 'warning',
+        label: `Last scan: ${runOutcomes[outcome.status] ?? outcome.status}`,
+        detail: outcome.summary,
+        lastRun: outcome.status,
+      };
+    // A counted scan shows what it saved; the funnel behind it is the tooltip.
+    const stats = source.lastRun?.scanStats;
+    if (stats)
+      return {
+        tone: stats.saved ? 'found' : 'idle',
+        label: `${stats.saved} saved of ${plural(stats.listings, 'new listing')}`,
+        detail: null,
+        title:
+          scanStatsLine(stats) +
+          (outcome.summary && outcome.summary !== 'Scan finished normally.'
+            ? '\n' + outcome.summary
+            : ''),
+      };
+    if (outcome.finishedAt)
+      return {
+        tone: source.lastFound ? 'found' : 'idle',
+        label: `${plural(source.resultCount ?? source.lastFound ?? 0, 'record')} in total`,
+        detail: null,
+        title: outcome.summary,
+      };
+    return {
+      tone: 'idle',
+      label: 'Not scanned yet',
+      detail: source.trial?.status === 'passed' ? null : 'The first round is a trial.',
+    };
   }
-  // Meta: the schedule only. The status line above already names the state, so
-  // the last round shows here only when it says something the status does not.
-  function metaLine(source, outcome) {
+  function statusLine(source) {
+    const state = sourceState(source),
+      status = el('div', null, 'source-status'),
+      label = el('b', state.label);
+    status.dataset.tone = state.tone;
+    if (state.lastRun) {
+      label.className = 'source-last-run';
+      label.dataset.status = state.lastRun;
+    }
+    status.append(label);
+    if (state.detail) status.append(el('span', state.detail, 'source-detail'));
+    status.title = state.title ?? state.detail ?? '';
+    return status;
+  }
+  // Request rate: how fast the app reaches this site, counted across all
+  // workspaces and applications. Shown while scanning or after recent requests.
+  function requestLine(source) {
+    const rate = source.requests;
+    if (!rate || (!source.scanning && !rate.lastHour)) return null;
+    const seconds = (ms) => Math.round(ms / 1000),
+      spacing = rate.jitterMs
+        ? `${seconds(rate.minGapMs)}–${seconds(rate.minGapMs + rate.jitterMs)} s apart`
+        : `at least ${seconds(rate.minGapMs)} s apart`,
+      budget = rate.budget,
+      window =
+        budget &&
+        (budget.windowMs === 3600000 ? 'hour' : `${Math.round(budget.windowMs / 60000)} min`);
+    const line = el(
+      'div',
+      budget
+        ? `Request rate: ${budget.used}/${budget.requests} per ${window} · ${spacing}`
+        : `Request rate: ${rate.lastTenMinutes} in the last 10 min · ${spacing}`,
+      'source-requests',
+    );
+    line.title = `Requests this app sent to ${new URL(source.url).hostname.replace(/^www\./, '')} for all workspaces and applications: ${rate.lastTenMinutes} in the last 10 minutes, ${rate.lastHour} in the last hour.${budget ? ` The site allows at most ${budget.requests} per ${window}; over that the scan waits instead of being blocked.` : ''}`;
+    return line;
+  }
+  // Schedule: last scan, next scan and the interval, which changes in place.
+  function scheduleLine(source, scope) {
     const meta = el('div', null, 'source-meta');
-    const plan = el('span', null, 'source-plan');
-    plan.append(el('b', `Every ${source.intervalMinutes} min`));
-    meta.append(plan);
-    const timing = el('span', null, 'source-timing'),
-      nextRun = el(
-        'b',
-        !source.enabled
-          ? 'Off'
-          : source.blocked
-            ? 'Paused until a retry'
-            : data.automation.status !== 'enabled'
-              ? 'Tracking paused'
-              : 'Next scan',
-      );
+    const lastAt = source.lastRun?.finishedAt ?? source.lastRunAt;
+    if (lastAt && !source.scanning) {
+      const lastScan = el('span', null, 'source-last-scan');
+      lastScan.dataset.sourceLastAt = String(lastAt);
+      lastScan.title = 'Last scan ' + time(lastAt);
+      updateLastRun(lastScan);
+      meta.append(lastScan);
+    }
     const nextAt = source.enabled
       ? (source.siteWait?.retryAt ??
-        (!source.scanning && !source.blocked && data.automation.status === 'enabled'
+        (!source.scanning &&
+        !source.blocked &&
+        !source.termsRequired &&
+        data.automation.status === 'enabled'
           ? source.nextRunAt
           : null))
       : null;
     if (nextAt) {
-      nextRun.dataset.sourceNextAt = String(nextAt);
-      nextRun.dataset.sourceNextLabel = source.siteWait ? 'Access check' : 'Next scan';
-      nextRun.title = nextRun.dataset.sourceNextLabel + ' ' + time(nextAt);
-      updateNextRun(nextRun);
-    }
-    timing.append(nextRun);
-    if (!source.scanning) meta.append(timing);
-    const outcomeLabel = runOutcomes[outcome.status],
-      stated =
-        source.scanning ||
-        source.blocked ||
-        source.siteWait ||
-        source.recovery ||
-        source.lastStatus === 'partial';
-    if (outcomeLabel && outcome.status !== 'completed' && !stated) {
-      const lastRun = el('span', `Last round: ${outcomeLabel}`, 'source-last-run');
-      lastRun.dataset.status = outcome.status;
-      lastRun.title = [outcome.finishedAt ? time(outcome.finishedAt) : null, outcome.summary]
-        .filter(Boolean)
-        .join(' · ');
-      meta.append(lastRun);
-    }
-    if (!source.trial || source.trial.status === 'failed') {
-      const trial = el(
-        'small',
-        source.trialRunning
-          ? 'Nothing is submitted during the trial'
-          : source.trial?.status === 'failed'
-            ? 'Trial could not finish'
-            : 'Will be tried in the first round',
-        'source-trial-status',
-      );
-      trial.dataset.status = source.trialRunning ? 'running' : (source.trial?.status ?? 'pending');
-      meta.append(trial);
-    }
+      const timing = el('span', null, 'source-timing'),
+        next = el('b');
+      next.dataset.sourceNextAt = String(nextAt);
+      next.dataset.sourceNextLabel = source.siteWait ? 'Access check' : 'Next scan';
+      next.title = next.dataset.sourceNextLabel + ' ' + time(nextAt);
+      updateNextRun(next);
+      timing.append(next);
+      meta.append(timing);
+    } else if (source.enabled && !source.scanning && data.automation.status !== 'enabled')
+      meta.append(el('span', 'Tracking paused', 'source-timing'));
+    const interval = el('select', null, 'source-interval'),
+      minutes = source.intervalMinutes;
+    interval.setAttribute('aria-label', source.name + ' scan interval');
+    for (const value of [...new Set([...intervalChoices, minutes])].sort((a, b) => a - b))
+      interval.append(new Option(intervalLabel(value), String(value)));
+    interval.value = String(minutes);
+    interval.onchange = action(async () => {
+      await api.automationSourceSave(scope, source.url, {
+        intervalMinutes: Number(interval.value),
+      });
+      await refresh();
+    });
+    meta.append(interval);
     return meta;
   }
-  // Sources a site extension reads carry its kind; the rest use the generic reader.
-  const extensionKinds = {
-    api: [
-      'API',
-      "Site extension: listings come in full text from the site's API; no browser is opened.",
-    ],
-    http: ['HTTP', 'Site extension: pages are read over HTTP without opening a browser.'],
-    browser: [
-      'Automation',
-      'Site extension: listings and pagination are read directly from the page opened in Chrome.',
-    ],
-  };
-  // A source row carries {kind}; a catalog group carries the kind itself.
-  function extensionChip(source) {
-    const kind = source.extension?.kind ?? source.extension;
-    const [label, detail] = extensionKinds[kind] ?? [];
-    if (!label) return null;
-    const chip = el('span', label, 'source-extension');
-    chip.dataset.kind = kind;
-    chip.title = detail;
-    return chip;
-  }
-  function recipeChip(source) {
-    const summary = recipeSummary(source.recipe ?? null, source.recipeState ?? null);
-    const chip = button(
-      summary.label,
-      () => {
-        editing = source.url;
-        render();
-        list
-          .querySelector('.source-editor .source-recipe-editor')
-          ?.scrollIntoView({block: 'nearest'});
-      },
-      'source-recipe',
-    );
-    chip.dataset.status = summary.status;
-    chip.title =
-      summary.detail +
-      (source.recipeState?.verifiedAt ? ` · Verified ${time(source.recipeState.verifiedAt)}` : '');
-    return chip;
-  }
 
-  // Memory: scan facts, recipe history and the pending queue. Rules fold away.
+  // Scan details (development builds): this round, its searches with the
+  // queue, and the recipe, each as one labelled list.
   const exclusionLabels = {
     hard_constraint: 'Hard constraint',
     qualification: 'Qualification conflict',
     unrelated_role: 'Unrelated role',
     not_listing: 'Not a listing',
+  };
+  const scopeReasons = {
+    initial: 'The first successful full scan has not happened yet.',
+    periodic: 'A regular full scan is due.',
+    ordering_unverified: 'Newest-first ordering could not be verified; all pages will be scanned.',
+    start_unverified:
+      'It could not be verified that the scan started on the first page; all pages will be scanned.',
+    dates_unverified: 'Listing dates are missing or unclear; all pages will be scanned.',
+    ordering_changed: 'The date order of the listings is inconsistent; all pages will be scanned.',
   };
   function progressDetails(source) {
     const section = el('section', null, 'source-progress-details source-memory'),
@@ -504,12 +631,35 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       scan = source.scan,
       state = source.scanState,
       cycle = state?.active ?? state?.lastCompleted,
-      pending = scan?.complete === false ? (scan.pendingUrls ?? []) : [];
+      pending = scan?.complete === false ? (scan.pendingUrls ?? []) : [],
+      searches = scan?.work?.searches ?? [],
+      pct = (p) => `${Math.round(p * 100)}%`,
+      link = (url, text = url) => button(text, () => api.openLink(url), 'source-progress-url');
     section.dataset.sourceId = source.url;
-    section.setAttribute('aria-label', 'Scan memory');
-    section.append(el('h3', 'Scan memory'));
-    const facts = el('dl', null, 'source-progress-facts');
-    for (const [label, value] of [
+    section.setAttribute('aria-label', 'Scan details');
+    // One group: a heading and label/value rows; empty values are skipped.
+    const group = (title, rows, always = false) => {
+      const shown = rows.filter(([, value]) => value != null && value !== '');
+      if (!shown.length && !always) return null;
+      const block = el('div', null, 'source-progress-group');
+      block.append(el('h4', title));
+      if (shown.length) {
+        const list = el('dl', null, 'source-progress-facts');
+        for (const [label, value] of shown) {
+          const row = el('div'),
+            dd = el('dd');
+          dd.append(value);
+          row.append(el('dt', label), dd);
+          list.append(row);
+        }
+        block.append(list);
+      }
+      section.append(block);
+      return block;
+    };
+
+    const resumeUrl = page?.url ?? cycle?.checkpoint?.url;
+    group('This round', [
       [
         'Scan type',
         cycle?.mode === 'incremental'
@@ -520,164 +670,99 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
               ? 'All pages in the first scan'
               : 'Source trial in the first round',
       ],
-      ['Last full scan', time(state?.lastFullScanAt)],
-      ['Start of this round', time(cycle?.startedAt)],
+      ['Why this scope', scopeReasons[cycle?.reason]],
+      ['Started', cycle?.startedAt ? time(cycle.startedAt) : null],
+      ['New records since', cycle?.mode === 'incremental' ? time(cycle.cutoffAt) : null],
+      ['Last full scan', state?.lastFullScanAt ? time(state.lastFullScanAt) : null],
       [
-        'Date cutoff for new records',
-        cycle?.mode === 'incremental' ? time(cycle.cutoffAt) : 'Up to the last page',
+        page ? 'Reported page' : 'Resume page',
+        resumeUrl
+          ? link(
+              resumeUrl,
+              page
+                ? `Page ${page.currentPage}${page.totalPages ? ` / ${page.totalPages}` : ''}`
+                : resumeUrl,
+            )
+          : null,
       ],
-      ['Total records', source.resultCount ?? 0],
       [
-        'Last reported page',
-        page
-          ? `Page ${page.currentPage}${page.totalPages ? ` / ${page.totalPages}` : ''}`
-          : 'Not reported yet',
+        'Last opened page',
+        source.observedPage && page && source.observedPage.currentPage !== page.currentPage
+          ? `Page ${source.observedPage.currentPage}. Saved progress and remaining addresses are kept.`
+          : null,
       ],
-    ]) {
-      const fact = el('div');
-      fact.append(el('dt', label), el('dd', String(value)));
-      facts.append(fact);
-    }
-    section.append(facts);
-    const reader = extensionKinds[source.extension?.kind];
-    const note = (label, text) => {
-      const group = el('div', null, 'source-progress-note');
-      group.append(el('b', label), el('p', text));
-      section.append(group);
-    };
-    const address = (url) => button(url, () => api.openLink(url), 'source-progress-url');
-    const recipe = el('div', null, 'source-progress-note source-progress-recipe'),
-      summary = recipeSummary(source.recipe ?? null, source.recipeState ?? null),
-      rs = source.recipeState;
-    recipe.append(el('b', 'Search recipe'));
-    const lines = [summary.label + ' · ' + summary.detail];
-    if (source.recipe?.entry.kind === 'url_template') {
-      lines.push('Template: ' + source.recipe.entry.template);
-      const filters = source.extension?.search
-        ? searchFilterLabels(source.extension.search, source.recipe.entry.template)
-        : [];
-      if (filters.length) lines.push('Site filters: ' + filters.join(' · '));
-    }
-    if (source.recipe?.entry.kind === 'search_form')
-      lines.push(
-        'Form: ' +
-          source.recipe.entry.url +
-          ' · ' +
-          source.recipe.entry.fields.map((f) => `${f.key}=“${f.label}”`).join(', '),
-      );
-    if (source.recipe?.terms?.length) lines.push('Search terms: ' + source.recipe.terms.join(', '));
-    if (source.recipe && source.recipe.entry.kind !== 'discovery')
-      lines.push(
-        'Pagination: ' +
-          paginationLabels[source.recipe.pagination ?? 'auto'] +
-          (source.recipe.ordering === 'newest_first'
-            ? ' · Newest first; repeat scans stop at known listings'
-            : '') +
-          ` · Each search reads up to ${SCAN_SEARCH_LISTINGS} new listings or ${SCAN_SEARCH_PAGES} pages`,
-      );
-    if (rs?.verifiedAt)
-      lines.push(
-        `Last verification ${time(rs.verifiedAt)} · ${rs.successCount} succeeded, ${rs.failCount} failed`,
-      );
-    if (rs?.lastFailure)
-      lines.push(
-        `Last error ${time(rs.lastFailure.at)}: ${rs.lastFailure.reason}${rs.lastFailure.url ? ' · ' + rs.lastFailure.url : ''}`,
-      );
-    recipe.append(el('p', lines.join('\n')));
-    section.append(recipe);
-    if (reader) note('How listings are read', reader[1]);
-    const reasons = {
-      initial: 'The first successful full scan has not happened yet.',
-      periodic: 'A regular full scan is due.',
-      ordering_unverified:
-        'Newest-first ordering could not be verified; all pages will be scanned.',
-      start_unverified:
-        'It could not be verified that the scan started on the first page; all pages will be scanned.',
-      dates_unverified: 'Listing dates are missing or unclear; all pages will be scanned.',
-      ordering_changed:
-        'The date order of the listings is inconsistent; all pages will be scanned.',
-    };
-    if (reasons[cycle?.reason]) note('Reason for the scope', reasons[cycle.reason]);
-    if (page?.url) {
-      const group = el('div', null, 'source-progress-note');
-      group.append(el('b', 'Last reported results page'), address(page.url));
-      section.append(group);
-    } else if (cycle?.checkpoint?.url) {
-      const group = el('div', null, 'source-progress-note');
-      group.append(el('b', 'Resume page'), address(cycle.checkpoint.url));
-      section.append(group);
-    }
-    if (cycle?.checkpoint?.cursor) note('Saved resume marker', cycle.checkpoint.cursor);
-    if (source.recovery)
-      note(
-        'Automatic resume',
-        `${time(source.recovery.readyAt)} · The agent session was interrupted; the same source and resume point will be picked up again.`,
-      );
-    if (cycle?.boundary)
-      note(
+      ['Resume marker', cycle?.checkpoint?.cursor],
+      [
         'Date cutoff',
-        'All records on this page were reported and verified as older than the date cutoff.',
-      );
-    if (scan?.reason) note(scan.complete ? 'Completion note' : 'Resume note', scan.reason);
-    if (source.observedPage && page && source.observedPage.currentPage !== page.currentPage)
-      note(
-        'Last opened results page',
-        `Page ${source.observedPage.currentPage}. Saved progress and remaining addresses are kept.`,
-      );
-    if (scan?.work?.searches.length > 1) {
-      const searches = el('div', null, 'source-progress-note');
-      searches.append(el('b', 'Searches'));
-      for (const search of scan.work.searches)
-        searches.append(
-          el(
-            'p',
-            `${search.label} · ${search.status === 'completed' ? 'Completed' : `${search.pendingUrls.length} address(es) waiting`}${search.pageProgress ? ` · page ${search.pageProgress.currentPage}` : ''}${search.id === scan.work.activeSearchId ? ' · Selected search' : ''}`,
-          ),
-        );
-      section.append(searches);
-    }
-    // Waiting addresses first, then what Jev eliminated (card or detail) in red.
-    const excluded = (scan?.work?.searches ?? []).flatMap((s) => s.excluded ?? []).reverse();
-    const cards = Object.assign({}, ...(scan?.work?.searches ?? []).map((s) => s.cards ?? {})),
-      pct = (p) => `${Math.round(p * 100)}%`;
+        cycle?.boundary
+          ? 'All records on the last page were verified as older than the cutoff.'
+          : null,
+      ],
+      [
+        'Automatic resume',
+        source.recovery
+          ? `${time(source.recovery.readyAt)} · the interrupted session picks up at the same point.`
+          : null,
+      ],
+      [scan?.complete ? 'Completion note' : 'Resume note', scan?.reason],
+      [
+        'Last result',
+        source.lastResult && source.lastResult !== 'Scan finished normally.'
+          ? source.lastResult
+          : null,
+      ],
+    ]);
+
+    // Searches, then the addresses waiting and what Jev dropped.
+    const searchRows = searches.map((search) => [
+      search.label + (search.id === scan.work.activeSearchId ? ' (current)' : ''),
+      search.status === 'completed'
+        ? 'Completed'
+        : `${search.pendingUrls.length} waiting${search.pageProgress ? ` · page ${search.pageProgress.currentPage}` : ''}`,
+    ]);
+    const excluded = searches.flatMap((s) => s.excluded ?? []).reverse(),
+      cards = Object.assign({}, ...searches.map((s) => s.cards ?? {}));
+    const queue = group(
+      'Searches',
+      searchRows.length > 1 ? searchRows : [],
+      Boolean(pending.length || excluded.length),
+    );
     if (pending.length || excluded.length) {
-      const details = el('details', null, 'source-progress-pending'),
-        urls = el('ol');
+      const details = el('details', null, 'source-progress-pending');
       details.open = pending.length === 1;
       details.append(
         el(
           'summary',
-          `Addresses to continue with (${pending.length}${excluded.length ? ` · ${excluded.length} excluded` : ''})`,
+          `${plural(pending.length, 'address', 'addresses')} waiting${excluded.length ? ` · ${excluded.length} excluded` : ''}`,
         ),
       );
-      const rows = [...pending.map((url) => ({url})), ...excluded];
+      const rows = [...pending.map((url) => ({url})), ...excluded],
+        urls = el('ol');
       let shown = 0;
       const more = button('Show the next 100 addresses', () => append());
       const append = () => {
         for (const row of rows.slice(shown, shown + 100)) {
-          const item = el('li');
+          const item = el('li'),
+            card = cards[row.url],
+            title = row.title ?? card?.title;
+          const address = new URL(row.url);
+          item.append(link(row.url, title ?? address.pathname + address.search));
           if (row.stage) {
             item.className = 'source-progress-excluded';
             item.append(
               el(
-                'b',
-                `Excluded · ${row.stage === 'detail' ? 'On detail' : 'On card'} · ${exclusionLabels[row.reason] ?? row.reason}${row.confidence != null ? ` · Jev ${pct(row.confidence)}` : ''}`,
+                'small',
+                `Excluded ${row.stage === 'detail' ? 'on detail' : 'on card'}: ${exclusionLabels[row.reason] ?? row.reason}${row.confidence != null ? ` · Jev ${pct(row.confidence)}` : ''}`,
               ),
             );
-            if (row.title) item.append(el('span', row.title));
-          } else if (cards[row.url]) {
-            const card = cards[row.url];
-            item.className = 'source-progress-card';
-            if (card.title) item.append(el('span', card.title));
-            if (card.keep != null)
-              item.append(
-                el(
-                  'small',
-                  `Jev card: keep ${pct(card.keep)}${card.risk?.p >= 0.1 ? ` · closest exclusion ${exclusionLabels[card.risk.reason]} ${pct(card.risk.p)}` : ''}`,
-                ),
-              );
-          }
-          item.append(address(row.url));
+          } else if (card?.keep != null)
+            item.append(
+              el(
+                'small',
+                `Keep ${pct(card.keep)}${card.risk?.p >= 0.1 ? ` · ${exclusionLabels[card.risk.reason]} ${pct(card.risk.p)}` : ''}`,
+              ),
+            );
+          item.title = row.url;
           urls.append(item);
         }
         shown = Math.min(shown + 100, rows.length);
@@ -685,22 +770,68 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       };
       append();
       details.append(urls, more);
-      section.append(details);
+      queue.append(details);
     }
-    if (source.lastResult) note('Last run result', source.lastResult);
-    const rules = el('details', null, 'source-progress-rules');
-    rules.append(
-      el('summary', 'Tracking rule'),
+
+    const recipe = source.recipe,
+      summary = recipeSummary(recipe ?? null, source.recipeState ?? null),
+      rs = source.recipeState,
+      filters =
+        recipe?.entry.kind === 'url_template' && source.extension?.search
+          ? searchFilterLabels(source.extension.search, recipe.entry.template)
+          : [];
+    group('Search recipe', [
+      [
+        'Status',
+        summary.label +
+          (rs?.verifiedAt
+            ? ` · ${rs.successCount} succeeded, ${rs.failCount} failed · checked ${time(rs.verifiedAt)}`
+            : ''),
+      ],
+      ['Method', recipe ? methodLabels[recipe.entry.kind] : null],
+      [
+        'Address',
+        recipe?.entry.kind === 'url_template'
+          ? el('code', recipe.entry.template)
+          : recipe?.entry.kind === 'search_form'
+            ? el(
+                'code',
+                `${recipe.entry.url} · ${recipe.entry.fields.map((f) => `${f.key}=“${f.label}”`).join(', ')}`,
+              )
+            : null,
+      ],
+      ['Site filters', filters.join(' · ')],
+      ['Search terms', recipe?.terms?.join(', ')],
+      [
+        'Pagination',
+        !recipe || recipe.entry.kind === 'discovery'
+          ? null
+          : pagedByExtension(source)
+            ? 'Set by the site extension'
+            : paginationLabels[recipe.pagination ?? 'auto'],
+      ],
+      ['Note', recipe?.notes],
+      [
+        'Last error',
+        rs?.lastFailure
+          ? `${time(rs.lastFailure.at)}: ${rs.lastFailure.reason}${rs.lastFailure.url ? ' · ' + rs.lastFailure.url : ''}`
+          : null,
+      ],
+    ]);
+    section.append(
       el(
-        'p',
-        'In the first round the source is tried, the recipe is saved and nothing is submitted. All pages are scanned in the next first scan and every 7 days. In other rounds, if the date ordering is reliable, listings are checked back to 24 hours before the start of the last successful round. If the recipe gives no results in two consecutive rounds, the source is learned again.',
+        'small',
+        readsNewestFirst(source)
+          ? `Each search reads newest first, up to ${SCAN_SEARCH_LISTINGS} new listings or ${SCAN_SEARCH_PAGES} pages, and repeat scans stop at known listings.`
+          : `Each search reads up to ${SCAN_SEARCH_LISTINGS} new listings or ${SCAN_SEARCH_PAGES} pages.`,
+        'source-progress-rule',
       ),
     );
-    section.append(rules);
     return section;
   }
 
-  // Editor: the source itself, then its search recipe. Skill text is no longer edited here.
+  // Editor: the name and search terms; the recipe, which the trial round
+  // learns by itself, and the per-source scope and instructions fold away.
   function recipeFields(form, recipe) {
     const f = form.elements;
     f.method.value = recipe ? recipe.entry.kind : 'none';
@@ -716,7 +847,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         : '';
     f.terms.value = recipe?.terms?.join(', ') ?? '';
     f.pagination.value = recipe?.pagination ?? 'auto';
-    f.ordering.value = recipe?.ordering ?? 'unknown';
     f.notes.value = recipe?.notes ?? '';
     syncRecipeFields(form);
   }
@@ -724,10 +854,10 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     const method = form.elements.method.value;
     form.querySelector('[data-recipe-template]').hidden = method !== 'url_template';
     form.querySelector('[data-recipe-form]').hidden = method !== 'search_form';
-    form.querySelector('[data-recipe-terms]').hidden =
-      form.querySelector('[data-recipe-pagination]').hidden =
-      form.querySelector('[data-recipe-ordering]').hidden =
-        !['url_template', 'search_form'].includes(method);
+    form.querySelector('[data-recipe-terms]').hidden = form.querySelector(
+      '[data-recipe-pagination]',
+    ).hidden = !['url_template', 'search_form'].includes(method);
+    if (form.pagedByExtension) form.querySelector('[data-recipe-pagination]').hidden = true;
     form.querySelector('[data-recipe-notes]').hidden = method === 'none';
     form.querySelector('[data-recipe-site]').hidden = method !== 'url_template' || !form.siteSearch;
     form.elements.template.required = method === 'url_template';
@@ -755,7 +885,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     const base = {
       pagination: f.pagination.value,
       ...keep,
-      ...(f.ordering.value === 'newest_first' ? {ordering: 'newest_first'} : {}),
       ...(terms.length ? {terms} : {}),
       ...(f.notes.value.trim() ? {notes: f.notes.value.trim()} : {}),
     };
@@ -810,7 +939,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     f.template.addEventListener('input', sync);
     const use = button('Use the site template', () => {
       f.template.value = search.template;
-      f.ordering.value = search.ordering ?? 'unknown';
       f.pagination.value = search.pagination ?? 'auto';
       sync();
     });
@@ -825,104 +953,94 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     sync();
   }
   function editor(source) {
-    const form = el('form', null, source ? 'source-editor' : 'source-add');
-    form.dataset.sourceId = source?.url ?? '';
-    form.innerHTML = `<fieldset class="source-editor-section"><legend>Source</legend>
-<label>Source name<input name="name" required maxlength="120"></label><label>Start address<input name="url" type="url" required></label>
-<label class="source-editor-wide">Search scope<textarea name="query" required maxlength="2000"></textarea><small>If the recipe has no search terms, this text fills the {query} placeholder.</small></label>
-<label>Scan interval (min)<input name="intervalMinutes" type="number" min="1" max="10080" required></label></fieldset>
-<fieldset class="source-editor-section source-recipe-editor"><legend>Search recipe <small class="source-recipe-legend"></small></legend>
-<label class="source-editor-wide">Search method<select name="method"></select><small>In the trial round the agent works out the site and saves the recipe itself. If you know it, you can also write it by hand; the app verifies it in the first scan.</small></label>
-<label class="source-editor-wide" data-recipe-template>URL template<input name="template" maxlength="2000" placeholder="https://site/jobs?q={query}&l={location}&sort=date" spellcheck="false"><small>{query} takes the search term or the scope. Other placeholders such as {location} are filled from the criteria field of the same name. A fixed address without placeholders also works.</small></label>
+    const form = el('form', null, 'source-editor');
+    form.dataset.sourceId = source.url;
+    form.innerHTML = `<div class="source-editor-main">
+<label>Name<input name="name" required maxlength="120"></label>
+<label data-recipe-terms>Search terms<input name="terms" maxlength="500" placeholder="Backend Engineer, .NET, Platform Engineer" spellcheck="false"><small>Comma-separated, up to 5. Each term is its own search on this site.</small></label></div>
+<details class="source-advanced"><summary>Advanced: search recipe and instructions</summary>
+<div class="source-editor-section">
+<label class="source-editor-wide">Search method <small class="source-recipe-legend"></small><select name="method"></select><small data-method-help>The trial round learns this by itself. A recipe written here is verified in the next scan.</small></label>
+<label class="source-editor-wide" data-recipe-template>URL template<input name="template" maxlength="2000" placeholder="https://site/jobs?q={query}&l={location}&sort=date" spellcheck="false"><small>{query} takes each search term, or the search scope when there are none. Other placeholders such as {location} come from the criteria field of the same name.</small></label>
 <div class="source-editor-wide source-site-search" data-recipe-site><b>Site filters</b><small></small><div class="source-recipe-form source-site-filters"></div></div>
 <div class="source-editor-wide source-recipe-form" data-recipe-form><label>Search form page<input name="formUrl" type="url" placeholder="https://site/jobs"></label><label>Search field label<input name="queryLabel" maxlength="120" placeholder="Stichwort"></label><label>Location field label (optional)<input name="locationLabel" maxlength="120" placeholder="Ort"></label></div>
-<label class="source-editor-wide" data-recipe-terms>Search terms<input name="terms" maxlength="500" placeholder="Compliance, AI Governance, Data Protection" spellcheck="false"><small>If the search scope is not a keyword, write up to 5 comma-separated terms; each term becomes a separate search.</small></label>
 <label data-recipe-pagination>Pagination<select name="pagination"></select></label>
-<label data-recipe-ordering>Ordering<select name="ordering"><option value="unknown">Unknown</option><option value="newest_first">Newest first · stops at known listings</option></select></label>
 <label class="source-editor-wide" data-recipe-notes>Note to the agent<textarea name="notes" maxlength="1000" placeholder="Filters, ordering, things to watch out for…"></textarea></label>
-<label class="source-editor-wide">Working instructions<textarea name="instructions" maxlength="6000" placeholder="Extra rules for this source (optional)"></textarea></label></fieldset>
+<label class="source-editor-wide">Search scope<textarea name="query" maxlength="2000"></textarea><small>What this source looks for. Empty uses the workspace goal.</small></label>
+<label class="source-editor-wide">Working instructions<textarea name="instructions" maxlength="6000" placeholder="Extra rules for this source (optional)"></textarea></label>
+</div></details>
 <div class="source-editor-foot"></div>`;
     const f = form.elements,
       footer = form.querySelector('.source-editor-foot'),
       scope = owner;
+    // A site extension's known results address takes a URL template; a
+    // collector reads nothing else. The saved method always stays selectable.
+    const ext = source.extension,
+      fixed = Boolean(ext?.search) || ext?.kind === 'api',
+      offered = (value) =>
+        !fixed ||
+        value === source.recipe?.entry.kind ||
+        ['none', 'url_template', ...(ext.kind === 'api' ? [] : ['discovery'])].includes(value);
     for (const [value, label] of Object.entries(methodLabels))
-      f.method.append(new Option(label, value));
+      if (offered(value)) f.method.append(new Option(label, value));
+    if (fixed)
+      form.querySelector('[data-method-help]').textContent =
+        'The site extension defines the results address: choose the search terms and site filters. A recipe written here is verified in the next scan.';
+    form.pagedByExtension = pagedByExtension(source);
     for (const value of RECIPE_PAGINATION_KINDS)
       f.pagination.append(new Option(paginationLabels[value], value));
-    f.name.value = source?.name ?? '';
-    f.url.value = source?.url ?? '';
-    f.url.disabled = Boolean(source);
-    f.query.value = source?.query ?? data.automation.goal;
-    f.intervalMinutes.value = source?.intervalMinutes ?? data.automation.intervalMinutes;
-    f.instructions.value = source?.instructions ?? '';
-    siteSearchFields(form, source?.extension?.search ?? null);
-    recipeFields(form, source?.recipe ?? null);
-    f.method.onchange = f.ordering.onchange = () => syncRecipeFields(form);
-    if (source) {
-      const relearn = button('Relearn', async () => {
-        await api.automationSourceRelearn(scope, source.url);
-        editing = null;
-        await refresh();
-        notice(
-          'The source’s next round will be a trial; the agent will work out the recipe again.',
-        );
-      });
-      relearn.title = 'Runs the trial round again and relearns the recipe with the strong agent.';
-      relearn.dataset.sourceRelearn = '';
-      const remove = button(
-        'Delete source',
-        async () => {
-          await api.automationSourceRemove(scope, source.url);
-          if (owner === scope) {
-            if (editing === source.url) editing = null;
-            if (memory === source.url) memory = null;
-            await refresh();
-            notice('Source deleted. Found records were kept.');
-          }
-        },
-        'quiet source-remove',
-      );
-      remove.title = 'Delete the source and its recipe; found records are kept.';
-      footer.append(relearn, remove);
-    }
+    f.name.value = source.name;
+    f.query.value = source.query?.trim() === data.automation.goal?.trim() ? '' : source.query;
+    f.query.placeholder = data.automation.goal ?? '';
+    f.instructions.value = source.instructions ?? '';
+    siteSearchFields(form, source.extension?.search ?? null);
+    recipeFields(form, source.recipe ?? null);
+    f.method.onchange = () => syncRecipeFields(form);
     const cancel = button('Cancel', () => {
       editing = null;
-      adding = false;
       render();
     });
     cancel.dataset.cancel = '';
-    footer.append(cancel);
-    const submit = el('button', source ? 'Save' : 'Add source', 'primary');
+    const submit = el('button', 'Save', 'primary');
     submit.type = 'submit';
-    footer.append(submit);
+    footer.append(cancel, submit);
     form.onsubmit = action(async () => {
-      const input = {
-        name: f.name.value,
-        url: f.url.value,
-        query: f.query.value,
-        instructions: f.instructions.value,
-        recipe: readRecipe(form, source?.recipe ?? null),
-        intervalMinutes: Number(f.intervalMinutes.value),
-      };
+      const query = f.query.value.trim() || data.automation.goal;
       submit.disabled = true;
       try {
-        if (source) await api.automationSourceSave(scope, source.url, input);
-        else await api.automationSourceAdd(scope, input);
+        await api.automationSourceSave(scope, source.url, {
+          name: f.name.value,
+          ...(query && query !== source.query ? {query} : {}),
+          instructions: f.instructions.value,
+          recipe: readRecipe(form, source.recipe ?? null),
+        });
         editing = null;
-        adding = false;
         await refresh();
-        notice(
-          source ? 'Source saved.' : 'Source added. It is tried automatically in its first round.',
-        );
+        notice('Source saved.');
       } finally {
         submit.disabled = false;
       }
     });
     return form;
   }
-  // The sites the app already knows (template starting sources, most with a
-  // site extension), each added in one click with its ready recipe and
-  // instructions.
+  function updateEditor(form, source) {
+    const locked = Boolean(source.scanning);
+    for (const field of form.querySelectorAll('input,select,button[type=submit]'))
+      field.disabled = locked;
+    for (const field of form.querySelectorAll('textarea')) field.readOnly = locked;
+    const summary = recipeSummary(source.recipe ?? null, source.recipeState ?? null),
+      legend = form.querySelector('.source-recipe-legend');
+    legend.textContent =
+      summary.label +
+      (source.recipeState?.verifiedAt ? ` · ${time(source.recipeState.verifiedAt)}` : '');
+    legend.dataset.status = summary.status;
+    form.querySelector('.source-editor-foot').title = locked
+      ? 'The source is running. Stop the scan first to change it.'
+      : '';
+  }
+
+  // Adding: one click for a site the app knows, or any address pasted in.
+  // The name, scope and interval take their defaults; Edit changes them.
   function renderCatalog(section) {
     const groups = data.sourceCatalog ?? [],
       key = groups.flatMap((group) => group.choices.map((choice) => choice.url)).join(' ');
@@ -950,7 +1068,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       country.setAttribute('aria-label', `${group.name} country`);
       for (const choice of group.choices) country.append(new Option(choice.label, choice.url));
       if (many) row.append(country);
-      row.append(extensionChip(group) ?? '');
       const add = button('Add', async () => {
         const scope = owner,
           choice = group.choices.find((c) => c.url === country.value) ?? first;
@@ -964,45 +1081,69 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       rows.append(row);
     }
     section.replaceChildren(
-      el('h3', 'Ready-made sources'),
-      el('small', 'Sites the app knows; the name, search recipe and instructions come ready.'),
+      el('h3', 'Sites the app knows'),
+      el('small', 'Their name and search come ready; add one with a click.'),
       rows,
     );
   }
-  function updateEditor(form, source) {
-    const locked = Boolean(source.scanning);
-    for (const field of form.querySelectorAll('input,textarea,select,button'))
-      if (field.type !== 'button')
-        field.disabled =
-          (locked && field.type === 'submit') ||
-          field.name === 'url' ||
-          (locked && field.tagName !== 'TEXTAREA');
-    for (const field of form.querySelectorAll('textarea')) field.readOnly = locked;
-    for (const b of form.querySelectorAll('[data-source-relearn],.source-remove'))
-      b.disabled = locked || busySource(source.url);
-    const summary = recipeSummary(source.recipe ?? null, source.recipeState ?? null),
-      legend = form.querySelector('.source-recipe-legend');
-    legend.textContent =
-      summary.label +
-      (source.recipeState?.verifiedAt ? ` · ${time(source.recipeState.verifiedAt)}` : '');
-    legend.dataset.status = summary.status;
-    form.querySelector('.source-editor-foot').title = locked
-      ? 'The source is running. Stop the scan first to change it.'
-      : '';
+  function addForm() {
+    const form = el('form', null, 'source-add');
+    form.innerHTML =
+      '<label>Another site<input name="url" type="url" required placeholder="Paste the address of a job board or careers page"></label>';
+    const submit = el('button', 'Add source', 'primary'),
+      cancel = button('Cancel', () => {
+        adding = false;
+        render();
+      });
+    submit.type = 'submit';
+    form.append(submit, cancel);
+    form.onsubmit = action(async () => {
+      const scope = owner;
+      submit.disabled = true;
+      try {
+        await api.automationSourceAdd(scope, {url: form.elements.url.value});
+        if (owner !== scope) return;
+        adding = false;
+        await refresh();
+        notice('Source added. In its first round the agent learns how to search it.');
+      } finally {
+        submit.disabled = false;
+      }
+    });
+    return form;
+  }
+
+  // Opening the screen puts active sources first, then the one that works
+  // soonest. The order then holds so rows do not jump while the screen is open;
+  // sources added meanwhile go to the end.
+  const workAt = (source) =>
+    source.scanning ? 0 : (source.siteWait?.retryAt ?? source.nextRunAt ?? Infinity);
+  function ordered(sources) {
+    order ??= [...sources]
+      .sort((a, b) => Number(b.enabled) - Number(a.enabled) || workAt(a) - workAt(b) || 0)
+      .map((source) => source.url);
+    const rank = (source) => {
+      const index = order.indexOf(source.url);
+      return index < 0 ? order.length : index;
+    };
+    return [...sources].sort((a, b) => rank(a) - rank(b));
   }
 
   function render() {
     if (!data) return;
-    const sources = data.sources ?? [],
+    const sources = ordered(data.sources ?? []),
       enabled = sources.filter((s) => s.enabled),
-      blocked = enabled.filter((s) => s.blocked),
+      attention = enabled.filter(needsAttention).length,
       upcoming = enabled
         .filter((s) => !s.scanning && !s.blocked && s.nextRunAt)
         .sort((a, b) => a.nextRunAt - b.nextRunAt)[0];
-    const verified = sources.filter((s) => s.recipeState?.status === 'verified').length;
     const overview = head.querySelector('p');
-    overview.textContent = `${plural(enabled.length, 'active source')}${sources.length - enabled.length ? `, ${sources.length - enabled.length} off` : ''}${blocked.length ? `, ${blocked.length} blocked` : ''}${sources.length ? ` · ${plural(verified, 'recipe')} verified` : ''}. `;
-    if (data.automation.status === 'enabled' && upcoming) {
+    overview.textContent = sources.length
+      ? `${enabled.length} active${sources.length - enabled.length ? `, ${sources.length - enabled.length} off` : ''}${attention ? ` · ${attention} need${attention === 1 ? 's' : ''} attention` : ''}. `
+      : '';
+    if (data.automation.status !== 'enabled' && sources.length)
+      overview.append(document.createTextNode('Tracking is paused.'));
+    else if (upcoming) {
       const next = el('span');
       next.dataset.sourceNextAt = String(upcoming.nextRunAt);
       next.dataset.sourceNextLabel = 'Next scan';
@@ -1010,19 +1151,16 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       next.title = time(upcoming.nextRunAt);
       updateNextRun(next);
       overview.append(next);
-    } else overview.append(document.createTextNode('Each source is tracked at its own interval.'));
-    for (const control of bulkForm.querySelectorAll('input,select,button'))
-      control.disabled = bulkSaving || !sources.length;
-    bulkForm.setAttribute('aria-busy', String(bulkSaving));
-    bulkForm.querySelector('[role=status]').textContent = bulkSaving ? 'Saving…' : '';
-    bulk.hidden = !sources.length;
-    list.inert = bulkSaving;
-    addHost.inert = bulkSaving;
+    }
     renderProposal();
-    add.disabled = bulkSaving;
     add.setAttribute('aria-expanded', String(adding));
     if (adding) {
-      if (!addHost.firstChild) addHost.append(el('section', null, 'source-catalog'), editor(null));
+      if (!addHost.firstChild) {
+        const panel = el('section', null, 'source-add-panel');
+        panel.append(el('section', null, 'source-catalog'), addForm());
+        addHost.append(panel);
+        panel.querySelector('[name=url]').focus();
+      }
       renderCatalog(addHost.querySelector('.source-catalog'));
     } else addHost.replaceChildren();
     const kept = list.querySelector('.source-editor'),
@@ -1037,23 +1175,18 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     let previous = null;
     for (const source of sources) {
       const view = rows.get(source.url) ?? sourceRow(source.url),
-        {row, toggle, main, run, restart, edit, memoryButton, tabHost} = view,
+        {row, toggle, main, run, restart, edit, relearn, remove, memoryButton, tabHost} = view,
         open = editing === source.url,
-        memoryOpen = memory === source.url,
-        scope = owner;
+        memoryOpen = benchAvailable && memory === source.url,
+        scope = owner,
+        locked = Boolean(source.scanning) || busySource(source.url);
       const next = previous ? previous.nextElementSibling : list.firstElementChild;
       if (next !== row) list.insertBefore(row, next);
       previous = row;
       row.dataset.open = String(open || memoryOpen);
-      row.dataset.tone = source.scanning
-        ? 'scanning'
-        : !source.enabled
-          ? 'off'
-          : source.blocked
-            ? 'blocked'
-            : source.lastFound
-              ? 'found'
-              : 'none';
+      row.dataset.expandable = String(benchAvailable);
+      row.dataset.tone = source.enabled ? 'on' : 'off';
+      row.dataset.trial = source.trialRunning ? 'running' : (source.trial?.status ?? 'pending');
       toggle.checked = source.enabled;
       toggle.disabled = Boolean(source.stopping || view.pending);
       toggle.setAttribute('aria-label', source.name + ' active');
@@ -1078,32 +1211,30 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
           () => api.openLink(source.url),
           'source-url',
         );
-      link.title = source.url;
+      link.title = [source.url, readerLabels[source.extension?.kind ?? 'agent']].join('\n');
       name.append(link);
-      const query = el('p', source.query, 'source-scope');
-      query.title = source.query;
-      const {status, outcome} = statusLine(source),
-        meta = metaLine(source, outcome);
-      // A working recipe and the reader kind are in Details; the row flags only a broken recipe.
-      if (recipeSummary(source.recipe ?? null, source.recipeState ?? null).status === 'stale')
-        meta.append(recipeChip(source));
-      main.replaceChildren(name, ...(sameScope(source) ? [] : [query]), status, meta);
+      main.replaceChildren(
+        ...[name, statusLine(source), requestLine(source), scheduleLine(source, scope)].filter(
+          Boolean,
+        ),
+      );
       const closing =
         (data.activeRuns ?? []).some(
           (r) => r.sourceUrl === source.url && !r.recordId && !r.recordOperation,
         ) && !source.scanning;
+      // A timed site wait resumes by itself; Force retry ends it now.
+      const timedWait = Boolean(source.siteWait?.waiting && !source.siteWait.exhausted);
       let runLabel = closing
           ? 'Session closing…'
-          : source.blocked || source.siteWait?.exhausted
-            ? 'Retry'
-            : 'Scan now',
-        runDisabled =
-          closing ||
-          (source.siteWait?.waiting && !source.siteWait?.exhausted) ||
-          !source.enabled ||
-          !data.progress?.reviewed;
-      run.title =
-        source.trial?.status === 'passed'
+          : timedWait
+            ? 'Force retry'
+            : source.blocked || source.siteWait?.exhausted
+              ? 'Retry'
+              : 'Scan now',
+        runDisabled = closing || !source.enabled || !data.progress?.reviewed;
+      run.title = timedWait
+        ? 'The site asked us to slow down; this scan resumes by itself at the access check. Force retry ends the wait now and continues from the saved point. If the site still refuses, the wait starts again.'
+        : source.trial?.status === 'passed'
           ? ''
           : 'The first round is a trial: the agent works out the site and saves the search recipe.';
       if (source.scanning || source.stopping) {
@@ -1120,7 +1251,15 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       run.setAttribute('aria-busy', String(Boolean(view.pending || source.stopping)));
       run.onclick = (event) => {
         event.preventDefault();
-        if (!run.disabled) void scanAction(view, scope, source.url, Boolean(source.scanning));
+        if (!run.disabled)
+          void scanAction(
+            view,
+            scope,
+            source.url,
+            Boolean(source.scanning),
+            false,
+            timedWait && !source.scanning,
+          );
       };
       // A scan left unfinished resumes where it stopped; this starts it over.
       const resumable =
@@ -1129,7 +1268,10 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         (source.scan?.complete === false || Boolean(source.scanState?.active));
       if (resumable)
         run.title = 'Continues from the page where it stopped and the remaining addresses.';
-      restart.hidden = !resumable || runDisabled || Boolean(source.siteWait);
+      // Stopped retries resume at the page that kept failing; starting over is
+      // the other way out, so it stays available then.
+      restart.hidden =
+        !resumable || runDisabled || Boolean(source.siteWait && !source.siteWait.exhausted);
       restart.disabled = Boolean(view.pending);
       restart.title =
         'Clears the saved page position and remaining addresses and starts the scan from the first results page. Saved listings are not read again.';
@@ -1143,13 +1285,46 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         render();
       });
       edit.setAttribute('aria-expanded', String(open));
-      memoryButton.textContent = memoryOpen ? 'Hide details' : 'Details';
+      // A site extension defines how this site is searched; there is nothing to relearn.
+      relearn.hidden = Boolean(source.extension);
+      relearn.disabled = remove.disabled = locked;
+      relearn.title = locked
+        ? 'Stop the scan first.'
+        : 'Runs the trial round again and relearns how to search this site.';
+      relearn.onclick = action(async () => {
+        await api.automationSourceRelearn(scope, source.url);
+        await refresh();
+        notice('The next round of this source is a trial; the agent learns the search again.');
+      });
+      remove.title = locked
+        ? 'Stop the scan first.'
+        : 'Deletes the source and its search recipe. Found records are kept.';
+      remove.onclick = action(async () => {
+        if (!confirm(`Delete ${source.name}? Records it found are kept.`)) return;
+        await api.automationSourceRemove(scope, source.url);
+        if (owner !== scope) return;
+        if (editing === source.url) editing = null;
+        if (memory === source.url) memory = null;
+        await refresh();
+        notice('Source deleted. Found records were kept.');
+      });
       view.menuToggle.setAttribute('aria-label', source.name + ' · More actions');
+      memoryButton.hidden = !benchAvailable;
+      memoryButton.textContent = memoryOpen ? 'Hide scan details' : 'Scan details';
       memoryButton.onclick = action(() => {
         memory = memoryOpen ? null : source.url;
         render();
       });
       memoryButton.setAttribute('aria-expanded', String(memoryOpen));
+      const benchOpen = benchAvailable && benchSource === source.url;
+      view.bench.hidden = !benchAvailable;
+      view.bench.textContent = benchOpen ? 'Close test bench' : 'Test extension';
+      view.bench.onclick = (event) => {
+        event.preventDefault();
+        benchSource = benchOpen ? null : source.url;
+        render();
+        if (!benchOpen) benchFor(source.url).open(source.url);
+      };
       tabHosts.set(source.url, tabHost);
       row.querySelector(':scope > .source-memory')?.remove();
       if (!open) row.querySelector(':scope > .source-editor')?.remove();
@@ -1166,8 +1341,14 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
               : null,
           pending = details.querySelector('.source-progress-pending');
         if (previousPending && pending) pending.open = previousPending.open;
-        row.append(details);
+        // Before an open bench, which is never moved: moving it would drop its focus.
+        const bench = benches.get(source.url)?.element;
+        row.insertBefore(details, bench?.parentElement === row ? bench : null);
       }
+      if (benchOpen) {
+        const panel = benchFor(source.url).element;
+        if (panel.parentElement !== row) row.append(panel);
+      } else benches.get(source.url)?.element.remove();
     }
     if (!sources.length) {
       if (!empty.isConnected) list.insertBefore(empty, otherHost);
@@ -1187,12 +1368,21 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         memory = null;
         adding = false;
         addHost.replaceChildren();
-        bulkForm.reset();
+        benchSource = null;
+        for (const bench of benches.values()) bench.element.remove();
+        benches.clear();
+        headBench?.element.remove();
+        headBench = null;
         for (const view of rows.values()) view.row.remove();
         rows.clear();
+        order = null;
       }
       owner = id;
       data = snapshot;
+      render();
+    },
+    resort() {
+      order = null;
       render();
     },
   };

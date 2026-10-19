@@ -155,6 +155,9 @@ export function recordCell(column, value, {openLink}) {
 }
 export const recordState = (record, definition) => {
   const id = record.workflowState ?? record.status;
+  // A record the app excluded because its source says it is gone keeps the
+  // dismissed state for filters and sorting but reads as closed.
+  if (id === 'dismissed' && record.closed) return {id, label: 'Closed', closed: true};
   return {id, label: definition?.records?.states.find((s) => s.id === id)?.label ?? id};
 };
 export function recordActions(container, record, definition, onAction) {

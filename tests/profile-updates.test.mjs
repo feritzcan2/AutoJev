@@ -396,3 +396,13 @@ test('saving without a restart applies the profile at once and keeps running tas
   // Their next context read sees the new profile.
   assert.equal(automationTaskContext(db, id, scans[0]).automation.criteria.budget, '1900');
 });
+
+test('a chat profile draft keeps the criteria the agent left out and clears one sent empty', async (t) => {
+  const {db, id, runtime} = fixture(t),
+    chat = await runtime.message(id, 'Bütçeyi değiştir.');
+  db.saveConversationPlan(id, chat.id, {criteria: {budget: '1700', requirements: ''}});
+  const criteria = db.get(id).planDraft.plan.criteria;
+  assert.equal(criteria.budget, '1700');
+  assert.equal(criteria.location, 'Berlin');
+  assert.ok(!criteria.requirements);
+});

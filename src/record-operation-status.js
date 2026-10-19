@@ -3,15 +3,45 @@ const running = {
   prepare: 'Preparing',
   execute: 'Applying',
   verify: 'Verifying',
+  cover_letter: 'Writing cover letter',
 };
 const queued = {
   score: 'Scoring queued',
   prepare: 'Preparation queued',
   execute: 'Application queued',
   verify: 'Verification queued',
+  cover_letter: 'Cover letter queued',
+};
+// The agent's blocker category, as the card's badge.
+const blockerLabels = {
+  not_eligible: 'Not eligible',
+  needs_answer: 'Needs your answer',
+  needs_login: 'Login needed',
+  needs_code: 'Code needed',
+  needs_payment: 'Payment needed',
+  verification: 'Verification needed',
+  listing_closed: 'Listing closed',
+  site_problem: 'Site problem',
+  technical: 'Technical error',
 };
 export function recordOperationStatus(record) {
   const {task, lastTask, question} = record.recordAction ?? {};
+  if (question?.verification)
+    return {
+      id: 'verification',
+      label: 'CAPTCHA to solve',
+      tone: 'blocked',
+      detail: question.text,
+      active: true,
+    };
+  if (question?.code)
+    return {
+      id: 'code',
+      label: 'Code to enter',
+      tone: 'blocked',
+      detail: question.text,
+      active: true,
+    };
   if (question)
     return {
       id: 'waiting',
@@ -65,12 +95,14 @@ export function recordOperationStatus(record) {
     lastTask.at >= Math.max(record.updatedAt, record.verifiedAt ?? 0) &&
     !['completed', 'uncertain', 'executing', 'dismissed'].includes(record.status)
   ) {
-    const label = {
-      blocked: 'Operation blocked',
-      failed: 'Operation failed',
-      interrupted: 'Operation interrupted',
-      cancelled: 'Operation cancelled',
-    }[lastTask.state];
+    const label =
+      (lastTask.state === 'blocked' && blockerLabels[lastTask.blocker?.category]) ||
+      {
+        blocked: 'Operation blocked',
+        failed: 'Operation failed',
+        interrupted: 'Operation interrupted',
+        cancelled: 'Operation cancelled',
+      }[lastTask.state];
     if (label)
       return {id: 'stopped', label, tone: 'blocked', detail: lastTask.summary, active: false};
   }
@@ -121,11 +153,29 @@ export function activeRecordOperations(snapshot) {
     }));
 }
 
+// Blockers whose card offers Skip next to the reason.
+const skipCategories = new Set([
+  'not_eligible',
+  'needs_answer',
+  'listing_closed',
+  'site_problem',
+  'technical',
+]);
+
 // A stopped operation or an unverified outcome the user has to look at.
 export function recordProblem(record) {
   if (record.status === 'dismissed' || record.trial) return null;
   const progress = recordOperationStatus(record),
-    summary = record.recordAction?.lastTask?.summary;
+    summary = record.recordAction?.lastTask?.summary,
+    blocker = record.recordAction?.lastTask?.blocker;
+  if (progress?.id === 'stopped' && blocker?.reason)
+    return {
+      label: progress.label,
+      category: blocker.category,
+      reason: blocker.reason,
+      next: blocker.userAction,
+      skip: skipCategories.has(blocker.category),
+    };
   if (progress?.id === 'stopped')
     return {label: progress.label, reason: summary || 'The agent did not record a reason.'};
   if (!progress && record.status === 'uncertain')

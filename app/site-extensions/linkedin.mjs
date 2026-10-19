@@ -6,11 +6,31 @@
 // the read (known listings, assessment, evidence, queue) stays generic.
 // Card and posting parsing follows github.com/MadsLorentzen/ai-job-search (MIT).
 import {decode, htmlText, inlineText, listingPage} from './listing.mjs';
-import {siteFetch, isMissing, readerPage} from './http.mjs';
+import {siteFetch, isMissing, readerPage, READER_HEADERS} from './http.mjs';
+import {cardCollector} from '../sources/card-collector.mjs';
 
 const SEARCH_PATH = '/jobs-guest/jobs/api/seeMoreJobPostings/search';
 const DETAIL_URL = 'https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/';
 export const LINKEDIN_PAGE_SIZE = 10;
+// LinkedIn answers guest reads with 429 after a few dozen requests from one
+// address, even with seconds between them (2026-10-18: about 35 in 13
+// minutes; 2026-10-19: about 27 in 10 minutes, then about 41 in 45 minutes at
+// 30-40 s spacing). The limit looks hourly, around 40. The reference CLI stays
+// low volume: about two result pages per query and postings only for a
+// shortlist. So the guest reads keep 45-75 s apart (about one a minute) and at
+// most 15 per hour; the rest of a scan resumes when the window frees
+// (SiteAccess.spend). After a 429 LinkedIn kept refusing for over two hours
+// (2026-10-19 04:17-06:20, which used up 30 and 90 minute retries), so
+// retries wait one and three hours. On 2026-10-19 09:34 and 10:04 a 429 came
+// after about 21 requests in 18 minutes and 27 in an hour, so 30 was too many.
+export const LINKEDIN_PACING = {
+  minIntervalMs: 45000,
+  jitterMs: 30000,
+  budget: {requests: 15, windowMs: 60 * 60000},
+  retryDelaysMs: [60 * 60000, 180 * 60000],
+};
+// The guest endpoints serve the page's own XHR calls, which send this header.
+const GUEST_HEADERS = {...READER_HEADERS, 'X-Requested-With': 'XMLHttpRequest'};
 
 const linkedInHost = (host) => host === 'linkedin.com' || host.endsWith('.linkedin.com');
 // Which guest request serves this address: a search page, a posting, or none.
@@ -172,7 +192,13 @@ export async function readLinkedInGuest(url, options = {}) {
   const request = linkedInGuestRequest(url);
   if (!request) throw Error('LinkedIn guest reader does not handle this address');
   const target = request.kind === 'search' ? request.url : DETAIL_URL + request.id;
-  const response = await siteFetch(target, {...options, site: 'LinkedIn', url});
+  const response = await siteFetch(target, {
+    ...LINKEDIN_PACING,
+    headers: GUEST_HEADERS,
+    ...options,
+    site: 'LinkedIn',
+    url,
+  });
   if (isMissing(response))
     return request.kind === 'search' ? linkedInSearchPage(url, []) : linkedInDetailPage(url, '');
   const html = await response.text();
@@ -181,10 +207,172 @@ export async function readLinkedInGuest(url, options = {}) {
     : linkedInDetailPage(url, html);
 }
 
-// No browser tab: the worker reads guest search pages and postings through
-// http.read and hands them to Jev as ordinary pages; a posting is a listing.
+const guestFetch = (target, url, options) =>
+  siteFetch(target, {
+    ...LINKEDIN_PACING,
+    headers: GUEST_HEADERS,
+    ...options,
+    site: 'LinkedIn',
+    url,
+  });
+
+// The collector's result page: the cards of one guest search page. A full
+// page links the next offset; a short or empty one ends the search.
+export async function readLinkedInCards(url, options = {}) {
+  const request = linkedInGuestRequest(url);
+  if (request?.kind !== 'search') throw Error('A LinkedIn jobs-guest search address is required.');
+  const response = await guestFetch(request.url, url, options),
+    cards = isMissing(response) ? [] : parseJobCards(await response.text());
+  const address = new URL(url),
+    start = Number(address.searchParams.get('start') ?? 0) || 0,
+    next = new URL(address);
+  next.searchParams.set('start', String(start + LINKEDIN_PAGE_SIZE));
+  const nextUrl = cards.length >= LINKEDIN_PAGE_SIZE ? next.href : null;
+  return {
+    url: address.href,
+    jobs: cards.map((card) => ({
+      url: card.url,
+      title: card.title,
+      company: card.company,
+      location: card.location,
+      publishedAt: card.date,
+    })),
+    page: Math.floor(start / LINKEDIN_PAGE_SIZE) + 1,
+    totalPages: null,
+    nextUrl,
+    complete: !nextUrl,
+  };
+}
+
+// The collector's listing read: one posting's full text by its address.
+export async function readLinkedInListing(url, options = {}) {
+  const request = linkedInGuestRequest(url);
+  if (request?.kind !== 'detail') throw Error('A LinkedIn job posting address is required.');
+  const response = await guestFetch(DETAIL_URL + request.id, url, options);
+  if (isMissing(response))
+    throw Object.assign(Error('This LinkedIn job posting was removed.'), {
+      status: response.status,
+    });
+  const job = parseJobDetail(await response.text());
+  if (!job.title || !job.description)
+    throw Error('The LinkedIn posting has no readable title or description.');
+  return {
+    url,
+    title: job.title,
+    company: job.company,
+    location: job.location,
+    description: job.description,
+    criteria: Object.fromEntries(job.criteria),
+    closed: job.closed,
+  };
+}
+
+// A saved search address as the guest search the collector pages through.
+export function linkedInSearchUrl(value) {
+  const url = new URL(value);
+  if (url.protocol !== 'https:' || !linkedInHost(url.hostname))
+    throw Error('A LinkedIn address is required.');
+  if (url.pathname !== SEARCH_PATH)
+    throw Error(
+      'The LinkedIn collector pages through jobs-guest search addresses; save a search recipe with the guest search template.',
+    );
+  const search = new URL(`https://www.linkedin.com${SEARCH_PATH}`);
+  for (const [key, entry] of url.searchParams)
+    if (key !== 'start') search.searchParams.append(key, entry);
+  return search.href;
+}
+
+// One posting page open in the browser (logged in or not). Runs inside the
+// page, so it is self-contained. The logged-in layout comes first, then the
+// guest layout; the first heading and the job details block are the fallback.
+export function collectLinkedInPosting() {
+  const text = (selectors) => {
+    for (const selector of selectors) {
+      const value = document
+        .querySelector(selector)
+        ?.innerText?.replace(/[ \t]+/g, ' ')
+        .trim();
+      if (value) return value;
+    }
+    return '';
+  };
+  return {
+    url: location.href,
+    title: text([
+      '.job-details-jobs-unified-top-card__job-title h1',
+      '.job-details-jobs-unified-top-card__job-title',
+      '.top-card-layout__title',
+      'main h1',
+      'h1',
+    ]),
+    company: text([
+      '.job-details-jobs-unified-top-card__company-name a',
+      '.job-details-jobs-unified-top-card__company-name',
+      '.topcard__org-name-link',
+    ]),
+    location: text([
+      '.job-details-jobs-unified-top-card__primary-description-container .tvm__text',
+      '.job-details-jobs-unified-top-card__bullet',
+      '.topcard__flavor--bullet',
+    ]),
+    description: text([
+      '#job-details',
+      '.jobs-description__content .jobs-box__html-content',
+      '.jobs-description-content__text',
+      '.show-more-less-html__markup',
+      '.description__text',
+    ]),
+    closed: /No longer accepting applications/i.test(document.body?.innerText ?? ''),
+  };
+}
+// A posting is read only with its own description; a short block is a
+// placeholder or a login prompt, not the listing.
+export function readLinkedInPosting(raw) {
+  const description = String(raw?.description ?? '').trim();
+  if (!raw?.title || description.length < 200) return null;
+  return {
+    title: raw.title,
+    company: raw.company || null,
+    location: raw.location || null,
+    description,
+    fields: {},
+    closed: Boolean(raw.closed),
+  };
+}
+
+// Result pages hold cards only, so the app reads each new posting itself at
+// the pacing above and hands the agent ready review batches (a collector).
+const collector = cardCollector({
+  templateId: 'job-search',
+  searchUrl: linkedInSearchUrl,
+  readCards: readLinkedInCards,
+  readListing: readLinkedInListing,
+  // Postings open in the user's browser; the guest API serves the result pages.
+  listingIn: 'browser',
+  detail: (job) => ({
+    ...listingPage({
+      browser: 'LinkedIn guest reader',
+      url: job.url,
+      title: job.company ? `${job.title} @ ${job.company}` : job.title,
+      description: job.description,
+      fields: {
+        company: job.company,
+        location: job.location,
+        postedAt: job.publishedAt,
+        ...job.criteria,
+      },
+      notes: job.closed ? ['No longer accepting applications.'] : [],
+    }),
+    cells: {company: job.company, location: job.location},
+  }),
+});
+
+// Job-search scans use the collector; other reads (records, other templates)
+// use the HTTP reader, which hands guest pages to Jev as ordinary pages.
 export default {
   id: 'linkedin',
+  // The Sources page shows request rates against this pacing.
+  pacing: LINKEDIN_PACING,
   matches: (value) => {
     try {
       const u = new URL(value);
@@ -194,6 +382,15 @@ export default {
     }
   },
   http: {handles: (url) => Boolean(linkedInGuestRequest(url)), read: readLinkedInGuest},
+  collector,
+  // A posting opened in the browser (the collector's listing reads).
+  dom: {
+    listing: {
+      handles: (url) => linkedInGuestRequest(url)?.kind === 'detail',
+      collect: collectLinkedInPosting,
+      read: readLinkedInPosting,
+    },
+  },
   // The guest search address and the filters it accepts (observed 2026-10).
   search: {
     template: `https://www.linkedin.com${SEARCH_PATH}?keywords={query}&location={location}&sortBy=DD`,

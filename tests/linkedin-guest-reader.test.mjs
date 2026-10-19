@@ -182,7 +182,7 @@ test('guest reads use the shared site access rules and the guest endpoints', asy
     'complete',
     'https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/4012345678',
     'token',
-    {status: 200},
+    {status: 200, retryDelays: [60 * 60000, 180 * 60000]},
   ]);
   for (const status of [429, 999]) {
     const error = await readLinkedInGuest(search, {
@@ -192,6 +192,11 @@ test('guest reads use the shared site access rules and the guest endpoints', asy
     assert.ok(error instanceof SiteWaitError);
     assert.equal(error.code, 'SITE_WAIT');
     assert.equal(error.wait.reason, 'rate_limit');
+    assert.deepEqual(
+      events.at(-1)[3].retryDelays,
+      [60 * 60000, 180 * 60000],
+      'a block waits for the LinkedIn cooldown',
+    );
     assert.equal(error.url, search);
   }
   const waiting = {
@@ -235,5 +240,24 @@ test('guest reads use the shared site access rules and the guest endpoints', asy
     },
   });
   assert.equal(waited, 4000, 'pacing after an incident spaces the request');
+  const spent = [];
+  let sentOverBudget = false;
+  const overBudget = await readLinkedInGuest(search, {
+    fetch: async (url, options) => {
+      sentOverBudget = true;
+      assert.equal(options.headers['X-Requested-With'], 'XMLHttpRequest');
+      return new Response('');
+    },
+    siteAccess: {
+      ...siteAccess,
+      spend: (url, budget) => {
+        spent.push(budget);
+        return {site: 'linkedin.com', reason: 'budget', retryAt: 2, waiting: true};
+      },
+    },
+  }).catch((e) => e);
+  assert.deepEqual(spent, [{requests: 15, windowMs: 60 * 60000}], 'guest reads keep a budget');
+  assert.equal(overBudget.code, 'SITE_WAIT');
+  assert.equal(sentOverBudget, false, 'a request over budget is not sent');
   await assert.rejects(readLinkedInGuest('https://example.test/jobs', {fetch}), /does not handle/);
 });

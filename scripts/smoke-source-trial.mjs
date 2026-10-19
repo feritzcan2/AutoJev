@@ -144,9 +144,9 @@ try {
   });
   await wait((s) => s.activeRun?.sourceUrl.endsWith('/hamburg') && s.activeRun.kind === 'trial');
   await page.locator('[data-view=sources]').click();
-  await page.locator('.source-trial-status[data-status=running]').waitFor();
-  assert.equal(await page.locator('.source-trial-status[data-status=passed]').count(), 1);
-  assert.equal(await page.locator('.source-trial-status[data-status=running]').count(), 1);
+  await page.locator('.source-row[data-trial=running]').waitFor();
+  assert.equal(await page.locator('.source-row[data-trial=passed]').count(), 1);
+  assert.equal(await page.locator('.source-row[data-trial=running]').count(), 1);
   await page.screenshot({path: path.join(data, 'independent-source-trials.png'), fullPage: true});
   await tool('browser_open', {url: sources[1]});
   await tool('finish_automation_run', {
@@ -185,8 +185,8 @@ try {
   await page.screenshot({path: path.join(data, 'source-trials-passed.png'), fullPage: true});
   await page.reload();
   await page.locator('[data-view=sources]').click();
-  await page.locator('.source-trial-status[data-status=passed]').first().waitFor();
-  assert.equal(await page.locator('.source-trial-status[data-status=passed]').count(), 2);
+  await page.locator('.source-row[data-trial=passed]').first().waitFor();
+  assert.equal(await page.locator('.source-row[data-trial=passed]').count(), 2);
   assert.equal(await page.getByRole('button', {name: 'Guide and tools', exact: true}).count(), 0);
   assert.deepEqual(errors, []);
   console.log('SOURCE_TRIAL_UI_PASS', data);

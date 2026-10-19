@@ -98,6 +98,88 @@ try {
   assert.equal(chosen.value, 'Europe');
   assert.equal(chosen.filled, true);
   console.log('JEV_DROP_ZONE_UPLOAD_AND_PLAIN_BUTTON_PICKER_PASS');
+
+  // A styled checkbox draws its box over a transparent native input and puts
+  // its text after it; a dropdown hides the page behind its open list.
+  await page.setContent(`
+    <div id="app"><form>
+      <label id="country-label">Country of residence *</label>
+      <div role="combobox" tabindex="0" aria-labelledby="country-label" aria-haspopup="listbox"
+        aria-expanded="false" aria-controls="countries">Germany</div>
+      <div><span style="position:relative;display:inline-block;width:20px;height:20px;border:1px solid #333">
+        <input type="checkbox" style="opacity:0;position:absolute;inset:0;margin:0"
+          onchange="document.querySelector('#go').disabled=!this.checked"></span>
+        <p style="display:inline">By registering, I agree to the <a href="#terms">Terms of Use</a>.</p></div>
+      <button id="go" type="button" disabled>Create account</button>
+    </form></div>
+    <ul id="countries" role="listbox" hidden style="position:fixed;top:0;left:0;max-height:120px;overflow:auto;margin:0"></ul>
+    <script>
+      const box = document.querySelector('[role=combobox]'), list = document.querySelector('#countries');
+      for (const name of ['Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Argentina', 'Armenia',
+        'Australia', 'Austria', 'Belgium', 'Brazil', 'Canada', 'Chile', 'France', 'Germany', 'Poland']) {
+        const li = document.createElement('li');
+        li.role = 'option';
+        li.textContent = name;
+        li.style.height = '24px';
+        li.onclick = () => {
+          box.textContent = name;
+          box.setAttribute('aria-expanded', 'false');
+          list.hidden = true;
+          document.querySelector('#app').removeAttribute('aria-hidden');
+        };
+        list.append(li);
+      }
+      box.onclick = () => {
+        box.setAttribute('aria-expanded', 'true');
+        list.hidden = false;
+        document.querySelector('#app').setAttribute('aria-hidden', 'true');
+      };
+    </script>`);
+  form = await call('browser_jev_inspect_form', {tabId});
+  const consent = form.fields.find((f) => f.type === 'checkbox');
+  assert.match(consent?.question ?? '', /^By registering, I agree to the Terms of Use/);
+  const country = form.fields.find((f) => f.type === 'combobox');
+  const picked = await call('browser_jev_autocomplete', {
+    tabId,
+    controlId: country.controlId,
+    option: 'Poland',
+  });
+  assert.equal(picked.status, 'ready', JSON.stringify(picked.message));
+  assert.equal(picked.selection?.actual, 'Poland');
+  await call('browser_jev_click', {
+    tabId,
+    targetId: (await call('browser_jev_observe', {tabId})).clickTargets.find(
+      (t) => t.role === 'checkbox',
+    ).targetId,
+  });
+  assert.equal(await page.evaluate(() => document.querySelector('#go').disabled), false);
+  console.log('JEV_TRANSPARENT_CHECKBOX_AND_ARIA_HIDDEN_DROPDOWN_PASS');
+
+  // The element that names a checkbox (aria-labelledby, not a <label>) is
+  // laid over the input and draws its box; clicking it toggles the input.
+  await page.setContent(`
+    <form><div style="position:relative;padding:4px">
+      <input type="checkbox" required id="legal" aria-labelledby="legal-text"
+        style="position:absolute;top:4px;left:4px;width:20px;height:20px;margin:0"
+        onchange="document.querySelector('#send').disabled=!this.checked">
+      <div id="legal-text" style="position:relative;padding-left:28px;min-height:20px;background:#fff"
+        onclick="const box=document.querySelector('#legal');box.checked=!box.checked;box.dispatchEvent(new Event('change'))">
+        <span aria-hidden="true" style="position:absolute;left:0;top:0;width:18px;height:18px;border:1px solid #333"></span>
+        I have read and understood the information regarding the processing of personal data.
+      </div></div>
+      <button id="send" type="button" disabled>Send</button>
+    </form>`);
+  form = await call('browser_jev_inspect_form', {tabId});
+  const legal = form.fields.find((f) => f.type === 'checkbox');
+  assert.match(legal?.question ?? '', /^I have read and understood/);
+  const ticked = await call('browser_jev_select_choice', {
+    tabId,
+    controlId: legal.options[0].controlId,
+  });
+  assert.equal(ticked.status, 'ready', JSON.stringify(ticked.message));
+  assert.equal(ticked.selection?.verified, true);
+  assert.equal(await page.evaluate(() => document.querySelector('#send').disabled), false);
+  console.log('JEV_CHECKBOX_DRAWN_BY_ITS_NAME_ELEMENT_PASS');
 } finally {
   await client.close();
   await rm(directory, {recursive: true, force: true});

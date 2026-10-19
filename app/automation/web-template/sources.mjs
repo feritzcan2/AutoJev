@@ -1,5 +1,5 @@
 // @ts-check
-import {sourceInput} from '../../sources/automation-sources.mjs';
+import {sourceInput, TERMS_REQUIRED} from '../../sources/automation-sources.mjs';
 import {automationAttention, dismissAutomationAttention} from '../attention.mjs';
 // WebTasks methods: per-source state, retries, runs and settings.
 export const sourceMethods = {
@@ -87,17 +87,50 @@ export const sourceMethods = {
     }
     return a;
   },
-  async runSource(id, url, {fresh = false} = {}) {
+  // The current state of the shared waits a source's access recovery recorded.
+  currentSourceWaits(source) {
+    return (source.accessRecovery?.waits ?? []).map((w) =>
+      this.db.siteAccess.forLane(w.lane).status('https://' + w.site),
+    );
+  },
+  async runSource(id, url, {fresh = false, force = false} = {}) {
     this.assertNotStopping(id);
-    const source = this.db.sources(id).find((s) => s.url === url);
+    let source = this.db.sources(id).find((s) => s.url === url);
     if (!source) throw Error('The source does not belong to this workspace');
     if (!source.enabled) throw Error('Turn on the source first');
+    if (source.termsRequired) throw Error(TERMS_REQUIRED);
     if (this.slots(id).some((s) => s.run.sourceUrl === url))
       throw Error('This source is already running');
+    // A timed site wait resumes by itself; a plain run queues behind it. Force
+    // retry is the user choosing not to wait it out: the current wait ends
+    // now, as Retry ends one whose automatic retries ran out, and the scan
+    // continues from its saved point.
+    if (force && source.siteWait?.waiting && !source.siteWait.exhausted) {
+      this.db.siteAccess.acknowledge(
+        [source.siteWait, ...this.currentSourceWaits(source)].filter((w) => w?.waiting),
+      );
+      source = this.db.sources(id).find((s) => s.url === url);
+    }
+    // Starting over from an access block drops the stopped run's saved
+    // position, tabs and queue; the stopped wait is retired below.
+    if (fresh && source.accessRecovery?.state === 'waiting') {
+      await this.sourceAccess.reset(id, url, source.accessRecovery.runId);
+      this.sourceState(id, url, {accessRecovery: null});
+    }
+    // A source waiting on an access block continues from its saved point. The
+    // shared wait may already be gone (another workspace or a record retry
+    // retired it); the source still waits for this Retry.
+    else if (
+      source.accessRecovery?.state === 'waiting' &&
+      (!source.siteWait?.waiting || source.siteWait.exhausted)
+    )
+      return this.sourceAccess.resume(id, url, source.accessRecovery.runId);
     if (source.siteWait?.exhausted) {
-      if (source.accessRecovery?.state === 'waiting')
-        return this.sourceAccess.resume(id, url, source.accessRecovery.runId);
-      this.db.siteAccess.acknowledge(source.accessRecovery?.waits ?? [source.siteWait]);
+      // The site waits are shared across workspaces, so the recorded wait can be
+      // older than the one on screen. Retry acknowledges the current wait.
+      this.db.siteAccess.acknowledge(
+        [source.siteWait, ...this.currentSourceWaits(source)].filter(Boolean),
+      );
       this.sourceState(id, url, {accessRecovery: null});
     }
     const a = this.db.get(id);

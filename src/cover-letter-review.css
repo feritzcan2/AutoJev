@@ -1,0 +1,18 @@
+.cover-letter-review {
+  margin-bottom: 24px;
+}
+.cover-letter-card textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.cover-letter-card .cover-letter-text {
+  min-height: 360px;
+  margin-bottom: 12px;
+}
+.cover-letter-card .cover-letter-notes {
+  min-height: 64px;
+}

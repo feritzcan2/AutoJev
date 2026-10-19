@@ -4,15 +4,51 @@
 // extension's business; the core only renders them. The page carries
 // `listing`, so Jev knows the text holds no site chrome to filter out.
 const entity = (cp) => (cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : '');
+// Named entities listing text uses: the Latin-1 letters and signs (U+00A1 to
+// U+00FF, in order) and common punctuation. &amp; is decoded last, so an
+// escaped entity stays text.
+const LATIN1 =
+  'iexcl cent pound curren yen brvbar sect uml copy ordf laquo not shy reg macr deg plusmn sup2 sup3 acute micro para middot cedil sup1 ordm raquo frac14 frac12 frac34 iquest Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml Igrave Iacute Icirc Iuml ETH Ntilde Ograve Oacute Ocirc Otilde Ouml times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig agrave aacute acirc atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute icirc iuml eth ntilde ograve oacute ocirc otilde ouml divide oslash ugrave uacute ucirc uuml yacute thorn yuml';
+const NAMED = {
+  ...Object.fromEntries(LATIN1.split(' ').map((name, i) => [name, String.fromCodePoint(0xa1 + i)])),
+  quot: '"',
+  apos: "'",
+  lt: '<',
+  gt: '>',
+  nbsp: ' ',
+  ensp: ' ',
+  emsp: ' ',
+  thinsp: ' ',
+  ndash: '–',
+  mdash: '—',
+  lsquo: '‘',
+  rsquo: '’',
+  sbquo: '‚',
+  ldquo: '“',
+  rdquo: '”',
+  bdquo: '„',
+  laquo: '«',
+  hellip: '…',
+  bull: '•',
+  euro: '€',
+  trade: '™',
+  OElig: 'Œ',
+  oelig: 'œ',
+  Scaron: 'Š',
+  scaron: 'š',
+  Yuml: 'Ÿ',
+  zwnj: '',
+  zwj: '',
+  lrm: '',
+  rlm: '',
+};
 export const decode = (text) =>
   text
     .replace(/&#(\d+);/g, (_, d) => entity(Number(d)))
     .replace(/&#x([0-9a-f]+);/gi, (_, h) => entity(parseInt(h, 16)))
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&nbsp;/g, ' ')
+    .replace(/&([a-z][a-z0-9]*);/gi, (match, name) =>
+      name === 'amp' ? match : (NAMED[name] ?? match),
+    )
     .replace(/&amp;/g, '&');
 // Listing HTML as plain text: paragraphs on their own lines, list items as "• ".
 export const htmlText = (html) =>

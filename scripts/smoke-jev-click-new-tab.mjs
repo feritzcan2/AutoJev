@@ -35,6 +35,16 @@ try {
   assert.notEqual(clicked.openedTab.tabId, tabId);
   const child = await call('browser_jev_observe', {tabId: clicked.openedTab.tabId});
   assert.match(JSON.stringify(child), /Employer application/);
+  // An email apply link is named in the page text and never clicked.
+  await page.setContent(`<a href="mailto:jobs@example.test?subject=Java">Apply now</a>`);
+  const read = await call('browser_jev_observe', {tabId, scope: 'document'});
+  assert.match(read.text, /Email link: Apply now — jobs@example\.test/);
+  observed = await call('browser_jev_observe', {tabId});
+  const mail = observed.clickTargets.find((t) => t.label === 'Apply now');
+  const mailed = await call('browser_jev_click', {tabId, targetId: mail.targetId});
+  assert.equal(mailed.status, 'unsupported');
+  assert.equal(mailed.executed, false);
+  assert.match(mailed.message, /jobs@example\.test/);
   console.log('JEV_CLICK_NEW_TAB_PASS');
 } finally {
   await client.close();

@@ -79,13 +79,11 @@ try {
     new Date(3000).toISOString(),
   );
   await page.screenshot({path: path.join(data, 'resolved-verification.png')});
-  assert.equal(await page.locator('#question-badge').innerText(), '2 answer(s)');
+  assert.equal(await page.locator('#question-badge').innerText(), '2');
   assert.equal(await page.locator('#agent-nav-status').isVisible(), false);
-  await page.locator('#question-badge').click();
-  assert.equal(
-    await page.locator('#automation-result-filter [aria-pressed=true]').getAttribute('data-filter'),
-    'attention',
-  );
+  await page.locator('[data-view=answers]').click();
+  assert.equal(await page.locator('.answer-card').count(), 2);
+  await page.locator('[data-view=board]').click();
   await page.locator('#automation-result-filter [data-filter=all]').click();
   // Job tables open sorted by fit score; activity sorting starts with the newest.
   await page.locator('[data-result-sort=updatedAt]').click();
@@ -97,29 +95,34 @@ try {
   await page.locator('[data-result-sort=title]').click();
   assert.deepEqual((await ids()).slice(0, 2), [records[0].id, records[1].id]);
   assert.equal(await page.locator('tr[data-needs-answer=true] .record-question-badge').count(), 2);
+  // The table has no answer form; its link opens the question on the Answers page.
+  assert.equal(await page.locator('#automation-results .candidate-question-form').count(), 0);
   await page.locator('#automation-result-filter [data-filter=attention]').click();
   assert.equal((await ids()).length, 2);
   await page.locator(`[data-record-question="${questions[0].id}"]`).click();
-  const card = page.locator('dialog.record-question-dialog');
+  const card = page.locator(`.answer-card[data-question-id="${questions[0].id}"]`);
   await card.waitFor({state: 'visible'});
-  assert.equal(await card.getAttribute('data-question-id'), questions[0].id);
-  assert.equal(await page.locator('#agent .candidate-question-form').count(), 0);
-  await card.getByRole('textbox', {name: 'Your answer', exact: true}).fill('Saved draft answer');
-  await page.keyboard.press('Escape');
-  await card.waitFor({state: 'hidden'});
-  await page.locator(`[data-record-question="${questions[0].id}"]`).click();
   assert.equal(
-    await card.getByRole('textbox', {name: 'Your answer', exact: true}).inputValue(),
-    'Saved draft answer',
+    await page
+      .locator('aside nav [data-view=answers]')
+      .evaluate((b) => b.classList.contains('selected')),
+    true,
   );
-  await page.screenshot({path: path.join(data, 'question-dialog.png')});
   assert.equal(
     await card.evaluate((el) => el.contains(document.activeElement)),
     true,
     'The exact question receives focus',
   );
+  await card.getByRole('textbox', {name: 'Your answer', exact: true}).fill('Saved draft answer');
+  await page.locator('[data-view=board]').click();
+  await page.locator('[data-view=answers]').click();
+  assert.equal(
+    await card.getByRole('textbox', {name: 'Your answer', exact: true}).inputValue(),
+    'Saved draft answer',
+  );
+  await page.screenshot({path: path.join(data, 'answers-page.png')});
   await card.getByRole('button', {name: 'Skip', exact: true}).click();
-  await card.waitFor({state: 'hidden'});
+  await card.waitFor({state: 'detached'});
   await page.locator('[data-view=board]').click();
   assert.deepEqual(await ids(), [records[1].id]);
   await page.locator('#automation-result-filter [data-filter=all]').click();
@@ -127,18 +130,17 @@ try {
   await page.screenshot({path: path.join(data, 'question-pinned.png')});
   await page.locator('[data-view=agent]').click();
   assert.equal(await page.locator('#agent .candidate-question-form').count(), 0);
-  await page.getByRole('button', {name: 'Show unanswered questions', exact: true}).click();
-  assert.equal(
-    await page.locator('#automation-result-filter [aria-pressed=true]').getAttribute('data-filter'),
-    'attention',
-  );
-  await page.locator(`[data-record-question="${questions[1].id}"]`).click();
-  await card
+  assert.equal(await page.locator('.automation-attention-banner').count(), 0);
+  await page.locator('[data-view=answers]').click();
+  const second = page.locator(`.answer-card[data-question-id="${questions[1].id}"]`);
+  await second.waitFor({state: 'visible'});
+  await second
     .getByRole('textbox', {name: 'Your answer', exact: true})
     .fill('Verified answer for the second record');
-  await card.getByRole('button', {name: 'Send answers', exact: true}).click();
-  await card.waitFor({state: 'hidden'});
+  await second.getByRole('button', {name: 'Send answers', exact: true}).click();
+  await second.waitFor({state: 'detached'});
   assert.equal(await page.locator('#question-badge').isVisible(), false);
+  assert.equal(await page.locator('.answers-empty').isVisible(), true);
   const answered = await page.evaluate((id) => window.jobloop.workspaceSnapshot(id), a.id);
   assert.equal(
     answered.automation.questions.find((q) => q.id === questions[1].id).answerValues.answer,

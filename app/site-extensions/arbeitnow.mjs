@@ -1,8 +1,9 @@
 // @ts-check
 // Arbeitnow site extension (API collector; per-site extensions requested
 // 2026-10-05). The public job-board API lists postings with their full
-// descriptions: the .com feed mixes Germany, the UK, France and Switzerland,
-// the .co.uk/.fr/.ch sites each list one country. It has no search (search= is
+// descriptions: the .com feed mixes Germany, the UK, France, Switzerland and
+// the Netherlands (.nl since 2026-10-17), the .co.uk/.fr/.ch/.nl sites each list
+// one country. It has no search (search= is
 // ignored, observed 2026-10), only the documented visa_sponsorship filter, so
 // one feed serves every query and Jev's triage narrows it. Terms of use: a
 // free API, do not abuse, link back to the site.
@@ -12,7 +13,7 @@ import {jobPostingDetail, jobPostingHtml} from './job-posting.mjs';
 
 const ORIGIN = 'https://www.arbeitnow.com';
 const API_PATH = '/api/job-board-api';
-const SITES = ['arbeitnow.com', 'arbeitnow.co.uk', 'arbeitnow.fr', 'arbeitnow.ch'];
+const SITES = ['arbeitnow.com', 'arbeitnow.co.uk', 'arbeitnow.fr', 'arbeitnow.ch', 'arbeitnow.nl'];
 const LISTING_PATH = /^\/jobs\/companies\/[^/]+\/[^/]+\/?$/;
 const MAX_BYTES = 16 * 1024 * 1024;
 const site = (hostname) => SITES.find((s) => hostname === s || hostname === `www.${s}`) ?? null;
@@ -140,7 +141,10 @@ export async function readArbeitnowDetail(
   });
   if (!response.ok) {
     await response.body?.cancel();
-    throw Error(`Arbeitnow listing page HTTP ${response.status}; the address stays pending.`);
+    throw Object.assign(
+      Error(`Arbeitnow listing page HTTP ${response.status}; the address stays pending.`),
+      {status: response.status},
+    );
   }
   const job = jobPostingDetail(jobPostingHtml(await response.text()));
   if (!job)

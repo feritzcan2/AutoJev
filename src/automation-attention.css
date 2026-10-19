@@ -162,3 +162,118 @@ body:not(.automation-workspace) .automation-attention-banner {
     padding: 16px;
   }
 }
+/* Attention needed page: neutral cards like the Answers page; the status pill carries the tone. */
+.attention-page .automation-attention,
+.attention-page .automation-retry-plans {
+  max-width: 760px;
+}
+.attention-page .attention-announcement,
+.attention-page .automation-help-card .attention-icon {
+  display: none;
+}
+.attention-page .attention-list {
+  gap: 16px;
+}
+.attention-page .automation-help-card,
+.attention-page .automation-help-card[data-waiting] {
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+.attention-page .automation-help-card > * {
+  margin-left: 24px;
+  margin-right: 24px;
+}
+.attention-page .automation-help-heading {
+  margin-top: 20px;
+  margin-bottom: 14px;
+}
+.attention-page .automation-help-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  color: var(--warning);
+  font-size: 11px;
+  font-weight: 600;
+}
+.attention-page .automation-help-label::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.attention-page .automation-help-card[data-waiting] .automation-help-label {
+  background: var(--bg-app);
+  color: var(--text-secondary);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.attention-page .automation-help-heading h3 {
+  margin-top: 10px;
+  font-size: 17px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.attention-page .automation-help-summary {
+  margin-top: 0;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.attention-page .automation-help-card > .automation-help-instructions {
+  margin: 10px 24px 20px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.attention-page .automation-help-card > .automation-help-actions {
+  margin: 0;
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-app);
+  gap: 8px;
+}
+.attention-page .automation-help-card > .automation-help-actions button {
+  padding: 8px 12px;
+  font-size: 12px;
+}
+.attention-page .automation-help-card > .automation-help-actions [data-dismiss-attention] {
+  margin-left: auto;
+}
+.attention-page .automation-help-card[data-waiting] .automation-help-feedback {
+  color: var(--warning);
+}
+/* Feedback, tab choices and the reply form continue the footer strip. */
+.attention-page .automation-help-card > .automation-help-feedback,
+.attention-page .automation-help-card > .automation-help-tabs,
+.attention-page .automation-help-card > .automation-help-reply,
+.attention-page .automation-help-card > details {
+  margin: 0;
+  padding: 2px 24px 16px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg-app);
+  font-size: 12.5px;
+}
+.attention-page .automation-help-card > .automation-help-reply .automation-help-actions button {
+  padding: 8px 14px;
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .attention-page .automation-help-card > * {
+    margin-left: 16px;
+    margin-right: 16px;
+  }
+  .attention-page .automation-help-card > .automation-help-actions {
+    padding: 12px 16px;
+  }
+  .attention-page .automation-help-card > .automation-help-feedback,
+  .attention-page .automation-help-card > .automation-help-tabs,
+  .attention-page .automation-help-card > .automation-help-reply,
+  .attention-page .automation-help-card > details {
+    padding: 2px 16px 14px;
+  }
+}
