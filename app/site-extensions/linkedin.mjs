@@ -13,15 +13,16 @@ const DETAIL_URL = 'https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/';
 export const LINKEDIN_PAGE_SIZE = 10;
 // LinkedIn answers guest reads with 429 after a few dozen requests from one
 // address, even with seconds between them (observed 2026-10-18: about 35
-// requests in 13 minutes at 8+ s spacing). The reference CLI stays low volume:
-// about two result pages per query and postings only for a shortlist. So the
-// guest reads keep 15–25 s apart and at most 25 per half hour; the rest of
-// a scan resumes when the window frees (SiteAccess.spend). A 429 lasts longer
+// requests in 13 minutes at 8+ s spacing; 2026-10-19 01:53: about 27 in 10
+// minutes). The reference CLI stays low volume: about two result pages per
+// query and postings only for a shortlist. So the guest reads keep 45–75 s
+// apart (about one a minute) and at most 25 per half hour; the rest of a scan
+// resumes when the window frees (SiteAccess.spend). A 429 lasts longer
 // than the default 5 and 10 minute retries (2026-10-19: still 429 after 15
 // minutes, which used up all retries), so retries wait 30 and 90 minutes.
 export const LINKEDIN_PACING = {
-  minIntervalMs: 15000,
-  jitterMs: 10000,
+  minIntervalMs: 45000,
+  jitterMs: 30000,
   budget: {requests: 25, windowMs: 30 * 60000},
   retryDelaysMs: [30 * 60000, 90 * 60000],
 };

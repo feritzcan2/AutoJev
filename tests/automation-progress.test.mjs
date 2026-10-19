@@ -290,7 +290,7 @@ test('a brand-new workspace with no conversation invites the first message inste
   );
   const p = automationProgress(s);
   assert.equal(p.title, 'Describe what you want to do');
-  assert.equal(p.next, 'Write your first message on the Agent page; the agent asks the rest.');
+  assert.equal(p.next, 'Write your first message on the Setup agent page; the agent asks the rest.');
   assert.equal(p.primary.id, 'message');
   assert.equal(p.fresh, true);
   assert.doesNotMatch(p.next, /Eksik/);

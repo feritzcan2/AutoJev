@@ -8,12 +8,13 @@ import {withAgentDefaults, withSetupAgentDefaults} from '../app/agents/settings.
 import {WorkerTerminalSurface} from './worker-terminal-surface.js';
 import {terminalAttention} from './agent-attention.js';
 import './onboarding.css';
+import {rulesField, RULES_HINT} from './template-fields.js';
 
 // Welcome screen of a new job search: the user picks the agent and the CV, the
 // setup agent fills the profile from the CV, the user reviews it and starts.
 const providerOrder = ['claude', 'codex', 'opencode'];
 // The review form shows these criteria; the rest stay on the profile page.
-const reviewFields = ['preferences', 'country', 'location', 'constraints', 'application_facts'];
+const reviewFields = ['preferences', 'country', 'location', 'application_facts'];
 const readinessIds = ['chrome', 'chrome-profile', 'chrome-debug', 'jev', 'failed'];
 const modes = [
   [
@@ -485,6 +486,9 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         }),
       );
     }
+    const rules = fields.get('hard_rules');
+    if (rules)
+      profile.append(rulesField('hard_rules', rules.label, a.criteria.hard_rules, RULES_HINT));
     const experience = fields.get('experience');
     if (experience) {
       const more = el('details', null, 'onboarding-more');
@@ -728,6 +732,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       criteria = {...current.criteria};
     for (const key of reviewFields) if (f[key]) criteria[key] = f[key].value.trim();
     if (f.experience) criteria.experience = f.experience.value.trim();
+    if (f.hard_rules) criteria.hard_rules = f.hard_rules.value.trim();
     criteria.score_threshold = f.score_threshold.value.trim();
     if (criteria.country) criteria.country = criteria.country.toUpperCase();
     delete criteria.save_score_threshold;

@@ -4,6 +4,7 @@ import {COLLECTOR_INSTRUCTIONS} from '../sources/collector-worker.mjs';
 import {isConversation} from '../workspaces/conversation.mjs';
 import {JEV_LAUNCH_INSTRUCTIONS, AGENT_LAUNCH_INSTRUCTIONS} from '../jev/task-tools.mjs';
 import {SOURCE_PAGE_INSTRUCTIONS} from '../sources/scan.mjs';
+import {COVER_LETTER_PROMPT} from './cover-letters.mjs';
 
 // agentDecides: the workspace lets the agent make the listing decisions (no Jev model).
 export function automationPrompt(
@@ -11,6 +12,7 @@ export function automationPrompt(
   request = null,
   {evidenceExpired = false, agentDecides = false} = {},
 ) {
+  if (run.recordOperation === 'cover_letter') return COVER_LETTER_PROMPT;
   if (run.collector && run.kind === 'run' && !run.recordId)
     return (
       'Read AGENTS.md and get_automation_context. ' +

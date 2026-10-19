@@ -130,7 +130,8 @@ try {
   await page.screenshot({path: path.join(data, 'question-pinned.png')});
   await page.locator('[data-view=agent]').click();
   assert.equal(await page.locator('#agent .candidate-question-form').count(), 0);
-  await page.getByRole('button', {name: 'Show unanswered questions', exact: true}).click();
+  assert.equal(await page.locator('.automation-attention-banner').count(), 0);
+  await page.locator('[data-view=answers]').click();
   const second = page.locator(`.answer-card[data-question-id="${questions[1].id}"]`);
   await second.waitFor({state: 'visible'});
   await second

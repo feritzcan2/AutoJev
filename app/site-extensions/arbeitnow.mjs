@@ -141,7 +141,10 @@ export async function readArbeitnowDetail(
   });
   if (!response.ok) {
     await response.body?.cancel();
-    throw Error(`Arbeitnow listing page HTTP ${response.status}; the address stays pending.`);
+    throw Object.assign(
+      Error(`Arbeitnow listing page HTTP ${response.status}; the address stays pending.`),
+      {status: response.status},
+    );
   }
   const job = jobPostingDetail(jobPostingHtml(await response.text()));
   if (!job)

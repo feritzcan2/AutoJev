@@ -93,12 +93,15 @@ export class WorkspaceSupport {
     };
   }
   questions(id) {
-    return (this.automation.get(id).questions ?? []).map((q) => ({
-      ...q,
-      question: q.text,
-      jobId: q.recordId,
-      createdAt: q.createdAt,
-    }));
+    // A cover letter is reviewed on the Files page, not answered from a channel.
+    return (this.automation.get(id).questions ?? [])
+      .filter((q) => !q.coverLetter)
+      .map((q) => ({
+        ...q,
+        question: q.text,
+        jobId: q.recordId,
+        createdAt: q.createdAt,
+      }));
   }
   queueState(id, item) {
     const record = this.automation.result(id, item.id),

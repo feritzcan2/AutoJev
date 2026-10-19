@@ -453,6 +453,50 @@ test("a site's own retry delays replace the default cooldown", () => {
   }
 });
 
+test('a request budget survives an app restart', () => {
+  const db = new DatabaseSync(':memory:');
+  let now = 1_000_000;
+  const budget = {requests: 2, windowMs: 30 * minute},
+    site = 'https://restart-budget.test/';
+  try {
+    const before = new SiteAccess(db, {now: () => now});
+    assert.equal(before.spend(site + 'a', budget), null);
+    assert.equal(before.spend(site + 'b', budget), null);
+    const after = new SiteAccess(db, {now: () => now});
+    assert.equal(after.spend(site + 'c', budget).reason, 'budget', 'the restart keeps the count');
+    now += 30 * minute;
+    assert.equal(after.spend(site + 'd', budget), null, 'old requests leave the window');
+    assert.equal(
+      db.prepare('SELECT count(*) AS n FROM site_requests').get().n,
+      1,
+      'expired requests are pruned',
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test('an old wait card retires even when a later incident of the site already recovered', () => {
+  const db = new DatabaseSync(':memory:');
+  let now = 1_000_000;
+  const gate = new SiteAccess(db, {now: () => now}),
+    site = 'https://card.test/';
+  try {
+    const old = gate.block(site, 'rate_limit');
+    gate.acknowledge([old]);
+    now += 60 * minute;
+    const later = gate.block(site, 'rate_limit');
+    now = later.retryAt;
+    gate.complete(site, gate.begin(site), {status: 200});
+    assert.doesNotThrow(() => gate.acknowledge([old]), 'the recovered incident blocks nothing');
+    assert.equal(gate.row(site).recovered, true, 'the recovered row stays for its task');
+    gate.save({...gate.row(site), recovered: false, retryAt: now + minute});
+    assert.throws(() => gate.acknowledge([old]), /new access wait/);
+  } finally {
+    db.close();
+  }
+});
+
 test('jitter adds a random part to the gap', () => {
   const db = new DatabaseSync(':memory:');
   const gate = new SiteAccess(db, {now: () => 1_000_000});

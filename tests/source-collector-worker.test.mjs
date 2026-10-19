@@ -503,6 +503,44 @@ test('an unavailable detail does not block other pages, a moved listing is recov
   assert.equal(done.progress.collected, 3);
 });
 
+test('a listing the site reports gone (410) leaves the queue instead of stopping the scan', async (t) => {
+  let changed = false;
+  const reads = [];
+  const f = fixture(t, {
+    readPage: (value) => {
+      const second = new URL(value).searchParams.get('page') === '2';
+      return parseHimalayasPage(value, {
+        jobs: second ? [jobs[2]] : changed ? [jobs[0]] : jobs,
+        offset: second ? 20 : 0,
+        limit: 20,
+        totalCount: 21,
+      });
+    },
+    readDetail: async (value) => {
+      reads.push(value);
+      throw Object.assign(Error('HTTP 410'), {status: 410});
+    },
+  });
+  await f.call('collect_source_page');
+  changed = true;
+  const resumed = restart(f);
+  let result = await resumed.call('collect_source_page');
+  for (let i = 0; i < 6 && !result.complete; i++) {
+    assert.notEqual(
+      result.issue?.reason,
+      'collector_details_unavailable',
+      'a removed listing is not an unreadable one',
+    );
+    await handle(resumed, result);
+    result = await resumed.call('collect_source_page');
+  }
+  assert.equal(result.complete, true);
+  const run = resumed.db.run(f.run.id);
+  assert.deepEqual(run.scan.pendingUrls, []);
+  assert.ok(run.scan.work.searches.some((s) => s.processedUrls.includes(url('reject'))));
+  assert.ok(reads.length >= 1);
+});
+
 test('a listing Jev cannot assess stays pending without holding its page', async (t) => {
   const image = {guid: url('image'), title: 'Werkstudent', description: '<p>IMAGE_ONLY_MARKER</p>'};
   const f = fixture(t, {

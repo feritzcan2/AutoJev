@@ -5,6 +5,7 @@ export const BLOCKER_CATEGORIES = [
   'not_eligible',
   'needs_answer',
   'needs_login',
+  'needs_code',
   'needs_payment',
   'verification',
   'listing_closed',
@@ -23,7 +24,7 @@ export const blockerSchema = {
       type: 'string',
       enum: BLOCKER_CATEGORIES,
       description:
-        'not_eligible: the listing or form excludes the user (location, work authorization, criteria). needs_answer: a fact only the user knows. needs_login: sign-in, account or emailed/SMS code. needs_payment: a paid step. verification: a CAPTCHA the user must solve. listing_closed: removed or no longer accepting applications. site_problem: the site itself errors or does not load. technical: a browser tool or form control did not work.',
+        'not_eligible: the listing or form excludes the user (location, work authorization, criteria). needs_answer: a fact only the user knows. needs_login: sign-in or account. needs_code: the site sent a security/verification code to the user’s email or phone and waits for it, before or after the submit click. needs_payment: a paid step. verification: a CAPTCHA the user must solve. listing_closed: removed or no longer accepting applications. site_problem: the site itself errors or does not load. technical: a browser tool or form control did not work.',
     },
     reason: {
       type: 'string',

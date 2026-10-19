@@ -31,13 +31,20 @@ let catalog = [],
 let settingsQueue = Promise.resolve(),
   refreshVersion = 0;
 const refresh = coalesceRefresh(refreshWorkspace);
+// Running workers report many changes; each one would otherwise read a full snapshot.
+const refreshOnChange = coalesceRefresh(refreshWorkspace, {gap: 1000});
 let agentSettingsDirty = false,
   agentSettingsSaving = false,
   agentSettingsBaseline = '';
 const confirmAgentRestart = createAgentRestartDialog();
+// A notice answers the action that just happened: it fades after a while and
+// never follows the user to another page.
+let noticeTimer = null;
 const notice = (message) => {
+  clearTimeout(noticeTimer);
   $('notice').textContent = message;
   $('notice').hidden = !message;
+  if (message) noticeTimer = setTimeout(() => notice(''), 8000);
 };
 const attempt =
   (fn) =>
@@ -239,6 +246,7 @@ sourcesNav.innerHTML =
   '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Sources</span><span id="sources-nav-status" class="agent-nav-status sources-nav-status" data-tone="active" aria-hidden="true" hidden></span>';
 document.querySelector('nav button[data-view="agent"]').before(sourcesNav);
 function switchView(name, options = {}) {
+  notice('');
   const global = name === 'start',
     selected = automationUI.selected;
   document.querySelector('main>header>.actions').hidden =
@@ -593,5 +601,5 @@ localStorage.removeItem('selected-candidate');
 localStorage.removeItem('selected-automation');
 api.onAutomationChange?.((event) => {
   if (event.automationId && event.automationId !== automationUI.selected) return;
-  refresh().catch((error) => notice(error.message));
+  refreshOnChange().catch((error) => notice(error.message));
 });

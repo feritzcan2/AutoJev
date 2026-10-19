@@ -28,6 +28,8 @@ export const questionMethods = {
       accessCheck = null,
       outcome = false,
       verification = false,
+      code = false,
+      coverLetter = null,
     },
     {runId = undefined} = {},
   ) {
@@ -59,6 +61,9 @@ export const questionMethods = {
       ...(accessCheck ? {accessCheck} : {}),
       ...(outcome ? {outcome: true} : {}),
       ...(verification ? {verification: true} : {}),
+      ...(code ? {code: true} : {}),
+      // Answered only by approving the letter on the Files page (cover-letters.mjs).
+      ...(coverLetter ? {coverLetter} : {}),
       answer: null,
       createdAt: this.now(),
       ...(run ? {runId: run.id} : {}),

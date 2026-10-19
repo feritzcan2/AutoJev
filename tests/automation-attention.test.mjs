@@ -153,6 +153,12 @@ test('a blocked source stays visible beside working sources, and disappears only
   assert.equal(automationAttention(s).length, 1);
   for (const patch of [{enabled: false}, {blocked: false}, {scanning: true}])
     assert.equal(automationAttention({...s, sources: [{...source, ...patch}]}).length, 0);
+  s.results = [{id: 'r', sourceUrl: source.url, status: 'uncertain'}];
+  assert.equal(
+    automationAttention(s)[0].retry,
+    'source',
+    'A record with an unclear outcome does not stop a new scan of its source',
+  );
   s.sources[0] = {...source, blocker: {recordId: 'record'}};
   assert.equal(
     automationAttention(s)[0].retry,

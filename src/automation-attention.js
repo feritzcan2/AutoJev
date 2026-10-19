@@ -36,7 +36,8 @@ export function automationAttentionPanel(
     review = el('button', 'Show issues', 'quiet');
   review.type = 'button';
   banner.append(el('span', '!', 'attention-icon'), bannerText, review);
-  document.querySelector('main>header').after(banner);
+  // With its own page the sidebar badges carry the count, so no banner is shown.
+  if (!container) document.querySelector('main>header').after(banner);
   const panel = el('section', null, 'automation-attention');
   panel.hidden = true;
   panel.dataset.webOnly = '';
@@ -376,7 +377,7 @@ export function automationAttentionPanel(
             await api.automationSourceResume(workspace, issue.sourceUrl, issue.runId);
           else if (issue.retry === 'source')
             await api.automationSourceRun(workspace, issue.sourceUrl);
-          else await api.automationRun(workspace, 'trial');
+          else await api.automationRun(workspace, issue.retry);
           await refresh();
         });
     if (later)

@@ -2,7 +2,7 @@
 // Every execute task applies the record in one pass; there is no saved draft
 // or approval step. Short numbered steps: the agents reading this are not experts.
 export const directRecordInstructions =
-  "The user asked to apply to this record now. Steps: 1. Open the listing and reach the real application form. When the page hands the application over to another site (a link or note saying it continues on the employer's or another website), open that link and continue there: a status such as Applied that a listing site shows after this click-through only records the redirect, not a submitted application. If the page says the listing is no longer available (removed, expired, not found, no longer accepting applications), read it once more; if it still says so, call record_automation_outcome with status=closed and that exact sentence as evidence, then finish completed. If it says the user already applied to this listing, do not apply again: call record_automation_outcome with status=applied and that exact sentence as evidence, then finish completed. 2. Call browser_jev_inspect_form and list every required field and upload. 3. Answer each field from the saved profile, documents and earlierAnswers; map a saved answer to the form option with the same meaning, and use what the profile directly implies (someone who already lives in the city of the job needs no relocation; a full-time role means the standard full-time week, for example 40 hours; how you heard about the job is the site of the listing URL; whether the user worked at a company follows from the employment history in the CV). Never invent a fact. Do not ask permission for any step of this application: the request to apply already approves it. If the site asks you to register or create a candidate profile before applying, fill that form from the saved profile, accept its terms and continue without asking. Only a password the user never saved or a code sent to the user (email, SMS) needs the user: keep the tab and finish blocked naming that step. 4. Only if a required fact is still missing, ask ONE ask_workspace_question with this recordId that contains one typed field per missing fact, then finish blocked; the answer resumes this application. 5. Fill the form, upload the documents from the workspace documents folder, tick consents the saved application policy allows. 6. Call reserve_automation_action, then click the final submit button once. 7. Read the fresh page and call record_automation_outcome: completed when the site that received the form confirms, otherwise uncertain. Never click submit twice; an unclear result is uncertain, not a retry. record_automation_result is optional notes, not a requirement.";
+  "The user asked to apply to this record now. Steps: 1. Open the listing and reach the real application form. When the page hands the application over to another site (a link or note saying it continues on the employer's or another website), open that link and continue there: a status such as Applied that a listing site shows after this click-through only records the redirect, not a submitted application. If the page says the listing is no longer available (removed, expired, not found, no longer accepting applications), read it once more; if it still says so, call record_automation_outcome with status=closed and that exact sentence as evidence, then finish completed. If it says the user already applied to this listing, do not apply again: call record_automation_outcome with status=applied and that exact sentence as evidence, then finish completed. 2. Call browser_jev_inspect_form and list every required field and upload. 3. Answer each field from the saved profile, documents and earlierAnswers; map a saved answer to the form option with the same meaning, and use what the profile directly implies (someone who already lives in the city of the job needs no relocation; a full-time role means the standard full-time week, for example 40 hours; how you heard about the job is the site of the listing URL; whether the user worked at a company follows from the employment history in the CV). Never invent a fact. Do not ask permission for any step of this application: the request to apply already approves it. If the site asks you to register or create a candidate profile before applying, fill that form from the saved profile, accept its terms and continue without asking. Only a password the user never saved or a code sent to the user (email, SMS) needs the user: keep the tab and finish blocked naming that step (blocker category needs_login for the password, needs_code for the code). 4. Only if a required fact is still missing, ask ONE ask_workspace_question with this recordId that contains one typed field per missing fact, then finish blocked; the answer resumes this application. A required cover letter (upload or text box) with no cover letter for this employer in the documents folder is not a question: never write one yourself and never put the CV there; fill the other fields, call request_cover_letter, then finish blocked. 5. Fill the form, upload the documents from the workspace documents folder, tick consents the saved application policy allows. 6. Call reserve_automation_action, then click the final submit button once. 7. Read the fresh page and call record_automation_outcome: completed when the site that received the form confirms, otherwise uncertain. If the site then asks for a code sent to the user's email or phone, never type a guessed code: record uncertain, keep the tab and finish blocked with blocker category needs_code; the app asks the user to enter it. Never click submit twice; an unclear result is uncertain, not a retry. record_automation_result is optional notes, not a requirement.";
 
 export const recordOperationDefaults = {
   score: {
@@ -38,6 +38,14 @@ export const UNSTATED_CHECK = 'Do not apply until checked',
 // workspace's own goal; templates do not define scoring criteria themselves.
 export const scoringFields = [
   {
+    id: 'hard_rules',
+    label: 'Elimination rules',
+    question:
+      'Conditions every record must meet, one per rule, and what to do when a listing does not mention it. The setup agent proposes them.',
+    required: false,
+    type: 'rules',
+  },
+  {
     id: 'ranking',
     label: 'Scoring criteria',
     question:
@@ -54,9 +62,10 @@ export const scoringFields = [
   },
   {
     id: 'unstated_conditions',
+    // Only workspaces without elimination rules use it; each rule has its own choice.
     label: 'When a listing does not mention a required condition',
     question:
-      'Treat it as met, or do not apply automatically until it is checked (default). An explicit restriction always excludes the listing.',
+      'Used only without elimination rules. Treat it as met, or do not apply automatically until it is checked (default). An explicit restriction always excludes the listing.',
     required: false,
     type: 'choice',
     options: [UNSTATED_CHECK, UNSTATED_MET],

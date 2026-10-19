@@ -946,6 +946,17 @@ test('table projection exposes queued, running, answered and stopped record acti
   assert.equal(recordOperationStatus(row).label, 'Operation blocked');
   assert.equal(recordOperationStatus(row).active, false);
   assert.equal(recordOperationStatus({...row, status: 'completed'}), null);
+  const notEligible = {
+    ...row,
+    recordAction: {
+      ...row.recordAction,
+      lastTask: {
+        ...row.recordAction.lastTask,
+        blocker: {category: 'not_eligible', reason: 'US only'},
+      },
+    },
+  };
+  assert.equal(recordOperationStatus(notEligible).label, 'Not eligible');
 });
 
 test('an explicit record request starts one disabled worker and keeps workspace permissions unchanged', async (t) => {
@@ -1765,6 +1776,24 @@ test('a user can mark a found, prepared or uncertain record as submitted', async
   assert.throws(() => f.db.markSubmitted(f.id, other.id), /queued or running/);
 });
 
+// A skip can be taken back: the record returns to found and can be applied.
+test('a user can restore a skipped record and apply it again', async (t) => {
+  const f = fixture(t);
+  const prepared = await f.prepare();
+  await f.runtime.dismissRecord(f.id, prepared.id);
+  assert.match(
+    recordOperationError(f.db.get(f.id), f.db.result(f.id, prepared.id), 'execute', {manual: true}),
+    /cannot be submitted again/,
+  );
+  const restored = f.runtime.restoreRecord(f.id, prepared.id);
+  assert.equal(restored.status, 'found');
+  assert.equal(
+    recordOperationError(f.db.get(f.id), f.db.result(f.id, prepared.id), 'execute', {manual: true}),
+    null,
+  );
+  assert.throws(() => f.db.restore(f.id, prepared.id), /Only a skipped record/);
+});
+
 test('an unconfirmed submit click attaches one viewport image; a confirmed one attaches nothing', async (t) => {
   for (const confirmed of [false, true]) {
     const f = fixture(t);
@@ -2003,6 +2032,57 @@ test('a CAPTCHA after the submit click asks the user to solve it before reportin
     question.fields[0].label,
     'After solving the verification: was this record submitted?',
   );
+});
+
+test('a code sent by email after the submit click asks the user to enter it', async (t) => {
+  const {recordOperationStatus} = await import('../src/record-operation-status.js');
+  const f = fixture(t);
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  f.db.reserve(f.id, run.id, item.id);
+  const page = {
+    url: item.url,
+    text: 'Job Application',
+    fillFields: [{fieldId: 'f1'}],
+    clickTargets: [{targetId: 'e1', label: 'Submit application'}],
+  };
+  const flow = automationWorkflow({
+    db: f.db,
+    run,
+    signal: new AbortController().signal,
+    submitSettleMs: 0,
+    browser: {
+      currentUrl: async () => item.url,
+      call: async () => ({
+        jevPage: page,
+        content: [{type: 'text', text: `Page URL: ${page.url}\n${JSON.stringify(page)}`}],
+        action: {executed: true},
+      }),
+    },
+    report: (...args) => f.runtime.report(...args),
+  });
+  await flow.call(f.id, run.id, 'browser_open', {url: item.url});
+  await flow.call(f.id, run.id, 'record_automation_outcome', {
+    status: 'uncertain',
+    evidence: 'An 8-box security code step appeared after the click.',
+    url: item.url,
+  });
+  await flow.call(f.id, run.id, 'finish_automation_run', {
+    status: 'blocked',
+    summary: 'Submitted once; the site asks for a security code sent by email.',
+    blocker: {
+      category: 'needs_code',
+      reason: 'The site sent a security code to the user’s email.',
+      userAction: 'Enter the code on the open tab',
+    },
+  });
+  const question = f.db.get(f.id).questions.find((q) => q.recordId === item.id && q.outcome);
+  assert.equal(question.code, true);
+  assert.match(question.text, /Enter the code/);
+  assert.equal(question.fields[0].label, 'After entering the code: was this record submitted?');
+  assert.equal(recordOperationStatus({recordAction: {question}}).label, 'Code to enter');
 });
 
 test('a CAPTCHA that renders after the submit result still marks the record as a CAPTCHA to solve', async (t) => {

@@ -231,6 +231,7 @@ async function recoverDetails(db, run, search, page, {signal, readDetail}) {
     (url) => !page.jobs.some((j) => j.url === url) && !failed.has(url),
   );
   const unavailable = [],
+    gone = [],
     jobs = [...page.jobs];
   // Bound each transport slice; remaining addresses are retained for the end.
   await Promise.all(
@@ -247,10 +248,25 @@ async function recoverDetails(db, run, search, page, {signal, readDetail}) {
       } catch (error) {
         signal?.throwIfAborted();
         currentRun(db, run.id);
-        unavailable.push({url, message: String(error.message).slice(0, 1000)});
+        // The site says the listing no longer exists (404/410): nothing is
+        // left to read or assess, so it leaves the queue instead of holding it.
+        if ([404, 410].includes(error.status)) gone.push(url);
+        else unavailable.push({url, message: String(error.message).slice(0, 1000)});
       }
     }),
   );
+  if (gone.length) {
+    const drop = (s) => {
+      s.pendingUrls = s.pendingUrls.filter((url) => !gone.includes(url));
+      s.processedUrls = [...new Set([...s.processedUrls, ...gone])];
+    };
+    const current = currentRun(db, run.id),
+      work = scanWork(current);
+    work.searches.forEach(drop);
+    persist(db, current, work);
+    // The caller's copy of this search stays in step with the saved one.
+    drop(search);
+  }
   return {...page, jobs, unavailable};
 }
 

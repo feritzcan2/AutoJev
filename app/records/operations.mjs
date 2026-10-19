@@ -8,6 +8,7 @@ import {boundedText} from '../templates/catalog.mjs';
 import {autoApplyThreshold} from '../scoring/thresholds.mjs';
 
 const live = ['pending', 'running', 'reported', 'paused'];
+const automaticRecordScanInterval = 10_000;
 const waitingForAnswer = 'Answer the pending questions for this record first';
 // When the user switched to Find and apply without queueing existing records,
 // only records saved after the switch are applied to automatically.
@@ -50,6 +51,12 @@ export function recordOperationError(
     return item.status === 'uncertain'
       ? null
       : 'Only an action with an uncertain outcome can be verified';
+  // The writer answers the record's own cover letter question, so that open
+  // question does not hold it back.
+  if (kind === 'cover_letter')
+    return ['completed', 'executing', 'uncertain', 'dismissed'].includes(item.status)
+      ? 'This record is closed'
+      : null;
   if (['completed', 'executing', 'uncertain', 'dismissed'].includes(item.status))
     return 'This record cannot be submitted again';
   if (!automationReady(a)) return 'Check and save the setup first';
@@ -420,7 +427,20 @@ export async function dispatchRecordOperations(runtime, id, {manualOnly = false}
     }
   }
   const customRecordWorkflow = db.template(a.templateId).workflow.some((s) => s.scope === 'record');
-  if (!manualOnly && a.status === 'enabled' && a.mode !== 'observe' && !customRecordWorkflow) {
+  // Automatic scheduling reads every record and record task. A few seconds of
+  // delay does not matter, so it runs at most once per interval per workspace,
+  // or at once after the setup changes.
+  const scans = (runtime.automaticRecordScans ??= new Map()),
+    scanKey = JSON.stringify([a.revision, a.mode, a.status]),
+    lastScan = scans.get(id);
+  if (
+    !manualOnly &&
+    a.status === 'enabled' &&
+    a.mode !== 'observe' &&
+    !customRecordWorkflow &&
+    (lastScan?.key !== scanKey || lastScan.next <= runtime.now())
+  ) {
+    scans.set(id, {key: scanKey, next: runtime.now() + automaticRecordScanInterval});
     const previous = queue.list(id, {summary: true}),
       activeRecords = new Set(
         previous.filter((t) => live.includes(t.state)).flatMap(taskRecordIds),
