@@ -1,4 +1,5 @@
 import {withAgentDefaults, DECISION_MODES} from '../agents/settings.mjs';
+const INITIAL_WORKERS = 3;
 // A workspace is a template plus shared settings/state. Domain extensions define
 // eligibility and task instructions; the app exposes one control surface.
 export class Workspaces {
@@ -43,6 +44,10 @@ export class Workspaces {
       await this.validateSettings(input.agentSettings);
     }
     const result = await driver.create(templateId, input);
+    // New workspaces start with three workers (or fewer when the template caps it).
+    const initial = Math.min(INITIAL_WORKERS, definition.execution.maxWorkers ?? 8);
+    for (let n = this.store.workers.list(result.id).length; n < initial; n++)
+      this.store.workers.add(result.id);
     this.changed(result.id);
     return result;
   }
