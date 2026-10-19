@@ -56,3 +56,11 @@ edit `vendor/termloop` files by hand or bypass the checksum verification.
 CI verifies the exact commit on three operating systems. A public release needs
 successful CI evidence for the same commit. Fork PRs have no access to private
 runners or release secrets.
+
+## Releases
+
+To release, bump `version` in `package.json` and push it to `main`. When CI passes
+for that commit, the release workflow tags it `v<version>`, builds signed macOS,
+Windows and Linux packages, and publishes the GitHub Release that the in-app updater
+reads. Pushes that leave the version unchanged release nothing. Pushing a `v*` tag
+yourself or running the workflow manually still works.
