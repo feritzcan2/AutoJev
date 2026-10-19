@@ -223,8 +223,26 @@ body.jl-simple .onboarding-fields {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
-body.jl-simple .onboarding-fields > :is(label, details) {
+body.jl-simple .onboarding-fields > :is(label, details, .rules-field) {
   grid-column: 1 / -1;
+}
+/* Elimination rules: the condition text gets the room; select and Remove stay compact. */
+body.jl-simple .onboarding .rule-row {
+  grid-template-columns: max-content minmax(160px, 1fr) max-content;
+}
+body.jl-simple .onboarding .rule-row input {
+  min-width: 0;
+  width: 100%;
+}
+body.jl-simple .onboarding .rules-field legend {
+  color: var(--jl-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+@media (max-width: 640px) {
+  body.jl-simple .onboarding .rule-row {
+    grid-template-columns: minmax(0, 1fr) max-content;
+  }
 }
 body.jl-simple .onboarding-fields > label:has(input[name='country']),
 body.jl-simple .onboarding-fields > label:has(input[name='location']) {
