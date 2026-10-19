@@ -2048,6 +2048,11 @@
   font-weight: 500;
   color: var(--text-secondary, #b3c1ce);
 }
+.rules-field > small {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted, #8e9eae);
+}
 .rules-list {
   display: grid;
   gap: 8px;

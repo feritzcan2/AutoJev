@@ -535,3 +535,44 @@ header .actions .primary {
 .sources-nav-status[hidden] {
   display: none;
 }
+
+/* Answers and Attention needed while something waits on the user: pinned on top, amber glow. */
+aside nav button[data-pending] {
+  position: relative;
+  color: var(--text);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--warning) 13%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--warning) 45%, transparent),
+    0 0 14px color-mix(in srgb, var(--warning) 22%, transparent);
+  animation: nav-pending-glow 2.4s ease-in-out infinite;
+}
+aside nav button[data-pending]:hover {
+  background: color-mix(in srgb, var(--warning) 20%, transparent);
+}
+aside nav button[data-pending].selected {
+  background: color-mix(in srgb, var(--warning) 20%, transparent);
+}
+aside nav button[data-pending] .nav-icon {
+  color: var(--warning);
+}
+aside nav button[data-pending] .agent-nav-status {
+  background: var(--warning);
+  color: #241b0a;
+  font-weight: 700;
+}
+aside nav button[data-pending] + button:not([data-pending]) {
+  margin-top: 6px;
+}
+@keyframes nav-pending-glow {
+  50% {
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--warning) 70%, transparent),
+      0 0 22px color-mix(in srgb, var(--warning) 38%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  aside nav button[data-pending] {
+    animation: none;
+  }
+}
