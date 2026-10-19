@@ -22,6 +22,7 @@ import {
   resolveDataDirectory,
   cancelDataLocation,
 } from '../app/system/data-location.mjs';
+import {symlinkSkip} from './helpers/symlinks.mjs';
 
 async function fixture(t) {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), 'loop-location-'))),
@@ -100,22 +101,26 @@ test('relocation preserves application evidence, secrets and documents and persi
   assert.equal(await currentDataDirectory(f.source), second);
 });
 
-test('occupied, nested and linked destinations leave existing data untouched', async (t) => {
-  const f = await fixture(t);
-  await writeFile(path.join(f.destination, 'mine.txt'), 'Keep me');
-  await assert.rejects(() => requestDataLocation(f.options), /empty/);
-  assert.equal(await readFile(path.join(f.destination, 'mine.txt'), 'utf8'), 'Keep me');
-  const nested = path.join(f.source, 'nested');
-  await mkdir(nested);
-  await assert.rejects(() => requestDataLocation({...f.options, destination: nested}), /nested/);
-  const linked = path.join(f.root, 'linked');
-  await symlink(f.destination, linked);
-  await assert.rejects(
-    () => requestDataLocation({...f.options, destination: linked}),
-    /real folder/,
-  );
-  assert.equal(await currentDataDirectory(f.source), f.source);
-});
+test(
+  'occupied, nested and linked destinations leave existing data untouched',
+  {skip: symlinkSkip},
+  async (t) => {
+    const f = await fixture(t);
+    await writeFile(path.join(f.destination, 'mine.txt'), 'Keep me');
+    await assert.rejects(() => requestDataLocation(f.options), /empty/);
+    assert.equal(await readFile(path.join(f.destination, 'mine.txt'), 'utf8'), 'Keep me');
+    const nested = path.join(f.source, 'nested');
+    await mkdir(nested);
+    await assert.rejects(() => requestDataLocation({...f.options, destination: nested}), /nested/);
+    const linked = path.join(f.root, 'linked');
+    await symlink(f.destination, linked);
+    await assert.rejects(
+      () => requestDataLocation({...f.options, destination: linked}),
+      /real folder/,
+    );
+    assert.equal(await currentDataDirectory(f.source), f.source);
+  },
+);
 
 test('a changed destination fails safely and the original can be reopened', async (t) => {
   const f = await fixture(t);
@@ -160,34 +165,42 @@ test('unavailable selected data never opens an empty or stale database', async (
   await assert.rejects(() => currentDataDirectory(f.source));
 });
 
-test('document symlinks cannot silently omit or pull unrelated data into the move', async (t) => {
-  const f = await fixture(t);
-  const outside = path.join(f.root, 'outside.txt');
-  await writeFile(outside, 'Outside');
-  await symlink(outside, path.join(f.source, 'candidates/person/link.txt'));
-  await requestDataLocation(f.options);
-  await assert.rejects(() => resolveDataDirectory({bootstrapDirectory: f.source}), /linked file/);
-  assert.equal(await currentDataDirectory(f.source), f.source);
-  assert.equal(await readFile(outside, 'utf8'), 'Outside');
-});
+test(
+  'document symlinks cannot silently omit or pull unrelated data into the move',
+  {skip: symlinkSkip},
+  async (t) => {
+    const f = await fixture(t);
+    const outside = path.join(f.root, 'outside.txt');
+    await writeFile(outside, 'Outside');
+    await symlink(outside, path.join(f.source, 'candidates/person/link.txt'));
+    await requestDataLocation(f.options);
+    await assert.rejects(() => resolveDataDirectory({bootstrapDirectory: f.source}), /linked file/);
+    assert.equal(await currentDataDirectory(f.source), f.source);
+    assert.equal(await readFile(outside, 'utf8'), 'Outside');
+  },
+);
 
-test('browser process links are omitted while executable workspace tools keep their permissions', async (t) => {
-  const f = await fixture(t),
-    browser = path.join(f.source, 'browsers', 'profile'),
-    tool = path.join(f.source, 'plugins', 'tool.sh');
-  await mkdir(browser, {recursive: true});
-  await symlink('/not/a/copied/browser', path.join(browser, 'RunningChromeVersion'));
-  await symlink('/not/a/copied/socket', path.join(browser, 'SingletonSocket'));
-  await mkdir(path.dirname(tool));
-  await writeFile(tool, '#!/bin/sh\nexit 0\n');
-  await chmod(tool, 0o700);
-  await requestDataLocation(f.options);
-  await resolveDataDirectory({bootstrapDirectory: f.source});
-  assert.equal((await stat(path.join(f.destination, 'plugins/tool.sh'))).mode & 0o700, 0o700);
-  await assert.rejects(() =>
-    stat(path.join(f.destination, 'browsers/profile/RunningChromeVersion')),
-  );
-});
+test(
+  'browser process links are omitted while executable workspace tools keep their permissions',
+  {skip: symlinkSkip},
+  async (t) => {
+    const f = await fixture(t),
+      browser = path.join(f.source, 'browsers', 'profile'),
+      tool = path.join(f.source, 'plugins', 'tool.sh');
+    await mkdir(browser, {recursive: true});
+    await symlink('/not/a/copied/browser', path.join(browser, 'RunningChromeVersion'));
+    await symlink('/not/a/copied/socket', path.join(browser, 'SingletonSocket'));
+    await mkdir(path.dirname(tool));
+    await writeFile(tool, '#!/bin/sh\nexit 0\n');
+    await chmod(tool, 0o700);
+    await requestDataLocation(f.options);
+    await resolveDataDirectory({bootstrapDirectory: f.source});
+    assert.equal((await stat(path.join(f.destination, 'plugins/tool.sh'))).mode & 0o700, 0o700);
+    await assert.rejects(() =>
+      stat(path.join(f.destination, 'browsers/profile/RunningChromeVersion')),
+    );
+  },
+);
 
 test('opening existing data persists without copying or rewriting either database and can return to the original', async (t) => {
   const f = await fixture(t);
@@ -223,33 +236,37 @@ test('opening existing data persists without copying or rewriting either databas
   assert.deepEqual(await readFile(path.join(f.source, 'jobloop.sqlite')), original);
 });
 
-test('existing folder selection rejects missing, invalid, linked and backup databases', async (t) => {
-  const f = await fixture(t),
-    file = path.join(f.destination, 'jobloop.sqlite');
-  await assert.rejects(
-    () => requestExistingDataLocation(f.options),
-    /jobloop.sqlite was not found/,
-  );
-  await assert.rejects(() => stat(file), {code: 'ENOENT'});
-  await writeFile(file, 'not sqlite');
-  await assert.rejects(() => requestExistingDataLocation(f.options));
-  await rm(file);
-  const db = new DatabaseSync(file);
-  db.exec('CREATE TABLE unrelated(id TEXT)');
-  db.close();
-  await assert.rejects(() => requestExistingDataLocation(f.options), /Loop database not found/);
-  await rm(file);
-  await symlink(path.join(f.source, 'jobloop.sqlite'), file);
-  await assert.rejects(() => requestExistingDataLocation(f.options), /real file/);
-  await rm(file);
-  await cp(f.source, f.destination, {recursive: true});
-  await writeFile(path.join(f.destination, 'manifest.json'), '{}');
-  await assert.rejects(() => requestExistingDataLocation(f.options), /Restore from backup/);
-  assert.equal(await currentDataDirectory(f.source), f.source);
-  await assert.rejects(() => stat(path.join(f.source, 'pending-data-location.json')), {
-    code: 'ENOENT',
-  });
-});
+test(
+  'existing folder selection rejects missing, invalid, linked and backup databases',
+  {skip: symlinkSkip},
+  async (t) => {
+    const f = await fixture(t),
+      file = path.join(f.destination, 'jobloop.sqlite');
+    await assert.rejects(
+      () => requestExistingDataLocation(f.options),
+      /jobloop.sqlite was not found/,
+    );
+    await assert.rejects(() => stat(file), {code: 'ENOENT'});
+    await writeFile(file, 'not sqlite');
+    await assert.rejects(() => requestExistingDataLocation(f.options));
+    await rm(file);
+    const db = new DatabaseSync(file);
+    db.exec('CREATE TABLE unrelated(id TEXT)');
+    db.close();
+    await assert.rejects(() => requestExistingDataLocation(f.options), /Loop database not found/);
+    await rm(file);
+    await symlink(path.join(f.source, 'jobloop.sqlite'), file);
+    await assert.rejects(() => requestExistingDataLocation(f.options), /real file/);
+    await rm(file);
+    await cp(f.source, f.destination, {recursive: true});
+    await writeFile(path.join(f.destination, 'manifest.json'), '{}');
+    await assert.rejects(() => requestExistingDataLocation(f.options), /Restore from backup/);
+    assert.equal(await currentDataDirectory(f.source), f.source);
+    await assert.rejects(() => stat(path.join(f.source, 'pending-data-location.json')), {
+      code: 'ENOENT',
+    });
+  },
+);
 
 test('existing data is revalidated at restart and failed selection leaves the current folder intact', async (t) => {
   const f = await fixture(t);

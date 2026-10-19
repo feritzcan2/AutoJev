@@ -9,6 +9,7 @@ import {claudeProjectDirectory} from '../app/agents/transcript.mjs';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
 import {launchAutomationWorker} from '../app/automation/worker.mjs';
+import {removeAfterTests} from './helpers/temp-directory.mjs';
 
 const nativeId = '11111111-1111-4111-8111-111111111111',
   since = 1000,
@@ -28,7 +29,7 @@ const claude = (at, id, usage, extra = {}) => ({
 });
 async function transcript(t, provider, records) {
   const cwd = await mkdtemp(path.join(tmpdir(), 'run-tokens-'));
-  t.after(() => rm(cwd, {recursive: true, force: true}));
+  removeAfterTests(cwd);
   const options = {provider, nativeId, cwd, since, until, codexRoot: cwd, claudeRoot: cwd};
   const directory = provider === 'claude' ? path.join(cwd, claudeProjectDirectory(cwd)) : cwd;
   await mkdir(directory, {recursive: true});
@@ -152,7 +153,7 @@ test('missing or malformed usage remains unknown instead of a zero total', async
 
 test('OpenCode sums every run message including compaction, while isolating workspace and session', async (t) => {
   const cwd = await mkdtemp(path.join(tmpdir(), 'opencode-run-tokens-'));
-  t.after(() => rm(cwd, {recursive: true, force: true}));
+  removeAfterTests(cwd);
   const opencodeFile = path.join(cwd, 'opencode.db'),
     id = 'ses_synthetic0000000000001',
     db = new DatabaseSync(opencodeFile);
@@ -184,7 +185,7 @@ test('OpenCode sums every run message including compaction, while isolating work
 
 test('worker close persists final agent and Jev usage, subtracting work from the preceding attempt', async (t) => {
   const data = await mkdtemp(path.join(tmpdir(), 'worker-tokens-'));
-  t.after(() => rm(data, {recursive: true, force: true}));
+  removeAfterTests(data);
   const core = new WorkspaceDatabase(':memory:');
   t.after(() => core.close());
   const db = new AutomationStore(core),

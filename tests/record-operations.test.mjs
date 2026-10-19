@@ -17,6 +17,7 @@ import {
   dispatchRecordOperations,
 } from '../app/records/operations.mjs';
 import {recordOperationStatus, recordActivityAt} from '../src/record-operation-status.js';
+import {symlinkSkip} from './helpers/symlinks.mjs';
 
 const source = 'https://example.test/list',
   settle = () => new Promise((r) => setImmediate(r));
@@ -868,65 +869,72 @@ test('an answer arriving before the asking worker closes schedules a fresh execu
   assert.equal(f.launches.at(-1).request.direct, true);
 });
 
-test('document uploads need an execute task, not a reservation or a draft, and a file inside this workspace', async (t) => {
-  const {mkdtemp, writeFile, rm, symlink} = await import('node:fs/promises'),
-    os = await import('node:os'),
-    path = await import('node:path');
-  const workspace = await mkdtemp(path.join(os.tmpdir(), 'record-upload-'));
-  t.after(() => rm(workspace, {recursive: true, force: true}));
-  await writeFile(path.join(workspace, 'cv.pdf'), 'Fixture CV');
-  await writeFile(path.join(workspace, 'private.pdf'), 'Unlisted');
-  const {mkdir} = await import('node:fs/promises');
-  await mkdir(path.join(workspace, 'documents', 'import'), {recursive: true});
-  await writeFile(path.join(workspace, 'documents', 'import', 'cv.pdf'), 'Imported CV');
-  const f = fixture(t);
-  await f.runtime.runRecord(f.id, f.item.id, 'prepare');
-  await settle();
-  let run = f.launches.at(-1);
-  const calls = [],
-    browser = {
-      call: async (id, name, args) => {
-        calls.push({name, args});
-        return {content: [{type: 'text', text: 'Page URL: ' + f.item.url + '\nCV uploaded'}]};
-      },
-    };
-  let flow = automationWorkflow({workspace, db: f.db, run, signal: {aborted: false}, browser});
-  await assert.rejects(
-    flow.call(f.id, run.id, 'browser_upload_document', {ref: 'file', filePath: 'cv.pdf'}),
-    /application task/,
-  );
-  f.db.record(f.id, run.id, {
-    url: f.item.url,
-    title: f.item.title,
-    summary: f.item.summary,
-    proposal: 'Upload cv.pdf',
-  });
-  await f.finish(run);
-  await f.runtime.runRecord(f.id, f.item.id, 'execute');
-  await settle();
-  run = f.launches.at(-1);
-  flow = automationWorkflow({workspace, db: f.db, run, signal: {aborted: false}, browser});
-  await symlink(new URL(import.meta.url).pathname, path.join(workspace, 'outside.pdf'));
-  await assert.rejects(
-    flow.call(f.id, run.id, 'browser_upload_document', {ref: 'file', filePath: 'outside.pdf'}),
-    /in this workspace/,
-  );
-  await flow.call(f.id, run.id, 'browser_upload_document', {ref: 'file', filePath: 'cv.pdf'});
-  assert.equal(calls[0].name, 'browser_upload_document');
-  assert.equal(calls[0].args.ref, 'file');
-  assert.equal(
-    calls[0].args.filePath,
-    await import('node:fs/promises').then((m) => m.realpath(path.join(workspace, 'cv.pdf'))),
-  );
-  // The import folder a document was stored in is the app's choice.
-  await flow.call(f.id, run.id, 'browser_upload_document', {
-    ref: 'file',
-    filePath: 'documents/import/cv.pdf',
-  });
-  // Any document inside the workspace may be uploaded; no draft has to name it.
-  await flow.call(f.id, run.id, 'browser_upload_document', {ref: 'file', filePath: 'private.pdf'});
-  assert.equal(calls.filter((c) => c.name === 'browser_upload_document').length, 3);
-});
+test(
+  'document uploads need an execute task, not a reservation or a draft, and a file inside this workspace',
+  {skip: symlinkSkip},
+  async (t) => {
+    const {mkdtemp, writeFile, rm, symlink} = await import('node:fs/promises'),
+      os = await import('node:os'),
+      path = await import('node:path');
+    const workspace = await mkdtemp(path.join(os.tmpdir(), 'record-upload-'));
+    t.after(() => rm(workspace, {recursive: true, force: true}));
+    await writeFile(path.join(workspace, 'cv.pdf'), 'Fixture CV');
+    await writeFile(path.join(workspace, 'private.pdf'), 'Unlisted');
+    const {mkdir} = await import('node:fs/promises');
+    await mkdir(path.join(workspace, 'documents', 'import'), {recursive: true});
+    await writeFile(path.join(workspace, 'documents', 'import', 'cv.pdf'), 'Imported CV');
+    const f = fixture(t);
+    await f.runtime.runRecord(f.id, f.item.id, 'prepare');
+    await settle();
+    let run = f.launches.at(-1);
+    const calls = [],
+      browser = {
+        call: async (id, name, args) => {
+          calls.push({name, args});
+          return {content: [{type: 'text', text: 'Page URL: ' + f.item.url + '\nCV uploaded'}]};
+        },
+      };
+    let flow = automationWorkflow({workspace, db: f.db, run, signal: {aborted: false}, browser});
+    await assert.rejects(
+      flow.call(f.id, run.id, 'browser_upload_document', {ref: 'file', filePath: 'cv.pdf'}),
+      /application task/,
+    );
+    f.db.record(f.id, run.id, {
+      url: f.item.url,
+      title: f.item.title,
+      summary: f.item.summary,
+      proposal: 'Upload cv.pdf',
+    });
+    await f.finish(run);
+    await f.runtime.runRecord(f.id, f.item.id, 'execute');
+    await settle();
+    run = f.launches.at(-1);
+    flow = automationWorkflow({workspace, db: f.db, run, signal: {aborted: false}, browser});
+    await symlink(new URL(import.meta.url).pathname, path.join(workspace, 'outside.pdf'));
+    await assert.rejects(
+      flow.call(f.id, run.id, 'browser_upload_document', {ref: 'file', filePath: 'outside.pdf'}),
+      /in this workspace/,
+    );
+    await flow.call(f.id, run.id, 'browser_upload_document', {ref: 'file', filePath: 'cv.pdf'});
+    assert.equal(calls[0].name, 'browser_upload_document');
+    assert.equal(calls[0].args.ref, 'file');
+    assert.equal(
+      calls[0].args.filePath,
+      await import('node:fs/promises').then((m) => m.realpath(path.join(workspace, 'cv.pdf'))),
+    );
+    // The import folder a document was stored in is the app's choice.
+    await flow.call(f.id, run.id, 'browser_upload_document', {
+      ref: 'file',
+      filePath: 'documents/import/cv.pdf',
+    });
+    // Any document inside the workspace may be uploaded; no draft has to name it.
+    await flow.call(f.id, run.id, 'browser_upload_document', {
+      ref: 'file',
+      filePath: 'private.pdf',
+    });
+    assert.equal(calls.filter((c) => c.name === 'browser_upload_document').length, 3);
+  },
+);
 
 test('a verify that ends without portal proof keeps the record uncertain and asks the applicant for the outcome once', async (t) => {
   const f = fixture(t);

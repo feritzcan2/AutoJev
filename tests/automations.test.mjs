@@ -25,6 +25,7 @@ import {
   pruneLogs,
 } from '../app/system/data-management.mjs';
 import {prepareAutomationChat} from '../src/automation-chat.js';
+import {removeAfterTests} from './helpers/temp-directory.mjs';
 
 const setup = {
   title: 'Berlin’de ev',
@@ -680,7 +681,7 @@ test('a new trial pauses an existing schedule; graceful shutdown holds only unce
 test('log cleanup removes completed automation output and preserves active run output', async (t) => {
   const {store} = fixture(t),
     data = await mkdtemp(path.join(tmpdir(), 'loop-retention-'));
-  t.after(() => rm(data, {recursive: true, force: true}));
+  removeAfterTests(data);
   for (const id of ['active', 'complete']) {
     await mkdir(path.join(data, 'automations', 'runs', id), {recursive: true});
     await writeFile(path.join(data, 'automations', 'runs', id, 'terminal.log'), 'Output');
@@ -980,7 +981,7 @@ for (const kind of ['interview', 'trial'])
   });
 test('backup includes automation documents, pauses schedules and clears approvals and trial on restore', async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), 'loop-automation-backup-'));
-  t.after(() => rm(root, {recursive: true, force: true}));
+  removeAfterTests(root);
   const data = path.join(root, 'data');
   await mkdir(data);
   const store = new WorkspaceDatabase(path.join(data, 'jobloop.sqlite')),

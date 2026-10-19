@@ -9,10 +9,11 @@ import {EARLIER_PROFILE_DOCUMENT} from '../app/automation/legacy-profile.mjs';
 import {workspaceDirectory} from '../app/workspaces/paths.mjs';
 import {loadScoringDocuments} from '../app/scoring/profile.mjs';
 import {planInput} from '../app/templates/catalog.mjs';
+import {removeAfterTests} from './helpers/temp-directory.mjs';
 
 async function fixture(t) {
   const directory = await mkdtemp(path.join(tmpdir(), 'legacy-profile-'));
-  t.after(() => rm(directory, {recursive: true, force: true}));
+  removeAfterTests(directory);
   const core = new WorkspaceDatabase(path.join(directory, 'state.sqlite'));
   t.after(() => core.close());
   const db = new AutomationStore(core),
@@ -90,7 +91,7 @@ test('the conversion runs once and keeps a document the user changed', async (t)
 
 test('a workspace without old data is left unchanged', async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), 'legacy-profile-none-'));
-  t.after(() => rm(directory, {recursive: true, force: true}));
+  removeAfterTests(directory);
   const core = new WorkspaceDatabase(path.join(directory, 'state.sqlite'));
   t.after(() => core.close());
   const a = new AutomationStore(core).create('job-search', {goal: 'Find work'}),

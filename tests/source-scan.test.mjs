@@ -19,6 +19,7 @@ import {
   SCAN_OVERLAP_MS,
 } from '../app/sources/scan.mjs';
 import {scanPageReport} from '../app/sources/scan-page.mjs';
+import {removeAfterTests} from './helpers/temp-directory.mjs';
 
 const source = 'https://listings.test/results',
   other = 'https://other.test/results';
@@ -201,7 +202,7 @@ test('incremental scans always stop at known listings; page dates or a claimed c
 
 test('failed, interrupted and restarted workers preserve the exact cycle and cutoff in the database', async (t) => {
   const dir = mkdtempSync(path.join(tmpdir(), 'source-scan-'));
-  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  removeAfterTests(dir);
   const file = path.join(dir, 'state.sqlite'),
     {store, db, id, start, finish, flow, setNow} = fixture(t, file);
   await finish(start());

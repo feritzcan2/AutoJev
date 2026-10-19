@@ -6,10 +6,11 @@ import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {ContextUsage, contextTokens} from '../app/agents/context-usage.mjs';
 import {opencodeCompaction} from '../app/agents/opencode-context.mjs';
+import {removeAfterTests} from './helpers/temp-directory.mjs';
 
 test('OpenCode context counts cached input once, tracks completed compaction and isolates the session', async (t) => {
   const dir = await mkdtemp(path.join(tmpdir(), 'opencode-context-'));
-  t.after(() => rm(dir, {recursive: true, force: true}));
+  removeAfterTests(dir);
   const file = path.join(dir, 'opencode.db'),
     modelsFile = path.join(dir, 'models.json'),
     id = 'ses_synthetic0000000000001';

@@ -6,9 +6,11 @@ import path from 'node:path';
 import {loadScoringDocuments, scoringSources} from '../app/scoring/profile.mjs';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
+import {removeAfterTests} from './helpers/temp-directory.mjs';
+import {symlinkSkip} from './helpers/symlinks.mjs';
 async function fixture(t) {
   const root = await mkdtemp(path.join(tmpdir(), 'score-documents-'));
-  t.after(() => rm(root, {recursive: true, force: true}));
+  removeAfterTests(root);
   await mkdir(path.join(root, 'candidates/one/documents'), {recursive: true});
   const a = {facts: 'Verified profile fact.'},
     cv = path.join(root, 'candidates/one/CV.txt'),
@@ -84,35 +86,39 @@ test('documents the user added are read, including PDFs', async (t) => {
     'files the agents prepared are not user facts',
   );
 });
-test('unreadable, missing, foreign and symlinked documents are reported as unknown without reading them', async (t) => {
-  const {root, db, added} = await fixture(t),
-    foreign = path.join(root, 'other.txt');
-  await writeFile(foreign, 'Another workspace private facts.');
-  await writeFile(
-    path.join(root, 'candidates/one/documents/photo.png'),
-    Buffer.from([137, 80, 78, 71]),
-  );
-  await symlink(foreign, path.join(root, 'candidates/one/documents/link.txt'));
-  await writeFile(path.join(root, 'candidates/one/documents/ok.txt'), 'Readable fact.');
-  added[0] = foreign;
-  added.push(
-    'documents/photo.png',
-    'documents/link.txt',
-    'documents/missing.pdf',
-    'documents/ok.txt',
-  );
-  const value = await loadScoringDocuments(db, 'one');
-  assert.deepEqual(value.paths, ['documents/ok.txt']);
-  assert.match(value.text, /Readable fact/);
-  assert.doesNotMatch(value.text, /private facts/);
-  assert.match(value.unavailable, /other.txt \(This file cannot be displayed\)/);
-  assert.match(value.unavailable, /photo.png \(no text could be extracted from this format\)/);
-  assert.match(value.unavailable, /link.txt \(This file cannot be displayed\)/);
-  assert.match(value.unavailable, /missing.pdf \(file not found\)/);
-});
+test(
+  'unreadable, missing, foreign and symlinked documents are reported as unknown without reading them',
+  {skip: symlinkSkip},
+  async (t) => {
+    const {root, db, added} = await fixture(t),
+      foreign = path.join(root, 'other.txt');
+    await writeFile(foreign, 'Another workspace private facts.');
+    await writeFile(
+      path.join(root, 'candidates/one/documents/photo.png'),
+      Buffer.from([137, 80, 78, 71]),
+    );
+    await symlink(foreign, path.join(root, 'candidates/one/documents/link.txt'));
+    await writeFile(path.join(root, 'candidates/one/documents/ok.txt'), 'Readable fact.');
+    added[0] = foreign;
+    added.push(
+      'documents/photo.png',
+      'documents/link.txt',
+      'documents/missing.pdf',
+      'documents/ok.txt',
+    );
+    const value = await loadScoringDocuments(db, 'one');
+    assert.deepEqual(value.paths, ['documents/ok.txt']);
+    assert.match(value.text, /Readable fact/);
+    assert.doesNotMatch(value.text, /private facts/);
+    assert.match(value.unavailable, /other.txt \(This file cannot be displayed\)/);
+    assert.match(value.unavailable, /photo.png \(no text could be extracted from this format\)/);
+    assert.match(value.unavailable, /link.txt \(This file cannot be displayed\)/);
+    assert.match(value.unavailable, /missing.pdf \(file not found\)/);
+  },
+);
 test('the store lists only documents the user added with the document control', async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), 'user-documents-'));
-  t.after(() => rm(directory, {recursive: true, force: true}));
+  removeAfterTests(directory);
   const core = new WorkspaceDatabase(path.join(directory, 'state.sqlite'));
   t.after(() => core.close());
   const db = new AutomationStore(core),

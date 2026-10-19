@@ -431,7 +431,7 @@ test('agent generated files are listed apart and never read as profile documents
   const files = await listDocuments(f.workspace);
   assert.deepEqual(files.map((d) => [d.path, d.generated]).sort(), [
     ['documents/CV.txt', false],
-    [path.join('generated', 'cover-letters', 'Cover-Letter-Example.txt'), true],
+    ['generated/cover-letters/Cover-Letter-Example.txt', true],
   ]);
   // Letters saved before the split stay agent files.
   assert.equal(agentDocument('documents/cover-letters/Cover-Letter-Old.pdf'), true);
