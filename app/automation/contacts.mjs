@@ -10,6 +10,8 @@ import {recordTask} from '../records/operations.mjs';
 
 export const CONTACT_LIMIT = 2,
   NOTE_CHARACTERS = 200;
+// Each person gets one note per style; the user picks one.
+export const NOTE_STYLES = ['direct', 'personal'];
 // Invitations and messages per day across workspaces; LinkedIn limits weekly invitations.
 const SEND_BUDGET = {requests: 20, windowMs: 24 * 3600_000},
   SEND_BUDGET_KEY = 'linkedin.com contact';
@@ -30,7 +32,7 @@ const RESENDABLE = new Set(['proposed', 'invited', 'failed', 'uncertain']);
 
 // Short numbered steps; the agents reading this are not experts.
 export const CONTACT_FIND_PROMPT =
-  'Read AGENTS.md. This is a contact search for one record: you find people on LinkedIn, you do not connect, message or apply. Steps: 1. Call read_contact_brief. 2. Open record.url with browser_open and read it with browser_read. Note the company, the team and any person the listing names (the poster or "hiring team" card, a recruiter, a contact person) with their LinkedIn profile link. 3. If you still have fewer than 2 good people, open a LinkedIn people search: https://www.linkedin.com/search/results/people/?keywords=<words> with the company name plus recruiter, talent acquisition, or the lead title of the team (for example engineering manager), and read the results. 4. Open the profile of each person you pick with browser_open and read it: keep only people who work at this company now and are close to this role (its poster, a recruiter for it, its hiring manager or team lead). Never pick former employees or unrelated people. 5. Read the CV with read_scoring_profile (source documents). 6. Write one invitation note per person following the brief noteRules. 7. Call save_record_contacts with at most 2 people; profileUrl is the address of the profile page you read. If nobody suitable exists, save an empty list with noneReason. 8. Call finish_automation_run with status completed. If LinkedIn asks you to sign in, finish blocked with blocker category needs_login. Never click Connect, Message, Follow or Send in this task; the app refuses those clicks.';
+  'Read AGENTS.md. This is a contact search for one record: you find people on LinkedIn, you do not connect, message or apply. Steps: 1. Call read_contact_brief. 2. Open record.url with browser_open and read it with browser_read. Note the company, the team and any person the listing names (the poster or "hiring team" card, a recruiter, a contact person) with their LinkedIn profile link. 3. If you still have fewer than 2 good people, open a LinkedIn people search: https://www.linkedin.com/search/results/people/?keywords=<words> with the company name plus recruiter, talent acquisition, or the lead title of the team (for example engineering manager), and read the results. 4. Open the profile of each person you pick with browser_open and read it: keep only people who work at this company now and are close to this role (its poster, a recruiter for it, its hiring manager or team lead). Never pick former employees or unrelated people. 5. Read the CV with read_scoring_profile (source documents). 6. Write two invitation notes per person, one in each style of the brief noteRules. 7. Call save_record_contacts with at most 2 people; profileUrl is the address of the profile page you read. If nobody suitable exists, save an empty list with noneReason. 8. Call finish_automation_run with status completed. If LinkedIn asks you to sign in, finish blocked with blocker category needs_login. Never click Connect, Message, Follow or Send in this task; the app refuses those clicks.';
 export const CONTACT_SEND_PROMPT =
   'Read AGENTS.md. This task sends the LinkedIn invitations or messages the user approved for one record. Steps: 1. Call read_contact_brief; it lists the contacts to handle and their approved text. 2. For each contact, one at a time: a. Open profileUrl with browser_open and read it. b. If the profile shows Pending, call record_contact_outcome with already_invited (or not_accepted_yet for a followUp contact) and go to the next contact. c. If the contact is a followUp and the profile has no Message button for a connection, call record_contact_outcome with not_accepted_yet. d. Otherwise call reserve_contact_action with the contactId. e. Existing connection (followUp, or a 1st-degree profile with Message): click Message, type the approved text, click Send. Otherwise click Connect (it may sit under More), click Add a note, type the approved text, click Send. If Add a note shows a limit or Premium offer instead of a text box, close it and click Send without a note. f. Read the page and call record_contact_outcome with what happened and the page words as evidence (invited_with_note, invited_without_note or messaged). If Connect is missing or the send failed, record failed with the reason. Click Send once per contact. 3. Call finish_automation_run with status completed after every contact has an outcome. If LinkedIn asks you to sign in, finish blocked with blocker category needs_login.';
 
@@ -246,10 +248,12 @@ export function contactBrief(db, id, run) {
       'relation: poster, recruiter, hiring_manager or team. reason: one sentence on why this person, from what the listing and profile say.',
       'name and headline as the profile page shows them. Open every profile before saving it; the app refuses a profile this task did not read.',
     ],
-    // Written like the opening of a cover letter.
+    // Two notes in clearly different styles; the user picks one and may edit it.
     noteRules: [
-      `message: one invitation note of at most ${NOTE_CHARACTERS} characters, written like the opening of a cover letter. Greet the person by first name, say you think you are a strong fit for the role (name it and the company) and that this is why you are writing, add one short reason from the CV that matches the listing, and close politely.`,
-      'Example shape: "Hi Jane, I think I am a strong fit for the Senior Backend Engineer role at Example, so I wanted to reach out: I have built event-driven AWS services at scale. Happy to connect!"',
+      `notes: exactly two invitation notes per person, each at most ${NOTE_CHARACTERS} characters, one of each style below. Both greet the person by first name, name the role and the company, and say why the user is strong for this role: one or two strengths from the CV that match what the listing asks for most, with a concrete fact (years, technology, scale or result). Say that this is why the user is writing.`,
+      'style direct: short and factual, strengths first. Example shape: "Hi Jane, the Senior Backend Engineer role at Example asks for event-driven AWS services; I have built them at scale for 8 years. That is why I wanted to reach out."',
+      'style personal: warm and conversational, opens with what the team or listing is working on, puts the strength in one natural sentence and ends with a short question. Example shape: "Hi Jane, your team\'s move to event-driven payments caught my eye. I have spent 8 years building exactly that on AWS. Would you be open to a short chat about the Backend role?"',
+      'The two notes must differ in opening, structure and tone, not reword the same sentences.',
       'record.applicationStatus applied: you may say you applied. Otherwise never say you applied.',
       'Write in the language of the listing unless userNotes name another. Only facts from the CV, the saved facts and the listing; no placeholders, links, emoji or signature.',
     ],
@@ -268,14 +272,28 @@ const APPLIED_CLAIM =
   /\b(?:I(?:'ve| have)? (?:already )?applied|I just applied|habe mich (?:bereits |schon )?beworben|ich habe mich beworben|j'ai postulé|he aplicado|başvurdum|başvuru yaptım)\b/i;
 
 // One note, refused when it claims an application the user has not made.
-function contactNote(contact, item) {
-  const text = noteText(contact.message),
-    status = applicationStatus(item);
+function contactNote(name, text, item) {
+  text = noteText(text);
+  const status = applicationStatus(item);
   if (status !== 'applied' && APPLIED_CLAIM.test(text))
     throw Error(
-      `The note to ${contact.name} says the user applied, but record.applicationStatus is ${status}. Say you think you are a strong fit instead.`,
+      `The note to ${name} says the user applied, but record.applicationStatus is ${status}. Write why the user is strong for the role instead.`,
     );
   return text;
+}
+
+// The two notes of one person, one per style, in NOTE_STYLES order.
+function contactNotes(name, notes, item, n) {
+  if (!Array.isArray(notes) || notes.length !== NOTE_STYLES.length)
+    throw Error(`contacts[${n}].notes needs exactly one note per style: ${NOTE_STYLES.join(', ')}.`);
+  const saved = NOTE_STYLES.map((style) => {
+    const note = notes.find((x) => x?.style === style);
+    if (!note) throw Error(`contacts[${n}].notes has no ${style} note.`);
+    return {style, text: contactNote(name, note.text, item)};
+  });
+  if (plain(saved[0].text) === plain(saved[1].text))
+    throw Error(`The two notes to ${name} are the same; write them in different styles.`);
+  return saved;
 }
 
 // save_record_contacts: the proposals wait for the user's review.
@@ -306,6 +324,7 @@ export function saveRecordContacts(db, id, run, {contacts = [], noneReason = ''}
     if (!plain(page.text).includes(plain(name)))
       throw Error(`The profile page you read does not show the name "${name}"; copy it exactly.`);
     if (!RELATIONS.includes(c.relation)) throw Error(`contacts[${n}].relation is not valid.`);
+    const notes = contactNotes(name, c.notes, item, n);
     return {
       id: `${run.id}-${n + 1}`,
       name,
@@ -317,7 +336,8 @@ export function saveRecordContacts(db, id, run, {contacts = [], noneReason = ''}
       reason: String(c.reason ?? '')
         .trim()
         .slice(0, 400),
-      message: contactNote({...c, name}, item),
+      notes,
+      message: notes[0].text,
       state: 'proposed',
       foundAt: db.now(),
     };

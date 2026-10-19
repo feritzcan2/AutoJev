@@ -28,7 +28,13 @@ const source = 'https://example.test/list',
   profile = 'https://www.linkedin.com/in/jane-doe-123/',
   settle = () => new Promise((r) => setImmediate(r)),
   note =
-    'Hi Jane, I think I am a strong fit for the Senior Backend Engineer role at Example, so I wanted to reach out: I built event-driven AWS services. Happy to connect!';
+    'Hi Jane, the Senior Backend Engineer role at Example asks for event-driven AWS services; I have built them at scale for 8 years. That is why I wanted to reach out.',
+  personal =
+    "Hi Jane, your team's event-driven platform caught my eye. I have spent 8 years building exactly that on AWS. Open to a short chat about the Backend role?",
+  notes = (direct, other = personal) => [
+    {style: 'direct', text: direct},
+    {style: 'personal', text: other},
+  ];
 
 async function fixture(t) {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'record-contacts-'));
@@ -101,7 +107,7 @@ async function fixture(t) {
           relation: 'recruiter',
           profileUrl: profile,
           reason: 'She recruits for the engineering team named in the listing.',
-          message: note,
+          notes: notes(note),
         },
       ],
     });
@@ -150,7 +156,7 @@ test('a contact is saved only from a profile this task read', async (t) => {
       relation: 'recruiter',
       profileUrl: profile,
       reason: 'Recruiter',
-      message: note,
+      notes: notes(note),
     };
   await assert.rejects(
     f.call(run, 'save_record_contacts', {contacts: [contact]}),
@@ -175,15 +181,24 @@ test('a contact is saved only from a profile this task read', async (t) => {
   // The user has not applied: no note may say so.
   await assert.rejects(
     f.call(run, 'save_record_contacts', {
-      contacts: [{...contact, message: 'Hi Jane, I applied for the backend role.'}],
+      contacts: [{...contact, notes: notes('Hi Jane, I applied for the backend role.')}],
     }),
     /says the user applied/,
   );
   await assert.rejects(
     f.call(run, 'save_record_contacts', {
-      contacts: [{...contact, message: 'x'.repeat(201)}],
+      contacts: [{...contact, notes: notes('x'.repeat(201))}],
     }),
     /keep it under 200/,
+  );
+  // Two notes, one per style, that really differ.
+  await assert.rejects(
+    f.call(run, 'save_record_contacts', {contacts: [{...contact, notes: notes(note).slice(0, 1)}]}),
+    /exactly one note per style/,
+  );
+  await assert.rejects(
+    f.call(run, 'save_record_contacts', {contacts: [{...contact, notes: notes(note, note)}]}),
+    /are the same/,
   );
   // Nobody suitable is a valid result when it says why.
   await assert.rejects(f.call(run, 'save_record_contacts', {contacts: []}), /noneReason/);
@@ -198,6 +213,7 @@ test('approved contacts are sent once each by a send task', async (t) => {
   assert.equal(jane.state, 'proposed');
   assert.equal(jane.profileUrl, profile);
   assert.equal(jane.message, note);
+  assert.deepEqual(jane.notes, notes(note));
   // The user's edit is kept; an empty note is refused.
   editRecordContact(f.db, f.id, f.item.id, jane.id, {message: note + ' Thanks.'});
   assert.throws(() => editRecordContact(f.db, f.id, f.item.id, jane.id, {message: ' '}), /Write/);
