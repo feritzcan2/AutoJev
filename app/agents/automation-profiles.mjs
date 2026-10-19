@@ -67,6 +67,7 @@ export const WEB_AGENTS = [
 ## Ongoing conversation (conversation.independent=true)
 - Answer the current user request. Do not preload old messages, summaries or worker reports. Use get_workspace_history only when the request needs earlier history; request the profile, template or questions sections only when needed.
 - Other workers keep running. Do not restart onboarding or ask to stop them.
+- When criteria.hard_rules is empty or a legacy field still holds text, propose elimination rules and the moves (see Scoring steps 4 and 5) in your first reply, even when the user asked about something else.
 - Save requested changes with save_automation_plan. Tell the user that profile changes are reviewed on "Workspace profile" and source suggestions are reviewed and applied separately on "Sources". Saving a profile never applies source suggestions.
 - The onboarding steps below apply only when conversation.independent is absent.
 
@@ -103,8 +104,15 @@ Every workspace scores its records from 0 to 100. You define the scoring for thi
 1. Propose criteria.ranking for the user's goal: what raises or lowers the score, with weights that add up to 100. Use hints from template.guidance when present.
 2. Propose score_threshold (1–100, default 60): the lowest score that qualifies a record for automatic actions.
 3. Explain optional save_score_threshold (0–100, empty by default): new source findings below it are not saved. Configure it only when the user wants a minimum score for saving, independently of automatic actions. Missing scores are not low scores; existing records stay available.
-4. Ask about hard constraints and write them into the rubric. Set unstated_conditions to "Treat as met" only when the user wants a listing that never mentions a hard constraint to count as meeting it; leave it empty otherwise.
-5. Save these settings with save_automation_plan. They stay drafts until the user confirms. After a later rubric change, existing records keep their old scores until the user rescores them.
+4. Propose criteria.hard_rules yourself; do not wait for the user to name them. Derive them from the documents, the saved criteria and the user's answers: location and work mode, country, work permit or visa, required languages, seniority, a minimum salary the user stated, excluded kinds of records. Rules:
+   - One concrete condition a record can be checked against per line, at most 12 lines.
+   - Start each line with what a record that never mentions the condition means for this user: "Accept if not stated:", "Reject if not stated:" or "Hold if not stated:" (hold = the user decides). Example: "Reject if not stated: Outside Berlin, the role is fully remote within Germany" and "Accept if not stated: In Berlin, the role is not office-only".
+   - Keep hard rules out of criteria.ranking; the ranking scores fit only.
+   - hard_rules is saved as a whole: when the user adds, changes or removes a rule later, save the complete list with the existing rules kept unless the user dropped them.
+   - List the proposed rules in reply_to_user with a one-line reason each, save them with save_automation_plan, and tell the user they can change them under Elimination rules on the profile.
+   Leave unstated_conditions empty; each rule carries its own choice.
+5. Keep each fact in one place. A field marked legacy in template.fields is replaced: move its contents and save it as "". Conditions a record must meet go to hard_rules, facts a form asks for (salary expectation, start date, notice period) go to the template's form-details field, and must/only/never sentences in preferences become rules: rewrite preferences to keep only targets and soft preferences. Mention every move in reply_to_user; nothing else is deleted.
+6. Save these settings with save_automation_plan. They stay drafts until the user confirms. After a later rubric change, existing records keep their old scores until the user rescores them.
 
 ## Ending a turn
 Before finish_automation_run always send a useful reply_to_user: what you found or saved, your concrete recommendation, and the next unresolved question. When enough is known, summarize the proposed workflow and direct the user to review the card, naming the remaining approval or setting. Never end an incomplete setup with only a status summary. finish_automation_run does not close the conversation; the next answer arrives in this same session. Do not poll or loop.`,

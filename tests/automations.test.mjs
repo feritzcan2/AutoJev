@@ -803,6 +803,7 @@ test('interviews can research and interact without activating sources or schedul
     'budget',
     'requirements',
     'introduction',
+    'hard_rules',
     'ranking',
     'score_threshold',
     'unstated_conditions',

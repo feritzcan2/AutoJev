@@ -1,5 +1,6 @@
 import {activeRecordOperations} from './record-operation-status.js';
 import {answersPage} from './answers-page.js';
+import {coverLetterReview} from './cover-letter-review.js';
 import {automationReady} from '../app/sources/trial.mjs';
 import {templateFields} from './template-fields.js';
 import {renderJevProfile} from './jev-profile.js';
@@ -68,7 +69,7 @@ export function automationsPage(
     openOnboarding = () => false,
   },
 ) {
-  let sourcePanel, chatPanel, saveScoreSettings;
+  let sourcePanel, chatPanel, saveScoreSettings, coverLetters;
   const host = el('section', null, 'automations-page');
   host.id = 'automations';
   host.hidden = true;
@@ -175,7 +176,7 @@ export function automationsPage(
     resultsTable = null;
   const answersSection = el('section');
   answersSection.dataset.automationPane = 'answers';
-  const answers = answersPage(answersSection, api, {refresh});
+  const answers = answersPage(answersSection, api, {refresh, openFiles: () => setPane('files')});
   function showAnswers(id) {
     navigate('answers');
     answers.focus(id);
@@ -608,7 +609,8 @@ export function automationsPage(
     const files = el('section');
     files.dataset.automationPane = 'files';
     files.innerHTML =
-      '<div class="section-title"><h2>Files</h2><span>The workspace’s documents</span></div><div id="automation-file-list"></div>';
+      '<div class="section-title"><h2>Files</h2><span>The workspace’s documents</span></div><div class="cover-letter-review" hidden></div><div id="automation-file-list"></div>';
+    coverLetters = coverLetterReview(files.querySelector('.cover-letter-review'), api, {refresh});
     files.querySelector('.section-title').append(
       button('Add document', async () => {
         await api.pickDocument(selected);
@@ -1016,7 +1018,7 @@ export function automationsPage(
           field.id,
           field.id === 'save_score_threshold'
             ? (data.automation.criteria.save_score_threshold ?? '')
-            : f['criteria-' + field.id].value,
+            : (f['criteria-' + field.id]?.value ?? ''),
         ]),
       ),
       instructions: f.instructions.value,
@@ -1057,6 +1059,17 @@ export function automationsPage(
       a.criteria,
     );
     for (const key of ['title', 'goal', 'instructions', 'facts', 'mode']) f[key].value = a[key];
+    // Workspaces saved before elimination rules existed get them from the setup agent.
+    const rules = f['criteria-hard_rules']?.closest('fieldset');
+    if (rules && !a.criteria.hard_rules?.trim())
+      rules.append(
+        button('Ask the setup agent to propose rules', async () => {
+          await sendMessage(
+            'Propose elimination rules (criteria.hard_rules) for this workspace from my documents and saved criteria, move the hard conditions out of the other fields as Scoring step 5 says, and save it for my review.',
+          );
+          openConversation();
+        }),
+      );
     const score = f['criteria-score_threshold']?.closest('label'),
       unstated = f['criteria-unstated_conditions'],
       slot = form.querySelector('.authorization-score');
@@ -1232,6 +1245,7 @@ export function automationsPage(
     }
     metrics.append(bar, legend);
     sourcePanel.update(data, selected);
+    coverLetters.update(data);
     const files = find('#automation-file-list');
     files.replaceChildren();
     for (const doc of data.documents) {

@@ -235,6 +235,21 @@ export const automationTools = [
     {ref: str, filePath: str},
   ),
   tool(
+    'request_cover_letter',
+    'Execute tasks only: the form requires a cover letter (upload or text box) and the documents folder has none written for this employer. A separate cover letter agent writes it and the user reviews it; never write one yourself and never put the CV in that field. Fill the other fields first, then call this and finish blocked with blocker category needs_answer. The approval resumes this application with the file path. notes: optional facts the writer needs, such as the language the form asks for or a word limit.',
+    {notes: {type: 'string', minLength: 0, maxLength: 1000}},
+    [],
+  ),
+  tool(
+    'read_cover_letter_brief',
+    'Cover letter tasks only: the listing, the application notes, any user feedback on an earlier letter and the writing rules. Read the CV with read_scoring_profile.',
+  ),
+  tool(
+    'save_cover_letter',
+    'Cover letter tasks only: save the complete letter as plain text (paragraphs separated by blank lines). The app makes the PDF and names the file; the user reviews it before the application continues. A refused letter returns the reason; fix it and save again.',
+    {text: {type: 'string', minLength: 1, maxLength: 6000}},
+  ),
+  tool(
     'browser_interact',
     'Act on the current page with a fresh ref. click: clickTargets.targetId, or a radio/checkbox controlId from browser_jev_inspect_form (selects that option and verifies it). type: fillFields.fieldId + text. select: controls.controlId + text. options: list a dropdown. press: a key. autocomplete: controlId; option selects that exact label (text may search first); text alone selects the option with exactly that label, otherwise returns the full suggestion list; neither lists the suggestions. scroll: scrollTargets.controlId with direction; stop on no_progress. reveal: bring an offscreen controlId into view, then type with the returned fieldId. If action.executed is false or status is stale, repeat once with the fresh ref. Tools do not enforce authority; you decide what the user allowed.',
     {
@@ -312,6 +327,25 @@ const SCAN_HIDDEN_TOOLS = [
   'configure_workspace_table',
 ];
 const scanRun = (run) => Boolean(run.sourceUrl && !run.recordId);
+// A cover letter writer reads the profile and the listing and saves one letter.
+const COVER_LETTER_TOOLS = new Set([
+  'get_automation_context',
+  'read_automation_context_part',
+  'read_scoring_profile',
+  'read_cover_letter_brief',
+  'save_cover_letter',
+  'browser_open',
+  'browser_read',
+  'browser_read_part',
+  'browser_search',
+  'finish_automation_run',
+]);
+const coverLetterTool = (run, name) =>
+  run.recordOperation === 'cover_letter'
+    ? COVER_LETTER_TOOLS.has(name)
+    : name === 'request_cover_letter'
+      ? run.recordOperation === 'execute'
+      : !['read_cover_letter_brief', 'save_cover_letter'].includes(name);
 // Collector runs fetch pages through the site extension, not the browser.
 export const collectorHidden = new Set([
   'browser_open',
@@ -353,6 +387,7 @@ export function scopedAutomationTools({run, template, collecting, agentDecides =
                 !run.recordOperation)),
         )
         .filter((t) => !scanRun(run) || !SCAN_HIDDEN_TOOLS.includes(t.name))
+        .filter((t) => coverLetterTool(run, t.name))
         .filter((t) =>
           collecting ? !collectorHidden.has(t.name) : t.name !== 'collect_source_page',
         ),
@@ -375,7 +410,7 @@ export function scopedAutomationTools({run, template, collecting, agentDecides =
     if (run.kind === 'run' && template.recordOperations?.score) {
       Object.assign(resultTool.inputSchema.properties, resultScoreFields);
       resultTool.description =
-        'Save an observed source finding. Send url, title and summary, plus top-level score for each new listing: an integer 0–100 following criteria.ranking and scoringPolicy, or null if details are inaccessible. Explain the score in optional scoreReason. Report mandatory conditions separately with eligibility and eligibilityReason; missing facts mean unverified. All four scoring fields are top-level values. Use the exact listing URL as key; external site IDs are not application record IDs. Custom cells are optional. Save only verified facts and reuse known records. For Jev batches, reject unsuitable findings with review decisions. New findings below scoringPolicy.saveThreshold return skipped=true without creating a record; do not retry skipped findings. Existing records and unavailable assessments are retained. No action is taken.';
+        'Save an observed source finding. Send url, title and summary, plus top-level score for each new listing: an integer 0–100 following criteria.ranking and scoringPolicy, or null if details are inaccessible. Explain the score in optional scoreReason. When scoringPolicy.hardRules is listed, answer every rule in rules (pass/fail/unknown) and the app sets eligibility; otherwise report mandatory conditions with eligibility and eligibilityReason, following scoringPolicy.unstatedConditions for conditions the listing never mentions. All scoring fields are top-level values. Use the exact listing URL as key; external site IDs are not application record IDs. Custom cells are optional. Save only verified facts and reuse known records. For Jev batches, reject unsuitable findings with review decisions. New findings below scoringPolicy.saveThreshold return skipped=true without creating a record; do not retry skipped findings. Existing records and unavailable assessments are retained. No action is taken.';
     }
   }
   if (resultTool && scanRun(run) && run.kind === 'run')
@@ -442,8 +477,10 @@ export function scopedAutomationTools({run, template, collecting, agentDecides =
     if (reserve)
       reserve.description =
         'Call right before the final submit click in an execute task. Reserve only the assigned record and saved proposal; obey recordAuthorization and limits. Scoring, preparation and verification cannot reserve or submit.';
-    scopedTools.find((t) => t.name === 'browser_interact').description +=
-      ' For record operations obey recordAuthorization: score, prepare and verify cannot submit; execute reserves right before the final submit.';
+    const interact = scopedTools.find((t) => t.name === 'browser_interact');
+    if (interact)
+      interact.description +=
+        ' For record operations obey recordAuthorization: score, prepare and verify cannot submit; execute reserves right before the final submit.';
   }
   return scopedTools;
 }

@@ -1746,8 +1746,24 @@ export async function runJevTask({
     save();
     return jevTaskSummary(task);
   } catch (error) {
-    if (signal?.aborted) throw error;
-    ports.assertActive();
+    // A stopped session leaves no one driving this slice. Keep the task
+    // resumable so the next session continues it instead of waiting on a
+    // "running" status forever.
+    const stopped = () => {
+      if (task.status !== 'running') return;
+      task.status = 'continue';
+      store.save(task);
+    };
+    if (signal?.aborted) {
+      stopped();
+      throw error;
+    }
+    try {
+      ports.assertActive();
+    } catch (inactive) {
+      stopped();
+      throw inactive;
+    }
     if (['JEV_ACCESS_BARRIER', 'SITE_WAIT'].includes(error.code)) {
       const siteWait = error.siteWait ?? error.wait;
       issue('access_barrier', {url: error.url ?? task.currentUrl, ...(siteWait ? {siteWait} : {})});

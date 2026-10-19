@@ -84,10 +84,10 @@ export class SiteAccess {
     this.incidents = new Map();
     this.paced = new Map();
     this.failures = new Map();
-    this.reads = new Map();
     db.exec(
       'CREATE TABLE IF NOT EXISTS browser_site_waits(site TEXT PRIMARY KEY,data TEXT NOT NULL)',
     );
+    db.exec('CREATE TABLE IF NOT EXISTS site_requests(site TEXT NOT NULL,at INTEGER NOT NULL)');
   }
   // The same store seen from one lane; pacing, incidents and listeners are shared.
   forLane(lane) {
@@ -148,16 +148,26 @@ export class SiteAccess {
   }
   // Only the explicit user-response path may retire an old cooldown early.
   // A later incident or an in-flight probe must not be cleared by a stale card.
+  // A later incident that already recovered blocks nothing: the old card
+  // still retires its own wait, and the recovered row stays for its task.
   acknowledge(waits) {
+    const later = (row, wait) => row.blockedAt !== wait.blockedAt;
     for (const wait of waits) {
       const row = this.stored(wait.site, wait.lane);
-      if (row && (row.blockedAt !== wait.blockedAt || row.leaseUntil > this.now()))
-        throw Error('This site has a new access wait. Check the current intervention card.');
+      if (
+        row &&
+        !(row.recovered && later(row, wait)) &&
+        (later(row, wait) || row.leaseUntil > this.now())
+      )
+        throw Error('This site has a new access wait. See Attention needed.');
     }
-    for (const wait of waits)
-      this.db
-        .prepare('DELETE FROM browser_site_waits WHERE site=?')
-        .run(waitKey(wait.site, wait.lane));
+    for (const wait of waits) {
+      const row = this.stored(wait.site, wait.lane);
+      if (row && !(row.recovered && later(row, wait)))
+        this.db
+          .prepare('DELETE FROM browser_site_waits WHERE site=?')
+          .run(waitKey(wait.site, wait.lane));
+    }
     this.changed();
   }
   // A successful page probe lets the scan continue, but must not give a scan
@@ -227,17 +237,21 @@ export class SiteAccess {
     return next - now;
   }
   // A site's stated request budget: at most `requests` requests within
-  // `windowMs`, counted across lanes and workspaces (RAM only). A request
+  // `windowMs`, counted across lanes and workspaces and kept in the database,
+  // so an app restart does not hand the site a fresh budget. A request
   // over budget is not sent and does not wait in the task: the site gets a
   // shared wait until the oldest counted request leaves the window, which
   // parks and resumes the task like a rate limit but is no incident.
   spend(url, {requests, windowMs}) {
     const site = siteKey(url),
-      now = this.now(),
-      reads = (this.reads.get(site) ?? []).filter((at) => now - at < windowMs);
-    this.reads.set(site, reads);
+      now = this.now();
+    this.db.prepare('DELETE FROM site_requests WHERE site=? AND at<=?').run(site, now - windowMs);
+    const reads = this.db
+      .prepare('SELECT at FROM site_requests WHERE site=? ORDER BY at')
+      .all(site)
+      .map((row) => Number(row.at));
     if (reads.length < requests) {
-      reads.push(now);
+      this.db.prepare('INSERT INTO site_requests(site,at) VALUES(?,?)').run(site, now);
       return null;
     }
     const previous = this.row(url);

@@ -59,6 +59,13 @@ import {workspaceTableTools, workspaceTableCall} from '../workspaces/table-tools
 import {BrowserSnapshot, BROWSER_RESPONSE_BYTES} from '../browser/snapshot.mjs';
 import {AutomationContext} from './context.mjs';
 import {
+  requestCoverLetter,
+  coverLetterBrief,
+  saveCoverLetter,
+  finishCoverLetter,
+} from './cover-letters.mjs';
+import {renderCoverLetterPdf} from './cover-letter-pdf.mjs';
+import {
   recordReceipt,
   scanToolOutput,
   documentToolContent,
@@ -141,6 +148,7 @@ export function automationWorkflow({
   submitSettleMs = 2000,
   collectorReadPage,
   collectorReadDetail,
+  renderPdf = renderCoverLetterPdf,
 }) {
   const id = run.automationId,
     snapshots = new BrowserSnapshot(),
@@ -1530,6 +1538,31 @@ export function automationWorkflow({
         result = {...(await inspect()), action: response.action};
         break;
       }
+      case 'request_cover_letter': {
+        if (active.recordOperation !== 'execute' || !active.recordId)
+          throw Error('A cover letter can only be requested in a record application task');
+        const item = db.result(id, active.recordId),
+          question = requestCoverLetter(db, id, active, {
+            notes: args.notes,
+            listing: db.browserEvidence.latest(active, item.url),
+          });
+        result = {
+          questionId: question.id,
+          next: 'Leave the cover letter field empty and keep the tab. Call finish_automation_run with status blocked and blocker category needs_answer now; the approved letter resumes this application.',
+        };
+        break;
+      }
+      case 'read_cover_letter_brief':
+        if (active.recordOperation !== 'cover_letter')
+          throw Error('Only a cover letter task has a brief');
+        return coverLetterBrief(db, id, active);
+      case 'save_cover_letter': {
+        if (active.recordOperation !== 'cover_letter')
+          throw Error('Only a cover letter task can save a cover letter');
+        if (!workspace) throw Error('Workspace file directory not found');
+        result = await saveCoverLetter(db, id, active, args.text, {workspace, renderPdf});
+        break;
+      }
       case 'browser_interact': {
         const research = active.kind === 'interview';
         db.spendStep(id, run.id, {research});
@@ -1682,6 +1715,8 @@ export function automationWorkflow({
         break;
       }
       case 'finish_automation_run':
+        if (active.recordOperation === 'cover_letter')
+          finishCoverLetter(db, id, active, args.status, args.summary);
         return finishAutomationRun({
           db,
           id,
@@ -1783,8 +1818,11 @@ export async function launchAutomationWorker({
   };
   try {
     // A trial may use a stronger model: it discovers the source once; scans replay the recipe.
+    // A cover letter is written once and read by an employer, so it gets the same model.
     const trialSettings = (s) =>
-      run.kind === 'trial' && s?.trialModel ? {...s, model: s.trialModel} : s;
+      (run.kind === 'trial' || run.recordOperation === 'cover_letter') && s?.trialModel
+        ? {...s, model: s.trialModel}
+        : s;
     const persistent = run.kind === 'interview',
       history = persistent
         ? setupAgentHistory(db, automation.id)

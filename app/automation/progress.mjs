@@ -59,7 +59,7 @@ export function automationProgress(snapshot, {dirty = false} = {}) {
     title: 'Describe what you want to do',
     label: 'Setup',
     detail: 'The agent will ask questions to prepare your criteria and sources.',
-    next: 'Write your first message on the Agent page; the agent asks the rest.',
+    next: 'Write your first message on the Setup agent page; the agent asks the rest.',
     primary: action('message', 'Message the agent'),
     secondary: [],
     running: Boolean(current),

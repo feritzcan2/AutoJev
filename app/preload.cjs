@@ -29,6 +29,9 @@ contextBridge.exposeInMainWorld('jobloop', {
   onInstructionsChange: (callback) => subscribe('instructions-changed', callback),
   configurationCatalog: (id) => invoke('configuration-catalog', id),
   workspaceAnswer: (id, question, value) => invoke('workspace-answer', id, question, value),
+  approveCoverLetter: (id, question, text) => invoke('cover-letter-approve', id, question, text),
+  reviseCoverLetter: (id, question, feedback) =>
+    invoke('cover-letter-revise', id, question, feedback),
   automationSourceStop: (id, url) => invoke('automation-source-stop', id, url),
   workspaces: () => invoke('workspaces'),
   workspaceStart: (id, options) => invoke('workspace-start', id, options),
@@ -91,6 +94,7 @@ contextBridge.exposeInMainWorld('jobloop', {
   automationRun: (id, kind) => invoke('automation-run', id, kind),
   automationApprove: (id, item) => invoke('automation-approve', id, item),
   automationDismiss: (id, item) => invoke('automation-dismiss', id, item),
+  automationRestore: (id, item) => invoke('automation-restore', id, item),
   automationMarkSubmitted: (id, item) => invoke('automation-mark-submitted', id, item),
   automationStar: (id, item, starred) => invoke('automation-star', id, item, starred),
   automationBrowser: (id) => invoke('automation-browser', id),

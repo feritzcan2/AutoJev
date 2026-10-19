@@ -1413,6 +1413,31 @@
   line-height: 1;
 }
 
+/* A record whose source says it is gone reads as closed, not as a user skip. */
+.automation-results-table tr[data-outcome='closed'] > td {
+  opacity: 0.72;
+}
+.automation-results-table tr[data-outcome='closed'] > td:first-child {
+  box-shadow: inset 3px 0 #e07a6f;
+}
+.automation-results-table tr[data-outcome='closed'] .role-cell strong {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, #e07a6f 70%, transparent);
+}
+.automation-results-table tr[data-outcome='closed'] .automation-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, #e07a6f 16%, var(--bg-raised));
+  color: #f0a39a;
+  font-weight: 650;
+}
+.automation-results-table tr[data-outcome='closed'] .automation-badge::before {
+  content: '⊘' / '';
+  font-size: 13px;
+  line-height: 1;
+}
+
 /* A live record tab stays recognizable across waiting, working and saved states. */
 .automation-results-table tr[data-open-tab='true']:not([data-needs-answer='true']) > td {
   background: color-mix(in srgb, #4fd5c6 13%, var(--bg-raised));
@@ -1449,7 +1474,7 @@
   text-align: left;
   white-space: normal;
 }
-.record-score-breakdown details p {
+.record-score-breakdown p {
   overflow-wrap: anywhere;
 }
 
@@ -1575,6 +1600,7 @@
   tr[data-problem='true']:has(
     .record-problem:is(
       [data-category='needs_login'],
+      [data-category='needs_code'],
       [data-category='needs_payment'],
       [data-category='verification'],
       [data-category='needs_answer']
@@ -1582,6 +1608,7 @@
   ),
 .record-problem:is(
   [data-category='needs_login'],
+  [data-category='needs_code'],
   [data-category='needs_payment'],
   [data-category='verification'],
   [data-category='needs_answer']
@@ -1621,6 +1648,9 @@
 }
 .record-problem[data-category='needs_login'] .record-problem-badge::before {
   content: '🔒 ' / '';
+}
+.record-problem[data-category='needs_code'] .record-problem-badge::before {
+  content: '✉ ' / '';
 }
 .record-problem[data-category='needs_payment'] .record-problem-badge::before {
   content: '💳 ' / '';
@@ -1848,11 +1878,24 @@
   line-height: 1;
 }
 .record-drawer-meta {
-  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 0;
   padding: 0 20px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.4;
+}
+.record-drawer-meta > span {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  overflow-wrap: anywhere;
+}
+.record-drawer-meta > .record-drawer-status {
+  background: color-mix(in srgb, var(--accent, #4fd5c6) 16%, var(--bg-raised));
+  color: var(--text);
 }
 .record-drawer-tools {
   display: flex;
@@ -1897,4 +1940,193 @@
   margin-top: 8px;
   color: var(--text-muted);
   font-size: 11px;
+}
+/* Verdict first: the score, what it means and the agent's one-line reason. */
+.record-verdict {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  margin: 14px 0 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-hover);
+}
+.record-verdict[data-tone='verified'] {
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+  background: color-mix(in srgb, var(--success) 10%, var(--bg-raised));
+}
+.record-verdict[data-tone='unverified'] {
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 9%, var(--bg-raised));
+}
+.record-verdict[data-tone='mismatch'] {
+  border-color: color-mix(in srgb, var(--danger, #e5727a) 40%, transparent);
+  background: color-mix(in srgb, var(--danger, #e5727a) 8%, var(--bg-raised));
+}
+.record-drawer-body .record-verdict p {
+  margin: 0;
+}
+.record-drawer-body .record-verdict-score {
+  white-space: nowrap;
+  line-height: 1;
+}
+.record-verdict-score strong {
+  font-size: 30px;
+  font-weight: 650;
+}
+.record-verdict-score span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.record-drawer-body .record-verdict-label {
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.record-rules-ok {
+  color: var(--success);
+}
+.record-fit-notes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 4px 16px;
+}
+.record-fit-notes [data-kind='matches'] h4 {
+  color: var(--success);
+}
+.record-fit-notes [data-kind='gaps'] h4 {
+  color: var(--warning);
+}
+.record-drawer-section {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.record-drawer-section > summary {
+  padding: 10px 0 4px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.record-score-evidence > h4 {
+  margin-top: 12px;
+}
+.record-drawer-body .record-score-evidence > p {
+  margin: 2px 0;
+  color: var(--text-secondary);
+}
+.record-score-bar {
+  display: inline-block;
+  width: 56px;
+  height: 6px;
+  margin-right: 8px;
+  border-radius: 3px;
+  background: var(--border);
+  vertical-align: middle;
+  overflow: hidden;
+}
+.record-score-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent, #4fd5c6);
+}
+
+/* Elimination rules: one row per rule, shared by the setup card and onboarding. */
+.rules-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.rules-field legend {
+  padding: 0;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary, #b3c1ce);
+}
+.rules-list {
+  display: grid;
+  gap: 8px;
+}
+.rule-row {
+  display: grid;
+  grid-template-columns: minmax(150px, max-content) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.rules-field > button {
+  justify-self: start;
+}
+@media (max-width: 640px) {
+  .rule-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .rule-row input {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+/* Elimination rule answers on a record: the table badge and the detail list. */
+.record-score-rule[data-kind='eliminated'] {
+  color: var(--danger, #e5727a);
+}
+.record-score-rule[data-kind='held'] {
+  color: var(--warning);
+}
+.record-rules {
+  margin: 10px 0 14px;
+}
+.record-rules h4 {
+  margin: 0 0 8px;
+}
+.record-rule-list {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.record-rule-list li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+.record-rule-mark {
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+}
+.record-rule-list li[data-tone='pass'] .record-rule-mark {
+  color: var(--success);
+}
+.record-rule-list li[data-tone='fail'] .record-rule-mark {
+  color: var(--danger, #e5727a);
+}
+.record-rule-list li[data-tone='hold'] .record-rule-mark {
+  color: var(--warning);
+}
+.record-rule-list p {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.record-rule-list small {
+  color: var(--muted);
+}
+.record-rule-list q {
+  display: block;
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }

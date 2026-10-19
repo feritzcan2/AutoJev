@@ -548,7 +548,9 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
               ? 'Score only the assigned listing using the current criteria.ranking and saved profile/documents. Save with record_automation_score. Do not change proposals or submit.'
               : active.recordOperation === 'execute'
                 ? directRecordInstructions
-                : 'prepare: no external submission; verify: inspect prior outcome without resubmitting. This request authorizes only this record, without changing workspace or source permissions.',
+                : active.recordOperation === 'cover_letter'
+                  ? 'Write one cover letter for the assigned record and save it with save_cover_letter. Do not fill forms, upload or submit; the user reviews the letter.'
+                  : 'prepare: no external submission; verify: inspect prior outcome without resubmitting. This request authorizes only this record, without changing workspace or source permissions.',
         }
       : null,
     contextScope: {

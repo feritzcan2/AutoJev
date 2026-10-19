@@ -425,6 +425,20 @@ export const recordMethods = {
       });
     });
   },
+  // The user takes back a skip: the record returns to the found list and can
+  // be applied again. Questions closed by the skip stay closed.
+  restore(id, itemId) {
+    return this.store.workspaces.tasks.atomic(() => {
+      const item = this.result(id, itemId);
+      if (item.status !== 'dismissed' || item.trial)
+        throw Error('Only a skipped record can be restored');
+      this.assertRecordIdle(id, item.id);
+      const {closed, ...rest} = item;
+      const saved = this.putResult({...rest, status: 'found', updatedAt: this.now()});
+      this.event(id, 'record_restored', {itemId: item.id});
+      return saved;
+    });
+  },
   // An execute run found the record's destination itself saying it is gone
   // (removed, expired, not found). The quote must be on the observed page and
   // nothing may have been reserved; the record leaves every queue like a

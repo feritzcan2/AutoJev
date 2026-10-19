@@ -461,6 +461,18 @@ test('malformed decisions cannot navigate and aborted decisions cannot mutate', 
   assert.equal(f.calls.length, 2);
 });
 
+test('a session stopped mid-slice leaves the task resumable for the next session', async (t) => {
+  const f = fixture(t);
+  f.ports.browser = async () => {
+    f.controller.abort();
+    throw f.controller.signal.reason;
+  };
+  await assert.rejects(f.run({operation: 'scan_results', url}), /abort/i);
+  const [task] = f.db.jevTasks.list(f.a.id, 'assigned');
+  assert.equal(task.status, 'continue', 'not left "running" with nobody driving it');
+  assert.match(jevTaskSummary(task).next, /Continue browser_jev_run with this taskId/);
+});
+
 test('form batches exact values and never clicks; changed earlier fields prevent success', async (t) => {
   for (const clearFirst of [false, true]) {
     const f = fixture(t);

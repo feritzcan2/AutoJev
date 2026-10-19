@@ -4,6 +4,7 @@ import {exampleTemplates} from './examples.mjs';
 import {saveScoreThreshold} from '../scoring/thresholds.mjs';
 import {withAgentDefaults} from '../agents/settings.mjs';
 import {templateContract} from './contract.mjs';
+import {normalizeHardRules} from '../../src/hard-rules.js';
 export const automationTemplates = [jobSearchTemplate, ...exampleTemplates];
 export function automationTemplate(id) {
   const template = automationTemplates.find((t) => t.id === id);
@@ -68,10 +69,15 @@ export function planInput(template, input, previous = {}) {
     title: boundedText(input.title ?? previous.title ?? template.title, 'Name', 150),
     goal: boundedText(input.goal ?? previous.goal ?? '', 'Goal', 6000, {empty: true}),
     criteria: Object.fromEntries(
-      Object.entries(criteria).map(([key, value]) => [
-        key,
-        boundedText(value, key, 6000, {empty: true}),
-      ]),
+      Object.entries(criteria).map(([key, value]) => {
+        const text = boundedText(value, key, 6000, {empty: true});
+        return [
+          key,
+          template.fields.find((f) => f.id === key)?.type === 'rules'
+            ? normalizeHardRules(text)
+            : text,
+        ];
+      }),
     ),
     sources,
     instructions: boundedText(

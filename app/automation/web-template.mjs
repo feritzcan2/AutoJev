@@ -686,6 +686,11 @@ export class WebTasks extends TaskRuns {
     this.changed(id);
     return item;
   }
+  restoreRecord(id, itemId) {
+    const item = this.db.restore(id, itemId);
+    this.changed(id);
+    return item;
+  }
   async dismissRecord(id, itemId) {
     const item = this.db.dismiss(id, itemId, {stopActive: true});
     this.changed(id);

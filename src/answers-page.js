@@ -17,7 +17,7 @@ const button = (text, click, cls = 'quiet') => {
 
 // The Answers page lists every open record question as its own card. Cards stay
 // mounted across refreshes so a half-written answer is never rebuilt.
-export function answersPage(root, api, {refresh}) {
+export function answersPage(root, api, {refresh, openFiles = () => {}}) {
   let snapshot = null,
     workspace = null;
   const cards = new Map(),
@@ -43,7 +43,13 @@ export function answersPage(root, api, {refresh}) {
     heading.append(
       el(
         'span',
-        issue.verification ? 'CAPTCHA TO SOLVE' : 'AWAITING ANSWER',
+        issue.verification
+          ? 'CAPTCHA TO SOLVE'
+          : issue.code
+            ? 'CODE TO ENTER'
+            : issue.coverLetter
+              ? 'COVER LETTER'
+              : 'AWAITING ANSWER',
         'answer-card-eyebrow',
       ),
       title,
@@ -54,14 +60,17 @@ export function answersPage(root, api, {refresh}) {
       );
     head.append(heading);
     const body = el('div', null, 'answer-card-body'),
-      form = questionForm(
-        workspace,
-        {id, question: issue.message, fields: issue.fields},
-        async (value) => {
-          await api.workspaceAnswer(workspace, id, value);
-          await refresh();
-        },
-      );
+      // A cover letter is answered by approving it on the Files page.
+      form = issue.coverLetter
+        ? button('Review on the Files page', openFiles, 'primary')
+        : questionForm(
+            workspace,
+            {id, question: issue.message, fields: issue.fields},
+            async (value) => {
+              await api.workspaceAnswer(workspace, id, value);
+              await refresh();
+            },
+          );
     body.append(el('p', issue.message, 'answer-card-message'), form);
     const footer = el('footer', null, 'answer-card-footer'),
       tools = el('div', null, 'answer-card-tools'),

@@ -110,7 +110,9 @@ export function finishAutomationRun({
       uncertain =
         item.status === 'uncertain' || (item.status === 'executing' && active.actionId === item.id);
     // A CAPTCHA after the submit click: the user must act first, so say so up front.
-    const challenge = Boolean(db.run(run.id)?.submission?.verification);
+    const challenge = Boolean(db.run(run.id)?.submission?.verification),
+      // A code sent to the user's email or phone after the submit click.
+      code = !challenge && blocker?.category === 'needs_code';
     if (
       uncertain &&
       !(automation.questions ?? []).some((q) => q.recordId === item.id && q.answer == null)
@@ -120,7 +122,9 @@ export function finishAutomationRun({
         {
           text: challenge
             ? `${item.title ?? item.url}: a verification (CAPTCHA) appeared on the page after submitting. Solve it in the open tab in Chrome. Then choose "${OUTCOME_FIELD.options[0]}" if a confirmation message appears, or "${OUTCOME_FIELD.options[1]}" if the form is still there.\nAgent note: ${String(args.summary ?? '').slice(0, 1500)}`
-            : `The submission result for ${item.title ?? item.url} could not be verified.\nAgent note: ${String(args.summary ?? '').slice(0, 1500)}`,
+            : code
+              ? `${item.title ?? item.url}: the site sent a security code to your email or phone after submitting. Enter the code in the open tab in Chrome. Then choose "${OUTCOME_FIELD.options[0]}" if a confirmation message appears, or "${OUTCOME_FIELD.options[1]}" if the form is still there.\nAgent note: ${String(args.summary ?? '').slice(0, 1500)}`
+              : `The submission result for ${item.title ?? item.url} could not be verified.\nAgent note: ${String(args.summary ?? '').slice(0, 1500)}`,
           recordId: item.id,
           fields: [
             challenge
@@ -128,10 +132,13 @@ export function finishAutomationRun({
                   ...OUTCOME_FIELD,
                   label: 'After solving the verification: was this record submitted?',
                 }
-              : OUTCOME_FIELD,
+              : code
+                ? {...OUTCOME_FIELD, label: 'After entering the code: was this record submitted?'}
+                : OUTCOME_FIELD,
           ],
           outcome: true,
           ...(challenge ? {verification: true} : {}),
+          ...(code ? {code: true} : {}),
         },
         {runId: run.id},
       );
