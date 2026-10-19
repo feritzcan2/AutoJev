@@ -163,12 +163,12 @@ try {
     ),
     [],
   );
-  const configuration = await page.evaluate(
-    (id) => window.jobloop.configurationCatalog(id),
+  const snapshot = await page.evaluate(
+    (id) => window.jobloop.instructionSnapshot(id),
     workspace.id,
   );
   assert.ok(
-    !configuration.instructions.some(
+    !snapshot.parts.some(
       (part) => /background|gmail-sync/i.test(part.id) || /gmail-sync/.test(part.text ?? ''),
     ),
   );

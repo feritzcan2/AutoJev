@@ -6,9 +6,10 @@ import {WebTasks} from '../app/automation/web-template.mjs';
 import {automationWorkflow} from '../app/automation/worker.mjs';
 import {automationPrompt} from '../app/automation/prompts.mjs';
 import {automationTaskContext} from '../app/automation/task-context.mjs';
-import {enqueueScoreBatch, recordTask} from '../app/records/operations.mjs';
+import {enqueueRecordOperation, enqueueScoreBatch, recordTask} from '../app/records/operations.mjs';
 import {workspaceHistory} from '../app/workspaces/conversation.mjs';
 import {jevDetailItems} from '../app/jev/tasks.mjs';
+import {recordToolGuard} from '../app/records/tool-guard.mjs';
 import {activeRecordOperations} from '../src/record-operation-status.js';
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 function fixture(t) {
@@ -235,6 +236,65 @@ test('batch writes and questions require an assigned ID and reject stale profile
     /The profile changed/,
   );
   assert.equal(f.db.result(f.id, f.ids[1]).assessment, undefined);
+});
+test('score requests queued one after another join the pending task and run as one batch', async (t) => {
+  const f = fixture(t),
+    first = enqueueRecordOperation(f.runtime, f.id, f.ids[0], 'score', {manual: true}),
+    second = enqueueRecordOperation(f.runtime, f.id, f.ids[1], 'score', {manual: true}),
+    third = enqueueScoreBatch(f.runtime, f.id, [f.ids[2], f.items[3].id]);
+  assert.equal(second.id, first.id);
+  assert.equal(third.id, first.id);
+  const task = f.runtime.queue.get(f.id, first.id);
+  assert.deepEqual(task.recordIds, [...f.ids, f.items[3].id]);
+  assert.equal(task.sources.length, 4);
+  assert.equal(task.sourceUrl, undefined);
+  assert.equal(
+    f.runtime.queue.list(f.id, {states: ['pending']}).filter((x) => x.recordOperation === 'score')
+      .length,
+    1,
+  );
+  assert.throws(
+    () => enqueueRecordOperation(f.runtime, f.id, f.ids[1], 'score', {manual: true}),
+    /already queued/,
+  );
+  await f.runtime.tick();
+  await settle();
+  assert.equal(f.launches.length, 1);
+  assert.deepEqual(f.launches[0].recordIds, task.recordIds);
+});
+test('a started score task takes no new records', async (t) => {
+  const f = fixture(t),
+    {task} = await f.start(),
+    next = enqueueRecordOperation(f.runtime, f.id, f.items[3].id, 'score', {manual: true});
+  assert.notEqual(next.id, task.id);
+  assert.deepEqual(f.runtime.queue.get(f.id, task.id).recordIds, f.ids);
+});
+test('a wrong batch itemId names the open assigned IDs and stops only after three in a row', async (t) => {
+  const f = fixture(t),
+    {run, flow} = await f.start(),
+    guard = recordToolGuard({
+      db: f.db,
+      run,
+      report: (...args) => f.runtime.report(...args),
+      changed: () => {},
+    }),
+    score = (itemId) =>
+      guard('record_automation_score', {itemId}, () =>
+        flow.call(f.id, run.id, 'record_automation_score', {itemId, score: 70}),
+      ),
+    stopped = () => Boolean(f.runtime.queue.get(f.id, run.taskId).toolFailure);
+  await score(f.ids[0]);
+  const error = await score('0c0eef69-3282-4381-830a-bbf35049eaf8').catch((e) => e);
+  assert.match(error.message, /not an assigned record ID/);
+  assert.match(error.message, new RegExp(`${f.ids[1]}, ${f.ids[2]}`));
+  assert.doesNotMatch(error.message, new RegExp(f.ids[0]));
+  await assert.rejects(score('snapshot-2'), /2\/3/);
+  await score(f.ids[1]);
+  await assert.rejects(score('snapshot-3'));
+  await assert.rejects(score('snapshot-4'));
+  assert.equal(stopped(), false);
+  await assert.rejects(score('snapshot-5'), /stopped/);
+  assert.equal(stopped(), true);
 });
 for (const early of [true, false])
   test(`a question on a non-primary batch row resumes only unfinished scoring (early answer: ${early})`, async (t) => {

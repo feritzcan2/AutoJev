@@ -27,7 +27,25 @@ const source = 'https://example.test/list',
   profile = 'https://www.linkedin.com/in/jane-doe-123/',
   settle = () => new Promise((r) => setImmediate(r)),
   note =
-    'Hi Jane, I applied for the Senior Backend Engineer role. I built event-driven .NET services on AWS. Happy to connect!';
+    'Hi Jane, I am applying for the Senior Backend Engineer role. The listing asks for event-driven AWS services, which I built for 10M+ users. Happy to connect!',
+  point = 'Build event-driven services on AWS',
+  notes = (text = note) => [
+    {style: 'role_fit', text},
+    {
+      style: 'team_question',
+      text: 'Hi Jane, I build event-driven AWS services. Which team owns them at Example GmbH?',
+    },
+    {
+      style: 'short_direct',
+      text: 'Hi Jane, I am applying for the backend role and build event-driven AWS services.',
+    },
+  ],
+  listing = (run, db) =>
+    db.browserEvidence.save(run, {
+      id: 'listing-1',
+      url: source + '/1',
+      text: '{"text":"Senior Backend Engineer. You will build event-driven services on AWS."}',
+    });
 
 async function fixture(t) {
   const workspace = await mkdtemp(path.join(os.tmpdir(), 'record-contacts-'));
@@ -87,6 +105,7 @@ async function fixture(t) {
     await findRecordContacts(runtime, a.id, item.id, {notes: 'the backend team'});
     await settle();
     const run = launches.at(-1);
+    listing(run, db);
     db.browserEvidence.save(run, {
       id: 'profile-1',
       url: profile,
@@ -100,7 +119,8 @@ async function fixture(t) {
           relation: 'recruiter',
           profileUrl: profile,
           reason: 'She recruits for the engineering team named in the listing.',
-          message: note,
+          listingPoint: point,
+          messages: notes(),
         },
       ],
     });
@@ -149,7 +169,8 @@ test('a contact is saved only from a profile this task read', async (t) => {
       relation: 'recruiter',
       profileUrl: profile,
       reason: 'Recruiter',
-      message: note,
+      listingPoint: point,
+      messages: notes(),
     };
   await assert.rejects(
     f.call(run, 'save_record_contacts', {contacts: [contact]}),
@@ -171,8 +192,27 @@ test('a contact is saved only from a profile this task read', async (t) => {
     /LinkedIn profile address/,
   );
   f.db.browserEvidence.save(run, {id: 'p2', url: profile, text: 'Jane Doe · Recruiter'});
+  // The notes answer a requirement copied from the listing page this task read.
   await assert.rejects(
-    f.call(run, 'save_record_contacts', {contacts: [{...contact, message: 'x'.repeat(201)}]}),
+    f.call(run, 'save_record_contacts', {contacts: [contact]}),
+    /listingPoint does not appear/,
+  );
+  listing(run, f.db);
+  await assert.rejects(
+    f.call(run, 'save_record_contacts', {contacts: [{...contact, messages: notes().slice(0, 2)}]}),
+    /needs 3 notes/,
+  );
+  // The user has not applied: no note may say so.
+  await assert.rejects(
+    f.call(run, 'save_record_contacts', {
+      contacts: [{...contact, messages: notes('Hi Jane, I applied for the backend role.')}],
+    }),
+    /says the user applied/,
+  );
+  await assert.rejects(
+    f.call(run, 'save_record_contacts', {
+      contacts: [{...contact, messages: notes('x'.repeat(201))}],
+    }),
     /keep it under 200/,
   );
   // Nobody suitable is a valid result when it says why.
@@ -187,6 +227,12 @@ test('approved contacts are sent once each by a send task', async (t) => {
   const [jane] = f.entry().contacts;
   assert.equal(jane.state, 'proposed');
   assert.equal(jane.profileUrl, profile);
+  assert.deepEqual(
+    jane.options.map((o) => o.style),
+    ['role_fit', 'team_question', 'short_direct'],
+  );
+  assert.equal(jane.message, note);
+  assert.equal(jane.listingPoint, 'Build event-driven services on AWS');
   // The user's edit is kept; an empty note is refused.
   editRecordContact(f.db, f.id, f.item.id, jane.id, {message: note + ' Thanks.'});
   assert.throws(() => editRecordContact(f.db, f.id, f.item.id, jane.id, {message: ' '}), /Write/);

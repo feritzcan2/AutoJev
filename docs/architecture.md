@@ -13,7 +13,6 @@ The existing implementation provides useful behavior to preserve, including task
 - [automation-store.mjs](../app/automation/store.mjs) combines persistence, scanning, scoring, questions, source recovery, and record operations. It also imports scoring behavior from the renderer directory.
 - [automation-worker.mjs](../app/automation/worker.mjs) combines tool definitions, prompts, browser operations, scoring, and execution coordination.
 - [templates/job-search](../app/templates/job-search/template.mjs) represents job search through the generic automation template and record model.
-- [configuration-catalog.mjs](../app/system/configuration-catalog.mjs) displays a prompt catalog assembled from other modules. Instructions are still authored in scanning, scoring, browser helpers, agent setup, and the Rust launcher.
 - [check.mjs](../scripts/check.mjs) currently checks JavaScript syntax. It does not enforce architectural import boundaries.
 - [site-extensions/index.mjs](../app/site-extensions/index.mjs) registers DOM readers, HTTP readers, and CLI/API collectors with different contracts. Site knowledge also remains in files outside extension folders. The rewrite gives these integrations one capability contract and one extension boundary.
 

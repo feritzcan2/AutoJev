@@ -8,7 +8,7 @@ import {browserSnapshotTools} from '../browser/snapshot.mjs';
 import {automationContextTools} from './context.mjs';
 import {jevTaskTools, agentDecisionTools} from '../jev/task-tools.mjs';
 import {RECIPE_PAGINATION_KINDS, RECIPE_TERM_LIMIT} from '../sources/recipe.mjs';
-import {CONTACT_LIMIT, CONTACT_OUTCOMES, NOTE_CHARACTERS} from './contacts.mjs';
+import {CONTACT_LIMIT, CONTACT_OUTCOMES, NOTE_CHARACTERS, NOTE_STYLES} from './contacts.mjs';
 
 const str = {type: 'string'},
   optional = {type: 'string', minLength: 0};
@@ -260,7 +260,7 @@ export const automationTools = [
   ),
   tool(
     'save_record_contacts',
-    `Contact search only: save at most ${CONTACT_LIMIT} LinkedIn contacts for the user's review. Open and read each profile first; profileUrl is that profile page address. Pass an empty contacts list with noneReason when nobody suitable works at the company. A refused save returns the reason; fix it and save again.`,
+    `Contact search only: save at most ${CONTACT_LIMIT} LinkedIn contacts for the user's review, each with listingPoint (copied from the listing) and three notes, one per style (${NOTE_STYLES.join(', ')}); the user picks one. Open and read each profile first; profileUrl is that profile page address. Pass an empty contacts list with noneReason when nobody suitable works at the company. A refused save returns the reason; fix it and save again.`,
     {
       contacts: {
         type: 'array',
@@ -271,7 +271,16 @@ export const automationTools = [
           relation: {type: 'string', enum: ['poster', 'recruiter', 'hiring_manager', 'team']},
           profileUrl: str,
           reason: str,
-          message: {type: 'string', minLength: 1, maxLength: NOTE_CHARACTERS},
+          listingPoint: str,
+          messages: {
+            type: 'array',
+            minItems: NOTE_STYLES.length,
+            maxItems: NOTE_STYLES.length,
+            items: object({
+              style: {type: 'string', enum: NOTE_STYLES},
+              text: {type: 'string', minLength: 1, maxLength: NOTE_CHARACTERS},
+            }),
+          },
         }),
       },
       noneReason: {type: 'string', minLength: 0, maxLength: 400},

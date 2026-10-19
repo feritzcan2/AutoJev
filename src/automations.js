@@ -1,7 +1,7 @@
 import {activeRecordOperations} from './record-operation-status.js';
 import {answersPage} from './answers-page.js';
 import {coverLetterReview} from './cover-letter-review.js';
-import {contactsPage, contactsToReview} from './contacts-page.js';
+import {contactsPage, contactsToReview, contactsWorking} from './contacts-page.js';
 import {automationReady} from '../app/sources/trial.mjs';
 import {templateFields} from './template-fields.js';
 import {
@@ -220,6 +220,15 @@ export function automationsPage(
       notice(error.message);
     }
   }
+  // A listing's "Evaluate criteria": the setup agent explains the score in its chat.
+  async function evaluateCriteria(text) {
+    openConversation();
+    try {
+      await sendMessage(text);
+    } catch (error) {
+      notice(error.message);
+    }
+  }
   const boardNav = document.querySelector('[data-view=board]'),
     recordWork = el('span', null, 'board-nav-work');
   recordWork.id = 'board-nav-work';
@@ -261,7 +270,12 @@ export function automationsPage(
   contactsBadge.dataset.tone = 'waiting';
   contactsBadge.setAttribute('aria-hidden', 'true');
   contactsBadge.hidden = true;
-  contactsNav.append(contactsBadge);
+  // A running search or send shows like Sources' "1 scanning".
+  const contactsWork = el('span', null, 'agent-nav-status');
+  contactsWork.dataset.tone = 'active';
+  contactsWork.setAttribute('aria-hidden', 'true');
+  contactsWork.hidden = true;
+  contactsNav.append(contactsWork, contactsBadge);
   contactsNav.onclick = () => navigate('contacts');
   document.querySelector('[data-view=files]').before(contactsNav);
   // Files shows a badge while a cover letter waits for the user's review.
@@ -471,6 +485,7 @@ export function automationsPage(
       statusNames,
       onQuestion: showAnswers,
       onContacts: showContacts,
+      onEvaluateCriteria: evaluateCriteria,
       onCoverLetter: () => navigate('files'),
     });
     saveScoreSettings = minimumSaveScoreSettings({
@@ -832,10 +847,21 @@ export function automationsPage(
     find('#automation-delete').disabled = locked;
     answers.update(data);
     contactsView.update(data);
-    const review = contactsToReview(data);
+    const review = contactsToReview(data),
+      {searching, sending} = contactsWorking(data),
+      contactWork = [searching && `${searching} searching`, sending && `${sending} sending`]
+        .filter(Boolean)
+        .join(' · ');
+    contactsWork.hidden = !contactWork;
+    contactsWork.textContent = contactWork;
     contactsBadge.hidden = !review;
     contactsBadge.textContent = review ? String(review) : '';
-    contactsNav.title = review ? `${review} contact${review > 1 ? 's' : ''} to approve` : '';
+    contactsNav.title = [
+      contactWork,
+      review && `${review} contact${review > 1 ? 's' : ''} to approve`,
+    ]
+      .filter(Boolean)
+      .join(' · ');
     contactsNav.setAttribute(
       'aria-label',
       ['Contacts', contactsNav.title].filter(Boolean).join(' · '),
@@ -1405,15 +1431,20 @@ export function automationsPage(
         url: record?.url ?? null,
       };
     };
+    // Newest first, each with the time it was created.
     const fileList = (target, docs, empty) => {
       const files = find(target);
       files.replaceChildren();
-      for (const doc of docs) {
+      const newest = [...docs].sort((a, b) =>
+        (b.createdAt ?? b.updatedAt).localeCompare(a.createdAt ?? a.updatedAt),
+      );
+      for (const doc of newest) {
         const row = el('div', null, 'document-row'),
           name = el('div'),
           detail = fileDetail(doc);
         name.append(el('strong', doc.name));
         if (detail) name.append(el('small', detail.text));
+        name.append(el('small', 'Created ' + time(doc.createdAt ?? doc.updatedAt)));
         const actions = el('div', null, 'document-actions');
         if (detail?.url) actions.append(button('Open listing ↗', () => api.openLink(detail.url)));
         actions.append(button('Open ↗', () => api.openDocument(selected, doc.path)));

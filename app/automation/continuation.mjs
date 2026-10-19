@@ -13,7 +13,11 @@ export function answerContinuation(db, id, task, kind) {
   const sourceContinuation = (origin, continuation) => {
     // The unfinished scan cycle defines continuity, including after an app restart
     // or a long wait for an answer. Live browser evidence is refreshed separately.
+    // A collector scan keeps all of its state in the app's checkpoint. Its old
+    // conversation only held stale results (an earlier background_read or a
+    // failure since fixed) that agents kept obeying, so it starts fresh.
     const resumeConversation =
+      !origin.collector &&
       unfinishedSourceStatuses.includes(origin.status) &&
       Boolean(origin.scanPlan?.id) &&
       origin.scanPlan.id === a.sourceState?.[task.sourceUrl]?.scanState?.active?.id;

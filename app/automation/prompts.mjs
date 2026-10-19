@@ -20,7 +20,7 @@ export function automationPrompt(
     return (
       'Read AGENTS.md and get_automation_context. ' +
       (agentDecides ? '' : jevProfilePrompt) +
-      (run.continuation ? COLLECTOR_RESUME : '') +
+      (run.continuation && run.continuation.resumeConversation !== false ? COLLECTOR_RESUME : '') +
       COLLECTOR_INSTRUCTIONS
     );
   const refresh =

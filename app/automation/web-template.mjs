@@ -11,7 +11,7 @@ import {
   dispatchRecordOperations,
   recordOperationError,
 } from '../records/operations.mjs';
-import {sourceTrialReady} from '../sources/trial.mjs';
+import {siteSourceTrialReady} from '../sources/automation-sources.mjs';
 import {TaskRuns} from './task-runs.mjs';
 import {recoverRecordOperations} from '../records/recovery.mjs';
 import {contactsInterrupted} from './contacts.mjs';
@@ -324,7 +324,7 @@ export class WebTasks extends TaskRuns {
     }
     if (tasks.some((t) => t.operation === 'trial'))
       return tasks.filter((t) => t.operation === 'trial');
-    if (!sourceTrialReady(a, source.url)) {
+    if (!siteSourceTrialReady(a, source.url)) {
       for (const task of tasks)
         if (task.state === 'pending')
           this.queue.finish(id, task.id, 'cancelled', 'The source’s first round will be a trial');
@@ -581,7 +581,7 @@ export class WebTasks extends TaskRuns {
             // A passed trial only learned the source; its first scan starts right away.
             const trialPassed =
               tasks.some((t) => t.operation === 'trial') &&
-              sourceTrialReady(this.db.get(a.id), source.url);
+              siteSourceTrialReady(this.db.get(a.id), source.url);
             this.sourceState(a.id, source.url, {
               batchId: null,
               blocked,

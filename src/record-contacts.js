@@ -17,6 +17,11 @@ const stateLabels = {
   failed: 'Not sent',
 };
 const resendable = new Set(['proposed', 'invited', 'failed', 'uncertain']);
+const styleLabels = {
+  role_fit: 'Fit with the role',
+  team_question: 'Question about the team',
+  short_direct: 'Short and direct',
+};
 
 export const contactEntry = (data, recordId) =>
   (data?.automation.recordContacts ?? []).find((e) => e.recordId === recordId) ?? null;
@@ -71,6 +76,8 @@ export function recordContacts({el, button, api, refresh, rerender}) {
     const about = [relationLabels[contact.relation], contact.headline].filter(Boolean).join(' · ');
     if (about) card.append(el('small', about, 'record-contact-about'));
     if (contact.reason) card.append(el('p', contact.reason, 'record-contact-reason'));
+    if (contact.listingPoint)
+      card.append(el('small', `Listing: “${contact.listingPoint}”`, 'record-contact-hint'));
     const editable = resendable.has(contact.state) && !locked;
     if (editable) {
       const note = el('textarea'),
@@ -93,6 +100,31 @@ export function recordContacts({el, button, api, refresh, rerender}) {
           await api.recordContactEdit(workspace, result.id, contact.id, note.value);
           drafts.delete(contact.id);
         });
+      // The agent's three notes: choosing one puts it in the box to send or edit.
+      if (contact.options?.length) {
+        const options = el('div', null, 'record-contact-options');
+        options.setAttribute('role', 'radiogroup');
+        options.setAttribute('aria-label', `Note styles for ${contact.name}`);
+        for (const option of contact.options) {
+          const choice = el('button', null, 'record-contact-option');
+          choice.type = 'button';
+          choice.setAttribute('role', 'radio');
+          choice.setAttribute('aria-checked', String(note.value === option.text));
+          choice.append(
+            el('b', styleLabels[option.style] ?? option.style),
+            el('span', option.text),
+          );
+          choice.onclick = () => {
+            note.value = option.text;
+            note.oninput();
+            note.onchange();
+            for (const other of options.children)
+              other.setAttribute('aria-checked', String(other === choice));
+          };
+          options.append(choice);
+        }
+        card.append(options);
+      }
       const pick = el('label', null, 'record-contact-pick'),
         box = el('input');
       box.type = 'checkbox';

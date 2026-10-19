@@ -1,5 +1,10 @@
 // @ts-check
-import {taskHasRecord, batchScoring} from '../records/task-scope.mjs';
+import {
+  taskHasRecord,
+  taskRecordIds,
+  batchScoring,
+  recordScoredInTask,
+} from '../records/task-scope.mjs';
 import {SCORING_VERSION} from './policy.mjs';
 import {boundedText, webUrl} from '../templates/catalog.mjs';
 import {assessmentEvidence} from '../records/evidence.mjs';
@@ -211,6 +216,17 @@ export function saveRecordScore(db, id, runId, input) {
   const run = db.activeRun(id, runId);
   if (batchScoring(run) && !input.itemId)
     throw Error('In batch scoring, name the assigned record with itemId');
+  // An ID outside the assignment (often a snapshotId) gets the IDs that still
+  // need a score, so the agent can correct the call instead of repeating it.
+  if (batchScoring(run) && !taskHasRecord(run, input.itemId)) {
+    const open = taskRecordIds(run).filter((itemId) => {
+      const item = db.store.workspaces.records.identities.resolve(id, itemId);
+      return item && !recordScoredInTask(db, run, item);
+    });
+    throw Error(
+      `itemId ${JSON.stringify(String(input.itemId).slice(0, 80))} is not an assigned record ID in this batch. Use an id from assignedRecords, not a snapshotId or URL. Assigned records not yet scored: ${open.join(', ') || 'none'}`,
+    );
+  }
   const item = db.result(id, input.itemId ?? run.recordId);
   if (run.recordOperation !== 'score' || !taskHasRecord(run, item.id))
     throw Error('A score can only be saved in the assigned scoring task');

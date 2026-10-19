@@ -218,18 +218,27 @@ export function automationTable(input) {
 // Collector display values may be shortened; callers retain full evidence in RAM.
 // Explicit cell updates still pass through the strict validator below.
 export function automationTextCells(values, table) {
-  return table.columns
-    .filter((c) => c.type === 'text' && !builtins.has(c.key) && Object.hasOwn(values, c.key))
-    .map((c) => {
-      const value = values[c.key].trim();
-      return {
-        key: c.key,
-        value:
-          value.length <= cellTextLimit
-            ? value
-            : value.slice(0, cellTextLimit - 1).replace(/[\uD800-\uDBFF]$/u, '') + '…',
-      };
-    });
+  return (
+    table.columns
+      // A site may not name every value (a card without its company).
+      .filter(
+        (c) =>
+          c.type === 'text' &&
+          !builtins.has(c.key) &&
+          typeof values[c.key] === 'string' &&
+          values[c.key].trim(),
+      )
+      .map((c) => {
+        const value = values[c.key].trim();
+        return {
+          key: c.key,
+          value:
+            value.length <= cellTextLimit
+              ? value
+              : value.slice(0, cellTextLimit - 1).replace(/[\uD800-\uDBFF]$/u, '') + '…',
+        };
+      })
+  );
 }
 export function automationCells(input, table) {
   if (!Array.isArray(input) || input.length > 10) throw Error('At most 10 cells can be updated');

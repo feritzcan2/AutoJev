@@ -27,7 +27,6 @@ contextBridge.exposeInMainWorld('jobloop', {
   instructionSnapshot: (id, options) => invoke('instruction-snapshot', id, options),
   instructionEvent: (id, seq) => invoke('instruction-event', id, seq),
   onInstructionsChange: (callback) => subscribe('instructions-changed', callback),
-  configurationCatalog: (id) => invoke('configuration-catalog', id),
   workspaceAnswer: (id, question, value) => invoke('workspace-answer', id, question, value),
   approveCoverLetter: (id, question, text) => invoke('cover-letter-approve', id, question, text),
   reviseCoverLetter: (id, question, feedback) =>

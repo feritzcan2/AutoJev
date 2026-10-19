@@ -779,6 +779,62 @@ test('replayed scans verify or invalidate the recipe; a stale recipe sends the s
   assert.equal(f.launches.at(-1).kind, 'trial', 'the next turn relearns the source');
 });
 
+test('a site extension source with a search recipe skips the trial until it is relearned', async (t) => {
+  const store = new WorkspaceDatabase(':memory:');
+  const db = new AutomationStore(store, {now: () => 1_800_000_000_000});
+  const board = 'https://builtin.com/jobs';
+  const a = db.create('housing', {
+    goal: 'Find homes',
+    criteria: {location: 'Berlin', budget: '2000', requirements: '2 rooms'},
+    sources: [board, source],
+    agentSettings: {provider: 'codex', decisions: 'jev'},
+  });
+  db.review(a.id);
+  const launches = [],
+    runtime = new WebTasks(db, {
+      now: () => 1_800_000_000_000,
+      launch: async (run) => {
+        launches.push(run);
+        return {close: async () => {}};
+      },
+    });
+  t.after(async () => {
+    await runtime.close();
+    store.close();
+  });
+  const recipe = (url, terms) => ({
+    entry: {kind: 'url_template', template: url},
+    ...(terms && {terms}),
+  });
+  db.saveSource(a.id, board, {
+    recipe: recipe('https://builtin.com/jobs?search={query}&country=USA&allLocations=true'),
+  });
+  db.saveSource(a.id, source, {recipe: recipe(template, ['ops'])});
+  const ready = () => Object.fromEntries(db.sources(a.id).map((s) => [s.url, s.trialReady]));
+  assert.deepEqual(
+    ready(),
+    {[board]: false, [source]: false},
+    'without terms, or without an extension that knows the search, the trial still runs',
+  );
+  db.saveSource(a.id, board, {
+    recipe: recipe('https://builtin.com/jobs?search={query}&country=USA&allLocations=true', [
+      'backend engineer',
+    ]),
+  });
+  assert.equal(ready()[board], true);
+  db.enable(a.id);
+  await runtime.runSource(a.id, board);
+  await settle();
+  assert.equal(launches.at(-1).kind, 'run', 'the first scan verifies the recipe');
+  runtime.report(a.id, launches.at(-1).id, 'completed', 'Scan ended');
+  await runtime.finish(a.id, 'completed', 'Scan ended', launches.at(-1).workerId);
+  await runtime.relearnSource(a.id, board);
+  assert.equal(ready()[board], false);
+  await runtime.runSource(a.id, board);
+  await settle();
+  assert.equal(launches.at(-1).kind, 'trial', 'a relearn request still runs a trial');
+});
+
 test('relearning and settings carry recipes without touching scan state', async (t) => {
   const f = fixture(t);
   f.db.saveSource(f.id, source, {recipe: {entry: {kind: 'url_template', template}}});
@@ -790,7 +846,8 @@ test('relearning and settings carry recipes without touching scan state', async 
   assert.equal(f.db.sources(f.id)[0].trial.status, 'passed');
   await f.runtime.relearnSource(f.id, source);
   const after = f.db.sources(f.id)[0];
-  assert.equal(after.trial, null);
+  assert.equal(after.trial.status, 'requested');
+  assert.equal(after.trialReady, false);
   assert.equal(after.recipeState.status, 'candidate');
   assert.equal(
     after.recipe.entry.template,

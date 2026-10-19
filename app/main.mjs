@@ -5,7 +5,6 @@ import {AgentProfiles} from './agents/profiles.mjs';
 import {WEB_AGENTS, WEB_AGENT_ROLES} from './agents/automation-profiles.mjs';
 import {InstructionLog} from './system/instruction-log.mjs';
 import {webInstructionCatalog, instructionSnapshot} from './system/instruction-catalog.mjs';
-import {configurationCatalog, webPromptCatalog} from './system/configuration-catalog.mjs';
 import {
   app,
   BrowserWindow,
@@ -299,7 +298,6 @@ async function boot() {
   workspaces.templates[browserDefinition.id] = {
     agentRoles: () => WEB_AGENT_ROLES,
     instructions: (id, role) => webInstructionCatalog(automationDb, id, role),
-    configuration: (id) => webPromptCatalog(automationDb.get(id)),
     create: (templateId, input) => automationDb.create(templateId, input),
     directory: web.workspace,
     documentPurposes: ['attachment'],
@@ -390,7 +388,6 @@ async function boot() {
     workspaces.templates[extension.definition.id] = service.driver;
     services.push(service);
   }
-  handle('configuration-catalog', (id) => configurationCatalog({id, workspaces, profiles}));
   handle('instruction-snapshot', (id, options) =>
     instructionSnapshot({id, options, log: instructionLog, agents, workspaces, profiles}),
   );

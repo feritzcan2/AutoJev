@@ -89,77 +89,6 @@ try {
     a.id,
   );
   await page.locator('#candidates').selectOption(a.id);
-  await page.locator('[data-view=config]').click();
-  await page.locator('a[href="#config-instructions"]').click();
-  await page.waitForFunction(
-    () => document.querySelectorAll('#config-instructions-list .prompt-card').length > 10,
-  );
-  assert.equal(await page.locator('#config-workspace').count(), 0);
-  const compareCatalog = async (id) => {
-    const {config, agent} = await page.evaluate(
-      async (id) => ({
-        config: await window.jobloop.configurationCatalog(id),
-        agent: await window.jobloop.instructionSnapshot(id),
-      }),
-      id,
-    );
-    assert.deepEqual(
-      config.instructions.filter((p) => p.key.startsWith('file:AGENTS.md:')),
-      agent.parts
-        .filter((p) => p.key.startsWith('file:AGENTS.md:'))
-        .map(({hash, state, ...part}) => part),
-    );
-    return config;
-  };
-  const webCatalog = await compareCatalog(a.id);
-  assert.ok(webCatalog.tools.some((t) => t.name === 'get_automation_context'));
-  assert.ok(!webCatalog.tools.some((t) => t.name === 'get_task_context'));
-  assert.equal(webCatalog.tasks.length, 3);
-  assert.equal(webCatalog.skills.length, 0);
-  assert.ok(
-    (await page.locator('#config-instructions-list').textContent()).includes(
-      'personal web automation',
-    ),
-  );
-  assert.ok(
-    !(await page.locator('#config-instructions-list').textContent()).includes(
-      'JobLoop scheduler messages',
-    ),
-  );
-  assert.ok((await page.locator('#config-instructions-list .config-group').count()) >= 3);
-  await page.getByLabel('Search text', {exact: true}).fill('1500');
-  assert.equal(await page.locator('#config-instructions-list .prompt-card:visible').count(), 1);
-  await page.locator('#config-instructions-list .prompt-card:visible summary').click();
-  assert.ok(
-    (await page.locator('#config-instructions-list pre:visible').textContent()).includes('1500'),
-  );
-  await page.locator('#candidates').selectOption(b.id);
-  await page.waitForFunction(
-    (title) => document.querySelector('#heading').textContent === title,
-    b.title,
-  );
-  await page.locator('[data-view=config]').click();
-  await page.waitForFunction(
-    () => document.querySelector('#config-search-note').textContent === 'No matches',
-  );
-  await page.getByLabel('Search text', {exact: true}).fill('');
-  assert.ok(!(await page.locator('#config-instructions-list').textContent()).includes('1500'));
-  await page.locator('#candidates').selectOption(a.id);
-  await page.waitForFunction(
-    (title) => document.querySelector('#heading').textContent === title,
-    a.title,
-  );
-  await page.locator('[data-view=config]').click();
-  await page.waitForFunction(() =>
-    document.querySelector('#config-instructions-list').textContent.includes('1500'),
-  );
-  await page.screenshot({path: '/tmp/loop-config-sections.png', fullPage: false});
-  await page.locator('a[href="#config-skills"]').click();
-  assert.ok(
-    (await page.locator('#config-skills').textContent()).includes(
-      'No separate skill file is defined',
-    ),
-  );
   await page.locator('[data-view=agent]').click();
   await page.getByRole('tab', {name: 'Instructions', exact: true}).click();
   await page.waitForFunction(() => document.querySelectorAll('.instruction-card').length > 10);
@@ -236,37 +165,10 @@ try {
     const catalog = await page.evaluate((id) => window.jobloop.instructionSnapshot(id), job.id);
     assert.ok(catalog.parts.some((p) => p.source === 'skill'));
     assert.ok(catalog.parts.some((p) => p.key === 'startup-routing'));
-    await page.locator('[data-view=config]').click();
-    await page.locator('a[href="#config-instructions"]').click();
-    await page.waitForFunction(() =>
-      document
-        .querySelector('#config-instructions-list')
-        .textContent.includes('JobLoop scheduler messages'),
-    );
-    assert.equal(await page.locator('#config-workspace').count(), 0);
-    const jobCatalog = await compareCatalog(job.id);
-    assert.ok(jobCatalog.skills.length > 0);
-    assert.ok(jobCatalog.tools.some((t) => t.name === 'get_task_context'));
-    await page.locator('#candidates').selectOption(a.id);
-    await page.waitForFunction(
-      (title) => document.querySelector('#heading').textContent === title,
-      a.title,
-    );
-    await page.locator('[data-view=config]').click();
-    await page.waitForFunction(() =>
-      document
-        .querySelector('#config-instructions-list')
-        .textContent.includes('personal web automation'),
-    );
-    assert.ok(
-      !(await page.locator('#config-instructions-list').textContent()).includes(
-        'JobLoop scheduler messages',
-      ),
-    );
   }
   assert.deepEqual(errors, []);
   console.log(
-    'INSTRUCTIONS_UI_PASS: selected workspace configuration, matching AGENTS.md sections, scoped catalogs, current/history separation, search, worker/session filters, empty workspace, terminal view; /tmp/loop-instructions-{parts,history}.png',
+    'INSTRUCTIONS_UI_PASS: current/history separation, search, worker/session filters, empty workspace, terminal view; /tmp/loop-instructions-{parts,history}.png',
   );
 } catch (error) {
   for (const page of app.windows()) {
