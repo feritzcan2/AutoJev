@@ -59,6 +59,7 @@ const require = createRequire(import.meta.url);
 const urlHash = (url) => createHash('sha256').update(url).digest('hex');
 const UPLOAD_BUTTON =
   /upload|attach|browse|(?:add|select|choose) files?|resume|\bcv\b|lebenslauf|hochladen|anhängen|datei|yükle|dosya|document|unterlagen/i;
+const MAX_SPARE_TABS = 2;
 const homeUrl =
   'data:text/html;charset=utf-8,' +
   encodeURIComponent(
@@ -116,6 +117,8 @@ export class JevBrowser {
     this.automationWorkspaces = new Map();
     this.automationSources = new Map();
     this.urlHashes = new Map();
+    // Finished task tabs kept blank in the Jev window for the next task.
+    this.spareTabs = new Set();
     this.busy = false;
     this.closed = false;
     this.abort = new AbortController();
@@ -204,6 +207,7 @@ export class JevBrowser {
                 .filter((id) => typeof saved?.urlHashes?.[id] === 'string')
                 .map((id) => [id, saved.urlHashes[id]]),
             );
+            this.spareTabs = new Set(restored.filter((id) => saved?.spareTabs?.includes(id)));
             for (const id of restored) transport.owned.add(id);
             this.connectedEndpoint = endpoint;
             this.contextId = contextId;
@@ -401,6 +405,7 @@ export class JevBrowser {
         automationWorkspaces: Object.fromEntries(this.automationWorkspaces),
         automationSources: Object.fromEntries(this.automationSources),
         urlHashes: Object.fromEntries(this.urlHashes),
+        spareTabs: [...this.spareTabs],
       });
   }
   forgetTab(id) {
@@ -410,6 +415,7 @@ export class JevBrowser {
     this.automationWorkspaces.delete(id);
     this.automationSources.delete(id);
     this.urlHashes.delete(id);
+    this.spareTabs.delete(id);
     this.transport?.owned.delete(id);
     this.transport?.attached.delete(id);
     for (const slot of this.tabs.values())
@@ -536,8 +542,7 @@ export class JevBrowser {
           continue;
         }
         try {
-          await slot.page.close({runBeforeUnload: false});
-          this.forgetTab(slot.id);
+          await this.retireTab(slot);
           closed.push(slot.id);
         } catch {
           retained.push(slot.id);
@@ -549,6 +554,46 @@ export class JevBrowser {
     } finally {
       this.busy = false;
     }
+  }
+  // Chrome restores a minimized window whenever a tab is added to it, and only
+  // window.open from an owned page reaches the exact Jev window. A finished
+  // task tab therefore stays open as a blank spare; the next task navigates it,
+  // which leaves a minimized window minimized. Other tabs are closed.
+  async retireTab(slot) {
+    if (this.connection === 'existing' && this.spareTabs.size < MAX_SPARE_TABS)
+      try {
+        await slot.page.goto('about:blank', {timeout: 5000});
+        if (slot.page.url() === 'about:blank') {
+          for (const map of [
+            this.automationTabs,
+            this.automationRuns,
+            this.automationWorkspaces,
+            this.automationSources,
+            this.urlHashes,
+          ])
+            map.delete(slot.id);
+          for (const [, child] of this.tabs)
+            for (const [url, id] of child.openedFrames ?? [])
+              if (id === slot.id) child.openedFrames.delete(url);
+          for (const key of Object.keys(slot))
+            if (!['page', 'cdp', 'id'].includes(key)) delete slot[key];
+          Object.assign(slot, {history: [], pending: null, uploads: new Map()});
+          this.spareTabs.add(slot.id);
+          return;
+        }
+      } catch {
+        // A page that refuses to leave (beforeunload, hung load) is closed.
+      }
+    await slot.page.close({runBeforeUnload: false});
+    this.forgetTab(slot.id);
+  }
+  takeSpareTab() {
+    for (const id of this.spareTabs) {
+      this.spareTabs.delete(id);
+      const slot = this.tabs.get(id);
+      if (slot && !slot.page.isClosed() && slot.page.url() === 'about:blank') return slot;
+    }
+    return null;
   }
   // Site waits of the lane of the current call (scan or application).
   get siteAccess() {
@@ -962,11 +1007,18 @@ export class JevBrowser {
       action?.kind === 'click' &&
       /submit|send application|apply now|başvur|gönder/i.test(action.label ?? '')
     )
-      return {
-        ...verificationHandoff(slot),
-        message:
-          'The site verification was not resolved. Do not resubmit the application; handle the current verification step or the uncertain result.',
-      };
+      return slot.verification.formFirst
+        ? {
+            ...verificationHandoff(slot),
+            nextAction: 'try_supported_visible_control',
+            message:
+              'The form verification checkbox is still unchecked. Click it once with its clickTargets ref, read the page, then submit.',
+          }
+        : {
+            ...verificationHandoff(slot),
+            message:
+              'The site verification was not resolved. Do not resubmit the application; handle the current verification step or the uncertain result.',
+          };
     if (!(await this.fresh(slot, observed, action)))
       return {
         ...(await this.observe(slot)),
@@ -1222,6 +1274,7 @@ export class JevBrowser {
         for (const slot of this.tabs.values()) {
           if (
             slot.id === this.homeId ||
+            this.spareTabs.has(slot.id) ||
             slot.page.isClosed() ||
             this.automationSources.has(slot.id)
           )
@@ -1253,6 +1306,7 @@ export class JevBrowser {
         state.automationWorkspaceId && state.automationTabKey?.startsWith('record:'),
       );
       const accessible = (slot) => {
+        if (this.spareTabs.has(slot.id)) return false;
         if (recordScope)
           return (
             slot.id !== this.homeId &&
@@ -1348,11 +1402,14 @@ export class JevBrowser {
             await this.onTabsClosed(closed);
             await this.persistTabs();
           }
-          const page =
-            this.connection === 'existing'
-              ? await this.openTabFrom(await this.home())
-              : await context.newPage();
-          slot = await this.track(page.context(), page);
+          slot = this.takeSpareTab();
+          if (!slot) {
+            const page =
+              this.connection === 'existing'
+                ? await this.openTabFrom(await this.home())
+                : await context.newPage();
+            slot = await this.track(page.context(), page);
+          }
           this.automationTabs.set(slot.id, state.automationTabKey);
           if (state.automationWorkspaceId)
             this.automationWorkspaces.set(slot.id, state.automationWorkspaceId);
@@ -1397,11 +1454,14 @@ export class JevBrowser {
           };
         }
       } else if (name === 'browser_open_page') {
-        const page =
-          this.connection === 'existing'
-            ? await this.openTabFrom(await this.home())
-            : await context.newPage();
-        const slot = await this.track(page.context(), page);
+        let slot = this.takeSpareTab();
+        if (!slot) {
+          const page =
+            this.connection === 'existing'
+              ? await this.openTabFrom(await this.home())
+              : await context.newPage();
+          slot = await this.track(page.context(), page);
+        }
         slot.owner = owner;
         await this.claimAutomationTab(slot, owner, state);
         if (state.automationWorkspaceId)
@@ -1444,6 +1504,7 @@ export class JevBrowser {
           updateVerification(slot, await verificationEvidence(slot.page, slot));
           if (
             slot.verification &&
+            !slot.verification.formFirst &&
             [
               'browser_act',
               'browser_click_target',

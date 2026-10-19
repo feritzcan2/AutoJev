@@ -83,6 +83,7 @@ try {
   await page.locator('[data-view=agent]').click();
   assert.equal(await form.locator('[name=model]').inputValue(), 'haiku');
   assert.equal(await form.locator('[name=trialModel]').inputValue(), 'opus[1m]');
+  assert.equal(await form.locator('[name=coverLetterModel]').inputValue(), 'opus[1m]');
   await page.screenshot({path: path.join(data, 'claude-default-settings.png'), fullPage: true});
   // An explicit trial-model opt-out must survive normalization and reload.
   await form.locator('[name=trialModel]').selectOption('');

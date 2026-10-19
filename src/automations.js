@@ -471,6 +471,7 @@ export function automationsPage(
       statusNames,
       onQuestion: showAnswers,
       onContacts: showContacts,
+      onCoverLetter: () => navigate('files'),
     });
     saveScoreSettings = minimumSaveScoreSettings({
       save: async (owner, value, options) => {

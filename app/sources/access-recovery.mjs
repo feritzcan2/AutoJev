@@ -69,7 +69,7 @@ export class SourceAccessRecovery {
     return this.db.get(id).sourceState?.[url]?.accessRecovery;
   }
   busy(id, url) {
-    return this.runtime.slots(id).some((s) => s.run.sourceUrl === url);
+    return this.runtime.slots(id).some((s) => s.run.sourceUrl === url && !s.run.recordId);
   }
   key(id, url) {
     return JSON.stringify([id, url]);

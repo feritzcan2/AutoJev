@@ -312,7 +312,7 @@ function settingsOptions(saved) {
     $(key).replaceChildren(...list.map((value) => new Option(value, value)));
     $(key).value = list.includes(settings[key]) ? settings[key] : 'default';
   }
-  for (const key of ['trialModel', 'contactModel']) {
+  for (const key of ['trialModel', 'contactModel', 'coverLetterModel']) {
     $(key).replaceChildren(
       new Option('Same as main model', ''),
       ...current.models
@@ -500,6 +500,7 @@ function readAgentSettings() {
     model: f.model.value,
     trialModel: f.trialModel.value || null,
     contactModel: f.contactModel.value || null,
+    coverLetterModel: f.coverLetterModel.value || null,
     permission: f.permission.value,
     reasoning: f.reasoning.value,
     network:

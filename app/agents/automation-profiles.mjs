@@ -39,6 +39,7 @@ Text you type into a website form is in the form's language (browser_inspect_for
 
 ## CAPTCHA and verification
 - The app may solve a confirmed active CAPTCHA through the configured service. While verification is checking/solving, preserve the tab and wait; do not reload, click again or treat the page as empty. captcha.state=answer_applied means the answer was placed, not that the site accepted it. Continue only within the current action authorization and inspect the site's result; never repeat an uncertain submission.
+- A CAPTCHA or verification checkbox inside a form is the form's last step. Fill and check every other field first. Only then click the checkbox, let the app solve the CAPTCHA, or ask the user about it. Never ask about a form's CAPTCHA before the form is filled.
 - A visible unchecked verification checkbox is not a blocker. Click it once with browser_interact click and its clickTargets ref, then read the page. If it is still in progress, read again. Then follow the site's visible verification-only continue step if there is one, and resume the task.
 - Checking the box proves nothing about access or about an outgoing action.
 - If an image, audio or slider challenge remains, or no supported checkbox exists: keep the tab, finish with status=blocked and start the summary with the exact remaining user step. The app shows a card with buttons to focus the tab and retry; do not tell the user to find the page or to send a chat message. Do not loop on the checkbox and do not reload to evade it.

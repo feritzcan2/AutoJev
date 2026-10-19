@@ -140,14 +140,19 @@ export class WorkspaceTasks {
         throw Error('The task’s previous steps are not complete');
       const canonical = (recordId) =>
         this.workspaces.records.identities.resolve(id, recordId)?.id ?? recordId;
+      // A cover letter writer only reads the listing in its own tab, so it
+      // starts while the record's application task still holds the form.
+      const beside = (t) =>
+        task.recordOperation === 'cover_letter' && t.recordOperation === 'execute';
       if (
         this.list(id, {states: active}).some(
           (t) =>
             t.workerId === workerId ||
             (task.lockKey && t.lockKey === task.lockKey) ||
-            taskRecordIds(task).some((recordId) =>
-              taskRecordIds(t).some((other) => canonical(other) === canonical(recordId)),
-            ),
+            (!beside(t) &&
+              taskRecordIds(task).some((recordId) =>
+                taskRecordIds(t).some((other) => canonical(other) === canonical(recordId)),
+              )),
         )
       )
         throw Error('The task is being handled by another worker.');

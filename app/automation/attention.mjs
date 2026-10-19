@@ -83,21 +83,18 @@ export function automationAttention(snapshot, {includeDismissed = false} = {}) {
   }
   for (const source of sources) {
     if (!source.enabled || !source.blocked || source.scanning) continue;
-    // A used-up request budget or a rate limit's cooldown resumes by itself at
-    // a known time and nothing the user does shortens it: the Sources and
-    // Background work pages show when it continues. A verification the user
-    // can solve, or a wait whose retries ran out, still asks for attention.
-    const wait = source.siteWait;
-    if (
-      wait?.waiting &&
-      wait.retryAt &&
-      !wait.exhausted &&
-      ['budget', 'rate_limit'].includes(wait.reason)
-    )
-      continue;
     const run =
       runs.find((r) => r.id === source.lastRunId) ??
       runs.find((r) => r.sourceUrl === source.url && r.status !== 'running');
+    // A used-up request budget or a rate limit's cooldown resumes by itself at
+    // a known time and nothing the user does shortens it: the Sources and
+    // Background work pages show when it continues. Once that wait has ended
+    // the source scans again on its own (after another workspace's turn on the
+    // site, if one holds it). A verification the user can solve, or a wait
+    // whose retries ran out, still asks for attention.
+    const wait = source.siteWait ?? (run?.status === 'blocked' ? run.siteWait : null);
+    if (wait?.retryAt && !wait.exhausted && ['budget', 'rate_limit'].includes(wait.reason))
+      continue;
     if (run?.usageLimit) {
       if (!issues.some((i) => i.runId === run.id))
         issues.push(

@@ -7,6 +7,7 @@ import {WorkspaceRecords} from './records.mjs';
 import {contextCompactTokens} from '../agents/context-compaction.mjs';
 import {contextRestartTokens} from '../agents/context-usage.mjs';
 import {automationTable, automationCells} from '../templates/catalog.mjs';
+import {englishTable} from './english-table.mjs';
 
 const parse = (row) => (row ? JSON.parse(row.data) : null);
 const sharedKeys = ['agentSettings', 'chromeProfile', 'browserMode'];
@@ -25,6 +26,11 @@ export class WorkspaceStore {
   CREATE TABLE IF NOT EXISTS workspaces(id TEXT PRIMARY KEY,template_id TEXT NOT NULL,data TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS workspace_conversations(workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,worker_id TEXT NOT NULL,provider TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(workspace_id,worker_id,provider));
  `);
+    const update = db.prepare('UPDATE workspaces SET data=? WHERE id=?');
+    for (const w of this.list()) {
+      const table = englishTable(w.table);
+      if (table) update.run(JSON.stringify({...w, table}), w.id);
+    }
     this.records = new WorkspaceRecords(this);
     this.tasks = new WorkspaceTasks(this);
     this.workers = new WorkspaceWorkers(this);

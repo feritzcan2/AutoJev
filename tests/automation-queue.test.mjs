@@ -337,6 +337,26 @@ for (const answerBeforeFinish of [false, true])
     );
   });
 
+test('a record run from a source does not hold back that source’s due scan', async (t) => {
+  const f = fixture(t, {workers: 3, mode: 'auto'});
+  await f.runtime.runOnce(f.id);
+  await settle();
+  const scan = f.launches.find((r) => r.sourceUrl === sources[1]);
+  const item = f.record(scan, sources[1] + '/job');
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  const execute = f.launches.at(-1);
+  assert.equal(execute.recordId, item.id);
+  await f.finish(scan);
+  await f.runtime.runSource(f.id, sources[1]);
+  await settle();
+  const next = f.launches.at(-1);
+  assert.equal(next.sourceUrl, sources[1]);
+  assert.equal(next.recordId, null);
+  assert.notEqual(next.id, scan.id);
+  assert.equal(f.db.run(execute.id).status, 'running');
+});
+
 test('source questions preserve pending work until answered and keep a one-off scan resumable', async (t) => {
   const f = fixture(t);
   await f.runtime.runSource(f.id, sources[0]);

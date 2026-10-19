@@ -237,9 +237,13 @@ export const automationTools = [
   ),
   tool(
     'request_cover_letter',
-    'Execute tasks only: the form has a cover letter field (upload or text box), required or optional, and this record has no approved cover letter. A separate cover letter agent writes it and the user reviews it; never write one yourself and never put the CV in that field. Fill the other fields first, then call this and finish blocked with blocker category needs_answer. The approval resumes this application with the file path. notes: optional facts the writer needs, such as the language the form asks for or a word limit.',
+    'Execute tasks only: the form has a cover letter field (upload or text box), required or optional, and this record has no approved cover letter. A separate cover letter agent writes it and the user reviews it; never write one yourself and never put the CV in that field. Fill the other fields first, then call this and do what its result says next: either finish blocked with blocker category needs_answer (the approval resumes this application with the file path) or call wait_for_cover_letter. notes: optional facts the writer needs, such as the language the form asks for or a word limit.',
     {notes: {type: 'string', minLength: 0, maxLength: 1000}},
     [],
+  ),
+  tool(
+    'wait_for_cover_letter',
+    'Execute tasks only, after request_cover_letter told you to wait: waits up to 45 seconds for the automatically accepted cover letter. Returns the file path and the letter text when it is ready, otherwise the next step (call it again, or finish blocked).',
   ),
   tool(
     'read_cover_letter_brief',
@@ -378,7 +382,7 @@ const COVER_LETTER_TOOLS = new Set([
 const coverLetterTool = (run, name) =>
   run.recordOperation === 'cover_letter'
     ? COVER_LETTER_TOOLS.has(name)
-    : name === 'request_cover_letter'
+    : ['request_cover_letter', 'wait_for_cover_letter'].includes(name)
       ? run.recordOperation === 'execute'
       : !['read_cover_letter_brief', 'save_cover_letter'].includes(name);
 // A contact search reads the listing, LinkedIn and the CV and saves proposals;

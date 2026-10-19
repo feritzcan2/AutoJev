@@ -1,12 +1,15 @@
 // @ts-check
 // Cover letters. An application task that meets a cover letter field, required
-// or optional, does not write one: it asks for it and finishes blocked. A separate cover_letter
+// or optional, does not write one: it asks for it and finishes blocked, or,
+// when letters are accepted automatically and another worker can write it,
+// keeps its tab and waits for the letter. A separate cover_letter
 // task, on the stronger model, writes the letter from the CV and the listing
 // and saves it as a PDF. The letter waits for the user's review on the Files
 // page; approving it answers the record's question, which resumes the
 // application in its own conversation and tab.
 import path from 'node:path';
 import {mkdir, realpath, writeFile} from 'node:fs/promises';
+import {setTimeout as pause} from 'node:timers/promises';
 import {recordSource, recordTask, pendingRecordQuestion} from '../records/operations.mjs';
 import {AGENT_DIRECTORY} from './artifacts.mjs';
 
@@ -81,17 +84,20 @@ export function coverLetterUploaded(a, recordId, fields, uploadId, relative) {
 }
 
 // What the application agent must do with the cover letter fields it saw on
-// this run's form pages; null once every one is filled.
-export function coverLetterStep(a, recordId, fields) {
+// this run's form pages; null once every one is filled. `wait` is set when
+// this run waits for an automatically accepted letter.
+export function coverLetterStep(a, recordId, fields, {wait = false} = {}) {
   const empty = (fields ?? []).filter((f) => !f.filled);
   if (!empty.length) return null;
   const names = empty.map((f) => `"${f.label}"`).join(', '),
     approved = approvedCoverLetter(a, recordId);
   if (approved)
     return `Fill the cover letter field ${names} with the approved cover letter ${approved.path}: upload that file to a file field, or type its text (in your saved answers) into a text box. Then call browser_inspect_form again before submitting.`;
+  if (openCoverLetter(a, recordId) && wait)
+    return `The cover letter for ${names} is being written. Call wait_for_cover_letter; it returns the letter when it is saved.`;
   if (openCoverLetter(a, recordId))
     return `The cover letter for ${names} is waiting for the user's approval. Finish blocked with blocker category needs_answer; the approval resumes this application.`;
-  return `This form has a cover letter field ${names}. Every cover letter field gets a letter written for this employer, also an optional one: never skip it, never write one yourself and never put the CV there. Fill the other fields, call request_cover_letter, then finish blocked with blocker category needs_answer. The app refuses the submit while the field is empty.`;
+  return `This form has a cover letter field ${names}. Every cover letter field gets a letter written for this employer, also an optional one: never skip it, never write one yourself and never put the CV there. Fill the other fields, call request_cover_letter and do what its result says next. The app refuses the submit while the field is empty.`;
 }
 
 function coverLetterQuestion(db, id, questionId, {answered = false} = {}) {
@@ -173,6 +179,76 @@ export function requestCoverLetter(db, id, run, {notes = '', listing = null} = {
   }
   enqueueWriter(db, id, item, question.id, {notes});
   return question;
+}
+
+// With automatic acceptance on and another enabled worker to write the
+// letter, the application keeps its tab and conversation and waits for it.
+export const coverLetterWaits = (a, workers, workerId) =>
+  a.coverLetterAutoApprove === true &&
+  workers.some((w) => w.id !== workerId && w.enabled !== false);
+
+const finishBlocked = (reason) =>
+  `${reason} Keep the tab and call finish_automation_run with status blocked and blocker category needs_answer.`;
+
+// wait_for_cover_letter: one call waits at most waitMs; the whole wait ends
+// after limitMs and the application finishes blocked, so a letter saved later
+// resumes it the usual way.
+export async function waitForCoverLetter(
+  db,
+  id,
+  run,
+  {signal = undefined, waitMs = 45000, limitMs = 10 * 60000, pollMs = 2000} = {},
+) {
+  const wait = run.coverLetterWait;
+  if (!wait)
+    throw Error(
+      'No cover letter is being written for this application; call request_cover_letter first.',
+    );
+  for (let waited = 0; ; waited += pollMs) {
+    const a = db.get(id),
+      question = (a.questions ?? []).find((q) => q.id === wait.questionId);
+    if (!question?.coverLetter) throw Error('The cover letter request no longer exists');
+    const letter = question.coverLetter;
+    if (letter.state === 'approved' && question.answer != null)
+      return {
+        ready: true,
+        path: letter.path,
+        letter: question.answer,
+        next: 'Fill the cover letter field with this letter, call browser_inspect_form again, then continue the application.',
+      };
+    if (question.answer != null)
+      return {
+        ready: false,
+        next: finishBlocked(`The cover letter request was closed: ${question.answer}`),
+      };
+    if (letter.state === 'failed')
+      return {
+        ready: false,
+        next: finishBlocked(
+          'The cover letter agent could not write the letter; the user retries it on the Files page.',
+        ),
+      };
+    if (letter.state === 'review' || !a.coverLetterAutoApprove)
+      return {
+        ready: false,
+        next: finishBlocked(
+          "The letter waits for the user's review; the approval resumes this application.",
+        ),
+      };
+    if (db.now() - wait.since >= limitMs)
+      return {
+        ready: false,
+        next: finishBlocked(
+          'The letter is not written yet; the saved letter resumes this application.',
+        ),
+      };
+    if (waited >= waitMs)
+      return {
+        ready: false,
+        next: 'The cover letter agent is still writing. Call wait_for_cover_letter again.',
+      };
+    await pause(pollMs, undefined, {signal});
+  }
 }
 
 // read_cover_letter_brief: everything the writer needs besides the CV, which it

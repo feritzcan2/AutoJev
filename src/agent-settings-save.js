@@ -15,6 +15,7 @@ export async function saveAgentSettings({api, owner, input, confirmRestart, onSa
     'model',
     'trialModel',
     'contactModel',
+    'coverLetterModel',
     'permission',
     'reasoning',
     'network',
