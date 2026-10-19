@@ -256,7 +256,7 @@ test('guest reads use the shared site access rules and the guest endpoints', asy
       },
     },
   }).catch((e) => e);
-  assert.deepEqual(spent, [{requests: 30, windowMs: 60 * 60000}], 'guest reads keep a budget');
+  assert.deepEqual(spent, [{requests: 15, windowMs: 60 * 60000}], 'guest reads keep a budget');
   assert.equal(overBudget.code, 'SITE_WAIT');
   assert.equal(sentOverBudget, false, 'a request over budget is not sent');
   await assert.rejects(readLinkedInGuest('https://example.test/jobs', {fetch}), /does not handle/);

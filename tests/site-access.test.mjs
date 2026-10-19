@@ -418,6 +418,18 @@ test("a site's request budget parks requests over it as a shared wait that is no
     gate.complete(site + 'i', gate.begin(site + 'i'), {status: 500});
     assert.equal(gate.status(site).reason, 'rate_limit');
     assert.equal(gate.status(site).attempts, 1);
+    // A lowered budget waits until the window holds fewer requests than it allows.
+    const lowered = 'https://lowered.test/';
+    for (const step of [0, 1, 2, 3]) {
+      now += minute;
+      gate.spend(lowered + step, {requests: 4, windowMs: 30 * minute});
+    }
+    const start = now - 3 * minute;
+    assert.equal(
+      gate.spend(lowered + 'x', budget).retryAt,
+      start + 2 * minute + 30 * minute,
+      'the third request leaving frees a slot of two',
+    );
   } finally {
     db.close();
   }
@@ -492,6 +504,43 @@ test('an old wait card retires even when a later incident of the site already re
     assert.equal(gate.row(site).recovered, true, 'the recovered row stays for its task');
     gate.save({...gate.row(site), recovered: false, retryAt: now + minute});
     assert.throws(() => gate.acknowledge([old]), /new access wait/);
+  } finally {
+    db.close();
+  }
+});
+
+test('the request rate counts sent requests per site, with the budget it uses', () => {
+  const db = new DatabaseSync(':memory:');
+  let now = 10 * 60 * minute;
+  const gate = new SiteAccess(db, {now: () => now}),
+    budget = {requests: 30, windowMs: 60 * minute};
+  try {
+    gate.pace('https://rate.test/a');
+    gate.spend('https://rate.test/a', budget);
+    const queued = gate.pace('https://rate.test/b');
+    assert.equal(
+      gate.requestRate('https://www.rate.test/').lastHour,
+      1,
+      'a queued slot is not sent',
+    );
+    now += queued;
+    let rate = gate.requestRate('https://rate.test/', {
+      minIntervalMs: 45000,
+      jitterMs: 30000,
+      budget,
+    });
+    assert.equal(rate.lastTenMinutes, 2);
+    assert.equal(rate.minGapMs, 45000);
+    assert.deepEqual(rate.budget, {requests: 30, windowMs: 60 * minute, used: 1});
+    assert.equal(gate.requestRate('https://other.test/').lastHour, 0, 'other sites count apart');
+    now += 15 * minute;
+    rate = gate.requestRate('https://rate.test/');
+    assert.equal(rate.lastTenMinutes, 0);
+    assert.equal(rate.lastHour, 2);
+    assert.equal(rate.minGapMs, 8000, 'the minimum gap every site keeps');
+    assert.equal(rate.budget, undefined);
+    now += 60 * minute;
+    assert.equal(gate.requestRate('https://rate.test/').lastHour, 0);
   } finally {
     db.close();
   }

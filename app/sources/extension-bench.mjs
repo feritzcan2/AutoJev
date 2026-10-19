@@ -186,7 +186,9 @@ export function extensionBench({
   // Why a DOM extension left the page to the generic reader, from a second
   // run of its own collect/results on the same tab.
   async function domDiagnostics(id, tabId, extension, page) {
-    if (!extension?.dom || page.siteExtension) return [];
+    if (extension?.dom?.listing?.handles(page.url) && !page.listing)
+      return listingDiagnostics(id, tabId, extension, page);
+    if (!extension?.dom?.collect || page.siteExtension) return [];
     return browser.enqueue(
       id,
       async () => {
@@ -218,6 +220,34 @@ export function extensionBench({
       {checkActive: false},
     );
   }
+  // Why a posting reader (dom.listing) gave the page no listing text.
+  async function listingDiagnostics(id, tabId, extension, page) {
+    return browser.enqueue(
+      id,
+      async () => {
+        const slot = (await browser.connectedClient(id))?.tabs.get(tabId);
+        if (!slot) return ['The bench tab is gone; read the address again.'];
+        let raw;
+        try {
+          raw = await slot.page.evaluate(extension.dom.listing.collect);
+        } catch (error) {
+          return [`dom.listing.collect threw in the page: ${error.message}`];
+        }
+        const lines = [`dom.listing.collect returned: ${JSON.stringify(shape(raw))}`];
+        if (raw?.url !== page.url)
+          lines.push(
+            `dom.listing.collect reported url ${raw?.url ?? 'none'}, the page is ${page.url}.`,
+          );
+        lines.push(
+          extension.dom.listing.read(raw)
+            ? 'dom.listing.read now returns a posting; the page changed between the reads — read again.'
+            : 'dom.listing.read returned null: no title or description found (a login prompt, a loading page or a changed layout).',
+        );
+        return lines;
+      },
+      {checkActive: false},
+    );
+  }
   async function readBrowser(id, base, {reopen = true} = {}) {
     const tabId = reopen ? (await call(id, 'browser_jev_open', {url: base.url})).tabId : base.tabId;
     if (!tabId) throw Error('Could not open the bench tab.');
@@ -233,6 +263,9 @@ export function extensionBench({
   // summary adds for its transport.
   async function readListing(id, url) {
     let base = route(id, url);
+    // A collector that reads its listings in the browser is tested there.
+    if (base.transport === 'api' && base.instance.collector.listingIn === 'browser')
+      base = {...base, transport: 'browser'};
     if (base.transport === 'api') {
       const adapter = base.instance.collector,
         cached = jobs.get(base.url);

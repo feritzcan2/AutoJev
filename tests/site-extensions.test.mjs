@@ -519,7 +519,7 @@ test('the source list shows which kind of extension reads a source and its searc
     Object.fromEntries(Object.entries(kinds).map(([id, k]) => [id, [k.id, k.kind]])),
     {
       stepstone: ['stepstone', 'browser'],
-      linkedin: ['linkedin', 'http'],
+      linkedin: ['linkedin', 'api'],
       himalayas: ['himalayas', 'api'],
       xing: ['xing', 'http'],
       'berlin-startup-jobs': ['berlin-startup-jobs', 'http'],

@@ -7,12 +7,20 @@ import {readJevBrief} from '../jev/brief.mjs';
 import {jevWaitMsFor, observeClientAbort} from '../jev/execution.mjs';
 import {withAgentDefaults, agentDecides} from '../agents/settings.mjs';
 import {otherScanSearchesPending, scanWork, activeSearch} from '../sources/scan-work.mjs';
-import {siteKey, sameSite, runSiteLane} from '../browser/site-access.mjs';
+import {
+  siteKey,
+  sameSite,
+  runSiteLane,
+  SiteWaitError,
+  siteDomainOf,
+} from '../browser/site-access.mjs';
 import {collectorRun, collectorExtension} from '../sources/collectors.mjs';
 import {
   collectSourcePage,
   collectorSaved,
   collectorProgress,
+  collectorPageReady,
+  prefetchCollectorPage,
   prepareCollection,
 } from '../sources/collector-worker.mjs';
 import {siteReaderFor, siteExtensionKind} from '../site-extensions/index.mjs';
@@ -116,6 +124,14 @@ const samePath = (a, b) => {
   }
 };
 const TRIAL_SCAN_PAGE_LIMIT = 2;
+// Listings a card collector opens in the user's (logged-in) browser: at least
+// 25 s apart and at most 60 an hour per site, counted apart from the site's
+// API budget, since these views belong to the user's account.
+const BROWSER_LISTING_GAP_MS = 25000,
+  BROWSER_LISTING_JITTER_MS = 10000,
+  BROWSER_LISTING_BUDGET = {requests: 60, windowMs: 60 * 60000};
+const BACKGROUND_READ =
+  'The app reads the next result page and its listings itself, at the pace this site allows; that can take many minutes. End this turn now: do not call finish_automation_run or any other tool. The app resumes you with the ready review batch.';
 // Another results page of the active search: same address shape as the last
 // page it served (numbers may differ, as in ?page=7 or /page/7), not that page.
 const laterResultsPage = (run, url) => {
@@ -781,7 +797,13 @@ export function automationWorkflow({
   const checkCollectorRecipe = async (replay) => {
     const collector = collectorExtension(db.get(id), run.sourceUrl).collector,
       url = collector.searchUrl(replay.searches[0].url),
-      page = await (collectorReadPage ?? collector.readPage)(url, {signal});
+      // Only the listing count matters here: a card site reads no listings.
+      page = await (collectorReadPage ?? collector.readPage)(url, {
+        signal,
+        wanted: () => [],
+        siteAccess: db.siteAccess,
+        wait: (ms) => pause(ms, undefined, {signal}),
+      });
     return page.jobs.length
       ? {ok: true, listings: page.jobs.length, pages: 1, url, term: replay.searches[0].term}
       : {ok: false, reason: 'the first page has no listings', url};
@@ -911,14 +933,78 @@ export function automationWorkflow({
   };
   // A page of already known listings leaves nothing to review. Read on in the
   // same call so an empty result never looks like a stalled collector.
+  // A card site's next page needs one request per listing at the site's pace.
+  // The app reads it between agent turns, so the agent ends its turn instead
+  // of waiting in a tool call. A site wait parks the source as usual. After a
+  // failed background read the call reads the page itself and reports the error.
+  const backgroundRead = () => {
+    const current = db.activeRun(id, run.id);
+    if (
+      !collectorExtension(db.get(id), current.sourceUrl)?.collector.cards ||
+      current.collectorError ||
+      collectorPageReady(db, run.id)
+    )
+      return null;
+    const search = activeSearch(scanWork(current)),
+      next = search?.collector?.page?.url ?? search?.collector?.nextUrl ?? current.sourceUrl,
+      wait = db.siteAccess.status(next);
+    if (wait?.waiting)
+      return releaseBlockedSource({db, id, runId: run.id, report}, current.sourceUrl, {
+        issue: {reason: 'access_barrier', url: next, siteWait: wait, sites: [wait.site]},
+      });
+    db.putRun({...current, collectorReading: true});
+    return {status: 'background_read', progress: collectorProgress(current), next: BACKGROUND_READ};
+  };
+  // A card site that reads its listings in the browser: open the posting in
+  // this source's tab and take the listing text its posting reader found.
+  // Waits for the budget and pacing in place; this runs before the agent.
+  const readListingInBrowser = async (url) => {
+    // One budget and pace for the whole site, whichever host serves a posting.
+    const site = siteDomainOf(url);
+    for (
+      let delay;
+      (delay = db.siteAccess.reserve(site + ' browser', BROWSER_LISTING_BUDGET)) > 0;
+
+    )
+      await pause(Math.min(delay, 60000), undefined, {signal});
+    const gap = db.siteAccess.pace(
+      'https://' + site,
+      BROWSER_LISTING_GAP_MS,
+      BROWSER_LISTING_JITTER_MS,
+    );
+    if (gap) await pause(gap, undefined, {signal});
+    let response = await browser.call(id, 'browser_navigate', {url}, run.id);
+    for (let i = 0; i < 3 && response.jevPage?.reading?.readiness?.loading; i++) {
+      await pause(2000, undefined, {signal});
+      response = await browser.call(id, 'browser_snapshot', {}, run.id);
+    }
+    const page = response.jevPage;
+    if (page?.siteWait) throw new SiteWaitError(page.siteWait);
+    // A posting that lands elsewhere (a sign-in or home page) is no listing.
+    if (page?.url && new URL(page.url).pathname !== new URL(url).pathname)
+      throw Error(
+        `The posting opened as ${page.url}; this browser may need to sign in to the site.`,
+      );
+    if (!page?.listing?.text)
+      throw Error('The opened posting gave no listing text (login prompt, loading or new layout).');
+    return {
+      url,
+      description: page.listing.text,
+      ...(page.listing.fields?.company ? {company: page.listing.fields.company} : {}),
+      ...(page.listing.fields?.location ? {location: page.listing.fields.location} : {}),
+    };
+  };
   const collectNextPage = async () => {
     for (let page = 1; ; page++) {
+      const background = backgroundRead();
+      if (background) return background;
       let collected;
       try {
         collected = await collectSourcePage(db, run.id, {
           signal,
           readPage: collectorReadPage,
           readDetail: collectorReadDetail,
+          readListing: readListingInBrowser,
         });
       } catch (error) {
         signal.throwIfAborted();
@@ -1735,6 +1821,9 @@ export function automationWorkflow({
     return name === 'complete_scan_search' ? scanToolOutput(result, {summary: true}) : result;
   };
   return {
+    // Reads the next review batch of a card collector before the agent starts.
+    prefetchCollector: () =>
+      prefetchCollectorPage(db, run.id, {signal, readListing: readListingInBrowser}),
     normalizeToolArgs: normalizeRecordToolArgs,
     guardToolCall:
       run.taskId && run.kind !== 'interview'
@@ -1859,6 +1948,12 @@ export async function launchAutomationWorker({
     // Records a site extension reads are scored from its text, like a scan.
     if (run.recordOperation === 'score')
       await readRecordListings(db, run, {signal, wait: (ms) => pause(ms, undefined, {signal})});
+    // A card site's next batch is read here, before the agent starts.
+    if (
+      collectorRun(automation, run) &&
+      collectorExtension(automation, run.sourceUrl)?.collector.cards
+    )
+      await flow.prefetchCollector();
     await agents.start({
       agentProfile: webAgentProfile(run.kind, settings),
       taskType: 'automation',

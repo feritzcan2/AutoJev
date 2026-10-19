@@ -420,6 +420,24 @@ test('Start over after stopped retries drops the saved position and scans from t
   assert.equal(state.blocked, false);
 });
 
+test('Force retry ends a timed site wait now and continues from the saved point', async (t) => {
+  const f = fixture(t),
+    blocked = await f.block(),
+    wait = f.db.sources(f.id).find((s) => s.url === source).siteWait;
+  assert.equal(wait.waiting && !wait.exhausted, true, 'a timed wait');
+  f.store.workspaces.workers.add(f.id);
+  await f.runtime.runSource(f.id, source);
+  await settle();
+  assert.ok(f.db.siteAccess.status(source).waiting, 'a plain run waits behind it');
+  assert.equal(f.launches.length, 1);
+  await f.runtime.runSource(f.id, source, {force: true});
+  await settle();
+  assert.equal(f.db.siteAccess.status(source), null, 'the wait ended');
+  const run = f.launches.at(-1);
+  assert.equal(run.sourceUrl, source);
+  assert.equal(run.taskId, blocked.run.taskId, 'continues the saved scan');
+});
+
 test('pause and source disable cancel automatic access resumption until enabled again', async (t) => {
   for (const pause of [true, false]) {
     const f = fixture(t),

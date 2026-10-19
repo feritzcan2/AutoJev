@@ -272,7 +272,10 @@ export function documentViewportText(documentText, viewportText = '') {
 
 export async function documentObservation(slot, value) {
   const readiness = settledBusy(slot, await slot.page.evaluate(documentReadiness));
-  const document = await readSiteExtension(slot, await slot.page.evaluate(renderedDocument));
+  const {siteListing, ...document} = await readSiteExtension(
+    slot,
+    await slot.page.evaluate(renderedDocument),
+  );
   if (document.readiness)
     document.readiness = settledBusy(slot, {url: document.url, ...document.readiness});
   if (document.url !== value.url || (readiness.url && readiness.url !== document.url))
@@ -281,8 +284,11 @@ export async function documentObservation(slot, value) {
     );
   // The page's own structured listing; Jev's evidence uses it instead of the
   // rendered text with its site chrome. A loading page is not read from it.
+  // A site's own posting reader (dom.listing) comes before the structured data.
   const listing =
-    document.readiness?.loading || readiness.loading ? null : jobPostingListing(document);
+    document.readiness?.loading || readiness.loading
+      ? null
+      : (siteListing ?? jobPostingListing(document));
   // Join by the observed DOM node, never a repeated label such as "Next".
   // Offscreen buttons may only have a reveal control; no target is invented.
   const targets = new Map(

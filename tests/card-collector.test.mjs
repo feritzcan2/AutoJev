@@ -1,0 +1,375 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
+import {automationWorkflow} from '../app/automation/worker.mjs';
+import {cardCollector, clearCardDetails} from '../app/sources/card-collector.mjs';
+import {
+  prepareCollection,
+  prefetchCollectorPage,
+  collectorPageReady,
+} from '../app/sources/collector-worker.mjs';
+import {continueSourceRun, unreportedSourceRun} from '../app/automation/recovery.mjs';
+import linkedin, {
+  readLinkedInCards,
+  readLinkedInListing,
+  linkedInSearchUrl,
+  readLinkedInPosting,
+} from '../app/site-extensions/linkedin.mjs';
+import {readSiteExtension} from '../app/site-extensions/index.mjs';
+
+const search =
+  'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=Backend&location=Germany&sortBy=DD';
+const card = (id, title) =>
+  `<li><div class="base-card job-search-card" data-entity-urn="urn:li:jobPosting:${id}"><a class="base-card__full-link absolute" href="https://de.linkedin.com/jobs/view/${title.toLowerCase().replace(/\W+/g, '-')}-at-acme-${id}?position=1&amp;trackingId=abc"><span class="sr-only">${title}</span></a><div class="base-search-card__info"><h3 class="base-search-card__title">${title}</h3><h4 class="base-search-card__subtitle"><a href="https://de.linkedin.com/company/acme">Acme</a></h4><div class="base-search-card__metadata"><span class="job-search-card__location">Berlin, Germany</span><time class="job-search-card__listdate" datetime="2026-10-18">1 day ago</time></div></div></div></li>`;
+const cards = (n, from = 0) =>
+  Array.from({length: n}, (_, i) =>
+    card(String(4100000000 + from + i), `Backend Engineer ${from + i}`),
+  ).join('');
+const posting = (id) =>
+  `<section class="top-card-layout"><h2 class="top-card-layout__title">Backend Engineer ${id}</h2><a class="topcard__org-name-link" href="https://de.linkedin.com/company/acme">Acme</a><span class="topcard__flavor topcard__flavor--bullet">Berlin, Germany</span></section><div class="description__text"><div class="show-more-less-html__markup"><p>POSTING_TEXT_${id} Build APIs in Go.</p></div></div>`;
+// A synthetic LinkedIn: guest search pages and postings; one posting is gone.
+function fakeLinkedIn({gone = null, pageSize = 10} = {}) {
+  const requests = [];
+  const fetch = async (value) => {
+    const url = new URL(value);
+    requests.push(url.href);
+    if (url.pathname.endsWith('/seeMoreJobPostings/search')) {
+      const start = Number(url.searchParams.get('start') ?? 0);
+      return new Response(start === 0 ? cards(pageSize) : cards(3, 10), {status: 200});
+    }
+    const id = url.pathname.split('/').pop();
+    return id === gone ? new Response('', {status: 404}) : new Response(posting(id), {status: 200});
+  };
+  return {fetch, requests};
+}
+
+test('a card collector reads only wanted listings once, drops removed ones and lists unreadable ones', async () => {
+  clearCardDetails();
+  const reads = [],
+    url = (k) => 'https://cards.test/job/' + k;
+  const collector = cardCollector({
+    templateId: 'job-search',
+    searchUrl: (u) => u,
+    readCards: async (u) => ({
+      url: u,
+      jobs: ['a', 'b', 'c', 'd'].map((k) => ({url: url(k), title: k})),
+      page: 1,
+      totalPages: null,
+      nextUrl: null,
+      complete: true,
+    }),
+    readListing: async (u) => {
+      reads.push(u);
+      if (u === url('c')) throw Object.assign(Error('Removed'), {status: 410});
+      if (u === url('d')) throw Error('Broken markup');
+      return {url: u, title: 'Role', description: 'Text of ' + u};
+    },
+    detail: (job) => job,
+  });
+  assert.equal(collector.cards, true);
+  const wanted = (urls) => urls.filter((u) => u !== url('a'));
+  const page = await collector.readPage('https://cards.test/search', {wanted});
+  assert.deepEqual(
+    page.jobs.map((j) => [j.url, Boolean(j.description)]),
+    [
+      [url('a'), false],
+      [url('b'), true],
+    ],
+    'a known card is not read; a removed listing is dropped',
+  );
+  assert.deepEqual(
+    page.unavailable.map((x) => x.url),
+    [url('d')],
+  );
+  await collector.readPage('https://cards.test/search', {wanted});
+  assert.equal(reads.filter((u) => u === url('b')).length, 1, 'a read listing is kept in RAM');
+  const waiting = cardCollector({
+    templateId: 'job-search',
+    searchUrl: (u) => u,
+    readCards: async (u) => ({url: u, jobs: [{url: url('e'), title: 'e'}], page: 1}),
+    readListing: async () => {
+      throw Object.assign(Error('Site wait'), {code: 'SITE_WAIT'});
+    },
+    detail: (job) => job,
+  });
+  await assert.rejects(
+    waiting.readPage('https://cards.test/search'),
+    (e) => e.code === 'SITE_WAIT',
+    'a site wait stops the page instead of skipping listings',
+  );
+});
+
+test('the LinkedIn collector pages guest cards and reads postings; a removed posting is gone', async () => {
+  clearCardDetails();
+  const site = fakeLinkedIn({gone: '4100000001'});
+  const page = await readLinkedInCards(search, {fetch: site.fetch});
+  assert.equal(page.jobs.length, 10);
+  assert.equal(page.page, 1);
+  assert.equal(new URL(page.nextUrl).searchParams.get('start'), '10');
+  assert.ok(
+    page.jobs.every((j) => !j.description),
+    'a result page holds cards only',
+  );
+  const last = await readLinkedInCards(page.nextUrl, {fetch: site.fetch});
+  assert.equal(last.page, 2);
+  assert.equal(last.complete, true);
+  const job = await readLinkedInListing(page.jobs[0].url, {fetch: site.fetch});
+  assert.match(job.description, /POSTING_TEXT_4100000000/);
+  assert.equal(job.company, 'Acme');
+  await assert.rejects(
+    readLinkedInListing(page.jobs[1].url, {fetch: site.fetch}),
+    (e) => e.status === 404,
+  );
+  assert.equal(
+    new URL(linkedInSearchUrl(search + '&start=40')).searchParams.get('start'),
+    null,
+    'a saved search starts at its first page',
+  );
+  assert.throws(() => linkedInSearchUrl('https://www.linkedin.com/jobs/'), /search recipe/);
+});
+
+const evaluate = async (state, questions) => ({
+  answers: Object.fromEntries(
+    Object.entries(questions).map(([name, q]) => {
+      const keys = Object.keys(q.criteria),
+        choice =
+          name === 'fit' && keys.includes('possible')
+            ? 'possible'
+            : name === 'support' && keys.includes('supported')
+              ? 'supported'
+              : keys.find((k) => k !== 'irrelevant');
+      return [
+        name,
+        {
+          choice,
+          confidence: 1,
+          probabilities: Object.fromEntries(keys.map((k) => [k, k === choice ? 1 : 0])),
+        },
+      ];
+    }),
+  ),
+  usage: {input_tokens: 5, output_tokens: 1},
+});
+function fixture(t, {browserCall = null} = {}) {
+  clearCardDetails();
+  const core = new WorkspaceDatabase(':memory:'),
+    db = new AutomationStore(core),
+    source = 'https://www.linkedin.com/jobs/';
+  t.after(() => core.close());
+  const a = db.create('job-search', {
+    goal: 'backend',
+    criteria: {preferences: 'Germany'},
+    sources: [source],
+  });
+  db.saveSource(a.id, source, {
+    recipe: {
+      entry: {
+        kind: 'url_template',
+        template:
+          'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={query}&location=Germany&sortBy=DD',
+      },
+      terms: ['Backend'],
+      pagination: 'url_param',
+    },
+  });
+  db.review(a.id);
+  db.skipTrial(a.id);
+  db.enable(a.id);
+  const task = core.workspaces.tasks.enqueue(a.id, {
+      sourceUrl: source,
+      operation: 'scan',
+      sources: [source],
+      lockKey: 'source:' + source,
+    }),
+    run = db.begin(a.id, {kind: 'run', taskId: task.id});
+  prepareCollection(db, run, db.get(a.id));
+  // The test does not wait out the real one-a-minute pacing.
+  db.siteAccess.pace = () => 0;
+  const site = fakeLinkedIn({pageSize: 3}),
+    original = globalThis.fetch;
+  globalThis.fetch = site.fetch;
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+  const flow = automationWorkflow({
+    db,
+    run: db.run(run.id),
+    signal: new AbortController().signal,
+    browser: {
+      evaluateJev: (_id, state, questions) => evaluate(state, questions),
+      hasPage: () => false,
+      call:
+        browserCall ??
+        (() => {
+          throw Error('No browser read');
+        }),
+    },
+    report: (...args) => db.finish(...args),
+  });
+  return {
+    db,
+    id: a.id,
+    runId: run.id,
+    site,
+    flow,
+    call: (name, args = {}) => flow.call(a.id, run.id, name, args),
+  };
+}
+
+test('the app reads a card page and its postings before the agent; the agent call reads nothing', async (t) => {
+  const f = fixture(t);
+  assert.equal(collectorPageReady(f.db, f.runId), false);
+  await prefetchCollectorPage(f.db, f.runId);
+  assert.equal(collectorPageReady(f.db, f.runId), true);
+  assert.equal(f.site.requests.length, 4, 'one result page and three postings');
+  const before = f.site.requests.length,
+    result = await f.call('collect_source_page');
+  assert.ok(result.taskId, JSON.stringify(result).slice(0, 300));
+  assert.equal(f.site.requests.length, before, 'the agent call does not read the site');
+  const task = f.db.jevTasks.get(f.id, f.db.run(f.runId).taskId, result.taskId);
+  assert.equal(task.items.length, 3);
+  assert.ok(task.items.every((i) => i.collected && i.detailComplete));
+});
+
+test('without a ready page the agent ends its turn and resumes at once after the app reads it', async (t) => {
+  const f = fixture(t);
+  const result = await f.call('collect_source_page');
+  assert.equal(result.status, 'background_read');
+  assert.match(result.next, /End this turn now/);
+  assert.equal(f.site.requests.length, 0, 'the agent call does not read the site');
+  assert.equal(f.db.run(f.runId).collectorReading, true);
+  assert.equal(continueSourceRun(f.db, f.id, f.runId), null, 'no idle nudge');
+  const outcome = unreportedSourceRun(f.db, f.id, f.runId, 'idle', 1000);
+  assert.equal(outcome.status, 'interrupted');
+  assert.deepEqual(f.db.run(f.runId).recovery, {
+    reason: 'collector_read',
+    attempt: 0,
+    readyAt: 1000,
+  });
+});
+
+test('a site wait parks the card source instead of sending the agent away', async (t) => {
+  const f = fixture(t);
+  f.db.siteAccess.block('https://www.linkedin.com/', 'rate_limit');
+  const result = await f.call('collect_source_page');
+  assert.notEqual(result.status, 'background_read');
+  assert.equal(f.db.run(f.runId).status, 'blocked');
+  assert.equal(f.db.run(f.runId).siteWait.reason, 'rate_limit');
+  assert.equal(f.site.requests.length, 0);
+});
+
+const longText = 'POSTING_IN_BROWSER Build reliable APIs. '.repeat(10);
+
+test('the LinkedIn posting reader needs a title and a real description', () => {
+  assert.equal(readLinkedInPosting({title: 'Role', description: 'Sign in to view'}), null);
+  assert.equal(readLinkedInPosting({title: '', description: longText}), null);
+  const job = readLinkedInPosting({
+    title: 'Staff Engineer',
+    company: 'Acme',
+    location: 'Berlin',
+    description: longText,
+    closed: true,
+  });
+  assert.equal(job.company, 'Acme');
+  assert.equal(job.closed, true);
+});
+
+test('a site posting reader gives an opened posting its listing text', async () => {
+  const url = 'https://www.linkedin.com/jobs/view/staff-engineer-at-acme-4100000000/';
+  const slot = {
+    page: {
+      evaluate: async (fn) =>
+        fn === linkedin.dom.listing.collect
+          ? {
+              url,
+              title: 'Staff Engineer',
+              company: 'Acme',
+              location: 'Berlin',
+              description: longText,
+            }
+          : null,
+    },
+  };
+  const read = await readSiteExtension(slot, {url, text: 'chrome and posting'});
+  assert.match(read.siteListing.text, /Staff Engineer @ Acme/);
+  assert.match(read.siteListing.text, /POSTING_IN_BROWSER/);
+  assert.equal(read.siteListing.fields.company, 'Acme');
+  const other = await readSiteExtension(
+    {page: {evaluate: async () => ({url: url + 'x', title: 'T', description: longText})}},
+    {url, text: ''},
+  );
+  assert.equal(other.siteListing, undefined, 'a read across a redirect is dropped');
+});
+
+test('a card collector reads its listings through a reader the app supplies', async () => {
+  clearCardDetails();
+  const collector = cardCollector({
+    templateId: 'job-search',
+    searchUrl: (u) => u,
+    readCards: async (u) => ({url: u, jobs: [{url: 'https://cards.test/job/x', title: 'x'}]}),
+    readListing: async () => {
+      throw Error('The HTTP reader is not used');
+    },
+    listingIn: 'browser',
+    detail: (job) => job,
+  });
+  assert.equal(collector.listingIn, 'browser');
+  const page = await collector.readPage('https://cards.test/s', {
+    readListing: async (u) => ({url: u, description: 'from the browser'}),
+  });
+  assert.equal(page.jobs[0].description, 'from the browser');
+});
+
+test('LinkedIn postings are opened in the browser before the agent; result pages use the API', async (t) => {
+  const opened = [];
+  const f = fixture(t, {
+    browserCall: async (_id, name, args) => {
+      if (name === 'browser_navigate') opened.push(args.url);
+      return {
+        jevPage: {
+          url: args.url ?? opened.at(-1),
+          reading: {readiness: {loading: false}},
+          listing: {text: 'Backend role ' + longText, fields: {company: 'Acme'}},
+        },
+      };
+    },
+  });
+  await f.flow.prefetchCollector();
+  assert.equal(opened.length, 3, 'each new posting opens in the browser');
+  assert.equal(f.site.requests.length, 1, 'only the result page comes from the guest API');
+  assert.equal(
+    f.db.db
+      .prepare("SELECT count(*) AS n FROM site_requests WHERE site='linkedin.com browser'")
+      .get().n,
+    3,
+    'logged-in views count under their own budget',
+  );
+  assert.equal(collectorPageReady(f.db, f.runId), true);
+});
+
+test('a posting that opens as a login prompt stays out of the batch', async (t) => {
+  const f = fixture(t, {
+    browserCall: async (_id, name, args) => ({
+      jevPage: {url: args.url, reading: {readiness: {loading: false}}},
+    }),
+  });
+  await f.flow.prefetchCollector();
+  const run = f.db.run(f.runId),
+    task = f.db.jevTasks.list(f.id, run.taskId).at(-1);
+  assert.equal(task.items.length, 0);
+  assert.equal(task.unavailable.length, 3);
+  assert.match(task.unavailable[0].message, /no listing text/);
+});
+
+test('a posting that redirects to a sign-in page says the browser may need to sign in', async (t) => {
+  const f = fixture(t, {
+    browserCall: async () => ({
+      jevPage: {url: 'https://www.linkedin.com/', reading: {readiness: {loading: false}}},
+    }),
+  });
+  await f.flow.prefetchCollector();
+  const task = f.db.jevTasks.list(f.id, f.db.run(f.runId).taskId).at(-1);
+  assert.equal(task.items.length, 0);
+  assert.match(task.unavailable[0].message, /may need to sign in/);
+});

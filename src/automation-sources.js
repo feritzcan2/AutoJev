@@ -395,7 +395,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     rows.set(url, view);
     return view;
   }
-  async function scanAction(view, scope, url, stop, fresh = false) {
+  async function scanAction(view, scope, url, stop, fresh = false, force = false) {
     if (view.pending) return;
     const current = () => owner === scope && rows.get(url) === view && host.isConnected;
     view.pending = stop ? 'stop' : 'start';
@@ -404,7 +404,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     try {
       await (stop
         ? api.automationSourceStop(scope, url)
-        : api.automationSourceRun(scope, url, {fresh}));
+        : api.automationSourceRun(scope, url, {fresh, force}));
       if (current()) {
         await refresh();
         if (current())
@@ -537,6 +537,29 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     if (state.detail) status.append(el('span', state.detail, 'source-detail'));
     status.title = state.title ?? state.detail ?? '';
     return status;
+  }
+  // Request rate: how fast the app reaches this site, counted across all
+  // workspaces and applications. Shown while scanning or after recent requests.
+  function requestLine(source) {
+    const rate = source.requests;
+    if (!rate || (!source.scanning && !rate.lastHour)) return null;
+    const seconds = (ms) => Math.round(ms / 1000),
+      spacing = rate.jitterMs
+        ? `${seconds(rate.minGapMs)}–${seconds(rate.minGapMs + rate.jitterMs)} s apart`
+        : `at least ${seconds(rate.minGapMs)} s apart`,
+      budget = rate.budget,
+      window =
+        budget &&
+        (budget.windowMs === 3600000 ? 'hour' : `${Math.round(budget.windowMs / 60000)} min`);
+    const line = el(
+      'div',
+      budget
+        ? `Request rate: ${budget.used}/${budget.requests} per ${window} · ${spacing}`
+        : `Request rate: ${rate.lastTenMinutes} in the last 10 min · ${spacing}`,
+      'source-requests',
+    );
+    line.title = `Requests this app sent to ${new URL(source.url).hostname.replace(/^www\./, '')} for all workspaces and applications: ${rate.lastTenMinutes} in the last 10 minutes, ${rate.lastHour} in the last hour.${budget ? ` The site allows at most ${budget.requests} per ${window}; over that the scan waits instead of being blocked.` : ''}`;
+    return line;
   }
   // Schedule: last scan, next scan and the interval, which changes in place.
   function scheduleLine(source, scope) {
@@ -1190,23 +1213,28 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         );
       link.title = [source.url, readerLabels[source.extension?.kind ?? 'agent']].join('\n');
       name.append(link);
-      main.replaceChildren(name, statusLine(source), scheduleLine(source, scope));
+      main.replaceChildren(
+        ...[name, statusLine(source), requestLine(source), scheduleLine(source, scope)].filter(
+          Boolean,
+        ),
+      );
       const closing =
         (data.activeRuns ?? []).some(
           (r) => r.sourceUrl === source.url && !r.recordId && !r.recordOperation,
         ) && !source.scanning;
+      // A timed site wait resumes by itself; Force retry ends it now.
+      const timedWait = Boolean(source.siteWait?.waiting && !source.siteWait.exhausted);
       let runLabel = closing
           ? 'Session closing…'
-          : source.blocked || source.siteWait?.exhausted
-            ? 'Retry'
-            : 'Scan now',
-        runDisabled =
-          closing ||
-          (source.siteWait?.waiting && !source.siteWait?.exhausted) ||
-          !source.enabled ||
-          !data.progress?.reviewed;
-      run.title =
-        source.trial?.status === 'passed'
+          : timedWait
+            ? 'Force retry'
+            : source.blocked || source.siteWait?.exhausted
+              ? 'Retry'
+              : 'Scan now',
+        runDisabled = closing || !source.enabled || !data.progress?.reviewed;
+      run.title = timedWait
+        ? 'The site asked us to slow down; this scan resumes by itself at the access check. Force retry ends the wait now and continues from the saved point. If the site still refuses, the wait starts again.'
+        : source.trial?.status === 'passed'
           ? ''
           : 'The first round is a trial: the agent works out the site and saves the search recipe.';
       if (source.scanning || source.stopping) {
@@ -1223,7 +1251,15 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       run.setAttribute('aria-busy', String(Boolean(view.pending || source.stopping)));
       run.onclick = (event) => {
         event.preventDefault();
-        if (!run.disabled) void scanAction(view, scope, source.url, Boolean(source.scanning));
+        if (!run.disabled)
+          void scanAction(
+            view,
+            scope,
+            source.url,
+            Boolean(source.scanning),
+            false,
+            timedWait && !source.scanning,
+          );
       };
       // A scan left unfinished resumes where it stopped; this starts it over.
       const resumable =

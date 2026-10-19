@@ -9,6 +9,8 @@ const siteDomain = (host) => {
   const keep = labels.length > 2 && labels.at(-2).length <= 3 && labels.at(-1).length <= 3 ? 3 : 2;
   return labels.slice(-keep).join('.');
 };
+// The registrable domain of an address (de.linkedin.com -> linkedin.com).
+export const siteDomainOf = (url) => siteDomain(siteKey(url));
 export const sameSite = (a, b) => {
   const x = siteKey(a),
     y = siteKey(b);
@@ -23,6 +25,7 @@ const PACE_WINDOW = 6 * 60 * minute,
   PACE_MIN = 8000,
   PACE_STEP = 10000,
   PACE_MAX = 30000;
+const REQUEST_LOG_MS = 60 * minute;
 export const siteRetryDelay = (attempt) => [5 * minute, 10 * minute][attempt - 1] ?? null;
 // A site that recovered and then worked for this long starts a new incident
 // with a fresh retry budget instead of continuing the old count.
@@ -83,6 +86,7 @@ export class SiteAccess {
     Object.assign(this, {db, now, changed});
     this.incidents = new Map();
     this.paced = new Map();
+    this.requests = new Map();
     this.failures = new Map();
     db.exec(
       'CREATE TABLE IF NOT EXISTS browser_site_waits(site TEXT PRIMARY KEY,data TEXT NOT NULL)',
@@ -234,7 +238,49 @@ export class SiteAccess {
         Math.floor(Math.random() * jitter),
       next = Math.max(now, (this.paced.get(site) ?? 0) + gap);
     this.paced.set(site, next);
+    // Every request to a site reserves a slot here, so the slots are the
+    // site's request log for the Sources page (RAM only, last hour).
+    this.requests.set(site, [
+      ...(this.requests.get(site) ?? []).filter((at) => now - at < REQUEST_LOG_MS),
+      next,
+    ]);
     return next - now;
+  }
+  // How fast this app reaches a site, across lanes and workspaces: requests
+  // in the last ten minutes and hour, the site's minimum gap, and its budget
+  // use when it states one.
+  requestRate(url, {minIntervalMs = 0, jitterMs = 0, budget = undefined} = {}) {
+    const site = siteKey(url),
+      now = this.now(),
+      log = (this.requests.get(site) ?? []).filter((at) => at <= now && now - at < REQUEST_LOG_MS);
+    const used = budget
+      ? Number(
+          this.db
+            .prepare('SELECT count(*) AS n FROM site_requests WHERE site=? AND at>?')
+            .get(site, now - budget.windowMs).n,
+        )
+      : null;
+    return {
+      lastTenMinutes: log.filter((at) => now - at < 10 * minute).length,
+      lastHour: log.length,
+      minGapMs: Math.max(PACE_MIN, minIntervalMs),
+      jitterMs,
+      ...(budget ? {budget: {requests: budget.requests, windowMs: budget.windowMs, used}} : {}),
+    };
+  }
+  // A request budget counted under its own key (for example logged-in page
+  // views, kept apart from a site's API budget), for reads that wait in
+  // place instead of parking a task. Records the request and returns 0 when
+  // the budget has room; otherwise the milliseconds until a slot frees.
+  reserve(key, {requests, windowMs}) {
+    const now = this.now();
+    this.db.prepare('DELETE FROM site_requests WHERE site=? AND at<=?').run(key, now - windowMs);
+    const used = this.db
+      .prepare('SELECT count(*) AS n, min(at) AS first FROM site_requests WHERE site=?')
+      .get(key);
+    if (Number(used.n) >= requests) return Number(used.first) + windowMs - now;
+    this.db.prepare('INSERT INTO site_requests(site,at) VALUES(?,?)').run(key, now);
+    return 0;
   }
   // A site's stated request budget: at most `requests` requests within
   // `windowMs`, counted across lanes and workspaces and kept in the database,
@@ -264,7 +310,9 @@ export class SiteAccess {
       reason: open?.reason ?? 'budget',
       attempts: open?.attempts ?? 0,
       blockedAt: now,
-      retryAt: reads[0] + windowMs,
+      // Until enough requests leave the window to free a slot; a lowered budget
+      // can find more requests than it allows.
+      retryAt: reads[reads.length - requests] + windowMs,
       token: null,
       leaseUntil: 0,
     });

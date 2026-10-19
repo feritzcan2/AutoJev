@@ -93,14 +93,24 @@ export const sourceMethods = {
       this.db.siteAccess.forLane(w.lane).status('https://' + w.site),
     );
   },
-  async runSource(id, url, {fresh = false} = {}) {
+  async runSource(id, url, {fresh = false, force = false} = {}) {
     this.assertNotStopping(id);
-    const source = this.db.sources(id).find((s) => s.url === url);
+    let source = this.db.sources(id).find((s) => s.url === url);
     if (!source) throw Error('The source does not belong to this workspace');
     if (!source.enabled) throw Error('Turn on the source first');
     if (source.termsRequired) throw Error(TERMS_REQUIRED);
     if (this.slots(id).some((s) => s.run.sourceUrl === url))
       throw Error('This source is already running');
+    // A timed site wait resumes by itself; a plain run queues behind it. Force
+    // retry is the user choosing not to wait it out: the current wait ends
+    // now, as Retry ends one whose automatic retries ran out, and the scan
+    // continues from its saved point.
+    if (force && source.siteWait?.waiting && !source.siteWait.exhausted) {
+      this.db.siteAccess.acknowledge(
+        [source.siteWait, ...this.currentSourceWaits(source)].filter((w) => w?.waiting),
+      );
+      source = this.db.sources(id).find((s) => s.url === url);
+    }
     // Starting over from an access block drops the stopped run's saved
     // position, tabs and queue; the stopped wait is retired below.
     if (fresh && source.accessRecovery?.state === 'waiting') {

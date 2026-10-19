@@ -261,6 +261,7 @@ export class WebTasks extends TaskRuns {
     this.restarting = new Set();
     this.pausing = new Map();
     this.browserReady = options?.browserReady ?? (() => true);
+    this.closeRunTabs = options?.onRunFinished;
     this.sourceChecks = new SourceRetryChecks(db, {
       probe: options?.probeSource,
       now: this.now,
@@ -681,10 +682,28 @@ export class WebTasks extends TaskRuns {
     if (current?.exhausted && current.blockedAt === wait.blockedAt)
       this.db.siteAccess.acknowledge([wait]);
   }
-  markRecordSubmitted(id, itemId) {
+  async markRecordSubmitted(id, itemId) {
     const item = this.db.markSubmitted(id, itemId);
     this.changed(id);
+    await this.closeRecordTabs(id, itemId);
     return item;
+  }
+  // A record the user skipped or marked applied needs no page any more: close
+  // the tabs its runs opened. Closing is best effort and never undoes the choice.
+  async closeRecordTabs(id, itemId) {
+    const runs = this.db.db
+      .prepare(
+        "SELECT id, json_extract(data,'$.workerId') AS workerId FROM automation_runs WHERE automation_id=? AND json_extract(data,'$.recordId')=? AND json_extract(data,'$.status')<>'running' ORDER BY rowid DESC",
+      )
+      .all(id, itemId);
+    if (!runs.length) return;
+    try {
+      await this.closeRunTabs?.(id, runs[0], {
+        closeTabs: true,
+        keepForms: false,
+        runIds: runs.map((run) => run.id),
+      });
+    } catch {}
   }
   restoreRecord(id, itemId) {
     const item = this.db.restore(id, itemId);
@@ -705,6 +724,7 @@ export class WebTasks extends TaskRuns {
       if (taskHasRecord(task, itemId))
         this.queue.finish(id, task.id, 'cancelled', 'The user rejected this record.');
     this.changed(id);
+    await this.closeRecordTabs(id, itemId);
     return item;
   }
   async runOnce(id) {
