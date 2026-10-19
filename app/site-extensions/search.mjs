@@ -56,8 +56,7 @@ export function siteSearchRecipe(search, recipe) {
     ),
     {base, params} = split(recipe.entry.template),
     removed = (search.removes ?? []).filter((param) => params.has(param)),
-    keepsFixed =
-      !removed.length && fixed.every(([param, value]) => params.get(param) === value);
+    keepsFixed = !removed.length && fixed.every(([param, value]) => params.get(param) === value);
   for (const [param, value] of fixed) params.set(param, value);
   for (const param of removed) params.delete(param);
   const query = restore(params.toString()),

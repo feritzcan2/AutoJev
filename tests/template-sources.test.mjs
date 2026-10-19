@@ -156,10 +156,7 @@ test('Indeed joins a workspace by country with one shared recipe', () => {
     const host = new URL(source.url).hostname;
     assert.match(host, /^[a-z]+\.indeed\.com$/);
     assert.equal(source.countries.length, 1);
-    assert.equal(
-      source.recipe.entry.template,
-      `https://${host}/jobs?q={query}&l={location}`,
-    );
+    assert.equal(source.recipe.entry.template, `https://${host}/jobs?q={query}&l={location}`);
     assert.equal(source.recipe.pagination, 'url_param');
   }
   assert.ok(indeed.some((s) => s.countries[0] === 'GB'));
