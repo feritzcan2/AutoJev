@@ -13,6 +13,8 @@ export const questionFieldsSchema = {
       type: {type: 'string', enum: ['text', 'boolean', 'select', 'multiselect', 'date', 'number']},
       required: {type: 'boolean'},
       help: string,
+      // A likely answer from the CV, saved facts or documents; the user confirms or edits it.
+      suggested: string,
       options: {type: 'array', minItems: 2, maxItems: 20, items: {...string, maxLength: 200}},
     },
   },
@@ -47,12 +49,15 @@ export function normalizeFields(fields) {
       throw Error('Invalid required flag');
     if (f.help !== undefined && (typeof f.help !== 'string' || f.help.length > 2000))
       throw Error('Invalid field help text');
+    if (f.suggested !== undefined && (typeof f.suggested !== 'string' || f.suggested.length > 2000))
+      throw Error('Invalid suggested answer');
     const field = {
       id: f.id,
       label: f.label.trim(),
       type: f.type,
       required: f.required !== false,
       ...(f.help ? {help: f.help} : {}),
+      ...(f.suggested?.trim() ? {suggested: f.suggested.trim()} : {}),
     };
     if (['select', 'multiselect'].includes(f.type)) {
       if (

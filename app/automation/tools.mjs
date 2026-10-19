@@ -56,7 +56,7 @@ export const automationTools = [
   ...jevTaskTools,
   tool(
     'ask_workspace_question',
-    'Ask the user a typed form (text, boolean, select, multiselect, date, number) for required facts, decisions or documents. Reuse an unanswered question. For login/access questions first follow the real entry control and pass accessCheck with the latest snapshot.id and the visible requirement; a signup link or an earlier run is not evidence. The app refreshes the page before saving. A question grants no permission and sends nothing.',
+    'Ask the user a typed form (text, boolean, select, multiselect, date, number) for required facts, decisions or documents. Reuse an unanswered question. For login/access questions first follow the real entry control and pass accessCheck with the latest snapshot.id and the visible requirement; a signup link or an earlier run is not evidence. The app refreshes the page before saving. A question grants no permission and sends nothing. Before asking, check criteria.application_facts and earlier answers: an equivalent saved fact answers the question (see the template Applications rules). When the CV, saved facts or documents point to a likely answer, put it in the suggested property of that field (an option text for select, Yes/No for boolean, YYYY-MM-DD for date) so the user only confirms it; leave suggested empty rather than guess.',
     {
       text: str,
       recordId: str,

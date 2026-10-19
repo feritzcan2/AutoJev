@@ -1,10 +1,59 @@
 import {asksForLogin} from '../app/automation/login-question.mjs';
+import {factLine} from './simple/facts.js';
 const node = (tag, value) => {
   const e = document.createElement(tag);
   if (value !== undefined) e.textContent = value;
   return e;
 };
-export function questionForm(candidate, q, submit) {
+// Which saved "Label: value" fact lines can answer a question, by its wording.
+// Equivalent facts count: an earliest start answers a notice period question.
+const FACT_HINTS = [
+  [/currency/i, ['Salary currency']],
+  [/salary|compensation|remuneration|\bpay\b|wage|gehalt|maaş/i, ['Salary expectation']],
+  [/relocat/i, ['Relocation']],
+  [/permit|visa|sponsor|authori[sz]|right to work/i, ['Work permit']],
+  [/notice|earliest|start date|availab|when can you (?:start|join)/i, ['Notice period', 'Earliest start']],
+  [/language|english|german|turkish|french|spanish|dutch/i, ['Languages']],
+  [/linkedin/i, ['LinkedIn']],
+  [/phone|mobile|telephone/i, ['Phone']],
+  [/e-?mail/i, ['Email']],
+];
+export function factSuggestion(question, facts) {
+  if (!facts) return '';
+  for (const [pattern, labels] of FACT_HINTS) {
+    if (!pattern.test(question)) continue;
+    for (const label of labels) {
+      let value = factLine(facts, label);
+      if (!value) continue;
+      // A salary keeps its currency when that is saved on its own line.
+      const currency = label === 'Salary expectation' ? factLine(facts, 'Salary currency') : '';
+      // Placed after the amount (or range); skipped when a currency is already written.
+      const amount = /\d(?:[\d,.\s]*\d)?k?(?:\s*[-–]\s*\d(?:[\d,.\s]*\d)?k?)?/i;
+      if (currency && !/[€$£₺¥₹]/.test(value) && !value.toUpperCase().includes(currency.toUpperCase()))
+        value = value.replace(amount, (match) => `${match.trim()} ${currency}`);
+      return value;
+    }
+    return '';
+  }
+  return '';
+}
+// The suggestion as a value the field accepts, or null when it does not fit.
+function fitSuggestion(f, text) {
+  if (!text) return null;
+  if (f.type === 'text') return text;
+  if (f.type === 'number') {
+    const n = Number(String(text).replace(/[^\d.-]/g, ''));
+    return Number.isFinite(n) && /\d/.test(text) ? n : null;
+  }
+  if (f.type === 'date') return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+  if (f.type === 'boolean')
+    return /^(yes|true|ja|evet)\b/i.test(text) ? true : /^(no|false|nein|hayır)\b/i.test(text) ? false : null;
+  if (f.type === 'select')
+    return f.options.find((o) => o.toLowerCase() === String(text).toLowerCase()) ?? null;
+  return null;
+}
+
+export function questionForm(candidate, q, submit, {facts = ''} = {}) {
   const form = node('form');
   form.className = 'candidate-question-form';
   const key = `jobloop-question:${candidate}:${q.id}`;
@@ -33,6 +82,9 @@ export function questionForm(candidate, q, submit) {
   } catch {}
   const fields = q.fields ?? [{id: 'answer', label: q.question, type: 'text', required: true}],
     readers = new Map(),
+    // Per field: put a value in the control, and the suggested value it offers.
+    appliers = new Map(),
+    suggestions = new Map(),
     customKey = key + ':custom';
   let customDraft = {};
   try {
@@ -102,6 +154,10 @@ export function questionForm(candidate, q, submit) {
         save();
       };
       syncCustom();
+      appliers.set(f.id, (value) => {
+        select.value = String(value);
+        select.dispatchEvent(new Event('change'));
+      });
       box.append(select, customInput);
       readers.set(f.id, () =>
         state.enabled
@@ -120,12 +176,50 @@ export function questionForm(candidate, q, submit) {
       input.setAttribute('aria-label', f.label);
       input.value = draft[f.id] ?? '';
       input.oninput = save;
+      appliers.set(f.id, (value) => {
+        input.value = String(value);
+        save();
+      });
       box.append(input);
       readers.set(f.id, () =>
         input.value === '' ? null : f.type === 'number' ? Number(input.value) : input.value,
       );
     }
+    // A likely answer from the agent (CV, documents) or from the saved profile facts.
+    const fromAgent = fitSuggestion(f, f.suggested),
+      fromFacts = fromAgent == null ? fitSuggestion(f, factSuggestion(f.label, facts)) : null,
+      suggestion = fromAgent ?? fromFacts;
+    if (suggestion != null && appliers.has(f.id)) {
+      const shown =
+          typeof suggestion === 'boolean' ? (suggestion ? 'Yes' : 'No') : String(suggestion),
+        row = node('div'),
+        use = node('button', 'Use this');
+      row.className = 'question-suggestion';
+      use.type = 'button';
+      use.className = 'quiet';
+      use.onclick = () => {
+        appliers.get(f.id)(suggestion);
+        row.dataset.used = 'true';
+      };
+      row.append(node('span', fromAgent != null ? 'Suggested' : 'From your profile'), node('b', shown), use);
+      const control = box.querySelector('textarea, input:not([type=checkbox]), select');
+      if (control && control.tagName !== 'SELECT' && f.type !== 'date') control.placeholder = shown;
+      box.append(row);
+      suggestions.set(f.id, suggestion);
+    }
     formFields.append(box);
+  }
+  // One click takes every suggestion; the user still reviews and sends.
+  if (suggestions.size > 1 || (suggestions.size && fields.length === 1)) {
+    const fill = node('button', suggestions.size > 1 ? 'Fill from my profile' : 'Use the suggested answer');
+    fill.type = 'button';
+    fill.className = 'quiet question-fill-all';
+    fill.onclick = () => {
+      for (const [id, value] of suggestions) appliers.get(id)(value);
+      for (const row of formFields.querySelectorAll('.question-suggestion')) row.dataset.used = 'true';
+      formFields.querySelector('textarea, input, select')?.focus();
+    };
+    formFields.prepend(fill);
   }
   const error = node('p');
   error.className = 'question-form-error';

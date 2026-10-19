@@ -619,6 +619,51 @@ body.jl-simple .onboarding .onboarding-once legend {
 .onboarding-pill input:focus-visible + span {
   box-shadow: 0 0 0 3px var(--jl-accent);
 }
+/* Salary amount with its currency on one line. */
+.onboarding-amount {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.onboarding-amount select {
+  min-width: 96px;
+}
+/* Consent: a plain checkbox row under the authority choices. */
+.onboarding .onboarding-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--jl-line);
+  border-radius: 12px;
+  background: var(--jl-panel);
+  cursor: pointer;
+}
+.onboarding .onboarding-consent input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+}
+.onboarding-consent span {
+  display: grid;
+  gap: 3px;
+}
+.onboarding-consent b {
+  font-size: 14px;
+  font-weight: 600;
+}
+.onboarding-consent small {
+  color: var(--jl-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.onboarding .onboarding-consent:has(input:checked) {
+  border-color: var(--jl-accent-line);
+  background: var(--jl-accent-wash);
+}
 .onboarding-never {
   display: grid;
   gap: 6px;

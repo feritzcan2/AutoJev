@@ -55,14 +55,15 @@ const quickQuestions = [
   {
     id: 'notice',
     label: 'Notice period',
-    title: 'Notice period or earliest start',
-    placeholder: 'e.g. 1 month, or immediately',
+    title: 'When can you start?',
+    placeholder: 'e.g. 1 month notice, or from 1 December',
   },
   {
     id: 'salary',
     label: 'Salary expectation',
     title: 'Salary expectation',
-    placeholder: 'e.g. €70,000 a year',
+    placeholder: 'e.g. 70,000 a year',
+    currency: true,
   },
   {
     id: 'languages',
@@ -71,6 +72,37 @@ const quickQuestions = [
     placeholder: 'e.g. English C1, Turkish B2',
   },
 ];
+// Salary currency: saved on its own line so later forms can use or convert it.
+const CURRENCY = 'Salary currency';
+const currencies = ['EUR', 'USD', 'GBP', 'TRY', 'CHF', 'PLN', 'SEK', 'NOK', 'DKK', 'CZK', 'CAD', 'AUD', 'AED', 'JPY', 'INR'];
+const countryCurrency = {
+  TR: 'TRY', GB: 'GBP', US: 'USD', CH: 'CHF', PL: 'PLN', SE: 'SEK', NO: 'NOK', DK: 'DKK',
+  CZ: 'CZK', CA: 'CAD', AU: 'AUD', AE: 'AED', JP: 'JPY', IN: 'INR',
+  ...Object.fromEntries(
+    'DE FR NL ES IT IE AT BE FI PT GR LU EE LV LT SK SI HR MT CY'.split(' ').map((c) => [c, 'EUR']),
+  ),
+};
+const symbolCurrency = {'€': 'EUR', $: 'USD', '£': 'GBP', '₺': 'TRY', '¥': 'JPY', '₹': 'INR'};
+// The saved currency, else the one the amount is written in, else the target country's.
+function guessCurrency(facts, amount, country) {
+  const saved = factLine(facts, CURRENCY).toUpperCase();
+  if (currencies.includes(saved)) return saved;
+  const written = String(amount).toUpperCase(),
+    code = currencies.find((c) => written.includes(c)) ?? (/\bTL\b/.test(written) ? 'TRY' : null);
+  if (code) return code;
+  const symbol = Object.keys(symbolCurrency).find((s) => written.includes(s));
+  if (symbol) return symbolCurrency[symbol];
+  let iso = String(country ?? '').trim().toUpperCase();
+  if (iso.length > 2) {
+    const names = new Intl.DisplayNames(['en'], {type: 'region'});
+    iso = Object.keys(countryCurrency).find((c) => names.of(c)?.toUpperCase() === iso) ?? '';
+  }
+  return countryCurrency[iso] ?? '';
+}
+// Privacy consent on application forms: a line in the application rules the agent follows.
+const CONSENT = 'Privacy consent';
+const CONSENT_TEXT =
+  'Accept the privacy policy and data processing consent a form requires to apply. Leave marketing, newsletter, job alert and talent pool opt-ins unticked.';
 const languagesFrom = (experience) =>
   String(experience ?? '')
     .match(/languages?\s*[:：]\s*(.+?)(?=\.\s|[\n·;]|$)/i)?.[1]
@@ -872,7 +904,17 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         input.value = current;
         input.placeholder = q.placeholder;
         input.maxLength = 300;
-        field.append(input);
+        if (q.currency) {
+          const row = el('span', null, 'onboarding-amount'),
+            currency = el('select');
+          currency.name = 'salary_currency';
+          currency.setAttribute('aria-label', 'Currency');
+          currency.append(new Option('Currency', ''));
+          for (const code of currencies) currency.append(new Option(code, code));
+          currency.value = guessCurrency(facts, current, a.criteria.country);
+          row.append(input, currency);
+          field.append(row);
+        } else field.append(input);
         grid.append(field);
       }
     }
@@ -925,6 +967,21 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       score.hidden = !auto;
     };
     choices.addEventListener('change', syncScore);
+    const consent = el('label', null, 'onboarding-consent'),
+      consentInput = el('input'),
+      consentCopy = el('span');
+    consentInput.type = 'checkbox';
+    consentInput.name = 'consent';
+    consentInput.checked = /^accept/i.test(factLine(a.criteria.application_policy, CONSENT));
+    consentCopy.append(
+      el('b', 'Accept privacy consent on application forms for me'),
+      el(
+        'small',
+        'Ticks the privacy policy and data processing boxes a form needs before you can apply. Marketing, newsletters and talent pools stay unticked.',
+      ),
+    );
+    consent.append(consentInput, consentCopy);
+    mode.append(consent);
     // Most people keep the recommended sources, so the list stays folded.
     const sources = el('details', null, 'onboarding-section onboarding-sources'),
       sourceSummary = el('summary');
@@ -1181,6 +1238,18 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       if (q.choices && !value) continue;
       criteria.application_facts = setFactLine(criteria.application_facts, q.label, value);
     }
+    if (f.salary_currency)
+      criteria.application_facts = setFactLine(
+        criteria.application_facts,
+        CURRENCY,
+        f.once_salary?.value.trim() ? f.salary_currency.value : '',
+      );
+    if (f.consent)
+      criteria.application_policy = setFactLine(
+        criteria.application_policy,
+        CONSENT,
+        f.consent.checked ? CONSENT_TEXT : '',
+      );
     criteria.constraints = setFactLine(criteria.constraints, NEVER, f.never.value.trim());
     if (f.hard_rules) criteria.hard_rules = f.hard_rules.value.trim();
     criteria.score_threshold = f.score_threshold.value.trim();

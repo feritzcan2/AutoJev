@@ -9,7 +9,7 @@ import {BRAND, markIcon} from './brand.js';
 import {playIntro} from './intro.js';
 import {el, button, icon, plural, scoreOf, relative, host} from './ui.js';
 import {checkmark, docScan, flyPlane, reduced, rollingNumber} from './motion.js';
-import {LESS, NEVER, listOf, setFactLine, withItem, withoutItem} from './facts.js';
+import {LESS, NEVER, factLine, listOf, setFactLine, withItem, withoutItem} from './facts.js';
 import './simple.css';
 import './onboarding.css';
 
@@ -922,6 +922,7 @@ function renderQuestions(data, asks) {
         await api.workspaceAnswer(state.id, issue.id, value);
         await load();
       },
+      {facts: data.automation.criteria?.application_facts},
     );
     card.append(
       head,
@@ -1193,9 +1194,42 @@ function renderSettings(data) {
     srows.append(row(s.name, host(s.url), toggle));
   }
   sources.lastChild.append(srows);
+  // Privacy consent on forms: the same application rules line onboarding writes.
+  const applying = section('Applying', 'What JobLoop may agree to on application forms.'),
+    arows = el('div', 'jl-rows'),
+    policy = data.automation.criteria?.application_policy ?? '',
+    consent = el('input');
+  consent.type = 'checkbox';
+  consent.checked = /^accept/i.test(factLine(policy, 'Privacy consent'));
+  consent.setAttribute('aria-label', 'Accept privacy consent on application forms');
+  consent.style.cssText = 'width:18px;height:18px;accent-color:var(--jl-check)';
+  consent.onchange = act('consent', async () => {
+    const a = state.data.automation,
+      criteria = {...a.criteria};
+    criteria.application_policy = setFactLine(
+      criteria.application_policy,
+      'Privacy consent',
+      consent.checked
+        ? 'Accept the privacy policy and data processing consent a form requires to apply. Leave marketing, newsletter, job alert and talent pool opt-ins unticked.'
+        : '',
+    );
+    await api.automationProfileSave(
+      state.id,
+      {title: a.title, goal: a.goal, criteria, mode: a.mode},
+      {expectedRevision: a.revision},
+    );
+  });
+  arows.append(
+    row(
+      'Accept privacy consent for me',
+      'Ticks the privacy and data processing boxes a form requires. Marketing and talent pool opt-ins stay unticked.',
+      consent,
+    ),
+  );
+  applying.lastChild.append(arows);
   const more = section('Advanced', 'Agent models, workers, keys, notifications, data and backups.');
   more.lastChild.append(button('Open advanced view', () => setSimple(false), 'jl-btn'));
-  card.append(ai, browser, sources, more);
+  card.append(ai, browser, sources, applying, more);
   page.append(card);
 }
 function row(title, text, control) {

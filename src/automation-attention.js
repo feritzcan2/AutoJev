@@ -473,6 +473,7 @@ export function automationAttentionPanel(
         await api.workspaceAnswer(workspace, issue.id, value);
         if (owner === workspace) await refresh();
       },
+      {facts: snapshot?.automation?.criteria?.application_facts},
     );
     const attach = el('button', 'Add document', 'quiet'),
       feedback = el('p');

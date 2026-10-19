@@ -70,6 +70,7 @@ export function answersPage(root, api, {refresh, openFiles = () => {}}) {
               await api.workspaceAnswer(workspace, id, value);
               await refresh();
             },
+            {facts: snapshot?.automation?.criteria?.application_facts},
           );
     body.append(el('p', issue.message, 'answer-card-message'), form);
     const footer = el('footer', null, 'answer-card-footer'),
