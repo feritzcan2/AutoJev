@@ -18,3 +18,6 @@ vendor/termloop/target/
 .termloop-runtime/
 /page.html
 /shot.png
+
+# Agent worktrees
+.claude/worktrees/

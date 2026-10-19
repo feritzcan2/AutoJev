@@ -423,6 +423,9 @@ export class JevBrowser {
   async openTabFrom(slot) {
     // Opening from an owned page selects its exact window; Target.createTarget
     // otherwise picks whichever personal Chrome window was activated last.
+    // window.open shows its window, which raises Chrome over the user's work.
+    // A new-tab modifier click opens a background tab without showing the
+    // window; Blink honours that modifier only from an isolated world.
     const marker = await chromeWindowMarker();
     try {
       const {frameTree} = await slot.cdp.send('Page.getFrameTree');
@@ -431,7 +434,11 @@ export class JevBrowser {
         worldName: 'jobloop-tabs',
       });
       await slot.cdp.send('Runtime.evaluate', {
-        expression: `window.open(${JSON.stringify(marker.url)}, '_blank')`,
+        expression: `(() => {
+          const link = document.createElement('a');
+          link.href = ${JSON.stringify(marker.url)};
+          link.dispatchEvent(new MouseEvent('click', {view: window, ${process.platform === 'darwin' ? 'metaKey' : 'ctrlKey'}: true}));
+        })()`,
         contextId: executionContextId,
         userGesture: true,
       });
@@ -1599,6 +1606,11 @@ export class JevBrowser {
           const child = await this.track(page.context(), page);
           child.owner = owner;
           await this.claimAutomationTab(child, owner, state);
+          // A background tab has no opener, so it does not inherit from slot in track().
+          child.openerId ??= slot.id;
+          for (const owners of [this.automationTabs, this.automationRuns])
+            if (!owners.has(child.id) && owners.has(slot.id))
+              owners.set(child.id, owners.get(slot.id));
           slot.openedFrames ??= new Map();
           slot.openedFrames.set(url, child.id);
           if (this.automationWorkspaces.has(slot.id))
