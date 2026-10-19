@@ -1952,10 +1952,68 @@
   margin: 0;
 }
 /* Contacts page: one group per listing, one card per LinkedIn contact. */
+.contacts-page-filters {
+  margin-bottom: 12px;
+}
 .contacts-page-list {
   display: grid;
-  gap: 18px;
-  max-width: 760px;
+  max-width: 860px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.contacts-page-list:empty {
+  display: none;
+}
+.contacts-page-row + .contacts-page-row {
+  border-top: 1px solid var(--border);
+}
+.contacts-page-row[data-open='true'] {
+  background: var(--bg-raised);
+}
+/* One line per listing: title and company, then what waits on the user. */
+.contacts-page-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.contacts-page-head:hover {
+  background: var(--bg-hover);
+}
+.contacts-page-title {
+  display: grid;
+  min-width: 0;
+}
+.contacts-page-title > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contacts-page-title small,
+.contacts-page-count,
+.contacts-page-caret {
+  color: var(--text-secondary);
+}
+.contacts-page-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.contacts-page-body {
+  padding: 0 14px 14px;
+}
+.contacts-page-tools {
+  display: flex;
+  justify-content: flex-end;
 }
 .contacts-page-empty,
 .contacts-page .record-listing-state,
@@ -1990,24 +2048,6 @@
 .record-contact[data-state='uncertain'] .record-contact-state,
 .record-contact[data-state='failed'] .record-contact-state {
   color: var(--danger, #e5484d);
-}
-.contacts-page-group {
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-raised);
-}
-.contacts-page-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-.contacts-page-head h3 {
-  margin: 0;
-}
-.contacts-page-head small {
-  color: var(--text-secondary);
 }
 .contacts-page .record-contact-reason {
   margin: 0;
@@ -2276,4 +2316,28 @@
   border: 0;
   background: none;
   font-weight: 600;
+}
+.contacts-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.contacts-chip[data-tone='waiting'] {
+  background: rgba(217, 170, 95, 0.14);
+  color: var(--warning);
+}
+.contacts-chip[data-tone='active'] {
+  background: color-mix(in srgb, var(--accent, #4fd5c6) 16%, transparent);
+  color: var(--text);
+}
+.contacts-chip[data-tone='done'] {
+  background: rgba(92, 201, 149, 0.14);
+  color: var(--success);
+}
+.contacts-chip[data-tone='blocked'] {
+  background: color-mix(in srgb, var(--danger, #e5484d) 14%, transparent);
+  color: var(--danger, #e5484d);
 }

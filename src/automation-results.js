@@ -1421,10 +1421,12 @@ export function automationResultsTable(
           (op.kind === 'verify'
             ? 'Verify the outcome of the action before resending it.'
             : 'Retry the last unfinished action.');
-        (problem ? problemActions : state).append(retry);
         // The user may apply although the listing or form excludes them; the
-        // agent still answers every question truthfully.
-        if (problem?.category === 'not_eligible' && op.kind === 'execute') {
+        // agent still answers every question truthfully. A plain retry would
+        // stop on the same requirement, so this card offers only this button.
+        const notEligible = problem?.category === 'not_eligible' && op.kind === 'execute';
+        if (!notEligible) (problem ? problemActions : state).append(retry);
+        if (notEligible) {
           const anyway = button(
             requesting ? 'Queueing…' : 'Apply anyway',
             async () => {
