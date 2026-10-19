@@ -420,8 +420,8 @@ export async function runJevTask({
     if (input.reviewedBatchId !== task.batch?.id)
       throw jevReviewRequired(
         task.batch
-          ? `The review batch is stale or misspelled. Current reviewedBatchId: ${task.batch.id}. Item numbers refer to this batch; if unsure, read it with read_jev_task(taskId).`
-          : 'The review batch is stale or belongs to another task. Read the current batch and item numbers with read_jev_task(taskId).',
+          ? `The review batch is stale or misspelled. Current reviewedBatchId: ${task.batch.id}. Item numbers refer to this batch; if unsure, read it with read_browser_task(taskId).`
+          : 'The review batch is stale or belongs to another task. Read the current batch and item numbers with read_browser_task(taskId).',
       );
     const items = task.batch.urls.map((url) => task.items.find((i) => i.url === url));
     if (!ports.reviewBatch)

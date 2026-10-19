@@ -14,6 +14,7 @@ import {
 import {sourceTrialReady} from '../sources/trial.mjs';
 import {TaskRuns} from './task-runs.mjs';
 import {recoverRecordOperations} from '../records/recovery.mjs';
+import {contactsInterrupted} from './contacts.mjs';
 import {workerKey} from './worker-key.mjs';
 import {randomUUID} from 'node:crypto';
 import {sourceCollector, collectorRun} from '../sources/collectors.mjs';
@@ -33,6 +34,7 @@ import {
 } from './recovery.mjs';
 import {sourceMethods} from './web-template/sources.mjs';
 import {conversationMethods} from './web-template/conversation.mjs';
+import {siteTurn} from '../sources/site-turns.mjs';
 // Template definitions select operations; the common queue owns dependencies,
 // worker leases and record/source exclusivity. No template-name dispatch here.
 export class WebTasks extends TaskRuns {
@@ -225,7 +227,12 @@ export class WebTasks extends TaskRuns {
             : run.kind === 'trial' ||
               batchScoring(run) ||
               Boolean(run.sourceUrl && run.scan?.complete && run.scan.completion !== 'user_stop');
-          const closeTabs = run.status === 'completed' && !pending && finished,
+          // A record the user is not eligible for needs no page either; a retry
+          // opens the listing again.
+          const notEligible =
+            Boolean(record && run.taskId) &&
+            db.store.workspaces.tasks.get(id, run.taskId)?.blocker?.category === 'not_eligible';
+          const closeTabs = !pending && ((run.status === 'completed' && finished) || notEligible),
             scope = run.recordId ?? (batchScoring(run) ? null : run.sourceUrl);
           // Earlier interrupted or blocked turns of the same record/source may have
           // left their own tabs; runs still waiting for an answer keep theirs.
@@ -245,7 +252,8 @@ export class WebTasks extends TaskRuns {
             retainForAccess:
               db.get(id).sourceState?.[run.sourceUrl]?.accessRecovery?.runId === run.id,
             closeTabs,
-            keepForms: record?.status !== 'completed',
+            // A completed or closed record needs no page any more, filled or not.
+            keepForms: !notEligible && !['completed', 'dismissed'].includes(record?.status),
             runIds,
             pendingTabIds: pendingContexts.map((context) => context.tabId).filter(Boolean),
             pendingUrls: pendingContexts.map((context) => context.url).filter(Boolean),
@@ -405,6 +413,7 @@ export class WebTasks extends TaskRuns {
           this.changed(saved.id);
         }
         this.sourceAccess.tick(saved.id);
+        if (contactsInterrupted(this.db, saved.id)) this.changed(saved.id);
         const native = saved.sources.some(
           (url) => saved.sourceSettings?.[url]?.enabled !== false && sourceCollector(saved, url),
         );
@@ -551,8 +560,10 @@ export class WebTasks extends TaskRuns {
           if (!batchId) {
             if (source.blocked || source.nextRunAt > this.now() || (a.once && source.onceCompleted))
               continue;
+            // Another workspace's round on this site goes first (site-turns.mjs).
+            if (siteTurn(this.db, a.id, source.url, this.now())) continue;
             batchId = randomUUID();
-            this.sourceState(a.id, source.url, {batchId});
+            this.sourceState(a.id, source.url, {batchId, roundStartedAt: this.now()});
           }
           const tasks = source.blocked
             ? this.queue.list(a.id, {batchId})
@@ -572,12 +583,19 @@ export class WebTasks extends TaskRuns {
             this.sourceState(a.id, source.url, {
               batchId: null,
               blocked,
+              // Other workspaces scanning this site start their turn after a gap.
+              roundEndedAt: this.now(),
               nextRunAt: blocked
                 ? null
                 : this.now() + (trialPassed ? 0 : source.intervalMinutes * 60000),
               onceCompleted: Boolean(a.once),
             });
-          } else
+          } else if (
+            // Two rounds open on one site: the later one waits for the earlier.
+            !siteTurn(this.db, a.id, source.url, this.now(), {
+              startedAt: source.roundStartedAt,
+            })
+          )
             pending.push(...waiting.filter((task) => !task.retryAt || task.retryAt <= this.now()));
         }
         const current = this.db.get(a.id),
@@ -663,6 +681,7 @@ export class WebTasks extends TaskRuns {
       digest: input.digest,
       direct: input.direct,
       changes: input.changes,
+      applyAnyway: input.applyAnyway,
     });
     await this.tick();
     return this.queue.get(id, task.id);

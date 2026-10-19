@@ -202,7 +202,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
-#automation-criteria {
+.profile-criteria {
   display: grid;
   gap: 18px;
 }
@@ -632,7 +632,7 @@
 .automation-plan .profile-form {
   padding: 0;
 }
-.automation-plan .profile-section .profile-fields #automation-criteria {
+.automation-plan .profile-section .profile-fields .profile-criteria {
   gap: 16px;
 }
 .automation-history-section .section-title {
@@ -1903,6 +1903,182 @@
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
 }
+.record-drawer:popover-open:has(.record-listing) {
+  width: min(640px, 100vw);
+}
+.record-drawer-tools {
+  align-items: center;
+  justify-content: space-between;
+}
+.record-drawer-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+}
+.record-drawer-tabs > button {
+  padding: 4px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+}
+.record-drawer-tabs > button[aria-selected='true'] {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+/* The listing's own text, at a comfortable reading width. */
+.record-drawer-body .record-listing-text {
+  max-width: 70ch;
+  margin-top: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.record-drawer-body .record-listing-state {
+  color: var(--text-secondary);
+}
+.record-listing-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.record-drawer-body .record-listing-footer small {
+  margin: 0;
+}
+/* Contacts page: one group per listing, one card per LinkedIn contact. */
+.contacts-page-filters {
+  margin-bottom: 12px;
+}
+.contacts-page-list {
+  display: grid;
+  max-width: 860px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.contacts-page-list:empty {
+  display: none;
+}
+.contacts-page-row + .contacts-page-row {
+  border-top: 1px solid var(--border);
+}
+.contacts-page-row[data-open='true'] {
+  background: var(--bg-raised);
+}
+/* One line per listing: title and company, then what waits on the user. */
+.contacts-page-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.contacts-page-head:hover {
+  background: var(--bg-hover);
+}
+.contacts-page-title {
+  display: grid;
+  min-width: 0;
+}
+.contacts-page-title > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contacts-page-title small,
+.contacts-page-count,
+.contacts-page-caret {
+  color: var(--text-secondary);
+}
+.contacts-page-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.contacts-page-body {
+  padding: 0 14px 14px;
+}
+.contacts-page-tools {
+  display: flex;
+  justify-content: flex-end;
+}
+.contacts-page-empty,
+.contacts-page .record-listing-state,
+.contacts-page .record-contact-about,
+.contacts-page .record-contact-hint {
+  color: var(--text-secondary);
+}
+.record-contact {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.record-contact-head,
+.record-contact-foot,
+.record-contacts-find {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.record-contact-head {
+  justify-content: space-between;
+}
+.record-contact-state {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  font-size: 12px;
+}
+.record-contact[data-state='uncertain'] .record-contact-state,
+.record-contact[data-state='failed'] .record-contact-state {
+  color: var(--danger, #e5484d);
+}
+.contacts-page .record-contact-reason {
+  margin: 0;
+  font-size: 13px;
+}
+.record-contact textarea {
+  width: 100%;
+  resize: vertical;
+}
+.record-contact-pick {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+}
+.record-contacts-send {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.record-contacts-find {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.record-contacts-find input {
+  flex: 1;
+}
+.contacts-page .record-contacts-error {
+  color: var(--danger, #e5484d);
+}
 .record-drawer-body {
   flex: 1;
   overflow: auto;
@@ -2134,4 +2310,34 @@
   color: var(--muted);
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+.record-contact-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-weight: 600;
+}
+.contacts-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.contacts-chip[data-tone='waiting'] {
+  background: rgba(217, 170, 95, 0.14);
+  color: var(--warning);
+}
+.contacts-chip[data-tone='active'] {
+  background: color-mix(in srgb, var(--accent, #4fd5c6) 16%, transparent);
+  color: var(--text);
+}
+.contacts-chip[data-tone='done'] {
+  background: rgba(92, 201, 149, 0.14);
+  color: var(--success);
+}
+.contacts-chip[data-tone='blocked'] {
+  background: color-mix(in srgb, var(--danger, #e5484d) 14%, transparent);
+  color: var(--danger, #e5484d);
 }

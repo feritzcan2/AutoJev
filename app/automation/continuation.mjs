@@ -1,6 +1,6 @@
 // @ts-check
 import {taskRecordIds} from '../records/task-scope.mjs';
-import {sourceScanScope} from '../sources/scan.mjs';
+import {sameScanScope} from '../sources/scan.mjs';
 
 const unfinishedSourceStatuses = ['interrupted', 'partial', 'blocked', 'failed', 'timeout'];
 
@@ -9,8 +9,7 @@ const unfinishedSourceStatuses = ['interrupted', 'partial', 'blocked', 'failed',
 export function answerContinuation(db, id, task, kind) {
   const a = db.get(id),
     matches = [];
-  const sourceScan = kind === 'run' && task.sourceUrl && !task.recordId && !task.recordOperation,
-    scopeKey = sourceScan ? sourceScanScope(a, task.sourceUrl) : null;
+  const sourceScan = kind === 'run' && task.sourceUrl && !task.recordId && !task.recordOperation;
   const sourceContinuation = (origin, continuation) => {
     // The unfinished scan cycle defines continuity, including after an app restart
     // or a long wait for an answer. Live browser evidence is refreshed separately.
@@ -29,7 +28,7 @@ export function answerContinuation(db, id, task, kind) {
     JSON.stringify(taskRecordIds(origin)) === JSON.stringify(taskRecordIds(task)) &&
     (origin.recordOperation ?? null) === (task.recordOperation ?? null) &&
     (!task.sourceUrl || origin.sourceUrl === task.sourceUrl) &&
-    (!sourceScan || origin.scanPlan?.scopeKey === scopeKey);
+    (!sourceScan || sameScanScope(origin.scanPlan?.scopeKey, a, task.sourceUrl));
   const access = !task.recordId && a.sourceState?.[task.sourceUrl]?.accessRecovery;
   if (access) {
     if (access.state !== 'answered') return null;

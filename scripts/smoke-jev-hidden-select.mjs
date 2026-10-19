@@ -38,7 +38,7 @@ try {
  <select id="gone" style="display:none">${options}</select>
  <div class="covered"><span>Covered</span><select id="covered">${options}</select><div class="cover"></div></div>
  <ul>${Array.from({length: 120}, (_, i) => `<li><a href="https://example.test/jobs/${i}">Job ${i}</a></li>`).join('')}</ul>`);
-  const observed = await call('browser_jev_observe', {tabId});
+  const observed = await call('browser_observe', {tabId});
   // Controls carry no DOM node; match them through the select-only fields.
   const selects = observed.controls.filter((c) => c.nativeSelect);
   const sort = selects.find(
@@ -57,10 +57,10 @@ try {
   assert.equal(region.selectedLabel, 'Any');
   assert.deepEqual(region.options, ['Any', 'Berlin']);
   assert.equal(selects.length, 2, 'hidden and covered selects stay out');
-  const listed = await call('browser_jev_list_options', {tabId, controlId: sort.controlId});
+  const listed = await call('browser_list_options', {tabId, controlId: sort.controlId});
   assert.equal(listed.optionCount, 3);
   assert.equal(listed.options[1].label, 'Most recent');
-  const picked = await call('browser_jev_select_option', {
+  const picked = await call('browser_choose_option', {
     tabId,
     controlId: sort.controlId,
     option: 'Most recent',
@@ -69,7 +69,7 @@ try {
   assert.equal(await page.evaluate(() => window.sorted), 'recent');
   const after =
     picked.controls.find((c) => c.controlId === sort.controlId) ??
-    (await call('browser_jev_observe', {tabId})).controls.find(
+    (await call('browser_observe', {tabId})).controls.find(
       (c) => c.nativeSelect && c.options?.includes('Most recent') && c.label !== 'Region',
     );
   assert.equal(after.selectedLabel, 'Most recent');

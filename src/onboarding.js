@@ -174,8 +174,8 @@ const friendlyChecks = {
     text: 'In Chrome, open chrome://inspect/#remote-debugging and turn on remote debugging. Chrome asks once to allow JobLoop.',
   },
   jev: {
-    title: 'Add your TypeSafe key',
-    text: 'JobLoop uses TypeSafe to fill application forms. Paste your API key here; it is stored encrypted on this computer.',
+    title: 'Choose who picks the listings',
+    text: 'A TypeSafe key makes picking listings faster and lighter; add it later under Configuration → Jev. Or let your AI agent decide instead.',
     link: ['Get a TypeSafe key', 'https://typesafe.ai'],
   },
 };
@@ -1122,23 +1122,11 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       );
       item.append(head, el('span', copy?.text ?? check.detail));
       if (copy?.link) item.append(button(copy.link[0], () => api.openLink(copy.link[1]), 'link'));
+      // The Jev key is entered later under Configuration → Jev; here the
+      // worker agent can take over the listing decisions instead.
       if (check.id === 'jev') {
-        const key = el('div', null, 'onboarding-key'),
-          input = el('input');
-        input.type = 'password';
-        input.name = 'jevKey';
-        input.placeholder = 'TypeSafe API key';
-        input.autocomplete = 'off';
+        const key = el('div', null, 'onboarding-key');
         key.append(
-          input,
-          button('Save key', () =>
-            attempt(async () => {
-              await api.saveJevSettings({apiKey: input.value});
-              readiness = null;
-              checkReadiness(form);
-            }),
-          ),
-          // Without a key the worker agent can make the listing decisions.
           button(
             'Let the agent decide instead',
             () =>
@@ -1164,7 +1152,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     try {
       readiness = await api.readiness({
         provider: data.automation.agentSettings.provider,
-        decisions: data.automation.agentSettings.decisions ?? 'jev',
+        decisions: data.automation.agentSettings.decisions ?? 'agent',
       });
     } catch (failure) {
       readiness = {
@@ -1214,7 +1202,9 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
   async function leaveOnboarding() {
     const owner = id,
       started = step !== 'start',
-      empty = Boolean(data && automationProgress(data).fresh && !data.documents?.length);
+      empty = Boolean(
+        data && automationProgress(data).fresh && !data.documents?.some((d) => !d.generated),
+      );
     if (
       started &&
       !confirm(
@@ -1231,12 +1221,13 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
   async function save(form) {
     const owner = id,
       f = form.elements;
-    const jev = await api.jevSettingsStatus();
-    if (!jev.configured) {
-      const key = form.querySelector('[name=jevKey]');
-      key?.scrollIntoView({block: 'center'});
-      key?.focus();
-      throw Error(jev.error ?? 'Add your TypeSafe key above to start the search.');
+    if (data.automation.agentSettings?.decisions === 'jev') {
+      const jev = await api.jevSettingsStatus();
+      if (!jev.configured)
+        throw Error(
+          jev.error ??
+            'Save the TypeSafe API key under Configuration → Jev, or let the agent make the listing decisions.',
+        );
     }
     const chosen = new Set(
       [...form.querySelectorAll('input[name=source]')].filter((i) => i.checked).map((i) => i.value),

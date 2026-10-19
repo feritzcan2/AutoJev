@@ -28,27 +28,27 @@ try {
     window.fileClicks = 0;
     document.querySelector('#cv').addEventListener('click', () => window.fileClicks++);
   });
-  let observed = await call('browser_jev_observe', {tabId});
+  let observed = await call('browser_observe', {tabId});
   assert.equal(observed.uploads.length, 1);
   assert.match(observed.uploads[0].label, /Resume\/CV/);
   const target = observed.clickTargets.find((t) => t.label === 'Select files');
   assert.ok(target);
-  const blocked = await call('browser_jev_click', {tabId, targetId: target.targetId});
+  const blocked = await call('browser_click_target', {tabId, targetId: target.targetId});
   assert.equal(blocked.status, 'upload_required');
   assert.equal(blocked.executed, false);
   assert.equal(await page.evaluate(() => window.fileClicks), 0);
-  const form = await call('browser_jev_inspect_form', {tabId});
+  const form = await call('browser_inspect_form', {tabId});
   assert.equal(form.uploads.length, 1);
   const year = form.fields.find((f) => f.label === 'Start year');
   assert.ok(year.controlId);
   assert.equal(year.fieldId, undefined);
-  const reveal = await call('browser_jev_reveal', {tabId, controlId: year.controlId});
+  const reveal = await call('browser_reveal', {tabId, controlId: year.controlId});
   const field = reveal.fillFields.find((f) => f.label === 'Start year');
   assert.ok(field);
-  await call('browser_jev_fill_fields', {tabId, fields: [{fieldId: field.fieldId, text: '2024'}]});
+  await call('browser_fill_fields', {tabId, fields: [{fieldId: field.fieldId, text: '2024'}]});
   assert.equal(await page.locator('[name=year]').inputValue(), '2024');
-  const latest = await call('browser_jev_inspect_form', {tabId});
-  const uploaded = await call('browser_jev_upload', {
+  const latest = await call('browser_inspect_form', {tabId});
+  const uploaded = await call('browser_upload', {
     tabId,
     uploadId: latest.uploads[0].uploadId,
     filePath: path.join(directory, 'CV.pdf'),
@@ -62,7 +62,7 @@ try {
   await page.setContent(
     '<section hidden><input type="file"><button>Select files</button></section><button>Continue</button>',
   );
-  observed = await call('browser_jev_observe', {tabId});
+  observed = await call('browser_observe', {tabId});
   assert.equal(observed.uploads.length, 0);
   // A button that creates its file input only when clicked: the file goes to
   // the chooser it opens; an ordinary button is refused as an upload target.
@@ -77,14 +77,14 @@ try {
       input.click();
     };
   });
-  observed = await call('browser_jev_observe', {tabId});
+  observed = await call('browser_observe', {tabId});
   assert.equal(observed.uploads.length, 0);
   const continueTarget = observed.clickTargets.find((t) => t.label === 'Continue');
   await assert.rejects(
     client
       .callTool(
         {
-          name: 'browser_jev_upload',
+          name: 'browser_upload',
           arguments: {
             tabId,
             uploadId: continueTarget.targetId,
@@ -99,7 +99,7 @@ try {
     /not a file upload button/,
   );
   const button = observed.clickTargets.find((t) => t.label === 'Add file');
-  const chosen = await call('browser_jev_upload', {
+  const chosen = await call('browser_upload', {
     tabId,
     uploadId: button.targetId,
     filePath: path.join(directory, 'CV.pdf'),

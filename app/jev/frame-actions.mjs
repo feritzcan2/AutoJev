@@ -139,7 +139,7 @@ export async function observeFormFrame(slot, frameId, owner) {
     inPlace: true,
     text: (await saved.frame.locator('body').innerText()).slice(0, 16000),
     controls,
-    nextAction: 'browser_jev_frame_act',
+    nextAction: 'browser_frame_act',
     message:
       'These targets work only inside the embedded form. Do not mix them with main page ids. After each action, use only the newly returned targets.',
   };

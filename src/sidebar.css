@@ -368,6 +368,17 @@ aside nav button:hover .nav-icon {
   color: var(--accent);
   border-color: var(--border);
 }
+.chrome-status .chrome-tip {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.chrome-status .chrome-tip[hidden] {
+  display: none;
+}
+.chrome-status .chrome-profile-note {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
 .chrome-profile-dialog {
   width: min(440px, calc(100vw - 32px));
   padding: 24px;

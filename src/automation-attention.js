@@ -400,26 +400,53 @@ export function automationAttentionPanel(
     return {card, open};
   }
   function createToolFailure(issue) {
-    const card = el('article', null, 'automation-help-card');
+    const workspace = owner,
+      card = el('article', null, 'automation-help-card');
     card.dataset.issueId = issue.id;
-    const open = el('button', 'Show record', 'primary');
+    const open = el('button', 'Show record', 'primary'),
+      actions = el('div', null, 'automation-help-actions'),
+      feedback = el('p');
     open.type = 'button';
+    feedback.setAttribute('role', 'status');
     open.onclick = () => {
       navigate('board');
       document
         .querySelector(`[data-result-id="${CSS.escape(issue.recordId)}"]`)
         ?.scrollIntoView({block: 'center', behavior: 'smooth'});
     };
+    actions.append(open);
+    if (issue.canDismissRecord) {
+      const skip = el('button', 'Skip', 'quiet');
+      skip.type = 'button';
+      skip.dataset.recordDismiss = issue.recordId;
+      skip.title = 'Skip this record and close this notice';
+      skip.onclick = async () => {
+        open.disabled = skip.disabled = true;
+        feedback.textContent = '';
+        try {
+          await api.automationDismiss(workspace, issue.recordId);
+          if (owner === workspace) await refresh();
+        } catch (error) {
+          feedback.textContent = error.message;
+        } finally {
+          open.disabled = skip.disabled = false;
+        }
+      };
+      actions.append(skip);
+    }
     card.append(
       el('span', 'Repeated error · Task stopped', 'automation-help-label'),
       el('h3', issue.name),
       el('p', issue.message, 'automation-help-summary'),
       el(
         'p',
-        'Automatic retries stopped. After fixing the cause of the error, you can retry from the results table.',
+        issue.canDismissRecord
+          ? 'Automatic retries stopped. After fixing the cause of the error, you can retry from the results table, or skip this record.'
+          : 'Automatic retries stopped. After fixing the cause of the error, you can retry from the results table.',
         'automation-help-instructions',
       ),
-      open,
+      actions,
+      feedback,
     );
     list.append(card);
     return {card, open};

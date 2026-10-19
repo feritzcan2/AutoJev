@@ -282,6 +282,7 @@ test('the third repeated save error stops only its worker and persists a visible
   assert.equal(issues[0].kind, 'repeated_tool_error');
   assert.equal(issues[0].recordId, f.item.id);
   assert.match(issues[0].message, /3 times/);
+  assert.equal(issues[0].canDismissRecord, true);
   assert.equal(
     f.db.messages(f.id).filter((m) => m.recordId === f.item.id && m.role === 'system').length,
     1,

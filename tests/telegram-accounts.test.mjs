@@ -356,7 +356,7 @@ test('legacy global setup migrates linked candidates, original messages, drafts 
   assert.equal(restarted.status(other.id).configured, false);
   assert.equal(restarted.worker(p.id).db.meta('offset'), '123');
   assert.equal(restarted.worker(p.id).db.meta('sendAfter'), '2000000');
-  const {queueSignature, ...migratedLink} = restarted.db.link(p.id).data;
+  const {queueSignature, recordTasks, ...migratedLink} = restarted.db.link(p.id).data;
   assert.deepEqual(migratedLink, dataJson);
   assert.equal(restarted.db.link(p.id).bot_id, '123456789');
   assert.equal(restarted.worker(p.id).db.delivery(row.id).message_id, 77);

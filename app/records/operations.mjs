@@ -57,6 +57,8 @@ export function recordOperationError(
     return ['completed', 'executing', 'uncertain', 'dismissed'].includes(item.status)
       ? 'This record is closed'
       : null;
+  // Finding or writing to a contact changes nothing about the record itself.
+  if (kind === 'contacts') return null;
   if (['completed', 'executing', 'uncertain', 'dismissed'].includes(item.status))
     return 'This record cannot be submitted again';
   if (!automationReady(a)) return 'Check and save the setup first';
@@ -91,11 +93,21 @@ export function enqueueRecordOperation(
   id,
   itemId,
   kind,
-  {manual = true, digest, direct = false, changes = undefined, dryRun = false} = {},
+  {
+    manual = true,
+    digest,
+    direct = false,
+    changes = undefined,
+    dryRun = false,
+    applyAnyway = false,
+  } = {},
 ) {
   runtime.assertNotStopping(id);
   // Every execute is direct: the agent fills and submits in one task.
   if (kind === 'execute') direct = true;
+  // The user's choice to apply despite an eligibility mismatch covers only
+  // their own request to apply.
+  applyAnyway = kind === 'execute' && manual && applyAnyway === true;
   // The user's requested changes to a reviewed draft go to a new preparation.
   if (changes !== undefined)
     changes = kind === 'prepare' ? boundedText(changes, 'Change request', 2000) : undefined;
@@ -162,6 +174,7 @@ export function enqueueRecordOperation(
         existing.recordOperation === kind &&
         (existing.request?.direct === true) === (direct === true) &&
         (existing.request?.dryRun === true) === (dryRun === true) &&
+        (existing.request?.applyAnyway === true) === applyAnyway &&
         (!digest || existing.request?.digest === digest)
       ) {
         if (manual && existing.state === 'pending' && !existing.request?.manual)
@@ -178,6 +191,7 @@ export function enqueueRecordOperation(
         manual,
         revision: a.revision,
         ...(kind === 'execute' ? {direct: true} : {}),
+        ...(applyAnyway ? {applyAnyway: true} : {}),
         ...(changes ? {changes} : {}),
         // Development trial score: the record keeps its assessment.
         ...(dryRun && kind === 'score' ? {dryRun: true} : {}),
@@ -272,7 +286,7 @@ export function validateRecordTask(db, id, task, now) {
   if (!task.recordOperation) return;
   const a = db.get(id),
     request = task.request ?? {};
-  if (request.revision !== a.revision && task.recordOperation !== 'verify')
+  if (request.revision !== a.revision && !['verify', 'contacts'].includes(task.recordOperation))
     throw Error('The setup changed while the task was queued; prepare the action again');
   for (const itemId of taskRecordIds(task)) {
     const item = db.result(id, itemId);
@@ -330,7 +344,7 @@ export function resumeRecordOperation(runtime, id, item, task) {
       : task?.recordOperation === 'score'
         ? 'score'
         : 'execute',
-    {direct: true},
+    {direct: true, applyAnyway: task?.request?.applyAnyway === true},
   );
 }
 
@@ -400,6 +414,7 @@ export async function dispatchRecordOperations(runtime, id, {manualOnly = false}
         manual: true,
         direct: request.direct === true,
         digest: request.direct === true ? undefined : request.digest,
+        applyAnyway: request.applyAnyway === true,
       });
     } catch (error) {
       db.message(
@@ -523,7 +538,8 @@ export function recordOperationState(
   } = {},
 ) {
   const task = recordTasks.find((t) => live.includes(t.state)),
-    last = recordTasks.findLast((t) => t.recordOperation);
+    // A contact task has its own state in the Contacts tab, not on the record.
+    last = recordTasks.findLast((t) => t.recordOperation && t.recordOperation !== 'contacts');
   // One action per record: verify an uncertain outcome, otherwise apply
   // directly. There is no separate draft or approval step.
   const kind =
@@ -575,6 +591,10 @@ export function recordOperationState(
       retryOperation = {
         kind: retryKind,
         direct,
+        // A retry keeps the user's choice to apply despite an eligibility mismatch.
+        ...(retryKind === 'execute' && last.request?.applyAnyway === true
+          ? {applyAnyway: true}
+          : {}),
         review: retryKind === 'execute' && !direct,
         disabled: Boolean(reason),
         reason,

@@ -28,7 +28,7 @@ test('the trace keeps every exchange of a run, masks secrets and stays bounded',
   });
   trace.tool(grant, {kind: 'tool_catalog', name: 'tools/list', result: {tools: [{name: 'a'}]}});
   trace.tool(grant, {
-    name: 'read_jev_brief',
+    name: 'read_listing_brief',
     args: {evidenceId: 'e1', apiKey: 'k-123'},
     result: {
       content: [
@@ -60,7 +60,7 @@ test('the trace keeps every exchange of a run, masks secrets and stays bounded',
     [
       ['prompt', 'launch'],
       ['prompt', 'tools'],
-      ['tool', 'read_jev_brief'],
+      ['tool', 'read_listing_brief'],
       ['tool', 'credential_vault_read'],
       ['tool', 'record_automation_score'],
       ['jev', undefined],
@@ -174,7 +174,7 @@ test('the bench asks Jev the scan questions with the workspace criteria and appl
   t.after(() => core.close());
   const a = db.create('job-search', {
     goal: 'Find backend roles',
-    criteria: {preferences: 'Go', constraints: 'Only backend roles. No design work.'},
+    criteria: {preferences: 'Go. Only backend roles. No design work.'},
     sources: [source],
   });
   const extension = {
@@ -269,7 +269,7 @@ test('the bench asks Jev the scan questions with the workspace criteria and appl
   assert.equal(j.why.reason, 'unrelated_role');
   assert.deepEqual(
     [j.why.rule.top[0].source, j.why.rule.top[0].text],
-    ['criteria.constraints', 'No design work.'],
+    ['criteria.preferences', 'No design work.'],
   );
   assert.match(j.why.passage.top[0].text, /Figma/);
   assert.ok(

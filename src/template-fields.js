@@ -76,8 +76,6 @@ export const RULES_HINT =
 export function templateFields(root, fields, values = {}, prefix = 'criteria-') {
   root.replaceChildren();
   for (const field of fields) {
-    // A replaced field shows only while it still holds text to move.
-    if (field.legacy && !String(values[field.id] ?? '').trim()) continue;
     if (field.type === 'rules') {
       root.append(rulesField(prefix + field.id, field.label, values[field.id], RULES_HINT));
       continue;

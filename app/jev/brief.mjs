@@ -117,7 +117,7 @@ export async function buildJevBrief({
         url: evidence.url,
         title: evidence.title,
         error: error.message,
-        next: 'Jev could not select source sections. Use read_jev_evidence for the needed original text, or retry this brief. Do not invent facts.',
+        next: 'Jev could not select source sections. Use read_listing_evidence for the needed original text, or retry this brief. Do not invent facts.',
       };
     }
     for (const [i, block] of batch.entries()) {
@@ -141,7 +141,7 @@ export async function buildJevBrief({
       evidenceId,
       url: evidence.url,
       title: evidence.title,
-      next: 'No reliable listing sections selected. Read relevant original text with read_jev_evidence before scoring; missing facts remain unknown.',
+      next: 'No reliable listing sections selected. Read relevant original text with read_listing_evidence before scoring; missing facts remain unknown.',
     };
   if (offset > brief.selected.length) throw Error('Invalid Jev brief range.');
   const sections = [];
@@ -167,7 +167,7 @@ export async function buildJevBrief({
       analyzedAllText: true,
       unreadFrames: evidence.unreadFrames ?? 0,
     },
-    next: "Use these original source sections for assessment. Read nextOffset pages if present. Absent facts stay unknown; a possibility is not a guarantee, and a site estimate is not the provider's own statement. For a missing or conflicting detail use read_jev_evidence at the relevant source offset. No full-page reread is required.",
+    next: "Use these original source sections for assessment. Read nextOffset pages if present. Absent facts stay unknown; a possibility is not a guarantee, and a site estimate is not the provider's own statement. For a missing or conflicting detail use read_listing_evidence at the relevant source offset. No full-page reread is required.",
   };
 }
 
@@ -209,7 +209,7 @@ export async function readJevBrief(options) {
     return {
       status: 'running',
       evidenceId,
-      next: 'Jev is selecting the important listing sections in the background. Poll read_jev_brief with this evidenceId; do not reread the page or start another browser operation.',
+      next: 'Jev is selecting the important listing sections in the background. Poll read_listing_brief with this evidenceId; do not reread the page or start another browser operation.',
     };
   if (job.error) {
     store.briefJobs.delete(evidenceId);

@@ -23,7 +23,7 @@ test('the user profile contains current language facts and user documents withou
     path: 'PRIVATE_PATH',
   });
   assert.match(context.userProfile.currentFacts.text, /German B2/);
-  assert.match(context.userProfile.savedFacts.text, /English C1/);
+  assert.equal('savedFacts' in context.userProfile, false, 'the retired profile is not read');
   assert.match(context.userProfile.documents.text, /LL.B.*GDPR/);
   assert.equal(context.userProfile.documents.truncated, false);
   assert.equal(context.criteria.preferences, automation.criteria.preferences);
@@ -39,25 +39,10 @@ test('large and unreadable profile sources stay bounded with explicit unknown co
   const automation = {
     templateId: 'job-search',
     facts: 'Current fact. '.repeat(5000),
-    referenceData: {profile: {facts: 'Saved fact. '.repeat(5000)}},
   };
   const context = jevCriteria(automation, {text: 'CV experience. '.repeat(5000)}).userProfile;
   assert.equal(context.currentFacts.truncated, true);
-  assert.equal(context.savedFacts.truncated, true);
   assert.equal(context.documents.truncated, true);
-  const answers = jevCriteria(
-    {
-      ...automation,
-      referenceData: {
-        profile: {
-          facts: 'Saved fact. '.repeat(5000),
-          learnedFacts: {languages: {value: 'German C1'}},
-        },
-      },
-    },
-    {text: ''},
-  ).userProfile.savedFacts.text;
-  assert.match(answers, /^languages: German C1/, 'a long saved summary never cuts short answers');
   assert.ok(JSON.stringify(context).length < 19000);
   const unavailable = jevCriteria(automation, {text: '', unavailable: 'CV unavailable'}).userProfile
     .documents;
@@ -73,7 +58,10 @@ test('large and unreadable profile sources stay bounded with explicit unknown co
 test('job examples come from the template, not the shared triage rules', () => {
   const hints = automationTemplate('job-search').assessmentHints;
   assert.match(hints, /engineer, developer or architect/);
-  assert.equal(jevCriteria({goal: 'g'}, undefined, hints).assessmentHints, hints);
+  assert.equal(
+    jevCriteria({goal: 'g'}, undefined, {assessmentHints: hints}).assessmentHints,
+    hints,
+  );
   assert.equal('assessmentHints' in jevCriteria({goal: 'g'}), false);
   for (const rules of [FIT_RULES, DISCOVERY_FIT_RULES])
     assert.doesNotMatch(rules, /for jobs|salary|\bCV\b|engineer/i);

@@ -1,4 +1,5 @@
-import {profilePlan, profileChanged, splitPlanDraft} from './profile-updates.mjs';
+import {profilePlan, profileChanged} from './profile-updates.mjs';
+import {convertLegacyProfile} from './legacy-profile.mjs';
 import {taskSnapshot} from '../browser/automation-snapshot.mjs';
 import {automationSnapshotReader} from '../browser/automation-snapshot-reader.mjs';
 import {JevTaskStore} from '../jev/task-store.mjs';
@@ -61,7 +62,8 @@ function agentSettings(input) {
   for (const key of ['model', 'permission', 'reasoning']) boundedText(input[key], key, 120);
   if (![true, false, null].includes(input.network)) throw Error('Invalid network setting');
   if (!DECISION_MODES.includes(input.decisions)) throw Error('Invalid decision setting');
-  const trialModel = input.trialModel ? boundedText(input.trialModel, 'trialModel', 120) : null;
+  const trialModel = input.trialModel ? boundedText(input.trialModel, 'trialModel', 120) : null,
+    contactModel = input.contactModel ? boundedText(input.contactModel, 'contactModel', 120) : null;
   return {
     provider: input.provider,
     model: input.model,
@@ -70,6 +72,7 @@ function agentSettings(input) {
     network: input.provider === 'codex' ? input.network : null,
     decisions: input.decisions,
     ...(trialModel || input.trialModel === null ? {trialModel} : {}),
+    ...(contactModel || input.contactModel === null ? {contactModel} : {}),
     contextCompactTokens: contextCompactTokens(input.contextCompactTokens),
     ...(input.contextRestartTokens === undefined
       ? {}
@@ -97,6 +100,8 @@ export class AutomationStore {
    CREATE TABLE IF NOT EXISTS scan_seen_listings(workspace_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,url_key TEXT NOT NULL,scope_key TEXT NOT NULL,reason TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(workspace_id,url_key));`);
     this.jevTasks = new JevTaskStore(this.db, now);
     this.browserEvidence = new BrowserEvidenceStore(now);
+    for (const {id} of this.db.prepare('SELECT id FROM automations').all())
+      convertLegacyProfile(this, id);
     for (const {id} of this.list())
       if (this.store.workspaces.records.usesUrl(id))
         this.store.workspaces.records.identities.rebuild(id);
@@ -129,11 +134,11 @@ export class AutomationStore {
     delete a.timeoutMinutes;
     delete a.maxBrowserSteps;
     if (a.questions) a.questions = a.questions.map((q) => this.questionScope(id, q));
-    return splitPlanDraft({
+    return {
       ...a,
       ...this.store.workspaces.fields(id),
       table: this.store.workspaces.table(id),
-    });
+    };
   }
   catalog() {
     return [

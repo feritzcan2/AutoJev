@@ -243,6 +243,68 @@ test('draft preparation keeps its tab; verified submission closes the completed 
   assert.deepEqual(calls.at(-1).options.runIds.toSorted(), [calls[0].run.id, run.id].toSorted());
 });
 
+test('an execute run that marks the record closed closes its tabs, including earlier turns', async (t) => {
+  const calls = [],
+    f = fixture(t, 'job-search', {onRunFinished: (id, run, options) => calls.push({run, options})});
+  await f.prepare();
+  await f.runtime.runRecord(f.id, f.item.id, 'execute', {manual: true});
+  await settle();
+  const run = f.launches.at(-1),
+    evidence = 'No longer accepting applications';
+  f.db.closeRecord(
+    f.id,
+    run.id,
+    f.item.id,
+    {evidence, url: f.item.url},
+    {url: f.item.url, text: evidence},
+  );
+  await f.finish(run);
+  assert.equal(f.db.result(f.id, f.item.id).status, 'dismissed');
+  assert.equal(calls.at(-1).run.id, run.id);
+  assert.equal(calls.at(-1).options.closeTabs, true);
+  assert.equal(calls.at(-1).options.keepForms, false);
+  assert.deepEqual(calls.at(-1).options.runIds.toSorted(), [calls[0].run.id, run.id].toSorted());
+});
+
+test('a blocked application closes its tabs only when the user is not eligible', async (t) => {
+  for (const [category, closes] of [
+    ['not_eligible', true],
+    ['needs_login', false],
+  ]) {
+    const calls = [],
+      f = fixture(t, 'job-search', {
+        onRunFinished: (id, run, options) => calls.push({run, options}),
+      });
+    const item = await f.prepare();
+    await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+    await settle();
+    const run = f.launches.at(-1);
+    const flow = automationWorkflow({
+      db: f.db,
+      run,
+      signal: new AbortController().signal,
+      browser: {currentUrl: async () => item.url, call: async () => ({content: []})},
+      report: (...args) => f.runtime.report(...args),
+    });
+    await flow.call(f.id, run.id, 'finish_automation_run', {
+      status: 'blocked',
+      summary: 'Not submitted.',
+      blocker: {category, reason: 'The form excludes the user.', userAction: 'Skip this record'},
+    });
+    await f.runtime.finish(f.id, 'blocked', 'Not submitted.', run.workerId);
+    await settle();
+    assert.equal(calls.at(-1).run.id, run.id);
+    assert.equal(calls.at(-1).options.closeTabs, closes, category);
+    if (closes) {
+      assert.equal(calls.at(-1).options.keepForms, false);
+      assert.deepEqual(
+        calls.at(-1).options.runIds.toSorted(),
+        [calls[0].run.id, run.id].toSorted(),
+      );
+    }
+  }
+});
+
 // Skip and a manual "applied" both end the record for the user: the tabs its
 // earlier runs opened close, including filled forms.
 test('skipping or marking a record applied closes its tabs', async (t) => {
@@ -427,6 +489,31 @@ test('requested changes to a reviewed draft reach the next preparation', async (
   assert.equal(context.assignedRecord.proposal, prepared.proposal);
 });
 
+test('apply anyway reaches the execute context and a retry keeps it', async (t) => {
+  const f = fixture(t, 'job-search');
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  let run = f.launches.at(-1);
+  assert.equal(automationTaskContext(f.db, f.id, f.db.run(run.id)).applyAnyway, undefined);
+  await f.runtime.finish(f.id, 'blocked', 'Not eligible.', run.workerId);
+  await settle();
+  const task = await f.runtime.runRecord(f.id, item.id, 'execute', {
+    direct: true,
+    applyAnyway: true,
+  });
+  assert.equal(task.request.applyAnyway, true);
+  await settle();
+  run = f.launches.at(-1);
+  assert.match(automationTaskContext(f.db, f.id, f.db.run(run.id)).applyAnyway.rule, /truthfully/);
+  // A Retry after that run keeps the choice.
+  await f.runtime.finish(f.id, 'blocked', 'Cover letter field still empty.', run.workerId);
+  await settle();
+  const retry = f.db.snapshot(f.id).results.find((r) => r.id === item.id)
+    .recordAction.retryOperation;
+  assert.equal(retry.applyAnyway, true);
+});
+
 test('one sign-in answer releases every open login question for the same site', async (t) => {
   const f = fixture(t),
     seed = f.db.begin(f.id, 'run');
@@ -552,7 +639,7 @@ test('dismissal cancels queued work and rejects foreign or already attempted rec
   const other = f.db.create('custom');
   await assert.rejects(f.runtime.dismissRecord(other.id, f.item.id), /does not belong/);
   assert.equal(queue.get(f.id, task.id).state, 'pending');
-  for (const status of ['executing', 'completed', 'uncertain']) {
+  for (const status of ['executing', 'completed']) {
     f.db.putResult({...f.item, status});
     await assert.rejects(f.runtime.dismissRecord(f.id, f.item.id), /history/);
     assert.equal(f.db.result(f.id, f.item.id).status, status);
@@ -895,7 +982,7 @@ test('Jev document upload uses the current record tab and observed upload ID', a
     'run',
   );
   assert.deepEqual(calls.at(-1), {
-    name: 'browser_jev_upload',
+    name: 'browser_upload',
     args: {tabId: 'record-tab', uploadId: 'observed-upload', filePath: '/workspace/cv.pdf'},
   });
 });
@@ -1259,6 +1346,41 @@ test('uncertain direct execution cannot be retried as another submission', async
     /cannot be submitted again/,
   );
   assert.equal(f.db.snapshot(f.id).results[0].recordAction.directOperation, null);
+});
+
+// A record stuck on an unverified submit can be skipped from its question; the
+// skip remembers the uncertainty, so Restore never reopens a new submission.
+test('an uncertain record can be skipped and restores as uncertain', async (t) => {
+  const f = fixture(t);
+  await f.runtime.runRecord(f.id, f.item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  f.db.record(f.id, run.id, {
+    key: f.item.key,
+    url: f.item.url,
+    title: f.item.title,
+    summary: 'Checked',
+    proposal: 'Verified form',
+  });
+  f.db.reserve(f.id, run.id, f.item.id);
+  await f.runtime.finish(f.id, 'interrupted', 'Connection lost', run.workerId);
+  const q = f.db.askQuestion(f.id, {recordId: f.item.id, text: 'Driving licence?'});
+  assert.equal(
+    f.db.snapshot(f.id).automation.questions.find((item) => item.id === q.id).canDismissRecord,
+    true,
+  );
+  await f.runtime.dismissRecord(f.id, f.item.id);
+  const skipped = f.db.result(f.id, f.item.id);
+  assert.equal(skipped.status, 'dismissed');
+  assert.equal(skipped.skippedFrom, 'uncertain');
+  assert.ok(f.db.get(f.id).questions.find((item) => item.id === q.id).answer);
+  const restored = f.runtime.restoreRecord(f.id, f.item.id);
+  assert.equal(restored.status, 'uncertain');
+  assert.equal(restored.skippedFrom, undefined);
+  await assert.rejects(
+    f.runtime.runRecord(f.id, f.item.id, 'execute', {direct: true}),
+    /cannot be submitted again/,
+  );
 });
 
 for (const template of ['job-search', 'housing', 'appointment', 'custom'])
@@ -1980,8 +2102,8 @@ test('autocomplete text alone asks for the option with exactly that label', asyn
       ),
     ]);
   assert.deepEqual(sent, [
-    ['browser_jev_autocomplete', {controlId: 'c1', text: 'Yes', option: 'Yes'}],
-    ['browser_jev_list_suggestions', {controlId: 'c2'}],
+    ['browser_autocomplete', {controlId: 'c1', text: 'Yes', option: 'Yes'}],
+    ['browser_list_suggestions', {controlId: 'c2'}],
   ]);
 });
 
@@ -2211,12 +2333,14 @@ test('a blocked application needs a short blocker, which the record card shows i
     category: 'not_eligible',
     reason: 'The form requires US work authorization; the listing said worldwide.',
     next: 'Skip this record',
-    skip: true,
   });
   // Without a blocker (older runs) the card falls back to the summary.
   const legacy = structuredClone(row);
   delete legacy.recordAction.lastTask.blocker;
-  assert.deepEqual(recordProblem(legacy), {label: 'Operation blocked', reason: summary});
+  assert.deepEqual(recordProblem(legacy), {
+    label: 'Operation blocked',
+    reason: summary,
+  });
 });
 
 test('a click on the submit button the form inspection found is the submission, also labelled Apply', async (t) => {
@@ -2234,7 +2358,7 @@ test('a click on the submit button the form inspection found is the submission, 
   const browser = {
     currentUrl: async () => item.url,
     call: async (_id, name) =>
-      name === 'browser_jev_inspect_form'
+      name === 'browser_inspect_form'
         ? {
             url: item.url,
             fields: [{label: 'Email', required: true}],
@@ -2259,7 +2383,7 @@ test('a click on the submit button the form inspection found is the submission, 
   // Before an inspection found a form, "Apply" may open the form: no reservation needed.
   const entry = await flow.call(f.id, run.id, 'browser_interact', {operation: 'click', ref: 'e1'});
   assert.equal(entry.submission, undefined);
-  await flow.call(f.id, run.id, 'browser_jev_inspect_form', {});
+  await flow.call(f.id, run.id, 'browser_inspect_form', {});
   await assert.rejects(
     flow.call(f.id, run.id, 'browser_interact', {operation: 'click', ref: 'e1'}),
     /reserve_automation_action/,
@@ -2378,7 +2502,10 @@ test('an execute run completes a record whose page says the user already applied
       content: [
         {
           type: 'text',
-          text: `Page URL: ${item.url}\n${JSON.stringify({url: item.url, text: 'Senior Engineer\n' + applied})}`,
+          text: `Page URL: ${item.url}\n${JSON.stringify({
+            url: item.url,
+            text: 'Senior Engineer\nApplication status\nApplication submitted\n2 weeks ago\nNo longer accepting applications',
+          })}`,
         },
       ],
     }),
@@ -2396,15 +2523,26 @@ test('an execute run completes a record whose page says the user already applied
       status: 'applied',
       evidence: 'You applied to this job',
     }),
-    /you already applied, word for word/,
+    /you already applied, copied word for word/,
+  );
+  // A note around quoted parts needs every quoted part on the page.
+  await assert.rejects(
+    flow.call(f.id, run.id, 'record_automation_outcome', {
+      status: 'applied',
+      evidence: 'The page shows "Application submitted" and "You applied on LinkedIn".',
+    }),
+    /quote is not in the current page text/,
   );
   assert.equal(f.db.result(f.id, item.id).status, 'prepared');
+  // Page lines joined with dashes, and a note with quoted page parts, are accepted.
+  const note =
+    'Application status: "Application status — Application submitted — 2 weeks ago" (job page); page also says "No longer accepting applications".';
   const saved = await flow.call(f.id, run.id, 'record_automation_outcome', {
     status: 'applied',
-    evidence: applied,
+    evidence: note,
   });
   assert.equal(saved.status, 'completed');
-  assert.equal(saved.alreadyApplied.evidence, applied);
+  assert.equal(saved.alreadyApplied.evidence, note);
   await flow.call(f.id, run.id, 'finish_automation_run', {
     status: 'completed',
     summary: 'The user already applied to this listing.',
@@ -2555,7 +2693,7 @@ test('a click that opens a new tab continues the run in that tab', async (t) => 
           ...page(item.url, 'Listing'),
           action: {status: 'uncertain', executed: true, openedTab: {tabId: 'child'}},
         };
-      if (name === 'browser_jev_use_tab') return page(item.url + '/apply', 'Employer form');
+      if (name === 'browser_use_tab') return page(item.url + '/apply', 'Employer form');
       return page(item.url, 'Listing');
     },
   };
@@ -2571,7 +2709,7 @@ test('a click that opens a new tab continues the run in that tab', async (t) => 
     operation: 'click',
     ref: 'e1',
   });
-  assert.deepEqual(calls.find((c) => c.name === 'browser_jev_use_tab').args, {tabId: 'child'});
+  assert.deepEqual(calls.find((c) => c.name === 'browser_use_tab').args, {tabId: 'child'});
   assert.equal(result.url, item.url + '/apply');
   assert.match(result.action.message, /new tab/);
 });

@@ -349,8 +349,8 @@ test('a brief without a model returns the original listing text in pages', async
   );
 });
 
-test('the decision setting defaults to Jev, is validated, and selects the agent instructions', (t) => {
-  assert.equal(withAgentDefaults({provider: 'claude'}).decisions, 'jev');
+test('the decision setting defaults to the agent, is validated, and selects the agent instructions', (t) => {
+  assert.equal(withAgentDefaults({provider: 'claude'}).decisions, 'agent');
   const core = new WorkspaceDatabase(':memory:'),
     db = new AutomationStore(core);
   t.after(() => core.close());
@@ -362,7 +362,7 @@ test('the decision setting defaults to Jev, is validated, and selects the agent 
   db.save(a.id, {agentSettings: {provider: 'codex', decisions: 'agent'}});
   assert.equal(db.get(a.id).agentSettings.decisions, 'agent');
 
-  const jev = webAgentProfile('run', {provider: 'codex'}).instructions,
+  const jev = webAgentProfile('run', {provider: 'codex', decisions: 'jev'}).instructions,
     agent = webAgentProfile('run', {provider: 'codex', decisions: 'agent'}).instructions;
   assert.match(jev, /## Jev managed browser/);
   assert.match(agent, /## Managed browser \(agent decisions\)/);
@@ -378,7 +378,7 @@ test('agent decisions narrow the tools and prompts to what the agent decides its
     agent = scopedAutomationTools({run, template, collecting: false, agentDecides: true});
   assert.ok(names(jev).includes('save_jev_profile'));
   assert.ok(!names(agent).includes('save_jev_profile'));
-  const tool = agent.find((t) => t.name === 'browser_jev_run');
+  const tool = agent.find((t) => t.name === 'browser_run_task');
   assert.deepEqual(tool.inputSchema.properties.operation.enum, [
     'scan_results',
     'classify_results',
@@ -386,7 +386,10 @@ test('agent decisions narrow the tools and prompts to what the agent decides its
   ]);
   assert.ok(tool.inputSchema.properties.selected && tool.inputSchema.properties.next);
   assert.ok(!tool.inputSchema.properties.answers);
-  assert.match(agent.find((t) => t.name === 'read_jev_brief').description, /original listing text/);
+  assert.match(
+    agent.find((t) => t.name === 'read_listing_brief').description,
+    /original listing text/,
+  );
 
   const prompt = automationPrompt(run, null, {agentDecides: true});
   assert.match(prompt, /you make the listing decisions/);
@@ -415,7 +418,7 @@ test('readiness needs no TypeSafe key when the agent makes the listing decisions
   assert.equal(check.state, 'ready');
   assert.match(check.detail, /no TypeSafe key is needed/);
   const jev = await collectReadiness(
-    {provider: 'codex'},
+    {provider: 'codex', decisions: 'jev'},
     {...options, jevStatus: async () => ({})},
   );
   assert.equal(jev.checks.find((c) => c.id === 'jev').state, 'error');
@@ -491,7 +494,7 @@ test('a recipe is verified from the listings the agent selected; no automatic ch
   const recipe = {entry: {kind: 'url_template', template}, terms: ['Find homes']};
   await assert.rejects(
     flow.call(a.id, trial.id, 'save_source_recipe', recipe),
-    /Recipe not checked yet: run browser_jev_run scan_results at .*no check was used/,
+    /Recipe not checked yet: run browser_run_task scan_results at .*no check was used/,
   );
   await assert.rejects(
     flow.call(a.id, trial.id, 'save_source_recipe', {
@@ -502,12 +505,12 @@ test('a recipe is verified from the listings the agent selected; no automatic ch
   assert.equal(opened.length, 0, 'no page is opened for a check');
   assert.equal(db.run(trial.id).recipeChecks ?? 0, 0);
 
-  const scan = await flow.call(a.id, trial.id, 'browser_jev_run', {
+  const scan = await flow.call(a.id, trial.id, 'browser_run_task', {
     operation: 'scan_results',
     url: expected,
   });
   assert.equal(scan.issue.reason, 'links_ready');
-  await flow.call(a.id, trial.id, 'browser_jev_run', {
+  await flow.call(a.id, trial.id, 'browser_run_task', {
     taskId: scan.taskId,
     reviewedBatchId: scan.linkSelection.id,
     selected: [1],

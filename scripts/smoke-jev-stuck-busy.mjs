@@ -20,7 +20,7 @@ const read = async (tabId) =>
   JSON.parse(
     (
       await client.callTool(
-        {name: 'browser_jev_observe', arguments: {tabId, scope: 'document'}},
+        {name: 'browser_observe', arguments: {tabId, scope: 'document'}},
         'test',
       )
     ).content[0].text,

@@ -108,7 +108,7 @@ export async function resolveTurnstileBarrier(browser, id, result, owner, option
     queued(() =>
       browser.performCall(
         id,
-        'browser_jev_observe',
+        'browser_observe',
         {tabId: slot.id, scope: 'document', full: true, fullReason: 'context_loss'},
         owner,
         options,

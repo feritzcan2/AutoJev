@@ -30,7 +30,7 @@ export const jobSearchTemplate = {
     prepare: {
       label: 'Prepare application',
       instructions:
-        'Read the full vacancy, candidate CV and saved application rules. Inspect the actual application form. Prepare exact answers and document paths, explaining eligibility and any missing facts through record-scoped questions. Save the complete application as a proposal. Do not submit an application during preparation.',
+        'Read the full vacancy, candidate CV and saved consent choices. Inspect the actual application form. Prepare exact answers and document paths, explaining eligibility and any missing facts through record-scoped questions. Save the complete application as a proposal. Do not submit an application during preparation.',
     },
     execute: {
       label: 'Apply',
@@ -39,9 +39,13 @@ export const jobSearchTemplate = {
         "The employer or portal shows confirmation for this exact vacancy and candidate, or its application history lists this application. Save the observed confirmation; an Apply button click is insufficient. When the listing sends the candidate to the employer's site, a job board's Applied marker or history entry only records that redirect: the confirmation must come from the employer's form.",
     },
   },
+  // Fields this template no longer has, by id: the store moves saved text of
+  // each into the instructions under this label.
+  retiredFields: {constraints: 'Hard requirements'},
   fields: [
     {
       id: 'preferences',
+      section: 'search',
       label: 'Job preferences',
       question: 'Which roles, countries and work modes fit?',
       required: true,
@@ -49,6 +53,7 @@ export const jobSearchTemplate = {
     },
     {
       id: 'country',
+      section: 'search',
       label: 'Target country',
       question:
         'Which country should listings be searched in? Two-letter country code (e.g. DE, GB, US)',
@@ -57,6 +62,7 @@ export const jobSearchTemplate = {
     },
     {
       id: 'location',
+      section: 'search',
       label: 'Search location',
       question:
         'Which city or region should listings be searched in? (e.g. London, United Kingdom)',
@@ -65,31 +71,24 @@ export const jobSearchTemplate = {
     },
     {
       id: 'experience',
+      section: 'candidate',
       label: 'Experience and skills',
       question: 'What experience and skills do you have according to your CV and documents?',
       required: false,
       type: 'text',
     },
     {
-      // Replaced by the generic Elimination rules; kept so saved profiles stay
-      // valid until the setup agent moves its contents.
-      id: 'constraints',
-      label: 'Hard requirements (old)',
-      question:
-        'Replaced by Elimination rules. The setup agent moves these into rules and application form details.',
-      required: false,
-      type: 'text',
-      legacy: true,
-    },
-    {
       id: 'application_policy',
-      label: 'Application rules',
-      question: 'Which conditions and approval preferences should applications follow?',
+      section: 'actions',
+      label: 'Consents and form choices',
+      question:
+        'How should application forms answer consent and optional questions: privacy policy, marketing emails, talent pool, demographic questions, legal agreements?',
       required: false,
       type: 'text',
     },
     {
       id: 'application_facts',
+      section: 'candidate',
       label: 'Application form details',
       question:
         'Details forms often ask for: phone, LinkedIn address, work permit or visa status, language levels, notice period, earliest start, salary expectation, willingness to come to the office, gender (optional). When these are saved, the agent does not ask during the application.',
@@ -142,13 +141,12 @@ The user uploaded their CV on the welcome screen. They review your result on a f
 - Required skills, language and work permit are mandatory conditions only when the listing says so.
 - Possible home office is not confirmed full remote. A site salary estimate is not an employer offer.
 - Never invent experience, qualifications, language skills, immigration status, salary, consent or personal facts.
-- Current saved criteria take precedence over archived referenceData.
 
 ## Applications
-- Follow criteria.application_policy for consent and approval decisions.
+- Follow criteria.application_policy for consent checkboxes and optional form questions. A condition on whether to apply at all belongs in criteria.hard_rules.
 - Privacy consent: when application_policy has "Privacy consent: Accept", tick the privacy policy, data processing and similar consent boxes the form requires to apply, without asking. Leave optional marketing, newsletter, job alert and talent pool opt-ins unticked unless application_policy allows them. Without that line, ask once without a recordId whether to accept required privacy consent on all applications, not per form.
 - Answer form questions from criteria.application_facts and earlier answers before asking. Equivalent facts answer each other: a notice period and an earliest start date (work out one from the other from today's date), salary expectation with Salary currency and desired salary, pay or compensation, a language list and a language level question. Fit a saved fact to the form's format yourself: weeks, months or a date; yearly or monthly; the currency the form asks for, converting at a current rate and noting the original when it differs. Ask only when no saved fact or answer covers the question.
-- A required cover letter is written by the cover letter agent: call request_cover_letter instead of writing one. Approved letters are in documents/cover-letters/.
+- Every cover letter field, also an optional one, is filled with a letter from the cover letter agent: call request_cover_letter instead of writing one. The approval names the file to upload.
 
 ## Source discovery
 - template.defaultSources lists the starting sources. Sources without countries or remote are already in the workspace. Sources with countries serve only those countries (ISO codes): propose the ones matching criteria.country and the user's other target countries with save_automation_plan addSources; the existing sources stay. Sources with remote serve remote work (with countries: those countries or remote work): propose them only when the user accepts fully remote work, or for their countries. Adding one keeps its saved recipe and instructions. A national board the user names that is not listed is added by its address; its recipe is learned in the trial.

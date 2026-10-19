@@ -107,7 +107,7 @@ try {
   await client.context();
   assert.deepEqual(order, ['open:Profile 2', 'connect']);
   const result = JSON.parse(
-    (await client.callTool({name: 'browser_jev_open', arguments: {url}}, 'fixture')).content[0]
+    (await client.callTool({name: 'browser_open_page', arguments: {url}}, 'fixture')).content[0]
       .text,
   );
   assert.equal(await client.tab(result.tabId).page.evaluate(() => document.cookie), 'login=work');
@@ -122,7 +122,7 @@ try {
     openWindow: async (marker, profile) => launch(profile.directory, marker),
   });
   const personalResult = JSON.parse(
-    (await personalClient.callTool({name: 'browser_jev_open', arguments: {url}}, 'fixture'))
+    (await personalClient.callTool({name: 'browser_open_page', arguments: {url}}, 'fixture'))
       .content[0].text,
   );
   const saved = [

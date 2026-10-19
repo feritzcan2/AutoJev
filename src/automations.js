@@ -1,8 +1,14 @@
 import {activeRecordOperations} from './record-operation-status.js';
 import {answersPage} from './answers-page.js';
 import {coverLetterReview} from './cover-letter-review.js';
+import {contactsPage, contactsToReview} from './contacts-page.js';
 import {automationReady} from '../app/sources/trial.mjs';
 import {templateFields} from './template-fields.js';
+import {
+  PROFILE_SECTIONS,
+  PROFILE_SECTION_IDS,
+  fieldSection,
+} from '../app/templates/profile-sections.mjs';
 import {renderJevProfile} from './jev-profile.js';
 import {profileChanged} from '../app/automation/profile-updates.mjs';
 import {automationProgress, runKindLabel} from '../app/automation/progress.mjs';
@@ -198,6 +204,22 @@ export function automationsPage(
     getConversation: () => chatPanel,
     showRecordQuestions: () => showAnswers(),
   });
+  const contactsSection = el('section');
+  contactsSection.dataset.automationPane = 'contacts';
+  const contactsView = contactsPage(contactsSection, api, {refresh});
+  // A listing's "Find contacts": a first search starts at once, then the page opens on it.
+  async function showContacts(result) {
+    const known = (data?.automation.recordContacts ?? []).some((e) => e.recordId === result.id);
+    navigate('contacts');
+    contactsView.focus(result.id);
+    if (known) return;
+    try {
+      await api.recordContactsFind(selected, result.id, '');
+      await refresh();
+    } catch (error) {
+      notice(error.message);
+    }
+  }
   const boardNav = document.querySelector('[data-view=board]'),
     recordWork = el('span', null, 'board-nav-work');
   recordWork.id = 'board-nav-work';
@@ -229,21 +251,52 @@ export function automationsPage(
   attentionNav.append(attentionBadge);
   attentionNav.onclick = () => navigate('attention');
   answersNav.after(attentionNav);
+  // Contacts sits above Files; its badge counts suggestions waiting for approval.
+  const contactsNav = el('button'),
+    contactsBadge = el('span', null, 'agent-nav-status');
+  contactsNav.type = 'button';
+  contactsNav.dataset.view = 'contacts';
+  contactsNav.innerHTML =
+    '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.5A6.5 6.5 0 0 1 21.5 20"/></svg><span>Contacts</span>';
+  contactsBadge.dataset.tone = 'waiting';
+  contactsBadge.setAttribute('aria-hidden', 'true');
+  contactsBadge.hidden = true;
+  contactsNav.append(contactsBadge);
+  contactsNav.onclick = () => navigate('contacts');
+  document.querySelector('[data-view=files]').before(contactsNav);
+  // Files shows a badge while a cover letter waits for the user's review.
+  const filesNav = document.querySelector('[data-view=files]'),
+    filesHome = document.querySelector('[data-view=background]'),
+    letterBadge = el('span', null, 'agent-nav-status');
+  letterBadge.dataset.tone = 'waiting';
+  letterBadge.setAttribute('aria-hidden', 'true');
+  letterBadge.hidden = true;
+  filesNav.append(letterBadge);
   // Pages with something waiting on the user rise to the top of the sidebar and
-  // glow; once handled they return to their place below the Tracking table.
-  function pinPending(questions, issues) {
+  // glow; once handled they return to their place (Answers and Attention needed
+  // below the Tracking table, Files below Background work).
+  function pinPending(questions, issues, letters = 0) {
     const nav = boardNav.parentElement,
       items = [
-        [answersNav, questions > 0],
-        [attentionNav, issues > 0],
+        [answersNav, questions > 0, null],
+        [filesNav, letters > 0, filesHome],
+        [attentionNav, issues > 0, null],
       ],
       pinned = items.filter(([, on]) => on).map(([node]) => node);
     for (const [node, on] of items) node.toggleAttribute('data-pending', on);
+    letterBadge.hidden = !letters;
+    letterBadge.textContent = letters ? String(letters) : '';
+    filesNav.title = letters ? `${letters} cover letter${letters > 1 ? 's' : ''} to review` : '';
+    filesNav.setAttribute('aria-label', ['Files', filesNav.title].filter(Boolean).join(' · '));
     // Move nodes only when out of place, so focus and hover are not disturbed.
     if (pinned.some((node, n) => nav.children[n] !== node)) nav.prepend(...pinned);
     let anchor = boardNav;
-    for (const [node, on] of items) {
+    for (const [node, on, home] of items) {
       if (on) continue;
+      if (home) {
+        if (home.nextElementSibling !== node) home.after(node);
+        continue;
+      }
       if (anchor.nextElementSibling !== node) anchor.after(node);
       anchor = node;
     }
@@ -404,7 +457,7 @@ export function automationsPage(
     progressSignature = '';
     host.innerHTML = `<div id="automation-controls" class="actions"></div><p id="automation-runtime-note" class="automation-runtime-note" role="status"></p>
 <div class="automation-setup-grid"><section class="automation-conversation"><div class="automation-section-head"><h2>Set up with the assistant</h2><p>Describe what you need, answer the questions or write the change you want.</p></div><div id="automation-messages" class="automation-messages" role="log" aria-label="Setup conversation"></div><form id="automation-chat"><label for="automation-message">Your message</label><textarea id="automation-message" placeholder="For example: I am looking for a two-room flat in Berlin up to 1,500 euros…" maxlength="12000" required></textarea><div class="actions"><button id="automation-send" data-idle type="submit" class="primary">Send</button><button id="automation-add-document" data-idle type="button" class="quiet">Add document</button></div><small>A change conversation pauses regular runs. New details appear in the workspace profile.</small></form></section>
-<section class="automation-plan"><div class="automation-section-head"><h2>Setup card</h2><p>Review and edit what the assistant prepared. You choose the permission here.</p></div><form id="automation-plan-form"><label>Name<input name="title" required maxlength="150"></label><label>Goal<textarea name="goal" required maxlength="6000"></textarea></label><div id="automation-criteria"></div><label>Workflow<textarea name="instructions" maxlength="12000"></textarea></label><details><summary>Personal details and documents</summary><label>Details this automation may use<textarea name="facts" maxlength="12000" placeholder="Only the details needed for this work. Do not share passwords here."></textarea></label><div id="automation-documents"></div><div id="automation-jev-profile" class="jev-profile"></div></details><label>Action permission<select name="mode"><option value="observe">Only find</option><option value="auto">Find and apply</option></select></label><div class="automation-plan-footer"><small id="automation-save-state" role="status"></small><button data-idle type="submit" class="primary">Save setup</button></div></form></section></div>
+<section class="automation-plan"><div class="automation-section-head"><h2>Setup card</h2><p>Review and edit what the assistant prepared. You choose the permission here.</p></div><form id="automation-plan-form"><label>Name<input name="title" required maxlength="150"></label><label>Goal<textarea name="goal" required maxlength="6000"></textarea></label><label>Workflow<textarea name="instructions" maxlength="12000"></textarea></label><details><summary>Personal details and documents</summary><label>Details this automation may use<textarea name="facts" maxlength="12000" placeholder="Only the details needed for this work. Do not share passwords here."></textarea></label><div id="automation-documents"></div><div id="automation-jev-profile" class="jev-profile"></div></details><label>Action permission<select name="mode"><option value="observe">Only find</option><option value="auto">Find and apply</option></select></label><div class="automation-plan-footer"><small id="automation-save-state" role="status"></small><button data-idle type="submit" class="primary">Save setup</button></div></form></section></div>
 <section class="automation-results-section"><div class="automation-heading"><div><h2>Results</h2></div><button id="automation-export" type="button" class="quiet">Export results</button></div><div id="automation-results"></div></section>
 <section class="automation-history-section"><div class="automation-section-head"><h2>Run history</h2><p>The outcome of each round and, when needed, the agent screen.</p></div><div id="automation-runs"></div></section><div class="automation-bottom-actions"><button id="automation-delete" type="button" class="quiet danger">Delete automation</button></div>`;
     const $ = (id) => find('#' + id),
@@ -417,6 +470,7 @@ export function automationsPage(
       refresh,
       statusNames,
       onQuestion: showAnswers,
+      onContacts: showContacts,
     });
     saveScoreSettings = minimumSaveScoreSettings({
       save: async (owner, value, options) => {
@@ -537,33 +591,44 @@ export function automationsPage(
     profileState.id = 'automation-profile-state';
     profileState.setAttribute('role', 'status');
     profileHead.after(profileState);
-    const sections = [
-      ['Workspace', 'The name and goal of this automation.', ['title', 'goal']],
-      [
-        'What you are looking for',
-        'The agent evaluates results against these criteria.',
-        ['criteria'],
-      ],
-      ['Workflow', 'The steps the agent follows.', ['instructions']],
-      ['Personal details', 'The agent uses only the details you give here.', ['facts']],
-      ['Action permission', 'You choose which actions it may take.', ['mode']],
+    const profileSection = (title, description, ...parts) => {
+        const section = el('div', null, 'profile-section'),
+          copy = el('div', null, 'profile-section-copy'),
+          fields = el('div', null, 'profile-fields');
+        copy.append(el('h3', title), el('p', description));
+        fields.append(...parts);
+        section.append(copy, fields);
+        return section;
+      },
+      field = (name) => form.elements[name].closest('label'),
+      // fillForm renders each template field into the box of its profile section.
+      criteriaBox = (id) => {
+        const box = el('div', null, 'profile-criteria');
+        box.dataset.criteriaSection = id;
+        return box;
+      },
+      titled = (id, ...before) => {
+        const section = PROFILE_SECTIONS.find((s) => s.id === id);
+        return [section.title, section.description, ...before, criteriaBox(id)];
+      };
+    const profileSections = [
+      profileSection(
+        'Workspace',
+        'The name and goal of this automation.',
+        field('title'),
+        field('goal'),
+      ),
+      profileSection(...titled('search')),
+      profileSection(
+        ...titled('candidate'),
+        field('facts'),
+        $('automation-documents'),
+        $('automation-jev-profile'),
+      ),
+      profileSection(...titled('rules')),
+      profileSection('Workflow', 'The steps the agent follows.', field('instructions')),
+      profileSection(...titled('actions', field('mode'))),
     ];
-    const profileSections = [];
-    for (const [title, description, names] of sections) {
-      const section = el('div', null, 'profile-section'),
-        copy = el('div', null, 'profile-section-copy'),
-        fields = el('div', null, 'profile-fields');
-      copy.append(el('h3', title), el('p', description));
-      for (const name of names) {
-        const field =
-          name === 'criteria' ? $('automation-criteria') : form.elements[name].closest('label');
-        fields.append(field);
-      }
-      if (names.includes('facts'))
-        fields.append($('automation-documents'), $('automation-jev-profile'));
-      section.append(copy, fields);
-      profileSections.push(section);
-    }
     const mode = profileSections.flatMap((section) => [
         ...section.querySelectorAll('select[name=mode]'),
       ])[0],
@@ -591,7 +656,7 @@ export function automationsPage(
       choice.append(input, copy);
       authorization.append(choice);
     }
-    // fillForm moves the criteria's minimum score field here.
+    // fillForm renders the fields for automatic actions here.
     authorization.append(el('div', null, 'authorization-score'));
     authorization.addEventListener('change', syncApplyScore);
     mode.closest('label').replaceWith(authorization);
@@ -628,8 +693,21 @@ export function automationsPage(
     const files = el('section');
     files.dataset.automationPane = 'files';
     files.innerHTML =
-      '<div class="section-title"><h2>Files</h2><span>The workspace’s documents</span></div><div class="cover-letter-review" hidden></div><div id="automation-file-list"></div>';
+      '<div class="section-title"><h2>Files</h2><span>The workspace’s documents</span></div><label class="cover-letter-auto"><input type="checkbox" id="cover-letter-auto-approve"><span>Accept cover letters automatically<small>The application continues as soon as the cover letter agent saves a letter. Letters already waiting for review still need your approval.</small></span></label><div class="cover-letter-review" hidden></div><h3 class="file-group-title">User uploaded files</h3><div id="automation-file-list"></div><h3 class="file-group-title">Agent generated files</h3><div id="automation-generated-file-list"></div>';
     coverLetters = coverLetterReview(files.querySelector('.cover-letter-review'), api, {refresh});
+    const autoApprove = files.querySelector('#cover-letter-auto-approve');
+    autoApprove.onchange = async () => {
+      autoApprove.disabled = true;
+      try {
+        await api.setCoverLetterAutoApprove(selected, autoApprove.checked);
+        await refresh();
+      } catch (error) {
+        autoApprove.checked = !autoApprove.checked;
+        notice(error.message);
+      } finally {
+        autoApprove.disabled = false;
+      }
+    };
     files.querySelector('.section-title').append(
       button('Add document', async () => {
         await api.pickDocument(selected);
@@ -640,6 +718,7 @@ export function automationsPage(
       results,
       answersSection,
       attentionSection,
+      contactsSection,
       history,
       files,
       sources,
@@ -751,6 +830,15 @@ export function automationsPage(
     document.querySelector('#delete-workspace').disabled = locked;
     find('#automation-delete').disabled = locked;
     answers.update(data);
+    contactsView.update(data);
+    const review = contactsToReview(data);
+    contactsBadge.hidden = !review;
+    contactsBadge.textContent = review ? String(review) : '';
+    contactsNav.title = review ? `${review} contact${review > 1 ? 's' : ''} to approve` : '';
+    contactsNav.setAttribute(
+      'aria-label',
+      ['Contacts', contactsNav.title].filter(Boolean).join(' · '),
+    );
     const helpCount = attention.update(selected, data),
       questionCount = (a.questions ?? []).filter((q) => q.recordId && q.answer == null).length,
       agentHelpCount = Math.max(0, helpCount - questionCount - attention.conversationCount),
@@ -758,7 +846,12 @@ export function automationsPage(
         (run) => run.kind !== 'interview',
       ).length;
     questionBadge.hidden = !questionCount;
-    pinPending(questionCount, agentHelpCount);
+    pinPending(
+      questionCount,
+      agentHelpCount,
+      (a.questions ?? []).filter((q) => q.coverLetter?.state === 'review' && q.answer == null)
+        .length,
+    );
     questionBadge.textContent = questionCount ? String(questionCount) : '';
     answersNav.title = questionCount ? `${questionCount} awaiting an answer` : '';
     answersNav.setAttribute(
@@ -859,6 +952,13 @@ export function automationsPage(
       ? (a.chromeProfile?.name ?? 'Selected Chrome session')
       : (connection.message ??
         'Open chrome://inspect/#remote-debugging in Chrome and allow the connection request.');
+    // A failed handshake does not tell whether remote debugging is on, so
+    // point to the setting unless the message already does.
+    chrome.querySelector('.chrome-tip').hidden =
+      connection.ready ||
+      connection.state === 'connecting' ||
+      !connection.message ||
+      connection.message.includes('chrome://inspect');
     chrome.querySelector('.chrome-reconnect').hidden = Boolean(connection.ready);
     chrome.querySelector('.chrome-reconnect').disabled =
       locked || connection.state === 'connecting';
@@ -1011,6 +1111,7 @@ export function automationsPage(
     resultsTable?.dispose();
     attention.update(null, null);
     answers.update(null);
+    contactsView.update(null);
     resultsTable?.dispose();
     agentNavLabel(false);
     chatPanel?.dispose();
@@ -1067,18 +1168,29 @@ export function automationsPage(
     formRevision = key;
     const form = find('#automation-plan-form'),
       f = form.elements,
-      criteria = find('#automation-criteria');
+      slot = form.querySelector('.authorization-score'),
+      fields = data.definition?.fields ?? templates.find((t) => t.id === a.templateId).fields;
     form.dataset.revision = String(saved.revision);
-    criteria.replaceChildren();
-    // The minimum score field lives under Find and apply; drop the old copy first.
-    form.querySelector('.authorization-score')?.replaceChildren();
-    templateFields(
-      criteria,
-      (data.definition?.fields ?? templates.find((t) => t.id === a.templateId).fields).filter(
-        (field) => field.id !== 'save_score_threshold',
-      ),
-      a.criteria,
-    );
+    // Board settings (section 'board') stay off the profile. Fields that matter
+    // only for automatic actions sit under Find and apply.
+    for (const section of PROFILE_SECTION_IDS) {
+      const box = form.querySelector(`[data-criteria-section=${section}]`),
+        own = fields.filter((field) => fieldSection(field) === section);
+      templateFields(
+        box,
+        own.filter((field) => !field.forMode),
+        a.criteria,
+      );
+      if (section === 'actions' && slot)
+        templateFields(
+          slot,
+          own.filter((field) => field.forMode === 'auto'),
+          a.criteria,
+        );
+      const parts = box.parentElement;
+      parts.closest('.profile-section').hidden =
+        parts.children.length === 1 && !box.children.length;
+    }
     for (const key of ['title', 'goal', 'instructions', 'facts', 'mode']) f[key].value = a[key];
     // Workspaces saved before elimination rules existed get them from the setup agent.
     const rules = f['criteria-hard_rules']?.closest('fieldset');
@@ -1092,20 +1204,14 @@ export function automationsPage(
         }),
       );
     const score = f['criteria-score_threshold']?.closest('label'),
-      unstated = f['criteria-unstated_conditions'],
-      slot = form.querySelector('.authorization-score');
-    if (score && slot) {
-      score.firstChild.textContent = 'Minimum score to apply';
-      slot.replaceChildren(score);
-    }
-    if (unstated && slot) {
+      unstated = f['criteria-unstated_conditions'];
+    if (score) score.firstChild.textContent = 'Minimum score to apply';
+    if (unstated)
       // An empty value is the default: wait until the condition is checked.
       for (const option of [...unstated.options])
         if (option.value === 'Do not apply until checked' && unstated.value !== option.value)
           option.remove();
         else if (option.value === '') option.textContent = 'Do not apply until checked (default)';
-      slot.append(unstated.closest('label'));
-    }
     syncApplyScore();
     formBaseline = readForm();
   }
@@ -1207,11 +1313,12 @@ export function automationsPage(
 
     const docs = $('automation-documents');
     docs.replaceChildren();
-    for (const doc of data.documents) {
+    const userDocuments = data.documents.filter((doc) => !doc.generated);
+    for (const doc of userDocuments) {
       const b = button(doc.name + ' ↗', () => api.openDocument(selected, doc.path));
       docs.append(b);
     }
-    if (!data.documents.length)
+    if (!userDocuments.length)
       docs.append(el('small', 'No documents have been added to this automation yet.'));
     renderJevProfile($('automation-jev-profile'), data.jevProfile, async (text) => {
       await api.saveJevProfile(selected, text);
@@ -1267,18 +1374,63 @@ export function automationsPage(
     metrics.append(bar, legend);
     sourcePanel.update(data, selected);
     coverLetters.update(data);
-    const files = find('#automation-file-list');
-    files.replaceChildren();
-    for (const doc of data.documents) {
-      const row = el('div', null, 'document-row');
-      row.append(
-        el('strong', doc.name),
-        button('Open ↗', () => api.openDocument(selected, doc.path)),
-      );
-      files.append(row);
-    }
-    if (!data.documents.length)
-      files.append(el('p', 'Documents you add to the workspace appear here.', 'empty'));
+    find('#cover-letter-auto-approve').checked = data.automation.coverLetterAutoApprove === true;
+    // Agent generated files (generated/) are kept apart from the user's own
+    // documents; agents never read them as profile documents.
+    // A cover letter names the application it was written for.
+    const letterState = {
+      writing: 'being rewritten',
+      review: 'waiting for your review',
+      approved: 'approved',
+      autoApproved: 'accepted automatically',
+      failed: 'rewrite stopped',
+    };
+    const written = new Map();
+    for (const q of data.automation.questions ?? [])
+      if (q.coverLetter?.path) written.set(q.coverLetter.path, q);
+    const fileDetail = (doc) => {
+      const q = written.get(doc.path.split('\\').join('/'));
+      if (!q) return null;
+      const record = data.results.find((r) => r.id === q.recordId),
+        site = record?.url ? new URL(record.url).hostname.replace(/^www\./, '') : null;
+      return {
+        text: [
+          'Cover letter for ' + (record?.title ?? 'a removed record'),
+          site,
+          letterState[q.coverLetter.autoApproved ? 'autoApproved' : q.coverLetter.state],
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        url: record?.url ?? null,
+      };
+    };
+    const fileList = (target, docs, empty) => {
+      const files = find(target);
+      files.replaceChildren();
+      for (const doc of docs) {
+        const row = el('div', null, 'document-row'),
+          name = el('div'),
+          detail = fileDetail(doc);
+        name.append(el('strong', doc.name));
+        if (detail) name.append(el('small', detail.text));
+        const actions = el('div', null, 'document-actions');
+        if (detail?.url) actions.append(button('Open listing ↗', () => api.openLink(detail.url)));
+        actions.append(button('Open ↗', () => api.openDocument(selected, doc.path)));
+        row.append(name, actions);
+        files.append(row);
+      }
+      if (!docs.length) files.append(el('p', empty, 'empty'));
+    };
+    fileList(
+      '#automation-file-list',
+      data.documents.filter((doc) => !doc.generated),
+      'Documents you add to the workspace appear here.',
+    );
+    fileList(
+      '#automation-generated-file-list',
+      data.documents.filter((doc) => doc.generated),
+      'Files the agents write, such as cover letters, appear here.',
+    );
   }
   function renderResults() {
     resultsTable.update(data, busy);

@@ -34,6 +34,7 @@ function fixture(t) {
     goal: 'Berlin homes',
     criteria: {location: 'Berlin', budget: '2000', requirements: '2 rooms'},
     sources: [url],
+    agentSettings: {provider: 'codex', decisions: 'jev'},
   });
   db.save(a.id, {browserMode: 'jev'});
   db.review(a.id);
@@ -91,9 +92,9 @@ function fixture(t) {
 
 test('a source scan saves several findings in one call and reports failed entries by index', async (t) => {
   const f = fixture(t);
-  const scan = await f.call('browser_jev_run', {operation: 'scan_results', url});
+  const scan = await f.call('browser_run_task', {operation: 'scan_results', url});
   assert.equal(scan.status, 'completed');
-  await f.call('browser_jev_run', {operation: 'collect_details', fromTaskId: scan.taskId});
+  await f.call('browser_run_task', {operation: 'collect_details', fromTaskId: scan.taskId});
   assert.deepEqual(new Set(f.db.scanQueue(f.a.id, f.run.id).pendingUrls), new Set([one, two]));
   const result = await f.call('record_automation_results', {
     records: [
@@ -121,17 +122,17 @@ test('a source scan saves several findings in one call and reports failed entrie
   assert.equal(f.db.results(f.a.id).length, 1);
 });
 
-test('read_jev_brief returns several briefs in one call and rejects mixed selectors', async (t) => {
+test('read_listing_brief returns several briefs in one call and rejects mixed selectors', async (t) => {
   const f = fixture(t);
-  const scan = await f.call('browser_jev_run', {operation: 'scan_results', url});
-  const details = await f.call('browser_jev_run', {
+  const scan = await f.call('browser_run_task', {operation: 'scan_results', url});
+  const details = await f.call('browser_run_task', {
     operation: 'collect_details',
     fromTaskId: scan.taskId,
   });
-  const index = await f.call('read_jev_task', {taskId: details.taskId}),
+  const index = await f.call('read_browser_task', {taskId: details.taskId}),
     ids = index.items.map((i) => i.evidenceId);
   assert.equal(ids.length, 2);
-  const batch = await f.call('read_jev_brief', {evidenceIds: ids});
+  const batch = await f.call('read_listing_brief', {evidenceIds: ids});
   assert.deepEqual(
     batch.briefs.map((b) => b.evidenceId),
     ids,
@@ -146,27 +147,27 @@ test('read_jev_brief returns several briefs in one call and rejects mixed select
     }
   }
   assert.ok(batch.next.includes('status=running'));
-  const single = await f.call('read_jev_brief', {evidenceId: ids[0]});
+  const single = await f.call('read_listing_brief', {evidenceId: ids[0]});
   assert.equal(single.status, 'ready');
   assert.equal(single.evidenceId, ids[0]);
   assert.doesNotMatch(single.sections[0].text, /Link: /);
   assert.ok(single.next);
   await assert.rejects(
-    f.call('read_jev_brief', {evidenceId: ids[0], evidenceIds: ids}),
+    f.call('read_listing_brief', {evidenceId: ids[0], evidenceIds: ids}),
     /not both/,
   );
-  await assert.rejects(f.call('read_jev_brief', {}), /evidenceId/);
-  const mixed = await f.call('read_jev_brief', {evidenceIds: [ids[0], 'missing-evidence']});
+  await assert.rejects(f.call('read_listing_brief', {}), /evidenceId/);
+  const mixed = await f.call('read_listing_brief', {evidenceIds: [ids[0], 'missing-evidence']});
   assert.equal(mixed.briefs[0].status, 'ready');
   assert.equal(mixed.briefs[1].status, 'error');
-  await assert.rejects(f.call('read_jev_brief', {evidenceIds: ['missing-a', 'missing-b']}));
+  await assert.rejects(f.call('read_listing_brief', {evidenceIds: ['missing-a', 'missing-b']}));
 });
 
 test('source scans do not list tools that only record operations can use', (t) => {
   const f = fixture(t),
     names = f.flow.tools.map((x) => x.name);
   for (const name of [
-    'browser_jev_inspect_form',
+    'browser_inspect_form',
     'reserve_automation_action',
     'browser_upload_document',
     'record_automation_outcome',
@@ -188,7 +189,7 @@ test('source scans do not list tools that only record operations can use', (t) =
     }),
     recordNames = recordFlow.tools.map((x) => x.name);
   for (const name of [
-    'browser_jev_inspect_form',
+    'browser_inspect_form',
     'reserve_automation_action',
     'record_automation_outcome',
   ])

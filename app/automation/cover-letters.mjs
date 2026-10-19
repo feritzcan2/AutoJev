@@ -1,15 +1,16 @@
 // @ts-check
-// Cover letters. An application task that meets a required cover letter does
-// not write one: it asks for it and finishes blocked. A separate cover_letter
+// Cover letters. An application task that meets a cover letter field, required
+// or optional, does not write one: it asks for it and finishes blocked. A separate cover_letter
 // task, on the stronger model, writes the letter from the CV and the listing
 // and saves it as a PDF. The letter waits for the user's review on the Files
 // page; approving it answers the record's question, which resumes the
 // application in its own conversation and tab.
 import path from 'node:path';
 import {mkdir, realpath, writeFile} from 'node:fs/promises';
-import {recordSource, recordTask} from '../records/operations.mjs';
+import {recordSource, recordTask, pendingRecordQuestion} from '../records/operations.mjs';
+import {AGENT_DIRECTORY} from './artifacts.mjs';
 
-export const COVER_LETTER_DIRECTORY = 'documents/cover-letters';
+export const COVER_LETTER_DIRECTORY = AGENT_DIRECTORY + '/cover-letters';
 // Short numbered steps; the writer does not apply or touch the form.
 export const COVER_LETTER_PROMPT =
   'Read AGENTS.md. This is a cover letter task for one record: you write the letter, you do not apply. Steps: 1. Call read_cover_letter_brief. 2. Read the CV and saved facts with read_scoring_profile (source documents, then facts); follow nextOffset until null. 3. If the brief has no listing text, open record.url with browser_open and read the description with browser_read. 4. Write the letter following the brief rules. 5. Call save_cover_letter with the full text; if it is refused, fix the reason and save again. 6. Call finish_automation_run with status completed. If the CV or the listing cannot be read, finish blocked with the reason instead of writing a letter.';
@@ -22,12 +23,93 @@ const listingTexts = new Map();
 
 export const openCoverLetter = (a, recordId) =>
   (a.questions ?? []).find((q) => q.coverLetter && q.recordId === recordId && q.answer == null);
+const approvedCoverLetter = (a, recordId) =>
+  (a.questions ?? []).findLast(
+    (q) => q.coverLetter?.state === 'approved' && q.recordId === recordId,
+  )?.coverLetter;
 
-function coverLetterQuestion(db, id, questionId) {
+// Third-party page vocabulary for a cover letter control. It is matched only
+// against the labels of the form's own fields and uploads, never page text.
+const COVER_LETTER_LABEL =
+  /cover(?:ing)?\s*letter|motivation(?:al)?\s*letter|letter\s+of\s+motivation|anschreiben|motivationsschreiben|bewerbungsschreiben|lettre\s+de\s+motivation|carta\s+de\s+presentaci[oó]n|lettera\s+di\s+presentazione|sollicitatiebrief|motivatiebrief|list\s+motywacyjny|ön\s*yazı|personligt\s+brev|følgebrev/i;
+
+// The cover letter controls of a browser_inspect_form result. A file field
+// and its upload entry are the same control; the field carries `filled`.
+export function coverLetterFields(form) {
+  const label = (c) => [c.question, c.label].filter(Boolean).join(' '),
+    uploads = (form?.uploads ?? []).filter((u) => COVER_LETTER_LABEL.test(u.label ?? '')),
+    fields = (form?.fields ?? [])
+      .filter((f) => COVER_LETTER_LABEL.test(label(f)))
+      .map((f) => ({label: f.question || f.label, type: f.type, filled: f.filled === true}));
+  const files = fields.filter((f) => f.type === 'file');
+  if (!files.length)
+    return [
+      ...fields,
+      ...uploads.map((u) => ({label: u.label, type: 'file', filled: false, uploadId: u.uploadId})),
+    ];
+  // A file field and its upload entry are the same control, in page order;
+  // the upload id lets a later upload of the approved letter fill the field.
+  return fields.map((f) =>
+    f.type === 'file' && uploads[files.indexOf(f)]
+      ? {...f, uploadId: uploads[files.indexOf(f)].uploadId}
+      : f,
+  );
+}
+
+// Merges a new inspection into the fields kept across the form's steps, per
+// label. An upload entry never shows which file it holds, so a field the app
+// saw receive the approved letter stays filled.
+export function mergeCoverLetterFields(previous, current) {
+  const kept = (previous ?? []).filter((f) => !current.some((c) => c.label === f.label));
+  return [
+    ...kept,
+    ...current.map((c) =>
+      c.type === 'file' && previous?.some((f) => f.label === c.label && f.uploaded)
+        ? {...c, filled: true, uploaded: true}
+        : c,
+    ),
+  ];
+}
+
+// After a successful browser_upload_document: the upload entry it targeted is
+// filled when the file is this record's approved cover letter.
+export function coverLetterUploaded(a, recordId, fields, uploadId, relative) {
+  const approved = approvedCoverLetter(a, recordId);
+  if (!approved || path.normalize(relative) !== path.normalize(approved.path)) return null;
+  if (!(fields ?? []).some((f) => f.uploadId === uploadId)) return null;
+  return fields.map((f) => (f.uploadId === uploadId ? {...f, filled: true, uploaded: true} : f));
+}
+
+// What the application agent must do with the cover letter fields it saw on
+// this run's form pages; null once every one is filled.
+export function coverLetterStep(a, recordId, fields) {
+  const empty = (fields ?? []).filter((f) => !f.filled);
+  if (!empty.length) return null;
+  const names = empty.map((f) => `"${f.label}"`).join(', '),
+    approved = approvedCoverLetter(a, recordId);
+  if (approved)
+    return `Fill the cover letter field ${names} with the approved cover letter ${approved.path}: upload that file to a file field, or type its text (in your saved answers) into a text box. Then call browser_inspect_form again before submitting.`;
+  if (openCoverLetter(a, recordId))
+    return `The cover letter for ${names} is waiting for the user's approval. Finish blocked with blocker category needs_answer; the approval resumes this application.`;
+  return `This form has a cover letter field ${names}. Every cover letter field gets a letter written for this employer, also an optional one: never skip it, never write one yourself and never put the CV there. Fill the other fields, call request_cover_letter, then finish blocked with blocker category needs_answer. The app refuses the submit while the field is empty.`;
+}
+
+function coverLetterQuestion(db, id, questionId, {answered = false} = {}) {
   const question = (db.get(id).questions ?? []).find((q) => q.id === questionId);
   if (!question?.coverLetter) throw Error('This cover letter does not belong to this workspace');
-  if (question.answer != null) throw Error('This cover letter was already approved');
+  if (question.answer != null && !answered) throw Error('This cover letter was already approved');
   return question;
+}
+
+// The answer that resumes the application: the file to upload and its text.
+const approvalAnswer = (path, letter, automatic = false) =>
+  `${automatic ? 'The cover letter was accepted automatically (workspace setting)' : 'The user approved the cover letter'}: ${path}. Upload this file to the cover letter field with browser_upload_document. If the field is a text box, type this letter text instead:\n\n${letter}`;
+
+// Workspace setting: a saved letter is approved at once and the application
+// continues without waiting for the user's review.
+export function setCoverLetterAutoApprove(db, id, value) {
+  if (typeof value !== 'boolean') throw Error('Choose on or off');
+  return db.put({...db.get(id), coverLetterAutoApprove: value});
 }
 
 function updateCoverLetter(db, id, questionId, patch) {
@@ -79,7 +161,7 @@ export function requestCoverLetter(db, id, run, {notes = '', listing = null} = {
   const question = db.askQuestion(
     id,
     {
-      text: `${item.title ?? item.url}: the application needs a cover letter. A cover letter agent writes it; review and approve it on the Files page to continue the application.`,
+      text: `${item.title ?? item.url}: the application needs a cover letter. A cover letter agent writes it; ${db.get(id).coverLetterAutoApprove ? 'the application continues as soon as it is saved (accepted automatically).' : 'review and approve it on the Files page to continue the application.'}`,
       recordId: item.id,
       coverLetter: {state: 'writing'},
     },
@@ -179,17 +261,37 @@ export async function saveCoverLetter(db, id, run, text, {workspace, renderPdf})
     writtenAt: db.now(),
     error: null,
   });
+  if (!db.get(id).coverLetterAutoApprove)
+    return {
+      saved: true,
+      path: relative,
+      next: 'Call finish_automation_run with status completed. The user reviews the letter on the Files page.',
+    };
+  // Accepted at once: the answer resumes the application once this writer
+  // task finishes, the same way a user's answer does while a task is live.
+  db.store.workspaces.tasks.atomic(() => {
+    updateCoverLetter(db, id, question.id, {
+      state: 'approved',
+      autoApproved: true,
+      approvedAt: db.now(),
+    });
+    db.answerQuestion(id, question.id, approvalAnswer(relative, text, true));
+    if (!pendingRecordQuestion(db.get(id), db.result(id, item.id))) {
+      const queue = db.store.workspaces.tasks;
+      queue.put({...queue.get(id, run.taskId), resumeRecordAfterAnswer: true});
+    }
+  });
   return {
     saved: true,
     path: relative,
-    next: 'Call finish_automation_run with status completed. The user reviews the letter on the Files page.',
+    next: 'Call finish_automation_run with status completed. The letter was accepted automatically and the application continues.',
   };
 }
 
 // A writer may only report completed after saving its letter; a blocked or
 // failed writer leaves the letter for the user to retry.
 export function finishCoverLetter(db, id, run, status, summary) {
-  const question = coverLetterQuestion(db, id, run.request?.questionId);
+  const question = coverLetterQuestion(db, id, run.request?.questionId, {answered: true});
   if (status === 'completed') {
     if (question.coverLetter.runId !== run.id)
       throw Error('Save the cover letter with save_cover_letter before finishing.');
@@ -224,11 +326,7 @@ export async function approveCoverLetter(
     text: letter,
     approvedAt: db.now(),
   });
-  return runtime.answer(
-    id,
-    questionId,
-    `The user approved the cover letter ${question.coverLetter.path}. Upload this file to the cover letter field with browser_upload_document. If the field is a text box, type this letter text instead:\n\n${letter}`,
-  );
+  return runtime.answer(id, questionId, approvalAnswer(question.coverLetter.path, letter));
 }
 
 // The user's notes go to a new writer task; the application stays blocked.

@@ -23,10 +23,11 @@ import {
   prefetchCollectorPage,
   prepareCollection,
 } from '../sources/collector-worker.mjs';
-import {siteReaderFor, siteExtensionKind} from '../site-extensions/index.mjs';
+import {siteReaderFor, siteExtensionKind, siteListingAddress} from '../site-extensions/index.mjs';
 import {siteSearchRecipe} from '../site-extensions/search.mjs';
 import {setTimeout as pause} from 'node:timers/promises';
 import {readRecordListings} from '../records/listing-reader.mjs';
+import {noteSourceActivity, agentStepLabel} from '../sources/source-activity.mjs';
 import {jevDetailKey} from '../jev/detail-urls.mjs';
 import {
   recordResultInput,
@@ -71,8 +72,21 @@ import {
   coverLetterBrief,
   saveCoverLetter,
   finishCoverLetter,
+  coverLetterFields,
+  coverLetterUploaded,
+  mergeCoverLetterFields,
+  coverLetterStep,
 } from './cover-letters.mjs';
 import {renderCoverLetterPdf} from './cover-letter-pdf.mjs';
+import {
+  contactBrief,
+  saveRecordContacts,
+  reserveContactAction,
+  recordContactOutcome,
+  contactClick,
+  contactSendClicked,
+  finishContactTask,
+} from './contacts.mjs';
 import {
   recordReceipt,
   scanToolOutput,
@@ -124,12 +138,22 @@ const samePath = (a, b) => {
   }
 };
 const TRIAL_SCAN_PAGE_LIMIT = 2;
-// Listings a card collector opens in the user's (logged-in) browser: at least
-// 25 s apart and at most 60 an hour per site, counted apart from the site's
-// API budget, since these views belong to the user's account.
-const BROWSER_LISTING_GAP_MS = 25000,
-  BROWSER_LISTING_JITTER_MS = 10000,
-  BROWSER_LISTING_BUDGET = {requests: 60, windowMs: 60 * 60000};
+// Listings a card collector opens in the user's (logged-in) browser: 12-20 s
+// apart, about a person reading postings, and at most 120 an hour per site,
+// counted apart from the site's API budget, since these views belong to the
+// user's account. (25-35 s and 60/hour until 2026-10-19 drew no block.)
+const BROWSER_LISTING_GAP_MS = 12000,
+  BROWSER_LISTING_JITTER_MS = 8000,
+  BROWSER_LISTING_BUDGET = {requests: 120, windowMs: 60 * 60000};
+// A new step forgets the previous one's posting, wait and tool.
+const IDLE_STEP = {
+  done: null,
+  total: null,
+  title: null,
+  company: null,
+  waitUntil: null,
+  browser: false,
+};
 const BACKGROUND_READ =
   'The app reads the next result page and its listings itself, at the pace this site allows; that can take many minutes. End this turn now: do not call finish_automation_run or any other tool. The app resumes you with the ready review batch.';
 // Another results page of the active search: same address shape as the last
@@ -481,14 +505,14 @@ export function automationWorkflow({
         observe: 'browser_snapshot',
         open: 'browser_navigate',
         reopen: 'browser_reopen_readonly',
-        fill: 'browser_jev_fill_fields',
-        options: 'browser_jev_list_options',
-        suggestions: 'browser_jev_list_suggestions',
-        select: 'browser_jev_select_option',
-        autocomplete: 'browser_jev_autocomplete',
-        click: 'browser_jev_click',
-        scroll: 'browser_jev_scroll',
-        reveal: 'browser_jev_reveal',
+        fill: 'browser_fill_fields',
+        options: 'browser_list_options',
+        suggestions: 'browser_list_suggestions',
+        select: 'browser_choose_option',
+        autocomplete: 'browser_autocomplete',
+        click: 'browser_click_target',
+        scroll: 'browser_scroll',
+        reveal: 'browser_reveal',
       };
       const searchId = active.scan?.work?.activeSearchId ?? 'default';
       const operation = args.taskId
@@ -504,11 +528,7 @@ export function automationWorkflow({
         } catch (error) {
           signal.throwIfAborted();
           db.activeRun(id, run.id);
-          if (
-            db.get(id).revision !== a.revision ||
-            db.get(id).referenceData?.profile?.cvPath !== a.referenceData?.profile?.cvPath
-          )
-            throw error;
+          if (db.get(id).revision !== a.revision) throw error;
           documents = {
             unavailable:
               'The user documents could not be read; use known facts and keep missing qualifications uncertain.',
@@ -521,7 +541,7 @@ export function automationWorkflow({
         taskId: scope,
         input: args,
         signal,
-        criteria: jevCriteria(a, documents, db.template(a.templateId).assessmentHints),
+        criteria: jevCriteria(a, documents, db.template(a.templateId)),
         ports: {
           onTask,
           sourceUrl: sourceScan(active) ? active.sourceUrl : null,
@@ -743,11 +763,7 @@ export function automationWorkflow({
     const before = db.get(id),
       value = await loadScoringDocuments(db, id);
     db.activeRun(id, run.id);
-    if (
-      signal.aborted ||
-      db.get(id).revision !== before.revision ||
-      db.get(id).referenceData?.profile?.cvPath !== before.referenceData?.profile?.cvPath
-    )
+    if (signal.aborted || db.get(id).revision !== before.revision)
       throw Error('The profile changed; read the current scoring context.');
     return value;
   };
@@ -955,25 +971,36 @@ export function automationWorkflow({
     db.putRun({...current, collectorReading: true});
     return {status: 'background_read', progress: collectorProgress(current), next: BACKGROUND_READ};
   };
+  // What this scan does right now, for the Sources page (RAM only).
+  const activity = (step) => {
+    noteSourceActivity(run.id, step);
+    changed(id);
+  };
   // A card site that reads its listings in the browser: open the posting in
   // this source's tab and take the listing text its posting reader found.
   // Waits for the budget and pacing in place; this runs before the agent.
   const readListingInBrowser = async (url) => {
     // One budget and pace for the whole site, whichever host serves a posting.
-    const site = siteDomainOf(url);
+    const site = siteDomainOf(url),
+      waitFor = async (ms) => {
+        activity({waitUntil: Date.now() + ms});
+        await pause(ms, undefined, {signal});
+      };
     for (
       let delay;
       (delay = db.siteAccess.reserve(site + ' browser', BROWSER_LISTING_BUDGET)) > 0;
 
     )
-      await pause(Math.min(delay, 60000), undefined, {signal});
+      await waitFor(Math.min(delay, 60000));
     const gap = db.siteAccess.pace(
       'https://' + site,
       BROWSER_LISTING_GAP_MS,
       BROWSER_LISTING_JITTER_MS,
     );
-    if (gap) await pause(gap, undefined, {signal});
-    let response = await browser.call(id, 'browser_navigate', {url}, run.id);
+    if (gap) await waitFor(gap);
+    activity({waitUntil: null, browser: true});
+    const address = siteListingAddress(url);
+    let response = await browser.call(id, 'browser_navigate', {url: address}, run.id);
     for (let i = 0; i < 3 && response.jevPage?.reading?.readiness?.loading; i++) {
       await pause(2000, undefined, {signal});
       response = await browser.call(id, 'browser_snapshot', {}, run.id);
@@ -981,7 +1008,7 @@ export function automationWorkflow({
     const page = response.jevPage;
     if (page?.siteWait) throw new SiteWaitError(page.siteWait);
     // A posting that lands elsewhere (a sign-in or home page) is no listing.
-    if (page?.url && new URL(page.url).pathname !== new URL(url).pathname)
+    if (page?.url && new URL(page.url).pathname !== new URL(address).pathname)
       throw Error(
         `The posting opened as ${page.url}; this browser may need to sign in to the site.`,
       );
@@ -1005,6 +1032,7 @@ export function automationWorkflow({
           readPage: collectorReadPage,
           readDetail: collectorReadDetail,
           readListing: readListingInBrowser,
+          progress: activity,
         });
       } catch (error) {
         signal.throwIfAborted();
@@ -1045,6 +1073,13 @@ export function automationWorkflow({
       throw Error('Invalid automation session');
     // Each agent browser step starts unblocked; other tools keep the last step's state.
     if (name.startsWith('browser_')) stepWaited = false;
+    activity({
+      ...IDLE_STEP,
+      step: 'agent',
+      tool: name,
+      label: agentStepLabel(name, args),
+      url: args?.url ?? null,
+    });
     let active = db.activeRun(id, run.id);
     const a = db.get(id),
       sourceTask =
@@ -1062,10 +1097,10 @@ export function automationWorkflow({
     if (
       jevExecution.busy &&
       ![
-        'browser_jev_run',
-        'read_jev_task',
-        'read_jev_brief',
-        'read_jev_evidence',
+        'browser_run_task',
+        'read_browser_task',
+        'read_listing_brief',
+        'read_listing_evidence',
         'get_automation_context',
         'read_automation_context_part',
         'search_automation_context',
@@ -1101,7 +1136,9 @@ export function automationWorkflow({
       }
       case 'read_scoring_profile': {
         const source =
-          args.source === 'documents' ? await scoringDocuments() : scoringSources(a)[args.source];
+          args.source === 'documents'
+            ? await scoringDocuments()
+            : scoringSources(a, undefined, db.template(a.templateId).fields)[args.source];
         if (!source) throw Error('Choose a valid scoring source.');
         const offset = args.offset ?? 0,
           limit = args.limit ?? 6000;
@@ -1123,7 +1160,7 @@ export function automationWorkflow({
           nextOffset: offset + limit < source.text.length ? offset + limit : null,
         };
       }
-      case 'read_jev_task': {
+      case 'read_browser_task': {
         db.jevTasks.get(id, active.taskId ?? run.id, args.taskId);
         if (jevExecution.owns(args.taskId)) {
           const value = await jevExecution.wait();
@@ -1131,7 +1168,7 @@ export function automationWorkflow({
         }
         return jevTaskSummary(db.jevTasks.get(id, active.taskId ?? run.id, args.taskId), args);
       }
-      case 'read_jev_brief': {
+      case 'read_listing_brief': {
         if (jevExecution.busy) return jevExecution.receipt();
         const ids = args.evidenceIds ?? (args.evidenceId ? [args.evidenceId] : []);
         if (!ids.length || (args.evidenceIds && args.evidenceId))
@@ -1150,7 +1187,7 @@ export function automationWorkflow({
           };
         }
         const deadline = Date.now() + jevExecution.waitWindow,
-          criteria = jevCriteria(a, documents, db.template(a.templateId).assessmentHints);
+          criteria = jevCriteria(a, documents, db.template(a.templateId));
         const briefFor = (evidenceId, offset, waitMs) => {
           const evidence = db.jevTasks.fullEvidence(id, scope, evidenceId);
           const task = db.jevTasks
@@ -1207,15 +1244,15 @@ export function automationWorkflow({
           );
         return briefToolOutput({
           briefs: values,
-          next: 'One entry per listing in the requested order. Use the original sections for assessment; absent facts stay unknown. Poll read_jev_brief again only for entries with status=running; read nextOffset pages per evidenceId; use read_jev_evidence only for a missing or conflicting detail.',
+          next: 'One entry per listing in the requested order. Use the original sections for assessment; absent facts stay unknown. Poll read_listing_brief again only for entries with status=running; read nextOffset pages per evidenceId; use read_listing_evidence only for a missing or conflicting detail.',
         });
       }
-      case 'read_jev_evidence': {
+      case 'read_listing_evidence': {
         const scope = active.taskId ?? run.id,
           value = db.jevTasks.readEvidence(id, scope, args.evidenceId, args);
         return value;
       }
-      case 'browser_jev_run':
+      case 'browser_run_task':
         result = await executeJev(args);
         // A finished collector review continues with the next page in the same
         // call, saving the agent one model turn per page.
@@ -1289,7 +1326,14 @@ export function automationWorkflow({
       }
       case 'save_jev_profile': {
         if (!sourceTask) throw Error('The Jev profile is only written in a source task.');
-        result = saveJevProfile(db, id, args.profile, 'agent', await scoringDocuments());
+        result = saveJevProfile(
+          db,
+          id,
+          args.profile,
+          'agent',
+          await scoringDocuments(),
+          db.template(a.templateId).fields,
+        );
         changed(id);
         break;
       }
@@ -1338,7 +1382,7 @@ export function automationWorkflow({
             );
           if (!provenListings(replay, active.taskId ?? run.id))
             throw Error(
-              `Recipe not checked yet: run browser_jev_run scan_results at ${replay.searches[0].url} and select its listings, then save the recipe again. The app verifies the recipe from your selection; no check was used.`,
+              `Recipe not checked yet: run browser_run_task scan_results at ${replay.searches[0].url} and select its listings, then save the recipe again. The app verifies the recipe from your selection; no check was used.`,
             );
         }
         const checks = active.recipeChecks ?? 0;
@@ -1402,7 +1446,11 @@ export function automationWorkflow({
         if (sourceTask && !args.section && !decideByAgent) {
           const documents = await scoringDocuments().catch(() => null);
           if (documents) {
-            const {status, by, text} = jevProfileView(a, documents);
+            const {status, by, text} = jevProfileView(
+              a,
+              documents,
+              db.template(a.templateId).fields,
+            );
             value.jevProfile = {status, ...(by === 'user' ? {by, text} : {})};
           }
         }
@@ -1482,9 +1530,16 @@ export function automationWorkflow({
         };
         break;
       }
-      case 'reserve_automation_action':
+      case 'reserve_automation_action': {
+        // A cover letter field seen on this run's form pages must be filled
+        // before the submit; an optional one is not skipped.
+        const coverLetter =
+          active.recordOperation === 'execute' &&
+          coverLetterStep(a, active.recordId, active.coverLetterFields);
+        if (coverLetter) throw Error(coverLetter);
         result = db.reserve(id, run.id, args.itemId);
         break;
+      }
       case 'record_automation_outcome': {
         // The app knows the assigned record and the observed page; the agent
         // names them only when it reports on something else.
@@ -1541,20 +1596,20 @@ export function automationWorkflow({
           result = await recheckPage(result.url);
         break;
       }
-      case 'browser_jev_tabs':
-      case 'browser_jev_use_tab':
-      case 'browser_jev_close_tab': {
+      case 'browser_tabs':
+      case 'browser_use_tab':
+      case 'browser_close_tab': {
         if (
           !(
             (active.sourceUrl && !active.recordId) ||
-            (active.recordOperation && name !== 'browser_jev_close_tab')
+            (active.recordOperation && name !== 'browser_close_tab')
           )
         )
           throw Error('Tab handover is only available in a source scan or an assigned record task');
-        if (name !== 'browser_jev_tabs') snapshots.invalidate();
+        if (name !== 'browser_tabs') snapshots.invalidate();
         const response = await callBrowser(id, name, args, run.id);
         if (response.isError) throw Error('The source tab operation could not complete');
-        result = name === 'browser_jev_use_tab' ? await inspect({response}) : response;
+        result = name === 'browser_use_tab' ? await inspect({response}) : response;
         break;
       }
       case 'browser_read': {
@@ -1571,7 +1626,7 @@ export function automationWorkflow({
           result = await recheckPage(result.url);
         break;
       }
-      case 'browser_jev_inspect_form': {
+      case 'browser_inspect_form': {
         const research = active.kind === 'interview',
           url = await browser.currentUrl(id);
         if (research) researchUrl(url);
@@ -1589,6 +1644,15 @@ export function automationWorkflow({
                 labels: new Set((result.submitControls ?? []).map((c) => spaced(c.label))),
               }
             : null;
+        const coverFields = active.recordOperation === 'execute' ? coverLetterFields(result) : [];
+        if (coverFields.length) {
+          // Kept per label across the form's steps; a later inspection updates `filled`.
+          const current = db.run(run.id),
+            fields = mergeCoverLetterFields(current.coverLetterFields, coverFields);
+          db.putRun({...current, coverLetterFields: fields});
+          const step = coverLetterStep(db.get(id), active.recordId, fields);
+          if (step) result = {...result, coverLetter: step};
+        }
         break;
       }
       case 'browser_upload_document': {
@@ -1621,6 +1685,15 @@ export function automationWorkflow({
             'The document could not be uploaded: ' +
               JSON.stringify(response.content).slice(0, 1000),
           );
+        const current = db.run(run.id),
+          uploaded = coverLetterUploaded(
+            db.get(id),
+            active.recordId,
+            current.coverLetterFields,
+            args.ref,
+            relative,
+          );
+        if (uploaded) db.putRun({...current, coverLetterFields: uploaded});
         result = {...(await inspect()), action: response.action};
         break;
       }
@@ -1649,6 +1722,24 @@ export function automationWorkflow({
         result = await saveCoverLetter(db, id, active, args.text, {workspace, renderPdf});
         break;
       }
+      case 'read_contact_brief':
+        if (active.recordOperation !== 'contacts') throw Error('Only a contact task has a brief');
+        return contactBrief(db, id, active);
+      case 'save_record_contacts':
+        if (active.recordOperation !== 'contacts')
+          throw Error('Only a contact task can save contacts');
+        result = saveRecordContacts(db, id, active, args);
+        break;
+      case 'reserve_contact_action':
+        if (active.recordOperation !== 'contacts')
+          throw Error('Only a contact send task can reserve a contact');
+        result = reserveContactAction(db, id, active, args.contactId);
+        break;
+      case 'record_contact_outcome':
+        if (active.recordOperation !== 'contacts')
+          throw Error('Only a contact send task records contact outcomes');
+        result = recordContactOutcome(db, id, active, args);
+        break;
       case 'browser_interact': {
         const research = active.kind === 'interview';
         db.spendStep(id, run.id, {research});
@@ -1658,10 +1749,10 @@ export function automationWorkflow({
           else webUrl(url);
           const tool =
             args.operation === 'scroll'
-              ? 'browser_jev_scroll'
+              ? 'browser_scroll'
               : args.operation === 'reveal'
-                ? 'browser_jev_reveal'
-                : 'browser_jev_options';
+                ? 'browser_reveal'
+                : 'browser_options';
           const parameters =
             args.operation === 'options'
               ? {ref: args.ref}
@@ -1701,6 +1792,9 @@ export function automationWorkflow({
           parameters.values = [value];
         } else if (args.operation === 'press') {
           if (!args.key?.trim()) throw Error('A key is required');
+          // Enter in a message box sends it past the Send-click gate.
+          if (active.recordOperation === 'contacts' && active.request?.phase === 'send')
+            throw Error('Keys are off in a contact send task; click the Send button instead.');
           operation = 'browser_target_press';
           parameters.ref = args.ref;
           parameters.key = args.key;
@@ -1708,8 +1802,7 @@ export function automationWorkflow({
           // Text alone names the wanted option; without an exact match the
           // tool returns the full suggestion list and selects nothing.
           const option = args.option ?? (args.text?.trim() ? args.text : undefined);
-          operation =
-            option === undefined ? 'browser_jev_list_suggestions' : 'browser_jev_autocomplete';
+          operation = option === undefined ? 'browser_list_suggestions' : 'browser_autocomplete';
           parameters.controlId = args.ref;
           if (args.text !== undefined) parameters.text = args.text;
           if (option !== undefined) parameters.option = option;
@@ -1723,10 +1816,18 @@ export function automationWorkflow({
           (Boolean(submitLabel) &&
             formSubmits?.labels.has(spaced(submitLabel)) &&
             formSubmits.url === (await browser.currentUrl(id)));
-        if (submitClick) assertSubmitAllowed(db.activeRun(id, run.id), submitLabel);
+        // A contact task has no application to submit: its own gate allows
+        // connect/message after a reservation and one Send per contact.
+        const contactTask = active.recordOperation === 'contacts',
+          contactSpend = contactTask
+            ? contactClick(db.activeRun(id, run.id), submitLabel, submitClick)
+            : null;
+        if (submitClick && !contactTask) assertSubmitAllowed(db.activeRun(id, run.id), submitLabel);
         const beforeSubmit = submitClick ? (snapshots.current?.text ?? '') : '';
         snapshots.invalidate();
         const response = await callBrowser(id, operation, parameters, run.id);
+        if (contactSpend === 'send' && response.action?.executed !== false)
+          contactSendClicked(db, id, run);
         if (response.isError)
           throw Error(
             'The browser step could not complete; check the result: ' +
@@ -1738,7 +1839,7 @@ export function automationWorkflow({
           // The click opened the next page in a new tab; continue there.
           const switched = await callBrowser(
             id,
-            'browser_jev_use_tab',
+            'browser_use_tab',
             {tabId: openedTab.tabId},
             run.id,
           );
@@ -1758,7 +1859,7 @@ export function automationWorkflow({
         if (response.siteWait && active.recordId)
           result.siteWaitGuidance =
             'This site asked to slow down, so the step was not executed. Do not retry it now. Call finish_automation_run with status=blocked; the app resumes this record after the wait from the same tab.';
-        if (submitClick) {
+        if (submitClick && !contactTask) {
           let outcome = classifySubmission(snapshots.current?.text ?? '', beforeSubmit);
           // A confirmation often renders a moment after the click: look twice more.
           for (
@@ -1803,6 +1904,8 @@ export function automationWorkflow({
       case 'finish_automation_run':
         if (active.recordOperation === 'cover_letter')
           finishCoverLetter(db, id, active, args.status, args.summary);
+        if (active.recordOperation === 'contacts')
+          finishContactTask(db, id, active, args.status, args.summary);
         return finishAutomationRun({
           db,
           id,
@@ -1822,8 +1925,14 @@ export function automationWorkflow({
   };
   return {
     // Reads the next review batch of a card collector before the agent starts.
-    prefetchCollector: () =>
-      prefetchCollectorPage(db, run.id, {signal, readListing: readListingInBrowser}),
+    prefetchCollector: async () => {
+      await prefetchCollectorPage(db, run.id, {
+        signal,
+        readListing: readListingInBrowser,
+        progress: activity,
+      });
+      activity({...IDLE_STEP, step: 'agent', tool: null, label: null, url: null});
+    },
     normalizeToolArgs: normalizeRecordToolArgs,
     guardToolCall:
       run.taskId && run.kind !== 'interview'
@@ -1908,10 +2017,16 @@ export async function launchAutomationWorker({
   try {
     // A trial may use a stronger model: it discovers the source once; scans replay the recipe.
     // A cover letter is written once and read by an employer, so it gets the same model.
-    const trialSettings = (s) =>
-      (run.kind === 'trial' || run.recordOperation === 'cover_letter') && s?.trialModel
-        ? {...s, model: s.trialModel}
-        : s;
+    // Contact tasks have their own model setting (Opus by default for Claude).
+    const trialSettings = (s) => {
+      const model =
+        run.kind === 'trial' || run.recordOperation === 'cover_letter'
+          ? s?.trialModel
+          : run.recordOperation === 'contacts' && s
+            ? withAgentDefaults(s).contactModel
+            : null;
+      return model ? {...s, model} : s;
+    };
     const persistent = run.kind === 'interview',
       history = persistent
         ? setupAgentHistory(db, automation.id)

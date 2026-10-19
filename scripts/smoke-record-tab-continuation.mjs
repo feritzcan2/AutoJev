@@ -39,7 +39,7 @@ try {
     'record:one',
     'Popup inherits exact record ownership',
   );
-  await first.call('workspace', 'browser_jev_use_tab', {tabId: form.id}, 'first');
+  await first.call('workspace', 'browser_use_tab', {tabId: form.id}, 'first');
   await popup.locator('input').fill('Unsaved candidate answer');
   await popup.evaluate(() => history.pushState({}, '', '/apply/after-login'));
   const count = context.pages().length;
@@ -52,12 +52,12 @@ try {
   const withoutCheckpoint = await adapter().call('workspace', 'browser_navigate', {url}, 'third');
   assert.equal(withoutCheckpoint.pageContext.tabId, form.id);
   assert.equal(context.pages().length, count);
-  const tabs = await second.call('workspace', 'browser_jev_tabs', {}, 'second');
+  const tabs = await second.call('workspace', 'browser_tabs', {}, 'second');
   assert.ok(tabs.tabs.every((t) => t.recordId === 'one'));
   assert.equal(tabs.tabs.length, 2);
   const foreign = adapter(null, 'other');
   await assert.rejects(
-    foreign.call('workspace', 'browser_jev_use_tab', {tabId: form.id}, 'other'),
+    foreign.call('workspace', 'browser_use_tab', {tabId: form.id}, 'other'),
     /another worker/,
   );
   const other = await foreign.call('workspace', 'browser_navigate', {url}, 'other');

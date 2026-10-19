@@ -19,6 +19,7 @@ import {InstructionLog} from '../app/system/instruction-log.mjs';
 import {selectResume} from '../app/agents/resume.mjs';
 const settings = {
   provider: 'codex',
+  decisions: 'jev',
   model: 'default',
   permission: 'default',
   reasoning: 'default',
@@ -28,14 +29,20 @@ function fixture(t) {
   const core = new WorkspaceDatabase(':memory:');
   t.after(() => core.close());
   const db = new AutomationStore(core),
-    a = db.create('custom', {title: 'Profiles'}),
+    a = db.create('custom', {
+      title: 'Profiles',
+      agentSettings: {provider: 'codex', decisions: 'jev'},
+    }),
     profiles = new AgentProfiles(core.workspaces, {validate: async () => {}});
   profiles.register(WEB_AGENTS);
   return {core, db, a, profiles};
 }
 test('saved agent revisions are isolated by workspace and reject stale editor saves', async (t) => {
   const {db, a, profiles} = fixture(t),
-    b = db.create('custom', {title: 'Other'}),
+    b = db.create('custom', {
+      title: 'Other',
+      agentSettings: {provider: 'codex', decisions: 'jev'},
+    }),
     original = profiles.get(a.id, 'web-run');
   const saved = await profiles.update(a.id, 'web-run', {
     instructions: 'Work only this task.',
@@ -71,14 +78,14 @@ test('each web role receives only its own task instructions', () => {
 test('Jev delegation reaches every role once and every fresh or resumed launch', () => {
   for (const kind of ['interview', 'trial', 'run']) {
     const instructions = webAgentProfile(kind, settings).instructions;
-    assert.match(instructions, /browser_jev_run/);
+    assert.match(instructions, /browser_run_task/);
     assert.match(instructions, /No prior Jev task ID is required/);
     assert.equal(
       instructions.split('## Jev managed browser').length,
       2,
       'the Jev block appears exactly once',
     );
-    assert.doesNotMatch(AUTOMATION_INSTRUCTIONS, /browser_jev_run/);
+    assert.doesNotMatch(AUTOMATION_INSTRUCTIONS, /browser_run_task/);
     for (const continuation of [undefined, {reason: 'task_retry'}])
       assert.match(automationPrompt({kind, continuation}), /fromTaskId is optional/);
   }

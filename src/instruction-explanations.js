@@ -11,7 +11,7 @@ const descriptions = {
   authorization:
     'States how far the agent may go: research, preparation or submission. Task-specific permissions can also be given in the task details.',
   applicationPolicy:
-    'Application rules such as filling forms, consent checkboxes and asking you when information is unknown.',
+    'How application forms answer consent checkboxes and optional questions such as marketing emails or demographic questions.',
   goal: 'The outcome you want reached in this workspace. The agent interprets its work and what counts as success from it.',
   sources:
     'Sites to research and their start addresses. A worker may be given only the sources it reviews in that task.',

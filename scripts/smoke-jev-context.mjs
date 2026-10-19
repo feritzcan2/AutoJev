@@ -31,10 +31,10 @@ try {
   await page.evaluate(() => {
     window.submits = 0;
   });
-  const first = await call('browser_jev_observe', {tabId});
+  const first = await call('browser_observe', {tabId});
   const original = first.page.controls.find((c) => c.label === 'Required field 0'),
     retained = first.page.controls.find((c) => c.label === 'Required field 1');
-  const second = await call('browser_jev_select_option', {
+  const second = await call('browser_choose_option', {
     tabId,
     controlId: original.controlId,
     option: 'Yes',
@@ -49,7 +49,7 @@ try {
   );
   assert.ok(second.bytes < first.bytes * 0.4, `${second.bytes}/${first.bytes}`);
   // A retained ID is usable, but a removed/replaced/foreign-owner ID cannot act.
-  const third = await call('browser_jev_select_option', {
+  const third = await call('browser_choose_option', {
     tabId,
     controlId: retained.controlId,
     option: 'No',
@@ -57,7 +57,7 @@ try {
   assert.equal(third.wire.selection.verified, true);
   assert.equal(await page.locator('#f1').inputValue(), 'no');
   // Redundant reads stay small while still inspecting the current live DOM.
-  const reread = await call('browser_jev_observe', {tabId});
+  const reread = await call('browser_observe', {tabId});
   assert.equal(reread.wire.observationMode, 'delta');
   assert.deepEqual(reread.wire.controls, []);
   assert.equal(reread.wire.text, undefined);
@@ -70,11 +70,11 @@ try {
       '<p role="alert">Please correct the application details.</p>',
     );
   });
-  const error = await call('browser_jev_observe', {tabId});
+  const error = await call('browser_observe', {tabId});
   assert.equal(error.wire.observationMode, 'delta');
   assert.match(error.wire.text, /Please correct/);
   assert.ok(error.wire.controls.some((c) => c.label === 'Required field 1' && c.value === 'yes'));
-  const stale = await call('browser_jev_select_option', {
+  const stale = await call('browser_choose_option', {
     tabId,
     controlId: original.controlId,
     option: 'No',
@@ -84,7 +84,7 @@ try {
   assert.equal(await page.locator('#f0').inputValue(), 'yes');
   const replacement = stale.page.controls.find((c) => c.label === 'Required field 0');
   await page.locator('#f0').evaluate((e) => e.replaceWith(e.cloneNode(true)));
-  const replaced = await call('browser_jev_select_option', {
+  const replaced = await call('browser_choose_option', {
     tabId,
     controlId: replacement.controlId,
     option: 'No',
@@ -94,7 +94,7 @@ try {
   await assert.rejects(
     () =>
       call(
-        'browser_jev_select_option',
+        'browser_choose_option',
         {
           tabId,
           controlId: replaced.page.controls.find((c) => c.label === 'Required field 0').controlId,
@@ -105,14 +105,14 @@ try {
     /oturuma/,
   );
   assert.equal(await page.evaluate(() => window.submits), 0);
-  const full = await call('browser_jev_observe', {tabId, full: true});
+  const full = await call('browser_observe', {tabId, full: true});
   assert.equal(full.wire.observationMode, 'full');
   assert.equal(full.wire.controls.length, 71);
   assert.match(full.wire.text, /Please correct/);
-  const next = await call('browser_jev_observe', {tabId, full: false});
+  const next = await call('browser_observe', {tabId, full: false});
   assert.equal(next.wire.observationMode, 'delta');
   assert.equal(next.wire.baseObservationId, full.wire.observationId);
-  const freshOwner = await call('browser_jev_observe', {tabId}, 'new-owner');
+  const freshOwner = await call('browser_observe', {tabId}, 'new-owner');
   assert.equal(freshOwner.wire.observationMode, 'full');
   assert.equal(freshOwner.wire.controls.length, 71);
   assert.ok(
@@ -122,7 +122,7 @@ try {
   );
   // A late confirmation on the same URL must arrive without requesting full.
   await page.setContent('<h1>Application received</h1><p>Thank you for applying.</p>');
-  const confirmation = await call('browser_jev_observe', {tabId}, 'new-owner');
+  const confirmation = await call('browser_observe', {tabId}, 'new-owner');
   assert.equal(confirmation.wire.observationMode, 'delta');
   assert.match(confirmation.wire.text, /Application received/);
   assert.equal(confirmation.wire.removedControls.length, 71);

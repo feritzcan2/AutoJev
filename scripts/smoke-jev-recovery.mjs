@@ -39,7 +39,7 @@ try {
       window.submits++;
     };
   });
-  let observed = await call('browser_jev_observe', {tabId}),
+  let observed = await call('browser_observe', {tabId}),
     apply = observed.clickTargets.find((t) => t.label === 'Apply');
   assert.ok(apply);
   // A consent overlay arrives after the first snapshot, as in the Zalando trace.
@@ -51,10 +51,10 @@ try {
       '<style>[role=dialog]{position:fixed;inset:0;background:white;z-index:9999;padding:30px}button{padding:20px}</style><section role="dialog" aria-modal="true" aria-label="Cookie preferences"><p>Choose cookie preferences</p><button type="button" id="deny">Reject optional cookies</button><button type="button">Accept all cookies</button></section>';
     host.shadowRoot.querySelector('#deny').onclick = () => host.remove();
   });
-  let result = await call('browser_jev_click', {tabId, targetId: apply.targetId});
+  let result = await call('browser_click_target', {tabId, targetId: apply.targetId});
   assert.equal(result.status, 'stale');
   assert.equal(await page.evaluate(() => window.clicks), 0);
-  const blocked = await call('browser_jev_next', {tabId, goal: 'Open the application form'});
+  const blocked = await call('browser_next', {tabId, goal: 'Open the application form'});
   assert.equal(blocked.operation, 'BLOCKED');
   assert.match(blocked.textExcerpt, /cookie preferences/);
   assert.equal(
@@ -65,41 +65,41 @@ try {
   const deny = blocked.clickTargets.find((t) => t.label === 'Reject optional cookies');
   assert.ok(deny);
   await assert.rejects(
-    () => call('browser_jev_click', {tabId, targetId: deny.targetId}, 'different-session'),
+    () => call('browser_click_target', {tabId, targetId: deny.targetId}, 'different-session'),
     /oturuma/,
   );
-  result = await call('browser_jev_click', {tabId, targetId: deny.targetId});
+  result = await call('browser_click_target', {tabId, targetId: deny.targetId});
   assert.equal(result.executed, true);
   apply = result.clickTargets.find((t) => t.label === 'Apply');
   assert.ok(apply);
-  result = await call('browser_jev_click', {tabId, targetId: apply.targetId});
+  result = await call('browser_click_target', {tabId, targetId: apply.targetId});
   assert.equal(result.executed, true);
   assert.equal(await page.locator('form').isVisible(), true);
   assert.equal(await page.evaluate(() => window.submits), 0);
   assert.equal(modelCalls, 1);
   // An old one-shot ID cannot execute again, and uncertain clicks cannot loop.
   assert.equal(
-    (await call('browser_jev_click', {tabId, targetId: apply.targetId})).executed,
+    (await call('browser_click_target', {tabId, targetId: apply.targetId})).executed,
     false,
   );
   await page.setContent('<button type="button" onclick="window.clicks++">No effect</button>');
   await page.evaluate(() => (window.clicks = 0));
-  observed = await call('browser_jev_observe', {tabId});
-  result = await call('browser_jev_click', {tabId, targetId: observed.clickTargets[0].targetId});
+  observed = await call('browser_observe', {tabId});
+  result = await call('browser_click_target', {tabId, targetId: observed.clickTargets[0].targetId});
   assert.equal(result.status, 'uncertain');
-  result = await call('browser_jev_click', {tabId, targetId: result.clickTargets[0].targetId});
+  result = await call('browser_click_target', {tabId, targetId: result.clickTargets[0].targetId});
   assert.equal(result.status, 'no_progress');
   assert.equal(await page.evaluate(() => window.clicks), 1);
   // Observed buttons below the fold can be revealed without clicking them.
   await page.setContent(
     '<div style="height:1200px"></div><button id="below" type="button" onclick="this.textContent=\'Opened\'">Apply below</button>',
   );
-  observed = await call('browser_jev_observe', {tabId});
+  observed = await call('browser_observe', {tabId});
   const control = observed.controls.find((c) => c.label === 'Apply below');
   assert.equal(control.visible, false);
-  result = await call('browser_jev_reveal', {tabId, controlId: control.controlId});
+  result = await call('browser_reveal', {tabId, controlId: control.controlId});
   assert.equal(result.visible, true);
-  result = await call('browser_jev_click', {
+  result = await call('browser_click_target', {
     tabId,
     targetId: result.clickTargets.find((t) => t.label === 'Apply below').targetId,
   });
@@ -107,9 +107,9 @@ try {
   assert.equal(await page.locator('#below').innerText(), 'Opened');
   // Replacing a node or changing the meaning of a link invalidates the target.
   await page.setContent('<a href="https://example.test/apply">Apply</a>');
-  observed = await call('browser_jev_observe', {tabId});
+  observed = await call('browser_observe', {tabId});
   await page.locator('a').evaluate((e) => (e.href = 'https://example.test/other'));
-  result = await call('browser_jev_click', {tabId, targetId: observed.clickTargets[0].targetId});
+  result = await call('browser_click_target', {tabId, targetId: observed.clickTargets[0].targetId});
   assert.equal(result.status, 'stale');
   assert.equal(page.url(), 'about:blank');
   // Read a custom dropdown after an unmatched query, without guessing an enum.
@@ -143,8 +143,8 @@ try {
     input.oninput = render;
     input.onclick = render;
   });
-  observed = await call('browser_jev_observe', {tabId});
-  result = await call('browser_jev_autocomplete', {
+  observed = await call('browser_observe', {tabId});
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: observed.controls.find((c) => c.label === 'Disclosure').controlId,
     text: 'Prefer not to say',
@@ -153,7 +153,7 @@ try {
   assert.equal(result.status, 'needs_selection');
   assert.deepEqual(result.suggestions, []);
   assert.equal(await page.evaluate(() => window.selections), 0);
-  result = await call('browser_jev_list_suggestions', {
+  result = await call('browser_list_suggestions', {
     tabId,
     controlId: result.controls.find((c) => c.label === 'Disclosure').controlId,
     text: '',
@@ -161,7 +161,7 @@ try {
   assert.deepEqual(result.suggestions, ['No answer', 'Option A', 'Option B']);
   assert.equal(result.selected, false);
   assert.equal(await page.evaluate(() => window.selections), 0);
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: result.controls.find((c) => c.label === 'Disclosure').controlId,
     option: 'No answer',
@@ -175,11 +175,11 @@ try {
       (document.querySelector('#host').attachShadow({mode: 'open'}).innerHTML =
         '<button>Shadow action</button>'),
   );
-  observed = await call('browser_jev_observe', {tabId});
+  observed = await call('browser_observe', {tabId});
   const shadow = observed.clickTargets.find((t) => t.label === 'Shadow action');
   assert.ok(shadow);
   await page.locator('#host').evaluate((e) => e.setAttribute('aria-disabled', 'true'));
-  result = await call('browser_jev_click', {tabId, targetId: shadow.targetId});
+  result = await call('browser_click_target', {tabId, targetId: shadow.targetId});
   assert.equal(result.status, 'stale');
   assert.equal(result.executed, false);
   assert.equal(result.clickTargets.length, 0);
@@ -187,8 +187,8 @@ try {
   await page.setContent(
     '<p>Drag the puzzle piece to complete verification</p><input role="combobox" aria-controls="items"><div role="listbox" id="items"></div>',
   );
-  observed = await call('browser_jev_observe', {tabId});
-  result = await call('browser_jev_list_suggestions', {
+  observed = await call('browser_observe', {tabId});
+  result = await call('browser_list_suggestions', {
     tabId,
     controlId: observed.controls[0].controlId,
     text: 'query',

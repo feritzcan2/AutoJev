@@ -3,6 +3,14 @@ import {readdir, realpath, stat, readFile} from 'node:fs/promises';
 import path from 'node:path';
 const extensions = new Set(['.pdf', '.docx', '.txt', '.md', '.png', '.jpg', '.jpeg']);
 const excluded = new Set(['runtime', 'node_modules', 'AGENTS.md', 'CLAUDE.md']);
+// Files the app or an agent wrote, such as cover letters, live under generated/;
+// documents/ holds only what the user added. Letters saved before the split
+// stay in documents/cover-letters/. Agent-written files are never user facts.
+export const AGENT_DIRECTORY = 'generated';
+export const agentDocument = (relative) =>
+  [AGENT_DIRECTORY + '/', 'documents/cover-letters/'].some((prefix) =>
+    relative.split(path.sep).join('/').startsWith(prefix),
+  );
 export async function documentPath(root, relative) {
   if (typeof relative !== 'string' || path.isAbsolute(relative)) throw Error('Invalid file');
   const base = await realpath(root),
@@ -45,6 +53,7 @@ export async function listDocuments(root) {
           name: entry.name,
           size: info.size,
           updatedAt: info.mtime.toISOString(),
+          generated: agentDocument(relative),
           preview: ['.txt', '.md'].includes(path.extname(entry.name).toLowerCase()),
         });
       } catch {}

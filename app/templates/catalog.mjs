@@ -5,6 +5,7 @@ import {saveScoreThreshold} from '../scoring/thresholds.mjs';
 import {withAgentDefaults} from '../agents/settings.mjs';
 import {templateContract} from './contract.mjs';
 import {normalizeHardRules} from '../../src/hard-rules.js';
+import {PROFILE_SECTION_IDS} from './profile-sections.mjs';
 export const automationTemplates = [jobSearchTemplate, ...exampleTemplates];
 export function automationTemplate(id) {
   const template = automationTemplates.find((t) => t.id === id);
@@ -133,6 +134,7 @@ export function reusableTemplate(input, normalize = templateContract) {
         ? f.type
         : 'text',
       ...(f.options ? {options: f.options.map((v) => boundedText(v, 'Option', 150))} : {}),
+      ...(PROFILE_SECTION_IDS.includes(f.section) ? {section: f.section} : {}),
     };
   });
   if (new Set(fields.map((f) => f.id)).size !== fields.length)

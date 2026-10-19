@@ -6,13 +6,13 @@ export const defaultPermission = (provider) =>
 // Who makes the listing decisions inside browser tasks: the Jev model
 // (TypeSafe key) or the worker agent itself, through its next tool call.
 export const DECISION_MODES = ['jev', 'agent'];
-export const agentDecides = (settings) => settings?.decisions === 'agent';
+export const agentDecides = (settings) => (settings?.decisions ?? 'agent') === 'agent';
 
 export function withAgentDefaults(settings = {}) {
   const provider = settings.provider ?? 'codex';
   return {
     model: provider === 'claude' ? 'haiku' : 'default',
-    ...(provider === 'claude' ? {trialModel: 'opus[1m]'} : {}),
+    ...(provider === 'claude' ? {trialModel: 'opus[1m]', contactModel: 'opus[1m]'} : {}),
     reasoning: provider === 'claude' ? 'medium' : 'default',
     network: null,
     contextCompactTokens: provider === 'claude' ? 200000 : DEFAULT_COMPACT_TOKENS,
@@ -20,7 +20,7 @@ export function withAgentDefaults(settings = {}) {
     ...settings,
     provider,
     permission: settings.permission ?? defaultPermission(provider),
-    decisions: settings.decisions ?? 'jev',
+    decisions: settings.decisions ?? 'agent',
   };
 }
 

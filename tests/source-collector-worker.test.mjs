@@ -94,7 +94,7 @@ function fixture(
     terms,
     ordering,
     saveScoreThreshold,
-    decisions,
+    decisions = 'jev',
   } = {},
 ) {
   const core = new WorkspaceDatabase(':memory:'),
@@ -108,7 +108,7 @@ function fixture(
     },
     sources: [source],
   });
-  if (decisions) db.save(a.id, {agentSettings: {provider: 'codex', decisions}});
+  db.save(a.id, {agentSettings: {provider: 'codex', decisions}});
   if (terms)
     db.saveSource(a.id, source, {
       recipe: {
@@ -188,7 +188,7 @@ async function save(f, item, score = 42) {
 }
 async function review(f, receipt, decisions = []) {
   const task = helper(f, receipt);
-  return f.call('browser_jev_run', {
+  return f.call('browser_run_task', {
     taskId: task.id,
     reviewedBatchId: task.batch.id,
     review: decisions,
@@ -227,11 +227,11 @@ test('CLI pages enter Jev triage, the agent scores retained items, and review ga
     /not finished/,
   );
   await assert.rejects(
-    f.call('browser_jev_run', {operation: 'scan_results', url: source}),
+    f.call('browser_run_task', {operation: 'scan_results', url: source}),
     /collect_source_page/,
   );
   const good = helper(f, first).items[0];
-  const brief = await f.call('read_jev_brief', {evidenceId: good.evidenceId});
+  const brief = await f.call('read_listing_brief', {evidenceId: good.evidenceId});
   assert.match(JSON.stringify(brief), /RAM_ONLY_DESCRIPTION_9724/);
   await assert.rejects(
     f.call('record_automation_result', {
@@ -370,7 +370,7 @@ test('minimum save score excludes CLI findings, allows batch review, and survive
     summary: 'Below threshold',
     score: 20,
   });
-  await flow.call(f.id, f.run.id, 'browser_jev_run', {
+  await flow.call(f.id, f.run.id, 'browser_run_task', {
     taskId: task.id,
     reviewedBatchId: task.batch.id,
   });

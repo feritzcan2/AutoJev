@@ -34,6 +34,22 @@ test('collector failures do not ask for browser tabs, including after run histor
   assert.equal(automationAttention(s)[0].browserRequired, true);
 });
 
+test('a budget or rate-limit wait that resumes by itself asks for no attention', () => {
+  const s = snapshot();
+  const waiting = (reason, extra = {}) => ({
+    ...source,
+    siteWait: {site: 'homes.example', reason, waiting: true, retryAt: 5000, ...extra},
+  });
+  for (const reason of ['budget', 'rate_limit']) {
+    s.sources = [waiting(reason)];
+    assert.deepEqual(automationAttention(s), [], reason);
+  }
+  s.sources = [waiting('verification')];
+  assert.equal(automationAttention(s).length, 1, 'a check the user can solve still asks');
+  s.sources = [waiting('rate_limit', {exhausted: true})];
+  assert.equal(automationAttention(s).length, 1, 'retries that ran out still ask');
+});
+
 test('conversation forms stay distinct from source and record questions during concurrent work', () => {
   const s = snapshot();
   s.sources = [];

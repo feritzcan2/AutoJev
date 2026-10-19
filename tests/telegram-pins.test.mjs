@@ -67,3 +67,58 @@ test('pin collection reads the queue once and follows live task changes across m
   assert.equal(reads, 2);
   check();
 });
+
+test('a live task change refreshes only its own records cards', (t) => {
+  const store = new NotificationFixture(':memory:'),
+    db = new TelegramStore(store, Date.now, 1);
+  t.after(() => store.close());
+  const candidate = store.createWorkspace({name: 'Candidate', preferences: 'Remote'}).id;
+  db.saveConfig(candidate, {enabled: true, bot: {id: 1}});
+  db.bind(db.pair(candidate).token, 1, 1, 'Candidate');
+  const tasks = store.workspaces.tasks,
+    cards = [];
+  for (let i = 0; i < 4; i++) {
+    const job = store.addRecord(candidate, {
+      url: `https://example.com/jobs/${i}`,
+      role: 'Engineer',
+    }).job;
+    const card = db.enqueue(candidate, `new-job:${job.id}`, {kind: 'new_job', jobId: job.id});
+    db.sent(card.id, i + 1, 1, {text: 'Job'});
+    cards.push({id: card.id, jobId: job.id});
+  }
+  const pending = () =>
+    store.db
+      .prepare("SELECT delivery_id FROM telegram_job_messages WHERE status='pending'")
+      .all()
+      .map((row) => row.delivery_id)
+      .sort();
+  const sync = () => {
+    db.collect();
+    for (const card of cards) db.edited(card.id, {text: 'Job'});
+  };
+  sync();
+  const task = tasks.enqueue(candidate, {
+    recordId: cards[1].jobId,
+    operation: 'execute',
+    recordOperation: 'execute',
+  });
+  db.collect();
+  assert.deepEqual(pending(), [cards[1].id]);
+  sync();
+  tasks.put({...task, state: 'running'});
+  db.collect();
+  assert.deepEqual(pending(), [cards[1].id]);
+  sync();
+  // A scan task without a record changes no card.
+  const scan = tasks.enqueue(candidate, {operation: 'scan'});
+  tasks.put({...scan, state: 'running'});
+  db.collect();
+  assert.deepEqual(pending(), []);
+  // A finished task drops out of the live queue and refreshes its card once more.
+  tasks.put({...task, state: 'completed'});
+  db.collect();
+  assert.deepEqual(pending(), [cards[1].id]);
+  sync();
+  db.collect();
+  assert.deepEqual(pending(), []);
+});

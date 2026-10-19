@@ -82,7 +82,7 @@ test('details that stay unreadable after bounded recovery leave the queue with a
     },
     report: (...args) => runtime.report(...args),
   });
-  const first = await flow.call(id, run.id, 'browser_jev_run', {operation: 'collect_details'});
+  const first = await flow.call(id, run.id, 'browser_run_task', {operation: 'collect_details'});
   assert.deepEqual(first.retired, {count: 1, urls: [apply]});
   assert.match(first.next, /retired 1 unreadable/);
   assert.deepEqual(
@@ -169,7 +169,7 @@ test('a detail Jev could not render is a verified loading issue: the app retries
     {pendingUrls: [slow], reason: 'Read details'},
     {url: source, text: 'Observed queue'},
   );
-  const first = await flow.call(id, run.id, 'browser_jev_run', {operation: 'collect_details'});
+  const first = await flow.call(id, run.id, 'browser_run_task', {operation: 'collect_details'});
   assert.equal(first.issue.reason, 'detail_unavailable');
   assert.equal(first.retired, undefined, 'a slow page keeps its wait');
   const issue = db.run(run.id).scanIssues[slow];
@@ -190,7 +190,7 @@ test('a detail Jev could not render is a verified loading issue: the app retries
   assert.deepEqual(db.run(run.id).scanIssues, {});
   // While the address still waits, the issue stays verified without a reread.
   loading = true;
-  await flow.call(id, run.id, 'browser_jev_run', {operation: 'collect_details'});
+  await flow.call(id, run.id, 'browser_run_task', {operation: 'collect_details'});
   assert.equal(db.run(run.id).scanIssues[slow]?.verified, true);
   // The agent only reports the failure; the app decides it is technical and retries the saved queue itself.
   await flow.call(id, run.id, 'finish_automation_run', {

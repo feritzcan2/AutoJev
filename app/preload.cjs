@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('jobloop', {
   approveCoverLetter: (id, question, text) => invoke('cover-letter-approve', id, question, text),
   reviseCoverLetter: (id, question, feedback) =>
     invoke('cover-letter-revise', id, question, feedback),
+  setCoverLetterAutoApprove: (id, value) => invoke('cover-letter-auto-approve', id, value),
   automationSourceStop: (id, url) => invoke('automation-source-stop', id, url),
   workspaces: () => invoke('workspaces'),
   workspaceStart: (id, options) => invoke('workspace-start', id, options),
@@ -60,6 +61,16 @@ contextBridge.exposeInMainWorld('jobloop', {
   automationRecordsDelete: (id, itemIds) => invoke('automation-records-delete', id, itemIds),
   automationRecordRun: (id, itemId, kind, input = {}) =>
     invoke('automation-record-run', id, itemId, kind, input),
+  automationRecordDescription: (id, itemId) => invoke('automation-record-description', id, itemId),
+  automationRecordDescriptionRead: (id, itemId) =>
+    invoke('automation-record-description-read', id, itemId),
+  recordContactsFind: (id, itemId, notes) => invoke('record-contacts-find', id, itemId, notes),
+  recordContactsSend: (id, itemId, contactIds, messages) =>
+    invoke('record-contacts-send', id, itemId, contactIds, messages),
+  recordContactEdit: (id, itemId, contactId, message) =>
+    invoke('record-contact-edit', id, itemId, contactId, message),
+  recordContactRemove: (id, itemId, contactId) =>
+    invoke('record-contact-remove', id, itemId, contactId),
   automationRetryLater: (id, key, cancel = false) =>
     invoke('automation-retry-later', id, key, cancel),
   automationAttentionDismiss: (id, key, dismissKey) =>

@@ -173,7 +173,7 @@ export function extensionBench({
     let page = null;
     for (let attempt = 0; attempt < SETTLE_TRIES; attempt++) {
       if (attempt) await wait(SETTLE_MS);
-      page = await call(id, 'browser_jev_observe', {
+      page = await call(id, 'browser_observe', {
         tabId,
         scope: 'document',
         full: true,
@@ -249,7 +249,9 @@ export function extensionBench({
     );
   }
   async function readBrowser(id, base, {reopen = true} = {}) {
-    const tabId = reopen ? (await call(id, 'browser_jev_open', {url: base.url})).tabId : base.tabId;
+    const tabId = reopen
+      ? (await call(id, 'browser_open_page', {url: base.url})).tabId
+      : base.tabId;
     if (!tabId) throw Error('Could not open the bench tab.');
     const page = await settle(id, tabId),
       diagnostics = await domDiagnostics(id, tabId, base.instance, page);
@@ -390,7 +392,7 @@ export function extensionBench({
         unavailable:
           'The user documents could not be read; use known facts and keep missing qualifications uncertain.',
       }));
-    const criteria = jevCriteria(a, documents, template.assessmentHints),
+    const criteria = jevCriteria(a, documents, template),
       config = await browser.options(id).config(),
       title = page.title ?? '',
       text = String(page.listing?.text ?? page.text ?? ''),

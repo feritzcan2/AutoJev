@@ -14,6 +14,7 @@ import {
 import {workspaceSourceTabs} from './workspace-tabs.js';
 import {positionMenu} from './popover-menu.js';
 import {extensionBenchAvailable, extensionBenchPanel} from './extension-bench.js';
+import {sourceActivityText} from '../app/sources/activity-text.mjs';
 
 const paginationLabels = {
   auto: 'Detect automatically',
@@ -455,6 +456,16 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
           (page ? 'Last verified: ' + page : null),
       };
     }
+    if (source.siteTurn)
+      return {
+        tone: 'waiting',
+        label: source.siteTurn.scanning
+          ? `Waiting for “${source.siteTurn.workspace}” to finish`
+          : `Starts at ${new Date(source.siteTurn.until).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})}`,
+        detail: source.siteTurn.scanning
+          ? `Workspaces scan ${source.siteTurn.site} one at a time; this scan starts automatically 30 min after that one ends.`
+          : `30 min after “${source.siteTurn.workspace}” finished scanning ${source.siteTurn.site}.`,
+      };
     if (source.blocker?.stop?.retryExhausted)
       return {
         tone: 'danger',
@@ -561,6 +572,15 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     line.title = `Requests this app sent to ${new URL(source.url).hostname.replace(/^www\./, '')} for all workspaces and applications: ${rate.lastTenMinutes} in the last 10 minutes, ${rate.lastHour} in the last hour.${budget ? ` The site allows at most ${budget.requests} per ${window}; over that the scan waits instead of being blocked.` : ''}`;
     return line;
   }
+  // What the scan does right now: the app reading a results page or posting
+  // n of m (and waiting for the site's pace), or the agent's current step.
+  function activityLine(source) {
+    const text = source.scanning ? sourceActivityText(source.activity) : null;
+    if (!text) return null;
+    const line = el('div', text, 'source-requests source-activity');
+    line.title = `Updated ${new Date(source.activity.at).toLocaleTimeString('en-GB')}`;
+    return line;
+  }
   // Schedule: last scan, next scan and the interval, which changes in place.
   function scheduleLine(source, scope) {
     const meta = el('div', null, 'source-meta');
@@ -572,15 +592,17 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       updateLastRun(lastScan);
       meta.append(lastScan);
     }
-    const nextAt = source.enabled
-      ? (source.siteWait?.retryAt ??
-        (!source.scanning &&
-        !source.blocked &&
-        !source.termsRequired &&
-        data.automation.status === 'enabled'
-          ? source.nextRunAt
-          : null))
-      : null;
+    // A source waiting for another workspace's turn says so in its status.
+    const nextAt =
+      source.enabled && !source.siteTurn
+        ? (source.siteWait?.retryAt ??
+          (!source.scanning &&
+          !source.blocked &&
+          !source.termsRequired &&
+          data.automation.status === 'enabled'
+            ? source.nextRunAt
+            : null))
+        : null;
     if (nextAt) {
       const timing = el('span', null, 'source-timing'),
         next = el('b');
@@ -1214,9 +1236,13 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       link.title = [source.url, readerLabels[source.extension?.kind ?? 'agent']].join('\n');
       name.append(link);
       main.replaceChildren(
-        ...[name, statusLine(source), requestLine(source), scheduleLine(source, scope)].filter(
-          Boolean,
-        ),
+        ...[
+          name,
+          statusLine(source),
+          activityLine(source),
+          requestLine(source),
+          scheduleLine(source, scope),
+        ].filter(Boolean),
       );
       const closing =
         (data.activeRuns ?? []).some(

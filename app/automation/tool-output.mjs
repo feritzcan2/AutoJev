@@ -85,7 +85,7 @@ function queueView(queue, limit, summary) {
       checkpoint: checkpointView(queue.checkpoint),
       entriesAvailable: queue.total,
       delegation:
-        'Use browser_jev_run operation=collect_details with no URLs; Jev reads this queue internally. Resume an existing continue taskId first.',
+        'Use browser_run_task operation=collect_details with no URLs; Jev reads this queue internally. Resume an existing continue taskId first.',
     };
   }
   const pendingUrls = queue.pendingUrls.slice(0, limit),

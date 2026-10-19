@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
+import {convertLegacyProfile} from '../app/automation/legacy-profile.mjs';
 import {WebTasks} from '../app/automation/web-template.mjs';
 import {automationTaskContext} from '../app/automation/task-context.mjs';
 import {automationProgress} from '../app/automation/progress.mjs';
@@ -194,6 +195,8 @@ test('legacy combined drafts are split without applying their source list', asyn
       },
     },
   });
+  // The store converts old drafts on startup.
+  convertLegacyProfile(db, id);
   const migrated = db.get(id);
   assert.equal(migrated.planDraft.plan.sources, undefined);
   assert.deepEqual(migrated.sourceDraft.sources, [third]);
@@ -262,6 +265,7 @@ test('legacy queued profiles retain source changes as a separate proposal', asyn
       },
     },
   });
+  convertLegacyProfile(db, id);
   await runtime.tick();
   assert.deepEqual(db.get(id).sources, a.sources);
   assert.deepEqual(db.get(id).sourceDraft.sources, [third]);

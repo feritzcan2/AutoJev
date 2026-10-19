@@ -1,6 +1,7 @@
 // @ts-check
 import {runOperationLabel} from './progress.mjs';
 import {isConversation} from '../workspaces/conversation.mjs';
+import {sourceActivityText} from '../sources/activity-text.mjs';
 
 const QUEUED_ROWS = 20;
 
@@ -47,6 +48,7 @@ export function currentWork(view) {
             : 'Running',
       tone: source?.scanIssue ? 'blocked' : 'running',
       progress: source ? scanProgress(source, run) : null,
+      now: source?.scanning ? sourceActivityText(source.activity) : null,
       startedAt: run.startedAt ?? null,
       updatedAt: run.pageProgress?.at ?? null,
       stop: source ? {sourceUrl: source.url} : {workerId: run.workerId ?? 'main'},
@@ -79,6 +81,21 @@ export function currentWork(view) {
   for (const source of sources) {
     if (covered.has(source.url) || !source.enabled) continue;
     const wait = source.siteWait && !source.siteWait.exhausted ? source.siteWait : null;
+    const turn = !wait && source.siteTurn;
+    if (turn) {
+      rows.push({
+        id: 'turn:' + source.url,
+        title: turn.scanning
+          ? `Waiting for “${turn.workspace}” to finish`
+          : 'Waiting for its turn on the site',
+        subject: source.name,
+        state: 'Waiting',
+        tone: 'waiting',
+        progress: `Workspaces scan ${turn.site} one at a time; this scan starts 30 min after “${turn.workspace}” ends.`,
+        resumesAt: turn.until ?? null,
+      });
+      continue;
+    }
     if (!wait && !(source.recovery && a.status === 'enabled')) continue;
     rows.push({
       id: 'wait:' + source.url,

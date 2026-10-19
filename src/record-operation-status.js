@@ -4,6 +4,7 @@ const running = {
   execute: 'Applying',
   verify: 'Verifying',
   cover_letter: 'Writing cover letter',
+  contacts: 'LinkedIn contacts',
 };
 const queued = {
   score: 'Scoring queued',
@@ -11,6 +12,7 @@ const queued = {
   execute: 'Application queued',
   verify: 'Verification queued',
   cover_letter: 'Cover letter queued',
+  contacts: 'Contact task queued',
 };
 // The agent's blocker category, as the card's badge.
 const blockerLabels = {
@@ -154,14 +156,6 @@ export function activeRecordOperations(snapshot) {
 }
 
 // Blockers whose card offers Skip next to the reason.
-const skipCategories = new Set([
-  'not_eligible',
-  'needs_answer',
-  'listing_closed',
-  'site_problem',
-  'technical',
-]);
-
 // A stopped operation or an unverified outcome the user has to look at.
 export function recordProblem(record) {
   if (record.status === 'dismissed' || record.trial) return null;
@@ -174,10 +168,12 @@ export function recordProblem(record) {
       category: blocker.category,
       reason: blocker.reason,
       next: blocker.userAction,
-      skip: skipCategories.has(blocker.category),
     };
   if (progress?.id === 'stopped')
-    return {label: progress.label, reason: summary || 'The agent did not record a reason.'};
+    return {
+      label: progress.label,
+      reason: summary || 'The agent did not record a reason.',
+    };
   if (!progress && record.status === 'uncertain')
     return {
       label: 'Outcome needs verification',

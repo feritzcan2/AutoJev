@@ -92,16 +92,16 @@ try {
   await page.locator('[data-view=agent]').click();
   assert.equal(await form.locator('[name=trialModel]').inputValue(), '');
   console.log('CLAUDE_DEFAULT_SETTINGS_UI_PASS');
-  // Listing decisions default to Jev; the agent option survives save and reload.
+  // Listing decisions default to the agent; the Jev option survives save and reload.
   const decisions = form.locator('[name=decisions]');
-  assert.equal(await decisions.inputValue(), 'jev');
-  await decisions.selectOption('agent');
+  assert.equal(await decisions.inputValue(), 'agent');
+  await decisions.selectOption('jev');
   await save.click();
   await page.waitForFunction(() => !document.querySelector('#agent-settings-form').inert);
-  assert.equal((await snapshot()).workspace.agentSettings.decisions, 'agent');
+  assert.equal((await snapshot()).workspace.agentSettings.decisions, 'jev');
   await page.reload();
   await page.locator('[data-view=agent]').click();
-  assert.equal(await decisions.inputValue(), 'agent');
+  assert.equal(await decisions.inputValue(), 'jev');
   await page.screenshot({path: path.join(data, 'agent-decisions-settings.png'), fullPage: true});
   console.log('AGENT_DECISIONS_UI_PASS');
   // Simulate active workers without launching any provider or touching real workspaces.

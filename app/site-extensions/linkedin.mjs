@@ -283,39 +283,54 @@ export function linkedInSearchUrl(value) {
 }
 
 // One posting page open in the browser (logged in or not). Runs inside the
-// page, so it is self-contained. The logged-in layout comes first, then the
-// guest layout; the first heading and the job details block are the fallback.
+// page, so it is self-contained. The signed-in layout (observed 2026-10-19) has
+// generated class names and no h1: its description sits in the "about the job"
+// component, and the tab title reads "Title | Company | LinkedIn". The guest
+// layout keeps its named classes. Styled Unicode letters become plain (NFKC).
 export function collectLinkedInPosting() {
+  const clean = (value) =>
+    String(value ?? '')
+      .normalize('NFKC')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n\s*\n\s*\n+/g, '\n\n')
+      .trim();
   const text = (selectors) => {
     for (const selector of selectors) {
-      const value = document
-        .querySelector(selector)
-        ?.innerText?.replace(/[ \t]+/g, ' ')
-        .trim();
+      const value = clean(document.querySelector(selector)?.innerText);
       if (value) return value;
     }
     return '';
   };
+  const tab = document.title.split(' | ').map(clean);
+  const fromTab = tab.length >= 3 && tab.at(-1) === 'LinkedIn' ? tab : [];
   return {
     url: location.href,
-    title: text([
-      '.job-details-jobs-unified-top-card__job-title h1',
-      '.job-details-jobs-unified-top-card__job-title',
-      '.top-card-layout__title',
-      'main h1',
-      'h1',
-    ]),
-    company: text([
-      '.job-details-jobs-unified-top-card__company-name a',
-      '.job-details-jobs-unified-top-card__company-name',
-      '.topcard__org-name-link',
-    ]),
+    title:
+      text([
+        '.job-details-jobs-unified-top-card__job-title h1',
+        '.job-details-jobs-unified-top-card__job-title',
+        '.top-card-layout__title',
+        'main h1',
+        'h1',
+      ]) ||
+      fromTab[0] ||
+      '',
+    company:
+      text([
+        '.job-details-jobs-unified-top-card__company-name a',
+        '.job-details-jobs-unified-top-card__company-name',
+        '.topcard__org-name-link',
+      ]) ||
+      fromTab[1] ||
+      '',
     location: text([
       '.job-details-jobs-unified-top-card__primary-description-container .tvm__text',
       '.job-details-jobs-unified-top-card__bullet',
       '.topcard__flavor--bullet',
     ]),
     description: text([
+      '[componentkey^="JobDetails_AboutTheJob_"] [data-testid="expandable-text-box"]',
+      '[componentkey^="JobDetails_AboutTheJob_"]',
       '#job-details',
       '.jobs-description__content .jobs-box__html-content',
       '.jobs-description-content__text',
@@ -387,6 +402,14 @@ export default {
   dom: {
     listing: {
       handles: (url) => linkedInGuestRequest(url)?.kind === 'detail',
+      // Signed in, a country host with a title slug (de.linkedin.com/jobs/view/
+      // senior-…-4437671367) shows an error page; the plain job address works.
+      open: (url) => {
+        const posting = linkedInGuestRequest(url);
+        return posting?.kind === 'detail'
+          ? `https://www.linkedin.com/jobs/view/${posting.id}/`
+          : url;
+      },
       collect: collectLinkedInPosting,
       read: readLinkedInPosting,
     },

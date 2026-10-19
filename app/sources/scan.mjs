@@ -15,9 +15,33 @@ const stable = (value) =>
         )
       : value;
 
-// Schedule, provider, table layout and permission changes do not change which
-// listings belong to a search. Search criteria do.
+// A scan's position belongs to what it searches: the source, its query and
+// its own instructions (a changed search recipe resets its pages itself). Profile changes (criteria, facts,
+// instructions, workflow) change how listings are judged, not which pages a
+// search reads, so they keep the position; known listings that need a new
+// judgement are reviewed again by the scan itself. (Until 2026-10-19 every
+// profile edit restarted every source from page 1.)
 export function sourceScanScope(a, url) {
+  const source = a.sourceSettings?.[url] ?? {};
+  return createHash('sha256')
+    .update(
+      JSON.stringify(
+        stable({
+          ...(source.instructions ? {sourceInstructions: source.instructions} : {}),
+          ...(source.skill ? {sourceSkill: source.skill} : {}),
+          url,
+          query: source.query ?? a.goal,
+          templateId: a.templateId,
+        }),
+      ),
+    )
+    .digest('hex');
+}
+
+// Listings a scan rejected are remembered under what was searched and what
+// they were judged against: a profile change judges them again. (The same
+// hash as the scan scope before 2026-10-19, so earlier rejections stay.)
+export function sourceJudgementScope(a, url) {
   const source = a.sourceSettings?.[url] ?? {};
   return createHash('sha256')
     .update(
@@ -38,6 +62,20 @@ export function sourceScanScope(a, url) {
       ),
     )
     .digest('hex');
+}
+
+// Scan state saved before 2026-10-19 carries the judgement scope as its key;
+// it is the same scan, so it keeps its position.
+export const sameScanScope = (key, a, url) =>
+  key === sourceScanScope(a, url) || key === sourceJudgementScope(a, url);
+export function currentScanState(saved, a, url) {
+  const key = sourceScanScope(a, url);
+  if (!saved || saved.scopeKey === key || !sameScanScope(saved.scopeKey, a, url)) return saved;
+  return {
+    ...saved,
+    scopeKey: key,
+    ...(saved.active ? {active: {...saved.active, scopeKey: key}} : {}),
+  };
 }
 
 export const KNOWN_BOUNDARY_PAGES = 2;
@@ -231,7 +269,7 @@ export function completeSourceScan(state, plan, completion, now) {
 }
 
 export const SOURCE_PAGE_INSTRUCTIONS =
-  'Page cycle: work one results page at a time. 1) Run browser_jev_run scan_results on the results page; the app saves its listing links to the pending queue and the page number (checkpointSaved=true). 2) Run browser_jev_run collect_details without URLs; it reads the pending queue and pauses with review batches. 3) In every review batch read briefs with read_jev_brief evidenceIds and save suitable listings together with record_automation_results (with score, optional scoreReason, eligibility and eligibilityReason when scoring is enabled) and reject or defer the rest. Saved and rejected listings leave the queue automatically. 4) Follow the observed next page and repeat. Never collect all result pages first and evaluate later.';
+  'Page cycle: work one results page at a time. 1) Run browser_run_task scan_results on the results page; the app saves its listing links to the pending queue and the page number (checkpointSaved=true). 2) Run browser_run_task collect_details without URLs; it reads the pending queue and pauses with review batches. 3) In every review batch read briefs with read_listing_brief evidenceIds and save suitable listings together with record_automation_results (with score, optional scoreReason, eligibility and eligibilityReason when scoring is enabled) and reject or defer the rest. Saved and rejected listings leave the queue automatically. 4) Follow the observed next page and repeat. Never collect all result pages first and evaluate later.';
 export const SOURCE_SCAN_INSTRUCTIONS =
   SOURCE_PAGE_INSTRUCTIONS +
   ' Coverage: read assignedSource.instructions first; source guidance never grants outgoing actions. Run scan_results once per saved query or filter set; the pending queue is shared and has no size limit. get_scan_queue shows the pending count. When the queue is empty and the last results page was observed, call complete_scan_search with completion=end, then finish_automation_run. scanPlan may show an incremental plan with cutoffAt; without verified dates the app treats it as a full scan, so cover the board to its observed end. When scan_results ends with knownBoundary=true (recipe ordered newest-first, consecutive pages held only known listings), empty the queue and call complete_scan_search with completion=cutoff. When scan_results ends with pageCapReached=true (each search reads at most scanPlan.pageCap pages and 100 new listings), empty the queue and call complete_scan_search with completion=end; do not open further pages of that search. When a results page fails with "the site does not serve this results page", the app has ended that search at the last page served: do the same. Known listing IDs never authorize stopping. user_stop is only for an explicit saved user stopping condition. Interrupted work resumes from the saved queue and page. These are coverage rules, not a time or step budget.';

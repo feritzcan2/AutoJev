@@ -19,6 +19,7 @@ import {randomUUID, createHash} from 'node:crypto';
 import {boundedText, webUrl} from '../../templates/catalog.mjs';
 import {sameSite} from '../../browser/site-access.mjs';
 import {recordUrlKey} from '../../records/identity.mjs';
+import {keepListingDescription} from '../../records/description.mjs';
 
 // The same listing reached through a redirect to another host of the same
 // site (de.example.com -> www.example.com, trailing slash) is still that page.
@@ -337,9 +338,11 @@ export const recordMethods = {
       item.assessment = assessment;
       item.cells = assessmentCells(this.get(id).table, item.cells, assessment);
     }
-    return this.putResult(item, {
+    const saved = this.putResult(item, {
       run: previous && !previous.trial ? undefined : this.countScanRecord(id, runId, 'saved'),
     });
+    keepListingDescription(this, id, run, saved.id, observedUrl);
+    return saved;
   },
   // A source scan counts its saved and below-threshold findings for the source row.
   countScanRecord(id, runId, key) {
@@ -415,26 +418,34 @@ export const recordMethods = {
   dismiss(id, itemId, {stopActive = false} = {}) {
     return this.store.workspaces.tasks.atomic(() => {
       const item = this.result(id, itemId);
-      if (['executing', 'completed', 'uncertain'].includes(item.status))
+      if (['executing', 'completed'].includes(item.status))
         throw Error('Action history cannot be changed');
       if (!stopActive) this.assertRecordIdle(id, item.id);
+      // An uncertain record may already be submitted; the skip remembers that
+      // so Restore brings it back as uncertain, never as a fresh record.
       return this.excludeRecord(id, item, {
         summary: 'The user rejected this record. Do not continue working on it.',
         resolution: 'record_dismissed',
         event: 'record_dismissed',
+        extra: item.status === 'uncertain' ? {skippedFrom: 'uncertain'} : {},
       });
     });
   },
   // The user takes back a skip: the record returns to the found list and can
-  // be applied again. Questions closed by the skip stay closed.
+  // be applied again, or to uncertain when it was skipped there. Questions
+  // closed by the skip stay closed.
   restore(id, itemId) {
     return this.store.workspaces.tasks.atomic(() => {
       const item = this.result(id, itemId);
       if (item.status !== 'dismissed' || item.trial)
         throw Error('Only a skipped record can be restored');
       this.assertRecordIdle(id, item.id);
-      const {closed, ...rest} = item;
-      const saved = this.putResult({...rest, status: 'found', updatedAt: this.now()});
+      const {closed, skippedFrom, ...rest} = item;
+      const saved = this.putResult({
+        ...rest,
+        status: skippedFrom ?? 'found',
+        updatedAt: this.now(),
+      });
       this.event(id, 'record_restored', {itemId: item.id});
       return saved;
     });
@@ -459,18 +470,28 @@ export const recordMethods = {
       if (!page || !samePage(page.url, proofUrl))
         throw Error('First observe the record page in the browser during this task.');
       const quote = boundedText(evidence, 'Page evidence', 600),
-        flat = (text) =>
+        // Letters and digits only: page lines joined with dashes, colons or
+        // line breaks are still the same page text.
+        words = (text) =>
           String(text ?? '')
-            .replace(/\s+/g, ' ')
-            .trim()
-            .toLowerCase();
+            .toLowerCase()
+            .replace(/[^\p{L}\p{N}]+/gu, ' ')
+            .trim();
       let text = page.text;
       try {
         text = JSON.parse(page.text.slice(page.text.indexOf('{'))).text ?? page.text;
       } catch {}
-      if (flat(quote).length < 8 || !flat(text).includes(flat(quote)))
+      const pageWords = ` ${words(text)} `,
+        onPage = (part) => !!words(part) && pageWords.includes(` ${words(part)} `),
+        // Evidence may describe the page around quoted parts; then every
+        // quoted part must be on the page.
+        quoted = [...quote.matchAll(/["“”„«»]([^"“”„«»]+)["“”„«»]/g)].map((m) => m[1]),
+        verified =
+          (words(quote).length >= 8 && onPage(quote)) ||
+          (quoted.some((part) => words(part).length >= 8) && quoted.every(onPage));
+      if (!verified)
         throw Error(
-          `The quote is not in the current page text. Quote the page sentence that says ${status === 'applied' ? 'you already applied' : 'the listing is gone'}, word for word.`,
+          `The quote is not in the current page text. Send only the page text that says ${status === 'applied' ? 'you already applied' : 'the listing is gone'}, copied word for word, or put each copied page part in double quotes.`,
         );
       if (status === 'applied')
         return this.putResult({

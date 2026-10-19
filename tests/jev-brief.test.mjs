@@ -172,7 +172,7 @@ test('briefs isolate owners and invalidate on fresh text or criteria; failures e
   };
   const failed = await readJevBrief(f.options);
   assert.equal(failed.status, 'needs_agent');
-  assert.match(failed.next, /read_jev_evidence/);
+  assert.match(failed.next, /read_listing_evidence/);
   f.controller.abort();
   await assert.rejects(readJevBrief(f.options), /abort/i);
 });

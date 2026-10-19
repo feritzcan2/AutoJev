@@ -10,7 +10,6 @@ import {workspaceSwitcher} from './workspace-switcher.js';
 import {workerTerminals} from './worker-terminals.js';
 import {activityPanels} from './activity-panels.js';
 import {configPage} from './config.js';
-import {notificationsPage} from './notifications.js';
 import './style.css';
 import './question-form.css';
 import './termloop-theme.css';
@@ -128,12 +127,7 @@ async function deleteWorkspace(owner = selectedWorkspace()) {
   }
 }
 $('delete-workspace').onclick = () => deleteWorkspace();
-const notificationsUI = notificationsPage(api, {notice});
-const configUI = configPage(api, {
-  notice,
-  relativeTime,
-  openNotifications: () => switchView('notifications'),
-});
+const configUI = configPage(api, {notice, relativeTime});
 const automationUI = automationsPage(api, {
   notice,
   getCatalog: () => catalog,
@@ -209,13 +203,23 @@ chromeStatus.setAttribute('role', 'status');
 chromeStatus.setAttribute('aria-live', 'polite');
 const chromeTitle = element('b'),
   chromeDetail = element('small'),
+  chromeTip = element(
+    'small',
+    'chrome-tip',
+    'Tip: in Chrome, turn on remote debugging at chrome://inspect/#remote-debugging.',
+  ),
   chromeReconnect = element('button', 'quiet chrome-reconnect', 'Reconnect');
 chromeReconnect.type = 'button';
-chromeStatus.append(chromeTitle, chromeDetail, chromeReconnect);
+chromeStatus.append(chromeTitle, chromeDetail, chromeTip, chromeReconnect);
 document.querySelector('.sidebar-bottom').before(chromeStatus);
 const chromeProfileChange = element('button', 'quiet chrome-profile-change', 'Change profile');
 chromeProfileChange.type = 'button';
-chromeStatus.append(chromeProfileChange);
+const chromeProfileNote = element(
+  'small',
+  'chrome-profile-note',
+  'Use your real Chrome profile, signed in to the sites you use, so you are not blocked.',
+);
+chromeStatus.append(chromeProfileChange, chromeProfileNote);
 const jevStatus = element('div', 'jev-status');
 jevStatus.setAttribute('role', 'alert');
 jevStatus.hidden = true;
@@ -253,7 +257,7 @@ function switchView(name, options = {}) {
   document.querySelector('main>header>.actions').hidden =
     global || !selected || name === 'setup-agent';
   document.body.classList.toggle('automation-workspace', Boolean(selected) && !global);
-  for (const id of ['notifications', 'config', 'profile', 'board', 'agent', 'setup-agent', 'files'])
+  for (const id of ['config', 'profile', 'board', 'agent', 'setup-agent', 'files'])
     if ($(id)) $(id).hidden = true;
   automationUI.element.hidden = false;
   if (global) {
@@ -266,13 +270,10 @@ function switchView(name, options = {}) {
       $('config').hidden = false;
       configUI.select(selected);
       configUI.show();
-    } else if (name === 'notifications') {
-      automationUI.element.hidden = true;
-      $('notifications').hidden = false;
-      notificationsUI.show(selected);
     } else {
       automationUI.showPane(name);
       if (['agent', 'setup-agent'].includes(name)) $(name).hidden = false;
+      if (name === 'agent') syncJevOption();
     }
   }
   localStorage.setItem('selected-view', name);
@@ -280,6 +281,18 @@ function switchView(name, options = {}) {
     .querySelectorAll('aside nav button')
     .forEach((button) => button.classList.toggle('selected', button.dataset.view === name));
   workspaceMenu.sync();
+}
+// Jev can be chosen only after a TypeSafe key is saved under Configuration → Jev.
+async function syncJevOption() {
+  const option = $('decisions').querySelector('option[value=jev]');
+  let configured = false;
+  try {
+    configured = Boolean((await api.jevSettingsStatus?.())?.configured);
+  } catch {}
+  option.disabled = !configured;
+  option.textContent = configured
+    ? 'Jev (TypeSafe key)'
+    : 'Jev (save a TypeSafe key under Configuration → Jev first)';
 }
 function settingsOptions(saved) {
   const current = catalog.find((a) => a.id === $('provider').value);
@@ -300,13 +313,15 @@ function settingsOptions(saved) {
     $(key).replaceChildren(...list.map((value) => new Option(value, value)));
     $(key).value = list.includes(settings[key]) ? settings[key] : 'default';
   }
-  $('trialModel').replaceChildren(
-    new Option('Same as main model', ''),
-    ...current.models
-      .filter((value) => value !== 'default')
-      .map((value) => new Option(value, value)),
-  );
-  $('trialModel').value = current.models.includes(settings.trialModel) ? settings.trialModel : '';
+  for (const key of ['trialModel', 'contactModel']) {
+    $(key).replaceChildren(
+      new Option('Same as main model', ''),
+      ...current.models
+        .filter((value) => value !== 'default')
+        .map((value) => new Option(value, value)),
+    );
+    $(key).value = current.models.includes(settings[key]) ? settings[key] : '';
+  }
 }
 function chromeProfileOptions(selected = workspaceAgent?.workspace?.chromeProfile) {
   const select = $('agent-settings-form').elements.chromeProfile;
@@ -374,7 +389,6 @@ function syncWorkspaceAgent(value) {
   fillAgentSettings(next.workspace, id);
   renderContext(next);
   configUI.select(id);
-  notificationsUI.select(id);
 }
 function renderContext(value) {
   const usage = value?.active?.contextUsage,
@@ -486,6 +500,7 @@ function readAgentSettings() {
     provider: f.provider.value,
     model: f.model.value,
     trialModel: f.trialModel.value || null,
+    contactModel: f.contactModel.value || null,
     permission: f.permission.value,
     reasoning: f.reasoning.value,
     network:
@@ -589,7 +604,6 @@ if (selected) {
             'files',
             'background',
             'config',
-            'notifications',
           ].includes(initialView)
         ? initialView
         : 'board',

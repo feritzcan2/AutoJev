@@ -84,6 +84,7 @@ function fixture(t) {
     goal: 'Berlin homes',
     criteria: {location: 'Berlin', budget: '2000', requirements: '2 rooms'},
     sources: [url],
+    agentSettings: {provider: 'codex', decisions: 'jev'},
   });
   db.save(a.id, {browserMode: 'jev'});
   db.review(a.id);
@@ -470,7 +471,7 @@ test('a session stopped mid-slice leaves the task resumable for the next session
   await assert.rejects(f.run({operation: 'scan_results', url}), /abort/i);
   const [task] = f.db.jevTasks.list(f.a.id, 'assigned');
   assert.equal(task.status, 'continue', 'not left "running" with nobody driving it');
-  assert.match(jevTaskSummary(task).next, /Continue browser_jev_run with this taskId/);
+  assert.match(jevTaskSummary(task).next, /Continue browser_run_task with this taskId/);
 });
 
 test('form batches exact values and never clicks; changed earlier fields prevent success', async (t) => {
@@ -838,7 +839,7 @@ test('workflow enforces operation scope before creating a task or touching Chrom
     report: () => {},
   });
   await assert.rejects(
-    flow.call(f.a.id, run.id, 'browser_jev_run', {
+    flow.call(f.a.id, run.id, 'browser_run_task', {
       operation: 'fill_form',
       answers: [{key: 'name', label: 'Name', value: 'Ada'}],
     }),
@@ -883,7 +884,7 @@ test('source workflow checkpoints every discovered detail but does not complete 
     browser,
     report: () => {},
   });
-  const result = await flow.call(f.a.id, run.id, 'browser_jev_run', {
+  const result = await flow.call(f.a.id, run.id, 'browser_run_task', {
     operation: 'scan_results',
     url,
   });
@@ -989,13 +990,13 @@ test('scan handoff exposes clean prioritized candidates and exact saved page evi
       report: () => {},
     }),
     call = (name, args) => flow.call(f.a.id, run.id, name, args);
-  const scan = await call('browser_jev_run', {operation: 'scan_results', url});
+  const scan = await call('browser_run_task', {operation: 'scan_results', url});
   assert.equal(scan.status, 'completed');
   assert.equal(scan.total, 3);
   assert.equal(scan.confirmedListings, 2);
   assert.equal(scan.uncertainLinks, 1);
   assert.equal(scan.items, undefined);
-  const index = await call('read_jev_task', {taskId: scan.taskId});
+  const index = await call('read_browser_task', {taskId: scan.taskId});
   assert.deepEqual(
     index.items.map((i) => i.url),
     [one, two, unknown],
@@ -1012,12 +1013,12 @@ test('scan handoff exposes clean prioritized candidates and exact saved page evi
     new Set([unknown, one, two]),
   );
   const calls = evaluated.length,
-    saved = await call('read_jev_task', {taskId: scan.taskId, pageOffset: 0});
+    saved = await call('read_browser_task', {taskId: scan.taskId, pageOffset: 0});
   assert.deepEqual(saved.pages, [scan.lastPage]);
   assert.equal(evaluated.length, calls);
   assert.deepEqual(opened, [url]);
   assert.ok(!evaluated.some((s) => Object.values(s.links ?? {}).some((l) => l.url === logo)));
-  const details = await call('browser_jev_run', {
+  const details = await call('browser_run_task', {
     operation: 'collect_details',
     fromTaskId: scan.taskId,
   });
@@ -1304,7 +1305,9 @@ test('collection after redirect can retire the requested queue URL and report ot
     browser,
     report: () => {},
   });
-  const result = await flow.call(f.a.id, run.id, 'browser_jev_run', {operation: 'collect_details'});
+  const result = await flow.call(f.a.id, run.id, 'browser_run_task', {
+    operation: 'collect_details',
+  });
   assert.equal(result.issue.reason, 'batch_ready');
   assert.equal(result.batch.total, 1);
   assert.equal(result.items[0].url, undefined);
@@ -1385,7 +1388,7 @@ test('restart reuses discovered Jev links only in their task/search without inve
       report: () => {},
     }),
     call = (name, args) => flow.call(f.a.id, run.id, name, args);
-  await call('read_jev_evidence', {evidenceId: evidence.id});
+  await call('read_listing_evidence', {evidenceId: evidence.id});
   assert.equal(f.db.run(run.id).observations.length, 0);
   await call('browser_open', {url});
   f.db.saveScanProgress(
@@ -1403,10 +1406,10 @@ test('restart reuses discovered Jev links only in their task/search without inve
   );
   assert.equal(f.db.scanQueue(f.a.id, run.id).total, 0);
   await assert.rejects(
-    call('browser_jev_run', {operation: 'collect_details', url: foreign}),
+    call('browser_run_task', {operation: 'collect_details', url: foreign}),
     /observed/,
   );
-  const result = await call('browser_jev_run', {operation: 'collect_details', url: child});
+  const result = await call('browser_run_task', {operation: 'collect_details', url: child});
   assert.equal(result.issue.reason, 'batch_ready');
   assert.deepEqual(browserCalls, [url, child]);
   assert.ok(f.db.run(run.id).observations.some((o) => o.url === child));
@@ -2016,7 +2019,7 @@ test('resumed context prioritizes review work over child scans and refreshes leg
     summary = jevTaskSummary(task);
   assert.equal(summary.assessmentRefreshRequired, true);
   assert.deepEqual(summary.items, []);
-  assert.match(summary.next, /FIRST resume browser_jev_run/);
+  assert.match(summary.next, /FIRST resume browser_run_task/);
   assert.deepEqual(task, before);
   for (let i = 0; i < 25; i++) {
     const scan = f.db.jevTasks.create(f.a.id, 'assigned', {operation: 'scan_results', url});
@@ -2062,11 +2065,11 @@ test('workflow polls a long Jev request, prevents duplicate work and keeps the b
     },
   });
   const call = (name, args = {}) => flow.call(f.a.id, run.id, name, args);
-  const receipt = await call('browser_jev_run', {operation: 'scan_results', url});
+  const receipt = await call('browser_run_task', {operation: 'scan_results', url});
   assert.equal(receipt.status, 'running');
   assert.ok(receipt.taskId);
   assert.equal(
-    (await call('browser_jev_run', {operation: 'scan_results', url})).taskId,
+    (await call('browser_run_task', {operation: 'scan_results', url})).taskId,
     receipt.taskId,
   );
   assert.equal((await call('browser_open', {url: url + '/other'})).status, 'running');
@@ -2074,11 +2077,11 @@ test('workflow polls a long Jev request, prevents duplicate work and keeps the b
     (await call('finish_automation_run', {status: 'completed', summary: 'Done'})).status,
     'running',
   );
-  assert.equal((await call('read_jev_task', {taskId: receipt.taskId})).status, 'running');
+  assert.equal((await call('read_browser_task', {taskId: receipt.taskId})).status, 'running');
   assert.equal(started, 1);
   assert.equal(f.db.run(run.id).status, 'running');
   finish();
-  const completed = await call('read_jev_task', {taskId: receipt.taskId});
+  const completed = await call('read_browser_task', {taskId: receipt.taskId});
   assert.equal(completed.status, 'needs_agent');
   assert.equal(
     completed.issue.reason,
@@ -2241,7 +2244,7 @@ test('discovery retires explicit card conflicts at 85 percent without opening de
     browser,
     report: () => {},
   });
-  const result = await flow.call(f.a.id, run.id, 'browser_jev_run', {
+  const result = await flow.call(f.a.id, run.id, 'browser_run_task', {
     operation: 'scan_results',
     url,
   });
@@ -2281,7 +2284,7 @@ test('discovery retires explicit card conflicts at 85 percent without opening de
   );
   assert.equal(f.db.results(f.a.id).length, 0);
   assert.deepEqual(opened, [url]);
-  const index = await flow.call(f.a.id, run.id, 'read_jev_task', {taskId: result.taskId});
+  const index = await flow.call(f.a.id, run.id, 'read_browser_task', {taskId: result.taskId});
   assert.equal(index.items.find((i) => i.url === borderline).discovery.decision, 'uncertain');
   assert.equal(f.db.run(run.id).status, 'running');
 });
@@ -2867,6 +2870,7 @@ test('LinkedIn guest searches and postings are read over HTTP; marked listings s
     goal: 'Backend jobs',
     criteria: {location: 'Germany', budget: '2000', requirements: 'backend'},
     sources: [search],
+    agentSettings: {provider: 'codex', decisions: 'jev'},
   });
   db.save(a.id, {browserMode: 'jev'});
   db.review(a.id);
@@ -2937,7 +2941,7 @@ test('LinkedIn guest searches and postings are read over HTTP; marked listings s
   };
   const flow = automationWorkflow({db, run, signal: controller.signal, browser, report: () => {}}),
     call = (name, args) => flow.call(a.id, run.id, name, args);
-  const scan = await call('browser_jev_run', {operation: 'scan_results', url: search});
+  const scan = await call('browser_run_task', {operation: 'scan_results', url: search});
   assert.equal(scan.status, 'completed');
   assert.equal(scan.confirmedListings, 11);
   assert.equal(scan.uncertainLinks, 0);
@@ -2958,7 +2962,7 @@ test('LinkedIn guest searches and postings are read over HTTP; marked listings s
     !queue.some((u) => u.includes('truck-driver')),
     'an explicit card conflict is still retired',
   );
-  const details = await call('browser_jev_run', {
+  const details = await call('browser_run_task', {
     operation: 'collect_details',
     fromTaskId: scan.taskId,
   });

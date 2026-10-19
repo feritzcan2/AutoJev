@@ -1,6 +1,7 @@
 // @ts-check
 import {createHash} from 'node:crypto';
 import {recordOperationState} from '../records/operations.mjs';
+import {taskRecordIds} from '../records/task-scope.mjs';
 // Compatibility projection for Telegram transports. All data and actions
 // come from the shared automation runtime; there is no candidate execution path.
 export class WorkspaceSupport {
@@ -21,6 +22,7 @@ export class WorkspaceSupport {
             task: {
               id: t.id,
               jobId: t.recordId,
+              jobIds: taskRecordIds(t),
               kind: t.recordOperation ?? t.operation,
               state: t.state,
             },

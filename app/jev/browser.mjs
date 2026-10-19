@@ -61,17 +61,17 @@ const urlHash = (url) => createHash('sha256').update(url).digest('hex');
 const UPLOAD_BUTTON =
   /upload|attach|browse|(?:add|select|choose) files?|resume|\bcv\b|lebenslauf|hochladen|anhängen|datei|yükle|dosya|document|unterlagen/i;
 const WRITE_TOOLS = new Set([
-  'browser_jev_act',
-  'browser_jev_autocomplete',
-  'browser_jev_click',
-  'browser_jev_fill_fields',
-  'browser_jev_frame_act',
-  'browser_jev_next',
-  'browser_jev_reveal',
-  'browser_jev_scroll',
-  'browser_jev_select_choice',
-  'browser_jev_select_option',
-  'browser_jev_upload',
+  'browser_act',
+  'browser_autocomplete',
+  'browser_click_target',
+  'browser_fill_fields',
+  'browser_frame_act',
+  'browser_next',
+  'browser_reveal',
+  'browser_scroll',
+  'browser_select_choice',
+  'browser_choose_option',
+  'browser_upload',
   'browser_target_press',
 ]);
 const homeUrl =
@@ -584,7 +584,7 @@ export class JevBrowser {
     if (!slot || slot.page.isClosed())
       throw Object.assign(
         Error(
-          'Jev tab not found: the saved tab was closed or no longer exists in the selected Chrome session. Check the recovered tabs with browser_jev_tabs. Verify the saved result before reopening the record; do not resubmit an action whose submission is uncertain.',
+          'Jev tab not found: the saved tab was closed or no longer exists in the selected Chrome session. Check the recovered tabs with browser_tabs. Verify the saved result before reopening the record; do not resubmit an action whose submission is uncertain.',
         ),
         {code: 'TAB_MISSING'},
       );
@@ -1009,7 +1009,7 @@ export class JevBrowser {
             status: 'upload_required',
             executed: false,
             message:
-              'No file chooser opened. Use browser_upload_document (direct Jev: browser_jev_upload) with the uploadId from the current uploads list and the document path in the workspace. Do not repeat the normal click.',
+              'No file chooser opened. Use browser_upload_document (direct Jev: browser_upload) with the uploadId from the current uploads list and the document path in the workspace. Do not repeat the normal click.',
           };
       }
     if (action.kind === 'click') {
@@ -1190,7 +1190,7 @@ export class JevBrowser {
         status: began ? 'uncertain' : 'error',
         executed: began ? 'unknown' : false,
         message:
-          'Could not verify the state after the action. Call browser_jev_observe first; in particular, do not repeat a submission.',
+          'Could not verify the state after the action. Call browser_observe first; in particular, do not repeat a submission.',
       };
     }
   }
@@ -1205,13 +1205,13 @@ export class JevBrowser {
         : this.abort.signal;
       this.readSignal.throwIfAborted();
       this.siteLane = state.siteLane;
-      if (name === 'browser_jev_open') {
+      if (name === 'browser_open_page') {
         checkedUrl(args.url);
         const wait = this.siteAccess?.status(args.url);
         if (wait?.waiting) throw Object.assign(new SiteWaitError(wait), {url: args.url});
       } else if (
         args.tabId &&
-        !['browser_jev_observe', 'browser_jev_screenshot', 'browser_jev_close_tab'].includes(name)
+        !['browser_observe', 'browser_page_screenshot', 'browser_close_tab'].includes(name)
       ) {
         const slot = this.tab(args.tabId),
           url = slot.page.url();
@@ -1284,7 +1284,7 @@ export class JevBrowser {
           );
         return !state.multiWorker || slot.owner === owner;
       };
-      if (name === 'browser_jev_tabs')
+      if (name === 'browser_tabs')
         value = {
           browser: 'Jev Chrome',
           tabs: [...this.tabs.values()]
@@ -1299,7 +1299,7 @@ export class JevBrowser {
                 : {}),
             })),
         };
-      else if (name === 'browser_jev_close_tab') {
+      else if (name === 'browser_close_tab') {
         const slot = this.tab(args.tabId);
         if (!sourceScope || !accessible(slot))
           throw Error('Only the scan tab of the source you took over can be closed.');
@@ -1309,7 +1309,7 @@ export class JevBrowser {
         this.forgetTab(slot.id);
         await this.persistTabs();
         value = {closed: true, closedTabId: slot.id};
-      } else if (name === 'browser_jev_open' && state.automationTabKey) {
+      } else if (name === 'browser_open_page' && state.automationTabKey) {
         // Internal read-only automation scope, never a model-selected target.
         const reusable = [...this.tabs.values()].filter(
           (s) =>
@@ -1411,7 +1411,7 @@ export class JevBrowser {
               : {}),
           };
         }
-      } else if (name === 'browser_jev_open') {
+      } else if (name === 'browser_open_page') {
         const page =
           this.connection === 'existing'
             ? await this.openTabFrom(await this.home())
@@ -1463,14 +1463,14 @@ export class JevBrowser {
           if (
             slot.verification &&
             [
-              'browser_jev_act',
-              'browser_jev_click',
-              'browser_jev_select_choice',
-              'browser_jev_fill_fields',
-              'browser_jev_select_option',
-              'browser_jev_autocomplete',
-              'browser_jev_list_suggestions',
-              'browser_jev_upload',
+              'browser_act',
+              'browser_click_target',
+              'browser_select_choice',
+              'browser_fill_fields',
+              'browser_choose_option',
+              'browser_autocomplete',
+              'browser_list_suggestions',
+              'browser_upload',
             ].includes(name)
           ) {
             if (slot.verification.handoff)
@@ -1478,7 +1478,7 @@ export class JevBrowser {
             slot.verification.attempts++;
           }
         }
-        if (name === 'browser_jev_screenshot') {
+        if (name === 'browser_page_screenshot') {
           if (slot.verification?.screenshots >= 1)
             return {
               content: [
@@ -1521,9 +1521,9 @@ export class JevBrowser {
             ],
           };
         }
-        if (name === 'browser_jev_frame_observe' || name === 'browser_jev_frame_act') {
+        if (name === 'browser_frame_observe' || name === 'browser_frame_act') {
           let result = {};
-          if (name === 'browser_jev_frame_act') {
+          if (name === 'browser_frame_act') {
             if (slot.verification)
               throw Error(
                 'Complete the current verification step first; do not resubmit the form.',
@@ -1545,7 +1545,7 @@ export class JevBrowser {
           }
           return {content: [{type: 'text', text: JSON.stringify({...observed, ...result})}]};
         }
-        if (name === 'browser_jev_open_frame') {
+        if (name === 'browser_open_frame') {
           if (slot.verification)
             throw Error(
               'The embedded form cannot be reopened while a verification/submission is pending.',
@@ -1612,7 +1612,7 @@ export class JevBrowser {
             };
           }
         }
-        if (name === 'browser_jev_observe') {
+        if (name === 'browser_observe') {
           // Only an assigned read-only source tab may probe an expired gate.
           // Reuse that tab once; record drafts and other workers stay untouched.
           if (sourceScope && !recordScope && /^https?:/.test(slot.page.url())) {
@@ -1625,7 +1625,7 @@ export class JevBrowser {
           }
           value = await this.observe(slot);
         }
-        if (name === 'browser_jev_click') {
+        if (name === 'browser_click_target') {
           const cookie =
             (await clickVerificationCheckbox(slot, args.targetId, owner)) ??
             (await clickCookieFrameTarget(slot, args.targetId, owner));
@@ -1650,9 +1650,9 @@ export class JevBrowser {
                   };
           }
         }
-        if (name === 'browser_jev_inspect_form' && slot.verification?.handoff)
+        if (name === 'browser_inspect_form' && slot.verification?.handoff)
           return {content: [{type: 'text', text: JSON.stringify(verificationHandoff(slot))}]};
-        if (name === 'browser_jev_inspect_form') {
+        if (name === 'browser_inspect_form') {
           const observation = await this.observe(slot);
           return {
             content: [
@@ -1671,16 +1671,16 @@ export class JevBrowser {
         }
         if (
           [
-            'browser_jev_reveal',
-            'browser_jev_scroll',
-            'browser_jev_select_option',
-            'browser_jev_list_options',
+            'browser_reveal',
+            'browser_scroll',
+            'browser_choose_option',
+            'browser_list_options',
           ].includes(name)
         ) {
           // A custom dropdown (no native SELECT) lists and selects through its popup.
           const saved = slot.controls?.get(args.controlId),
             dropdown =
-              ['browser_jev_select_option', 'browser_jev_list_options'].includes(name) &&
+              ['browser_choose_option', 'browser_list_options'].includes(name) &&
               saved?.kind === 'control' &&
               slot.observed?.controls?.some(
                 (c) => c.node === saved.node && c.autocomplete && !c.nativeSelect,
@@ -1698,7 +1698,7 @@ export class JevBrowser {
             : await navigateObserved(slot, name, args, owner, this.reader);
           value = {...(await this.observe(slot)), ...result};
         }
-        if (['browser_jev_autocomplete', 'browser_jev_list_suggestions'].includes(name)) {
+        if (['browser_autocomplete', 'browser_list_suggestions'].includes(name)) {
           slot.rejectedControlIds ??= new Set();
           const repeated = slot.rejectedControlIds.has(args.controlId);
           const result = repeated
@@ -1735,11 +1735,11 @@ export class JevBrowser {
               : {}),
           };
         }
-        if (name === 'browser_jev_select_choice') {
+        if (name === 'browser_select_choice') {
           const result = await selectChoice(slot, args, owner, this.reader);
           value = {...(await this.observe(slot)), ...result};
         }
-        if (name === 'browser_jev_fill_fields') {
+        if (name === 'browser_fill_fields') {
           const result = await fillKnownFields(slot, args.fields, owner, this.reader);
           const observed = await this.observe(slot).catch(() => ({
             browser: 'Jev Chrome',
@@ -1748,7 +1748,7 @@ export class JevBrowser {
           }));
           value = {...observed, ...result};
         }
-        if (name === 'browser_jev_next') {
+        if (name === 'browser_next') {
           const page = await this.observe(slot);
           if (slot.verification?.handoff)
             return {content: [{type: 'text', text: JSON.stringify(verificationHandoff(slot))}]};
@@ -1809,11 +1809,11 @@ export class JevBrowser {
                 'Inspect current targets and any overlay before reporting a blocker. Use browser_interact click for an authorized observed target, reveal an offscreen control, or screenshot to diagnose occlusion. Verify the resulting form; never repeat an uncertain submission.',
             };
         }
-        if (name === 'browser_jev_act') {
+        if (name === 'browser_act') {
           const pending = slot.pending;
           if (!pending || pending.owner !== owner || pending.decisionId !== args.decisionId)
             throw Error(
-              'There is no valid Jev decision for this session. Call browser_jev_next first.',
+              'There is no valid Jev decision for this session. Call browser_next first.',
             );
           if (pending.operation === 'TYPE_TEXT' && typeof args.text !== 'string')
             throw Error(
@@ -1825,12 +1825,12 @@ export class JevBrowser {
           value = await this.execute(slot, pending, args.text);
         }
         if (
-          name === 'browser_jev_upload' &&
+          name === 'browser_upload' &&
           !slot.uploads.has(args.uploadId) &&
           slot.clickTargets?.has(args.uploadId)
         )
           value = await this.uploadThroughChooser(slot, args, owner);
-        else if (name === 'browser_jev_upload') {
+        else if (name === 'browser_upload') {
           if (!path.isAbsolute(args.filePath)) throw Error('The file path must be absolute.');
           const upload = slot.uploads.get(args.uploadId);
           if (!upload)
@@ -1913,7 +1913,7 @@ export class JevBrowser {
             ? {full: true, standalone: true}
             : observationPolicy(name, args, value.status),
         );
-        if (name === 'browser_jev_observe' && args.scope === 'document')
+        if (name === 'browser_observe' && args.scope === 'document')
           value = await retryJevRead(slot.page, async (attempt) => {
             const observed = attempt
               ? presentObservation(slot, await this.observe(slot), {full: true, standalone: true})
@@ -1921,7 +1921,7 @@ export class JevBrowser {
             return documentObservation(slot, observed);
           });
         if (
-          name === 'browser_jev_observe' &&
+          name === 'browser_observe' &&
           args.full === true &&
           !args.fullReason &&
           value.observationMode === 'compact'

@@ -24,6 +24,15 @@ test('current work lists a running scan with its live search and page progress',
     ],
     sources: [
       source('https://jobs.example/', {
+        scanning: true,
+        activity: {
+          step: 'listing',
+          done: 1,
+          total: 4,
+          title: 'Backend',
+          company: 'Acme',
+          browser: true,
+        },
         scan: {
           work: {
             activeSearchId: 'b',
@@ -44,7 +53,7 @@ test('current work lists a running scan with its live search and page progress',
   });
   assert.equal(rows.length, 1);
   assert.deepEqual(
-    {...rows[0], progress: undefined},
+    {...rows[0], progress: undefined, now: undefined},
     {
       id: 'r1',
       title: 'Source scan',
@@ -53,6 +62,7 @@ test('current work lists a running scan with its live search and page progress',
       state: 'Running',
       tone: 'running',
       progress: undefined,
+      now: undefined,
       startedAt: 1,
       updatedAt: 5,
       stop: {sourceUrl: 'https://jobs.example/'},
@@ -62,6 +72,7 @@ test('current work lists a running scan with its live search and page progress',
     rows[0].progress,
     'Search 2/2 (platform) · page 3/4 · 2 addresses pending · 3 excluded · 2 new records',
   );
+  assert.equal(rows[0].now, 'Now: Reading listing 2/4 in the browser: Backend @ Acme');
 });
 
 test('a running scan shows the search its run moved to before the source saved it', () => {

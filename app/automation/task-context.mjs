@@ -116,7 +116,6 @@ export const conversationContextVersion = (a) =>
           'mode',
           'sources',
           'sourceSettings',
-          'referenceData',
           'planDraft',
           'sourceDraft',
           'profileUpdate',
@@ -161,9 +160,6 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
           'facts',
           'table',
         ]),
-        referenceData: a.referenceData
-          ? pick(a.referenceData, ['profile', 'applicationPolicy', 'ranking'])
-          : null,
         draftPending: Boolean(draft),
         sourceDraftPending: Boolean(saved.sourceDraft),
         sourceSearch: db.sourceSearchOptions(id, a.sources),
@@ -265,6 +261,8 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
           q.recordId &&
           q.recordId !== assignedRecord.id &&
           !q.instruction &&
+          // A cover letter belongs to its own employer.
+          !q.coverLetter &&
           !q.accessCheck &&
           !q.outcome &&
           !q.resolution,
@@ -361,9 +359,6 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
         .slice(0, 10)
         .map((r) => pick(r, ['id', 'url', 'title', 'status', 'trial']))
     : [];
-  const referenceData = a.referenceData
-    ? pick(a.referenceData, ['profile', 'applicationPolicy', 'ranking'])
-    : null;
   let operation =
     active.kind === 'run' && active.operation && findOperation(definition, active.operation)
       ? operationFor(definition, active.operation)
@@ -417,6 +412,13 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
           },
         }
       : {}),
+    ...(active.request?.applyAnyway
+      ? {
+          applyAnyway: {
+            rule: 'The user chose to apply to assignedRecord although the listing or form states a requirement the saved facts do not meet. Do not stop for that requirement: answer every form question truthfully from the saved facts, even when the true answer may disqualify the user, and submit. Never answer untruthfully. A missing fact, login, code or CAPTCHA still blocks as usual.',
+          },
+        }
+      : {}),
     ...(earlierAnswers.length
       ? {
           earlierAnswers: {
@@ -457,7 +459,7 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
     ),
     jevGuidance: active.collector
       ? 'Use collect_source_page for fresh CLI evidence and Jev triage; resume only its returned Jev task IDs for review. Final scoring belongs to the agent.'
-      : 'Resume saved pending details with browser_jev_run collect_details before any new search; use scan_results for discovery. jevTasks lists the RAM-only helper tasks of this task; assessmentRefreshRequired means resume that task first. Final assessments and source completion remain yours.',
+      : 'Resume saved pending details with browser_run_task collect_details before any new search; use scan_results for discovery. jevTasks lists the RAM-only helper tasks of this task; assessmentRefreshRequired means resume that task first. Final assessments and source completion remain yours.',
     sourceExamples:
       !active.recordId && active.sourceUrl
         ? db
@@ -474,7 +476,6 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
           workflow: operation ? [operation.id] : [],
         },
     questions,
-    referenceData,
     messages,
     results,
     ...(conversation
@@ -550,7 +551,11 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
                 ? directRecordInstructions
                 : active.recordOperation === 'cover_letter'
                   ? 'Write one cover letter for the assigned record and save it with save_cover_letter. Do not fill forms, upload or submit; the user reviews the letter.'
-                  : 'prepare: no external submission; verify: inspect prior outcome without resubmitting. This request authorizes only this record, without changing workspace or source permissions.',
+                  : active.recordOperation === 'contacts'
+                    ? active.request?.phase === 'send'
+                      ? 'Send only the approved LinkedIn invitations or messages in read_contact_brief, once per contact, after reserve_contact_action. Do not apply or change the record.'
+                      : 'Find at most two LinkedIn contacts for the assigned record and save them with save_record_contacts. Never connect, message or send; the user reviews the notes.'
+                    : 'prepare: no external submission; verify: inspect prior outcome without resubmitting. This request authorizes only this record, without changing workspace or source permissions.',
         }
       : null,
     contextScope: {

@@ -97,14 +97,14 @@ try {
   assert.equal(delayed.readiness.loading, false);
   assert.match(loaded.text, /DELAYED_LISTING/);
   assert.doesNotMatch(loaded.text, /HIDDEN_MUST_NOT_LEAK|KEEP_MY_DRAFT/);
-  const before = await call('browser_jev_tabs'),
+  const before = await call('browser_tabs'),
     oldId = before.currentTabId;
   const recovered = await call('browser_open', {url: source + 'recover'}),
     page = await document(recovered);
   assert.equal(recovered.readiness.loading, false);
   assert.match(page.text, /RECOVERED_LISTING/);
   assert.equal(freshRequests, 2);
-  const after = await call('browser_jev_tabs');
+  const after = await call('browser_tabs');
   assert.equal(after.tabs.length, before.tabs.length + 1);
   assert.notEqual(after.currentTabId, oldId);
   const client = (await browsers.connect(a.id)).client;

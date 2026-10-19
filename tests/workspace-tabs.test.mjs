@@ -305,7 +305,7 @@ test('a reused automation tab is assigned to the new run without transferring it
     client.automationRuns.set(id, 'old-run');
   }
   client.observe = async (slot) => ({tabId: slot.id, url: slot.page.url()});
-  await client.callTool({name: 'browser_jev_observe', arguments: {tabId: 'listing'}}, 'new-run', {
+  await client.callTool({name: 'browser_observe', arguments: {tabId: 'listing'}}, 'new-run', {
     automationWorkspaceId: 'workspace',
     automationTabKey: 'record:item',
   });

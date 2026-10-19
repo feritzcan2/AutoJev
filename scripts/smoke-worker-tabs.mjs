@@ -34,12 +34,14 @@ try {
     true,
     JSON.stringify(browsers.status('workspace')),
   );
-  const listing = decode(await browsers.call('workspace', 'browser_jev_open', {url}, 'run', scope));
+  const listing = decode(
+    await browsers.call('workspace', 'browser_open_page', {url}, 'run', scope),
+  );
   const link = listing.clickTargets.find((t) => t.label === 'Open application');
   assert.ok(link, JSON.stringify(listing.clickTargets));
   await browsers.call(
     'workspace',
-    'browser_jev_click',
+    'browser_click_target',
     {tabId: listing.tabId, targetId: link.targetId},
     'run',
     scope,

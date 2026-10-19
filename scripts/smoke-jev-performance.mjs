@@ -49,7 +49,7 @@ try {
       window.submits = 0;
       window.clicks = 0;
     });
-    return call('browser_jev_observe', {tabId});
+    return call('browser_observe', {tabId});
   };
   let observed = await reset();
   assert.equal(observed.controls.find((c) => c.label === 'Email').visible, false);
@@ -64,7 +64,7 @@ try {
   const initialBytes = Buffer.byteLength(JSON.stringify(observed)),
     start = Date.now();
   // One reveal, one fill, one exact selection: no Jev/model round trips.
-  observed = await call('browser_jev_reveal', {
+  observed = await call('browser_reveal', {
     tabId,
     controlId: observed.controls.find((c) => c.label === 'Email').controlId,
   });
@@ -72,12 +72,12 @@ try {
   assert.equal(await page.evaluate(() => scrollY), 0);
   const email = observed.fillFields.find((f) => f.label === 'Email');
   assert.ok(email);
-  observed = await call('browser_jev_fill_fields', {
+  observed = await call('browser_fill_fields', {
     tabId,
     fields: [{fieldId: email.fieldId, text: 'test@example.com'}],
   });
   assert.equal(observed.status, 'ready');
-  observed = await call('browser_jev_select_option', {
+  observed = await call('browser_choose_option', {
     tabId,
     controlId: observed.controls.find((c) => c.label === 'Country').controlId,
     option: 'Germany',
@@ -104,22 +104,22 @@ try {
   );
   // Correct container is also used by the compatibility next/act flow.
   observed = await reset();
-  let decision = await call('browser_jev_next', {tabId, goal: 'scroll'});
+  let decision = await call('browser_next', {tabId, goal: 'scroll'});
   assert.equal(decision.elements, undefined);
-  let result = await call('browser_jev_act', {tabId, decisionId: decision.decisionId});
+  let result = await call('browser_act', {tabId, decisionId: decision.decisionId});
   assert.equal(result.progress, true);
   assert.ok((await page.locator('#pane').evaluate((e) => e.scrollTop)) > 0);
   assert.equal(await page.evaluate(() => scrollY), 0);
   // No-progress guard survives fresh observations and reworded goals.
   await page.locator('#pane').evaluate((e) => (e.scrollTop = e.scrollHeight));
-  observed = await call('browser_jev_observe', {tabId});
-  result = await call('browser_jev_scroll', {
+  observed = await call('browser_observe', {tabId});
+  result = await call('browser_scroll', {
     tabId,
     controlId: observed.scrollTargets[0].controlId,
     direction: 'down',
   });
   assert.equal(result.status, 'no_progress');
-  result = await call('browser_jev_scroll', {
+  result = await call('browser_scroll', {
     tabId,
     controlId: result.scrollTargets[0].controlId,
     direction: 'down',
@@ -129,11 +129,11 @@ try {
   // A non-changing click can focus the button once, then one failed action is
   // enough to lock identical repeats; it never becomes an automatic loop.
   await page.locator('#inertButton').focus();
-  decision = await call('browser_jev_next', {tabId, goal: 'No effect'});
-  result = await call('browser_jev_act', {tabId, decisionId: decision.decisionId});
+  decision = await call('browser_next', {tabId, goal: 'No effect'});
+  result = await call('browser_act', {tabId, decisionId: decision.decisionId});
   assert.equal(result.status, 'uncertain');
   assert.equal(result.retryBlocked, true);
-  decision = await call('browser_jev_next', {tabId, goal: 'No effect'});
+  decision = await call('browser_next', {tabId, goal: 'No effect'});
   assert.equal(decision.status, 'no_progress');
   assert.equal(decision.decisionId, undefined);
   assert.equal(await page.evaluate(() => window.clicks), 1);
@@ -141,11 +141,10 @@ try {
   observed = await reset();
   let country = observed.controls.find((c) => c.label === 'Country').controlId;
   await assert.rejects(
-    () =>
-      call('browser_jev_select_option', {tabId, controlId: country, option: 'Germany'}, 'other'),
+    () => call('browser_choose_option', {tabId, controlId: country, option: 'Germany'}, 'other'),
     /oturuma/,
   );
-  result = await call('browser_jev_select_option', {
+  result = await call('browser_choose_option', {
     tabId,
     controlId: 'guessed',
     option: 'Germany',
@@ -155,23 +154,23 @@ try {
   assert.ok(result.controls.length);
   country = result.controls.find((c) => c.label === 'Country').controlId;
   await page.locator('#country').evaluate((e) => e.replaceWith(e.cloneNode(true)));
-  result = await call('browser_jev_select_option', {tabId, controlId: country, option: 'Germany'});
+  result = await call('browser_choose_option', {tabId, controlId: country, option: 'Germany'});
   assert.equal(result.status, 'stale');
   assert.equal(await page.locator('#country').inputValue(), '');
-  observed = await call('browser_jev_observe', {tabId});
+  observed = await call('browser_observe', {tabId});
   country = observed.controls.find((c) => c.label === 'Country').controlId;
-  result = await call('browser_jev_select_option', {tabId, controlId: country, option: 'Germ'});
+  result = await call('browser_choose_option', {tabId, controlId: country, option: 'Germ'});
   assert.equal(result.status, 'needs_selection');
   assert.equal(result.executed, false);
   assert.equal(result.reason, 'no_match');
-  assert.match(result.message, /browser_jev_list_options/);
+  assert.match(result.message, /browser_list_options/);
   country = result.controls.find((c) => c.label === 'Country').controlId;
   await page
     .locator('#country')
     .evaluate((e) => e.insertAdjacentHTML('beforeend', '<option value="other">Germany</option>'));
-  observed = await call('browser_jev_observe', {tabId});
+  observed = await call('browser_observe', {tabId});
   country = observed.controls.find((c) => c.label === 'Country').controlId;
-  result = await call('browser_jev_select_option', {tabId, controlId: country, option: 'Germany'});
+  result = await call('browser_choose_option', {tabId, controlId: country, option: 'Germany'});
   assert.equal(result.status, 'needs_selection');
   assert.equal(result.reason, 'ambiguous');
   assert.equal(result.executed, false);
@@ -183,20 +182,20 @@ try {
     cover.style = 'position:fixed;inset:0;z-index:999';
     document.body.append(cover);
   });
-  result = await call('browser_jev_select_option', {tabId, controlId: country, option: 'Germany'});
+  result = await call('browser_choose_option', {tabId, controlId: country, option: 'Germany'});
   assert.equal(result.status, 'stale');
   assert.equal(await page.locator('#country').inputValue(), '');
   // Removing a modal never redirects its old scroll ID to the background page.
   observed = await reset();
   const modalScroll = observed.scrollTargets[0].controlId;
   await page.locator('[role=dialog]').evaluate((e) => e.remove());
-  result = await call('browser_jev_scroll', {tabId, controlId: modalScroll, direction: 'down'});
+  result = await call('browser_scroll', {tabId, controlId: modalScroll, direction: 'down'});
   assert.equal(result.status, 'stale');
   assert.equal(await page.evaluate(() => scrollY), 0);
   // The same tools also work on an ordinary page, without dialog-specific code.
-  observed = await call('browser_jev_observe', {tabId});
+  observed = await call('browser_observe', {tabId});
   assert.equal(observed.scrollTargets[0].label, 'Page');
-  result = await call('browser_jev_scroll', {
+  result = await call('browser_scroll', {
     tabId,
     controlId: observed.scrollTargets[0].controlId,
     direction: 'down',
@@ -212,10 +211,10 @@ try {
       e.value = '';
     }),
   );
-  result = await call('browser_jev_select_option', {tabId, controlId: country, option: 'Germany'});
+  result = await call('browser_choose_option', {tabId, controlId: country, option: 'Germany'});
   assert.equal(result.status, 'uncertain');
   assert.equal(result.selection.verified, false);
-  result = await call('browser_jev_select_option', {
+  result = await call('browser_choose_option', {
     tabId,
     controlId: result.controls.find((c) => c.label === 'Country').controlId,
     option: 'Germany',
