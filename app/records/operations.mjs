@@ -88,6 +88,45 @@ export function recordOperationError(
   return null;
 }
 
+const MAX_SCORE_BATCH = 100;
+// Score requests the user queues one after another share one agent: new
+// records join a manual score task that has not started yet.
+function joinPendingScore(runtime, id, a, items) {
+  const {db, queue} = runtime;
+  const target = queue
+    .list(id, {states: ['pending']})
+    .find(
+      (t) =>
+        t.recordOperation === 'score' &&
+        t.attempts === 0 &&
+        !t.stopRequested &&
+        !t.retryAt &&
+        t.request?.manual === true &&
+        !t.request?.dryRun &&
+        t.request?.revision === a.revision &&
+        taskRecordIds(t).length + items.length <= MAX_SCORE_BATCH,
+    );
+  if (!target) return null;
+  const known = taskRecordIds(target),
+    added = items.filter((item) => !known.includes(item.id));
+  if (!added.length) return target;
+  const {sourceUrl, recordVersion, ...rest} = target;
+  void sourceUrl;
+  void recordVersion;
+  const task = queue.put({
+    ...rest,
+    recordIds: [...known, ...added.map((item) => item.id)],
+    sources: [...(target.sources ?? []), ...added.map((item) => item.url)],
+  });
+  db.event(id, 'record_operation_queued', {
+    itemIds: added.map((item) => item.id),
+    kind: 'score',
+    taskId: task.id,
+    manual: true,
+  });
+  return task;
+}
+
 export function enqueueRecordOperation(
   runtime,
   id,
@@ -186,6 +225,10 @@ export function enqueueRecordOperation(
       }
       throw Error('Another task for this record is already queued or running');
     }
+    if (kind === 'score' && manual && !dryRun) {
+      const joined = joinPendingScore(runtime, id, a, [item]);
+      if (joined) return joined;
+    }
     const sourceUrl = recordSource(a, item),
       request = {
         manual,
@@ -224,7 +267,7 @@ export function enqueueScoreBatch(runtime, id, itemIds) {
   if (
     !Array.isArray(itemIds) ||
     !itemIds.length ||
-    itemIds.length > 100 ||
+    itemIds.length > MAX_SCORE_BATCH ||
     itemIds.some((value) => typeof value !== 'string' || !value.trim())
   )
     throw Error('Select 1–100 records to score');
@@ -249,6 +292,8 @@ export function enqueueScoreBatch(runtime, id, itemIds) {
       return existing;
     if (recordIds.some((itemId) => recordTask(db, id, itemId)))
       throw Error('Another task is already queued or running for one of the selected records');
+    const joined = joinPendingScore(runtime, id, a, items);
+    if (joined) return joined;
     const task = queue.enqueue(id, {
       recordOperation: 'score',
       operation: op.id,

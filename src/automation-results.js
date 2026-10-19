@@ -100,6 +100,22 @@ const editable = (node) =>
   node instanceof HTMLElement &&
   (node.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(node.tagName));
 
+// The setup agent's brief for one listing's "Evaluate criteria".
+export function criteriaReviewMessage(result) {
+  const assessment = result.assessment,
+    decided = decidingRule(assessment),
+    score = assessment.score === null ? 'could not be assessed' : `${assessment.score}/100`;
+  return [
+    `Evaluate the criteria for the listing "${result.title}" (record ${result.id}).`,
+    `Fit score: ${score}.` +
+      (decided
+        ? ` ${decided.kind === 'eliminated' ? 'Eliminated' : 'On hold'} by the rule: ${decided.rule.text}`
+        : ''),
+    'Read the record with get_automation_result and explain why it scored this way or was eliminated: which criteria, elimination rules or listing facts caused it, and whether the judgement looks right.',
+    'Do not change anything yet. If I ask for a change in this chat, propose it as a profile draft for me to review.',
+  ].join('\n');
+}
+
 export function automationResultsTable(
   root,
   {
@@ -111,6 +127,7 @@ export function automationResultsTable(
     statusNames,
     onQuestion = () => {},
     onContacts = () => {},
+    onEvaluateCriteria = null,
     onCoverLetter = () => {},
   },
 ) {
@@ -1290,6 +1307,12 @@ export function automationResultsTable(
         onContacts(result);
       });
       findContacts.dataset.recordMenuAction = 'contacts';
+      // Asks the setup agent why this listing scored as it did; criteria change only on request.
+      const evaluateCriteria = button('Evaluate criteria', () => {
+        if (actionsPanel.matches(':popover-open')) actionsPanel.hidePopover();
+        onEvaluateCriteria(criteriaReviewMessage(result));
+      });
+      evaluateCriteria.dataset.recordMenuAction = 'criteria';
       const tabWorkspace = data.automation.id,
         tabFeedback =
           keepMenu && !problem
@@ -1348,7 +1371,14 @@ export function automationResultsTable(
       goToTab.dataset.recordTab = result.id;
       goToTab.dataset.recordMenuAction = 'tab';
       actions.append(open, detail);
-      if (api.recordContactsFind && !result.trial) actions.append(findContacts);
+      // A row shows "Find contacts" above its next step; a problem card keeps it in the menu.
+      const contactsRow =
+        api.recordContactsFind && !result.trial && !problem
+          ? el('div', null, 'record-contacts-action')
+          : null;
+      if (contactsRow) contactsRow.append(findContacts);
+      else if (api.recordContactsFind && !result.trial) actions.append(findContacts);
+      if (onEvaluateCriteria && result.assessment) actions.append(evaluateCriteria);
       // A problem card shows its open tab next to the reason.
       if (problem) goToTab.textContent = 'Show page ↗';
       // A row with an open tab also shows the button outside the menu. Several
@@ -1609,6 +1639,7 @@ export function automationResultsTable(
         why.setAttribute('aria-controls', drawer.id);
         problemActions.append(why);
       }
+      if (contactsRow) state.append(contactsRow);
       if (next.childElementCount) state.append(next);
       // The record's latest cover letter: an approved one opens its PDF, one
       // being written or waiting for review opens the Files page.

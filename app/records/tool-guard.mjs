@@ -1,6 +1,7 @@
 // @ts-check
 import {createHash} from 'node:crypto';
 import {jobUrlKey} from './job-urls.mjs';
+import {batchScoring, taskHasRecord} from './task-scope.mjs';
 
 const LIMIT = 3,
   ARGUMENT_LIMIT = 6;
@@ -18,7 +19,9 @@ const category = (message) =>
       ? 'scorecard'
       : /page observation is stale/i.test(message)
         ? 'snapshot'
-        : null;
+        : /is not an assigned record ID/.test(message)
+          ? 'record_id'
+          : null;
 const recoveryHint = (kind) =>
   kind === 'arguments'
     ? 'Fix all listed field errors in one call; resend the full arguments, keeping the other valid fields. You do not need to read the page again for this error.'
@@ -26,9 +29,14 @@ const recoveryHint = (kind) =>
       ? 'Use the current tool schema and the scoringPolicy section; fix the missing fields in one go.'
       : kind === 'snapshot'
         ? 'Continue with savedListing from the current context or the latest snapshot.id; if there is no saved text, use browser_read.'
-        : 'Do not repeat the same operation without fixing the cause of the error.';
+        : kind === 'record_id'
+          ? 'Copy itemId exactly from the list of assigned records not yet scored.'
+          : 'Do not repeat the same operation without fixing the cause of the error.';
 function operationKey(run, name, args) {
   let target = run.recordId;
+  // Each batch row counts its own failures; one row cannot stop the others.
+  if (name === 'record_automation_score' && batchScoring(run) && taskHasRecord(run, args?.itemId))
+    target = args.itemId;
   if (name.startsWith('browser_')) {
     const url = args?.url ?? run.resumeContext?.url;
     if (url) {

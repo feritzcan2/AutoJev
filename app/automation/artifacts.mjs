@@ -53,6 +53,8 @@ export async function listDocuments(root) {
           name: entry.name,
           size: info.size,
           updatedAt: info.mtime.toISOString(),
+          // File systems without a birth time report 0; the change time stands in.
+          createdAt: (info.birthtimeMs > 0 ? info.birthtime : info.mtime).toISOString(),
           generated: agentDocument(relative),
           preview: ['.txt', '.md'].includes(path.extname(entry.name).toLowerCase()),
         });

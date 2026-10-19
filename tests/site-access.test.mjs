@@ -94,7 +94,7 @@ test('Cloudflare challenge detection requires the verification title and body to
 test('browser observation detects a challenge before creating listing evidence and shares its wait', async () => {
   const db = new DatabaseSync(':memory:'),
     gate = new SiteAccess(db),
-    browser = new JevBrowser('/unused', {siteAccess: gate});
+    browser = new JevBrowser('/unused', {siteAccess: gate, challengeGraceMs: 0});
   let reads = 0;
   const slot = {
     id: 'owned',
@@ -112,6 +112,51 @@ test('browser observation detects a challenge before creating listing evidence a
     assert.match(gate.status(url).message, /access verification/);
     assert.throws(() => gate.begin(url + '/another'), {code: 'SITE_WAIT'});
     assert.equal(gate.begin('https://other.example/list'), null);
+  } finally {
+    db.close();
+  }
+});
+test('a challenge that passes on its own during the grace period starts no site wait', async () => {
+  const db = new DatabaseSync(':memory:'),
+    gate = new SiteAccess(db),
+    browser = new JevBrowser('/unused', {siteAccess: gate, challengeGraceMs: 50});
+  const listing = {url, title: 'Staff Engineer', text: 'Listing description'};
+  const slot = {
+    id: 'owned',
+    http: {url, status: 200},
+    page: {
+      evaluate: async (fn) => (fn === documentReadiness ? {url, loading: false} : listing),
+    },
+  };
+  try {
+    const result = await browser.awaitSelfClearingChallenge(slot, {url, ...challenge});
+    assert.equal(result.title, 'Staff Engineer');
+    assert.equal(gate.status(url), null);
+    const again = {url, ...challenge};
+    assert.equal(
+      await browser.awaitSelfClearingChallenge(slot, again),
+      again,
+      'one grace period per response',
+    );
+  } finally {
+    db.close();
+  }
+});
+test('a challenge that outlasts the grace period still starts the shared wait', async () => {
+  const db = new DatabaseSync(':memory:'),
+    gate = new SiteAccess(db),
+    browser = new JevBrowser('/unused', {siteAccess: gate, challengeGraceMs: 30});
+  const slot = {
+    id: 'owned',
+    http: {url, status: 200},
+    page: {
+      evaluate: async (fn) =>
+        fn === documentReadiness ? {url, loading: false} : {url, ...challenge},
+    },
+  };
+  try {
+    await assert.rejects(browser.observeOnce(slot), (error) => error.code === 'SITE_WAIT');
+    assert.equal(gate.status(url).reason, 'verification');
   } finally {
     db.close();
   }

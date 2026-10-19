@@ -532,6 +532,18 @@ for (const finishedAt of [null, 'unknown', 'future'])
     await f.finish(next);
   });
 
+test('a collector scan continues from its checkpoint in a fresh conversation', async (t) => {
+  const f = await fixture(t),
+    first = await f.start();
+  // The old conversation holds stale tool results (a background read, a fixed failure).
+  f.db.putRun({...f.db.run(first.run.id), collector: 'cli'});
+  await f.finish(first, 'interrupted');
+  const next = await f.start(sources[0], 'main', first.run.taskId);
+  assert.equal(next.run.continuation.resumeConversation, false);
+  assert.equal(next.launch.resumeId, undefined);
+  await f.finish(next);
+});
+
 for (const provider of ['claude', 'codex', 'opencode'])
   for (const crash of [false, true])
     test(`${provider}: app restart resumes the unfinished task conversation on another worker (crash=${crash})`, async (t) => {

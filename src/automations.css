@@ -1794,10 +1794,12 @@
   background: color-mix(in srgb, var(--danger, #e5727a) 10%, var(--bg-raised));
   color: var(--text-secondary);
 }
-.record-next-action {
+.record-next-action,
+.record-contacts-action {
   margin-top: 6px;
 }
-.record-next-action button {
+.record-next-action button,
+.record-contacts-action button {
   padding: 3px 10px;
   font-size: 12px;
 }
@@ -2341,4 +2343,74 @@
 .contacts-chip[data-tone='blocked'] {
   background: color-mix(in srgb, var(--danger, #e5484d) 14%, transparent);
   color: var(--danger, #e5484d);
+}
+.contacts-page-latest {
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+/* The agent's latest messages while a contact task runs. */
+.contacts-page-updates {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+}
+.contacts-page-updates-title {
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.contacts-page-updates ol {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.contacts-page-updates li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+}
+.contacts-page-updates time {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.contacts-page-updates span {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Three note styles per contact; the chosen one fills the box below. */
+.record-contact-options {
+  display: grid;
+  gap: 6px;
+}
+.record-contact-option {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.record-contact-option b {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.record-contact-option:hover {
+  background: var(--bg-hover);
+}
+.record-contact-option[aria-checked='true'] {
+  border-color: var(--accent, #4fd5c6);
+  background: color-mix(in srgb, var(--accent, #4fd5c6) 10%, transparent);
 }

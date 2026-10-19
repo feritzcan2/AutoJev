@@ -14,6 +14,7 @@ import {
   webUrl,
   automationTable,
   automationCells,
+  automationTextCells,
 } from '../app/templates/catalog.mjs';
 import {validate} from '../app/agents/tool-schema.mjs';
 import {startTestServer} from './helpers/tool-server.mjs';
@@ -1009,4 +1010,17 @@ test('backup includes automation documents, pauses schedules and clears approval
   assert.equal(db2.get(a.id).trial, null);
   assert.equal(db2.get(a.id).reviewedRevision, null);
   assert.equal(db2.get(a.id).sourceState[setup.sources[0]].trial, null);
+});
+
+test('collector text cells skip values the site did not name', () => {
+  const table = {
+    columns: [
+      {key: 'company', type: 'text'},
+      {key: 'location', type: 'text'},
+    ],
+  };
+  assert.deepEqual(automationTextCells({company: undefined, location: ' Berlin '}, table), [
+    {key: 'location', value: 'Berlin'},
+  ]);
+  assert.deepEqual(automationTextCells({company: null, location: '  '}, table), []);
 });

@@ -532,7 +532,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     return {
       tone: 'idle',
       label: 'Not scanned yet',
-      detail: source.trial?.status === 'passed' ? null : 'The first round is a trial.',
+      detail: source.trialReady ? null : 'The first round is a trial.',
     };
   }
   function statusLine(source) {
@@ -688,7 +688,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
           ? 'New record check'
           : cycle
             ? 'Full scan'
-            : source.trial?.status === 'passed'
+            : source.trialReady
               ? 'All pages in the first scan'
               : 'Source trial in the first round',
       ],
@@ -1208,7 +1208,9 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       row.dataset.open = String(open || memoryOpen);
       row.dataset.expandable = String(benchAvailable);
       row.dataset.tone = source.enabled ? 'on' : 'off';
-      row.dataset.trial = source.trialRunning ? 'running' : (source.trial?.status ?? 'pending');
+      row.dataset.trial = source.trialRunning
+        ? 'running'
+        : (source.trial?.status ?? (source.trialReady ? 'skipped' : 'pending'));
       toggle.checked = source.enabled;
       toggle.disabled = Boolean(source.stopping || view.pending);
       toggle.setAttribute('aria-label', source.name + ' active');

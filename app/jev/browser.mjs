@@ -60,6 +60,7 @@ const urlHash = (url) => createHash('sha256').update(url).digest('hex');
 const UPLOAD_BUTTON =
   /upload|attach|browse|(?:add|select|choose) files?|resume|\bcv\b|lebenslauf|hochladen|anhängen|datei|yükle|dosya|document|unterlagen/i;
 const MAX_SPARE_TABS = 2;
+const CHALLENGE_GRACE_MS = 12000;
 const homeUrl =
   'data:text/html;charset=utf-8,' +
   encodeURIComponent(
@@ -88,6 +89,7 @@ export class JevBrowser {
       endpoint = existingChromeEndpoint,
       openWindow = openChromeWindow,
       readyTimeout = 10000,
+      challengeGraceMs = CHALLENGE_GRACE_MS,
       checkpoints = [],
       accountVault = null,
       onDisconnect = () => {},
@@ -111,6 +113,7 @@ export class JevBrowser {
     this.endpoint = endpoint;
     this.openWindow = openWindow;
     this.readyTimeout = readyTimeout;
+    this.challengeGraceMs = challengeGraceMs;
     this.tabs = new Map();
     this.automationTabs = new Map();
     this.automationRuns = new Map();
@@ -727,6 +730,28 @@ export class JevBrowser {
       }
     });
   }
+  // Many challenge pages ("Just a moment…") pass on their own within seconds
+  // and reload the requested page. Give each response one bounded, cancellable
+  // grace period before the page counts as a verification barrier.
+  async awaitSelfClearingChallenge(slot, observed) {
+    if (
+      slot.challengeGrace === slot.http ||
+      accessBarrier({title: observed.title, text: observed.text}) !== 'verification'
+    )
+      return observed;
+    slot.challengeGrace = slot.http;
+    const signal = this.readSignal ?? this.abort.signal,
+      step = Math.min(1000, this.challengeGraceMs);
+    for (let waited = 0; waited < this.challengeGraceMs; waited += step) {
+      await pause(step, undefined, {signal});
+      const current = await slot.page.evaluate(this.reader).catch(() => null);
+      if (current && accessBarrier({title: current.title, text: current.text}) !== 'verification') {
+        await waitForDocument(slot, {signal});
+        return (await slot.page.evaluate(this.reader)) ?? current;
+      }
+    }
+    return observed;
+  }
   async observeOnce(slot) {
     // HTTP 429 can accompany a real interactive verification page. With
     // automatic verification the loaded document decides below: a challenge
@@ -749,9 +774,13 @@ export class JevBrowser {
     slot.pending = null;
     const previousUploads = slot.uploads;
     slot.uploads = new Map();
-    const observed = await slot.page.evaluate(this.reader);
+    let observed = await slot.page.evaluate(this.reader);
     if (!observed) throw Error('The page is loading; observe again.');
     if (this.siteAccess && /^https?:/.test(observed.url)) {
+      const recordTab = this.automationTabs.get(slot.id)?.startsWith('record:');
+      // Tabs without an automatic checkbox attempt would start the wait at once.
+      if (!this.autoVerify() || recordTab)
+        observed = await this.awaitSelfClearingChallenge(slot, observed);
       const verificationPage =
         accessBarrier({title: observed.title, text: observed.text}) === 'verification';
       // A verification document behind HTTP 429 is the same interactive barrier.
@@ -763,7 +792,7 @@ export class JevBrowser {
         this.autoVerify() &&
         (!this.siteAccess.status(observed.url)?.waiting ||
           (probe?.token && this.siteAccess.row(observed.url)?.token === probe.token)) &&
-        !this.automationTabs.get(slot.id)?.startsWith('record:');
+        !recordTab;
       if (verificationPage && mayVerify && (await prepareTurnstileBarrier(slot))) {
         slot.observed = observed;
         this.urlHashes.set(slot.id, urlHash(observed.url));

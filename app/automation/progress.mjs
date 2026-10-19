@@ -51,7 +51,10 @@ export function automationProgress(snapshot, {dirty = false} = {}) {
   );
   const latest = runs[0],
     reviewed = a.reviewedRevision === a.revision,
-    passed = enabledSources.length > 0 && enabledSources.every((url) => sourceTrialReady(a, url));
+    // The source list carries the app's answer, which knows the site extensions.
+    sourceReady = (url) =>
+      snapshot.sources?.find((s) => s.url === url)?.trialReady ?? sourceTrialReady(a, url),
+    passed = enabledSources.length > 0 && enabledSources.every(sourceReady);
   const relevant = latest?.revision === a.revision ? latest : null;
   const reply = [...messages].reverse().find((m) => m.role === 'assistant');
   // A workspace nobody has written to yet is a blank page, not a list of missing fields.

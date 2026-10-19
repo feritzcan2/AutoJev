@@ -592,7 +592,7 @@ export const sourceMethods = {
         ...a.sourceState,
         [url]: {
           ...state,
-          trial: null,
+          trial: {status: 'requested', at: this.now()},
           blocked: false,
           nextRunAt: this.now(),
           recipeState: recipe ? {...state.recipeState, status: 'candidate', failCount: 0} : null,

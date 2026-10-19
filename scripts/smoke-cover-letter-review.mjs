@@ -114,7 +114,12 @@ try {
     'Cover-Letter-Example.pdf',
   );
   // An agent generated file names the application it was written for.
-  const detail = page.locator('#automation-generated-file-list small');
+  const detail = page.locator('#automation-generated-file-list small').first();
+  // Each file shows when it was created.
+  assert.match(
+    await page.locator('#automation-generated-file-list small').last().innerText(),
+    /^Created \d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}:\d{2}$/,
+  );
   assert.equal(
     await detail.innerText(),
     'Cover letter for Senior Software Engineer · example.test · waiting for your review',
