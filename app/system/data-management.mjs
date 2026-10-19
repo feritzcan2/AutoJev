@@ -208,7 +208,6 @@ function sanitizeExport(db) {
   if (tableExists(db, 'account_credentials'))
     db.exec('UPDATE account_credentials SET ciphertext=NULL,pending=NULL');
   for (const table of [
-    'captcha_settings',
     'jev_settings',
     'gmail_accounts',
     'telegram_job_messages',

@@ -1,7 +1,6 @@
 import {createHash} from 'node:crypto';
 import {accessBarrier} from '../browser/site-access.mjs';
 import {findTurnstileCheckbox} from './turnstile-checkbox.mjs';
-import {readTurnstileRegistration} from './turnstile-registration.mjs';
 
 import {captchaProvider} from './provider.mjs';
 export {captchaProvider} from './provider.mjs';
@@ -152,7 +151,6 @@ export function classifyCaptcha({
   return {state: 'none'};
 }
 
-export const gridSelector = 'table.rc-imageselect-table-33,table.rc-imageselect-table-44';
 async function visibleFrame(frame) {
   for (
     let current = frame, depth = 0;
@@ -424,11 +422,6 @@ async function readCaptcha(page) {
             {provider: item.provider, sitekey: item.sitekey},
           ),
         );
-      if (item.provider === 'turnstile') {
-        const registration = await readTurnstileRegistration(host);
-        if (registration)
-          Object.assign(item, {...registration, token: item.token || registration.answered});
-      }
     } catch {
       item.unavailable = true;
     } finally {
@@ -482,26 +475,12 @@ async function readCaptcha(page) {
     staleError: main.staleError,
     ocr,
   });
-  if (barrier) {
-    const target = result.target;
-    if (
-      result.state === 'active' &&
-      target?.provider === 'turnstile' &&
-      target.sitekey &&
-      target.callback &&
-      !target.managed
-    ) {
-      target.fullPage = true;
-    } else
-      result = {
-        state: 'unsupported',
-        reason: target?.managed
-          ? 'Cloudflare Challenge data detected; solving that needs a proxy is not configured in this session.'
-          : target?.provider === 'turnstile'
-            ? 'Turnstile is visible; the sitekey and the verified result callback could not both be read. No API request was sent.'
-            : 'Could not verify an active widget on the access barrier that the API can solve.',
-      };
-  }
+  // A full-page verification barrier is the user's to pass.
+  if (barrier)
+    result = {
+      state: 'unsupported',
+      reason: 'A verification page blocks access; the user needs to complete it in this tab.',
+    };
   const target = result.target;
   if (target) {
     target.questionId = gridQuestion(target.question ?? '');
@@ -512,7 +491,6 @@ async function readCaptcha(page) {
       target.origin,
       target.provider,
       target.sitekey,
-      target.registration,
       target.action,
       target.cdata,
     ]);
@@ -542,7 +520,7 @@ export function captchaEvidence(detection) {
   if (state === 'idle') return null; // The existing checkbox affordance handles idle widgets.
   return {
     state: 'required',
-    capability: state === 'active' ? 'solver' : 'not_exposed',
+    capability: 'not_exposed',
     provider: target?.provider,
     captchaState: state,
     evidence: reason,

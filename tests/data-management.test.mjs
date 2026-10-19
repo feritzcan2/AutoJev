@@ -1,5 +1,4 @@
 import test from 'node:test';
-import {CaptchaSettings} from '../app/captcha/settings.mjs';
 import assert from 'node:assert/strict';
 import {
   mkdtemp,
@@ -113,10 +112,6 @@ async function fixture(t) {
     'CREATE TABLE jev_settings(id INTEGER PRIMARY KEY,ciphertext TEXT NOT NULL,model TEXT NOT NULL)',
   );
   store.db.prepare('INSERT INTO jev_settings VALUES(1,?,?)').run('JEV-CIPHERTEXT', 'model');
-  new CaptchaSettings(store.db, {
-    encrypt: () => 'CAPTCHA-CIPHERTEXT',
-    decrypt: () => 'synthetic-captcha-key',
-  }).save({apiKey: 'synthetic-captcha-key', enabled: true});
   store.db
     .prepare('INSERT INTO prompts(candidate_id,kind,text,at) VALUES(?,?,?,?)')
     .run(profile.id, 'start', 'Prompt private content', new Date().toISOString());
@@ -169,7 +164,7 @@ test('portable backup includes committed WAL data and documents while removing c
       db.prepare('SELECT email FROM account_credentials').get().email,
       'ada@example.test',
     );
-    for (const table of ['telegram_configs', 'jev_settings', 'captcha_settings', 'prompts'])
+    for (const table of ['telegram_configs', 'jev_settings', 'prompts'])
       assert.equal(db.prepare(`SELECT count(*) AS n FROM ${table}`).get().n, 0);
   } finally {
     db.close();
@@ -178,7 +173,6 @@ test('portable backup includes committed WAL data and documents while removing c
   assert.ok(!bytes.includes('PORTAL-SECRET'));
   assert.ok(!bytes.includes('TELEGRAM-CIPHERTEXT'));
   assert.ok(!bytes.includes('JEV-CIPHERTEXT'));
-  assert.ok(!bytes.includes('CAPTCHA-CIPHERTEXT'));
   assert.equal(profileRow(f.store, f.profile.id).name, 'Ada Lovelace');
   assert.equal(
     f.store.db.prepare('SELECT ciphertext FROM account_credentials').get().ciphertext,

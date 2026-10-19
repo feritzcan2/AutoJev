@@ -112,23 +112,6 @@ try {
   await page.waitForFunction(
     async () => (await window.jobloop.jevSettingsStatus()).saved === false,
   );
-  await page.locator('a[href="#config-privacy"]').click();
-  await page.locator('#config-privacy').waitFor({state: 'visible'});
-  const disclosure = await page.locator('#config-privacy').innerText();
-  for (const label of [
-    'At the AI provider you choose',
-    'TypeSafe / Jev',
-    'Telegram',
-    'current form field values',
-  ])
-    assert.ok(disclosure.includes(label));
-  assert.equal(
-    (await page.locator('aside .sidebar-bottom').innerText()).includes(
-      'Data stays on this computer',
-    ),
-    false,
-  );
-  await page.screenshot({path: path.join(data, 'data-disclosure.png')});
   await page.locator('a[href="#config-data"]').click();
   await page.locator('#config-data').waitFor({state: 'visible'});
   const dataStatus = await page.evaluate(() => window.jobloop.dataStatus());

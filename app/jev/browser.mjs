@@ -3,9 +3,7 @@ import {
   prepareCloudflareCheckbox,
   cloudflareCheckboxMessage,
 } from '../captcha/cloudflare-checkbox.mjs';
-import {installTurnstileRegistration} from '../captcha/turnstile-registration.mjs';
 import {installNoTranslate} from './translation.mjs';
-import {prepareTurnstileBarrier, turnstileBarrierResult} from '../captcha/barrier.mjs';
 import {privateJevPage, retryJevRead} from './page.mjs';
 import {acquireTabRendering} from './rendering.mjs';
 import {accessBarrier, SiteWaitError, siteKey} from '../browser/site-access.mjs';
@@ -83,7 +81,6 @@ export class JevBrowser {
       headless = false,
       workspace,
       siteAccess,
-      autoVerify = () => false,
       connection = 'existing',
       profile,
       endpoint = existingChromeEndpoint,
@@ -97,7 +94,6 @@ export class JevBrowser {
     } = {},
   ) {
     this.sharedSiteAccess = siteAccess;
-    this.autoVerify = autoVerify;
     this.accountVault = accountVault;
     this.directory = directory;
     this.config = config;
@@ -340,7 +336,6 @@ export class JevBrowser {
       };
       // A tab that rejects init scripts still works; its labels may then be translated.
       await installNoTranslate(slot.page).catch(() => {});
-      if (this.autoVerify()) await installTurnstileRegistration(slot.page);
       if (this.connection === 'existing') {
         this.contextId = targetInfo.browserContextId;
         await this.persistTabs();
@@ -503,10 +498,12 @@ export class JevBrowser {
     }
   }
   // runIds are the finished runs whose tabs belong to the completed work.
+  // closeAll is the user ending that work (skip, marked applied): every tab of
+  // those runs closes, also one that moved to another site or awaits a check.
   async closeFinishedAutomationRunTabs(
     runIds,
     workspaceId,
-    {keepForms = false, pendingTabIds = [], resetSource = null} = {},
+    {keepForms = false, pendingTabIds = [], resetSource = null, closeAll = false} = {},
   ) {
     if (
       this.closed ||
@@ -536,6 +533,7 @@ export class JevBrowser {
           continue;
         if (
           !resetSource &&
+          !closeAll &&
           (pending.has(slot.id) ||
             slot.verification ||
             this.leftObservedPage(slot) ||
@@ -695,7 +693,6 @@ export class JevBrowser {
     return value;
   }
   async navigate(slot, url) {
-    if (this.autoVerify()) await installTurnstileRegistration(slot.page);
     // Paced sites wait their turn before the request leaves; cancellable.
     const gap = this.siteAccess?.pace?.(url) ?? 0;
     if (gap > 0) await pause(gap, undefined, {signal: this.abort.signal});
@@ -706,8 +703,8 @@ export class JevBrowser {
       return await slot.page.goto(url, {waitUntil: 'domcontentloaded', timeout: 20000});
     } catch (error) {
       // A 429 answered before its document loaded may still be an interactive
-      // verification page; with automatic verification the observation decides.
-      if (slot.http?.status === 429 && this.siteAccess && this.autoVerify()) throw error;
+      // verification page; the observation decides.
+      if (slot.http?.status === 429 && this.siteAccess) throw error;
       const wait =
         this.siteAccess?.complete(url, token, {
           ...slot.http,
@@ -753,21 +750,9 @@ export class JevBrowser {
     return observed;
   }
   async observeOnce(slot) {
-    // HTTP 429 can accompany a real interactive verification page. With
-    // automatic verification the loaded document decides below: a challenge
-    // gets its checkbox attempt, an ordinary rate limit starts the shared wait.
-    // Without it, rate limits return immediately.
-    if (this.siteAccess && slot.http?.status === 429 && !this.autoVerify()) {
-      const probe = slot.accessProbe,
-        url = probe?.url ?? slot.http.url;
-      const wait =
-        (slot.accessChecked === slot.http && this.siteAccess.status(url)) ||
-        this.siteAccess.complete(url, probe?.token, {...slot.http, reason: 'rate_limit'});
-      slot.accessProbe = null;
-      slot.accessChecked = slot.http;
-      slot.pending = null;
-      throw Object.assign(new SiteWaitError(wait), {url: slot.http.url, tabId: slot.id});
-    }
+    // HTTP 429 can accompany a real interactive verification page. The loaded
+    // document decides below: a challenge gets its checkbox attempt, an
+    // ordinary rate limit starts the shared wait.
     await waitForDocument(slot, {signal: this.readSignal ?? this.abort.signal});
     const previousFields = slot.fillFields;
     await clearFillFields(slot);
@@ -778,9 +763,8 @@ export class JevBrowser {
     if (!observed) throw Error('The page is loading; observe again.');
     if (this.siteAccess && /^https?:/.test(observed.url)) {
       const recordTab = this.automationTabs.get(slot.id)?.startsWith('record:');
-      // Tabs without an automatic checkbox attempt would start the wait at once.
-      if (!this.autoVerify() || recordTab)
-        observed = await this.awaitSelfClearingChallenge(slot, observed);
+      // Tabs without a checkbox attempt would start the wait at once.
+      if (recordTab) observed = await this.awaitSelfClearingChallenge(slot, observed);
       const verificationPage =
         accessBarrier({title: observed.title, text: observed.text}) === 'verification';
       // A verification document behind HTTP 429 is the same interactive barrier.
@@ -789,36 +773,13 @@ export class JevBrowser {
           : accessBarrier({...slot.http, title: observed.title, text: observed.text}),
         probe = slot.accessProbe;
       const mayVerify =
-        this.autoVerify() &&
         (!this.siteAccess.status(observed.url)?.waiting ||
           (probe?.token && this.siteAccess.row(observed.url)?.token === probe.token)) &&
         !recordTab;
-      if (verificationPage && mayVerify && (await prepareTurnstileBarrier(slot))) {
-        slot.observed = observed;
-        this.urlHashes.set(slot.id, urlHash(observed.url));
-        await this.persistTabs();
-        return turnstileBarrierResult(slot, observed);
-      }
-      if (
-        !verificationPage &&
-        slot.turnstileBarrier?.phase === 'checking' &&
-        !reason &&
-        slot.http?.status >= 200 &&
-        slot.http.status < 400
-      ) {
-        slot.turnstileBarrier.phase = 'cleared';
-        delete slot.verification;
-        delete slot.captchaDocument;
-      }
       // A visible Cloudflare checkbox gets one native attempt before cooldown.
       // Record/application tabs retain their submission checkpoints. The
       // coordinator performs the click and waiting outside this observation.
-      if (
-        reason === 'verification' &&
-        mayVerify &&
-        !slot.turnstileBarrier &&
-        (await prepareCloudflareCheckbox(slot))
-      ) {
+      if (reason === 'verification' && mayVerify && (await prepareCloudflareCheckbox(slot))) {
         slot.observed = observed;
         this.urlHashes.set(slot.id, urlHash(observed.url));
         await this.persistTabs();
@@ -848,7 +809,6 @@ export class JevBrowser {
         delete slot.cloudflareDiscovery;
         delete slot.cloudflareDiagnostic;
         delete slot.cloudflareDocument;
-        delete slot.turnstileDiagnostic;
         await slot.cloudflareCheckbox?.dispose();
         delete slot.cloudflareCheckbox;
       }
@@ -880,17 +840,10 @@ export class JevBrowser {
             diagnostic.reason = 'barrier_after_click';
           diagnostic.elapsedMs = Date.now() - (slot.cloudflareDiscovery?.startedAt ?? Date.now());
         }
-        const captcha = slot.turnstileBarrier
-          ? slot.turnstileDiagnostic
-          : diagnostic
-            ? {
-                ...diagnostic,
-                message: cloudflareCheckboxMessage(diagnostic),
-                ...(slot.turnstileDiagnostic ? {api: slot.turnstileDiagnostic} : {}),
-              }
-            : slot.turnstileDiagnostic;
-        const detail = [captcha?.message, captcha?.api?.message].filter(Boolean).join(' '),
-          reported = detail ? {...wait, message: wait.message + ' ' + detail} : wait;
+        const captcha = diagnostic
+          ? {...diagnostic, message: cloudflareCheckboxMessage(diagnostic)}
+          : null;
+        const reported = captcha ? {...wait, message: wait.message + ' ' + captcha.message} : wait;
         throw Object.assign(new SiteWaitError(reported), {
           url: observed.url,
           tabId: slot.id,

@@ -21,8 +21,6 @@ export async function registerSettingsServices({
   bootstrapDirectory = data,
   store,
   jevSettings,
-  captchaSettings,
-  siteCredentials,
   handle,
   window,
   maintenance,
@@ -41,17 +39,6 @@ export async function registerSettingsServices({
   handle('jev-settings-save', (input) => jevSettings.save(input));
   handle('jev-settings-remove', () => jevSettings.remove());
   handle('jev-settings-test', () => jevSettings.testConnection());
-  if (captchaSettings) {
-    handle('captcha-settings-status', () => captchaSettings.status());
-    handle('captcha-settings-save', (input) => captchaSettings.save(input));
-    handle('captcha-settings-remove', () => captchaSettings.remove());
-    handle('captcha-settings-test', () => captchaSettings.testConnection());
-  }
-  if (siteCredentials) {
-    handle('site-credentials-status', () => siteCredentials.status());
-    handle('site-credentials-save', (site, input) => siteCredentials.save(site, input));
-    handle('site-credentials-remove', (site) => siteCredentials.remove(site));
-  }
   handle('data-status', async () => ({...(await dataManagementStatus(params)), directory: data}));
   handle('data-open-directory', async () => {
     const error = await shell.openPath(data);

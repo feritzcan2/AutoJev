@@ -37,8 +37,6 @@
     "test:jev:button-list": "node scripts/smoke-jev-button-list.mjs",
     "test:jev:custom-dropdown": "node scripts/smoke-jev-custom-dropdown.mjs",
     "test:jev:blockers": "node scripts/smoke-jev-blockers.mjs",
-    "test:captcha": "node scripts/smoke-captcha.mjs",
-    "test:captcha:ui": "node scripts/smoke-captcha-settings.mjs",
     "test:jev:cookie-frame": "node scripts/smoke-jev-cookie-frame.mjs",
     "test:jev:embedded-recovery": "node scripts/smoke-jev-embedded-recovery.mjs",
     "engine:release": "node scripts/build-engine.mjs --release",

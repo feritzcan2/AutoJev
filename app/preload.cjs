@@ -15,13 +15,6 @@ const subscribe = (name, callback) => {
   return () => ipcRenderer.removeListener(name, listener);
 };
 contextBridge.exposeInMainWorld('jobloop', {
-  captchaSettingsStatus: () => invoke('captcha-settings-status'),
-  saveCaptchaSettings: (input) => invoke('captcha-settings-save', input),
-  removeCaptchaSettings: () => invoke('captcha-settings-remove'),
-  testCaptchaConnection: () => invoke('captcha-settings-test'),
-  siteCredentialsStatus: () => invoke('site-credentials-status'),
-  saveSiteCredentials: (site, input) => invoke('site-credentials-save', site, input),
-  removeSiteCredentials: (site) => invoke('site-credentials-remove', site),
   workerPreview: (id, worker = 'main') => invoke('worker-preview', id, worker),
   saveAgentProfile: (id, role, input) => invoke('agent-profile-save', id, role, input),
   instructionSnapshot: (id, options) => invoke('instruction-snapshot', id, options),
@@ -70,6 +63,7 @@ contextBridge.exposeInMainWorld('jobloop', {
     invoke('record-contact-edit', id, itemId, contactId, message),
   recordContactRemove: (id, itemId, contactId) =>
     invoke('record-contact-remove', id, itemId, contactId),
+  recordContactsRemove: (id, itemId) => invoke('record-contacts-remove', id, itemId),
   automationRetryLater: (id, key, cancel = false) =>
     invoke('automation-retry-later', id, key, cancel),
   automationAttentionDismiss: (id, key, dismissKey) =>

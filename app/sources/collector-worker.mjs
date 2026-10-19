@@ -9,7 +9,6 @@ import {scanWork, activeSearch, pendingScanUrls, noteCards} from './scan-work.mj
 import {SCAN_SEARCH_LISTINGS, SCAN_SEARCH_PAGES, recipeValues} from './recipe.mjs';
 import {automationTextCells} from '../templates/catalog.mjs';
 import {listingCard} from '../site-extensions/listing.mjs';
-import {siteCredentialValues} from './site-credentials.mjs';
 import {setTimeout as pause} from 'node:timers/promises';
 
 // A continued conversation still holds the background_read that ended its
@@ -320,11 +319,9 @@ export async function collectSourcePage(
   }
   const extension = collectorExtension(db.get(run.automationId), run.sourceUrl),
     adapter = extension.collector;
-  // A site with an account reads with the user's saved credentials (Site accounts).
   // Reads follow the site's shared pacing and waits; a card page reads only
   // the listings this workspace still needs (wanted).
-  const credentials = () => (extension.credentials ? siteCredentialValues(extension.id) : null),
-    access = {
+  const access = {
       siteAccess: db.siteAccess,
       wait: async (ms) => {
         progress({waitUntil: Date.now() + ms});
@@ -349,13 +346,11 @@ export async function collectSourcePage(
     };
   const readSitePage = (url, options) => {
     progress({step: 'page', search: search.label, url, done: null, total: null, title: null});
-    return adapter.readPage(url, {...options, ...access, wanted, credentials: credentials()});
+    return adapter.readPage(url, {...options, ...access, wanted});
   };
   readPage ??= readSitePage;
   readDetail ??=
-    adapter.readDetail &&
-    ((url, options) =>
-      adapter.readDetail(url, {...options, ...access, credentials: credentials()}));
+    adapter.readDetail && ((url, options) => adapter.readDetail(url, {...options, ...access}));
   const task = pageTask(db, run, search);
   // A listing Jev could not read or assess stays pending without holding the page.
   if (

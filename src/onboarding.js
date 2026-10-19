@@ -579,13 +579,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         if (country && choice.countries.includes(country) && choice.enabled !== false)
           row(choice.url, choice.name, 'Suggested · ' + choice.label, true);
         else if (country && choice.countries.includes(country))
-          row(
-            choice.url,
-            choice.name,
-            'Optional · ' +
-              (choice.account ? 'needs your API key under Site accounts' : choice.label),
-            false,
-          );
+          row(choice.url, choice.name, 'Optional · ' + choice.label, false);
         else if (choice.remote) row(choice.url, choice.name, 'Optional · ' + choice.label, false);
   }
   function renderReadiness(form) {

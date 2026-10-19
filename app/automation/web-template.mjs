@@ -710,7 +710,8 @@ export class WebTasks extends TaskRuns {
     return item;
   }
   // A record the user skipped or marked applied needs no page any more: close
-  // the tabs its runs opened. Closing is best effort and never undoes the choice.
+  // every tab its runs opened, also one that moved on to the employer's site.
+  // Closing is best effort and never undoes the choice.
   async closeRecordTabs(id, itemId) {
     const runs = this.db.db
       .prepare(
@@ -722,6 +723,7 @@ export class WebTasks extends TaskRuns {
       await this.closeRunTabs?.(id, runs[0], {
         closeTabs: true,
         keepForms: false,
+        closeAll: true,
         runIds: runs.map((run) => run.id),
       });
     } catch {}

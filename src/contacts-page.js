@@ -196,14 +196,46 @@ export function contactsPage(root, api, {refresh}) {
       chips.append(chip);
     }
     if (!summary.chips.length)
-      chips.append(el('small', plural(entry.contacts.length, 'contact'), 'contacts-page-count'));
+      chips.append(
+        el(
+          'small',
+          entry.contacts.length ? plural(entry.contacts.length, 'contact') : 'No contacts',
+          'contacts-page-count',
+        ),
+      );
     head.append(title, chips, el('span', expanded ? '▾' : '▸', 'contacts-page-caret'));
     head.onclick = () => {
       if (open.has(entry.recordId)) open.delete(entry.recordId);
       else open.add(entry.recordId);
       render();
     };
-    node.append(head);
+    // × removes the listing from this page; a running search or send keeps it.
+    const working = summary.group === 'working',
+      remove = button(
+        '×',
+        async () => {
+          if (
+            !confirm(
+              `Remove the contacts of “${result.title}”? Invitations already sent stay on LinkedIn.`,
+            )
+          )
+            return;
+          try {
+            await api.recordContactsRemove(data.automation.id, entry.recordId);
+            open.delete(entry.recordId);
+            await refresh();
+          } catch (error) {
+            alert(error.message);
+          }
+        },
+        'quiet contacts-page-remove',
+      );
+    remove.disabled = working;
+    remove.title = working ? 'A contact task is running for this listing' : 'Remove from Contacts';
+    remove.setAttribute('aria-label', `Remove ${result.title} from Contacts`);
+    const line = el('div', null, 'contacts-page-line');
+    line.append(head, remove);
+    node.append(line);
     if (expanded) {
       const body = el('div', null, 'contacts-page-body'),
         tools = el('div', null, 'contacts-page-tools');
