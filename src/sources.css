@@ -206,6 +206,12 @@
 .source-row[data-open='true'] {
   background: var(--bg-hover);
 }
+.source-row[data-expandable='true'] {
+  cursor: pointer;
+}
+.source-row[data-expandable='true'] :is(.source-memory, .source-editor, .extension-bench) {
+  cursor: auto;
+}
 .source-row .switch {
   justify-self: center;
   margin-top: 2px;

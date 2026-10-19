@@ -15,14 +15,14 @@ export const LINKEDIN_PAGE_SIZE = 10;
 // address, even with seconds between them (observed 2026-10-18: about 35
 // requests in 13 minutes at 8+ s spacing; 2026-10-19 01:53: about 27 in 10
 // minutes). The reference CLI stays low volume: about two result pages per
-// query and postings only for a shortlist. So the guest reads keep 45–75 s
-// apart (about one a minute) and at most 25 per half hour; the rest of a scan
-// resumes when the window frees (SiteAccess.spend). A 429 lasts longer
+// query and postings only for a shortlist. So the guest reads keep 30–40 s
+// apart and at most 25 per half hour; the rest of a scan resumes when the
+// window frees (SiteAccess.spend). A 429 lasts longer
 // than the default 5 and 10 minute retries (2026-10-19: still 429 after 15
 // minutes, which used up all retries), so retries wait 30 and 90 minutes.
 export const LINKEDIN_PACING = {
-  minIntervalMs: 45000,
-  jitterMs: 30000,
+  minIntervalMs: 30000,
+  jitterMs: 10000,
   budget: {requests: 25, windowMs: 30 * 60000},
   retryDelaysMs: [30 * 60000, 90 * 60000],
 };

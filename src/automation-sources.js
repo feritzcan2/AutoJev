@@ -380,6 +380,18 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     menu.append(view.edit, view.restart, view.relearn, view.remove, view.memoryButton, view.bench);
     view.actions.append(view.run, view.tabHost, menuToggle, menu);
     view.row.append(view.toggle, view.main, view.actions);
+    // A click on the row itself opens or closes its scan details; controls,
+    // open panels and text selection keep their own behaviour.
+    view.row.addEventListener('click', (event) => {
+      if (view.memoryButton.hidden || getSelection()?.toString()) return;
+      if (
+        event.target.closest(
+          'button, a, input, select, textarea, label, summary, [popover], .source-memory, .source-editor, .extension-bench',
+        )
+      )
+        return;
+      view.memoryButton.click();
+    });
     rows.set(url, view);
     return view;
   }
@@ -1149,6 +1161,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       if (next !== row) list.insertBefore(row, next);
       previous = row;
       row.dataset.open = String(open || memoryOpen);
+      row.dataset.expandable = String(benchAvailable);
       row.dataset.tone = source.enabled ? 'on' : 'off';
       row.dataset.trial = source.trialRunning ? 'running' : (source.trial?.status ?? 'pending');
       toggle.checked = source.enabled;

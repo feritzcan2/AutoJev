@@ -229,6 +229,25 @@ export function automationsPage(
   attentionNav.append(attentionBadge);
   attentionNav.onclick = () => navigate('attention');
   answersNav.after(attentionNav);
+  // Pages with something waiting on the user rise to the top of the sidebar and
+  // glow; once handled they return to their place below the Tracking table.
+  function pinPending(questions, issues) {
+    const nav = boardNav.parentElement,
+      items = [
+        [answersNav, questions > 0],
+        [attentionNav, issues > 0],
+      ],
+      pinned = items.filter(([, on]) => on).map(([node]) => node);
+    for (const [node, on] of items) node.toggleAttribute('data-pending', on);
+    // Move nodes only when out of place, so focus and hover are not disturbed.
+    if (pinned.some((node, n) => nav.children[n] !== node)) nav.prepend(...pinned);
+    let anchor = boardNav;
+    for (const [node, on] of items) {
+      if (on) continue;
+      if (anchor.nextElementSibling !== node) anchor.after(node);
+      anchor = node;
+    }
+  }
   const hasUnsaved = () => dirty;
   const profileSaveDialog = el('dialog');
   profileSaveDialog.id = 'automation-profile-save-dialog';
@@ -739,6 +758,7 @@ export function automationsPage(
         (run) => run.kind !== 'interview',
       ).length;
     questionBadge.hidden = !questionCount;
+    pinPending(questionCount, agentHelpCount);
     questionBadge.textContent = questionCount ? String(questionCount) : '';
     answersNav.title = questionCount ? `${questionCount} awaiting an answer` : '';
     answersNav.setAttribute(
@@ -977,6 +997,7 @@ export function automationsPage(
     answersNav.title = '';
     answersNav.setAttribute('aria-label', 'Answers');
     attentionBadge.hidden = true;
+    pinPending(0, 0);
     attentionNav.title = '';
     attentionNav.setAttribute('aria-label', 'Attention needed');
     document.querySelector('[data-view=board]').setAttribute('aria-label', 'Tracking table');
