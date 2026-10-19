@@ -16,7 +16,9 @@ import {
   safeStorage,
   Notification,
   nativeTheme,
+  powerMonitor,
 } from 'electron';
+import {setForegroundPolicy} from './jev/focus-guard.mjs';
 import {mkdir, rm} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -495,6 +497,17 @@ async function boot() {
       emit('logs-cleared', {});
     },
     activeRunIds: () => services.flatMap((service) => service.activeRunIds?.() ?? []),
+  });
+  // Chrome comes forward for a form write only after the person pauses, and
+  // JobLoop takes the keyboard back right after (app/jev/focus-guard.mjs).
+  setForegroundPolicy({
+    idleSeconds: () => powerMonitor.getSystemIdleTime(),
+    appFocused: () => Boolean(window && !window.isDestroyed() && window.isFocused()),
+    refocusApp: () => {
+      if (!window || window.isDestroyed()) return;
+      if (process.platform === 'darwin') app.focus({steal: true});
+      window.focus();
+    },
   });
   window = new BrowserWindow({
     width: 1440,

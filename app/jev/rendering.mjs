@@ -1,3 +1,4 @@
+import {appHasFocus, refocusApp, waitForForegroundTurn} from './focus-guard.mjs';
 // Ordinary Chrome pauses animation frames in background tabs. Playwright's
 // visibility/stability checks need those frames even for a ready document.
 // Resume only the owned tab for the current operation, without activating a
@@ -48,8 +49,18 @@ export async function acquireTabRendering(
     await bounded(() => state.stopping, {signal, timeoutMs});
     return acquireTabRendering(slot, {signal, hidden, foreground, timeoutMs});
   }
+  // A hidden tab that must come forward waits for a pause in the person's
+  // typing first; this wait is outside the short rendering bound below.
+  if (foreground && !state && slot.page) {
+    hidden ??= await bounded(
+      () => slot.page.evaluate(() => document.visibilityState === 'hidden'),
+      {signal, timeoutMs},
+    );
+    if (hidden === true) await waitForForegroundTurn({signal});
+    state = active.get(slot);
+  }
   if (!state) {
-    state = {users: 0, enabled: false};
+    state = {users: 0, enabled: false, restoreFocus: false};
     active.set(slot, state);
     state.ready = (async () => {
       if (
@@ -67,8 +78,24 @@ export async function acquireTabRendering(
       // tool call at a time, so bringing the tab forward cannot interleave
       // with another worker's write.
       if (foreground) {
+        const appWasFocused = appHasFocus();
         await bounded(() => slot.page.bringToFront(), {signal, timeoutMs}).catch(() => {});
         signal?.throwIfAborted();
+        if (appWasFocused) {
+          // The tab is now the front tab of its window; give the keyboard back at
+          // once. Chrome keeps painting it while its window is not fully covered.
+          refocusApp();
+          await new Promise((resolve) => setTimeout(resolve, 250));
+          const covered = await bounded(
+            () => slot.page.evaluate(() => document.visibilityState === 'hidden'),
+            {signal, timeoutMs},
+          ).catch(() => false);
+          if (covered) {
+            // Fully covered: Chrome stays in front for this one action only.
+            await bounded(() => slot.page.bringToFront(), {signal, timeoutMs}).catch(() => {});
+            state.restoreFocus = true;
+          }
+        }
       }
       state.enabled = true;
       await bounded(() => slot.cdp.send('Emulation.setFocusEmulationEnabled', {enabled: true}), {
@@ -90,6 +117,7 @@ export async function acquireTabRendering(
         await bounded(() => slot.cdp.send('Emulation.setFocusEmulationEnabled', {enabled: false}), {
           timeoutMs,
         }).catch(() => {});
+      if (state.restoreFocus) refocusApp();
       if (active.get(slot) === state) active.delete(slot);
     })();
     await state.stopping;
