@@ -644,7 +644,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     try {
       readiness = await api.readiness({
         provider: data.automation.agentSettings.provider,
-        decisions: data.automation.agentSettings.decisions ?? 'jev',
+        decisions: data.automation.agentSettings.decisions ?? 'agent',
       });
     } catch (failure) {
       readiness = {

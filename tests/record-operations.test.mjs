@@ -243,6 +243,29 @@ test('draft preparation keeps its tab; verified submission closes the completed 
   assert.deepEqual(calls.at(-1).options.runIds.toSorted(), [calls[0].run.id, run.id].toSorted());
 });
 
+test('an execute run that marks the record closed closes its tabs, including earlier turns', async (t) => {
+  const calls = [],
+    f = fixture(t, 'job-search', {onRunFinished: (id, run, options) => calls.push({run, options})});
+  await f.prepare();
+  await f.runtime.runRecord(f.id, f.item.id, 'execute', {manual: true});
+  await settle();
+  const run = f.launches.at(-1),
+    evidence = 'No longer accepting applications';
+  f.db.closeRecord(
+    f.id,
+    run.id,
+    f.item.id,
+    {evidence, url: f.item.url},
+    {url: f.item.url, text: evidence},
+  );
+  await f.finish(run);
+  assert.equal(f.db.result(f.id, f.item.id).status, 'dismissed');
+  assert.equal(calls.at(-1).run.id, run.id);
+  assert.equal(calls.at(-1).options.closeTabs, true);
+  assert.equal(calls.at(-1).options.keepForms, false);
+  assert.deepEqual(calls.at(-1).options.runIds.toSorted(), [calls[0].run.id, run.id].toSorted());
+});
+
 // Skip and a manual "applied" both end the record for the user: the tabs its
 // earlier runs opened close, including filled forms.
 test('skipping or marking a record applied closes its tabs', async (t) => {
@@ -552,7 +575,7 @@ test('dismissal cancels queued work and rejects foreign or already attempted rec
   const other = f.db.create('custom');
   await assert.rejects(f.runtime.dismissRecord(other.id, f.item.id), /does not belong/);
   assert.equal(queue.get(f.id, task.id).state, 'pending');
-  for (const status of ['executing', 'completed', 'uncertain']) {
+  for (const status of ['executing', 'completed']) {
     f.db.putResult({...f.item, status});
     await assert.rejects(f.runtime.dismissRecord(f.id, f.item.id), /history/);
     assert.equal(f.db.result(f.id, f.item.id).status, status);
@@ -1259,6 +1282,41 @@ test('uncertain direct execution cannot be retried as another submission', async
     /cannot be submitted again/,
   );
   assert.equal(f.db.snapshot(f.id).results[0].recordAction.directOperation, null);
+});
+
+// A record stuck on an unverified submit can be skipped from its question; the
+// skip remembers the uncertainty, so Restore never reopens a new submission.
+test('an uncertain record can be skipped and restores as uncertain', async (t) => {
+  const f = fixture(t);
+  await f.runtime.runRecord(f.id, f.item.id, 'execute', {direct: true});
+  await settle();
+  const run = f.launches.at(-1);
+  f.db.record(f.id, run.id, {
+    key: f.item.key,
+    url: f.item.url,
+    title: f.item.title,
+    summary: 'Checked',
+    proposal: 'Verified form',
+  });
+  f.db.reserve(f.id, run.id, f.item.id);
+  await f.runtime.finish(f.id, 'interrupted', 'Connection lost', run.workerId);
+  const q = f.db.askQuestion(f.id, {recordId: f.item.id, text: 'Driving licence?'});
+  assert.equal(
+    f.db.snapshot(f.id).automation.questions.find((item) => item.id === q.id).canDismissRecord,
+    true,
+  );
+  await f.runtime.dismissRecord(f.id, f.item.id);
+  const skipped = f.db.result(f.id, f.item.id);
+  assert.equal(skipped.status, 'dismissed');
+  assert.equal(skipped.skippedFrom, 'uncertain');
+  assert.ok(f.db.get(f.id).questions.find((item) => item.id === q.id).answer);
+  const restored = f.runtime.restoreRecord(f.id, f.item.id);
+  assert.equal(restored.status, 'uncertain');
+  assert.equal(restored.skippedFrom, undefined);
+  await assert.rejects(
+    f.runtime.runRecord(f.id, f.item.id, 'execute', {direct: true}),
+    /cannot be submitted again/,
+  );
 });
 
 for (const template of ['job-search', 'housing', 'appointment', 'custom'])

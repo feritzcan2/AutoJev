@@ -214,7 +214,12 @@ chromeStatus.append(chromeTitle, chromeDetail, chromeReconnect);
 document.querySelector('.sidebar-bottom').before(chromeStatus);
 const chromeProfileChange = element('button', 'quiet chrome-profile-change', 'Change profile');
 chromeProfileChange.type = 'button';
-chromeStatus.append(chromeProfileChange);
+const chromeProfileNote = element(
+  'small',
+  'chrome-profile-note',
+  'Use your real Chrome profile, signed in to the sites you use, so you are not blocked.',
+);
+chromeStatus.append(chromeProfileChange, chromeProfileNote);
 const jevStatus = element('div', 'jev-status');
 jevStatus.setAttribute('role', 'alert');
 jevStatus.hidden = true;

@@ -202,7 +202,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
-#automation-criteria {
+.profile-criteria {
   display: grid;
   gap: 18px;
 }
@@ -632,7 +632,7 @@
 .automation-plan .profile-form {
   padding: 0;
 }
-.automation-plan .profile-section .profile-fields #automation-criteria {
+.automation-plan .profile-section .profile-fields .profile-criteria {
   gap: 16px;
 }
 .automation-history-section .section-title {
@@ -1902,6 +1902,54 @@
   gap: 8px;
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
+}
+.record-drawer:popover-open:has(.record-listing) {
+  width: min(640px, 100vw);
+}
+.record-drawer-tools {
+  align-items: center;
+  justify-content: space-between;
+}
+.record-drawer-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+}
+.record-drawer-tabs > button {
+  padding: 4px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+}
+.record-drawer-tabs > button[aria-selected='true'] {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+/* The listing's own text, at a comfortable reading width. */
+.record-drawer-body .record-listing-text {
+  max-width: 70ch;
+  margin-top: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.record-drawer-body .record-listing-state {
+  color: var(--text-secondary);
+}
+.record-listing-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.record-drawer-body .record-listing-footer small {
+  margin: 0;
 }
 .record-drawer-body {
   flex: 1;

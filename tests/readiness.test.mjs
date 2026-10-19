@@ -64,14 +64,14 @@ test('Jev readiness verifies the selected profile, debug port and key without br
   assert.equal(
     (
       await collectReadiness(
-        {provider: 'claude', chromeProfile: {directory: 'Default'}},
+        {provider: 'claude', decisions: 'jev', chromeProfile: {directory: 'Default'}},
         dependencies,
       )
     ).ready,
     true,
   );
   const result = await collectReadiness(
-    {chromeProfile: {directory: 'Missing'}},
+    {decisions: 'jev', chromeProfile: {directory: 'Missing'}},
     {
       ...dependencies,
       chromePortAvailable: async () => false,

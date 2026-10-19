@@ -596,34 +596,40 @@ export class TelegramStore {
   collect() {
     for (const link of this.links())
       this.transaction(() => {
-        // Queue changes live on the campaign rather than the job. Refresh old cards on
-        // upgrade, and whenever scheduling or permissions change without a job event.
+        // Refresh every card on upgrade and when scheduling, setup or permissions
+        // change without a job event. A live task only changes its own records'
+        // cards, so worker churn must not re-render the whole workspace.
         const campaign = this.store.campaign(link.candidate_id),
           profile = this.store.profile(link.candidate_id);
         const queueSignature = hash(
           JSON.stringify([
-            'workspace-cards-v1',
+            'workspace-cards-v2',
             campaign?.status,
-            campaign?.task?.jobId,
-            campaign?.task?.kind,
-            Boolean(campaign?.task?.report),
-            this.store.workerState
-              .tasks(link.candidate_id)
-              .map(({workerId, task}) => [
-                workerId,
-                task.jobId,
-                task.kind,
-                task.state,
-                Boolean(task.report),
-              ]),
+            profile.revision,
+            profile.reviewedRevision,
             profile.authorization,
             this.store.sources(link.candidate_id).map((source) => [source.id, source.applyMode]),
+            // An open question without a record holds back every record of its source.
+            this.store
+              .questions(link.candidate_id)
+              .filter((q) => q.answer == null && !q.jobId)
+              .map((q) => q.id),
           ]),
         );
+        const recordTasks = {};
+        for (const {workerId, task} of this.store.workerState.tasks(link.candidate_id))
+          for (const jobId of task.jobIds ?? [task.jobId].filter(Boolean))
+            (recordTasks[jobId] ??= []).push([workerId, task.kind, task.state]);
         if (link.data.queueSignature !== queueSignature) {
           this.refreshJobMessages(link.candidate_id);
           link.data.queueSignature = queueSignature;
+        } else {
+          const previous = link.data.recordTasks ?? {};
+          for (const jobId of new Set([...Object.keys(previous), ...Object.keys(recordTasks)]))
+            if (JSON.stringify(previous[jobId]) !== JSON.stringify(recordTasks[jobId]))
+              this.refreshJobMessages(link.candidate_id, jobId);
         }
+        link.data.recordTasks = recordTasks;
         const rows = this.store.eventsAfter(link.candidate_id, link.cursor);
         for (const row of rows) {
           const data = JSON.parse(row.data);
@@ -634,9 +640,12 @@ export class TelegramStore {
           if (data.id && link.data.newJobs !== false)
             this.wakeScoreWaits(link.candidate_id, data.id);
           if (
-            ['question_answered', 'question_updated', 'technical_question_resolved'].includes(
-              row.kind,
-            )
+            [
+              'question_asked',
+              'question_answered',
+              'question_updated',
+              'technical_question_resolved',
+            ].includes(row.kind)
           ) {
             this.refreshQuestionMessages(link.candidate_id, data.id);
             const q = this.question(link.candidate_id, data.id);

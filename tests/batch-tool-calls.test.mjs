@@ -34,6 +34,7 @@ function fixture(t) {
     goal: 'Berlin homes',
     criteria: {location: 'Berlin', budget: '2000', requirements: '2 rooms'},
     sources: [url],
+    agentSettings: {provider: 'codex', decisions: 'jev'},
   });
   db.save(a.id, {browserMode: 'jev'});
   db.review(a.id);

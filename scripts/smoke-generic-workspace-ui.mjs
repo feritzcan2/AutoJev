@@ -168,7 +168,7 @@ try {
   await finish('Job answers saved');
   await page.locator('[data-view=profile]').click();
   await page
-    .locator('#automation-criteria [name=criteria-preferences]')
+    .locator('[data-criteria-section=search] [name=criteria-preferences]')
     .waitFor({state: 'visible'});
   await page.locator('[data-view=notifications]').click();
   await page.getByRole('heading', {name: 'Notification settings'}).waitFor();

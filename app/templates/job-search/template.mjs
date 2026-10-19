@@ -42,6 +42,7 @@ export const jobSearchTemplate = {
   fields: [
     {
       id: 'preferences',
+      section: 'search',
       label: 'Job preferences',
       question: 'Which roles, countries and work modes fit?',
       required: true,
@@ -49,6 +50,7 @@ export const jobSearchTemplate = {
     },
     {
       id: 'country',
+      section: 'search',
       label: 'Target country',
       question:
         'Which country should listings be searched in? Two-letter country code (e.g. DE, GB, US)',
@@ -57,6 +59,7 @@ export const jobSearchTemplate = {
     },
     {
       id: 'location',
+      section: 'search',
       label: 'Search location',
       question:
         'Which city or region should listings be searched in? (e.g. London, United Kingdom)',
@@ -65,6 +68,7 @@ export const jobSearchTemplate = {
     },
     {
       id: 'experience',
+      section: 'candidate',
       label: 'Experience and skills',
       question: 'What experience and skills do you have according to your CV and documents?',
       required: false,
@@ -74,6 +78,7 @@ export const jobSearchTemplate = {
       // Replaced by the generic Elimination rules; kept so saved profiles stay
       // valid until the setup agent moves its contents.
       id: 'constraints',
+      section: 'rules',
       label: 'Hard requirements (old)',
       question:
         'Replaced by Elimination rules. The setup agent moves these into rules and application form details.',
@@ -83,6 +88,7 @@ export const jobSearchTemplate = {
     },
     {
       id: 'application_policy',
+      section: 'actions',
       label: 'Application rules',
       question: 'Which conditions and approval preferences should applications follow?',
       required: false,
@@ -90,6 +96,7 @@ export const jobSearchTemplate = {
     },
     {
       id: 'application_facts',
+      section: 'candidate',
       label: 'Application form details',
       question:
         'Details forms often ask for: phone, LinkedIn address, work permit or visa status, language levels, notice period, earliest start, salary expectation, willingness to come to the office, gender (optional). When these are saved, the agent does not ask during the application.',

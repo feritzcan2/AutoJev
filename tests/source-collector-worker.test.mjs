@@ -94,7 +94,7 @@ function fixture(
     terms,
     ordering,
     saveScoreThreshold,
-    decisions,
+    decisions = 'jev',
   } = {},
 ) {
   const core = new WorkspaceDatabase(':memory:'),
@@ -108,7 +108,7 @@ function fixture(
     },
     sources: [source],
   });
-  if (decisions) db.save(a.id, {agentSettings: {provider: 'codex', decisions}});
+  db.save(a.id, {agentSettings: {provider: 'codex', decisions}});
   if (terms)
     db.saveSource(a.id, source, {
       recipe: {

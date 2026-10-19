@@ -6,7 +6,7 @@ export const defaultPermission = (provider) =>
 // Who makes the listing decisions inside browser tasks: the Jev model
 // (TypeSafe key) or the worker agent itself, through its next tool call.
 export const DECISION_MODES = ['jev', 'agent'];
-export const agentDecides = (settings) => settings?.decisions === 'agent';
+export const agentDecides = (settings) => (settings?.decisions ?? 'agent') === 'agent';
 
 export function withAgentDefaults(settings = {}) {
   const provider = settings.provider ?? 'codex';
@@ -20,7 +20,7 @@ export function withAgentDefaults(settings = {}) {
     ...settings,
     provider,
     permission: settings.permission ?? defaultPermission(provider),
-    decisions: settings.decisions ?? 'jev',
+    decisions: settings.decisions ?? 'agent',
   };
 }
 

@@ -18,7 +18,7 @@ const outcomes = new Map();
 // What the readers did for this run: read listings and failed reads.
 export const recordListingReads = (runId) => outcomes.get(runId) ?? null;
 
-async function readOne(db, a, run, item, {signal, wait}) {
+export async function readOne(db, a, run, item, {signal, wait}) {
   const collector = collectorExtension(a, item.url),
     reader = collector ? null : siteReaderFor(item.url),
     extension = collector ?? (reader ? siteExtensionFor(item.url) : null);

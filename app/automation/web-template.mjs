@@ -245,7 +245,8 @@ export class WebTasks extends TaskRuns {
             retainForAccess:
               db.get(id).sourceState?.[run.sourceUrl]?.accessRecovery?.runId === run.id,
             closeTabs,
-            keepForms: record?.status !== 'completed',
+            // A completed or closed record needs no page any more, filled or not.
+            keepForms: !['completed', 'dismissed'].includes(record?.status),
             runIds,
             pendingTabIds: pendingContexts.map((context) => context.tabId).filter(Boolean),
             pendingUrls: pendingContexts.map((context) => context.url).filter(Boolean),

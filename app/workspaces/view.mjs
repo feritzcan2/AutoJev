@@ -68,6 +68,9 @@ export function webWorkspaceView(snapshot, agents) {
       },
       presentation: {
         pageProgress: ownRun?.pageProgress ?? null,
+        // The app prepares some tasks itself (reading pages and listings)
+        // before the agent session starts.
+        appWorking: Boolean(ownRun?.status === 'running' && !ownActive),
         title: waiting
           ? 'Waiting for the next task'
           : ownRun

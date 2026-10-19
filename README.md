@@ -100,11 +100,12 @@ package and open it again. The saved profile and CV are kept; preparation is ret
    When using Jev, open `chrome://inspect/#remote-debugging` in your existing Chrome
    and allow the connection request. In the agent's own browser mode, enable the
    tools inside the agent.
-3. If you will use Jev, save the TypeSafe API key under **Configuration → Jev** and
-   test the connection. Sources are scanned through the selected browser. To work
-   without a TypeSafe key, set **Agent settings → Listing decisions** to **This
-   agent**: the managed browser still reads pages, keeps the queue and follows
-   observed page numbers, but no model is called. Each results page pauses so the
+3. **Agent settings → Listing decisions** defaults to **This agent**, which needs
+   no TypeSafe key. To let Jev decide instead, switch it to **Jev (TypeSafe key)**,
+   save the TypeSafe API key under **Configuration → Jev** and test the connection.
+   Sources are scanned through the selected browser. With **This agent** the
+   managed browser still reads pages, keeps the queue and follows observed page
+   numbers, but no model is called. Each results page pauses so the
    worker agent chooses the listings to read, the agent picks the next page when the
    page numbers do not show it, and every read listing waits in a review batch for
    the agent's decision. The agent fills search forms itself, and a search recipe is

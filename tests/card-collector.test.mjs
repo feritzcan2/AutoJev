@@ -15,6 +15,7 @@ import linkedin, {
   readLinkedInListing,
   linkedInSearchUrl,
   readLinkedInPosting,
+  collectLinkedInPosting,
 } from '../app/site-extensions/linkedin.mjs';
 import {readSiteExtension} from '../app/site-extensions/index.mjs';
 
@@ -275,6 +276,32 @@ test('the LinkedIn posting reader needs a title and a real description', () => {
   assert.equal(job.closed, true);
 });
 
+test('the LinkedIn posting reader reads the signed-in layout without named classes', () => {
+  const about = {innerText: 'Build 𝐫𝐞𝐥𝐢𝐚𝐛𝐥𝐞 APIs.\n\n\n\n\nKafka.'};
+  const saved = {document: globalThis.document, location: globalThis.location};
+  globalThis.location = {href: 'https://www.linkedin.com/jobs/view/4478132255/'};
+  globalThis.document = {
+    title: '𝐒𝐭𝐚𝐟𝐟 𝐄𝐧𝐠𝐢𝐧𝐞𝐞𝐫 - Berlin | Xcede | LinkedIn',
+    body: {innerText: ''},
+    querySelector: (selector) =>
+      selector.startsWith('[componentkey^="JobDetails_AboutTheJob_"]') ? about : null,
+  };
+  try {
+    assert.deepEqual(collectLinkedInPosting(), {
+      url: 'https://www.linkedin.com/jobs/view/4478132255/',
+      title: 'Staff Engineer - Berlin',
+      company: 'Xcede',
+      location: '',
+      description: 'Build reliable APIs.\n\nKafka.',
+      closed: false,
+    });
+    globalThis.document.title = 'Sign in | LinkedIn';
+    assert.equal(collectLinkedInPosting().title, '', 'a tab title without a company is no posting');
+  } finally {
+    Object.assign(globalThis, saved);
+  }
+});
+
 test('a site posting reader gives an opened posting its listing text', async () => {
   const url = 'https://www.linkedin.com/jobs/view/staff-engineer-at-acme-4100000000/';
   const slot = {
@@ -337,6 +364,17 @@ test('LinkedIn postings are opened in the browser before the agent; result pages
   });
   await f.flow.prefetchCollector();
   assert.equal(opened.length, 3, 'each new posting opens in the browser');
+  assert.match(
+    opened[0],
+    /^https:\/\/www\.linkedin\.com\/jobs\/view\/\d+\/$/,
+    'signed in, a posting opens at its plain job address, not the country host with a slug',
+  );
+  const task = f.db.jevTasks.list(f.id, f.db.run(f.runId).taskId).at(-1);
+  assert.match(
+    task.items[0].url,
+    /^https:\/\/de\.linkedin\.com\/jobs\/view\/.+-at-acme-\d+$/,
+    'the listing keeps its card address',
+  );
   assert.equal(f.site.requests.length, 1, 'only the result page comes from the guest API');
   assert.equal(
     f.db.db

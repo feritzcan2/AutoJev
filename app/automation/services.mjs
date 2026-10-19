@@ -1,5 +1,6 @@
 import {batchScoring} from '../records/task-scope.mjs';
 import {deleteRecords} from '../records/deletion.mjs';
+import {listingDescription, readListingDescription} from '../records/description.mjs';
 import {workspaceDirectory} from '../workspaces/paths.mjs';
 import {withAgentDefaults} from '../agents/settings.mjs';
 import path from 'node:path';
@@ -181,6 +182,7 @@ export function registerAutomationServices({
         jevProfile: jevProfileView(
           db.get(id),
           await loadScoringDocuments(db, id).catch(() => null),
+          db.template(db.get(id).templateId).fields,
         ),
       },
       agents,
@@ -213,7 +215,14 @@ export function registerAutomationServices({
     return a;
   });
   handle('automation-jev-profile-save', async (id, text) => {
-    const result = saveJevProfile(db, id, text, 'user', await loadScoringDocuments(db, id));
+    const result = saveJevProfile(
+      db,
+      id,
+      text,
+      'user',
+      await loadScoringDocuments(db, id),
+      db.template(db.get(id).templateId).fields,
+    );
     changed(id);
     return result;
   });
@@ -299,6 +308,10 @@ export function registerAutomationServices({
   });
   handle('automation-record-run', (id, itemId, kind, input) =>
     runtime.runRecord(id, itemId, kind, input),
+  );
+  handle('automation-record-description', (id, itemId) => listingDescription(db, id, itemId));
+  handle('automation-record-description-read', (id, itemId) =>
+    readListingDescription(db, id, itemId),
   );
   handle('automation-approve', (id, itemId) => {
     const item = db.approve(id, itemId);

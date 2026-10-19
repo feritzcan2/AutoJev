@@ -490,10 +490,13 @@ export function workerTerminals(
     pane.card.dataset.closed = String(!active);
     pane.card.dataset.history = String(Boolean(pane.showHistory));
     pane.idle.hidden = Boolean(active);
-    pane.idleTitle.textContent = 'Agent is off';
+    const appWorking = !paused && worker.presentation?.appWorking;
+    pane.idleTitle.textContent = appWorking ? 'The app is working' : 'Agent is off';
     pane.idleDetail.textContent = paused
       ? 'Taking a short break. We can continue whenever you are ready.'
-      : 'Resting for now. I am here when you are ready.';
+      : appWorking
+        ? 'The app prepares this task itself, such as reading pages and listings. The agent starts when it is ready.'
+        : 'Resting for now. I am here when you are ready.';
     pane.idleHistory.hidden = !pane.hasOutput || pane.view() === 'chat';
     pane.idleHistory.textContent = pane.showHistory ? 'Hide output' : 'Last terminal output';
     pane.idleHistory.setAttribute('aria-expanded', String(Boolean(pane.showHistory)));

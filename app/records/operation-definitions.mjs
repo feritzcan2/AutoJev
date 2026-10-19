@@ -39,6 +39,7 @@ export const UNSTATED_CHECK = 'Do not apply until checked',
 export const scoringFields = [
   {
     id: 'hard_rules',
+    section: 'rules',
     label: 'Elimination rules',
     question:
       'Conditions every record must meet, one per rule, and what to do when a listing does not mention it. The setup agent proposes them.',
@@ -47,6 +48,7 @@ export const scoringFields = [
   },
   {
     id: 'ranking',
+    section: 'rules',
     label: 'Scoring criteria',
     question:
       'Which criteria should records be scored by, 0–100? The setup agent suggests them; free text.',
@@ -55,6 +57,9 @@ export const scoringFields = [
   },
   {
     id: 'score_threshold',
+    section: 'actions',
+    // Shown only for automatic actions.
+    forMode: 'auto',
     label: 'Minimum score for automatic action',
     question: 'Lowest score for automatic action, 1–100 (default 60)',
     required: false,
@@ -62,6 +67,8 @@ export const scoringFields = [
   },
   {
     id: 'unstated_conditions',
+    section: 'actions',
+    forMode: 'auto',
     // Only workspaces without elimination rules use it; each rule has its own choice.
     label: 'When a listing does not mention a required condition',
     question:
@@ -72,6 +79,7 @@ export const scoringFields = [
   },
   {
     id: 'save_score_threshold',
+    section: 'board',
     label: 'Minimum score to save',
     question:
       'New results below this score are not saved. 0–100; leave empty to keep results regardless of score.',

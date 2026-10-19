@@ -84,6 +84,7 @@ function fixture(t) {
     goal: 'Berlin homes',
     criteria: {location: 'Berlin', budget: '2000', requirements: '2 rooms'},
     sources: [url],
+    agentSettings: {provider: 'codex', decisions: 'jev'},
   });
   db.save(a.id, {browserMode: 'jev'});
   db.review(a.id);
@@ -2867,6 +2868,7 @@ test('LinkedIn guest searches and postings are read over HTTP; marked listings s
     goal: 'Backend jobs',
     criteria: {location: 'Germany', budget: '2000', requirements: 'backend'},
     sources: [search],
+    agentSettings: {provider: 'codex', decisions: 'jev'},
   });
   db.save(a.id, {browserMode: 'jev'});
   db.review(a.id);

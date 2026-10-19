@@ -23,7 +23,7 @@ import {
   prefetchCollectorPage,
   prepareCollection,
 } from '../sources/collector-worker.mjs';
-import {siteReaderFor, siteExtensionKind} from '../site-extensions/index.mjs';
+import {siteReaderFor, siteExtensionKind, siteListingAddress} from '../site-extensions/index.mjs';
 import {siteSearchRecipe} from '../site-extensions/search.mjs';
 import {setTimeout as pause} from 'node:timers/promises';
 import {readRecordListings} from '../records/listing-reader.mjs';
@@ -124,12 +124,13 @@ const samePath = (a, b) => {
   }
 };
 const TRIAL_SCAN_PAGE_LIMIT = 2;
-// Listings a card collector opens in the user's (logged-in) browser: at least
-// 25 s apart and at most 60 an hour per site, counted apart from the site's
-// API budget, since these views belong to the user's account.
-const BROWSER_LISTING_GAP_MS = 25000,
-  BROWSER_LISTING_JITTER_MS = 10000,
-  BROWSER_LISTING_BUDGET = {requests: 60, windowMs: 60 * 60000};
+// Listings a card collector opens in the user's (logged-in) browser: 12-20 s
+// apart, about a person reading postings, and at most 120 an hour per site,
+// counted apart from the site's API budget, since these views belong to the
+// user's account. (25-35 s and 60/hour until 2026-10-19 drew no block.)
+const BROWSER_LISTING_GAP_MS = 12000,
+  BROWSER_LISTING_JITTER_MS = 8000,
+  BROWSER_LISTING_BUDGET = {requests: 120, windowMs: 60 * 60000};
 const BACKGROUND_READ =
   'The app reads the next result page and its listings itself, at the pace this site allows; that can take many minutes. End this turn now: do not call finish_automation_run or any other tool. The app resumes you with the ready review batch.';
 // Another results page of the active search: same address shape as the last
@@ -521,7 +522,7 @@ export function automationWorkflow({
         taskId: scope,
         input: args,
         signal,
-        criteria: jevCriteria(a, documents, db.template(a.templateId).assessmentHints),
+        criteria: jevCriteria(a, documents, db.template(a.templateId)),
         ports: {
           onTask,
           sourceUrl: sourceScan(active) ? active.sourceUrl : null,
@@ -973,7 +974,8 @@ export function automationWorkflow({
       BROWSER_LISTING_JITTER_MS,
     );
     if (gap) await pause(gap, undefined, {signal});
-    let response = await browser.call(id, 'browser_navigate', {url}, run.id);
+    const address = siteListingAddress(url);
+    let response = await browser.call(id, 'browser_navigate', {url: address}, run.id);
     for (let i = 0; i < 3 && response.jevPage?.reading?.readiness?.loading; i++) {
       await pause(2000, undefined, {signal});
       response = await browser.call(id, 'browser_snapshot', {}, run.id);
@@ -981,7 +983,7 @@ export function automationWorkflow({
     const page = response.jevPage;
     if (page?.siteWait) throw new SiteWaitError(page.siteWait);
     // A posting that lands elsewhere (a sign-in or home page) is no listing.
-    if (page?.url && new URL(page.url).pathname !== new URL(url).pathname)
+    if (page?.url && new URL(page.url).pathname !== new URL(address).pathname)
       throw Error(
         `The posting opened as ${page.url}; this browser may need to sign in to the site.`,
       );
@@ -1101,7 +1103,9 @@ export function automationWorkflow({
       }
       case 'read_scoring_profile': {
         const source =
-          args.source === 'documents' ? await scoringDocuments() : scoringSources(a)[args.source];
+          args.source === 'documents'
+            ? await scoringDocuments()
+            : scoringSources(a, undefined, db.template(a.templateId).fields)[args.source];
         if (!source) throw Error('Choose a valid scoring source.');
         const offset = args.offset ?? 0,
           limit = args.limit ?? 6000;
@@ -1150,7 +1154,7 @@ export function automationWorkflow({
           };
         }
         const deadline = Date.now() + jevExecution.waitWindow,
-          criteria = jevCriteria(a, documents, db.template(a.templateId).assessmentHints);
+          criteria = jevCriteria(a, documents, db.template(a.templateId));
         const briefFor = (evidenceId, offset, waitMs) => {
           const evidence = db.jevTasks.fullEvidence(id, scope, evidenceId);
           const task = db.jevTasks
@@ -1289,7 +1293,14 @@ export function automationWorkflow({
       }
       case 'save_jev_profile': {
         if (!sourceTask) throw Error('The Jev profile is only written in a source task.');
-        result = saveJevProfile(db, id, args.profile, 'agent', await scoringDocuments());
+        result = saveJevProfile(
+          db,
+          id,
+          args.profile,
+          'agent',
+          await scoringDocuments(),
+          db.template(a.templateId).fields,
+        );
         changed(id);
         break;
       }
@@ -1402,7 +1413,11 @@ export function automationWorkflow({
         if (sourceTask && !args.section && !decideByAgent) {
           const documents = await scoringDocuments().catch(() => null);
           if (documents) {
-            const {status, by, text} = jevProfileView(a, documents);
+            const {status, by, text} = jevProfileView(
+              a,
+              documents,
+              db.template(a.templateId).fields,
+            );
             value.jevProfile = {status, ...(by === 'user' ? {by, text} : {})};
           }
         }

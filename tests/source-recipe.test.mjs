@@ -296,6 +296,7 @@ function fixture(t) {
     goal: 'Find homes',
     criteria: {location: 'Berlin', budget: '2000', requirements: '2 rooms'},
     sources: [source],
+    agentSettings: {provider: 'codex', decisions: 'jev'},
   });
   // These tests step the clock past a 30-minute scan interval.
   db.saveSourcesInterval(a.id, 30);

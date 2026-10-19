@@ -248,7 +248,7 @@ export function configPage(api, {notice, relativeTime, openNotifications}) {
       return {
         provider: profile.agentSettings.provider,
         chromeProfile: profile.chromeProfile,
-        decisions: profile.agentSettings.decisions ?? 'jev',
+        decisions: profile.agentSettings.decisions ?? 'agent',
       };
     },
   });
