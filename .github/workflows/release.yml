@@ -2,6 +2,11 @@ name: release
 on:
   push:
     tags: ['v*']
+  # A version bump in package.json on main is released once CI passes for that commit.
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
@@ -20,18 +25,60 @@ concurrency:
   group: jobloop-release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 env:
-  JOBLOOP_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
   JOBLOOP_SKIP_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_tests && '1' || '0' }}
 jobs:
-  confirm-candidate:
+  resolve:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Resolve release tag, tagging a new main version
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.tag || github.ref_name }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" != workflow_run ]; then
+            echo "tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version="$(gh api "repos/$GITHUB_REPOSITORY/contents/package.json?ref=$HEAD_SHA" -H 'Accept: application/vnd.github.raw' | jq -r .version)"
+          tag="v$version"
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version $version is not a stable release; nothing to publish."
+            exit 0
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1; then
+            echo "$tag already exists; nothing to publish."
+            exit 0
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$HEAD_SHA" >/dev/null
+          echo "Tagged $HEAD_SHA as $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+  confirm-candidate:
+    needs: resolve
+    if: needs.resolve.outputs.tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      JOBLOOP_RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
     outputs:
       sha: ${{ steps.candidate.outputs.sha }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: refs/tags/${{ needs.resolve.outputs.tag }}
           fetch-depth: 0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -42,7 +89,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/release-candidate.mjs
   build:
-    needs: confirm-candidate
+    needs: [resolve, confirm-candidate]
     environment: production
     strategy:
       fail-fast: false
@@ -58,6 +105,7 @@ jobs:
     timeout-minutes: 120
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      JOBLOOP_RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -102,10 +150,12 @@ jobs:
           retention-days: 1
           if-no-files-found: error
   publish:
-    needs: [confirm-candidate, build]
+    needs: [resolve, confirm-candidate, build]
     environment: production
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      JOBLOOP_RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
     permissions:
       contents: write
       actions: read

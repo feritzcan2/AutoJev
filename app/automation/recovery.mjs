@@ -2,7 +2,7 @@
 import {operationFor} from '../templates/contract.mjs';
 import {sourceMode} from '../sources/automation-sources.mjs';
 import {SOURCE_PAGE_INSTRUCTIONS} from '../sources/scan.mjs';
-import {COLLECTOR_INSTRUCTIONS} from '../sources/collector-worker.mjs';
+import {COLLECTOR_INSTRUCTIONS, COLLECTOR_RESUME} from '../sources/collector-worker.mjs';
 
 const TECHNICAL_RETRY_LIMIT = 3,
   IDLE_RETRY_LIMIT = 5;
@@ -96,7 +96,7 @@ export function continueSourceRun(db, id, runId) {
   return (
     'The same assigned source task is still open; no restart or new task occurred. Continue from the current page and saved checkpoint. Do not reread unchanged context or documents. If your last finish_automation_run was rejected, inspect its error, correct only the missing report or continue the remaining work. Page loading failures are verified and retried by the app. Do not repeat an unchanged failed action or submit anything.' +
     (run.kind === 'run'
-      ? ' ' + (run.collector ? COLLECTOR_INSTRUCTIONS : SOURCE_PAGE_INSTRUCTIONS)
+      ? ' ' + (run.collector ? COLLECTOR_RESUME + COLLECTOR_INSTRUCTIONS : SOURCE_PAGE_INSTRUCTIONS)
       : '')
   );
 }

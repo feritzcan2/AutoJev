@@ -1,6 +1,6 @@
 // @ts-check
 import {batchScoring} from '../records/task-scope.mjs';
-import {COLLECTOR_INSTRUCTIONS} from '../sources/collector-worker.mjs';
+import {COLLECTOR_INSTRUCTIONS, COLLECTOR_RESUME} from '../sources/collector-worker.mjs';
 import {isConversation} from '../workspaces/conversation.mjs';
 import {JEV_LAUNCH_INSTRUCTIONS, AGENT_LAUNCH_INSTRUCTIONS} from '../jev/task-tools.mjs';
 import {SOURCE_PAGE_INSTRUCTIONS} from '../sources/scan.mjs';
@@ -20,6 +20,7 @@ export function automationPrompt(
     return (
       'Read AGENTS.md and get_automation_context. ' +
       (agentDecides ? '' : jevProfilePrompt) +
+      (run.continuation ? COLLECTOR_RESUME : '') +
       COLLECTOR_INSTRUCTIONS
     );
   const refresh =
