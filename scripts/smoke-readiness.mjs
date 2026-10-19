@@ -160,7 +160,7 @@ try {
   const updateStatus = await page.evaluate(() => window.jobloop.updateStatus());
   assert.equal(updateStatus.enabled, false, 'Development smoke must not enable a release updater');
   await page.waitForFunction(() =>
-    document.querySelector('#config-updates [data-status]').textContent.includes('desteklenmiyor'),
+    document.querySelector('#config-updates [data-status]').textContent.includes('not supported'),
   );
   assert.equal(await page.locator('#config-updates [data-check]').isVisible(), false);
   assert.equal(await page.locator('#config-updates [data-download]').isVisible(), false);
