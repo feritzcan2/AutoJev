@@ -5,6 +5,7 @@ import {
   noteSourceActivity,
   sourceActivity,
 } from '../app/sources/source-activity.mjs';
+import {sourceActivityText} from '../app/sources/activity-text.mjs';
 
 test('agent steps read as what they do, not as internal tool names', () => {
   assert.equal(
@@ -40,4 +41,20 @@ test('a step merges into the run activity and old runs are dropped', () => {
   assert.equal(sourceActivity('r1'), null);
   noteSourceActivity('r2', null);
   assert.equal(sourceActivity('r2'), null);
+});
+
+test('a wait names what it waits for', () => {
+  const now = Date.parse('2026-10-19T15:00:00Z'),
+    waitUntil = now + 10 * 60000;
+  assert.match(
+    sourceActivityText({step: 'page', search: 'Go', waitUntil}, now),
+    /waiting for the site’s pace until/,
+  );
+  assert.match(
+    sourceActivityText(
+      {step: 'page', search: 'Go', waitUntil, waitFor: 'the limit of 60 pages an hour'},
+      now,
+    ),
+    /^Now: Reading a results page for “Go” · waiting for the limit of 60 pages an hour until /,
+  );
 });

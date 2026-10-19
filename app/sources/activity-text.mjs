@@ -13,5 +13,9 @@ export function sourceActivityText(a, now = Date.now()) {
         : a.tool
           ? `Agent: ${a.label ?? a.tool.replace(/_/g, ' ')}${a.url ? ' · ' + a.url : ''}`
           : 'Agent: reviewing the ready batch';
-  return 'Now: ' + what + (until ? ` · waiting for the site’s pace until ${until}` : '');
+  return (
+    'Now: ' +
+    what +
+    (until ? ` · waiting for ${a.waitFor ?? 'the site’s pace'} until ${until}` : '')
+  );
 }

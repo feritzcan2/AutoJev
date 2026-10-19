@@ -231,8 +231,7 @@ export function automationResultsTable(
   };
   const pinnedNote = (count) => {
     const note = el('span', `${count} pinned on top`, 'record-pinned-note');
-    note.title =
-      'Records that need your answer, have an open tab, are working or are queued to apply stay above the sorted records.';
+    note.title = 'Records that need your answer or are working stay above the sorted records.';
     return note;
   };
   const setFilter = (value) => {
@@ -753,21 +752,7 @@ export function automationResultsTable(
               : r.cells?.[sort];
       return numeric ? sortNumber(raw) : String(raw ?? '').trim() || null;
     };
-    // Queued applications sit right under the running ones.
-    const queuedApplication = (result) =>
-      result.status !== 'dismissed' &&
-      result.recordAction?.task?.state === 'pending' &&
-      result.recordAction.task.kind === 'execute';
-    const priority = (result) =>
-      recordNeedsAnswer(result)
-        ? 0
-        : openIds.has(result.id)
-          ? 1
-          : recordIsWorking(result)
-            ? 2
-            : queuedApplication(result)
-              ? 3
-              : 4;
+    const priority = (result) => (recordNeedsAnswer(result) ? 0 : recordIsWorking(result) ? 1 : 2);
     // Missing values stay last in both directions; ties show the latest activity first.
     results.sort((a, b) => {
       const rank = priority(a) - priority(b);
@@ -795,7 +780,7 @@ export function automationResultsTable(
       });
     }
     shownOrder = results.map((r) => r.id);
-    const pinned = results.filter((r) => priority(r) < 4).length;
+    const pinned = results.filter((r) => priority(r) < 2).length;
     const pages = Math.max(1, Math.ceil(results.length / pageSize));
     page = Math.min(page, pages);
     const start = (page - 1) * pageSize,

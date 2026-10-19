@@ -159,6 +159,7 @@ const IDLE_STEP = {
   title: null,
   company: null,
   waitUntil: null,
+  waitFor: null,
   browser: false,
 };
 const BACKGROUND_READ =
@@ -992,16 +993,16 @@ export function automationWorkflow({
   const openInBrowser = async (url, address) => {
     // One budget and pace for the whole site, whichever host serves the page.
     const site = siteDomainOf(url),
-      waitFor = async (ms) => {
-        activity({waitUntil: Date.now() + ms});
+      waitFor = async (ms, waitFor) => {
+        activity({waitUntil: Date.now() + ms, waitFor});
         await pause(ms, undefined, {signal});
       };
     const pacing = siteExtensionFor(url)?.pacing ?? BROWSER_PACING;
     for (let delay; (delay = db.siteAccess.reserve(site + ' browser', pacing.budget)) > 0; )
-      await waitFor(Math.min(delay, 60000));
+      await waitFor(delay, `the limit of ${pacing.budget.requests} pages an hour`);
     const gap = db.siteAccess.pace('https://' + site, pacing.minIntervalMs, pacing.jitterMs);
-    if (gap) await waitFor(gap);
-    activity({waitUntil: null, browser: true});
+    if (gap) await waitFor(gap, null);
+    activity({waitUntil: null, waitFor: null, browser: true});
     let response = await browser.call(id, 'browser_navigate', {url: address}, run.id);
     for (let i = 0; i < 3 && response.jevPage?.reading?.readiness?.loading; i++) {
       await pause(2000, undefined, {signal});
