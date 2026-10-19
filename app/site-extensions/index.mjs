@@ -27,6 +27,9 @@
 // an API that needs the user's own account: the values are entered under Site
 // accounts (../sources/site-credentials.mjs) and reach the collector's reads
 // as `options.credentials`.
+// Optionally `listingKey(url)`: the one comparison key of a listing the site
+// serves under several addresses (country hosts, title slugs), or null to keep
+// the generic key. Records and remembered rejections compare listings by it.
 // Optionally `search` (./search.mjs), or search(url) for a site with one host
 // per country: the results address, its order and the filters the site
 // accepts, so recipes are built from known parameters.
@@ -99,6 +102,13 @@ export const SITE_EXTENSIONS = [
   nationaleVacaturebank,
 ];
 export const siteExtensionFor = (url) => SITE_EXTENSIONS.find((e) => e.matches(url)) ?? null;
+export const siteListingKey = (url) => {
+  try {
+    return siteExtensionFor(url)?.listingKey?.(url) ?? null;
+  } catch {
+    return null;
+  }
+};
 // The address a posting opens at in the browser for the site's posting reader.
 export const siteListingAddress = (url) => siteExtensionFor(url)?.dom?.listing?.open?.(url) ?? url;
 // What reads this source for the source list: api (collector, only for its
@@ -176,5 +186,5 @@ function siteListing(url, job) {
     fields: {company: job.company, location: job.location, ...job.fields},
     notes: job.closed ? ['No longer accepting applications.'] : [],
   });
-  return {text: page.text, fields: page.listing?.fields ?? {}};
+  return {text: page.text, fields: page.listing?.fields ?? {}, title: job.title};
 }

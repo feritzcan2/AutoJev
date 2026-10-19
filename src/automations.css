@@ -1243,12 +1243,12 @@
 .automation-results-table .record-row-actions .table-actions button {
   width: 100%;
   min-height: 30px;
-  padding: 7px 9px;
+  padding: 6px 10px;
   border: 0;
   border-radius: 5px;
   background: transparent;
-  color: var(--text-secondary);
-  font-size: 11px;
+  color: var(--text);
+  font-size: 12px;
   text-align: left;
 }
 .automation-results-table .record-row-actions .table-actions button:hover:not(:disabled),
@@ -1257,17 +1257,18 @@
   color: var(--text);
 }
 .automation-results-table .record-row-actions .table-actions button:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
+  cursor: default;
 }
 .automation-results-table .record-row-actions .table-actions [data-record-direct],
 .automation-results-table .record-row-actions .table-actions [data-record-operation] {
   color: var(--accent-strong);
   font-weight: 600;
 }
-.automation-results-table .record-row-actions .table-actions [data-record-direct] {
-  margin-top: 5px;
-  border-top: 1px solid var(--border);
-  border-radius: 0;
+.automation-results-table .record-row-actions .record-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
 }
 .automation-results-table .record-row-actions .record-tab-choices {
   max-width: none;

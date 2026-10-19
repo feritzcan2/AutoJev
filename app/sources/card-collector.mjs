@@ -12,6 +12,11 @@
 // options.readListing. Without it (a recipe check, a record read) the site's
 // own HTTP listing reader is used.
 //
+// A site with cardsInBrowser ({open(url), read(page, url)}) has a second way to
+// its result pages: when its API refuses (a site wait or a used-up budget),
+// the same page is read in the user's browser (options.readCardsInBrowser) and
+// the search keeps its position.
+//
 // Listing texts already read stay in RAM for a while, so a page that a site
 // wait interrupted does not spend its requests again when it is read later.
 const CACHE_MS = 12 * 60 * 60000,
@@ -31,6 +36,7 @@ const stopsPage = (error, signal) =>
  *   detail: (job: any) => any,
  *   acceptsQuery?: (url: string) => boolean,
  *   listingIn?: 'http' | 'browser',
+ *   cardsInBrowser?: {open: (url: string) => string, read: (page: any, url: string) => any} | null,
  *   now?: () => number,
  * }} site
  */
@@ -42,6 +48,7 @@ export function cardCollector({
   detail,
   acceptsQuery = () => false,
   listingIn = 'http',
+  cardsInBrowser = null,
   now = Date.now,
 }) {
   const readDetail = async (url, options = {}) => {
@@ -59,10 +66,19 @@ export function cardCollector({
     // Result pages carry cards only; the worker reads them before the agent.
     cards: true,
     listingIn,
+    cardsInBrowser,
     readDetail,
     detail,
     async readPage(url, {wanted = (urls) => urls, progress = () => {}, ...options} = {}) {
-      const page = await readCards(url, options);
+      let page;
+      try {
+        page = await readCards(url, options);
+      } catch (error) {
+        if (error?.code !== 'SITE_WAIT' || !cardsInBrowser || !options.readCardsInBrowser)
+          throw error;
+        options.signal?.throwIfAborted();
+        page = await options.readCardsInBrowser(url, options);
+      }
       const want = new Set(wanted(page.jobs.map((job) => job.url))),
         total = page.jobs.filter((card) => want.has(card.url)).length,
         jobs = [],

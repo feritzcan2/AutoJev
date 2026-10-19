@@ -1,13 +1,16 @@
 // @ts-check
 import {jevDetailKey} from '../jev/detail-urls.mjs';
+import {siteListingKey} from '../site-extensions/index.mjs';
 
 // Navigation keeps the observed address. Only universally known provenance is
 // removed from the comparison key; query IDs and SPA routes remain significant.
+// A site extension may name the one key of a listing it serves under several
+// addresses (listingKey).
 export function recordUrlKey(raw) {
   try {
     const u = new URL(raw);
     if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password) return null;
-    return jevDetailKey(u.href);
+    return siteListingKey(u.href) ?? jevDetailKey(u.href);
   } catch {
     return null;
   }

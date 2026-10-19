@@ -21,7 +21,10 @@ const MISSING_STATUSES = new Set([404, 410]);
  * the shared pacing, `jitterMs` a random addition to that spacing, and
  * `budget` ({requests, windowMs}) the most requests the site takes in a window
  * before it gets a shared wait (SiteAccess.spend), `retryDelaysMs` the site's
- * own cooldown before each automatic retry after a block. Resolves with the response
+ * own cooldown before each automatic retry after a block, and `accessUrl` the
+ * address its waits, pacing and budget are counted under (default `target`): a
+ * site's public API can be counted apart from its signed-in pages, so a block
+ * of one does not stop the other. Resolves with the response
  * (status 404/410 included, so the reader can say the listing is gone); any
  * other failure is an error carrying `url`.
  */
@@ -42,13 +45,14 @@ export async function siteFetch(
     jitterMs = 0,
     budget = undefined,
     retryDelaysMs = undefined,
+    accessUrl = target,
   } = {},
 ) {
-  const token = siteAccess?.begin(target) ?? null,
+  const token = siteAccess?.begin(accessUrl) ?? null,
     cooldown = retryDelaysMs ? {retryDelays: retryDelaysMs} : {};
-  const held = budget ? siteAccess?.spend?.(target, budget) : null;
+  const held = budget ? siteAccess?.spend?.(accessUrl, budget) : null;
   if (held) throw Object.assign(new SiteWaitError(held), {url});
-  const delay = siteAccess?.pace(target, minIntervalMs, jitterMs) ?? 0;
+  const delay = siteAccess?.pace(accessUrl, minIntervalMs, jitterMs) ?? 0;
   if (delay) {
     await wait(delay);
     signal?.throwIfAborted();
@@ -63,7 +67,7 @@ export async function siteFetch(
       : AbortSignal.timeout(timeoutMs),
   });
   if (BLOCKED_STATUSES.has(response.status)) {
-    const blocked = siteAccess?.complete(target, token, {
+    const blocked = siteAccess?.complete(accessUrl, token, {
       status: response.status,
       reason: 'rate_limit',
       ...cooldown,
@@ -71,7 +75,7 @@ export async function siteFetch(
     if (blocked) throw Object.assign(new SiteWaitError(blocked), {url});
     throw Object.assign(Error(`${site} denied access (HTTP ${response.status}).`), {url});
   }
-  siteAccess?.complete(target, token, {status: response.status, ...cooldown});
+  siteAccess?.complete(accessUrl, token, {status: response.status, ...cooldown});
   if (!response.ok && !MISSING_STATUSES.has(response.status))
     throw Object.assign(Error(`${site} request failed (HTTP ${response.status}).`), {url});
   return response;

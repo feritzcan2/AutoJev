@@ -279,6 +279,7 @@ export async function collectSourcePage(
     readPage = undefined,
     readDetail = undefined,
     readListing = undefined,
+    readCardsInBrowser = undefined,
     progress = () => {},
   } = {},
 ) {
@@ -327,8 +328,10 @@ export async function collectSourcePage(
         progress({waitUntil: null});
       },
       progress,
-      // A browser read of each listing, for a site that reads them there.
+      // A browser read of each listing, for a site that reads them there, and
+      // of a results page when the site's API refuses.
       ...(readListing && adapter.listingIn === 'browser' ? {readListing} : {}),
+      ...(readCardsInBrowser && adapter.cardsInBrowser ? {readCardsInBrowser} : {}),
     },
     wanted = (urls) => {
       const known = new Set(db.knownListingUrls(run.automationId, run.id, urls)),
@@ -492,12 +495,22 @@ const PREFETCH_PAGES = 20;
 export async function prefetchCollectorPage(
   db,
   runId,
-  {signal = undefined, readListing = undefined, progress = undefined} = {},
+  {
+    signal = undefined,
+    readListing = undefined,
+    readCardsInBrowser = undefined,
+    progress = undefined,
+  } = {},
 ) {
   for (let page = 0; page < PREFETCH_PAGES && !collectorPageReady(db, runId); page++) {
     let result;
     try {
-      result = await collectSourcePage(db, runId, {signal, readListing, progress});
+      result = await collectSourcePage(db, runId, {
+        signal,
+        readListing,
+        readCardsInBrowser,
+        progress,
+      });
     } catch (error) {
       if (signal?.aborted) throw error;
       if (error?.code !== 'SITE_WAIT')
