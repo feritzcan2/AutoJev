@@ -979,8 +979,11 @@ export function automationWorkflow({
   // A card site that reads its listings in the browser: open the posting in
   // this source's tab and take the listing text its posting reader found.
   // Waits for the budget and pacing in place; this runs before the agent.
-  const readListingInBrowser = async (url) => {
-    // One budget and pace for the whole site, whichever host serves a posting.
+  // One page of a card site in the user's (signed-in) browser: waits for the
+  // site's browser budget and pace in place, then opens the address in this
+  // source's tab. Runs before the agent.
+  const openInBrowser = async (url, address) => {
+    // One budget and pace for the whole site, whichever host serves the page.
     const site = siteDomainOf(url),
       waitFor = async (ms) => {
         activity({waitUntil: Date.now() + ms});
@@ -999,7 +1002,6 @@ export function automationWorkflow({
     );
     if (gap) await waitFor(gap);
     activity({waitUntil: null, browser: true});
-    const address = siteListingAddress(url);
     let response = await browser.call(id, 'browser_navigate', {url: address}, run.id);
     for (let i = 0; i < 3 && response.jevPage?.reading?.readiness?.loading; i++) {
       await pause(2000, undefined, {signal});
@@ -1007,19 +1009,36 @@ export function automationWorkflow({
     }
     const page = response.jevPage;
     if (page?.siteWait) throw new SiteWaitError(page.siteWait);
-    // A posting that lands elsewhere (a sign-in or home page) is no listing.
+    // A page that lands elsewhere (a sign-in or home page) is not the one asked for.
     if (page?.url && new URL(page.url).pathname !== new URL(address).pathname)
-      throw Error(
-        `The posting opened as ${page.url}; this browser may need to sign in to the site.`,
-      );
+      throw Error(`The page opened as ${page.url}; this browser may need to sign in to the site.`);
+    return page;
+  };
+  // A card site that reads its listings in the browser: take the listing text
+  // its posting reader found.
+  const readListingInBrowser = async (url) => {
+    const page = await openInBrowser(url, siteListingAddress(url));
     if (!page?.listing?.text)
       throw Error('The opened posting gave no listing text (login prompt, loading or new layout).');
     return {
       url,
+      ...(page.listing.title ? {title: page.listing.title} : {}),
       description: page.listing.text,
       ...(page.listing.fields?.company ? {company: page.listing.fields.company} : {}),
       ...(page.listing.fields?.location ? {location: page.listing.fields.location} : {}),
     };
+  };
+  // A card site whose API refused: the same results page in the browser, read
+  // by the site's results reader.
+  const readCardsInBrowser = async (url) => {
+    const cards = collectorExtension(db.get(id), run.sourceUrl)?.collector?.cardsInBrowser;
+    if (!cards) throw Error('This site has no browser reader for its results pages.');
+    const read = cards.read(await openInBrowser(url, cards.open(url)), url);
+    if (!read)
+      throw Error(
+        'The results page opened in the browser gave no job cards (sign-in, loading or new layout).',
+      );
+    return read;
   };
   const collectNextPage = async () => {
     for (let page = 1; ; page++) {
@@ -1032,6 +1051,7 @@ export function automationWorkflow({
           readPage: collectorReadPage,
           readDetail: collectorReadDetail,
           readListing: readListingInBrowser,
+          readCardsInBrowser,
           progress: activity,
         });
       } catch (error) {
@@ -1929,6 +1949,7 @@ export function automationWorkflow({
       await prefetchCollectorPage(db, run.id, {
         signal,
         readListing: readListingInBrowser,
+        readCardsInBrowser,
         progress: activity,
       });
       activity({...IDLE_STEP, step: 'agent', tool: null, label: null, url: null});

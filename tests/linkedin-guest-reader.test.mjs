@@ -180,10 +180,14 @@ test('guest reads use the shared site access rules and the guest endpoints', asy
   assert.equal(posting.url, 'https://de.linkedin.com/jobs/view/x-4012345678?trk=a');
   assert.deepEqual(events.at(-1), [
     'complete',
-    'https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/4012345678',
+    'https://jobs-guest.linkedin.com/',
     'token',
     {status: 200, retryDelays: [60 * 60000, 180 * 60000]},
   ]);
+  assert.ok(
+    events.every(([, address]) => address === 'https://jobs-guest.linkedin.com/'),
+    'the guest API is counted apart from the signed-in site',
+  );
   for (const status of [429, 999]) {
     const error = await readLinkedInGuest(search, {
       fetch: async () => ({status, ok: false, text: async () => ''}),

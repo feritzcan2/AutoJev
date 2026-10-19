@@ -23,11 +23,15 @@ export const LINKEDIN_PAGE_SIZE = 10;
 // (2026-10-19 04:17-06:20, which used up 30 and 90 minute retries), so
 // retries wait one and three hours. On 2026-10-19 09:34 and 10:04 a 429 came
 // after about 21 requests in 18 minutes and 27 in an hour, so 30 was too many.
+// The guest API's waits and budget are counted apart from the signed-in site
+// (accessUrl): when the API refuses, the collector reads the same results page
+// in the user's signed-in browser instead (collector.cardsInBrowser).
 export const LINKEDIN_PACING = {
   minIntervalMs: 45000,
   jitterMs: 30000,
   budget: {requests: 15, windowMs: 60 * 60000},
   retryDelaysMs: [60 * 60000, 180 * 60000],
+  accessUrl: 'https://jobs-guest.linkedin.com/',
 };
 // The guest endpoints serve the page's own XHR calls, which send this header.
 const GUEST_HEADERS = {...READER_HEADERS, 'X-Requested-With': 'XMLHttpRequest'};
@@ -355,6 +359,126 @@ export function readLinkedInPosting(raw) {
   };
 }
 
+// The signed-in results page (/jobs/search/), read when the guest API refuses.
+// Runs inside the page, so it is self-contained. The list renders only the
+// cards near the viewport, but every list item carries its job ID; a card
+// not rendered yet gives its ID alone and the posting read fills it in.
+// Styled Unicode letters become plain (NFKC).
+export function collectLinkedInResults() {
+  if (!location.pathname.startsWith('/jobs/search')) return null;
+  const clean = (value) =>
+    String(value ?? '')
+      .normalize('NFKC')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const jobs = new Map();
+  // A card reads title (often twice, once marked "(Verified job)"), company,
+  // location, then dates and badges.
+  const add = (id, card) => {
+    if (!id) return;
+    const job = jobs.get(id) ?? {id, title: '', company: '', location: ''};
+    const lines = [
+      ...new Set(
+        String(card?.innerText ?? '')
+          .split('\n')
+          .map((line) => clean(line).replace(/\s*\(Verified job\)$/i, ''))
+          .filter(Boolean),
+      ),
+    ];
+    const link = card?.querySelector?.('a[href*="/jobs/view/"]');
+    job.title ||= clean(link?.getAttribute('aria-label') || link?.innerText) || lines[0] || '';
+    const rest = lines.filter((line) => line !== job.title);
+    job.company ||= rest[0] ?? '';
+    job.location ||= rest[1] ?? '';
+    jobs.set(id, job);
+  };
+  // The 2026 layout marks each card with its job ID; the older one put it on
+  // the list item.
+  for (const item of document.querySelectorAll('[componentkey^="job-card-component-ref-"]'))
+    if (!item.parentElement?.closest('[componentkey^="job-card-component-ref-"]'))
+      add(item.getAttribute('componentkey').match(/(\d+)$/)?.[1], item);
+  for (const item of document.querySelectorAll('[data-occludable-job-id], [data-job-id]'))
+    add(item.getAttribute('data-occludable-job-id') || item.getAttribute('data-job-id'), item);
+  for (const link of document.querySelectorAll('a[href*="/jobs/view/"]'))
+    add(
+      link.href.match(/\/jobs\/view\/(?:[^/?#]*-)?(\d+)/)?.[1],
+      link.closest('li') ?? link.parentElement,
+    );
+  const text = document.querySelector('main')?.innerText ?? document.body?.innerText ?? '';
+  return {
+    url: location.href,
+    jobs: [...jobs.values()],
+    noResults: /No matching jobs found|Keine passenden Jobs/i.test(text),
+  };
+}
+export const LINKEDIN_SIGNED_IN_PAGE_SIZE = 25;
+const signedInResults = (raw) => {
+  if (!raw?.jobs || (!raw.jobs.length && !raw.noResults)) return null;
+  const address = new URL(raw.url),
+    start = Number(address.searchParams.get('start') ?? 0) || 0,
+    next = new URL(address);
+  next.searchParams.set('start', String(start + raw.jobs.length));
+  const number = Math.floor(start / LINKEDIN_SIGNED_IN_PAGE_SIZE) + 1;
+  return {
+    listings: raw.jobs.map((job) => ({
+      ...job,
+      url: `https://www.linkedin.com/jobs/view/${job.id}/`,
+      text: [job.title, job.company, job.location].filter(Boolean).join(' · '),
+    })),
+    pagination: [
+      {text: String(number), url: address.href, kind: 'link', current: true, disabled: false},
+      ...(raw.jobs.length >= LINKEDIN_SIGNED_IN_PAGE_SIZE
+        ? [
+            {
+              text: String(number + 1),
+              url: next.href,
+              kind: 'link',
+              current: false,
+              disabled: false,
+            },
+          ]
+        : []),
+    ],
+  };
+};
+// The guest search as the signed-in results page, at the same offset. The
+// 2026 signed-in search lives at /jobs/search-results/ (/jobs/search/
+// redirects there).
+export function linkedInSignedInSearch(url) {
+  const guest = new URL(url),
+    signedIn = new URL('https://www.linkedin.com/jobs/search-results/');
+  for (const [key, value] of guest.searchParams) signedIn.searchParams.set(key, value);
+  return signedIn.href;
+}
+// The cards of a signed-in results page in the collector's terms: the next
+// page continues the guest search at the offset after these cards.
+export function linkedInBrowserCards(page, url) {
+  if (page?.siteExtension !== 'linkedin') return null;
+  const jobs = (page.links ?? [])
+    .filter((link) => link.listing && link.id)
+    .map((link) => ({
+      url: link.url,
+      title: link.title || '',
+      company: link.company || '',
+      location: link.location || '',
+    }));
+  const guest = new URL(url),
+    start = Number(guest.searchParams.get('start') ?? 0) || 0;
+  if (!jobs.length && !page.pagination?.length) return null;
+  const nextUrl =
+    jobs.length >= LINKEDIN_SIGNED_IN_PAGE_SIZE
+      ? (guest.searchParams.set('start', String(start + jobs.length)), guest.href)
+      : null;
+  return {
+    url,
+    jobs,
+    page: Math.floor(start / LINKEDIN_PAGE_SIZE) + 1,
+    totalPages: null,
+    nextUrl,
+    complete: !nextUrl,
+  };
+}
+
 // Result pages hold cards only, so the app reads each new posting itself at
 // the pacing above and hands the agent ready review batches (a collector).
 const collector = cardCollector({
@@ -362,8 +486,10 @@ const collector = cardCollector({
   searchUrl: linkedInSearchUrl,
   readCards: readLinkedInCards,
   readListing: readLinkedInListing,
-  // Postings open in the user's browser; the guest API serves the result pages.
+  // Postings open in the user's browser; the guest API serves the result pages,
+  // and the signed-in results page stands in when it refuses.
   listingIn: 'browser',
+  cardsInBrowser: {open: linkedInSignedInSearch, read: linkedInBrowserCards},
   detail: (job) => ({
     ...listingPage({
       browser: 'LinkedIn guest reader',
@@ -398,6 +524,12 @@ export default {
   },
   http: {handles: (url) => Boolean(linkedInGuestRequest(url)), read: readLinkedInGuest},
   collector,
+  // One posting under every address LinkedIn gives it (country hosts, title
+  // slugs, the guest endpoint): its job ID.
+  listingKey: (url) => {
+    const posting = linkedInGuestRequest(url);
+    return posting?.kind === 'detail' ? `https://www.linkedin.com/jobs/view/${posting.id}` : null;
+  },
   // A posting opened in the browser (the collector's listing reads).
   dom: {
     listing: {
@@ -413,6 +545,9 @@ export default {
       collect: collectLinkedInPosting,
       read: readLinkedInPosting,
     },
+    // The signed-in results page (the collector's fallback for result pages).
+    collect: collectLinkedInResults,
+    results: signedInResults,
   },
   // The guest search address and the filters it accepts (observed 2026-10).
   search: {

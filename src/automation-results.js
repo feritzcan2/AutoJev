@@ -43,6 +43,28 @@ const menuControlKey = (control) => {
   ])
     if (control?.dataset[key]) return key + ':' + control.dataset[key];
 };
+// The row menu lists page links first, then work on the record, then status changes.
+const menuGroup = ({dataset}) =>
+  ['tab', 'open', 'detail'].includes(dataset.recordMenuAction)
+    ? 0
+    : dataset.recordSubmitted ||
+        dataset.recordDismiss ||
+        dataset.recordRestore ||
+        dataset.recordAction
+      ? 2
+      : 1;
+const groupMenu = (actions) => {
+  const controls = [...actions.children].sort((a, b) => menuGroup(a) - menuGroup(b));
+  actions.replaceChildren();
+  controls.forEach((control, index) => {
+    if (index && menuGroup(control) !== menuGroup(controls[index - 1])) {
+      const separator = el('div', null, 'record-menu-separator');
+      separator.setAttribute('role', 'separator');
+      actions.append(separator);
+    }
+    actions.append(control);
+  });
+};
 // Short relative time; the exact time stays in the element title.
 const relativeTime = (at, now = Date.now()) => {
   const minutes = Math.round((now - at) / 60000);
@@ -1496,12 +1518,14 @@ export function automationResultsTable(
             ? 'The agent fills the form with the saved information and submits the application. If anything is missing, it asks all at once.'
             : '');
         // Verifying is the way out of an unclear outcome, so it stays next to the reason.
-        (problem && op.kind === 'verify' && !recordAction.retryOperation
-          ? problemActions
-          : nextStep
-            ? next
-            : actions
-        ).append(action);
+        const target =
+          problem && op.kind === 'verify' && !recordAction.retryOperation
+            ? problemActions
+            : nextStep
+              ? next
+              : actions;
+        // A running task already shows its label in the status badge.
+        if (!(recordAction.task && target === actions)) target.append(action);
       }
       if (['found', 'prepared', 'uncertain'].includes(result.status)) {
         const submitted = button('Applied', async () => {
@@ -1577,6 +1601,7 @@ export function automationResultsTable(
       }
       for (const control of actions.querySelectorAll('[data-idle]'))
         control.disabled = busy || requesting || Boolean(recordAction?.task);
+      groupMenu(actions);
       if (problem) {
         const why = button(detailId === result.id ? 'Hide details' : 'Details', () =>
           toggleDetail(result.id),

@@ -13,6 +13,9 @@ import {
   forgetPlanPosition,
 } from '../../sources/scan-work.mjs';
 import {jevDetailKey} from '../../jev/detail-urls.mjs';
+import {siteListingKey} from '../../site-extensions/index.mjs';
+
+const listingKey = (url) => siteListingKey(url) ?? jevDetailKey(url);
 import {boundedText, webUrl} from '../../templates/catalog.mjs';
 import {SCAN_SEARCH_LISTINGS} from '../../sources/recipe.mjs';
 import {
@@ -266,9 +269,12 @@ export const scanMethods = {
     const seen = this.db.prepare(
       'SELECT 1 FROM scan_seen_listings WHERE workspace_id=? AND url_key=? AND scope_key=?',
     );
+    // Rows written before a site named its listing key carry the generic key.
     return urls.filter((url) => {
       try {
-        return Boolean(seen.get(id, jevDetailKey(url), scopeKey));
+        return Boolean(
+          seen.get(id, listingKey(url), scopeKey) || seen.get(id, jevDetailKey(url), scopeKey),
+        );
       } catch {
         return false;
       }
@@ -282,7 +288,7 @@ export const scanMethods = {
       now = this.now();
     for (const url of urls) {
       try {
-        insert.run(id, jevDetailKey(url), scopeKey, String(reason).slice(0, 200), now);
+        insert.run(id, listingKey(url), scopeKey, String(reason).slice(0, 200), now);
       } catch {}
     }
   },

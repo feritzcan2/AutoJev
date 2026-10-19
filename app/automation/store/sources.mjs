@@ -158,7 +158,10 @@ export const sourceMethods = {
             ? (active.pageProgress ?? null)
             : (source.pageProgress ?? null),
         observedPage: active?.observedPage ?? source.observedPage ?? null,
-        requests: this.siteAccess.requestRate(source.url, siteExtensionFor(source.url)?.pacing),
+        requests: this.siteAccess.requestRate(
+          siteExtensionFor(source.url)?.pacing?.accessUrl ?? source.url,
+          siteExtensionFor(source.url)?.pacing,
+        ),
         resultCount,
         extension: siteExtensionKind(source.url, a.templateId),
         scanning: Boolean(active),
