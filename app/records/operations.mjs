@@ -91,11 +91,21 @@ export function enqueueRecordOperation(
   id,
   itemId,
   kind,
-  {manual = true, digest, direct = false, changes = undefined, dryRun = false} = {},
+  {
+    manual = true,
+    digest,
+    direct = false,
+    changes = undefined,
+    dryRun = false,
+    applyAnyway = false,
+  } = {},
 ) {
   runtime.assertNotStopping(id);
   // Every execute is direct: the agent fills and submits in one task.
   if (kind === 'execute') direct = true;
+  // The user's choice to apply despite an eligibility mismatch covers only
+  // their own request to apply.
+  applyAnyway = kind === 'execute' && manual && applyAnyway === true;
   // The user's requested changes to a reviewed draft go to a new preparation.
   if (changes !== undefined)
     changes = kind === 'prepare' ? boundedText(changes, 'Change request', 2000) : undefined;
@@ -162,6 +172,7 @@ export function enqueueRecordOperation(
         existing.recordOperation === kind &&
         (existing.request?.direct === true) === (direct === true) &&
         (existing.request?.dryRun === true) === (dryRun === true) &&
+        (existing.request?.applyAnyway === true) === applyAnyway &&
         (!digest || existing.request?.digest === digest)
       ) {
         if (manual && existing.state === 'pending' && !existing.request?.manual)
@@ -178,6 +189,7 @@ export function enqueueRecordOperation(
         manual,
         revision: a.revision,
         ...(kind === 'execute' ? {direct: true} : {}),
+        ...(applyAnyway ? {applyAnyway: true} : {}),
         ...(changes ? {changes} : {}),
         // Development trial score: the record keeps its assessment.
         ...(dryRun && kind === 'score' ? {dryRun: true} : {}),
@@ -330,7 +342,7 @@ export function resumeRecordOperation(runtime, id, item, task) {
       : task?.recordOperation === 'score'
         ? 'score'
         : 'execute',
-    {direct: true},
+    {direct: true, applyAnyway: task?.request?.applyAnyway === true},
   );
 }
 
@@ -400,6 +412,7 @@ export async function dispatchRecordOperations(runtime, id, {manualOnly = false}
         manual: true,
         direct: request.direct === true,
         digest: request.direct === true ? undefined : request.digest,
+        applyAnyway: request.applyAnyway === true,
       });
     } catch (error) {
       db.message(

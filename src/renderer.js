@@ -202,9 +202,14 @@ chromeStatus.setAttribute('role', 'status');
 chromeStatus.setAttribute('aria-live', 'polite');
 const chromeTitle = element('b'),
   chromeDetail = element('small'),
+  chromeTip = element(
+    'small',
+    'chrome-tip',
+    'Tip: in Chrome, turn on remote debugging at chrome://inspect/#remote-debugging.',
+  ),
   chromeReconnect = element('button', 'quiet chrome-reconnect', 'Reconnect');
 chromeReconnect.type = 'button';
-chromeStatus.append(chromeTitle, chromeDetail, chromeReconnect);
+chromeStatus.append(chromeTitle, chromeDetail, chromeTip, chromeReconnect);
 document.querySelector('.sidebar-bottom').before(chromeStatus);
 const chromeProfileChange = element('button', 'quiet chrome-profile-change', 'Change profile');
 chromeProfileChange.type = 'button';

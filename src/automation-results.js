@@ -1411,6 +1411,33 @@ export function automationResultsTable(
             ? 'Verify the outcome of the action before resending it.'
             : 'Retry the last unfinished action.');
         (problem ? problemActions : state).append(retry);
+        // The user may apply although the listing or form excludes them; the
+        // agent still answers every question truthfully.
+        if (problem?.category === 'not_eligible' && op.kind === 'execute') {
+          const anyway = button(
+            requesting ? 'Queueing…' : 'Apply anyway',
+            async () => {
+              if (
+                !window.confirm(
+                  'Apply although you do not meet this requirement? The agent answers every question truthfully, so the employer may reject the application.',
+                )
+              )
+                return;
+              try {
+                await sendOperation(result, 'execute', {direct: true, applyAnyway: true});
+              } catch (error) {
+                showNotice(error.message);
+              }
+            },
+            'record-apply-anyway',
+          );
+          anyway.dataset.recordApplyAnyway = result.id;
+          anyway.disabled = retry.disabled;
+          anyway.title =
+            op.reason ??
+            'Submit the application anyway, answering the eligibility questions truthfully.';
+          problemActions.append(anyway);
+        }
       }
       if (recordAction?.directOperation && !recordAction.task) {
         const op = recordAction.directOperation,
@@ -1492,8 +1519,8 @@ export function automationResultsTable(
         dismiss.dataset.recordDismiss = result.id;
         dismiss.disabled = busy || requesting;
         dismiss.title = 'Skip this record and close its pending questions';
-        // A record that cannot be applied puts Skip next to its reason.
-        (problem?.skip ? problemActions : actions).append(dismiss);
+        // Every problem card offers Skip next to its reason.
+        (problem ? problemActions : actions).append(dismiss);
       }
       if (result.status === 'dismissed' && api.automationRestore && !result.trial) {
         const restore = async () => {

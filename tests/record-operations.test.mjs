@@ -489,6 +489,25 @@ test('requested changes to a reviewed draft reach the next preparation', async (
   assert.equal(context.assignedRecord.proposal, prepared.proposal);
 });
 
+test('apply anyway reaches the execute context and only an execute request carries it', async (t) => {
+  const f = fixture(t, 'job-search');
+  const item = await f.prepare();
+  await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+  await settle();
+  let run = f.launches.at(-1);
+  assert.equal(automationTaskContext(f.db, f.id, f.db.run(run.id)).applyAnyway, undefined);
+  await f.runtime.finish(f.id, 'blocked', 'Not eligible.', run.workerId);
+  await settle();
+  const task = await f.runtime.runRecord(f.id, item.id, 'execute', {
+    direct: true,
+    applyAnyway: true,
+  });
+  assert.equal(task.request.applyAnyway, true);
+  await settle();
+  run = f.launches.at(-1);
+  assert.match(automationTaskContext(f.db, f.id, f.db.run(run.id)).applyAnyway.rule, /truthfully/);
+});
+
 test('one sign-in answer releases every open login question for the same site', async (t) => {
   const f = fixture(t),
     seed = f.db.begin(f.id, 'run');
@@ -2308,7 +2327,6 @@ test('a blocked application needs a short blocker, which the record card shows i
     category: 'not_eligible',
     reason: 'The form requires US work authorization; the listing said worldwide.',
     next: 'Skip this record',
-    skip: true,
   });
   // Without a blocker (older runs) the card falls back to the summary.
   const legacy = structuredClone(row);
@@ -2316,7 +2334,6 @@ test('a blocked application needs a short blocker, which the record card shows i
   assert.deepEqual(recordProblem(legacy), {
     label: 'Operation blocked',
     reason: summary,
-    skip: true,
   });
 });
 

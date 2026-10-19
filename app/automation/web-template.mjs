@@ -679,6 +679,7 @@ export class WebTasks extends TaskRuns {
       digest: input.digest,
       direct: input.direct,
       changes: input.changes,
+      applyAnyway: input.applyAnyway,
     });
     await this.tick();
     return this.queue.get(id, task.id);

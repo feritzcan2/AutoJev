@@ -39,6 +39,27 @@ const question = db.askQuestion(a.id, {
   text: 'Senior Software Engineer: the application needs a cover letter.',
   coverLetter: {state: 'review', path: relative, text, writtenAt: 1},
 });
+// A second letter is still being written; its card shows the writer's progress.
+db.observe(a.id, run.id, 'https://example.test/2', 'Observed listing');
+const writing = db.record(a.id, run.id, {
+    url: 'https://example.test/2',
+    title: 'Platform Engineer',
+    summary: 'Observed',
+  }),
+  queue = core.workspaces.tasks,
+  writer = queue.enqueue(a.id, {
+    recordOperation: 'cover_letter',
+    operation: 'record-cover-letter',
+    capability: 'browser.observe',
+    recordId: writing.id,
+    lockKey: 'cover-letter:' + writing.id,
+  });
+db.putResult({...writing, trial: false});
+db.askQuestion(a.id, {
+  recordId: writing.id,
+  text: 'Platform Engineer: the application needs a cover letter.',
+  coverLetter: {state: 'writing', taskId: writer.id},
+});
 db.finish(a.id, run.id, 'completed', 'Waiting');
 db.put({...db.get(a.id), status: 'paused'});
 core.close();
@@ -54,14 +75,18 @@ try {
     errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   // The first start after a build loads slowly; wait for the workspace data.
-  await page.locator('#question-badge', {hasText: '1'}).waitFor({timeout: 90000});
+  await page.locator('#question-badge', {hasText: '2'}).waitFor({timeout: 90000});
   await page.locator('[data-view=answers]').click();
   const answer = page.locator(`.answer-card[data-question-id="${question.id}"]`);
   await answer.waitFor({state: 'visible'});
   assert.equal(await answer.locator('.candidate-question-form').count(), 0);
   await page.screenshot({path: path.join(data, 'answers.png')});
   await answer.getByRole('button', {name: 'Review on the Files page'}).click();
-  const card = page.locator('.cover-letter-card');
+  const progress = page.locator('.cover-letter-card .cover-letter-progress');
+  await progress.waitFor({state: 'visible'});
+  // The app ends tasks left running at startup, so this writer waits in the queue.
+  assert.equal(await progress.textContent(), 'Queued · waits for a free agent');
+  const card = page.locator('.cover-letter-card', {hasText: 'Senior Software Engineer'});
   await card.waitFor({state: 'visible'});
   const letter = card.getByRole('textbox', {name: 'Cover letter text'});
   assert.equal(await letter.inputValue(), text);

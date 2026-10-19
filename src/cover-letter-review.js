@@ -30,7 +30,28 @@ export function coverLetterReview(root, api, {refresh}) {
     return !task || finished.includes(task.state) ? 'failed' : 'writing';
   }
 
-  function card(question, record, current) {
+  // The writer task's live state: queued while it waits for a free agent, then running.
+  function progress(task) {
+    const line = el('p', null, 'cover-letter-progress');
+    if (task?.state !== 'running') {
+      line.textContent = 'Queued · waits for a free agent';
+      return line;
+    }
+    line.dataset.running = '';
+    let shown = false;
+    const tick = () => {
+      // The card is replaced when the task state changes; stop with it.
+      if (shown && !line.isConnected) return clearInterval(timer);
+      const seconds = Math.max(0, Math.round((Date.now() - (task.startedAt ?? Date.now())) / 1000));
+      line.textContent = `Running · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+      shown = true;
+    };
+    const timer = setInterval(tick, 1000);
+    tick();
+    return line;
+  }
+
+  function card(question, record, current, task) {
     const letter = question.coverLetter,
       node = el('article', null, 'answer-card cover-letter-card'),
       head = el('header', null, 'answer-card-head'),
@@ -72,6 +93,7 @@ export function coverLetterReview(root, api, {refresh}) {
     };
     if (current === 'writing') {
       body.append(
+        progress(task),
         el(
           'p',
           'The cover letter agent is writing this letter from your CV and the listing. The application waits for your review.',
@@ -136,7 +158,13 @@ export function coverLetterReview(root, api, {refresh}) {
         keys = new Set();
       open.forEach((question, n) => {
         const current = state(question, tasks),
-          key = [question.id, current, question.coverLetter.writtenAt ?? ''].join(':');
+          task = tasks.find((t) => t.id === question.coverLetter.taskId),
+          key = [
+            question.id,
+            current,
+            current === 'writing' ? task?.state : '',
+            question.coverLetter.writtenAt ?? '',
+          ].join(':');
         keys.add(key);
         if (!cards.has(key))
           cards.set(
@@ -145,6 +173,7 @@ export function coverLetterReview(root, api, {refresh}) {
               question,
               data.results.find((r) => r.id === question.recordId),
               current,
+              task,
             ),
           );
         const node = cards.get(key);
