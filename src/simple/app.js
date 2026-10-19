@@ -741,6 +741,21 @@ function jobCard(data, r) {
     );
     side.append(s);
     if (op?.id === 'waiting') side.append(button('Answer', () => go('questions'), 'jl-btn small'));
+    // Stop and skip any time before the submission starts; a send in flight
+    // cannot be taken back, so it says so instead.
+    if (r.status === 'executing')
+      side.append(el('small', 'jl-stop-note', 'Sending, can’t stop now'));
+    else if (r.status !== 'uncertain') {
+      const k = 'rec:' + r.id,
+        stop = button(
+          state.busy.has(k) ? 'Stopping…' : 'Stop & skip',
+          () => skipWith(r, null, card, 'Stopped and skipped.'),
+          'jl-btn ghost small',
+        );
+      stop.disabled = state.busy.has(k);
+      stop.title = 'Stops the work on this application and moves it to Skipped';
+      side.append(stop);
+    }
   } else if (state.tab === 'applied') {
     const s = el('span', 'jl-state done');
     s.append(el('i'), 'Sent ' + relative(r.updatedAt));
@@ -749,6 +764,14 @@ function jobCard(data, r) {
     const s = el('span', 'jl-state');
     s.append(el('i'), r.status === 'closed' ? 'Listing closed' : 'Skipped');
     side.append(s);
+    if (r.status === 'dismissed' && !r.trial)
+      side.append(
+        button(
+          'Move back',
+          act('restore:' + r.id, () => api.automationRestore(state.id, r.id)),
+          'jl-btn ghost small',
+        ),
+      );
   }
   card.append(side);
   // Why it fits
@@ -790,7 +813,7 @@ function whyLine(label, tone, text) {
 }
 
 // Skipping: the card slides away, then the rule is saved and the job dismissed.
-async function skipWith(r, rule, card) {
+async function skipWith(r, rule, card, done = 'Skipped.') {
   const k = 'rec:' + r.id;
   if (state.busy.has(k)) return;
   state.busy.add(k);
@@ -800,7 +823,7 @@ async function skipWith(r, rule, card) {
   try {
     if (rule) await saveLearned(rule);
     await api.automationDismiss(state.id, r.id);
-    state.note = {text: rule ? learnedReply(rule) : 'Skipped.', title: r.title, at: Date.now()};
+    state.note = {text: rule ? learnedReply(rule) : done, title: r.title, at: Date.now()};
     if (rule) state.justLearned = rule.item;
     clearTimeout(state.noteTimer);
     state.noteTimer = setTimeout(() => ((state.note = null), render()), 6000);

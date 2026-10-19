@@ -749,6 +749,10 @@ body.jl-simple {
   margin: 0;
   padding-left: 18px;
 }
+.jl-stop-note {
+  color: var(--jl-faint);
+  font-size: 12px;
+}
 .jl-state {
   display: inline-flex;
   align-items: center;
