@@ -1,6 +1,7 @@
 // "Label: value" lines inside the free-text profile fields. The app writes a
 // few of its own lines (quick answers, never-apply list, what it learned from
 // skips) and keeps everything else the user or the AI wrote untouched.
+import {parseHardRules, formatHardRules} from '../hard-rules.js';
 const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const lineRe = (label) => new RegExp('^\\s*' + escape(label) + '\\s*:\\s*(.*)$', 'im');
 
@@ -50,4 +51,24 @@ export function cvFacts(experience) {
         ? {lead: part.slice(0, cut + 1), rest: part.slice(cut + 1).trim()}
         : {lead: part.slice(0, cut), rest: part.slice(cut).replace(/^\s*[–—-]\s*/, '')};
     });
+}
+
+// The never-apply list lives in the elimination rules as one rule:
+// "Accept if not stated: Never apply to: Acme, gambling". A listing that is
+// one of them fails the rule; one that mentions none of them passes.
+const NEVER_RULE = /^never apply to\s*:\s*/i;
+export const neverItems = (hardRules) => {
+  const rule = parseHardRules(hardRules).find((r) => NEVER_RULE.test(r.rule));
+  return rule
+    ? rule.rule
+        .replace(NEVER_RULE, '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
+};
+export function withNever(hardRules, items) {
+  const rules = parseHardRules(hardRules).filter((r) => !NEVER_RULE.test(r.rule));
+  if (items.length) rules.push({ifNotStated: 'accept', rule: `${NEVER}: ${items.join(', ')}`});
+  return formatHardRules(rules);
 }

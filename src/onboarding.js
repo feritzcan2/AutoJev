@@ -10,7 +10,7 @@ import {terminalAttention} from './agent-attention.js';
 import './onboarding.css';
 import {BRAND, markIcon} from './simple/brand.js';
 import {readChoicePrompt, choiceKeys} from './simple/terminal-prompt.js';
-import {NEVER, factLine, setFactLine, cvFacts} from './simple/facts.js';
+import {factLine, setFactLine, cvFacts, neverItems, withNever} from './simple/facts.js';
 import {docScan, checkmark, typewrite} from './simple/motion.js';
 import {rulesField, RULES_HINT} from './template-fields.js';
 
@@ -30,7 +30,7 @@ const modes = [
 ];
 const flagKey = (id) => 'onboarding:' + id;
 // Long free-text criteria fold away on the review form.
-const folded = new Set(['constraints', 'application_facts']);
+const folded = new Set(['application_facts']);
 // Answer once: saved as "Label: answer" lines in the application facts.
 const quickQuestions = [
   {
@@ -885,7 +885,9 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     }
     const rules = fields.get('hard_rules');
     if (rules)
-      profile.append(rulesField('hard_rules', rules.label, a.criteria.hard_rules, RULES_HINT));
+      profile.append(
+        rulesField('hard_rules', rules.label, withNever(a.criteria.hard_rules, []), RULES_HINT),
+      );
     const experience = fields.get('experience');
     if (experience)
       moreBody.prepend(
@@ -952,7 +954,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     const never = el('label', 'Never apply to', 'onboarding-never'),
       neverInput = el('input');
     neverInput.name = 'never';
-    neverInput.value = factLine(a.criteria.constraints, NEVER);
+    neverInput.value = neverItems(a.criteria.hard_rules).join(', ');
     neverInput.placeholder =
       'Companies or words, comma separated · e.g. Acme, gambling, internship';
     neverInput.maxLength = 1000;
@@ -1271,8 +1273,15 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         CONSENT,
         f.consent.checked ? CONSENT_TEXT : '',
       );
-    criteria.constraints = setFactLine(criteria.constraints, NEVER, f.never.value.trim());
-    if (f.hard_rules) criteria.hard_rules = f.hard_rules.value.trim();
+    // The never-apply list is saved as one elimination rule next to the others.
+    criteria.hard_rules = withNever(
+      f.hard_rules ? f.hard_rules.value : criteria.hard_rules,
+      f.never.value
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean),
+    );
+    delete criteria.constraints;
     criteria.score_threshold = f.score_threshold.value.trim();
     if (criteria.country) criteria.country = criteria.country.toUpperCase();
     delete criteria.save_score_threshold;

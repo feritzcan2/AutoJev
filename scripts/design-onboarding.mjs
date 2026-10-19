@@ -249,7 +249,7 @@ try {
           await page.evaluate(async () => {
             const [w] = await window.jobloop.workspaces(),
               c = (await window.jobloop.workspaceSnapshot(w.id)).automation.criteria;
-            return {application_facts: c.application_facts, constraints: c.constraints};
+            return {application_facts: c.application_facts, hard_rules: c.hard_rules};
           }),
         ),
     );

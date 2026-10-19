@@ -9,7 +9,18 @@ import {BRAND, markIcon} from './brand.js';
 import {playIntro} from './intro.js';
 import {el, button, icon, plural, scoreOf, relative, host} from './ui.js';
 import {checkmark, docScan, flyPlane, reduced, rollingNumber} from './motion.js';
-import {LESS, NEVER, factLine, listOf, setFactLine, withItem, withoutItem} from './facts.js';
+import {
+  LESS,
+  NEVER,
+  factLine,
+  listOf,
+  neverItems,
+  setFactLine,
+  withItem,
+  withNever,
+  withoutItem,
+} from './facts.js';
+import {rulesField, RULES_HINT} from '../template-fields.js';
 import './simple.css';
 import './onboarding.css';
 
@@ -448,7 +459,7 @@ function weekRecap(data, g) {
     sent = g.applied.filter((r) => (r.updatedAt ?? 0) >= since);
   const learned = [
     ...listOf(a.criteria?.preferences, LESS).map((x) => 'fewer ' + x),
-    ...listOf(a.criteria?.constraints, NEVER).map((x) => 'never ' + x),
+    ...neverItems(a.criteria?.hard_rules).map((x) => 'never ' + x),
   ];
   const seenKey = 'jl-recap:' + a.id,
     first = sessionStorage.getItem(seenKey) !== String(found + ':' + sent.length);
@@ -629,14 +640,22 @@ const learnedReply = (rule) =>
 // Adds or removes one item of a learned line and saves the profile.
 async function saveLearned(rule, remove = false) {
   const a = state.data.automation,
-    key = rule.line === NEVER ? 'constraints' : 'preferences',
-    criteria = {...a.criteria},
-    items = listOf(criteria[key], rule.line);
-  criteria[key] = setFactLine(
-    criteria[key],
-    rule.line,
-    remove ? withoutItem(items, rule.item, rule.line) : withItem(items, rule.item, rule.line),
-  );
+    criteria = {...a.criteria};
+  delete criteria.constraints;
+  if (rule.line === NEVER) {
+    // A never-apply item is part of the elimination rules (facts.js withNever).
+    const items = neverItems(criteria.hard_rules).filter(
+      (x) => x.toLowerCase() !== rule.item.toLowerCase(),
+    );
+    criteria.hard_rules = withNever(criteria.hard_rules, remove ? items : [...items, rule.item]);
+  } else {
+    const items = listOf(criteria.preferences, rule.line);
+    criteria.preferences = setFactLine(
+      criteria.preferences,
+      rule.line,
+      remove ? withoutItem(items, rule.item, rule.line) : withItem(items, rule.item, rule.line),
+    );
+  }
   await api.automationProfileSave(
     state.id,
     {title: a.title, goal: a.goal, criteria, mode: a.mode},
@@ -737,14 +756,17 @@ function jobCard(data, r) {
       el('i'),
       problem?.label ??
         op?.label ??
-        (r.status === 'uncertain' ? 'Checking if it was sent' : 'Working'),
+        (r.status === 'uncertain'
+          ? 'Checking if it was sent'
+          : r.status === 'executing'
+            ? 'Sending application'
+            : 'Working'),
     );
     side.append(s);
     if (op?.id === 'waiting') side.append(button('Answer', () => go('questions'), 'jl-btn small'));
     // Stop and skip any time before the submission starts; a send in flight
     // cannot be taken back, so it says so instead.
-    if (r.status === 'executing')
-      side.append(el('small', 'jl-stop-note', 'Sending, can’t stop now'));
+    if (r.status === 'executing') s.title = 'A send in progress can’t be stopped';
     else if (r.status !== 'uncertain') {
       const k = 'rec:' + r.id,
         stop = button(
@@ -986,7 +1008,6 @@ const profileFields = [
   ['preferences', 'Roles, places and work mode', 'Target roles, cities, remote or hybrid'],
   ['location', 'Main search location', 'As job sites spell it, e.g. Berlin, Germany', false, true],
   ['experience', 'Experience and skills', 'Years, main skills, languages and levels'],
-  ['constraints', 'Must-haves', 'Salary floor, work permit, language, start date'],
   [
     'application_facts',
     'Details forms ask for',
@@ -1047,10 +1068,19 @@ function renderProfile(data) {
     const value = key === 'goal' ? a.goal : a.criteria?.[key];
     basics.lastChild.append(field(key, label, value, placeholder, required, single));
   }
+  // Elimination rules; the never-apply list shows under What I’ve learned instead.
+  basics.lastChild.append(
+    rulesField(
+      'hard_rules',
+      'Elimination rules',
+      withNever(a.criteria?.hard_rules, []),
+      RULES_HINT,
+    ),
+  );
   // What JobLoop learned from skips; each item can be removed.
   const rules = [
       ...listOf(a.criteria?.preferences, LESS).map((item) => ({line: LESS, item})),
-      ...listOf(a.criteria?.constraints, NEVER).map((item) => ({line: NEVER, item})),
+      ...neverItems(a.criteria?.hard_rules).map((item) => ({line: NEVER, item})),
     ],
     learned = section(
       'What I’ve learned',
@@ -1092,6 +1122,8 @@ function renderProfile(data) {
       criteria = {...a.criteria};
     for (const [key] of profileFields)
       if (key !== 'goal' && f[key]) criteria[key] = f[key].value.trim();
+    criteria.hard_rules = withNever(f.hard_rules.value, neverItems(a.criteria?.hard_rules));
+    delete criteria.constraints;
     const auto = f.level.value === 'auto';
     if (auto) criteria.score_threshold = f.threshold.value;
     act('profile', async () => {

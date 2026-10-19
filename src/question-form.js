@@ -21,8 +21,9 @@ const FACT_HINTS = [
   [/phone|mobile|telephone/i, ['Phone']],
   [/e-?mail/i, ['Email']],
 ];
+// The matching fact and its label, e.g. {value: '1 month', label: 'Notice period'}.
 export function factSuggestion(question, facts) {
-  if (!facts) return '';
+  if (!facts) return null;
   for (const [pattern, labels] of FACT_HINTS) {
     if (!pattern.test(question)) continue;
     for (const label of labels) {
@@ -38,11 +39,11 @@ export function factSuggestion(question, facts) {
         !value.toUpperCase().includes(currency.toUpperCase())
       )
         value = value.replace(amount, (match) => `${match.trim()} ${currency}`);
-      return value;
+      return {value, label};
     }
-    return '';
+    return null;
   }
-  return '';
+  return null;
 }
 // The suggestion as a value the field accepts, or null when it does not fit.
 function fitSuggestion(f, text) {
@@ -197,39 +198,40 @@ export function questionForm(candidate, q, submit, {facts = ''} = {}) {
       );
     }
     // A likely answer from the agent (CV, documents) or from the saved profile facts.
-    const fromAgent = fitSuggestion(f, f.suggested),
-      fromFacts = fromAgent == null ? fitSuggestion(f, factSuggestion(f.label, facts)) : null,
-      suggestion = fromAgent ?? fromFacts;
+    const fact = f.suggested ? null : factSuggestion(f.label, facts),
+      suggestion = fitSuggestion(f, f.suggested) ?? fitSuggestion(f, fact?.value);
     if (suggestion != null && appliers.has(f.id)) {
       const shown =
           typeof suggestion === 'boolean' ? (suggestion ? 'Yes' : 'No') : String(suggestion),
+        control = box.querySelector('textarea, input:not([type=checkbox]), select'),
         row = node('div'),
-        use = node('button', 'Use this');
+        use = node('button', `Use “${shown}”`),
+        accept = () => {
+          appliers.get(f.id)(suggestion);
+          row.dataset.used = 'true';
+        };
       row.className = 'question-suggestion';
       use.type = 'button';
       use.className = 'quiet';
-      use.onclick = () => {
-        appliers.get(f.id)(suggestion);
-        row.dataset.used = 'true';
-      };
-      row.append(
-        node('span', fromAgent != null ? 'Suggested' : 'From your profile'),
-        node('b', shown),
-        use,
-      );
-      const control = box.querySelector('textarea, input:not([type=checkbox]), select');
-      if (control && control.tagName !== 'SELECT' && f.type !== 'date') control.placeholder = shown;
+      use.onclick = accept;
+      // Where it comes from, so "1 month" under a start-date question makes sense.
+      row.append(use, node('small', fact ? `From your profile · ${fact.label}` : 'Suggested'));
+      if (control && control.tagName !== 'SELECT' && f.type !== 'date') {
+        control.placeholder = shown;
+        // Tab in an empty field takes the suggestion, like ghost text.
+        control.addEventListener('keydown', (event) => {
+          if (event.key === 'Tab' && !event.shiftKey && !control.value) accept();
+        });
+        row.lastChild.textContent += ' · Tab to use';
+      }
       box.append(row);
       suggestions.set(f.id, suggestion);
     }
     formFields.append(box);
   }
   // One click takes every suggestion; the user still reviews and sends.
-  if (suggestions.size > 1 || (suggestions.size && fields.length === 1)) {
-    const fill = node(
-      'button',
-      suggestions.size > 1 ? 'Fill from my profile' : 'Use the suggested answer',
-    );
+  if (suggestions.size > 1) {
+    const fill = node('button', 'Fill from my profile');
     fill.type = 'button';
     fill.className = 'quiet question-fill-all';
     fill.onclick = () => {

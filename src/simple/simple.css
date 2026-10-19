@@ -749,10 +749,6 @@ body.jl-simple {
   margin: 0;
   padding-left: 18px;
 }
-.jl-stop-note {
-  color: var(--jl-faint);
-  font-size: 12px;
-}
 .jl-state {
   display: inline-flex;
   align-items: center;
@@ -1023,7 +1019,8 @@ body.jl-simple {
     textarea,
     select
   ),
-.jl-field :is(input, textarea, select) {
+.jl-field :is(input, textarea, select),
+.jl-fields .rules-field :is(input, select) {
   width: 100%;
   border: 1px solid var(--jl-line-strong);
   border-radius: 10px;
@@ -1036,7 +1033,8 @@ body.jl-simple {
   resize: vertical;
 }
 .jl-question :is(input, textarea, select):focus,
-.jl-field :is(input, textarea, select):focus {
+.jl-field :is(input, textarea, select):focus,
+.jl-fields .rules-field :is(input, select):focus {
   outline: none;
   border-color: var(--jl-ink);
   box-shadow: 0 0 0 3px var(--jl-accent);
@@ -1811,4 +1809,44 @@ body.jl-intro-reveal :is(.onboarding-head, .onboarding-card, #jl-root) {
   body.jl-intro-reveal :is(.onboarding-head, .onboarding-card, #jl-root) {
     animation: none;
   }
+}
+
+/* Elimination rules on Profile: the shared rules field in simple-view colours. */
+.jl-fields .rules-field legend {
+  margin-bottom: 2px;
+  color: var(--jl-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.jl-fields .rules-field > small {
+  color: var(--jl-muted);
+  font-size: 12px;
+}
+.jl-fields .rules-field button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--jl-line-strong);
+  border-radius: 10px;
+  background: var(--jl-panel);
+  color: var(--jl-ink);
+  font-weight: 500;
+  cursor: pointer;
+}
+/* Answer-mode switch: a light segmented control instead of the classic dark one. */
+body.jl-simple .question-answer-modes {
+  border-color: var(--jl-line);
+  background: var(--jl-sunk);
+}
+body.jl-simple .jl-question .question-answer-modes button {
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--jl-muted);
+}
+body.jl-simple .jl-question .question-answer-modes button[aria-pressed='true'] {
+  background: var(--jl-panel);
+  color: var(--jl-ink);
+  box-shadow:
+    0 1px 2px rgb(14 15 18 / 0.08),
+    inset 0 0 0 1px var(--jl-line);
 }

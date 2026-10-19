@@ -113,44 +113,37 @@
     inset 0 0 0 1px var(--border-strong);
 }
 
-/* A likely answer the user confirms with one click. */
+/* A likely answer the user confirms with one click (or Tab in the empty field). */
 .question-suggestion {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px 10px;
-  padding: 8px 10px;
-  border: 1px dashed var(--border, rgba(127, 127, 127, 0.35));
-  border-radius: 8px;
-  font-size: 12.5px;
+  gap: 4px 10px;
+  font-size: 12px;
   color: var(--text-secondary);
 }
-.question-suggestion b {
-  flex: 1;
-  min-width: 0;
-  color: var(--text);
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
 .question-suggestion button {
+  max-width: 100%;
   padding: 4px 10px;
-  font-size: 12px;
+  border: 1px dashed var(--border-strong, rgba(127, 127, 127, 0.45));
+  border-radius: 99px;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .question-suggestion[data-used='true'] {
-  border-style: solid;
-  opacity: 0.6;
-}
-.question-suggestion[data-used='true'] button {
   display: none;
 }
 .question-fill-all {
   justify-self: start;
 }
-body.jl-simple .question-suggestion {
-  border-color: var(--jl-accent-line);
+body.jl-simple .jl-question .question-suggestion button {
+  min-height: 30px;
+  border: 1px dashed var(--jl-accent-line);
   background: var(--jl-accent-wash);
-  color: var(--jl-muted);
-}
-body.jl-simple .question-suggestion b {
   color: var(--jl-ink);
+}
+body.jl-simple .question-suggestion small {
+  color: var(--jl-muted);
 }

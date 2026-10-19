@@ -30,7 +30,8 @@ if (!fresh) {
         country: 'DE',
         location: 'Berlin, Germany',
         experience: '7 years · Go, Python, Postgres, Kubernetes · English C2, German B1',
-        constraints: 'Minimum €80k',
+        hard_rules:
+          'Accept if not stated: Salary at least €80k a year\nAccept if not stated: Never apply to: gambling, crypto',
         application_facts: 'Notice period: 1 month',
       },
     });
