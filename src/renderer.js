@@ -10,7 +10,6 @@ import {workspaceSwitcher} from './workspace-switcher.js';
 import {workerTerminals} from './worker-terminals.js';
 import {activityPanels} from './activity-panels.js';
 import {configPage} from './config.js';
-import {notificationsPage} from './notifications.js';
 import './style.css';
 import './question-form.css';
 import './termloop-theme.css';
@@ -127,12 +126,7 @@ async function deleteWorkspace(owner = selectedWorkspace()) {
   }
 }
 $('delete-workspace').onclick = () => deleteWorkspace();
-const notificationsUI = notificationsPage(api, {notice});
-const configUI = configPage(api, {
-  notice,
-  relativeTime,
-  openNotifications: () => switchView('notifications'),
-});
+const configUI = configPage(api, {notice, relativeTime});
 const automationUI = automationsPage(api, {
   notice,
   getCatalog: () => catalog,
@@ -257,7 +251,7 @@ function switchView(name, options = {}) {
   document.querySelector('main>header>.actions').hidden =
     global || !selected || name === 'setup-agent';
   document.body.classList.toggle('automation-workspace', Boolean(selected) && !global);
-  for (const id of ['notifications', 'config', 'profile', 'board', 'agent', 'setup-agent', 'files'])
+  for (const id of ['config', 'profile', 'board', 'agent', 'setup-agent', 'files'])
     if ($(id)) $(id).hidden = true;
   automationUI.element.hidden = false;
   if (global) {
@@ -270,13 +264,10 @@ function switchView(name, options = {}) {
       $('config').hidden = false;
       configUI.select(selected);
       configUI.show();
-    } else if (name === 'notifications') {
-      automationUI.element.hidden = true;
-      $('notifications').hidden = false;
-      notificationsUI.show(selected);
     } else {
       automationUI.showPane(name);
       if (['agent', 'setup-agent'].includes(name)) $(name).hidden = false;
+      if (name === 'agent') syncJevOption();
     }
   }
   localStorage.setItem('selected-view', name);
@@ -284,6 +275,18 @@ function switchView(name, options = {}) {
     .querySelectorAll('aside nav button')
     .forEach((button) => button.classList.toggle('selected', button.dataset.view === name));
   workspaceMenu.sync();
+}
+// Jev can be chosen only after a TypeSafe key is saved under Configuration → Jev.
+async function syncJevOption() {
+  const option = $('decisions').querySelector('option[value=jev]');
+  let configured = false;
+  try {
+    configured = Boolean((await api.jevSettingsStatus?.())?.configured);
+  } catch {}
+  option.disabled = !configured;
+  option.textContent = configured
+    ? 'Jev (TypeSafe key)'
+    : 'Jev (save a TypeSafe key under Configuration → Jev first)';
 }
 function settingsOptions(saved) {
   const current = catalog.find((a) => a.id === $('provider').value);
@@ -378,7 +381,6 @@ function syncWorkspaceAgent(value) {
   fillAgentSettings(next.workspace, id);
   renderContext(next);
   configUI.select(id);
-  notificationsUI.select(id);
 }
 function renderContext(value) {
   const usage = value?.active?.contextUsage,
@@ -593,7 +595,6 @@ if (selected) {
             'files',
             'background',
             'config',
-            'notifications',
           ].includes(initialView)
         ? initialView
         : 'board',

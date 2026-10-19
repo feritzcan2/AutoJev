@@ -198,20 +198,3 @@
     flex-basis: 100%;
   }
 }
-.notifications-head {
-  margin-bottom: 24px;
-}
-.notifications-head h2 {
-  margin: 0 0 8px;
-  font-size: 24px;
-  font-weight: 550;
-}
-.notifications-head p {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 1.6;
-}
-#notifications {
-  max-width: 960px;
-}

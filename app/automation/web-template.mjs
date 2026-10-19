@@ -226,7 +226,12 @@ export class WebTasks extends TaskRuns {
             : run.kind === 'trial' ||
               batchScoring(run) ||
               Boolean(run.sourceUrl && run.scan?.complete && run.scan.completion !== 'user_stop');
-          const closeTabs = run.status === 'completed' && !pending && finished,
+          // A record the user is not eligible for needs no page either; a retry
+          // opens the listing again.
+          const notEligible =
+            Boolean(record && run.taskId) &&
+            db.store.workspaces.tasks.get(id, run.taskId)?.blocker?.category === 'not_eligible';
+          const closeTabs = !pending && ((run.status === 'completed' && finished) || notEligible),
             scope = run.recordId ?? (batchScoring(run) ? null : run.sourceUrl);
           // Earlier interrupted or blocked turns of the same record/source may have
           // left their own tabs; runs still waiting for an answer keep theirs.
@@ -247,7 +252,7 @@ export class WebTasks extends TaskRuns {
               db.get(id).sourceState?.[run.sourceUrl]?.accessRecovery?.runId === run.id,
             closeTabs,
             // A completed or closed record needs no page any more, filled or not.
-            keepForms: !['completed', 'dismissed'].includes(record?.status),
+            keepForms: !notEligible && !['completed', 'dismissed'].includes(record?.status),
             runIds,
             pendingTabIds: pendingContexts.map((context) => context.tabId).filter(Boolean),
             pendingUrls: pendingContexts.map((context) => context.url).filter(Boolean),

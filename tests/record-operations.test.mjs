@@ -266,6 +266,45 @@ test('an execute run that marks the record closed closes its tabs, including ear
   assert.deepEqual(calls.at(-1).options.runIds.toSorted(), [calls[0].run.id, run.id].toSorted());
 });
 
+test('a blocked application closes its tabs only when the user is not eligible', async (t) => {
+  for (const [category, closes] of [
+    ['not_eligible', true],
+    ['needs_login', false],
+  ]) {
+    const calls = [],
+      f = fixture(t, 'job-search', {
+        onRunFinished: (id, run, options) => calls.push({run, options}),
+      });
+    const item = await f.prepare();
+    await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+    await settle();
+    const run = f.launches.at(-1);
+    const flow = automationWorkflow({
+      db: f.db,
+      run,
+      signal: new AbortController().signal,
+      browser: {currentUrl: async () => item.url, call: async () => ({content: []})},
+      report: (...args) => f.runtime.report(...args),
+    });
+    await flow.call(f.id, run.id, 'finish_automation_run', {
+      status: 'blocked',
+      summary: 'Not submitted.',
+      blocker: {category, reason: 'The form excludes the user.', userAction: 'Skip this record'},
+    });
+    await f.runtime.finish(f.id, 'blocked', 'Not submitted.', run.workerId);
+    await settle();
+    assert.equal(calls.at(-1).run.id, run.id);
+    assert.equal(calls.at(-1).options.closeTabs, closes, category);
+    if (closes) {
+      assert.equal(calls.at(-1).options.keepForms, false);
+      assert.deepEqual(
+        calls.at(-1).options.runIds.toSorted(),
+        [calls[0].run.id, run.id].toSorted(),
+      );
+    }
+  }
+});
+
 // Skip and a manual "applied" both end the record for the user: the tabs its
 // earlier runs opened close, including filled forms.
 test('skipping or marking a record applied closes its tabs', async (t) => {

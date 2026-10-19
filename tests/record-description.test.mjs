@@ -7,7 +7,6 @@ import {listingDescription, readListingDescription} from '../app/records/descrip
 
 const source = 'https://jobs.example.test/jobs';
 const detail = 'https://jobs.example.test/jobs/view/synthetic-data-role-42/';
-const text = 'Synthetic data role\ncompany: Example Ltd\n\nBuild pipelines in a small team.';
 const assessment = {
   status: 'scored',
   scorecard: unknownScorecard(),
@@ -49,29 +48,62 @@ function fixture(t) {
   return {core, db, id: a.id, run, record};
 }
 
-test('a saved record keeps the listing text its scan read, outside the record JSON', (t) => {
+// A listing as a site reader or the page's structured data gives it.
+const readerPage = (body) => ({
+  id: 'read-' + body.length,
+  url: detail,
+  text: 'Synthetic data role\ncompany: Example Ltd\n\n' + body,
+  reader: {extension: 'example', kind: 'http'},
+});
+const description = 'About the role\nBuild pipelines in a small team.\n\nRequirements\nSQL';
+
+test('a saved record keeps only the description its site reader read, outside the record JSON', (t) => {
   const f = fixture(t);
-  f.db.observe(f.id, f.run.id, detail, text);
+  f.db.browserEvidence.save(f.run, readerPage(description));
   const saved = f.record();
-  const description = listingDescription(f.db, f.id, saved.id);
-  assert.equal(description.text, text);
-  assert.equal(description.url, detail);
-  assert.equal(typeof description.readAt, 'number');
+  const kept = listingDescription(f.db, f.id, saved.id);
+  assert.equal(kept.text, description);
+  assert.equal(kept.url, detail);
+  assert.equal(typeof kept.readAt, 'number');
   assert.equal(f.db.result(f.id, saved.id).description, undefined);
   assert.ok(!JSON.stringify(f.db.snapshot(f.id).results).includes('Build pipelines'));
 });
 
-test('a record without read listing text has no description instead of an empty one', (t) => {
+test('a listing Jev read from structured data keeps its description', (t) => {
   const f = fixture(t);
+  const job = f.db.jevTasks.create(f.id, f.run.taskId, {operation: 'collect_details'});
+  job.searchId = 'default';
+  const evidence = f.db.jevTasks.evidence(job, {
+    url: detail,
+    title: 'Synthetic data role',
+    text: 'Rendered page with site navigation',
+    listing: {text: 'Synthetic data role\nlocation: Remote\n\n' + description, fields: {}},
+  });
+  job.items = [{url: detail, evidenceId: evidence.id, collected: true, detailComplete: true}];
+  job.status = 'needs_agent';
+  f.db.jevTasks.save(job);
+  const saved = f.record();
+  assert.equal(listingDescription(f.db, f.id, saved.id).text, description);
+});
+
+test('a rendered page or agent observation is not saved as the description', (t) => {
+  const f = fixture(t);
+  f.db.observe(
+    f.id,
+    f.run.id,
+    detail,
+    'Page URL: ' + detail + '\n{"savedLogin":null}\n\nLink: Home',
+  );
+  f.db.browserEvidence.save(f.run, {id: 'browser', url: detail, text: 'Menu\n\nJobs'});
   const saved = f.record();
   assert.equal(listingDescription(f.db, f.id, saved.id), null);
 });
 
 test('a newer read replaces the saved description and deleting the record removes it', (t) => {
   const f = fixture(t);
-  f.db.observe(f.id, f.run.id, detail, text);
+  f.db.browserEvidence.save(f.run, readerPage(description));
   const saved = f.record();
-  f.db.observe(f.id, f.run.id, detail, text + '\nUpdated.');
+  f.db.browserEvidence.save(f.run, readerPage(description + '\nUpdated.'));
   f.record({summary: 'Again'});
   assert.match(listingDescription(f.db, f.id, saved.id).text, /Updated\.$/);
   f.core.db.prepare('DELETE FROM workspace_records WHERE id=?').run(saved.id);
