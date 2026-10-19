@@ -13,6 +13,60 @@ import {scoreBreakdown, ruleSummary} from './score-breakdown.js';
 import {decidingRule, shortRule} from './hard-rules.js';
 import {devToolsAvailable} from './agent-trace.js';
 import {recordDevPanel} from './record-dev-panel.js';
+
+// A listing's contacts in its row: once a search ran, the people it found
+// (or its state) replace "Find contacts"; each opens the Contacts page.
+const contactStates = {
+  proposed: 'to approve',
+  queued: 'sending',
+  invited: 'invited',
+  messaged: 'messaged',
+  uncertain: 'check',
+  failed: 'not sent',
+};
+const contactEntryOf = (data, recordId) =>
+  (data.automation.recordContacts ?? []).find((e) => e.recordId === recordId);
+const contactsKey = (data, recordId) => {
+  const entry = contactEntryOf(data, recordId);
+  return entry && [entry.state, entry.contacts.map((c) => [c.name, c.state])];
+};
+function contactsFound(data, recordId, findContacts) {
+  const entry = contactEntryOf(data, recordId);
+  if (!entry) return [findContacts];
+  const chip = (text, tone, title) => {
+    const node = findContacts.cloneNode(false);
+    node.textContent = text;
+    node.className = 'record-contact-chip';
+    node.dataset.tone = tone;
+    node.title = title;
+    node.onclick = findContacts.onclick;
+    return node;
+  };
+  const chips = entry.contacts.map((c) =>
+    chip(
+      `${c.name} · ${contactStates[c.state] ?? c.state}`,
+      ['invited', 'messaged'].includes(c.state)
+        ? 'done'
+        : ['uncertain', 'failed'].includes(c.state)
+          ? 'blocked'
+          : c.state === 'queued'
+            ? 'active'
+            : 'waiting',
+      [c.headline, 'Open on the Contacts page'].filter(Boolean).join(' · '),
+    ),
+  );
+  if (entry.state === 'searching')
+    chips.unshift(chip('Searching contacts…', 'active', 'Open on the Contacts page'));
+  else if (!chips.length)
+    chips.push(
+      chip(
+        entry.state === 'failed' ? 'Contact search stopped' : 'No contact found',
+        'muted',
+        entry.error || entry.noneReason || 'Open on the Contacts page',
+      ),
+    );
+  return chips;
+}
 const el = (tag, text, cls) => {
   const node = document.createElement(tag);
   if (text != null) node.textContent = text;
@@ -1011,6 +1065,7 @@ export function automationResultsTable(
               (data.automation.questions ?? [])
                 .filter((q) => q.coverLetter && q.recordId === result.id)
                 .map((q) => [q.id, q.answer != null, q.coverLetter.path]),
+              contactsKey(data, result.id),
             ]),
           ])
         : [['', JSON.stringify([Boolean(data.results.length)])]],
@@ -1376,7 +1431,7 @@ export function automationResultsTable(
         api.recordContactsFind && !result.trial && !problem
           ? el('div', null, 'record-contacts-action')
           : null;
-      if (contactsRow) contactsRow.append(findContacts);
+      if (contactsRow) contactsRow.append(...contactsFound(data, result.id, findContacts));
       else if (api.recordContactsFind && !result.trial) actions.append(findContacts);
       if (onEvaluateCriteria && result.assessment) actions.append(evaluateCriteria);
       // A problem card shows its open tab next to the reason.
