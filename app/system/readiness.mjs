@@ -119,7 +119,7 @@ export async function collectReadiness(input = {}, options = {}) {
     throw Error('Invalid setup choice.');
   const provider = input.provider ?? 'codex';
   if (!Object.hasOwn(providers, provider)) throw Error('Invalid setup choice.');
-  const decisions = input.decisions ?? 'jev';
+  const decisions = input.decisions ?? 'agent';
   if (!DECISION_MODES.includes(decisions)) throw Error('Invalid setup choice.');
   const profile = input.chromeProfile?.directory;
   if (profile !== undefined && (typeof profile !== 'string' || !/^[\w -]{1,100}$/.test(profile)))

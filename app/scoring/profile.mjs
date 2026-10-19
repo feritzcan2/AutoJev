@@ -3,6 +3,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {documentPath} from '../automation/artifacts.mjs';
 import {workspaceDirectory} from '../workspaces/paths.mjs';
+import {candidateFacts, profileView} from '../templates/profile-sections.mjs';
 const cache = new Map(),
   MAX_TEXT = 300000;
 const source = (text, extra = {}) => ({
@@ -10,23 +11,22 @@ const source = (text, extra = {}) => ({
   digest: createHash('sha256').update(text).digest('hex'),
   ...extra,
 });
-export function scoringSources(automation, documents) {
+// fields are the template's fields; they place each criterion in its profile section.
+export function scoringSources(automation, documents, fields = []) {
   const profile = automation.referenceData?.profile ?? {};
   const facts = [
-    automation.facts,
+    candidateFacts(automation, fields),
     profile.facts,
     ...Object.values(profile.learnedFacts ?? {}).map((x) => x.value),
   ]
-    .filter((x) => typeof x === 'string')
+    .filter((x) => typeof x === 'string' && x)
     .join('\n');
-  // Preferences are the workspace goal and its saved criteria, whatever the template.
-  const criteria = Object.entries(automation.criteria ?? {})
-    .filter(
-      ([key, value]) =>
-        !['ranking', 'score_threshold', 'save_score_threshold'].includes(key) &&
-        typeof value === 'string',
-    )
-    .map(([, value]) => value);
+  // Preferences are the workspace goal and its saved criteria, whatever the
+  // template, except facts about the user, the rubric and the thresholds.
+  const view = profileView(automation, fields),
+    criteria = [...view.search, ...view.rules, ...view.actions]
+      .filter((f) => !['ranking', 'score_threshold'].includes(f.id))
+      .map((f) => f.value);
   return {
     facts: source(facts),
     preferences: source(

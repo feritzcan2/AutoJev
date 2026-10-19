@@ -390,7 +390,7 @@ export function extensionBench({
         unavailable:
           'The user documents could not be read; use known facts and keep missing qualifications uncertain.',
       }));
-    const criteria = jevCriteria(a, documents, template.assessmentHints),
+    const criteria = jevCriteria(a, documents, template),
       config = await browser.options(id).config(),
       title = page.title ?? '',
       text = String(page.listing?.text ?? page.text ?? ''),

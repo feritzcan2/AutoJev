@@ -9,8 +9,9 @@
 //   pagination holds the current page and, when there is one, the next page
 //   with its url; null when the extension cannot tell. A pagination without a
 //   next page tells the scan that this is the last results page.
-//   Optionally dom.listing {handles(url), collect, read(raw)} reads one posting
-//   page: collect runs inside the page like dom.collect, read(raw) returns
+//   Optionally dom.listing {handles(url), open?(url), collect, read(raw)} reads
+//   one posting page: open(url) gives the address to open it at in the browser
+//   (default url), collect runs inside the page like dom.collect, read(raw) returns
 //   {title, company, location, description, fields, closed} or null. Its text
 //   becomes the page's listing evidence (like a schema.org JobPosting).
 // - http: {handles(url), read(url, options)} replaces the browser tab for the
@@ -98,6 +99,8 @@ export const SITE_EXTENSIONS = [
   nationaleVacaturebank,
 ];
 export const siteExtensionFor = (url) => SITE_EXTENSIONS.find((e) => e.matches(url)) ?? null;
+// The address a posting opens at in the browser for the site's posting reader.
+export const siteListingAddress = (url) => siteExtensionFor(url)?.dom?.listing?.open?.(url) ?? url;
 // What reads this source for the source list: api (collector, only for its
 // template), http (reader) or browser (DOM extension on the open page), with
 // the site's results address and filters (`search`, ./search.mjs) when known.

@@ -1,5 +1,6 @@
 // @ts-check
 import {jevProfileStatus, JEV_PROFILE_LIMIT} from './qualification-profile.mjs';
+import {candidateFacts, profileView} from '../templates/profile-sections.mjs';
 export const JEV_CLASSIFICATION_VERSION = 9;
 export const JEV_TRIAGE_CONFIDENCE = 0.85;
 // A card whose keep probability falls below this is eliminated before its
@@ -14,8 +15,10 @@ const excerpt = (value, limit) => {
     .trim();
   return {text: text.slice(0, limit), truncated: text.length > limit};
 };
-// assessmentHints is the template's short domain guidance for these rules.
-export function jevCriteria(automation, documents, assessmentHints) {
+// template supplies assessmentHints, its short domain guidance for these rules,
+// and the fields that place each criterion in its profile section.
+export function jevCriteria(automation, documents, template = {}) {
+  const {assessmentHints, fields = []} = template;
   /** @type {Record<string, unknown>} */
   const context = {
     goal: automation.goal,
@@ -25,9 +28,15 @@ export function jevCriteria(automation, documents, assessmentHints) {
   };
   // A user profile is sent only when the caller supplies a document reading.
   if (documents === undefined) return context;
-  if (jevProfileStatus(automation, documents) === 'current') {
+  // Facts about the user travel in userProfile, not twice in criteria.
+  const candidate = new Set(profileView(automation, fields).candidate.map((f) => f.id));
+  context.criteria = Object.fromEntries(
+    Object.entries(automation.criteria ?? {}).filter(([id]) => !candidate.has(id)),
+  );
+  const currentFacts = excerpt(candidateFacts(automation, fields), 4000);
+  if (jevProfileStatus(automation, documents, fields) === 'current') {
     context.userProfile = {
-      currentFacts: excerpt(automation.facts, 4000),
+      currentFacts,
       qualifications: excerpt(automation.jevProfile.text, JEV_PROFILE_LIMIT),
       precedence:
         'qualifications summarizes the user documents and saved facts. Current user facts and instructions override it. A fact it does not state is unknown, not a proven missing qualification.',
@@ -36,7 +45,7 @@ export function jevCriteria(automation, documents, assessmentHints) {
   }
   const profile = automation.referenceData?.profile ?? {};
   context.userProfile = {
-    currentFacts: excerpt(automation.facts, 4000),
+    currentFacts,
     // The user's short answers (languages, work permit) go first: the long
     // saved summary repeats the documents and is the part a cut may lose.
     savedFacts: excerpt(

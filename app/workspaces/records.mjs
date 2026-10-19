@@ -11,7 +11,8 @@ export class WorkspaceRecords {
     this.db = workspaces.db;
     this.db
       .exec(`CREATE TABLE IF NOT EXISTS workspace_records(id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,record_key TEXT NOT NULL,identity TEXT NOT NULL DEFAULT '',data TEXT NOT NULL,UNIQUE(workspace_id,record_key));
-    CREATE INDEX IF NOT EXISTS workspace_records_owner ON workspace_records(workspace_id);`);
+    CREATE INDEX IF NOT EXISTS workspace_records_owner ON workspace_records(workspace_id);
+    CREATE TABLE IF NOT EXISTS workspace_record_descriptions(record_id TEXT PRIMARY KEY REFERENCES workspace_records(id) ON DELETE CASCADE,url TEXT NOT NULL,text TEXT NOT NULL,read_at INTEGER NOT NULL);`);
     this.identities = new RecordIdentity(this);
   }
   get(id, recordId) {
@@ -105,6 +106,27 @@ export class WorkspaceRecords {
       if (this.usesUrl(id)) this.identities.bind(id, record);
       return record;
     });
+  }
+  // A listing's description is kept beside its record, outside the record
+  // JSON, so workspace snapshots do not carry every listing's full text.
+  saveDescription(id, recordId, {url, text, readAt}) {
+    const record = this.get(id, recordId);
+    this.db
+      .prepare(
+        'INSERT INTO workspace_record_descriptions(record_id,url,text,read_at) VALUES(?,?,?,?) ON CONFLICT(record_id) DO UPDATE SET url=excluded.url,text=excluded.text,read_at=excluded.read_at',
+      )
+      .run(record.id, url, text, readAt);
+  }
+  // The main record's description, else the newest one of a record merged into it.
+  description(id, recordId) {
+    const record = this.get(id, recordId),
+      row = this.db
+        .prepare(
+          `SELECT d.url,d.text,d.read_at AS readAt FROM workspace_record_descriptions d JOIN workspace_records r ON r.id=d.record_id
+   WHERE r.workspace_id=? AND (r.id=? OR json_extract(r.data,'$.mergedInto')=?) ORDER BY r.id=? DESC,d.read_at DESC LIMIT 1`,
+        )
+        .get(id, record.id, record.id, record.id);
+    return row ? {...row} : null;
   }
   update(id, recordId, change) {
     return this.identities.atomic(() => {

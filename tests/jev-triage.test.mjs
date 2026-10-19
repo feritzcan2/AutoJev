@@ -73,7 +73,10 @@ test('large and unreadable profile sources stay bounded with explicit unknown co
 test('job examples come from the template, not the shared triage rules', () => {
   const hints = automationTemplate('job-search').assessmentHints;
   assert.match(hints, /engineer, developer or architect/);
-  assert.equal(jevCriteria({goal: 'g'}, undefined, hints).assessmentHints, hints);
+  assert.equal(
+    jevCriteria({goal: 'g'}, undefined, {assessmentHints: hints}).assessmentHints,
+    hints,
+  );
   assert.equal('assessmentHints' in jevCriteria({goal: 'g'}), false);
   for (const rules of [FIT_RULES, DISCOVERY_FIT_RULES])
     assert.doesNotMatch(rules, /for jobs|salary|\bCV\b|engineer/i);

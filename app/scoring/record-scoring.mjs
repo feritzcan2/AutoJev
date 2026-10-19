@@ -3,6 +3,7 @@ import {taskHasRecord, batchScoring} from '../records/task-scope.mjs';
 import {SCORING_VERSION} from './policy.mjs';
 import {boundedText, webUrl} from '../templates/catalog.mjs';
 import {assessmentEvidence} from '../records/evidence.mjs';
+import {keepListingDescription} from '../records/description.mjs';
 import {dryRunTask, saveDryScore} from './trial-scores.mjs';
 import {normalizeCellToolArgs} from '../workspaces/table-tools.mjs';
 import {parseHardRules, hardRuleEligibility} from '../../src/hard-rules.js';
@@ -224,6 +225,8 @@ export function saveRecordScore(db, id, runId, input) {
     saveDryScore(run.taskId, item.id, {assessment, runId: run.id, at: assessment.scoredAt});
     return {itemId: item.id, saved: true, score: assessment.score};
   }
-  const cells = assessmentCells(db.get(id).table, item.cells, assessment);
-  return db.putResult({...item, assessment, cells, updatedAt: assessment.scoredAt});
+  const cells = assessmentCells(db.get(id).table, item.cells, assessment),
+    saved = db.putResult({...item, assessment, cells, updatedAt: assessment.scoredAt});
+  keepListingDescription(db, id, run, saved.id, item.url);
+  return saved;
 }

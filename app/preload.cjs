@@ -60,6 +60,9 @@ contextBridge.exposeInMainWorld('jobloop', {
   automationRecordsDelete: (id, itemIds) => invoke('automation-records-delete', id, itemIds),
   automationRecordRun: (id, itemId, kind, input = {}) =>
     invoke('automation-record-run', id, itemId, kind, input),
+  automationRecordDescription: (id, itemId) => invoke('automation-record-description', id, itemId),
+  automationRecordDescriptionRead: (id, itemId) =>
+    invoke('automation-record-description-read', id, itemId),
   automationRetryLater: (id, key, cancel = false) =>
     invoke('automation-retry-later', id, key, cancel),
   automationAttentionDismiss: (id, key, dismissKey) =>

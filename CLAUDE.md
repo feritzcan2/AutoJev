@@ -35,4 +35,6 @@ regex matching a "Bewerben" or "Başvur" button alongside "Apply").
 
 Follow [CONTRIBUTING.md](CONTRIBUTING.md) for other development and validation
 steps. Keep temporary page content and the Jev cache in RAM; read pages again
-after the application restarts.
+after the application restarts. The one exception is a record's listing
+description, saved on disk (`workspace_record_descriptions`) only so the user can
+read it in the record panel; agents and scoring still read the page again.

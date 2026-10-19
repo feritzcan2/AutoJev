@@ -179,7 +179,9 @@ export const questionMethods = {
     if (question.answer == null && question.recordId)
       question = {
         ...question,
-        canDismissRecord: ['found', 'prepared'].includes(this.result(id, question.recordId).status),
+        canDismissRecord: ['found', 'prepared', 'uncertain'].includes(
+          this.result(id, question.recordId).status,
+        ),
       };
     if (question.answer != null || question.browserContext) return question;
     // Older questions predate saved tab context. Match their owning run even

@@ -349,8 +349,8 @@ test('a brief without a model returns the original listing text in pages', async
   );
 });
 
-test('the decision setting defaults to Jev, is validated, and selects the agent instructions', (t) => {
-  assert.equal(withAgentDefaults({provider: 'claude'}).decisions, 'jev');
+test('the decision setting defaults to the agent, is validated, and selects the agent instructions', (t) => {
+  assert.equal(withAgentDefaults({provider: 'claude'}).decisions, 'agent');
   const core = new WorkspaceDatabase(':memory:'),
     db = new AutomationStore(core);
   t.after(() => core.close());
@@ -362,7 +362,7 @@ test('the decision setting defaults to Jev, is validated, and selects the agent 
   db.save(a.id, {agentSettings: {provider: 'codex', decisions: 'agent'}});
   assert.equal(db.get(a.id).agentSettings.decisions, 'agent');
 
-  const jev = webAgentProfile('run', {provider: 'codex'}).instructions,
+  const jev = webAgentProfile('run', {provider: 'codex', decisions: 'jev'}).instructions,
     agent = webAgentProfile('run', {provider: 'codex', decisions: 'agent'}).instructions;
   assert.match(jev, /## Jev managed browser/);
   assert.match(agent, /## Managed browser \(agent decisions\)/);
@@ -415,7 +415,7 @@ test('readiness needs no TypeSafe key when the agent makes the listing decisions
   assert.equal(check.state, 'ready');
   assert.match(check.detail, /no TypeSafe key is needed/);
   const jev = await collectReadiness(
-    {provider: 'codex'},
+    {provider: 'codex', decisions: 'jev'},
     {...options, jevStatus: async () => ({})},
   );
   assert.equal(jev.checks.find((c) => c.id === 'jev').state, 'error');

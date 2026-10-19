@@ -366,7 +366,7 @@ export function automationResultsTable(
   const skippable = (result) =>
     Boolean(
       api.automationDismiss &&
-        ['found', 'prepared'].includes(result.status) &&
+        ['found', 'prepared', 'uncertain'].includes(result.status) &&
         !result.recordAction?.task &&
         !requests.has(data.automation.id + ':' + result.id),
     );
@@ -441,6 +441,71 @@ export function automationResultsTable(
     const panel = content.querySelector('.record-row-actions:popover-open');
     if (panel)
       positionMenu(panel, panel.closest('[data-result-id]').querySelector('.record-row-menu'));
+  }
+
+  // The Listing tab shows the description saved with the record. It is fetched
+  // on demand, not with every snapshot, and fetched again after the record changes.
+  let drawerTab = 'fit';
+  const descriptions = new Map();
+  async function loadDescription(result, read = false) {
+    const workspace = data.automation.id,
+      entry = {status: read ? 'reading' : 'loading', at: result.updatedAt, value: null, error: ''};
+    descriptions.set(result.id, entry);
+    try {
+      entry.value = await (read
+        ? api.automationRecordDescriptionRead(workspace, result.id)
+        : api.automationRecordDescription(workspace, result.id));
+      entry.status = entry.value ? 'ready' : 'missing';
+    } catch (error) {
+      entry.status = 'error';
+      entry.error = error.message;
+    }
+    if (descriptions.get(result.id) === entry && detailId === result.id) {
+      renderKeys.delete(drawer);
+      renderDrawer();
+    }
+  }
+  function listingContent(result) {
+    const cell = el('div', null, 'record-listing');
+    if (!api.automationRecordDescription) return cell;
+    let entry = descriptions.get(result.id);
+    if (
+      !entry ||
+      (entry.at !== result.updatedAt && !['loading', 'reading'].includes(entry.status))
+    ) {
+      void loadDescription(result);
+      entry = descriptions.get(result.id);
+    }
+    const readButton = (label) => {
+      const read = button(label, () => loadDescription(result, true));
+      read.disabled = entry.status === 'reading';
+      return read;
+    };
+    if (entry.status === 'loading')
+      cell.append(el('p', 'Loading the description…', 'record-listing-state'));
+    else if (entry.status === 'reading')
+      cell.append(el('p', 'Reading the listing…', 'record-listing-state'));
+    else if (entry.status === 'ready') {
+      cell.append(el('div', entry.value.text, 'record-listing-text'));
+      const footer = el('div', null, 'record-listing-footer');
+      footer.append(
+        el('small', `Saved ${time(entry.value.readAt)} from ${source({url: entry.value.url})}`),
+        readButton('Read again'),
+      );
+      cell.append(footer);
+    } else {
+      cell.append(
+        el(
+          'p',
+          entry.status === 'error'
+            ? `Could not read the description: ${entry.error}`
+            : 'No description was saved for this listing yet. Records found from now on keep the description their scan or scoring read.',
+          'record-listing-state',
+        ),
+        readButton('Read listing'),
+      );
+    }
+    return cell;
   }
 
   // Development builds: a developer section per record, kept across rebuilds.
@@ -1170,6 +1235,15 @@ export function automationResultsTable(
             'automation-trial-label',
           ),
         );
+      // A record sent back after an unsent attempt looks new without this label.
+      if (result.notSubmitted && ['found', 'prepared'].includes(result.status)) {
+        const label = el('span', 'Not submitted · earlier attempt', 'automation-trial-label');
+        label.title =
+          result.notSubmitted.kind === 'user'
+            ? 'You reported that the earlier attempt was not submitted. It can be sent again.'
+            : 'Verification found that the earlier attempt was not submitted. It can be sent again.';
+        state.append(label);
+      }
       const activityAt = recordActivityAt(result),
         date = el('time', relativeTime(activityAt));
       date.dateTime = new Date(activityAt).toISOString();
@@ -1410,7 +1484,7 @@ export function automationResultsTable(
           'If you verified that the application was submitted, mark the record as completed';
         (problem ? problemActions : actions).append(submitted);
       }
-      if (['found', 'prepared'].includes(result.status)) {
+      if (['found', 'prepared', 'uncertain'].includes(result.status)) {
         const dismiss = button('Skip', async () => {
           await api.automationDismiss(data.automation.id, result.id);
           await refresh();
@@ -1426,7 +1500,9 @@ export function automationResultsTable(
           await api.automationRestore(data.automation.id, result.id);
           await refresh();
         };
-        if (data.definition.recordOperations?.execute) {
+        // A record skipped while uncertain may already be submitted; it
+        // returns to verification, not straight to a new submission.
+        if (data.definition.recordOperations?.execute && !result.skippedFrom) {
           const apply = button(
             'Apply',
             async () => {
@@ -1454,7 +1530,9 @@ export function automationResultsTable(
         });
         unskip.dataset.recordRestore = result.id;
         unskip.disabled = busy || requesting;
-        unskip.title = 'Take back the skip; the record returns to the found list';
+        unskip.title = result.skippedFrom
+          ? 'Take back the skip; the record returns to its unverified state'
+          : 'Take back the skip; the record returns to the found list';
         actions.append(unskip);
       }
       for (const control of actions.querySelectorAll('[data-idle]'))
@@ -1515,9 +1593,20 @@ export function automationResultsTable(
       if (drawer.matches(':popover-open')) drawer.hidePopover();
       return;
     }
-    if (changed(drawer, JSON.stringify([result, data.automation.revision]))) {
+    const description = descriptions.get(result.id);
+    if (
+      changed(
+        drawer,
+        JSON.stringify([
+          result,
+          data.automation.revision,
+          drawerTab,
+          drawerTab === 'listing' && description?.status,
+        ]),
+      )
+    ) {
       // Build the body first: the title and meta change only with it.
-      const body = detailContent(result);
+      const body = drawerTab === 'listing' ? listingContent(result) : detailContent(result);
       body.id = 'automation-result-detail-' + result.id;
       drawerTitle.textContent = result.title;
       const columns = data.automation.table?.columns ?? [];
@@ -1541,7 +1630,25 @@ export function automationResultsTable(
           }),
         status,
       );
-      drawerTools.replaceChildren(button('Open ↗', () => api.openLink(result.url)));
+      const tabs = el('div', null, 'record-drawer-tabs');
+      tabs.setAttribute('role', 'tablist');
+      for (const [key, label] of [
+        ['fit', 'Fit'],
+        ['listing', 'Listing'],
+      ]) {
+        const tab = button(label, () => {
+          drawerTab = key;
+          renderDrawer();
+        });
+        tab.setAttribute('role', 'tab');
+        tab.setAttribute('aria-selected', String(drawerTab === key));
+        tab.setAttribute('aria-controls', body.id);
+        tabs.append(tab);
+      }
+      drawerTools.replaceChildren(
+        tabs,
+        button('Open ↗', () => api.openLink(result.url)),
+      );
       drawerBody.replaceChildren(body);
       drawerBody.scrollTop = 0;
     }
