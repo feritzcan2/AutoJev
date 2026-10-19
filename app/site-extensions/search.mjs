@@ -4,7 +4,9 @@
 // accepts. Data only: recipes are built from it, nothing here reads a page or
 // judges a listing. Also bundled into the renderer; keep it free of app imports.
 //
-// search: {template, ordering?, pagination?, filters, notes?}
+// search: {template, ordering?, pagination?, filters, notes?, removes?}
+// removes: address parameters a saved template drops, such as a sort the site
+// no longer uses, so the site's default applies.
 // filter: {param, label, values?} — values maps a parameter value to its
 // label; without values the filter takes free text.
 // Placeholders must survive the form encoding of URLSearchParams.
@@ -43,7 +45,7 @@ export const searchFilterLabels = (search, template) =>
 
 // An agent's url_template recipe for a site whose results address the
 // extension knows. The extension owns the site structure: its fixed address
-// parameters (the sort), the pagination and the ordering. The agent keeps its
+// parameters (the sort) and the ones it removes, the pagination and the ordering. The agent keeps its
 // choices: the path, the search placeholders, the terms and the filter values.
 // Returns the recipe to save and the fields that changed.
 export function siteSearchRecipe(search, recipe) {
@@ -53,8 +55,11 @@ export function siteSearchRecipe(search, recipe) {
         !placeholder.test(value) && !search.filters.some((filter) => filter.param === param),
     ),
     {base, params} = split(recipe.entry.template),
-    keepsFixed = fixed.every(([param, value]) => params.get(param) === value);
+    removed = (search.removes ?? []).filter((param) => params.has(param)),
+    keepsFixed =
+      !removed.length && fixed.every(([param, value]) => params.get(param) === value);
   for (const [param, value] of fixed) params.set(param, value);
+  for (const param of removed) params.delete(param);
   const query = restore(params.toString()),
     template = keepsFixed ? recipe.entry.template : query ? `${base}?${query}` : base,
     next = {

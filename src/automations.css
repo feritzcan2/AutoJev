@@ -1951,6 +1951,94 @@
 .record-drawer-body .record-listing-footer small {
   margin: 0;
 }
+/* Contacts page: one group per listing, one card per LinkedIn contact. */
+.contacts-page-list {
+  display: grid;
+  gap: 18px;
+  max-width: 760px;
+}
+.contacts-page-empty,
+.contacts-page .record-listing-state,
+.contacts-page .record-contact-about,
+.contacts-page .record-contact-hint {
+  color: var(--text-secondary);
+}
+.record-contact {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.record-contact-head,
+.record-contact-foot,
+.record-contacts-find {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.record-contact-head {
+  justify-content: space-between;
+}
+.record-contact-state {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  font-size: 12px;
+}
+.record-contact[data-state='uncertain'] .record-contact-state,
+.record-contact[data-state='failed'] .record-contact-state {
+  color: var(--danger, #e5484d);
+}
+.contacts-page-group {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-raised);
+}
+.contacts-page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.contacts-page-head h3 {
+  margin: 0;
+}
+.contacts-page-head small {
+  color: var(--text-secondary);
+}
+.contacts-page .record-contact-reason {
+  margin: 0;
+  font-size: 13px;
+}
+.record-contact textarea {
+  width: 100%;
+  resize: vertical;
+}
+.record-contact-pick {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+}
+.record-contacts-send {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.record-contacts-find {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.record-contacts-find input {
+  flex: 1;
+}
+.contacts-page .record-contacts-error {
+  color: var(--danger, #e5484d);
+}
 .record-drawer-body {
   flex: 1;
   overflow: auto;
@@ -2182,4 +2270,10 @@
   color: var(--muted);
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+.record-contact-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-weight: 600;
 }

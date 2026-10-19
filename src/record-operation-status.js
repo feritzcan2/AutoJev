@@ -4,6 +4,7 @@ const running = {
   execute: 'Applying',
   verify: 'Verifying',
   cover_letter: 'Writing cover letter',
+  contacts: 'LinkedIn contacts',
 };
 const queued = {
   score: 'Scoring queued',
@@ -11,6 +12,7 @@ const queued = {
   execute: 'Application queued',
   verify: 'Verification queued',
   cover_letter: 'Cover letter queued',
+  contacts: 'Contact task queued',
 };
 // The agent's blocker category, as the card's badge.
 const blockerLabels = {

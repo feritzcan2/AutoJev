@@ -74,12 +74,18 @@ export class SiteWaitError extends Error {
     this.wait = wait;
   }
 }
-// Scans and applications keep separate waits for the same site: a scan that
-// hits a rate limit must not hold an application there, and the reverse.
-// Pacing stays shared, so both lanes together still never burst a site.
-export const APPLY_LANE = 'apply';
+// Scans, applications and contact tasks keep separate waits for the same
+// site: a scan that hits a rate limit (such as a public API budget) must not
+// hold a signed-in application or contact search there, and the reverse.
+// Pacing stays shared, so the lanes together still never burst a site.
+export const APPLY_LANE = 'apply',
+  CONTACTS_LANE = 'contacts';
 export const runSiteLane = (run) =>
-  ['prepare', 'execute', 'verify'].includes(run?.recordOperation) ? APPLY_LANE : undefined;
+  ['prepare', 'execute', 'verify'].includes(run?.recordOperation)
+    ? APPLY_LANE
+    : run?.recordOperation === 'contacts'
+      ? CONTACTS_LANE
+      : undefined;
 const waitKey = (site, lane) => (lane ? `${site} ${lane}` : site);
 export class SiteAccess {
   constructor(db, {now = Date.now, changed = () => {}} = {}) {
@@ -133,7 +139,7 @@ export class SiteAccess {
       exhausted,
       probing,
       waiting: exhausted || retryAt > this.now(),
-      message: `${row.site}: shared wait for ${row.lane === APPLY_LANE ? 'applications' : 'scans'} because of ${row.reason === 'budget' ? 'its request budget being used up' : row.reason === 'ip_block' ? 'an IP block' : row.reason === 'verification' ? 'an access verification' : row.reason === 'unreachable' ? 'the site being unreachable' : 'a rate limit'}. ${exhausted ? 'Third access failure; automatic retries stopped. Intervention is needed to continue.' : probing ? 'A single access check is in progress.' : `Resumes automatically: ${new Date(retryAt).toLocaleString('en-GB')}.`} Other sites${row.lane === APPLY_LANE ? ' and scans of this site' : ' and applications on this site'} can keep working.`,
+      message: `${row.site}: shared wait for ${row.lane === APPLY_LANE ? 'applications' : row.lane === CONTACTS_LANE ? 'contact tasks' : 'scans'} because of ${row.reason === 'budget' ? 'its request budget being used up' : row.reason === 'ip_block' ? 'an IP block' : row.reason === 'verification' ? 'an access verification' : row.reason === 'unreachable' ? 'the site being unreachable' : 'a rate limit'}. ${exhausted ? 'Third access failure; automatic retries stopped. Intervention is needed to continue.' : probing ? 'A single access check is in progress.' : `Resumes automatically: ${new Date(retryAt).toLocaleString('en-GB')}.`} Other sites${row.lane ? ' and scans of this site' : ' and applications on this site'} can keep working.`,
     };
   }
   begin(url) {

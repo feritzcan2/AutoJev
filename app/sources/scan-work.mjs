@@ -283,12 +283,12 @@ export function assertScanWorkFinished(run) {
 }
 // Every saved search was closed by complete_scan_search, or by a collector
 // from its own API pages, and nothing is queued: the app has verified the
-// whole scan itself.
+// whole scan itself. This holds for a single search too: after a restart the
+// finish must not ask for an evidence page the closed search refuses to open.
 export function scanWorkVerified(run) {
   const work = run.scan?.work;
   return Boolean(
     work &&
-      (work.searches.length > 1 || run.scan.collector) &&
       work.searches.every((s) => s.status === 'completed') &&
       !pendingScanUrls(scanWork(run)).length,
   );
@@ -373,7 +373,11 @@ export function scanPlanView(plan) {
   };
 }
 export function validateWorkCompletion(run, scan) {
-  if ((run.scan?.work?.searches.length ?? 0) <= 1 && !run.scan?.collector) {
+  if (
+    (run.scan?.work?.searches.length ?? 0) <= 1 &&
+    !run.scan?.collector &&
+    !scanWorkVerified(run)
+  ) {
     const completion = validateScanCompletion(run.scanPlan, scan, run.pageProgress, run.id);
     assertScanWorkFinished(run);
     return completion;

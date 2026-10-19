@@ -79,6 +79,15 @@ import {
 } from './cover-letters.mjs';
 import {renderCoverLetterPdf} from './cover-letter-pdf.mjs';
 import {
+  contactBrief,
+  saveRecordContacts,
+  reserveContactAction,
+  recordContactOutcome,
+  contactClick,
+  contactSendClicked,
+  finishContactTask,
+} from './contacts.mjs';
+import {
   recordReceipt,
   scanToolOutput,
   documentToolContent,
@@ -1713,6 +1722,24 @@ export function automationWorkflow({
         result = await saveCoverLetter(db, id, active, args.text, {workspace, renderPdf});
         break;
       }
+      case 'read_contact_brief':
+        if (active.recordOperation !== 'contacts') throw Error('Only a contact task has a brief');
+        return contactBrief(db, id, active);
+      case 'save_record_contacts':
+        if (active.recordOperation !== 'contacts')
+          throw Error('Only a contact task can save contacts');
+        result = saveRecordContacts(db, id, active, args);
+        break;
+      case 'reserve_contact_action':
+        if (active.recordOperation !== 'contacts')
+          throw Error('Only a contact send task can reserve a contact');
+        result = reserveContactAction(db, id, active, args.contactId);
+        break;
+      case 'record_contact_outcome':
+        if (active.recordOperation !== 'contacts')
+          throw Error('Only a contact send task records contact outcomes');
+        result = recordContactOutcome(db, id, active, args);
+        break;
       case 'browser_interact': {
         const research = active.kind === 'interview';
         db.spendStep(id, run.id, {research});
@@ -1765,6 +1792,9 @@ export function automationWorkflow({
           parameters.values = [value];
         } else if (args.operation === 'press') {
           if (!args.key?.trim()) throw Error('A key is required');
+          // Enter in a message box sends it past the Send-click gate.
+          if (active.recordOperation === 'contacts' && active.request?.phase === 'send')
+            throw Error('Keys are off in a contact send task; click the Send button instead.');
           operation = 'browser_target_press';
           parameters.ref = args.ref;
           parameters.key = args.key;
@@ -1786,10 +1816,18 @@ export function automationWorkflow({
           (Boolean(submitLabel) &&
             formSubmits?.labels.has(spaced(submitLabel)) &&
             formSubmits.url === (await browser.currentUrl(id)));
-        if (submitClick) assertSubmitAllowed(db.activeRun(id, run.id), submitLabel);
+        // A contact task has no application to submit: its own gate allows
+        // connect/message after a reservation and one Send per contact.
+        const contactTask = active.recordOperation === 'contacts',
+          contactSpend = contactTask
+            ? contactClick(db.activeRun(id, run.id), submitLabel, submitClick)
+            : null;
+        if (submitClick && !contactTask) assertSubmitAllowed(db.activeRun(id, run.id), submitLabel);
         const beforeSubmit = submitClick ? (snapshots.current?.text ?? '') : '';
         snapshots.invalidate();
         const response = await callBrowser(id, operation, parameters, run.id);
+        if (contactSpend === 'send' && response.action?.executed !== false)
+          contactSendClicked(db, id, run);
         if (response.isError)
           throw Error(
             'The browser step could not complete; check the result: ' +
@@ -1821,7 +1859,7 @@ export function automationWorkflow({
         if (response.siteWait && active.recordId)
           result.siteWaitGuidance =
             'This site asked to slow down, so the step was not executed. Do not retry it now. Call finish_automation_run with status=blocked; the app resumes this record after the wait from the same tab.';
-        if (submitClick) {
+        if (submitClick && !contactTask) {
           let outcome = classifySubmission(snapshots.current?.text ?? '', beforeSubmit);
           // A confirmation often renders a moment after the click: look twice more.
           for (
@@ -1866,6 +1904,8 @@ export function automationWorkflow({
       case 'finish_automation_run':
         if (active.recordOperation === 'cover_letter')
           finishCoverLetter(db, id, active, args.status, args.summary);
+        if (active.recordOperation === 'contacts')
+          finishContactTask(db, id, active, args.status, args.summary);
         return finishAutomationRun({
           db,
           id,
@@ -1977,10 +2017,16 @@ export async function launchAutomationWorker({
   try {
     // A trial may use a stronger model: it discovers the source once; scans replay the recipe.
     // A cover letter is written once and read by an employer, so it gets the same model.
-    const trialSettings = (s) =>
-      (run.kind === 'trial' || run.recordOperation === 'cover_letter') && s?.trialModel
-        ? {...s, model: s.trialModel}
-        : s;
+    // Contact tasks have their own model setting (Opus by default for Claude).
+    const trialSettings = (s) => {
+      const model =
+        run.kind === 'trial' || run.recordOperation === 'cover_letter'
+          ? s?.trialModel
+          : run.recordOperation === 'contacts' && s
+            ? withAgentDefaults(s).contactModel
+            : null;
+      return model ? {...s, model} : s;
+    };
     const persistent = run.kind === 'interview',
       history = persistent
         ? setupAgentHistory(db, automation.id)

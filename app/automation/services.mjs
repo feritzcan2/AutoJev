@@ -24,6 +24,12 @@ import {
   setCoverLetterAutoApprove,
 } from './cover-letters.mjs';
 import {renderCoverLetterPdf} from './cover-letter-pdf.mjs';
+import {
+  findRecordContacts,
+  editRecordContact,
+  removeRecordContact,
+  sendRecordContacts,
+} from './contacts.mjs';
 
 export function registerAutomationServices({
   root,
@@ -67,7 +73,11 @@ export function registerAutomationServices({
       return browsers.status(id).ready;
     },
     launch: (run, automation, onEvent, signal) => {
-      const coverLetter = run.recordOperation === 'cover_letter';
+      // Cover letter writers and contact tasks read in their own tab; the
+      // application's form tab stays as the applicant left it.
+      const coverLetter = run.recordOperation === 'cover_letter',
+        contacts = run.recordOperation === 'contacts',
+        ownTab = coverLetter || contacts;
       if (run.sourceUrl && run.taskId && !run.recordOperation)
         void browsers.closeSourceCheck(automation.id, run).catch(() => {});
       return launch({
@@ -100,18 +110,16 @@ export function registerAutomationServices({
             },
           ),
           {
-            // A cover letter writer reads the listing in its own tab; the
-            // application's form tab stays as the applicant left it.
-            isolatedResearch: isConversation(run) || batchScoring(run) || coverLetter,
+            isolatedResearch: isConversation(run) || batchScoring(run) || ownTab,
             resumeContext:
-              batchScoring(run) || coverLetter
+              batchScoring(run) || ownTab
                 ? undefined
                 : (run.continuation?.browserContext ?? run.resumeContext),
             resumeSource: ['site_access_response', 'site_access_retry'].includes(
               run.continuation?.reason,
             ),
             recordId:
-              run.recordOperation && !batchScoring(run) && !coverLetter ? run.recordId : undefined,
+              run.recordOperation && !batchScoring(run) && !ownTab ? run.recordId : undefined,
             sourceUrl: run.recordOperation ? undefined : run.sourceUrl,
             sourceUrls: automation.sources,
             // Development builds keep every Jev request of the run in the agent trace.
@@ -125,13 +133,15 @@ export function registerAutomationServices({
               ? `score-batch:${run.taskId}`
               : coverLetter
                 ? `cover-letter:${run.recordId}`
-                : run.recordOperation
-                  ? `record:${run.recordId}`
-                  : run.sourceUrl && !run.recordId
-                    ? `source:${run.sourceUrl}`
-                    : run.kind !== 'run'
-                      ? `read:${run.sourceUrl ?? run.workerId ?? 'main'}`
-                      : undefined,
+                : contacts
+                  ? `contacts:${run.recordId}`
+                  : run.recordOperation
+                    ? `record:${run.recordId}`
+                    : run.sourceUrl && !run.recordId
+                      ? `source:${run.sourceUrl}`
+                      : run.kind !== 'run'
+                        ? `read:${run.sourceUrl ?? run.workerId ?? 'main'}`
+                        : undefined,
           },
         ),
         report: (id, runId, status, summary, goalReached) => {
@@ -319,6 +329,22 @@ export function registerAutomationServices({
     runtime.runRecord(id, itemId, kind, input),
   );
   handle('automation-record-description', (id, itemId) => listingDescription(db, id, itemId));
+  handle('record-contacts-find', (id, itemId, notes) =>
+    findRecordContacts(runtime, id, itemId, {notes}),
+  );
+  handle('record-contacts-send', (id, itemId, contactIds, messages) =>
+    sendRecordContacts(runtime, id, itemId, contactIds, messages),
+  );
+  handle('record-contact-edit', (id, itemId, contactId, message) => {
+    const entry = editRecordContact(db, id, itemId, contactId, {message});
+    changed(id);
+    return entry;
+  });
+  handle('record-contact-remove', (id, itemId, contactId) => {
+    const entry = removeRecordContact(db, id, itemId, contactId);
+    changed(id);
+    return entry;
+  });
   handle('automation-record-description-read', (id, itemId) =>
     readListingDescription(db, id, itemId),
   );

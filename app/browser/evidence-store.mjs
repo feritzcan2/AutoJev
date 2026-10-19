@@ -53,6 +53,12 @@ export class BrowserEvidenceStore {
   known(id) {
     return this.pages.has(id);
   }
+  // Every page this run's scope read, oldest first.
+  list(run) {
+    return [...this.pages.values()]
+      .filter((row) => row.scope === scope(run))
+      .map((row) => structuredClone(row.value));
+  }
   latest(run, url) {
     return structuredClone(
       [...this.pages.values()]

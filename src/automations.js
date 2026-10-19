@@ -1,6 +1,7 @@
 import {activeRecordOperations} from './record-operation-status.js';
 import {answersPage} from './answers-page.js';
 import {coverLetterReview} from './cover-letter-review.js';
+import {contactsPage, contactsToReview} from './contacts-page.js';
 import {automationReady} from '../app/sources/trial.mjs';
 import {templateFields} from './template-fields.js';
 import {
@@ -203,6 +204,22 @@ export function automationsPage(
     getConversation: () => chatPanel,
     showRecordQuestions: () => showAnswers(),
   });
+  const contactsSection = el('section');
+  contactsSection.dataset.automationPane = 'contacts';
+  const contactsView = contactsPage(contactsSection, api, {refresh});
+  // A listing's "Find contacts": a first search starts at once, then the page opens on it.
+  async function showContacts(result) {
+    const known = (data?.automation.recordContacts ?? []).some((e) => e.recordId === result.id);
+    navigate('contacts');
+    contactsView.focus(result.id);
+    if (known) return;
+    try {
+      await api.recordContactsFind(selected, result.id, '');
+      await refresh();
+    } catch (error) {
+      notice(error.message);
+    }
+  }
   const boardNav = document.querySelector('[data-view=board]'),
     recordWork = el('span', null, 'board-nav-work');
   recordWork.id = 'board-nav-work';
@@ -234,6 +251,19 @@ export function automationsPage(
   attentionNav.append(attentionBadge);
   attentionNav.onclick = () => navigate('attention');
   answersNav.after(attentionNav);
+  // Contacts sits above Files; its badge counts suggestions waiting for approval.
+  const contactsNav = el('button'),
+    contactsBadge = el('span', null, 'agent-nav-status');
+  contactsNav.type = 'button';
+  contactsNav.dataset.view = 'contacts';
+  contactsNav.innerHTML =
+    '<svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.5A6.5 6.5 0 0 1 21.5 20"/></svg><span>Contacts</span>';
+  contactsBadge.dataset.tone = 'waiting';
+  contactsBadge.setAttribute('aria-hidden', 'true');
+  contactsBadge.hidden = true;
+  contactsNav.append(contactsBadge);
+  contactsNav.onclick = () => navigate('contacts');
+  document.querySelector('[data-view=files]').before(contactsNav);
   // Files shows a badge while a cover letter waits for the user's review.
   const filesNav = document.querySelector('[data-view=files]'),
     filesHome = document.querySelector('[data-view=background]'),
@@ -440,6 +470,7 @@ export function automationsPage(
       refresh,
       statusNames,
       onQuestion: showAnswers,
+      onContacts: showContacts,
     });
     saveScoreSettings = minimumSaveScoreSettings({
       save: async (owner, value, options) => {
@@ -687,6 +718,7 @@ export function automationsPage(
       results,
       answersSection,
       attentionSection,
+      contactsSection,
       history,
       files,
       sources,
@@ -798,6 +830,15 @@ export function automationsPage(
     document.querySelector('#delete-workspace').disabled = locked;
     find('#automation-delete').disabled = locked;
     answers.update(data);
+    contactsView.update(data);
+    const review = contactsToReview(data);
+    contactsBadge.hidden = !review;
+    contactsBadge.textContent = review ? String(review) : '';
+    contactsNav.title = review ? `${review} contact${review > 1 ? 's' : ''} to approve` : '';
+    contactsNav.setAttribute(
+      'aria-label',
+      ['Contacts', contactsNav.title].filter(Boolean).join(' · '),
+    );
     const helpCount = attention.update(selected, data),
       questionCount = (a.questions ?? []).filter((q) => q.recordId && q.answer == null).length,
       agentHelpCount = Math.max(0, helpCount - questionCount - attention.conversationCount),
@@ -1070,6 +1111,7 @@ export function automationsPage(
     resultsTable?.dispose();
     attention.update(null, null);
     answers.update(null);
+    contactsView.update(null);
     resultsTable?.dispose();
     agentNavLabel(false);
     chatPanel?.dispose();

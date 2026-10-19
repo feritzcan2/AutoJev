@@ -457,7 +457,9 @@ test('with automatic acceptance the saved letter resumes the application without
   assert.deepEqual(resumed.continuation.questionIds, [questionId]);
 });
 
-test('an upload-only cover letter field counts as filled once the approved letter is uploaded to it', async (t) => {
+// Uploads the approved letter on a form whose inspection `form(id, uploaded)`
+// returns; each inspection gives the upload a new id.
+async function uploadApprovedLetter(t, form) {
   const f = await fixture(t);
   const {questionId} = await f.requestLetter();
   const writer = f.launches.at(-1);
@@ -470,9 +472,8 @@ test('an upload-only cover letter field counts as filled once the approved lette
   await settle();
   const execute = f.launches.at(-1);
   await writeFile(path.join(f.workspace, 'CV.pdf'), '%PDF-cv');
-  // The upload entry never says which file it holds, and each inspection
-  // gives it a new id.
-  let inspections = 0;
+  let inspections = 0,
+    uploaded = false;
   const flow = automationWorkflow({
     workspace: f.workspace,
     db: f.db,
@@ -480,24 +481,22 @@ test('an upload-only cover letter field counts as filled once the approved lette
     signal: {aborted: false},
     browser: {
       currentUrl: async () => f.item.url,
-      call: async (_, name) =>
-        name === 'browser_upload_document'
-          ? {action: 'uploaded'}
-          : name === 'browser_snapshot'
-            ? {
-                pageContext: {url: f.item.url, tabId: 'tab-1'},
-                content: [{type: 'text', text: `Page URL: ${f.item.url}\nApplication form`}],
-              }
-            : {
-                url: f.item.url,
-                uploads: [
-                  {uploadId: `letter-${++inspections}`, label: 'Cover Letter — File upload'},
-                ],
-                fields: [
-                  {label: 'Email', question: 'Email *', required: true, type: 'text', filled: true},
-                ],
-                submitControls: [{label: 'Submit application'}],
-              },
+      call: async (_, name, args) => {
+        if (name === 'browser_upload_document') {
+          uploaded = args.filePath.endsWith('.pdf') && !args.filePath.endsWith('CV.pdf');
+          return {action: 'uploaded'};
+        }
+        if (name === 'browser_snapshot')
+          return {
+            pageContext: {url: f.item.url, tabId: 'tab-1'},
+            content: [{type: 'text', text: `Page URL: ${f.item.url}\nApplication form`}],
+          };
+        return {
+          url: f.item.url,
+          submitControls: [{label: 'Submit application'}],
+          ...form(`letter-${++inspections}`, uploaded),
+        };
+      },
     },
     renderPdf: f.renderPdf,
     report: (...args) => f.runtime.report(...args),
@@ -519,4 +518,26 @@ test('an upload-only cover letter field counts as filled once the approved lette
   // A later inspection of the same step keeps the field filled.
   await flow.call(f.id, execute.id, 'browser_inspect_form', {});
   await reserve();
-});
+}
+
+const email = {label: 'Email', question: 'Email *', required: true, type: 'text', filled: true};
+
+test('an upload-only cover letter field counts as filled once the approved letter is uploaded to it', (t) =>
+  // The upload entry never says which file it holds.
+  uploadApprovedLetter(t, (uploadId) => ({
+    uploads: [{uploadId, label: 'Cover Letter — File upload'}],
+    fields: [email],
+  })));
+
+test('a cover letter file field that disappears after the upload counts as filled', (t) =>
+  // The field reports empty until the file is attached, then the form shows
+  // the file name in its place.
+  uploadApprovedLetter(t, (uploadId, uploaded) => ({
+    uploads: uploaded ? [] : [{uploadId, label: 'Cover Letter — Attach'}],
+    fields: [
+      email,
+      ...(uploaded
+        ? []
+        : [{label: 'Attach', question: 'Cover Letter', type: 'file', filled: false}]),
+    ],
+  })));

@@ -5,6 +5,7 @@ import {isConversation} from '../workspaces/conversation.mjs';
 import {JEV_LAUNCH_INSTRUCTIONS, AGENT_LAUNCH_INSTRUCTIONS} from '../jev/task-tools.mjs';
 import {SOURCE_PAGE_INSTRUCTIONS} from '../sources/scan.mjs';
 import {COVER_LETTER_PROMPT} from './cover-letters.mjs';
+import {CONTACT_FIND_PROMPT, CONTACT_SEND_PROMPT} from './contacts.mjs';
 
 // agentDecides: the workspace lets the agent make the listing decisions (no Jev model).
 export function automationPrompt(
@@ -13,6 +14,8 @@ export function automationPrompt(
   {evidenceExpired = false, agentDecides = false} = {},
 ) {
   if (run.recordOperation === 'cover_letter') return COVER_LETTER_PROMPT;
+  if (run.recordOperation === 'contacts')
+    return run.request?.phase === 'send' ? CONTACT_SEND_PROMPT : CONTACT_FIND_PROMPT;
   if (run.collector && run.kind === 'run' && !run.recordId)
     return (
       'Read AGENTS.md and get_automation_context. ' +

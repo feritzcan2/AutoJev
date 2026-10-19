@@ -6,7 +6,11 @@ import {automationWorkflow} from '../app/automation/worker.mjs';
 import {automationTaskContext} from '../app/automation/task-context.mjs';
 import {sourceStop} from '../app/automation/stop.mjs';
 import {validate} from '../app/agents/tool-schema.mjs';
-import {hasUnblockedScanWork} from '../app/sources/scan-work.mjs';
+import {
+  hasUnblockedScanWork,
+  scanWorkVerified,
+  validateWorkCompletion,
+} from '../app/sources/scan-work.mjs';
 
 test('site waits retain reachable details and undiscovered searches across search scopes', () => {
   const run = {
@@ -171,4 +175,20 @@ test('progress without a page preserves the queue while falling back from an uns
     /both pending and processed/,
   );
   assert.deepEqual(f.db.scanQueue(f.id, f.run.id).pendingUrls, [p(2)]);
+});
+
+// A resumed turn has no page of its own, and a closed search refuses to open one.
+test('a single search closed by complete_scan_search finishes without a new evidence page', () => {
+  const search = (status, completion) => ({
+    id: 'default',
+    status,
+    completion,
+    pendingUrls: [],
+    processedUrls: ['https://board.test/jobs'],
+  });
+  const run = (s) => ({id: 'r', scan: {work: {activeSearchId: 'default', searches: [s]}}});
+  const closed = run(search('completed', 'cutoff'));
+  assert.equal(scanWorkVerified(closed), true);
+  assert.equal(validateWorkCompletion(closed, {complete: true, pendingUrls: []}), 'cutoff');
+  assert.equal(scanWorkVerified(run(search('pending'))), false);
 });

@@ -312,13 +312,15 @@ function settingsOptions(saved) {
     $(key).replaceChildren(...list.map((value) => new Option(value, value)));
     $(key).value = list.includes(settings[key]) ? settings[key] : 'default';
   }
-  $('trialModel').replaceChildren(
-    new Option('Same as main model', ''),
-    ...current.models
-      .filter((value) => value !== 'default')
-      .map((value) => new Option(value, value)),
-  );
-  $('trialModel').value = current.models.includes(settings.trialModel) ? settings.trialModel : '';
+  for (const key of ['trialModel', 'contactModel']) {
+    $(key).replaceChildren(
+      new Option('Same as main model', ''),
+      ...current.models
+        .filter((value) => value !== 'default')
+        .map((value) => new Option(value, value)),
+    );
+    $(key).value = current.models.includes(settings[key]) ? settings[key] : '';
+  }
 }
 function chromeProfileOptions(selected = workspaceAgent?.workspace?.chromeProfile) {
   const select = $('agent-settings-form').elements.chromeProfile;
@@ -497,6 +499,7 @@ function readAgentSettings() {
     provider: f.provider.value,
     model: f.model.value,
     trialModel: f.trialModel.value || null,
+    contactModel: f.contactModel.value || null,
     permission: f.permission.value,
     reasoning: f.reasoning.value,
     network:
