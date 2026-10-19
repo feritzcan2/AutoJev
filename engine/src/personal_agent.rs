@@ -67,7 +67,10 @@ mod tests {
             request.prompt=Some("Execute the assigned task.");
             request.provider_instructions_source=Some(&termloop_launch::PERSONAL_AGENT_TEMPLATE);
             request.provider_instructions=Some(&instructions);
-            let launch=termloop_launch::resolve(request).unwrap().into_payload();
+            let launch=match termloop_launch::resolve(request) {
+                Err(termloop_launch::InvocationError::AgentCliNotFound(_)) => { eprintln!("{provider} CLI not installed; skipping"); continue; }
+                other => other.unwrap().into_payload(),
+            };
             if provider=="codex" {assert_eq!(launch.codex_app_server_developer_instructions(),Some(instructions.as_str()));}
             else if provider=="opencode" {assert!(launch.environment().entries().find(|(key,_)| *key=="OPENCODE_CONFIG_CONTENT").unwrap().1.to_string_lossy().contains("Saved agent"));}
             else {let index=launch.args().iter().position(|a|a=="--append-system-prompt").unwrap();assert_eq!(launch.args()[index+1],instructions);}

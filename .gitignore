@@ -16,3 +16,5 @@ vendor/termloop/target/
 
 # TermLoop runtime data
 .termloop-runtime/
+/page.html
+/shot.png
