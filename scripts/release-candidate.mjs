@@ -5,6 +5,7 @@ const env = process.env,
   repository = env.GITHUB_REPOSITORY;
 if (!/^v\d+\.\d+\.\d+$/.test(tag ?? '')) throw Error('Use a stable vMAJOR.MINOR.PATCH tag');
 if (!/^[\w.-]+\/[\w.-]+$/.test(repository ?? '')) throw Error('GITHUB_REPOSITORY is required');
+const platforms = (env.JOBLOOP_RELEASE_PLATFORMS || 'macos,linux,windows').split(',');
 const git = (args) => execFileSync('git', args, {encoding: 'utf8'}).trim();
 const sha = git(['rev-parse', 'HEAD']);
 if (env.JOBLOOP_CANDIDATE_SHA && sha !== env.JOBLOOP_CANDIDATE_SHA)
@@ -50,7 +51,7 @@ if (env.JOBLOOP_SKIP_TESTS === '1') {
   const runs = await api(
     `actions/workflows/ci.yml/runs?head_sha=${sha}&status=success&per_page=50`,
   );
-  const required = ['preflight', 'verify (macos)', 'verify (linux)', 'verify (windows)'];
+  const required = ['preflight', ...platforms.map((platform) => `verify (${platform})`)];
   for (const run of runs.workflow_runs.filter(
     (run) => ['push', 'workflow_dispatch'].includes(run.event) && run.head_sha === sha,
   )) {
