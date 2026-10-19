@@ -8,7 +8,7 @@ import {questionForm} from '../question-form.js';
 import {BRAND, markIcon} from './brand.js';
 import {playIntro} from './intro.js';
 import {el, button, icon, plural, scoreOf, relative, host} from './ui.js';
-import {checkmark, flyPlane, reduced, rollingNumber} from './motion.js';
+import {checkmark, docScan, flyPlane, reduced, rollingNumber} from './motion.js';
 import {LESS, NEVER, listOf, setFactLine, withItem, withoutItem} from './facts.js';
 import './simple.css';
 import './onboarding.css';
@@ -26,6 +26,10 @@ const state = {
   open: new Set(),
   busy: new Set(),
   loading: 0,
+  // First snapshot not back yet: show a loading screen instead of a blank page.
+  loaded: false,
+  // Start was just pressed; the backend may take a few seconds to report it.
+  startedAt: 0,
   error: '',
   profileDirty: false,
   // Motion state: what just opened or changed, so an animation plays once.
@@ -141,6 +145,7 @@ async function load() {
   } catch (error) {
     if (version === state.loading) state.error = error.message;
   }
+  if (version === state.loading) state.loaded = true;
   render();
 }
 api.onAutomationChange?.((event) => {
@@ -195,7 +200,10 @@ function pilot(data) {
   const exec = data?.execution ?? {},
     a = data?.automation ?? {},
     asks = questions(data).length,
-    running = ['enabled', 'running'].includes(exec.status) || Boolean(data?.activity?.running),
+    active = ['enabled', 'running'].includes(exec.status) || Boolean(data?.activity?.running),
+    // Between pressing Start and the backend reporting it, show it as starting.
+    starting = !active && state.startedAt > 0 && Date.now() - state.startedAt < 90000,
+    running = active || starting,
     auto = a.mode === 'auto',
     threshold = Number(a.criteria?.score_threshold) || null;
   let title, detail, tone;
@@ -203,6 +211,10 @@ function pilot(data) {
     title = 'Autopilot off';
     detail = a.reviewedRevision == null ? 'Check your profile, then start' : 'Paused';
     tone = 'off';
+  } else if (starting) {
+    title = 'Starting…';
+    detail = 'Getting your search ready';
+    tone = 'on';
   } else if (asks) {
     title = 'Waiting for you';
     detail = `${plural(asks, 'question')} to answer`;
@@ -218,7 +230,8 @@ function pilot(data) {
           : 'You pick what to apply to';
     tone = 'on';
   }
-  return {running, title, detail, tone, auto, threshold};
+  if (active) state.startedAt = 0;
+  return {running, starting, title, detail, tone, auto, threshold};
 }
 
 // ---- Render ---------------------------------------------------------------
@@ -243,6 +256,7 @@ function render() {
   who.append(el('span', 'jl-avatar', initials(name)), Object.assign(el('div'), {}));
   who.lastChild.append(el('b', null, name), el('small', null, 'Switch search'));
 
+  if (!state.loaded) return renderLoading();
   if (!state.id || !a) return renderWelcome();
   renderTop(data, g, asks);
   page.replaceChildren();
@@ -289,8 +303,10 @@ function renderTop(data, g, asks) {
     toggle = button(
       state.busy.has(key) ? '…' : p.running ? 'Pause' : 'Start',
       act(key, async () => {
-        if (p.running) await api.workspaceStop(state.id);
-        else await api.workspaceStart(state.id);
+        if (p.running) {
+          state.startedAt = 0;
+          await api.workspaceStop(state.id);
+        } else await startSearch();
       }),
       'jl-btn small ' + (p.running ? '' : 'accent'),
     );
@@ -316,6 +332,9 @@ function renderJobs(data, g, asks) {
     page.append(banner);
   }
   for (const issue of otherIssues(data)) page.append(issueBanner(issue));
+  const p = pilot(data);
+  if (p.running && !asks.length && (g.review.length || state.tab !== 'review'))
+    page.append(liveStrip(data, p));
   const recap = weekRecap(data, g);
   if (recap) page.append(recap);
 
@@ -512,35 +531,42 @@ function weekRecap(data, g) {
 function emptyJobs(data, tab, g) {
   const p = pilot(data),
     box = el('div', 'jl-empty jl-card');
-  const mark = el('div', p.running && tab === 'review' ? 'jl-spin' : '');
+  if (tab === 'review' && p.running) {
+    const work = liveWork(data);
+    box.classList.add('jl-searching');
+    box.setAttribute('role', 'status');
+    box.setAttribute('aria-live', 'polite');
+    box.append(
+      scanAnimation(),
+      el('h2', null, p.starting ? 'Starting your search' : 'Looking for jobs that fit you'),
+      el(
+        'p',
+        'jl-live-line',
+        work?.text ?? (p.starting ? 'Getting things ready…' : p.detail || 'Getting started…'),
+      ),
+      stepTrail(work ? work.step : 0),
+      el(
+        'p',
+        null,
+        'New matches show up here as soon as they are scored. You can close this window; JobLoop keeps going while the app is open.',
+      ),
+    );
+    return box;
+  }
+  const mark = el('div');
   mark.innerHTML = markIcon(52);
   box.append(mark);
-  if (tab === 'review') {
-    if (p.running) {
-      box.append(
-        el('h2', null, 'Looking for jobs that fit you'),
-        el(
-          'p',
-          null,
-          'New matches show up here as soon as they are scored. You can close this window; JobLoop keeps going while the app is open.',
-        ),
-      );
-    } else {
-      box.append(
-        el('h2', null, g.applied.length ? 'Nothing new to review' : 'Ready when you are'),
-        el(
-          'p',
-          null,
-          'Start autopilot and JobLoop searches your sources, scores every listing against your CV, and lists the best ones here.',
-        ),
-        button(
-          'Start autopilot',
-          act('pilot', () => api.workspaceStart(state.id)),
-          'jl-btn accent big',
-        ),
-      );
-    }
-  } else
+  if (tab === 'review')
+    box.append(
+      el('h2', null, g.applied.length ? 'Nothing new to review' : 'Ready when you are'),
+      el(
+        'p',
+        null,
+        'Start autopilot and JobLoop searches your sources, scores every listing against your CV, and lists the best ones here.',
+      ),
+      button('Start autopilot', act('pilot', startSearch), 'jl-btn accent big'),
+    );
+  else
     box.append(
       el(
         'h2',
@@ -1184,6 +1210,78 @@ const providerLabel = (id) =>
   ({claude: 'Claude', codex: 'ChatGPT (Codex)', opencode: 'OpenCode'})[id] ?? id;
 
 // ---- Welcome (no search yet) -----------------------------------------------------
+function renderLoading() {
+  top.replaceChildren();
+  const box = el('div', 'jl-empty jl-loading jl-spin');
+  box.setAttribute('role', 'status');
+  box.style.paddingTop = '18vh';
+  const mark = el('div');
+  mark.innerHTML = markIcon(56);
+  box.append(mark, el('h2', null, 'Opening your job search'), el('p', null, 'One moment…'));
+  page.replaceChildren(box);
+}
+
+function startSearch() {
+  state.startedAt = Date.now();
+  render();
+  return api.workspaceStart(state.id);
+}
+
+// What the agent is doing right now, in plain words, and which step of
+// Search → Read → Score → Apply that is. Derived from the active runs.
+const STEPS = ['Search', 'Read', 'Score', 'Apply'];
+function liveWork(data) {
+  const runs = data?.runs ?? [],
+    active = (data?.activeRuns ?? (data?.activeRun ? [data.activeRun] : []))
+      .map((run) => runs.find((r) => r.id === run.id) ?? run)
+      .filter((run) => run.kind !== 'interview' && run.kind !== 'conversation');
+  const run = active.find((r) => r.status === 'running') ?? active[0];
+  if (!run) return null;
+  const site = host(run.sourceUrl ?? ''),
+    op = run.operation ?? run.kind;
+  if (op === 'trial') return {step: 0, text: site ? `Learning how to search ${site}` : 'Learning a new job site'};
+  if (['run', 'scan'].includes(op)) return {step: 0, text: site ? `Searching ${site}` : 'Searching job sites'};
+  if (['detail', 'inspect'].includes(op)) return {step: 1, text: 'Reading a job listing'};
+  if (op === 'record-score') return {step: 2, text: 'Scoring a listing against your CV'};
+  if (op === 'record-prepare') return {step: 3, text: 'Filling in an application'};
+  if (op === 'record-execute') return {step: 3, text: 'Sending an application'};
+  if (op === 'record-verify') return {step: 3, text: 'Checking the application went through'};
+  return {step: 0, text: 'Working on your search'};
+}
+function stepTrail(step) {
+  const trail = el('ol', 'jl-steps');
+  trail.setAttribute('aria-label', 'Progress');
+  STEPS.forEach((name, i) => {
+    const item = el('li', null, name);
+    item.dataset.state = i < step ? 'done' : i === step ? 'now' : 'next';
+    if (i === step) item.setAttribute('aria-current', 'step');
+    trail.append(item);
+  });
+  return trail;
+}
+// A strip at the top of Jobs while the agent runs, so the page never looks idle.
+function liveStrip(data, p) {
+  const work = liveWork(data),
+    strip = el('div', 'jl-live');
+  strip.setAttribute('role', 'status');
+  strip.setAttribute('aria-live', 'polite');
+  const copy = el('div', 'jl-live-copy');
+  copy.append(
+    el('b', null, work?.text ?? (p.starting ? 'Starting your search' : 'Waiting for the next scan')),
+    el(
+      'small',
+      null,
+      work ? 'Live · updates as JobLoop works' : p.starting ? 'This takes a few seconds' : p.detail,
+    ),
+  );
+  strip.append(el('span', 'jl-live-dot'), copy, stepTrail(work ? work.step : p.starting ? 0 : -1));
+  strip.dataset.idle = String(!work && !p.starting);
+  return strip;
+}
+// One scan animation reused across renders, so polling does not restart it.
+let scanMark = null;
+const scanAnimation = () => (scanMark ??= docScan(72));
+
 function renderWelcome() {
   top.replaceChildren();
   page.replaceChildren();
@@ -1225,4 +1323,5 @@ const initials = (name) =>
 // ---- Boot ------------------------------------------------------------------------
 document.body.classList.toggle('jl-simple', simpleOn());
 if (simpleOn()) playIntro();
+render();
 load();
