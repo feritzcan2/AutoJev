@@ -28,6 +28,7 @@ import {
   findRecordContacts,
   editRecordContact,
   removeRecordContact,
+  removeRecordContacts,
   sendRecordContacts,
 } from './contacts.mjs';
 
@@ -96,17 +97,6 @@ export function registerAutomationServices({
             {
               signal,
               siteLane: runSiteLane(run),
-              captchaMaySubmit: () => {
-                const current = db.run(run.id);
-                if (
-                  current.recordOperation !== 'execute' ||
-                  !current.recordId ||
-                  current.actionId !== current.recordId
-                )
-                  return false;
-                const item = db.result(run.automationId, current.recordId);
-                return item.status === 'executing' && item.attemptRunId === run.id;
-              },
             },
           ),
           {
@@ -339,6 +329,10 @@ export function registerAutomationServices({
     const entry = editRecordContact(db, id, itemId, contactId, {message});
     changed(id);
     return entry;
+  });
+  handle('record-contacts-remove', (id, itemId) => {
+    removeRecordContacts(db, id, itemId);
+    changed(id);
   });
   handle('record-contact-remove', (id, itemId, contactId) => {
     const entry = removeRecordContact(db, id, itemId, contactId);

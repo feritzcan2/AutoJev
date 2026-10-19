@@ -339,39 +339,6 @@
   box-sizing: border-box;
 }
 
-/* Portal account */
-.account-state {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 12.5px;
-}
-.account-state::before {
-  content: '';
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  flex-shrink: 0;
-}
-.account-state[data-configured='true'] {
-  color: var(--text);
-}
-.account-state[data-configured='true']::before {
-  background: var(--success);
-}
-.account-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-.account-note {
-  margin-top: -8px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
 .profile-fields label.check {
   display: flex;
   flex-direction: row;
@@ -389,42 +356,6 @@
   margin: 2px 0 0;
   flex-shrink: 0;
   accent-color: var(--accent);
-}
-.account-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.account-actions button {
-  padding: 8px 13px;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  background: var(--bg-hover);
-  color: var(--text);
-  font-size: 12.5px;
-  font-weight: 550;
-  text-align: center;
-}
-.account-actions button:hover:not(:disabled) {
-  filter: none;
-  border-color: var(--text-muted);
-}
-.account-actions .remove {
-  border-color: transparent;
-  background: transparent;
-  color: var(--text-secondary);
-  font-weight: 500;
-}
-.account-actions .remove:hover {
-  filter: none;
-  color: var(--danger);
-  background: rgba(225, 117, 126, 0.1);
-}
-.account-actions [role='status'] {
-  margin: 0 0 0 4px;
-  color: var(--text-secondary);
-  font-size: 12px;
 }
 
 /* Telegram */
@@ -458,8 +389,5 @@
   .profile-section {
     grid-template-columns: 1fr;
     gap: 12px;
-  }
-  .account-grid {
-    grid-template-columns: 1fr;
   }
 }

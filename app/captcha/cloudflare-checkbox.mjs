@@ -202,7 +202,6 @@ export async function resolveCloudflareCheckbox(browser, id, result, owner, opti
       slot.owner !== owner ||
       slot.page.isClosed() ||
       (browser.isActive && !browser.isActive()) ||
-      !browser.captcha?.settings.status().enabled ||
       client.automationTabs.get(slot.id)?.startsWith('record:')
     )
       throw Error('The verification task changed.');

@@ -87,6 +87,27 @@ test('finished work closes same-site URL rewrites and earlier turn tabs, keeping
   assert.ok(f.browser.tabs.has('running'));
 });
 
+test('a record the user ended closes every tab of its runs, including pages moved to another site', async () => {
+  const f = jevFixture();
+  f.add('home');
+  f.add('listing');
+  f.add('form', {draft: true});
+  f.add('employer');
+  f.add('check');
+  f.add('other-run', {run: 'other'});
+  const employer = f.browser.tabs.get('employer');
+  employer.observed = {url: 'https://example.test/employer'};
+  employer.page.url = () => 'https://careers.employer.test/apply';
+  f.browser.tabs.get('check').verification = {state: 'required'};
+  const result = await f.browser.closeFinishedAutomationRunTabs(['finished'], 'workspace', {
+    keepForms: true,
+    pendingTabIds: ['form'],
+    closeAll: true,
+  });
+  assert.deepEqual(result, {closed: ['listing', 'form', 'employer', 'check'], retained: []});
+  for (const id of ['home', 'other-run']) assert.ok(f.browser.tabs.has(id), id);
+});
+
 test('verified record completion closes its exact form tab, preserving other tasks', async () => {
   const f = jevFixture();
   f.add('home');

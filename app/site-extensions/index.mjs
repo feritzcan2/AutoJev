@@ -26,10 +26,6 @@
 //   cardsInBrowser it opens the results pages there too (dom.collect/results).
 //   Such a site's `pacing` ({minIntervalMs, jitterMs, budget}) spaces and
 //   bounds those page views.
-// Optionally `credentials` ({label, help, signupUrl, fields:[{key,label}]}) for
-// an API that needs the user's own account: the values are entered under Site
-// accounts (../sources/site-credentials.mjs) and reach the collector's reads
-// as `options.credentials`.
 // Optionally `listingKey(url)`: the one comparison key of a listing the site
 // serves under several addresses (country hosts, title slugs), or null to keep
 // the generic key. Records and remembered rejections compare listings by it.
@@ -56,8 +52,6 @@ import simplyhired from './simplyhired.mjs';
 import hnHiring from './hn-hiring.mjs';
 import themuse from './themuse.mjs';
 import weWorkRemotely from './weworkremotely.mjs';
-import franceTravail from './france-travail.mjs';
-import adzuna from './adzuna.mjs';
 import jobdanmark from './jobdanmark.mjs';
 import jobnet from './jobnet.mjs';
 import reed from './reed.mjs';
@@ -88,8 +82,6 @@ export const SITE_EXTENSIONS = [
   hnHiring,
   themuse,
   weWorkRemotely,
-  franceTravail,
-  adzuna,
   jobdanmark,
   jobnet,
   reed,

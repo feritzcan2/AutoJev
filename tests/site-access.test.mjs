@@ -95,6 +95,8 @@ test('browser observation detects a challenge before creating listing evidence a
   const db = new DatabaseSync(':memory:'),
     gate = new SiteAccess(db),
     browser = new JevBrowser('/unused', {siteAccess: gate, challengeGraceMs: 0});
+  // A record tab gets no checkbox attempt.
+  browser.automationTabs.set('owned', 'record:1');
   let reads = 0;
   const slot = {
     id: 'owned',
@@ -146,6 +148,7 @@ test('a challenge that outlasts the grace period still starts the shared wait', 
   const db = new DatabaseSync(':memory:'),
     gate = new SiteAccess(db),
     browser = new JevBrowser('/unused', {siteAccess: gate, challengeGraceMs: 30});
+  browser.automationTabs.set('owned', 'record:1');
   const slot = {
     id: 'owned',
     http: {url, status: 200},
@@ -164,7 +167,7 @@ test('a challenge that outlasts the grace period still starts the shared wait', 
 test('a 429 challenge page is judged from its loaded document and gets the native checkbox attempt, not a rate-limit wait', async () => {
   const db = new DatabaseSync(':memory:'),
     gate = new SiteAccess(db),
-    browser = new JevBrowser('/unused', {siteAccess: gate, autoVerify: () => true});
+    browser = new JevBrowser('/unused', {siteAccess: gate});
   const calls = [];
   let readiness = 0;
   const page = {
@@ -195,10 +198,10 @@ test('a 429 challenge page is judged from its loaded document and gets the nativ
     db.close();
   }
 });
-test('an ordinary 429 page with automatic verification still starts the rate-limit wait from its loaded document', async () => {
+test('an ordinary 429 page still starts the rate-limit wait from its loaded document', async () => {
   const db = new DatabaseSync(':memory:'),
     gate = new SiteAccess(db),
-    browser = new JevBrowser('/unused', {siteAccess: gate, autoVerify: () => true});
+    browser = new JevBrowser('/unused', {siteAccess: gate});
   const slot = {
     id: 'owned',
     http: {url, status: 429},
@@ -222,26 +225,7 @@ test('an ordinary 429 page with automatic verification still starts the rate-lim
     db.close();
   }
 });
-test('without automatic verification a 429 starts the rate-limit wait before any document read', async () => {
-  const db = new DatabaseSync(':memory:'),
-    gate = new SiteAccess(db),
-    browser = new JevBrowser('/unused', {siteAccess: gate});
-  const slot = {
-    id: 'owned',
-    http: {url, status: 429},
-    page: {evaluate: async () => assert.fail('the document must not be read')},
-  };
-  try {
-    await assert.rejects(
-      browser.observeOnce(slot),
-      (error) => error.code === 'SITE_WAIT' && error.wait.reason === 'rate_limit',
-    );
-    assert.ok(gate.status(url).waiting);
-  } finally {
-    db.close();
-  }
-});
-test('a 429 navigation that gives up before its document loads leaves the decision to the observation when automatic verification is on', async () => {
+test('a 429 navigation that gives up before its document loads leaves the decision to the observation', async () => {
   const db = new DatabaseSync(':memory:'),
     gate = new SiteAccess(db);
   const slotFor = () => {
@@ -259,7 +243,7 @@ test('a 429 navigation that gives up before its document loads leaves the decisi
     return slot;
   };
   try {
-    const verifying = new JevBrowser('/unused', {siteAccess: gate, autoVerify: () => true}),
+    const verifying = new JevBrowser('/unused', {siteAccess: gate}),
       pending = slotFor();
     await assert.rejects(verifying.navigate(pending, url), /Timeout/);
     assert.equal(gate.status(url), null, 'no rate-limit wait before the document is read');
@@ -267,11 +251,6 @@ test('a 429 navigation that gives up before its document loads leaves the decisi
       pending.accessProbe,
       {url, token: null},
       'the probe stays for the observation',
-    );
-    const plain = new JevBrowser('/unused', {siteAccess: gate});
-    await assert.rejects(
-      plain.navigate(slotFor(), url),
-      (error) => error.code === 'SITE_WAIT' && error.wait.reason === 'rate_limit',
     );
   } finally {
     db.close();

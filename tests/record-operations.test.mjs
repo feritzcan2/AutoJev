@@ -306,7 +306,7 @@ test('a blocked application closes its tabs only when the user is not eligible',
 });
 
 // Skip and a manual "applied" both end the record for the user: the tabs its
-// earlier runs opened close, including filled forms.
+// earlier runs opened close, including filled forms and employer pages.
 test('skipping or marking a record applied closes its tabs', async (t) => {
   const calls = [],
     f = fixture(t, 'job-search', {onRunFinished: (id, run, options) => calls.push({run, options})});
@@ -315,6 +315,7 @@ test('skipping or marking a record applied closes its tabs', async (t) => {
   await f.runtime.dismissRecord(f.id, prepared.id);
   assert.equal(calls.at(-1).options.closeTabs, true);
   assert.equal(calls.at(-1).options.keepForms, false);
+  assert.equal(calls.at(-1).options.closeAll, true);
   assert.deepEqual(calls.at(-1).options.runIds, [prepareRun]);
   f.runtime.restoreRecord(f.id, prepared.id);
   calls.length = 0;

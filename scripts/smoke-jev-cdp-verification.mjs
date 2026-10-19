@@ -9,9 +9,6 @@ import {JevBrowser} from '../app/jev/browser.mjs';
 import {JevTabs} from '../app/jev/tabs.mjs';
 import {SiteAccess} from '../app/browser/site-access.mjs';
 import {clickCloudflareCheckbox} from '../app/captcha/cloudflare-checkbox.mjs';
-import {BrowserTools} from '../app/browser/tools.mjs';
-import {CaptchaSettings} from '../app/captcha/settings.mjs';
-import {CaptchaCoordinator} from '../app/captcha/coordinator.mjs';
 import {startJevFixture} from './jev-demo.mjs';
 const require = createRequire(import.meta.url),
   {chromium} = createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
@@ -45,7 +42,6 @@ const client = new JevBrowser(path.join(directory, 'candidate'), {
   endpoint,
   openWindow,
   siteAccess: new SiteAccess(db),
-  autoVerify: () => true,
 });
 try {
   await context.route('https://portal.test/**', (r) =>
@@ -136,70 +132,10 @@ try {
     assert.equal(negative.status, 'site_wait', mode);
     assert.equal(nativeClicks, 1);
   }
-  // The API registration bridge must also work through scoped, noDefaults CDP.
-  // Nothing is installed into the unrelated personal tab.
-  let paid = 0,
-    accepted = 0;
-  const settings = new CaptchaSettings(db, {
-    encrypt: (x) => x,
-    decrypt: (x) => x,
-    client: {
-      solve: async (_key, task) => {
-        paid++;
-        assert.equal(task.type, 'AntiTurnstileTaskProxyLess');
-        assert.equal(task.websiteKey, 'synthetic-key');
-        return {token: 'synthetic-valid-token-123456789'};
-      },
-    },
-  });
-  settings.save({apiKey: 'synthetic-key', enabled: true});
-  const tools = new BrowserTools(directory);
-  tools.clients.set('scope', {client, pending: Promise.resolve({client})});
-  tools.prepare = () => ({ready: true});
-  tools.connect = async () => ({client});
-  tools.captcha = new CaptchaCoordinator(settings, {settleMs: 30});
-  await context.route('https://challenges.cloudflare.com/turnstile/v0/api.js*', (r) =>
-    r.fulfill({
-      contentType: 'text/javascript',
-      body: `window.turnstile={render(selector,options){document.querySelector(selector).attachShadow({mode:'closed'}).innerHTML='<iframe style="width:300px;height:65px" src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform/test/turnstile"></iframe>';return 'widget';}};`,
-    }),
-  );
-  await context.route('https://api-barrier.test/**', (r) => {
-    if (new URL(r.request().url()).pathname === '/done') {
-      accepted++;
-      return r.fulfill({
-        contentType: 'text/html',
-        body: '<title>Results</title><h1>Requested content</h1><article>The API callback was accepted and content is ready.</article>',
-      });
-    }
-    return r.fulfill({
-      status: 403,
-      contentType: 'text/html',
-      body: `<title>Just a moment...</title><h1>Additional Verification Required</h1><p>Cloudflare — Your Ray ID: synthetic</p><div id="widget"></div><script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"></script><script>turnstile.render('#widget',{sitekey:'synthetic-key',callback:token=>{if(token==='synthetic-valid-token-123456789')location.href='/done';}});</script>`,
-    });
-  });
-  const solved = JSON.parse(
-    (
-      await tools.call(
-        'scope',
-        'browser_open_page',
-        {url: 'https://api-barrier.test/check'},
-        'local',
-      )
-    ).content[0].text,
-  );
-  assert.equal(paid, 1, JSON.stringify(solved));
-  assert.equal(accepted, 1);
-  assert.equal(solved.captcha.state, 'cleared');
-  assert.match(solved.text, /API callback was accepted/);
-  assert.equal(
-    await personal.evaluate(() => typeof window.__autoJevTurnstileRegistration),
-    'undefined',
-  );
   assert.equal(personal.isClosed(), false);
   assert.equal(personal.url(), fixture.url);
   console.log(
-    'SCOPED_CDP_CROSS_ORIGIN_CHECKBOX_CLICK_AND_CONTINUE_PASS: reCAPTCHA, Cloudflare closed shadow root, paid Turnstile callback; personal tab preserved',
+    'SCOPED_CDP_CROSS_ORIGIN_CHECKBOX_CLICK_AND_CONTINUE_PASS: reCAPTCHA, Cloudflare closed shadow root; personal tab preserved',
   );
 } finally {
   await client.close();

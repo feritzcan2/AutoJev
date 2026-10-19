@@ -97,8 +97,3 @@ export function jevSettingsPanel(api, root, {notice = () => {}} = {}) {
     });
   return {load};
 }
-
-export function dataDisclosure(root) {
-  root.classList.add('data-disclosure');
-  root.innerHTML = `<h4>Where is your data processed?</h4><ul><li><b>On this computer:</b> Candidate profiles, CVs and documents, application history, browser profiles and app records are stored.</li><li><b>At the AI provider you choose:</b> While the agent works, task instructions, candidate details, documents it reads, browser observations and tool results are processed. Your provider account’s data preferences apply.</li><li><b>At TypeSafe / Jev:</b> When Jev is asked for a decision, the page address, title, text, current form field values and recent actions are shared. Personal details in forms can be part of this content.</li><li><b>At CapSolver:</b> If you turn on automatic CAPTCHA solving, the page address, challenge details and, when needed, the CAPTCHA image are shared with CapSolver.</li><li><b>On Telegram:</b> When you enable the bot, the listing, application and question notifications you choose, your replies to them and the chat id are processed through Telegram.</li><li><b>On job sites:</b> In application flows you allow, the details filled in and the documents uploaded are sent to that site.</li></ul><p>Portal passwords and API keys you save in the app are encrypted with the system keychain. Jev’s password fill tool passes the password straight to the site and never shows it in a chat reply. Protect your backups and exported candidate documents as personal data.</p>`;
-}

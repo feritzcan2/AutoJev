@@ -223,7 +223,6 @@ export const sourceMethods = {
         ...(s.remote ? {remote: true} : {}),
         // Off in the template, for example an API that needs the user's own key.
         ...(s.enabled ? {} : {enabled: false}),
-        ...(siteExtensionFor(s.url)?.credentials ? {account: true} : {}),
         label:
           label ??
           (s.remote ? (served ? served + ' or remote' : 'Remote only') : served || 'All countries'),

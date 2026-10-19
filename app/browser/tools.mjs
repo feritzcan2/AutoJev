@@ -23,13 +23,12 @@ export class BrowserTools {
       changed: (id, state) => this.onStatus?.(id, state),
     });
   }
-  forWorker(workerId = 'main', isActive = () => true, {signal, captchaMaySubmit, siteLane} = {}) {
+  forWorker(workerId = 'main', isActive = () => true, {signal, siteLane} = {}) {
     const scoped = Object.create(this);
     scoped.siteLane = siteLane;
     scoped.workerId = workerId;
     scoped.isActive = isActive;
     scoped.signal = signal;
-    scoped.captchaMaySubmit = captchaMaySubmit;
     return scoped;
   }
   options(id) {
@@ -96,7 +95,6 @@ export class BrowserTools {
       client: new JevBrowser(path.join(directory, 'jev-profile'), {
         ...options,
         siteAccess: this.siteAccess,
-        autoVerify: () => this.captcha?.settings.status().enabled === true,
         workspace,
         onDisconnect: () => this.connections.disconnected(candidateId),
         onTabsClosed: (ids) => {
@@ -112,8 +110,6 @@ export class BrowserTools {
     return jevTools;
   }
   async call(candidateId, name, args, sessionId, options) {
-    const slot = this.clients.get(candidateId)?.client?.tabs.get(args.tabId);
-    if (slot && slot.owner === sessionId) await this.captcha?.wait(slot);
     const result = await this.enqueue(candidateId, () =>
       this.performCall(candidateId, name, args, sessionId, options),
     );
@@ -384,6 +380,7 @@ export class BrowserTools {
       runIds = [run.id],
       keepForms = true,
       pendingTabIds = [],
+      closeAll = false,
     } = {},
   ) {
     if (!closeTabs) return {closed: []};
@@ -397,6 +394,7 @@ export class BrowserTools {
         return client.closeFinishedAutomationRunTabs(runIds, id, {
           keepForms,
           pendingTabIds,
+          closeAll,
           ...(sourceAccessReset ? {resetSource: run.sourceUrl} : {}),
         });
       },

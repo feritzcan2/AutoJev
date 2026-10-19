@@ -119,41 +119,13 @@ The portal membership password is stored to **create new job-site accounts** on
 behalf of that candidate. Each candidate's record is separate. It does not assume
 it is the password of an existing account.
 
-## Automatic CAPTCHA solving
+## CAPTCHA and verification pages
 
-Under **Configuration → CAPTCHA**, save the CapSolver API key, check the connection
-and balance, and turn on automatic solving. The daily limit on solve requests is
-shared by all workspaces; it resets each UTC day and is kept when the app is
-reopened. Each new round of an image CAPTCHA counts as a separate request.
-
-The app checks for a visible and active verification; it does not send a paid
-request for a script, a hidden widget or old error text alone. Supported are
-reCAPTCHA v2 image selection, eligible reCAPTCHA v2/Turnstile token flows, and
-CAPTCHA text images clearly associated with an answer field. Solving runs in the
-same tab; other workers keep working. If the task is stopped or the page changes,
-the old answer is not applied.
-
-While automatic solving is on, full-page verification in reading tabs is examined
-too. If the sitekey and result callback of a visible, active Turnstile widget are
-verified, the CapSolver token API is used. Explicit render parameters are captured
-while the page loads; missed parameters of an existing page are not guessed and no
-automatic reload is done. The answer is given once, only to the verification
-callback of a reading tab without a form. After the API answer, the app separately
-verifies that the block is gone and the page content can be read. Other workers are
-not held in the queue while it waits.
-
-If API details are missing, a visible Cloudflare box can be tried once; this local
-attempt sends no paid API request. Cloudflare's managed Challenge flow, which
-requires `chlPageData`, is not sent to the Turnstile API; if a proxy/clearance
-integration is not supported, the reason is reported. The shared wait is kept on
-real rate limits.
-
-Forms that may submit require the existing action permission. An API answer alone
-does not show that the site accepted the verification. Unsupported puzzles,
-persistent full-page access blocks and rejected answers ask for intervention in the
-current tab. The key is stored encrypted and is not included in portable backups.
-CAPTCHA images and temporary solving data are kept in RAM; during solving the
-relevant data is sent to CapSolver.
+The app does not solve CAPTCHAs. On a reading tab, a visible Cloudflare
+"Verify you are human" checkbox gets one local click; no paid service is used.
+Any other verification, and every verification on an application tab, is
+reported and handed to you in the current tab. Real rate limits start the shared
+site wait.
 
 ## Data and updates
 

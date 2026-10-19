@@ -468,64 +468,6 @@ export const jobSearchSources = [
         'Nationale Vacaturebank DOM extension: result cards are /vacature/<id>/<slug> links; preview company/place links and menu pages are not listings. ?page=N is ignored (same first results), so more results come only from scrolling. Listing pages carry a schema.org JobPosting read by the generic reader. The page orders by date through its API, but no ordering is declared. Plain HTTP is blocked by the Akamai WAF.',
     },
   },
-  {
-    url: 'https://candidat.francetravail.fr/',
-    name: 'France Travail',
-    countries: ['FR'],
-    // Needs the user's own API application (Configuration → Site accounts).
-    enabled: false,
-    instructions:
-      "France. The France Travail extension reads the official Offres d'emploi API with the user's own application: listings arrive with their full descriptions, newest first. Enable this source after saving the client ID and secret under Configuration → Site accounts; without them a scan stops with that message. Use French search terms. Fetch one page with collect_source_page; Jev narrows the listings by the profile, then score and save the rest. These instructions grant no permission to act.",
-    recipe: {
-      entry: {
-        kind: 'url_template',
-        template: 'https://candidat.francetravail.fr/offres/recherche?motsCles={query}&tri=1',
-      },
-      pagination: 'url_param',
-      loginRequired: false,
-      notes:
-        'France Travail site extension: the address becomes the API search. 50 offers per page with full descriptions, at most 1150 per search, so narrow with publieeDepuis=1|3|7|14|31 or departement=<code>. tri=1 is newest first. Listings are https://candidat.francetravail.fr/offres/recherche/detail/<id>.',
-    },
-  },
-  {
-    url: 'https://www.adzuna.com/',
-    name: 'Adzuna',
-    countries: [
-      'AT',
-      'AU',
-      'BE',
-      'BR',
-      'CA',
-      'CH',
-      'DE',
-      'ES',
-      'FR',
-      'GB',
-      'IN',
-      'IT',
-      'MX',
-      'NL',
-      'NZ',
-      'PL',
-      'SG',
-      'US',
-      'ZA',
-    ],
-    // Needs the user's own free API key (Configuration → Site accounts).
-    enabled: false,
-    instructions:
-      "A job aggregator for 19 countries, read through Adzuna's official API with the user's own free key (250 calls a day). Enable this source after saving the app ID and key under Configuration → Site accounts. The workspace country picks the Adzuna country. Listings carry only a 500-character teaser, not the full description: judge from the card and do not assume what the teaser leaves out. Fetch one page with collect_source_page; Jev narrows the listings by the profile, then score and save the rest. These instructions grant no permission to act.",
-    recipe: {
-      entry: {
-        kind: 'url_template',
-        template: 'https://api.adzuna.com/v1/api/jobs/{country}/search/1?what={query}&sort_by=date',
-      },
-      pagination: 'url_param',
-      loginRequired: false,
-      notes:
-        'Adzuna site extension: official API, one country per search from {country} (the workspace country). 50 listings per page via the /search/<page> path; sort_by=date. max_days_old=N keeps recent postings; where=<place> with distance=<km> narrows the place. Descriptions are cut to 500 characters. Each call counts against the 250 calls a day of the free key.',
-    },
-  },
 ].map((source) => ({
   ...source,
   query: 'Current listings matching the saved target roles, country and work preferences',

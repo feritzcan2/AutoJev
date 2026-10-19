@@ -10,10 +10,6 @@ import {listingCard} from '../site-extensions/listing.mjs';
 import {pageEntries} from '../site-extensions/http.mjs';
 import {reloadSiteExtensions, siteExtensionsVersion} from '../site-extensions/reload.mjs';
 import {recipeReplay, recipeValues} from './recipe.mjs';
-import {siteCredentialValues} from './site-credentials.mjs';
-// A site with an account reads with the user's saved credentials (Site accounts).
-const credentials = (base) =>
-  base.instance.credentials ? siteCredentialValues(base.instance.id) : null;
 import {askJev} from '../jev/policy.mjs';
 import {
   jevCriteria,
@@ -275,10 +271,7 @@ export function extensionBench({
       if (!job) {
         if (!adapter.readDetail) throw Error('This collector cannot read a single listing.');
         job = {
-          ...(await adapter.readDetail(base.url, {
-            signal: signal(),
-            credentials: credentials(base),
-          })),
+          ...(await adapter.readDetail(base.url, {signal: signal()})),
           url: base.url,
         };
         remember(base.instance.id, job);
@@ -591,7 +584,7 @@ export function extensionBench({
       if (base.transport === 'api') {
         const adapter = base.instance.collector,
           apiUrl = adapter.searchUrl(base.url),
-          page = await adapter.readPage(apiUrl, {signal: signal(), credentials: credentials(base)});
+          page = await adapter.readPage(apiUrl, {signal: signal()});
         for (const job of page.jobs) remember(base.instance.id, job);
         const number = page.page ?? 1;
         return result(base, {

@@ -53,18 +53,6 @@ export async function verificationEvidence(page, slot) {
         evidence:
           'A visible verification checkbox inside Turnstile. Verify with a single click first.',
       });
-    if (
-      slot.captchaAnswer &&
-      detection.target?.identity === slot.captchaAnswer.identity &&
-      detection.target.token
-    )
-      return {
-        state: 'answer_applied',
-        capability: 'supported',
-        evidence: slot.captchaAnswer.message,
-      };
-    if (slot.captchaAnswer && detection.target?.identity !== slot.captchaAnswer.identity)
-      delete slot.captchaAnswer;
     const evidence = captchaEvidence(detection);
     if (evidence) return evidence;
     if (
@@ -178,7 +166,6 @@ export function updateVerification(slot, evidence, now = Date.now()) {
   state.deadlineAt = state.startedAt + 60000;
   state.handoff =
     state.capability === 'not_exposed' ||
-    state.capability === 'solver' ||
     (state.checkbox && !!slot.verificationCheckboxAttempt) ||
     state.attempts >= 2 ||
     now >= state.deadlineAt;

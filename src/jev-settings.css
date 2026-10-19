@@ -10,8 +10,7 @@
   justify-content: space-between;
   gap: 16px;
 }
-.jev-settings h4,
-.data-disclosure h4 {
+.jev-settings h4 {
   margin: 0;
   font-size: 14px;
 }
@@ -19,8 +18,7 @@
   color: var(--text-secondary);
   font-size: 12px;
 }
-.jev-settings > p,
-.data-disclosure {
+.jev-settings > p {
   color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.6;
@@ -53,18 +51,4 @@
 }
 .jev-settings-message:empty {
   display: none;
-}
-.data-disclosure {
-  margin-top: 22px;
-  padding: 20px 24px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-}
-.data-disclosure ul {
-  display: grid;
-  gap: 12px;
-  padding-left: 18px;
-}
-.data-disclosure p {
-  margin-bottom: 0;
 }

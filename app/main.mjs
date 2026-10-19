@@ -27,9 +27,6 @@ import {registerAutomationServices} from './automation/services.mjs';
 import {AutomationStore} from './automation/store.mjs';
 import {registerSettingsServices} from './system/settings-services.mjs';
 import {JevSettings} from './jev/settings.mjs';
-import {CaptchaSettings} from './captcha/settings.mjs';
-import {SiteCredentials, useSiteCredentials} from './sources/site-credentials.mjs';
-import {CaptchaCoordinator} from './captcha/coordinator.mjs';
 import {
   applyPendingRestore,
   prepareDataUpgrade,
@@ -119,15 +116,9 @@ async function boot() {
   };
   const decryptSecret = (value) => safeStorage.decryptString(Buffer.from(value, 'base64'));
   const jevSettings = new JevSettings(core.db, {encrypt: encryptSecret, decrypt: decryptSecret});
-  const captchaSettings = new CaptchaSettings(core.db, {
-    encrypt: encryptSecret,
-    decrypt: decryptSecret,
-  });
-  const siteCredentials = new SiteCredentials(core.db, {
-    encrypt: encryptSecret,
-    decrypt: decryptSecret,
-  });
-  useSiteCredentials(siteCredentials);
+  // Site accounts and CapSolver were removed; drop their saved keys.
+  core.db.exec('DROP TABLE IF EXISTS site_credentials');
+  core.db.exec('DROP TABLE IF EXISTS captcha_settings; DROP TABLE IF EXISTS captcha_usage');
   let window,
     quitting = false;
   const emit = (channel, value) => {
@@ -189,7 +180,6 @@ async function boot() {
   const browser = new BrowserTools(data, (id, worker) =>
     workspaces.template(id).browserOptions(id, worker),
   );
-  browser.captcha = new CaptchaCoordinator(captchaSettings);
   browser.onCaptchaProgress = changed;
   browser.directoryFor = (id) => workspaces.template(id).browserDirectory(id);
   browser.onStatus = (id, state) => {
@@ -487,8 +477,6 @@ async function boot() {
     bootstrapDirectory,
     store: core,
     jevSettings,
-    captchaSettings,
-    siteCredentials,
     handle,
     window: () => window,
     maintenance,
