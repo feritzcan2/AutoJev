@@ -154,14 +154,6 @@ export function activeRecordOperations(snapshot) {
 }
 
 // Blockers whose card offers Skip next to the reason.
-const skipCategories = new Set([
-  'not_eligible',
-  'needs_answer',
-  'listing_closed',
-  'site_problem',
-  'technical',
-]);
-
 // A stopped operation or an unverified outcome the user has to look at.
 export function recordProblem(record) {
   if (record.status === 'dismissed' || record.trial) return null;
@@ -174,14 +166,11 @@ export function recordProblem(record) {
       category: blocker.category,
       reason: blocker.reason,
       next: blocker.userAction,
-      skip: skipCategories.has(blocker.category),
     };
-  // A stop without a blocker (for example repeated tool errors) also offers Skip.
   if (progress?.id === 'stopped')
     return {
       label: progress.label,
       reason: summary || 'The agent did not record a reason.',
-      skip: true,
     };
   if (!progress && record.status === 'uncertain')
     return {

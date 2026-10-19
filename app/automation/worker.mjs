@@ -73,6 +73,8 @@ import {
   saveCoverLetter,
   finishCoverLetter,
   coverLetterFields,
+  coverLetterUploaded,
+  mergeCoverLetterFields,
   coverLetterStep,
 } from './cover-letters.mjs';
 import {renderCoverLetterPdf} from './cover-letter-pdf.mjs';
@@ -1637,12 +1639,7 @@ export function automationWorkflow({
         if (coverFields.length) {
           // Kept per label across the form's steps; a later inspection updates `filled`.
           const current = db.run(run.id),
-            fields = [
-              ...(current.coverLetterFields ?? []).filter(
-                (f) => !coverFields.some((c) => c.label === f.label),
-              ),
-              ...coverFields,
-            ];
+            fields = mergeCoverLetterFields(current.coverLetterFields, coverFields);
           db.putRun({...current, coverLetterFields: fields});
           const step = coverLetterStep(db.get(id), active.recordId, fields);
           if (step) result = {...result, coverLetter: step};
@@ -1679,6 +1676,15 @@ export function automationWorkflow({
             'The document could not be uploaded: ' +
               JSON.stringify(response.content).slice(0, 1000),
           );
+        const current = db.run(run.id),
+          uploaded = coverLetterUploaded(
+            db.get(id),
+            active.recordId,
+            current.coverLetterFields,
+            args.ref,
+            relative,
+          );
+        if (uploaded) db.putRun({...current, coverLetterFields: uploaded});
         result = {...(await inspect()), action: response.action};
         break;
       }

@@ -49,6 +49,30 @@ export function coverLetterFields(form) {
   ];
 }
 
+// Merges a new inspection into the fields kept across the form's steps, per
+// label. An upload entry never shows which file it holds, so a field the app
+// saw receive the approved letter stays filled.
+export function mergeCoverLetterFields(previous, current) {
+  const kept = (previous ?? []).filter((f) => !current.some((c) => c.label === f.label));
+  return [
+    ...kept,
+    ...current.map((c) =>
+      c.uploadId && previous?.some((f) => f.label === c.label && f.uploaded)
+        ? {...c, filled: true, uploaded: true}
+        : c,
+    ),
+  ];
+}
+
+// After a successful browser_upload_document: the upload entry it targeted is
+// filled when the file is this record's approved cover letter.
+export function coverLetterUploaded(a, recordId, fields, uploadId, relative) {
+  const approved = approvedCoverLetter(a, recordId);
+  if (!approved || path.normalize(relative) !== path.normalize(approved.path)) return null;
+  if (!(fields ?? []).some((f) => f.uploadId === uploadId)) return null;
+  return fields.map((f) => (f.uploadId === uploadId ? {...f, filled: true, uploaded: true} : f));
+}
+
 // What the application agent must do with the cover letter fields it saw on
 // this run's form pages; null once every one is filled.
 export function coverLetterStep(a, recordId, fields) {

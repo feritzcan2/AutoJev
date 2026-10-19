@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp, readFile, rm} from 'node:fs/promises';
+import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
@@ -455,4 +455,68 @@ test('with automatic acceptance the saved letter resumes the application without
   assert.equal(resumed.recordOperation, 'execute');
   assert.equal(resumed.continuation.runId, execute.id);
   assert.deepEqual(resumed.continuation.questionIds, [questionId]);
+});
+
+test('an upload-only cover letter field counts as filled once the approved letter is uploaded to it', async (t) => {
+  const f = await fixture(t);
+  const {questionId} = await f.requestLetter();
+  const writer = f.launches.at(-1);
+  const saved = await f.flow(writer).call(f.id, writer.id, 'save_cover_letter', {text: letter()});
+  await f.finish(writer, 'completed');
+  await approveCoverLetter(f.runtime, f.id, questionId, {
+    workspace: f.workspace,
+    renderPdf: f.renderPdf,
+  });
+  await settle();
+  const execute = f.launches.at(-1);
+  await writeFile(path.join(f.workspace, 'CV.pdf'), '%PDF-cv');
+  // The upload entry never says which file it holds, and each inspection
+  // gives it a new id.
+  let inspections = 0;
+  const flow = automationWorkflow({
+    workspace: f.workspace,
+    db: f.db,
+    run: execute,
+    signal: {aborted: false},
+    browser: {
+      currentUrl: async () => f.item.url,
+      call: async (_, name) =>
+        name === 'browser_upload_document'
+          ? {action: 'uploaded'}
+          : name === 'browser_snapshot'
+            ? {
+                pageContext: {url: f.item.url, tabId: 'tab-1'},
+                content: [{type: 'text', text: `Page URL: ${f.item.url}\nApplication form`}],
+              }
+            : {
+                url: f.item.url,
+                uploads: [
+                  {uploadId: `letter-${++inspections}`, label: 'Cover Letter — File upload'},
+                ],
+                fields: [
+                  {label: 'Email', question: 'Email *', required: true, type: 'text', filled: true},
+                ],
+                submitControls: [{label: 'Submit application'}],
+              },
+    },
+    renderPdf: f.renderPdf,
+    report: (...args) => f.runtime.report(...args),
+  });
+  const reserve = () =>
+    flow.call(f.id, execute.id, 'reserve_automation_action', {itemId: f.item.id});
+  await flow.call(f.id, execute.id, 'browser_inspect_form', {});
+  // Another file in the cover letter field does not count.
+  await flow.call(f.id, execute.id, 'browser_upload_document', {
+    ref: `letter-${inspections}`,
+    filePath: 'CV.pdf',
+  });
+  await assert.rejects(reserve(), /approved cover letter/);
+  await flow.call(f.id, execute.id, 'browser_inspect_form', {});
+  await flow.call(f.id, execute.id, 'browser_upload_document', {
+    ref: `letter-${inspections}`,
+    filePath: saved.path,
+  });
+  // A later inspection of the same step keeps the field filled.
+  await flow.call(f.id, execute.id, 'browser_inspect_form', {});
+  await reserve();
 });

@@ -412,6 +412,13 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
           },
         }
       : {}),
+    ...(active.request?.applyAnyway
+      ? {
+          applyAnyway: {
+            rule: 'The user chose to apply to assignedRecord although the listing or form states a requirement the saved facts do not meet. Do not stop for that requirement: answer every form question truthfully from the saved facts, even when the true answer may disqualify the user, and submit. Never answer untruthfully. A missing fact, login, code or CAPTCHA still blocks as usual.',
+          },
+        }
+      : {}),
     ...(earlierAnswers.length
       ? {
           earlierAnswers: {

@@ -234,21 +234,39 @@ export function automationsPage(
   attentionNav.append(attentionBadge);
   attentionNav.onclick = () => navigate('attention');
   answersNav.after(attentionNav);
+  // Files shows a badge while a cover letter waits for the user's review.
+  const filesNav = document.querySelector('[data-view=files]'),
+    filesHome = document.querySelector('[data-view=background]'),
+    letterBadge = el('span', null, 'agent-nav-status');
+  letterBadge.dataset.tone = 'waiting';
+  letterBadge.setAttribute('aria-hidden', 'true');
+  letterBadge.hidden = true;
+  filesNav.append(letterBadge);
   // Pages with something waiting on the user rise to the top of the sidebar and
-  // glow; once handled they return to their place below the Tracking table.
-  function pinPending(questions, issues) {
+  // glow; once handled they return to their place (Answers and Attention needed
+  // below the Tracking table, Files below Background work).
+  function pinPending(questions, issues, letters = 0) {
     const nav = boardNav.parentElement,
       items = [
-        [answersNav, questions > 0],
-        [attentionNav, issues > 0],
+        [answersNav, questions > 0, null],
+        [filesNav, letters > 0, filesHome],
+        [attentionNav, issues > 0, null],
       ],
       pinned = items.filter(([, on]) => on).map(([node]) => node);
     for (const [node, on] of items) node.toggleAttribute('data-pending', on);
+    letterBadge.hidden = !letters;
+    letterBadge.textContent = letters ? String(letters) : '';
+    filesNav.title = letters ? `${letters} cover letter${letters > 1 ? 's' : ''} to review` : '';
+    filesNav.setAttribute('aria-label', ['Files', filesNav.title].filter(Boolean).join(' · '));
     // Move nodes only when out of place, so focus and hover are not disturbed.
     if (pinned.some((node, n) => nav.children[n] !== node)) nav.prepend(...pinned);
     let anchor = boardNav;
-    for (const [node, on] of items) {
+    for (const [node, on, home] of items) {
       if (on) continue;
+      if (home) {
+        if (home.nextElementSibling !== node) home.after(node);
+        continue;
+      }
       if (anchor.nextElementSibling !== node) anchor.after(node);
       anchor = node;
     }
@@ -787,7 +805,12 @@ export function automationsPage(
         (run) => run.kind !== 'interview',
       ).length;
     questionBadge.hidden = !questionCount;
-    pinPending(questionCount, agentHelpCount);
+    pinPending(
+      questionCount,
+      agentHelpCount,
+      (a.questions ?? []).filter((q) => q.coverLetter?.state === 'review' && q.answer == null)
+        .length,
+    );
     questionBadge.textContent = questionCount ? String(questionCount) : '';
     answersNav.title = questionCount ? `${questionCount} awaiting an answer` : '';
     answersNav.setAttribute(
@@ -888,6 +911,13 @@ export function automationsPage(
       ? (a.chromeProfile?.name ?? 'Selected Chrome session')
       : (connection.message ??
         'Open chrome://inspect/#remote-debugging in Chrome and allow the connection request.');
+    // A failed handshake does not tell whether remote debugging is on, so
+    // point to the setting unless the message already does.
+    chrome.querySelector('.chrome-tip').hidden =
+      connection.ready ||
+      connection.state === 'connecting' ||
+      !connection.message ||
+      connection.message.includes('chrome://inspect');
     chrome.querySelector('.chrome-reconnect').hidden = Boolean(connection.ready);
     chrome.querySelector('.chrome-reconnect').disabled =
       locked || connection.state === 'connecting';
