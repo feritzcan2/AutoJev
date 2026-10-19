@@ -5,6 +5,7 @@
 import {automationAttention} from '../../app/automation/attention.mjs';
 import {recordOperationStatus, recordProblem} from '../record-operation-status.js';
 import {questionForm} from '../question-form.js';
+import {attentionTabs} from '../automation-attention.js';
 import {BRAND, markIcon} from './brand.js';
 import {playIntro} from './intro.js';
 import {el, button, icon, plural, scoreOf, relative, host} from './ui.js';
@@ -14,6 +15,7 @@ import {
   NEVER,
   factLine,
   listOf,
+  neverCompany,
   neverItems,
   setFactLine,
   withItem,
@@ -153,6 +155,10 @@ async function load() {
     }
     state.id = id;
     state.data = data;
+    if (data && (await skipNeverCompanies(data))) {
+      if (version !== state.loading) return;
+      state.data = await api.workspaceSnapshot(id);
+    }
   } catch (error) {
     if (version === state.loading) state.error = error.message;
   }
@@ -631,11 +637,61 @@ function skipReasons(r) {
     place && ['Wrong location', {line: LESS, item: `jobs in ${place}`}],
     ['Too junior', {line: LESS, item: 'roles below my level'}],
     ['Pay too low', {line: LESS, item: 'roles that list low pay'}],
-    company && ['Not this company', {line: NEVER, item: company}],
+    company && [`Skip all from ${company}`, {line: NEVER, item: company}],
   ].filter(Boolean);
 }
+// Listings from a never-apply company are skipped as soon as they show up,
+// also ones found later; a send already under way is left alone.
+const autoSkipping = new Set();
+// Jobs the user moved back by hand stay, even from a never-apply company.
+const KEEP_KEY = 'jl-keep-records';
+const keptRecords = () => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(KEEP_KEY) ?? '[]'));
+  } catch {
+    return new Set();
+  }
+};
+function keepRecord(id) {
+  try {
+    localStorage.setItem(KEEP_KEY, JSON.stringify([...keptRecords(), id].slice(-500)));
+  } catch {}
+}
+async function skipNeverCompanies(data) {
+  const items = neverItems(data?.automation?.criteria?.hard_rules);
+  if (!items.length) return 0;
+  const kept = keptRecords();
+  const targets = (data.results ?? []).filter(
+    (r) =>
+      !r.trial &&
+      ![
+        'dismissed',
+        'closed',
+        'withdrawn',
+        'completed',
+        'manual_submitted',
+        'submitted',
+        'executing',
+        'uncertain',
+      ].includes(r.status) &&
+      !autoSkipping.has(r.id) &&
+      !kept.has(r.id) &&
+      neverCompany(r.cells?.company, items),
+  );
+  for (const r of targets) {
+    autoSkipping.add(r.id);
+    try {
+      await api.automationDismiss(data.automation.id, r.id);
+    } catch {
+      // Tried once; a record that cannot be skipped stays for the user.
+    }
+  }
+  return targets.length;
+}
 const learnedReply = (rule) =>
-  rule.line === NEVER ? `Got it: I won’t apply to ${rule.item}.` : `Got it: fewer ${rule.item}.`;
+  rule.line === NEVER
+    ? `Got it: I’ll skip every job from ${rule.item}, now and later.`
+    : `Got it: fewer ${rule.item}.`;
 
 // Adds or removes one item of a learned line and saves the profile.
 async function saveLearned(rule, remove = false) {
@@ -790,7 +846,10 @@ function jobCard(data, r) {
       side.append(
         button(
           'Move back',
-          act('restore:' + r.id, () => api.automationRestore(state.id, r.id)),
+          act('restore:' + r.id, () => {
+            keepRecord(r.id);
+            return api.automationRestore(state.id, r.id);
+          }),
           'jl-btn ghost small',
         ),
       );
@@ -845,7 +904,18 @@ async function skipWith(r, rule, card, done = 'Skipped.') {
   try {
     if (rule) await saveLearned(rule);
     await api.automationDismiss(state.id, r.id);
-    state.note = {text: rule ? learnedReply(rule) : done, title: r.title, at: Date.now()};
+    let more = 0;
+    if (rule?.line === NEVER) {
+      autoSkipping.add(r.id);
+      const fresh = await api.workspaceSnapshot(state.id);
+      more = await skipNeverCompanies(fresh);
+    }
+    const text = rule ? learnedReply(rule) : done;
+    state.note = {
+      text: more ? `${text} Skipped ${plural(more, 'more job')} from them too.` : text,
+      title: r.title,
+      at: Date.now(),
+    };
     if (rule) state.justLearned = rule.item;
     clearTimeout(state.noteTimer);
     state.noteTimer = setTimeout(() => ((state.note = null), render()), 6000);
@@ -896,6 +966,28 @@ async function applyTo(data, r) {
   await api.automationRecordRun(state.id, r.id, 'execute', {direct: true});
 }
 
+// Brings Chrome forward on the page an issue is about (a sign-in, a CAPTCHA),
+// or on any JobLoop tab. Connects first when needed; a failure is shown,
+// never swallowed, so the button never looks dead.
+async function showInBrowser(issue = {}) {
+  const sources = state.data?.sources ?? [],
+    find = async () => attentionTabs(issue, await api.workspaceTabs(state.id), sources);
+  let tabs = await find().catch(() => []);
+  if (!tabs.length) {
+    const status = await api.automationBrowser(state.id);
+    if (status && status.ready === false)
+      throw Error(
+        status.message ??
+          'Chrome is not connected yet. In Chrome, open chrome://inspect/#remote-debugging, turn on remote debugging and allow JobLoop.',
+      );
+    tabs = await find().catch(() => []);
+    if (!tabs.length) tabs = (await api.workspaceTabs(state.id).catch(() => [])).slice(0, 1);
+  }
+  if (!tabs.length)
+    throw Error('Chrome is connected, but JobLoop has no page open yet. The next scan opens one.');
+  await api.focusWorkspaceTab(state.id, tabs[0].tabId);
+}
+
 function issueBanner(issue) {
   const banner = el('div', 'jl-banner info'),
     copy = el('div');
@@ -907,8 +999,8 @@ function issueBanner(issue) {
   if (['login', 'access', 'captcha', 'browser'].some((k) => String(issue.kind).includes(k)))
     banner.append(
       button(
-        'Open browser',
-        act('browser', () => api.automationBrowser(state.id)),
+        state.busy.has('browser') ? 'Opening…' : 'Show in browser',
+        act('browser', () => showInBrowser(issue)),
         'jl-btn small',
       ),
     );
@@ -1228,8 +1320,8 @@ function renderSettings(data) {
         ? 'Sign-ins in that Chrome are used for applying.'
         : 'Open the browser once and sign in to the job sites you use.',
       button(
-        'Open browser',
-        act('browser', () => api.automationBrowser(state.id)),
+        state.busy.has('browser') ? 'Opening…' : 'Open browser',
+        act('browser', () => showInBrowser()),
         'jl-btn small',
       ),
     ),

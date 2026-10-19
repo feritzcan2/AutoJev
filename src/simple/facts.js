@@ -72,3 +72,21 @@ export function withNever(hardRules, items) {
   if (items.length) rules.push({ifNotStated: 'accept', rule: `${NEVER}: ${items.join(', ')}`});
   return formatHardRules(rules);
 }
+
+// A listing's company against the never-apply list. Legal suffixes and case
+// do not matter; a listed name inside a longer company name counts.
+const companyKey = (name) =>
+  String(name ?? '')
+    .toLowerCase()
+    .replace(/[.,()]/g, ' ')
+    .replace(/\b(?:inc|ltd|llc|gmbh|ag|bv|sa|sas|srl|plc|corp|co|a ?ş|aş|limited|company)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+export function neverCompany(company, items) {
+  company = companyKey(company);
+  if (!company) return false;
+  return items.some((item) => {
+    const key = companyKey(item);
+    return key && (company === key || ` ${company} `.includes(` ${key} `));
+  });
+}
