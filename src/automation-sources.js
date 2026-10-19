@@ -779,7 +779,8 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     };
 
     const resumeUrl = page?.url ?? cycle?.checkpoint?.url;
-    group('This round', [
+    // A finished round stays on show until the next one starts.
+    group(!state?.active && state?.lastCompleted ? 'Last round' : 'This round', [
       [
         'Scan type',
         cycle?.mode === 'incremental'
@@ -843,7 +844,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     const excluded = searches.flatMap((s) => s.excluded ?? []).reverse(),
       cards = Object.assign({}, ...searches.map((s) => s.cards ?? {}));
     const queue = group(
-      'Searches',
+      scan?.complete ? 'Searches of the last round' : 'Searches',
       searchRows.length > 1 ? searchRows : [],
       Boolean(pending.length || excluded.length),
     );

@@ -171,7 +171,12 @@ export const conversationMethods = {
     }
     if (answer.recordId) {
       // The outcome answer already resolved the record; the user picks the next step.
-      if (answer.outcome) return answer;
+      // A record confirmed as submitted needs no page any more, as after Mark applied.
+      if (answer.outcome) {
+        if (this.db.result(id, answer.recordId).status === 'completed')
+          await this.closeRecordTabs(id, answer.recordId);
+        return answer;
+      }
       if (!pendingRecordQuestion(this.db.get(id), this.db.result(id, answer.recordId))) {
         try {
           const active = recordTask(this.db, id, answer.recordId);

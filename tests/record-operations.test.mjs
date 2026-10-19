@@ -324,6 +324,32 @@ test('skipping or marking a record applied closes its tabs', async (t) => {
   assert.deepEqual(calls.at(-1).options.runIds, [prepareRun]);
 });
 
+// An uncertain submission the user confirms in the outcome question ends the
+// record as "Mark applied" does; "not submitted" keeps the page for a resend.
+test('confirming an uncertain submission closes the record tabs', async (t) => {
+  const calls = [],
+    f = fixture(t, 'job-search', {onRunFinished: (id, run, options) => calls.push({run, options})});
+  const prepared = await f.prepare(),
+    prepareRun = calls.at(-1).run.id;
+  const ask = () => {
+    f.db.putResult({...f.db.result(f.id, prepared.id), status: 'uncertain'});
+    return f.db.askQuestion(f.id, {
+      recordId: prepared.id,
+      text: 'Was this record submitted?',
+      outcome: true,
+      fields: [OUTCOME_FIELD],
+    });
+  };
+  calls.length = 0;
+  await f.runtime.answer(f.id, ask().id, {[OUTCOME_FIELD.id]: OUTCOME_FIELD.options[1]});
+  assert.equal(calls.length, 0);
+  await f.runtime.answer(f.id, ask().id, {[OUTCOME_FIELD.id]: OUTCOME_FIELD.options[0]});
+  assert.equal(f.db.result(f.id, prepared.id).status, 'completed');
+  assert.equal(calls.at(-1).options.closeTabs, true);
+  assert.equal(calls.at(-1).options.closeAll, true);
+  assert.deepEqual(calls.at(-1).options.runIds, [prepareRun]);
+});
+
 test('a manual execute request needs no draft and keeps observe permissions; duplicate submission is rejected', async (t) => {
   const f = fixture(t),
     a = f.db.get(f.id);
