@@ -43,28 +43,14 @@ export function jevCriteria(automation, documents, template = {}) {
     };
     return context;
   }
-  const profile = automation.referenceData?.profile ?? {};
   context.userProfile = {
     currentFacts,
-    // The user's short answers (languages, work permit) go first: the long
-    // saved summary repeats the documents and is the part a cut may lose.
-    savedFacts: excerpt(
-      [
-        ...Object.entries(profile.learnedFacts ?? {}).map(([key, fact]) =>
-          typeof fact.value === 'string' ? `${key}: ${fact.value}` : '',
-        ),
-        profile.facts,
-      ]
-        .filter(Boolean)
-        .join('\n'),
-      4000,
-    ),
     documents: {
       ...excerpt(documents?.text, 10000),
       ...(documents?.unavailable ? {unavailable: documents.unavailable} : {}),
     },
     precedence:
-      'Current user facts and instructions override older saved facts and document statements. Missing, unavailable or truncated profile information is unknown, not a proven missing qualification.',
+      'Current user facts and instructions override document statements. Missing, unavailable or truncated profile information is unknown, not a proven missing qualification.',
   };
   return context;
 }

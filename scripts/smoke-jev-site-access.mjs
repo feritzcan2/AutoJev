@@ -84,7 +84,7 @@ try {
     (
       await client.callTool(
         {
-          name: 'browser_jev_fill_fields',
+          name: 'browser_fill_fields',
           arguments: {
             tabId: slot.id,
             fields: [{fieldId: observation.fillFields[0].fieldId, text: 'Local fixture'}],

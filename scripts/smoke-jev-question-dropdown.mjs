@@ -61,7 +61,7 @@ try {
         document.body.append(list);
       };
   });
-  const observed = await call('browser_jev_observe', {tabId});
+  const observed = await call('browser_observe', {tabId});
   const labels = observed.clickTargets.map((t) => t.label);
   const consent = observed.clickTargets.find((t) => /consent to the use of AI/.test(t.label));
   assert.ok(consent, JSON.stringify(labels));
@@ -72,10 +72,10 @@ try {
   assert.ok(!labels.some((l) => /^\s*(Yes|No) Required$/.test(l)), JSON.stringify(labels));
   const control = observed.controls.find((c) => /consent to the use of AI/.test(c.label));
   assert.ok(control, JSON.stringify(observed.controls.map((c) => c.label)));
-  const opened = await call('browser_jev_click', {tabId, targetId: consent.targetId});
+  const opened = await call('browser_click_target', {tabId, targetId: consent.targetId});
   const yes = opened.clickTargets.find((t) => t.role === 'option' && t.label === 'Yes');
   assert.ok(yes, JSON.stringify(opened.clickTargets));
-  const chosen = await call('browser_jev_click', {tabId, targetId: yes.targetId});
+  const chosen = await call('browser_click_target', {tabId, targetId: yes.targetId});
   assert.notEqual(chosen.status, 'stale');
   assert.equal(await page.locator('#ai').textContent(), 'Yes');
   assert.equal(await page.locator('#work').textContent(), 'Yes');

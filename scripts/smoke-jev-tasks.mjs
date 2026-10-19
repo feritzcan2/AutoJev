@@ -183,9 +183,9 @@ const call = async (name, args = {}) => {
   return flow.call(a.id, run.id, name, args);
 };
 const complete = async (input) => {
-  let result = await call('browser_jev_run', input);
+  let result = await call('browser_run_task', input);
   for (let i = 0; i < 10 && result.status === 'continue'; i++)
-    result = await call('browser_jev_run', {taskId: result.taskId});
+    result = await call('browser_run_task', {taskId: result.taskId});
   assert.equal(result.status, 'completed', JSON.stringify(result));
   return result;
 };
@@ -217,7 +217,7 @@ try {
   assert.equal(buttons.total, 2);
   assert.equal(buttons.pageCount, 2);
   assert.equal(buttons.lastPage.position.currentPage, 2);
-  const evidence = await call('read_jev_evidence', {evidenceId: detail.items[0].evidenceId});
+  const evidence = await call('read_listing_evidence', {evidenceId: detail.items[0].evidenceId});
   assert.equal(evidence.nextOffset, 6000);
   assert.match(evidence.text, /rent 1500/);
   const direct = await complete({
@@ -236,10 +236,13 @@ try {
   assert.equal(delayed.classified, 1);
   assert.equal(incompleteReads, 1, 'an unchanged shell is not sent back to the model');
   assert.match(
-    (await call('read_jev_evidence', {evidenceId: delayed.items[0].evidenceId})).text,
+    (await call('read_listing_evidence', {evidenceId: delayed.items[0].evidenceId})).text,
     /Berlin apartment: 2 rooms/,
   );
-  const board = await call('browser_jev_run', {operation: 'collect_details', url: scan.currentUrl});
+  const board = await call('browser_run_task', {
+    operation: 'collect_details',
+    url: scan.currentUrl,
+  });
   assert.equal(board.status, 'needs_agent');
   assert.equal(board.resultsPages, 1);
   assert.equal(board.classified, 0);
@@ -247,14 +250,14 @@ try {
   const redirected = await complete({operation: 'collect_details', url: base + '/redirect'});
   assert.equal(redirected.classified, 1);
   assert.match(
-    (await call('read_jev_evidence', {evidenceId: redirected.items[0].evidenceId})).url,
+    (await call('read_listing_evidence', {evidenceId: redirected.items[0].evidenceId})).url,
     /\/home\/redirected/,
   );
   const filtered = await complete({operation: 'scan_results', url: base + '/filtered'});
   assert.equal(filtered.total, 1);
   assert.equal(filtered.items, undefined);
   assert.equal(
-    (await call('read_jev_task', {taskId: filtered.taskId})).items[0].url,
+    (await call('read_browser_task', {taskId: filtered.taskId})).items[0].url,
     base + '/home/filtered',
   );
   assert.deepEqual(filtered.lastPage.position, {currentPage: 1, totalPages: 1, evidence: '1 of 1'});
@@ -272,16 +275,16 @@ try {
   assert.match(card, /Berlin, full remote, 2 days ago/);
   assert.doesNotMatch(card, /SECRET HIDDEN|PRIVATE FORM|Last seven days|1 of 1/);
   const beforeRead = requests;
-  await call('read_jev_task', {taskId: filtered.taskId, pageOffset: 0});
+  await call('read_browser_task', {taskId: filtered.taskId, pageOffset: 0});
   assert.equal(requests, beforeRead);
-  const marketing = await call('browser_jev_run', {
+  const marketing = await call('browser_run_task', {
     operation: 'scan_results',
     url: base + '/marketing',
   });
   assert.equal(marketing.status, 'needs_agent');
   assert.equal(marketing.issue.reason, 'no_listing_links');
   assert.equal(marketing.total, 0);
-  const wrongOperation = await call('browser_jev_run', {
+  const wrongOperation = await call('browser_run_task', {
     operation: 'prepare_search',
     url: base + '/home/1',
     goal: 'Read this listing',
@@ -310,7 +313,7 @@ try {
     report: () => {},
   });
   const before = modelCalls,
-    restored = await call('read_jev_task', {taskId: scan.taskId});
+    restored = await call('read_browser_task', {taskId: scan.taskId});
   assert.equal(restored.total, 2);
   assert.equal(modelCalls, before);
   console.log(

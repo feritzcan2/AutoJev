@@ -1,7 +1,7 @@
 import {readFile, stat, realpath} from 'node:fs/promises';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
-import {documentPath} from '../automation/artifacts.mjs';
+import {documentPath, agentDocument} from '../automation/artifacts.mjs';
 import {workspaceDirectory} from '../workspaces/paths.mjs';
 import {candidateFacts, profileView} from '../templates/profile-sections.mjs';
 const cache = new Map(),
@@ -13,19 +13,13 @@ const source = (text, extra = {}) => ({
 });
 // fields are the template's fields; they place each criterion in its profile section.
 export function scoringSources(automation, documents, fields = []) {
-  const profile = automation.referenceData?.profile ?? {};
-  const facts = [
-    candidateFacts(automation, fields),
-    profile.facts,
-    ...Object.values(profile.learnedFacts ?? {}).map((x) => x.value),
-  ]
-    .filter((x) => typeof x === 'string' && x)
-    .join('\n');
+  const facts = candidateFacts(automation, fields);
   // Preferences are the workspace goal and its saved criteria, whatever the
-  // template, except facts about the user, the rubric and the thresholds.
+  // template, except facts about the user, the rubric and the action settings,
+  // which decide what may be done rather than what fits.
   const view = profileView(automation, fields),
-    criteria = [...view.search, ...view.rules, ...view.actions]
-      .filter((f) => !['ranking', 'score_threshold'].includes(f.id))
+    criteria = [...view.search, ...view.rules]
+      .filter((f) => f.id !== 'ranking')
       .map((f) => f.value);
   return {
     facts: source(facts),
@@ -74,12 +68,10 @@ async function documentText(file) {
   cache.set(key, text);
   return text;
 }
-// Profile documents are the legacy profile CV and every document the user added
-// to this workspace. Files agents prepared under documents/ are not user facts.
+// Profile documents are every document the user added to this workspace.
+// Files the app or agents wrote (generated/) are not user facts.
 export async function loadScoringDocuments(db, id) {
-  const saved = [db.get(id).referenceData?.profile?.cvPath, ...db.userDocuments(id)].filter(
-    Boolean,
-  );
+  const saved = db.userDocuments(id).filter((file) => file && !agentDocument(file));
   if (!saved.length)
     return source('', {
       unavailable: 'No saved documents; leave unverified information as unknown.',

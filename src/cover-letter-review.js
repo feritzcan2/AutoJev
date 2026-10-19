@@ -117,6 +117,7 @@ export function coverLetterReview(root, api, {refresh}) {
         button('Open PDF ↗', () => api.openDocument(owner, letter.path)),
       );
     }
+    if (record?.url) tools.append(button('Open listing ↗', () => api.openLink(record.url)));
     footer.append(tools, feedback);
     node.append(head, body, footer);
     return node;

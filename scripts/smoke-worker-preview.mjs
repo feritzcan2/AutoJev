@@ -47,7 +47,7 @@ try {
       .forWorker(worker)
       .call(
         'workspace',
-        'browser_jev_open',
+        'browser_open_page',
         {url: base + '/' + slug},
         sessions.get(worker).sessionId,
         {automationWorkspaceId: 'workspace', automationTabKey: 'source:' + slug},

@@ -139,7 +139,7 @@ test('nonempty oversized source notes report the exact length and limit, not an 
   );
 });
 test('evidence-read bounds explain the permitted range and accept its boundary', () => {
-  const schema = jevTaskTools.find((t) => t.name === 'read_jev_evidence').inputSchema;
+  const schema = jevTaskTools.find((t) => t.name === 'read_listing_evidence').inputSchema;
   assert.throws(
     () => validate(schema, {evidenceId: 'test', limit: 9000}),
     /arguments.limit: Number exceeds maximum 6000; received 9000/,

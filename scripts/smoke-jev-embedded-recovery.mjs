@@ -34,12 +34,12 @@ try {
       ?.contentDocument?.querySelector('#email'),
   );
   const count = context.pages().length;
-  let o = await call('browser_jev_observe', {tabId, full: true});
+  let o = await call('browser_observe', {tabId, full: true});
   const frameId = o.embeddedForms.find((f) => f.url.endsWith('/inner')).frameId;
-  o = await call('browser_jev_frame_observe', {tabId, frameId});
+  o = await call('browser_frame_observe', {tabId, frameId});
   await assert.rejects(() =>
     call(
-      'browser_jev_frame_act',
+      'browser_frame_act',
       {
         tabId,
         frameId,
@@ -50,8 +50,8 @@ try {
       'foreign',
     ),
   );
-  o = await call('browser_jev_frame_observe', {tabId, frameId});
-  o = await call('browser_jev_frame_act', {
+  o = await call('browser_frame_observe', {tabId, frameId});
+  o = await call('browser_frame_act', {
     tabId,
     frameId,
     targetId: o.controls.find((c) => c.kind === 'fill').targetId,
@@ -59,7 +59,7 @@ try {
     text: 'x@test.example',
   });
   assert.equal(o.verified, true);
-  o = await call('browser_jev_frame_act', {
+  o = await call('browser_frame_act', {
     tabId,
     frameId,
     targetId: o.controls.find((c) => c.kind === 'choice').targetId,
@@ -67,7 +67,7 @@ try {
     checked: true,
   });
   assert.equal(o.verified, true);
-  o = await call('browser_jev_frame_act', {
+  o = await call('browser_frame_act', {
     tabId,
     frameId,
     targetId: o.controls.find((c) => c.label === 'Next').targetId,
@@ -83,27 +83,27 @@ try {
       (e) =>
         (e.innerHTML = `<a role="combobox" aria-label="Country" aria-expanded="false" tabindex="0" onclick="this.setAttribute('aria-expanded','true');document.querySelector('[role=listbox]').hidden=false">Select</a><div role="listbox" hidden><div role="option" tabindex="0" onclick="document.querySelector('[role=combobox]').textContent='Germany';this.parentElement.hidden=true">Germany</div></div><label>Resume<input type="file"></label>`),
     );
-  o = await call('browser_jev_frame_observe', {tabId, frameId});
+  o = await call('browser_frame_observe', {tabId, frameId});
   assert.equal(o.controls.filter((c) => c.label === 'Germany').length, 0);
-  o = await call('browser_jev_frame_act', {
+  o = await call('browser_frame_act', {
     tabId,
     frameId,
     targetId: o.controls.find((c) => c.label === 'Country').targetId,
     action: 'click',
   });
   assert.ok(o.controls.some((c) => c.label === 'Germany'));
-  o = await call('browser_jev_frame_act', {
+  o = await call('browser_frame_act', {
     tabId,
     frameId,
     targetId: o.controls.find((c) => c.label === 'Germany').targetId,
     action: 'click',
   });
   assert.ok(o.text.includes('Germany'));
-  o = await call('browser_jev_observe', {tabId, full: true});
+  o = await call('browser_observe', {tabId, full: true});
   assert.equal(o.uploads.length, 1);
   const embeddedCv = path.join(dir, 'embedded.txt');
   await writeFile(embeddedCv, 'Synthetic embedded fixture');
-  o = await call('browser_jev_upload', {
+  o = await call('browser_upload', {
     tabId,
     uploadId: o.uploads[0].uploadId,
     filePath: embeddedCv,
@@ -117,8 +117,8 @@ try {
       (e) =>
         (e.innerHTML = `<input id="city" type="text" role="combobox" aria-autocomplete="list" aria-label="Location (City)" onkeydown="if(event.key==='ArrowDown')document.querySelector('[role=listbox]').hidden=false" onblur="if(!document.querySelector('[role=option]').dataset.selected)this.value='' "><div role="listbox" hidden><div role="option" tabindex="0" onmousedown="this.dataset.selected='yes'" onclick="document.querySelector('#city').value=this.textContent;this.parentElement.hidden=true">Berlin, Germany</div></div>`),
     );
-  o = await call('browser_jev_frame_observe', {tabId, frameId});
-  o = await call('browser_jev_frame_act', {
+  o = await call('browser_frame_observe', {tabId, frameId});
+  o = await call('browser_frame_act', {
     tabId,
     frameId,
     targetId: o.controls.find((c) => c.label === 'Location (City)').targetId,
@@ -128,7 +128,7 @@ try {
   assert.equal(o.status, 'needs_selection');
   assert.equal(o.suggestionsVisible, true);
   assert.ok(o.controls.some((c) => c.label === 'Berlin, Germany'));
-  o = await call('browser_jev_frame_act', {
+  o = await call('browser_frame_act', {
     tabId,
     frameId,
     targetId: o.controls.find((c) => c.label === 'Berlin, Germany').targetId,
@@ -139,31 +139,31 @@ try {
   await page.setContent(
     '<div role="dialog"><span id="upload-text">Upload from Device</span><input type="file" style="opacity:0" aria-labelledby="upload-text"></div>',
   );
-  o = await call('browser_jev_observe', {tabId, full: true});
+  o = await call('browser_observe', {tabId, full: true});
   assert.equal(o.uploads.length, 1);
   assert.equal(o.uploads[0].label, 'Upload from Device');
   const cv = path.join(dir, 'synthetic.txt');
   await writeFile(cv, 'Synthetic fixture only');
-  o = await call('browser_jev_upload', {tabId, uploadId: o.uploads[0].uploadId, filePath: cv});
+  o = await call('browser_upload', {tabId, uploadId: o.uploads[0].uploadId, filePath: cv});
   assert.equal(o.executed, true);
   assert.equal(await page.locator('input').evaluate((e) => e.files[0].name), 'synthetic.txt');
   // Personio-style visually hidden file input behind a visible Add file button.
   await page.setContent(
     '<div class="document-input-wrapper"><button type="button">Add file</button><input type="file" aria-label="Upload CV" style="display:none"></div>',
   );
-  o = await call('browser_jev_observe', {tabId, full: true});
+  o = await call('browser_observe', {tabId, full: true});
   assert.equal(o.uploads.length, 1);
   assert.equal(o.uploads[0].label, 'Upload CV');
   await page.setContent(
     '<div><p>Cover Letter</p><button type="button">Attach</button><input type="file" aria-label="Attach" style="display:none"></div>',
   );
-  o = await call('browser_jev_observe', {tabId, full: true});
+  o = await call('browser_observe', {tabId, full: true});
   assert.equal(o.uploads[0].label, 'Cover Letter — Attach');
   // Disabled final send reports the actual missing required fields, including custom JS forms.
   await page.setContent(
     '<form><label>Email *<input type="email" id="mail"></label><label>Phone *<input type="tel" id="phone"></label><button type="submit" disabled>Submit Application</button></form>',
   );
-  o = await call('browser_jev_inspect_form', {tabId});
+  o = await call('browser_inspect_form', {tabId});
   assert.deepEqual(
     o.missingRequired.map((f) => f.label),
     ['Email *', 'Phone *'],
@@ -180,13 +180,13 @@ try {
     '<p>The captcha is required.</p><iframe title="reCAPTCHA" src="https://www.google.com/recaptcha/api2/anchor?fixture=1" style="width:300px;height:100px"></iframe>',
   );
   await page.frames()[1].waitForLoadState();
-  o = await call('browser_jev_observe', {tabId, full: true});
+  o = await call('browser_observe', {tabId, full: true});
   assert.equal(o.verification.capability, 'supported');
   const verify = o.clickTargets.find((c) => c.verification);
   assert.ok(verify);
-  o = await call('browser_jev_click', {tabId, targetId: verify.targetId});
+  o = await call('browser_click_target', {tabId, targetId: verify.targetId});
   assert.equal(o.executed, true);
-  o = await call('browser_jev_observe', {tabId});
+  o = await call('browser_observe', {tabId});
   assert.equal(o.verification.state, 'cleared');
   assert.equal(slot.verification, undefined);
   assert.equal(context.pages().length, count);
@@ -201,7 +201,7 @@ try {
     f.style = 'width:300px;height:200px';
     document.body.append(f);
   });
-  o = await call('browser_jev_observe', {tabId});
+  o = await call('browser_observe', {tabId});
   assert.equal(o.verification.capability, 'not_exposed');
   assert.equal(o.verification.handoff, true);
   delete slot.verification;
@@ -214,14 +214,14 @@ try {
     .frames()[1]
     .locator('[role=checkbox]')
     .evaluate((e) => (e.onclick = null));
-  o = await call('browser_jev_observe', {tabId, full: true});
-  o = await call('browser_jev_click', {
+  o = await call('browser_observe', {tabId, full: true});
+  o = await call('browser_click_target', {
     tabId,
     targetId: o.clickTargets.find((c) => c.verification).targetId,
   });
-  o = await call('browser_jev_observe', {tabId});
+  o = await call('browser_observe', {tabId});
   assert.equal(o.verification.handoff, true);
-  const again = await call('browser_jev_click', {
+  const again = await call('browser_click_target', {
     tabId,
     targetId: o.clickTargets.find((c) => c.verification).targetId,
   });

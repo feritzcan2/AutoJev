@@ -396,7 +396,7 @@ const settleTask = async (flow, id, runId, first) => {
     polls = 0;
   while (result.status === 'running') {
     if (++polls > 40) throw Error('task did not settle');
-    result = await flow.call(id, runId, 'read_jev_task', {
+    result = await flow.call(id, runId, 'read_browser_task', {
       taskId: result.taskId ?? result.index?.taskId,
     });
   }
@@ -437,7 +437,7 @@ test('a recipe check reuses listings the trial already proved at the replayed ad
     flow,
     f.id,
     trial.id,
-    await flow.call(f.id, trial.id, 'browser_jev_run', {operation: 'scan_results', url: expected}),
+    await flow.call(f.id, trial.id, 'browser_run_task', {operation: 'scan_results', url: expected}),
   );
   assert.equal(scan.confirmedListings, 0);
   assert.ok(scan.uncertainLinks >= 2);
@@ -446,7 +446,7 @@ test('a recipe check reuses listings the trial already proved at the replayed ad
     flow,
     f.id,
     trial.id,
-    await flow.call(f.id, trial.id, 'browser_jev_run', {
+    await flow.call(f.id, trial.id, 'browser_run_task', {
       operation: 'collect_details',
       urls: [lead],
     }),
@@ -538,7 +538,7 @@ test('a trial scan reads at most two result pages while a scan run keeps paging'
     flow,
     f.id,
     trial.id,
-    await flow.call(f.id, trial.id, 'browser_jev_run', {operation: 'scan_results', url: expected}),
+    await flow.call(f.id, trial.id, 'browser_run_task', {operation: 'scan_results', url: expected}),
   );
   assert.equal(scanned.status, 'completed');
   assert.equal(scanned.pageCount, 2);
@@ -572,7 +572,7 @@ test('a trial scan reads at most two result pages while a scan run keeps paging'
     scanFlow,
     f.id,
     scan.id,
-    await scanFlow.call(f.id, scan.id, 'browser_jev_run', {
+    await scanFlow.call(f.id, scan.id, 'browser_run_task', {
       operation: 'scan_results',
       url: expected,
     }),
@@ -745,13 +745,13 @@ test('replayed scans verify or invalidate the recipe; a stale recipe sends the s
       browser,
       report: (...args) => f.runtime.report(...args),
     });
-    const scan = await flow.call(f.id, run.id, 'browser_jev_run', {
+    const scan = await flow.call(f.id, run.id, 'browser_run_task', {
       operation: 'scan_results',
       url: expected,
     });
     if (listings)
       await flow
-        .call(f.id, run.id, 'browser_jev_run', {
+        .call(f.id, run.id, 'browser_run_task', {
           operation: 'collect_details',
           fromTaskId: scan.taskId,
         })
@@ -887,7 +887,7 @@ test('a scan never rereads listings the workspace already holds or rejected unde
     flow,
     f.id,
     scan.id,
-    await flow.call(f.id, scan.id, 'browser_jev_run', {operation: 'scan_results', url: expected}),
+    await flow.call(f.id, scan.id, 'browser_run_task', {operation: 'scan_results', url: expected}),
   );
   assert.equal(first.status, 'completed');
   assert.equal(first.lastPage.knownListings, 0);
@@ -923,7 +923,7 @@ test('a scan never rereads listings the workspace already holds or rejected unde
     flow,
     f.id,
     scan.id,
-    await flow.call(f.id, scan.id, 'browser_jev_run', {operation: 'scan_results', url: expected}),
+    await flow.call(f.id, scan.id, 'browser_run_task', {operation: 'scan_results', url: expected}),
   );
   assert.equal(second.status, 'completed');
   assert.equal(second.lastPage.knownListings, 2);
@@ -994,7 +994,7 @@ test('on a board the recipe orders newest-first, a repeat scan stops after two p
     flow,
     f.id,
     first.id,
-    await flow.call(f.id, first.id, 'browser_jev_run', {operation: 'scan_results', url: expected}),
+    await flow.call(f.id, first.id, 'browser_run_task', {operation: 'scan_results', url: expected}),
   );
   assert.equal(full.status, 'completed');
   assert.equal(full.pageCount, 4);
@@ -1046,7 +1046,10 @@ test('on a board the recipe orders newest-first, a repeat scan stops after two p
     flow,
     f.id,
     repeat.id,
-    await flow.call(f.id, repeat.id, 'browser_jev_run', {operation: 'scan_results', url: expected}),
+    await flow.call(f.id, repeat.id, 'browser_run_task', {
+      operation: 'scan_results',
+      url: expected,
+    }),
   );
   assert.equal(bounded.status, 'completed');
   assert.equal(bounded.knownBoundary, true);
@@ -1135,7 +1138,7 @@ async function scanAfterTrial(t, board) {
     flow,
     f.id,
     scan.id,
-    await flow.call(f.id, scan.id, 'browser_jev_run', {operation: 'scan_results', url: expected}),
+    await flow.call(f.id, scan.id, 'browser_run_task', {operation: 'scan_results', url: expected}),
   );
   return {f, scan, flow, opened, expected, capped};
 }
@@ -1188,7 +1191,7 @@ test('a search completes with its results page snapshot after detail pages were 
     flow,
     f.id,
     scan.id,
-    await flow.call(f.id, scan.id, 'browser_jev_run', {
+    await flow.call(f.id, scan.id, 'browser_run_task', {
       operation: 'collect_details',
       fromTaskId: capped.taskId,
     }),
@@ -1275,7 +1278,7 @@ test('each recipe term is its own search: completing one opens the next with a f
       flow,
       f.id,
       scan.id,
-      await flow.call(f.id, scan.id, 'browser_jev_run', {operation: 'scan_results', url}),
+      await flow.call(f.id, scan.id, 'browser_run_task', {operation: 'scan_results', url}),
     );
     assert.equal(capped.pageCapReached, true);
     assert.equal(capped.pageCount, 10, 'each search has its own 10-page limit');
@@ -1399,7 +1402,7 @@ test('a detail page with its own page counter does not move the search or lift i
     flow,
     f.id,
     scan.id,
-    await flow.call(f.id, scan.id, 'browser_jev_run', {operation: 'scan_results', url: expected}),
+    await flow.call(f.id, scan.id, 'browser_run_task', {operation: 'scan_results', url: expected}),
   );
   assert.equal(capped.pageCapReached, true);
   assert.equal(f.db.run(scan.id).scanPlan.boundary?.pageCap, true, 'the cap is set');
@@ -1408,7 +1411,7 @@ test('a detail page with its own page counter does not move the search or lift i
     flow,
     f.id,
     scan.id,
-    await flow.call(f.id, scan.id, 'browser_jev_run', {
+    await flow.call(f.id, scan.id, 'browser_run_task', {
       operation: 'collect_details',
       fromTaskId: capped.taskId,
     }),

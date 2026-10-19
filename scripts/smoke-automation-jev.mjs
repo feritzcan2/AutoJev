@@ -58,7 +58,7 @@ const pageOf = (result) =>
   JSON.parse(result.content.find((p) => p.type === 'text').text.replace(/^Page URL: [^\n]+\n/, ''));
 try {
   begin('trial');
-  assert.ok(!flow.tools.some((t) => t.name === 'browser_jev_next'));
+  assert.ok(!flow.tools.some((t) => t.name === 'browser_next'));
   let page = pageOf(await call('browser_open', {url}));
   assert.match(page.text, /Berlin apartment/);
   const initialField = page.fillFields.find((f) => f.label === 'Message');

@@ -63,7 +63,7 @@ try {
   const o = JSON.parse(
     (
       await client.callTool(
-        {name: 'browser_jev_open', arguments: {url: 'https://portal.test/register'}},
+        {name: 'browser_open_page', arguments: {url: 'https://portal.test/register'}},
         'local',
         {},
       )
@@ -76,13 +76,13 @@ try {
   assert.equal(obs.verification.checkbox, true);
   const call = async (name, args) =>
     JSON.parse((await client.callTool({name, arguments: args}, 'local', {})).content[0].text);
-  const checked = await call('browser_jev_click', {
+  const checked = await call('browser_click_target', {
     tabId: o.tabId,
     targetId: obs.clickTargets.find((t) => t.verification).targetId,
   });
   assert.equal(checked.executed, true);
   assert.equal(checked.verification.state, 'cleared');
-  const continued = await call('browser_jev_click', {
+  const continued = await call('browser_click_target', {
     tabId: o.tabId,
     targetId: checked.clickTargets.find((t) => t.label === 'Absenden').targetId,
   });
@@ -114,7 +114,7 @@ try {
       body: `<title>Just a moment...</title><h1>Additional Verification Required</h1><p>Cloudflare — Your Ray ID: synthetic</p><div id="host"></div><script>document.getElementById('host').attachShadow({mode:'closed'}).innerHTML='<iframe style="position:absolute;left:250px;top:140px;width:300px;height:65px" src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform/test/turnstile?mode=${mode}"></iframe>';addEventListener('message',e=>{if(e.origin==='https://challenges.cloudflare.com'&&e.data==='verified')location.href='/done';});</script>`,
     });
   });
-  const barrier = await call('browser_jev_open', {url: 'https://barrier.test/access'});
+  const barrier = await call('browser_open_page', {url: 'https://barrier.test/access'});
   assert.equal(barrier.status, 'verification_pending');
   const barrierSlot = client.tab(barrier.tabId);
   assert.equal(await clickCloudflareCheckbox(barrierSlot, () => {}), true);
@@ -126,12 +126,12 @@ try {
   for (const mode of ['hidden', 'covered', 'disabled', 'unlabelled']) {
     // Isolate site cooldown state to exercise detection for every negative case.
     db.exec('DELETE FROM browser_site_waits');
-    let negative = await call('browser_jev_open', {url: 'https://barrier.test/' + mode});
+    let negative = await call('browser_open_page', {url: 'https://barrier.test/' + mode});
     if (negative.status === 'verification_pending') {
       const pending = client.tab(negative.tabId);
       assert.equal(pending.cloudflareCheckbox, null, mode);
       pending.cloudflareDiscovery.until = Date.now() - 1;
-      negative = await call('browser_jev_observe', {tabId: negative.tabId});
+      negative = await call('browser_observe', {tabId: negative.tabId});
     }
     assert.equal(negative.status, 'site_wait', mode);
     assert.equal(nativeClicks, 1);
@@ -182,7 +182,7 @@ try {
     (
       await tools.call(
         'scope',
-        'browser_jev_open',
+        'browser_open_page',
         {url: 'https://api-barrier.test/check'},
         'local',
       )

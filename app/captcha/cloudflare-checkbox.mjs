@@ -212,7 +212,7 @@ export async function resolveCloudflareCheckbox(browser, id, result, owner, opti
       check();
       return browser.performCall(
         id,
-        'browser_jev_observe',
+        'browser_observe',
         {tabId: slot.id, scope: 'document', full: true, fullReason: 'context_loss'},
         owner,
         options,

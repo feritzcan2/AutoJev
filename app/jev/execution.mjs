@@ -44,8 +44,8 @@ export class JevExecution {
       taskId: task.taskId ?? null,
       operation: task.operation,
       next: task.taskId
-        ? 'Jev continues automatically until review, an issue or completion. Use read_jev_task to wait for its result; do not run shell sleep, restart the operation or use the browser.'
-        : 'Jev is starting. Repeat browser_jev_run with the same input to retrieve its taskId; this will reuse the existing operation.',
+        ? 'Jev continues automatically until review, an issue or completion. Use read_browser_task to wait for its result; do not run shell sleep, restart the operation or use the browser.'
+        : 'Jev is starting. Repeat browser_run_task with the same input to retrieve its taskId; this will reuse the existing operation.',
     };
   }
   async wait() {

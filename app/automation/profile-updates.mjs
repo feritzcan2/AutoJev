@@ -17,31 +17,6 @@ export const profileChanged = (plan, base) =>
       : fieldValue(value) !== fieldValue(base[key]),
   );
 
-// Older conversations stored source suggestions inside the profile draft.
-export function splitPlanDraft(a) {
-  const next = {...a};
-  for (const key of ['planDraft', 'profileUpdate']) {
-    const draft = a[key];
-    if (!draft?.plan || !Object.hasOwn(draft.plan, 'sources')) continue;
-    const {sources} = draft.plan,
-      plan = profilePlan(draft.plan);
-    if (
-      !next.sourceDraft &&
-      draft.baseRevision === a.revision &&
-      JSON.stringify(sources) !== JSON.stringify(a.sources)
-    )
-      next.sourceDraft = {
-        id: `${key}:${draft.runId ?? draft.savedAt}:${draft.updatedAt ?? draft.savedAt}`,
-        sources,
-        runId: draft.runId,
-        updatedAt: draft.updatedAt ?? draft.savedAt,
-      };
-    if (key === 'profileUpdate' || profileChanged(plan, {...a, ...a.profileUpdate?.plan}))
-      next[key] = {...draft, plan};
-    else delete next[key];
-  }
-  return next;
-}
 export function queueProfileUpdate(
   db,
   id,

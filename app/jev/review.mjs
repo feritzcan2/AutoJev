@@ -22,7 +22,7 @@ export function resolveJevReview(items, decisions = []) {
   return decisions.map((decision, position) => {
     const fail = (message) => {
       throw jevReviewRequired(
-        `review[${position}]: ${message} Use read_jev_task(taskId, batchId, limit:20) for the current batch; send the decision with the item number.`,
+        `review[${position}]: ${message} Use read_browser_task(taskId, batchId, limit:20) for the current batch; send the decision with the item number.`,
       );
     };
     if (!decision || typeof decision !== 'object' || Array.isArray(decision))
@@ -65,7 +65,7 @@ export function resolveJevReview(items, decisions = []) {
 export function resolveLinkSelection(links, selected = [], review = []) {
   const fail = (message) => {
     throw jevReviewRequired(
-      `${message} Read the current linkSelection with read_jev_task(taskId); send selected=[item numbers] and review=[{item,decision:"reject",reason}].`,
+      `${message} Read the current linkSelection with read_browser_task(taskId); send selected=[item numbers] and review=[{item,decision:"reject",reason}].`,
     );
   };
   if (!Array.isArray(selected) || !Array.isArray(review))

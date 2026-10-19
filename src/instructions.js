@@ -34,7 +34,7 @@ const fieldLabels = {
   fields: 'Setup questions',
   preferences: 'Preferences',
   authorization: 'Action permission',
-  applicationPolicy: 'Application rules',
+  applicationPolicy: 'Consents and form choices',
   maxActionsPerDay: 'Daily action limit',
   maxBrowserSteps: 'Browser step limit',
   timeoutMinutes: 'Time limit',

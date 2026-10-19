@@ -25,7 +25,7 @@ try {
   assert.equal(browsers.status('workspace').ready, true);
   const page = JSON.parse(
     (
-      await browsers.call('workspace', 'browser_jev_open', {url}, 'active-record', {
+      await browsers.call('workspace', 'browser_open_page', {url}, 'active-record', {
         automationWorkspaceId: 'workspace',
         automationTabKey: 'record:item',
       })

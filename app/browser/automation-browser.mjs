@@ -107,7 +107,7 @@ export function automationBrowser(
       : observed(
           await native(
             id,
-            'browser_jev_observe',
+            'browser_observe',
             {tabId: result.page.tabId, scope: 'document', full: true, fullReason: 'context_loss'},
             session,
           ),
@@ -157,20 +157,20 @@ export function automationBrowser(
       if (name === 'browser_reopen_readonly') {
         if (!sourceUrl || !readTabKey)
           throw Error('A new control tab can only be opened during a source scan.');
-        const result = await native(id, 'browser_jev_open', {url: args.url}, session, {
+        const result = await native(id, 'browser_open_page', {url: args.url}, session, {
           automationFreshTab: true,
         });
         tabId = result.page.tabId ?? tabId;
         return document(id, result, session);
       }
-      if (name === 'browser_jev_tabs') {
+      if (name === 'browser_tabs') {
         const {page} = await native(id, name, {}, session, options);
         return {tabs: page.tabs ?? [], currentTabId: tabId};
       }
-      if (name === 'browser_jev_use_tab') {
+      if (name === 'browser_use_tab') {
         const result = await native(
           id,
-          'browser_jev_observe',
+          'browser_observe',
           {tabId: args.tabId, scope: 'document', full: true, fullReason: 'context_loss'},
           session,
           options,
@@ -179,7 +179,7 @@ export function automationBrowser(
         restoreRecord = false;
         return observed(result);
       }
-      if (name === 'browser_jev_close_tab') {
+      if (name === 'browser_close_tab') {
         const {page} = await native(id, name, {tabId: args.tabId}, session, options);
         if (page.closed && tabId === args.tabId) tabId = null;
         return {...page, currentTabId: tabId};
@@ -191,7 +191,7 @@ export function automationBrowser(
             if (nextSource !== activeSource) tabId = null;
             activeSource = nextSource;
           }
-          const result = await native(id, 'browser_jev_open', {url: args.url}, session, {
+          const result = await native(id, 'browser_open_page', {url: args.url}, session, {
             automationPreferredTabId: tabId,
             automationResumeRecord: restoreRecord,
           });
@@ -204,11 +204,11 @@ export function automationBrowser(
           if (!tabId) throw Error('Could not open the Jev tab');
           return document(id, result, session);
         }
-        const {page: tabs} = await native(id, 'browser_jev_tabs', {}, session),
+        const {page: tabs} = await native(id, 'browser_tabs', {}, session),
           existing = tabs.tabs?.find((t) => t.url === args.url);
         const result = await native(
           id,
-          existing ? 'browser_jev_observe' : 'browser_jev_open',
+          existing ? 'browser_observe' : 'browser_open_page',
           existing
             ? {tabId: existing.tabId, full: true, fullReason: 'context_loss'}
             : {url: args.url},
@@ -225,20 +225,20 @@ export function automationBrowser(
         );
       if (
         [
-          'browser_jev_fill_fields',
-          'browser_jev_click',
-          'browser_jev_list_options',
-          'browser_jev_select_option',
+          'browser_fill_fields',
+          'browser_click_target',
+          'browser_list_options',
+          'browser_choose_option',
         ].includes(name)
       )
         return observed(await native(id, name, {...args, tabId}, session, options));
-      if (name === 'browser_jev_inspect_form')
+      if (name === 'browser_inspect_form')
         return (await native(id, name, {tabId}, session, options)).page;
       // A viewport image of the current tab; no page action, no Jev call.
       if (name === 'browser_screenshot') {
         const {response, page} = await native(
           id,
-          'browser_jev_screenshot',
+          'browser_page_screenshot',
           {tabId, format: 'jpeg'},
           session,
           options,
@@ -251,33 +251,33 @@ export function automationBrowser(
       let tool,
         parameters = {tabId};
       if (name === 'browser_snapshot') {
-        tool = 'browser_jev_observe';
+        tool = 'browser_observe';
         Object.assign(parameters, {scope: 'document', full: true, fullReason: 'context_loss'});
       } else if (name === 'browser_click') {
-        tool = 'browser_jev_click';
+        tool = 'browser_click_target';
         parameters.targetId = args.target;
       } else if (name === 'browser_type') {
-        tool = 'browser_jev_fill_fields';
+        tool = 'browser_fill_fields';
         parameters.fields = [{fieldId: args.target, text: args.text}];
       } else if (name === 'browser_select_option') {
-        tool = 'browser_jev_select_option';
+        tool = 'browser_choose_option';
         Object.assign(parameters, {controlId: args.target, option: args.values[0]});
       } else if (name === 'browser_upload_document') {
-        tool = 'browser_jev_upload';
+        tool = 'browser_upload';
         Object.assign(parameters, {uploadId: args.ref, filePath: args.filePath});
-      } else if (name === 'browser_jev_options') {
-        tool = 'browser_jev_list_options';
+      } else if (name === 'browser_options') {
+        tool = 'browser_list_options';
         parameters.controlId = args.ref;
-      } else if (name === 'browser_jev_scroll') {
+      } else if (name === 'browser_scroll') {
         tool = name;
         Object.assign(parameters, {controlId: args.controlId, direction: args.direction});
-      } else if (name === 'browser_jev_reveal') {
+      } else if (name === 'browser_reveal') {
         tool = name;
         parameters.controlId = args.controlId;
       } else if (name === 'browser_target_press') {
         tool = name;
         Object.assign(parameters, {ref: args.ref, key: args.key});
-      } else if (['browser_jev_list_suggestions', 'browser_jev_autocomplete'].includes(name)) {
+      } else if (['browser_list_suggestions', 'browser_autocomplete'].includes(name)) {
         tool = name;
         parameters.controlId = args.controlId;
         if (args.text !== undefined) parameters.text = args.text;

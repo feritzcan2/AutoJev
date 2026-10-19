@@ -8,9 +8,15 @@ import {AutomationStore} from '../app/automation/store.mjs';
 import {WebTasks} from '../app/automation/web-template.mjs';
 import {automationWorkflow} from '../app/automation/worker.mjs';
 import {automationPrompt} from '../app/automation/prompts.mjs';
-import {approveCoverLetter, reviseCoverLetter} from '../app/automation/cover-letters.mjs';
+import {
+  approveCoverLetter,
+  reviseCoverLetter,
+  setCoverLetterAutoApprove,
+} from '../app/automation/cover-letters.mjs';
 import {coverLetterHtml} from '../app/automation/cover-letter-pdf.mjs';
+import {listDocuments, agentDocument} from '../app/automation/artifacts.mjs';
 import {automationAttention} from '../app/automation/attention.mjs';
+import {automationTaskContext} from '../app/automation/task-context.mjs';
 
 const source = 'https://example.test/list',
   settle = () => new Promise((r) => setImmediate(r)),
@@ -182,7 +188,7 @@ test('the writer saves a PDF for review and cannot finish without it', async (t)
     /placeholder \[Company\]/,
   );
   const saved = await flow.call(f.id, writer.id, 'save_cover_letter', {text: letter()});
-  assert.match(saved.path, /^documents\/cover-letters\/Cover-Letter-Senior-Software-Engineer-/);
+  assert.match(saved.path, /^generated\/cover-letters\/Cover-Letter-Senior-Software-Engineer-/);
   assert.match(await readFile(path.join(f.workspace, saved.path), 'utf8'), /^%PDF-fixture/);
   await f.finish(writer, 'completed');
   const question = f.db.get(f.id).questions.find((q) => q.id === questionId);
@@ -277,4 +283,176 @@ test('a writer that stops without a letter can be retried', async (t) => {
 test('the PDF page escapes the letter text and keeps its paragraphs', () => {
   const html = coverLetterHtml('Dear <team>,\n\nLine one\nline two');
   assert.match(html, /<p>Dear &lt;team&gt;,<\/p><p>Line one<br>line two<\/p>/);
+});
+
+test('an optional cover letter field blocks the submit until an approved letter fills it', async (t) => {
+  const f = await fixture(t);
+  await f.runtime.runRecord(f.id, f.item.id, 'execute', {direct: true});
+  await settle();
+  const form = (filled) => ({
+    url: f.item.url,
+    uploads: [{uploadId: 'cv', label: 'Resume/CV — Attach'}],
+    fields: [
+      {label: 'Attach', question: 'Resume/CV *', required: true, type: 'file', filled: true},
+      {label: 'Attach', question: 'Cover Letter', type: 'file', filled},
+    ],
+    submitControls: [{label: 'Submit application'}],
+  });
+  const formFlow = (run, filled) =>
+    automationWorkflow({
+      workspace: f.workspace,
+      db: f.db,
+      run,
+      signal: {aborted: false},
+      browser: {currentUrl: async () => f.item.url, call: async () => form(filled)},
+      renderPdf: f.renderPdf,
+      report: (...args) => f.runtime.report(...args),
+    });
+  let execute = f.launches.at(-1);
+  const inspected = await formFlow(execute, false).call(
+    f.id,
+    execute.id,
+    'browser_inspect_form',
+    {},
+  );
+  assert.match(inspected.coverLetter, /also an optional one.*request_cover_letter/);
+  await assert.rejects(
+    formFlow(execute, false).call(f.id, execute.id, 'reserve_automation_action', {
+      itemId: f.item.id,
+    }),
+    /"Cover Letter".*request_cover_letter/,
+  );
+  const {questionId} = await formFlow(execute, false).call(
+    f.id,
+    execute.id,
+    'request_cover_letter',
+    {},
+  );
+  await assert.rejects(
+    formFlow(execute, false).call(f.id, execute.id, 'reserve_automation_action', {
+      itemId: f.item.id,
+    }),
+    /waiting for the user's approval/,
+  );
+  await f.finish(execute, 'blocked', {
+    blocker: {
+      category: 'needs_answer',
+      reason: 'The form has a cover letter field.',
+      userAction: 'Review the cover letter on the Files page',
+    },
+  });
+  const writer = f.launches.at(-1);
+  const saved = await f.flow(writer).call(f.id, writer.id, 'save_cover_letter', {text: letter()});
+  await f.finish(writer, 'completed');
+  await approveCoverLetter(f.runtime, f.id, questionId, {
+    workspace: f.workspace,
+    renderPdf: f.renderPdf,
+  });
+  await settle();
+  execute = f.launches.at(-1);
+  assert.equal(execute.recordOperation, 'execute');
+  // The resumed application must fill the field with the approved file.
+  await formFlow(execute, false).call(f.id, execute.id, 'browser_inspect_form', {});
+  await assert.rejects(
+    formFlow(execute, false).call(f.id, execute.id, 'reserve_automation_action', {
+      itemId: f.item.id,
+    }),
+    new RegExp(saved.path.replace(/[.]/g, '\\.')),
+  );
+  await formFlow(execute, true).call(f.id, execute.id, 'browser_inspect_form', {});
+  await formFlow(execute, true).call(f.id, execute.id, 'reserve_automation_action', {
+    itemId: f.item.id,
+  });
+});
+
+test('a form without a cover letter field submits as before', async (t) => {
+  const f = await fixture(t);
+  await f.runtime.runRecord(f.id, f.item.id, 'execute', {direct: true});
+  await settle();
+  const execute = f.launches.at(-1),
+    flow = automationWorkflow({
+      workspace: f.workspace,
+      db: f.db,
+      run: execute,
+      signal: {aborted: false},
+      browser: {
+        currentUrl: async () => f.item.url,
+        call: async () => ({
+          url: f.item.url,
+          uploads: [{uploadId: 'cv', label: 'Resume/CV — Attach'}],
+          fields: [{label: 'Attach', question: 'Resume/CV *', type: 'file', filled: true}],
+        }),
+      },
+    });
+  const inspected = await flow.call(f.id, execute.id, 'browser_inspect_form', {});
+  assert.equal(inspected.coverLetter, undefined);
+  await flow.call(f.id, execute.id, 'reserve_automation_action', {itemId: f.item.id});
+});
+
+test('an approved cover letter is not shown to applications for other records', async (t) => {
+  const f = await fixture(t);
+  const {questionId} = await f.requestLetter();
+  const writer = f.launches.at(-1);
+  await f.flow(writer).call(f.id, writer.id, 'save_cover_letter', {text: letter()});
+  await f.finish(writer, 'completed');
+  await approveCoverLetter(f.runtime, f.id, questionId, {
+    workspace: f.workspace,
+    renderPdf: f.renderPdf,
+  });
+  await settle();
+  await f.runtime.finish(f.id, 'blocked', 'Done', f.launches.at(-1).workerId);
+  const seed = f.db.begin(f.id, 'run'),
+    other = f.db.record(f.id, seed.id, {
+      key: source + '/2',
+      url: source + '/2',
+      title: 'Other role',
+      summary: 'Observed facts',
+    });
+  f.db.finish(f.id, seed.id, 'completed', 'Saved');
+  await f.runtime.runRecord(f.id, other.id, 'execute', {direct: true});
+  await settle();
+  const context = automationTaskContext(f.db, f.id, f.db.run(f.launches.at(-1).id));
+  assert.equal(context.assignedRecord.id, other.id);
+  assert.doesNotMatch(JSON.stringify(context.earlierAnswers ?? {}), /cover letter/i);
+});
+
+test('agent generated files are listed apart and never read as profile documents', async (t) => {
+  const f = await fixture(t);
+  const {writeFile, mkdir} = await import('node:fs/promises');
+  await mkdir(path.join(f.workspace, 'documents'), {recursive: true});
+  await mkdir(path.join(f.workspace, 'generated', 'cover-letters'), {recursive: true});
+  await writeFile(path.join(f.workspace, 'documents', 'CV.txt'), 'Ada Lovelace, engineer');
+  await writeFile(
+    path.join(f.workspace, 'generated', 'cover-letters', 'Cover-Letter-Example.txt'),
+    'Dear team',
+  );
+  const files = await listDocuments(f.workspace);
+  assert.deepEqual(files.map((d) => [d.path, d.generated]).sort(), [
+    ['documents/CV.txt', false],
+    [path.join('generated', 'cover-letters', 'Cover-Letter-Example.txt'), true],
+  ]);
+  // Letters saved before the split stay agent files.
+  assert.equal(agentDocument('documents/cover-letters/Cover-Letter-Old.pdf'), true);
+  assert.equal(agentDocument('documents/CV.pdf'), false);
+});
+
+test('with automatic acceptance the saved letter resumes the application without a review', async (t) => {
+  const f = await fixture(t);
+  setCoverLetterAutoApprove(f.db, f.id, true);
+  assert.throws(() => setCoverLetterAutoApprove(f.db, f.id, 'yes'), /on or off/);
+  const {execute, questionId} = await f.requestLetter();
+  const writer = f.launches.at(-1);
+  const saved = await f.flow(writer).call(f.id, writer.id, 'save_cover_letter', {text: letter()});
+  assert.match(saved.next, /accepted automatically/);
+  const question = f.db.get(f.id).questions.find((q) => q.id === questionId);
+  assert.equal(question.coverLetter.state, 'approved');
+  assert.equal(question.coverLetter.autoApproved, true);
+  assert.match(question.answer, /accepted automatically/);
+  // The writer finishes first; then the same application continues.
+  assert.equal(f.launches.at(-1).id, writer.id);
+  await f.finish(writer, 'completed');
+  const resumed = f.launches.at(-1);
+  assert.equal(resumed.recordOperation, 'execute');
+  assert.equal(resumed.continuation.runId, execute.id);
+  assert.deepEqual(resumed.continuation.questionIds, [questionId]);
 });

@@ -25,7 +25,7 @@ try {
   const personal = await (await client.context()).newPage();
   await personal.goto(url + '/0');
   const draft = unpack(
-    await browsers.call('workspace', 'browser_jev_open', {url: url + '/0'}, 'draft'),
+    await browsers.call('workspace', 'browser_open_page', {url: url + '/0'}, 'draft'),
   );
   assert.ok(draft.tabId);
   const initial = client.tabs.size,

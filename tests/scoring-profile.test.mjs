@@ -10,17 +10,15 @@ async function fixture(t) {
   const root = await mkdtemp(path.join(tmpdir(), 'score-documents-'));
   t.after(() => rm(root, {recursive: true, force: true}));
   await mkdir(path.join(root, 'candidates/one/documents'), {recursive: true});
-  const a = {
-      facts: 'Verified profile fact.',
-      referenceData: {profile: {cvPath: path.join(root, 'candidates/one/CV.txt')}},
-    },
-    added = [];
+  const a = {facts: 'Verified profile fact.'},
+    cv = path.join(root, 'candidates/one/CV.txt'),
+    added = ['CV.txt'];
   const db = {
     get: () => a,
     userDocuments: () => added,
     store: {directory: root, workspaces: {get: () => ({id: 'one', storagePath: 'candidates/one'})}},
   };
-  return {root, a, db, added};
+  return {root, a, db, added, cv};
 }
 function pdf(text) {
   const stream = `BT /F1 12 Tf 20 80 Td (${text}) Tj ET`;
@@ -49,21 +47,21 @@ function pdf(text) {
   );
 }
 test('profile documents use the workspace storage path and refresh changed files', async (t) => {
-  const {a, db} = await fixture(t);
-  await writeFile(a.referenceData.profile.cvPath, 'Five years of compliance experience.');
+  const {a, db, cv} = await fixture(t);
+  await writeFile(cv, 'Five years of compliance experience.');
   const first = await loadScoringDocuments(db, 'one');
   assert.deepEqual(first.paths, ['CV.txt']);
   assert.match(first.text, /## CV.txt\nFive years/);
   assert.equal(first.unavailable, undefined);
-  await writeFile(a.referenceData.profile.cvPath, 'Seven years of compliance program ownership.');
+  await writeFile(cv, 'Seven years of compliance program ownership.');
   const next = await loadScoringDocuments(db, 'one');
   assert.notEqual(next.digest, first.digest);
   assert.equal(scoringSources(a, next).facts.text, 'Verified profile fact.');
   assert.equal(scoringSources(a).documents, undefined);
 });
-test('documents the user added are read, including PDFs, without a legacy CV path', async (t) => {
-  const {root, a, db, added} = await fixture(t);
-  delete a.referenceData.profile.cvPath;
+test('documents the user added are read, including PDFs', async (t) => {
+  const {root, db, added} = await fixture(t);
+  added.length = 0;
   assert.equal((await loadScoringDocuments(db, 'one')).text, '');
   assert.match((await loadScoringDocuments(db, 'one')).unavailable, /No saved documents/);
   await writeFile(
@@ -87,7 +85,7 @@ test('documents the user added are read, including PDFs, without a legacy CV pat
   );
 });
 test('unreadable, missing, foreign and symlinked documents are reported as unknown without reading them', async (t) => {
-  const {root, a, db, added} = await fixture(t),
+  const {root, db, added} = await fixture(t),
     foreign = path.join(root, 'other.txt');
   await writeFile(foreign, 'Another workspace private facts.');
   await writeFile(
@@ -96,7 +94,7 @@ test('unreadable, missing, foreign and symlinked documents are reported as unkno
   );
   await symlink(foreign, path.join(root, 'candidates/one/documents/link.txt'));
   await writeFile(path.join(root, 'candidates/one/documents/ok.txt'), 'Readable fact.');
-  a.referenceData.profile.cvPath = foreign;
+  added[0] = foreign;
   added.push(
     'documents/photo.png',
     'documents/link.txt',
@@ -124,4 +122,17 @@ test('the store lists only documents the user added with the document control', 
   });
   db.message(a.id, 'assistant', 'Saved documents/cover-letter.txt');
   assert.deepEqual(db.userDocuments(a.id), ['documents/cv.pdf']);
+});
+test('files the agents wrote are never read as profile documents', async (t) => {
+  const {root, db, added, cv} = await fixture(t);
+  await writeFile(cv, 'Five years of compliance experience.');
+  await mkdir(path.join(root, 'candidates/one/generated/cover-letters'), {recursive: true});
+  await writeFile(
+    path.join(root, 'candidates/one/generated/cover-letters/Cover-Letter-Example.txt'),
+    'Dear Example team, I led the compliance program.',
+  );
+  added.push('generated/cover-letters/Cover-Letter-Example.txt');
+  const documents = await loadScoringDocuments(db, 'one');
+  assert.deepEqual(documents.paths, ['CV.txt']);
+  assert.doesNotMatch(documents.text, /Dear Example team/);
 });

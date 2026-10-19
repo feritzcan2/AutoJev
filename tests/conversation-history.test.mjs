@@ -38,12 +38,10 @@ test('new and resumed chat inputs contain only the pinned request, with history 
   const old = db.message(id, 'assistant', 'OLD_REPORT '.repeat(700), {conversation: false});
   db.put({
     ...db.get(id),
-    referenceData: {profile: {experience: 'LONG_CV '.repeat(2000)}},
     questions: [{id: 'old-question', text: 'OLD_SETUP', answer: 'OLD_ANSWER'}],
   });
   const run = start('Sen mi puanladın?'),
     original = automationTaskContext(db, id, run);
-  assert.equal(original.referenceData, undefined);
   assert.equal(original.template.fields, undefined);
   assert.deepEqual(original.questions, []);
   assert.equal(original.previousRuns, undefined);
@@ -52,7 +50,7 @@ test('new and resumed chat inputs contain only the pinned request, with history 
     prompt = automationPrompt(run, request);
   assert.match(prompt, /Sen mi puanladın/);
   assert.match(prompt, /Do not preload old messages or summaries/);
-  assert.doesNotMatch(JSON.stringify(original) + prompt, /OLD_REPORT|OLD_SETUP|LONG_CV/);
+  assert.doesNotMatch(JSON.stringify(original) + prompt, /OLD_REPORT|OLD_SETUP/);
   // A newer worker reply or even a newer user message must not replace the
   // request captured by a launching/resuming run.
   db.message(id, 'assistant', 'A concurrent worker report', {conversation: false});
@@ -90,21 +88,9 @@ test('new and resumed chat inputs contain only the pinned request, with history 
     flow.call(id, 'foreign', 'get_workspace_history', {kind: 'messages'}),
     /Invalid/,
   );
-  // Explicitly requested long profile data still uses exact paged context.
-  let page = await flow.call(id, run.id, 'get_automation_context', {section: 'profile'}),
-    text = '';
-  while (page.context) {
-    text += page.text;
-    if (page.context.nextOffset === null) break;
-    page = await flow.call(id, run.id, 'read_automation_context_part', {
-      contextId: page.context.id,
-      offset: page.context.nextOffset,
-    });
-  }
-  assert.equal(
-    JSON.parse(text).referenceData.profile.experience,
-    db.get(id).referenceData.profile.experience,
-  );
+  // Explicitly requested profile data comes from the profile section.
+  const profile = await flow.call(id, run.id, 'get_automation_context', {section: 'profile'});
+  assert.equal(profile.automation.goal, db.get(id).goal);
   assert.equal(
     (await flow.call(id, run.id, 'get_automation_context', {section: 'questions'})).questions[0]
       .answer,

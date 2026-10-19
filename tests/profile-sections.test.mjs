@@ -21,7 +21,7 @@ const automation = {
     preferences: 'Staff backend, hybrid Berlin',
     experience: 'Nine years of .NET and AWS',
     application_facts: 'EU work permit; notice period 3 months',
-    application_policy: 'Never apply twice to one company',
+    application_policy: 'Decline marketing emails',
     ranking: 'Seniority match 40, stack 30',
     score_threshold: '70',
     save_score_threshold: '40',
@@ -64,14 +64,14 @@ test('the profile view splits criteria by section and knows scoring fields witho
   assert.match(candidateFacts(automation, template.fields), /^German C1\nExperience and skills: /);
 });
 
-test('scoring reads facts about the user as facts, not as preferences', () => {
+test('scoring reads facts about the user as facts and leaves action settings out', () => {
   const sources = scoringSources(automation, undefined, template.fields);
   assert.match(sources.facts.text, /German C1/);
   assert.match(sources.facts.text, /Nine years of \.NET/);
   assert.match(sources.facts.text, /EU work permit/);
   assert.doesNotMatch(sources.preferences.text, /Nine years|EU work permit/);
   assert.match(sources.preferences.text, /Staff backend/);
-  assert.match(sources.preferences.text, /Never apply twice/);
+  assert.doesNotMatch(sources.preferences.text, /marketing/, 'consents are not preferences');
   assert.doesNotMatch(sources.preferences.text, /Seniority match|\b70\b|\b40\b/);
 });
 

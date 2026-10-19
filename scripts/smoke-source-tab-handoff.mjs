@@ -69,7 +69,7 @@ try {
   const duplicate = unpack(
     await browsers
       .forWorker('main')
-      .call('workspace', 'browser_jev_open', {url: base + '/finished-detail'}, 'old-run', {
+      .call('workspace', 'browser_open_page', {url: base + '/finished-detail'}, 'old-run', {
         automationWorkspaceId: 'workspace',
         automationSourceUrl: sources[0],
       }),
@@ -77,14 +77,14 @@ try {
   const second = adapter('second', sources[1]),
     other = unpack(await call(second, 'other-run', 'browser_navigate', {url: sources[1]}));
   const successor = adapter('third', sources[0]);
-  const tabs = await call(successor, 'new-run', 'browser_jev_tabs');
+  const tabs = await call(successor, 'new-run', 'browser_tabs');
   assert.deepEqual(
     new Set(tabs.tabs.map((t) => t.tabId)),
     new Set([opened.tabId, duplicate.tabId]),
   );
   const before = requests.length;
   const resumed = unpack(
-    await call(successor, 'new-run', 'browser_jev_use_tab', {tabId: opened.tabId}),
+    await call(successor, 'new-run', 'browser_use_tab', {tabId: opened.tabId}),
   );
   assert.equal(resumed.url, opened.url);
   assert.equal(requests.length, before, 'Taking over a tab must not navigate');
@@ -98,29 +98,29 @@ try {
     opened.tabId,
   );
   assert.equal(
-    (await call(successor, 'new-run', 'browser_jev_close_tab', {tabId: duplicate.tabId})).closed,
+    (await call(successor, 'new-run', 'browser_close_tab', {tabId: duplicate.tabId})).closed,
     true,
   );
   await assert.rejects(
-    call(successor, 'new-run', 'browser_jev_use_tab', {tabId: other.tabId}),
+    call(successor, 'new-run', 'browser_use_tab', {tabId: other.tabId}),
     /another worker/,
   );
   await assert.rejects(
-    call(successor, 'new-run', 'browser_jev_close_tab', {tabId: other.tabId}),
+    call(successor, 'new-run', 'browser_close_tab', {tabId: other.tabId}),
     /source you took over/,
   );
   // A user navigation must be inspected before a retained tab can be discarded.
   await client.tab(opened.tabId).page.goto(base + '/manual-change');
   await assert.rejects(
-    call(successor, 'new-run', 'browser_jev_close_tab', {tabId: opened.tabId}),
+    call(successor, 'new-run', 'browser_close_tab', {tabId: opened.tabId}),
     /The tab changed/,
   );
-  await call(successor, 'new-run', 'browser_jev_use_tab', {tabId: opened.tabId});
+  await call(successor, 'new-run', 'browser_use_tab', {tabId: opened.tabId});
   // Earlier versions stored owned target IDs and URL hashes but no source labels.
   const legacy = unpack(
     await browsers.call(
       'workspace',
-      'browser_jev_open',
+      'browser_open_page',
       {url: legacySource + '?page=7'},
       'legacy-run',
       {automationTabKey: 'read:legacy'},
@@ -129,7 +129,7 @@ try {
   const ambiguous = unpack(
     await browsers.call(
       'workspace',
-      'browser_jev_open',
+      'browser_open_page',
       {url: base + '/unassigned'},
       'legacy-other',
       {automationTabKey: 'read:unassigned'},
@@ -139,19 +139,19 @@ try {
   await browsers.close();
   browsers = new BrowserTools(directory, options);
   const restarted = adapter('fourth', sources[0]);
-  const restored = await call(restarted, 'restart-run', 'browser_jev_tabs');
+  const restored = await call(restarted, 'restart-run', 'browser_tabs');
   assert.deepEqual(
     restored.tabs.map((t) => t.tabId),
     [opened.tabId],
   );
   assert.equal(
-    unpack(await call(restarted, 'restart-run', 'browser_jev_use_tab', {tabId: opened.tabId})).url,
+    unpack(await call(restarted, 'restart-run', 'browser_use_tab', {tabId: opened.tabId})).url,
     base + '/manual-change',
   );
   ({client} = await browsers.connect('workspace'));
   assert.equal(client.tab(other.tabId).page.url(), sources[1]);
   const legacySuccessor = adapter('legacy-successor', legacySource),
-    legacyTabs = await call(legacySuccessor, 'legacy-next', 'browser_jev_tabs');
+    legacyTabs = await call(legacySuccessor, 'legacy-next', 'browser_tabs');
   assert.deepEqual(
     legacyTabs.tabs.map((t) => t.tabId),
     [legacy.tabId],
@@ -163,15 +163,15 @@ try {
     'Ambiguous legacy host must not be assigned to either source',
   );
   assert.equal(
-    unpack(await call(legacySuccessor, 'legacy-next', 'browser_jev_use_tab', {tabId: legacy.tabId}))
+    unpack(await call(legacySuccessor, 'legacy-next', 'browser_use_tab', {tabId: legacy.tabId}))
       .url,
     legacySource + '?page=7',
   );
   assert.equal(
-    (await call(restarted, 'restart-run', 'browser_jev_close_tab', {tabId: opened.tabId})).closed,
+    (await call(restarted, 'restart-run', 'browser_close_tab', {tabId: opened.tabId})).closed,
     true,
   );
-  assert.deepEqual((await call(restarted, 'restart-run', 'browser_jev_tabs')).tabs, []);
+  assert.deepEqual((await call(restarted, 'restart-run', 'browser_tabs')).tabs, []);
   await assert.rejects(call(restarted, 'restart-run', 'browser_snapshot'), /[Oo]pen a page/);
   assert.equal(personal.url(), base + '/personal');
   assert.equal(personal.isClosed(), false);

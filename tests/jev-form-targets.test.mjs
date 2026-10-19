@@ -4,10 +4,10 @@ import {validateJevArgs} from '../app/jev/tools.mjs';
 import {fillKnownFields} from '../app/jev/form.mjs';
 test('text value alias is normalized but conflicting text is rejected before writing', () => {
   const args = {tabId: 'tab', fields: [{fieldId: 'field', value: 'known answer'}]};
-  validateJevArgs('browser_jev_fill_fields', args);
+  validateJevArgs('browser_fill_fields', args);
   assert.deepEqual(args.fields, [{fieldId: 'field', text: 'known answer'}]);
   assert.throws(() =>
-    validateJevArgs('browser_jev_fill_fields', {
+    validateJevArgs('browser_fill_fields', {
       tabId: 'tab',
       fields: [{fieldId: 'field', value: 'one', text: 'two'}],
     }),

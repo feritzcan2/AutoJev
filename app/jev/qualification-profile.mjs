@@ -10,14 +10,14 @@ import {profileView} from '../templates/profile-sections.mjs';
 export const JEV_PROFILE_LIMIT = 3000;
 
 export function jevProfileBasis(automation, documents, fields = []) {
-  const profile = automation.referenceData?.profile ?? {},
-    candidate = profileView(automation, fields).candidate.map((f) => [f.id, f.value]);
+  const candidate = profileView(automation, fields).candidate.map((f) => [f.id, f.value]);
   return createHash('sha256')
     .update(
       JSON.stringify([
         automation.facts ?? '',
-        profile.facts ?? '',
-        profile.learnedFacts ?? {},
+        // Places of two retired sources, kept so saved profiles stay current.
+        '',
+        {},
         documents?.digest ?? null,
         // Appended only when present, so profiles without them keep their basis.
         ...(candidate.length ? [candidate] : []),

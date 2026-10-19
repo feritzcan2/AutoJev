@@ -118,10 +118,10 @@ try {
         search.focus();
       };
     }, countries);
-    return call('browser_jev_observe', {tabId});
+    return call('browser_observe', {tabId});
   };
   let observed = await reset();
-  let form = await call('browser_jev_inspect_form', {tabId});
+  let form = await call('browser_inspect_form', {tabId});
   const missing = form.missingRequired.map((f) => f.label);
   assert.deepEqual(missing, ['Work permit', 'Country'], JSON.stringify(form.missingRequired));
   assert.ok(form.missingRequired.every((f) => f.type === 'combobox'));
@@ -134,7 +134,7 @@ try {
   assert.equal(control(observed, 'Country').autocomplete, true);
   assert.equal(control(observed, 'Country').required, true);
   // Exact option through the combobox; verified from the trigger caption.
-  let result = await call('browser_jev_autocomplete', {
+  let result = await call('browser_autocomplete', {
     tabId,
     controlId: control(observed, 'Work permit').controlId,
     option: 'Yes',
@@ -147,7 +147,7 @@ try {
     const r = document.getElementById('country').getBoundingClientRect();
     scrollBy(0, r.top - 40);
   });
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: control(result, 'Country').controlId,
     text: 'Germ',
@@ -155,10 +155,10 @@ try {
   });
   assert.equal(result.status, 'ready', JSON.stringify(result));
   assert.deepEqual(result.selection, {label: 'Germany', actual: 'Germany', verified: true});
-  form = await call('browser_jev_inspect_form', {tabId});
+  form = await call('browser_inspect_form', {tabId});
   assert.deepEqual(form.missingRequired, []);
   // An option missing from a list without a search query is not guessed.
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: control(result, 'Open to relocation?').controlId,
     option: 'Maybe',
@@ -167,13 +167,13 @@ try {
   assert.deepEqual(result.suggestions, ['Yes', 'No']);
   // Native-select operations on a custom dropdown use the same popup path.
   observed = await reset();
-  result = await call('browser_jev_list_options', {
+  result = await call('browser_list_options', {
     tabId,
     controlId: control(observed, 'Open to relocation?').controlId,
   });
   assert.equal(result.status, 'ready', JSON.stringify(result));
   assert.deepEqual(result.suggestions, ['Yes', 'No']);
-  result = await call('browser_jev_select_option', {
+  result = await call('browser_choose_option', {
     tabId,
     controlId: control(result, 'Open to relocation?').controlId,
     option: 'No',
@@ -183,12 +183,12 @@ try {
   // A click-opened popup exposes its options as click targets, even while a
   // backdrop covers the trigger; the trigger stays usable by controlId.
   await page.evaluate(() => document.getElementById('country').scrollIntoView({block: 'center'}));
-  observed = await call('browser_jev_observe', {tabId});
+  observed = await call('browser_observe', {tabId});
   const trigger = observed.clickTargets.find((t) => t.label === 'Country');
-  result = await call('browser_jev_click', {tabId, targetId: trigger.targetId});
+  result = await call('browser_click_target', {tabId, targetId: trigger.targetId});
   const options = result.clickTargets.filter((t) => t.role === 'option').map((t) => t.label);
   assert.deepEqual(options, ['Austria', 'Belgium', 'Croatia']);
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: control(result, 'Country').controlId,
     option: 'Belgium',
@@ -198,7 +198,7 @@ try {
   assert.equal(await page.evaluate(() => window.submits), 0);
   // A search text for a list without a search box does not block the wanted option.
   observed = await reset();
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: control(observed, 'Open to relocation?').controlId,
     text: 'No',
@@ -224,8 +224,8 @@ try {
     <div><label for="email">Email</label><input id="email" aria-describedby="email-help email-error">
       <span id="email-help">Work address</span><span id="email-error" role="alert"></span></div>
     <button type="submit">Apply</button></form>`);
-  await call('browser_jev_observe', {tabId});
-  form = await call('browser_jev_inspect_form', {tabId});
+  await call('browser_observe', {tabId});
+  form = await call('browser_inspect_form', {tabId});
   const salary = form.fields.filter((f) => f.label === 'Desired salary');
   assert.deepEqual(
     salary.map((f) => [f.type, f.required, f.filled]),
@@ -253,7 +253,7 @@ try {
     document.getElementById('email').setAttribute('aria-invalid', 'true');
     document.getElementById('email-error').textContent = 'Enter a valid email address';
   });
-  form = await call('browser_jev_inspect_form', {tabId});
+  form = await call('browser_inspect_form', {tabId});
   const missingCurrency = form.missingRequired.find((f) => f.type === 'combobox');
   assert.equal(missingCurrency?.label, 'Desired salary', JSON.stringify(form.missingRequired));
   assert.equal(missingCurrency.validationMessage, 'Both fields are required');
@@ -300,16 +300,16 @@ try {
       render();
     };
   });
-  observed = await call('browser_jev_observe', {tabId});
-  result = await call('browser_jev_list_options', {
+  observed = await call('browser_observe', {tabId});
+  result = await call('browser_list_options', {
     tabId,
     controlId: control(observed, 'Currency').controlId,
   });
   assert.equal(result.status, 'ready', JSON.stringify(result));
   assert.equal(result.optionCount, 160, JSON.stringify(result).slice(0, 400));
   assert.ok(result.suggestions.includes('EUR €'));
-  observed = await call('browser_jev_observe', {tabId});
-  result = await call('browser_jev_autocomplete', {
+  observed = await call('browser_observe', {tabId});
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: control(observed, 'Currency').controlId,
     option: 'EUR €',

@@ -196,11 +196,6 @@ test('task context excludes unrelated questions and history while keeping exact 
     maxActionsTotal: 9,
     maxActionsPerDay: 2,
     facts: 'Verified fact',
-    referenceData: {
-      profile: {permission: false},
-      applicationPolicy: {minimumScore: 75},
-      previousTasks: 'irrelevant'.repeat(10000),
-    },
     questions: [
       {
         id: 'own',
@@ -246,13 +241,12 @@ test('task context excludes unrelated questions and history while keeping exact 
   assert.equal('maxActionsTotal' in context.automation, false);
   assert.equal('maxActionsPerDay' in context.automation, false);
   assert.equal(context.automation.facts, 'Verified fact');
-  assert.equal(context.referenceData.profile.permission, false);
   assert.deepEqual(context.scanProgress, active.scan);
   assert.deepEqual(context.currentRun.resumeContext, active.resumeContext);
   assert.ok(context.currentRun.observations.every((o) => o.text === undefined));
   assert.deepEqual(context.results, []);
   assert.deepEqual(context.sourceExamples, []);
-  assert.equal(context.referenceData.previousTasks, undefined);
+  assert.equal('referenceData' in context, false);
   assert.ok(size(context) < 20000);
   const scan = automationTaskContext(db, a.id, {
     ...active,

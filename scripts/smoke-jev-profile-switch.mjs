@@ -55,7 +55,7 @@ const open = async (id, worker = 'main') => {
   assert.equal(tools.status(id).ready, true, JSON.stringify(tools.status(id)));
   const response = await tools
     .forWorker(worker)
-    .call(id, 'browser_jev_open', {url: fixture.url}, worker);
+    .call(id, 'browser_open_page', {url: fixture.url}, worker);
   assert.ok(!response.isError);
   const result = JSON.parse(response.content[0].text),
     {client} = await tools.connect(id);

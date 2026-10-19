@@ -176,8 +176,13 @@ export function recordProblem(record) {
       next: blocker.userAction,
       skip: skipCategories.has(blocker.category),
     };
+  // A stop without a blocker (for example repeated tool errors) also offers Skip.
   if (progress?.id === 'stopped')
-    return {label: progress.label, reason: summary || 'The agent did not record a reason.'};
+    return {
+      label: progress.label,
+      reason: summary || 'The agent did not record a reason.',
+      skip: true,
+    };
   if (!progress && record.status === 'uncertain')
     return {
       label: 'Outcome needs verification',

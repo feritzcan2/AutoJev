@@ -192,12 +192,7 @@ try {
     tools.captcha = new CaptchaCoordinator(settings, {settleMs: 50});
     tools.prepare = () => ({ready: true});
     tools.connect = async () => ({client});
-    const response = await tools.call(
-      'workspace',
-      'browser_jev_observe',
-      {tabId: slot.id},
-      'owner',
-    );
+    const response = await tools.call('workspace', 'browser_observe', {tabId: slot.id}, 'owner');
     const value = JSON.parse(response.content[0].text);
     assert.equal(requests, 1);
     assert.equal(value.captcha.state, 'cleared');
@@ -208,8 +203,7 @@ try {
     main = `<div data-sitekey="synthetic-turnstile-key"><iframe src="${turnstile}" style="width:300px;height:90px"></iframe><input name="cf-turnstile-response" type="hidden"></div>`;
     await target.goto('https://different.test/turnstile?query=1');
     let v = JSON.parse(
-      (await tools.call('workspace', 'browser_jev_observe', {tabId: slot.id}, 'owner')).content[0]
-        .text,
+      (await tools.call('workspace', 'browser_observe', {tabId: slot.id}, 'owner')).content[0].text,
     );
     assert.equal(requests, 1);
     const checkbox = v.clickTargets.find((t) => t.verification);
@@ -218,7 +212,7 @@ try {
       (
         await tools.call(
           'workspace',
-          'browser_jev_click',
+          'browser_click_target',
           {tabId: slot.id, targetId: checkbox.targetId},
           'owner',
         )
@@ -231,8 +225,7 @@ try {
     main = '<form><label>Name<input value="Synthetic person"></label>' + widget() + '</form>';
     await target.goto('https://different.test/apply');
     v = JSON.parse(
-      (await tools.call('workspace', 'browser_jev_observe', {tabId: slot.id}, 'owner')).content[0]
-        .text,
+      (await tools.call('workspace', 'browser_observe', {tabId: slot.id}, 'owner')).content[0].text,
     );
     assert.equal(requests, 2);
     assert.equal(v.status, 'verification_handoff');

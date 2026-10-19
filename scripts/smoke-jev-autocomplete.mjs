@@ -75,14 +75,14 @@ try {
       },
       {aria, duplicate, reject, delay, label, keyOnly},
     );
-    return call('browser_jev_observe', {tabId});
+    return call('browser_observe', {tabId});
   };
   let observed = await reset(),
     control = observed.controls.find((c) => c.label === 'Current location');
   assert.equal(control.autocomplete, true);
   assert.equal(observed.fillFields.length, 0);
   const start = Date.now();
-  let result = await call('browser_jev_autocomplete', {
+  let result = await call('browser_autocomplete', {
     tabId,
     controlId: control.controlId,
     text: 'Berlin',
@@ -102,7 +102,7 @@ try {
   // A widget that searches on key events only still receives the query.
   observed = await reset({keyOnly: true});
   control = observed.controls.find((c) => c.label === 'Current location');
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: control.controlId,
     text: 'Berlin',
@@ -115,7 +115,7 @@ try {
   // Exact matches only; show options without inventing a city or clicking elsewhere.
   observed = await reset({aria: true});
   control = observed.controls.find((c) => c.label === 'Current location');
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: control.controlId,
     text: 'Berlin',
@@ -125,10 +125,10 @@ try {
   assert.ok(result.suggestions.includes(label));
   assert.equal(await page.evaluate(() => window.selections + window.unrelated), 0);
   // The compatibility action space now includes the actual plain/ARIA options.
-  result = await call('browser_jev_observe', {tabId, full: true, fullReason: 'context_loss'});
+  result = await call('browser_observe', {tabId, full: true, fullReason: 'context_loss'});
   assert.ok(result.elements.some((e) => e.label === label && e.role === 'option'));
   const current = result.controls.find((c) => c.label === 'Current location');
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: current.controlId,
     text: 'Berlin',
@@ -136,18 +136,18 @@ try {
   });
   assert.equal(result.status, 'no_progress');
   assert.equal(result.executed, false);
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: result.controls.find((c) => c.label === 'Current location').controlId,
     option: label,
   });
   assert.equal(result.selection.verified, true);
   // A stale ID returns replacement controls directly, without a second observe.
-  result = await call('browser_jev_reveal', {tabId, controlId: 'previous-process-id'});
+  result = await call('browser_reveal', {tabId, controlId: 'previous-process-id'});
   assert.equal(result.status, 'stale');
   assert.equal(result.executed, false);
   assert.ok(result.controls.find((c) => c.label === 'Current location').controlId);
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: 'previous-process-id',
     option: label,
@@ -157,7 +157,7 @@ try {
   await assert.rejects(
     () =>
       call(
-        'browser_jev_autocomplete',
+        'browser_autocomplete',
         {
           tabId,
           controlId: result.controls.find((c) => c.label === 'Current location').controlId,
@@ -169,7 +169,7 @@ try {
   );
   // Duplicate labels, covered controls, swapped inputs and rejected clicks never report success.
   observed = await reset({duplicate: true});
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: observed.controls.find((c) => c.label === 'Current location').controlId,
     text: 'Berlin',
@@ -179,7 +179,7 @@ try {
   assert.equal(await page.evaluate(() => window.selections), 0);
   observed = await reset();
   await page.locator('#location').evaluate((e) => e.replaceWith(e.cloneNode(true)));
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: observed.controls.find((c) => c.label === 'Current location').controlId,
     text: 'Berlin',
@@ -192,7 +192,7 @@ try {
     e.style = 'position:fixed;inset:0;z-index:99';
     document.body.append(e);
   });
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: observed.controls.find((c) => c.label === 'Current location').controlId,
     text: 'Berlin',
@@ -201,7 +201,7 @@ try {
   assert.equal(result.status, 'stale');
   assert.equal(await page.locator('#location').inputValue(), '');
   observed = await reset({reject: true});
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: observed.controls.find((c) => c.label === 'Current location').controlId,
     text: 'Berlin',
@@ -210,7 +210,7 @@ try {
   assert.equal(result.status, 'uncertain');
   assert.equal(result.selection.verified, false);
   assert.equal(await page.evaluate(() => window.selections), 1);
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: result.controls.find((c) => c.label === 'Current location').controlId,
     text: 'Berlin',
@@ -222,7 +222,7 @@ try {
   observed = await reset();
   await page.locator('#location').fill('Berlin');
   await page.locator('.dropdown-location').first().waitFor();
-  result = await call('browser_jev_observe', {tabId, full: true, fullReason: 'context_loss'});
+  result = await call('browser_observe', {tabId, full: true, fullReason: 'context_loss'});
   assert.ok(result.elements.some((e) => e.label === label && e.role === 'option'));
   assert.equal(
     result.controls.find((c) => c.label === 'Current location').label,
@@ -234,9 +234,9 @@ try {
     action: snapshot.actions.find((a) => a.role === 'option' && a.label === label),
     confidence: 1,
   });
-  const decision = await call('browser_jev_next', {tabId, goal: 'Select the exact city'});
+  const decision = await call('browser_next', {tabId, goal: 'Select the exact city'});
   assert.equal(decision.action.role, 'option');
-  result = await call('browser_jev_act', {tabId, decisionId: decision.decisionId});
+  result = await call('browser_act', {tabId, decisionId: decision.decisionId});
   assert.equal(result.status, 'ready');
   assert.equal(await page.locator('#selected-location').inputValue(), 'accepted');
   assert.equal(await page.evaluate(() => window.submits + window.unrelated), 0);
@@ -247,8 +247,8 @@ try {
   await page.locator('.dropdown-results').evaluate((e) => {
     e.innerHTML = '<button role="option">Berlin</button>';
   });
-  observed = await call('browser_jev_observe', {tabId});
-  result = await call('browser_jev_autocomplete', {
+  observed = await call('browser_observe', {tabId});
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: observed.controls.find((c) => c.label === 'Current location').controlId,
     option: 'Berlin',
@@ -257,9 +257,9 @@ try {
   assert.equal(await page.evaluate(() => window.submits), 0);
   // No association: a nearby unrelated button is never promoted to a suggestion.
   await page.setContent('<label>City<input id="city"></label><button>Berlin</button>');
-  observed = await call('browser_jev_observe', {tabId});
+  observed = await call('browser_observe', {tabId});
   assert.equal(observed.controls.find((c) => c.label === 'City').autocomplete, undefined);
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: observed.controls.find((c) => c.label === 'City').controlId,
     text: 'Berlin',
@@ -317,10 +317,10 @@ try {
       },
       {reject, wrongSelected},
     );
-    return call('browser_jev_observe', {tabId});
+    return call('browser_observe', {tabId});
   };
   observed = await reactReset();
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: observed.controls.find((c) => c.label === 'Country').controlId,
     text: 'Germany',
@@ -336,14 +336,14 @@ try {
   // A changed visible answer invalidates the old control even if input.value is empty.
   control = result.controls.find((c) => c.label === 'Country');
   await page.locator('.custom__single-value').evaluate((e) => (e.textContent = '+44'));
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: control.controlId,
     option: 'Germany +49',
   });
   assert.equal(result.status, 'stale');
   observed = await reactReset({wrongSelected: true});
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: observed.controls.find((c) => c.label === 'Country').controlId,
     text: 'Germany',
@@ -352,7 +352,7 @@ try {
   assert.equal(result.status, 'uncertain');
   assert.equal(result.selection.verified, false);
   observed = await reactReset();
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: observed.controls.find((c) => c.label === 'Country').controlId,
     text: 'Germany',
@@ -387,10 +387,10 @@ try {
           input.setAttribute('aria-expanded', 'false');
         };
     });
-    return call('browser_jev_observe', {tabId});
+    return call('browser_observe', {tabId});
   };
   observed = await longReset();
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: observed.controls.find((c) => c.label === 'Working from').controlId,
     option: 'Germany',
@@ -400,7 +400,7 @@ try {
   assert.equal(await page.locator('input').inputValue(), 'Germany');
   observed = await longReset({cover: true});
   control = observed.controls.find((c) => c.label === 'Working from');
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: control.controlId,
     option: 'Germany',
@@ -408,7 +408,7 @@ try {
   assert.equal(result.status, 'stale');
   assert.equal(await page.evaluate(() => window.selections), 0);
   await page.evaluate(() => document.querySelector('#cover').remove());
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: control.controlId,
     option: 'Germany',
@@ -459,13 +459,13 @@ try {
       input.setAttribute('aria-expanded', 'false');
     };
   });
-  observed = await call('browser_jev_observe', {tabId});
-  let form = await call('browser_jev_inspect_form', {tabId});
+  observed = await call('browser_observe', {tabId});
+  let form = await call('browser_inspect_form', {tabId});
   assert.deepEqual(
     form.missingRequired.map((f) => f.label),
     ['How did you hear about us?'],
   );
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: observed.controls.find((c) => c.label === 'How did you hear about us?').controlId,
     option: 'Job Board',
@@ -478,7 +478,7 @@ try {
   assert.equal(result.selection.verified, true);
   assert.equal(await page.evaluate(() => window.selections), 1);
   assert.equal(await page.locator('input').getAttribute('aria-expanded'), 'false');
-  form = await call('browser_jev_inspect_form', {tabId});
+  form = await call('browser_inspect_form', {tabId});
   assert.deepEqual(form.missingRequired, []);
   console.log('JEV_REACT_SELECT_MULTIPLE_CHOICE_PASS');
   // Select-only combobox (as in Ant Design): a read-only transparent input over
@@ -511,15 +511,15 @@ try {
       input.setAttribute('aria-expanded', 'true');
     };
   });
-  observed = await call('browser_jev_observe', {tabId});
+  observed = await call('browser_observe', {tabId});
   control = observed.controls.find((c) => c.label === 'Preferred Contact Method');
   assert.ok(control?.autocomplete, JSON.stringify(observed.controls));
-  form = await call('browser_jev_inspect_form', {tabId});
+  form = await call('browser_inspect_form', {tabId});
   assert.deepEqual(
     form.missingRequired.map((f) => f.label),
     ['Preferred Contact Method'],
   );
-  result = await call('browser_jev_autocomplete', {
+  result = await call('browser_autocomplete', {
     tabId,
     controlId: control.controlId,
     option: 'Mobile Phone',
@@ -535,7 +535,7 @@ try {
     result.controls.find((c) => c.label === 'Preferred Contact Method').selectedLabels,
     ['Mobile Phone'],
   );
-  form = await call('browser_jev_inspect_form', {tabId});
+  form = await call('browser_inspect_form', {tabId});
   assert.deepEqual(form.missingRequired, []);
   console.log('JEV_SELECT_ONLY_COMBOBOX_PASS');
 } finally {

@@ -1,6 +1,7 @@
 import {createServer} from 'node:http';
 import {randomBytes, timingSafeEqual} from 'node:crypto';
 import {validate} from './tool-schema.mjs';
+import {currentToolName} from './legacy-tool-names.mjs';
 
 // A tool result may carry binary parts (an image the agent should see) under
 // `attachments`; they travel as their own MCP content parts, never as JSON text.
@@ -135,7 +136,7 @@ export async function startToolServer({
     try {
       if (!grants.has(token)) throw Error('The worker session closed.');
       protocol = resolve(grant);
-      const name = rpc.params?.name,
+      const name = currentToolName(rpc.params?.name),
         args = rpc.params?.arguments ?? {};
       if (protocol.callResult) {
         const value = await protocol.callResult(name, args);

@@ -18,7 +18,11 @@ import {jevProvider} from '../jev/policy.mjs';
 import {saveJevProfile, jevProfileView} from '../jev/qualification-profile.mjs';
 import {loadScoringDocuments} from '../scoring/profile.mjs';
 import {runSiteLane} from '../browser/site-access.mjs';
-import {approveCoverLetter, reviseCoverLetter} from './cover-letters.mjs';
+import {
+  approveCoverLetter,
+  reviseCoverLetter,
+  setCoverLetterAutoApprove,
+} from './cover-letters.mjs';
 import {renderCoverLetterPdf} from './cover-letter-pdf.mjs';
 
 export function registerAutomationServices({
@@ -241,6 +245,11 @@ export function registerAutomationServices({
   handle('cover-letter-revise', (id, question, feedback) =>
     reviseCoverLetter(runtime, id, question, feedback),
   );
+  handle('cover-letter-auto-approve', (id, value) => {
+    const a = setCoverLetterAutoApprove(db, id, value);
+    changed(id);
+    return a.coverLetterAutoApprove;
+  });
   handle('automation-setup', (id) => runtime.setup(id));
   handle('automation-onboarding', (id, input) => runtime.onboard(id, input));
   handle('setup-agent-settings', async (id, input) => {

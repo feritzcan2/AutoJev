@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('jobloop', {
   approveCoverLetter: (id, question, text) => invoke('cover-letter-approve', id, question, text),
   reviseCoverLetter: (id, question, feedback) =>
     invoke('cover-letter-revise', id, question, feedback),
+  setCoverLetterAutoApprove: (id, value) => invoke('cover-letter-auto-approve', id, value),
   automationSourceStop: (id, url) => invoke('automation-source-stop', id, url),
   workspaces: () => invoke('workspaces'),
   workspaceStart: (id, options) => invoke('workspace-start', id, options),

@@ -206,7 +206,7 @@ test('foreign worker tabs are rejected before rendering or inspecting their DOM'
   client.context = async () => ({});
   client.reconcileJobs = async () => {};
   await assert.rejects(
-    client.callTool({name: 'browser_jev_observe', arguments: {tabId: slot.id}}, 'worker', {
+    client.callTool({name: 'browser_observe', arguments: {tabId: slot.id}}, 'worker', {
       multiWorker: true,
     }),
     /another worker/,

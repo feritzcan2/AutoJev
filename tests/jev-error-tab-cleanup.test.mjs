@@ -54,7 +54,7 @@ function fixture() {
     fresh = true,
     url = 'https://source.test/listing',
   } = {}) => {
-    const response = await browser.callTool({name: 'browser_jev_open', arguments: {url}}, owner, {
+    const response = await browser.callTool({name: 'browser_open_page', arguments: {url}}, owner, {
       ...scope,
       automationFreshTab: fresh,
     });

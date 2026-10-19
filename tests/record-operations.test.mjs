@@ -918,7 +918,7 @@ test('Jev document upload uses the current record tab and observed upload ID', a
     'run',
   );
   assert.deepEqual(calls.at(-1), {
-    name: 'browser_jev_upload',
+    name: 'browser_upload',
     args: {tabId: 'record-tab', uploadId: 'observed-upload', filePath: '/workspace/cv.pdf'},
   });
 });
@@ -2038,8 +2038,8 @@ test('autocomplete text alone asks for the option with exactly that label', asyn
       ),
     ]);
   assert.deepEqual(sent, [
-    ['browser_jev_autocomplete', {controlId: 'c1', text: 'Yes', option: 'Yes'}],
-    ['browser_jev_list_suggestions', {controlId: 'c2'}],
+    ['browser_autocomplete', {controlId: 'c1', text: 'Yes', option: 'Yes'}],
+    ['browser_list_suggestions', {controlId: 'c2'}],
   ]);
 });
 
@@ -2274,7 +2274,11 @@ test('a blocked application needs a short blocker, which the record card shows i
   // Without a blocker (older runs) the card falls back to the summary.
   const legacy = structuredClone(row);
   delete legacy.recordAction.lastTask.blocker;
-  assert.deepEqual(recordProblem(legacy), {label: 'Operation blocked', reason: summary});
+  assert.deepEqual(recordProblem(legacy), {
+    label: 'Operation blocked',
+    reason: summary,
+    skip: true,
+  });
 });
 
 test('a click on the submit button the form inspection found is the submission, also labelled Apply', async (t) => {
@@ -2292,7 +2296,7 @@ test('a click on the submit button the form inspection found is the submission, 
   const browser = {
     currentUrl: async () => item.url,
     call: async (_id, name) =>
-      name === 'browser_jev_inspect_form'
+      name === 'browser_inspect_form'
         ? {
             url: item.url,
             fields: [{label: 'Email', required: true}],
@@ -2317,7 +2321,7 @@ test('a click on the submit button the form inspection found is the submission, 
   // Before an inspection found a form, "Apply" may open the form: no reservation needed.
   const entry = await flow.call(f.id, run.id, 'browser_interact', {operation: 'click', ref: 'e1'});
   assert.equal(entry.submission, undefined);
-  await flow.call(f.id, run.id, 'browser_jev_inspect_form', {});
+  await flow.call(f.id, run.id, 'browser_inspect_form', {});
   await assert.rejects(
     flow.call(f.id, run.id, 'browser_interact', {operation: 'click', ref: 'e1'}),
     /reserve_automation_action/,
@@ -2436,7 +2440,10 @@ test('an execute run completes a record whose page says the user already applied
       content: [
         {
           type: 'text',
-          text: `Page URL: ${item.url}\n${JSON.stringify({url: item.url, text: 'Senior Engineer\n' + applied})}`,
+          text: `Page URL: ${item.url}\n${JSON.stringify({
+            url: item.url,
+            text: 'Senior Engineer\nApplication status\nApplication submitted\n2 weeks ago\nNo longer accepting applications',
+          })}`,
         },
       ],
     }),
@@ -2454,15 +2461,26 @@ test('an execute run completes a record whose page says the user already applied
       status: 'applied',
       evidence: 'You applied to this job',
     }),
-    /you already applied, word for word/,
+    /you already applied, copied word for word/,
+  );
+  // A note around quoted parts needs every quoted part on the page.
+  await assert.rejects(
+    flow.call(f.id, run.id, 'record_automation_outcome', {
+      status: 'applied',
+      evidence: 'The page shows "Application submitted" and "You applied on LinkedIn".',
+    }),
+    /quote is not in the current page text/,
   );
   assert.equal(f.db.result(f.id, item.id).status, 'prepared');
+  // Page lines joined with dashes, and a note with quoted page parts, are accepted.
+  const note =
+    'Application status: "Application status — Application submitted — 2 weeks ago" (job page); page also says "No longer accepting applications".';
   const saved = await flow.call(f.id, run.id, 'record_automation_outcome', {
     status: 'applied',
-    evidence: applied,
+    evidence: note,
   });
   assert.equal(saved.status, 'completed');
-  assert.equal(saved.alreadyApplied.evidence, applied);
+  assert.equal(saved.alreadyApplied.evidence, note);
   await flow.call(f.id, run.id, 'finish_automation_run', {
     status: 'completed',
     summary: 'The user already applied to this listing.',
@@ -2613,7 +2631,7 @@ test('a click that opens a new tab continues the run in that tab', async (t) => 
           ...page(item.url, 'Listing'),
           action: {status: 'uncertain', executed: true, openedTab: {tabId: 'child'}},
         };
-      if (name === 'browser_jev_use_tab') return page(item.url + '/apply', 'Employer form');
+      if (name === 'browser_use_tab') return page(item.url + '/apply', 'Employer form');
       return page(item.url, 'Listing');
     },
   };
@@ -2629,7 +2647,7 @@ test('a click that opens a new tab continues the run in that tab', async (t) => 
     operation: 'click',
     ref: 'e1',
   });
-  assert.deepEqual(calls.find((c) => c.name === 'browser_jev_use_tab').args, {tabId: 'child'});
+  assert.deepEqual(calls.find((c) => c.name === 'browser_use_tab').args, {tabId: 'child'});
   assert.equal(result.url, item.url + '/apply');
   assert.match(result.action.message, /new tab/);
 });

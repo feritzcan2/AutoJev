@@ -24,24 +24,24 @@ try {
   await page.setContent(
     `<button id="open" onclick="const w=window.open('about:blank');w.document.write('<h1>Employer application</h1>')">Apply on company website</button><button onclick="document.body.dataset.n=(+document.body.dataset.n||0)+1">Show more</button>`,
   );
-  let observed = await call('browser_jev_observe', {tabId});
+  let observed = await call('browser_observe', {tabId});
   const plain = observed.clickTargets.find((t) => t.label === 'Show more');
-  const same = await call('browser_jev_click', {tabId, targetId: plain.targetId});
+  const same = await call('browser_click_target', {tabId, targetId: plain.targetId});
   assert.equal(same.openedTab, undefined);
-  observed = await call('browser_jev_observe', {tabId});
+  observed = await call('browser_observe', {tabId});
   const apply = observed.clickTargets.find((t) => t.label === 'Apply on company website');
-  const clicked = await call('browser_jev_click', {tabId, targetId: apply.targetId});
+  const clicked = await call('browser_click_target', {tabId, targetId: apply.targetId});
   assert.ok(clicked.openedTab?.tabId, JSON.stringify(clicked).slice(0, 300));
   assert.notEqual(clicked.openedTab.tabId, tabId);
-  const child = await call('browser_jev_observe', {tabId: clicked.openedTab.tabId});
+  const child = await call('browser_observe', {tabId: clicked.openedTab.tabId});
   assert.match(JSON.stringify(child), /Employer application/);
   // An email apply link is named in the page text and never clicked.
   await page.setContent(`<a href="mailto:jobs@example.test?subject=Java">Apply now</a>`);
-  const read = await call('browser_jev_observe', {tabId, scope: 'document'});
+  const read = await call('browser_observe', {tabId, scope: 'document'});
   assert.match(read.text, /Email link: Apply now — jobs@example\.test/);
-  observed = await call('browser_jev_observe', {tabId});
+  observed = await call('browser_observe', {tabId});
   const mail = observed.clickTargets.find((t) => t.label === 'Apply now');
-  const mailed = await call('browser_jev_click', {tabId, targetId: mail.targetId});
+  const mailed = await call('browser_click_target', {tabId, targetId: mail.targetId});
   assert.equal(mailed.status, 'unsupported');
   assert.equal(mailed.executed, false);
   assert.match(mailed.message, /jobs@example\.test/);

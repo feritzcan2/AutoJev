@@ -42,7 +42,7 @@ try {
     document.querySelector('#container').__reactProps$fixture = {onClick: () => {}};
     document.querySelector('#hidden').__reactProps$fixture = {onClick: () => {}};
   });
-  let observation = await call('browser_jev_observe', {tabId});
+  let observation = await call('browser_observe', {tabId});
   assert.equal(
     observation.controls.filter((c) => c.label === 'Preferred Work Location*').length,
     1,
@@ -52,7 +52,7 @@ try {
   );
   let trigger = observation.clickTargets.find((c) => c.label === 'Preferred Work Location*');
   assert.ok(trigger);
-  let result = await call('browser_jev_click', {tabId, targetId: trigger.targetId});
+  let result = await call('browser_click_target', {tabId, targetId: trigger.targetId});
   assert.equal(await page.locator('#options').isVisible(), true);
   const berlin = result.controls.find(
     (c) => c.role === 'checkbox' && (c.choice?.option === 'Berlin' || c.label === 'Berlin'),
@@ -62,7 +62,7 @@ try {
     (c) => c.role === 'checkbox' && c.label === 'Berlin',
   );
   assert.ok(berlinTarget);
-  result = await call('browser_jev_click', {tabId, targetId: berlinTarget.targetId});
+  result = await call('browser_click_target', {tabId, targetId: berlinTarget.targetId});
   assert.equal(
     result.clickTargets.find((c) => c.role === 'checkbox' && c.label === 'Berlin').checked,
     'true',
@@ -76,7 +76,7 @@ try {
     overlay.id = 'overlay';
     document.body.append(overlay);
   });
-  observation = await call('browser_jev_observe', {tabId});
+  observation = await call('browser_observe', {tabId});
   assert.ok(!observation.clickTargets.some((c) => c.label === 'Preferred Work Location*'));
   console.log('CUSTOM_MENU_OPEN_SELECT_VERIFY_OVERLAY_PASS');
 } finally {

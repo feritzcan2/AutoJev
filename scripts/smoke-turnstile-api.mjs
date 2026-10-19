@@ -152,7 +152,7 @@ try {
   assert.match(rejected.jevPage.captcha.message, /barrier did not clear/);
   const repeat = await browsers.call(
     'workspace',
-    'browser_jev_observe',
+    'browser_observe',
     {tabId: rejected.pageContext.tabId},
     'run',
   );

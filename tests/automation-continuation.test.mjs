@@ -170,10 +170,10 @@ test('record tab tools are available but tab closure stays source-only', async (
     report: () => {},
   });
   const names = flow.tools.map((t) => t.name);
-  assert.ok(names.includes('browser_jev_tabs'));
-  assert.ok(names.includes('browser_jev_use_tab'));
-  assert.ok(!names.includes('browser_jev_close_tab'));
-  assert.equal((await flow.call(f.a.id, run.id, 'browser_jev_tabs', {})).tabs[0].tabId, 'assigned');
+  assert.ok(names.includes('browser_tabs'));
+  assert.ok(names.includes('browser_use_tab'));
+  assert.ok(!names.includes('browser_close_tab'));
+  assert.equal((await flow.call(f.a.id, run.id, 'browser_tabs', {})).tabs[0].tabId, 'assigned');
 });
 
 test('setup answers use their original conversation and consume it only once', async (t) => {

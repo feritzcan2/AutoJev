@@ -35,13 +35,13 @@ try {
       <ul id="loc-list" role="listbox"><li role="option">Berlin, Germany</li><li role="option">Berlin, OH, USA</li></ul>
     </div>
     <dialog class="kept" aria-modal="true"><button>Close privacy policy</button></dialog>`);
-  let observed = await call('browser_jev_observe', {tabId});
+  let observed = await call('browser_observe', {tabId});
   for (const label of ['First name', 'Start date', 'Location', 'Submit application'])
     assert.ok(
       labels(observed).some((l) => l.startsWith(label)),
       `${label} stays in scope: ${labels(observed)}`,
     );
-  let form = await call('browser_jev_inspect_form', {tabId});
+  let form = await call('browser_inspect_form', {tabId});
   assert.deepEqual(
     form.fields.map((f) => f.label),
     ['First name', 'Start date', 'Location'],
@@ -54,9 +54,9 @@ try {
     document.body.append(d);
     d.showModal();
   });
-  observed = await call('browser_jev_observe', {tabId});
+  observed = await call('browser_observe', {tabId});
   assert.deepEqual(labels(observed), ['Code', 'Verify']);
-  form = await call('browser_jev_inspect_form', {tabId});
+  form = await call('browser_inspect_form', {tabId});
   assert.deepEqual(
     form.fields.map((f) => f.label),
     ['Code'],
@@ -75,7 +75,7 @@ try {
       <div><label>Portfolio<input name="portfolio"></label><button type="button">Clear</button></div>
       <button type="submit">Apply  without saving</button>
     </form>`);
-  form = await call('browser_jev_inspect_form', {tabId});
+  form = await call('browser_inspect_form', {tabId});
   assert.equal(form.uploads.length, 1);
   assert.match(form.uploads[0].label, /Resume\/CV/);
   const picker = form.fields.find((f) => f.type === 'picker');
@@ -87,13 +87,13 @@ try {
     'a Clear button beside a labelled input is not a picker',
   );
   assert.ok(form.missingRequired.some((f) => /Resume/.test(f.label ?? f)));
-  observed = await call('browser_jev_observe', {tabId});
+  observed = await call('browser_observe', {tabId});
   const trigger = observed.clickTargets.find((t) => t.label === 'Select an option');
-  await call('browser_jev_click', {tabId, targetId: trigger.targetId});
-  observed = await call('browser_jev_observe', {tabId});
+  await call('browser_click_target', {tabId, targetId: trigger.targetId});
+  observed = await call('browser_observe', {tabId});
   const option = observed.clickTargets.find((t) => t.label === 'Europe');
-  await call('browser_jev_click', {tabId, targetId: option.targetId});
-  form = await call('browser_jev_inspect_form', {tabId});
+  await call('browser_click_target', {tabId, targetId: option.targetId});
+  form = await call('browser_inspect_form', {tabId});
   const chosen = form.fields.find((f) => f.type === 'picker');
   assert.equal(chosen.value, 'Europe');
   assert.equal(chosen.filled, true);
@@ -135,20 +135,20 @@ try {
         document.querySelector('#app').setAttribute('aria-hidden', 'true');
       };
     </script>`);
-  form = await call('browser_jev_inspect_form', {tabId});
+  form = await call('browser_inspect_form', {tabId});
   const consent = form.fields.find((f) => f.type === 'checkbox');
   assert.match(consent?.question ?? '', /^By registering, I agree to the Terms of Use/);
   const country = form.fields.find((f) => f.type === 'combobox');
-  const picked = await call('browser_jev_autocomplete', {
+  const picked = await call('browser_autocomplete', {
     tabId,
     controlId: country.controlId,
     option: 'Poland',
   });
   assert.equal(picked.status, 'ready', JSON.stringify(picked.message));
   assert.equal(picked.selection?.actual, 'Poland');
-  await call('browser_jev_click', {
+  await call('browser_click_target', {
     tabId,
-    targetId: (await call('browser_jev_observe', {tabId})).clickTargets.find(
+    targetId: (await call('browser_observe', {tabId})).clickTargets.find(
       (t) => t.role === 'checkbox',
     ).targetId,
   });
@@ -169,10 +169,10 @@ try {
       </div></div>
       <button id="send" type="button" disabled>Send</button>
     </form>`);
-  form = await call('browser_jev_inspect_form', {tabId});
+  form = await call('browser_inspect_form', {tabId});
   const legal = form.fields.find((f) => f.type === 'checkbox');
   assert.match(legal?.question ?? '', /^I have read and understood/);
-  const ticked = await call('browser_jev_select_choice', {
+  const ticked = await call('browser_select_choice', {
     tabId,
     controlId: legal.options[0].controlId,
   });

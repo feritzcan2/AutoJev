@@ -34,7 +34,7 @@ test('Jev full document reading is explicit; automation scopes scroll to its cur
   });
   await adapter.call(
     'workspace',
-    'browser_jev_scroll',
+    'browser_scroll',
     {controlId: 'observed-scroll', direction: 'down', tabId: 'foreign-tab'},
     'run',
   );
@@ -43,19 +43,14 @@ test('Jev full document reading is explicit; automation scopes scroll to its cur
     controlId: 'observed-scroll',
     direction: 'down',
   });
-  await adapter.call(
-    'workspace',
-    'browser_jev_reveal',
-    {controlId: 'date', tabId: 'foreign'},
-    'run',
-  );
+  await adapter.call('workspace', 'browser_reveal', {controlId: 'date', tabId: 'foreign'}, 'run');
   assert.deepEqual(calls.at(-1).args, {tabId: 'owned-tab', controlId: 'date'});
-  await adapter.call('workspace', 'browser_jev_inspect_form', {tabId: 'foreign'}, 'run');
+  await adapter.call('workspace', 'browser_inspect_form', {tabId: 'foreign'}, 'run');
   assert.deepEqual(calls.at(-1).args, {tabId: 'owned-tab'});
-  validateJevArgs('browser_jev_observe', {tabId: 'owned-tab', scope: 'document'});
-  validateJevArgs('browser_jev_observe', {tabId: 'owned-tab'});
+  validateJevArgs('browser_observe', {tabId: 'owned-tab', scope: 'document'});
+  validateJevArgs('browser_observe', {tabId: 'owned-tab'});
   assert.throws(() =>
-    validateJevArgs('browser_jev_observe', {tabId: 'owned-tab', scope: 'hidden_state'}),
+    validateJevArgs('browser_observe', {tabId: 'owned-tab', scope: 'hidden_state'}),
   );
 });
 
@@ -86,7 +81,7 @@ test('a user access response can observe its retained source tab before any new 
   assert.equal(adapter.hasPage(), true);
   await adapter.call('workspace', 'browser_snapshot', {}, 'resumed-run');
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].name, 'browser_jev_observe');
+  assert.equal(calls[0].name, 'browser_observe');
   assert.equal(calls[0].args.tabId, 'retained-source');
   assert.equal(calls[0].options.automationSourceUrl, source);
   const fresh = automationBrowser(browser, {
@@ -196,8 +191,8 @@ test('read navigation uses an app-owned stable scope, never URL-matched foreign 
     for (const url of ['https://example.com/page', 'https://example.com/detail'])
       await adapter.call('workspace', 'browser_navigate', {url}, session);
   }
-  const opens = calls.filter((c) => c.name === 'browser_jev_open'),
-    reads = calls.filter((c) => c.name === 'browser_jev_observe');
+  const opens = calls.filter((c) => c.name === 'browser_open_page'),
+    reads = calls.filter((c) => c.name === 'browser_observe');
   assert.equal(opens.length, 4);
   assert.equal(reads.length, 4);
   assert.ok(
@@ -218,7 +213,7 @@ test('source tab changes preserve historical text and remain unavailable to othe
     browser = {
       async call(id, name) {
         calls.push(name);
-        return name === 'browser_jev_tabs'
+        return name === 'browser_tabs'
           ? {tabs: [{tabId: 'retained', url: run.sourceUrl}]}
           : {
               content: [
@@ -239,17 +234,17 @@ test('source tab changes preserve historical text and remain unavailable to othe
     }),
     call = (name, args = {}) => flow.call(f.a.id, run.id, name, args);
   const first = await call('browser_read');
-  assert.equal((await call('browser_jev_tabs')).tabs[0].tabId, 'retained');
+  assert.equal((await call('browser_tabs')).tabs[0].tabId, 'retained');
   await call('browser_read_part', {snapshotId: first.snapshot.id});
-  const selected = await call('browser_jev_use_tab', {tabId: 'retained'});
-  assert.deepEqual(calls, ['browser_snapshot', 'browser_jev_tabs', 'browser_jev_use_tab']);
+  const selected = await call('browser_use_tab', {tabId: 'retained'});
+  assert.deepEqual(calls, ['browser_snapshot', 'browser_tabs', 'browser_use_tab']);
   assert.equal((await call('browser_read_part', {snapshotId: first.snapshot.id})).historical, true);
-  await call('browser_jev_close_tab', {tabId: 'retained'});
+  await call('browser_close_tab', {tabId: 'retained'});
   assert.equal(
     (await call('browser_read_part', {snapshotId: selected.snapshot.id})).historical,
     true,
   );
-  assert.ok(!f.flow.tools.some((tool) => tool.name === 'browser_jev_tabs'));
+  assert.ok(!f.flow.tools.some((tool) => tool.name === 'browser_tabs'));
   const recordRun = f.db.putRun({...run, recordId: 'record'});
   const recordFlow = automationWorkflow({
     db: f.db,
@@ -258,9 +253,9 @@ test('source tab changes preserve historical text and remain unavailable to othe
     browser,
     report: () => {},
   });
-  assert.ok(!recordFlow.tools.some((tool) => tool.name === 'browser_jev_close_tab'));
+  assert.ok(!recordFlow.tools.some((tool) => tool.name === 'browser_close_tab'));
   await assert.rejects(
-    recordFlow.call(f.a.id, run.id, 'browser_jev_close_tab', {tabId: 'retained'}),
+    recordFlow.call(f.a.id, run.id, 'browser_close_tab', {tabId: 'retained'}),
     /source scan/,
   );
 });

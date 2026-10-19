@@ -27,6 +27,7 @@ import {
   sourceSearchRecipe,
 } from '../../sources/source-search.mjs';
 import {json, finishedSourceRun, runSource} from './rows.mjs';
+import {sourceActivity} from '../../sources/source-activity.mjs';
 // Only a different search method changes a recipe; notes, the pagination
 // hint, the page cap and the login flag are advisory.
 const recipeKey = (r) => (r ? JSON.stringify({entry: r.entry, terms: r.terms ?? null}) : null);
@@ -159,6 +160,7 @@ export const sourceMethods = {
         resultCount,
         extension: siteExtensionKind(source.url, a.templateId),
         scanning: Boolean(active),
+        activity: active ? sourceActivity(active.id) : null,
         trialRunning: active?.kind === 'trial',
         scanIssue: active
           ? (Object.values(active.scanIssues ?? {}).sort((a, b) => b.at - a.at)[0] ?? null)

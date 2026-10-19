@@ -36,26 +36,26 @@ try {
         }
       };
     });
-    return call('browser_jev_observe', {tabId, full: true});
+    return call('browser_observe', {tabId, full: true});
   };
   const initialPages = context.pages().length;
   let o = await setup();
   let target = o.clickTargets.find((t) => t.label === 'Decline');
   assert.ok(target);
   assert.equal(target.frameUrl, 'about:srcdoc');
-  o = await call('browser_jev_observe', {tabId});
+  o = await call('browser_observe', {tabId});
   assert.ok(o.clickTargets.some((t) => t.targetId === target.targetId));
   await assert.rejects(
-    () => call('browser_jev_click', {tabId, targetId: target.targetId}, 'foreign'),
+    () => call('browser_click_target', {tabId, targetId: target.targetId}, 'foreign'),
     /oturuma/,
   );
-  o = await call('browser_jev_click', {tabId, targetId: target.targetId});
+  o = await call('browser_click_target', {tabId, targetId: target.targetId});
   assert.equal(o.executed, true);
   await page.waitForFunction(() => window.consentClicks === 1);
   assert.equal(await page.evaluate(() => window.consentClicks), 1);
   assert.equal(await page.locator('iframe').count(), 0);
   assert.equal(context.pages().length, initialPages);
-  o = await call('browser_jev_observe', {tabId});
+  o = await call('browser_observe', {tabId});
   assert.ok(!o.clickTargets.some((t) => t.frameUrl === 'about:srcdoc'));
   o = await setup();
   target = o.clickTargets.find((t) => t.label === 'Accept');
@@ -64,7 +64,7 @@ try {
     .locator('button')
     .last()
     .evaluate((e) => (e.textContent = 'Submit application'));
-  o = await call('browser_jev_click', {tabId, targetId: target.targetId});
+  o = await call('browser_click_target', {tabId, targetId: target.targetId});
   assert.equal(o.executed, false);
   assert.equal(o.status, 'stale');
   o = await setup('sandbox="allow-scripts"');
@@ -78,7 +78,7 @@ try {
     cover.style = 'position:fixed;inset:0;background:white;z-index:9999';
     document.body.append(cover);
   });
-  o = await call('browser_jev_click', {tabId, targetId: target.targetId});
+  o = await call('browser_click_target', {tabId, targetId: target.targetId});
   assert.equal(o.status, 'uncertain');
   assert.equal(await page.evaluate(() => window.consentClicks), 0);
   console.log('SRCDOC_COOKIE_IN_PLACE_OWNER_STALE_SANDBOX_OVERLAY_PASS');

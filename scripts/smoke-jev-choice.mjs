@@ -51,7 +51,7 @@ try {
       },
       {reject, delay},
     );
-    return call('browser_jev_observe', {tabId});
+    return call('browser_observe', {tabId});
   };
   const answer = (o, q, v) =>
     o.controls.find((c) => c.choice?.question === q && c.choice.option === v);
@@ -68,7 +68,7 @@ try {
     ),
   );
   const start = Date.now();
-  let result = await call('browser_jev_select_choice', {tabId, controlId: control.controlId});
+  let result = await call('browser_select_choice', {tabId, controlId: control.controlId});
   assert.equal(result.status, 'ready');
   assert.equal(result.selection.verified, true);
   assert.equal(result.selection.option, 'No');
@@ -81,7 +81,7 @@ try {
     'JEV_CHOICE_ONE_CALL_PASS',
     JSON.stringify({elapsedMs: Date.now() - start, modelCalls, operationCalls: 1}),
   );
-  result = await call('browser_jev_select_choice', {
+  result = await call('browser_select_choice', {
     tabId,
     controlId: answer(result, 'Live here?', 'No').controlId,
   });
@@ -92,17 +92,17 @@ try {
   observed = await reset();
   control = answer(observed, 'Work authorization?', 'No');
   await assert.rejects(
-    () => call('browser_jev_select_choice', {tabId, controlId: control.controlId}, 'other'),
+    () => call('browser_select_choice', {tabId, controlId: control.controlId}, 'other'),
     /oturuma/,
   );
   await page.locator('#work label').evaluate((e) => (e.textContent = 'Different consent?'));
-  result = await call('browser_jev_select_choice', {tabId, controlId: control.controlId});
+  result = await call('browser_select_choice', {tabId, controlId: control.controlId});
   assert.equal(result.status, 'stale');
   assert.equal(await page.evaluate(() => window.clicks), 0);
   observed = await reset();
   control = answer(observed, 'Work authorization?', 'No');
   await page.locator('#work [data-option=no]').evaluate((e) => e.replaceWith(e.cloneNode(true)));
-  result = await call('browser_jev_select_choice', {tabId, controlId: control.controlId});
+  result = await call('browser_select_choice', {tabId, controlId: control.controlId});
   assert.equal(result.status, 'stale');
   // No hit-test bypass, even with a valid semantic ID.
   observed = await reset();
@@ -112,7 +112,7 @@ try {
     e.style = 'position:fixed;inset:0;z-index:999';
     document.body.append(e);
   });
-  result = await call('browser_jev_select_choice', {tabId, controlId: control.controlId});
+  result = await call('browser_select_choice', {tabId, controlId: control.controlId});
   assert.equal(result.status, 'blocked');
   assert.equal(result.reason, 'no_safe_click_point');
   assert.equal(result.observationMode, 'full');
@@ -121,32 +121,32 @@ try {
   // Focus changes are not proof; failed choices cannot be retried via either tool.
   observed = await reset({reject: true});
   control = answer(observed, 'Work authorization?', 'No');
-  result = await call('browser_jev_select_choice', {tabId, controlId: control.controlId});
+  result = await call('browser_select_choice', {tabId, controlId: control.controlId});
   assert.equal(result.status, 'uncertain');
   assert.equal(result.selection.verified, false);
-  result = await call('browser_jev_select_choice', {
+  result = await call('browser_select_choice', {
     tabId,
     controlId: answer(result, 'Work authorization?', 'No').controlId,
   });
   assert.equal(result.status, 'no_progress');
-  let decision = await call('browser_jev_next', {tabId, goal: 'Select the No answer'});
+  let decision = await call('browser_next', {tabId, goal: 'Select the No answer'});
   assert.equal(decision.operation, 'BLOCKED');
   assert.equal(await page.evaluate(() => window.clicks), 1);
   // The compatibility next/act flow returns the same question and verified state.
   observed = await reset({delay: 250});
-  decision = await call('browser_jev_next', {tabId, goal: 'Select No for work authorization'});
+  decision = await call('browser_next', {tabId, goal: 'Select No for work authorization'});
   assert.equal(decision.action.choice.question, 'Work authorization?');
   assert.equal(decision.action.pressed, 'false');
-  result = await call('browser_jev_act', {tabId, decisionId: decision.decisionId});
+  result = await call('browser_act', {tabId, decisionId: decision.decisionId});
   assert.equal(result.controlState.verified, true);
   assert.equal(result.controlState.actual, true);
   observed = await reset({reject: true});
-  decision = await call('browser_jev_next', {tabId, goal: 'Select No'});
-  result = await call('browser_jev_act', {tabId, decisionId: decision.decisionId});
+  decision = await call('browser_next', {tabId, goal: 'Select No'});
+  result = await call('browser_act', {tabId, decisionId: decision.decisionId});
   assert.equal(result.status, 'uncertain');
   assert.equal(result.controlState.verified, false);
   assert.equal(result.retryBlocked, true);
-  result = await call('browser_jev_select_choice', {
+  result = await call('browser_select_choice', {
     tabId,
     controlId: answer(result, 'Work authorization?', 'No').controlId,
   });
@@ -154,24 +154,24 @@ try {
   assert.equal(await page.evaluate(() => window.clicks), 1);
   // Selected state changing externally invalidates a pending Jev decision.
   observed = await reset();
-  decision = await call('browser_jev_next', {tabId, goal: 'Select No'});
+  decision = await call('browser_next', {tabId, goal: 'Select No'});
   await page
     .locator('#work [data-option=no]')
     .evaluate((e) => e.setAttribute('aria-pressed', 'true'));
-  result = await call('browser_jev_act', {tabId, decisionId: decision.decisionId});
+  result = await call('browser_act', {tabId, decisionId: decision.decisionId});
   assert.equal(result.status, 'stale');
   assert.equal(await page.evaluate(() => window.clicks), 0);
   // Other sites: fieldset native radios and labelled ARIA radiogroups.
   await page.setContent(
     '<fieldset><legend>Schedule?</legend><label><input type="radio" name="schedule">Full time</label><label><input type="radio" name="schedule">Part time</label></fieldset><div role="radiogroup" aria-label="Travel?"><button type="button" role="radio" aria-checked="false" onclick="this.setAttribute(\'aria-checked\',\'true\')">No</button></div>',
   );
-  observed = await call('browser_jev_observe', {tabId});
-  result = await call('browser_jev_select_choice', {
+  observed = await call('browser_observe', {tabId});
+  result = await call('browser_select_choice', {
     tabId,
     controlId: answer(observed, 'Schedule?', 'Full time').controlId,
   });
   assert.equal(result.selection.verified, true);
-  result = await call('browser_jev_select_choice', {
+  result = await call('browser_select_choice', {
     tabId,
     controlId: answer(result, 'Travel?', 'No').controlId,
   });
@@ -181,9 +181,9 @@ try {
     '<form onsubmit="event.preventDefault();window.submits++"><label>Unrelated<input></label><button aria-pressed="false">Yes</button><fieldset><legend>Consent?</legend><button aria-pressed="false">Accept</button><button type="button" aria-pressed="mixed">Mixed</button><input type="submit" role="radio" aria-checked="false" value="Disguised submit"><a href="#navigate"><span role="radio" aria-checked="false">Disguised link</span></a></fieldset></form>',
   );
   await page.evaluate(() => (window.submits = 0));
-  observed = await call('browser_jev_observe', {tabId});
+  observed = await call('browser_observe', {tabId});
   for (const control of observed.controls.filter((c) => c.choice)) {
-    result = await call('browser_jev_select_choice', {tabId, controlId: control.controlId});
+    result = await call('browser_select_choice', {tabId, controlId: control.controlId});
     assert.equal(result.status, 'unsupported');
   }
   assert.equal(await page.evaluate(() => window.submits), 0);
@@ -202,12 +202,12 @@ try {
     window.clicks = 0;
     root.addEventListener('change', () => window.clicks++);
   });
-  observed = await call('browser_jev_observe', {tabId, full: true});
+  observed = await call('browser_observe', {tabId, full: true});
   for (const question of ['Sponsorship?', 'Relocation?']) {
     control = answer(observed, question, 'No');
     assert.ok(control);
     assert.equal(control.visible, false);
-    result = await call('browser_jev_select_choice', {tabId, controlId: control.controlId});
+    result = await call('browser_select_choice', {tabId, controlId: control.controlId});
     assert.equal(result.status, 'ready');
     assert.equal(result.selection.verified, true);
     assert.equal(result.selection.question, question);

@@ -16,3 +16,21 @@
 .cover-letter-card .cover-letter-notes {
   min-height: 64px;
 }
+.cover-letter-auto {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  max-width: 760px;
+  margin: 0 0 20px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.cover-letter-auto input {
+  margin-top: 2px;
+}
+.cover-letter-auto small {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}

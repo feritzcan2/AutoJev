@@ -88,16 +88,16 @@ try {
         host.attachShadow({mode: 'open'}).append(form);
       });
     assert.equal(await page.evaluate(() => document.visibilityState), 'hidden');
-    const observed = await call('browser_jev_observe');
+    const observed = await call('browser_observe');
     const target = observed.controls.find((c) => c.label === 'Contact');
     assert.ok(target);
     assert.equal(target.visible, false);
     assert.equal(observed.fillFields.length, 0);
-    const revealed = await call('browser_jev_reveal', {controlId: target.controlId});
+    const revealed = await call('browser_reveal', {controlId: target.controlId});
     assert.equal(revealed.status, 'ready', revealed.message);
     const field = revealed.fillFields.find((f) => f.label === 'Contact');
     assert.ok(field);
-    const filled = await call('browser_jev_fill_fields', {
+    const filled = await call('browser_fill_fields', {
       fields: [{fieldId: field.fieldId, text: 'Synthetic answer'}],
     });
     assert.equal(filled.status, 'ready', JSON.stringify(filled.results));
@@ -121,23 +121,23 @@ try {
   await page.setContent(
     '<label>Covered<input name="covered"></label><div style="position:fixed;inset:0;background:white;z-index:10">Overlay</div>',
   );
-  let observed = await call('browser_jev_observe');
+  let observed = await call('browser_observe');
   assert.equal(observed.fillFields.length, 0);
   const covered = observed.controls.find((c) => c.label === 'Covered');
   assert.equal(covered.visible, false);
-  const blocked = await call('browser_jev_reveal', {controlId: covered.controlId});
+  const blocked = await call('browser_reveal', {controlId: covered.controlId});
   assert.equal(blocked.status, 'no_progress');
   assert.equal(blocked.fillFields.length, 0);
   assert.equal(await page.locator('input').inputValue(), '');
   // Cancellation cannot start a form mutation or leave the tab emulated.
   await page.setContent('<label>Ready<input name="ready"></label>');
-  observed = await call('browser_jev_observe');
+  observed = await call('browser_observe');
   const abort = new AbortController();
   abort.abort();
   await assert.rejects(
     client.callTool(
       {
-        name: 'browser_jev_fill_fields',
+        name: 'browser_fill_fields',
         arguments: {
           tabId,
           fields: [{fieldId: observed.fillFields[0].fieldId, text: 'Must not be written'}],

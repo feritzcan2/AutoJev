@@ -137,7 +137,7 @@ export const scanMethods = {
       return {
         ...scanWorkSummary(this.run(runId)),
         next: next.url
-          ? `Search "${next.label}" is now active. Call browser_jev_run scan_results with url ${next.url}, then complete_scan_search for it as well.`
+          ? `Search "${next.label}" is now active. Call browser_run_task scan_results with url ${next.url}, then complete_scan_search for it as well.`
           : `Search "${next.label}" is now active; continue its queue and complete it as well.`,
       };
     });

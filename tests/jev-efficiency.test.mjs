@@ -236,7 +236,7 @@ test('routine full requests produce compact maps; lost context and recovery reta
       text: 'Form',
     },
     slot = {owner: 'a'};
-  const present = (value, args = {full: true}, name = 'browser_jev_observe') =>
+  const present = (value, args = {full: true}, name = 'browser_observe') =>
     presentObservation(slot, value, observationPolicy(name, args, value.status));
   assert.equal(present(page).observationMode, 'full');
   const changed = present({
@@ -256,8 +256,8 @@ test('routine full requests produce compact maps; lost context and recovery reta
   slot.owner = 'b';
   assert.equal(present(page).observationMode, 'full');
   assert.equal(present({...page, url: 'https://example.test/new'}).observationMode, 'full');
-  assert.equal(observationPolicy('browser_jev_fill_fields', {}, 'invalid_target').full, true);
-  assert.equal(observationPolicy('browser_jev_select_choice', {}, 'blocked').full, true);
+  assert.equal(observationPolicy('browser_fill_fields', {}, 'invalid_target').full, true);
+  assert.equal(observationPolicy('browser_select_choice', {}, 'blocked').full, true);
 });
 
 test('compact wire state works without prior maps, removes old IDs, and preserves exact consent and new evidence', () => {
@@ -285,7 +285,7 @@ test('compact wire state works without prior maps, removes old IDs, and preserve
   const wire = presentObservation(
     slot,
     current,
-    observationPolicy('browser_jev_observe', {full: true, fullReason: 'missing_baseline'}),
+    observationPolicy('browser_observe', {full: true, fullReason: 'missing_baseline'}),
   );
   assert.equal(wire.observationMode, 'compact');
   assert.equal(wire.controlMaps, 'replace');
@@ -308,7 +308,7 @@ test('compact wire state works without prior maps, removes old IDs, and preserve
   const recovery = presentObservation(
     slot,
     page,
-    observationPolicy('browser_jev_observe', {full: true, fullReason: 'context_loss'}),
+    observationPolicy('browser_observe', {full: true, fullReason: 'context_loss'}),
   );
   assert.equal(recovery.observationMode, 'full');
   assert.equal(recovery.text, longText);

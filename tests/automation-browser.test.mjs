@@ -111,7 +111,7 @@ test('a selected profile readiness timeout returns its waiting status and a retr
   assert.equal(f.browsers.status(f.id).ready, true);
   assert.equal(result.pageContext.tabId, 'owned-tab');
   assert.equal(
-    f.calls.find((c) => c.name === 'browser_jev_open').args.url,
+    f.calls.find((c) => c.name === 'browser_open_page').args.url,
     f.db.get(f.id).sources[0],
   );
 });
@@ -139,7 +139,7 @@ test('source changes during the connection wait use the current source after rea
   f.db.save(f.id, {sources: [url]});
   finish();
   await opening;
-  assert.equal(f.calls.find((c) => c.name === 'browser_jev_open').args.url, url);
+  assert.equal(f.calls.find((c) => c.name === 'browser_open_page').args.url, url);
 });
 
 test('connecting while a worker is active preserves its tabs', async (t) => {
