@@ -182,7 +182,7 @@ test('guest reads use the shared site access rules and the guest endpoints', asy
     'complete',
     'https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/4012345678',
     'token',
-    {status: 200, retryDelays: [30 * 60000, 90 * 60000]},
+    {status: 200, retryDelays: [60 * 60000, 180 * 60000]},
   ]);
   for (const status of [429, 999]) {
     const error = await readLinkedInGuest(search, {
@@ -194,7 +194,7 @@ test('guest reads use the shared site access rules and the guest endpoints', asy
     assert.equal(error.wait.reason, 'rate_limit');
     assert.deepEqual(
       events.at(-1)[3].retryDelays,
-      [30 * 60000, 90 * 60000],
+      [60 * 60000, 180 * 60000],
       'a block waits for the LinkedIn cooldown',
     );
     assert.equal(error.url, search);
@@ -256,7 +256,7 @@ test('guest reads use the shared site access rules and the guest endpoints', asy
       },
     },
   }).catch((e) => e);
-  assert.deepEqual(spent, [{requests: 25, windowMs: 30 * 60000}], 'guest reads keep a budget');
+  assert.deepEqual(spent, [{requests: 30, windowMs: 60 * 60000}], 'guest reads keep a budget');
   assert.equal(overBudget.code, 'SITE_WAIT');
   assert.equal(sentOverBudget, false, 'a request over budget is not sent');
   await assert.rejects(readLinkedInGuest('https://example.test/jobs', {fetch}), /does not handle/);

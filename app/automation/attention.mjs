@@ -106,7 +106,13 @@ export function automationAttention(snapshot, {includeDismissed = false} = {}) {
       sourceUrl: source.url,
       name: source.name,
       workerId: saved.workerId ?? run?.workerId,
-      browserRequired: !(run?.collector || source.scan?.collector),
+      // An API collector or the site extension's HTTP reader scans without a
+      // browser tab; a tab the run recorded still counts.
+      browserRequired: !(
+        run?.collector ||
+        source.scan?.collector ||
+        (['api', 'http'].includes(source.extension?.kind) && !saved.tabId)
+      ),
       dismissKey: JSON.stringify([
         source.lastRunId ?? saved.runId,
         source.lastRunAt,
