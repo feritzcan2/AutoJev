@@ -285,7 +285,9 @@ function contactNote(name, text, item) {
 // The two notes of one person, one per style, in NOTE_STYLES order.
 function contactNotes(name, notes, item, n) {
   if (!Array.isArray(notes) || notes.length !== NOTE_STYLES.length)
-    throw Error(`contacts[${n}].notes needs exactly one note per style: ${NOTE_STYLES.join(', ')}.`);
+    throw Error(
+      `contacts[${n}].notes needs exactly one note per style: ${NOTE_STYLES.join(', ')}.`,
+    );
   const saved = NOTE_STYLES.map((style) => {
     const note = notes.find((x) => x?.style === style);
     if (!note) throw Error(`contacts[${n}].notes has no ${style} note.`);
