@@ -37,16 +37,23 @@ const COVER_LETTER_LABEL =
 // and its upload entry are the same control; the field carries `filled`.
 export function coverLetterFields(form) {
   const label = (c) => [c.question, c.label].filter(Boolean).join(' '),
+    uploads = (form?.uploads ?? []).filter((u) => COVER_LETTER_LABEL.test(u.label ?? '')),
     fields = (form?.fields ?? [])
       .filter((f) => COVER_LETTER_LABEL.test(label(f)))
       .map((f) => ({label: f.question || f.label, type: f.type, filled: f.filled === true}));
-  if (fields.some((f) => f.type === 'file')) return fields;
-  return [
-    ...fields,
-    ...(form?.uploads ?? [])
-      .filter((u) => COVER_LETTER_LABEL.test(u.label ?? ''))
-      .map((u) => ({label: u.label, type: 'file', filled: false, uploadId: u.uploadId})),
-  ];
+  const files = fields.filter((f) => f.type === 'file');
+  if (!files.length)
+    return [
+      ...fields,
+      ...uploads.map((u) => ({label: u.label, type: 'file', filled: false, uploadId: u.uploadId})),
+    ];
+  // A file field and its upload entry are the same control, in page order;
+  // the upload id lets a later upload of the approved letter fill the field.
+  return fields.map((f) =>
+    f.type === 'file' && uploads[files.indexOf(f)]
+      ? {...f, uploadId: uploads[files.indexOf(f)].uploadId}
+      : f,
+  );
 }
 
 // Merges a new inspection into the fields kept across the form's steps, per
@@ -57,7 +64,7 @@ export function mergeCoverLetterFields(previous, current) {
   return [
     ...kept,
     ...current.map((c) =>
-      c.uploadId && previous?.some((f) => f.label === c.label && f.uploaded)
+      c.type === 'file' && previous?.some((f) => f.label === c.label && f.uploaded)
         ? {...c, filled: true, uploaded: true}
         : c,
     ),

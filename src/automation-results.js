@@ -80,7 +80,7 @@ const editable = (node) =>
 
 export function automationResultsTable(
   root,
-  {button, badge, time, api, refresh, statusNames, onQuestion = () => {}},
+  {button, badge, time, api, refresh, statusNames, onQuestion = () => {}, onContacts = () => {}},
 ) {
   let data,
     busy = false,
@@ -1264,6 +1264,12 @@ export function automationResultsTable(
       });
       open.dataset.recordMenuAction = 'open';
       open.setAttribute('aria-label', result.title + ' · Open source');
+      // Opens the Contacts page; a record without contacts starts the search at once.
+      const findContacts = button('Find contacts', () => {
+        if (actionsPanel.matches(':popover-open')) actionsPanel.hidePopover();
+        onContacts(result);
+      });
+      findContacts.dataset.recordMenuAction = 'contacts';
       const tabWorkspace = data.automation.id,
         tabFeedback =
           keepMenu && !problem
@@ -1322,6 +1328,7 @@ export function automationResultsTable(
       goToTab.dataset.recordTab = result.id;
       goToTab.dataset.recordMenuAction = 'tab';
       actions.append(open, detail);
+      if (api.recordContactsFind && !result.trial) actions.append(findContacts);
       // A problem card shows its open tab next to the reason.
       if (problem) goToTab.textContent = 'Show page ↗';
       // A row with an open tab also shows the button outside the menu. Several
@@ -1396,7 +1403,11 @@ export function automationResultsTable(
             requesting ? 'Queueing…' : 'Retry',
             async () => {
               try {
-                await sendOperation(result, op.kind, op.direct ? {direct: true} : {});
+                await sendOperation(
+                  result,
+                  op.kind,
+                  op.direct ? {direct: true, ...(op.applyAnyway ? {applyAnyway: true} : {})} : {},
+                );
               } catch (error) {
                 showNotice(error.message);
               }

@@ -14,6 +14,7 @@ import {
 import {sourceTrialReady} from '../sources/trial.mjs';
 import {TaskRuns} from './task-runs.mjs';
 import {recoverRecordOperations} from '../records/recovery.mjs';
+import {contactsInterrupted} from './contacts.mjs';
 import {workerKey} from './worker-key.mjs';
 import {randomUUID} from 'node:crypto';
 import {sourceCollector, collectorRun} from '../sources/collectors.mjs';
@@ -412,6 +413,7 @@ export class WebTasks extends TaskRuns {
           this.changed(saved.id);
         }
         this.sourceAccess.tick(saved.id);
+        if (contactsInterrupted(this.db, saved.id)) this.changed(saved.id);
         const native = saved.sources.some(
           (url) => saved.sourceSettings?.[url]?.enabled !== false && sourceCollector(saved, url),
         );

@@ -489,7 +489,7 @@ test('requested changes to a reviewed draft reach the next preparation', async (
   assert.equal(context.assignedRecord.proposal, prepared.proposal);
 });
 
-test('apply anyway reaches the execute context and only an execute request carries it', async (t) => {
+test('apply anyway reaches the execute context and a retry keeps it', async (t) => {
   const f = fixture(t, 'job-search');
   const item = await f.prepare();
   await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
@@ -506,6 +506,12 @@ test('apply anyway reaches the execute context and only an execute request carri
   await settle();
   run = f.launches.at(-1);
   assert.match(automationTaskContext(f.db, f.id, f.db.run(run.id)).applyAnyway.rule, /truthfully/);
+  // A Retry after that run keeps the choice.
+  await f.runtime.finish(f.id, 'blocked', 'Cover letter field still empty.', run.workerId);
+  await settle();
+  const retry = f.db.snapshot(f.id).results.find((r) => r.id === item.id)
+    .recordAction.retryOperation;
+  assert.equal(retry.applyAnyway, true);
 });
 
 test('one sign-in answer releases every open login question for the same site', async (t) => {

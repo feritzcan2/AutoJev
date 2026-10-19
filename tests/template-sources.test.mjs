@@ -158,7 +158,7 @@ test('Indeed joins a workspace by country with one shared recipe', () => {
     assert.equal(source.countries.length, 1);
     assert.equal(
       source.recipe.entry.template,
-      `https://${host}/jobs?q={query}&l={location}&sort=date`,
+      `https://${host}/jobs?q={query}&l={location}`,
     );
     assert.equal(source.recipe.pagination, 'url_param');
   }

@@ -551,7 +551,11 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
                 ? directRecordInstructions
                 : active.recordOperation === 'cover_letter'
                   ? 'Write one cover letter for the assigned record and save it with save_cover_letter. Do not fill forms, upload or submit; the user reviews the letter.'
-                  : 'prepare: no external submission; verify: inspect prior outcome without resubmitting. This request authorizes only this record, without changing workspace or source permissions.',
+                  : active.recordOperation === 'contacts'
+                    ? active.request?.phase === 'send'
+                      ? 'Send only the approved LinkedIn invitations or messages in read_contact_brief, once per contact, after reserve_contact_action. Do not apply or change the record.'
+                      : 'Find at most two LinkedIn contacts for the assigned record and save them with save_record_contacts. Never connect, message or send; the user reviews the notes.'
+                    : 'prepare: no external submission; verify: inspect prior outcome without resubmitting. This request authorizes only this record, without changing workspace or source permissions.',
         }
       : null,
     contextScope: {

@@ -8,6 +8,7 @@ import {browserSnapshotTools} from '../browser/snapshot.mjs';
 import {automationContextTools} from './context.mjs';
 import {jevTaskTools, agentDecisionTools} from '../jev/task-tools.mjs';
 import {RECIPE_PAGINATION_KINDS, RECIPE_TERM_LIMIT} from '../sources/recipe.mjs';
+import {CONTACT_LIMIT, CONTACT_OUTCOMES, NOTE_CHARACTERS} from './contacts.mjs';
 
 const str = {type: 'string'},
   optional = {type: 'string', minLength: 0};
@@ -250,6 +251,40 @@ export const automationTools = [
     {text: {type: 'string', minLength: 1, maxLength: 6000}},
   ),
   tool(
+    'read_contact_brief',
+    'Contact tasks only: the record, the user notes and the rules of this task. A send task lists the approved contacts with the exact text to send.',
+  ),
+  tool(
+    'save_record_contacts',
+    `Contact search only: save at most ${CONTACT_LIMIT} LinkedIn contacts for the user's review. Open and read each profile first; profileUrl is that profile page address. Pass an empty contacts list with noneReason when nobody suitable works at the company. A refused save returns the reason; fix it and save again.`,
+    {
+      contacts: {
+        type: 'array',
+        maxItems: CONTACT_LIMIT,
+        items: object({
+          name: str,
+          headline: optional,
+          relation: {type: 'string', enum: ['poster', 'recruiter', 'hiring_manager', 'team']},
+          profileUrl: str,
+          reason: str,
+          message: {type: 'string', minLength: 1, maxLength: NOTE_CHARACTERS},
+        }),
+      },
+      noneReason: {type: 'string', minLength: 0, maxLength: 400},
+    },
+    ['contacts'],
+  ),
+  tool(
+    'reserve_contact_action',
+    'Contact send tasks only: call right before the first Connect or Message click for one contact. Allows that contact one Send click and returns the approved text.',
+    {contactId: str},
+  ),
+  tool(
+    'record_contact_outcome',
+    'Contact send tasks only: record what happened for one contact with the page words as evidence. invited_with_note, invited_without_note and messaged need the Send click after reserve_contact_action; already_invited when the profile already shows Pending; not_accepted_yet for a followUp contact whose invitation is still open; failed with the reason otherwise.',
+    {contactId: str, status: {type: 'string', enum: CONTACT_OUTCOMES}, evidence: str},
+  ),
+  tool(
     'browser_interact',
     'Act on the current page with a fresh ref. click: clickTargets.targetId, or a radio/checkbox controlId from browser_inspect_form (selects that option and verifies it). type: fillFields.fieldId + text. select: controls.controlId + text. options: list a dropdown. press: a key. autocomplete: controlId; option selects that exact label (text may search first); text alone selects the option with exactly that label, otherwise returns the full suggestion list; neither lists the suggestions. scroll: scrollTargets.controlId with direction; stop on no_progress. reveal: bring an offscreen controlId into view, then type with the returned fieldId. If action.executed is false or status is stale, repeat once with the fresh ref. Tools do not enforce authority; you decide what the user allowed.',
     {
@@ -346,6 +381,35 @@ const coverLetterTool = (run, name) =>
     : name === 'request_cover_letter'
       ? run.recordOperation === 'execute'
       : !['read_cover_letter_brief', 'save_cover_letter'].includes(name);
+// A contact search reads the listing, LinkedIn and the CV and saves proposals;
+// a send task reaches the approved contacts. Neither applies.
+const CONTACT_TOOLS = [
+    'get_automation_context',
+    'read_automation_context_part',
+    'read_contact_brief',
+    'browser_open',
+    'browser_read',
+    'browser_read_part',
+    'browser_search',
+    'browser_interact',
+    'finish_automation_run',
+  ],
+  CONTACT_FIND_TOOLS = new Set([...CONTACT_TOOLS, 'read_scoring_profile', 'save_record_contacts']),
+  CONTACT_SEND_TOOLS = new Set([
+    ...CONTACT_TOOLS,
+    'reserve_contact_action',
+    'record_contact_outcome',
+  ]);
+const CONTACT_ONLY = new Set([
+  'read_contact_brief',
+  'save_record_contacts',
+  'reserve_contact_action',
+  'record_contact_outcome',
+]);
+const contactTool = (run, name) =>
+  run.recordOperation === 'contacts'
+    ? (run.request?.phase === 'send' ? CONTACT_SEND_TOOLS : CONTACT_FIND_TOOLS).has(name)
+    : !CONTACT_ONLY.has(name);
 // Collector runs fetch pages through the site extension, not the browser.
 export const collectorHidden = new Set([
   'browser_open',
@@ -386,6 +450,7 @@ export function scopedAutomationTools({run, template, collecting, agentDecides =
         )
         .filter((t) => !scanRun(run) || !SCAN_HIDDEN_TOOLS.includes(t.name))
         .filter((t) => coverLetterTool(run, t.name))
+        .filter((t) => contactTool(run, t.name))
         .filter((t) =>
           collecting ? !collectorHidden.has(t.name) : t.name !== 'collect_source_page',
         ),

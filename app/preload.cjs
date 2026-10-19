@@ -64,6 +64,13 @@ contextBridge.exposeInMainWorld('jobloop', {
   automationRecordDescription: (id, itemId) => invoke('automation-record-description', id, itemId),
   automationRecordDescriptionRead: (id, itemId) =>
     invoke('automation-record-description-read', id, itemId),
+  recordContactsFind: (id, itemId, notes) => invoke('record-contacts-find', id, itemId, notes),
+  recordContactsSend: (id, itemId, contactIds, messages) =>
+    invoke('record-contacts-send', id, itemId, contactIds, messages),
+  recordContactEdit: (id, itemId, contactId, message) =>
+    invoke('record-contact-edit', id, itemId, contactId, message),
+  recordContactRemove: (id, itemId, contactId) =>
+    invoke('record-contact-remove', id, itemId, contactId),
   automationRetryLater: (id, key, cancel = false) =>
     invoke('automation-retry-later', id, key, cancel),
   automationAttentionDismiss: (id, key, dismissKey) =>

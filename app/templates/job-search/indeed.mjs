@@ -66,12 +66,12 @@ export const indeedSources = INDEED_SITES.map(([subdomain, country, name]) => {
     recipe: {
       entry: {
         kind: 'url_template',
-        template: `https://${host}/jobs?q={query}&l={location}&sort=date`,
+        template: `https://${host}/jobs?q={query}&l={location}`,
       },
       pagination: 'url_param',
       loginRequired: false,
       notes:
-        "The site extension reads result cards as viewjob?jk=<id> (the page links are ad-click redirects). Pages via start=10,20,… sort=date lists the newest first by Indeed's own date, not strictly; fromage limits to recent days.",
+        "The site extension reads result cards as viewjob?jk=<id> (the page links are ad-click redirects). Pages via start=10,20,… Indeed's default relevance order mixes dates; fromage limits to recent days.",
     },
   };
 });

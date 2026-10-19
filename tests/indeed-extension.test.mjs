@@ -156,7 +156,7 @@ test('the in-page collector reads card ids, hidden cards, the result list and th
   });
 });
 
-test('every indeed country site gets its own search address, without a date order', () => {
+test('every indeed country site gets its own search address, in relevance order', () => {
   assert.equal(isIndeedUrl('https://uk.indeed.com/'), true);
   assert.equal(isIndeedUrl('https://indeed.com/jobs'), true);
   for (const url of [
@@ -168,28 +168,34 @@ test('every indeed country site gets its own search address, without a date orde
     assert.equal(isIndeedUrl(url), false, url);
   const uk = siteExtensionKind('https://uk.indeed.com/', 'job-search');
   assert.equal(uk.kind, 'browser');
-  assert.equal(uk.search.template, 'https://uk.indeed.com/jobs?q={query}&l={location}&sort=date');
-  assert.equal(uk.search.ordering, undefined, 'the date sort is not a certain order');
-  // A recipe saved without the date sort gets it, and keeps its filters.
+  assert.equal(uk.search.template, 'https://uk.indeed.com/jobs?q={query}&l={location}');
+  assert.equal(uk.search.ordering, undefined, 'relevance mixes dates');
+  // A recipe saved with the date sort loses it, and keeps its filters.
   const {recipe, changed} = siteSearchRecipe(
     siteExtensionKind('https://de.indeed.com/', 'job-search').search,
     {
       entry: {
         kind: 'url_template',
-        template: 'https://de.indeed.com/jobs?q={query}&l=Berlin&fromage=7',
+        template: 'https://de.indeed.com/jobs?q={query}&l=Berlin&fromage=7&sort=date',
       },
       pagination: 'url_param',
     },
   );
   assert.equal(recipe.ordering, undefined);
   assert.deepEqual(changed, ['template']);
-  assert.equal(
-    recipe.entry.template,
-    'https://de.indeed.com/jobs?q={query}&l=Berlin&fromage=7&sort=date',
+  assert.equal(recipe.entry.template, 'https://de.indeed.com/jobs?q={query}&l=Berlin&fromage=7');
+  // A recipe without a sort is left as saved.
+  const plain = 'https://de.indeed.com/jobs?q={query}&l=Berlin&fromage=7';
+  assert.deepEqual(
+    siteSearchRecipe(siteExtensionKind('https://de.indeed.com/', 'job-search').search, {
+      entry: {kind: 'url_template', template: plain},
+      pagination: 'url_param',
+    }).changed,
+    [],
   );
 });
 
-test('a saved Indeed recipe without the date sort replays with it and keeps its filters', (t) => {
+test('a saved Indeed recipe with the date sort replays without it and keeps its filters', (t) => {
   const core = new WorkspaceDatabase(':memory:'),
     db = new AutomationStore(core),
     source = 'https://uk.indeed.com/';
@@ -199,7 +205,7 @@ test('a saved Indeed recipe without the date sort replays with it and keeps its 
     criteria: {preferences: 'England', location: 'London'},
     sources: [source],
   });
-  const template = 'https://uk.indeed.com/jobs?q={query}&l={location}&fromage=7';
+  const template = 'https://uk.indeed.com/jobs?q={query}&l={location}&fromage=7&sort=date';
   db.saveSource(a.id, source, {
     recipe: {
       entry: {kind: 'url_template', template},
@@ -208,7 +214,8 @@ test('a saved Indeed recipe without the date sort replays with it and keeps its 
     },
   });
   const {replay} = db.sourceRecipe(a.id, source);
-  assert.match(replay.searches[0].url, /[?&]fromage=7&sort=date$/);
+  assert.match(replay.searches[0].url, /[?&]fromage=7$/);
+  assert.doesNotMatch(replay.searches[0].url, /sort=/);
   assert.equal(
     db.get(a.id).sourceSettings[source].recipe.entry.template,
     template,

@@ -16,7 +16,7 @@ export function recoverRecordOperations(db) {
   for (const a of db.list()) {
     const latest = new Map();
     for (const task of queue.list(a.id))
-      if (task.recordId && task.recordOperation)
+      if (task.recordId && task.recordOperation && task.recordOperation !== 'contacts')
         for (const itemId of taskRecordIds(task)) latest.set(itemId, task);
     for (const task of new Set(latest.values())) {
       if (taskRecordIds(task).some((itemId) => latest.get(itemId)?.id !== task.id)) continue;

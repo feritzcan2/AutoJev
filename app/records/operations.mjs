@@ -57,6 +57,8 @@ export function recordOperationError(
     return ['completed', 'executing', 'uncertain', 'dismissed'].includes(item.status)
       ? 'This record is closed'
       : null;
+  // Finding or writing to a contact changes nothing about the record itself.
+  if (kind === 'contacts') return null;
   if (['completed', 'executing', 'uncertain', 'dismissed'].includes(item.status))
     return 'This record cannot be submitted again';
   if (!automationReady(a)) return 'Check and save the setup first';
@@ -284,7 +286,7 @@ export function validateRecordTask(db, id, task, now) {
   if (!task.recordOperation) return;
   const a = db.get(id),
     request = task.request ?? {};
-  if (request.revision !== a.revision && task.recordOperation !== 'verify')
+  if (request.revision !== a.revision && !['verify', 'contacts'].includes(task.recordOperation))
     throw Error('The setup changed while the task was queued; prepare the action again');
   for (const itemId of taskRecordIds(task)) {
     const item = db.result(id, itemId);
@@ -536,7 +538,8 @@ export function recordOperationState(
   } = {},
 ) {
   const task = recordTasks.find((t) => live.includes(t.state)),
-    last = recordTasks.findLast((t) => t.recordOperation);
+    // A contact task has its own state in the Contacts tab, not on the record.
+    last = recordTasks.findLast((t) => t.recordOperation && t.recordOperation !== 'contacts');
   // One action per record: verify an uncertain outcome, otherwise apply
   // directly. There is no separate draft or approval step.
   const kind =
@@ -588,6 +591,10 @@ export function recordOperationState(
       retryOperation = {
         kind: retryKind,
         direct,
+        // A retry keeps the user's choice to apply despite an eligibility mismatch.
+        ...(retryKind === 'execute' && last.request?.applyAnyway === true
+          ? {applyAnyway: true}
+          : {}),
         review: retryKind === 'execute' && !direct,
         disabled: Boolean(reason),
         reason,
