@@ -16,7 +16,7 @@ import {jevDetailKey} from '../../jev/detail-urls.mjs';
 import {boundedText, webUrl} from '../../templates/catalog.mjs';
 import {SCAN_SEARCH_LISTINGS} from '../../sources/recipe.mjs';
 import {
-  sourceScanScope,
+  sourceJudgementScope,
   advanceSourceScan,
   markKnownBoundary,
   markPageCap,
@@ -262,7 +262,7 @@ export const scanMethods = {
     });
   },
   seenListingUrls(id, sourceUrl, urls) {
-    const scopeKey = sourceScanScope(this.get(id), sourceUrl);
+    const scopeKey = sourceJudgementScope(this.get(id), sourceUrl);
     const seen = this.db.prepare(
       'SELECT 1 FROM scan_seen_listings WHERE workspace_id=? AND url_key=? AND scope_key=?',
     );
@@ -275,7 +275,7 @@ export const scanMethods = {
     });
   },
   rememberSeenListings(id, sourceUrl, urls, reason) {
-    const scopeKey = sourceScanScope(this.get(id), sourceUrl),
+    const scopeKey = sourceJudgementScope(this.get(id), sourceUrl),
       insert = this.db.prepare(
         'INSERT OR REPLACE INTO scan_seen_listings(workspace_id,url_key,scope_key,reason,at) VALUES(?,?,?,?,?)',
       ),

@@ -28,6 +28,7 @@ import {
 } from '../../sources/source-search.mjs';
 import {json, finishedSourceRun, runSource} from './rows.mjs';
 import {sourceActivity} from '../../sources/source-activity.mjs';
+import {siteTurn} from '../../sources/site-turns.mjs';
 // Only a different search method changes a recipe; notes, the pagination
 // hint, the page cap and the login flag are advisory.
 const recipeKey = (r) => (r ? JSON.stringify({entry: r.entry, terms: r.terms ?? null}) : null);
@@ -127,6 +128,7 @@ export const sourceMethods = {
           ['run', 'trial'].includes(r.kind) &&
           (r.sourceUrl === source.url || (r.sources?.length === 1 && r.sources[0] === source.url)),
       );
+      const siteWait = this.sourceWait(id, source, a);
       const resultCount = records.filter(
         (r) =>
           !r.trial &&
@@ -150,7 +152,7 @@ export const sourceMethods = {
           : {}),
         ...source,
         lastRun: lastRuns.get(source.url) ?? null,
-        siteWait: this.sourceWait(id, source, a),
+        siteWait,
         pageProgress:
           active && !active.recordId
             ? (active.pageProgress ?? null)
@@ -161,6 +163,19 @@ export const sourceMethods = {
         extension: siteExtensionKind(source.url, a.templateId),
         scanning: Boolean(active),
         activity: active ? sourceActivity(active.id) : null,
+        // A due round that waits for another workspace's turn on this site.
+        siteTurn:
+          source.enabled &&
+          a.status === 'enabled' &&
+          !active &&
+          // A shared site wait leaves the source blocked; its turn still shows.
+          (!source.blocked || (siteWait && !siteWait.exhausted))
+            ? source.batchId
+              ? siteTurn(this, id, source.url, this.now(), {startedAt: source.roundStartedAt})
+              : source.nextRunAt > this.now()
+                ? null
+                : siteTurn(this, id, source.url, this.now())
+            : null,
         trialRunning: active?.kind === 'trial',
         scanIssue: active
           ? (Object.values(active.scanIssues ?? {}).sort((a, b) => b.at - a.at)[0] ?? null)
