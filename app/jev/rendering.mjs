@@ -37,6 +37,26 @@ async function bounded(operation, {signal, timeoutMs}) {
     if (abort) signal.removeEventListener('abort', abort);
   }
 }
+// Whether the tab is hidden. A page whose scripts do not answer is frozen or
+// not running, which Chrome does to a tab in a covered or background window:
+// wake it through the browser and treat it as hidden, so focus emulation
+// turns its rendering on. The operation that follows keeps its own bound.
+async function visibility(slot, {signal, timeoutMs}) {
+  try {
+    return await bounded(() => slot.page.evaluate(() => document.visibilityState === 'hidden'), {
+      signal,
+      timeoutMs,
+    });
+  } catch (error) {
+    if (error.code !== 'TAB_RENDER_TIMEOUT') throw error;
+    await bounded(() => slot.cdp.send('Page.setWebLifecycleState', {state: 'active'}), {
+      signal,
+      timeoutMs,
+    }).catch(() => {});
+    signal?.throwIfAborted();
+    return true;
+  }
+}
 export async function acquireTabRendering(
   slot,
   {signal, hidden, foreground = false, timeoutMs = 2000} = {},
@@ -52,14 +72,7 @@ export async function acquireTabRendering(
     state = {users: 0, enabled: false};
     active.set(slot, state);
     state.ready = (async () => {
-      if (
-        (hidden ??
-          (await bounded(() => slot.page.evaluate(() => document.visibilityState === 'hidden'), {
-            signal,
-            timeoutMs,
-          }))) !== true
-      )
-        return;
+      if ((hidden ?? (await visibility(slot, {signal, timeoutMs}))) !== true) return;
       signal?.throwIfAborted();
       // Focus emulation alone makes a background tab (even in a minimized
       // window) visible and painting, so reads and form writes (fill, click,
