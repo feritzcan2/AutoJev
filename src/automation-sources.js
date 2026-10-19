@@ -456,6 +456,16 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
           (page ? 'Last verified: ' + page : null),
       };
     }
+    if (source.siteTurn)
+      return {
+        tone: 'waiting',
+        label: source.siteTurn.scanning
+          ? `Waiting for “${source.siteTurn.workspace}” to finish`
+          : `Starts at ${new Date(source.siteTurn.until).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})}`,
+        detail: source.siteTurn.scanning
+          ? `Workspaces scan ${source.siteTurn.site} one at a time; this scan starts automatically 30 min after that one ends.`
+          : `30 min after “${source.siteTurn.workspace}” finished scanning ${source.siteTurn.site}.`,
+      };
     if (source.blocker?.stop?.retryExhausted)
       return {
         tone: 'danger',
@@ -568,7 +578,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     const text = source.scanning ? sourceActivityText(source.activity) : null;
     if (!text) return null;
     const line = el('div', text, 'source-requests source-activity');
-    line.title = `Updated ${new Date(a.at).toLocaleTimeString('en-GB')}`;
+    line.title = `Updated ${new Date(source.activity.at).toLocaleTimeString('en-GB')}`;
     return line;
   }
   // Schedule: last scan, next scan and the interval, which changes in place.
@@ -582,15 +592,17 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       updateLastRun(lastScan);
       meta.append(lastScan);
     }
-    const nextAt = source.enabled
-      ? (source.siteWait?.retryAt ??
-        (!source.scanning &&
-        !source.blocked &&
-        !source.termsRequired &&
-        data.automation.status === 'enabled'
-          ? source.nextRunAt
-          : null))
-      : null;
+    // A source waiting for another workspace's turn says so in its status.
+    const nextAt =
+      source.enabled && !source.siteTurn
+        ? (source.siteWait?.retryAt ??
+          (!source.scanning &&
+          !source.blocked &&
+          !source.termsRequired &&
+          data.automation.status === 'enabled'
+            ? source.nextRunAt
+            : null))
+        : null;
     if (nextAt) {
       const timing = el('span', null, 'source-timing'),
         next = el('b');

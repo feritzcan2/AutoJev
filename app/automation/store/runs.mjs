@@ -22,7 +22,12 @@ import {
 import {collectorRun} from '../../sources/collectors.mjs';
 import {randomUUID} from 'node:crypto';
 import {boundedText} from '../../templates/catalog.mjs';
-import {beginSourceScan, sourceScanScope, completeSourceScan} from '../../sources/scan.mjs';
+import {
+  beginSourceScan,
+  sourceScanScope,
+  currentScanState,
+  completeSourceScan,
+} from '../../sources/scan.mjs';
 // AutomationStore methods: run lifecycle: starting a task and finishing it.
 export const runMethods = {
   begin(id, input, workerId = 'main') {
@@ -68,7 +73,10 @@ export const runMethods = {
         Object.keys(a.retryPlan ?? {}).length
       )
         this.put({...this.get(id), retryPlan: {}});
-      const state = a.sourceState?.[task.sourceUrl] ?? {},
+      const saved = a.sourceState?.[task.sourceUrl] ?? {},
+        state = saved.scanState
+          ? {...saved, scanState: currentScanState(saved.scanState, a, task.sourceUrl)}
+          : saved,
         scopeKey = task.sourceUrl ? sourceScanScope(a, task.sourceUrl) : null;
       const scopeMatches = !state.scanState || state.scanState.scopeKey === scopeKey;
       const resumable = !task.recordId && scopeMatches && (task.scan ?? state.scan),

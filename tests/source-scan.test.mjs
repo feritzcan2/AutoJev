@@ -9,6 +9,8 @@ import {automationWorkflow} from '../app/automation/worker.mjs';
 import {
   beginSourceScan,
   sourceScanScope,
+  sourceJudgementScope,
+  currentScanState,
   advanceSourceScan,
   validateScanCompletion,
   markKnownBoundary,
@@ -338,14 +340,42 @@ test('source criteria invalidate only that source; schedule changes preserve his
   assert.notEqual(next.scanPlan.scopeKey, before.scopeKey);
   db.finish(id, next.id, 'interrupted', 'Stop');
   const a = db.get(id);
-  assert.notEqual(
+  assert.equal(
     sourceScanScope(a, source),
-    sourceScanScope({...a, criteria: {different: 'criteria'}}, source),
+    sourceScanScope({...a, criteria: {different: 'criteria'}, facts: 'Other facts'}, source),
+    'a profile change keeps the scan position',
+  );
+  assert.notEqual(
+    sourceJudgementScope(a, source),
+    sourceJudgementScope({...a, criteria: {different: 'criteria'}}, source),
+    'and judges rejected listings again',
   );
   assert.equal(
     sourceScanScope(a, source),
     sourceScanScope({...a, intervalMinutes: 100, agentSettings: {provider: 'other'}}, source),
   );
+});
+
+test('scan state saved under the earlier scope key keeps its position', () => {
+  const a = {
+    goal: 'Find homes',
+    criteria: {city: 'Berlin'},
+    facts: 'Facts',
+    templateId: 'job-search',
+  };
+  const old = sourceJudgementScope(a, source),
+    saved = {scopeKey: old, active: {id: 'plan', scopeKey: old}, lastSuccessfulStartAt: 5};
+  const state = currentScanState(saved, a, source);
+  assert.equal(state.scopeKey, sourceScanScope(a, source));
+  assert.equal(state.active.id, 'plan');
+  assert.equal(state.active.scopeKey, state.scopeKey);
+  assert.equal(
+    beginSourceScan(state, state.scopeKey, 10).active.id,
+    'plan',
+    'the same scan continues',
+  );
+  const other = {scopeKey: 'from another search'};
+  assert.equal(currentScanState(other, a, source), other);
 });
 
 test('record actions and user stopping conditions do not advance source coverage', async (t) => {

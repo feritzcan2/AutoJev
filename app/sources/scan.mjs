@@ -15,9 +15,33 @@ const stable = (value) =>
         )
       : value;
 
-// Schedule, provider, table layout and permission changes do not change which
-// listings belong to a search. Search criteria do.
+// A scan's position belongs to what it searches: the source, its query and
+// its own instructions (a changed search recipe resets its pages itself). Profile changes (criteria, facts,
+// instructions, workflow) change how listings are judged, not which pages a
+// search reads, so they keep the position; known listings that need a new
+// judgement are reviewed again by the scan itself. (Until 2026-10-19 every
+// profile edit restarted every source from page 1.)
 export function sourceScanScope(a, url) {
+  const source = a.sourceSettings?.[url] ?? {};
+  return createHash('sha256')
+    .update(
+      JSON.stringify(
+        stable({
+          ...(source.instructions ? {sourceInstructions: source.instructions} : {}),
+          ...(source.skill ? {sourceSkill: source.skill} : {}),
+          url,
+          query: source.query ?? a.goal,
+          templateId: a.templateId,
+        }),
+      ),
+    )
+    .digest('hex');
+}
+
+// Listings a scan rejected are remembered under what was searched and what
+// they were judged against: a profile change judges them again. (The same
+// hash as the scan scope before 2026-10-19, so earlier rejections stay.)
+export function sourceJudgementScope(a, url) {
   const source = a.sourceSettings?.[url] ?? {};
   return createHash('sha256')
     .update(
@@ -38,6 +62,20 @@ export function sourceScanScope(a, url) {
       ),
     )
     .digest('hex');
+}
+
+// Scan state saved before 2026-10-19 carries the judgement scope as its key;
+// it is the same scan, so it keeps its position.
+export const sameScanScope = (key, a, url) =>
+  key === sourceScanScope(a, url) || key === sourceJudgementScope(a, url);
+export function currentScanState(saved, a, url) {
+  const key = sourceScanScope(a, url);
+  if (!saved || saved.scopeKey === key || !sameScanScope(saved.scopeKey, a, url)) return saved;
+  return {
+    ...saved,
+    scopeKey: key,
+    ...(saved.active ? {active: {...saved.active, scopeKey: key}} : {}),
+  };
 }
 
 export const KNOWN_BOUNDARY_PAGES = 2;

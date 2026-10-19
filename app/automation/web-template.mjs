@@ -33,6 +33,7 @@ import {
 } from './recovery.mjs';
 import {sourceMethods} from './web-template/sources.mjs';
 import {conversationMethods} from './web-template/conversation.mjs';
+import {siteTurn} from '../sources/site-turns.mjs';
 // Template definitions select operations; the common queue owns dependencies,
 // worker leases and record/source exclusivity. No template-name dispatch here.
 export class WebTasks extends TaskRuns {
@@ -552,8 +553,10 @@ export class WebTasks extends TaskRuns {
           if (!batchId) {
             if (source.blocked || source.nextRunAt > this.now() || (a.once && source.onceCompleted))
               continue;
+            // Another workspace's round on this site goes first (site-turns.mjs).
+            if (siteTurn(this.db, a.id, source.url, this.now())) continue;
             batchId = randomUUID();
-            this.sourceState(a.id, source.url, {batchId});
+            this.sourceState(a.id, source.url, {batchId, roundStartedAt: this.now()});
           }
           const tasks = source.blocked
             ? this.queue.list(a.id, {batchId})
@@ -573,12 +576,19 @@ export class WebTasks extends TaskRuns {
             this.sourceState(a.id, source.url, {
               batchId: null,
               blocked,
+              // Other workspaces scanning this site start their turn after a gap.
+              roundEndedAt: this.now(),
               nextRunAt: blocked
                 ? null
                 : this.now() + (trialPassed ? 0 : source.intervalMinutes * 60000),
               onceCompleted: Boolean(a.once),
             });
-          } else
+          } else if (
+            // Two rounds open on one site: the later one waits for the earlier.
+            !siteTurn(this.db, a.id, source.url, this.now(), {
+              startedAt: source.roundStartedAt,
+            })
+          )
             pending.push(...waiting.filter((task) => !task.retryAt || task.retryAt <= this.now()));
         }
         const current = this.db.get(a.id),

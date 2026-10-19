@@ -16,7 +16,7 @@ import {
   SCAN_SEARCH_PAGES,
   jevListingItem,
 } from '../app/sources/recipe.mjs';
-import {sourceScanScope} from '../app/sources/scan.mjs';
+import {sourceScanScope, sourceJudgementScope} from '../app/sources/scan.mjs';
 import {replayScanWork} from '../app/sources/scan-work.mjs';
 
 const source = 'https://board.test/jobs';
@@ -937,12 +937,12 @@ test('a scan never rereads listings the workspace already holds or rejected unde
   assert.equal(opened.filter((u) => u.includes('/view/')).length, 0, 'no detail page was opened');
   const changed = f.store.db
     .prepare('SELECT 1 FROM scan_seen_listings WHERE workspace_id=? AND scope_key=?')
-    .get(f.id, sourceScanScope({...f.db.get(f.id), criteria: {location: 'Hamburg'}}, source));
+    .get(f.id, sourceJudgementScope({...f.db.get(f.id), criteria: {location: 'Hamburg'}}, source));
   assert.equal(changed, undefined, 'rejections are bound to the search scope that produced them');
   assert.ok(
     f.store.db
       .prepare('SELECT 1 FROM scan_seen_listings WHERE workspace_id=? AND scope_key=?')
-      .get(f.id, sourceScanScope(f.db.get(f.id), source)),
+      .get(f.id, sourceJudgementScope(f.db.get(f.id), source)),
   );
 });
 
