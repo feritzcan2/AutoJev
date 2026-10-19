@@ -602,23 +602,11 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       const item = el('div', null, 'onboarding-check');
       item.dataset.state = check.state;
       item.append(el('b', check.label), el('span', check.detail));
+      // The Jev key is entered later under Configuration → Jev; here the
+      // worker agent can take over the listing decisions instead.
       if (check.id === 'jev') {
-        const key = el('div', null, 'onboarding-key'),
-          input = el('input');
-        input.type = 'password';
-        input.name = 'jevKey';
-        input.placeholder = 'TypeSafe API key';
-        input.autocomplete = 'off';
+        const key = el('div', null, 'onboarding-key');
         key.append(
-          input,
-          button('Save key', () =>
-            attempt(async () => {
-              await api.saveJevSettings({apiKey: input.value});
-              readiness = null;
-              checkReadiness(form);
-            }),
-          ),
-          // Without a key the worker agent can make the listing decisions.
           button(
             'Let the agent decide instead',
             () =>
@@ -713,8 +701,14 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
   async function save(form) {
     const owner = id,
       f = form.elements;
-    const jev = await api.jevSettingsStatus();
-    if (!jev.configured) throw Error(jev.error ?? 'Save the TypeSafe API key to start the search.');
+    if (data.automation.agentSettings?.decisions === 'jev') {
+      const jev = await api.jevSettingsStatus();
+      if (!jev.configured)
+        throw Error(
+          jev.error ??
+            'Save the TypeSafe API key under Configuration → Jev, or let the agent make the listing decisions.',
+        );
+    }
     const chosen = new Set(
       [...form.querySelectorAll('input[name=source]')].filter((i) => i.checked).map((i) => i.value),
     );

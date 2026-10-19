@@ -10,6 +10,10 @@ const require = createRequire(import.meta.url),
   {_electron: electron} = createRequire(require.resolve('@playwright/mcp/package.json'))(
     'playwright',
   );
+async function openNotifications(page) {
+  await page.locator('aside nav [data-view=config]').click();
+  await page.locator('.config-nav a[href="#config-telegram"]').click();
+}
 const data = await mkdtemp(path.join(os.tmpdir(), 'telegram-score-ui-')),
   file = path.join(data, 'jobloop.sqlite'),
   store = new NotificationFixture(file);
@@ -141,7 +145,7 @@ try {
     p.id,
   );
   await page.locator('#candidates').selectOption(p.id);
-  await page.locator('aside nav [data-view=notifications]').click();
+  await openNotifications(page);
   const batch = page.locator('.telegram-batch');
   await batch.waitFor({state: 'visible'});
   await batch.getByRole('spinbutton', {name: 'Minimum score'}).fill('70');
@@ -159,7 +163,7 @@ try {
     ).length,
     0,
   );
-  await page.locator('#notifications').screenshot({path: path.join(data, 'telegram-resend.png')});
+  await page.locator('#config-telegram').screenshot({path: path.join(data, 'telegram-resend.png')});
   await batch.getByRole('button', {name: 'Resend listings', exact: true}).click();
   await page.waitForFunction(
     () => document.querySelector('[data-deliveries]')?.textContent.startsWith('0 messages'),
@@ -265,7 +269,7 @@ try {
       ?.textContent.includes('1 listings waiting to pass the score limit'),
   );
   await page
-    .locator('#notifications')
+    .locator('#config-telegram')
     .screenshot({path: path.join(data, 'telegram-automatic-score.png')});
   await page.locator('#candidates').selectOption(other.id);
   await page.waitForFunction(
@@ -273,7 +277,7 @@ try {
       document.querySelector('[data-candidate-state]')?.textContent !==
       'Ada’s account is connected.',
   );
-  await page.locator('aside nav [data-view=notifications]').click();
+  await openNotifications(page);
   await page.waitForFunction(
     () =>
       document.querySelector('[data-candidate-state]')?.textContent ===
@@ -288,7 +292,7 @@ try {
       document.querySelector('[data-candidate-state]')?.textContent !==
       'Grace’s account is connected.',
   );
-  await page.locator('aside nav [data-view=notifications]').click();
+  await openNotifications(page);
   await page.waitForFunction(
     () => document.querySelector('[name=newJobsMinScore]')?.value === '65',
   );
@@ -334,7 +338,7 @@ try {
       selected: document.querySelector('#candidates')?.value,
       state: document.querySelector('[data-candidate-state]')?.textContent,
       notice: document.querySelector('#notice')?.textContent,
-      notificationsHidden: document.querySelector('#notifications')?.hidden,
+      notificationsHidden: document.querySelector('#config-telegram')?.hidden,
     })),
   );
   throw error;

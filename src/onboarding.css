@@ -242,8 +242,7 @@ body.onboarding-open {
   font-weight: 500;
 }
 .onboarding-fields input,
-.onboarding-fields textarea,
-.onboarding-key input {
+.onboarding-fields textarea {
   width: 100%;
 }
 .onboarding-fields textarea {

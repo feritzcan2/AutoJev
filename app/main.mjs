@@ -165,6 +165,14 @@ async function boot() {
     changing = new Set(),
     services = [];
   const ensureEngine = () => agents.ensure('catalog');
+  // Jev makes the listing decisions only with a saved TypeSafe key.
+  const validateSettings = async (settings) => {
+    if (settings.decisions === 'jev' && !(await jevSettings.status()).configured)
+      throw Error(
+        'Save the TypeSafe API key under Configuration → Jev before choosing Jev for listing decisions.',
+      );
+    return ensureEngine().request('validate', settings);
+  };
   const profiles = new AgentProfiles(core.workspaces, {
     validate: (library) => ensureEngine().request('validate-profile', {library}),
     changed: (id) => emit('instructions-changed', {workspaceId: id}),
@@ -175,7 +183,7 @@ async function boot() {
     templates: {},
     changing,
     changed,
-    validateSettings: (settings) => ensureEngine().request('validate', settings),
+    validateSettings,
     workerRemoved: (id, worker) => agents.clear(id, worker),
   });
   const documents = new WorkspaceDocuments(workspaces, {dialog, shell, window: () => window});
@@ -262,7 +270,7 @@ async function boot() {
     agents,
     handle,
     emit,
-    validateSettings: (settings) => ensureEngine().request('validate', settings),
+    validateSettings,
     dialog,
     shell,
     window: () => window,

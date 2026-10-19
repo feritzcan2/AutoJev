@@ -30,7 +30,7 @@ export function assessmentListingText(db, owner, run, url) {
   return assessmentEvidence(db, owner, run, url)?.evidence ?? '';
 }
 
-function memoryDetail(db, owner, run, url) {
+export function memoryDetail(db, owner, run, url) {
   if (!run.taskId) return null;
   const searchId = run.scan?.work?.activeSearchId ?? 'default',
     identity = listingIdentity(url)?.key;

@@ -5,6 +5,7 @@ import {siteCredentialsPanel} from './site-credentials.js';
 import {readinessPanel} from './readiness.js';
 import {createDataManagement} from './data-management.js';
 import {updatesPanel} from './updates.js';
+import {telegramPanel} from './telegram.js';
 const node = (tag, cls, text) => {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -58,12 +59,12 @@ function card({title, when, path, text, open = false}) {
   details.append(summary, body(text));
   return details;
 }
-export function configPage(api, {notice, relativeTime, openNotifications}) {
+export function configPage(api, {notice, relativeTime}) {
   const root = document.getElementById('config');
   root.innerHTML = `<div class="config-head"><div><h2>Configuration</h2><p>Setup, backups, updates, notifications and the text sent to the agent: instructions, task prompts, skills and MCP tools.</p></div><label class="config-search"><input id="config-search" type="search" placeholder="Search text" aria-label="Search text"><small id="config-search-note"></small></label></div>
 <div class="config-body"><nav class="config-nav" aria-label="Sections"><a href="#config-telegram">Notifications<b></b></a><a href="#config-readiness">Setup check<b></b></a><a href="#config-jev">Jev<b></b></a><a href="#config-captcha">CAPTCHA<b></b></a><a href="#config-site-accounts">Site accounts<b></b></a><a href="#config-data">Data and backups<b></b></a><a href="#config-updates">Updates<b></b></a><a href="#config-privacy">Data sharing<b></b></a><a href="#config-instructions">Instructions<b></b></a><a href="#config-tasks">Task prompts<b></b></a><a href="#config-skills">Skills<b></b></a><a href="#config-tools">MCP tools<b></b></a></nav>
 <div class="config-sections">
-<section id="config-telegram" class="config-section"><h3>Notifications</h3><p>The Telegram bot connection and per-candidate notification preferences are on the Notifications page.</p><button id="open-notifications" class="primary" type="button">Open notification settings</button></section>
+<section id="config-telegram" class="config-section"><h3>Notifications</h3><p>The selected workspace's Telegram connection and which notifications it receives.</p><div id="config-telegram-panel"></div></section>
 <section id="config-readiness" class="config-section"><h3>Setup check</h3><div id="config-readiness-panel"></div></section>
 <section id="config-captcha" class="config-section"><h3>CAPTCHA</h3><div id="config-captcha-panel"></div></section>
 <section id="config-site-accounts" class="config-section"><h3>Site accounts</h3><div id="config-site-accounts-panel"></div></section>
@@ -98,7 +99,7 @@ export function configPage(api, {notice, relativeTime, openNotifications}) {
         (tab) => tab.getAttribute('href') === `#config-${active}`,
       )
     )
-      active = openNotifications ? 'telegram' : 'instructions';
+      active = telegram ? 'telegram' : 'instructions';
     for (const section of root.querySelectorAll('.config-section')) {
       const key = section.id.slice(7),
         tab = root.querySelector(`.config-nav a[href="#config-${key}"]`);
@@ -113,6 +114,7 @@ export function configPage(api, {notice, relativeTime, openNotifications}) {
       tab.setAttribute('aria-current', !query && key === active ? 'page' : 'false');
     }
     root.dataset.searching = String(Boolean(query));
+    if (candidate && !root.hidden && !$('config-telegram').hidden) telegram?.load();
   }
   function open(key) {
     active = key;
@@ -237,6 +239,9 @@ export function configPage(api, {notice, relativeTime, openNotifications}) {
           ),
         );
   }
+  const telegram = api.telegramStatus
+    ? telegramPanel(api, $('config-telegram-panel'), {notice})
+    : null;
   const captcha = captchaSettingsPanel(api, $('config-captcha-panel'), {notice});
   const siteAccounts = siteCredentialsPanel(api, $('config-site-accounts-panel'), {notice});
   const jev = jevSettingsPanel(api, $('config-jev-panel'), {notice});
@@ -269,8 +274,7 @@ export function configPage(api, {notice, relativeTime, openNotifications}) {
     dataPanel?.load();
     updates?.load();
   }
-  $('open-notifications').onclick = openNotifications;
-  if (!openNotifications) {
+  if (!telegram) {
     $('config-telegram').hidden = true;
     root.querySelector('a[href="#config-telegram"]').hidden = true;
   }
@@ -304,6 +308,7 @@ export function configPage(api, {notice, relativeTime, openNotifications}) {
   return {
     open,
     select(id) {
+      telegram?.select(id);
       if (id === candidate) return;
       candidate = id;
       version++;

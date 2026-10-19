@@ -170,8 +170,9 @@ try {
   await page
     .locator('[data-criteria-section=search] [name=criteria-preferences]')
     .waitFor({state: 'visible'});
-  await page.locator('[data-view=notifications]').click();
-  await page.getByRole('heading', {name: 'Notification settings'}).waitFor();
+  await page.locator('[data-view=config]').click();
+  await page.locator('.config-nav a[href="#config-telegram"]').click();
+  await page.locator('#config-telegram .telegram-card').waitFor({state: 'visible'});
   await page.locator('[data-view=background]').click();
   await page.locator('[data-automation-pane=background]').waitFor({state: 'visible'});
   await page.reload();
