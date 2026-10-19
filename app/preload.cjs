@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('jobloop', {
   focusWorkspaceTab: (id, tabId) => invoke('focus-workspace-tab', id, tabId),
   closeWorkspaceTabs: (id, tabs) => invoke('close-workspace-tabs', id, tabs),
   automationSourceSave: (id, url, input) => invoke('automation-source-save', id, url, input),
+  automationSearchTerms: (id, terms) => invoke('automation-search-terms', id, terms),
   automationSourcesInterval: (id, intervalMinutes) =>
     invoke('automation-sources-interval', id, intervalMinutes),
   automationSourceRun: (id, url, options) => invoke('automation-source-run', id, url, options),

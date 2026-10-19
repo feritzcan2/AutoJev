@@ -464,7 +464,21 @@ export function recordContactOutcome(db, id, run, {contactId, status, evidence})
           outcome: status,
           evidence,
           error: status === 'failed' ? evidence : null,
-          ...(SENT.has(status) ? {sentAt: db.now(), sentAs: status} : {}),
+          ...(SENT.has(status)
+            ? {
+                sentAt: db.now(),
+                sentAs: status,
+                // What went out, for the Contacts page conversation.
+                history: [
+                  ...(c.history ?? []),
+                  {
+                    as: status,
+                    text: status === 'invited_without_note' ? '' : c.message,
+                    at: db.now(),
+                  },
+                ],
+              }
+            : {}),
           ...(status === 'invited_with_note' || status === 'messaged' ? {followUp: false} : {}),
         }
       : null,

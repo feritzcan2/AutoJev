@@ -183,8 +183,8 @@ try {
   assert.ok(retried.siteWait);
   assert.equal(
     clicks,
-    beforeProbe + 1,
-    'A later site probe uses the new document rather than the expired target',
+    beforeProbe + 2,
+    'A later site probe uses the new document (click, refresh, click) rather than the expired target',
   );
   // HTTP 429 can carry the same interactive challenge: the document decides, not the status.
   const limited = 'https://limited.test/limited',

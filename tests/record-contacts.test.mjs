@@ -259,6 +259,11 @@ test('approved contacts are sent once each by a send task', async (t) => {
   const sent = f.entry().contacts[0];
   assert.equal(sent.state, 'invited');
   assert.equal(sent.outcome, 'invited_without_note');
+  // The conversation keeps what went out: an invitation without its note.
+  assert.deepEqual(
+    sent.history.map((h) => [h.as, h.text]),
+    [['invited_without_note', '']],
+  );
   // After acceptance the kept note goes out as a message.
   await sendRecordContacts(f.runtime, f.id, f.item.id, [jane.id]);
   await settle();

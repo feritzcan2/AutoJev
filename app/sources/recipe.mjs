@@ -111,6 +111,28 @@ export const recipeNeedsTerms = (recipe) =>
   hasQueryPlaceholder(recipe.entry.template) &&
   !recipe.terms?.length;
 
+// The workspace's search terms: one list every keyword search shares.
+export function normalizeSearchTerms(input) {
+  if (input === undefined || input === null) return [];
+  if (!Array.isArray(input) || input.length > RECIPE_TERM_LIMIT)
+    throw Error(`Search terms: up to ${RECIPE_TERM_LIMIT} items`);
+  return [...new Set(input.map((term) => boundedText(term, 'Search term', 80)))];
+}
+export const sameTerms = (a, b) =>
+  Boolean(a?.length) && JSON.stringify(a) === JSON.stringify(b ?? null);
+// A source without its own terms whose {query} is a query parameter value
+// searches with the workspace's terms. {query} in the address path is a slug
+// or a category, so such a source keeps its own terms.
+export const takesSearchTerms = (recipe) =>
+  recipeNeedsTerms(recipe) &&
+  !hasQueryPlaceholder(recipe.entry.template.split('?')[0]) &&
+  hasQueryPlaceholder(recipe.entry.template.split('?').slice(1).join('?'));
+export const withSearchTerms = (recipe, terms) =>
+  takesSearchTerms(recipe) && terms?.length ? {...recipe, terms: [...terms]} : (recipe ?? null);
+// The recipe a source scans with: its own, filled with the workspace's terms.
+export const sourceRecipeOf = (a, url) =>
+  withSearchTerms(a.sourceSettings?.[url]?.recipe ?? null, a.searchTerms);
+
 // {query} is the saved source query; other placeholders read the workspace
 // criteria field with the same id. Empty values drop their query parameter.
 export function recipeValues(a, url) {
