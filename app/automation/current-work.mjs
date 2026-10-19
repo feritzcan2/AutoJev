@@ -1,6 +1,7 @@
 // @ts-check
 import {runOperationLabel} from './progress.mjs';
 import {isConversation} from '../workspaces/conversation.mjs';
+import {sourceActivityText} from '../sources/activity-text.mjs';
 
 const QUEUED_ROWS = 20;
 
@@ -47,6 +48,7 @@ export function currentWork(view) {
             : 'Running',
       tone: source?.scanIssue ? 'blocked' : 'running',
       progress: source ? scanProgress(source, run) : null,
+      now: source?.scanning ? sourceActivityText(source.activity) : null,
       startedAt: run.startedAt ?? null,
       updatedAt: run.pageProgress?.at ?? null,
       stop: source ? {sourceUrl: source.url} : {workerId: run.workerId ?? 'main'},

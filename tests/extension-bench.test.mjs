@@ -114,7 +114,7 @@ test(
     );
     assert.equal(read.transport, 'browser');
     assert.match(read.notes[0], /serves job-search workspaces only/);
-    assert.equal(calls[0][0], 'browser_jev_open');
+    assert.equal(calls[0][0], 'browser_open_page');
   }),
 );
 
@@ -171,7 +171,7 @@ test(
       const browser = fakeBrowser({pages: [page({url})], calls});
       const read = await extensionBench({browser, db: db()}).read('w', url);
       assert.equal(read.transport, 'browser');
-      assert.equal(calls[0][0], 'browser_jev_open');
+      assert.equal(calls[0][0], 'browser_open_page');
     },
   ),
 );
@@ -226,8 +226,8 @@ test(
     assert.equal(read.readiness.loading, true);
     assert.deepEqual(read.listings, []);
     // One open, then a bounded number of document reads; never a second open.
-    assert.equal(calls.filter(([name]) => name === 'browser_jev_open').length, 1);
-    assert.equal(calls.filter(([name]) => name === 'browser_jev_observe').length, 4);
+    assert.equal(calls.filter(([name]) => name === 'browser_open_page').length, 1);
+    assert.equal(calls.filter(([name]) => name === 'browser_observe').length, 4);
     assert.equal(waits.length, 3);
     assert.deepEqual(calls[0][3], {
       automationWorkspaceId: 'w',

@@ -21,15 +21,15 @@ try {
     const root = document.querySelector('#host').attachShadow({mode: 'open'});
     root.innerHTML = '<label>Confirm your email<input type="email" required></label>';
   });
-  let observation = await call('browser_jev_observe', {tabId, full: true});
+  let observation = await call('browser_observe', {tabId, full: true});
   const field = observation.fillFields.find((f) => f.type === 'email');
   assert.ok(field, 'Shadow email must be writable');
-  const form = await call('browser_jev_inspect_form', {tabId});
+  const form = await call('browser_inspect_form', {tabId});
   assert.ok(
     form.fields.some((f) => f.type === 'email'),
     'Preflight must see shadow fields',
   );
-  const filled = await call('browser_jev_fill_fields', {
+  const filled = await call('browser_fill_fields', {
     tabId,
     fields: [{fieldId: field.fieldId, text: 'candidate@example.test'}],
   });
@@ -45,7 +45,7 @@ try {
     overlay.style = 'position:fixed;inset:0;background:white;z-index:999';
     document.body.append(overlay);
   });
-  observation = await call('browser_jev_observe', {tabId, full: true});
+  observation = await call('browser_observe', {tabId, full: true});
   assert.equal(observation.fillFields.length, 0, 'Overlay must still block writes');
   // React-style full form node replacement on blur must not lose verified values.
   await page.setContent(
@@ -63,8 +63,8 @@ try {
       );
     bind();
   });
-  observation = await call('browser_jev_observe', {tabId, full: true});
-  let batch = await call('browser_jev_fill_fields', {
+  observation = await call('browser_observe', {tabId, full: true});
+  let batch = await call('browser_fill_fields', {
     tabId,
     fields: observation.fillFields.map((f, i) => ({
       fieldId: f.fieldId,
@@ -87,8 +87,8 @@ try {
       (document.querySelector('#first').onblur = () =>
         (document.querySelector('#city').value = 'External edit')),
   );
-  observation = await call('browser_jev_observe', {tabId, full: true});
-  batch = await call('browser_jev_fill_fields', {
+  observation = await call('browser_observe', {tabId, full: true});
+  batch = await call('browser_fill_fields', {
     tabId,
     fields: observation.fillFields.map((f, i) => ({
       fieldId: f.fieldId,
@@ -101,16 +101,16 @@ try {
   await page.setContent(
     '<label>When are you available?<input id="start" type="date" required min="2026-09-28" max="2027-12-31"></label>',
   );
-  observation = await call('browser_jev_observe', {tabId, full: true});
+  observation = await call('browser_observe', {tabId, full: true});
   const date = observation.fillFields.find((f) => f.type === 'date');
   assert.ok(date);
   assert.equal(date.format, 'YYYY-MM-DD');
   for (const text of ['28.11.2026', '2026-02-30', '2025-11-28'])
     await assert.rejects(() =>
-      call('browser_jev_fill_fields', {tabId, fields: [{fieldId: date.fieldId, text}]}),
+      call('browser_fill_fields', {tabId, fields: [{fieldId: date.fieldId, text}]}),
     );
   assert.equal(await page.locator('#start').inputValue(), '');
-  batch = await call('browser_jev_fill_fields', {
+  batch = await call('browser_fill_fields', {
     tabId,
     fields: [{fieldId: date.fieldId, text: '2026-11-28'}],
   });

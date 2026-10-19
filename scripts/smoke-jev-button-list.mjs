@@ -39,14 +39,14 @@ try {
         };
     }
   });
-  let o = await call('browser_jev_observe', {tabId, full: true});
+  let o = await call('browser_observe', {tabId, full: true});
   let field = o.controls.find((c) => c.label === 'Land*');
   assert.ok(field?.autocomplete);
   await assert.rejects(
-    () => call('browser_jev_list_suggestions', {tabId, controlId: field.controlId}, 'other'),
+    () => call('browser_list_suggestions', {tabId, controlId: field.controlId}, 'other'),
     /current controlId of this session/,
   );
-  let r = await call('browser_jev_autocomplete', {
+  let r = await call('browser_autocomplete', {
     tabId,
     controlId: field.controlId,
     text: 'Deutschland',
@@ -54,11 +54,11 @@ try {
   });
   assert.equal(r.status, 'unsupported');
   assert.deepEqual(await page.evaluate(() => window.picks), []);
-  r = await call('browser_jev_list_suggestions', {tabId, controlId: field.controlId});
+  r = await call('browser_list_suggestions', {tabId, controlId: field.controlId});
   assert.equal(r.optionCount, 61);
   assert.ok(r.suggestions.includes('Deutschland'));
   field = r.controls.find((c) => c.label === 'Land*');
-  r = await call('browser_jev_autocomplete', {
+  r = await call('browser_autocomplete', {
     tabId,
     controlId: field.controlId,
     option: 'Deutschland',
@@ -80,9 +80,9 @@ try {
     e.style = 'position:fixed;inset:0;z-index:999;background:white';
     document.body.append(e);
   });
-  o = await call('browser_jev_observe', {tabId, full: true});
+  o = await call('browser_observe', {tabId, full: true});
   field = o.controls.find((c) => c.label === 'Nationalität');
-  r = await call('browser_jev_autocomplete', {
+  r = await call('browser_autocomplete', {
     tabId,
     controlId: field.controlId,
     option: 'Deutschland',

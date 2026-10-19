@@ -37,31 +37,31 @@ try {
       input.setAttribute('aria-expanded', 'false');
     };
   });
-  let o = await call('browser_jev_observe', {tabId, full: true});
+  let o = await call('browser_observe', {tabId, full: true});
   const city = o.controls.find((c) => c.role === 'combobox');
   assert.ok(city);
-  let options = await call('browser_jev_list_suggestions', {
+  let options = await call('browser_list_suggestions', {
     tabId,
     controlId: city.controlId,
     text: 'Berlin',
   });
   assert.ok(options.suggestions.includes('Berlin, State of Berlin, Germany'));
-  const selected = await call('browser_jev_autocomplete', {
+  const selected = await call('browser_autocomplete', {
     tabId,
     controlId: options.controls.find((c) => c.role === 'combobox').controlId,
     text: 'Berlin',
     option: 'Berlin, State of Berlin, Germany',
   });
   assert.equal(selected.selection.verified, true);
-  o = await call('browser_jev_observe', {tabId, full: true});
+  o = await call('browser_observe', {tabId, full: true});
   const checkbox = o.controls.find((c) => c.role === 'checkbox');
   assert.ok(checkbox?.choice);
-  const checked = await call('browser_jev_select_choice', {tabId, controlId: checkbox.controlId});
+  const checked = await call('browser_select_choice', {tabId, controlId: checkbox.controlId});
   assert.equal(checked.selection.verified, true);
-  o = await call('browser_jev_observe', {tabId, full: true});
+  o = await call('browser_observe', {tabId, full: true});
   const radio = o.controls.find((c) => c.role === 'radio');
   assert.ok(radio?.choice?.question);
-  const chosen = await call('browser_jev_select_choice', {tabId, controlId: radio.controlId});
+  const chosen = await call('browser_select_choice', {tabId, controlId: radio.controlId});
   assert.equal(chosen.selection.verified, true);
   // SmartRecruiters buttons project light-DOM labels into shadow slots.
   // Their label is the actual hit target, not an unrelated overlay.
@@ -87,19 +87,19 @@ try {
       document.querySelector('#buttons').append(host);
     }
   });
-  o = await call('browser_jev_observe', {tabId, full: true});
+  o = await call('browser_observe', {tabId, full: true});
   assert.ok(o.controls.find((c) => c.label === 'Next'));
   assert.ok(o.controls.find((c) => c.label === 'Fallback'));
   let target = o.clickTargets.find((c) => c.label === 'Cancel');
   assert.ok(target);
-  let clicked = await call('browser_jev_click', {tabId, targetId: target.targetId});
+  let clicked = await call('browser_click_target', {tabId, targetId: target.targetId});
   assert.deepEqual(await page.evaluate(() => window.buttonClicks), ['Cancel']);
   const next = clicked.controls.find((c) => c.label === 'Next');
   assert.ok(next);
-  o = await call('browser_jev_reveal', {tabId, controlId: next.controlId});
+  o = await call('browser_reveal', {tabId, controlId: next.controlId});
   target = o.clickTargets.find((c) => c.label === 'Next');
   assert.ok(target);
-  await call('browser_jev_click', {tabId, targetId: target.targetId});
+  await call('browser_click_target', {tabId, targetId: target.targetId});
   assert.deepEqual(await page.evaluate(() => window.buttonClicks), ['Cancel', 'Next']);
   // A real overlay still blocks clicks; slot support must not bypass it.
   await page.evaluate(() => {
@@ -107,7 +107,7 @@ try {
     overlay.style = 'position:fixed;inset:0;z-index:999;background:white';
     document.body.append(overlay);
   });
-  o = await call('browser_jev_observe', {tabId, full: true});
+  o = await call('browser_observe', {tabId, full: true});
   assert.ok(!o.clickTargets.some((c) => ['Cancel', 'Next', 'Fallback'].includes(c.label)));
   assert.deepEqual(await page.evaluate(() => window.buttonClicks), ['Cancel', 'Next']);
   console.log('SLOTTED_BUTTON_LABEL_CLICK_REVEAL_OVERLAY_PASS');
@@ -115,10 +115,10 @@ try {
   await page.setContent(
     '<label>Username<input required></label><button type="button">Without Resume</button><div role="dialog" aria-modal="true" id="cookie-shell"><div style="position:fixed;opacity:0;pointer-events:none"><button>Accept cookies</button><label>Hidden preference<input></label></div></div>',
   );
-  o = await call('browser_jev_observe', {tabId, full: true});
+  o = await call('browser_observe', {tabId, full: true});
   assert.ok(o.clickTargets.some((t) => t.label === 'Without Resume'));
   assert.ok(!o.clickTargets.some((t) => t.label === 'Accept cookies'));
-  let inspected = await call('browser_jev_inspect_form', {tabId});
+  let inspected = await call('browser_inspect_form', {tabId});
   assert.ok(inspected.fields.some((f) => f.label === 'Username'));
   assert.ok(!inspected.fields.some((f) => f.label === 'Hidden preference'));
   // A zero-height shell with a visible positioned panel IS an active modal.
@@ -126,10 +126,10 @@ try {
     const panel = document.querySelector('#cookie-shell > div');
     panel.style = 'position:fixed;inset:30px;background:white;z-index:999';
   });
-  o = await call('browser_jev_observe', {tabId, full: true});
+  o = await call('browser_observe', {tabId, full: true});
   assert.ok(o.clickTargets.some((t) => t.label === 'Accept cookies'));
   assert.ok(!o.controls.some((t) => t.label === 'Without Resume'));
-  inspected = await call('browser_jev_inspect_form', {tabId});
+  inspected = await call('browser_inspect_form', {tabId});
   assert.ok(inspected.fields.some((f) => f.label === 'Hidden preference'));
   assert.ok(!inspected.fields.some((f) => f.label === 'Username'));
   console.log('CLOSED_COOKIE_SHELL_IGNORED_ACTIVE_MODAL_RESPECTED_PASS');
@@ -138,9 +138,9 @@ try {
     '<button type="button" onclick="window.entered=true">Apply</button><div hidden><label>CV<input type="file"></label></div>',
   );
   await page.evaluate(() => (window.entered = false));
-  o = await call('browser_jev_observe', {tabId, full: true});
+  o = await call('browser_observe', {tabId, full: true});
   assert.equal(o.uploads.length, 0);
-  await call('browser_jev_click', {
+  await call('browser_click_target', {
     tabId,
     targetId: o.clickTargets.find((t) => t.label === 'Apply').targetId,
   });
@@ -149,17 +149,17 @@ try {
   await page.setContent(
     '<label for="cv">Upload CV</label><input id="cv" type="file" style="display:none"><section hidden><label for="inactive">Other CV</label><input id="inactive" type="file"></section>',
   );
-  o = await call('browser_jev_observe', {tabId, full: true});
+  o = await call('browser_observe', {tabId, full: true});
   assert.equal(o.uploads.length, 1);
   assert.equal(o.uploads[0].label, 'Upload CV');
   const previousUpload = o.uploads[0].uploadId;
-  o = await call('browser_jev_observe', {tabId});
+  o = await call('browser_observe', {tabId});
   assert.equal(o.uploads[0].uploadId, previousUpload);
   // Repeating a rejected dropdown ID is bounded and never dispatches a click.
-  o = await call('browser_jev_list_suggestions', {tabId, controlId: 'expired-control'});
+  o = await call('browser_list_suggestions', {tabId, controlId: 'expired-control'});
   assert.equal(o.status, 'stale');
   assert.equal(o.rejectedControlId, 'expired-control');
-  o = await call('browser_jev_list_suggestions', {tabId, controlId: 'expired-control'});
+  o = await call('browser_list_suggestions', {tabId, controlId: 'expired-control'});
   assert.equal(o.status, 'no_progress');
   assert.equal(o.executed, false);
   assert.ok(Array.isArray(o.availableTargets));
@@ -171,15 +171,15 @@ try {
     '<iframe style="width:600px;height:300px" src="https://embedded.test/form"></iframe><iframe style="width:600px;height:300px" src="https://embedded.test/captcha"></iframe><iframe sandbox style="width:600px;height:300px" src="https://embedded.test/sandbox"></iframe>',
   );
   await page.frames()[1].waitForLoadState();
-  o = await call('browser_jev_observe', {tabId, full: true});
+  o = await call('browser_observe', {tabId, full: true});
   assert.equal(o.embeddedForms.length, 1);
   const frame = o.embeddedForms[0];
-  const child = await call('browser_jev_open_frame', {tabId, frameId: frame.frameId});
+  const child = await call('browser_open_frame', {tabId, frameId: frame.frameId});
   assert.equal(child.url, 'https://embedded.test/form');
   assert.equal(child.parentTabId, tabId);
   assert.equal(page.isClosed(), false);
   assert.ok(child.fillFields.some((f) => f.type === 'email'));
-  const reused = await call('browser_jev_open_frame', {tabId, frameId: frame.frameId});
+  const reused = await call('browser_open_frame', {tabId, frameId: frame.frameId});
   assert.equal(reused.tabId, child.tabId);
   assert.equal(reused.reused, true);
   console.log('BLOCKERS_SMOKE_PASS');

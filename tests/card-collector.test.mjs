@@ -10,6 +10,7 @@ import {
   collectorPageReady,
 } from '../app/sources/collector-worker.mjs';
 import {continueSourceRun, unreportedSourceRun} from '../app/automation/recovery.mjs';
+import {sourceActivity} from '../app/sources/source-activity.mjs';
 import linkedin, {
   readLinkedInCards,
   readLinkedInListing,
@@ -70,7 +71,12 @@ test('a card collector reads only wanted listings once, drops removed ones and l
   });
   assert.equal(collector.cards, true);
   const wanted = (urls) => urls.filter((u) => u !== url('a'));
-  const page = await collector.readPage('https://cards.test/search', {wanted});
+  const steps = [];
+  const page = await collector.readPage('https://cards.test/search', {
+    wanted,
+    progress: (step) => steps.push(`${step.done + 1}/${step.total} ${step.title}`),
+  });
+  assert.deepEqual(steps, ['1/3 b', '2/3 c', '3/3 d'], 'each wanted listing reports its turn');
   assert.deepEqual(
     page.jobs.map((j) => [j.url, Boolean(j.description)]),
     [
@@ -364,6 +370,11 @@ test('LinkedIn postings are opened in the browser before the agent; result pages
   });
   await f.flow.prefetchCollector();
   assert.equal(opened.length, 3, 'each new posting opens in the browser');
+  assert.equal(
+    sourceActivity(f.runId).step,
+    'agent',
+    'once the batch is ready the Sources page shows the agent at work',
+  );
   assert.match(
     opened[0],
     /^https:\/\/www\.linkedin\.com\/jobs\/view\/\d+\/$/,

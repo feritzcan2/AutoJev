@@ -24,22 +24,25 @@ try {
   await page.setContent(
     '<iframe title="hCaptcha challenge" style="width:300px;height:250px"></iframe><button onclick="window.sent=true">Submit application</button>',
   );
-  let result = await call('browser_jev_observe', {tabId});
+  let result = await call('browser_observe', {tabId});
   assert.equal(result.verification.capability, 'not_exposed');
   assert.equal(result.verification.handoff, true);
-  result = await call('browser_jev_next', {tabId, goal: 'Solve challenge'});
+  result = await call('browser_next', {tabId, goal: 'Solve challenge'});
   assert.equal(result.status, 'verification_handoff');
   assert.equal(modelCalls, 0);
   const submit = (await client.observe(slot)).clickTargets.find(
     (c) => c.label === 'Submit application',
   );
-  result = await call('browser_jev_click', {tabId, targetId: submit.targetId});
+  result = await call('browser_click_target', {tabId, targetId: submit.targetId});
   assert.equal(result.executed, false);
   assert.equal(await page.evaluate(() => Boolean(window.sent)), false);
-  const first = await client.callTool({name: 'browser_jev_screenshot', arguments: {tabId}}, 'test');
+  const first = await client.callTool(
+    {name: 'browser_page_screenshot', arguments: {tabId}},
+    'test',
+  );
   assert.ok(first.content.some((p) => p.type === 'image'));
   const second = await client.callTool(
-    {name: 'browser_jev_screenshot', arguments: {tabId}},
+    {name: 'browser_page_screenshot', arguments: {tabId}},
     'test',
   );
   assert.ok(!second.content.some((p) => p.type === 'image'));
@@ -47,16 +50,16 @@ try {
   await page.setContent(
     '<iframe title="reCAPTCHA"></iframe><iframe title="hCaptcha challenge" hidden></iframe><label>Name<input></label>',
   );
-  result = await call('browser_jev_observe', {tabId});
+  result = await call('browser_observe', {tabId});
   assert.equal(result.verification, null);
   assert.equal(slot.verification, undefined);
   // A generic verification error is not mislabeled as a proven CAPTCHA.
   await page.setContent('<p>There was an error verifying your application. Please try again.</p>');
-  result = await call('browser_jev_observe', {tabId});
+  result = await call('browser_observe', {tabId});
   assert.equal(result.verification.state, 'verification_error');
   assert.equal(result.verification.capability, 'unknown');
   slot.verification.startedAt = Date.now() - 61000;
-  result = await call('browser_jev_next', {tabId, goal: 'Inspect error'});
+  result = await call('browser_next', {tabId, goal: 'Inspect error'});
   assert.equal(result.status, 'verification_handoff');
   assert.match(result.message, /does not prove/);
   assert.equal(modelCalls, 0);

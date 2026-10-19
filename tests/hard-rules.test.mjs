@@ -104,14 +104,3 @@ test('every template offers elimination rules and saving normalizes them', () =>
     'Hold if not stated: Full time\nReject if not stated: In Germany',
   );
 });
-
-test('the old hard requirements field stays valid but is marked for the setup agent to move', () => {
-  const template = automationTemplate('job-search');
-  assert.equal(template.fields.find((f) => f.id === 'constraints')?.legacy, true);
-  assert.doesNotMatch(template.onboarding, /- constraints:/);
-  assert.equal(
-    planInput(template, {goal: 'Jobs', criteria: {preferences: 'Backend', constraints: ''}})
-      .criteria.constraints,
-    '',
-  );
-});

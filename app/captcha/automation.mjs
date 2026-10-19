@@ -138,7 +138,7 @@ export async function resolveBrowserCaptcha(browser, id, result, owner, options)
     const observed = await browser.enqueue(id, () =>
       browser.performCall(
         id,
-        'browser_jev_observe',
+        'browser_observe',
         {
           tabId: slot.id,
           full: true,

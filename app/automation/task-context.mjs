@@ -116,7 +116,6 @@ export const conversationContextVersion = (a) =>
           'mode',
           'sources',
           'sourceSettings',
-          'referenceData',
           'planDraft',
           'sourceDraft',
           'profileUpdate',
@@ -161,9 +160,6 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
           'facts',
           'table',
         ]),
-        referenceData: a.referenceData
-          ? pick(a.referenceData, ['profile', 'applicationPolicy', 'ranking'])
-          : null,
         draftPending: Boolean(draft),
         sourceDraftPending: Boolean(saved.sourceDraft),
         sourceSearch: db.sourceSearchOptions(id, a.sources),
@@ -265,6 +261,8 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
           q.recordId &&
           q.recordId !== assignedRecord.id &&
           !q.instruction &&
+          // A cover letter belongs to its own employer.
+          !q.coverLetter &&
           !q.accessCheck &&
           !q.outcome &&
           !q.resolution,
@@ -361,9 +359,6 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
         .slice(0, 10)
         .map((r) => pick(r, ['id', 'url', 'title', 'status', 'trial']))
     : [];
-  const referenceData = a.referenceData
-    ? pick(a.referenceData, ['profile', 'applicationPolicy', 'ranking'])
-    : null;
   let operation =
     active.kind === 'run' && active.operation && findOperation(definition, active.operation)
       ? operationFor(definition, active.operation)
@@ -457,7 +452,7 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
     ),
     jevGuidance: active.collector
       ? 'Use collect_source_page for fresh CLI evidence and Jev triage; resume only its returned Jev task IDs for review. Final scoring belongs to the agent.'
-      : 'Resume saved pending details with browser_jev_run collect_details before any new search; use scan_results for discovery. jevTasks lists the RAM-only helper tasks of this task; assessmentRefreshRequired means resume that task first. Final assessments and source completion remain yours.',
+      : 'Resume saved pending details with browser_run_task collect_details before any new search; use scan_results for discovery. jevTasks lists the RAM-only helper tasks of this task; assessmentRefreshRequired means resume that task first. Final assessments and source completion remain yours.',
     sourceExamples:
       !active.recordId && active.sourceUrl
         ? db
@@ -474,7 +469,6 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
           workflow: operation ? [operation.id] : [],
         },
     questions,
-    referenceData,
     messages,
     results,
     ...(conversation

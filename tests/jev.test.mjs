@@ -78,10 +78,10 @@ test('repeated answer buttons keep their question, option and pressed state in m
   });
   assert.equal(result.action.choice.question, 'Live here?');
   assert.doesNotThrow(() =>
-    validateJevArgs('browser_jev_select_choice', {tabId: 'tab', controlId: 'observed'}),
+    validateJevArgs('browser_select_choice', {tabId: 'tab', controlId: 'observed'}),
   );
   assert.throws(() =>
-    validateJevArgs('browser_jev_select_choice', {
+    validateJevArgs('browser_select_choice', {
       tabId: 'tab',
       controlId: 'observed',
       selector: 'button',
@@ -141,17 +141,17 @@ test('missing key and provider failures do not expose credentials', async () => 
 });
 test('agent arguments cannot replace observed actions or execute code', () => {
   assert.throws(() =>
-    validateJevArgs('browser_jev_act', {tabId: 'tab', decisionId: 'id', action: 'evil'}),
+    validateJevArgs('browser_act', {tabId: 'tab', decisionId: 'id', action: 'evil'}),
   );
-  assert.throws(() => validateJevArgs('browser_jev_next', {tabId: 'tab'}));
-  assert.throws(() => validateJevArgs('browser_jev_run_code', {code: 'anything'}));
-  validateJevArgs('browser_jev_act', {tabId: 'tab', decisionId: 'id', text: ''});
+  assert.throws(() => validateJevArgs('browser_next', {tabId: 'tab'}));
+  assert.throws(() => validateJevArgs('browser_run_code', {code: 'anything'}));
+  validateJevArgs('browser_act', {tabId: 'tab', decisionId: 'id', text: ''});
 });
 test('observation rebuild is optional and requires an actual boolean', () => {
   for (const args of [{tabId: 'tab'}, {tabId: 'tab', full: true}, {tabId: 'tab', full: false}])
-    validateJevArgs('browser_jev_observe', args);
+    validateJevArgs('browser_observe', args);
   for (const full of ['true', 1, null, {}])
-    assert.throws(() => validateJevArgs('browser_jev_observe', {tabId: 'tab', full}));
+    assert.throws(() => validateJevArgs('browser_observe', {tabId: 'tab', full}));
 });
 test('settings load only Jev config and do not mutate the process environment', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'jev-config-'));
@@ -194,7 +194,7 @@ test('demo seeds the real app with only a local synthetic source', async () => {
 
 test('batch field mappings are bounded and cannot inject selectors or actions', () => {
   const field = {fieldId: 'observed-id', text: 'verified answer'};
-  validateJevArgs('browser_jev_fill_fields', {tabId: 'tab', fields: [field]});
+  validateJevArgs('browser_fill_fields', {tabId: 'tab', fields: [field]});
   for (const fields of [
     [],
     Array(21).fill(field),
@@ -203,12 +203,12 @@ test('batch field mappings are bounded and cannot inject selectors or actions', 
     [{fieldId: 'x', text: 123}],
     [{fieldId: 'x', text: 'x'.repeat(12001)}],
   ]) {
-    assert.throws(() => validateJevArgs('browser_jev_fill_fields', {tabId: 'tab', fields}));
+    assert.throws(() => validateJevArgs('browser_fill_fields', {tabId: 'tab', fields}));
   }
 });
 test('direct navigation only accepts observed IDs and bounded operations', () => {
-  validateJevArgs('browser_jev_scroll', {tabId: 'tab', controlId: 'observed', direction: 'down'});
-  validateJevArgs('browser_jev_select_option', {
+  validateJevArgs('browser_scroll', {tabId: 'tab', controlId: 'observed', direction: 'down'});
+  validateJevArgs('browser_choose_option', {
     tabId: 'tab',
     controlId: 'observed',
     option: 'Germany',
@@ -217,8 +217,8 @@ test('direct navigation only accepts observed IDs and bounded operations', () =>
     {tabId: 'tab', controlId: 'observed', direction: 'sideways'},
     {tabId: 'tab', controlId: 'observed', direction: 'down', selector: 'body'},
   ])
-    assert.throws(() => validateJevArgs('browser_jev_scroll', args));
-  assert.throws(() => validateJevArgs('browser_jev_reveal', {tabId: 'tab', selector: '#submit'}));
+    assert.throws(() => validateJevArgs('browser_scroll', args));
+  assert.throws(() => validateJevArgs('browser_reveal', {tabId: 'tab', selector: '#submit'}));
 });
 test('compact observations preserve complete IDs while omitting repeated content and large option lists', () => {
   const options = Array.from({length: 230}, (_, i) => ({
@@ -261,13 +261,13 @@ test('compact observations preserve complete IDs while omitting repeated content
 test('Jev task instructions describe Jev navigation and current observations; shared rules stay browser-neutral', () => {
   for (const name of ['browser_interact', 'scrollTargets.controlId', 'no_progress'])
     assert.ok(JEV_TASK_INSTRUCTIONS.includes(name));
-  for (const name of ['browser_jev_scroll', 'browser_jev_next', 'save_scan_progress'])
+  for (const name of ['browser_scroll', 'browser_next', 'save_scan_progress'])
     assert.ok(!JEV_TASK_INSTRUCTIONS.includes(name) && !AUTOMATION_INSTRUCTIONS.includes(name));
 });
 test('autocomplete requires observed control and exact answer, never accepts selectors or code', () => {
   const args = {tabId: 'tab', controlId: 'observed', text: 'Berlin', option: 'Berlin, DEU'};
-  validateJevArgs('browser_jev_autocomplete', args);
-  validateJevArgs('browser_jev_autocomplete', {
+  validateJevArgs('browser_autocomplete', args);
+  validateJevArgs('browser_autocomplete', {
     tabId: 'tab',
     controlId: 'observed',
     option: 'Berlin, DEU',
@@ -279,14 +279,14 @@ test('autocomplete requires observed control and exact answer, never accepts sel
     {...args, timeout: 60000},
     {tabId: 'tab', text: 'Berlin', option: 'Berlin'},
   ])
-    assert.throws(() => validateJevArgs('browser_jev_autocomplete', bad));
+    assert.throws(() => validateJevArgs('browser_autocomplete', bad));
 });
 
 test('native option search is bounded and read-only arguments cannot inject targets', () => {
   const args = {tabId: 'tab', controlId: 'observed'};
-  validateJevArgs('browser_jev_list_options', args);
-  validateJevArgs('browser_jev_list_options', {...args, query: '', offset: 0});
-  validateJevArgs('browser_jev_list_options', {...args, query: 'Bilkent', offset: 20, limit: 20});
+  validateJevArgs('browser_list_options', args);
+  validateJevArgs('browser_list_options', {...args, query: '', offset: 0});
+  validateJevArgs('browser_list_options', {...args, query: 'Bilkent', offset: 20, limit: 20});
   for (const extra of [
     {limit: 0},
     {limit: 1001},
@@ -301,7 +301,7 @@ test('native option search is bounded and read-only arguments cannot inject targ
     {selector: 'select'},
     {option: 'auto select'},
   ])
-    assert.throws(() => validateJevArgs('browser_jev_list_options', {...args, ...extra}));
+    assert.throws(() => validateJevArgs('browser_list_options', {...args, ...extra}));
 });
 
 test('malformed Jev choices report the failing invariant without echoing source content', () => {

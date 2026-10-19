@@ -694,7 +694,9 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
   async function leaveOnboarding() {
     const owner = id,
       started = step !== 'start',
-      empty = Boolean(data && automationProgress(data).fresh && !data.documents?.length);
+      empty = Boolean(
+        data && automationProgress(data).fresh && !data.documents?.some((d) => !d.generated),
+      );
     if (
       started &&
       !confirm(

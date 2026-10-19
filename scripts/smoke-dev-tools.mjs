@@ -61,7 +61,7 @@ try {
         seq: 2,
         at: Date.now() - 8000,
         type: 'tool',
-        name: 'read_jev_brief',
+        name: 'read_listing_brief',
         ms: 840,
         error: false,
         args: block({evidenceId: 'e1'}),

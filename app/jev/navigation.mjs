@@ -126,8 +126,7 @@ export async function navigateObserved(slot, name, args, owner, reader) {
     throw Error(
       'A current controlId of this session is required; use the last controls/scrollTargets list.',
     );
-  if ((name === 'browser_jev_scroll') !== (saved.kind === 'scroll'))
-    throw Error('Wrong control type.');
+  if ((name === 'browser_scroll') !== (saved.kind === 'scroll')) throw Error('Wrong control type.');
   const current = await slot.page.evaluate(reader),
     guards = saved.kind === 'scroll' ? current?.scroll_guards : current?.control_guards;
   if (!same(guards?.[saved.node], saved.guard))
@@ -136,7 +135,7 @@ export async function navigateObserved(slot, name, args, owner, reader) {
       executed: false,
       message: 'The target changed; use the returned current control.',
     };
-  if (name === 'browser_jev_list_options') {
+  if (name === 'browser_list_options') {
     slot.pending = null;
     slot.optionLists ??= new Map();
     let list = slot.optionLists.get(saved.node),
@@ -217,7 +216,7 @@ export async function navigateObserved(slot, name, args, owner, reader) {
   slot.pending = null;
   let began = false;
   try {
-    if (name === 'browser_jev_select_option') {
+    if (name === 'browser_choose_option') {
       // Resolve only a unique, exact observed native option. No fuzzy answers,
       // arbitrary selector, checkbox, custom dropdown, or submit operation.
       const match = await slot.page.evaluate(
@@ -260,7 +259,7 @@ export async function navigateObserved(slot, name, args, owner, reader) {
           reason: match.reason,
           message: known
             ? 'No exact, enabled option matched. The full list was already returned; use the actual label/value from that list. Do not request the list again or guess another spelling.'
-            : 'No exact, enabled option matched. Read all options with browser_jev_list_options; use the actual label/value. Do not guess another spelling; no observe or screenshot is needed.',
+            : 'No exact, enabled option matched. Read all options with browser_list_options; use the actual label/value. Do not guess another spelling; no observe or screenshot is needed.',
         };
       }
       if (match.unchanged)
@@ -312,7 +311,7 @@ export async function navigateObserved(slot, name, args, owner, reader) {
         await releaseRendering();
       }
     }
-    if (name === 'browser_jev_reveal') {
+    if (name === 'browser_reveal') {
       const handle = await slot.page.evaluateHandle(
         (node) => window.__jevFast.nodes.get(node),
         saved.node,
@@ -338,7 +337,7 @@ export async function navigateObserved(slot, name, args, owner, reader) {
     }
     const after = await slot.page.evaluate(reader),
       progress = rememberProgress(slot, key, before, progressKey(after));
-    if (name === 'browser_jev_reveal') {
+    if (name === 'browser_reveal') {
       const visible = after.controls.find((c) => c.node === saved.node)?.visible === true;
       const concealed = visible ? false : await concealedByPage(slot, saved.node);
       return {
@@ -388,14 +387,14 @@ export function compactElements(elements) {
 // skips the actual page observation or outcome verification.
 export function observationPolicy(name, args, status) {
   const recovery =
-    name === 'browser_jev_observe' && args.full === true && args.fullReason === 'context_loss';
+    name === 'browser_observe' && args.full === true && args.fullReason === 'context_loss';
   return {
     standalone: true,
     full:
-      name === 'browser_jev_open' ||
+      name === 'browser_open_page' ||
       recovery ||
-      (name === 'browser_jev_select_choice' && ['stale', 'blocked'].includes(status)) ||
-      (name === 'browser_jev_fill_fields' && ['stale', 'invalid_target'].includes(status)),
+      (name === 'browser_select_choice' && ['stale', 'blocked'].includes(status)) ||
+      (name === 'browser_fill_fields' && ['stale', 'invalid_target'].includes(status)),
   };
 }
 export function presentObservation(slot, value, {full = false, standalone = false} = {}) {

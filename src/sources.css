@@ -341,6 +341,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The scan's current step: one line, cut with an ellipsis when long. */
+.source-activity {
+  color: var(--text-secondary, var(--text-muted));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Schedule: last scan, next scan and the interval, which reads as text. */
 .source-meta {
   display: flex;

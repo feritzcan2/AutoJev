@@ -136,7 +136,7 @@ test('the primary source gate releases the worker despite empty searches and rea
     },
     report: (...args) => f.runtime.report(...args),
   });
-  const result = await flow.call(f.id, run.id, 'browser_jev_run', {operation: 'collect_details'});
+  const result = await flow.call(f.id, run.id, 'browser_run_task', {operation: 'collect_details'});
   assert.equal(calls, 1);
   assert.equal(result.parent.stop, true);
   assert.equal(f.db.run(run.id).status, 'blocked');

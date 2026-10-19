@@ -42,13 +42,13 @@ try {
       document.querySelector('#school').onchange = () => window.changes++;
       window.scrollTo(0, 0);
     });
-    return call('browser_jev_observe', {tabId});
+    return call('browser_observe', {tabId});
   };
   let result = await reset(),
     controlId = result.controls.find((c) => c.label === 'University').controlId;
   assert.equal(result.controls.find((c) => c.label === 'University').visible, false);
   const started = Date.now();
-  result = await call('browser_jev_list_options', {tabId, controlId});
+  result = await call('browser_list_options', {tabId, controlId});
   assert.equal(result.options.length, 237);
   assert.equal(result.nextOffset, null);
   assert.equal(result.controls.find((c) => c.controlId === controlId).optionsRead.complete, true);
@@ -72,7 +72,7 @@ try {
     ]),
     [0, 0, 0, '', 'Keep me'],
   );
-  result = await call('browser_jev_select_option', {
+  result = await call('browser_choose_option', {
     tabId,
     controlId: result.controlId,
     option: bilkent.value,
@@ -86,12 +86,12 @@ try {
   );
   controlId = result.controls.find((c) => c.label === 'University').controlId;
   for (const query of ['ihsan dogramaci', 'BİLKENT', 'bılkent', '  Bilkent  Universitesi  ']) {
-    result = await call('browser_jev_list_options', {tabId, controlId, query});
+    result = await call('browser_list_options', {tabId, controlId, query});
     assert.equal(result.matchCount, 1);
     assert.equal(result.options[0].label, label);
     assert.equal(result.options[0].selected, true);
   }
-  result = await call('browser_jev_list_options', {tabId, controlId, query: 'No such institution'});
+  result = await call('browser_list_options', {tabId, controlId, query: 'No such institution'});
   assert.equal(result.matchCount, 0);
   assert.equal(result.nextOffset, null);
   assert.deepEqual(result.options, []);
@@ -99,7 +99,7 @@ try {
   const indices = [];
   let offset = 0;
   do {
-    result = await call('browser_jev_list_options', {tabId, controlId, offset, limit: 20});
+    result = await call('browser_list_options', {tabId, controlId, offset, limit: 20});
     assert.ok(result.options.length <= 20);
     assert.equal(result.matchCount, 237);
     indices.push(...result.options.map((o) => o.index));
@@ -109,14 +109,14 @@ try {
   assert.equal(new Set(indices).size, 237);
   assert.equal(indices.length, 237);
   // A failed exact guess returns a useful next action and fresh IDs, no error loop.
-  result = await call('browser_jev_select_option', {
+  result = await call('browser_choose_option', {
     tabId,
     controlId,
     option: 'Bilkent University',
   });
   assert.equal(result.status, 'needs_selection');
   assert.equal(result.executed, false);
-  assert.match(result.message, /browser_jev_list_options/);
+  assert.match(result.message, /browser_list_options/);
   assert.equal(result.optionCount, 237);
   assert.equal(await page.locator('#school').inputValue(), label);
   // Duplicated labels and disabled optgroups are visible but cannot be selected blindly.
@@ -128,32 +128,32 @@ try {
         '<option value="duplicate">İHSAN DOĞRAMACI BİLKENT ÜNİVERSİTESİ</option><optgroup label="Unavailable" disabled><option value="closed">Closed School</option></optgroup>',
       ),
     );
-  result = await call('browser_jev_list_options', {tabId, controlId, query: 'Bilkent'});
+  result = await call('browser_list_options', {tabId, controlId, query: 'Bilkent'});
   assert.equal(result.status, 'stale');
   controlId = result.controls.find((c) => c.label === 'University').controlId;
-  result = await call('browser_jev_list_options', {tabId, controlId, query: 'bilkent'});
+  result = await call('browser_list_options', {tabId, controlId, query: 'bilkent'});
   assert.equal(result.matchCount, 2);
   assert.equal(result.cached, false);
-  result = await call('browser_jev_select_option', {tabId, controlId, option: label});
+  result = await call('browser_choose_option', {tabId, controlId, option: label});
   assert.equal(result.reason, 'ambiguous');
   assert.equal(result.executed, false);
-  result = await call('browser_jev_list_options', {tabId, controlId, query: 'Closed'});
+  result = await call('browser_list_options', {tabId, controlId, query: 'Closed'});
   assert.equal(result.options[0].disabled, true);
   assert.equal(result.options[0].group, 'Unavailable');
-  result = await call('browser_jev_select_option', {tabId, controlId, option: 'closed'});
+  result = await call('browser_choose_option', {tabId, controlId, option: 'closed'});
   assert.equal(result.reason, 'disabled');
   assert.equal(result.executed, false);
   // Wrong session and replaced controls cannot reveal stale options or mutate inputs.
   await assert.rejects(
-    () => call('browser_jev_list_options', {tabId, controlId, query: 'Bilkent'}, 'other'),
+    () => call('browser_list_options', {tabId, controlId, query: 'Bilkent'}, 'other'),
     /oturuma/,
   );
   await page.locator('#school').evaluate((e) => e.replaceWith(e.cloneNode(true)));
-  result = await call('browser_jev_list_options', {tabId, controlId, query: 'Bilkent'});
+  result = await call('browser_list_options', {tabId, controlId, query: 'Bilkent'});
   assert.equal(result.status, 'stale');
   assert.equal(result.options, undefined);
   assert.ok(result.controls.length);
-  result = await call('browser_jev_list_options', {
+  result = await call('browser_list_options', {
     tabId,
     controlId: 'previous-session',
     query: 'Bilkent',
@@ -161,7 +161,7 @@ try {
   assert.equal(result.status, 'stale');
   assert.equal(result.executed, false);
   const textControl = result.controls.find((c) => c.label === 'Unrelated field');
-  result = await call('browser_jev_list_options', {tabId, controlId: textControl.controlId});
+  result = await call('browser_list_options', {tabId, controlId: textControl.controlId});
   assert.equal(result.status, 'unsupported');
   assert.equal(await page.evaluate(() => window.submits), 0);
   console.log('JEV_OPTION_UNICODE_PAGINATION_DISABLED_AMBIGUOUS_SCOPE_AND_STALE_PASS');

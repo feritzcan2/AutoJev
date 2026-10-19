@@ -14,6 +14,7 @@ import {
 import {workspaceSourceTabs} from './workspace-tabs.js';
 import {positionMenu} from './popover-menu.js';
 import {extensionBenchAvailable, extensionBenchPanel} from './extension-bench.js';
+import {sourceActivityText} from '../app/sources/activity-text.mjs';
 
 const paginationLabels = {
   auto: 'Detect automatically',
@@ -559,6 +560,15 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       'source-requests',
     );
     line.title = `Requests this app sent to ${new URL(source.url).hostname.replace(/^www\./, '')} for all workspaces and applications: ${rate.lastTenMinutes} in the last 10 minutes, ${rate.lastHour} in the last hour.${budget ? ` The site allows at most ${budget.requests} per ${window}; over that the scan waits instead of being blocked.` : ''}`;
+    return line;
+  }
+  // What the scan does right now: the app reading a results page or posting
+  // n of m (and waiting for the site's pace), or the agent's current step.
+  function activityLine(source) {
+    const text = source.scanning ? sourceActivityText(source.activity) : null;
+    if (!text) return null;
+    const line = el('div', text, 'source-requests source-activity');
+    line.title = `Updated ${new Date(a.at).toLocaleTimeString('en-GB')}`;
     return line;
   }
   // Schedule: last scan, next scan and the interval, which changes in place.
@@ -1214,9 +1224,13 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       link.title = [source.url, readerLabels[source.extension?.kind ?? 'agent']].join('\n');
       name.append(link);
       main.replaceChildren(
-        ...[name, statusLine(source), requestLine(source), scheduleLine(source, scope)].filter(
-          Boolean,
-        ),
+        ...[
+          name,
+          statusLine(source),
+          activityLine(source),
+          requestLine(source),
+          scheduleLine(source, scope),
+        ].filter(Boolean),
       );
       const closing =
         (data.activeRuns ?? []).some(

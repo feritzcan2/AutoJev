@@ -78,14 +78,14 @@ test('each web role receives only its own task instructions', () => {
 test('Jev delegation reaches every role once and every fresh or resumed launch', () => {
   for (const kind of ['interview', 'trial', 'run']) {
     const instructions = webAgentProfile(kind, settings).instructions;
-    assert.match(instructions, /browser_jev_run/);
+    assert.match(instructions, /browser_run_task/);
     assert.match(instructions, /No prior Jev task ID is required/);
     assert.equal(
       instructions.split('## Jev managed browser').length,
       2,
       'the Jev block appears exactly once',
     );
-    assert.doesNotMatch(AUTOMATION_INSTRUCTIONS, /browser_jev_run/);
+    assert.doesNotMatch(AUTOMATION_INSTRUCTIONS, /browser_run_task/);
     for (const continuation of [undefined, {reason: 'task_retry'}])
       assert.match(automationPrompt({kind, continuation}), /fromTaskId is optional/);
   }

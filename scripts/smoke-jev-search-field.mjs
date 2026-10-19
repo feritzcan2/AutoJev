@@ -33,11 +33,11 @@ try {
       window.selections = 0;
       document.querySelector('[role=option]').onclick = () => window.selections++;
     });
-    let observed = await call('browser_jev_observe', {tabId});
+    let observed = await call('browser_observe', {tabId});
     const query = observed.fillFields.find((f) => f.label === 'Search');
     assert.ok(query, 'Search combobox must expose a writable field');
     const text = 'AI governance Berlin Germany';
-    const filled = await call('browser_jev_fill_fields', {
+    const filled = await call('browser_fill_fields', {
       tabId,
       fields: [{fieldId: query.fieldId, text}],
     });
@@ -48,14 +48,14 @@ try {
       0,
       'Typing must not select a suggestion or submit',
     );
-    const stale = await call('browser_jev_fill_fields', {
+    const stale = await call('browser_fill_fields', {
       tabId,
       fields: [{fieldId: query.fieldId, text: 'Wrong query'}],
     });
     assert.equal(stale.status, 'stale');
     assert.equal(await page.locator('textarea,input').inputValue(), text);
-    observed = await call('browser_jev_observe', {tabId});
-    await call('browser_jev_click', {
+    observed = await call('browser_observe', {tabId});
+    await call('browser_click_target', {
       tabId,
       targetId: observed.clickTargets.find((t) => t.label === 'Search now').targetId,
     });
@@ -67,11 +67,11 @@ try {
   await page.setContent(
     '<label>Country<input role="combobox" aria-autocomplete="list"></label><form role="search"><input aria-label="Readonly" readonly><input aria-label="Disabled" disabled></form>',
   );
-  assert.equal((await call('browser_jev_observe', {tabId})).fillFields.length, 0);
+  assert.equal((await call('browser_observe', {tabId})).fillFields.length, 0);
   await page.setContent(
     '<form role="search"><textarea role="combobox" aria-label="Search"></textarea></form><div style="position:fixed;inset:0;z-index:99"></div>',
   );
-  assert.equal((await call('browser_jev_observe', {tabId})).fillFields.length, 0);
+  assert.equal((await call('browser_observe', {tabId})).fillFields.length, 0);
   console.log('JEV_SEARCH_COMBOBOX_FILL_AND_SUBMIT_PASS');
 } finally {
   await client.close();

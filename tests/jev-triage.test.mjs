@@ -23,7 +23,7 @@ test('the user profile contains current language facts and user documents withou
     path: 'PRIVATE_PATH',
   });
   assert.match(context.userProfile.currentFacts.text, /German B2/);
-  assert.match(context.userProfile.savedFacts.text, /English C1/);
+  assert.equal('savedFacts' in context.userProfile, false, 'the retired profile is not read');
   assert.match(context.userProfile.documents.text, /LL.B.*GDPR/);
   assert.equal(context.userProfile.documents.truncated, false);
   assert.equal(context.criteria.preferences, automation.criteria.preferences);
@@ -39,25 +39,10 @@ test('large and unreadable profile sources stay bounded with explicit unknown co
   const automation = {
     templateId: 'job-search',
     facts: 'Current fact. '.repeat(5000),
-    referenceData: {profile: {facts: 'Saved fact. '.repeat(5000)}},
   };
   const context = jevCriteria(automation, {text: 'CV experience. '.repeat(5000)}).userProfile;
   assert.equal(context.currentFacts.truncated, true);
-  assert.equal(context.savedFacts.truncated, true);
   assert.equal(context.documents.truncated, true);
-  const answers = jevCriteria(
-    {
-      ...automation,
-      referenceData: {
-        profile: {
-          facts: 'Saved fact. '.repeat(5000),
-          learnedFacts: {languages: {value: 'German C1'}},
-        },
-      },
-    },
-    {text: ''},
-  ).userProfile.savedFacts.text;
-  assert.match(answers, /^languages: German C1/, 'a long saved summary never cuts short answers');
   assert.ok(JSON.stringify(context).length < 19000);
   const unavailable = jevCriteria(automation, {text: '', unavailable: 'CV unavailable'}).userProfile
     .documents;

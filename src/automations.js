@@ -644,8 +644,21 @@ export function automationsPage(
     const files = el('section');
     files.dataset.automationPane = 'files';
     files.innerHTML =
-      '<div class="section-title"><h2>Files</h2><span>The workspace’s documents</span></div><div class="cover-letter-review" hidden></div><div id="automation-file-list"></div>';
+      '<div class="section-title"><h2>Files</h2><span>The workspace’s documents</span></div><label class="cover-letter-auto"><input type="checkbox" id="cover-letter-auto-approve"><span>Accept cover letters automatically<small>The application continues as soon as the cover letter agent saves a letter. Letters already waiting for review still need your approval.</small></span></label><div class="cover-letter-review" hidden></div><h3 class="file-group-title">User uploaded files</h3><div id="automation-file-list"></div><h3 class="file-group-title">Agent generated files</h3><div id="automation-generated-file-list"></div>';
     coverLetters = coverLetterReview(files.querySelector('.cover-letter-review'), api, {refresh});
+    const autoApprove = files.querySelector('#cover-letter-auto-approve');
+    autoApprove.onchange = async () => {
+      autoApprove.disabled = true;
+      try {
+        await api.setCoverLetterAutoApprove(selected, autoApprove.checked);
+        await refresh();
+      } catch (error) {
+        autoApprove.checked = !autoApprove.checked;
+        notice(error.message);
+      } finally {
+        autoApprove.disabled = false;
+      }
+    };
     files.querySelector('.section-title').append(
       button('Add document', async () => {
         await api.pickDocument(selected);
@@ -1228,11 +1241,12 @@ export function automationsPage(
 
     const docs = $('automation-documents');
     docs.replaceChildren();
-    for (const doc of data.documents) {
+    const userDocuments = data.documents.filter((doc) => !doc.generated);
+    for (const doc of userDocuments) {
       const b = button(doc.name + ' ↗', () => api.openDocument(selected, doc.path));
       docs.append(b);
     }
-    if (!data.documents.length)
+    if (!userDocuments.length)
       docs.append(el('small', 'No documents have been added to this automation yet.'));
     renderJevProfile($('automation-jev-profile'), data.jevProfile, async (text) => {
       await api.saveJevProfile(selected, text);
@@ -1288,18 +1302,63 @@ export function automationsPage(
     metrics.append(bar, legend);
     sourcePanel.update(data, selected);
     coverLetters.update(data);
-    const files = find('#automation-file-list');
-    files.replaceChildren();
-    for (const doc of data.documents) {
-      const row = el('div', null, 'document-row');
-      row.append(
-        el('strong', doc.name),
-        button('Open ↗', () => api.openDocument(selected, doc.path)),
-      );
-      files.append(row);
-    }
-    if (!data.documents.length)
-      files.append(el('p', 'Documents you add to the workspace appear here.', 'empty'));
+    find('#cover-letter-auto-approve').checked = data.automation.coverLetterAutoApprove === true;
+    // Agent generated files (generated/) are kept apart from the user's own
+    // documents; agents never read them as profile documents.
+    // A cover letter names the application it was written for.
+    const letterState = {
+      writing: 'being rewritten',
+      review: 'waiting for your review',
+      approved: 'approved',
+      autoApproved: 'accepted automatically',
+      failed: 'rewrite stopped',
+    };
+    const written = new Map();
+    for (const q of data.automation.questions ?? [])
+      if (q.coverLetter?.path) written.set(q.coverLetter.path, q);
+    const fileDetail = (doc) => {
+      const q = written.get(doc.path.split('\\').join('/'));
+      if (!q) return null;
+      const record = data.results.find((r) => r.id === q.recordId),
+        site = record?.url ? new URL(record.url).hostname.replace(/^www\./, '') : null;
+      return {
+        text: [
+          'Cover letter for ' + (record?.title ?? 'a removed record'),
+          site,
+          letterState[q.coverLetter.autoApproved ? 'autoApproved' : q.coverLetter.state],
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        url: record?.url ?? null,
+      };
+    };
+    const fileList = (target, docs, empty) => {
+      const files = find(target);
+      files.replaceChildren();
+      for (const doc of docs) {
+        const row = el('div', null, 'document-row'),
+          name = el('div'),
+          detail = fileDetail(doc);
+        name.append(el('strong', doc.name));
+        if (detail) name.append(el('small', detail.text));
+        const actions = el('div', null, 'document-actions');
+        if (detail?.url) actions.append(button('Open listing ↗', () => api.openLink(detail.url)));
+        actions.append(button('Open ↗', () => api.openDocument(selected, doc.path)));
+        row.append(name, actions);
+        files.append(row);
+      }
+      if (!docs.length) files.append(el('p', empty, 'empty'));
+    };
+    fileList(
+      '#automation-file-list',
+      data.documents.filter((doc) => !doc.generated),
+      'Documents you add to the workspace appear here.',
+    );
+    fileList(
+      '#automation-generated-file-list',
+      data.documents.filter((doc) => doc.generated),
+      'Files the agents write, such as cover letters, appear here.',
+    );
   }
   function renderResults() {
     resultsTable.update(data, busy);

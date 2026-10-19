@@ -56,17 +56,17 @@ let restarted, wrongProfile, coldTools, otherProcess;
 const call = async (client, name, args = {}, state = {}) =>
   JSON.parse((await client.callTool({name, arguments: args}, 'local', state)).content[0].text);
 try {
-  await assert.rejects(() => call(a, 'browser_jev_tabs'), /Chrome connection/);
-  assert.deepEqual((await call(a, 'browser_jev_tabs')).tabs, []);
+  await assert.rejects(() => call(a, 'browser_tabs'), /Chrome connection/);
+  assert.deepEqual((await call(a, 'browser_tabs')).tabs, []);
   assert.equal(windowRequests, 1);
-  const first = await call(a, 'browser_jev_open', {url: fixture.url});
+  const first = await call(a, 'browser_open_page', {url: fixture.url});
   assert.equal(windowRequests, 1);
   assert.equal(
     await a.tab(first.tabId).page.evaluate(() => document.cookie),
     'test_login=existing-session',
   );
   const screenshot = await a.callTool({
-    name: 'browser_jev_screenshot',
+    name: 'browser_page_screenshot',
     arguments: {tabId: first.tabId},
   });
   assert.equal(screenshot.content[1].mimeType, 'image/png');
@@ -75,8 +75,8 @@ try {
     '89504e470d0a1a0a',
   );
   await personal.bringToFront();
-  const second = await call(a, 'browser_jev_open', {url: fixture.url});
-  const third = await call(b, 'browser_jev_open', {url: fixture.url});
+  const second = await call(a, 'browser_open_page', {url: fixture.url});
+  const third = await call(b, 'browser_open_page', {url: fixture.url});
   const windows = await Promise.all(
     [targetInfo.targetId, first.tabId, second.tabId, third.tabId].map((targetId) =>
       root.send('Browser.getWindowForTarget', {targetId}),
@@ -86,20 +86,17 @@ try {
   assert.equal(windows[1].windowId, windows[2].windowId);
   assert.notEqual(windows[1].windowId, windows[3].windowId);
   assert.deepEqual(
-    (await call(a, 'browser_jev_tabs')).tabs.map((t) => t.tabId).sort(),
+    (await call(a, 'browser_tabs')).tabs.map((t) => t.tabId).sort(),
     [first.tabId, second.tabId].sort(),
   );
   assert.deepEqual(
-    (await call(b, 'browser_jev_tabs')).tabs.map((t) => t.tabId),
+    (await call(b, 'browser_tabs')).tabs.map((t) => t.tabId),
     [third.tabId],
   );
+  await assert.rejects(() => call(a, 'browser_observe', {tabId: targetInfo.targetId}), /not found/);
+  await assert.rejects(() => call(b, 'browser_observe', {tabId: first.tabId}), /not found/);
   await assert.rejects(
-    () => call(a, 'browser_jev_observe', {tabId: targetInfo.targetId}),
-    /not found/,
-  );
-  await assert.rejects(() => call(b, 'browser_jev_observe', {tabId: first.tabId}), /not found/);
-  await assert.rejects(
-    () => b.callTool({name: 'browser_jev_screenshot', arguments: {tabId: first.tabId}}),
+    () => b.callTool({name: 'browser_page_screenshot', arguments: {tabId: first.tabId}}),
     /not found/,
   );
   // A real filled draft survives both socket loss and an application restart.
@@ -109,14 +106,14 @@ try {
     action: page.actions.find((a) => a.kind === 'fill'),
     confidence: 1,
   });
-  const decision = await call(a, 'browser_jev_next', {tabId: first.tabId, goal: 'Change query'});
+  const decision = await call(a, 'browser_next', {tabId: first.tabId, goal: 'Change query'});
   const disconnected = new Promise((resolve) => a.browser.once('disconnected', resolve));
   a.transport.close();
   await disconnected;
-  assert.equal((await call(a, 'browser_jev_observe', {tabId: first.tabId})).tabId, first.tabId);
+  assert.equal((await call(a, 'browser_observe', {tabId: first.tabId})).tabId, first.tabId);
   await assert.rejects(
     () =>
-      call(a, 'browser_jev_act', {
+      call(a, 'browser_act', {
         tabId: first.tabId,
         decisionId: decision.decisionId,
         text: 'must not execute',
@@ -133,14 +130,11 @@ try {
     'unsent draft',
   );
   assert.equal(windowRequests, 4);
-  await assert.rejects(
-    () => call(restarted, 'browser_jev_observe', {tabId: third.tabId}),
-    /not found/,
-  );
+  await assert.rejects(() => call(restarted, 'browser_observe', {tabId: third.tabId}), /not found/);
   // A closed target cannot be confused with another open copy of the same URL.
   await root.send('Target.closeTarget', {targetId: second.tabId});
   await assert.rejects(
-    () => call(restarted, 'browser_jev_observe', {tabId: second.tabId}),
+    () => call(restarted, 'browser_observe', {tabId: second.tabId}),
     /not found|closed/,
   );
   const {BrowserTools} = await import('../app/browser/tools.mjs');
@@ -169,7 +163,7 @@ try {
     checkpoints: [{browser: 'Jev Chrome', tabId: first.tabId}],
   });
   const before = windowRequests;
-  assert.deepEqual((await call(otherProcess, 'browser_jev_tabs')).tabs, []);
+  assert.deepEqual((await call(otherProcess, 'browser_tabs')).tabs, []);
   assert.equal(windowRequests, before + 1);
   await otherProcess.close();
   // A registry that missed a live checkpoint must not make the saved draft vanish.
@@ -184,9 +178,7 @@ try {
     openWindow,
     checkpoints: [{browser: 'Jev Chrome', tabId: first.tabId}],
   });
-  assert.ok(
-    (await call(otherProcess, 'browser_jev_tabs')).tabs.some((t) => t.tabId === first.tabId),
-  );
+  assert.ok((await call(otherProcess, 'browser_tabs')).tabs.some((t) => t.tabId === first.tabId));
   assert.equal(
     await otherProcess.tab(first.tabId).page.locator('#query').inputValue(),
     'unsent draft',
@@ -205,7 +197,7 @@ try {
     openWindow: wrongOpen,
     checkpoints: [{browser: 'Jev Chrome', tabId: first.tabId}],
   });
-  assert.deepEqual((await call(wrongProfile, 'browser_jev_tabs')).tabs, []);
+  assert.deepEqual((await call(wrongProfile, 'browser_tabs')).tabs, []);
   await wrongProfile.close();
   await otherContext.close();
   await restarted.close();

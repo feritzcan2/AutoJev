@@ -68,7 +68,7 @@ const compactControl = (control) => {
   return out;
 };
 // Option entries (radio, checkbox, listbox options) are plentiful and already
-// grouped by browser_jev_inspect_form; buttons, links and text controls stay
+// grouped by browser_inspect_form; buttons, links and text controls stay
 // first when a list must be cut.
 const OPTION_ROLES = new Set(['radio', 'checkbox', 'option', 'menuitemradio', 'menuitemcheckbox']);
 const isOption = (item) => Boolean(item?.choice) || OPTION_ROLES.has(item?.role);

@@ -61,16 +61,25 @@ export function cardCollector({
     listingIn,
     readDetail,
     detail,
-    async readPage(url, {wanted = (urls) => urls, ...options} = {}) {
+    async readPage(url, {wanted = (urls) => urls, progress = () => {}, ...options} = {}) {
       const page = await readCards(url, options);
       const want = new Set(wanted(page.jobs.map((job) => job.url))),
+        total = page.jobs.filter((card) => want.has(card.url)).length,
         jobs = [],
         unavailable = [];
+      let done = 0;
       for (const card of page.jobs) {
         if (!want.has(card.url)) {
           jobs.push(card);
           continue;
         }
+        progress({
+          step: 'listing',
+          done: done++,
+          total,
+          title: card.title ?? null,
+          company: card.company ?? null,
+        });
         try {
           jobs.push({...card, ...(await readDetail(card.url, options))});
         } catch (error) {

@@ -30,7 +30,7 @@ export const jobSearchTemplate = {
     prepare: {
       label: 'Prepare application',
       instructions:
-        'Read the full vacancy, candidate CV and saved application rules. Inspect the actual application form. Prepare exact answers and document paths, explaining eligibility and any missing facts through record-scoped questions. Save the complete application as a proposal. Do not submit an application during preparation.',
+        'Read the full vacancy, candidate CV and saved consent choices. Inspect the actual application form. Prepare exact answers and document paths, explaining eligibility and any missing facts through record-scoped questions. Save the complete application as a proposal. Do not submit an application during preparation.',
     },
     execute: {
       label: 'Apply',
@@ -39,6 +39,9 @@ export const jobSearchTemplate = {
         "The employer or portal shows confirmation for this exact vacancy and candidate, or its application history lists this application. Save the observed confirmation; an Apply button click is insufficient. When the listing sends the candidate to the employer's site, a job board's Applied marker or history entry only records that redirect: the confirmation must come from the employer's form.",
     },
   },
+  // Fields this template no longer has, by id: the store moves saved text of
+  // each into the instructions under this label.
+  retiredFields: {constraints: 'Hard requirements'},
   fields: [
     {
       id: 'preferences',
@@ -75,22 +78,11 @@ export const jobSearchTemplate = {
       type: 'text',
     },
     {
-      // Replaced by the generic Elimination rules; kept so saved profiles stay
-      // valid until the setup agent moves its contents.
-      id: 'constraints',
-      section: 'rules',
-      label: 'Hard requirements (old)',
-      question:
-        'Replaced by Elimination rules. The setup agent moves these into rules and application form details.',
-      required: false,
-      type: 'text',
-      legacy: true,
-    },
-    {
       id: 'application_policy',
       section: 'actions',
-      label: 'Application rules',
-      question: 'Which conditions and approval preferences should applications follow?',
+      label: 'Consents and form choices',
+      question:
+        'How should application forms answer consent and optional questions: privacy policy, marketing emails, talent pool, demographic questions, legal agreements?',
       required: false,
       type: 'text',
     },
@@ -149,11 +141,10 @@ The user uploaded their CV on the welcome screen. They review your result on a f
 - Required skills, language and work permit are mandatory conditions only when the listing says so.
 - Possible home office is not confirmed full remote. A site salary estimate is not an employer offer.
 - Never invent experience, qualifications, language skills, immigration status, salary, consent or personal facts.
-- Current saved criteria take precedence over archived referenceData.
 
 ## Applications
-- Follow criteria.application_policy for consent and approval decisions.
-- A required cover letter is written by the cover letter agent: call request_cover_letter instead of writing one. Approved letters are in documents/cover-letters/.
+- Follow criteria.application_policy for consent checkboxes and optional form questions. A condition on whether to apply at all belongs in criteria.hard_rules.
+- Every cover letter field, also an optional one, is filled with a letter from the cover letter agent: call request_cover_letter instead of writing one. The approval names the file to upload.
 
 ## Source discovery
 - template.defaultSources lists the starting sources. Sources without countries or remote are already in the workspace. Sources with countries serve only those countries (ISO codes): propose the ones matching criteria.country and the user's other target countries with save_automation_plan addSources; the existing sources stay. Sources with remote serve remote work (with countries: those countries or remote work): propose them only when the user accepts fully remote work, or for their countries. Adding one keeps its saved recipe and instructions. A national board the user names that is not listed is added by its address; its recipe is learned in the trial.

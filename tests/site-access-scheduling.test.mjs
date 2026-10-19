@@ -188,7 +188,7 @@ test('Jev stops a source at its first shared barrier, preserves pending work and
     },
     report: (...args) => f.runtime.report(...args),
   });
-  const result = await flow.call(id, run.id, 'browser_jev_run', {operation: 'collect_details'});
+  const result = await flow.call(id, run.id, 'browser_run_task', {operation: 'collect_details'});
   assert.equal(result.issue.reason, 'access_barrier');
   assert.equal(result.parent.stop, true);
   assert.equal(calls, 1);
@@ -199,7 +199,7 @@ test('Jev stops a source at its first shared barrier, preserves pending work and
   assert.deepEqual(stopped.scan.pendingUrls, pending);
   assert.equal(f.db.results(id).length, 0);
   assert.equal(f.db.get(id).sourceState[source].siteBlocked, true);
-  await assert.rejects(flow.call(id, run.id, 'browser_jev_run', {operation: 'collect_details'}));
+  await assert.rejects(flow.call(id, run.id, 'browser_run_task', {operation: 'collect_details'}));
   assert.equal(calls, 1);
   await f.runtime.finish(id, 'blocked', stopped.summary);
   const wait = f.db.sources(id).find((s) => s.url === source).siteWait;
@@ -281,7 +281,7 @@ test('an external barrier preserves reachable work beyond the first queue page a
     report: (...args) => f.runtime.report(...args),
   });
   const call = (name, args) => flow.call(id, run.id, name, args);
-  const first = await call('browser_jev_run', {operation: 'collect_details'});
+  const first = await call('browser_run_task', {operation: 'collect_details'});
   assert.equal(first.issue.reason, 'access_barrier');
   assert.equal(first.parent, undefined);
   assert.deepEqual(calls, [blocked[0]]);
@@ -300,15 +300,15 @@ test('an external barrier preserves reachable work beyond the first queue page a
     );
   assert.equal(f.db.run(run.id).status, 'running');
   assert.equal(f.db.store.workspaces.tasks.get(id, task.id).toolFailure, undefined);
-  const next = await call('browser_jev_run', {operation: 'collect_details'});
+  const next = await call('browser_run_task', {operation: 'collect_details'});
   assert.equal(next.batch.total, 1);
   assert.deepEqual(calls, [blocked[0], good]);
-  await call('browser_jev_run', {
+  await call('browser_run_task', {
     taskId: next.taskId,
     reviewedBatchId: next.batch.id,
     review: [{url: good, decision: 'reject', reason: 'Parent reviewed an unrelated role'}],
   });
-  const final = await call('browser_jev_run', {operation: 'collect_details'});
+  const final = await call('browser_run_task', {operation: 'collect_details'});
   assert.equal(final.issue.reason, 'access_barrier');
   assert.equal(final.parent.stop, true);
   assert.equal(calls.length, 2);

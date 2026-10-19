@@ -56,22 +56,22 @@ for (const kind of ['interview', 'trial', 'run'])
         {operation: 'autocomplete', ref: 'c1', option: 'Berlin'},
       ])
         await call('browser_interact', input);
-      await call('browser_jev_inspect_form', {});
+      await call('browser_inspect_form', {});
       await call('browser_interact', {operation: 'reveal', ref: 'offscreen-date'});
       await call('browser_interact', {operation: 'scroll', ref: 's1', direction: 'down'});
       await call('browser_interact', {operation: 'options', ref: 'c1'});
-      assert.ok(flow.tools.some((t) => t.name === 'browser_jev_inspect_form'));
+      assert.ok(flow.tools.some((t) => t.name === 'browser_inspect_form'));
       assert.ok(
-        calls.some((c) => c.name === 'browser_jev_reveal' && c.args.controlId === 'offscreen-date'),
+        calls.some((c) => c.name === 'browser_reveal' && c.args.controlId === 'offscreen-date'),
       );
-      assert.ok(calls.some((c) => c.name === 'browser_jev_scroll' && c.args.direction === 'down'));
-      assert.ok(calls.some((c) => c.name === 'browser_jev_options' && c.args.ref === 'c1'));
+      assert.ok(calls.some((c) => c.name === 'browser_scroll' && c.args.direction === 'down'));
+      assert.ok(calls.some((c) => c.name === 'browser_options' && c.args.ref === 'c1'));
       for (const name of [
-        'browser_jev_next',
-        'browser_jev_act',
-        'browser_jev_reveal',
-        'browser_jev_scroll',
-        'browser_jev_options',
+        'browser_next',
+        'browser_act',
+        'browser_reveal',
+        'browser_scroll',
+        'browser_options',
         'configure_automation_table',
         'update_automation_cells',
         'save_scan_progress',
@@ -84,8 +84,8 @@ for (const kind of ['interview', 'trial', 'run'])
         'browser_type',
         'browser_select_option',
         'browser_target_press',
-        'browser_jev_list_suggestions',
-        'browser_jev_autocomplete',
+        'browser_list_suggestions',
+        'browser_autocomplete',
       ])
         assert.ok(
           calls.some((c) => c.name === name),

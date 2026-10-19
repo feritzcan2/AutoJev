@@ -49,6 +49,7 @@ export function renderCurrentWork(root, view, {stop}) {
       item.append(line);
     }
     if (row.progress) item.append(el('span', row.progress, 'run-summary'));
+    if (row.now) item.append(el('span', row.now, 'run-summary current-work-now'));
     list.append(item);
   }
   const title = el('div', null, 'section-title');

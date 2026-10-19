@@ -470,18 +470,28 @@ export const recordMethods = {
       if (!page || !samePage(page.url, proofUrl))
         throw Error('First observe the record page in the browser during this task.');
       const quote = boundedText(evidence, 'Page evidence', 600),
-        flat = (text) =>
+        // Letters and digits only: page lines joined with dashes, colons or
+        // line breaks are still the same page text.
+        words = (text) =>
           String(text ?? '')
-            .replace(/\s+/g, ' ')
-            .trim()
-            .toLowerCase();
+            .toLowerCase()
+            .replace(/[^\p{L}\p{N}]+/gu, ' ')
+            .trim();
       let text = page.text;
       try {
         text = JSON.parse(page.text.slice(page.text.indexOf('{'))).text ?? page.text;
       } catch {}
-      if (flat(quote).length < 8 || !flat(text).includes(flat(quote)))
+      const pageWords = ` ${words(text)} `,
+        onPage = (part) => !!words(part) && pageWords.includes(` ${words(part)} `),
+        // Evidence may describe the page around quoted parts; then every
+        // quoted part must be on the page.
+        quoted = [...quote.matchAll(/["“”„«»]([^"“”„«»]+)["“”„«»]/g)].map((m) => m[1]),
+        verified =
+          (words(quote).length >= 8 && onPage(quote)) ||
+          (quoted.some((part) => words(part).length >= 8) && quoted.every(onPage));
+      if (!verified)
         throw Error(
-          `The quote is not in the current page text. Quote the page sentence that says ${status === 'applied' ? 'you already applied' : 'the listing is gone'}, word for word.`,
+          `The quote is not in the current page text. Send only the page text that says ${status === 'applied' ? 'you already applied' : 'the listing is gone'}, copied word for word, or put each copied page part in double quotes.`,
         );
       if (status === 'applied')
         return this.putResult({

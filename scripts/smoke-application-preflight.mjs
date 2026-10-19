@@ -40,7 +40,7 @@ try {
     document.addEventListener('invalid', () => window.invalidEvents++, true);
   });
   await page.locator('[name=email]').focus();
-  let result = await call('browser_jev_inspect_form', {tabId});
+  let result = await call('browser_inspect_form', {tabId});
   const field = (label) => result.fields.find((f) => f.label === label);
   assert.equal(field('Email').required, true);
   assert.equal(field('Email').filled, false);
@@ -66,7 +66,7 @@ try {
   );
   await page.locator('[name=email]').fill('test@example.test');
   await page.locator('[name=permit]').fill('Known category');
-  result = await call('browser_jev_inspect_form', {tabId});
+  result = await call('browser_inspect_form', {tabId});
   assert.equal(field('Email').invalid, false);
   assert.equal(field('Email').filled, true);
   assert.equal(field('Permit category *').filled, true);
@@ -82,8 +82,8 @@ try {
     window.submits = 0;
     window.scrollTo(0, 0);
   });
-  const observed = await call('browser_jev_observe', {tabId});
-  result = await call('browser_jev_inspect_form', {tabId});
+  const observed = await call('browser_observe', {tabId});
+  result = await call('browser_inspect_form', {tabId});
   const notice = field('Notice period and possible start date *'),
     salary = field('Salary expectation *');
   assert.equal(notice.required, true);
@@ -107,7 +107,7 @@ try {
     false,
   );
   assert.equal(await page.evaluate(() => scrollY), 0);
-  const filled = await call('browser_jev_fill_fields', {
+  const filled = await call('browser_fill_fields', {
     tabId,
     fields: [{fieldId: notice.fieldId, text: 'Two months after agreement'}],
   });
@@ -117,7 +117,7 @@ try {
   // Submit is below the viewport; reveal it using its observed control first.
   let current = filled;
   if (!submit)
-    current = await call('browser_jev_reveal', {
+    current = await call('browser_reveal', {
       tabId,
       controlId: filled.controls.find((c) => c.label === 'Submit application').controlId,
     });
@@ -127,7 +127,7 @@ try {
   await page.setContent(
     '<label>Background<input required></label><div role="dialog" aria-modal="true"><label>Modal field<input required></label></div>',
   );
-  result = await call('browser_jev_inspect_form', {tabId});
+  result = await call('browser_inspect_form', {tabId});
   assert.deepEqual(
     result.fields.map((f) => f.label),
     ['Modal field'],
@@ -139,7 +139,7 @@ try {
   await page.evaluate(() => {
     window.submits = 0;
   });
-  result = await call('browser_jev_inspect_form', {tabId});
+  result = await call('browser_inspect_form', {tabId});
   assert.equal(field('CV').accept, '.pdf,.docx');
   assert.equal(field('CV').multiple, false);
   assert.equal(field('Cover letter').maxLength, 500);

@@ -54,7 +54,7 @@ export async function checkSourceBrowser(client, id, task) {
   };
   try {
     let page = value(
-      await client.callTool({name: 'browser_jev_open', arguments: {url}}, owner, state),
+      await client.callTool({name: 'browser_open_page', arguments: {url}}, owner, state),
     );
     if (page.siteWait)
       return {ready: false, evidence: page.siteWait.message ?? 'Waiting for source access.'};
@@ -66,7 +66,7 @@ export async function checkSourceBrowser(client, id, task) {
     page = value(
       await client.callTool(
         {
-          name: 'browser_jev_observe',
+          name: 'browser_observe',
           arguments: {tabId: tab.id, scope: 'document', full: true, fullReason: 'context_loss'},
         },
         owner,

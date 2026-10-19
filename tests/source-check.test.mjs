@@ -20,7 +20,7 @@ function browser() {
     },
     persistTabs: async () => {},
     async callTool({name, arguments: args}, owner) {
-      if (name === 'browser_jev_open') {
+      if (name === 'browser_open_page') {
         const id = `tab-${++next}`;
         client.tabs.set(id, {id, page: {close: async () => client.closed.push(id)}});
         client.automationRuns.set(id, owner);
