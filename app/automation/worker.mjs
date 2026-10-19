@@ -81,6 +81,8 @@ import {
   coverLetterUploaded,
   mergeCoverLetterFields,
   coverLetterStep,
+  coverLetterWaits,
+  waitForCoverLetter,
 } from './cover-letters.mjs';
 import {renderCoverLetterPdf} from './cover-letter-pdf.mjs';
 import {
@@ -1555,7 +1557,9 @@ export function automationWorkflow({
         // before the submit; an optional one is not skipped.
         const coverLetter =
           active.recordOperation === 'execute' &&
-          coverLetterStep(a, active.recordId, active.coverLetterFields);
+          coverLetterStep(a, active.recordId, active.coverLetterFields, {
+            wait: Boolean(active.coverLetterWait),
+          });
         if (coverLetter) throw Error(coverLetter);
         result = db.reserve(id, run.id, args.itemId);
         break;
@@ -1670,7 +1674,9 @@ export function automationWorkflow({
           const current = db.run(run.id),
             fields = mergeCoverLetterFields(current.coverLetterFields, coverFields);
           db.putRun({...current, coverLetterFields: fields});
-          const step = coverLetterStep(db.get(id), active.recordId, fields);
+          const step = coverLetterStep(db.get(id), active.recordId, fields, {
+            wait: Boolean(current.coverLetterWait),
+          });
           if (step) result = {...result, coverLetter: step};
         }
         break;
@@ -1725,12 +1731,34 @@ export function automationWorkflow({
             notes: args.notes,
             listing: db.browserEvidence.latest(active, item.url),
           });
+        if (
+          coverLetterWaits(
+            db.get(id),
+            db.store.workspaces.workers.list(id),
+            active.workerId ?? 'main',
+          )
+        ) {
+          db.putRun({
+            ...db.run(run.id),
+            coverLetterWait: {questionId: question.id, since: db.now()},
+          });
+          result = {
+            questionId: question.id,
+            next: 'Keep the tab and the filled fields. Another worker writes the letter and it is accepted automatically: call wait_for_cover_letter now.',
+          };
+          break;
+        }
         result = {
           questionId: question.id,
           next: 'Leave the cover letter field empty and keep the tab. Call finish_automation_run with status blocked and blocker category needs_answer now; the approved letter resumes this application.',
         };
         break;
       }
+      case 'wait_for_cover_letter':
+        if (active.recordOperation !== 'execute')
+          throw Error('Only an application task waits for its cover letter');
+        result = await waitForCoverLetter(db, id, db.run(run.id), {signal});
+        break;
       case 'read_cover_letter_brief':
         if (active.recordOperation !== 'cover_letter')
           throw Error('Only a cover letter task has a brief');
@@ -2037,15 +2065,17 @@ export async function launchAutomationWorker({
   };
   try {
     // A trial may use a stronger model: it discovers the source once; scans replay the recipe.
-    // A cover letter is written once and read by an employer, so it gets the same model.
-    // Contact tasks have their own model setting (Opus by default for Claude).
+    // Cover letter and contact tasks have their own model settings (Opus by
+    // default for Claude).
     const trialSettings = (s) => {
       const model =
-        run.kind === 'trial' || run.recordOperation === 'cover_letter'
+        run.kind === 'trial'
           ? s?.trialModel
-          : run.recordOperation === 'contacts' && s
-            ? withAgentDefaults(s).contactModel
-            : null;
+          : run.recordOperation === 'cover_letter' && s
+            ? withAgentDefaults(s).coverLetterModel
+            : run.recordOperation === 'contacts' && s
+              ? withAgentDefaults(s).contactModel
+              : null;
       return model ? {...s, model} : s;
     };
     const persistent = run.kind === 'interview',

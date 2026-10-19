@@ -38,7 +38,7 @@ export const workspaceTableTools = [
   {
     name: 'configure_workspace_table',
     description:
-      'Configure the workspace table: rename, reorder or add typed columns. source and title stay; status, activity and actions are app-owned. Presentation only.',
+      'Configure the workspace table: rename, reorder or add typed columns. Write the title and labels in English. source and title stay; status, activity and actions are app-owned. Presentation only.',
     inputSchema: object({
       title: text,
       columns: {

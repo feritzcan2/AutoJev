@@ -205,6 +205,23 @@ test('unsupported challenges stop immediately; supported challenges stop at two 
     true,
   );
 });
+test('a verification checkbox inside a form never hands off while the form is being filled', () => {
+  const slot = {},
+    evidence = {
+      state: 'required',
+      capability: 'supported',
+      checkbox: true,
+      formFirst: true,
+      evidence: 'Visible unchecked verification checkbox',
+    };
+  const first = updateVerification(slot, evidence, 0);
+  assert.equal(first.handoff, false);
+  assert.equal(first.nextAction, 'fill_form_first');
+  slot.verification.attempts = 5;
+  assert.equal(updateVerification(slot, evidence, 600000).handoff, false);
+  const {formFirst, ...plain} = evidence;
+  assert.equal(updateVerification(slot, plain, 600001).handoff, true);
+});
 test('the verification budget belongs to one page; a widget seen on an earlier page never hands a later page off', () => {
   let url = 'https://example.test/signup';
   const slot = {page: {url: () => url}},

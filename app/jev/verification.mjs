@@ -1,6 +1,23 @@
 // @ts-check
 import {scanVerificationCheckboxes} from './verification-checkbox.mjs';
 import {detectCaptcha, captchaEvidence} from '../captcha/detection.mjs';
+// A verification checkbox on a page with other fillable fields belongs to that
+// form. It is the form's last step before submit, not a gate before filling.
+const hasFormFields = (page) =>
+  page
+    .evaluate(() =>
+      [...document.querySelectorAll('input:not([type="hidden"]),textarea,select')].some(
+        (e) =>
+          !/^(?:submit|button|reset|image)$/i.test(e.getAttribute('type') ?? '') &&
+          !/(?:g-recaptcha|h-captcha|cf-turnstile)-response/.test(e.getAttribute('name') ?? '') &&
+          e.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}),
+      ),
+    )
+    .catch(() => false);
+const formFirst = async (page, slot, evidence) =>
+  !slot?.verificationCheckboxAttempt && (await hasFormFields(page))
+    ? {...evidence, formFirst: true}
+    : evidence;
 // Evidence-only detection. Never treats a CAPTCHA widget's mere presence as a
 // challenge, never retries Submit, and never solves/bypasses site verification.
 export async function verificationEvidence(page, slot) {
@@ -29,13 +46,13 @@ export async function verificationEvidence(page, slot) {
       detection.target.provider === 'turnstile' &&
       !slot.verificationCheckboxAttempt
     )
-      return {
+      return formFirst(page, slot, {
         state: 'required',
         capability: 'supported',
         checkbox: true,
         evidence:
           'A visible verification checkbox inside Turnstile. Verify with a single click first.',
-      };
+      });
     if (
       slot.captchaAnswer &&
       detection.target?.identity === slot.captchaAnswer.identity &&
@@ -107,14 +124,14 @@ export async function verificationEvidence(page, slot) {
     if (evidence?.capability === 'not_exposed' || evidence?.state === 'verification_error')
       return evidence;
     if (boxes.some((b) => !b.meta.checked))
-      return {
+      return await formFirst(page, slot, {
         state: 'required',
         capability: 'supported',
         evidence: 'Visible unchecked verification checkbox',
         checkbox: true,
         limitation:
           'Only the visible checkbox is supported, subject to the executing provider confirmation policy. Image/audio challenges remain manual.',
-      };
+      });
     if (boxes.length && boxes.every((b) => b.meta.checked))
       return {
         state: 'cleared',
@@ -146,6 +163,15 @@ export function updateVerification(slot, evidence, now = Date.now()) {
   if (state.state === 'answer_applied') {
     state.handoff = false;
     state.message = state.evidence;
+    slot.verification = state;
+    return state;
+  }
+  if (state.formFirst) {
+    // No attempt budget or deadline while the rest of the form is being filled.
+    state.handoff = false;
+    state.nextAction = 'fill_form_first';
+    state.message =
+      'This verification checkbox belongs to the form. Fill and check every other field first; do not ask the user about the verification yet. Click the checkbox once only as the last step before submit.';
     slot.verification = state;
     return state;
   }

@@ -63,7 +63,10 @@ function agentSettings(input) {
   if (![true, false, null].includes(input.network)) throw Error('Invalid network setting');
   if (!DECISION_MODES.includes(input.decisions)) throw Error('Invalid decision setting');
   const trialModel = input.trialModel ? boundedText(input.trialModel, 'trialModel', 120) : null,
-    contactModel = input.contactModel ? boundedText(input.contactModel, 'contactModel', 120) : null;
+    contactModel = input.contactModel ? boundedText(input.contactModel, 'contactModel', 120) : null,
+    coverLetterModel = input.coverLetterModel
+      ? boundedText(input.coverLetterModel, 'coverLetterModel', 120)
+      : null;
   return {
     provider: input.provider,
     model: input.model,
@@ -73,6 +76,7 @@ function agentSettings(input) {
     decisions: input.decisions,
     ...(trialModel || input.trialModel === null ? {trialModel} : {}),
     ...(contactModel || input.contactModel === null ? {contactModel} : {}),
+    ...(coverLetterModel || input.coverLetterModel === null ? {coverLetterModel} : {}),
     contextCompactTokens: contextCompactTokens(input.contextCompactTokens),
     ...(input.contextRestartTokens === undefined
       ? {}

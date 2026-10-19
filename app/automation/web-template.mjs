@@ -527,7 +527,9 @@ export class WebTasks extends TaskRuns {
             continue;
           if (!canBrowse.has(a.id) && !sourceCollector(a, source.url)) continue;
           // Skip due turns during an existing search instead of queuing a duplicate.
-          if (this.slots(a.id).some((s) => s.run.sourceUrl === source.url)) continue;
+          // A record's run (an application) from this source is not a search.
+          if (this.slots(a.id).some((s) => s.run.sourceUrl === source.url && !s.run.recordId))
+            continue;
           if (['waiting', 'resetting'].includes(source.accessRecovery?.state)) continue;
           if (source.accessRecovery?.state === 'fresh' && source.nextRunAt > this.now()) continue;
           if (

@@ -12,7 +12,9 @@ export function withAgentDefaults(settings = {}) {
   const provider = settings.provider ?? 'codex';
   return {
     model: provider === 'claude' ? 'haiku' : 'default',
-    ...(provider === 'claude' ? {trialModel: 'opus[1m]', contactModel: 'opus[1m]'} : {}),
+    ...(provider === 'claude'
+      ? {trialModel: 'opus[1m]', contactModel: 'opus[1m]', coverLetterModel: 'opus[1m]'}
+      : {}),
     reasoning: provider === 'claude' ? 'medium' : 'default',
     network: null,
     contextCompactTokens: provider === 'claude' ? 200000 : DEFAULT_COMPACT_TOKENS,

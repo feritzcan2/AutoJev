@@ -102,7 +102,17 @@ const editable = (node) =>
 
 export function automationResultsTable(
   root,
-  {button, badge, time, api, refresh, statusNames, onQuestion = () => {}, onContacts = () => {}},
+  {
+    button,
+    badge,
+    time,
+    api,
+    refresh,
+    statusNames,
+    onQuestion = () => {},
+    onContacts = () => {},
+    onCoverLetter = () => {},
+  },
 ) {
   let data,
     busy = false,
@@ -981,6 +991,9 @@ export function automationResultsTable(
               openIds.has(result.id),
               data.workers?.find((w) => w.id === result.recordAction?.task?.workerId)?.name,
               data.automation.revision,
+              (data.automation.questions ?? [])
+                .filter((q) => q.coverLetter && q.recordId === result.id)
+                .map((q) => [q.id, q.answer != null, q.coverLetter.path]),
             ]),
           ])
         : [['', JSON.stringify([Boolean(data.results.length)])]],
@@ -1597,6 +1610,27 @@ export function automationResultsTable(
         problemActions.append(why);
       }
       if (next.childElementCount) state.append(next);
+      // The record's latest cover letter: an approved one opens its PDF, one
+      // being written or waiting for review opens the Files page.
+      const letter = (data.automation.questions ?? []).findLast(
+        (q) => q.coverLetter && q.recordId === result.id,
+      );
+      if (letter) {
+        const approved = letter.answer != null && letter.coverLetter.path,
+          cover = button(
+            'Cover letter ↗',
+            () =>
+              approved
+                ? api.openDocument(data.automation.id, letter.coverLetter.path)
+                : onCoverLetter(),
+            'quiet record-quick-tab',
+          );
+        cover.dataset.recordCoverLetter = result.id;
+        cover.title = approved
+          ? 'Open the cover letter sent with this application'
+          : 'Review the cover letter on the Files page';
+        state.append(cover);
+      }
       if (!keepMenu) state.append(actionsToggle);
       row.append(updated, state);
       place(row);

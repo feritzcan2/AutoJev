@@ -48,6 +48,19 @@ test('a budget or rate-limit wait that resumes by itself asks for no attention',
   assert.equal(automationAttention(s).length, 1, 'a check the user can solve still asks');
   s.sources = [waiting('rate_limit', {exhausted: true})];
   assert.equal(automationAttention(s).length, 1, 'retries that ran out still ask');
+  // The wait has ended and the source waits for its next turn on the site.
+  s.sources = [{...source, lastRunId: 'scan', lastResult: 'shared wait … Resumes automatically'}];
+  s.runs = [
+    {
+      id: 'scan',
+      sourceUrl: source.url,
+      status: 'blocked',
+      siteWait: {site: 'homes.example', reason: 'budget', waiting: true, retryAt: 5000},
+    },
+  ];
+  assert.deepEqual(automationAttention(s), [], 'an ended budget wait resumes on its own');
+  s.runs[0].siteWait = {...s.runs[0].siteWait, reason: 'verification'};
+  assert.equal(automationAttention(s).length, 1, 'a check the run hit still asks');
 });
 
 test('conversation forms stay distinct from source and record questions during concurrent work', () => {

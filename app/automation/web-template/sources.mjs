@@ -69,7 +69,7 @@ export const sourceMethods = {
         !task.recordOperation &&
         (!task.sourceUrl || urls.includes(task.sourceUrl)) &&
         !a.sourceState?.[task.sourceUrl]?.accessRecovery &&
-        !this.slots(id).some((s) => s.run.sourceUrl === task.sourceUrl)
+        !this.slots(id).some((s) => s.run.sourceUrl === task.sourceUrl && !s.run.recordId)
       )
         this.queue.finish(id, task.id, 'cancelled', 'New source round');
     for (const url of urls) {
@@ -99,7 +99,8 @@ export const sourceMethods = {
     if (!source) throw Error('The source does not belong to this workspace');
     if (!source.enabled) throw Error('Turn on the source first');
     if (source.termsRequired) throw Error(TERMS_REQUIRED);
-    if (this.slots(id).some((s) => s.run.sourceUrl === url))
+    // A record's run (an application) from this source is not a scan.
+    if (this.slots(id).some((s) => s.run.sourceUrl === url && !s.run.recordId))
       throw Error('This source is already running');
     // A timed site wait resumes by itself; a plain run queues behind it. Force
     // retry is the user choosing not to wait it out: the current wait ends

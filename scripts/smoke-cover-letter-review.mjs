@@ -76,6 +76,13 @@ try {
   page.on('pageerror', (e) => errors.push(e.message));
   // The first start after a build loads slowly; wait for the workspace data.
   await page.locator('#question-badge', {hasText: '2'}).waitFor({timeout: 90000});
+  // The tracking table shows a cover letter button on both records; one that
+  // is not approved yet opens the Files page.
+  await page.locator('[data-view=board]').click();
+  await page.locator(`[data-record-cover-letter="${item.id}"]`).waitFor();
+  await page.locator(`[data-record-cover-letter="${writing.id}"]`).click();
+  await page.locator('.cover-letter-card').first().waitFor();
+  await page.screenshot({path: path.join(data, 'board-files.png')});
   await page.locator('[data-view=answers]').click();
   const answer = page.locator(`.answer-card[data-question-id="${question.id}"]`);
   await answer.waitFor({state: 'visible'});
@@ -134,6 +141,13 @@ try {
   await card.waitFor({state: 'detached'});
   await detail.filter({hasText: 'approved'}).waitFor();
   await page.screenshot({path: path.join(data, 'files-after.png')});
+  await page.locator('[data-view=board]').click();
+  assert.match(
+    await page.locator(`[data-record-cover-letter="${item.id}"]`).getAttribute('title'),
+    /sent with this application/,
+  );
+  await page.screenshot({path: path.join(data, 'board-approved.png')});
+  await page.locator('[data-view=files]').click();
   const pdf = await readFile(path.join(workspace, relative));
   assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
   assert.ok(pdf.length > 1000, 'Chromium rendered the edited letter');

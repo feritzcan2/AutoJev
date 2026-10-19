@@ -12,11 +12,13 @@ import {
   approveCoverLetter,
   reviseCoverLetter,
   setCoverLetterAutoApprove,
+  waitForCoverLetter,
 } from '../app/automation/cover-letters.mjs';
 import {coverLetterHtml} from '../app/automation/cover-letter-pdf.mjs';
 import {listDocuments, agentDocument} from '../app/automation/artifacts.mjs';
 import {automationAttention} from '../app/automation/attention.mjs';
 import {automationTaskContext} from '../app/automation/task-context.mjs';
+import {withAgentDefaults} from '../app/agents/settings.mjs';
 
 const source = 'https://example.test/list',
   settle = () => new Promise((r) => setImmediate(r)),
@@ -72,7 +74,7 @@ async function fixture(t) {
       workspace,
       db,
       run,
-      signal: {aborted: false},
+      signal: new AbortController().signal,
       browser: {},
       renderPdf,
       report: (...args) => runtime.report(...args),
@@ -457,6 +459,42 @@ test('with automatic acceptance the saved letter resumes the application without
   assert.deepEqual(resumed.continuation.questionIds, [questionId]);
 });
 
+test('with automatic acceptance and another worker the application waits for its letter', async (t) => {
+  const f = await fixture(t);
+  setCoverLetterAutoApprove(f.db, f.id, true);
+  f.db.store.workspaces.workers.add(f.id);
+  await f.runtime.runRecord(f.id, f.item.id, 'execute', {direct: true});
+  await settle();
+  const execute = f.launches.at(-1);
+  const requested = await f.flow(execute).call(f.id, execute.id, 'request_cover_letter', {});
+  assert.match(requested.next, /wait_for_cover_letter/);
+  await f.runtime.tick();
+  await settle();
+  // The writer starts on the other worker while the application keeps its task.
+  const writer = f.launches.at(-1);
+  assert.equal(writer.recordOperation, 'cover_letter');
+  assert.notEqual(writer.workerId, execute.workerId);
+  const still = await waitForCoverLetter(f.db, f.id, f.db.run(execute.id), {waitMs: 0});
+  assert.match(still.next, /still writing/);
+  // A wait that outlasts its limit finishes blocked; the saved letter resumes it later.
+  const late = await waitForCoverLetter(
+    f.db,
+    f.id,
+    {coverLetterWait: {questionId: requested.questionId, since: 0}},
+    {limitMs: 0},
+  );
+  assert.match(late.next, /status blocked/);
+  const waiting = f.flow(execute).call(f.id, execute.id, 'wait_for_cover_letter', {});
+  const saved = await f.flow(writer).call(f.id, writer.id, 'save_cover_letter', {text: letter()});
+  const ready = await waiting;
+  assert.equal(ready.ready, true);
+  assert.equal(ready.path, saved.path);
+  assert.match(ready.letter, /accepted automatically/);
+  // The waiting application uses the letter; the writer's end starts no second one.
+  await f.finish(writer, 'completed');
+  assert.equal(f.launches.at(-1).id, writer.id);
+});
+
 // Uploads the approved letter on a form whose inspection `form(id, uploaded)`
 // returns; each inspection gives the upload a new id.
 async function uploadApprovedLetter(t, form) {
@@ -541,3 +579,15 @@ test('a cover letter file field that disappears after the upload counts as fille
         : [{label: 'Attach', question: 'Cover Letter', type: 'file', filled: false}]),
     ],
   })));
+
+test('cover letters get their own model setting', async (t) => {
+  assert.equal(withAgentDefaults({provider: 'claude'}).coverLetterModel, 'opus[1m]');
+  assert.equal(withAgentDefaults({provider: 'codex'}).coverLetterModel, undefined);
+  const f = await fixture(t);
+  f.db.save(f.id, {
+    agentSettings: {provider: 'claude', model: 'haiku', coverLetterModel: 'sonnet'},
+  });
+  assert.equal(f.db.get(f.id).agentSettings.coverLetterModel, 'sonnet');
+  f.db.save(f.id, {agentSettings: {provider: 'claude', model: 'haiku', coverLetterModel: null}});
+  assert.equal(f.db.get(f.id).agentSettings.coverLetterModel, null);
+});

@@ -279,7 +279,13 @@ export class BrowserTools {
       return client.connection === 'existing' ? client.transport?.owned.has(slot.id) : true;
     };
     return [...client.tabs.values()]
-      .filter((slot) => slot.id !== client.homeId && !slot.page.isClosed() && ownTab(slot))
+      .filter(
+        (slot) =>
+          slot.id !== client.homeId &&
+          !client.spareTabs?.has(slot.id) &&
+          !slot.page.isClosed() &&
+          ownTab(slot),
+      )
       .map((slot) => ({
         tabId: slot.id,
         url: slot.page.url(),

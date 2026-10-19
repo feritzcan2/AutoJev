@@ -158,3 +158,57 @@ test('source reset retries failed tab closes without falsely reporting cleanup c
     {closed: ['challenge'], retained: []},
   );
 });
+
+test('finished tabs in an existing Chrome stay as blank spares that the next task reuses', async () => {
+  // Chrome restores a minimized window when a tab is added; reusing a spare adds none.
+  const browser = new JevBrowser('/unused', {connection: 'existing'}),
+    closed = [],
+    ids = ['stuck', 'first', 'second', 'third'];
+  browser.opening = Promise.resolve({});
+  browser.browser = {isConnected: () => true};
+  browser.transport = {owned: new Set(ids), attached: new Set()};
+  browser.persistTabs = async () => {};
+  for (const id of ids) {
+    let url = `https://example.test/${id}`,
+      isClosed = false;
+    browser.tabs.set(id, {
+      id,
+      history: ['old'],
+      observed: {url},
+      page: {
+        url: () => url,
+        isClosed: () => isClosed,
+        goto: async (target) => {
+          // A page that cannot leave is closed and does not take a spare place.
+          if (id === 'stuck') throw Error('Timeout 5000ms exceeded');
+          url = target;
+        },
+        close: async () => {
+          isClosed = true;
+          closed.push(id);
+        },
+      },
+    });
+    browser.automationRuns.set(id, 'finished');
+    browser.automationWorkspaces.set(id, 'workspace');
+    browser.automationTabs.set(id, 'record:' + id);
+    browser.urlHashes.set(id, hash(url));
+  }
+  assert.deepEqual(await browser.closeFinishedAutomationRunTabs(['finished'], 'workspace'), {
+    closed: ids,
+    retained: [],
+  });
+  assert.deepEqual(closed, ['stuck', 'third']);
+  assert.deepEqual([...browser.spareTabs], ['first', 'second']);
+  for (const map of [browser.automationRuns, browser.automationWorkspaces, browser.automationTabs])
+    assert.equal(map.has('first'), false);
+  const tools = new BrowserTools('/unused');
+  tools.connectedClient = async () => browser;
+  assert.deepEqual(await tools.workspaceTabs('workspace'), [], 'spares are no workspace tab');
+  const reused = browser.takeSpareTab();
+  assert.equal(reused.id, 'first');
+  assert.deepEqual(reused.history, []);
+  assert.equal(reused.observed, undefined);
+  assert.equal(browser.takeSpareTab().id, 'second');
+  assert.equal(browser.takeSpareTab(), null);
+});
