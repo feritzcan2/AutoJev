@@ -20,13 +20,14 @@ const SEARCH_PATHS = new Set([
 ]);
 // The signed-in results page lists 25 cards.
 export const LINKEDIN_PAGE_SIZE = 25;
-// Page views of the user's account: 20-30 s apart and at most 60 an hour, the
-// pace that drew no block from 2026-10-12 to 2026-10-19. Results pages and
-// postings share this budget (the worker's browser budget for the site).
+// Page views of the user's account: 10-15 s apart and at most 120 an hour
+// (doubled at the user's request on 2026-10-19; 20-30 s and 60 an hour drew
+// no block from 2026-10-12). Results pages and postings share this budget
+// (the worker's browser budget for the site).
 export const LINKEDIN_PACING = {
-  minIntervalMs: 20000,
-  jitterMs: 10000,
-  budget: {requests: 60, windowMs: 60 * 60000},
+  minIntervalMs: 10000,
+  jitterMs: 5000,
+  budget: {requests: 120, windowMs: 60 * 60000},
 };
 
 const linkedInHost = (host) => host === 'linkedin.com' || host.endsWith('.linkedin.com');

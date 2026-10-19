@@ -278,14 +278,16 @@ export class SiteAccess {
   // A request budget counted under its own key (for example logged-in page
   // views, kept apart from a site's API budget), for reads that wait in
   // place instead of parking a task. Records the request and returns 0 when
-  // the budget has room; otherwise the milliseconds until a slot frees.
+  // the budget has room; otherwise the milliseconds until a slot frees (after
+  // a lowered budget, until enough requests leave the window).
   reserve(key, {requests, windowMs}) {
     const now = this.now();
     this.db.prepare('DELETE FROM site_requests WHERE site=? AND at<=?').run(key, now - windowMs);
-    const used = this.db
-      .prepare('SELECT count(*) AS n, min(at) AS first FROM site_requests WHERE site=?')
-      .get(key);
-    if (Number(used.n) >= requests) return Number(used.first) + windowMs - now;
+    const reads = this.db
+      .prepare('SELECT at FROM site_requests WHERE site=? ORDER BY at')
+      .all(key)
+      .map((row) => Number(row.at));
+    if (reads.length >= requests) return reads[reads.length - requests] + windowMs - now;
     this.db.prepare('INSERT INTO site_requests(site,at) VALUES(?,?)').run(key, now);
     return 0;
   }

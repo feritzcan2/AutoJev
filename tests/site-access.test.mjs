@@ -488,6 +488,25 @@ test('a request budget survives an app restart', () => {
   }
 });
 
+test('a lowered page budget waits until enough pages leave the window, not one minute', () => {
+  const db = new DatabaseSync(':memory:');
+  let now = 1_000_000;
+  try {
+    const access = new SiteAccess(db, {now: () => now});
+    for (let i = 0; i < 5; i++) {
+      assert.equal(access.reserve('lowered.test browser', {requests: 5, windowMs: 60 * minute}), 0);
+      now += minute;
+    }
+    // Five pages in the hour, now a budget of three: two must leave first.
+    assert.equal(
+      access.reserve('lowered.test browser', {requests: 3, windowMs: 60 * minute}),
+      1_000_000 + 2 * minute + 60 * minute - now,
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test('an old wait card retires even when a later incident of the site already recovered', () => {
   const db = new DatabaseSync(':memory:');
   let now = 1_000_000;
