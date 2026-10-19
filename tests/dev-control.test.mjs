@@ -16,7 +16,8 @@ test('the dev control channel invokes registered handlers only with its token', 
     invoke: (name, fn) => (gated.push(name), fn()),
   });
   const file = path.join(directory, 'dev-control.json');
-  assert.equal((await stat(file)).mode & 0o777, 0o600);
+  // Windows has no POSIX permission bits.
+  if (process.platform !== 'win32') assert.equal((await stat(file)).mode & 0o777, 0o600);
   const {endpoint, token} = JSON.parse(await readFile(file, 'utf8'));
   const post = (body, headers = {Authorization: 'Bearer ' + token}) =>
     fetch(endpoint + '/invoke', {method: 'POST', headers, body: JSON.stringify(body)});

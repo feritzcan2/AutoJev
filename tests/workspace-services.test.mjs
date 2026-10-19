@@ -9,6 +9,7 @@ import {Workspaces} from '../app/workspaces/workspaces.mjs';
 import {WorkspaceDocuments} from '../app/workspaces/documents.mjs';
 import {WebTasks} from '../app/automation/web-template.mjs';
 import {saveAgentSettings} from '../src/agent-settings-save.js';
+import {symlinkSkip} from './helpers/symlinks.mjs';
 
 const raw = (store, table, id) =>
   JSON.parse(store.db.prepare(`SELECT data FROM ${table} WHERE id=?`).get(id).data);
@@ -263,66 +264,70 @@ test('worker reads and terminal sizing remain scoped during a restart while comm
   );
 });
 
-test('the same workspace APIs rename, delete, import, preview and open documents for both templates', async (t) => {
-  const {store, db, job, web} = fixture(t),
-    dir = await mkdtemp(path.join(tmpdir(), 'loop-documents-'));
-  t.after(() => rm(dir, {recursive: true, force: true}));
-  const source = path.join(dir, 'source.txt');
-  await writeFile(source, 'Document text');
-  let picked = source;
-  const opened = [],
-    added = [],
-    removed = [];
-  const templates = drivers(store, db, {}, {});
-  for (const driver of Object.values(templates))
-    Object.assign(driver, {
-      directory: (id) => path.join(dir, id),
-      documentPurposes: ['attachment'],
-      documentAdded: (id, doc) => added.push({id, ...doc}),
-    });
-  const workspaces = new Workspaces(store.workspaces, {
-      templates,
-      workerRemoved: (...args) => removed.push(args),
-    }),
-    documents = new WorkspaceDocuments(workspaces, {
-      window: () => null,
-      dialog: {showOpenDialog: async () => ({canceled: !picked, filePaths: [picked]})},
-      shell: {
-        openPath: async (file) => {
-          opened.push(file);
-          return '';
+test(
+  'the same workspace APIs rename, delete, import, preview and open documents for both templates',
+  {skip: symlinkSkip},
+  async (t) => {
+    const {store, db, job, web} = fixture(t),
+      dir = await mkdtemp(path.join(tmpdir(), 'loop-documents-'));
+    t.after(() => rm(dir, {recursive: true, force: true}));
+    const source = path.join(dir, 'source.txt');
+    await writeFile(source, 'Document text');
+    let picked = source;
+    const opened = [],
+      added = [],
+      removed = [];
+    const templates = drivers(store, db, {}, {});
+    for (const driver of Object.values(templates))
+      Object.assign(driver, {
+        directory: (id) => path.join(dir, id),
+        documentPurposes: ['attachment'],
+        documentAdded: (id, doc) => added.push({id, ...doc}),
+      });
+    const workspaces = new Workspaces(store.workspaces, {
+        templates,
+        workerRemoved: (...args) => removed.push(args),
+      }),
+      documents = new WorkspaceDocuments(workspaces, {
+        window: () => null,
+        dialog: {showOpenDialog: async () => ({canceled: !picked, filePaths: [picked]})},
+        shell: {
+          openPath: async (file) => {
+            opened.push(file);
+            return '';
+          },
         },
-      },
-    });
-  for (const [id, title] of [
-    [job.id, 'Jobs renamed'],
-    [web.id, 'Homes renamed'],
-  ]) {
-    workspaces.rename(id, title);
-    assert.equal(store.workspaces.get(id).title, title);
-    const imported = await documents.pick(id);
-    assert.equal(await readFile(imported, 'utf8'), 'Document text');
-    const [doc] = await documents.list(id);
-    assert.equal(await documents.read(id, doc.path), 'Document text');
-    await documents.open(id, doc.path);
-    assert.equal(opened.at(-1), await realpath(imported));
-    await assert.rejects(documents.open(id, '../source.txt'));
-    await assert.rejects(documents.read(id, '/tmp/outside.txt'));
-    await symlink(source, path.join(dir, id, 'outside.txt'));
-    await assert.rejects(documents.open(id, 'outside.txt'));
-  }
-  await assert.rejects(documents.pick(job.id, {purpose: 'cv'}), /not supported/);
-  await assert.rejects(documents.pick(web.id, {purpose: 'cv'}), /not supported/);
-  picked = null;
-  assert.equal(await documents.pick(web.id), null);
-  assert.equal(added.length, 2);
-  for (const id of [web.id, job.id]) {
-    await workspaces.remove(id);
-    assert.equal(store.workspaces.has(id), false);
-    assert.throws(() => documents.list(id), /not found/);
-  }
-  assert.deepEqual(removed, [
-    [web.id, 'main'],
-    [job.id, 'main'],
-  ]);
-});
+      });
+    for (const [id, title] of [
+      [job.id, 'Jobs renamed'],
+      [web.id, 'Homes renamed'],
+    ]) {
+      workspaces.rename(id, title);
+      assert.equal(store.workspaces.get(id).title, title);
+      const imported = await documents.pick(id);
+      assert.equal(await readFile(imported, 'utf8'), 'Document text');
+      const [doc] = await documents.list(id);
+      assert.equal(await documents.read(id, doc.path), 'Document text');
+      await documents.open(id, doc.path);
+      assert.equal(opened.at(-1), await realpath(imported));
+      await assert.rejects(documents.open(id, '../source.txt'));
+      await assert.rejects(documents.read(id, '/tmp/outside.txt'));
+      await symlink(source, path.join(dir, id, 'outside.txt'));
+      await assert.rejects(documents.open(id, 'outside.txt'));
+    }
+    await assert.rejects(documents.pick(job.id, {purpose: 'cv'}), /not supported/);
+    await assert.rejects(documents.pick(web.id, {purpose: 'cv'}), /not supported/);
+    picked = null;
+    assert.equal(await documents.pick(web.id), null);
+    assert.equal(added.length, 2);
+    for (const id of [web.id, job.id]) {
+      await workspaces.remove(id);
+      assert.equal(store.workspaces.has(id), false);
+      assert.throws(() => documents.list(id), /not found/);
+    }
+    assert.deepEqual(removed, [
+      [web.id, 'main'],
+      [job.id, 'main'],
+    ]);
+  },
+);

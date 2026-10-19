@@ -8,6 +8,8 @@ import documentPlugin from '../app/agents/opencode-documents-plugin.mjs';
 import {readOpenCodeFailure} from '../app/agents/opencode-failure.mjs';
 import {AgentSessions} from '../app/agents/sessions.mjs';
 import {TaskRuns} from '../app/automation/task-runs.mjs';
+import {removeAfterTests} from './helpers/temp-directory.mjs';
+import {symlinkSkip} from './helpers/symlinks.mjs';
 
 const nativeId = 'ses_12345678901234567890';
 const failure = {
@@ -23,7 +25,7 @@ const failure = {
 };
 async function fixture(t) {
   const root = await mkdtemp(path.join(tmpdir(), 'opencode-failure-'));
-  t.after(() => rm(root, {recursive: true, force: true}));
+  removeAfterTests(root);
   const file = path.join(root, 'opencode.db'),
     db = new DatabaseSync(file);
   t.after(() => db.close());
@@ -44,22 +46,26 @@ async function fixture(t) {
   return {root, file, db, set, read};
 }
 
-test('native PDF reads are redirected to local document text, including uppercase names and symlink aliases; text, images and MCP remain available', async (t) => {
-  const {root} = await fixture(t),
-    hook = (await documentPlugin({directory: root}))['tool.execute.before'];
-  await writeFile(path.join(root, 'CV.PDF'), '%PDF-1.4\nprivate document');
-  await symlink(path.join(root, 'CV.PDF'), path.join(root, 'alias'));
-  await writeFile(path.join(root, 'facts.txt'), 'Profile facts');
-  await writeFile(path.join(root, 'image.png'), Buffer.from([137, 80, 78, 71]));
-  for (const filePath of ['CV.PDF', 'alias', path.join(root, 'CV.PDF')])
-    await assert.rejects(
-      hook({tool: 'read'}, {args: {filePath}}),
-      /jobloop_read_scoring_profile.*nextOffset/,
-    );
-  for (const filePath of ['facts.txt', 'image.png', 'missing.txt'])
-    await hook({tool: 'read'}, {args: {filePath}});
-  await hook({tool: 'jobloop_read_scoring_profile'}, {args: {source: 'documents'}});
-});
+test(
+  'native PDF reads are redirected to local document text, including uppercase names and symlink aliases; text, images and MCP remain available',
+  {skip: symlinkSkip},
+  async (t) => {
+    const {root} = await fixture(t),
+      hook = (await documentPlugin({directory: root}))['tool.execute.before'];
+    await writeFile(path.join(root, 'CV.PDF'), '%PDF-1.4\nprivate document');
+    await symlink(path.join(root, 'CV.PDF'), path.join(root, 'alias'));
+    await writeFile(path.join(root, 'facts.txt'), 'Profile facts');
+    await writeFile(path.join(root, 'image.png'), Buffer.from([137, 80, 78, 71]));
+    for (const filePath of ['CV.PDF', 'alias', path.join(root, 'CV.PDF')])
+      await assert.rejects(
+        hook({tool: 'read'}, {args: {filePath}}),
+        /jobloop_read_scoring_profile.*nextOffset/,
+      );
+    for (const filePath of ['facts.txt', 'image.png', 'missing.txt'])
+      await hook({tool: 'read'}, {args: {filePath}});
+    await hook({tool: 'jobloop_read_scoring_profile'}, {args: {source: 'documents'}});
+  },
+);
 
 test('only the current workspace’s latest completed fatal message is reported, with no provider bodies or headers', async (t) => {
   const f = await fixture(t);

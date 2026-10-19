@@ -45,7 +45,8 @@ export async function listDocuments(root) {
       }
       if (!entry.isFile() || !extensions.has(path.extname(entry.name).toLowerCase())) continue;
       try {
-        const relative = path.relative(root, file),
+        // Forward slashes on every system, matching the saved document list.
+        const relative = path.relative(root, file).split(path.sep).join('/'),
           safe = await documentPath(root, relative),
           info = await stat(safe);
         result.push({

@@ -85,7 +85,7 @@ export async function loadScoringDocuments(db, id) {
   for (const file of files) {
     const label = path.relative(root, file).startsWith('..')
       ? path.basename(file)
-      : path.relative(root, file);
+      : path.relative(root, file).split(path.sep).join('/');
     try {
       const requested = await realpath(file),
         safe = await documentPath(root, path.relative(root, requested)),

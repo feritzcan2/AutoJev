@@ -9,6 +9,7 @@ import {AutomationStore} from '../app/automation/store.mjs';
 import {WebTasks} from '../app/automation/web-template.mjs';
 import {templateContract} from '../app/templates/contract.mjs';
 import {workspaceTableCall} from '../app/workspaces/table-tools.mjs';
+import {removeAfterTests} from './helpers/temp-directory.mjs';
 const car = JSON.parse(
   await readFile(new URL('./fixtures/car-search.loop-template.json', import.meta.url)),
 ).template;
@@ -233,7 +234,7 @@ test('a failed close retains the shared lease until termination is confirmed', a
 
 test('personal job templates, worker queues and histories survive reopening without legacy tables', async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), 'loop-personal-reopen-'));
-  t.after(() => rm(directory, {recursive: true, force: true}));
+  removeAfterTests(directory);
   const file = path.join(directory, 'db.sqlite');
   let core = new WorkspaceDatabase(file);
   t.after(() => core.close());

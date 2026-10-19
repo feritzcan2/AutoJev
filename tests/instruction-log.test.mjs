@@ -17,6 +17,7 @@ import {startToolServer} from '../app/agents/tool-server.mjs';
 import {webInstructionCatalog} from '../app/system/instruction-catalog.mjs';
 import {createBackup, pruneLogs} from '../app/system/data-management.mjs';
 import {DatabaseSync} from 'node:sqlite';
+import {removeAfterTests} from './helpers/temp-directory.mjs';
 const settings = {
   provider: 'codex',
   model: 'default',
@@ -99,7 +100,7 @@ test('instruction logs page, mark truncation, redact secret fields and obey rete
 test('shared sessions record immutable launch files, submission requests, failures and provider delivery without logging terminal keystrokes', async (t) => {
   const {a, log} = fixture(t),
     directory = await mkdtemp(path.join(tmpdir(), 'loop-instructions-'));
-  t.after(() => rm(directory, {recursive: true, force: true}));
+  removeAfterTests(directory);
   await writeFile(path.join(directory, 'AGENTS.md'), 'Initial rules.');
   let emit,
     fail = false;
@@ -229,7 +230,7 @@ test('page report validation errors and successful checkpoints remain inspectabl
 
 test('portable backups and clear-logs remove instruction content while leaving saved plans intact', async (t) => {
   const dir = await mkdtemp(path.join(tmpdir(), 'loop-instruction-backup-'));
-  t.after(() => rm(dir, {recursive: true, force: true}));
+  removeAfterTests(dir);
   const data = path.join(dir, 'data');
   await mkdir(data);
   const {core, a, log, record} = fixture(t, path.join(data, 'jobloop.sqlite'));

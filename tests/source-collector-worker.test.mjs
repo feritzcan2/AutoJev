@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fork, spawn} from 'node:child_process';
 import {once} from 'node:events';
-import {fileURLToPath} from 'node:url';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
 import {WebTasks} from '../app/automation/web-template.mjs';
@@ -21,7 +20,8 @@ import {
 } from '../app/site-extensions/himalayas/cli-client.mjs';
 
 const source = 'https://himalayas.app/',
-  fixtureModule = fileURLToPath(new URL('./fixtures/himalayas-cli-fetch.mjs', import.meta.url));
+  // --import takes a URL; a bare C:\ path is rejected on Windows.
+  fixtureModule = new URL('./fixtures/himalayas-cli-fetch.mjs', import.meta.url).href;
 const url = (id) => `https://himalayas.app/companies/synthetic/jobs/${id}`;
 const jobs = [
   {
