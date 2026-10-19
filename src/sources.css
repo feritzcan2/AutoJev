@@ -333,6 +333,14 @@
   }
 }
 
+/* Request rate: one quiet line under the status. */
+.source-requests {
+  padding-left: 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Schedule: last scan, next scan and the interval, which reads as text. */
 .source-meta {
   display: flex;

@@ -243,6 +243,24 @@ test('draft preparation keeps its tab; verified submission closes the completed 
   assert.deepEqual(calls.at(-1).options.runIds.toSorted(), [calls[0].run.id, run.id].toSorted());
 });
 
+// Skip and a manual "applied" both end the record for the user: the tabs its
+// earlier runs opened close, including filled forms.
+test('skipping or marking a record applied closes its tabs', async (t) => {
+  const calls = [],
+    f = fixture(t, 'job-search', {onRunFinished: (id, run, options) => calls.push({run, options})});
+  const prepared = await f.prepare(),
+    prepareRun = calls.at(-1).run.id;
+  await f.runtime.dismissRecord(f.id, prepared.id);
+  assert.equal(calls.at(-1).options.closeTabs, true);
+  assert.equal(calls.at(-1).options.keepForms, false);
+  assert.deepEqual(calls.at(-1).options.runIds, [prepareRun]);
+  f.runtime.restoreRecord(f.id, prepared.id);
+  calls.length = 0;
+  await f.runtime.markRecordSubmitted(f.id, prepared.id);
+  assert.equal(calls.at(-1).options.closeTabs, true);
+  assert.deepEqual(calls.at(-1).options.runIds, [prepareRun]);
+});
+
 test('a manual execute request needs no draft and keeps observe permissions; duplicate submission is rejected', async (t) => {
   const f = fixture(t),
     a = f.db.get(f.id);
@@ -1760,7 +1778,7 @@ test('a user can mark a found, prepared or uncertain record as submitted', async
   const f = fixture(t);
   const prepared = await f.prepare();
   f.db.askQuestion(f.id, {recordId: prepared.id, text: 'Pending detail'});
-  const saved = f.runtime.markRecordSubmitted(f.id, prepared.id);
+  const saved = await f.runtime.markRecordSubmitted(f.id, prepared.id);
   assert.equal(saved.status, 'completed');
   assert.match(saved.evidence, /confirmed the record was submitted/);
   assert.ok(f.db.get(f.id).questions.every((q) => q.recordId !== prepared.id || q.answer != null));

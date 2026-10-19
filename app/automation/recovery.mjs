@@ -87,6 +87,8 @@ export function continueSourceRun(db, id, runId) {
   const run = db.run(runId);
   if (
     !resumable(db, run) ||
+    // Ended for the app's background read: resumed after it, not nudged now.
+    run.collectorReading ||
     Object.keys(run.scanIssues ?? {}).length ||
     (db.get(id).questions ?? []).some((q) => q.answer == null && q.taskId === run.taskId)
   )
@@ -102,6 +104,16 @@ export function continueSourceRun(db, id, runId) {
 export function unreportedSourceRun(db, id, runId, reason, now) {
   const run = db.run(runId);
   if (!resumable(db, run)) return null;
+  // The agent ended its turn so the app could read a card site's next page;
+  // that is the expected stop, not an idle agent. Resume at once.
+  if (run.collectorReading) {
+    db.putRun({...run, recovery: {reason: 'collector_read', attempt: 0, readyAt: now}});
+    return {
+      status: 'interrupted',
+      summary:
+        'The app is reading the next page and its listings; the agent resumes with the ready batch.',
+    };
+  }
   const issues = Object.values(run.scanIssues ?? {}).filter(
     (issue) => issue.verified || issue.kind === 'browser_error',
   );

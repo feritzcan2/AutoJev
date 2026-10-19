@@ -245,7 +245,7 @@ export function registerAutomationServices({
     runtime.saveSourcesInterval(id, intervalMinutes),
   );
   handle('automation-source-run', (id, url, options) =>
-    runtime.runSource(id, url, {fresh: options?.fresh === true}),
+    runtime.runSource(id, url, {fresh: options?.fresh === true, force: options?.force === true}),
   );
   handle('automation-source-relearn', (id, url) => runtime.relearnSource(id, url));
   handle('automation-source-resume', (id, url, runId, response) =>

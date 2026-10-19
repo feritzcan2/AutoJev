@@ -64,6 +64,34 @@ test('current work lists a running scan with its live search and page progress',
   );
 });
 
+test('a running scan shows the search its run moved to before the source saved it', () => {
+  const work = (activeSearchId, first) => ({
+    work: {
+      activeSearchId,
+      searches: [
+        {id: 'a', label: 'staff', status: first, pendingUrls: []},
+        {id: 'b', label: 'backend', status: 'pending', pendingUrls: []},
+      ],
+    },
+  });
+  const [row] = currentWork({
+    automation: {status: 'enabled', questions: []},
+    activeRuns: [{id: 'r1'}],
+    runs: [
+      {
+        id: 'r1',
+        kind: 'run',
+        operation: 'scan',
+        status: 'running',
+        sourceUrl: 'https://jobs.example/',
+        scan: work('b', 'completed'),
+      },
+    ],
+    sources: [source('https://jobs.example/', {scan: work('a', 'pending')})],
+  });
+  assert.equal(row.progress, 'Search 2/2 (backend) · 0 new records');
+});
+
 test('current work shows queued tasks oldest first and the waits, skipping the setup chat', () => {
   const rows = currentWork({
     automation: {

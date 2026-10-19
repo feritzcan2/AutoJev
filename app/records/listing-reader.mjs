@@ -27,7 +27,8 @@ async function readOne(db, a, run, item, {signal, wait}) {
   if (collector) {
     const adapter = collector.collector;
     if (!adapter.readDetail) return null;
-    const job = await adapter.readDetail(item.url, {signal});
+    // Reads follow the site's shared pacing and request budget, like a scan.
+    const job = await adapter.readDetail(item.url, {signal, siteAccess: db.siteAccess, wait});
     if (job?.url !== item.url || !job.title?.trim() || !job.description?.trim())
       throw Error('The listing read is incomplete or does not match the record address.');
     page = adapter.detail(job);

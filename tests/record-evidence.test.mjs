@@ -5,10 +5,10 @@ import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
 import {assessmentEvidence} from '../app/records/evidence.mjs';
 
-const source = 'https://www.linkedin.com/jobs';
-const detail = 'https://www.linkedin.com/jobs/view/synthetic-compliance-role-1234567890/';
+const source = 'https://jobs.example.test/jobs';
+const detail = 'https://jobs.example.test/jobs/view/synthetic-compliance-role-1234567890/';
 const alias =
-  'https://www.linkedin.com/jobs/view/synthetic-compliance-role-1234567890?trackingId=alias';
+  'https://jobs.example.test/jobs/view/synthetic-compliance-role-1234567890?trackingId=alias';
 const text = 'Synthetic compliance position in Berlin. Salary and remote policy are unspecified.';
 const assessment = {
   status: 'scored',
@@ -154,8 +154,8 @@ for (const [name, patch] of Object.entries({
   'a failed detail': {item: {error: 'Page unavailable'}},
   'a results page': {item: {pageKind: 'results'}},
   'empty evidence': {text: '   '},
-  'a different listing': {url: 'https://www.linkedin.com/jobs/view/1234567891'},
-  'a lookalike domain': {url: 'https://linkedin.com.evil.test/jobs/view/1234567890'},
+  'a different listing': {url: 'https://jobs.example.test/jobs/view/1234567891'},
+  'a lookalike domain': {url: 'https://jobs.example.test.evil.test/jobs/view/1234567890'},
 }))
   test('historical evidence rejects ' + name, (t) => {
     const f = fixture(t);
@@ -185,7 +185,7 @@ test('current observations take precedence and a new task still needs its own ev
   f.saved();
   f.restart();
   const current =
-    'https://www.linkedin.com/jobs/view/synthetic-compliance-role-1234567890?trackingId=current';
+    'https://jobs.example.test/jobs/view/synthetic-compliance-role-1234567890?trackingId=current';
   f.db.observe(f.id, f.run.id, current, 'Current detail');
   assert.equal(f.record().assessment.evidenceUrl, current);
   const run = f.db.run(f.run.id);
