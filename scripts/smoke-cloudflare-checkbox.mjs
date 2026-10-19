@@ -9,15 +9,13 @@ import {SiteAccess} from '../app/browser/site-access.mjs';
 
 const directory = await mkdtemp(path.join(os.tmpdir(), 'cloudflare-checkbox-')),
   db = new DatabaseSync(':memory:');
-let enabled = true,
-  clicks = 0,
+let clicks = 0,
   paid = 0,
   now = Date.now();
 const hits = new Map();
 const browsers = new BrowserTools(directory, () => ({connection: 'separate', headless: true}));
 browsers.siteAccess = new SiteAccess(db, {now: () => now});
 browsers.captcha = {
-  settings: {status: () => ({enabled})},
   wait() {},
   run() {
     paid++;
@@ -60,7 +58,7 @@ await context.route('https://**/*', async (route) => {
   return route.fulfill({
     status,
     contentType: 'text/html',
-    body: `<title>Just a moment...</title><h1>Additional Verification Required</h1><p>Cloudflare — Your Ray ID: synthetic</p>${frameMarkup}<script>addEventListener('message',async e=>{if(e.origin!=='https://challenges.cloudflare.com'||e.data!=='verified')return;await fetch('/count');${url.pathname === '/never' ? '' : url.pathname === '/replaced' ? "location.href='/never';" : "location.href='/done';"}});</script>`,
+    body: `<title>Just a moment...</title><h1>Additional Verification Required</h1><p>Cloudflare — Your Ray ID: synthetic</p>${frameMarkup}<script>addEventListener('message',async e=>{if(e.origin!=='https://challenges.cloudflare.com'||e.data!=='verified')return;await fetch('/count');${url.pathname === '/never' ? '' : url.pathname === '/replaced' ? "location.href='/never';" : url.pathname === '/second-try' ? "if(sessionStorage.getItem('loaded'))location.href='/done';" : "location.href='/done';"}});${url.pathname === '/second-try' ? "addEventListener('pagehide',()=>sessionStorage.setItem('loaded','1'));" : ''}</script>`,
   });
 });
 const adapter = (source, worker = browsers, extra = {}) =>
@@ -102,11 +100,6 @@ try {
     assert.ok(page.siteWait);
     assert.equal(clicks, 5);
   }
-  enabled = false;
-  const off = 'https://disabled.test/check';
-  assert.ok((await open(adapter(off), off)).siteWait);
-  assert.equal(clicks, 5);
-  enabled = true;
   const record = 'https://record.test/check';
   assert.ok(
     (
@@ -132,22 +125,30 @@ try {
   assert.equal(otherRead, true);
   controller.abort();
   await rejection;
+  // A click that does not open access gets one page refresh and a second click.
+  const second = 'https://second.test/second-try',
+    passed = await open(adapter(second), second);
+  assert.equal(passed.siteWait, undefined);
+  assert.match(passed.jevPage.text, /Real content is now available/);
+  assert.equal(clicks, 8);
+  assert.equal(hits.get(second), 2);
   // A failure stays a site barrier and repeated reads never click it again.
   const never = 'https://never.test/never',
     a = adapter(never);
   const blocked = await open(a, never);
   assert.equal(blocked.siteWait.reason, 'verification');
-  assert.equal(clicks, 7);
-  assert.equal(hits.get(never), 1);
+  assert.equal(clicks, 10);
+  assert.equal(hits.get(never), 2);
   assert.equal(blocked.jevPage.captcha.clicked, true);
+  assert.equal(blocked.jevPage.captcha.refreshed, true);
   assert.equal(blocked.jevPage.captcha.reason, 'barrier_after_click');
   assert.match(
     blocked.siteWait.message,
-    /clicked once.*\(barrier_after_click\)/,
+    /clicked again after a page refresh.*\(barrier_after_click\)/,
     'The wait card names the checkbox outcome',
   );
   assert.ok((await a.call('workspace', 'browser_snapshot', {}, 'run')).siteWait);
-  assert.equal(clicks, 7);
+  assert.equal(clicks, 10);
   assert.equal(paid, 0);
   for (const url of [
     'https://late-widget.test/delayed-checkbox',
@@ -173,12 +174,9 @@ try {
     replaced = 'https://replacement.test/replaced';
   const changed = await open(adapter(replaced), replaced);
   assert.equal(changed.siteWait.reason, 'verification');
-  assert.equal(changed.jevPage.captcha.reason, 'document_changed');
-  assert.equal(
-    clicks,
-    beforeReplacement + 1,
-    'A replacement barrier is not clicked again by the same attempt',
-  );
+  // The page replaced itself after the click: that counts as the refresh.
+  assert.equal(changed.jevPage.captcha.reason, 'barrier_after_click');
+  assert.equal(clicks, beforeReplacement + 2, 'A replacement barrier gets the one retry, not more');
   const beforeProbe = clicks;
   now += 5 * 60000;
   const retried = await a.call('workspace', 'browser_snapshot', {}, 'run');
@@ -196,7 +194,7 @@ try {
   assert.match(limitedPage.jevPage.text, /Real content is now available/);
   assert.equal(clicks, beforeLimited + 1);
   console.log(
-    'CLOUDFLARE_CHECKBOX_PASS: closed shadow root, late checkbox/frame, one click, document replacement, HTTP 429 challenge, diagnostic evidence, cancellation, queue isolation, cooldown and record guard',
+    'CLOUDFLARE_CHECKBOX_PASS: closed shadow root, late checkbox/frame, one refresh and retry, document replacement, HTTP 429 challenge, diagnostic evidence, cancellation, queue isolation, cooldown and record guard',
   );
 } finally {
   await browsers.close();

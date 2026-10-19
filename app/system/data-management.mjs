@@ -187,17 +187,21 @@ function sqliteCheck(file) {
         }
     return {
       schemaVersion: db.prepare('PRAGMA user_version').get().user_version,
-      candidates: tableExists(db, 'candidates')
-        ? db.prepare('SELECT count(*) AS n FROM candidates').get().n
-        : 0,
-      jobs: !tableExists(db, 'candidates')
-        ? 0
-        : (tableExists(db, 'workspace_records')
-            ? db.prepare(
-                'SELECT count(*) AS n FROM workspace_records WHERE workspace_id IN (SELECT id FROM candidates)',
-              )
-            : db.prepare('SELECT count(*) AS n FROM jobs')
-          ).get().n,
+      ...(tableExists(db, 'workspaces')
+        ? {
+            candidates: db.prepare('SELECT count(*) AS n FROM workspaces').get().n,
+            jobs: tableExists(db, 'workspace_records')
+              ? db.prepare('SELECT count(*) AS n FROM workspace_records').get().n
+              : 0,
+          }
+        : {
+            candidates: tableExists(db, 'candidates')
+              ? db.prepare('SELECT count(*) AS n FROM candidates').get().n
+              : 0,
+            jobs: tableExists(db, 'jobs')
+              ? db.prepare('SELECT count(*) AS n FROM jobs').get().n
+              : 0,
+          }),
     };
   } finally {
     db.close();

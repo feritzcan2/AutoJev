@@ -5,7 +5,7 @@ import {captchaProvider} from './provider.mjs';
 import {acquireTabRendering} from '../jev/rendering.mjs';
 import {humanClick} from './human-click.mjs';
 
-// The site-wait card is the only place a user sees why the one native attempt
+// The site-wait card is the only place a user sees why the native attempts
 // ended. Keep the reason code too; it names the exact discovery/click step.
 const outcomes = {
   barrier_after_click:
@@ -20,8 +20,12 @@ const outcomes = {
 };
 export function cloudflareCheckboxMessage(diagnostic) {
   if (!diagnostic) return null;
-  const reason = diagnostic.reason ?? 'unknown';
-  return `${outcomes[reason] ?? `The verification checkbox did not become clickable within ${Math.round((diagnostic.elapsedMs ?? 0) / 1000)} s.`} (${reason})`;
+  const reason = diagnostic.reason ?? 'unknown',
+    text =
+      reason === 'barrier_after_click' && diagnostic.refreshed
+        ? 'The verification checkbox was clicked, then clicked again after a page refresh; Cloudflare did not open access.'
+        : outcomes[reason];
+  return `${text ?? `The verification checkbox did not become clickable within ${Math.round((diagnostic.elapsedMs ?? 0) / 1000)} s.`} (${reason})`;
 }
 
 // A real challenge can run its own checks for 10+ seconds before it renders a
@@ -29,13 +33,34 @@ export function cloudflareCheckboxMessage(diagnostic) {
 const DISCOVERY_MS = 30000,
   ATTEMPT_MS = 20000;
 
+// A click that did not open access gets one second attempt on a fresh
+// document: a new discovery deadline, the same overall start time.
+function startRetry(slot) {
+  delete slot.cloudflareAttempt;
+  slot.cloudflareDiscovery = {
+    startedAt: slot.cloudflareDiscovery?.startedAt ?? Date.now(),
+    until: Date.now() + DISCOVERY_MS,
+    retried: true,
+  };
+  if (slot.cloudflareDiagnostic)
+    Object.assign(slot.cloudflareDiagnostic, {phase: 'discovering', refreshed: true});
+}
+
 export async function prepareCloudflareCheckbox(slot) {
   const document = await slot.page.evaluate(() => performance.timeOrigin);
   if (slot.cloudflareDocument !== undefined && slot.cloudflareDocument !== document) {
     // Never carry a captured target into a replacement document. A challenge
     // may reload itself before showing a checkbox: discovery continues within
     // the same deadline. After a click the attempt stops; a later authorized
-    // site probe starts from fresh evidence.
+    // site probe starts from fresh evidence. A page that reloads itself after
+    // the first click and still shows the barrier counts as the refresh.
+    if (
+      pending.has(slot) &&
+      slot.cloudflareAttempt &&
+      !slot.cloudflareAttempt.finished &&
+      !slot.cloudflareDiscovery?.retried
+    )
+      startRetry(slot);
     if (
       pending.has(slot) &&
       !slot.cloudflareAttempt &&
@@ -59,7 +84,12 @@ export async function prepareCloudflareCheckbox(slot) {
   }
   slot.cloudflareDocument = document;
   const attempt = slot.cloudflareAttempt;
-  if (attempt) return !attempt.finished && Date.now() < attempt.until;
+  // An expired first attempt stays pending: the coordinator refreshes the page.
+  if (attempt)
+    return (
+      !attempt.finished &&
+      (Date.now() < attempt.until || (pending.has(slot) && !slot.cloudflareDiscovery?.retried))
+    );
   if (slot.cloudflareCheckbox) return true;
   // This helper is only called on an observed full-page verification barrier.
   // Do not complete verification for a page with user form fields.
@@ -225,9 +255,10 @@ export async function resolveCloudflareCheckbox(browser, id, result, owner, opti
       };
       browser.onCaptchaProgress?.(id);
       // Discovery and post-click waiting are outside the workspace queue. A late
-      // checkbox gets its one attempt; a disappeared/replaced widget is re-read.
+      // checkbox gets its attempt; a disappeared/replaced widget is re-read. A
+      // click that does not open access is followed by one refresh and retry.
       for (
-        const deadline = Date.now() + DISCOVERY_MS + ATTEMPT_MS + 10000;
+        const deadline = Date.now() + 2 * (DISCOVERY_MS + ATTEMPT_MS) + 10000;
         Date.now() < deadline;
 
       ) {
@@ -241,7 +272,18 @@ export async function resolveCloudflareCheckbox(browser, id, result, owner, opti
             if (slot.cloudflareDiscovery) slot.cloudflareDiscovery.finished = true;
             return await observe();
           }
-        }
+        } else if (
+          slot.cloudflareAttempt &&
+          !slot.cloudflareAttempt.finished &&
+          Date.now() >= slot.cloudflareAttempt.until &&
+          !slot.cloudflareDiscovery?.retried
+        )
+          await browser.enqueue(id, async () => {
+            check();
+            startRetry(slot);
+            // The observation below decides whether the reloaded page passed.
+            await slot.page.reload({waitUntil: 'domcontentloaded', timeout: 20000}).catch(() => {});
+          });
         await delay(500, undefined, {signal});
         check();
         const current = await observe(),

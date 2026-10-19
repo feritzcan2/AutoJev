@@ -783,7 +783,8 @@ export class JevBrowser {
         (!this.siteAccess.status(observed.url)?.waiting ||
           (probe?.token && this.siteAccess.row(observed.url)?.token === probe.token)) &&
         !recordTab;
-      // A visible Cloudflare checkbox gets one native attempt before cooldown.
+      // A visible Cloudflare checkbox gets a native attempt (plus one retry after
+      // a page refresh) before cooldown.
       // Record/application tabs retain their submission checkpoints. The
       // coordinator performs the click and waiting outside this observation.
       if (reason === 'verification' && mayVerify && (await prepareCloudflareCheckbox(slot))) {
