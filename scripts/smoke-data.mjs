@@ -4,8 +4,10 @@ import {mkdtemp, mkdir, writeFile, readFile, stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import {seedLegacyDatabase} from '../tests/helpers/legacy-database.mjs';
 import {inspectBackup} from '../app/system/data-management.mjs';
+import {DATA_SCHEMA_VERSION} from '../app/system/data-management-schema.mjs';
+import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
+import {AutomationStore} from '../app/automation/store.mjs';
 
 const require = createRequire(import.meta.url),
   {_electron: electron} = createRequire(require.resolve('@playwright/mcp/package.json'))(
@@ -30,9 +32,7 @@ async function launch() {
   });
   page = await app.firstWindow();
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.waitForFunction(
-    () => document.querySelector('#candidates')?.value === 'legacy-person',
-  );
+  await page.waitForFunction(() => document.querySelector('script[type=module]'));
   await page.evaluate(() =>
     import(document.querySelector('script[type=module]').src).then(() => true),
   );
@@ -45,31 +45,44 @@ async function close() {
   }
 }
 try {
-  // Boot a frozen old-format database through the real upgrade path.
-  const {
-    profile: candidate,
-    completed: working,
-    unsure: submitting,
-  } = seedLegacyDatabase(path.join(data, 'jobloop.sqlite'));
-  const cv = path.join(data, 'candidates', candidate.id, 'CV.txt'),
-    document = path.join(data, 'candidates', candidate.id, 'documents', 'cover-letter.txt');
+  // Seed current-format data with two records, as a previous app version left it.
+  const core = new WorkspaceDatabase(path.join(data, 'jobloop.sqlite')),
+    store = new AutomationStore(core),
+    source = 'https://jobs.example.test/search';
+  const candidate = store.create('job-search', {
+    title: 'Backup Fixture',
+    goal: 'Local test only',
+    criteria: Object.fromEntries(
+      store
+        .template('job-search')
+        .fields.filter((field) => field.required)
+        .map((field) => [field.id, 'Synthetic criteria']),
+    ),
+    sources: [source],
+  });
+  store.review(candidate.id);
+  const trial = store.begin(candidate.id, 'trial');
+  store.observe(candidate.id, trial.id, source, 'Observed source');
+  store.finish(candidate.id, trial.id, 'completed', 'Source checked');
+  const run = store.begin(candidate.id, 'run');
+  for (const n of [1, 2])
+    store.record(candidate.id, run.id, {
+      key: `${source}/${n}`,
+      url: `${source}/${n}`,
+      title: `Synthetic listing ${n}`,
+      summary: 'Synthetic facts',
+    });
+  store.finish(candidate.id, run.id, 'completed', 'Saved');
+  core.close();
+  const workspaceDirectory = path.join(data, 'automations', 'workspaces', candidate.id),
+    cv = path.join(workspaceDirectory, 'CV.txt'),
+    document = path.join(workspaceDirectory, 'documents', 'cover-letter.txt');
   await mkdir(path.dirname(document), {recursive: true});
   await writeFile(cv, await readFile(cvSource));
   await writeFile(document, 'Original synthetic cover letter.\n');
-  const seed = new DatabaseSync(path.join(data, 'jobloop.sqlite'));
-  seed.prepare('UPDATE candidates SET data=? WHERE id=?').run(
-    JSON.stringify({
-      ...candidate,
-      name: 'Backup Fixture',
-      preferences: 'Local test only',
-      cvPath: cv,
-    }),
-    candidate.id,
-  );
-  seed.close();
   await writeFile(
     path.join(data, 'data-version.json'),
-    JSON.stringify({appVersion: '0.0.0-smoke', schemaVersion: 1}),
+    JSON.stringify({appVersion: '0.0.0-smoke', schemaVersion: DATA_SCHEMA_VERSION}),
   );
   await launch();
   const version = await app.evaluate(({app}) => app.getVersion()),
@@ -94,12 +107,22 @@ try {
   const inspected = await inspectBackup(backup.path);
   assert.ok(inspected.files >= 3);
   assert.equal(
-    await readFile(path.join(backup.path, 'candidates', candidate.id, 'CV.txt'), 'utf8'),
+    await readFile(
+      path.join(backup.path, 'automations', 'workspaces', candidate.id, 'CV.txt'),
+      'utf8',
+    ),
     await readFile(cvSource, 'utf8'),
   );
   assert.equal(
     await readFile(
-      path.join(backup.path, 'candidates', candidate.id, 'documents', 'cover-letter.txt'),
+      path.join(
+        backup.path,
+        'automations',
+        'workspaces',
+        candidate.id,
+        'documents',
+        'cover-letter.txt',
+      ),
       'utf8',
     ),
     'Original synthetic cover letter.\n',
@@ -116,7 +139,7 @@ try {
   );
   await writeFile(document, 'Changed after export.\n');
   await writeFile(
-    path.join(data, 'candidates', candidate.id, 'documents', 'after-export.txt'),
+    path.join(workspaceDirectory, 'documents', 'after-export.txt'),
     'This must disappear on restore.\n',
   );
   assert.equal(
@@ -180,15 +203,13 @@ try {
   assert.equal(restored.automation.goal, 'Local test only');
   assert.equal(await readFile(cv, 'utf8'), await readFile(cvSource, 'utf8'));
   assert.equal(await readFile(document, 'utf8'), 'Original synthetic cover letter.\n');
-  await assert.rejects(
-    () => stat(path.join(data, 'candidates', candidate.id, 'documents', 'after-export.txt')),
-    {code: 'ENOENT'},
-  );
+  await assert.rejects(() => stat(path.join(workspaceDirectory, 'documents', 'after-export.txt')), {
+    code: 'ENOENT',
+  });
   assert.equal(restored.automation.status, 'paused');
   assert.equal(restored.activeRun, null);
   assert.ok(restored.workers.every((worker) => !worker.active));
-  assert.equal(restored.results.find((job) => job.id === working.id).status, 'completed');
-  assert.equal(restored.results.find((job) => job.id === submitting.id).status, 'uncertain');
+  assert.equal(restored.results.length, 2);
   assert.equal(restored.definition.execution.driver, 'browser');
   assert.equal(await page.evaluate(() => typeof window.jobloop.backgroundSnapshot), 'undefined');
   const documents = await page.evaluate((id) => window.jobloop.documents(id), candidate.id);

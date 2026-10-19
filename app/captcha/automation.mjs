@@ -1,7 +1,8 @@
 // @ts-check
 import {resolveCloudflareCheckbox} from './cloudflare-checkbox.mjs';
 
-// A visible Cloudflare checkbox gets its one native click; every other
+// A visible Cloudflare checkbox gets a native click, and one more after a
+// page refresh if the first did not open access; every other
 // verification is reported to the agent and handed to the user.
 export async function resolveBrowserCaptcha(browser, id, result, owner, options) {
   const part = result.content?.find((p) => p.type === 'text');
