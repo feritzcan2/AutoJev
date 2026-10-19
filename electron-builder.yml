@@ -6,6 +6,7 @@ directories:
 files:
   - app/**
   - src/scoring-state.js
+  - src/hard-rules.js
   - dist/**
   - vendor/jev-ultrafast/**
   - package.json

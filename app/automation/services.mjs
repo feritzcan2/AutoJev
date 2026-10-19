@@ -259,6 +259,7 @@ export function registerAutomationServices({
   });
   handle('setup-agent-restart', (id) => runtime.configureConversation(id, null, {restart: true}));
   handle('automation-source-save', (id, url, input) => runtime.saveSource(id, url, input));
+  handle('automation-search-terms', (id, terms) => runtime.saveSearchTerms(id, terms));
   handle('automation-sources-interval', (id, intervalMinutes) =>
     runtime.saveSourcesInterval(id, intervalMinutes),
   );

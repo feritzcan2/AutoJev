@@ -1,5 +1,5 @@
 // @ts-check
-import {recipeNeedsTerms} from './recipe.mjs';
+import {recipeNeedsTerms, sourceRecipeOf} from './recipe.mjs';
 
 // Legacy workspace metadata is retained for history; a skip never validates a source.
 export const automationTrialReady = (a) =>
@@ -12,7 +12,7 @@ export const automationReady = (a) => a.reviewedRevision === a.revision;
 // module, so the caller looks up the site extension.
 export function sourceTrialReady(a, url, {siteSearch = false} = {}) {
   const state = a.sourceState?.[url],
-    recipe = a.sourceSettings?.[url]?.recipe;
+    recipe = sourceRecipeOf(a, url);
   if (state?.trial) return state.trial.status === 'passed';
   return Boolean(
     recipe?.entry.kind === 'url_template' &&

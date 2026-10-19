@@ -18,6 +18,7 @@ import {
   recipeRunOutcome,
   advanceRecipeState,
   SCAN_SEARCH_PAGES,
+  sourceRecipeOf,
 } from '../../sources/recipe.mjs';
 import {collectorRun} from '../../sources/collectors.mjs';
 import {randomUUID} from 'node:crypto';
@@ -311,7 +312,7 @@ export const runMethods = {
         !run.recordOperation &&
         ['completed', 'partial', 'failed'].includes(status)
       ) {
-        const recipe = a.sourceSettings?.[run.sourceUrl]?.recipe,
+        const recipe = sourceRecipeOf(a, run.sourceUrl),
           state = a.sourceState?.[run.sourceUrl] ?? {};
         if (recipe && recipe.entry.kind !== 'discovery') {
           const replay = recipeReplay(recipe, recipeValues(a, run.sourceUrl)),

@@ -54,14 +54,19 @@ export function sourceSearchChoice(search, recipe, input) {
   return choice;
 }
 
+// Empty terms drop the source's own terms, so it searches with the workspace's.
 export function sourceSearchRecipe(search, recipe, {terms = undefined, filters}) {
-  const base = baseRecipe(search, recipe),
+  const {terms: own, ...base} = baseRecipe(search, recipe),
     template = withSearchFilters(
       base.entry.template,
       Object.fromEntries(filters.map((f) => [f.param, f.value])),
-    );
+    ),
+    kept = terms ?? own;
   return normalizeSourceRecipe(
-    siteSearchRecipe(search, {...base, entry: {...base.entry, template}, ...(terms ? {terms} : {})})
-      .recipe,
+    siteSearchRecipe(search, {
+      ...base,
+      entry: {...base.entry, template},
+      ...(kept?.length ? {terms: kept} : {}),
+    }).recipe,
   );
 }

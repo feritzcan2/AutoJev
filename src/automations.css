@@ -1987,268 +1987,6 @@
 .record-drawer-body .record-listing-footer small {
   margin: 0;
 }
-/* Contacts page: one group per listing, one card per LinkedIn contact. */
-.contacts-page-filters {
-  margin-bottom: 12px;
-}
-.contacts-page-list {
-  display: grid;
-  max-width: 860px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
-}
-.contacts-page-list:empty {
-  display: none;
-}
-.contacts-page-row + .contacts-page-row {
-  border-top: 1px solid var(--border);
-}
-.contacts-page-row[data-open='true'] {
-  background: var(--bg-raised);
-}
-/* One line per listing: title and company, then what waits on the user. */
-.contacts-page-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 10px 14px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--text);
-  text-align: left;
-}
-.contacts-page-head:hover {
-  background: var(--bg-hover);
-}
-.contacts-page-title {
-  display: grid;
-  min-width: 0;
-}
-.contacts-page-title > * {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.contacts-page-title small,
-.contacts-page-count,
-.contacts-page-caret {
-  color: var(--text-secondary);
-}
-.contacts-page-chips {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-}
-.contacts-page-body {
-  padding: 0 14px 14px;
-}
-.contacts-page-tools {
-  display: flex;
-  justify-content: flex-end;
-}
-.contacts-page-empty,
-.contacts-page .record-listing-state,
-.contacts-page .record-contact-about,
-.contacts-page .record-contact-hint {
-  color: var(--text-secondary);
-}
-.record-contacts-people {
-  display: grid;
-  gap: 12px;
-  margin-top: 12px;
-}
-.record-contact {
-  display: grid;
-  gap: 10px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-raised);
-}
-.record-contact[data-state='invited'],
-.record-contact[data-state='messaged'] {
-  border-left: 3px solid var(--success);
-}
-.record-contact[data-state='uncertain'],
-.record-contact[data-state='failed'] {
-  border-left: 3px solid var(--danger, #e5484d);
-}
-.record-contact-head,
-.record-contact-foot,
-.record-contact-meta,
-.record-contacts-find {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.record-contact-avatar {
-  display: grid;
-  flex: none;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--accent-wash);
-  color: var(--accent-strong);
-  font-size: 13px;
-  font-weight: 600;
-}
-.record-contact-who {
-  display: grid;
-  flex: 1;
-  min-width: 0;
-  gap: 2px;
-}
-.record-contact-who > * {
-  overflow: hidden;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.record-contact-state {
-  flex: none;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--bg-hover);
-  font-size: 12px;
-}
-.record-contact[data-state='invited'] .record-contact-state,
-.record-contact[data-state='messaged'] .record-contact-state {
-  color: var(--success);
-}
-.record-contact[data-state='uncertain'] .record-contact-state,
-.record-contact[data-state='failed'] .record-contact-state {
-  color: var(--danger, #e5484d);
-}
-.contacts-page .record-contact-reason {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 13px;
-}
-.record-contact-reason b {
-  color: var(--text);
-  font-weight: 600;
-}
-.record-contact-options {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 8px;
-}
-.record-contact-option {
-  display: grid;
-  align-content: start;
-  gap: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  background: var(--bg-app);
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: 13px;
-  line-height: 1.45;
-  text-align: left;
-  cursor: pointer;
-}
-.record-contact-option[aria-checked='false']:is(:hover, :focus-visible) {
-  border-color: var(--accent);
-  outline: none;
-}
-.record-contact-option[aria-checked='true'] {
-  border-color: var(--accent);
-  background: var(--accent-wash);
-  color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--accent);
-  cursor: default;
-}
-.record-contact-option-text {
-  margin: 0;
-}
-.record-contact-option-use {
-  color: var(--accent);
-  font-size: 12px;
-  opacity: 0;
-}
-.record-contact-option:is(:hover, :focus-visible) .record-contact-option-use {
-  opacity: 1;
-}
-.record-contact-editor {
-  display: grid;
-  gap: 4px;
-}
-.record-contact-option-top {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.record-contact-option-top b {
-  color: var(--text);
-}
-.record-contact-option-top small {
-  color: var(--text-muted);
-  font-size: 11px;
-}
-.record-contact-option[aria-checked='true'] .record-contact-option-top b::before {
-  content: '✓ ';
-  color: var(--accent-strong);
-}
-.record-contact textarea {
-  width: 100%;
-  resize: vertical;
-  font: inherit;
-  line-height: 1.45;
-}
-.record-contact-meta {
-  justify-content: flex-end;
-  color: var(--text-muted);
-  font-size: 11px;
-}
-.record-contact-edited {
-  color: var(--warning);
-}
-.record-contact-foot {
-  justify-content: space-between;
-}
-.record-contact-pick {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.record-contact-remove {
-  color: var(--text-muted);
-}
-.record-contact-remove:hover {
-  color: var(--danger, #e5484d);
-}
-.record-contact-note {
-  margin: 0;
-  padding: 8px 12px;
-  border-left: 2px solid var(--border-strong);
-  color: var(--text-secondary);
-}
-.record-contacts-send {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 14px;
-  color: var(--text-muted);
-}
-.record-contacts-find {
-  margin-top: 18px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-.record-contacts-find input {
-  flex: 1;
-}
-.contacts-page .record-contacts-error {
-  color: var(--danger, #e5484d);
-}
 .record-drawer-body {
   flex: 1;
   overflow: auto;
@@ -2481,92 +2219,481 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
-.record-contact-name {
+
+/* Contacts page: a messenger with threads by listing and one open conversation. */
+.contacts-chat {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  height: max(520px, calc(100vh - 190px));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-raised);
+}
+.contacts-chat-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+.contacts-chat-filters {
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.contacts-chat-filters button {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.contacts-chat-threads {
+  flex: 1;
+  overflow: auto;
+  padding: 6px 0 12px;
+}
+.contacts-listing + .contacts-listing {
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.contacts-listing-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 4px 14px;
+}
+.contacts-listing-title {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.contacts-listing-title > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contacts-listing-title b {
+  font-size: 12px;
+  letter-spacing: 0.2px;
+}
+.contacts-listing-title small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.contacts-listing-remove {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  line-height: 1;
+}
+.contacts-listing-remove:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--danger, #e5484d);
+}
+.contacts-thread {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px 8px 14px;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+.contacts-thread:hover {
+  background: var(--bg-hover);
+}
+.contacts-thread[aria-current='true'] {
+  border-left-color: var(--accent);
+  background: var(--accent-wash);
+}
+.contacts-thread-text {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.contacts-thread-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.contacts-thread-top b {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contacts-thread-top time {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.contacts-thread-preview {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contacts-thread[data-tone='blocked'] .contacts-thread-preview {
+  color: var(--danger, #e5484d);
+}
+.contacts-thread-badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(217, 170, 95, 0.16);
+  color: var(--warning);
+  font-size: 11px;
+}
+.contacts-thread[data-tone='active'] .contacts-thread-badge {
+  background: var(--accent-wash);
+  color: var(--accent-strong);
+  letter-spacing: 1px;
+}
+.contacts-avatar {
+  display: grid;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-wash);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+.contacts-avatar.agent {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: 16px;
+}
+.contacts-avatar.large {
+  width: 42px;
+  height: 42px;
+  font-size: 14px;
+}
+.contacts-avatar.large svg {
+  width: 19px;
+  height: 19px;
+}
+.contacts-thread[data-tone='done'] .contacts-avatar {
+  box-shadow: 0 0 0 2px var(--success);
+}
+.contacts-chat-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-app);
+}
+.contacts-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+.contacts-pane-who {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.contacts-pane-who > * {
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contacts-pane-who small {
+  color: var(--text-secondary);
+}
+.contacts-pane-name {
   padding: 0;
   border: 0;
   background: none;
+  font-size: 15px;
   font-weight: 600;
 }
-.contacts-chip {
-  padding: 2px 8px;
+.contacts-pane-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+.contacts-pill {
+  max-width: 260px;
+  padding: 3px 10px;
+  overflow: hidden;
   border-radius: 999px;
   background: var(--bg-hover);
   color: var(--text-secondary);
   font-size: 12px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.contacts-chip[data-tone='waiting'] {
-  background: rgba(217, 170, 95, 0.14);
-  color: var(--warning);
+button.contacts-pill {
+  border: 0;
 }
-.contacts-chip[data-tone='active'] {
-  background: color-mix(in srgb, var(--accent, #4fd5c6) 16%, transparent);
+button.contacts-pill:hover {
   color: var(--text);
 }
-.contacts-chip[data-tone='done'] {
-  background: rgba(92, 201, 149, 0.14);
+.contacts-pill[data-state='proposed'] {
+  color: var(--warning);
+}
+.contacts-pill:is([data-state='invited'], [data-state='messaged']) {
   color: var(--success);
 }
-.contacts-chip[data-tone='blocked'] {
-  background: color-mix(in srgb, var(--danger, #e5484d) 14%, transparent);
+.contacts-pill[data-state='queued'] {
+  color: var(--accent-strong);
+}
+.contacts-pill:is([data-state='uncertain'], [data-state='failed']) {
   color: var(--danger, #e5484d);
 }
-.contacts-page-latest {
-  margin-top: 2px;
-  color: var(--text-secondary);
-  font-style: italic;
+.contacts-pane-remove {
+  padding: 3px 10px;
+  color: var(--text-muted);
+  font-size: 12px;
 }
-/* The agent's latest messages while a contact task runs. */
-.contacts-page-updates {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--bg-hover);
+.contacts-pane-remove:hover {
+  color: var(--danger, #e5484d);
 }
-.contacts-page-updates-title {
-  color: var(--text-secondary);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.contacts-page-updates ol {
-  display: grid;
-  gap: 6px;
-  margin: 6px 0 0;
-  padding: 0;
-  list-style: none;
-  font-size: 13px;
-}
-.contacts-page-updates li {
-  display: grid;
-  grid-template-columns: auto 1fr;
+.contacts-log {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 22px;
 }
-.contacts-page-updates time {
+.contacts-system {
+  align-self: center;
+  max-width: 80%;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+.contacts-system[data-tone='blocked'] {
+  color: var(--danger, #e5484d);
+}
+.contacts-why {
+  display: grid;
+  align-self: center;
+  gap: 2px;
+  max-width: 520px;
+  padding: 8px 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
   color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  text-align: center;
 }
-.contacts-page-updates span {
+.contacts-why b {
+  color: var(--text);
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.contacts-bubble {
+  display: grid;
+  gap: 4px;
+  max-width: min(72%, 560px);
+  padding: 9px 13px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.contacts-bubble p {
+  margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.contacts-page-line {
+.contacts-bubble small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.contacts-bubble.out small {
+  color: rgba(13, 27, 42, 0.68);
+}
+.contacts-bubble.out {
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+  background: var(--accent);
+  color: #0d1b2a;
+}
+.contacts-bubble.out small {
+  text-align: right;
+}
+.contacts-bubble.out[data-tone='pending'] small {
+  color: var(--text-secondary);
+}
+.contacts-bubble.out[data-tone='pending'] {
+  background: var(--accent-wash);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.contacts-bubble.in {
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--text);
+}
+.contacts-typing {
+  display: flex;
+  gap: 4px;
+  padding: 12px 14px;
+}
+.contacts-typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  animation: contacts-typing 1.2s infinite ease-in-out;
+}
+.contacts-typing span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.contacts-typing span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes contacts-typing {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+.contacts-composer {
+  display: grid;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 12px 18px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+.contacts-composer.search {
   display: flex;
   align-items: center;
 }
-.contacts-page-line > .contacts-page-head {
+.contacts-composer.search input {
   flex: 1;
-  min-width: 0;
 }
-.contacts-page-remove {
-  margin-right: 10px;
-  padding: 2px 8px;
-  border: 0;
-  background: transparent;
+.contacts-composer textarea {
+  width: 100%;
+  resize: none;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.contacts-composer-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.contacts-composer-hint {
+  flex: 1;
+  text-align: right;
+}
+.contacts-edited {
+  color: var(--warning);
+}
+.contacts-composer-locked {
+  margin: 0;
+  padding: 14px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-raised);
   color: var(--text-secondary);
-  font-size: 16px;
-  line-height: 1;
+  font-size: 12px;
 }
-.contacts-page-remove:hover:not(:disabled) {
+.contacts-suggestions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+.contacts-suggestion {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 8px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-app);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: left;
+}
+.contacts-suggestion:hover {
+  border-color: var(--accent);
+}
+.contacts-suggestion[aria-checked='true'] {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  color: var(--text);
+}
+.contacts-suggestion-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.contacts-suggestion-top b {
+  color: var(--text);
+}
+.contacts-suggestion[aria-checked='true'] .contacts-suggestion-top b::before {
+  content: '✓ ';
+  color: var(--accent-strong);
+}
+.contacts-suggestion-top small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.contacts-suggestion-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.contacts-error {
+  margin: 0;
+  padding: 8px 18px;
+  background: var(--bg-raised);
   color: var(--danger, #e5484d);
+  font-size: 12px;
+}
+.contacts-chat-empty {
+  display: grid;
+  flex: 1;
+  place-content: center;
+  gap: 6px;
+  max-width: 420px;
+  margin: auto;
+  padding: 24px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.contacts-chat-empty p {
+  margin: 0;
 }

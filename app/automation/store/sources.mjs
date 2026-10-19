@@ -11,7 +11,11 @@ import {
   recipeReplay,
   replayMatches,
   recipeStatus,
-  recipeNeedsTerms,
+  normalizeSearchTerms,
+  sameTerms,
+  sourceRecipeOf,
+  takesSearchTerms,
+  withSearchTerms,
 } from '../../sources/recipe.mjs';
 import {siteExtensionKind, siteExtensionFor} from '../../site-extensions/index.mjs';
 import {siteSearchRecipe} from '../../site-extensions/search.mjs';
@@ -33,20 +37,6 @@ import {siteTurn} from '../../sources/site-turns.mjs';
 // Only a different search method changes a recipe; notes, the pagination
 // hint, the page cap and the login flag are advisory.
 const recipeKey = (r) => (r ? JSON.stringify({entry: r.entry, terms: r.terms ?? null}) : null);
-
-// The search terms most sources of the workspace share, for a source added
-// without its own: a {query} search then starts from the workspace's roles
-// instead of waiting. Its trial or the setup chat can change them.
-function sharedTerms(settings = {}) {
-  const counts = new Map();
-  for (const {recipe} of Object.values(settings))
-    if (recipe?.terms?.length) {
-      const key = JSON.stringify(recipe.terms);
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-  const [best] = [...counts].sort((x, y) => y[1] - x[1]);
-  return best ? JSON.parse(best[0]) : null;
-}
 
 // AutomationStore methods: source list, per-source settings, waits and learned recipes.
 // A site whose scans read its pages in the user's browser counts them under
@@ -266,14 +256,14 @@ export const sourceMethods = {
     return sources.flatMap((url) => {
       const search = siteExtensionKind(url, a.templateId)?.search;
       if (!search) return [];
-      const recipe = this.sourceRecipeBase(a, url);
+      const base = this.sourceRecipeBase(a, url),
+        recipe = draft[url] ? sourceSearchRecipe(search, base, draft[url]) : base;
       return [
         {
           url,
-          ...sourceSearchOptions(
-            search,
-            draft[url] ? sourceSearchRecipe(search, recipe, draft[url]) : recipe,
-          ),
+          ...sourceSearchOptions(search, recipe),
+          // Without its own terms it searches with the workspace's search terms.
+          ...(takesSearchTerms(recipe) ? {usesSearchTerms: true} : {}),
         },
       ];
     });
@@ -323,15 +313,10 @@ export const sourceMethods = {
       // setup), or another address on its site, keeps its template name, recipe
       // and instructions.
       const defaults = this.template(a.templateId).defaultSources ?? [];
-      const terms = sharedTerms(a.sourceSettings);
       const seeded = Object.fromEntries(
         added.flatMap((url) => {
           const source = !a.sourceSettings?.[url] && startingSource(defaults, url);
-          if (!source) return [];
-          const settings = templateSourceSettings(source);
-          if (terms && recipeNeedsTerms(settings.recipe))
-            settings.recipe = {...settings.recipe, terms};
-          return [[url, settings]];
+          return source ? [[url, templateSourceSettings(source)]] : [];
         }),
       );
       const next = {
@@ -351,7 +336,11 @@ export const sourceMethods = {
         const searches = Object.entries(a.sourceDraft.searches ?? {}).filter(([url]) =>
           proposed.includes(url),
         );
-        if (JSON.stringify(proposed) === JSON.stringify(urls) && !searches.length)
+        if (
+          JSON.stringify(proposed) === JSON.stringify(urls) &&
+          !searches.length &&
+          !a.sourceDraft.searchTerms
+        )
           delete next.sourceDraft;
         else
           next.sourceDraft = {
@@ -405,6 +394,7 @@ export const sourceMethods = {
     if (accept)
       return this.store.workspaces.tasks.atomic(() => {
         let next = this.saveSources(id, a.sourceDraft.sources, {acceptDraft: true});
+        if (a.sourceDraft.searchTerms) next = this.saveSearchTerms(id, a.sourceDraft.searchTerms);
         for (const [url, choice] of Object.entries(a.sourceDraft.searches ?? {}))
           next = this.saveSource(id, url, {
             recipe: sourceSearchRecipe(
@@ -425,6 +415,50 @@ export const sourceMethods = {
       const a = this.get(id);
       for (const url of a.sources) this.saveSource(id, url, {intervalMinutes});
       return this.sources(id);
+    });
+  },
+  // The workspace's search terms. Every source that searches with them starts
+  // its results pages over and verifies its recipe again, as after a recipe
+  // edit; a source whose own terms equal the list joins it.
+  saveSearchTerms(id, input) {
+    const a = this.get(id),
+      terms = normalizeSearchTerms(input);
+    if (JSON.stringify(terms) === JSON.stringify(a.searchTerms ?? [])) return a;
+    const shared = a.sources.filter((url) => takesSearchTerms(a.sourceSettings?.[url]?.recipe)),
+      running = shared.find((url) =>
+        this.runs(id).some(
+          (r) => !isConversation(r) && r.status === 'running' && r.sourceUrl === url,
+        ),
+      );
+    if (running)
+      throw Error(
+        `Stop the running scan of ${a.sourceSettings[running]?.name ?? running} first; it searches with these terms.`,
+      );
+    const next = {
+      ...a,
+      searchTerms: terms,
+      sourceSettings: {...a.sourceSettings},
+      sourceState: {...a.sourceState},
+    };
+    return this.store.workspaces.tasks.atomic(() => {
+      for (const url of shared)
+        next.sourceState[url] = {
+          ...this.forgetRecipePosition(
+            id,
+            a,
+            url,
+            sourceRecipeOf(a, url),
+            a.sourceState?.[url] ?? {},
+          ),
+          recipeState: {status: 'candidate', successCount: 0, failCount: 0},
+        };
+      for (const url of a.sources) {
+        const {terms: own, ...recipe} = a.sourceSettings?.[url]?.recipe ?? {};
+        if (sameTerms(own, terms) && takesSearchTerms(recipe))
+          next.sourceSettings[url] = {...next.sourceSettings[url], recipe};
+      }
+      next.updatedAt = this.now();
+      return this.put(next);
     });
   },
   saveSource(id, url, input) {
@@ -476,10 +510,11 @@ export const sourceMethods = {
     // An edited recipe is a new candidate; the next scan verifies it.
     // Only a different search method invalidates verification; notes, the
     // pagination hint and login flag are advisory.
-    const recipeChanged = recipeKey(old.recipe) !== recipeKey(settings.recipe);
+    const oldRecipe = withSearchTerms(old.recipe, a.searchTerms),
+      recipeChanged = recipeKey(oldRecipe) !== recipeKey(sourceRecipeOf(a, url));
     const position =
       recipeChanged && !scopeChanged
-        ? this.forgetRecipePosition(id, a, url, old.recipe, state)
+        ? this.forgetRecipePosition(id, a, url, oldRecipe, state)
         : state;
     a.sourceState = {
       ...a.sourceState,
@@ -531,9 +566,10 @@ export const sourceMethods = {
               evidence: {listings, pages},
             }
           : {status: 'candidate', successCount: 0, failCount: 0, learnedRunId: runId};
-    const old = a.sourceSettings?.[url]?.recipe ?? null,
-      state = a.sourceState?.[url] ?? {};
-    const changed = recipeKey(old) !== recipeKey(settings.recipe);
+    const old = sourceRecipeOf(a, url),
+      state = a.sourceState?.[url] ?? {},
+      learned = withSearchTerms(settings.recipe, a.searchTerms);
+    const changed = recipeKey(old) !== recipeKey(learned);
     const position = changed ? this.forgetRecipePosition(id, a, url, old, state) : state;
     const saved = this.put({
       ...a,
@@ -550,10 +586,7 @@ export const sourceMethods = {
           (candidate) => replayMatches(oldReplay, candidate),
           run.scan.work.activeSearchId,
         );
-      const scan = replayScanWork(
-        kept,
-        recipeReplay(settings.recipe, recipeValues(a, url))?.searches,
-      );
+      const scan = replayScanWork(kept, recipeReplay(learned, recipeValues(a, url))?.searches);
       if (scan !== run.scan) this.persistScan(id, {...run, scan});
     }
     return saved;
@@ -621,7 +654,7 @@ export const sourceMethods = {
   },
   sourceRecipe(id, url) {
     const a = this.get(id),
-      saved = a.sourceSettings?.[url]?.recipe ?? null,
+      saved = sourceRecipeOf(a, url),
       search =
         saved?.entry?.kind === 'url_template' ? siteExtensionKind(url, a.templateId)?.search : null,
       // The site extension owns the sort, pagination and ordering of its results

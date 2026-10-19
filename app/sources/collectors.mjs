@@ -1,6 +1,6 @@
 // @ts-check
 import {siteExtensionFor} from '../site-extensions/index.mjs';
-import {recipeReplay, recipeValues} from './recipe.mjs';
+import {recipeReplay, recipeValues, sourceRecipeOf} from './recipe.mjs';
 
 // Only the explicitly requested job source uses a native collector. Other
 // templates, record operations, and websites retain their existing behavior.
@@ -17,7 +17,7 @@ export const collectorRun = (a, run) =>
   !run.recordId && !run.recordOperation && run.kind === 'run' && sourceCollector(a, run.sourceUrl);
 export function collectorSearches(a, url) {
   if (!sourceCollector(a, url)) throw Error('This source has no dedicated collector.');
-  const recipe = a.sourceSettings?.[url]?.recipe;
+  const recipe = sourceRecipeOf(a, url);
   if (recipe && recipe.entry.kind !== 'url_template')
     throw Error('This collector needs a URL search recipe.');
   const adapter = collectorExtension(a, url).collector,

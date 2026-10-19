@@ -116,6 +116,7 @@ export const conversationContextVersion = (a) =>
           'mode',
           'sources',
           'sourceSettings',
+          'searchTerms',
           'planDraft',
           'sourceDraft',
           'profileUpdate',
@@ -141,7 +142,12 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
     a = {
       ...base,
       ...draft?.plan,
-      ...(conversation && saved.sourceDraft ? {sources: saved.sourceDraft.sources} : {}),
+      ...(conversation && saved.sourceDraft
+        ? {
+            sources: saved.sourceDraft.sources,
+            ...(saved.sourceDraft.searchTerms ? {searchTerms: saved.sourceDraft.searchTerms} : {}),
+          }
+        : {}),
     },
     definition = db.template(a.templateId),
     interview = active.kind === 'interview';
@@ -156,6 +162,7 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
           'goal',
           'criteria',
           'sources',
+          'searchTerms',
           'instructions',
           'facts',
           'table',

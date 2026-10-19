@@ -6,7 +6,7 @@ import {
   needsCollectorReview,
 } from './collectors.mjs';
 import {scanWork, activeSearch, pendingScanUrls, noteCards} from './scan-work.mjs';
-import {SCAN_SEARCH_LISTINGS, SCAN_SEARCH_PAGES, recipeValues} from './recipe.mjs';
+import {SCAN_SEARCH_LISTINGS, SCAN_SEARCH_PAGES, recipeValues, sourceRecipeOf} from './recipe.mjs';
 import {automationTextCells} from '../templates/catalog.mjs';
 import {listingCard} from '../site-extensions/listing.mjs';
 import {setTimeout as pause} from 'node:timers/promises';
@@ -454,7 +454,7 @@ export async function collectSourcePage(
   // Without terms {query} holds the source query, often a sentence the site
   // cannot search for; an empty first page is then not a result.
   const a = db.get(run.automationId),
-    recipe = a.sourceSettings?.[run.sourceUrl]?.recipe;
+    recipe = sourceRecipeOf(a, run.sourceUrl);
   if (
     !page.jobs.length &&
     !search.collector.visitedPages?.length &&

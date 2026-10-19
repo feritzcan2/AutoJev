@@ -240,6 +240,12 @@ export const sourceMethods = {
     this.changed(id);
     return this.db.sources(id).find((s) => s.url === url);
   },
+  async saveSearchTerms(id, terms) {
+    this.db.saveSearchTerms(id, terms);
+    this.changed(id);
+    await this.tick();
+    return this.db.sources(id);
+  },
   async saveSourcesInterval(id, intervalMinutes) {
     this.db.saveSourcesInterval(id, intervalMinutes);
     this.changed(id);

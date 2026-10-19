@@ -148,7 +148,11 @@ The user uploaded their CV on the welcome screen. They review your result on a f
 
 ## Source discovery
 - template.defaultSources lists the starting sources. Sources without countries or remote are already in the workspace. Sources with countries serve only those countries (ISO codes): propose the ones matching criteria.country and the user's other target countries with save_automation_plan addSources; the existing sources stay. Sources with remote serve remote work (with countries: those countries or remote work): propose them only when the user accepts fully remote work, or for their countries. Adding one keeps its saved recipe and instructions. A national board the user names that is not listed is added by its address; its recipe is learned in the trial.
-- Then read get_automation_context section profile. sourceSearch lists the sources whose site extension knows the search: notes say what {query} takes, filters lists the values each filter accepts, terms and current show the present choice. Set them with save_automation_plan sourceSearches: up to 5 terms from the target roles in the form the notes ask for (exact job titles, or a category name where {query} is a category), and only the filter values the criteria decide, such as work mode or seniority. Leave other filters unset. Skip a source when its current choice already fits. Every source listed in sourceSearch needs terms: without them its scans wait, because {query} would hold the source scope sentence.
-- When the target roles or work preferences change later, update the affected sourceSearches in the same save_automation_plan call.
+- Then read get_automation_context section profile and set the searches with save_automation_plan:
+  1. searchTerms: up to 5 exact job titles from the target roles. Every source marked usesSearchTerms searches with them; automation.searchTerms shows the current list.
+  2. sourceSearches terms only for a source whose notes ask for another form (a category name or a slug), in that form. terms [] makes a source use searchTerms again.
+  3. sourceSearches filters: only the values the criteria decide, such as work mode or seniority. Leave other filters unset.
+  Skip what already fits. A source without terms and without searchTerms does not scan, because {query} would hold the source scope sentence.
+- When the target roles or work preferences change later, update searchTerms (and the affected sourceSearches) in the same save_automation_plan call.
 `,
 };

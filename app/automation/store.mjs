@@ -1,5 +1,6 @@
 import {profilePlan, profileChanged} from './profile-updates.mjs';
 import {convertLegacyProfile} from './legacy-profile.mjs';
+import {adoptSearchTerms} from '../sources/automation-sources.mjs';
 import {taskSnapshot} from '../browser/automation-snapshot.mjs';
 import {automationSnapshotReader} from '../browser/automation-snapshot-reader.mjs';
 import {JevTaskStore} from '../jev/task-store.mjs';
@@ -22,7 +23,12 @@ import {contextCompactTokens} from '../agents/context-compaction.mjs';
 import {contextRestartTokens} from '../agents/context-usage.mjs';
 import {randomUUID} from 'node:crypto';
 import {siteKey} from '../browser/site-key.mjs';
-import {recipeNeedsTerms} from '../sources/recipe.mjs';
+import {
+  recipeNeedsTerms,
+  normalizeSearchTerms,
+  sameTerms,
+  sourceRecipeOf,
+} from '../sources/recipe.mjs';
 import {
   reusableTemplate,
   planInput,
@@ -104,8 +110,11 @@ export class AutomationStore {
    CREATE TABLE IF NOT EXISTS scan_seen_listings(workspace_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,url_key TEXT NOT NULL,scope_key TEXT NOT NULL,reason TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(workspace_id,url_key));`);
     this.jevTasks = new JevTaskStore(this.db, now);
     this.browserEvidence = new BrowserEvidenceStore(now);
-    for (const {id} of this.db.prepare('SELECT id FROM automations').all())
+    for (const {id} of this.db.prepare('SELECT id FROM automations').all()) {
       convertLegacyProfile(this, id);
+      const adopted = adoptSearchTerms(this.get(id));
+      if (adopted) this.put(adopted);
+    }
     for (const {id} of this.list())
       if (this.store.workspaces.records.usesUrl(id))
         this.store.workspaces.records.identities.rebuild(id);
@@ -387,12 +396,18 @@ export class AutomationStore {
     else if (profileChanged(profile, base))
       a.planDraft = {plan: profile, baseRevision: a.revision, runId, updatedAt};
     else delete a.planDraft;
-    const searches = this.proposedSourceSearches(id, plan.sources, input.sourceSearches);
-    const changed = JSON.stringify(plan.sources) !== JSON.stringify(a.sources) || searches;
+    const searches = this.proposedSourceSearches(id, plan.sources, input.sourceSearches),
+      proposedTerms = input.searchTerms
+        ? normalizeSearchTerms(input.searchTerms)
+        : a.sourceDraft?.searchTerms,
+      searchTerms = sameTerms(proposedTerms, a.searchTerms) ? null : proposedTerms;
+    const changed =
+      JSON.stringify(plan.sources) !== JSON.stringify(a.sources) || searches || searchTerms;
     if (changed)
       a.sourceDraft = {
         id: randomUUID(),
         sources: plan.sources,
+        ...(searchTerms?.length ? {searchTerms} : {}),
         ...(searches ? {searches} : {}),
         runId,
         updatedAt,
@@ -405,7 +420,7 @@ export class AutomationStore {
       if (changed) this.resolveSourceDraft(id, a.sourceDraft.id, true);
       const saved = this.get(id),
         withoutTerms = this.sourceSearchOptions(id, saved.sources)
-          .filter(({url}) => recipeNeedsTerms(saved.sourceSettings?.[url]?.recipe))
+          .filter(({url}) => recipeNeedsTerms(sourceRecipeOf(saved, url)))
           .map(({url}) => url);
       return {
         saved: true,
@@ -416,7 +431,7 @@ export class AutomationStore {
         message:
           'Saved. During the initial setup the profile, sources and source searches apply right away; the user reviews them on the onboarding form.' +
           (withoutTerms.length
-            ? ' sourcesWithoutTerms have no search terms yet and will not scan without them: read get_automation_context section profile (sourceSearch notes say what {query} takes, in the site language) and set their terms with sourceSearches.'
+            ? ' sourcesWithoutTerms have no search terms yet and will not scan without them: read get_automation_context section profile. Set searchTerms (exact job titles) for the sources marked usesSearchTerms; give the others their own terms with sourceSearches in the form their notes ask for (a category or slug, in the site language).'
             : ''),
       };
     }
