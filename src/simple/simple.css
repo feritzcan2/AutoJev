@@ -345,10 +345,37 @@ body.jl-simple {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px;
+  width: 100%;
+  margin: 2px 0 14px;
+  padding: 8px 10px;
   border-radius: 12px;
   background: var(--jl-panel);
   border: 1px solid var(--jl-line);
+  color: var(--jl-ink);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.jl-who:hover,
+.jl-who[aria-expanded='true'] {
+  border-color: var(--jl-line-strong);
+  box-shadow: var(--jl-shadow);
+}
+.jl-who:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--jl-accent);
+}
+.jl-who > div {
+  flex: 1;
+}
+.jl-who-chevron {
+  flex: none;
+  color: var(--jl-muted);
+  font-size: 14px;
+  line-height: 1;
+  transform: translateY(-3px);
 }
 .jl-avatar {
   flex: none;
@@ -1287,6 +1314,7 @@ body.jl-simple {
   .jl-rail .jl-label,
   .jl-brand span,
   .jl-who > div,
+  .jl-who-chevron,
   .jl-private span {
     display: none;
   }
@@ -1849,4 +1877,98 @@ body.jl-simple .jl-question .question-answer-modes button[aria-pressed='true'] {
   box-shadow:
     0 1px 2px rgb(14 15 18 / 0.08),
     inset 0 0 0 1px var(--jl-line);
+}
+
+/* Job search switcher: a menu under the trigger, one row per search. */
+.jl-search-menu {
+  position: fixed;
+  z-index: 50;
+  width: 300px;
+  max-height: min(70vh, 520px);
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--jl-line);
+  border-radius: 14px;
+  background: var(--jl-panel);
+  box-shadow:
+    0 2px 6px rgb(14 15 18 / 0.06),
+    0 18px 48px rgb(14 15 18 / 0.16);
+  animation: jl-rise 0.16s ease-out;
+}
+.jl-search-menu-title {
+  padding: 8px 10px 6px;
+  color: var(--jl-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.jl-search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--jl-ink);
+  text-align: left;
+  cursor: pointer;
+}
+.jl-search-row:hover,
+.jl-search-row:focus-visible {
+  outline: none;
+  background: var(--jl-sunk);
+}
+.jl-search-row[aria-checked='true'] {
+  background: var(--jl-accent-wash);
+  box-shadow: inset 0 0 0 1px var(--jl-accent-line);
+}
+.jl-search-row > div {
+  flex: 1;
+  min-width: 0;
+}
+.jl-search-row b {
+  display: block;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jl-search-row small {
+  display: block;
+  min-height: 15px;
+  color: var(--jl-muted);
+  font-size: 12px;
+}
+.jl-search-row kbd {
+  flex: none;
+  color: var(--jl-faint);
+  font-family: var(--jl-mono);
+  font-size: 11px;
+}
+.jl-search-add {
+  margin-top: 4px;
+  border-top: 1px solid var(--jl-line);
+  border-radius: 0 0 10px 10px;
+  padding-top: 12px;
+}
+.jl-search-plus {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px dashed var(--jl-line-strong);
+  border-radius: 99px;
+  color: var(--jl-muted);
+  font-size: 18px;
+  line-height: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .jl-search-menu {
+    animation: none;
+  }
 }

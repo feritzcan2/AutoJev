@@ -6,6 +6,7 @@ import {automationAttention} from '../../app/automation/attention.mjs';
 import {recordOperationStatus, recordProblem} from '../record-operation-status.js';
 import {questionForm} from '../question-form.js';
 import {attentionTabs} from '../automation-attention.js';
+import {orderWorkspaces} from '../workspace-switcher.js';
 import {BRAND, markIcon} from './brand.js';
 import {playIntro} from './intro.js';
 import {el, button, icon, plural, scoreOf, relative, host} from './ui.js';
@@ -102,7 +103,13 @@ const navItems = [
   ['settings', 'Settings', 'settings'],
 ];
 const navButtons = new Map();
-rail.append(brand);
+const who = el('button', 'jl-who');
+who.type = 'button';
+who.setAttribute('aria-haspopup', 'menu');
+who.setAttribute('aria-expanded', 'false');
+who.title = 'Switch or add a job search';
+who.onclick = () => (searchMenu.hidden ? openSearchMenu() : closeSearchMenu());
+rail.append(brand, who);
 for (const [view, label, glyph] of navItems) {
   const b = el('button', 'jl-nav');
   b.type = 'button';
@@ -112,14 +119,10 @@ for (const [view, label, glyph] of navItems) {
   rail.append(b);
 }
 const foot = el('div', 'jl-rail-foot'),
-  who = el('button', 'jl-who'),
   advanced = button('Advanced view', () => setSimple(false), 'jl-btn ghost small'),
   privacy = el('div', 'jl-private');
-who.type = 'button';
-who.title = 'Switch or add a job search';
-who.onclick = () => switchSearch();
 privacy.append(el('i'), el('span', null, 'Your data stays on this computer'));
-foot.append(who, privacy, advanced);
+foot.append(privacy, advanced);
 rail.append(foot);
 
 function go(view) {
@@ -142,6 +145,8 @@ async function load() {
   try {
     // A search that was just removed (Start over, Cancel) falls back to another.
     const list = await api.workspaces();
+    searches = orderedSearches(list);
+    syncCandidates(list);
     if (!id || !list.some((w) => w.id === id)) id = list[0]?.id ?? null;
     const data = id ? await api.workspaceSnapshot(id) : null;
     if (version !== state.loading) return;
@@ -155,6 +160,7 @@ async function load() {
     }
     state.id = id;
     state.data = data;
+    if (candidates && id && candidates.value !== id) candidates.value = id;
     if (data && (await skipNeverCompanies(data))) {
       if (version !== state.loading) return;
       state.data = await api.workspaceSnapshot(id);
@@ -269,9 +275,13 @@ function render() {
     count.classList.toggle('alert', view === 'questions' && value > 0);
   }
   who.replaceChildren();
-  const name = a?.title && a.title !== data?.definition?.title ? a.title : 'Your job search';
-  who.append(el('span', 'jl-avatar', initials(name)), Object.assign(el('div'), {}));
-  who.lastChild.append(el('b', null, name), el('small', null, 'Switch search'));
+  const name = searchName(a, data?.definition),
+    count = searches.length;
+  who.append(el('span', 'jl-avatar', initials(name)), el('div'), el('span', 'jl-who-chevron', '⌄'));
+  who.children[1].append(
+    el('b', null, name),
+    el('small', null, count > 1 ? `${count} searches · Switch` : 'Add another search'),
+  );
 
   if (!state.loaded) return renderLoading();
   if (!state.id || !a) return renderWelcome();
@@ -1491,14 +1501,120 @@ function renderWelcome() {
 }
 
 // ---- Switch search -------------------------------------------------------------
-function switchSearch() {
-  const options = [...(candidates?.options ?? [])].filter((o) => o.value);
-  if (options.length <= 1) return document.getElementById('new')?.click();
-  const index = options.findIndex((o) => o.value === state.id),
-    next = options[(index + 1) % options.length];
-  candidates.value = next.value;
-  candidates.dispatchEvent(new Event('change', {bubbles: true}));
+// ---- Job searches: the switcher under the brand -------------------------------
+// Same order and ⌘1–9 shortcuts as the advanced view's workspace switcher.
+let searches = [];
+const ORDER_KEY = 'jobloop.workspaceOrder.v1';
+function orderedSearches(list) {
+  let order = [];
+  try {
+    order = JSON.parse(localStorage.getItem(ORDER_KEY) ?? '[]');
+  } catch {}
+  return orderWorkspaces(list, Array.isArray(order) ? order : []);
 }
+const searchName = (a, definition) =>
+  a?.title && a.title !== definition?.title ? a.title : 'Your job search';
+const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+const searchMenu = el('div', 'jl-search-menu');
+searchMenu.id = 'jl-search-menu';
+searchMenu.setAttribute('role', 'menu');
+searchMenu.setAttribute('aria-label', 'Job searches');
+searchMenu.hidden = true;
+who.setAttribute('aria-controls', searchMenu.id);
+root.append(searchMenu);
+
+// The shared workspace select drives ⌘1–9 and the advanced view; the simple
+// view keeps its options filled (the advanced view fills it the same way).
+function syncCandidates(list) {
+  if (!candidates) return;
+  const ids = [...candidates.options].map((o) => o.value).filter(Boolean);
+  if (ids.length === list.length && list.every((w, i) => w.id === ids[i])) return;
+  const value = candidates.value;
+  candidates.replaceChildren(
+    new Option('Select workspace', ''),
+    ...list.map((w) => new Option(w.title, w.id)),
+  );
+  candidates.value = list.some((w) => w.id === value) ? value : (state.id ?? '');
+}
+function chooseSearch(id) {
+  closeSearchMenu();
+  if (!id || id === state.id || !candidates) return;
+  candidates.value = id;
+  candidates.dispatchEvent(new Event('change', {bubbles: true}));
+  state.id = id;
+  state.loaded = false;
+  render();
+  scheduleLoad();
+}
+// One line of status per search, read when the menu opens.
+async function searchStatus(id) {
+  const data = id === state.id ? state.data : await api.workspaceSnapshot(id).catch(() => null);
+  if (!data?.automation) return '';
+  const p = pilot(data),
+    g = groups(data),
+    asks = questions(data).length,
+    parts = [p.running ? 'Autopilot on' : 'Autopilot off'];
+  if (asks) parts.push(plural(asks, 'question'));
+  else if (g.review.length) parts.push(`${g.review.length} to review`);
+  else if (g.applied.length) parts.push(`${g.applied.length} applied`);
+  return parts.join(' · ');
+}
+function openSearchMenu() {
+  searchMenu.replaceChildren(el('div', 'jl-search-menu-title', 'Job searches'));
+  const list = el('div', 'jl-search-list');
+  searches.forEach((w, index) => {
+    const row = el('button', 'jl-search-row'),
+      copy = el('div'),
+      status = el('small', null, ' ');
+    row.type = 'button';
+    row.setAttribute('role', 'menuitemradio');
+    row.setAttribute('aria-checked', String(w.id === state.id));
+    row.dataset.id = w.id;
+    copy.append(el('b', null, w.title || 'Job search'), status);
+    row.append(el('span', 'jl-avatar', initials(w.title || 'Job search')), copy);
+    if (index < 9) row.append(el('kbd', null, (mac ? '⌘' : 'Ctrl+') + (index + 1)));
+    row.onclick = () => chooseSearch(w.id);
+    list.append(row);
+    searchStatus(w.id).then((text) => (status.textContent = text || ' '));
+  });
+  const add = el('button', 'jl-search-row jl-search-add');
+  add.type = 'button';
+  add.setAttribute('role', 'menuitem');
+  add.append(el('span', 'jl-search-plus', '+'), el('b', null, 'New job search'));
+  add.onclick = () => {
+    closeSearchMenu();
+    document.getElementById('new')?.click();
+  };
+  searchMenu.append(list, add);
+  const r = who.getBoundingClientRect();
+  searchMenu.style.top = r.bottom + 6 + 'px';
+  searchMenu.style.left = r.left + 'px';
+  searchMenu.hidden = false;
+  who.setAttribute('aria-expanded', 'true');
+  (searchMenu.querySelector('[aria-checked=true]') ?? add).focus();
+}
+function closeSearchMenu(focus = false) {
+  if (searchMenu.hidden) return;
+  searchMenu.hidden = true;
+  who.setAttribute('aria-expanded', 'false');
+  if (focus) who.focus();
+}
+searchMenu.addEventListener('keydown', (event) => {
+  const rows = [...searchMenu.querySelectorAll('button')],
+    at = rows.indexOf(document.activeElement);
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeSearchMenu(true);
+  } else if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
+    event.preventDefault();
+    rows[(at + (event.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length]?.focus();
+  } else if (event.key === 'Tab') closeSearchMenu();
+});
+document.addEventListener('pointerdown', (event) => {
+  if (!searchMenu.hidden && !searchMenu.contains(event.target) && !who.contains(event.target))
+    closeSearchMenu();
+});
+addEventListener('resize', () => closeSearchMenu());
 const initials = (name) =>
   name
     .split(/\s+/)
