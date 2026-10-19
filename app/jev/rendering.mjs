@@ -61,11 +61,11 @@ export async function acquireTabRendering(
       )
         return;
       signal?.throwIfAborted();
-      // Focus emulation keeps reads working in a background tab, but form
-      // writes (fill, click, upload) need real rendering: Playwright waits for
-      // visible, stable elements and a hidden tab never paints. Jev runs one
-      // tool call at a time, so bringing the tab forward cannot interleave
-      // with another worker's write.
+      // Focus emulation alone makes a background tab (even in a minimized
+      // window) visible and painting, so reads and form writes (fill, click,
+      // upload, scroll) work without activating the tab or raising Chrome over
+      // the user's work. Only callers that need the real foreground (a captcha
+      // click) ask for it.
       if (foreground) {
         await bounded(() => slot.page.bringToFront(), {signal, timeoutMs}).catch(() => {});
         signal?.throwIfAborted();

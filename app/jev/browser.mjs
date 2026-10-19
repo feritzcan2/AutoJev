@@ -57,23 +57,8 @@ import {
 import {validateJevArgs} from './tools.mjs';
 const require = createRequire(import.meta.url);
 const urlHash = (url) => createHash('sha256').update(url).digest('hex');
-// Tools that write to or scroll the page need a rendering tab (see rendering.mjs).
 const UPLOAD_BUTTON =
   /upload|attach|browse|(?:add|select|choose) files?|resume|\bcv\b|lebenslauf|hochladen|anhängen|datei|yükle|dosya|document|unterlagen/i;
-const WRITE_TOOLS = new Set([
-  'browser_act',
-  'browser_autocomplete',
-  'browser_click_target',
-  'browser_fill_fields',
-  'browser_frame_act',
-  'browser_next',
-  'browser_reveal',
-  'browser_scroll',
-  'browser_select_choice',
-  'browser_choose_option',
-  'browser_upload',
-  'browser_target_press',
-]);
 const homeUrl =
   'data:text/html;charset=utf-8,' +
   encodeURIComponent(
@@ -1454,10 +1439,7 @@ export class JevBrowser {
           this.automationSources.set(slot.id, state.automationSourceUrl);
           await this.persistTabs();
         }
-        releaseRendering = await acquireTabRendering(slot, {
-          signal: this.readSignal,
-          foreground: WRITE_TOOLS.has(name),
-        });
+        releaseRendering = await acquireTabRendering(slot, {signal: this.readSignal});
         if (slot.verification) {
           updateVerification(slot, await verificationEvidence(slot.page, slot));
           if (
