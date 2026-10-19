@@ -12,7 +12,10 @@ const FACT_HINTS = [
   [/salary|compensation|remuneration|\bpay\b|wage|gehalt|maaş/i, ['Salary expectation']],
   [/relocat/i, ['Relocation']],
   [/permit|visa|sponsor|authori[sz]|right to work/i, ['Work permit']],
-  [/notice|earliest|start date|availab|when can you (?:start|join)/i, ['Notice period', 'Earliest start']],
+  [
+    /notice|earliest|start date|availab|when can you (?:start|join)/i,
+    ['Notice period', 'Earliest start'],
+  ],
   [/language|english|german|turkish|french|spanish|dutch/i, ['Languages']],
   [/linkedin/i, ['LinkedIn']],
   [/phone|mobile|telephone/i, ['Phone']],
@@ -29,7 +32,11 @@ export function factSuggestion(question, facts) {
       const currency = label === 'Salary expectation' ? factLine(facts, 'Salary currency') : '';
       // Placed after the amount (or range); skipped when a currency is already written.
       const amount = /\d(?:[\d,.\s]*\d)?k?(?:\s*[-–]\s*\d(?:[\d,.\s]*\d)?k?)?/i;
-      if (currency && !/[€$£₺¥₹]/.test(value) && !value.toUpperCase().includes(currency.toUpperCase()))
+      if (
+        currency &&
+        !/[€$£₺¥₹]/.test(value) &&
+        !value.toUpperCase().includes(currency.toUpperCase())
+      )
         value = value.replace(amount, (match) => `${match.trim()} ${currency}`);
       return value;
     }
@@ -47,7 +54,11 @@ function fitSuggestion(f, text) {
   }
   if (f.type === 'date') return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
   if (f.type === 'boolean')
-    return /^(yes|true|ja|evet)\b/i.test(text) ? true : /^(no|false|nein|hayır)\b/i.test(text) ? false : null;
+    return /^(yes|true|ja|evet)\b/i.test(text)
+      ? true
+      : /^(no|false|nein|hayır)\b/i.test(text)
+        ? false
+        : null;
   if (f.type === 'select')
     return f.options.find((o) => o.toLowerCase() === String(text).toLowerCase()) ?? null;
   return null;
@@ -201,7 +212,11 @@ export function questionForm(candidate, q, submit, {facts = ''} = {}) {
         appliers.get(f.id)(suggestion);
         row.dataset.used = 'true';
       };
-      row.append(node('span', fromAgent != null ? 'Suggested' : 'From your profile'), node('b', shown), use);
+      row.append(
+        node('span', fromAgent != null ? 'Suggested' : 'From your profile'),
+        node('b', shown),
+        use,
+      );
       const control = box.querySelector('textarea, input:not([type=checkbox]), select');
       if (control && control.tagName !== 'SELECT' && f.type !== 'date') control.placeholder = shown;
       box.append(row);
@@ -211,12 +226,16 @@ export function questionForm(candidate, q, submit, {facts = ''} = {}) {
   }
   // One click takes every suggestion; the user still reviews and sends.
   if (suggestions.size > 1 || (suggestions.size && fields.length === 1)) {
-    const fill = node('button', suggestions.size > 1 ? 'Fill from my profile' : 'Use the suggested answer');
+    const fill = node(
+      'button',
+      suggestions.size > 1 ? 'Fill from my profile' : 'Use the suggested answer',
+    );
     fill.type = 'button';
     fill.className = 'quiet question-fill-all';
     fill.onclick = () => {
       for (const [id, value] of suggestions) appliers.get(id)(value);
-      for (const row of formFields.querySelectorAll('.question-suggestion')) row.dataset.used = 'true';
+      for (const row of formFields.querySelectorAll('.question-suggestion'))
+        row.dataset.used = 'true';
       formFields.querySelector('textarea, input, select')?.focus();
     };
     formFields.prepend(fill);

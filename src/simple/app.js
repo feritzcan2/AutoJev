@@ -1273,8 +1273,10 @@ function liveWork(data) {
   if (!run) return null;
   const site = host(run.sourceUrl ?? ''),
     op = run.operation ?? run.kind;
-  if (op === 'trial') return {step: 0, text: site ? `Learning how to search ${site}` : 'Learning a new job site'};
-  if (['run', 'scan'].includes(op)) return {step: 0, text: site ? `Searching ${site}` : 'Searching job sites'};
+  if (op === 'trial')
+    return {step: 0, text: site ? `Learning how to search ${site}` : 'Learning a new job site'};
+  if (['run', 'scan'].includes(op))
+    return {step: 0, text: site ? `Searching ${site}` : 'Searching job sites'};
   if (['detail', 'inspect'].includes(op)) return {step: 1, text: 'Reading a job listing'};
   if (op === 'record-score') return {step: 2, text: 'Scoring a listing against your CV'};
   if (op === 'record-prepare') return {step: 3, text: 'Filling in an application'};
@@ -1301,7 +1303,11 @@ function liveStrip(data, p) {
   strip.setAttribute('aria-live', 'polite');
   const copy = el('div', 'jl-live-copy');
   copy.append(
-    el('b', null, work?.text ?? (p.starting ? 'Starting your search' : 'Waiting for the next scan')),
+    el(
+      'b',
+      null,
+      work?.text ?? (p.starting ? 'Starting your search' : 'Waiting for the next scan'),
+    ),
     el(
       'small',
       null,

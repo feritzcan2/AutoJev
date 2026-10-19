@@ -74,10 +74,38 @@ const quickQuestions = [
 ];
 // Salary currency: saved on its own line so later forms can use or convert it.
 const CURRENCY = 'Salary currency';
-const currencies = ['EUR', 'USD', 'GBP', 'TRY', 'CHF', 'PLN', 'SEK', 'NOK', 'DKK', 'CZK', 'CAD', 'AUD', 'AED', 'JPY', 'INR'];
+const currencies = [
+  'EUR',
+  'USD',
+  'GBP',
+  'TRY',
+  'CHF',
+  'PLN',
+  'SEK',
+  'NOK',
+  'DKK',
+  'CZK',
+  'CAD',
+  'AUD',
+  'AED',
+  'JPY',
+  'INR',
+];
 const countryCurrency = {
-  TR: 'TRY', GB: 'GBP', US: 'USD', CH: 'CHF', PL: 'PLN', SE: 'SEK', NO: 'NOK', DK: 'DKK',
-  CZ: 'CZK', CA: 'CAD', AU: 'AUD', AE: 'AED', JP: 'JPY', IN: 'INR',
+  TR: 'TRY',
+  GB: 'GBP',
+  US: 'USD',
+  CH: 'CHF',
+  PL: 'PLN',
+  SE: 'SEK',
+  NO: 'NOK',
+  DK: 'DKK',
+  CZ: 'CZK',
+  CA: 'CAD',
+  AU: 'AUD',
+  AE: 'AED',
+  JP: 'JPY',
+  IN: 'INR',
   ...Object.fromEntries(
     'DE FR NL ES IT IE AT BE FI PT GR LU EE LV LT SK SI HR MT CY'.split(' ').map((c) => [c, 'EUR']),
   ),
@@ -92,7 +120,9 @@ function guessCurrency(facts, amount, country) {
   if (code) return code;
   const symbol = Object.keys(symbolCurrency).find((s) => written.includes(s));
   if (symbol) return symbolCurrency[symbol];
-  let iso = String(country ?? '').trim().toUpperCase();
+  let iso = String(country ?? '')
+    .trim()
+    .toUpperCase();
   if (iso.length > 2) {
     const names = new Intl.DisplayNames(['en'], {type: 'region'});
     iso = Object.keys(countryCurrency).find((c) => names.of(c)?.toUpperCase() === iso) ?? '';
