@@ -280,7 +280,7 @@ export async function collectSourcePage(
     readDetail = undefined,
     readListing = undefined,
     readCardsInBrowser = undefined,
-    progress = () => {},
+    progress = (_step) => {},
   } = {},
 ) {
   signal?.throwIfAborted();
@@ -328,8 +328,8 @@ export async function collectSourcePage(
         progress({waitUntil: null});
       },
       progress,
-      // A browser read of each listing, for a site that reads them there, and
-      // of a results page when the site's API refuses.
+      // Browser reads of each listing and results page, for a site that reads
+      // them there.
       ...(readListing && adapter.listingIn === 'browser' ? {readListing} : {}),
       ...(readCardsInBrowser && adapter.cardsInBrowser ? {readCardsInBrowser} : {}),
     },

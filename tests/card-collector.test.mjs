@@ -4,49 +4,67 @@ import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
 import {automationWorkflow} from '../app/automation/worker.mjs';
 import {cardCollector, clearCardDetails} from '../app/sources/card-collector.mjs';
-import {
-  prepareCollection,
-  prefetchCollectorPage,
-  collectorPageReady,
-} from '../app/sources/collector-worker.mjs';
+import {prepareCollection, collectorPageReady} from '../app/sources/collector-worker.mjs';
 import {continueSourceRun, unreportedSourceRun} from '../app/automation/recovery.mjs';
 import {sourceActivity} from '../app/sources/source-activity.mjs';
 import {recordUrlKey} from '../app/records/identity.mjs';
 import linkedin, {
-  readLinkedInCards,
-  readLinkedInListing,
   linkedInSearchUrl,
+  linkedInSignedInSearch,
   readLinkedInPosting,
   collectLinkedInPosting,
   collectLinkedInResults,
 } from '../app/site-extensions/linkedin.mjs';
 import {readSiteExtension} from '../app/site-extensions/index.mjs';
 
-const search =
-  'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=Backend&location=Germany&sortBy=DD';
-const card = (id, title) =>
-  `<li><div class="base-card job-search-card" data-entity-urn="urn:li:jobPosting:${id}"><a class="base-card__full-link absolute" href="https://de.linkedin.com/jobs/view/${title.toLowerCase().replace(/\W+/g, '-')}-at-acme-${id}?position=1&amp;trackingId=abc"><span class="sr-only">${title}</span></a><div class="base-search-card__info"><h3 class="base-search-card__title">${title}</h3><h4 class="base-search-card__subtitle"><a href="https://de.linkedin.com/company/acme">Acme</a></h4><div class="base-search-card__metadata"><span class="job-search-card__location">Berlin, Germany</span><time class="job-search-card__listdate" datetime="2026-10-18">1 day ago</time></div></div></div></li>`;
-const cards = (n, from = 0) =>
-  Array.from({length: n}, (_, i) =>
-    card(String(4100000000 + from + i), `Backend Engineer ${from + i}`),
-  ).join('');
-const posting = (id) =>
-  `<section class="top-card-layout"><h2 class="top-card-layout__title">Backend Engineer ${id}</h2><a class="topcard__org-name-link" href="https://de.linkedin.com/company/acme">Acme</a><span class="topcard__flavor topcard__flavor--bullet">Berlin, Germany</span></section><div class="description__text"><div class="show-more-less-html__markup"><p>POSTING_TEXT_${id} Build APIs in Go.</p></div></div>`;
-// A synthetic LinkedIn: guest search pages and postings; one posting is gone.
-function fakeLinkedIn({gone = null, pageSize = 10, searchStatus = 200} = {}) {
-  const requests = [];
-  const fetch = async (value) => {
-    const url = new URL(value);
-    requests.push(url.href);
-    if (url.pathname.endsWith('/seeMoreJobPostings/search')) {
-      if (searchStatus !== 200) return new Response('', {status: searchStatus});
-      const start = Number(url.searchParams.get('start') ?? 0);
-      return new Response(start === 0 ? cards(pageSize) : cards(3, 10), {status: 200});
-    }
-    const id = url.pathname.split('/').pop();
-    return id === gone ? new Response('', {status: 404}) : new Response(posting(id), {status: 200});
+const longText = 'POSTING_IN_BROWSER Build reliable APIs. '.repeat(10);
+// A signed-in results page as the page reader leaves it: marked listing links
+// with the fields the site's results reader found.
+const signedInPage = (url, ids) => ({
+  url,
+  siteExtension: 'linkedin',
+  reading: {readiness: {loading: false}},
+  links: [
+    {text: 'Feed', url: 'https://www.linkedin.com/feed/', listing: false},
+    ...ids.map((id) => ({
+      id,
+      url: `https://www.linkedin.com/jobs/view/${id}/`,
+      text: 'Engineer ' + id,
+      title: 'Engineer ' + id,
+      company: 'Acme',
+      location: 'Berlin',
+      listing: true,
+    })),
+  ],
+  pagination: [{text: '1', url, current: true}],
+});
+// A synthetic signed-in LinkedIn in the browser: a results page of `cards`
+// postings, and each posting's page with its listing text (posting(url)).
+function fakeLinkedIn({cards = 3, posting = null} = {}) {
+  const opened = [];
+  const call = async (_id, name, args) => {
+    if (name === 'browser_navigate') opened.push(args.url);
+    const url = args.url ?? opened.at(-1);
+    if (url.includes('/jobs/search-results/'))
+      return {
+        jevPage: signedInPage(
+          url,
+          Array.from({length: cards}, (_, i) => String(4200000001 + i)),
+        ),
+      };
+    return {
+      jevPage: posting?.(url) ?? {
+        url,
+        reading: {readiness: {loading: false}},
+        listing: {
+          text: 'Backend role ' + longText,
+          fields: {company: 'Acme'},
+          title: 'Staff Engineer',
+        },
+      },
+    };
   };
-  return {fetch, requests};
+  return {call, opened};
 }
 
 test('a card collector reads only wanted listings once, drops removed ones and lists unreadable ones', async () => {
@@ -110,29 +128,38 @@ test('a card collector reads only wanted listings once, drops removed ones and l
   );
 });
 
-test('the LinkedIn collector pages guest cards and reads postings; a removed posting is gone', async () => {
-  clearCardDetails();
-  const site = fakeLinkedIn({gone: '4100000001'});
-  const page = await readLinkedInCards(search, {fetch: site.fetch});
-  assert.equal(page.jobs.length, 10);
-  assert.equal(page.page, 1);
-  assert.equal(new URL(page.nextUrl).searchParams.get('start'), '10');
-  assert.ok(
-    page.jobs.every((j) => !j.description),
-    'a result page holds cards only',
-  );
-  const last = await readLinkedInCards(page.nextUrl, {fetch: site.fetch});
-  assert.equal(last.page, 2);
-  assert.equal(last.complete, true);
-  const job = await readLinkedInListing(page.jobs[0].url, {fetch: site.fetch});
-  assert.match(job.description, /POSTING_TEXT_4100000000/);
-  assert.equal(job.company, 'Acme');
-  await assert.rejects(
-    readLinkedInListing(page.jobs[1].url, {fetch: site.fetch}),
-    (e) => e.status === 404,
+test('a LinkedIn search opens as the signed-in results page with its filters', () => {
+  const saved = (query) => 'https://www.linkedin.com/jobs/search/?' + query;
+  assert.equal(
+    linkedInSignedInSearch(
+      saved('keywords=Backend&location=Germany&f_WT=2&f_TPR=r604800&start=25'),
+    ),
+    'https://www.linkedin.com/jobs/search-results/?keywords=Backend+remote&geoId=101282230&f_TPR=r604800&start=25',
+    'the location becomes its geoId and the work mode a keyword',
   );
   assert.equal(
-    new URL(linkedInSearchUrl(search + '&start=40')).searchParams.get('start'),
+    linkedInSignedInSearch(
+      'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=Go&location=Worldwide&f_WT=2,3&sortBy=DD',
+    ),
+    'https://www.linkedin.com/jobs/search-results/?keywords=Go+remote+hybrid&geoId=92000000',
+    'a guest search saved before 2026-10-19 opens the same way; the sort is dropped',
+  );
+  assert.equal(
+    linkedInSignedInSearch(saved('keywords=Go&location=Berlin&geoId=106967730')),
+    'https://www.linkedin.com/jobs/search-results/?keywords=Go&geoId=106967730',
+    'a saved geoId wins',
+  );
+  assert.equal(
+    linkedInSignedInSearch(saved('keywords=Go&location=Berlin%2C+Germany')),
+    'https://www.linkedin.com/jobs/search-results/?keywords=Go&geoId=101282230',
+    'a city searches its country',
+  );
+  assert.throws(
+    () => linkedInSignedInSearch(saved('keywords=Go&location=Atlantis')),
+    /only as a geoId.*Atlantis/,
+  );
+  assert.equal(
+    new URL(linkedInSearchUrl(saved('keywords=Go&start=40'))).searchParams.get('start'),
     null,
     'a saved search starts at its first page',
   );
@@ -161,7 +188,7 @@ const evaluate = async (state, questions) => ({
   ),
   usage: {input_tokens: 5, output_tokens: 1},
 });
-function fixture(t, {browserCall = null, searchStatus = 200} = {}) {
+function fixture(t, {browserCall = null, site = fakeLinkedIn()} = {}) {
   clearCardDetails();
   const core = new WorkspaceDatabase(':memory:'),
     db = new AutomationStore(core),
@@ -176,8 +203,7 @@ function fixture(t, {browserCall = null, searchStatus = 200} = {}) {
     recipe: {
       entry: {
         kind: 'url_template',
-        template:
-          'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={query}&location=Germany&sortBy=DD',
+        template: 'https://www.linkedin.com/jobs/search/?keywords={query}&location=Germany&f_WT=2',
       },
       terms: ['Backend'],
       pagination: 'url_param',
@@ -194,14 +220,8 @@ function fixture(t, {browserCall = null, searchStatus = 200} = {}) {
     }),
     run = db.begin(a.id, {kind: 'run', taskId: task.id});
   prepareCollection(db, run, db.get(a.id));
-  // The test does not wait out the real one-a-minute pacing.
+  // The test does not wait out the real pacing.
   db.siteAccess.pace = () => 0;
-  const site = fakeLinkedIn({pageSize: 3, searchStatus}),
-    original = globalThis.fetch;
-  globalThis.fetch = site.fetch;
-  t.after(() => {
-    globalThis.fetch = original;
-  });
   const flow = automationWorkflow({
     db,
     run: db.run(run.id),
@@ -209,11 +229,7 @@ function fixture(t, {browserCall = null, searchStatus = 200} = {}) {
     browser: {
       evaluateJev: (_id, state, questions) => evaluate(state, questions),
       hasPage: () => false,
-      call:
-        browserCall ??
-        (() => {
-          throw Error('No browser read');
-        }),
+      call: browserCall ?? site.call,
     },
     report: (...args) => db.finish(...args),
   });
@@ -230,13 +246,13 @@ function fixture(t, {browserCall = null, searchStatus = 200} = {}) {
 test('the app reads a card page and its postings before the agent; the agent call reads nothing', async (t) => {
   const f = fixture(t);
   assert.equal(collectorPageReady(f.db, f.runId), false);
-  await prefetchCollectorPage(f.db, f.runId);
+  await f.flow.prefetchCollector();
   assert.equal(collectorPageReady(f.db, f.runId), true);
-  assert.equal(f.site.requests.length, 4, 'one result page and three postings');
-  const before = f.site.requests.length,
+  assert.equal(f.site.opened.length, 4, 'one result page and three postings');
+  const before = f.site.opened.length,
     result = await f.call('collect_source_page');
   assert.ok(result.taskId, JSON.stringify(result).slice(0, 300));
-  assert.equal(f.site.requests.length, before, 'the agent call does not read the site');
+  assert.equal(f.site.opened.length, before, 'the agent call does not read the site');
   const task = f.db.jevTasks.get(f.id, f.db.run(f.runId).taskId, result.taskId);
   assert.equal(task.items.length, 3);
   assert.ok(task.items.every((i) => i.collected && i.detailComplete));
@@ -247,7 +263,7 @@ test('without a ready page the agent ends its turn and resumes at once after the
   const result = await f.call('collect_source_page');
   assert.equal(result.status, 'background_read');
   assert.match(result.next, /End this turn now/);
-  assert.equal(f.site.requests.length, 0, 'the agent call does not read the site');
+  assert.equal(f.site.opened.length, 0, 'the agent call does not read the site');
   assert.equal(f.db.run(f.runId).collectorReading, true);
   assert.equal(continueSourceRun(f.db, f.id, f.runId), null, 'no idle nudge');
   const outcome = unreportedSourceRun(f.db, f.id, f.runId, 'idle', 1000);
@@ -266,10 +282,8 @@ test('a site wait parks the card source instead of sending the agent away', asyn
   assert.notEqual(result.status, 'background_read');
   assert.equal(f.db.run(f.runId).status, 'blocked');
   assert.equal(f.db.run(f.runId).siteWait.reason, 'rate_limit');
-  assert.equal(f.site.requests.length, 0);
+  assert.equal(f.site.opened.length, 0);
 });
-
-const longText = 'POSTING_IN_BROWSER Build reliable APIs. '.repeat(10);
 
 test('the LinkedIn posting reader needs a title and a real description', () => {
   assert.equal(readLinkedInPosting({title: 'Role', description: 'Sign in to view'}), null);
@@ -351,59 +365,57 @@ test('a card collector reads its listings through a reader the app supplies', as
     detail: (job) => job,
   });
   assert.equal(collector.listingIn, 'browser');
+  await assert.rejects(
+    collector.readDetail('https://cards.test/job/y'),
+    /read in the browser/,
+    'without the browser a listing is not read over HTTP',
+  );
   const page = await collector.readPage('https://cards.test/s', {
     readListing: async (u) => ({url: u, description: 'from the browser'}),
   });
   assert.equal(page.jobs[0].description, 'from the browser');
+  assert.equal(collector.hasDetail('https://cards.test/job/x'), true);
 });
 
-test('LinkedIn postings are opened in the browser before the agent; result pages use the API', async (t) => {
-  const opened = [];
-  const f = fixture(t, {
-    browserCall: async (_id, name, args) => {
-      if (name === 'browser_navigate') opened.push(args.url);
-      return {
-        jevPage: {
-          url: args.url ?? opened.at(-1),
-          reading: {readiness: {loading: false}},
-          listing: {text: 'Backend role ' + longText, fields: {company: 'Acme'}},
-        },
-      };
-    },
-  });
+test('LinkedIn results pages and postings open in the signed-in browser before the agent', async (t) => {
+  const f = fixture(t);
   await f.flow.prefetchCollector();
-  assert.equal(opened.length, 3, 'each new posting opens in the browser');
+  assert.equal(
+    f.site.opened[0],
+    'https://www.linkedin.com/jobs/search-results/?keywords=Backend+remote&geoId=101282230',
+    'the search opens signed in with its location and work mode',
+  );
+  assert.deepEqual(f.site.opened.slice(1), [
+    'https://www.linkedin.com/jobs/view/4200000001/',
+    'https://www.linkedin.com/jobs/view/4200000002/',
+    'https://www.linkedin.com/jobs/view/4200000003/',
+  ]);
   assert.equal(
     sourceActivity(f.runId).step,
     'agent',
     'once the batch is ready the Sources page shows the agent at work',
   );
-  assert.match(
-    opened[0],
-    /^https:\/\/www\.linkedin\.com\/jobs\/view\/\d+\/$/,
-    'signed in, a posting opens at its plain job address, not the country host with a slug',
-  );
   const task = f.db.jevTasks.list(f.id, f.db.run(f.runId).taskId).at(-1);
-  assert.match(
-    task.items[0].url,
-    /^https:\/\/de\.linkedin\.com\/jobs\/view\/.+-at-acme-\d+$/,
-    'the listing keeps its card address',
+  assert.deepEqual(
+    task.items.map((item) => item.title),
+    ['Staff Engineer', 'Staff Engineer', 'Staff Engineer'],
+    'the posting names the listing',
   );
-  assert.equal(f.site.requests.length, 1, 'only the result page comes from the guest API');
   assert.equal(
     f.db.db
       .prepare("SELECT count(*) AS n FROM site_requests WHERE site='linkedin.com browser'")
       .get().n,
-    3,
-    'logged-in views count under their own budget',
+    4,
+    'results pages and postings share the browser budget',
   );
+  assert.equal(f.db.sources(f.id).find((s) => s.url.includes('linkedin')).requests.budget.used, 4);
   assert.equal(collectorPageReady(f.db, f.runId), true);
 });
 
 test('a posting that opens as a login prompt stays out of the batch', async (t) => {
   const f = fixture(t, {
-    browserCall: async (_id, name, args) => ({
-      jevPage: {url: args.url, reading: {readiness: {loading: false}}},
+    site: fakeLinkedIn({
+      posting: (url) => ({url, reading: {readiness: {loading: false}}}),
     }),
   });
   await f.flow.prefetchCollector();
@@ -416,8 +428,8 @@ test('a posting that opens as a login prompt stays out of the batch', async (t) 
 
 test('a posting that redirects to a sign-in page says the browser may need to sign in', async (t) => {
   const f = fixture(t, {
-    browserCall: async () => ({
-      jevPage: {url: 'https://www.linkedin.com/', reading: {readiness: {loading: false}}},
+    site: fakeLinkedIn({
+      posting: () => ({url: 'https://www.linkedin.com/', reading: {readiness: {loading: false}}}),
     }),
   });
   await f.flow.prefetchCollector();
@@ -426,68 +438,18 @@ test('a posting that redirects to a sign-in page says the browser may need to si
   assert.match(task.unavailable[0].message, /may need to sign in/);
 });
 
-// A signed-in results page as the page reader leaves it: marked listing links
-// with the fields the site's results reader found.
-const signedInPage = (url, ids) => ({
-  url,
-  siteExtension: 'linkedin',
-  reading: {readiness: {loading: false}},
-  links: [
-    {text: 'Feed', url: 'https://www.linkedin.com/feed/', listing: false},
-    ...ids.map((id) => ({
-      id,
-      url: `https://www.linkedin.com/jobs/view/${id}/`,
-      text: 'Engineer ' + id,
-      title: 'Engineer ' + id,
-      company: 'Acme',
-      location: 'Berlin',
-      listing: true,
-    })),
-  ],
-  pagination: [{text: '1', url, current: true}],
-});
-
-test('when the guest API refuses, the results page is read in the signed-in browser at the same offset', async (t) => {
-  const opened = [];
+test('a results page that lands on the sign-in page is a reported error, not an empty search', async (t) => {
   const f = fixture(t, {
-    searchStatus: 429,
-    browserCall: async (_id, name, args) => {
-      if (name === 'browser_navigate') opened.push(args.url);
-      const url = args.url ?? opened.at(-1);
-      return {
-        jevPage: url.includes('/jobs/search')
-          ? signedInPage(url, ['4200000001', '4200000002'])
-          : {
-              url,
-              reading: {readiness: {loading: false}},
-              listing: {text: 'Backend role ' + longText, fields: {}, title: 'Staff Engineer'},
-            },
-      };
-    },
+    browserCall: async () => ({
+      jevPage: {
+        url: 'https://www.linkedin.com/authwall',
+        reading: {readiness: {loading: false}},
+      },
+    }),
   });
   await f.flow.prefetchCollector();
-  assert.match(
-    opened[0],
-    /^https:\/\/www\.linkedin\.com\/jobs\/search-results\/\?keywords=Backend&location=Germany&sortBy=DD$/,
-    'the same search opens signed in',
-  );
-  assert.deepEqual(opened.slice(1), [
-    'https://www.linkedin.com/jobs/view/4200000001/',
-    'https://www.linkedin.com/jobs/view/4200000002/',
-  ]);
-  assert.equal(
-    f.db.siteAccess.status('https://www.linkedin.com/jobs/'),
-    null,
-    'the signed-in site keeps working',
-  );
-  assert.equal(f.db.siteAccess.status('https://jobs-guest.linkedin.com/').reason, 'rate_limit');
-  const task = f.db.jevTasks.list(f.id, f.db.run(f.runId).taskId).at(-1);
-  assert.deepEqual(
-    task.items.map((item) => item.title),
-    ['Staff Engineer', 'Staff Engineer'],
-    'the posting names the listing',
-  );
-  assert.equal(collectorPageReady(f.db, f.runId), true);
+  assert.match(f.db.run(f.runId).collectorError, /may need to sign in/);
+  assert.equal(collectorPageReady(f.db, f.runId), false);
 });
 
 test('the signed-in results reader takes job IDs from list items and links and ends a short search', () => {
@@ -569,17 +531,19 @@ test('the signed-in results reader takes job IDs from list items and links and e
   } finally {
     Object.assign(globalThis, saved);
   }
-  const guest =
-    'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=Backend&start=20';
+  const search = 'https://www.linkedin.com/jobs/search/?keywords=Backend&location=Germany&start=25';
   const ids = Array.from({length: 25}, (_, i) => String(4400000000 + i));
-  const cards = linkedin.collector.cardsInBrowser.read(signedInPage('x', ids), guest);
+  const cards = linkedin.collector.cardsInBrowser.read(signedInPage('x', ids), search);
+  assert.equal(cards.page, 2);
   assert.equal(
-    new URL(cards.nextUrl).searchParams.get('start'),
-    '45',
-    'the guest search continues after these cards',
+    cards.nextUrl,
+    'https://www.linkedin.com/jobs/search/?keywords=Backend&location=Germany&start=50',
+    'the search search continues after these cards',
   );
   assert.equal(cards.jobs.length, 25);
-  assert.equal(linkedin.collector.cardsInBrowser.read({links: []}, guest), null);
+  const last = linkedin.collector.cardsInBrowser.read(signedInPage('x', ids.slice(0, 4)), search);
+  assert.equal(last.complete, true, 'a short page ends the search');
+  assert.equal(linkedin.collector.cardsInBrowser.read({links: []}, search), null);
 });
 
 test('one LinkedIn posting under any address is one record key', () => {

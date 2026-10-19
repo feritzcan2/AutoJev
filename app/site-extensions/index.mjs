@@ -22,7 +22,10 @@
 //   reads an API; the shared source worker queues its listings for Jev.
 //   A card collector (../sources/card-collector.mjs) reads result cards from
 //   the API and each listing separately; with listingIn: 'browser' the app
-//   opens each listing in the browser and reads it with dom.listing.
+//   opens each listing in the browser and reads it with dom.listing, and with
+//   cardsInBrowser it opens the results pages there too (dom.collect/results).
+//   Such a site's `pacing` ({minIntervalMs, jitterMs, budget}) spaces and
+//   bounds those page views.
 // Optionally `credentials` ({label, help, signupUrl, fields:[{key,label}]}) for
 // an API that needs the user's own account: the values are entered under Site
 // accounts (../sources/site-credentials.mjs) and reach the collector's reads

@@ -10,18 +10,16 @@ export const jobSearchSources = [
     name: 'LinkedIn',
     enabled: true,
     instructions:
-      "Use the current workspace criteria and the source query. The logged-out jobs-guest results address returns only listing cards; do not go to the login wall. Keep each query's pagination and remaining details in the scan queue. Tell an empty result apart from an access block; report a login or verification block and do not try to get past it. These instructions grant no permission to act; applications run from record tasks.",
+      "Use the current workspace criteria and the source query. The app opens LinkedIn's results pages and postings in the user's signed-in browser and reads them itself. Keep each query's pagination and remaining details in the scan queue. Tell an empty result apart from an access block; report a login or verification block and do not try to get past it. These instructions grant no permission to act; applications run from record tasks.",
     recipe: {
       entry: {
         kind: 'url_template',
-        template:
-          'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={query}&location={location}&sortBy=DD',
+        template: 'https://www.linkedin.com/jobs/search/?keywords={query}&location={location}',
       },
       pagination: 'url_param',
-      ordering: 'newest_first',
-      loginRequired: false,
+      loginRequired: true,
       notes:
-        'Logged-out jobs-guest endpoint: no page shell and no login wall, only listing cards. sortBy=DD puts the newest first. 10 listings per page, paginated with start=10,20,….',
+        'Read in the signed-in browser, in relevance order. location is a country (Germany, United States, Worldwide), or geoId=<LinkedIn geoId> replaces it. f_WT=1|2|3 (on-site, remote, hybrid) and f_TPR=r86400|r604800|r2592000 filter. 25 listings per page, paginated with start=25,50,….',
     },
   },
   {

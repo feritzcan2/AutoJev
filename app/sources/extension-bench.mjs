@@ -578,6 +578,16 @@ export function extensionBench({
     // A results page (or any page): its listings, other links and pagination.
     async read(id, url) {
       let base = route(id, url);
+      // A collector that reads its results pages in the browser is tested there,
+      // at the address it opens them at.
+      const cards = base.transport === 'api' ? base.instance.collector.cardsInBrowser : null;
+      if (cards) {
+        let address = base.url;
+        try {
+          address = cards.open(base.instance.collector.searchUrl(base.url));
+        } catch {}
+        base = {...base, url: address, transport: 'browser'};
+      }
       if (base.transport === 'api') {
         const adapter = base.instance.collector,
           apiUrl = adapter.searchUrl(base.url),

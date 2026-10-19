@@ -17,6 +17,7 @@ import {siteExtensionKind, siteExtensionFor} from '../../site-extensions/index.m
 import {siteSearchRecipe} from '../../site-extensions/search.mjs';
 import {templateSourceSettings, startingSource} from '../../templates/sources.mjs';
 import {siteKey} from '../../browser/site-key.mjs';
+import {siteDomainOf} from '../../browser/site-access.mjs';
 import {randomUUID} from 'node:crypto';
 import {normalizeSourceUrls, webUrl} from '../../templates/catalog.mjs';
 import {automationSources, sourceInput} from '../../sources/automation-sources.mjs';
@@ -48,6 +49,14 @@ function sharedTerms(settings = {}) {
 }
 
 // AutomationStore methods: source list, per-source settings, waits and learned recipes.
+// A site whose scans read its pages in the user's browser counts them under
+// its browser budget (worker openInBrowser); other sites under their address.
+const requestRate = (siteAccess, url) => {
+  const extension = siteExtensionFor(url);
+  if (!extension?.collector?.cardsInBrowser) return siteAccess.requestRate(url, extension?.pacing);
+  const site = siteDomainOf(url);
+  return siteAccess.requestRate('https://' + site, extension.pacing, site + ' browser');
+};
 export const sourceMethods = {
   schedulingSources(id, a = this.get(id)) {
     return automationSources(a).map((source) => ({
@@ -158,10 +167,7 @@ export const sourceMethods = {
             ? (active.pageProgress ?? null)
             : (source.pageProgress ?? null),
         observedPage: active?.observedPage ?? source.observedPage ?? null,
-        requests: this.siteAccess.requestRate(
-          siteExtensionFor(source.url)?.pacing?.accessUrl ?? source.url,
-          siteExtensionFor(source.url)?.pacing,
-        ),
+        requests: requestRate(this.siteAccess, source.url),
         resultCount,
         extension: siteExtensionKind(source.url, a.templateId),
         scanning: Boolean(active),

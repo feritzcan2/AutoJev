@@ -9,13 +9,12 @@
 //
 // A site with listingIn: 'browser' has its listings opened in the browser and
 // read with its posting reader (dom.listing); the app passes that read as
-// options.readListing. Without it (a recipe check, a record read) the site's
-// own HTTP listing reader is used.
+// options.readListing. Without it (a record read) only a listing already read
+// in this session is served.
 //
-// A site with cardsInBrowser ({open(url), read(page, url)}) has a second way to
-// its result pages: when its API refuses (a site wait or a used-up budget),
-// the same page is read in the user's browser (options.readCardsInBrowser) and
-// the search keeps its position.
+// A site with cardsInBrowser ({open(url), read(page, url)}) has its result
+// pages opened in the user's browser too and read by its results reader; the
+// app passes that read as options.readCardsInBrowser.
 //
 // Listing texts already read stay in RAM for a while, so a page that a site
 // wait interrupted does not spend its requests again when it is read later.
@@ -31,8 +30,8 @@ const stopsPage = (error, signal) =>
  * @param {{
  *   templateId: string,
  *   searchUrl: (url: string) => string,
- *   readCards: (url: string, options?: any) => Promise<{url: string, jobs: any[], page: number, totalPages: number | null, nextUrl: string | null, complete: boolean}>,
- *   readListing: (url: string, options?: any) => Promise<any>,
+ *   readCards?: (url: string, options?: any) => Promise<{url: string, jobs: any[], page: number, totalPages: number | null, nextUrl: string | null, complete: boolean}>,
+ *   readListing?: (url: string, options?: any) => Promise<any>,
  *   detail: (job: any) => any,
  *   acceptsQuery?: (url: string) => boolean,
  *   listingIn?: 'http' | 'browser',
@@ -43,18 +42,21 @@ const stopsPage = (error, signal) =>
 export function cardCollector({
   templateId,
   searchUrl,
-  readCards,
-  readListing,
+  readCards = undefined,
+  readListing = undefined,
   detail,
   acceptsQuery = () => false,
   listingIn = 'http',
   cardsInBrowser = null,
   now = Date.now,
 }) {
+  /** @param {string} url @param {any} [options] */
   const readDetail = async (url, options = {}) => {
     const saved = details.get(url);
     if (saved && now() - saved.at < CACHE_MS) return saved.job;
-    const job = await (options.readListing ?? readListing)(url, options);
+    const read = options.readListing ?? (listingIn === 'browser' ? null : readListing);
+    if (!read) throw Error("This site's listings are read in the browser during a scan.");
+    const job = await read(url, options);
     if (details.size >= CACHE_MAX) details.delete(details.keys().next().value);
     details.set(url, {job, at: now()});
     return job;
@@ -68,17 +70,14 @@ export function cardCollector({
     listingIn,
     cardsInBrowser,
     readDetail,
+    // Whether a listing's text is already in RAM (a read that needs no request).
+    hasDetail: (url) => now() - (details.get(url)?.at ?? -Infinity) < CACHE_MS,
     detail,
-    async readPage(url, {wanted = (urls) => urls, progress = () => {}, ...options} = {}) {
-      let page;
-      try {
-        page = await readCards(url, options);
-      } catch (error) {
-        if (error?.code !== 'SITE_WAIT' || !cardsInBrowser || !options.readCardsInBrowser)
-          throw error;
-        options.signal?.throwIfAborted();
-        page = await options.readCardsInBrowser(url, options);
-      }
+    /** @param {string} url @param {any} [read] */
+    async readPage(url, {wanted = (urls) => urls, progress = (_step) => {}, ...options} = {}) {
+      if (cardsInBrowser && !options.readCardsInBrowser)
+        throw Error("This site's results pages are read in the browser during a scan.");
+      const page = await (cardsInBrowser ? options.readCardsInBrowser : readCards)(url, options);
       const want = new Set(wanted(page.jobs.map((job) => job.url))),
         total = page.jobs.filter((card) => want.has(card.url)).length,
         jobs = [],

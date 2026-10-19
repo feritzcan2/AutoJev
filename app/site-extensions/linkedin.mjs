@@ -1,44 +1,37 @@
 // @ts-check
-// LinkedIn site extension (HTTP reader): a site exception the user explicitly
-// requested (2026-10-05). LinkedIn's public jobs-guest endpoints return plain job cards
-// and posting markup, so search pages and postings are read over HTTP instead
-// of a browser tab and returned as ordinary Jev page objects. Everything after
-// the read (known listings, assessment, evidence, queue) stays generic.
-// Card and posting parsing follows github.com/MadsLorentzen/ai-job-search (MIT).
-import {decode, htmlText, inlineText, listingPage} from './listing.mjs';
-import {siteFetch, isMissing, readerPage, READER_HEADERS} from './http.mjs';
+// LinkedIn site extension: a site exception the user explicitly requested
+// (2026-10-05). Since 2026-10-19 a scan reads LinkedIn only in the user's
+// signed-in browser, like a person browsing: the results page lists its cards
+// (dom.collect/results) and each new posting opens on its own page
+// (dom.listing). LinkedIn's logged-out jobs-guest API is no longer read; it
+// refused after a few dozen requests an hour. Everything after the read
+// (known listings, assessment, evidence, queue) stays generic.
+import {listingPage} from './listing.mjs';
 import {cardCollector} from '../sources/card-collector.mjs';
 
-const SEARCH_PATH = '/jobs-guest/jobs/api/seeMoreJobPostings/search';
-const DETAIL_URL = 'https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/';
-export const LINKEDIN_PAGE_SIZE = 10;
-// LinkedIn answers guest reads with 429 after a few dozen requests from one
-// address, even with seconds between them (2026-10-18: about 35 in 13
-// minutes; 2026-10-19: about 27 in 10 minutes, then about 41 in 45 minutes at
-// 30-40 s spacing). The limit looks hourly, around 40. The reference CLI stays
-// low volume: about two result pages per query and postings only for a
-// shortlist. So the guest reads keep 45-75 s apart (about one a minute) and at
-// most 15 per hour; the rest of a scan resumes when the window frees
-// (SiteAccess.spend). After a 429 LinkedIn kept refusing for over two hours
-// (2026-10-19 04:17-06:20, which used up 30 and 90 minute retries), so
-// retries wait one and three hours. On 2026-10-19 09:34 and 10:04 a 429 came
-// after about 21 requests in 18 minutes and 27 in an hour, so 30 was too many.
-// The guest API's waits and budget are counted apart from the signed-in site
-// (accessUrl): when the API refuses, the collector reads the same results page
-// in the user's signed-in browser instead (collector.cardsInBrowser).
+// Saved searches keep the address they were made with: the jobs-guest search
+// (until 2026-10-19), the classic /jobs/search/ or the 2026 /jobs/search-results/.
+const SEARCH_PATHS = new Set([
+  '/jobs-guest/jobs/api/seeMoreJobPostings/search',
+  '/jobs/search',
+  '/jobs/search/',
+  '/jobs/search-results',
+  '/jobs/search-results/',
+]);
+// The signed-in results page lists 25 cards.
+export const LINKEDIN_PAGE_SIZE = 25;
+// Page views of the user's account: 20-30 s apart and at most 60 an hour, the
+// pace that drew no block from 2026-10-12 to 2026-10-19. Results pages and
+// postings share this budget (the worker's browser budget for the site).
 export const LINKEDIN_PACING = {
-  minIntervalMs: 45000,
-  jitterMs: 30000,
-  budget: {requests: 15, windowMs: 60 * 60000},
-  retryDelaysMs: [60 * 60000, 180 * 60000],
-  accessUrl: 'https://jobs-guest.linkedin.com/',
+  minIntervalMs: 20000,
+  jitterMs: 10000,
+  budget: {requests: 60, windowMs: 60 * 60000},
 };
-// The guest endpoints serve the page's own XHR calls, which send this header.
-const GUEST_HEADERS = {...READER_HEADERS, 'X-Requested-With': 'XMLHttpRequest'};
 
 const linkedInHost = (host) => host === 'linkedin.com' || host.endsWith('.linkedin.com');
-// Which guest request serves this address: a search page, a posting, or none.
-export function linkedInGuestRequest(value) {
+// What a LinkedIn address is: a job search, a posting (with its job ID), or none.
+export function linkedInAddress(value) {
   let url;
   try {
     url = new URL(value);
@@ -46,244 +39,69 @@ export function linkedInGuestRequest(value) {
     return null;
   }
   if (url.protocol !== 'https:' || !linkedInHost(url.hostname)) return null;
-  if (url.pathname === SEARCH_PATH) return {kind: 'search', url: url.href};
+  if (SEARCH_PATHS.has(url.pathname)) return {kind: 'search', url: url.href};
   const id =
     url.pathname.match(/^\/jobs\/view\/(?:[^/]*-)?(\d{6,})\/?$/)?.[1] ??
     url.pathname.match(/^\/jobs-guest\/jobs\/api\/jobPosting\/(\d{6,})\/?$/)?.[1];
   return id ? {kind: 'detail', id, url: url.href} : null;
 }
 
-const clean = inlineText;
-// Inner HTML of the first <div> carrying this class, following nested divs.
-function divContent(html, className) {
-  const open = new RegExp(`<div[^>]*class="[^"]*${className}[^"]*"[^>]*>`, 'i').exec(html);
-  if (!open) return null;
-  let i = open.index + open[0].length,
-    depth = 1;
-  while (depth > 0) {
-    const nextOpen = html.indexOf('<div', i),
-      nextClose = html.indexOf('</div>', i);
-    if (nextClose < 0) return null;
-    if (nextOpen >= 0 && nextOpen < nextClose) {
-      depth++;
-      i = nextOpen + 4;
-    } else {
-      depth--;
-      i = nextClose + 6;
-    }
-  }
-  return html.slice(open.index + open[0].length, i - 6);
-}
-
-export function parseJobCards(html) {
-  const cards = [];
-  for (const chunk of html.split(/data-entity-urn="urn:li:jobPosting:/).slice(1)) {
-    const id = chunk.match(/^(\d+)/)?.[1];
-    if (!id) continue;
-    const href = chunk.match(/class="base-card__full-link[^"]*"[^>]*href="([^"]+)"/i)?.[1];
-    const title =
-      clean(chunk.match(/class="base-search-card__title"[^>]*>([\s\S]*?)<\/h3>/i)?.[1] ?? '') ||
-      clean(chunk.match(/class="sr-only"[^>]*>([\s\S]*?)<\/span>/i)?.[1] ?? '');
-    if (!title) continue;
-    const company =
-      clean(chunk.match(/class="base-search-card__subtitle"[^>]*>([\s\S]*?)<\/h4>/i)?.[1] ?? '') ||
-      null;
-    const location =
-      clean(chunk.match(/class="job-search-card__location"[^>]*>([\s\S]*?)<\/span>/i)?.[1] ?? '') ||
-      null;
-    const date =
-      chunk.match(/class="job-search-card__listdate[^"]*"[^>]*datetime="([^"]+)"/i)?.[1] ?? null;
-    // Tracking parameters change per request; the posting address does not.
-    const url = href ? decode(href).split('?')[0] : `https://www.linkedin.com/jobs/view/${id}`;
-    cards.push({id, title, company, location, date, url});
-  }
-  return cards;
-}
-
-export function parseJobDetail(html) {
-  const title = clean(
-    html.match(
-      /class="(?:top-card-layout__title|topcard__title)[^"]*"[^>]*>([\s\S]*?)<\/h[12]>/i,
-    )?.[1] ?? '',
-  );
-  const company =
-    clean(html.match(/class="topcard__org-name-link[^"]*"[^>]*>([\s\S]*?)<\/a>/i)?.[1] ?? '') ||
-    null;
-  const location =
-    clean(
-      html.match(/class="topcard__flavor topcard__flavor--bullet"[^>]*>([\s\S]*?)<\/span>/i)?.[1] ??
-        '',
-    ) || null;
-  const description =
-    htmlText(
-      divContent(html, 'show-more-less-html__markup') ??
-        divContent(html, 'description__text') ??
-        '',
-    ) || null;
-  const criteria = [];
-  for (const m of html.matchAll(
-    /class="description__job-criteria-subheader"[^>]*>([\s\S]*?)<\/h3>[\s\S]*?class="description__job-criteria-text[^"]*"[^>]*>([\s\S]*?)<\/span>/gi,
-  ))
-    criteria.push([clean(m[1]), clean(m[2])]);
-  const descStart = html.search(/class="(?:show-more-less-html__markup|description__text)/i),
-    top = descStart < 0 ? html : html.slice(0, descStart);
-  return {
-    title,
-    company,
-    location,
-    description,
-    criteria,
-    closed: /closed-job__flavor|no longer accepting applications/i.test(top),
-  };
-}
-
-const page = (url, title, text, links, pagination = []) =>
-  readerPage({browser: 'LinkedIn guest reader', url, title, text, links, pagination});
-
-// A results page lists its cards as known listings (links marked listing) and
-// numbers itself; a full page links the next offset, a short or empty page
-// links none, which is the end of the search.
-export function linkedInSearchPage(url, cards) {
-  const address = new URL(url),
-    start = Number(address.searchParams.get('start') ?? 0) || 0,
-    number = Math.floor(start / LINKEDIN_PAGE_SIZE) + 1;
-  const lines = [`LinkedIn job search results, page ${number}`];
-  for (const card of cards)
-    lines.push(
-      `Link: ${card.title} — ${card.url}`,
-      [card.company, card.location, card.date && `posted ${card.date}`].filter(Boolean).join(' · '),
-    );
-  if (!cards.length)
-    lines.push('This results page has no job cards: the search has no further results.');
-  const next = new URL(address);
-  next.searchParams.set('start', String(start + LINKEDIN_PAGE_SIZE));
-  const pagination = [
-    {text: String(number), url: address.href, kind: 'link', current: true, disabled: false},
-    ...(cards.length >= LINKEDIN_PAGE_SIZE
-      ? [{text: String(number + 1), url: next.href, kind: 'link', current: false, disabled: false}]
-      : []),
-  ];
-  return page(
-    address.href,
-    'LinkedIn jobs',
-    lines.join('\n'),
-    cards.map((card) => ({text: card.title, url: card.url, listing: true})),
-    pagination,
-  );
-}
-
-export function linkedInDetailPage(url, html) {
-  if (!html.trim())
-    return page(
-      url,
-      'LinkedIn job',
-      'This LinkedIn job posting was not found; it has been removed or is no longer available.',
-      [],
-    );
-  const job = parseJobDetail(html);
-  return listingPage({
-    browser: 'LinkedIn guest reader',
-    url,
-    title: job.company ? `${job.title} @ ${job.company}` : job.title || 'LinkedIn job',
-    description: job.description,
-    fields: {company: job.company, location: job.location, ...Object.fromEntries(job.criteria)},
-    notes: job.closed ? ['No longer accepting applications.'] : [],
-  });
-}
-
-// One guest request through the shared site access rules (./http.mjs).
-export async function readLinkedInGuest(url, options = {}) {
-  const request = linkedInGuestRequest(url);
-  if (!request) throw Error('LinkedIn guest reader does not handle this address');
-  const target = request.kind === 'search' ? request.url : DETAIL_URL + request.id;
-  const response = await siteFetch(target, {
-    ...LINKEDIN_PACING,
-    headers: GUEST_HEADERS,
-    ...options,
-    site: 'LinkedIn',
-    url,
-  });
-  if (isMissing(response))
-    return request.kind === 'search' ? linkedInSearchPage(url, []) : linkedInDetailPage(url, '');
-  const html = await response.text();
-  return request.kind === 'search'
-    ? linkedInSearchPage(url, parseJobCards(html))
-    : linkedInDetailPage(url, html);
-}
-
-const guestFetch = (target, url, options) =>
-  siteFetch(target, {
-    ...LINKEDIN_PACING,
-    headers: GUEST_HEADERS,
-    ...options,
-    site: 'LinkedIn',
-    url,
-  });
-
-// The collector's result page: the cards of one guest search page. A full
-// page links the next offset; a short or empty one ends the search.
-export async function readLinkedInCards(url, options = {}) {
-  const request = linkedInGuestRequest(url);
-  if (request?.kind !== 'search') throw Error('A LinkedIn jobs-guest search address is required.');
-  const response = await guestFetch(request.url, url, options),
-    cards = isMissing(response) ? [] : parseJobCards(await response.text());
-  const address = new URL(url),
-    start = Number(address.searchParams.get('start') ?? 0) || 0,
-    next = new URL(address);
-  next.searchParams.set('start', String(start + LINKEDIN_PAGE_SIZE));
-  const nextUrl = cards.length >= LINKEDIN_PAGE_SIZE ? next.href : null;
-  return {
-    url: address.href,
-    jobs: cards.map((card) => ({
-      url: card.url,
-      title: card.title,
-      company: card.company,
-      location: card.location,
-      publishedAt: card.date,
-    })),
-    page: Math.floor(start / LINKEDIN_PAGE_SIZE) + 1,
-    totalPages: null,
-    nextUrl,
-    complete: !nextUrl,
-  };
-}
-
-// The collector's listing read: one posting's full text by its address.
-export async function readLinkedInListing(url, options = {}) {
-  const request = linkedInGuestRequest(url);
-  if (request?.kind !== 'detail') throw Error('A LinkedIn job posting address is required.');
-  const response = await guestFetch(DETAIL_URL + request.id, url, options);
-  if (isMissing(response))
-    throw Object.assign(Error('This LinkedIn job posting was removed.'), {
-      status: response.status,
-    });
-  const job = parseJobDetail(await response.text());
-  if (!job.title || !job.description)
-    throw Error('The LinkedIn posting has no readable title or description.');
-  return {
-    url,
-    title: job.title,
-    company: job.company,
-    location: job.location,
-    description: job.description,
-    criteria: Object.fromEntries(job.criteria),
-    closed: job.closed,
-  };
-}
-
-// A saved search address as the guest search the collector pages through.
+// A saved search address as the search the collector pages through, from its
+// first page.
 export function linkedInSearchUrl(value) {
   const url = new URL(value);
   if (url.protocol !== 'https:' || !linkedInHost(url.hostname))
     throw Error('A LinkedIn address is required.');
-  if (url.pathname !== SEARCH_PATH)
+  if (!SEARCH_PATHS.has(url.pathname))
     throw Error(
-      'The LinkedIn collector pages through jobs-guest search addresses; save a search recipe with the guest search template.',
+      'The LinkedIn collector pages through job search addresses; save a search recipe with the search template.',
     );
-  const search = new URL(`https://www.linkedin.com${SEARCH_PATH}`);
-  for (const [key, entry] of url.searchParams)
-    if (key !== 'start') search.searchParams.append(key, entry);
-  return search.href;
+  url.searchParams.delete('start');
+  return url.href;
+}
+
+// The 2026 signed-in search (/jobs/search-results/) drops the location,
+// work mode and sort parameters of the older addresses (observed 2026-10-19).
+// It keeps keywords, start and f_TPR (posted within), takes the location as a
+// geoId, and reads a work mode written into the keywords ("… remote"). Results
+// come in relevance order.
+const GEO_IDS = {
+  germany: 101282230,
+  deutschland: 101282230,
+  'united states': 103644278,
+  usa: 103644278,
+  worldwide: 92000000,
+};
+// A location names its country ("Germany", "Berlin, Germany").
+const geoIdOf = (location) => {
+  const words = location.toLowerCase();
+  return (
+    GEO_IDS[words] ??
+    Object.entries(GEO_IDS).find(([name]) => new RegExp(`\\b${name}\\b`).test(words))?.[1] ??
+    null
+  );
+};
+const WORK_MODES = {1: 'on-site', 2: 'remote', 3: 'hybrid'};
+// The signed-in results page for a saved search address, at the same offset.
+export function linkedInSignedInSearch(value) {
+  const saved = new URL(value).searchParams,
+    open = new URL('https://www.linkedin.com/jobs/search-results/');
+  const modes = (saved.get('f_WT') ?? '')
+    .split(',')
+    .map((mode) => WORK_MODES[mode.trim()])
+    .filter(Boolean);
+  const keywords = [saved.get('keywords') ?? '', ...modes].join(' ').trim();
+  if (keywords) open.searchParams.set('keywords', keywords);
+  const location = saved.get('location')?.trim(),
+    geoId = saved.get('geoId') ?? (location ? geoIdOf(location) : null);
+  if (location && !geoId)
+    throw Error(
+      `LinkedIn takes a search location only as a geoId, and "${location}" has no known one. Search on linkedin.com with that location and add its geoId=… parameter to the source's search address.`,
+    );
+  if (geoId) open.searchParams.set('geoId', String(geoId));
+  for (const key of ['f_TPR', 'start'])
+    if (saved.get(key)) open.searchParams.set(key, saved.get(key));
+  return open.href;
 }
 
 // One posting page open in the browser (logged in or not). Runs inside the
@@ -359,8 +177,7 @@ export function readLinkedInPosting(raw) {
   };
 }
 
-// The signed-in results page (/jobs/search/), read when the guest API refuses.
-// Runs inside the page, so it is self-contained. The list renders only the
+// The signed-in results page (/jobs/search-results/). Runs inside the page, so it is self-contained. The list renders only the
 // cards near the viewport, but every list item carries its job ID; a card
 // not rendered yet gives its ID alone and the posting read fills it in.
 // Styled Unicode letters become plain (NFKC).
@@ -401,7 +218,7 @@ export function collectLinkedInResults() {
     add(item.getAttribute('data-occludable-job-id') || item.getAttribute('data-job-id'), item);
   for (const link of document.querySelectorAll('a[href*="/jobs/view/"]'))
     add(
-      link.href.match(/\/jobs\/view\/(?:[^/?#]*-)?(\d+)/)?.[1],
+      /** @type {HTMLAnchorElement} */ (link).href.match(/\/jobs\/view\/(?:[^/?#]*-)?(\d+)/)?.[1],
       link.closest('li') ?? link.parentElement,
     );
   const text = document.querySelector('main')?.innerText ?? document.body?.innerText ?? '';
@@ -411,14 +228,13 @@ export function collectLinkedInResults() {
     noResults: /No matching jobs found|Keine passenden Jobs/i.test(text),
   };
 }
-export const LINKEDIN_SIGNED_IN_PAGE_SIZE = 25;
 const signedInResults = (raw) => {
   if (!raw?.jobs || (!raw.jobs.length && !raw.noResults)) return null;
   const address = new URL(raw.url),
     start = Number(address.searchParams.get('start') ?? 0) || 0,
     next = new URL(address);
   next.searchParams.set('start', String(start + raw.jobs.length));
-  const number = Math.floor(start / LINKEDIN_SIGNED_IN_PAGE_SIZE) + 1;
+  const number = Math.floor(start / LINKEDIN_PAGE_SIZE) + 1;
   return {
     listings: raw.jobs.map((job) => ({
       ...job,
@@ -427,7 +243,7 @@ const signedInResults = (raw) => {
     })),
     pagination: [
       {text: String(number), url: address.href, kind: 'link', current: true, disabled: false},
-      ...(raw.jobs.length >= LINKEDIN_SIGNED_IN_PAGE_SIZE
+      ...(raw.jobs.length >= LINKEDIN_PAGE_SIZE
         ? [
             {
               text: String(number + 1),
@@ -441,17 +257,8 @@ const signedInResults = (raw) => {
     ],
   };
 };
-// The guest search as the signed-in results page, at the same offset. The
-// 2026 signed-in search lives at /jobs/search-results/ (/jobs/search/
-// redirects there).
-export function linkedInSignedInSearch(url) {
-  const guest = new URL(url),
-    signedIn = new URL('https://www.linkedin.com/jobs/search-results/');
-  for (const [key, value] of guest.searchParams) signedIn.searchParams.set(key, value);
-  return signedIn.href;
-}
 // The cards of a signed-in results page in the collector's terms: the next
-// page continues the guest search at the offset after these cards.
+// page continues the saved search address at the offset after these cards.
 export function linkedInBrowserCards(page, url) {
   if (page?.siteExtension !== 'linkedin') return null;
   const jobs = (page.links ?? [])
@@ -462,12 +269,12 @@ export function linkedInBrowserCards(page, url) {
       company: link.company || '',
       location: link.location || '',
     }));
-  const guest = new URL(url),
-    start = Number(guest.searchParams.get('start') ?? 0) || 0;
+  const saved = new URL(url),
+    start = Number(saved.searchParams.get('start') ?? 0) || 0;
   if (!jobs.length && !page.pagination?.length) return null;
   const nextUrl =
-    jobs.length >= LINKEDIN_SIGNED_IN_PAGE_SIZE
-      ? (guest.searchParams.set('start', String(start + jobs.length)), guest.href)
+    jobs.length >= LINKEDIN_PAGE_SIZE
+      ? (saved.searchParams.set('start', String(start + jobs.length)), saved.href)
       : null;
   return {
     url,
@@ -479,20 +286,17 @@ export function linkedInBrowserCards(page, url) {
   };
 }
 
-// Result pages hold cards only, so the app reads each new posting itself at
+// Result pages hold cards only, so the app opens each new posting itself at
 // the pacing above and hands the agent ready review batches (a collector).
+// Both open in the user's signed-in browser.
 const collector = cardCollector({
   templateId: 'job-search',
   searchUrl: linkedInSearchUrl,
-  readCards: readLinkedInCards,
-  readListing: readLinkedInListing,
-  // Postings open in the user's browser; the guest API serves the result pages,
-  // and the signed-in results page stands in when it refuses.
   listingIn: 'browser',
   cardsInBrowser: {open: linkedInSignedInSearch, read: linkedInBrowserCards},
   detail: (job) => ({
     ...listingPage({
-      browser: 'LinkedIn guest reader',
+      browser: 'LinkedIn (signed-in browser)',
       url: job.url,
       title: job.company ? `${job.title} @ ${job.company}` : job.title,
       description: job.description,
@@ -509,10 +313,10 @@ const collector = cardCollector({
 });
 
 // Job-search scans use the collector; other reads (records, other templates)
-// use the HTTP reader, which hands guest pages to Jev as ordinary pages.
+// open the page in the browser, where the same page readers apply.
 export default {
   id: 'linkedin',
-  // The Sources page shows request rates against this pacing.
+  // The browser pacing of the collector's page views, shown on the Sources page.
   pacing: LINKEDIN_PACING,
   matches: (value) => {
     try {
@@ -522,22 +326,21 @@ export default {
       return false;
     }
   },
-  http: {handles: (url) => Boolean(linkedInGuestRequest(url)), read: readLinkedInGuest},
   collector,
   // One posting under every address LinkedIn gives it (country hosts, title
   // slugs, the guest endpoint): its job ID.
   listingKey: (url) => {
-    const posting = linkedInGuestRequest(url);
+    const posting = linkedInAddress(url);
     return posting?.kind === 'detail' ? `https://www.linkedin.com/jobs/view/${posting.id}` : null;
   },
   // A posting opened in the browser (the collector's listing reads).
   dom: {
     listing: {
-      handles: (url) => linkedInGuestRequest(url)?.kind === 'detail',
+      handles: (url) => linkedInAddress(url)?.kind === 'detail',
       // Signed in, a country host with a title slug (de.linkedin.com/jobs/view/
       // senior-…-4437671367) shows an error page; the plain job address works.
       open: (url) => {
-        const posting = linkedInGuestRequest(url);
+        const posting = linkedInAddress(url);
         return posting?.kind === 'detail'
           ? `https://www.linkedin.com/jobs/view/${posting.id}/`
           : url;
@@ -545,14 +348,14 @@ export default {
       collect: collectLinkedInPosting,
       read: readLinkedInPosting,
     },
-    // The signed-in results page (the collector's fallback for result pages).
+    // The signed-in results page (the collector's result pages).
     collect: collectLinkedInResults,
     results: signedInResults,
   },
-  // The guest search address and the filters it accepts (observed 2026-10).
+  // The search address and the filters it accepts (observed 2026-10-19); the
+  // collector opens it as the signed-in results page (linkedInSignedInSearch).
   search: {
-    template: `https://www.linkedin.com${SEARCH_PATH}?keywords={query}&location={location}&sortBy=DD`,
-    ordering: 'newest_first',
+    template: 'https://www.linkedin.com/jobs/search/?keywords={query}&location={location}',
     pagination: 'url_param',
     filters: [
       {param: 'f_WT', label: 'Work mode', values: {1: 'On-site', 2: 'Remote', 3: 'Hybrid'}},
@@ -562,6 +365,7 @@ export default {
         values: {r86400: 'Last 24 hours', r604800: 'Last week', r2592000: 'Last month'},
       },
     ],
-    notes: 'sortBy=DD orders newest first. 10 cards per page, pages via &start=10,20,…',
+    notes:
+      'Read in the signed-in browser, in relevance order. location is a country name (Germany, United States, Worldwide) or geoId=<LinkedIn geoId> replaces it. 25 cards per page, pages via &start=25,50,…',
   },
 };
