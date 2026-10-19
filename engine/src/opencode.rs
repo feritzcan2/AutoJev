@@ -103,7 +103,10 @@ mod tests {
             request.approved_tools=&["ask_candidate"];
             request.mcp=Some(McpConnection{endpoint:"http://127.0.0.1:1234/mcp",token:"private-token",claude_config_path:"unused",server_name:"jobloop",instructions:None});
             if resume { request.conversation=conversation.resume(); }
-            let manifest=termloop_launch::resolve(request).unwrap();
+            let manifest=match termloop_launch::resolve(request) {
+                Err(termloop_launch::InvocationError::AgentCliNotFound(_)) => { eprintln!("opencode CLI not installed; skipping"); return; }
+                other => other.unwrap(),
+            };
             let inspection=serde_json::to_string(manifest.inspectable_manifest()).unwrap();
             assert!(!inspection.contains("private-token"));
             let payload=manifest.into_payload();
