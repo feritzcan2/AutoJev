@@ -23,7 +23,12 @@ import {
   prefetchCollectorPage,
   prepareCollection,
 } from '../sources/collector-worker.mjs';
-import {siteReaderFor, siteExtensionKind, siteListingAddress} from '../site-extensions/index.mjs';
+import {
+  siteReaderFor,
+  siteExtensionFor,
+  siteExtensionKind,
+  siteListingAddress,
+} from '../site-extensions/index.mjs';
 import {siteSearchRecipe} from '../site-extensions/search.mjs';
 import {setTimeout as pause} from 'node:timers/promises';
 import {readRecordListings} from '../records/listing-reader.mjs';
@@ -138,13 +143,15 @@ const samePath = (a, b) => {
   }
 };
 const TRIAL_SCAN_PAGE_LIMIT = 2;
-// Listings a card collector opens in the user's (logged-in) browser: 12-20 s
+// Pages a card collector opens in the user's (logged-in) browser: 12-20 s
 // apart, about a person reading postings, and at most 120 an hour per site,
 // counted apart from the site's API budget, since these views belong to the
-// user's account. (25-35 s and 60/hour until 2026-10-19 drew no block.)
-const BROWSER_LISTING_GAP_MS = 12000,
-  BROWSER_LISTING_JITTER_MS = 8000,
-  BROWSER_LISTING_BUDGET = {requests: 120, windowMs: 60 * 60000};
+// user's account. A site extension's own pacing replaces these.
+export const BROWSER_PACING = {
+  minIntervalMs: 12000,
+  jitterMs: 8000,
+  budget: {requests: 120, windowMs: 60 * 60000},
+};
 // A new step forgets the previous one's posting, wait and tool.
 const IDLE_STEP = {
   done: null,
@@ -989,17 +996,10 @@ export function automationWorkflow({
         activity({waitUntil: Date.now() + ms});
         await pause(ms, undefined, {signal});
       };
-    for (
-      let delay;
-      (delay = db.siteAccess.reserve(site + ' browser', BROWSER_LISTING_BUDGET)) > 0;
-
-    )
+    const pacing = siteExtensionFor(url)?.pacing ?? BROWSER_PACING;
+    for (let delay; (delay = db.siteAccess.reserve(site + ' browser', pacing.budget)) > 0; )
       await waitFor(Math.min(delay, 60000));
-    const gap = db.siteAccess.pace(
-      'https://' + site,
-      BROWSER_LISTING_GAP_MS,
-      BROWSER_LISTING_JITTER_MS,
-    );
+    const gap = db.siteAccess.pace('https://' + site, pacing.minIntervalMs, pacing.jitterMs);
     if (gap) await waitFor(gap);
     activity({waitUntil: null, browser: true});
     let response = await browser.call(id, 'browser_navigate', {url: address}, run.id);
@@ -1028,8 +1028,7 @@ export function automationWorkflow({
       ...(page.listing.fields?.location ? {location: page.listing.fields.location} : {}),
     };
   };
-  // A card site whose API refused: the same results page in the browser, read
-  // by the site's results reader.
+  // A card site's results page in the browser, read by its results reader.
   const readCardsInBrowser = async (url) => {
     const cards = collectorExtension(db.get(id), run.sourceUrl)?.collector?.cardsInBrowser;
     if (!cards) throw Error('This site has no browser reader for its results pages.');

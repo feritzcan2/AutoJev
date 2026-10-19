@@ -26,7 +26,9 @@ export async function readOne(db, a, run, item, {signal, wait}) {
   let page;
   if (collector) {
     const adapter = collector.collector;
-    if (!adapter.readDetail) return null;
+    // A site read in the browser serves only the listings a scan already read.
+    if (!adapter.readDetail || (adapter.listingIn === 'browser' && !adapter.hasDetail?.(item.url)))
+      return null;
     // Reads follow the site's shared pacing and request budget, like a scan.
     const job = await adapter.readDetail(item.url, {signal, siteAccess: db.siteAccess, wait});
     if (job?.url !== item.url || !job.title?.trim() || !job.description?.trim())

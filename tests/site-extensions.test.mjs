@@ -485,23 +485,19 @@ test('eliminated listings are kept per search with their stage and reason', () =
 });
 
 test('an HTTP reader extension serves only the addresses it handles', () => {
-  assert.equal(siteExtensionFor('https://de.linkedin.com/jobs/view/x-4012345678').id, 'linkedin');
+  assert.equal(siteExtensionFor('https://www.xing.com/jobs/berlin-role-1234567').id, 'xing');
   assert.equal(
-    typeof siteReaderFor('https://de.linkedin.com/jobs/view/x-4012345678').read,
+    typeof siteReaderFor('https://www.xing.com/jobs/berlin-role-1234567').read,
     'function',
   );
-  assert.ok(
-    siteReaderFor(
-      'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=go',
-    ),
-  );
+  assert.ok(siteReaderFor('https://www.xing.com/jobs/search?keywords=go&location=Berlin'));
   for (const other of [
-    'https://www.linkedin.com/feed/',
-    'https://linkedin.example.com/jobs/view/4012345678',
+    'https://www.linkedin.com/jobs/view/4012345678',
+    'https://www.xing.com/',
     results,
     'not a url',
   ])
-    assert.equal(siteReaderFor(other), null);
+    assert.equal(siteReaderFor(other), null, other);
 });
 
 test('the source list shows which kind of extension reads a source and its search address', (t) => {
@@ -538,7 +534,8 @@ test('the source list shows which kind of extension reads a source and its searc
   }
   assert.deepEqual(
     ['stepstone', 'linkedin', 'himalayas'].map((id) => kinds[id].search.ordering),
-    ['newest_first', 'newest_first', 'newest_first'],
+    ['newest_first', undefined, 'newest_first'],
+    'the signed-in LinkedIn search lists by relevance',
   );
   assert.equal(
     siteExtensionKind('https://himalayas.app/', 'housing'),

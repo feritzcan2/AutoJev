@@ -254,8 +254,9 @@ export class SiteAccess {
   }
   // How fast this app reaches a site, across lanes and workspaces: requests
   // in the last ten minutes and hour, the site's minimum gap, and its budget
-  // use when it states one.
-  requestRate(url, {minIntervalMs = 0, jitterMs = 0, budget = undefined} = {}) {
+  // use when it states one (counted under budgetKey when the reads reserve
+  // their own key, see reserve).
+  requestRate(url, {minIntervalMs = 0, jitterMs = 0, budget = undefined} = {}, budgetKey = null) {
     const site = siteKey(url),
       now = this.now(),
       log = (this.requests.get(site) ?? []).filter((at) => at <= now && now - at < REQUEST_LOG_MS);
@@ -263,7 +264,7 @@ export class SiteAccess {
       ? Number(
           this.db
             .prepare('SELECT count(*) AS n FROM site_requests WHERE site=? AND at>?')
-            .get(site, now - budget.windowMs).n,
+            .get(budgetKey ?? site, now - budget.windowMs).n,
         )
       : null;
     return {

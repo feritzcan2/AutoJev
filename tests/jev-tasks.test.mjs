@@ -2859,13 +2859,12 @@ test('a changing shell has a bounded number of semantic checks and an elapsed-ti
   }
 });
 
-test('LinkedIn guest searches and postings are read over HTTP; marked listings survive triage but not an explicit conflict', async (t) => {
+test('HTTP reader searches and postings are read without a tab; marked listings survive triage but not an explicit conflict', async (t) => {
   const core = new WorkspaceDatabase(':memory:'),
     db = new AutomationStore(core);
   t.after(() => core.close());
   db.siteAccess.pace = () => 0; // No real gap between the fake responses.
-  const search =
-    'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=backend&location=Germany&sortBy=DD';
+  const search = 'https://berlinstartupjobs.com/engineering/';
   const a = db.create('housing', {
     goal: 'Backend jobs',
     criteria: {location: 'Germany', budget: '2000', requirements: 'backend'},
@@ -2884,7 +2883,7 @@ test('LinkedIn guest searches and postings are read over HTTP; marked listings s
     }),
     run = db.begin(a.id, {kind: 'run', taskId: task.id});
   const card = (id, title) =>
-    `<li><div data-entity-urn="urn:li:jobPosting:${id}"><a class="base-card__full-link" href="https://de.linkedin.com/jobs/view/${title.toLowerCase().replaceAll(' ', '-')}-${id}?trackingId=t"></a><h3 class="base-search-card__title">${title}</h3><h4 class="base-search-card__subtitle">Acme</h4><span class="job-search-card__location">Berlin, Germany</span></div></li>`;
+    `<li class="bjs-jlid"><div class="bjs-jlid__wrapper"><h4 class="bjs-jlid__h"><a href="${search}${title.toLowerCase().replaceAll(' ', '-')}-${id}/">${title}</a></h4><a class="bjs-jlid__b" href="https://berlinstartupjobs.com/companies/acme/">Acme</a><div class="bjs-jlid__description">Build services in Berlin.</div></div></li>`;
   const ids = Array.from({length: 12}, (_, n) => String(4100000000 + n)),
     titles = ids.map((_, n) => (n === 3 ? 'Truck Driver' : `Backend Engineer ${n}`));
   const fetched = [],
@@ -2895,22 +2894,24 @@ test('LinkedIn guest searches and postings are read over HTTP; marked listings s
   globalThis.fetch = async (target) => {
     fetched.push(target);
     const u = new URL(target);
-    if (u.pathname.includes('jobPosting'))
+    if (!/^\/engineering\/(page\/2\/)?$/.test(u.pathname))
       return new Response(
-        `<h2 class="top-card-layout__title">Backend Engineer</h2><div class="show-more-less-html__markup"><p>Go services, Berlin hybrid.</p></div>`,
+        `<html><head><title>Backend Engineer</title><script type="application/ld+json">${JSON.stringify({'@type': 'JobPosting', title: 'Backend Engineer', description: 'Go services, Berlin hybrid. '.repeat(10), hiringOrganization: {name: 'Acme'}})}</script></head><body><h1>Backend Engineer</h1></body></html>`,
       );
-    const start = Number(u.searchParams.get('start') ?? 0);
+    const start = u.pathname.includes('page/2') ? 10 : 0;
     return new Response(
-      ids
+      `<html><head><title>Engineering | Berlin Startup Jobs</title></head><body><ul class="jobs-list-items">${ids
         .slice(start, start + 10)
         .map((id, n) => card(id, titles[start + n]))
-        .join(''),
+        .join(
+          '',
+        )}</ul><div class="pagination">${start ? '' : `<a class="next page-numbers" href="${search}page/2/">Next</a>`}</div></body></html>`,
     );
   };
   const asked = [];
   const browser = {
     call: async () => {
-      throw Error('LinkedIn guest pages must not open a browser tab');
+      throw Error('Reader pages must not open a browser tab');
     },
     evaluateJev: async (_, state, questions) => {
       asked.push(Object.keys(questions));
@@ -2946,17 +2947,17 @@ test('LinkedIn guest searches and postings are read over HTTP; marked listings s
   assert.equal(scan.confirmedListings, 11);
   assert.equal(scan.uncertainLinks, 0);
   assert.deepEqual(
-    fetched.map((u) => new URL(u).searchParams.get('start')),
-    [null, '10'],
-    'the next offset is followed without a model choice; the short page ends the search',
+    fetched.map((u) => new URL(u).pathname),
+    ['/engineering/', '/engineering/page/2/'],
+    'the next page is followed without a model choice; the last page ends the search',
   );
   const queue = db.scanQueue(a.id, run.id).pendingUrls;
   assert.equal(queue.length, 11);
   assert.ok(
     queue.every((u) =>
-      /^https:\/\/de\.linkedin\.com\/jobs\/view\/[a-z0-9-]+-41000000\d\d$/.test(u),
+      /^https:\/\/berlinstartupjobs\.com\/engineering\/[a-z0-9-]+-41000000\d\d\/$/.test(u),
     ),
-    'card addresses without tracking parameters',
+    'card addresses',
   );
   assert.ok(
     !queue.some((u) => u.includes('truck-driver')),
@@ -2968,10 +2969,8 @@ test('LinkedIn guest searches and postings are read over HTTP; marked listings s
   });
   assert.ok(details.classified > 0);
   assert.ok(
-    fetched
-      .slice(2)
-      .every((u) => u.startsWith('https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/')),
-    'postings come from the guest endpoint',
+    fetched.slice(2).length > 0 && fetched.slice(2).every((u) => u.startsWith(search)),
+    'postings come from the reader',
   );
 });
 test('TypeSafe HTTP failures are kept for the sidebar until Jev answers again', async () => {

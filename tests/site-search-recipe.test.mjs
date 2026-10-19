@@ -60,7 +60,7 @@ test('the sort parameters come back; the agent path, placeholders and filter val
       'https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords={query}&location={location}&sortBy=R&f_WT=2',
     ),
   ).recipe.entry.template;
-  assert.match(linkedin, /sortBy=DD/);
+  assert.doesNotMatch(linkedin, /sortBy=DD/, 'the signed-in LinkedIn search has no sort to force');
   assert.match(linkedin, /f_WT=2/);
   assert.match(linkedin, /keywords=\{query\}&location=\{location\}/);
 });
