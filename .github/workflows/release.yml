@@ -18,6 +18,11 @@ on:
         required: false
         default: false
         type: boolean
+      platforms:
+        description: Comma-separated platforms to build and publish
+        required: false
+        default: macos,linux,windows
+        type: string
 permissions:
   contents: read
   actions: read
@@ -25,6 +30,7 @@ concurrency:
   group: jobloop-release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 env:
+  JOBLOOP_RELEASE_PLATFORMS: ${{ inputs.platforms || 'macos,linux,windows' }}
   JOBLOOP_SKIP_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_tests && '1' || '0' }}
 jobs:
   resolve:
@@ -39,7 +45,28 @@ jobs:
       contents: write
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
+      - name: Select build platforms
+        id: matrix
+        env:
+          MACOS_RUNNER: ${{ vars.JOBLOOP_MACOS_RUNNER || '["macos-15"]' }}
+          LINUX_RUNNER: ${{ vars.JOBLOOP_LINUX_RUNNER || '["ubuntu-24.04"]' }}
+          WINDOWS_RUNNER: ${{ vars.JOBLOOP_WINDOWS_RUNNER || '["windows-2025"]' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          include='[]'
+          for platform in ${JOBLOOP_RELEASE_PLATFORMS//,/ }; do
+            case "$platform" in
+              macos) runner="$MACOS_RUNNER" ;;
+              linux) runner="$LINUX_RUNNER" ;;
+              windows) runner="$WINDOWS_RUNNER" ;;
+              *) echo "Unknown platform: $platform" >&2; exit 1 ;;
+            esac
+            include="$(jq -c --arg p "$platform" --arg r "$runner" '. + [{platform: $p, runner: $r}]' <<< "$include")"
+          done
+          echo "matrix={\"include\":$include}" >> "$GITHUB_OUTPUT"
       - name: Resolve release tag, tagging a new main version
         id: tag
         env:
@@ -93,14 +120,7 @@ jobs:
     environment: production
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - platform: macos
-            runner: ${{ vars.JOBLOOP_MACOS_RUNNER || '["macos-15"]' }}
-          - platform: linux
-            runner: ${{ vars.JOBLOOP_LINUX_RUNNER || '["ubuntu-24.04"]' }}
-          - platform: windows
-            runner: ${{ vars.JOBLOOP_WINDOWS_RUNNER || '["windows-2025"]' }}
+      matrix: ${{ fromJSON(needs.resolve.outputs.matrix) }}
     runs-on: ${{ fromJSON(matrix.runner) }}
     timeout-minutes: 120
     env:

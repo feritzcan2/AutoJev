@@ -2,15 +2,22 @@ import {readdir, readFile, writeFile, copyFile, mkdir, stat} from 'node:fs/promi
 import {createHash} from 'node:crypto';
 import path from 'node:path';
 const version = JSON.parse(await readFile('package.json', 'utf8')).version;
+const assetsByPlatform = {
+  macos: [
+    `jobloop-macos-universal-${version}.dmg`,
+    `jobloop-macos-universal-${version}.zip`,
+    'latest-mac.yml',
+  ],
+  linux: [
+    `jobloop-linux-x86_64-${version}.AppImage`,
+    `jobloop-linux-amd64-${version}.deb`,
+    'latest-linux.yml',
+  ],
+  windows: [`jobloop-windows-x64-${version}.exe`, 'latest.yml'],
+};
+const platforms = (process.env.JOBLOOP_RELEASE_PLATFORMS || 'macos,linux,windows').split(',');
 const allowed = new Set([
-  `jobloop-macos-universal-${version}.dmg`,
-  `jobloop-macos-universal-${version}.zip`,
-  `jobloop-linux-x86_64-${version}.AppImage`,
-  `jobloop-linux-amd64-${version}.deb`,
-  `jobloop-windows-x64-${version}.exe`,
-  'latest-mac.yml',
-  'latest-linux.yml',
-  'latest.yml',
+  ...platforms.flatMap((platform) => assetsByPlatform[platform] ?? []),
   `jobloop-source-${version}.tar.gz`,
 ]);
 const blockmaps = new Set(
@@ -22,19 +29,8 @@ const directory = path.resolve(process.argv[2] ?? 'release-assets');
 if (process.argv.includes('--collect')) {
   await mkdir(directory, {recursive: true});
   const names = await readdir('release');
-  const platformAssets = {
-    darwin: [
-      `jobloop-macos-universal-${version}.dmg`,
-      `jobloop-macos-universal-${version}.zip`,
-      'latest-mac.yml',
-    ],
-    linux: [
-      `jobloop-linux-x86_64-${version}.AppImage`,
-      `jobloop-linux-amd64-${version}.deb`,
-      'latest-linux.yml',
-    ],
-    win32: [`jobloop-windows-x64-${version}.exe`, 'latest.yml'],
-  }[process.platform];
+  const platformAssets =
+    assetsByPlatform[{darwin: 'macos', linux: 'linux', win32: 'windows'}[process.platform]];
   if (!platformAssets) throw Error(`Unsupported release platform: ${process.platform}`);
   for (const name of platformAssets)
     if (!names.includes(name)) throw Error(`Missing native release asset: ${name}`);
