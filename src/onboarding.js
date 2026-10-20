@@ -69,7 +69,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     steps = el('ol', null, 'onboarding-steps'),
     card = el('section', null, 'onboarding-card'),
     error = el('p', null, 'onboarding-error');
-  head.append(el('b', 'AutoJev', 'onboarding-brand'), steps);
+  head.append(el('b', 'AutoJob', 'onboarding-brand'), steps);
   for (const label of ['CV', 'Profile', 'Start']) steps.append(el('li', label));
   error.setAttribute('role', 'alert');
   error.hidden = true;

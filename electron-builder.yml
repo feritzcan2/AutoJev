@@ -1,5 +1,5 @@
 appId: dev.jobloop.desktop
-productName: AutoJev
+productName: AutoJob
 directories:
   output: release
   buildResources: build
@@ -33,7 +33,7 @@ afterPack: scripts/prepare-macos-bundle.cjs
 publish:
   provider: github
   owner: feritzcan2
-  repo: AutoJev
+  repo: AutoJob
   releaseType: release
 mac:
   mergeASARs: false

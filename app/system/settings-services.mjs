@@ -51,7 +51,7 @@ export async function registerSettingsServices({
     choosingDirectory = true;
     try {
       const selected = await dialog.showOpenDialog(window(), {
-        title: 'Choose an existing AutoJev data folder',
+        title: 'Choose an existing AutoJob data folder',
         buttonLabel: 'Open and restart',
         properties: ['openDirectory'],
       });
@@ -105,7 +105,7 @@ export async function registerSettingsServices({
         ...params,
         destination: path.join(
           selected.filePaths[0],
-          `AutoJev-backup-${Date.now()}-${randomUUID().slice(0, 8)}`,
+          `AutoJob-backup-${Date.now()}-${randomUUID().slice(0, 8)}`,
         ),
         kind: 'manual',
       });
@@ -117,7 +117,7 @@ export async function registerSettingsServices({
     const result = await maintenance.run(
       async () => {
         const selected = await dialog.showOpenDialog(window(), {
-          title: 'Choose an AutoJev backup folder',
+          title: 'Choose an AutoJob backup folder',
           properties: ['openDirectory'],
         });
         if (selected.canceled) return null;

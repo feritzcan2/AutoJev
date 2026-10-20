@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="build/icon.png" width="96" alt="AutoJev icon">
+  <img src="build/icon.png" width="96" alt="AutoJob icon">
 </p>
 
-<h1 align="center">AutoJev</h1>
+<h1 align="center">AutoJob</h1>
 
 <p align="center">
   <b>Your automatic job search and job application assistant.</b><br>
@@ -11,19 +11,19 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/feritzcan2/AutoJev/releases/latest"><b>Download</b></a> ·
+  <a href="https://github.com/feritzcan2/AutoJob/releases/latest"><b>Download</b></a> ·
   <a href="#what-it-does">What it does</a> ·
   <a href="#getting-started">Getting started</a> ·
   <a href="#privacy">Privacy</a>
 </p>
 
 <p align="center">
-  <img src="docs/images/tracking-table.png" width="860" alt="AutoJev tracking table: jobs found on XING, Indeed, StepStone and FreeHire, each with a fit score and Apply and Find contacts buttons">
+  <img src="docs/images/tracking-table.png" width="860" alt="AutoJob tracking table: jobs found on XING, Indeed, StepStone and FreeHire, each with a fit score and Apply and Find contacts buttons">
 </p>
 <p align="center"><i>Every job it finds, scored against your CV, with one-click Apply and Find contacts.</i></p>
 
 <p align="center">
-  <img src="docs/images/sources.png" width="860" alt="AutoJev sources page: LinkedIn, StepStone and XING scanning, Workable, Arbeitnow, company career pages and FreeHire on a schedule">
+  <img src="docs/images/sources.png" width="860" alt="AutoJob sources page: LinkedIn, StepStone and XING scanning, Workable, Arbeitnow, company career pages and FreeHire on a schedule">
 </p>
 <p align="center"><i>Your job sites, scanned in the background on a schedule.</i></p>
 
@@ -33,14 +33,14 @@
 
 Job hunting means checking the same sites every day, reading hundreds of listings
 that do not fit, filling in the same forms again and again, and writing yet another
-cover letter. AutoJev is a desktop app that does all of that for you, using the AI
+cover letter. AutoJob is a desktop app that does all of that for you, using the AI
 assistant you already have.
 
 ## What it does
 
 ### 🔎 Finds jobs for you
 
-Tell it once what you are looking for: role, city, salary, remote or on-site. AutoJev
+Tell it once what you are looking for: role, city, salary, remote or on-site. AutoJob
 goes through LinkedIn, Indeed, StepStone, XING and many other job sites, page by
 page, and on a schedule if you want. It can also find new job sites for your field
 and country by itself.
@@ -53,7 +53,7 @@ and a short reason, so you know *why* it fits or not. Jobs that break your rules
 
 ### 📝 Applies automatically
 
-AutoJev opens the application form, fills in every field from your profile, uploads
+AutoJob opens the application form, fills in every field from your profile, uploads
 your CV and submits it. If a site needs an account, it creates one for you. When a
 fact is missing, it asks you once and remembers the answer for the next
 applications.
@@ -65,7 +65,7 @@ from your CV. Read and approve each one, or let them go out automatically.
 
 ### 🤝 Reaches out to the right people
 
-For a job you care about, AutoJev looks for the people behind it on LinkedIn: the
+For a job you care about, AutoJob looks for the people behind it on LinkedIn: the
 person who posted the job, the recruiter or the hiring manager. It writes a short,
 personal note for each of them. You pick the note you like, and it sends the
 connection request or message for you.
@@ -80,14 +80,14 @@ rejected. You get updates on Telegram and can answer its questions from your pho
 1. **Talk to the assistant.** It asks what you are looking for and reads your CV.
 2. **Choose how much it may do.** Only collect jobs, prepare applications for you
    to check, or apply on its own.
-3. **Press run.** AutoJev works on the real job sites in Chrome, just like you
+3. **Press run.** AutoJob works on the real job sites in Chrome, just like you
    would, and fills your table with matching jobs and sent applications.
 4. **Step in only when needed.** A login, a CAPTCHA or a code sent to your email?
    It stops, tells you, and continues once you are done.
 
 ## Supported job sites
 
-| Site | Country | Good for | How AutoJev reads it |
+| Site | Country | Good for | How AutoJob reads it |
 | --- | --- | --- | --- |
 | **LinkedIn** | 🌍 Worldwide | The largest professional network | 🌐 Your Chrome, signed in |
 | **Indeed** | 🌍 Worldwide | Largest job search engine, a site for each country | 🌐 Your Chrome |
@@ -127,10 +127,10 @@ search it.
 
 ## Getting started
 
-### 1. Install AutoJev
+### 1. Install AutoJob
 
 Download the package for your computer from
-[Releases](https://github.com/feritzcan2/AutoJev/releases/latest):
+[Releases](https://github.com/feritzcan2/AutoJob/releases/latest):
 
 | System | File |
 | --- | --- |
@@ -140,19 +140,19 @@ Download the package for your computer from
 
 ### 2. Connect an AI assistant
 
-AutoJev uses the AI assistant you already have. Install one of these and sign in
+AutoJob uses the AI assistant you already have. Install one of these and sign in
 with your own account:
 
 - [Claude Code](https://code.claude.com/docs/en/overview)
 - [Codex CLI](https://github.com/openai/codex)
 - [OpenCode](https://opencode.ai)
 
-AutoJev itself is free. The AI usage counts against your own subscription with that
+AutoJob itself is free. The AI usage counts against your own subscription with that
 provider.
 
 ### 3. Install Google Chrome
 
-AutoJev applies through the real job sites in Chrome. Press **Open browser** in the
+AutoJob applies through the real job sites in Chrome. Press **Open browser** in the
 app and sign in to LinkedIn and the other sites you use once.
 
 ### 4. Start your job search
@@ -164,7 +164,7 @@ on.
 ## Privacy
 
 - **Your data stays on your computer.** Your profile, CV and application history are
-  stored locally. There is no AutoJev account and no AutoJev server.
+  stored locally. There is no AutoJob account and no AutoJob server.
 - **You choose what leaves it.** The parts needed for a task are sent to the AI
   provider you connected, to Telegram if you turn it on, and to Jev if you add a
   TypeSafe key (optional).
@@ -179,7 +179,7 @@ on.
   submits, and it clicks submit only once.
 - **Polite on LinkedIn.** Contact messages are sent only after you approve them,
   with a daily limit.
-- **CAPTCHAs.** AutoJev does not solve CAPTCHAs or bypass site protections. When a
+- **CAPTCHAs.** AutoJob does not solve CAPTCHAs or bypass site protections. When a
   site asks for verification, it hands the tab over to you.
 - **Not only jobs.** The same assistant can also search for a home or watch for free
   appointment slots.
@@ -187,7 +187,7 @@ on.
 ## Help and contributing
 
 - Found a bug or have an idea? Open an
-  [issue](https://github.com/feritzcan2/AutoJev/issues). Please do not post CVs,
+  [issue](https://github.com/feritzcan2/AutoJob/issues). Please do not post CVs,
   personal data, tokens or raw logs.
 - Security problem? Use the private channel in [SECURITY](SECURITY.md).
 - Want to build from source or add a job site? See
@@ -197,5 +197,5 @@ on.
 
 ## License
 
-AutoJev is open source under GPL-3.0-or-later, with a commercial license option.
+AutoJob is open source under GPL-3.0-or-later, with a commercial license option.
 See [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md).

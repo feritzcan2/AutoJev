@@ -80,7 +80,7 @@ export function createDataManagement(api, {notice = () => {}} = {}) {
   element.querySelector('[data-restore]').onclick = () =>
     run(async () => {
       const result = await api.dataRestore();
-      if (result?.restartRequired) notice('Backup verified. AutoJev is restarting to restore it.');
+      if (result?.restartRequired) notice('Backup verified. AutoJob is restarting to restore it.');
     });
   element.querySelector('[data-open]').onclick = () => run(() => api.dataOpenBackups());
   element.querySelector('[data-clear]').onclick = () =>

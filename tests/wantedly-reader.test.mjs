@@ -244,7 +244,7 @@ test('reads use the shared site access rules and pass the caller signal', async 
   };
   const fetch = async (url, options) => {
     requested.push(url);
-    assert.match(options.headers['User-Agent'], /AutoJev/);
+    assert.match(options.headers['User-Agent'], /AutoJob/);
     assert.equal(options.signal.aborted, false);
     return new Response(url.includes('/projects?') ? SEARCH : LISTING, {status: 200});
   };

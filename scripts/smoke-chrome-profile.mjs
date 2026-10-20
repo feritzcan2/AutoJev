@@ -124,7 +124,7 @@ try {
       state: 'waiting',
       ready: false,
       message:
-        'The selected Chrome profile is not ready. Bring the opened AutoJev window to the front and reconnect.',
+        'The selected Chrome profile is not ready. Bring the opened AutoJob window to the front and reconnect.',
     };
   });
   const waiting = await page.evaluate((id) => window.jobloop.automationBrowser(id), web.id);

@@ -145,7 +145,7 @@ export class Telegram {
         const webhook = await api.call('getWebhookInfo');
         if (webhook?.url)
           throw Error(
-            'This bot has a webhook enabled. Create a separate bot for AutoJev or remove the existing webhook.',
+            'This bot has a webhook enabled. Create a separate bot for AutoJob or remove the existing webhook.',
           );
       }
       const config = {

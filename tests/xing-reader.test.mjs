@@ -258,7 +258,7 @@ test('reads use the shared site access rules', async () => {
   };
   const fetch = async (url, options) => {
     requested.push(url);
-    assert.match(options.headers['User-Agent'], /AutoJev/);
+    assert.match(options.headers['User-Agent'], /AutoJob/);
     return new Response(url.includes('/jobs/search') ? page([job('1', 'A')]) : detail(), {
       status: 200,
     });

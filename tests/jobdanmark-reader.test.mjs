@@ -127,7 +127,7 @@ test('a results address becomes one JSON search and lists its results as listing
   assert.equal(calls[0].url, `${API}1`);
   assert.equal(calls[0].method, 'POST');
   assert.equal(calls[0].headers['Content-Type'], 'application/json');
-  assert.match(calls[0].headers['User-Agent'], /AutoJev/);
+  assert.match(calls[0].headers['User-Agent'], /AutoJob/);
   assert.deepEqual(calls[0].body, {
     jobTypes: [],
     filters: [{type: 'freetext', value: 'udvikler', displayText: 'udvikler'}],

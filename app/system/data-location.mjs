@@ -103,7 +103,7 @@ async function existingDataDirectory(directory, {allowPendingLocation = false} =
   const file = path.join(target, 'jobloop.sqlite');
   if (!(await exists(file)))
     throw Error(
-      'jobloop.sqlite was not found in the selected folder. Choose an existing AutoJev data folder.',
+      'jobloop.sqlite was not found in the selected folder. Choose an existing AutoJob data folder.',
     );
   const info = await lstat(file);
   if (!info.isFile() || info.isSymbolicLink()) throw Error('The database must be a real file.');

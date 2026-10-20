@@ -61,7 +61,7 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
       'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; connect-src 'self'`,
     });
     res.end(
-      '<!doctype html><title>AutoJev · Jev</title><p>AutoJev is connecting to the existing Chrome session…</p>' +
+      '<!doctype html><title>AutoJob · Jev</title><p>AutoJob is connecting to the existing Chrome session…</p>' +
         (observeFocus
           ? // Browser UI (address bar, an extension bubble or panel) can keep keyboard
             // focus in the new active window, so the page may never get focus. A
@@ -110,7 +110,7 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
               finish(
                 Object.assign(
                   Error(
-                    'The selected Chrome profile is not ready. Bring the opened AutoJev window to the front and reconnect.',
+                    'The selected Chrome profile is not ready. Bring the opened AutoJob window to the front and reconnect.',
                   ),
                   {code: 'PROFILE_NOT_READY'},
                 ),
