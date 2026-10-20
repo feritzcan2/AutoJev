@@ -284,6 +284,11 @@ export class JevBrowser {
   }
   async prepareProfileWindow() {
     this.abort.signal.throwIfAborted();
+    // A window that never loaded or was closed cannot become ready; open a new one.
+    if (this.profileWindow && !this.profileWindow.loaded) {
+      this.profileWindow.close();
+      this.profileWindow = null;
+    }
     if (!this.profileWindow) {
       const marker = await chromeWindowMarker({observeFocus: true});
       this.profileWindow = marker;

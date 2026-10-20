@@ -24,8 +24,11 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
   const route = `/jev/${randomUUID()}`,
     nonce = randomUUID(),
     waiters = new Set();
+  // Whether the page is currently loaded in Chrome: a retry opens a new window
+  // when the old one never loaded or was closed.
   let focused = false,
-    closed = false;
+    closed = false,
+    loaded = false;
   const server = createServer((req, res) => {
     const host = `127.0.0.1:${server.address().port}`;
     if (req.headers.host !== host) {
@@ -36,10 +39,11 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
     if (
       observeFocus &&
       req.method === 'POST' &&
-      [route + '/focused', route + '/blurred'].includes(req.url) &&
+      [route + '/focused', route + '/blurred', route + '/closed'].includes(req.url) &&
       req.headers.origin === `http://${host}`
     ) {
       focused = req.url.endsWith('/focused');
+      loaded = !req.url.endsWith('/closed');
       if (focused) for (const finish of waiters) finish();
       res.writeHead(204);
       res.end();
@@ -50,6 +54,7 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
       res.end();
       return;
     }
+    loaded = true;
     res.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-store',
@@ -65,7 +70,7 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
       let previous,left=false;
       const report=()=>{const active=document.visibilityState==='visible'&&(document.hasFocus()||!left);if(active===previous)return;previous=active;fetch(location.pathname+(active?'/focused':'/blurred'),{method:'POST',keepalive:true}).catch(()=>{previous=undefined;});};
       addEventListener('focus',report);addEventListener('blur',()=>{left=true;report();});document.addEventListener('visibilitychange',report);
-      addEventListener('pagehide',()=>fetch(location.pathname+'/blurred',{method:'POST',keepalive:true}).catch(()=>{}));report();
+      addEventListener('pagehide',()=>fetch(location.pathname+'/closed',{method:'POST',keepalive:true}).catch(()=>{}));report();
     </script>`
           : ''),
     );
@@ -76,6 +81,9 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
   });
   return {
     url: `http://127.0.0.1:${server.address().port}${route}`,
+    get loaded() {
+      return loaded;
+    },
     waitForReady({signal, timeout = 10000} = {}) {
       return new Promise((resolve, reject) => {
         if (signal?.aborted) {
