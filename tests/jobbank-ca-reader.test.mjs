@@ -248,7 +248,7 @@ test('reads use the shared site access rules, pass the signal and report removed
   };
   const fetch = async (url, options) => {
     requested.push(url);
-    assert.match(options.headers['User-Agent'], /AutoJev/);
+    assert.match(options.headers['User-Agent'], /AutoJob/);
     controller.abort();
     assert.equal(options.signal.aborted, true, "the caller's signal reaches the request");
     return new Response(url.includes('/jobsearch/jobsearch') ? results : ownPosting);

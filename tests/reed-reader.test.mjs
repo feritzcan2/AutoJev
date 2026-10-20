@@ -358,7 +358,7 @@ test('reads use the shared site access rules and pass the signal through', async
   };
   const fetch = async (url, options) => {
     requested.push(url);
-    assert.match(options.headers['User-Agent'], /AutoJev/);
+    assert.match(options.headers['User-Agent'], /AutoJob/);
     assert.equal(options.redirect, 'follow');
     assert.equal(options.signal.aborted, false);
     controller.abort('stop');

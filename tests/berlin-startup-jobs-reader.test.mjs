@@ -173,7 +173,7 @@ test('reads use the shared site access rules and never fetch the site search', a
   };
   const fetch = async (url, options) => {
     requested.push(url);
-    assert.match(options.headers['User-Agent'], /AutoJev/);
+    assert.match(options.headers['User-Agent'], /AutoJob/);
     return new Response(url.endsWith('/engineering/') ? list([card('a', 'A')]) : detail());
   };
   const read = await readBerlinStartupJobs(category, {fetch, siteAccess});

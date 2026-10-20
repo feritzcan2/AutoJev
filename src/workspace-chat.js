@@ -334,7 +334,7 @@ export function workspaceChat({
         bubble.dataset.id = m.id;
         bubble.dataset.role = m.role;
         const meta = node('div', 'workspace-chat-meta');
-        meta.append(node('b', '', m.role === 'user' ? 'You' : 'AutoJev'), node('time'));
+        meta.append(node('b', '', m.role === 'user' ? 'You' : 'AutoJob'), node('time'));
         bubble.append(meta, node('div', 'workspace-chat-body'));
       }
       bubble.dataset.pending = String(Boolean(m.pending));

@@ -167,7 +167,7 @@ test('reads use the shared site access rules and pass the caller signal', async 
     fetch: async (url, options) => {
       requested.push(url);
       signal = options.signal;
-      assert.match(options.headers['User-Agent'], /AutoJev/);
+      assert.match(options.headers['User-Agent'], /AutoJob/);
       return new Response(results);
     },
   });

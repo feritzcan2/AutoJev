@@ -14,7 +14,7 @@ use termloop_launch::{AgentObservationLaunch, AgentObservationLaunchTransport, L
 use termloop_terminal::{TerminalEvent, TerminalService, TerminalGrid, TerminalGridMemory};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-const TEMPLATE: PromptTemplate = PromptTemplate { id: "jobloop.application-assistant", version: 2, authored_body: "You are the assistant for one AutoJev web automation. Read AGENTS.md, call get_automation_context, then complete only the assigned task through the automation tools. Never report a result without evidence." };
+const TEMPLATE: PromptTemplate = PromptTemplate { id: "jobloop.application-assistant", version: 2, authored_body: "You are the assistant for one AutoJob web automation. Read AGENTS.md, call get_automation_context, then complete only the assigned task through the automation tools. Never report a result without evidence." };
 fn emit(value:Value){let mut out=io::stdout().lock();let _=writeln!(out,"{value}");let _=out.flush();}
 fn field<'a>(value:&'a Value,key:&str)->Result<&'a str,String>{value[key].as_str().filter(|s|!s.is_empty()).ok_or_else(||format!("Missing {key}"))}
 fn now()->u64{std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64}
@@ -41,7 +41,7 @@ impl Engine {
                 if provider=="opencode" {
                     let capability=termloop_agents::discover_capabilities(provider);
                     if capability.available && capability.observation!=termloop_agents::ObservationCapability::LaunchScopedHook {
-                        return Err("AutoJev automations need OpenCode 1.18.33–1.x for status tracking. Status tracking and session resume are not yet supported for OpenCode v2; choose a compatible 1.x version or another provider.".into());
+                        return Err("AutoJob automations need OpenCode 1.18.33–1.x for status tracking. Status tracking and session resume are not yet supported for OpenCode v2; choose a compatible 1.x version or another provider.".into());
                     }
                 }
                 let id=field(v,"sessionId")?;let cwd=field(v,"cwd")?;let directory=field(v,"runtimeDirectory")?;

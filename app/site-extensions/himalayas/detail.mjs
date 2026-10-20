@@ -19,7 +19,7 @@ export async function readHimalayasDetail(
   const args = himalayasJobIdentity(url),
     abort = AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]);
   abort.throwIfAborted();
-  const client = new Client({name: 'autojev-collector', version: '1.0.0'});
+  const client = new Client({name: 'autojob-collector', version: '1.0.0'});
   const transport = new StreamableHTTPClientTransport(new URL('https://mcp.himalayas.app/mcp'), {
     fetch: (value, options) =>
       fetch(value, {

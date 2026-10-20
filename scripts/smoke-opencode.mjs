@@ -1,4 +1,4 @@
-// Uses the real OpenCode TUI with a local model fixture and real AutoJev MCP.
+// Uses the real OpenCode TUI with a local model fixture and real AutoJob MCP.
 // No provider credentials, external model calls, or job applications are needed.
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
@@ -13,7 +13,7 @@ import {AutomationStore} from '../app/automation/store.mjs';
 import {automationTools} from '../app/automation/tools.mjs';
 import {startToolServer} from '../app/agents/tool-server.mjs';
 
-const directory = await mkdtemp(path.join(tmpdir(), 'autojev-opencode-'));
+const directory = await mkdtemp(path.join(tmpdir(), 'autojob-opencode-'));
 const store = new WorkspaceDatabase(':memory:'),
   db = new AutomationStore(store),
   candidate = db.create('custom', {title: 'Synthetic test'});
@@ -88,7 +88,7 @@ const profile = {
   name: 'Fixture',
   description: 'Local transport test',
   category: 'Test',
-  instructions: 'AUTOJEV_SYSTEM_SENTINEL. This is a local test. Only use the supplied MCP tool.',
+  instructions: 'AUTOJOB_SYSTEM_SENTINEL. This is a local test. Only use the supplied MCP tool.',
   agent_id: 'opencode',
   selection: {model: 'default', permission: 'default', reasoning: 'default'},
 };
@@ -171,7 +171,7 @@ try {
   assert.ok(
     requests.some((r) =>
       r.messages.some(
-        (m) => m.role === 'system' && JSON.stringify(m.content).includes('AUTOJEV_SYSTEM_SENTINEL'),
+        (m) => m.role === 'system' && JSON.stringify(m.content).includes('AUTOJOB_SYSTEM_SENTINEL'),
       ),
     ),
   );

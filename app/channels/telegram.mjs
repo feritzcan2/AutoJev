@@ -303,7 +303,7 @@ export class TelegramBot {
     const {row, link} = notification,
       candidate = link.candidate_id;
     try {
-      if (!this.queueApplication) throw Error('Queueing is unavailable. Restart AutoJev.');
+      if (!this.queueApplication) throw Error('Queueing is unavailable. Restart AutoJob.');
       const job = this.store.job(candidate, row.data.jobId),
         state = this.store.queueState(candidate, job);
       if (state.state !== 'available') {
@@ -359,7 +359,7 @@ export class TelegramBot {
         if (this.dismissesRecord(row)) {
           const job = this.store.job(link.candidate_id, row.data.jobId);
           if (job.status !== 'skipped' && job.manualOutcome !== 'withdrawn') {
-            if (!this.withdrawApplication) throw Error('Restart AutoJev.');
+            if (!this.withdrawApplication) throw Error('Restart AutoJob.');
             // Use the desktop action so an active application is stopped before withdrawal.
             await this.withdrawApplication(link.candidate_id, job.id);
           }
@@ -369,7 +369,7 @@ export class TelegramBot {
         }
       } catch {
         return {
-          text: 'Could not dismiss the record; the message was not deleted. Check in AutoJev and try again.',
+          text: 'Could not dismiss the record; the message was not deleted. Check in AutoJob and try again.',
           show_alert: true,
         };
       }

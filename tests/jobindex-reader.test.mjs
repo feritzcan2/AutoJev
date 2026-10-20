@@ -174,7 +174,7 @@ test('reads go through the shared site access rules and keep the queued address'
   const requested = [];
   const fetch = async (url, options) => {
     requested.push([url, options.redirect]);
-    assert.match(options.headers['User-Agent'], /AutoJev/);
+    assert.match(options.headers['User-Agent'], /AutoJob/);
     assert.ok(options.signal instanceof AbortSignal);
     return url.includes('.rss') ? feedResponse() : new Response(fixture('hosted-ad.html'));
   };

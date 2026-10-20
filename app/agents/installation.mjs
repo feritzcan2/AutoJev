@@ -8,7 +8,7 @@ export function missingAgentMessage(provider) {
       : provider === 'codex'
         ? 'codex login'
         : 'claude auth login';
-  return `AutoJev could not find the ${label} command. Check with ${provider} --version in a terminal. If the command works, quit AutoJev completely and open it from the same terminal. AutoJev does not include this tool; if it is not installed, install it separately and sign in with ${login}. Then continue the setup. Your saved information is kept.`;
+  return `AutoJob could not find the ${label} command. Check with ${provider} --version in a terminal. If the command works, quit AutoJob completely and open it from the same terminal. AutoJob does not include this tool; if it is not installed, install it separately and sign in with ${login}. Then continue the setup. Your saved information is kept.`;
 }
 
 export function engineErrorMessage(message) {

@@ -1,6 +1,6 @@
 # Development
 
-Technical notes for running AutoJev from source and working on it. For what the
+Technical notes for running AutoJob from source and working on it. For what the
 app does and how to install it, see the [README](../README.md). For contribution
 rules, see [CONTRIBUTING](../CONTRIBUTING.md).
 
@@ -11,8 +11,8 @@ system's native build tools. Windows needs the MSVC tools, macOS needs the Xcode
 Command Line Tools.
 
 ```sh
-git clone https://github.com/feritzcan2/AutoJev.git
-cd AutoJev
+git clone https://github.com/feritzcan2/AutoJob.git
+cd AutoJob
 corepack enable
 pnpm bootstrap
 pnpm start
@@ -115,10 +115,10 @@ OpenCode can be selected in the Agent settings. It uses the same OpenCode Go mod
 as TermLoop and the `default`, `plan` and `bypassPermissions` permissions. Session
 resume, MCP tools and agent instructions are supported. Setup uses
 `opencode auth login`; status tracking requires OpenCode 1.18.33–1.x. OpenCode v2
-launch settings are recognised, but v2 cannot yet be used in AutoJev automations
+launch settings are recognised, but v2 cannot yet be used in AutoJob automations
 because it has no status tracking or session resume.
 
-OpenCode manages its own context compaction; AutoJev context thresholds and the
+OpenCode manages its own context compaction; AutoJob context thresholds and the
 local plain-text conversation transcript currently apply to Claude/Codex. The
 OpenCode conversation is shown in the agent terminal.
 
@@ -128,7 +128,7 @@ Real CLI/MCP test with a local mock model:
 ## Data folder
 
 - **Configuration → Data and backups → Open existing data folder** chooses an
-  AutoJev data folder that contains `jobloop.sqlite`. The app restarts and uses the
+  AutoJob data folder that contains `jobloop.sqlite`. The app restarts and uses the
   records in that folder on later launches too. For exported backups, use
   **Restore from backup**.
 - Passwords and API keys saved by the app are removed from portable backups;

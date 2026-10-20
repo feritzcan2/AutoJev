@@ -62,7 +62,7 @@ const CHALLENGE_GRACE_MS = 12000;
 const homeUrl =
   'data:text/html;charset=utf-8,' +
   encodeURIComponent(
-    '<!doctype html><title>AutoJev</title><h1>AutoJev</h1><p>Listings and application forms open as tabs in this window.</p>',
+    '<!doctype html><title>AutoJob</title><h1>AutoJob</h1><p>Listings and application forms open as tabs in this window.</p>',
   );
 const checkedUrl = (value) => {
   const url = new URL(value);
@@ -456,7 +456,7 @@ export class JevBrowser {
       );
       if (parent.windowId !== child.windowId) {
         await page.close();
-        throw Error('Could not open the new tab in the AutoJev window.');
+        throw Error('Could not open the new tab in the AutoJob window.');
       }
       return page;
     } finally {
@@ -1860,7 +1860,7 @@ export class JevBrowser {
             );
           if (pending.operation === 'TYPE_TEXT' && typeof args.text !== 'string')
             throw Error(
-              'The AutoJev agent must supply the text value to type. No separate API key is needed.',
+              'The AutoJob agent must supply the text value to type. No separate API key is needed.',
             );
           if (pending.operation !== 'TYPE_TEXT' && args.text !== undefined)
             throw Error('This action does not accept text.');

@@ -1,6 +1,6 @@
 import {createRequire} from 'node:module';
 const require = createRequire(import.meta.url);
-export const RELEASES_URL = 'https://api.github.com/repos/feritzcan2/AutoJev/releases?per_page=20';
+export const RELEASES_URL = 'https://api.github.com/repos/feritzcan2/AutoJob/releases?per_page=20';
 const CHECK_DELAY = 15_000,
   CHECK_INTERVAL = 6 * 60 * 60_000;
 const versionParts = (value) =>
@@ -19,7 +19,7 @@ export function compareVersions(a, b) {
 // Published releases newer than the installed version, newest first.
 export async function newerReleases(version, fetchImpl = globalThis.fetch) {
   const response = await fetchImpl(RELEASES_URL, {
-    headers: {accept: 'application/vnd.github+json', 'user-agent': 'AutoJev'},
+    headers: {accept: 'application/vnd.github+json', 'user-agent': 'AutoJob'},
     signal: AbortSignal.timeout(20_000),
   });
   if (!response.ok) throw Error(`The releases list could not be read (HTTP ${response.status}).`);

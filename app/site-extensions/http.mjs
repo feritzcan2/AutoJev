@@ -7,7 +7,7 @@ import {SiteWaitError} from '../browser/site-access.mjs';
 import {htmlText} from './listing.mjs';
 
 export const READER_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (compatible; AutoJev/1.0)',
+  'User-Agent': 'Mozilla/5.0 (compatible; AutoJob/1.0)',
   Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'en-US,en;q=0.9',
 };

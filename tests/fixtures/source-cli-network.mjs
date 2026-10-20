@@ -17,7 +17,7 @@ const job = {
 // URL or request shape exits the child, including before its retry handlers.
 globalThis.fetch = async (input, init = {}) => {
   const url = new URL(String(input)),
-    fixture = process.env.AUTOJEV_CLI_FIXTURE;
+    fixture = process.env.AUTOJOB_CLI_FIXTURE;
   try {
     if (fixture === 'forbidden') return new Response('Access denied', {status: 403});
     if (fixture === 'freehire-search') {

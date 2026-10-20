@@ -16,14 +16,14 @@ export function assertDataSchemaVersion(db) {
   const version = db.prepare('PRAGMA user_version').get().user_version;
   if (version > DATA_SCHEMA_VERSION)
     throw Error(
-      'This data belongs to a newer AutoJev version. Install the current version; the data was not changed.',
+      'This data belongs to a newer AutoJob version. Install the current version; the data was not changed.',
     );
   if (
     version < MIN_DATA_SCHEMA_VERSION &&
     db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' LIMIT 1").get()
   )
     throw Error(
-      'This data belongs to an old AutoJev version that is no longer supported; the data was not changed.',
+      'This data belongs to an old AutoJob version that is no longer supported; the data was not changed.',
     );
   return version;
 }

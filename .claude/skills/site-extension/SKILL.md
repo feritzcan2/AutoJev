@@ -100,7 +100,7 @@ Check in this order and take the first that works:
 ## Step 2 — Inspect the site (no own live browser runs)
 
 Do not launch your own headless/live browser experiments; the user runs live
-checks in AutoJev. Ask the user for a results URL with a real search. Inspect
+checks in AutoJob. Ask the user for a results URL with a real search. Inspect
 with a plain HTTP fetch (`curl -sL -A 'Mozilla/5.0' URL`) of the results page,
 a second results page and one listing page. If the fetch is blocked or the
 content is client-rendered, ask the user to save the page from Chrome (Save

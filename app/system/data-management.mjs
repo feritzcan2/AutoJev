@@ -161,7 +161,7 @@ function sqliteCheck(file) {
     for (const name of tableExists(db, 'workspaces')
       ? ['workspaces', 'workspace_records']
       : ['candidates', 'jobs', 'sources', 'questions'])
-      if (!tableExists(db, name)) throw Error('This file is not an AutoJev database.');
+      if (!tableExists(db, name)) throw Error('This file is not an AutoJob database.');
     if (db.prepare('PRAGMA foreign_key_check').get())
       throw Error('The backup database has inconsistent relations.');
     for (const table of [
@@ -390,7 +390,7 @@ export async function inspectBackup(directory) {
     manifest.appVersion.length > 100 ||
     !Number.isFinite(Date.parse(manifest.createdAt))
   )
-    throw Error('Unsupported or invalid AutoJev backup.');
+    throw Error('Unsupported or invalid AutoJob backup.');
   const seen = new Set();
   let total = 0;
   for (const entry of manifest.files) {
@@ -722,7 +722,7 @@ export async function applyPendingRestore({dataDirectory}) {
     await rm(pendingPath, {force: true});
     if (stage) await rm(stage, {recursive: true, force: true});
     throw Error(
-      'Could not verify the backup; existing data was kept. You can reopen AutoJev. ' +
+      'Could not verify the backup; existing data was kept. You can reopen AutoJob. ' +
         error.message,
     );
   }

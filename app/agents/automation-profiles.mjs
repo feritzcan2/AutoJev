@@ -5,9 +5,9 @@ import {personalAgent} from './profiles.mjs';
 // Shared rules for every automation session (written to AGENTS.md).
 // Keep this file short and structured: the agents reading it are not experts.
 // Role-specific steps live in WEB_AGENTS; the browser block is appended to each.
-export const AUTOMATION_INSTRUCTIONS = `# AutoJev automation agent
+export const AUTOMATION_INSTRUCTIONS = `# AutoJob automation agent
 
-You run one assigned task for one personal web automation inside the AutoJev app. The app owns scheduling, the task queue and all durable state. You own the browser work and the decisions.
+You run one assigned task for one personal web automation inside the AutoJob app. The app owns scheduling, the task queue and all durable state. You own the browser work and the decisions.
 
 ## Start of every turn
 1. Call get_automation_context. If it returns context.id, call read_automation_context_part with context.nextOffset until nextOffset is null. Only the complete context counts; it holds the saved criteria, permissions and recovery state.

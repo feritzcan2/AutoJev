@@ -11,7 +11,7 @@ import {createUpdateManager} from '../app/system/update-manager.mjs';
 test('packaged engine resolves outside asar and development uses an existing debug binary', () => {
   assert.equal(
     engineBinaryPath({
-      root: '/Applications/AutoJev.app/Contents/Resources/app.asar',
+      root: '/Applications/AutoJob.app/Contents/Resources/app.asar',
       resourcesPath: '/resources',
       platform: 'win32',
     }),
@@ -101,18 +101,18 @@ test('universal packaging refuses mixed source snapshots before creating an ESM-
     for (const arch of ['x64', 'arm64']) {
       const resources = path.join(
         directory,
-        `mac-universal-${arch}-temp/AutoJev.app/Contents/Resources`,
+        `mac-universal-${arch}-temp/AutoJob.app/Contents/Resources`,
       );
       await mkdir(resources, {recursive: true});
       await writeFile(path.join(resources, 'app.asar'), 'immutable source');
     }
     const context = {
       appOutDir: path.join(directory, 'mac-universal-arm64-temp'),
-      packager: {appInfo: {productFilename: 'AutoJev'}},
+      packager: {appInfo: {productFilename: 'AutoJob'}},
     };
     await verifyUniversalInputs(context);
     await writeFile(
-      path.join(context.appOutDir, 'AutoJev.app/Contents/Resources/app.asar'),
+      path.join(context.appOutDir, 'AutoJob.app/Contents/Resources/app.asar'),
       'concurrent edit',
     );
     await assert.rejects(verifyUniversalInputs(context), /immutable checkout/);
@@ -129,9 +129,9 @@ test(
   async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'jobloop-package-permissions-'));
     try {
-      const bundle = path.join(directory, 'AutoJev.app'),
+      const bundle = path.join(directory, 'AutoJob.app'),
         binaries = path.join(bundle, 'Contents/MacOS'),
-        executable = path.join(binaries, 'AutoJev'),
+        executable = path.join(binaries, 'AutoJob'),
         resource = path.join(bundle, 'Contents/Info.plist'),
         outside = path.join(directory, 'private-file');
       await mkdir(binaries, {recursive: true, mode: 0o700});
@@ -143,7 +143,7 @@ test(
       await prepareMacosBundle({
         appOutDir: directory,
         electronPlatformName: 'darwin',
-        packager: {appInfo: {productFilename: 'AutoJev'}},
+        packager: {appInfo: {productFilename: 'AutoJob'}},
       });
       for (const file of [bundle, path.join(bundle, 'Contents'), binaries, executable])
         assert.equal((await stat(file)).mode & 0o777, 0o755);
