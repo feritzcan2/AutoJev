@@ -9,6 +9,7 @@
 import {listingPage} from './listing.mjs';
 import {cardCollector} from '../sources/card-collector.mjs';
 import {SearchValueError} from './search.mjs';
+import {LINKEDIN_COUNTRIES} from './linkedin-countries.mjs';
 
 // Saved searches keep the address they were made with: the jobs-guest search
 // (until 2026-10-19), the classic /jobs/search/ or the 2026 /jobs/search-results/.
@@ -67,22 +68,31 @@ export function linkedInSearchUrl(value) {
 // It keeps keywords, start and f_TPR (posted within), takes the location as a
 // geoId, and reads a work mode written into the keywords ("… remote"). Results
 // come in relevance order.
-const GEO_IDS = {
-  germany: 101282230,
+const fold = (text) =>
+  text
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+// Every country by its names (linkedin-countries.mjs), plus the worldwide search.
+/** @type {Map<string, number>} */
+const GEO_IDS = new Map();
+for (const [geoId, ...names] of Object.values(LINKEDIN_COUNTRIES))
+  for (const name of names) GEO_IDS.set(fold(String(name)), Number(geoId));
+for (const [name, geoId] of Object.entries({
   deutschland: 101282230,
-  'united states': 103644278,
   usa: 103644278,
+  us: 103644278,
+  uk: 101165590,
   worldwide: 92000000,
-};
-// A location names its country ("Germany", "Berlin, Germany").
-const geoIdOf = (location) => {
-  const words = location.toLowerCase();
-  return (
-    GEO_IDS[words] ??
-    Object.entries(GEO_IDS).find(([name]) => new RegExp(`\\b${name}\\b`).test(words))?.[1] ??
-    null
-  );
-};
+}))
+  GEO_IDS.set(name, geoId);
+// A location names its country ("Germany") or ends with it ("Berlin, Germany").
+// Other places ("Amsterdam", "New Jersey") are not guessed from their words.
+const geoIdOf = (location) =>
+  GEO_IDS.get(fold(location)) ?? GEO_IDS.get(fold(location.split(',').at(-1))) ?? null;
 const WORK_MODES = {1: 'on-site', 2: 'remote', 3: 'hybrid'};
 // The signed-in results page for a saved search address, at the same offset.
 export function linkedInSignedInSearch(value) {
@@ -372,6 +382,6 @@ export default {
       },
     ],
     notes:
-      'Read in the signed-in browser, in relevance order. location is a country name (Germany, United States, Worldwide) or geoId=<LinkedIn geoId> replaces it. 25 cards per page, pages via &start=25,50,…',
+      'Read in the signed-in browser, in relevance order. location is a country name (Germany, Netherlands, Worldwide) or a place ending with it (Berlin, Germany); geoId=<LinkedIn geoId> replaces it. 25 cards per page, pages via &start=25,50,…',
   },
 };
