@@ -8,7 +8,7 @@
   display: flex;
   flex-direction: column;
   position: relative;
-  background: #111820;
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-raised));
   border-top: 1px solid var(--border);
   overflow: hidden;
 }
@@ -25,7 +25,7 @@
   min-height: 0;
   object-fit: contain;
   object-position: center;
-  background: #111820;
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-raised));
 }
 .worker-screenshot-empty {
   flex: 1;

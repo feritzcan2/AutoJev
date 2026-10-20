@@ -21,8 +21,8 @@ body:not(.automation-workspace) .automation-attention-banner {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: var(--warning);
-  color: #21190e;
+  background: var(--warning-fill);
+  color: var(--warning-ink);
   font-weight: 800;
   font-size: 18px;
 }
@@ -47,8 +47,8 @@ body:not(.automation-workspace) .automation-attention-banner {
 }
 /* Shared site wait: cool accent and a timer glyph, distinct from amber interventions. */
 .automation-help-card[data-waiting] {
-  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-  border-left-color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent-strong) 55%, transparent);
+  border-left-color: var(--accent-strong);
   background: color-mix(in srgb, var(--accent) 7%, var(--bg-raised));
 }
 .automation-help-card[data-waiting] .automation-help-label,
@@ -61,7 +61,7 @@ body:not(.automation-workspace) .automation-attention-banner {
   font-size: 15px;
 }
 .automation-attention-banner[data-waiting] {
-  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  border-color: color-mix(in srgb, var(--accent-strong) 55%, transparent);
   background: color-mix(in srgb, var(--accent) 7%, var(--bg-raised));
 }
 .automation-attention-banner[data-waiting] .attention-icon {

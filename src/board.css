@@ -30,7 +30,7 @@
 }
 .pipeline[data-status='running'] .campaign-state::before {
   background: var(--accent);
-  box-shadow: 0 0 0 0 rgba(102, 179, 255, 0.55);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-strong) 55%, transparent);
   animation: source-pulse 1.6s ease-out infinite;
 }
 .pipeline[data-status='paused'] .campaign-state::before {
@@ -159,10 +159,10 @@
   position: relative;
   margin-bottom: 14px;
   padding: 18px 22px 20px 24px;
-  border: 1px solid rgba(217, 170, 95, 0.28);
+  border: 1px solid color-mix(in srgb, var(--warning) 28%, transparent);
   border-left: 3px solid var(--warning);
   border-radius: 12px;
-  background: rgba(217, 170, 95, 0.06);
+  background: color-mix(in srgb, var(--warning) 6%, transparent);
 }
 .question-head {
   display: flex;
@@ -191,12 +191,12 @@
   height: 7px;
   border-radius: 50%;
   background: var(--warning);
-  box-shadow: 0 0 0 0 rgba(217, 170, 95, 0.55);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 55%, transparent);
   animation: question-pulse 1.8s ease-out infinite;
 }
 @keyframes question-pulse {
   to {
-    box-shadow: 0 0 0 7px rgba(217, 170, 95, 0);
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--warning) 0%, transparent);
   }
 }
 .question-job {
@@ -247,7 +247,7 @@
 }
 .question-link-actions button:hover {
   filter: none;
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
   color: var(--text);
 }
 .question-link-actions .danger {
@@ -255,7 +255,7 @@
   border-color: transparent;
 }
 .question-link-actions .danger:hover {
-  background: rgba(225, 117, 126, 0.1);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
   color: var(--danger);
 }
 .question-link-actions .tab-status {
@@ -459,17 +459,21 @@
 }
 
 .jobs-table tbody tr.agent-current-row {
-  background: color-mix(in srgb, var(--accent-strong, #45baff) 10%, var(--bg-raised, #181f27));
+  background: color-mix(
+    in srgb,
+    var(--accent-strong, var(--accent-soft)) 10%,
+    var(--bg-raised, color-mix(in srgb, var(--accent) 14%, var(--bg-raised)))
+  );
 }
 .jobs-table tbody tr.agent-current-row td:first-child {
-  box-shadow: inset 3px 0 var(--accent-strong, #45baff);
+  box-shadow: inset 3px 0 var(--accent-strong, var(--accent-strong));
 }
 .application-agent-badge {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   margin-top: 7px;
-  color: var(--accent-strong, #45baff);
+  color: var(--accent-strong, var(--accent-strong));
   font-size: 11px;
   font-weight: 600;
 }
@@ -482,10 +486,10 @@
   flex-shrink: 0;
 }
 .application-agent-badge.waiting {
-  color: #dfb964;
+  color: var(--warning);
 }
 .jobs-table tbody tr.agent-current-row[data-agent-tone='waiting'] td:first-child {
-  box-shadow: inset 3px 0 #dfb964;
+  box-shadow: inset 3px 0 var(--warning);
 }
 
 /* Let the pinned row stick to the page viewport rather than an unscrolled wrapper. */
@@ -496,8 +500,12 @@
   position: sticky;
   top: var(--job-sticky-top, 0px);
   z-index: 5;
-  background: color-mix(in srgb, var(--accent-strong, #45baff) 10%, var(--bg-raised, #181f27));
-  border-bottom: 2px solid var(--accent-strong, #45baff);
+  background: color-mix(
+    in srgb,
+    var(--accent-strong, var(--accent-soft)) 10%,
+    var(--bg-raised, color-mix(in srgb, var(--accent) 14%, var(--bg-raised)))
+  );
+  border-bottom: 2px solid var(--accent-strong, var(--accent-strong));
 }
 
 /* Rank explains priority without hiding weak or uncertain listings. */
@@ -511,7 +519,7 @@
   margin-top: 6px;
 }
 .rank-score {
-  color: var(--accent);
+  color: var(--accent-strong);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -638,7 +646,7 @@
   height: 16px;
   margin: 0;
   padding: 0;
-  accent-color: var(--accent-strong);
+  accent-color: var(--jl-check);
   cursor: pointer;
 }
 .section-title .job-filter-option span {

@@ -33,7 +33,7 @@
 }
 .telegram-badge[data-on='true'] {
   color: var(--success);
-  background: rgba(92, 201, 149, 0.1);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
 }
 .telegram-token {
   display: flex;

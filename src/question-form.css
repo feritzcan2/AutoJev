@@ -9,7 +9,7 @@
   margin-top: 18px;
   padding: 18px 0 0;
   border: 0;
-  border-top: 1px solid rgba(217, 170, 95, 0.2);
+  border-top: 1px solid color-mix(in srgb, var(--warning) 20%, transparent);
   border-radius: 0;
   background: transparent;
 }

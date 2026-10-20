@@ -15,13 +15,13 @@
 }
 .data-management .data-notice {
   padding: 14px 16px;
-  border: 1px solid var(--border, #303b47);
+  border: 1px solid var(--border, var(--accent-strong));
   border-radius: 10px;
-  background: var(--panel, #151c25);
+  background: var(--panel, color-mix(in srgb, var(--accent) 14%, var(--bg-raised)));
 }
 .data-management .data-restore-note {
   font-size: 13px;
-  color: var(--muted, #aab6c3);
+  color: var(--muted, var(--text-secondary));
 }
 .data-management .data-status {
   min-height: 1.6em;
@@ -31,14 +31,14 @@
   padding-left: 20px;
   font-size: 13px;
   line-height: 1.8;
-  color: var(--muted, #aab6c3);
+  color: var(--muted, var(--text-secondary));
 }
 .data-directory {
   overflow-wrap: anywhere;
   padding: 12px 14px;
-  border: 1px solid var(--border, #303b47);
+  border: 1px solid var(--border, var(--accent-strong));
   border-radius: 8px;
-  background: var(--panel, #151c25);
+  background: var(--panel, color-mix(in srgb, var(--accent) 14%, var(--bg-raised)));
   font-family: monospace;
   font-size: 13px;
 }

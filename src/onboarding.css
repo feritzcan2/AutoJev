@@ -65,7 +65,7 @@ body.onboarding-open {
   color: var(--accent-strong);
 }
 .onboarding-steps li[data-state='current']::before {
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
   background: var(--accent-wash);
 }
 .onboarding-steps li[data-state='done'] {
@@ -179,7 +179,7 @@ body.onboarding-open {
   width: 18px;
   height: 18px;
   border: 2px solid var(--border-strong);
-  border-top-color: var(--accent);
+  border-top-color: var(--accent-strong);
   border-radius: 50%;
   animation: onboarding-spin 0.9s linear infinite;
 }
@@ -219,7 +219,7 @@ body.onboarding-open {
   width: min(var(--onboarding-width), 100%);
   margin: 0;
   padding: 12px 14px;
-  border: 1px solid rgba(225, 117, 126, 0.4);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
   border-radius: 10px;
   color: var(--danger);
   font-size: 13px;
@@ -286,7 +286,7 @@ body.onboarding-open {
   display: grid;
   gap: 12px;
   padding: 16px;
-  border: 1px solid rgba(217, 170, 95, 0.35);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
   border-radius: 10px;
 }
 .onboarding-readiness[hidden] {

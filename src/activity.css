@@ -37,7 +37,7 @@
 }
 .now-panel[data-tone='active'] .now-label::before {
   background: var(--accent);
-  box-shadow: 0 0 0 0 rgba(102, 179, 255, 0.55);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-strong) 55%, transparent);
   animation: source-pulse 1.6s ease-out infinite;
 }
 .now-panel[data-tone='waiting'] .now-label {
@@ -291,7 +291,7 @@
   overflow: hidden;
 }
 .now-panel[data-tone='active'] {
-  border-color: rgba(102, 179, 255, 0.38);
+  border-color: color-mix(in srgb, var(--accent-strong) 38%, transparent);
 }
 .now-panel[data-tone='active']::after {
   content: '';
@@ -393,10 +393,10 @@
 }
 .automation-results-table .automation-badge.running,
 .automation-results-table .automation-badge.queued {
-  color: var(--accent);
-  background: rgba(102, 179, 255, 0.12);
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .automation-results-table .automation-badge.blocked {
-  color: #ebc88b;
-  background: #413625;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, var(--bg-raised));
 }

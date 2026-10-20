@@ -1,8 +1,8 @@
 /* Sidebar: a quiet rail. The workspace is the one thing you switch; pages are a plain list under it. */
 :root {
   --sidebar-width: 236px;
-  --bg-sidebar: #181c1e;
-  --sidebar-text: #aeb4b6;
+  --bg-sidebar: var(--jl-rail);
+  --sidebar-text: var(--jl-muted);
 }
 
 body {
@@ -98,7 +98,7 @@ aside > #candidates {
   border-color: var(--text-muted);
 }
 .workspace-switcher-trigger[aria-expanded='true'] {
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
 }
 .workspace-switcher-label {
   flex: 1;
@@ -240,7 +240,7 @@ aside > #candidates {
 }
 .workspace-actions .danger:hover {
   color: var(--danger);
-  background: rgba(225, 117, 126, 0.1);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 .workspace-actions button:disabled {
   opacity: 0.35;
@@ -275,13 +275,18 @@ aside nav button:hover {
   background: var(--bg-hover);
   color: var(--text);
 }
+/* The current page: a solid ink pill, as in JobLoop. */
 aside nav .selected,
 aside nav .selected:hover {
-  color: var(--text);
-  background: var(--accent-wash);
+  color: var(--jl-bg);
+  background: var(--jl-ink);
 }
 aside nav .selected .nav-icon {
-  color: var(--accent-strong);
+  color: inherit;
+}
+aside nav .selected .agent-nav-status {
+  color: inherit;
+  border-color: color-mix(in srgb, var(--jl-bg) 35%, transparent);
 }
 aside nav button > span:first-of-type {
   flex: 1 1 auto;
@@ -324,12 +329,12 @@ aside nav button:hover .nav-icon {
 }
 .agent-nav-status[data-tone='active'] {
   border-color: transparent;
-  background: rgba(92, 201, 149, 0.14);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
   color: var(--success);
 }
 .agent-nav-status[data-tone='waiting'] {
   border-color: transparent;
-  background: rgba(217, 170, 95, 0.14);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
   color: var(--warning);
 }
 
@@ -350,7 +355,7 @@ aside nav button:hover .nav-icon {
   font-size: 12px;
   border: 1px solid var(--danger);
   border-radius: 10px;
-  background: rgba(225, 117, 126, 0.1);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
   color: var(--danger);
 }
 .jev-status b:before {
@@ -365,7 +370,7 @@ aside nav button:hover .nav-icon {
   margin-top: 0;
 }
 .chrome-status .chrome-profile-change {
-  color: var(--accent);
+  color: var(--accent-strong);
   border-color: var(--border);
 }
 .chrome-status .chrome-tip {
@@ -494,12 +499,12 @@ h1 {
   background: var(--text-muted);
 }
 #agent-state[data-active='true'] {
-  border-color: rgba(92, 201, 149, 0.35);
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
   color: var(--text);
 }
 #agent-state[data-active='true']::before {
   background: var(--success);
-  box-shadow: 0 0 6px rgba(92, 201, 149, 0.7);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--success) 70%, transparent);
 }
 header .actions .primary {
   font-weight: 600;
@@ -562,14 +567,15 @@ aside nav button[data-pending]:hover {
   background: color-mix(in srgb, var(--warning) 20%, transparent);
 }
 aside nav button[data-pending].selected {
+  color: var(--text);
   background: color-mix(in srgb, var(--warning) 20%, transparent);
 }
 aside nav button[data-pending] .nav-icon {
   color: var(--warning);
 }
 aside nav button[data-pending] .agent-nav-status {
-  background: var(--warning);
-  color: #241b0a;
+  background: var(--warning-fill);
+  color: var(--warning-ink);
   font-weight: 700;
 }
 aside nav button[data-pending] + button:not([data-pending]) {

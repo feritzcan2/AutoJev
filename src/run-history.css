@@ -39,7 +39,7 @@
 }
 .run-row[data-status='running'] .run-head::before {
   background: var(--accent);
-  box-shadow: 0 0 0 0 rgba(102, 179, 255, 0.55);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-strong) 55%, transparent);
   animation: source-pulse 1.6s ease-out infinite;
 }
 .run-row[data-status='failed'] .run-head::before,

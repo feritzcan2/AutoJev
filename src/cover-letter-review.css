@@ -50,7 +50,7 @@
   background: var(--text-muted);
 }
 .cover-letter-progress[data-running] {
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .cover-letter-progress[data-running]::before {
   background: var(--accent);

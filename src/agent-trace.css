@@ -49,7 +49,7 @@ dialog.agent-trace::backdrop {
   border-bottom: 1px solid var(--border);
 }
 .agent-trace-bar button[data-active='true'] {
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
   color: var(--accent-strong);
 }
 .agent-trace-bar input {
@@ -104,7 +104,7 @@ dialog.agent-trace::backdrop {
   border-radius: 999px;
 }
 .agent-trace-event[data-type='tool'] .agent-trace-kind {
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
   color: var(--accent-strong);
 }
 .agent-trace-event[data-type='jev'] .agent-trace-kind {

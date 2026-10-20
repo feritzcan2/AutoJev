@@ -30,7 +30,7 @@
   gap: 8px;
   flex-shrink: 0;
   padding: 8px 13px;
-  border-color: rgba(102, 179, 255, 0.4);
+  border-color: color-mix(in srgb, var(--accent-strong) 40%, transparent);
   color: var(--accent-strong);
   font-size: 13px;
   font-weight: 550;
@@ -38,7 +38,7 @@
 .profile-head > button:hover:not(:disabled) {
   filter: none;
   background: var(--accent-wash);
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
 }
 .btn-icon {
   width: 15px;
@@ -181,8 +181,8 @@
 }
 .cv-row:has([data-empty='true']) {
   border-style: dashed;
-  border-color: rgba(217, 170, 95, 0.45);
-  background: rgba(217, 170, 95, 0.05);
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 5%, transparent);
 }
 .cv-row:has([data-empty='true']) .cv-icon {
   stroke: var(--warning);
@@ -228,17 +228,17 @@
 }
 .choice:has(:checked) {
   background: var(--accent-wash);
-  box-shadow: inset 3px 0 var(--accent);
+  box-shadow: inset 3px 0 var(--accent-strong);
 }
 .choice:has(:focus-visible) {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-strong);
   outline-offset: -2px;
 }
 .choice input {
   width: 15px;
   height: 15px;
   margin: 2px 0 0;
-  accent-color: var(--accent);
+  accent-color: var(--jl-check);
 }
 /* Find and apply's required minimum score, under the choices. */
 .authorization-score {
@@ -278,7 +278,7 @@
   line-height: 1.45;
 }
 .choice:has([value='submit']:checked) {
-  background: rgba(217, 170, 95, 0.08);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
   box-shadow: inset 3px 0 var(--warning);
 }
 .choice:has([value='submit']:checked) input {
@@ -321,8 +321,8 @@
 }
 .profile-head > #automation-profile-save {
   background: var(--accent);
-  color: var(--bg-app);
-  border-color: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent-strong);
 }
 .profile-save-status {
   max-width: var(--profile-width);
@@ -355,7 +355,7 @@
   height: 15px;
   margin: 2px 0 0;
   flex-shrink: 0;
-  accent-color: var(--accent);
+  accent-color: var(--jl-check);
 }
 
 /* Telegram */

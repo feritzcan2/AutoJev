@@ -35,7 +35,7 @@
   --jl-accent-text: #4a6600;
   --jl-good: #4a6600;
   --jl-good-soft: #eef8c9;
-  --jl-warn: #9a5b07;
+  --jl-warn: #8d5306;
   --jl-warn-soft: #fbf0dc;
   --jl-bad: #b42318;
   --jl-bad-soft: #fde8e6;
@@ -54,7 +54,7 @@
     --jl-line-strong: #34363d;
     --jl-ink: #f1f2ea;
     --jl-muted: #a4a6ad;
-    --jl-faint: #8b8e95;
+    --jl-faint: #8f9299;
     --jl-check: #c6f432;
     --jl-accent-wash: #1a1f0e;
     --jl-accent-edge: transparent;
@@ -145,7 +145,6 @@
     transition: none;
   }
 }
-
 
 /* ---- First-launch intro ------------------------------------------------ */
 .jl-intro {
@@ -258,4 +257,3 @@ body.jl-intro-reveal :is(.onboarding-head, .onboarding-card) {
     animation: none;
   }
 }
-

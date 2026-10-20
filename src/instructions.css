@@ -2,16 +2,16 @@
   display: flex;
   gap: 6px;
   margin: 0 0 22px;
-  border-bottom: 1px solid #303c48;
+  border-bottom: 1px solid var(--accent-strong);
   padding-bottom: 12px;
 }
 .agent-view-tabs button {
   background: transparent;
-  color: #a1adbb;
+  color: var(--text-secondary);
 }
 .agent-view-tabs [aria-selected='true'] {
-  background: #283a33;
-  color: #c4ebc2;
+  background: color-mix(in srgb, var(--success) 14%, var(--bg-raised));
+  color: var(--success);
 }
 #agent[data-panel='instructions'] > :not(.agent-view-tabs):not(.instruction-panel) {
   display: none !important;
@@ -29,7 +29,7 @@
 .instruction-eyebrow {
   font-size: 10px;
   letter-spacing: 1.8px;
-  color: #97c7b0;
+  color: var(--success);
 }
 .instruction-heading h2 {
   font-size: 25px;
@@ -41,7 +41,7 @@
 .instruction-footnote {
   font-size: 12px;
   line-height: 1.7;
-  color: #94a3b4;
+  color: var(--text-secondary);
 }
 .instruction-heading p {
   margin: 0;
@@ -64,8 +64,8 @@
 }
 .instruction-stats > div {
   padding: 17px 20px;
-  background: #191f28;
-  border: 1px solid #2a3542;
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-raised));
+  border: 1px solid var(--accent-strong);
   border-radius: 10px;
   display: flex;
   gap: 14px;
@@ -74,11 +74,11 @@
 .instruction-stats strong {
   font-size: 25px;
   font-weight: 500;
-  color: #d2e7dc;
+  color: var(--success);
 }
 .instruction-stats span {
   font-size: 12px;
-  color: #9daabb;
+  color: var(--accent-strong);
 }
 .instruction-modes {
   display: flex;
@@ -86,12 +86,12 @@
 }
 .instruction-modes button {
   background: transparent;
-  border: 1px solid #34414a;
+  border: 1px solid var(--border);
 }
 .instruction-modes [aria-selected='true'] {
-  background: #d0e6d5;
-  color: #173b2b;
-  border-color: #d0e6d5;
+  background: var(--success-soft);
+  color: var(--success);
+  border-color: var(--success);
 }
 .instruction-sources {
   display: flex;
@@ -102,14 +102,14 @@
 .instruction-sources button {
   font-size: 11px;
   padding: 6px 10px;
-  border: 1px solid #34414a;
+  border: 1px solid var(--border);
   background: transparent;
-  color: #a6b3c3;
+  color: var(--accent-strong);
 }
 .instruction-sources .selected {
-  background: #293e35;
-  color: #c7ead0;
-  border-color: #5d826e;
+  background: color-mix(in srgb, var(--success) 14%, var(--bg-raised));
+  color: var(--success);
+  border-color: var(--border-strong);
 }
 .instruction-content {
   display: grid;
@@ -118,11 +118,11 @@
 .instruction-card,
 .instruction-event {
   margin: 0;
-  border: 1px solid #303b48;
+  border: 1px solid var(--accent-strong);
   border-radius: 10px;
-  background: #181f28;
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-raised));
   overflow: hidden;
-  color: #b5c1ce;
+  color: var(--accent-strong);
 }
 .instruction-card > summary,
 .instruction-event > summary {
@@ -138,7 +138,7 @@
 .instruction-event > summary::before {
   content: '›';
   font-size: 20px;
-  color: #9cadba;
+  color: var(--text-secondary);
 }
 .instruction-card[open] > summary::before,
 .instruction-event[open] > summary::before {
@@ -154,25 +154,25 @@
 .instruction-card strong,
 .instruction-event strong {
   font-size: 14px;
-  color: #e0e8ef;
+  color: var(--accent-strong);
   font-weight: 550;
   overflow-wrap: anywhere;
 }
 .instruction-source {
-  color: #9abda9;
+  color: var(--success);
   font-size: 10px;
   letter-spacing: 0.5px;
 }
 .instruction-when {
   font-size: 11px;
-  color: #91a2b3;
+  color: var(--accent-strong);
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
 .instruction-state {
   font-size: 10px;
-  color: #b0bdc9;
-  background: #26323f;
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-raised));
   padding: 6px 9px;
   border-radius: 6px;
   max-width: 230px;
@@ -180,24 +180,24 @@
 }
 .instruction-state[data-state='changed'],
 .instruction-state[data-state='failed'] {
-  color: #f1cd8f;
-  background: #433827;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 14%, var(--bg-raised));
 }
 .instruction-state[data-state='recorded'],
 .instruction-state[data-state='returned'] {
-  color: #bde3c8;
-  background: #284235;
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 14%, var(--bg-raised));
 }
 .instruction-text {
   padding: 0 20px 18px;
-  border-top: 1px solid #303b48;
+  border-top: 1px solid var(--accent-strong);
 }
 .instruction-text-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 12px 0;
-  color: #8c9dad;
+  color: var(--text-secondary);
 }
 .instruction-text-head button {
   font-size: 11px;
@@ -210,7 +210,7 @@
     SFMono-Regular,
     Consolas,
     monospace;
-  color: #c6d1de;
+  color: var(--accent-strong);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   max-height: 480px;
@@ -218,10 +218,10 @@
 }
 .instruction-event > summary small {
   font-size: 10px;
-  color: #8fa3b7;
+  color: var(--accent-strong);
 }
 .instruction-event-body {
-  border-top: 1px solid #303b48;
+  border-top: 1px solid var(--accent-strong);
   padding: 12px 18px;
 }
 .instruction-part {
@@ -230,16 +230,16 @@
 .instruction-part > summary {
   cursor: pointer;
   padding: 8px 0;
-  color: #bccbd8;
+  color: var(--accent-strong);
   overflow-wrap: anywhere;
 }
 .instruction-empty {
   margin: 8px 0;
   padding: 36px 22px;
-  border: 1px dashed #34414a;
+  border: 1px dashed var(--border);
   border-radius: 10px;
   text-align: center;
-  color: #96a6b8;
+  color: var(--accent-strong);
   font-size: 13px;
   line-height: 1.7;
 }
@@ -247,18 +247,18 @@
   margin-top: 16px;
 }
 .instruction-footnote {
-  border-top: 1px solid #2b3540;
+  border-top: 1px solid var(--accent-strong);
   padding-top: 18px;
   margin-top: 26px;
 }
 .instruction-error,
 .instruction-warning {
-  color: #eecb93;
+  color: var(--warning);
   font-size: 12px;
   line-height: 1.6;
 }
 .instruction-panel summary:focus-visible {
-  outline: 2px solid #bce9bc;
+  outline: 2px solid var(--success);
   outline-offset: -3px;
 }
 @media (max-width: 1150px) {
@@ -280,7 +280,7 @@
 
 .instruction-purpose {
   font-size: 12px;
-  color: #b8c5d2;
+  color: var(--accent-strong);
   line-height: 1.7;
   max-width: 760px;
 }
@@ -291,36 +291,36 @@
   line-height: 1.7;
 }
 .instruction-when b {
-  color: #bbd8c6;
+  color: var(--success);
   font-weight: 550;
 }
 .instruction-change {
   padding: 16px 20px;
-  background: #1c2730;
-  border-top: 1px solid #303b48;
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-raised));
+  border-top: 1px solid var(--accent-strong);
 }
 .instruction-change strong {
   font-size: 12px;
-  color: #d2e3db;
+  color: var(--success);
 }
 .instruction-change p {
   margin: 7px 0 0;
   font-size: 12px;
   line-height: 1.7;
-  color: #adbdcd;
+  color: var(--accent-strong);
 }
 .instruction-guide {
-  border: 1px solid #34414a;
+  border: 1px solid var(--border);
   border-radius: 9px;
   padding: 14px 18px;
-  color: #aabaca;
+  color: var(--accent-strong);
   font-size: 12px;
   line-height: 1.8;
   margin: 18px 0;
 }
 .instruction-guide > summary {
   cursor: pointer;
-  color: #cee3d5;
+  color: var(--success);
   font-weight: 550;
 }
 .instruction-guide ol {
@@ -347,15 +347,15 @@
 }
 .instruction-agents button {
   padding: 9px 16px;
-  border: 1px solid var(--border, #34444f);
+  border: 1px solid var(--border, var(--accent-strong));
   border-radius: 8px;
   background: transparent;
   color: inherit;
 }
 .instruction-agents button[aria-selected='true'] {
-  background: #244438;
-  border-color: #8eb9a1;
-  color: #deffe8;
+  background: color-mix(in srgb, var(--success) 14%, var(--bg-raised));
+  border-color: var(--success);
+  color: var(--success);
 }
 .instruction-agent-summary {
   margin: 0 0 20px;
@@ -366,11 +366,11 @@
 }
 .instruction-agent-summary p {
   margin: 6px 0;
-  color: #bccbd6;
+  color: var(--accent-strong);
   line-height: 1.6;
 }
 .instruction-agent-summary small {
-  color: #9db0bf;
+  color: var(--accent-strong);
 }
 .instruction-profile-editor {
   margin-top: 14px;
@@ -384,9 +384,9 @@
   width: 100%;
   padding: 12px;
   margin: 12px 0;
-  background: #111b23;
-  color: #d5e1ea;
-  border: 1px solid #425360;
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-raised));
+  color: var(--accent-strong);
+  border: 1px solid var(--accent-strong);
   border-radius: 8px;
   font-family: monospace;
   line-height: 1.6;
