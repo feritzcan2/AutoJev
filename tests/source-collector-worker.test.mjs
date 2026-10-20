@@ -176,6 +176,25 @@ function fixture(
     call: (name, args = {}) => flow.call(a.id, run.id, name, args),
   };
 }
+// Ends this round and starts the source's next one as a new task.
+function nextRound(f) {
+  f.db.finish(f.id, f.run.id, 'completed', 'Round done');
+  f.core.workspaces.tasks.finish(f.id, f.run.taskId, 'completed', 'Round done');
+  const task = f.core.workspaces.tasks.enqueue(f.id, {
+      sourceUrl: source,
+      operation: 'scan',
+      sources: [source],
+      lockKey: 'source:' + source,
+    }),
+    run = f.db.begin(f.id, {kind: 'run', taskId: task.id});
+  prepareCollection(f.db, run, f.db.get(f.id));
+  const flow = f.makeFlow(f.db, undefined, run.id);
+  return {
+    ...f,
+    run: f.db.run(run.id),
+    call: (name, args = {}) => flow.call(f.id, run.id, name, args),
+  };
+}
 const helper = (f, receipt) => f.db.jevTasks.get(f.id, f.run.taskId, receipt.taskId);
 async function save(f, item, score = 42) {
   return f.call('record_automation_result', {
@@ -485,22 +504,55 @@ test('an unavailable detail does not block other pages, a moved listing is recov
   const second = await resumed.call('collect_source_page');
   assert.equal(helper(resumed, second).items[0].url, url('uncertain'));
   await handle(resumed, second);
+  // The unreadable listing does not hold the source: the round ends and the
+  // next round reads it again first.
   const end = await resumed.call('collect_source_page');
-  assert.equal(end.complete, false);
-  assert.deepEqual(end.issue.urls, [url('reject')]);
+  assert.equal(end.complete, true);
+  assert.deepEqual(end.unread.urls, [url('reject')]);
+  assert.match(end.unread.note, /not rejected/);
   assert.equal(reads.length, 2);
-  await resumed.call('collect_source_page');
-  assert.equal(reads.length, 2, 'Do not retry unchanged failures within the run');
   assert.equal(resumed.db.run(f.run.id).scan.reviewStats.collected, 3);
   assert.equal(resumed.db.results(f.id).length, 2);
+  assert.deepEqual(resumed.db.get(f.id).sourceState[source].carriedListings, {
+    [url('reject')]: 1,
+  });
   recovered = true;
-  const again = restart(resumed),
-    detail = await again.call('collect_source_page');
-  await handle(again, detail);
-  const done = await again.call('collect_source_page');
-  assert.equal(done.complete, true);
-  assert.equal(done.progress.jevRejected, 1);
-  assert.equal(done.progress.collected, 3);
+  const again = nextRound(resumed);
+  assert.deepEqual(again.db.run(again.run.id).scan.pendingUrls, [url('reject')]);
+  assert.deepEqual(again.db.get(f.id).sourceState[source].carriedListings, {});
+  let result = await again.call('collect_source_page');
+  for (let i = 0; i < 6 && !result.complete; i++) {
+    await handle(again, result);
+    result = await again.call('collect_source_page');
+  }
+  assert.equal(result.complete, true);
+  assert.equal(result.unread, undefined);
+  assert.ok(reads.includes(url('reject')) && reads.length > 2);
+});
+
+test('a listing that stays unreadable is tried for three rounds and then dropped', async (t) => {
+  let f = fixture(t, {
+    readPage: (value) =>
+      parseHimalayasPage(value, {jobs: [jobs[0]], offset: 0, limit: 20, totalCount: 1}),
+  });
+  f.db.persistScan(f.id, {
+    ...f.db.run(f.run.id),
+    scan: {...f.db.run(f.run.id).scan, pendingUrls: [url('gone')]},
+  });
+  const notes = [];
+  for (let round = 1; round <= 3; round++) {
+    let result = await f.call('collect_source_page');
+    for (let i = 0; i < 6 && !result.complete; i++) {
+      await handle(f, result);
+      result = await f.call('collect_source_page');
+    }
+    assert.deepEqual(result.unread.urls, [url('gone')]);
+    notes.push(result.unread.note);
+    if (round < 3) f = nextRound(f);
+  }
+  assert.match(notes[0], /next round reads 1 of them again/);
+  assert.match(notes[2], /stayed unreadable for 3 rounds/);
+  assert.deepEqual(f.db.get(f.id).sourceState[source].carriedListings, {});
 });
 
 test('a listing the site reports gone (410) leaves the queue instead of stopping the scan', async (t) => {
@@ -566,9 +618,8 @@ test('a listing Jev cannot assess stays pending without holding its page', async
   assert.notEqual(second.taskId, first.taskId, 'the next page is fetched');
   await handle(f, second);
   const end = await f.call('collect_source_page');
-  assert.equal(end.complete, false);
-  assert.equal(end.issue.reason, 'collector_details_unavailable');
-  assert.deepEqual(end.issue.urls, [url('image')]);
+  assert.equal(end.complete, true);
+  assert.deepEqual(end.unread.urls, [url('image')]);
 });
 
 test('a page holding only an unreadable listing is read on, and that listing is not re-read per page', async (t) => {
@@ -597,8 +648,8 @@ test('a page holding only an unreadable listing is read on, and that listing is 
   await handle(f, first);
   await handle(f, await f.call('collect_source_page'));
   const end = await f.call('collect_source_page');
-  assert.equal(end.issue.reason, 'collector_details_unavailable');
-  assert.deepEqual(end.issue.urls, [url('image')]);
+  assert.equal(end.complete, true);
+  assert.deepEqual(end.unread.urls, [url('image')]);
   assert.equal(detailReads, 0, 'the unreadable listing is not re-read on later pages');
 });
 

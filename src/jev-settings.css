@@ -52,3 +52,19 @@
 .jev-settings-message:empty {
   display: none;
 }
+.update-releases {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+.update-releases button.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-strong);
+  font-size: 13px;
+}
+.update-releases button.link:hover {
+  text-decoration: underline;
+  filter: none;
+}

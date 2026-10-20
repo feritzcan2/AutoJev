@@ -164,6 +164,7 @@ export async function registerSettingsServices({
   });
   const updates = createUpdateManager({
     app,
+    autoCheck: process.env.JOBLOOP_UPDATE_CHECK !== 'off',
     onChange: (state) => emit('update-status', state),
     beforeInstall: () =>
       maintenance.run(

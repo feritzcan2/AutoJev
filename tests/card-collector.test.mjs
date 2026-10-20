@@ -318,6 +318,11 @@ test('the LinkedIn posting reader reads the signed-in layout without named class
       description: 'Build reliable APIs.\n\nKafka.',
       closed: false,
     });
+    globalThis.document.title = 'DevOps Engineer | 150k € all-in! | Acme Group | LinkedIn';
+    assert.deepEqual(
+      [collectLinkedInPosting().title, collectLinkedInPosting().company],
+      ['DevOps Engineer | 150k € all-in!', 'Acme Group'],
+    );
     globalThis.document.title = 'Sign in | LinkedIn';
     assert.equal(collectLinkedInPosting().title, '', 'a tab title without a company is no posting');
   } finally {
