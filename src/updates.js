@@ -19,8 +19,9 @@ export function updatesPanel(api, root, {notice = () => {}} = {}) {
   };
   function render() {
     if (!state) return;
+    const newest = state.availableVersion || state.releases?.[0]?.version;
     $('[data-version]').textContent =
-      `Installed version: ${state.version}${state.availableVersion ? ' · New version: ' + state.availableVersion : ''}`;
+      `Installed version: ${state.version}${newest ? ' · New version: ' + newest : ''}`;
     $('[data-status]').textContent = state.error || messages[state.status] || state.status;
     if (state.status === 'downloading')
       $('[data-status]').textContent += ` ${Math.round(state.progress ?? 0)}%`;
@@ -89,7 +90,9 @@ export function updatesPanel(api, root, {notice = () => {}} = {}) {
   };
 }
 
-// The Configuration sidebar item shows "1" while a newer version is available.
+// The Configuration sidebar item shows "1" while a newer version is available,
+// whether the in-app updater found it or only the GitHub releases list did (the
+// updater may fail or be unsupported while a newer release exists).
 export function updateBadge(api, nav) {
   if (!api.updateStatus || !nav) return;
   const badge = document.createElement('span');
@@ -99,10 +102,13 @@ export function updateBadge(api, nav) {
   badge.hidden = true;
   nav.append(badge);
   const render = (state) => {
-    const waiting = ['available', 'downloading', 'downloaded'].includes(state?.status);
+    const version = state?.availableVersion || state?.releases?.[0]?.version,
+      waiting =
+        ['available', 'downloading', 'downloaded'].includes(state?.status) ||
+        Boolean(state?.releases?.length);
     badge.hidden = !waiting;
     badge.textContent = waiting ? '1' : '';
-    nav.title = waiting ? `Version ${state.availableVersion} is available` : '';
+    nav.title = waiting && version ? `Version ${version} is available` : '';
   };
   api.onUpdateStatus?.(render);
   api.updateStatus().then(render, () => {});
