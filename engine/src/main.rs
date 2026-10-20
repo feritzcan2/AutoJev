@@ -4,6 +4,8 @@ mod hooks;
 mod history;
 mod context_status;
 mod compact;
+mod claude;
+mod startup_cursor;
 use serde_json::{Value, json};
 use std::io::{self, Write};
 use std::path::Path;
@@ -17,7 +19,7 @@ fn emit(value:Value){let mut out=io::stdout().lock();let _=writeln!(out,"{value}
 fn field<'a>(value:&'a Value,key:&str)->Result<&'a str,String>{value[key].as_str().filter(|s|!s.is_empty()).ok_or_else(||format!("Missing {key}"))}
 fn now()->u64{std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64}
 
-struct Engine {profile:bool, provider:String, compact:Option<compact::Delivery>, manual_draft:bool, compact_input_uncertain:bool, terminal:TerminalService, observed:Option<ObservedSession>, id:String, output:Option<tokio::task::JoinHandle<()>>}
+struct Engine {profile:bool, provider:String, compact:Option<compact::Delivery>, manual_draft:bool, compact_input_uncertain:bool, terminal:TerminalService, observed:Option<ObservedSession>, id:String, output:Option<tokio::task::JoinHandle<()>>, cursor:startup_cursor::StartupCursor}
 impl Engine {
     fn stop(&mut self)->Result<(),String>{
         if !self.id.is_empty(){self.terminal.terminate(&self.id).map_err(|e|e.to_string())?;}
@@ -97,15 +99,19 @@ impl Engine {
                 if provider=="opencode" {
                     let document_directory=if v["opencodeDocumentGuard"].as_bool()==Some(true) {Some(Path::new(directory))} else {None};
                     opencode::spawn(&self.terminal,id,cwd,&launch,v.get("opencodeCompaction"),document_directory)?;
+                } else if provider=="claude" {
+                    claude::spawn(&self.terminal,id,cwd,&launch,Path::new(directory))?;
                 } else {spawn_agent_terminal(&self.terminal,id,1,cwd,&launch).map_err(|e|e.to_string())?;}
                 if let Some(prompt)=launch.initial_input_submission(){runtime.enqueue(prompt);}
                 let mut subscription=self.terminal.subscribe(id,1).map_err(|e|e.to_string())?;
                 let output_session=id.to_owned();
+                self.cursor=startup_cursor::StartupCursor::new();
+                let (mut cursor,terminal)=(self.cursor.observer(),self.terminal.clone());
                 self.output=Some(tokio::spawn(async move{loop{match subscription.recv().await{
-                    Ok(TerminalEvent::Output(bytes))=>emit(json!({"event":"output","sessionId":output_session,"bytes":bytes})),
+                    Ok(TerminalEvent::Output(bytes))=>{cursor.output(&terminal,&output_session,&bytes);emit(json!({"event":"output","sessionId":output_session,"bytes":bytes}))},
                     Ok(TerminalEvent::Eof)=>{emit(json!({"event":"eof","sessionId":output_session}));break},
-                    Ok(TerminalEvent::Gap(n))=>emit(json!({"event":"gap","sessionId":output_session,"count":n})),
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n))=>emit(json!({"event":"gap","sessionId":output_session,"count":n})),
+                    Ok(TerminalEvent::Gap(n))=>{cursor.gap();emit(json!({"event":"gap","sessionId":output_session,"count":n}))},
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n))=>{cursor.gap();emit(json!({"event":"gap","sessionId":output_session,"count":n}))},
                     Err(_)=>break,
                 }}}));
                 self.profile=profile.is_some();self.provider=provider.into();self.id=id.into();self.observed=Some(runtime);Ok(json!({"started":true,"providerInstructions":instructions}))
@@ -130,6 +136,7 @@ impl Engine {
             }
             "input"=>{
                 let bytes=field(v,"text")?.as_bytes();
+                if self.cursor.is_duplicate_reply(bytes){return Ok(json!({}));}
                 let before=self.terminal.user_input_activity(&self.id,1).map_err(|e|e.to_string())?;
                 self.terminal.input_user(&self.id,1,bytes).map_err(|e|e.to_string())?;
                 let after=self.terminal.user_input_activity(&self.id,1).map_err(|e|e.to_string())?;
@@ -149,7 +156,7 @@ async fn main(){
     let directory=std::env::args().nth(1).expect("process registry directory required");
     if directory=="hook"{let _=termloop_agent_runtime::hook_forwarder::run_hook_client(hooks::Protocol).await;return;}
     if directory=="context-status"{if let Some(output)=std::env::args().nth(2){let _=context_status::run(Path::new(&output));}return;}
-    let mut engine=Engine{profile:false,provider:String::new(),compact:None,manual_draft:false,compact_input_uncertain:false,terminal:TerminalService::with_process_registry(directory.into()),observed:None,id:String::new(),output:None};
+    let mut engine=Engine{profile:false,provider:String::new(),compact:None,manual_draft:false,compact_input_uncertain:false,terminal:TerminalService::with_process_registry(directory.into()),observed:None,id:String::new(),output:None,cursor:startup_cursor::StartupCursor::new()};
     let mut lines=BufReader::new(tokio::io::stdin()).lines();let mut tick=tokio::time::interval(std::time::Duration::from_millis(100));let mut previous=String::new();let mut previous_identity=String::new();let mut previous_delivery=String::new();
     loop{tokio::select!{
         line=lines.next_line()=>{let Ok(Some(line))=line else{break};if line.len()>16*1024*1024{continue;}match serde_json::from_str::<Value>(&line){Ok(v)=>{let id=v["id"].clone();if line.len()>262144 && v["op"]!="validate-profile" {emit(json!({"id":id,"error":"Command too large"}));continue;}match tokio::task::block_in_place(||engine.command(&v)){Ok(result)=>emit(json!({"id":id,"result":result})),Err(error)=>emit(json!({"id":id,"error":error}))}},Err(e)=>emit(json!({"event":"error","error":e.to_string()}))}}
