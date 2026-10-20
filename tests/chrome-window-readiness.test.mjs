@@ -148,3 +148,40 @@ test('a retry whose reused window is not ready still reports why the previous at
   );
   assert.equal(attempts, 2);
 });
+
+test('a retry opens a new window when the previous one was closed or never loaded', async (t) => {
+  const markers = [];
+  let load = true;
+  const browser = new JevBrowser('/unused', {
+    profile: {directory: 'Profile 2'},
+    readyTimeout: 50,
+    openWindow: async (url) => {
+      markers.push({url});
+      if (load) await fetch(url);
+    },
+    endpoint: async () => {
+      throw Error('Synthetic endpoint unavailable');
+    },
+  });
+  t.after(() => browser.close());
+  // Loaded but not in front: the retry keeps waiting for the same window.
+  await assert.rejects(browser.context(), /profile is not ready/);
+  await assert.rejects(browser.context(), /profile is not ready/);
+  assert.equal(markers.length, 1);
+  // The user closed it: the next attempt opens a new window, and the old page is gone.
+  await fetch(markers[0].url + '/closed', {
+    method: 'POST',
+    headers: {Origin: new URL(markers[0].url).origin},
+  });
+  load = false;
+  await assert.rejects(browser.context(), /profile is not ready/);
+  assert.equal(markers.length, 2);
+  await assert.rejects(fetch(markers[0].url));
+  // Chrome never loaded that one either: the retry opens another.
+  load = true;
+  await assert.rejects(browser.context(), /profile is not ready/);
+  assert.equal(markers.length, 3);
+  await focus(markers[2]);
+  await assert.rejects(browser.context(), /Synthetic endpoint unavailable/);
+  assert.equal(markers.length, 3);
+});
