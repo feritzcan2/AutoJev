@@ -114,6 +114,7 @@ test('a checkbox in a background tab is clicked after the tab is brought forward
     presses.map(([kind]) => kind),
     ['down', 'up'],
   );
-  for (const [, x, y] of presses) assert.ok(Math.abs(x - 120) <= 2 && Math.abs(y - 230) <= 2);
+  // The press lands at most ±2 px aim, ±1 px hover and rounding (under 5 px) from the centre.
+  for (const [, x, y] of presses) assert.ok(Math.hypot(x - 120, y - 230) < 5);
   assert.equal(slot.cloudflareDiagnostic.reason, 'click_dispatched');
 });
