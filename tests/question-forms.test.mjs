@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
-import {normalizeFields, validateAnswers} from '../app/automation/question-forms.mjs';
+import {normalizeFields, validateAnswers, quickAnswer} from '../app/automation/question-forms.mjs';
 import {validate} from '../app/agents/tool-schema.mjs';
 import {startTestServer} from './helpers/tool-server.mjs';
 import {automationWorkflow} from '../app/automation/worker.mjs';
@@ -114,6 +114,48 @@ test('an instruction replaces the answer and is marked as an instruction', () =>
     assert.equal(result.answerValues, null);
     assert.equal(result.answer, 'Write a cover letter from my CV.');
     assert.match(s.messages(p.id).at(-1).text, /Instruction: Write a cover letter/);
+  } finally {
+    core.close();
+  }
+});
+
+test('notification answers fill the stored form and reach the question hook', () => {
+  const core = new WorkspaceDatabase(':memory:'),
+    s = new AutomationStore(core),
+    asked = [];
+  s.questionAsked = (id, question) => asked.push([id, question.id]);
+  try {
+    const p = s.create('job-search'),
+      ask = (text, fields) => s.askQuestion(p.id, {text, ...(fields ? {fields} : {})}),
+      free = ask('Notice period?'),
+      permit = ask('Work permit?', [{id: 'permit', label: 'Permit', type: 'boolean'}]),
+      salary = ask('Salary?', [{id: 'salary', label: 'Salary', type: 'number'}]),
+      level = ask('Level?', [{id: 'level', label: 'Level', type: 'select', options: ['A', 'B']}]);
+    assert.deepEqual(
+      asked.map(([, id]) => id),
+      [free.id, permit.id, salary.id, level.id],
+    );
+    s.answerQuestion(p.id, free.id, quickAnswer(free).reply('Three months'));
+    const choice = quickAnswer(permit);
+    assert.deepEqual(choice.options, ['Yes', 'No']);
+    assert.equal(s.answerQuestion(p.id, permit.id, choice.choose('No')).answerValues.permit, false);
+    assert.throws(() => s.answerQuestion(p.id, salary.id, quickAnswer(salary).reply(' ')));
+    assert.equal(
+      s.answerQuestion(p.id, salary.id, quickAnswer(salary).reply('65000')).answerValues.salary,
+      65000,
+    );
+    assert.equal(
+      s.answerQuestion(p.id, level.id, quickAnswer(level).choose('B')).answerValues.level,
+      'B',
+    );
+    assert.equal(s.get(p.id).questions[0].answer, 'Three months');
+    // Larger forms and cover letters stay in the window.
+    assert.equal(quickAnswer({fields}), null);
+    assert.equal(quickAnswer({coverLetter: {path: 'letter.pdf'}}), null);
+    assert.equal(
+      quickAnswer({fields: [{id: 'x', label: 'X', type: 'select', options: ['1', '2', '3', '4']}]}),
+      null,
+    );
   } finally {
     core.close();
   }

@@ -83,6 +83,7 @@ export const questionMethods = {
       this.put({...a, questions: [...(a.questions ?? []), question]});
       this.event(id, 'question_asked', {id: question.id});
     });
+    this.questionAsked?.(id, question);
     return question;
   },
   answerQuestion(id, questionId, value) {

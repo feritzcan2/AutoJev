@@ -25,7 +25,9 @@ import {AgentTrace} from './system/agent-trace.mjs';
 import {registerDevTools} from './system/dev-tools.mjs';
 import {registerAutomationServices} from './automation/services.mjs';
 import {AutomationStore} from './automation/store.mjs';
+import {createScanFailureReporter} from './system/scan-failure-report.mjs';
 import {registerSettingsServices} from './system/settings-services.mjs';
+import {openedInBackground, startBackgroundMode} from './system/background.mjs';
 import {JevSettings} from './jev/settings.mjs';
 import {
   applyPendingRestore,
@@ -250,6 +252,10 @@ async function boot() {
     });
   }
   const automationDb = new AutomationStore(core);
+  automationDb.scanFailed = createScanFailureReporter({
+    release: app.getVersion(),
+    environment: app.isPackaged ? 'production' : 'development',
+  });
   const web = registerAutomationServices({
     root,
     data,
@@ -476,6 +482,7 @@ async function boot() {
   });
   scheduler.register('web-templates', () => web.runtime.tick());
   scheduler.start();
+  const activeRunIds = () => services.flatMap((service) => service.activeRunIds?.() ?? []);
   const settingsServices = await registerSettingsServices({
     app,
     root,
@@ -492,7 +499,7 @@ async function boot() {
       for (const service of services) service.clearOutputs?.();
       emit('logs-cleared', {});
     },
-    activeRunIds: () => services.flatMap((service) => service.activeRunIds?.() ?? []),
+    activeRunIds,
   });
   window = new BrowserWindow({
     width: 1440,
@@ -501,6 +508,7 @@ async function boot() {
     minHeight: 720,
     title: 'AutoJob · Web automations',
     backgroundColor: '#11151b',
+    show: !openedInBackground(),
     webPreferences: {
       preload: path.join(root, 'app/preload.cjs'),
       contextIsolation: true,
@@ -510,6 +518,35 @@ async function boot() {
   });
   window.webContents.setWindowOpenHandler(() => ({action: 'deny'}));
   window.webContents.on('will-navigate', (event) => event.preventDefault());
+  const openQuestions = core.db.prepare(
+    "SELECT json_extract(data,'$.questions') AS questions FROM automations",
+  );
+  const background = startBackgroundMode({
+    root,
+    window: () => window,
+    quitting: () => quitting,
+    activity: () => ({
+      running: activeRunIds().length,
+      questions: new Set(
+        openQuestions
+          .all()
+          .flatMap((row) => JSON.parse(row.questions ?? '[]'))
+          .filter((q) => q.answer == null)
+          .map((q) => q.id),
+      ),
+    }),
+    workspaceTitle: (id) => automationDb.get(id).title,
+    answer: (id, questionId, value) =>
+      maintenance.invoke('workspace-answer', async () => {
+        const result = await web.runtime.answer(id, questionId, value);
+        changed(id);
+        return result;
+      }),
+    openWorkspace: (id) => emit('open-workspace', {workspaceId: id}),
+  });
+  automationDb.questionAsked = (id, question) => background.questionAsked(id, question);
+  handle('background-status', () => background.status());
+  handle('background-open-at-login', (value) => background.setOpenAtLogin(value === true));
   await window.loadFile(path.join(root, 'dist/index.html'));
   await completeDataUpgrade({dataDirectory: data, appVersion: app.getVersion()});
   // Unpackaged builds only: lets a local development script drive the app.
@@ -532,6 +569,7 @@ async function boot() {
     if (quitting) return;
     event.preventDefault();
     quitting = true;
+    background.dispose();
     settingsServices.dispose();
     scheduler.close();
     (async () => {

@@ -7,11 +7,19 @@ import {jevTools} from '../jev/tools.mjs';
 import {pressBrowserTarget} from './target.mjs';
 import {resolveBrowserCaptcha} from '../captcha/automation.mjs';
 
+// One browser step holds the workspace queue, so every worker of the workspace
+// waits behind it. A step past this bound is cancelled; one that ignores the
+// cancellation drops the Chrome connection so the queue moves on.
+const STEP_MS = 5 * 60000,
+  STEP_GRACE_MS = 15000;
+
 // Every workspace uses one Jev-managed Chrome connection shared by its workers.
 export class BrowserTools {
   constructor(directory, jevOptionsForCandidate = () => ({})) {
     this.directory = directory;
     this.jevOptionsForCandidate = jevOptionsForCandidate;
+    this.stepMs = STEP_MS;
+    this.stepGraceMs = STEP_GRACE_MS;
     this.clients = new Map();
     this.operations = new Map();
     this.connectionKeys = new Map();
@@ -112,8 +120,8 @@ export class BrowserTools {
     return jevTools;
   }
   async call(candidateId, name, args, sessionId, options) {
-    const result = await this.enqueue(candidateId, () =>
-      this.performCall(candidateId, name, args, sessionId, options),
+    const result = await this.enqueue(candidateId, (signal) =>
+      this.performCall(candidateId, name, args, sessionId, options, signal),
     );
     return resolveBrowserCaptcha(this, candidateId, result, sessionId, options);
   }
@@ -124,13 +132,47 @@ export class BrowserTools {
       .then(() => {
         if (checkActive && this.isActive && !this.isActive())
           throw Error('The worker session has closed.');
-        return run();
+        return this.bounded(candidateId, run);
       });
     this.operations.set(candidateId, operation);
     try {
       return await operation;
     } finally {
       if (this.operations.get(candidateId) === operation) this.operations.delete(candidateId);
+    }
+  }
+  async bounded(candidateId, run) {
+    const step = new AbortController(),
+      minutes = this.stepMs / 60000;
+    let cancel, drop;
+    const expired = new Promise((_, reject) => {
+      cancel = setTimeout(() => {
+        step.abort(
+          Object.assign(
+            Error(
+              `The browser step did not finish within ${minutes} minutes and was stopped. Report it as a technical blocker; do not repeat an action whose result is uncertain.`,
+            ),
+            {code: 'BROWSER_STEP_TIMEOUT'},
+          ),
+        );
+        drop = setTimeout(() => {
+          this.resetCandidate(candidateId).catch(() => {});
+          reject(
+            Object.assign(
+              Error(
+                `The browser step did not finish within ${minutes} minutes and ignored cancellation, so the app dropped the Chrome connection; the next step reconnects. Report it as a technical blocker; do not repeat an action whose result is uncertain.`,
+              ),
+              {code: 'BROWSER_STEP_TIMEOUT'},
+            ),
+          );
+        }, this.stepGraceMs);
+      }, this.stepMs);
+    });
+    try {
+      return await Promise.race([Promise.resolve().then(() => run(step.signal)), expired]);
+    } finally {
+      clearTimeout(cancel);
+      clearTimeout(drop);
     }
   }
   async waitForOperations(candidateId) {
@@ -150,6 +192,7 @@ export class BrowserTools {
       automationFreshTab,
       automationResumeRecord,
     } = {},
+    stepSignal,
   ) {
     if (!this.prepare(candidateId).ready)
       return {content: [{type: 'text', text: JSON.stringify(browserWaitResult())}]};
@@ -193,7 +236,7 @@ export class BrowserTools {
     try {
       result = await client.callTool({name, arguments: args}, sessionId, {
         ...this.options(candidateId).lifecycle,
-        signal: this.signal,
+        signal: AbortSignal.any([this.signal, stepSignal].filter(Boolean)),
         ...(this.siteLane ? {siteLane: this.siteLane} : {}),
         ...(automationTabKey ? {automationTabKey} : {}),
         ...(automationWorkspaceId ? {automationWorkspaceId: candidateId} : {}),

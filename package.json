@@ -49,7 +49,8 @@
     "test:readiness:ui": "node scripts/smoke-readiness.mjs",
     "test:data:ui": "node scripts/smoke-data.mjs",
     "test:extension-bench": "node scripts/smoke-extension-bench.mjs",
-    "test:dev-tools": "node scripts/smoke-dev-tools.mjs"
+    "test:dev-tools": "node scripts/smoke-dev-tools.mjs",
+    "test:background:ui": "node scripts/smoke-background.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.31.0",

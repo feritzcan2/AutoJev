@@ -39,6 +39,7 @@ import {questionMethods} from './store/questions.mjs';
 import {scanMethods} from './store/scan.mjs';
 import {recordMethods} from './store/records.mjs';
 import {runMethods} from './store/runs.mjs';
+import {reportableScanFailure} from '../system/scan-failure-report.mjs';
 const integer = (value, label, min, max) => {
   if (!Number.isInteger(value) || value < min || value > max)
     throw Error(`${label}: a whole number between ${min} and ${max} is required`);
@@ -90,6 +91,10 @@ export class AutomationStore {
     this.db = store.db;
     this.now = now;
     this.siteAccess = new SiteAccess(this.db, {now});
+    // Set by the app: called with (workspaceId, question) for each new question.
+    this.questionAsked = null;
+    // Set by the app: called with each source scan run that ends failed, blocked or timed out.
+    this.scanFailed = null;
     this.db
       .exec(`CREATE TABLE IF NOT EXISTS workspace_events(seq INTEGER PRIMARY KEY,workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,kind TEXT NOT NULL,data TEXT NOT NULL,at INTEGER NOT NULL);
    CREATE TABLE IF NOT EXISTS automation_templates(id TEXT PRIMARY KEY,data TEXT NOT NULL);
@@ -571,11 +576,24 @@ export class AutomationStore {
     return r;
   }
   putRun(run) {
+    const previous = this.scanFailed
+      ? this.db
+          .prepare("SELECT json_extract(data,'$.status') AS status FROM automation_runs WHERE id=?")
+          .get(run.id)?.status
+      : undefined;
     this.db
       .prepare(
         'INSERT INTO automation_runs VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',
       )
       .run(run.id, run.automationId, JSON.stringify(run));
+    if (this.scanFailed && reportableScanFailure(run, previous))
+      // Report after the surrounding transaction, and only if it kept the status.
+      queueMicrotask(() => {
+        const saved = json(
+          this.db.prepare('SELECT data FROM automation_runs WHERE id=?').get(run.id),
+        );
+        if (saved?.status === run.status) this.scanFailed?.(saved);
+      });
     return run;
   }
   activeRun(automationId, runId) {

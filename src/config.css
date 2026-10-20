@@ -82,6 +82,39 @@
   font-size: 13px;
   line-height: 1.55;
 }
+#config-background-panel > p {
+  margin: 6px 0 8px;
+  max-width: 640px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.background-option {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: center;
+  max-width: 640px;
+  padding: 14px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.background-option span {
+  display: grid;
+  gap: 5px;
+}
+.background-option b {
+  font-weight: 550;
+}
+.background-option small {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.background-option input {
+  flex-shrink: 0;
+  margin: 0;
+}
 
 @media (max-width: 1000px) {
   .config-head {

@@ -4,13 +4,15 @@ import {readinessPanel} from './readiness.js';
 import {createDataManagement} from './data-management.js';
 import {updatesPanel} from './updates.js';
 import {telegramPanel} from './telegram.js';
+import {backgroundPanel} from './background-settings.js';
 export function configPage(api, {notice, relativeTime}) {
   const root = document.getElementById('config');
-  root.innerHTML = `<div class="config-head"><div><h2>Configuration</h2><p>Setup, backups, updates and notifications.</p></div></div>
-<div class="config-body"><nav class="config-nav" aria-label="Sections"><a href="#config-telegram">Notifications</a><a href="#config-readiness">Setup check</a><a href="#config-jev">Jev</a><a href="#config-data">Data and backups</a><a href="#config-updates">Updates</a></nav>
+  root.innerHTML = `<div class="config-head"><div><h2>Configuration</h2><p>Setup, background running, backups, updates and notifications.</p></div></div>
+<div class="config-body"><nav class="config-nav" aria-label="Sections"><a href="#config-telegram">Notifications</a><a href="#config-readiness">Setup check</a><a href="#config-background">Background</a><a href="#config-jev">Jev</a><a href="#config-data">Data and backups</a><a href="#config-updates">Updates</a></nav>
 <div class="config-sections">
 <section id="config-telegram" class="config-section"><h3>Notifications</h3><p>The selected workspace's Telegram connection and which notifications it receives.</p><div id="config-telegram-panel"></div></section>
 <section id="config-readiness" class="config-section"><h3>Setup check</h3><div id="config-readiness-panel"></div></section>
+<section id="config-background" class="config-section"><h3>Background</h3><div id="config-background-panel"></div></section>
 <section id="config-jev" class="config-section"><h3>Jev</h3><div id="config-jev-panel"></div></section>
 <section id="config-updates" class="config-section"><div id="config-updates-panel"></div></section>
 </div></div>`;
@@ -68,6 +70,13 @@ export function configPage(api, {notice, relativeTime}) {
       };
     },
   });
+  const background = api.backgroundStatus
+    ? backgroundPanel(api, $('config-background-panel'), {notice})
+    : null;
+  if (!background) {
+    $('config-background').hidden = true;
+    root.querySelector('a[href="#config-background"]').hidden = true;
+  }
   const dataPanel = api.dataStatus ? createDataManagement(api, {notice}) : null;
   if (dataPanel) root.querySelector('.config-sections').append(dataPanel.element);
   else root.querySelector('a[href="#config-data"]').hidden = true;
@@ -80,6 +89,7 @@ export function configPage(api, {notice, relativeTime}) {
     if (root.hidden) return;
     jev.load();
     readiness.load();
+    background?.load();
     dataPanel?.load();
     updates?.load();
   }

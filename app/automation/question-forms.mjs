@@ -111,3 +111,20 @@ export function validateAnswers(fields, values) {
   if (!summary || summary.length > 10000) throw Error('The answer is empty or too long');
   return {values: result, summary};
 }
+// Answers a notification can carry: free text, or one choice from a short list.
+// Other forms and cover letters are answered in the window.
+export function quickAnswer(question) {
+  if (question.coverLetter) return null;
+  const fields = question.fields ?? [];
+  if (!fields.length) return {reply: (text) => text};
+  if (fields.length !== 1) return null;
+  const [field] = fields;
+  if (field.type === 'text') return {reply: (text) => ({[field.id]: text})};
+  if (field.type === 'number')
+    return {reply: (text) => ({[field.id]: text.trim() ? Number(text.trim()) : null})};
+  if (field.type === 'boolean')
+    return {options: ['Yes', 'No'], choose: (option) => ({[field.id]: option === 'Yes'})};
+  if (field.type === 'select' && field.options.length <= 3)
+    return {options: field.options, choose: (option) => ({[field.id]: option})};
+  return null;
+}
