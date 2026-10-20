@@ -1,0 +1,959 @@
+/* JobLoop onboarding styles (moved from the simple view; same specificity). */
+/* First-run flow in the JobLoop look. The onboarding logic and markup stay in
+   src/onboarding.js; this sheet re-themes it by remapping the classic tokens. */
+:root body .onboarding {
+  --bg-app: var(--jl-bg);
+  --bg-raised: var(--jl-panel);
+  --bg-hover: var(--jl-sunk);
+  --border: var(--jl-line);
+  --border-strong: var(--jl-line-strong);
+  --text: var(--jl-ink);
+  --text-secondary: var(--jl-muted);
+  --text-muted: var(--jl-faint);
+  --accent: var(--jl-accent);
+  --accent-strong: var(--jl-accent-text);
+  --accent-wash: var(--jl-accent-wash);
+  --success: var(--jl-good);
+  --warning: var(--jl-warn);
+  --danger: var(--jl-bad);
+  --onboarding-width: 600px;
+  color-scheme: light;
+  font-family: var(--jl-font);
+  font-size: 14px;
+  padding-top: 40px;
+  -webkit-font-smoothing: antialiased;
+}
+@media (prefers-color-scheme: dark) {
+  :root body .onboarding {
+    color-scheme: dark;
+  }
+}
+:root body .onboarding-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+:root body .onboarding-steps {
+  gap: 6px;
+  font-size: 13px;
+}
+:root body .onboarding-steps li {
+  padding: 6px 12px 6px 6px;
+  border-radius: 99px;
+  background: var(--jl-panel);
+  border: 1px solid var(--jl-line);
+}
+:root body .onboarding-steps li[data-state='current'] {
+  background: var(--jl-ink);
+  border-color: var(--jl-ink);
+  color: var(--jl-bg);
+}
+:root body .onboarding-steps li[data-state='current']::before {
+  background: var(--jl-bg);
+  border-color: var(--jl-bg);
+  color: var(--jl-ink);
+}
+:root body .onboarding-steps li[data-state='done'] {
+  background: var(--jl-good-soft);
+  border-color: transparent;
+  color: var(--jl-good);
+}
+:root body .onboarding-card {
+  gap: 20px;
+  padding: 36px;
+  border-radius: 20px;
+  box-shadow: var(--jl-shadow);
+}
+:root body .onboarding-card h1 {
+  font-size: 28px;
+  letter-spacing: -0.03em;
+}
+:root body .onboarding-lead {
+  font-size: 15px;
+}
+/* The CV picker is the one big target on the first screen. */
+:root body .onboarding-drop {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 36px 20px;
+  border: 2px dashed var(--jl-line-strong);
+  border-radius: 16px;
+  background: var(--jl-sunk);
+  color: var(--jl-ink);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+:root body .onboarding-drop:hover:not(:disabled) {
+  border-color: var(--jl-ink);
+  background: var(--jl-accent-wash);
+  filter: none;
+}
+:root body .onboarding-drop svg {
+  box-sizing: content-box;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--jl-accent);
+  color: var(--jl-accent-ink);
+  margin-bottom: 6px;
+}
+:root body .onboarding-drop b {
+  font-size: 16px;
+  font-weight: 600;
+}
+:root body .onboarding-drop small {
+  color: var(--jl-muted);
+  font-size: 13px;
+}
+:root body .onboarding legend {
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--jl-ink);
+}
+:root body .onboarding .authorization {
+  border-radius: 12px;
+}
+:root body .onboarding .choice {
+  padding: 14px 16px;
+  font-size: 14px;
+}
+:root body .onboarding .choice:has(:checked) {
+  box-shadow: inset 3px 0 var(--jl-ink);
+}
+:root body .onboarding-missing {
+  padding: 10px 16px;
+  border-top: 1px solid var(--jl-line);
+  font-size: 13px;
+  color: var(--jl-muted);
+}
+:root body .onboarding-missing summary {
+  cursor: pointer;
+}
+:root body .onboarding-missing .choice {
+  padding-inline: 0;
+  opacity: 0.8;
+}
+:root body .onboarding-missing .choice small {
+  font-size: 12px;
+}
+:root body :is(.onboarding-notes-box, .onboarding-live, .onboarding-more) summary {
+  cursor: pointer;
+  color: var(--jl-accent-text);
+  font-weight: 500;
+  font-size: 13px;
+}
+:root body .onboarding-notes-box[open] summary {
+  margin-bottom: 10px;
+}
+:root body .onboarding-live .onboarding-terminal {
+  margin-top: 12px;
+  color-scheme: dark;
+}
+:root body .onboarding :is(input, textarea, select) {
+  border: 1px solid var(--jl-line-strong);
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: var(--jl-panel);
+  color: var(--jl-ink);
+}
+:root body .onboarding :is(input, textarea, select):focus {
+  outline: none;
+  border-color: var(--jl-ink);
+  box-shadow: 0 0 0 3px var(--jl-accent);
+}
+:root body .onboarding :is(input[type='radio'], input[type='checkbox']) {
+  padding: 0;
+  box-shadow: none;
+}
+:root body .onboarding-fields label,
+:root body .onboarding label {
+  color: var(--jl-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+:root body .onboarding button {
+  border-radius: 10px;
+}
+:root body .onboarding input[type='radio'],
+:root body .onboarding input[type='checkbox'] {
+  accent-color: var(--jl-check);
+}
+:root body .onboarding button.primary {
+  box-shadow: inset 0 0 0 1px var(--jl-accent-edge);
+  min-height: 48px;
+  padding: 0 24px;
+  background: var(--jl-accent);
+  color: var(--jl-accent-ink);
+  font-size: 15px;
+  font-weight: 600;
+}
+:root body .onboarding button:not(.primary, .link, .onboarding-drop) {
+  background: var(--jl-panel);
+  border: 1px solid var(--jl-line-strong);
+  color: var(--jl-ink);
+}
+:root body .onboarding button.link {
+  color: var(--jl-muted);
+}
+:root body .onboarding-spinner {
+  border-color: var(--jl-line);
+  border-top-color: var(--jl-accent);
+}
+:root body .onboarding-error {
+  color: var(--jl-bad);
+}
+:root body .onboarding :is(input, textarea, select),
+:root body .onboarding .choice small,
+:root body .onboarding .check small {
+  font-weight: 400;
+}
+:root body .onboarding .choice small,
+:root body .onboarding .check small {
+  color: var(--jl-muted);
+}
+:root body .onboarding-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+:root body .onboarding-fields > :is(label, details, .rules-field) {
+  grid-column: 1 / -1;
+}
+/* Elimination rules: the condition text gets the room; select and Remove stay compact. */
+:root body .onboarding .rule-row {
+  grid-template-columns: max-content minmax(160px, 1fr) max-content;
+}
+:root body .onboarding .rule-row input {
+  min-width: 0;
+  width: 100%;
+}
+:root body .onboarding .rules-field legend {
+  color: var(--jl-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+@media (max-width: 640px) {
+  :root body .onboarding .rule-row {
+    grid-template-columns: minmax(0, 1fr) max-content;
+  }
+}
+:root body .onboarding-fields > label:has(input[name='country']),
+:root body .onboarding-fields > label:has(input[name='location']) {
+  grid-column: auto;
+}
+:root body .onboarding-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+:root body .onboarding-checks .check {
+  padding: 10px 12px;
+  border: 1px solid var(--jl-line);
+  border-radius: 10px;
+  background: var(--jl-panel);
+}
+:root body .onboarding-checks .check:has(:checked) {
+  border-color: var(--jl-accent-line);
+  background: var(--jl-accent-soft);
+}
+:root body .onboarding-readiness {
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--jl-warn-soft);
+}
+:root body .onboarding-foot {
+  position: sticky;
+  bottom: -40px;
+  padding: 16px 0;
+  border-top: 1px solid var(--jl-line);
+  background: var(--jl-panel);
+}
+
+/* Reading step: the agent screen is an engineer tool; the live log stays one click away. */
+:root body .onboarding [data-agent-screen] {
+  display: none;
+}
+/* Sources: a calm checked state, no large tinted blocks. */
+:root body .onboarding-checks .check:has(:checked) {
+  border-color: var(--jl-line-strong);
+  background: var(--jl-panel);
+}
+:root body .onboarding-checks .check:not(:has(:checked)) {
+  background: var(--jl-sunk);
+}
+:root body .onboarding-checks .check:not(:has(:checked)) b {
+  color: var(--jl-muted);
+}
+/* Setup checklist */
+:root body .onboarding-readiness {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--jl-line);
+  background: var(--jl-panel);
+}
+:root body .onboarding-readiness[data-blocking='true'] {
+  border-color: var(--jl-warn);
+  background: var(--jl-warn-soft);
+}
+:root body .onboarding-readiness h2 {
+  font-size: 15px;
+}
+:root body .onboarding-check-lead {
+  margin: -6px 0 2px;
+  color: var(--jl-muted);
+  font-size: 13px;
+}
+:root body .onboarding-check {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--jl-panel);
+  border: 1px solid var(--jl-line);
+}
+:root body .onboarding-check-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+:root body .onboarding-check-head b {
+  color: var(--jl-ink);
+  font-size: 14px;
+}
+:root body .onboarding-check > span {
+  color: var(--jl-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+:root body .onboarding-check-tag {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--jl-sunk);
+  color: var(--jl-muted);
+}
+:root body .onboarding-check[data-state='error'] .onboarding-check-tag {
+  background: var(--jl-warn-soft);
+  color: var(--jl-warn);
+}
+:root body .onboarding-check button.link {
+  justify-self: start;
+  color: var(--jl-accent-text);
+  font-weight: 500;
+}
+:root body .onboarding-key button {
+  white-space: nowrap;
+}
+:root body .onboarding-no-ai {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  background: var(--jl-warn-soft);
+}
+:root body .onboarding-no-ai span {
+  color: var(--jl-muted);
+  font-size: 13px;
+}
+:root body .onboarding-no-ai button {
+  justify-self: start;
+}
+:root body .onboarding-error {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--jl-bad-soft);
+  font-weight: 500;
+}
+
+/* Reading step: a calm progress screen. The agent terminal is kept mounted
+   off screen so its prompts can be read and answered from app cards. */
+.onboarding .onboarding-live:not(.open) {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: 960px;
+  height: 480px;
+  opacity: 0;
+  pointer-events: none;
+}
+.onboarding .onboarding-live.open .onboarding-terminal {
+  height: 320px;
+  color-scheme: dark;
+}
+.onboarding-reading {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 12px 0 4px;
+  text-align: center;
+}
+.onboarding-reading h1 {
+  margin: 6px 0 0;
+}
+.onboarding-reading-mark {
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 28px;
+  background: var(--jl-accent-wash);
+}
+.onboarding-file {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 5px 12px;
+  border: 1px solid var(--jl-line);
+  border-radius: 99px;
+  background: var(--jl-sunk);
+  color: var(--jl-muted);
+  font: 500 12px/1.4 var(--jl-mono, ui-monospace, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.onboarding-stages {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+.onboarding-stages li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--jl-faint);
+  font-size: 14px;
+  transition: color 0.4s ease;
+}
+.onboarding-stages li::before {
+  content: '';
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--jl-line-strong);
+  border-radius: 50%;
+  box-sizing: border-box;
+  transition:
+    background 0.3s ease,
+    border-color 0.3s ease;
+}
+.onboarding-stages li[data-state='current'] {
+  color: var(--jl-ink);
+  font-weight: 500;
+}
+.onboarding-stages li[data-state='current']::before {
+  border: 2px solid var(--jl-ink);
+  background: var(--jl-accent);
+  animation: jl-breathe 1.6s ease-in-out infinite;
+}
+.onboarding-stages li[data-state='done'] {
+  color: var(--jl-muted);
+}
+.onboarding-stages li[data-state='done']::before {
+  border-color: var(--jl-ink);
+  background: var(--jl-ink)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' fill='none' stroke='%23c6f432' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / 14px no-repeat;
+}
+@keyframes jl-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(198 244 50 / 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgb(198 244 50 / 0);
+  }
+}
+.onboarding-reading-meta {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0 0;
+  color: var(--jl-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.onboarding-reading.paused li::before {
+  animation-play-state: paused;
+}
+/* A question from the AI, as an app card. */
+.onboarding-ask {
+  display: grid;
+  gap: 8px;
+  padding: 18px 20px;
+  border: 1px solid var(--jl-ink);
+  border-radius: 14px;
+  background: var(--jl-panel);
+  box-shadow: var(--jl-shadow);
+  animation: jl-rise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.onboarding-ask b {
+  color: var(--jl-ink);
+  font-size: 15px;
+}
+.onboarding-ask p {
+  margin: 0;
+  color: var(--jl-muted);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.onboarding-ask-actions,
+.onboarding-ask-reply {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.onboarding-ask-reply input {
+  flex: 1;
+  min-width: 0;
+}
+:root body .onboarding .onboarding-ask button.primary {
+  min-height: 40px;
+  padding: 0 18px;
+  font-size: 14px;
+}
+@keyframes jl-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-stages li::before,
+  .onboarding-ask {
+    animation: none !important;
+  }
+}
+
+/* Review: answer once, never-apply list, folded details and sources. */
+.onboarding-section-lead {
+  margin: -2px 0 14px;
+  color: var(--jl-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.onboarding .onboarding-once {
+  gap: 0;
+  padding: 20px;
+  border: 1px solid var(--jl-line);
+  border-radius: 14px;
+  background: var(--jl-accent-wash);
+}
+:root body .onboarding .onboarding-once legend {
+  float: left;
+  width: 100%;
+  margin-bottom: 6px;
+  font-size: 15px;
+}
+.onboarding-once-grid {
+  clear: both;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.onboarding-once-grid > label:last-child {
+  grid-column: 1 / -1;
+}
+.onboarding-once-choice {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  align-items: end;
+  gap: 8px;
+}
+.onboarding-once-title {
+  color: var(--jl-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.onboarding-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.onboarding .onboarding-pill {
+  position: relative;
+  display: inline-flex;
+  font-weight: 500 !important;
+  cursor: pointer;
+}
+.onboarding-pill input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.onboarding-pill span {
+  padding: 8px 14px;
+  border: 1px solid var(--jl-line-strong);
+  border-radius: 99px;
+  background: var(--jl-panel);
+  color: var(--jl-ink);
+  font-size: 13px;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+.onboarding-pill:hover span {
+  border-color: var(--jl-ink);
+}
+.onboarding-pill:active span {
+  transform: scale(0.97);
+}
+.onboarding-pill input:checked + span {
+  border-color: var(--jl-ink);
+  background: var(--jl-ink);
+  color: var(--jl-bg);
+}
+.onboarding-pill input:focus-visible + span {
+  box-shadow: 0 0 0 3px var(--jl-accent);
+}
+/* Salary amount with its currency on one line. */
+.onboarding-amount {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.onboarding-amount select {
+  min-width: 96px;
+}
+/* Consent: a plain checkbox row under the authority choices. */
+.onboarding .onboarding-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--jl-line);
+  border-radius: 12px;
+  background: var(--jl-panel);
+  cursor: pointer;
+}
+.onboarding .onboarding-consent input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+}
+.onboarding-consent span {
+  display: grid;
+  gap: 3px;
+}
+.onboarding-consent b {
+  font-size: 14px;
+  font-weight: 600;
+}
+.onboarding-consent small {
+  color: var(--jl-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.onboarding .onboarding-consent:has(input:checked) {
+  border-color: var(--jl-accent-line);
+  background: var(--jl-accent-wash);
+}
+.onboarding-never {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+}
+.onboarding-never small {
+  color: var(--jl-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.onboarding-more-body {
+  display: grid;
+  gap: 16px;
+  margin-top: 14px;
+}
+.onboarding-sources {
+  border: 1px solid var(--jl-line);
+  border-radius: 14px;
+  background: var(--jl-panel);
+}
+.onboarding-sources > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  list-style: none;
+  cursor: pointer;
+}
+.onboarding-sources > summary::-webkit-details-marker {
+  display: none;
+}
+.onboarding-sources-title {
+  color: var(--jl-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+.onboarding-sources-count {
+  color: var(--jl-muted);
+  font-size: 13px;
+}
+.onboarding-sources-edit {
+  margin-left: auto;
+  color: var(--jl-accent-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.onboarding-sources[open] > summary {
+  border-bottom: 1px solid var(--jl-line);
+}
+.onboarding-sources .onboarding-checks {
+  padding: 14px 16px 16px;
+}
+@media (max-width: 640px) {
+  .onboarding-once-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.onboarding-ask-context {
+  display: block;
+  max-height: 96px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--jl-sunk);
+  color: var(--jl-ink);
+  font: 12px/1.5 var(--jl-mono);
+  overflow-wrap: anywhere;
+}
+.onboarding[data-step='reading'] .onboarding-links {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+}
+
+/* "I read you": facts from the CV, ticked and typed in. */
+.onboarding-echo {
+  display: grid;
+  gap: 12px;
+  padding: 18px 20px;
+  border: 1px solid var(--jl-line);
+  border-radius: 14px;
+  background: var(--jl-panel);
+}
+.onboarding-echo h2 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+.onboarding-echo ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.onboarding-echo li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  color: var(--jl-ink);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.onboarding-echo li .jl-lottie {
+  margin-top: 0;
+}
+.onboarding-echo b {
+  font-weight: 600;
+}
+.onboarding-echo-rest {
+  opacity: 0;
+  transition: opacity 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.onboarding-echo-rest.in {
+  opacity: 1;
+}
+
+/* The AI that does the work: one quiet line when only one assistant works. */
+.onboarding-agent-one {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  font-size: 14px;
+  color: var(--jl-ink);
+}
+.onboarding-agent-one small {
+  color: var(--jl-muted);
+  font-size: 13px;
+}
+.onboarding-agent-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--jl-good);
+}
+.onboarding-missing-rows {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+.onboarding-missing-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.onboarding-missing-row b {
+  color: var(--jl-ink);
+  font-weight: 500;
+}
+.onboarding-missing-row small {
+  color: var(--jl-muted);
+}
+.onboarding-missing-row .link {
+  margin-left: auto;
+}
+
+/* First screen: the CV leads; the assistant is a row of pills. */
+.onboarding .onboarding-agents {
+  display: grid;
+  gap: 10px;
+}
+.onboarding-agents-title {
+  color: var(--jl-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.onboarding-ai-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+body .onboarding button.onboarding-ai-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid var(--jl-line-strong);
+  border-radius: 99px;
+  background: var(--jl-panel);
+  color: var(--jl-ink);
+  font: 500 14px var(--jl-font);
+  cursor: pointer;
+  transition:
+    background 120ms,
+    border-color 120ms,
+    color 120ms,
+    transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+body .onboarding button.onboarding-ai-pill:hover {
+  border-color: var(--jl-ink);
+}
+body .onboarding button.onboarding-ai-pill:active {
+  transform: scale(0.97);
+}
+body .onboarding button.onboarding-ai-pill[aria-pressed='true'] {
+  border-color: var(--jl-ink);
+  background: var(--jl-ink);
+  color: var(--jl-bg);
+}
+body .onboarding button.onboarding-ai-pill[data-state='error'] {
+  border-style: dashed;
+  background: transparent;
+  color: var(--jl-muted);
+}
+body .onboarding button.onboarding-ai-pill[data-state='checking'] {
+  opacity: 0.6;
+  cursor: progress;
+}
+.onboarding-ai-tick {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--jl-accent);
+}
+.onboarding-ai-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  min-height: 20px;
+  color: var(--jl-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.onboarding-ai-note[data-tone='warn'] {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--jl-warn-soft);
+  color: var(--jl-ink);
+}
+.onboarding-ai-note .link {
+  color: var(--jl-accent-text);
+  font-weight: 500;
+}
+:root body .onboarding-notes-box summary {
+  color: var(--jl-muted);
+  font-weight: 500;
+}
+:root body .onboarding-notes-box summary:hover {
+  color: var(--jl-ink);
+}
+.onboarding-start-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 18px;
+  border-top: 1px solid var(--jl-line);
+}
+.onboarding-start-foot .link {
+  color: var(--jl-muted);
+  font-size: 14px;
+}
+.onboarding-start-foot .link:hover {
+  color: var(--jl-ink);
+}
+.onboarding-drop-arrow {
+  transform-box: fill-box;
+  animation: jl-arrow 2.6s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+.onboarding-drop:hover .onboarding-drop-arrow {
+  animation-duration: 1.1s;
+}
+@keyframes jl-arrow {
+  0%,
+  55%,
+  100% {
+    transform: translateY(0);
+  }
+  25% {
+    transform: translateY(-2.5px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-drop-arrow {
+    animation: none;
+  }
+}
+
+/* Dark mode: marks that sit on ink keep an ink base and a visible edge. */
+.onboarding-stages li[data-state='done']::before {
+  background-color: #0e0f12;
+  border-color: var(--jl-line-strong);
+}
+.onboarding-ai-tick {
+  box-shadow: 0 0 0 2px #0e0f12;
+}

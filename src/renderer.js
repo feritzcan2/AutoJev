@@ -19,6 +19,10 @@ import './activity.css';
 import './sources.css';
 import './board.css';
 import './profile.css';
+// JobLoop brand: tokens and fonts, then the onboarding styles over the base ones.
+import './jobloop/jobloop.css';
+import './jobloop/onboarding.css';
+import {playIntro} from './jobloop/intro.js';
 const api = window.jobloop,
   $ = (id) => document.getElementById(id);
 let catalog = [],
@@ -341,7 +345,7 @@ function chromeProfileVisibility() {
   $('chrome-profile-hint').textContent =
     chromeProfilesError ||
     (chromeProfiles.length
-      ? 'Jev uses your existing sign-in and opens listings as tabs in a single AutoJev window.'
+      ? 'Jev uses your existing sign-in and opens listings as tabs in a single JobLoop window.'
       : 'No Chrome profile found.');
 }
 function fillAgentSettings(profile, id) {
@@ -611,6 +615,8 @@ if (selected) {
         : 'board',
   );
 } else {
+  // First launch: the JobLoop intro plays once, then onboarding rises in under it.
+  playIntro();
   switchView('start');
   await onboardingUI.open();
 }

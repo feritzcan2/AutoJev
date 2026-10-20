@@ -7,7 +7,7 @@ export const clip = (value, max = 3500) =>
     .join('');
 const signature = (q) => JSON.stringify([q.question, q.fields]);
 const help =
-  'New listings and application notifications arrive in this chat. You can change notification preferences in AutoJev’s Telegram settings.\n/questions — Pending questions\n/status — Application summary\n/cancel — Cancel the answer you are writing\n/unlink — Remove the Telegram link';
+  'New listings and application notifications arrive in this chat. You can change notification preferences in JobLoop’s Telegram settings.\n/questions — Pending questions\n/status — Application summary\n/cancel — Cancel the answer you are writing\n/unlink — Remove the Telegram link';
 const keyboard = (rows) => ({inline_keyboard: rows});
 // English commands; the Turkish names stay accepted as aliases for existing users.
 const commandAliases = {
@@ -76,7 +76,7 @@ export class TelegramConversation {
             promptId,
           },
         );
-      this.say(link, 'Send these answers to AutoJev?', {
+      this.say(link, 'Send these answers to JobLoop?', {
         questionId: q.id,
         promptId,
         reply_markup: keyboard([
@@ -150,7 +150,7 @@ export class TelegramConversation {
       if (!bound)
         return {
           chat,
-          text: 'The link is invalid or expired, or the account is already linked. Create a new link in AutoJev.',
+          text: 'The link is invalid or expired, or the account is already linked. Create a new link in JobLoop.',
         };
       link = bound;
       this.say(
@@ -167,7 +167,7 @@ export class TelegramConversation {
       return command
         ? {
             chat,
-            text: 'To link, choose your candidate in AutoJev, create a link under Configuration → Telegram, and press Start here.',
+            text: 'To link, choose your candidate in JobLoop, create a link under Configuration → Telegram, and press Start here.',
           }
         : null;
     if (command) {
@@ -193,7 +193,7 @@ export class TelegramConversation {
         if (!link.data.questions)
           this.say(
             link,
-            'Question notifications are off. You can turn them on in AutoJev’s Telegram settings.',
+            'Question notifications are off. You can turn them on in JobLoop’s Telegram settings.',
           );
         else {
           const questions = this.store
@@ -278,7 +278,7 @@ export class TelegramConversation {
         }
         this.say(
           link,
-          'Answer saved. Check the agent status in AutoJev to continue the application.',
+          'Answer saved. Check the agent status in JobLoop to continue the application.',
         );
       }
       const current = this.db.link(link.candidate_id);
@@ -287,7 +287,7 @@ export class TelegramConversation {
       this.db.saveLink(current);
       this.say(
         current,
-        'Your answers were saved in AutoJev. Application status will be reported here.',
+        'Your answers were saved in JobLoop. Application status will be reported here.',
       );
       this.changed(link.candidate_id);
       return null;

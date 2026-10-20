@@ -1,0 +1,261 @@
+/* JobLoop brand: fonts, the Volt palette as --jl-* tokens (light, and dark
+   following the system), the motion kit and the first-launch intro. The app's
+   own tokens (termloop-theme.css) are mapped onto these. */
+@font-face {
+  font-family: 'Geist';
+  src: url('./fonts/Geist-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('./fonts/GeistMono-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+:root {
+  /* JobLoop palette: one signature color (Volt) on ink and paper.
+     Volt is a fill, never text on a light ground; text accents use --jl-accent-text. */
+  --jl-bg: #f4f4ef;
+  --jl-rail: #fafaf6;
+  --jl-panel: #ffffff;
+  --jl-sunk: #edede6;
+  --jl-line: #e2e2da;
+  --jl-line-strong: #cfcfc5;
+  --jl-ink: #0e0f12;
+  --jl-muted: #55575e;
+  --jl-faint: #686a71;
+  --jl-check: #0e0f12;
+  --jl-accent-wash: #f7fbe7;
+  --jl-accent-edge: rgb(14 15 18 / 0.16);
+  --jl-accent: #c6f432;
+  --jl-accent-ink: #0e0f12;
+  --jl-accent-soft: #eef8c9;
+  --jl-accent-line: #c9e36a;
+  --jl-accent-text: #4a6600;
+  --jl-good: #4a6600;
+  --jl-good-soft: #eef8c9;
+  --jl-warn: #9a5b07;
+  --jl-warn-soft: #fbf0dc;
+  --jl-bad: #b42318;
+  --jl-bad-soft: #fde8e6;
+  --jl-shadow: 0 1px 2px rgb(14 15 18 / 0.04), 0 8px 24px rgb(14 15 18 / 0.06);
+  --jl-radius: 14px;
+  --jl-font: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --jl-mono: 'Geist Mono', ui-monospace, 'SF Mono', monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --jl-bg: #0e0f12;
+    --jl-rail: #121317;
+    --jl-panel: #17181c;
+    --jl-sunk: #1f2026;
+    --jl-line: #26282e;
+    --jl-line-strong: #34363d;
+    --jl-ink: #f1f2ea;
+    --jl-muted: #a4a6ad;
+    --jl-faint: #8b8e95;
+    --jl-check: #c6f432;
+    --jl-accent-wash: #1a1f0e;
+    --jl-accent-edge: transparent;
+    --jl-accent: #c6f432;
+    --jl-accent-ink: #0e0f12;
+    --jl-accent-soft: #263011;
+    --jl-accent-line: #4a5a17;
+    --jl-accent-text: #c6f432;
+    --jl-good: #c6f432;
+    --jl-good-soft: #263011;
+    --jl-warn: #f2b544;
+    --jl-warn-soft: #362a14;
+    --jl-bad: #ff8a80;
+    --jl-bad-soft: #3a1d1b;
+    --jl-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.25);
+  }
+}
+
+/* ---- Motion kit -------------------------------------------------------- */
+.jl-lottie {
+  display: inline-block;
+  flex: none;
+  line-height: 0;
+}
+.jl-odo {
+  display: inline-flex;
+  height: 1em;
+  line-height: 1;
+  overflow: hidden;
+  vertical-align: -0.1em;
+}
+.jl-odo-col {
+  display: inline-block;
+  height: 1em;
+  overflow: hidden;
+}
+.jl-odo-col > span {
+  display: flex;
+  flex-direction: column;
+  transition: transform 1100ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.jl-odo-col > span > span {
+  display: block;
+  height: 1em;
+  line-height: 1;
+}
+.jl-typing::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: -0.15em;
+  background: currentColor;
+  animation: jl-blink 0.9s steps(1) infinite;
+}
+.jl-flight {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  color: var(--jl-ink);
+}
+.jl-flight > svg:first-child {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.jl-flight-plane {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 44px;
+  height: 44px;
+  offset-rotate: auto;
+  offset-anchor: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .jl-job-detail.opening,
+  .jl-ask.opening,
+  .jl-rule.new,
+  .jl-skip-note,
+  .jl-day.rising i,
+  .jl-day.rising b {
+    animation: none;
+  }
+  .jl-odo-col > span {
+    transition: none;
+  }
+}
+
+
+/* ---- First-launch intro ------------------------------------------------ */
+.jl-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  background: var(--jl-bg);
+  transition: opacity 460ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.jl-intro-stage {
+  display: grid;
+  justify-items: center;
+  transition: transform 460ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.jl-intro.leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+.jl-intro.leaving .jl-intro-stage {
+  transform: translateY(-14px) scale(0.98);
+}
+.jl-intro-mark {
+  border-radius: 26px;
+  box-shadow: 0 18px 44px rgb(14 15 18 / 0.18);
+  animation: jl-intro-tile 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes jl-intro-tile {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+}
+.jl-intro-trail {
+  stroke-dasharray: 100 100;
+  stroke-dashoffset: 100;
+  animation: jl-intro-draw 760ms 200ms cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+@keyframes jl-intro-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.jl-intro-plane {
+  opacity: 0;
+  animation: jl-intro-plane 440ms 800ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+@keyframes jl-intro-plane {
+  from {
+    opacity: 0;
+    transform: translate(-130px, 130px) scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.jl-intro-name {
+  margin-top: 22px;
+  color: var(--jl-ink);
+  font: 700 30px/1.1 var(--jl-font);
+  letter-spacing: -0.03em;
+  opacity: 0;
+  animation: jl-intro-up 440ms 1040ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+.jl-intro-line {
+  margin-top: 8px;
+  color: var(--jl-muted);
+  font: 400 15px/1.4 var(--jl-font);
+  opacity: 0;
+  animation: jl-intro-up 440ms 1180ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+@keyframes jl-intro-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* What sits underneath rises in as the intro lifts away. */
+body.jl-intro-on :is(.onboarding-head, .onboarding-card) {
+  opacity: 0;
+}
+body.jl-intro-reveal :is(.onboarding-head, .onboarding-card) {
+  animation: jl-intro-rise 560ms 120ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes jl-intro-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+.jl-intro.quick *,
+.jl-intro.quick {
+  animation: none !important;
+  transition-duration: 160ms;
+}
+.jl-intro.quick :is(.jl-intro-plane, .jl-intro-name, .jl-intro-line) {
+  opacity: 1;
+}
+.jl-intro.quick .jl-intro-trail {
+  stroke-dashoffset: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  body.jl-intro-reveal :is(.onboarding-head, .onboarding-card) {
+    animation: none;
+  }
+}
+

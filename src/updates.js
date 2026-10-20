@@ -11,7 +11,7 @@ export function updatesPanel(api, root, {notice = () => {}} = {}) {
     current: 'You are on the latest version.',
     downloading: 'Downloading the update…',
     downloaded:
-      'The update is downloaded. It installs when you quit AutoJev, or stop tasks and restart now.',
+      'The update is downloaded. It installs when you quit JobLoop, or stop tasks and restart now.',
     installing: 'Backup taken. Installing the update…',
     unsupported:
       'In-app updates are not supported for this installation. New releases are listed here; download the right package from the releases page.',
@@ -27,8 +27,8 @@ export function updatesPanel(api, root, {notice = () => {}} = {}) {
     for (const button of root.querySelectorAll('button'))
       button.disabled = busy || ['checking', 'downloading', 'installing'].includes(state.status);
     $('[data-help]').textContent = state.enabled
-      ? 'AutoJev checks for new releases a little after it starts and every few hours, and downloads a new version in the background. It installs when you quit AutoJev, after an automatic backup of your data. To install now, stop running tasks and choose Back up and restart.'
-      : 'AutoJev checks for new releases a little after it starts and every few hours and lists them here.';
+      ? 'JobLoop checks for new releases a little after it starts and every few hours, and downloads a new version in the background. It installs when you quit JobLoop, after an automatic backup of your data. To install now, stop running tasks and choose Back up and restart.'
+      : 'JobLoop checks for new releases a little after it starts and every few hours and lists them here.';
     if (state.status === 'available' && !state.enabled)
       $('[data-status]').textContent =
         `Version ${state.availableVersion} is available. In-app updates are not supported for this installation; download it from the releases page.`;

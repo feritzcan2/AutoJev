@@ -8,6 +8,10 @@ import {withAgentDefaults, withSetupAgentDefaults} from '../app/agents/settings.
 import {WorkerTerminalSurface} from './worker-terminal-surface.js';
 import {terminalAttention} from './agent-attention.js';
 import './onboarding.css';
+import {BRAND, markIcon} from './jobloop/brand.js';
+import {readChoicePrompt, choiceKeys} from './jobloop/terminal-prompt.js';
+import {factLine, setFactLine, cvFacts, neverItems, withNever} from './jobloop/facts.js';
+import {docScan, checkmark, typewrite} from './jobloop/motion.js';
 import {rulesField, RULES_HINT} from './template-fields.js';
 
 // Welcome screen of a new job search: the user picks the agent and the CV, the
@@ -19,12 +23,162 @@ const readinessIds = ['chrome', 'chrome-profile', 'chrome-debug', 'jev', 'failed
 const modes = [
   [
     'observe',
-    'Only find',
-    'Finds and scores suitable listings; applies only when you say "Apply".',
+    'I pick, JobLoop applies',
+    'Finds and scores jobs for you. Applies only to the ones you press Apply on.',
   ],
-  ['auto', 'Find and apply', 'Also applies on its own to listings that reach the minimum score.'],
+  ['auto', 'Full autopilot', 'Also applies on its own to jobs at or above your minimum fit score.'],
 ];
 const flagKey = (id) => 'onboarding:' + id;
+// Long free-text criteria fold away on the review form.
+const folded = new Set(['application_facts']);
+// Answer once: saved as "Label: answer" lines in the application facts.
+const quickQuestions = [
+  {
+    id: 'permit',
+    label: 'Work permit',
+    title: 'Can you work in the countries you target?',
+    choices: [
+      ['Yes, I can', 'Allowed to work there without sponsorship'],
+      ['I need a visa', 'Needs visa sponsorship'],
+    ],
+  },
+  {
+    id: 'relocation',
+    label: 'Relocation',
+    title: 'Open to relocating?',
+    choices: [
+      ['Yes', 'Yes'],
+      ['Maybe', 'Open to it for the right role'],
+      ['No', 'No'],
+    ],
+  },
+  {
+    id: 'notice',
+    label: 'Notice period',
+    title: 'When can you start?',
+    placeholder: 'e.g. 1 month notice, or from 1 December',
+  },
+  {
+    id: 'salary',
+    label: 'Salary expectation',
+    title: 'Salary expectation',
+    placeholder: 'e.g. 70,000 a year',
+    currency: true,
+  },
+  {
+    id: 'languages',
+    label: 'Languages',
+    title: 'Languages and levels',
+    placeholder: 'e.g. English C1, Turkish B2',
+  },
+];
+// Salary currency: saved on its own line so later forms can use or convert it.
+const CURRENCY = 'Salary currency';
+const currencies = [
+  'EUR',
+  'USD',
+  'GBP',
+  'TRY',
+  'CHF',
+  'PLN',
+  'SEK',
+  'NOK',
+  'DKK',
+  'CZK',
+  'CAD',
+  'AUD',
+  'AED',
+  'JPY',
+  'INR',
+];
+const countryCurrency = {
+  TR: 'TRY',
+  GB: 'GBP',
+  US: 'USD',
+  CH: 'CHF',
+  PL: 'PLN',
+  SE: 'SEK',
+  NO: 'NOK',
+  DK: 'DKK',
+  CZ: 'CZK',
+  CA: 'CAD',
+  AU: 'AUD',
+  AE: 'AED',
+  JP: 'JPY',
+  IN: 'INR',
+  ...Object.fromEntries(
+    'DE FR NL ES IT IE AT BE FI PT GR LU EE LV LT SK SI HR MT CY'.split(' ').map((c) => [c, 'EUR']),
+  ),
+};
+const symbolCurrency = {'€': 'EUR', $: 'USD', '£': 'GBP', '₺': 'TRY', '¥': 'JPY', '₹': 'INR'};
+// The saved currency, else the one the amount is written in, else the target country's.
+function guessCurrency(facts, amount, country) {
+  const saved = factLine(facts, CURRENCY).toUpperCase();
+  if (currencies.includes(saved)) return saved;
+  const written = String(amount).toUpperCase(),
+    code = currencies.find((c) => written.includes(c)) ?? (/\bTL\b/.test(written) ? 'TRY' : null);
+  if (code) return code;
+  const symbol = Object.keys(symbolCurrency).find((s) => written.includes(s));
+  if (symbol) return symbolCurrency[symbol];
+  let iso = String(country ?? '')
+    .trim()
+    .toUpperCase();
+  if (iso.length > 2) {
+    const names = new Intl.DisplayNames(['en'], {type: 'region'});
+    iso = Object.keys(countryCurrency).find((c) => names.of(c)?.toUpperCase() === iso) ?? '';
+  }
+  return countryCurrency[iso] ?? '';
+}
+// Privacy consent on application forms: a line in the application rules the agent follows.
+const CONSENT = 'Privacy consent';
+const CONSENT_TEXT =
+  'Accept the privacy policy and data processing consent a form requires to apply. Leave marketing, newsletter, job alert and talent pool opt-ins unticked.';
+const languagesFrom = (experience) =>
+  String(experience ?? '')
+    .match(/languages?\s*[:：]\s*(.+?)(?=\.\s|[\n·;]|$)/i)?.[1]
+    .trim() ?? '';
+const readingStages = ['Opening your CV', 'Reading your experience', 'Filling in your profile'];
+// Terminal choices, worded for people: continue first, refuse last.
+const choiceTone = (label) =>
+  /^(?:no|deny|cancel|exit)\b/i.test(label)
+    ? 'stop'
+    : /don.?t ask again|always|for this session|all /i.test(label)
+      ? 'always'
+      : /^(?:yes|allow|approve|proceed|trust|continue)\b/i.test(label)
+        ? 'go'
+        : 'other';
+const toneRank = {go: 0, always: 1, other: 2, stop: 3};
+const choiceLabel = (label, tone, trust) =>
+  trust
+    ? ({go: 'Allow', stop: 'Don’t allow'}[tone] ?? label)
+    : ({go: 'Allow', always: 'Always allow', stop: 'Don’t allow'}[tone] ?? label);
+const providerNames = {claude: 'Claude', codex: 'ChatGPT (Codex)', opencode: 'OpenCode'};
+const installLinks = {
+  claude: 'https://code.claude.com/docs/en/overview',
+  codex: 'https://developers.openai.com/codex/cli',
+  opencode: 'https://opencode.ai/docs/',
+};
+// Plain-language setup items; the checks themselves come from the app.
+const friendlyChecks = {
+  chrome: {
+    title: 'Install Google Chrome',
+    text: 'JobLoop opens job sites in Chrome. Install it, open it once, then press Check again.',
+    link: ['Download Chrome', 'https://www.google.com/chrome/'],
+  },
+  'chrome-profile': {
+    title: 'Choose a Chrome profile',
+    text: 'Open Chrome once so it creates a profile. Sign in there to the job sites you use.',
+  },
+  'chrome-debug': {
+    title: 'Let JobLoop use Chrome',
+    text: 'In Chrome, open chrome://inspect/#remote-debugging and turn on remote debugging. Chrome asks once to allow JobLoop.',
+  },
+  jev: {
+    title: 'Choose who picks the listings',
+    text: 'A TypeSafe key makes picking listings faster and lighter; add it later under Configuration → Jev. Or let your AI agent decide instead.',
+    link: ['Get a TypeSafe key', 'https://typesafe.ai'],
+  },
+};
 
 const el = (tag, text, cls) => {
   const node = document.createElement(tag);
@@ -42,7 +196,9 @@ const button = (text, onclick, cls = 'quiet') => {
 export function onboardingStep(data) {
   const run = interviewRun(data);
   if (run && !conversationWaiting(run)) return 'reading';
-  return (data.runs ?? []).some((r) => r.kind === 'interview') ? 'review' : 'start';
+  if ((data.runs ?? []).some((r) => r.kind === 'interview')) return 'review';
+  // No CV: the user fills in the details themselves.
+  return localStorage.getItem(flagKey(data.automation?.id)) === 'manual' ? 'review' : 'start';
 }
 
 // A blank workspace, or one whose CV was uploaded but whose profile is not saved yet.
@@ -53,7 +209,7 @@ export function wantsOnboarding(data) {
     Boolean(data.definition?.onboarding) &&
     flag !== 'skip' &&
     a.reviewedRevision == null &&
-    (flag === 'cv' || automationProgress(data).fresh)
+    (flag === 'cv' || flag === 'manual' || automationProgress(data).fresh)
   );
 }
 
@@ -69,8 +225,11 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     steps = el('ol', null, 'onboarding-steps'),
     card = el('section', null, 'onboarding-card'),
     error = el('p', null, 'onboarding-error');
-  head.append(el('b', 'AutoJev', 'onboarding-brand'), steps);
-  for (const label of ['CV', 'Profile', 'Start']) steps.append(el('li', label));
+  const brand = el('b', null, 'onboarding-brand');
+  brand.innerHTML = markIcon(32);
+  brand.append(BRAND);
+  head.append(brand, steps);
+  for (const label of ['Upload CV', 'Check details', 'Start']) steps.append(el('li', label));
   error.setAttribute('role', 'alert');
   error.hidden = true;
   root.append(head, card, error);
@@ -87,11 +246,14 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     readiness = null,
     reviewKey = '',
     reviewDirty = false,
+    missingFocus = null,
     terminal = null;
 
   const showError = (message = '') => {
     error.textContent = message;
     error.hidden = !message;
+    // The message sits under the card; bring it into view so it is never missed.
+    if (message) requestAnimationFrame(() => error.scrollIntoView({block: 'center'}));
   };
   async function attempt(fn) {
     if (busy) return;
@@ -118,6 +280,8 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     showError();
     root.hidden = false;
     document.body.classList.add('onboarding-open');
+    // The app behind the onboarding is out of reach for keyboard and screen readers.
+    for (const node of document.querySelectorAll('#jl-root, body > main')) node.inert = true;
     unsubscribe ??= api.onAutomationChange((event) => {
       if (id && (!event.automationId || event.automationId === id)) load();
     });
@@ -131,6 +295,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     closeTerminal();
     root.hidden = true;
     document.body.classList.remove('onboarding-open');
+    for (const node of document.querySelectorAll('#jl-root, body > main')) node.inert = false;
     unsubscribe?.();
     unsubscribe = null;
     clearInterval(timer);
@@ -209,54 +374,179 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
 
   function startStep() {
     const intro = [
-      el('h1', 'Let’s start your job search from your CV'),
+      el('h1', 'Let’s find your next job'),
       el(
         'p',
-        'Choose your CV. The agent builds your profile from it; you review it and start the search.',
+        'Upload your CV. JobLoop reads it, you check the details, and it starts finding jobs that fit you.',
         'onboarding-lead',
       ),
     ];
-    const agents = el('fieldset', null, 'onboarding-agents');
-    agents.append(el('legend', 'Which AI agent should run?'), el('div', null, 'authorization'));
-    const notes = el('label', 'Notes for the agent (optional)', 'onboarding-notes'),
+    const pick = button('', () => attempt(pickCv), 'onboarding-cv onboarding-drop');
+    pick.dataset.action = 'pick-cv';
+    pick.innerHTML =
+      '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><g class="onboarding-drop-arrow"><path d="M12 18v-6M9 15l3-3 3 3"/></g></svg><b>Choose your CV</b><small>PDF, DOCX or TXT · it stays on this computer</small>';
+    // The assistant: one pill per assistant; ones not installed explain themselves.
+    const agents = el('div', null, 'onboarding-agents');
+    agents.setAttribute('role', 'group');
+    agents.setAttribute('aria-labelledby', 'onboarding-ai-title');
+    const agentsTitle = el('span', 'Your AI assistant', 'onboarding-agents-title');
+    agentsTitle.id = 'onboarding-ai-title';
+    agents.append(
+      agentsTitle,
+      el('div', null, 'onboarding-ai-pills'),
+      el('div', null, 'onboarding-ai-note'),
+    );
+    const notesBox = el('details', null, 'onboarding-notes-box'),
+      notes = el('label', 'Anything your CV does not say? (optional)', 'onboarding-notes'),
       input = el('textarea');
+    notesBox.append(el('summary', 'Add a note (optional)'), notes);
     input.name = 'notes';
     input.maxLength = 12000;
     input.placeholder =
       'Where do you want to work, which roles, remote or on-site, salary, start date, anything your CV does not say.';
     notes.append(input);
-    const pick = button('Choose CV', () => attempt(pickCv), 'primary onboarding-cv');
-    pick.dataset.action = 'pick-cv';
-    const hint = el(
-      'small',
-      'PDF, DOCX or TXT. The file stays on this computer; your notes go to the agent with it.',
-      'onboarding-hint',
-    );
-    const links = el('div', null, 'onboarding-links');
-    links.append(button('I want to set it up in a chat', () => attempt(skip), 'link'));
-    return [...intro, agents, notes, pick, hint, links];
+    const foot = el('div', null, 'onboarding-start-foot'),
+      manualLink = button('No CV? Fill in your details yourself', () => attempt(manual), 'link'),
+      go = button('Choose CV and continue', () => attempt(pickCv), 'primary');
+    manualLink.dataset.action = 'manual';
+    go.dataset.action = 'continue';
+    foot.append(manualLink, go);
+    return [...intro, pick, agents, notesBox, foot, el('div', null, 'onboarding-links')];
   }
+  // While the AI reads the CV the user sees a calm progress screen. The agent's
+  // terminal stays mounted off screen: its choice prompts are shown as cards
+  // here and answered with keystrokes, so nobody has to use a terminal.
   function readingStep() {
-    const status = el('div', null, 'onboarding-progress');
-    status.append(el('span', null, 'onboarding-spinner'), el('span', '0:00', 'onboarding-elapsed'));
-    const attention = el('p', null, 'onboarding-attention');
-    attention.hidden = true;
-    const screen = el('div', null, 'worker-terminal onboarding-terminal');
+    const visual = el('div', null, 'onboarding-reading-mark');
+    visual.append(docScan(72));
+    const stages = el('ol', null, 'onboarding-stages');
+    for (const label of readingStages) stages.append(el('li', label));
+    const meta = el('p', null, 'onboarding-reading-meta');
+    meta.append(
+      el('span', 'Usually about a minute'),
+      el('span', '·'),
+      el('span', '0:00', 'onboarding-elapsed'),
+    );
+    const ask = el('div', null, 'onboarding-ask');
+    ask.hidden = true;
+    ask.setAttribute('role', 'group');
+    ask.setAttribute('aria-live', 'polite');
+    const screen = el('div', null, 'worker-terminal onboarding-terminal'),
+      live = el('div', null, 'onboarding-live');
     screen.setAttribute('aria-label', 'Setup agent terminal');
+    live.append(screen);
     const links = el('div', null, 'onboarding-links');
-    links.append(button('Open the agent screen', () => chat(id), 'link'));
-    return [
-      el('h1', 'Reading your CV'),
+    const details = button('Show technical details', () => toggleDetails(), 'link');
+    details.dataset.action = 'details';
+    details.hidden = true;
+    const agentLink = button('Open the agent screen', () => chat(id), 'link');
+    agentLink.dataset.agentScreen = '';
+    links.append(details, agentLink);
+    const hero = el('div', null, 'onboarding-reading');
+    hero.append(visual, el('h1', 'Reading your CV'), stages, meta);
+    return [hero, ask, live, links];
+  }
+  function toggleDetails(force) {
+    const live = card.querySelector('.onboarding-live'),
+      open = force ?? !live.classList.contains('open');
+    live.classList.toggle('open', open);
+    const link = card.querySelector('[data-action=details]');
+    if (link) link.textContent = open ? 'Hide technical details' : 'Show technical details';
+  }
+  // A choice the agent's terminal is waiting on, rendered as an app card.
+  function renderAsk(run) {
+    const ask = card.querySelector('.onboarding-ask'),
+      prompt = terminal?.choice,
+      kind = terminal?.prompt,
+      key = JSON.stringify([
+        kind,
+        prompt?.question,
+        prompt?.options.map((o) => o.label),
+        run?.state,
+        run?.usageLimit,
+      ]);
+    if (ask.dataset.key === key) return;
+    ask.dataset.key = key;
+    ask.replaceChildren();
+    const waiting = run?.state === 'AwaitingInput';
+    ask.hidden = !(prompt || waiting || run?.usageLimit);
+    card.querySelector('.onboarding-reading')?.classList.toggle('paused', !ask.hidden);
+    if (ask.hidden) return;
+    if (run?.usageLimit) {
+      ask.append(
+        el('b', 'Your AI assistant hit its usage limit'),
+        el('p', 'Wait until it resets, or switch to another assistant, then press Refill from CV.'),
+      );
+      return;
+    }
+    if (prompt) {
+      const trust = kind === 'trust';
+      ask.append(
+        el('b', trust ? 'One quick permission' : 'The AI asks before it continues'),
+        el(
+          'p',
+          trust
+            ? `${providerNames[data?.automation?.agentSettings?.provider ?? provider] ?? 'Your AI'} asks once whether it may work in JobLoop’s folder for this profile. That is where your CV is kept.`
+            : prompt.question || 'It needs your approval for its next step.',
+        ),
+      );
+      if (!trust && prompt.context)
+        ask.append(el('code', prompt.context, 'onboarding-ask-context'));
+      const row = el('div', null, 'onboarding-ask-actions');
+      // Lead with the option that lets the setup continue.
+      const order = prompt.options
+        .map((option, index) => ({...option, index, tone: choiceTone(option.label)}))
+        .sort((x, y) => toneRank[x.tone] - toneRank[y.tone]);
+      for (const option of order) {
+        const b = button(
+          choiceLabel(option.label, option.tone, trust),
+          () => answerChoice(option.index),
+          option === order[0] ? 'primary' : 'quiet',
+        );
+        b.title = option.label;
+        row.append(b);
+      }
+      ask.append(row);
+      return;
+    }
+    // Free-text question with no menu.
+    const form = el('form', null, 'onboarding-ask-reply'),
+      input = el('input');
+    input.name = 'reply';
+    input.placeholder = 'Type your answer';
+    input.autocomplete = 'off';
+    const send = el('button', 'Send', 'primary');
+    send.type = 'submit';
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      sendKeys(text + '\r');
+    };
+    form.append(input, send);
+    ask.append(
+      el('b', 'The AI needs a quick answer'),
       el(
         'p',
-        'The agent is building your profile from your CV. This usually takes a minute or two; the screen moves on by itself.',
-        'onboarding-lead',
+        'It stopped to ask you something. Answer here, or open the details to see the full question.',
       ),
-      status,
-      attention,
-      screen,
-      links,
-    ];
+      form,
+    );
+    card.querySelector('[data-action=details]').hidden = false;
+  }
+  const sendKeys = (text) =>
+    api
+      .input(id, text, CONVERSATION_WORKER, conversationSession()?.sessionId)
+      .catch((failure) => showError(failure.message));
+  function answerChoice(index) {
+    const prompt = terminal?.choice;
+    if (!prompt) return;
+    const buttons = [...card.querySelectorAll('.onboarding-ask button')];
+    for (const node of buttons) node.disabled = true;
+    sendKeys(choiceKeys(prompt, index));
+    // If the prompt is still there a moment later, let the user try again.
+    setTimeout(() => buttons.forEach((node) => (node.disabled = false)), 2500);
   }
 
   // The setup agent's live terminal, so approvals it asks for can be answered here.
@@ -321,9 +611,24 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     const rows = t.surface.terminal.rows,
       screen = t.surface.probe().text.split('\n').slice(-rows).join('\n'),
       found = terminalAttention(screen, conversationSession()?.state);
-    const prompt = ['trust', 'permission'].includes(found?.kind) ? found.kind : null;
-    if (prompt === t.prompt) return;
+    // Any menu question at the bottom of the screen also waits for the user.
+    const menu = readChoicePrompt(screen),
+      prompt = ['trust', 'permission'].includes(found?.kind)
+        ? found.kind
+        : menu
+          ? 'permission'
+          : null,
+      choice = prompt ? menu : null,
+      // The profile is being written once the agent calls its save tool.
+      // A tool call line ("⏺ jobloop - save_automation_plan (MCP)"), not the
+      // request text that names the tool.
+      saving = t.saving || /⏺[^\n]*(?:save_automation_plan|reply_to_user)/.test(screen);
+    const key = JSON.stringify([prompt, choice, saving]);
+    if (key === t.key) return;
+    t.key = key;
     t.prompt = prompt;
+    t.choice = choice;
+    t.saving = saving;
     update();
   }
   function closeTerminal() {
@@ -344,7 +649,8 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       if (event.target.name === 'country') renderSources(form);
     };
     return [
-      el('h1', 'Review your profile'),
+      el('h1', 'Check your details'),
+      el('section', null, 'onboarding-echo'),
       el('p', null, 'onboarding-reply'),
       el('div', null, 'onboarding-failure'),
       form,
@@ -362,49 +668,82 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       links.append(node);
     }
     if (step === 'start') {
-      const list = card.querySelector('.onboarding-agents .authorization');
-      list.replaceChildren();
-      for (const [value, p] of providers) {
-        const choice = el('label', null, 'choice'),
-          input = el('input'),
-          copy = el('span');
-        input.type = 'radio';
-        input.name = 'onboarding-provider';
-        input.value = value;
-        input.checked = value === provider;
-        input.onchange = () => {
-          provider = value;
-          render();
-        };
-        copy.append(
-          el('b', p.label),
+      const pills = card.querySelector('.onboarding-ai-pills'),
+        note = card.querySelector('.onboarding-ai-note');
+      pills.replaceChildren();
+      note.replaceChildren();
+      const entries = [...providers],
+        usable = entries.filter(([, p]) => ['ready', 'warning'].includes(p.state));
+      for (const [value, p] of entries) {
+        const pill = button(providerNames[value] ?? p.label, null, 'onboarding-ai-pill');
+        pill.dataset.state = p.state;
+        const chosen = value === provider && p.state !== 'error';
+        pill.setAttribute('aria-pressed', String(chosen));
+        if (p.state === 'checking') {
+          pill.disabled = true;
+          pill.title = 'Checking…';
+        } else if (p.state === 'error') {
+          pill.title = 'Not installed on this computer';
+          pill.onclick = () => {
+            missingFocus = missingFocus === value ? null : value;
+            update();
+          };
+        } else
+          pill.onclick = () => {
+            provider = value;
+            missingFocus = null;
+            update();
+          };
+        if (chosen) {
+          const tick = el('span', null, 'onboarding-ai-tick');
+          tick.setAttribute('aria-hidden', 'true');
+          pill.prepend(tick);
+        }
+        pills.append(pill);
+      }
+      if (!providers.size) note.append(el('span', 'Looking for AI assistants on this computer…'));
+      else if (missingFocus && providers.get(missingFocus)?.state === 'error') {
+        note.append(
+          el('span', `${providerNames[missingFocus]} isn’t installed on this computer.`),
+          button('How to install', () => api.openLink(installLinks[missingFocus]), 'link'),
+          button('Check again', () => checkProviders(), 'link'),
+        );
+      } else if (
+        providers.size &&
+        !usable.length &&
+        ![...providers.values()].some((p) => p.state === 'checking')
+      ) {
+        note.dataset.tone = 'warn';
+        note.append(
           el(
-            'small',
-            p.state === 'checking'
-              ? 'Checking…'
-              : p.state === 'ready'
-                ? 'Ready'
-                : p.detail || 'Unavailable',
+            'span',
+            'JobLoop needs Claude Code or ChatGPT’s Codex on this computer. Install one, sign in once, then check again.',
+          ),
+          button('How to install Claude Code', () => api.openLink(installLinks.claude), 'link'),
+          button('Check again', () => checkProviders(), 'link'),
+        );
+      } else if (provider && providers.get(provider)) {
+        const p = providers.get(provider);
+        note.append(
+          el(
+            'span',
+            p.state === 'warning'
+              ? p.detail || 'Sign-in may be needed.'
+              : `${providerNames[provider]} reads your CV and applies for you, with your own account.`,
           ),
         );
-        choice.dataset.state = p.state;
-        choice.append(input, copy);
-        list.append(choice);
       }
-      if (!providers.size) list.append(el('p', 'Loading the agent list…', 'onboarding-hint'));
-      const blocked = !provider || ['checking', 'error'].includes(providers.get(provider)?.state);
-      card.querySelector('[data-action=pick-cv]').disabled = busy || blocked;
-      card.querySelector('[data-action=pick-cv]').textContent = busy ? 'Adding CV…' : 'Choose CV';
+      if (!note.dataset.tone || usable.length) delete note.dataset.tone;
+      const blocked = !provider || ['checking', 'error'].includes(providers.get(provider)?.state),
+        pick = card.querySelector('[data-action=pick-cv]');
+      pick.disabled = busy || blocked;
+      for (const action of ['continue', 'manual']) {
+        const node = card.querySelector(`[data-action=${action}]`);
+        if (node) node.disabled = busy || blocked;
+      }
+      pick.querySelector('b').textContent = busy ? 'Adding your CV…' : 'Choose your CV';
     } else if (step === 'reading') {
-      const run = interviewRun(data),
-        prompt = terminal?.prompt,
-        attention = card.querySelector('.onboarding-attention');
-      attention.hidden = !(prompt || run?.state === 'AwaitingInput' || run?.usageLimit);
-      attention.textContent = run?.usageLimit
-        ? 'The agent reached its usage limit. Check the status in the terminal below.'
-        : prompt === 'trust'
-          ? 'Claude asks whether it may work in this profile’s folder. Choose “Yes, I trust this folder” in the terminal below and press Enter.'
-          : 'The agent is waiting for an approval to continue. Answer it in the terminal below.';
+      renderAsk(interviewRun(data));
       tick();
     } else if (step === 'review') updateReview();
   }
@@ -417,8 +756,51 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     const label = card.querySelector('.onboarding-elapsed');
     if (label)
       label.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    // Stages: the CV is open once the run started; the profile is being
+    // filled once the agent saves it (or, failing a visible signal, after a while).
+    const stage = terminal?.saving || seconds > 50 ? 2 : seconds > 4 ? 1 : 0;
+    [...card.querySelectorAll('.onboarding-stages li')].forEach((item, index) => {
+      item.dataset.state = index < stage ? 'done' : index === stage ? 'current' : 'pending';
+    });
+    // A slow run gets a way to see what is going on.
+    const details = card.querySelector('[data-action=details]');
+    if (details && seconds > 150) details.hidden = false;
   }
 
+  // "I read you": three facts from the CV come back, each ticked and typed in.
+  // The animation plays once per profile in a session; afterwards it is static.
+  function renderEcho(box, a) {
+    const facts = cvFacts(a.criteria?.experience);
+    box.hidden = !facts.length;
+    const key = JSON.stringify(facts);
+    if (!facts.length) return false;
+    if (box.dataset.key === key) return true;
+    box.dataset.key = key;
+    const seen = sessionStorage.getItem('jl-echo:' + a.id) === key;
+    sessionStorage.setItem('jl-echo:' + a.id, key);
+    const list = el('ul');
+    box.replaceChildren(el('h2', 'Here’s what I took from your CV'), list);
+    facts.forEach((fact, i) => {
+      const item = el('li'),
+        check = checkmark(22, {play: false}),
+        text = el('span'),
+        lead = el('b'),
+        rest = el('span', fact.rest, 'onboarding-echo-rest');
+      text.append(lead, ' ', rest);
+      item.append(check, text);
+      list.append(item);
+      const show = () => {
+        check.play();
+        typewrite(lead, fact.lead, {speed: seen ? 0 : 24, done: () => rest.classList.add('in')});
+      };
+      if (seen) {
+        lead.textContent = fact.lead;
+        rest.classList.add('in');
+        check.play();
+      } else setTimeout(show, 250 + i * 950);
+    });
+    return true;
+  }
   function updateReview() {
     const a = data.automation,
       reply = [...data.messages]
@@ -426,8 +808,14 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         .find((m) => m.role === 'assistant' && m.conversation && m.runId),
       latest = data.runs.find((r) => r.kind === 'interview'),
       failed = !interviewRun(data) && ['failed', 'timeout', 'interrupted'].includes(latest?.status);
-    card.querySelector('.onboarding-reply').textContent =
-      reply?.text ?? 'Check the details the agent filled in and complete anything missing.';
+    const manualMode = !latest && localStorage.getItem(flagKey(a.id)) === 'manual';
+    card.querySelector('.onboarding-reply').textContent = manualMode
+      ? 'Tell JobLoop what you’re looking for. You can add your CV later from Profile & CV.'
+      : (reply?.text ?? 'Check the details the agent filled in and complete anything missing.');
+    // With the CV echo shown, the AI's own (often technical) note gives way to one plain line.
+    if (renderEcho(card.querySelector('.onboarding-echo'), a) && !manualMode)
+      card.querySelector('.onboarding-reply').textContent =
+        'Check the details below and add anything your CV doesn’t say, like salary or notice period.';
     const failure = card.querySelector('.onboarding-failure');
     failure.replaceChildren();
     if (failed)
@@ -470,15 +858,24 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         placeholder: 'Your first and last name',
         multiline: false,
       }),
-      text('goal', 'The job you are looking for', a.goal, {
-        placeholder: 'E.g. senior backend engineering in Berlin or remote',
-        required: true,
-      }),
+      text(
+        'goal',
+        'The job you are looking for',
+        a.goal || sessionStorage.getItem('jl-manual-notes:' + a.id) || '',
+        {
+          placeholder: 'E.g. senior backend engineering in Berlin or remote',
+          required: true,
+        },
+      ),
     );
+    // The main fields stay open; the long free-text ones fold into "More details".
+    const more = el('details', null, 'onboarding-more'),
+      moreBody = el('div', null, 'onboarding-more-body');
+    more.append(el('summary', 'More details: experience, requirements, form answers'), moreBody);
     for (const key of reviewFields) {
       const field = fields.get(key);
       if (!field) continue;
-      profile.append(
+      (folded.has(key) ? moreBody : profile).append(
         text(key, field.label, a.criteria[key], {
           placeholder: field.question,
           multiline: !['country', 'location'].includes(key),
@@ -488,21 +885,87 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     }
     const rules = fields.get('hard_rules');
     if (rules)
-      profile.append(rulesField('hard_rules', rules.label, a.criteria.hard_rules, RULES_HINT));
+      profile.append(
+        rulesField('hard_rules', rules.label, withNever(a.criteria.hard_rules, []), RULES_HINT),
+      );
     const experience = fields.get('experience');
-    if (experience) {
-      const more = el('details', null, 'onboarding-more');
-      more.append(
-        el('summary', experience.label),
+    if (experience)
+      moreBody.prepend(
         text('experience', experience.label, a.criteria.experience, {
           placeholder: experience.question,
         }),
       );
-      profile.append(more);
+    profile.append(more);
+    // Answer once: the questions application forms ask most, saved for every application.
+    const facts = a.criteria.application_facts ?? '',
+      once = el('fieldset', null, 'onboarding-section onboarding-once');
+    once.append(
+      el('legend', 'Answer once, never again'),
+      el(
+        'p',
+        'Employers ask these on almost every form. Answer them now and JobLoop fills them in for you.',
+        'onboarding-section-lead',
+      ),
+    );
+    const grid = el('div', null, 'onboarding-once-grid');
+    for (const q of quickQuestions) {
+      const current =
+        factLine(facts, q.label) ||
+        (q.id === 'languages' ? languagesFrom(a.criteria.experience) : '');
+      if (q.choices) {
+        const group = el('div', null, 'onboarding-once-choice'),
+          pills = el('div', null, 'onboarding-pills');
+        group.append(el('span', q.title, 'onboarding-once-title'), pills);
+        group.setAttribute('role', 'radiogroup');
+        group.setAttribute('aria-label', q.title);
+        for (const [label, value] of q.choices) {
+          const pill = el('label', null, 'onboarding-pill'),
+            input = el('input');
+          input.type = 'radio';
+          input.name = 'once_' + q.id;
+          input.value = value;
+          input.checked = current.toLowerCase() === value.toLowerCase();
+          pill.append(input, el('span', label));
+          pills.append(pill);
+        }
+        grid.append(group);
+      } else {
+        const field = el('label', q.title),
+          input = el('input');
+        input.name = 'once_' + q.id;
+        input.value = current;
+        input.placeholder = q.placeholder;
+        input.maxLength = 300;
+        if (q.currency) {
+          const row = el('span', null, 'onboarding-amount'),
+            currency = el('select');
+          currency.name = 'salary_currency';
+          currency.setAttribute('aria-label', 'Currency');
+          currency.append(new Option('Currency', ''));
+          for (const code of currencies) currency.append(new Option(code, code));
+          currency.value = guessCurrency(facts, current, a.criteria.country);
+          row.append(input, currency);
+          field.append(row);
+        } else field.append(input);
+        grid.append(field);
+      }
     }
+    once.append(grid);
+    const never = el('label', 'Never apply to', 'onboarding-never'),
+      neverInput = el('input');
+    neverInput.name = 'never';
+    neverInput.value = neverItems(a.criteria.hard_rules).join(', ');
+    neverInput.placeholder =
+      'Companies or words, comma separated · e.g. Acme, gambling, internship';
+    neverInput.maxLength = 1000;
+    never.append(
+      neverInput,
+      el('small', 'JobLoop treats these as a hard no and never applies to them.'),
+    );
+    once.append(never);
     const mode = el('fieldset', null, 'onboarding-section'),
       choices = el('div', null, 'authorization');
-    mode.append(el('legend', 'Agent permissions'), choices);
+    mode.append(el('legend', 'How far should JobLoop go?'), choices);
     for (const [value, title, description] of modes) {
       const choice = el('label', null, 'choice'),
         input = el('input'),
@@ -536,17 +999,49 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       score.hidden = !auto;
     };
     choices.addEventListener('change', syncScore);
-    const sources = el('fieldset', null, 'onboarding-section onboarding-sources');
-    sources.append(el('legend', 'Where should we search?'), el('div', null, 'onboarding-checks'));
+    const consent = el('label', null, 'onboarding-consent'),
+      consentInput = el('input'),
+      consentCopy = el('span');
+    consentInput.type = 'checkbox';
+    consentInput.name = 'consent';
+    consentInput.checked = /^accept/i.test(factLine(a.criteria.application_policy, CONSENT));
+    consentCopy.append(
+      el('b', 'Accept privacy consent on application forms for me'),
+      el(
+        'small',
+        'Ticks the privacy policy and data processing boxes a form needs before you can apply. Marketing, newsletters and talent pools stay unticked.',
+      ),
+    );
+    consent.append(consentInput, consentCopy);
+    mode.append(consent);
+    // Most people keep the recommended sources, so the list stays folded.
+    const sources = el('details', null, 'onboarding-section onboarding-sources'),
+      sourceSummary = el('summary');
+    sourceSummary.append(
+      el('span', 'Where to search', 'onboarding-sources-title'),
+      el('span', null, 'onboarding-sources-count'),
+      el('span', 'Edit', 'onboarding-sources-edit'),
+    );
+    sources.append(sourceSummary, el('div', null, 'onboarding-checks'));
+    sources.addEventListener('toggle', () => {
+      sources.querySelector('.onboarding-sources-edit').textContent = sources.open
+        ? 'Done'
+        : 'Edit';
+    });
+    sources.addEventListener('change', () => countSources(form));
     const checks = el('section', null, 'onboarding-readiness');
     checks.setAttribute('aria-label', 'Before you start');
     const foot = el('div', null, 'onboarding-foot'),
-      again = button('Refill from CV', () => attempt(readAgain)),
-      submit = el('button', 'Save and start the search', 'primary');
+      noCv = !data.runs.some((r) => r.kind === 'interview'),
+      again = noCv
+        ? button('Add my CV instead', () => attempt(pickCv))
+        : button('Refill from CV', () => attempt(readAgain)),
+      submit = el('button', 'Start finding jobs', 'primary');
     again.dataset.action = 'read-again';
     submit.type = 'submit';
     foot.append(again, submit);
-    form.append(profile, mode, sources, checks, foot);
+    // Setup items that block the start come before the long source list.
+    form.append(profile, once, mode, checks, sources, foot);
     syncScore();
     renderSources(form);
     renderReadiness(form);
@@ -581,6 +1076,15 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         else if (country && choice.countries.includes(country))
           row(choice.url, choice.name, 'Optional · ' + choice.label, false);
         else if (choice.remote) row(choice.url, choice.name, 'Optional · ' + choice.label, false);
+    countSources(form);
+  }
+  function countSources(form) {
+    const all = [...form.querySelectorAll('input[name=source]')],
+      on = all.filter((i) => i.checked).length,
+      label = form.querySelector('.onboarding-sources-count');
+    if (label)
+      label.textContent =
+        on === all.length ? `All ${all.length} job sites` : `${on} of ${all.length} job sites`;
   }
   function renderReadiness(form) {
     const root = form.querySelector('.onboarding-readiness');
@@ -591,11 +1095,29 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     );
     root.hidden = !open.length;
     if (!open.length) return;
-    root.append(el('h2', 'Before you start'));
+    const blocking = open.some((c) => c.state === 'error');
+    root.dataset.blocking = String(blocking);
+    root.append(
+      el('h2', blocking ? 'One more thing before you start' : 'Before you start'),
+      el(
+        'p',
+        blocking
+          ? 'JobLoop needs the items marked Required to find and apply to jobs.'
+          : 'Recommended, so JobLoop can apply on job sites for you.',
+        'onboarding-check-lead',
+      ),
+    );
     for (const check of open) {
-      const item = el('div', null, 'onboarding-check');
+      const item = el('div', null, 'onboarding-check'),
+        copy = friendlyChecks[check.id],
+        head = el('div', null, 'onboarding-check-head');
       item.dataset.state = check.state;
-      item.append(el('b', check.label), el('span', check.detail));
+      head.append(
+        el('b', copy?.title ?? check.label),
+        el('span', check.state === 'error' ? 'Required' : 'Recommended', 'onboarding-check-tag'),
+      );
+      item.append(head, el('span', copy?.text ?? check.detail));
+      if (copy?.link) item.append(button(copy.link[0], () => api.openLink(copy.link[1]), 'link'));
       // The Jev key is entered later under Configuration → Jev; here the
       // worker agent can take over the listing decisions instead.
       if (check.id === 'jev') {
@@ -662,15 +1184,15 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     await api.automationOnboarding(id);
     await load();
   }
-  async function skip() {
+  // No CV: go straight to Check details and fill it in by hand.
+  async function manual() {
     const notes = (card.querySelector('[name=notes]')?.value ?? '').trim(),
       owner = await prepare();
-    localStorage.setItem(flagKey(owner), 'skip');
-    // Notes start the chat setup as its first message.
-    if (notes) await api.automationMessage(owner, notes);
-    await chat(owner);
-    close();
+    localStorage.setItem(flagKey(owner), 'manual');
+    if (notes) sessionStorage.setItem('jl-manual-notes:' + owner, notes);
+    await load();
   }
+
   // Before the CV only an untouched workspace is removed; after it, leaving
   // discards the unfinished profile together with its setup agent.
   async function leaveOnboarding() {
@@ -706,7 +1228,10 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     const chosen = new Set(
       [...form.querySelectorAll('input[name=source]')].filter((i) => i.checked).map((i) => i.value),
     );
-    if (!chosen.size) throw Error('Choose at least one source.');
+    if (!chosen.size) {
+      form.querySelector('.onboarding-sources').open = true;
+      throw Error('Choose at least one job site to search.');
+    }
     for (const source of data.sources)
       if (chosen.has(source.url) !== source.enabled)
         await api.automationSourceSave(owner, source.url, {enabled: chosen.has(source.url)});
@@ -722,7 +1247,35 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       criteria = {...current.criteria};
     for (const key of reviewFields) if (f[key]) criteria[key] = f[key].value.trim();
     if (f.experience) criteria.experience = f.experience.value.trim();
-    if (f.hard_rules) criteria.hard_rules = f.hard_rules.value.trim();
+    // Quick answers win over the same lines in the free text.
+    for (const q of quickQuestions) {
+      const input = f['once_' + q.id],
+        value = (input?.value ?? '').trim();
+      // An unanswered choice keeps whatever the CV reading wrote there.
+      if (q.choices && !value) continue;
+      criteria.application_facts = setFactLine(criteria.application_facts, q.label, value);
+    }
+    if (f.salary_currency)
+      criteria.application_facts = setFactLine(
+        criteria.application_facts,
+        CURRENCY,
+        f.once_salary?.value.trim() ? f.salary_currency.value : '',
+      );
+    if (f.consent)
+      criteria.application_policy = setFactLine(
+        criteria.application_policy,
+        CONSENT,
+        f.consent.checked ? CONSENT_TEXT : '',
+      );
+    // The never-apply list is saved as one elimination rule next to the others.
+    criteria.hard_rules = withNever(
+      f.hard_rules ? f.hard_rules.value : criteria.hard_rules,
+      f.never.value
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean),
+    );
+    delete criteria.constraints;
     criteria.score_threshold = f.score_threshold.value.trim();
     if (criteria.country) criteria.country = criteria.country.toUpperCase();
     delete criteria.save_score_threshold;
