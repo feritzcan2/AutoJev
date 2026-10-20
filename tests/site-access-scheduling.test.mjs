@@ -54,11 +54,9 @@ test('all workspaces defer the blocked site while another site runs; sources res
   await f.runtime.runSource(one, source);
   await f.runtime.runSource(two, source);
   await settle();
-  assert.equal(f.launches.length, 0);
   for (const id of [one, two])
     assert.ok(f.db.sources(id).find((s) => s.url === source).siteWait.waiting);
-  await f.runtime.runSource(one, other);
-  await settle();
+  // Tracking is on, so the other site runs meanwhile (one workspace at a time).
   assert.deepEqual(
     f.launches.map((r) => r.sourceUrl),
     [other],

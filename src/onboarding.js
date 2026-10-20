@@ -9,10 +9,12 @@ import {WorkerTerminalSurface} from './worker-terminal-surface.js';
 import {terminalAttention, trustKeys} from './agent-attention.js';
 import './onboarding.css';
 import {rulesField, RULES_HINT} from './template-fields.js';
+import {DEFAULT_SCORE_THRESHOLD} from '../app/scoring/thresholds.mjs';
 
 // Welcome screen of a new job search: the user picks the agent and the CV, the
 // setup agent fills the profile from the CV, the user reviews it and starts.
 const providerOrder = ['claude', 'codex', 'opencode'];
+const RECOMMENDED_PROVIDER = 'claude';
 // The review form shows these criteria; the rest stay on the profile page.
 const reviewFields = ['preferences', 'country', 'location', 'application_facts'];
 const readinessIds = ['chrome', 'chrome-profile', 'chrome-debug', 'jev', 'failed'];
@@ -461,8 +463,11 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
           provider = value;
           render();
         };
+        const name = el('b', p.label);
+        if (value === RECOMMENDED_PROVIDER)
+          name.append(' ', el('span', 'Recommended', 'onboarding-badge'));
         copy.append(
-          el('b', p.label),
+          name,
           el(
             'small',
             p.state === 'checking'
@@ -671,7 +676,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       max: '100',
       step: '1',
       placeholder: '1–100, required for Find and apply',
-      value: a.criteria.score_threshold ?? '',
+      value: a.criteria.score_threshold || String(DEFAULT_SCORE_THRESHOLD),
     });
     score.append(scoreInput);
     choices.append(score);

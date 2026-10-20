@@ -25,7 +25,11 @@ async function fixture(t) {
   const saved = db.get(a.id);
   db.put({
     ...saved,
-    criteria: {...saved.criteria, constraints: 'Only Berlin or remote Germany.'},
+    criteria: {
+      ...saved.criteria,
+      constraints: 'Only Berlin or remote Germany.',
+      unstated_conditions: 'Treat as met',
+    },
     referenceData: {
       profile: {
         facts: 'Synthetic summary of the earlier profile.',
@@ -58,6 +62,8 @@ test('an imported profile becomes documents and its retired field joins the inst
     a = db.get(id);
   assert.equal(a.referenceData, undefined);
   assert.equal(Object.hasOwn(a.criteria, 'constraints'), false);
+  assert.equal(Object.hasOwn(a.criteria, 'unstated_conditions'), false);
+  assert.doesNotMatch(a.instructions, /Treat as met/);
   assert.match(
     a.instructions,
     /Hard requirements \(moved from a replaced field\): Only Berlin or remote Germany\./,

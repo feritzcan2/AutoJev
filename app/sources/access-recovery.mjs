@@ -114,7 +114,6 @@ export class SourceAccessRecovery {
           recovery.retryAt > this.runtime.now() ||
           a.status !== 'enabled' ||
           a.sourceSettings?.[url]?.enabled === false ||
-          (a.onceSources && !a.onceSources.includes(url)) ||
           recovery.revision !== a.revision)
       )
         continue;
@@ -190,10 +189,7 @@ export class SourceAccessRecovery {
         run.taskId,
         recovery.waits.map((w) => w.site),
       );
-      if (a.status !== 'enabled') {
-        this.db.enable(id);
-        this.db.put({...this.db.get(id), once: true, onceSources: [url]});
-      }
+      if (a.status !== 'enabled') this.db.enable(id, {sourceUrl: url});
       r.clearRetry(id, url);
       r.queue.put({
         ...task,
@@ -212,7 +208,6 @@ export class SourceAccessRecovery {
         siteBlocked: false,
         batchId,
         nextRunAt: r.now(),
-        onceCompleted: false,
         accessRecovery: {
           ...recovery,
           state: 'answered',
@@ -318,7 +313,6 @@ export class SourceAccessRecovery {
           observedPage: null,
           scanState: state.scanState ? {...state.scanState, active: null} : null,
           nextRunAt: current.retryAt === null ? null : Math.max(current.retryAt, r.now()),
-          onceCompleted: false,
           accessRecovery: {...current, state: 'fresh', cleanupError: null},
         });
         const saved = this.db.get(id);

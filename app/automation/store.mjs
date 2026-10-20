@@ -359,7 +359,7 @@ export class AutomationStore {
       previous = a.planDraft?.baseRevision === a.revision ? {...base, ...a.planDraft.plan} : base;
     // Criteria the agent leaves out keep their saved values (an empty value
     // clears one); a partial update must not drop settings such as the
-    // unstated-conditions rule.
+    // elimination rules.
     if (input.criteria) input = {...input, criteria: {...previous.criteria, ...input.criteria}};
     const template = this.template(a.templateId),
       plan = planInput(template, input, {
@@ -448,7 +448,8 @@ export class AutomationStore {
   }
   enable(id, {sourceUrl = null} = {}) {
     // A source request joins the worker queue while unrelated record work continues.
-    // Enabling the whole workspace still requires idle workers.
+    // Enabling the whole workspace still requires idle workers. Either way regular
+    // tracking turns on: every source starts on its own when it is due.
     if (!sourceUrl) this.assertIdle(id, {allowConversation: true});
     const a = this.get(id);
     if (a.reviewedRevision !== a.revision) throw Error('Save the setup first');
@@ -460,8 +461,6 @@ export class AutomationStore {
       ...a,
       status: 'enabled',
       batchId: null,
-      once: Boolean(sourceUrl),
-      onceSources: sourceUrl ? [sourceUrl] : null,
       nextRunAt: this.now(),
     });
   }

@@ -102,6 +102,11 @@ try {
     'A ready agent is preselected',
   );
   assert.equal(await screen.getByText('Cancel').count(), 0, 'First run cannot be cancelled');
+  assert.equal(
+    await screen.locator('.onboarding-badge').textContent(),
+    'Recommended',
+    'Claude is marked as recommended',
+  );
   await page.screenshot({path: path.join(data, '1-start.png')});
 
   let rpc = 0;

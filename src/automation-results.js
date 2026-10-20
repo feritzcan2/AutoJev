@@ -28,14 +28,20 @@ const contactEntryOf = (data, recordId) =>
   (data.automation.recordContacts ?? []).find((e) => e.recordId === recordId);
 const contactsKey = (data, recordId) => {
   const entry = contactEntryOf(data, recordId);
-  return entry && [entry.state, entry.contacts.map((c) => [c.name, c.state])];
+  return entry && [entry.state, entry.contacts.map((c) => [c.name, c.headline, c.state])];
 };
 function contactsFound(data, recordId, findContacts) {
   const entry = contactEntryOf(data, recordId);
   if (!entry) return [findContacts];
-  const chip = (text, tone, title) => {
+  // A person's chip shows their title (the profile headline) under the name.
+  const chip = (text, tone, title, headline = '') => {
     const node = findContacts.cloneNode(false);
     node.textContent = text;
+    if (headline) {
+      const line = document.createElement('small');
+      line.textContent = headline;
+      node.append(line);
+    }
     node.className = 'record-contact-chip';
     node.dataset.tone = tone;
     node.title = title;
@@ -53,6 +59,7 @@ function contactsFound(data, recordId, findContacts) {
             ? 'active'
             : 'waiting',
       [c.headline, 'Open on the Contacts page'].filter(Boolean).join(' · '),
+      c.headline,
     ),
   );
   if (entry.state === 'searching')

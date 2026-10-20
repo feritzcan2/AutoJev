@@ -12,12 +12,16 @@ import {profilePlan, profileChanged} from './profile-updates.mjs';
 //   agents keep reading them while the profile fields stay as the user wrote them;
 // - the old CV becomes a user document;
 // - the text of a retired field joins the instructions (or the document when
-//   the instructions have no room left).
+//   the instructions have no room left);
+// - a removed setting is dropped.
 export const EARLIER_PROFILE_DOCUMENT = 'documents/earlier-profile.md';
 const INSTRUCTIONS_LIMIT = 12000;
 
+// Elimination rules decide what an unmentioned condition means.
+const DROPPED_CRITERIA = ['unstated_conditions'];
 const text = (value) => (typeof value === 'string' ? value.trim() : '');
 const retired = (template) => Object.entries(template?.retiredFields ?? {});
+const oldKeys = (template) => [...retired(template).map(([key]) => key), ...DROPPED_CRITERIA];
 
 export function needsLegacyConversion(a, template) {
   const drafts = [a.planDraft?.plan, a.profileUpdate?.plan].filter(Boolean);
@@ -25,7 +29,7 @@ export function needsLegacyConversion(a, template) {
     a.referenceData !== undefined ||
     drafts.some((plan) => Object.hasOwn(plan, 'sources')) ||
     [a, ...drafts].some((plan) =>
-      retired(template).some(([key]) => Object.hasOwn(plan.criteria ?? {}, key)),
+      oldKeys(template).some((key) => Object.hasOwn(plan.criteria ?? {}, key)),
     )
   );
 }
@@ -40,6 +44,7 @@ function retireFields(plan, template) {
     delete criteria[key];
     if (value) moved.push(`${label} (moved from a replaced field): ${value}`);
   }
+  for (const key of DROPPED_CRITERIA) delete criteria[key];
   const instructions = [text(plan.instructions), ...moved].filter(Boolean).join('\n\n');
   if (instructions.length <= INSTRUCTIONS_LIMIT) {
     Object.assign(plan, {criteria, ...(moved.length ? {instructions} : {})});

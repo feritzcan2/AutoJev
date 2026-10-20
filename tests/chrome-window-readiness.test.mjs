@@ -47,6 +47,8 @@ test('a visible window whose page never had focus is ready until the page loses 
     },
     addEventListener: on,
     fetch: (url, options) => {
+      // The page's open request stays pending while the app keeps the window.
+      if (url.endsWith('/wait')) return new Promise(() => {});
       reports.push(url.split('/').at(-1));
       // Deliver in order, as one page's reports would arrive.
       delivered = delivered.then(() => focus(marker, url.endsWith('/focused')));
@@ -182,6 +184,53 @@ test('a retry opens a new window when the previous one was closed or never loade
   await assert.rejects(browser.context(), /profile is not ready/);
   assert.equal(markers.length, 3);
   await focus(markers[2]);
+  await assert.rejects(browser.context(), /Synthetic endpoint unavailable/);
+  assert.equal(markers.length, 3);
+});
+
+test('the page closes itself when the app drops its window', async () => {
+  const marker = await chromeWindowMarker({observeFocus: true});
+  const html = await (await fetch(marker.url)).text();
+  assert.match(html, /\/wait'\)\.then\(\(\)=>close\(\)/);
+  const wait = fetch(marker.url + '/wait');
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  marker.close();
+  assert.equal((await wait).status, 204);
+});
+
+test('a window left behind is reported, and Reconnect opens a new one in front', async (t) => {
+  const markers = [],
+    waits = [];
+  const browser = new JevBrowser('/unused', {
+    profile: {directory: 'Profile 1', name: 'irem'},
+    readyTimeout: 50,
+    onWindowWait: (name) => waits.push(name),
+    openWindow: async (url) => {
+      markers.push({url});
+      await fetch(url);
+    },
+    endpoint: async () => {
+      throw Error('Synthetic endpoint unavailable');
+    },
+  });
+  t.after(() => browser.close());
+  const first = browser.context();
+  await new Promise((resolve) => setTimeout(resolve, 70));
+  assert.deepEqual(waits, ['irem']);
+  const pageWait = fetch(markers[0].url + '/wait');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(browser.reopenProfileWindow(), true);
+  await assert.rejects(first, /setup window was closed/);
+  assert.equal((await pageWait).status, 204);
+  await assert.rejects(browser.context(), /profile is not ready\.[^.]*\.$/);
+  assert.equal(markers.length, 2);
+  // Reconnect between attempts replaces a window that is still behind.
+  assert.equal(browser.reopenProfileWindow(), false);
+  await assert.rejects(browser.context(), /profile is not ready/);
+  assert.equal(markers.length, 3);
+  // A window in front is kept.
+  await focus(markers[2]);
+  browser.reopenProfileWindow();
   await assert.rejects(browser.context(), /Synthetic endpoint unavailable/);
   assert.equal(markers.length, 3);
 });

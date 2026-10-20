@@ -54,7 +54,7 @@ try {
     };
     const api = {
       workspaceTabs: async () => [],
-      extensionBenchStatus: async () => ({available: true}),
+      extensionBenchStatus: async () => ({available: false}),
       automationSourceStop: async (id, url) => {
         window.stopCalls.push({id, url});
         await new Promise((resolve) => {
@@ -149,8 +149,7 @@ try {
     source.observedPage = {currentPage: 1};
     panel.update(snapshot, 'owner');
   });
-  await page.locator('.source-row-menu').click();
-  await page.getByRole('button', {name: 'Scan details', exact: true}).click();
+  await page.getByRole('button', {name: 'Details', exact: true}).click();
   await page.getByText('250 waiting · page 7', {exact: true}).waitFor();
   await page
     .getByText('Page 1. Saved progress and remaining addresses are kept.', {exact: true})

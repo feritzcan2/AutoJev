@@ -32,8 +32,6 @@ export const recordOperationDefaults = {
   },
 };
 
-export const UNSTATED_CHECK = 'Do not apply until checked',
-  UNSTATED_MET = 'Treat as met';
 // Every workspace scores its records. The setup agent writes the rubric for the
 // workspace's own goal; templates do not define scoring criteria themselves.
 export const scoringFields = [
@@ -61,21 +59,21 @@ export const scoringFields = [
     // Shown only for automatic actions.
     forMode: 'auto',
     label: 'Minimum score for automatic action',
-    question: 'Lowest score for automatic action, 1–100 (default 60)',
+    question: 'Lowest score for automatic action, 1–100 (default 70)',
     required: false,
     type: 'number',
   },
   {
-    id: 'unstated_conditions',
+    id: 'auto_contacts',
     section: 'actions',
-    forMode: 'auto',
-    // Only workspaces without elimination rules use it; each rule has its own choice.
-    label: 'When a listing does not mention a required condition',
+    // The profile page shows it as a checkbox under Action permission.
+    forMode: 'contacts',
+    label: 'Find contacts automatically',
     question:
-      'Used only without elimination rules. Treat it as met, or do not apply automatically until it is checked (default). An explicit restriction always excludes the listing.',
+      'Every new record that reaches the minimum score gets one LinkedIn contact search. find: the user approves each note before it is sent. find_and_send: the search sends the invitations itself. Empty: off.',
     required: false,
     type: 'choice',
-    options: [UNSTATED_CHECK, UNSTATED_MET],
+    options: ['find', 'find_and_send'],
   },
   {
     id: 'save_score_threshold',
@@ -87,6 +85,13 @@ export const scoringFields = [
     type: 'number',
   },
 ];
+// 'find', 'send' or null. 'true' was the first saved form of find.
+export const autoContactsMode = (criteria) =>
+  criteria?.auto_contacts === 'find_and_send'
+    ? 'send'
+    : ['find', 'true'].includes(criteria?.auto_contacts)
+      ? 'find'
+      : null;
 export const withScoringFields = (fields) => [
   ...fields,
   ...scoringFields.filter((field) => !fields.some((f) => f.id === field.id)),

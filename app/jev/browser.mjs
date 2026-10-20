@@ -91,6 +91,7 @@ export class JevBrowser {
       accountVault = null,
       onDisconnect = () => {},
       onTabsClosed = () => {},
+      onWindowWait = () => {},
     } = {},
   ) {
     this.sharedSiteAccess = siteAccess;
@@ -103,6 +104,7 @@ export class JevBrowser {
     this.workspace = workspace;
     this.onDisconnect = onDisconnect;
     this.onTabsClosed = onTabsClosed;
+    this.onWindowWait = onWindowWait;
     this.checkpoints = checkpoints;
     this.connection = connection;
     this.profile = profile;
@@ -142,7 +144,7 @@ export class JevBrowser {
             const marker = await this.prepareProfileWindow();
             const endpoint = await this.endpoint(),
               saved = await this.registry.read();
-            await marker.waitForReady({signal: this.abort.signal, timeout: this.readyTimeout});
+            await this.waitForProfileWindow(marker);
             transport = await JevCdpTransport.connect(endpoint, {signal: this.abort.signal});
             this.transport = transport;
             transport.onTargetDestroyed = (id) => {
@@ -251,11 +253,13 @@ export class JevBrowser {
             // A retry reuses the profile window, which may no longer be in front.
             // Its readiness timeout must not hide why the previous attempt failed.
             let message = error.message.split('\n')[0];
-            if (error.code !== 'PROFILE_NOT_READY') this.lastConnectError = message;
+            if (!['PROFILE_NOT_READY', 'WINDOW_CLOSED'].includes(error.code))
+              this.lastConnectError = message;
             else if (this.lastConnectError)
               message += ` The previous attempt failed: ${this.lastConnectError}`;
             throw Object.assign(Error(`Could not connect to Chrome: ${message}`), {
               code: 'BROWSER_DISCONNECTED',
+              windowWait: error.code === 'PROFILE_NOT_READY',
             });
           } finally {
             release?.();
@@ -284,8 +288,15 @@ export class JevBrowser {
   }
   async prepareProfileWindow() {
     this.abort.signal.throwIfAborted();
-    // A window that never loaded or was closed cannot become ready; open a new one.
-    if (this.profileWindow && !this.profileWindow.loaded) {
+    // A window that never loaded or was closed cannot become ready; open a new
+    // one. After Reconnect, a window behind others is replaced too: Chrome
+    // brings a new window to the front, and the old page closes itself.
+    const fresh = this.freshWindow;
+    this.freshWindow = false;
+    if (
+      this.profileWindow &&
+      (!this.profileWindow.loaded || (fresh && !this.profileWindow.focused))
+    ) {
       this.profileWindow.close();
       this.profileWindow = null;
     }
@@ -306,11 +317,36 @@ export class JevBrowser {
     }
     // A slow load or a denied connection reuses this window on retry.
     this.abort.signal.throwIfAborted();
-    await this.profileWindow.waitForReady({
-      signal: this.abort.signal,
-      timeout: this.readyTimeout,
-    });
+    await this.waitForProfileWindow(this.profileWindow);
     return this.profileWindow;
+  }
+  // Chrome gets no connection request until the selected profile's window is
+  // in front, so a window left behind others must be visible in the app.
+  async waitForProfileWindow(marker) {
+    const wait = (timeout) => marker.waitForReady({signal: this.abort.signal, timeout});
+    try {
+      await wait(Math.min(2000, this.readyTimeout));
+      return;
+    } catch (error) {
+      if (error.code !== 'PROFILE_NOT_READY') throw error;
+    }
+    this.waitingForWindow = marker;
+    this.onWindowWait(this.profile?.name);
+    try {
+      await wait(this.readyTimeout);
+    } finally {
+      if (this.waitingForWindow === marker) this.waitingForWindow = null;
+    }
+  }
+  // Reconnect: open the selected profile's window again in front. Returns true
+  // when it ended a wait for a window that stayed behind others.
+  reopenProfileWindow() {
+    this.freshWindow = true;
+    const marker = this.waitingForWindow;
+    if (!marker || marker !== this.profileWindow) return false;
+    marker.close();
+    this.profileWindow = null;
+    return true;
   }
   async findOwnedPage(id) {
     for (let i = 0; i < 100; i++) {

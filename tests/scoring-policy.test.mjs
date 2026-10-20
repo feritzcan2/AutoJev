@@ -17,7 +17,7 @@ const profile = {
 
 test('the scoring policy is the same for every template: a rubric text and a threshold', () => {
   assert.equal(scoringPolicy(profile).threshold, 70);
-  assert.equal(scoringPolicy({criteria: {}}).threshold, 60);
+  assert.equal(scoringPolicy({criteria: {}}).threshold, 70);
   for (const criteria of [
     {score_threshold: '101'},
     {score_threshold: '0'},
@@ -60,7 +60,7 @@ test('minimum save score is optional, independent of actions, and validated when
     const criteria = value === undefined ? {} : {save_score_threshold: value};
     const policy = scoringPolicy({criteria});
     assert.equal(policy.saveThreshold, value === undefined || value === '' ? null : Number(value));
-    assert.equal(policy.threshold, 60);
+    assert.equal(policy.threshold, 70);
     assert.doesNotThrow(() => planInput(template, {criteria}));
   }
   for (const value of ['-1', '101', '60.5', 'invalid']) {
@@ -118,20 +118,8 @@ test('record writes save the supplied score without a mandatory breakdown', () =
   assert.throws(() => recordAssessment(db, 'one', run, input), /score/);
 });
 
-test('unstated mandatory conditions stay unverified unless the profile treats them as met', () => {
-  const base = {revision: 1, criteria: {ranking: 'Fit'}};
-  assert.equal(scoringPolicy(base).unstatedConditions, 'check');
-  assert.equal(
-    scoringPolicy({...base, criteria: {...base.criteria, unstated_conditions: 'Treat as met'}})
-      .unstatedConditions,
-    'met',
-  );
-  assert.equal(
-    scoringPolicy({
-      ...base,
-      criteria: {...base.criteria, unstated_conditions: 'Do not apply until checked'},
-    }).unstatedConditions,
-    'check',
-  );
-  assert.match(scoringPolicy(base).instructions, /unstatedConditions/);
+test('unstated mandatory conditions stay unverified without elimination rules', () => {
+  const policy = scoringPolicy({revision: 1, criteria: {ranking: 'Fit'}});
+  assert.equal(policy.hardRules, undefined);
+  assert.match(policy.instructions, /never mentions stays unverified/);
 });

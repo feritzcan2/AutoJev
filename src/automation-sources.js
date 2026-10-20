@@ -233,7 +233,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     discover.dataset.sourceDiscover = '';
     headActions.append(discover);
   }
-  // Development builds: the extension test bench and the scan details.
+  // Development builds: the extension test bench.
   const benches = new Map();
   const benchFor = (url) => {
     if (!benches.has(url))
@@ -353,7 +353,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       restart: button('Start over', () => {}, 'source-restart'),
       relearn: button('Relearn', () => {}),
       remove: button('Delete source', () => {}, 'source-remove'),
-      memoryButton: button('', () => {}, 'source-memory-toggle'),
+      memoryButton: button('', () => {}, 'quiet source-memory-toggle'),
       bench: button('Test extension', () => {}, 'source-bench-toggle'),
       pending: null,
     };
@@ -378,13 +378,13 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     menu.addEventListener('click', (event) => {
       if (event.target.closest('button') && menu.matches(':popover-open')) menu.hidePopover();
     });
-    menu.append(view.edit, view.restart, view.relearn, view.remove, view.memoryButton, view.bench);
-    view.actions.append(view.run, view.tabHost, menuToggle, menu);
+    menu.append(view.edit, view.restart, view.relearn, view.remove, view.bench);
+    view.actions.append(view.run, view.memoryButton, view.tabHost, menuToggle, menu);
     view.row.append(view.toggle, view.main, view.actions);
     // A click on the row itself opens or closes its scan details; controls,
     // open panels and text selection keep their own behaviour.
     view.row.addEventListener('click', (event) => {
-      if (view.memoryButton.hidden || getSelection()?.toString()) return;
+      if (getSelection()?.toString()) return;
       if (
         event.target.closest(
           'button, a, input, select, textarea, label, summary, [popover], .source-memory, .source-editor, .extension-bench',
@@ -638,7 +638,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     return meta;
   }
 
-  // Scan details (development builds): this round, its searches with the
+  // Scan details: this round, its searches with the
   // queue, and the recipe, each as one labelled list.
   const exclusionLabels = {
     hard_constraint: 'Hard constraint',
@@ -1208,14 +1208,13 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       const view = rows.get(source.url) ?? sourceRow(source.url),
         {row, toggle, main, run, restart, edit, relearn, remove, memoryButton, tabHost} = view,
         open = editing === source.url,
-        memoryOpen = benchAvailable && memory === source.url,
+        memoryOpen = memory === source.url,
         scope = owner,
         locked = Boolean(source.scanning) || busySource(source.url);
       const next = previous ? previous.nextElementSibling : list.firstElementChild;
       if (next !== row) list.insertBefore(row, next);
       previous = row;
       row.dataset.open = String(open || memoryOpen);
-      row.dataset.expandable = String(benchAvailable);
       row.dataset.tone = source.enabled ? 'on' : 'off';
       row.dataset.trial = source.trialRunning
         ? 'running'
@@ -1346,8 +1345,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         notice('Source deleted. Found records were kept.');
       });
       view.menuToggle.setAttribute('aria-label', source.name + ' · More actions');
-      memoryButton.hidden = !benchAvailable;
-      memoryButton.textContent = memoryOpen ? 'Hide scan details' : 'Scan details';
+      memoryButton.textContent = memoryOpen ? 'Hide details' : 'Details';
       memoryButton.onclick = action(() => {
         memory = memoryOpen ? null : source.url;
         render();

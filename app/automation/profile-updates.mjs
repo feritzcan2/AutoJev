@@ -1,6 +1,7 @@
 // @ts-check
 import {planInput, missingProfileFields} from '../templates/catalog.mjs';
 import {assertAutoApplyThreshold} from '../scoring/thresholds.mjs';
+import {autoContactsMode} from '../records/operation-definitions.mjs';
 
 const fields = ['title', 'goal', 'criteria', 'instructions', 'facts', 'mode'];
 export const profilePlan = (plan) =>
@@ -60,6 +61,13 @@ export function queueProfileUpdate(
   return db.put({...current, profileUpdate: update});
 }
 
+// Find contacts automatically covers records saved after it was turned on, so
+// switching it on does not start a search for every earlier record.
+function contactsSwitch(next, a, update) {
+  if (autoContactsMode(update.plan.criteria) && !autoContactsMode(a.criteria))
+    next.autoContactsAfter = update.savedAt;
+}
+
 // Saving without a restart writes the profile at once and keeps the revision, so
 // running tasks stay valid and finish; every later context read sees the new profile.
 export function applyProfileInPlace(db, id) {
@@ -71,6 +79,7 @@ export function applyProfileInPlace(db, id) {
   const {profileUpdate, ...next} = {...a, ...profilePlan(update.plan), updatedAt: db.now()};
   if (Object.hasOwn(update, 'queueExisting'))
     next.autoApplyAfter = update.queueExisting ? null : update.savedAt;
+  contactsSwitch(next, a, update);
   db.put(next);
   db.event(id, 'profile_applied', {revision: a.revision, savedAt: update.savedAt, inPlace: true});
   return true;
@@ -91,14 +100,9 @@ export function applyProfileUpdate(db, id) {
     if (a.planDraft) next.planDraft = {...a.planDraft, baseRevision: next.revision};
     if (Object.hasOwn(update, 'queueExisting'))
       next.autoApplyAfter = update.queueExisting ? null : update.savedAt;
+    contactsSwitch(next, a, update);
     // Applying a profile does not start paused work. Existing tracking continues.
-    if (a.status === 'enabled')
-      Object.assign(next, {
-        status: 'enabled',
-        nextRunAt: db.now(),
-        once: a.once,
-        onceSources: a.onceSources?.filter((url) => next.sources.includes(url)),
-      });
+    if (a.status === 'enabled') Object.assign(next, {status: 'enabled', nextRunAt: db.now()});
     else if (['paused', 'blocked', 'complete'].includes(a.status))
       Object.assign(next, {status: a.status, nextRunAt: null});
     delete next.profileUpdate;

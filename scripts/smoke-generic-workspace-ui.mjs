@@ -219,7 +219,10 @@ try {
       title: template + ' setup',
       goal: 'Read local fixture',
       criteria: (await tool('get_automation_context', {section: 'template'})).template.fields.map(
-        (f) => ({key: f.id, value: f.type === 'number' ? '60' : 'Test criteria'}),
+        (f) => ({
+          key: f.id,
+          value: f.type === 'number' ? '60' : f.type === 'boolean' ? 'false' : 'Test criteria',
+        }),
       ),
       addSources: [fixtureUrl],
       instructions: 'Only observe the local fixture; no submissions.',

@@ -8,7 +8,13 @@ import {browserSnapshotTools} from '../browser/snapshot.mjs';
 import {automationContextTools} from './context.mjs';
 import {jevTaskTools, agentDecisionTools} from '../jev/task-tools.mjs';
 import {RECIPE_PAGINATION_KINDS, RECIPE_TERM_LIMIT} from '../sources/recipe.mjs';
-import {CONTACT_LIMIT, CONTACT_OUTCOMES, NOTE_CHARACTERS, NOTE_STYLES} from './contacts.mjs';
+import {
+  CONTACT_LIMIT,
+  CONTACT_OUTCOMES,
+  NOTE_CHARACTERS,
+  NOTE_STYLES,
+  contactTaskSends,
+} from './contacts.mjs';
 
 const str = {type: 'string'},
   optional = {type: 'string', minLength: 0};
@@ -288,12 +294,12 @@ export const automationTools = [
   ),
   tool(
     'reserve_contact_action',
-    'Contact send tasks only: call right before the first Connect or Message click for one contact. Allows that contact one Send click and returns the approved text.',
+    'Contact tasks that send only: call right before the first Connect or Message click for one contact. Allows that contact one Send click and returns the approved text.',
     {contactId: str},
   ),
   tool(
     'record_contact_outcome',
-    'Contact send tasks only: record what happened for one contact with the page words as evidence. invited_with_note, invited_without_note and messaged need the Send click after reserve_contact_action; already_invited when the profile already shows Pending; not_accepted_yet for a followUp contact whose invitation is still open; failed with the reason otherwise.',
+    'Contact tasks that send only: record what happened for one contact with the page words as evidence. invited_with_note, invited_without_note and messaged need the Send click after reserve_contact_action; already_invited when the profile already shows Pending; not_accepted_yet for a followUp contact whose invitation is still open; failed with the reason otherwise.',
     {contactId: str, status: {type: 'string', enum: CONTACT_OUTCOMES}, evidence: str},
   ),
   tool(
@@ -418,9 +424,12 @@ const CONTACT_ONLY = new Set([
   'reserve_contact_action',
   'record_contact_outcome',
 ]);
+// A find task that sends (find_and_send) gets both sets.
 const contactTool = (run, name) =>
   run.recordOperation === 'contacts'
-    ? (run.request?.phase === 'send' ? CONTACT_SEND_TOOLS : CONTACT_FIND_TOOLS).has(name)
+    ? run.request?.phase === 'send'
+      ? CONTACT_SEND_TOOLS.has(name)
+      : CONTACT_FIND_TOOLS.has(name) || (contactTaskSends(run) && CONTACT_SEND_TOOLS.has(name))
     : !CONTACT_ONLY.has(name);
 // Collector runs fetch pages through the site extension, not the browser.
 export const collectorHidden = new Set([
@@ -485,7 +494,7 @@ export function scopedAutomationTools({run, template, collecting, agentDecides =
     if (run.kind === 'run' && template.recordOperations?.score) {
       Object.assign(resultTool.inputSchema.properties, resultScoreFields);
       resultTool.description =
-        'Save an observed source finding. Send url, title and summary, plus top-level score for each new listing: an integer 0–100 following criteria.ranking and scoringPolicy, or null if details are inaccessible. Explain the score in optional scoreReason. When scoringPolicy.hardRules is listed, answer every rule in rules (pass/fail/unknown) and the app sets eligibility; otherwise report mandatory conditions with eligibility and eligibilityReason, following scoringPolicy.unstatedConditions for conditions the listing never mentions. All scoring fields are top-level values. Use the exact listing URL as key; external site IDs are not application record IDs. Custom cells are optional. Save only verified facts and reuse known records. For Jev batches, reject unsuitable findings with review decisions. New findings below scoringPolicy.saveThreshold return skipped=true without creating a record; do not retry skipped findings. Existing records and unavailable assessments are retained. No action is taken.';
+        'Save an observed source finding. Send url, title and summary, plus top-level score for each new listing: an integer 0–100 following criteria.ranking and scoringPolicy, or null if details are inaccessible. Explain the score in optional scoreReason. When scoringPolicy.hardRules is listed, answer every rule in rules (pass/fail/unknown) and the app sets eligibility; otherwise report mandatory conditions with eligibility and eligibilityReason; a condition the listing never mentions stays unverified. All scoring fields are top-level values. Use the exact listing URL as key; external site IDs are not application record IDs. Custom cells are optional. Save only verified facts and reuse known records. For Jev batches, reject unsuitable findings with review decisions. New findings below scoringPolicy.saveThreshold return skipped=true without creating a record; do not retry skipped findings. Existing records and unavailable assessments are retained. No action is taken.';
     }
   }
   if (resultTool && scanRun(run) && run.kind === 'run')

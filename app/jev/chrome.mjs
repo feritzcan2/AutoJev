@@ -23,7 +23,10 @@ const exec = (file, args, {signal, windowsHide}) =>
 export async function chromeWindowMarker({observeFocus = false} = {}) {
   const route = `/jev/${randomUUID()}`,
     nonce = randomUUID(),
-    waiters = new Set();
+    waiters = new Set(),
+    // The page's open request; answering it when the app drops the window
+    // lets the page close itself.
+    pageWaits = new Set();
   // Whether the page is currently loaded in Chrome: a retry opens a new window
   // when the old one never loaded or was closed.
   let focused = false,
@@ -49,6 +52,11 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
       res.end();
       return;
     }
+    if (observeFocus && req.method === 'GET' && req.url === route + '/wait') {
+      pageWaits.add(res);
+      res.once('close', () => pageWaits.delete(res));
+      return;
+    }
     if (req.method !== 'GET' || req.url !== route) {
       res.writeHead(404);
       res.end();
@@ -62,6 +70,7 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
     });
     res.end(
       '<!doctype html><title>AutoJob · Jev</title><p>AutoJob is connecting to the existing Chrome session…</p>' +
+        (observeFocus ? '<p>Keep this window in front until the connection is ready.</p>' : '') +
         (observeFocus
           ? // Browser UI (address bar, an extension bubble or panel) can keep keyboard
             // focus in the new active window, so the page may never get focus. A
@@ -71,6 +80,7 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
       const report=()=>{const active=document.visibilityState==='visible'&&(document.hasFocus()||!left);if(active===previous)return;previous=active;fetch(location.pathname+(active?'/focused':'/blurred'),{method:'POST',keepalive:true}).catch(()=>{previous=undefined;});};
       addEventListener('focus',report);addEventListener('blur',()=>{left=true;report();});document.addEventListener('visibilitychange',report);
       addEventListener('pagehide',()=>fetch(location.pathname+'/closed',{method:'POST',keepalive:true}).catch(()=>{}));report();
+      const wait=(tries)=>fetch(location.pathname+'/wait').then(()=>close(),()=>tries?setTimeout(()=>wait(tries-1),1000):close());wait(1);
     </script>`
           : ''),
     );
@@ -83,6 +93,9 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
     url: `http://127.0.0.1:${server.address().port}${route}`,
     get loaded() {
       return loaded;
+    },
+    get focused() {
+      return focused;
     },
     waitForReady({signal, timeout = 10000} = {}) {
       return new Promise((resolve, reject) => {
@@ -110,7 +123,7 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
               finish(
                 Object.assign(
                   Error(
-                    'The selected Chrome profile is not ready. Bring the opened AutoJob window to the front and reconnect.',
+                    'The selected Chrome profile is not ready. Click the opened AutoJob window in Chrome, or press Reconnect to open it again in front.',
                   ),
                   {code: 'PROFILE_NOT_READY'},
                 ),
@@ -124,7 +137,11 @@ export async function chromeWindowMarker({observeFocus = false} = {}) {
     close() {
       if (closed) return;
       closed = true;
-      for (const finish of waiters) finish(Error('The Chrome setup window was closed.'));
+      for (const finish of waiters)
+        finish(
+          Object.assign(Error('The Chrome setup window was closed.'), {code: 'WINDOW_CLOSED'}),
+        );
+      for (const res of pageWaits) res.writeHead(204).end();
       server.closeAllConnections();
       server.close();
     },

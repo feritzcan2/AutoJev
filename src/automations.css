@@ -1817,9 +1817,20 @@
   background: var(--bg-hover);
   color: var(--text-secondary);
   font-size: 11px;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
+}
+.record-contacts-action .record-contact-chip:has(small) {
+  border-radius: 8px;
+}
+.record-contact-chip small {
+  display: block;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
 }
 .record-contact-chip[data-tone='waiting'] {
   color: var(--warning);

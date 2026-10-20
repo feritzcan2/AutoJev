@@ -199,6 +199,7 @@
   font-size: 12px;
   line-height: 1.45;
   color: var(--text-secondary);
+  cursor: pointer;
 }
 .source-row:first-child {
   border-top: 0;
@@ -206,10 +207,7 @@
 .source-row[data-open='true'] {
   background: var(--bg-hover);
 }
-.source-row[data-expandable='true'] {
-  cursor: pointer;
-}
-.source-row[data-expandable='true'] :is(.source-memory, .source-editor, .extension-bench) {
+.source-row :is(.source-memory, .source-editor, .extension-bench) {
   cursor: auto;
 }
 .source-row .switch {
@@ -393,7 +391,7 @@
   color: var(--accent-strong);
 }
 
-/* One primary action per row; the rest sit behind the ⋯ menu. */
+/* The scan action and the details toggle per row; the rest sit behind the ⋯ menu. */
 .source-actions {
   display: flex;
   align-items: center;
@@ -644,7 +642,7 @@
   color: var(--danger);
 }
 
-/* Scan details (development builds): labelled groups, one fact per line. */
+/* Scan details: labelled groups, one fact per line. */
 .source-progress-details {
   grid-column: 1 / -1;
   min-width: 0;

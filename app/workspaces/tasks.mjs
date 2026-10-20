@@ -141,9 +141,11 @@ export class WorkspaceTasks {
       const canonical = (recordId) =>
         this.workspaces.records.identities.resolve(id, recordId)?.id ?? recordId;
       // A cover letter writer only reads the listing in its own tab, so it
-      // starts while the record's application task still holds the form.
+      // starts while the record's application task still holds the form. A
+      // contact search works on LinkedIn in its own tab beside any record task.
       const beside = (t) =>
-        task.recordOperation === 'cover_letter' && t.recordOperation === 'execute';
+        (task.recordOperation === 'cover_letter' && t.recordOperation === 'execute') ||
+        (task.recordOperation === 'contacts') !== (t.recordOperation === 'contacts');
       if (
         this.list(id, {states: active}).some(
           (t) =>

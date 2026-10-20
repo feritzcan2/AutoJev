@@ -158,7 +158,7 @@ test('two workers execute one declarative graph, wait for closure, and never exe
     await finish(run);
   }
   await runtime.tick();
-  assert.equal(db.get(id).status, 'paused');
+  assert.equal(db.get(id).status, 'enabled');
   assert.equal(launched.length, 6);
   assert.equal(db.results(id).filter((r) => r.status === 'prepared').length, 2);
   assert.equal(

@@ -172,10 +172,15 @@ export class AgentSessions {
             if (this.engines.get(key) !== instance || this.sessions.get(key) !== s) return;
           }
           if (event.event === 'compaction' && s) this.compaction.delivery(s, event);
-          if (s && ['delivery', 'compaction'].includes(event.event))
+          if (s && ['delivery', 'delivery_failed', 'compaction'].includes(event.event))
             this.audit(s, {
               kind: event.event,
-              title: event.event === 'delivery' ? 'Provider delivery status' : 'Context compaction',
+              title:
+                event.event === 'compaction'
+                  ? 'Context compaction'
+                  : event.event === 'delivery'
+                    ? 'Provider delivery status'
+                    : 'Message was not delivered',
               status: 'observed',
               detail: String(event.state),
               parts: [],

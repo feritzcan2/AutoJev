@@ -84,7 +84,7 @@ function fixture(t, {mode = 'prepare', workers = 1, templateId = 'job-search'} =
   return {store, db, id: a.id, runtime, launches, closed, finish, flow, record, options};
 }
 
-test('workspace restart keeps the profile permission, disabled sources and the one-off scope', async (t) => {
+test('workspace restart keeps the profile permission and disabled sources', async (t) => {
   const f = fixture(t, {mode: 'observe', workers: 2});
   f.db.saveSource(f.id, sources[1], {enabled: false});
   for (const worker of f.runtime.workers.list(f.id))
@@ -125,8 +125,6 @@ test('workspace restart keeps the profile permission, disabled sources and the o
     context = JSON.parse(text);
   }
   assert.equal(f.db.get(f.id).status, 'enabled');
-  assert.equal(f.db.get(f.id).once, true);
-  assert.deepEqual(f.db.get(f.id).onceSources, [sources[0]]);
   assert.deepEqual(run.sources, [sources[0]]);
   assert.equal(run.sourceUrl, sources[0]);
   assert.equal(run.operation, 'scan');
@@ -140,9 +138,10 @@ test('workspace restart keeps the profile permission, disabled sources and the o
   assert.equal(f.runtime.slots(f.id).length, 1);
   for (const worker of f.runtime.workers.list(f.id))
     assert.equal(f.store.workspaces.history(f.id, worker.id).conversation(f.id, 'codex'), null);
+  // A finished round keeps regular tracking on.
   await f.finish(run);
   await f.runtime.tick();
-  assert.equal(f.db.get(f.id).status, 'paused');
+  assert.equal(f.db.get(f.id).status, 'enabled');
 });
 
 test('restart preserves multiple workers and waits for every old provider to close', async (t) => {
@@ -357,8 +356,9 @@ test('a record run from a source does not hold back that source’s due scan', a
   assert.equal(f.db.run(execute.id).status, 'running');
 });
 
-test('source questions preserve pending work until answered and keep a one-off scan resumable', async (t) => {
+test('source questions preserve pending work until answered and keep a scan resumable', async (t) => {
   const f = fixture(t);
+  f.db.saveSource(f.id, sources[1], {enabled: false});
   await f.runtime.runSource(f.id, sources[0]);
   await settle();
   const scan = f.launches[0],
@@ -411,6 +411,7 @@ test('a pending question defers execution and the answer releases it even after 
     seed = f.db.begin(f.id, 'run'),
     item = f.record(seed, sources[0] + '/job', 'Reviewed proposal');
   f.db.finish(f.id, seed.id, 'completed', 'Seeded');
+  f.db.saveSource(f.id, sources[1], {enabled: false});
   await f.runtime.runSource(f.id, sources[0]);
   await settle();
   const scan = f.launches.at(-1);
@@ -433,6 +434,7 @@ test('a pending question defers execution and the answer releases it even after 
 
 test('answering a source question after an explicit stop does not restart its scan', async (t) => {
   const f = fixture(t);
+  f.db.saveSource(f.id, sources[1], {enabled: false});
   await f.runtime.runSource(f.id, sources[0]);
   await settle();
   const scan = f.launches[0];

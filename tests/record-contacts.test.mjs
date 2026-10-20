@@ -14,6 +14,7 @@ import {SiteAccess, runSiteLane, CONTACTS_LANE} from '../app/browser/site-access
 import {
   CONTACT_FIND_PROMPT,
   CONTACT_SEND_PROMPT,
+  CONTACT_FIND_SEND_PROMPT,
   findRecordContacts,
   sendRecordContacts,
   editRecordContact,
@@ -22,6 +23,7 @@ import {
   contactsInterrupted,
   removeRecordContacts,
   contactSendClicked,
+  queueAutomaticContacts,
 } from '../app/automation/contacts.mjs';
 
 const source = 'https://example.test/list',
@@ -350,4 +352,155 @@ test('a listing leaves the Contacts page only when no contact task runs for it',
   });
   removeRecordContacts(f.db, f.id, f.item.id);
   assert.equal(f.db.get(f.id).recordContacts.length, 0);
+});
+
+test('find contacts automatically searches once per record that reaches the minimum score', async (t) => {
+  const f = await fixture(t),
+    run = f.db.begin(f.id, 'run'),
+    scored = (key, score) =>
+      f.db.record(f.id, run.id, {
+        key: source + '/' + key,
+        url: source + '/' + key,
+        title: 'Backend Engineer ' + key,
+        summary: 'Observed facts',
+        assessment: {score, eligibility: 'verified', eligibilityReason: 'Met', summary: 'Fits'},
+      }),
+    low = scored('low', 69),
+    high = scored('high', 70);
+  f.db.finish(f.id, run.id, 'completed', 'Saved');
+  const queue = () =>
+      queueAutomaticContacts(f.db, f.id, f.db.get(f.id), f.db.store.workspaces.tasks.list(f.id)),
+    tasks = () =>
+      f.db.store.workspaces.tasks.list(f.id).filter((x) => x.recordOperation === 'contacts');
+  assert.equal(queue(), null, 'off by default');
+  const a = f.db.get(f.id);
+  f.db.put({...a, criteria: {...a.criteria, auto_contacts: 'find'}});
+  // Without a minimum score the default 70 applies; 69 and the unscored record wait.
+  assert.equal(queue(), high.id);
+  assert.equal(f.db.get(f.id).recordContacts[0].state, 'searching');
+  assert.equal(tasks()[0].request.manual, false);
+  assert.equal(queue(), null, 'one search at a time');
+  f.db.store.workspaces.tasks.finish(f.id, tasks()[0].id, 'completed', 'Done');
+  // A removed entry is not searched again.
+  const done = f.db.get(f.id);
+  f.db.put({...done, recordContacts: []});
+  assert.equal(queue(), null);
+  assert.equal(tasks().length, 1);
+  void low;
+});
+
+test('a contact search runs beside the same record’s application', async (t) => {
+  const f = await fixture(t),
+    tasks = f.db.store.workspaces.tasks,
+    execute = tasks.enqueue(f.id, {
+      recordOperation: 'execute',
+      recordId: f.item.id,
+      lockKey: 'submit',
+      request: {manual: true},
+    });
+  tasks.claim(f.id, execute.id, 'apply-worker');
+  await findRecordContacts(f.runtime, f.id, f.item.id);
+  await settle();
+  // The worker started the search while the application holds the record.
+  const search = tasks.list(f.id).find((x) => x.recordOperation === 'contacts');
+  assert.equal(search.state, 'running');
+  assert.equal(f.launches.at(-1).recordOperation, 'contacts');
+  await assert.rejects(findRecordContacts(f.runtime, f.id, f.item.id), /contact task/);
+});
+
+test('find contacts and send messages: the search sends each contact it saved, once', async (t) => {
+  const f = await fixture(t),
+    seed = f.db.begin(f.id, 'run'),
+    item = f.db.record(f.id, seed.id, {
+      key: source + '/send',
+      url: source + '/send',
+      title: 'Backend Engineer',
+      summary: 'Observed facts',
+      assessment: {score: 90, eligibility: 'verified', eligibilityReason: 'Met', summary: 'Fits'},
+    });
+  f.db.finish(f.id, seed.id, 'completed', 'Saved');
+  const a = f.db.get(f.id);
+  f.db.put({...a, criteria: {...a.criteria, auto_contacts: 'find_and_send'}});
+  const tasks = f.db.store.workspaces.tasks;
+  assert.equal(queueAutomaticContacts(f.db, f.id, f.db.get(f.id), tasks.list(f.id)), item.id);
+  const task = tasks.list(f.id).find((x) => x.recordOperation === 'contacts');
+  assert.equal(task.request.send, true);
+  // Runs here without enabling the workspace's scans.
+  tasks.put({...task, request: {...task.request, manual: true}});
+  await f.runtime.tick();
+  await settle();
+  const run = f.launches.at(-1),
+    entry = () => f.db.get(f.id).recordContacts.find((e) => e.recordId === item.id);
+  assert.equal(automationPrompt(run), CONTACT_FIND_SEND_PROMPT);
+  const tools = f.flow(run).tools.map((tool) => tool.name);
+  for (const name of ['save_record_contacts', 'reserve_contact_action', 'record_contact_outcome'])
+    assert.ok(tools.includes(name), name);
+  assert.equal((await f.call(run, 'read_contact_brief')).send, true);
+  // Nothing goes out before a saved contact is reserved.
+  assert.throws(() => contactClick(f.db.run(run.id), 'Connect', false), /reserve_contact_action/);
+  await assert.rejects(
+    f.call(run, 'reserve_contact_action', {contactId: 'someone'}),
+    /save_record_contacts first/,
+  );
+  f.db.browserEvidence.save(run, {id: 'p', url: profile, text: 'Jane Doe · Recruiter · Connect'});
+  const saved = await f.call(run, 'save_record_contacts', {
+    contacts: [
+      {
+        name: 'Jane Doe',
+        relation: 'recruiter',
+        profileUrl: profile,
+        reason: 'Recruiter',
+        notes: notes(note),
+      },
+    ],
+  });
+  const [jane] = saved.contacts;
+  assert.equal(entry().contacts[0].state, 'queued');
+  await assert.rejects(
+    f.call(run, 'finish_automation_run', {status: 'completed', summary: 'Done'}),
+    /Record an outcome/,
+  );
+  const reserved = await f.call(run, 'reserve_contact_action', {contactId: jane.contactId});
+  assert.equal(reserved.text, note);
+  assert.equal(contactClick(f.db.run(run.id), 'Send', true), 'send');
+  contactSendClicked(f.db, f.id, run);
+  assert.throws(() => contactClick(f.db.run(run.id), 'Send', true), /already clicked/);
+  await f.call(run, 'record_contact_outcome', {
+    contactId: jane.contactId,
+    status: 'invited_with_note',
+    evidence: 'Invitation sent to Jane Doe',
+  });
+  await f.finish(run, 'completed');
+  assert.equal(entry().contacts[0].state, 'invited');
+  assert.deepEqual(
+    entry().contacts[0].history.map((h) => [h.as, h.text]),
+    [['invited_with_note', note]],
+  );
+});
+
+test('a stopped find-and-send task hands unsent contacts back as proposals', async (t) => {
+  const f = await fixture(t);
+  await findRecordContacts(f.runtime, f.id, f.item.id);
+  await settle();
+  const run = f.launches.at(-1);
+  // The same task with sending on, as Find contacts and send messages queues it.
+  const current = f.db.run(run.id);
+  f.db.putRun({...current, request: {...current.request, send: true}});
+  const sending = f.db.run(run.id);
+  f.db.browserEvidence.save(sending, {id: 'p', url: profile, text: 'Jane Doe · Recruiter'});
+  await f.call(sending, 'save_record_contacts', {
+    contacts: [
+      {
+        name: 'Jane Doe',
+        relation: 'recruiter',
+        profileUrl: profile,
+        reason: 'R',
+        notes: notes(note),
+      },
+    ],
+  });
+  await f.finish(sending, 'blocked', {
+    blocker: {category: 'needs_login', reason: 'LinkedIn sign-in', userAction: 'Sign in'},
+  });
+  assert.equal(f.entry().contacts[0].state, 'proposed');
 });

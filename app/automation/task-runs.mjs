@@ -227,6 +227,18 @@ export class TaskRuns {
       /^Some\((Blocked|Failed|RequiresUserResubmit)\)$/.test(String(event.state))
     )
       this.undelivered(slot);
+    // The engine pressed Enter again and the provider still did not take the
+    // message. A worker round cannot continue without it, so end the round.
+    if (event.event === 'delivery_failed') {
+      if (slot.run.interactive) this.undelivered(slot);
+      else if (!slot.completionRequested)
+        void this.finish(
+          id,
+          'failed',
+          'The task message did not reach the agent; it stayed in the agent terminal without being submitted.',
+          slot.workerId,
+        ).catch(() => {});
+    }
     if (['eof', 'engine_exit'].includes(event.event) && !slot.completionRequested)
       void this.unreported(slot, 'exit');
   }

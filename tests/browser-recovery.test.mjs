@@ -46,6 +46,45 @@ test('one connection handshake, backoff, disconnect and retry without agent call
   c.disconnected('a');
   assert.equal(c.status('a').ready, true);
 });
+test('a window wait is visible, and Reconnect replaces the window and retries at once', async () => {
+  let count = 0,
+    waiting = false,
+    reject;
+  const c = new BrowserConnections({
+    connect: () => {
+      count++;
+      return new Promise((_, fail) => (reject = fail));
+    },
+    reopen: () => {
+      if (!waiting) return false;
+      waiting = false;
+      reject(Error('The Chrome setup window was closed.'));
+      return true;
+    },
+  });
+  c.prepare('a');
+  await flush();
+  c.windowWait('a', 'irem');
+  assert.equal(c.status('a').windowWait, true);
+  assert.match(c.status('a').message, /AutoJob · Jev.*profile irem/);
+  // Reconnect with no window wait in progress keeps the current attempt.
+  c.prepare('a', {force: true});
+  await flush();
+  assert.equal(count, 1);
+  waiting = true;
+  c.prepare('a', {force: true});
+  await flush();
+  await flush();
+  assert.equal(count, 2);
+  assert.equal(c.status('a').state, 'connecting');
+  assert.equal(c.status('a').windowWait, undefined);
+  // A wait for focus that timed out stays marked for the sidebar.
+  reject(Object.assign(Error('The selected Chrome profile is not ready.'), {windowWait: true}));
+  await flush();
+  assert.equal(c.status('a').state, 'waiting');
+  assert.equal(c.status('a').windowWait, true);
+});
+
 test('a late handshake cannot mark a newly selected Chrome profile ready', async () => {
   let resolve;
   const c = new BrowserConnections({connect: () => new Promise((r) => (resolve = r))});

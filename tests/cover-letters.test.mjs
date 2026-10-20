@@ -19,6 +19,11 @@ import {listDocuments, agentDocument} from '../app/automation/artifacts.mjs';
 import {automationAttention} from '../app/automation/attention.mjs';
 import {automationTaskContext} from '../app/automation/task-context.mjs';
 import {withAgentDefaults} from '../app/agents/settings.mjs';
+import {
+  recordIsWorking,
+  recordNeedsAnswer,
+  recordOperationStatus,
+} from '../src/record-operation-status.js';
 
 const source = 'https://example.test/list',
   settle = () => new Promise((r) => setImmediate(r)),
@@ -144,6 +149,12 @@ test('a required cover letter blocks the application and starts a separate write
   // The Answers page points to the Files page instead of a form.
   const issue = automationAttention(f.db.snapshot(f.id)).find((i) => i.id === questionId);
   assert.equal(issue.coverLetter.state, 'writing');
+  // The table shows the writer at work, not an answer the user owes.
+  const row = f.db.snapshot(f.id).results.find((r) => r.id === f.item.id);
+  assert.equal(recordOperationStatus(row).label, 'Writing cover letter');
+  assert.equal(recordOperationStatus(row).tone, 'running');
+  assert.equal(recordNeedsAnswer(row), false);
+  assert.equal(recordIsWorking(row), true);
 });
 
 test('only an application task can ask for a cover letter and only the writer can save one', async (t) => {
@@ -197,6 +208,10 @@ test('the writer saves a PDF for review and cannot finish without it', async (t)
   assert.equal(question.coverLetter.state, 'review');
   assert.equal(question.coverLetter.text, letter());
   assert.equal(question.answer, null);
+  // A saved letter waits for the user's review.
+  const row = f.db.snapshot(f.id).results.find((r) => r.id === f.item.id);
+  assert.equal(recordOperationStatus(row).label, 'Awaiting answer');
+  assert.equal(recordNeedsAnswer(row), true);
   // The application stays blocked until the user approves.
   assert.equal(f.launches.at(-1).id, writer.id);
 });

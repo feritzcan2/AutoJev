@@ -60,7 +60,6 @@ test('scoring with elimination rules ignores the agent eligibility and needs eve
   const run = {id: 'run', revision: 2};
   const policy = scoringPolicy(a);
   assert.equal(policy.hardRules.length, 3);
-  assert.equal(policy.unstatedConditions, undefined);
   const saved = recordAssessment(db, 'one', run, {
     score: 80,
     eligibility: 'verified',

@@ -138,12 +138,9 @@ export const sourceMethods = {
     }
     const a = this.db.get(id);
     if (a.status !== 'enabled') this.db.enable(id, {sourceUrl: url});
-    else if (a.once)
-      this.db.put({...a, onceSources: [...new Set([...(a.onceSources ?? a.sources), url])]});
     // resetSources cancels the pending task that carries the saved queue.
     if (fresh) this.db.forgetSourceScan(id, url);
     this.resetSources(id, [url]);
-    this.sourceState(id, url, {onceCompleted: false});
     // Scan now is the user's call: it skips the gap after another workspace's
     // round on this site (site-turns.mjs), not a round still open there.
     const state = this.db.get(id).sourceState?.[url] ?? {},
@@ -195,7 +192,6 @@ export const sourceMethods = {
         recovery: null,
         accessRecovery: null,
         nextRunAt,
-        onceCompleted: Boolean(this.db.get(id).once),
         lastStatus: 'interrupted',
         lastResult: summary,
       });

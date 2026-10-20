@@ -172,7 +172,7 @@ test('another source keeps working while retry is deferred; cancellation prevent
   assert.equal(f.launches.length, 1);
   assert.equal(f.db.get(f.id).retryPlan[source], undefined);
 });
-test('paused source retry enables only that source when due and explicit stop cancels scheduled work', async (t) => {
+test('paused source retry turns tracking on when due and explicit stop cancels scheduled work', async (t) => {
   const f = fixture(t),
     r = f.runtime();
   await r.pause(f.id);
@@ -183,7 +183,7 @@ test('paused source retry enables only that source when due and explicit stop ca
   await settle();
   assert.equal(f.launches.length, 1);
   assert.equal(f.launches[0].sourceUrl, source);
-  assert.deepEqual(f.db.get(f.id).onceSources, [source]);
+  assert.equal(f.db.get(f.id).status, 'enabled');
   await r.finish(f.id, 'blocked', 'Still blocked');
   await r.tick();
   r.retryLater(f.id, source);

@@ -26,8 +26,22 @@ const blockerLabels = {
   site_problem: 'Site problem',
   technical: 'Technical error',
 };
+// A cover letter being written is agent work, not an answer the user owes.
+const writingCoverLetter = (record) => record.recordAction?.question?.coverLetter === 'writing';
 export function recordOperationStatus(record) {
   const {task, lastTask, question} = record.recordAction ?? {};
+  if (writingCoverLetter(record)) {
+    const queuedLetter = task?.kind === 'cover_letter' && task.state === 'pending';
+    return {
+      id: queuedLetter ? 'queued' : 'working',
+      label: queuedLetter ? queued.cover_letter : running.cover_letter,
+      tone: queuedLetter ? 'queued' : 'running',
+      detail: queuedLetter
+        ? 'Waiting for an available agent to write the cover letter.'
+        : 'An agent is writing the cover letter for this application.',
+      active: true,
+    };
+  }
   if (question?.verification)
     return {
       id: 'verification',
@@ -119,11 +133,13 @@ export const recordActivityAt = (record) =>
   );
 export const recordIsWorking = (record) =>
   record.status !== 'dismissed' &&
-  !record.recordAction?.question &&
+  (!record.recordAction?.question || writingCoverLetter(record)) &&
   ['running', 'reported'].includes(record.recordAction?.task?.state);
 
 export const recordNeedsAnswer = (record) =>
-  record.status !== 'dismissed' && Boolean(record.recordAction?.question);
+  record.status !== 'dismissed' &&
+  Boolean(record.recordAction?.question) &&
+  !writingCoverLetter(record);
 
 export function activeRecordOperations(snapshot) {
   const counts = new Map(),

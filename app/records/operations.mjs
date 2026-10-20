@@ -6,6 +6,8 @@ import {automationReady} from '../sources/trial.mjs';
 import {workerKey} from '../automation/worker-key.mjs';
 import {boundedText} from '../templates/catalog.mjs';
 import {autoApplyThreshold} from '../scoring/thresholds.mjs';
+import {queueAutomaticContacts} from '../automation/contacts.mjs';
+import {autoContactsMode} from './operation-definitions.mjs';
 
 const live = ['pending', 'running', 'reported', 'paused'];
 const automaticRecordScanInterval = 10_000;
@@ -27,8 +29,11 @@ export function pendingRecordQuestion(a, item) {
       (q.recordId ? q.recordId === item.id : !q.sourceUrl || q.sourceUrl === recordSource(a, item)),
   );
 }
+// The record's own live task. A contact search runs beside it and is not one.
 export function recordTask(db, id, itemId) {
-  return db.store.workspaces.tasks.list(id, {states: live}).find((t) => taskHasRecord(t, itemId));
+  return db.store.workspaces.tasks
+    .list(id, {states: live})
+    .find((t) => t.recordOperation !== 'contacts' && taskHasRecord(t, itemId));
 }
 export function recordOperationError(
   a,
@@ -493,19 +498,21 @@ export async function dispatchRecordOperations(runtime, id, {manualOnly = false}
   const scans = (runtime.automaticRecordScans ??= new Map()),
     scanKey = JSON.stringify([a.revision, a.mode, a.status]),
     lastScan = scans.get(id);
+  const autoApply = a.mode !== 'observe' && !customRecordWorkflow;
   if (
     !manualOnly &&
     a.status === 'enabled' &&
-    a.mode !== 'observe' &&
-    !customRecordWorkflow &&
+    (autoApply || autoContactsMode(a.criteria)) &&
     (lastScan?.key !== scanKey || lastScan.next <= runtime.now())
   ) {
     scans.set(id, {key: scanKey, next: runtime.now() + automaticRecordScanInterval});
     const previous = queue.list(id, {summary: true}),
       activeRecords = new Set(
-        previous.filter((t) => live.includes(t.state)).flatMap(taskRecordIds),
+        previous
+          .filter((t) => live.includes(t.state) && t.recordOperation !== 'contacts')
+          .flatMap(taskRecordIds),
       );
-    for (const item of db.results(id)) {
+    for (const item of autoApply ? db.results(id) : []) {
       // Scheduling needs source permissions, not the UI projection that loads
       // every result and run. Read those settings once with the workspace.
       if (
@@ -533,6 +540,8 @@ export async function dispatchRecordOperations(runtime, id, {manualOnly = false}
       enqueueRecordOperation(runtime, id, item.id, kind, {manual: false});
       activeRecords.add(item.id);
     }
+    // A contact search runs beside the record's application.
+    if (queueAutomaticContacts(db, id, a, previous)) runtime.changed(id);
   }
   const pending = queue
     .list(id, {states: ['pending']})
@@ -582,7 +591,11 @@ export function recordOperationState(
     recordTasks = tasks.filter((t) => taskHasRecord(t, item.id)),
   } = {},
 ) {
-  const task = recordTasks.find((t) => live.includes(t.state)),
+  const liveTasks = recordTasks.filter(
+      (t) => live.includes(t.state) && t.recordOperation !== 'contacts',
+    ),
+    // A letter being written is the record's work, also while its application waits.
+    task = liveTasks.find((t) => t.recordOperation === 'cover_letter') ?? liveTasks[0],
     // A contact task has its own state in the Contacts tab, not on the record.
     last = recordTasks.findLast((t) => t.recordOperation && t.recordOperation !== 'contacts');
   // One action per record: verify an uncertain outcome, otherwise apply
@@ -657,6 +670,7 @@ export function recordOperationState(
           id: question.id,
           text: question.text,
           ...(question.verification ? {verification: true} : {}),
+          ...(question.coverLetter ? {coverLetter: question.coverLetter.state} : {}),
         }
       : null,
     lastTask:

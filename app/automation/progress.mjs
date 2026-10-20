@@ -289,9 +289,9 @@ export function automationProgress(snapshot, {dirty = false} = {}) {
       title: paused ? 'Tracking paused' : ran ? 'This round is complete' : 'Setup complete',
       label: paused ? 'Paused' : ran ? 'Round finished' : 'Ready to run',
       detail: relevant?.summary ?? 'Your criteria and sources are saved.',
-      next: `Regular tracking is off. Each source’s first round is a trial and submits nothing. Run once, or turn on regular tracking at each source’s own scan interval.`,
+      next: `Regular tracking is off. Each source’s first round is a trial and submits nothing. Scan all now, or resume tracking at each source’s own scan interval; both keep tracking on.`,
       primary: action('enable', paused ? 'Resume regular tracking' : 'Start regular tracking'),
-      secondary: [action('run', 'Run once'), action('results', 'View results')],
+      secondary: [action('run', 'Scan all now'), action('results', 'View results')],
     });
   }
   result.steps = [

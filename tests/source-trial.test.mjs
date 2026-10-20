@@ -146,27 +146,31 @@ test('a blocked source trial does not block parallel trials or turn a same-origi
   assert.equal(f.launches.at(-1).sourceUrl, urls[0]);
 });
 
-test('one-off source trial completes without scanning or activating other sources', async (t) => {
+test('a passed source trial starts its first scan right away and tracking stays on', async (t) => {
   const f = fixture(t);
+  f.db.saveSource(f.id, urls[0], {enabled: false});
   await f.runtime.runSource(f.id, urls[1]);
   await settle();
   assert.equal(f.launches[0].kind, 'trial');
   await f.finish(f.launches[0]);
-  await f.runtime.tick();
-  assert.equal(f.db.get(f.id).status, 'paused');
-  assert.equal(f.launches.length, 1);
+  for (let n = 0; n < 2; n++) {
+    await f.runtime.tick();
+    await settle();
+  }
+  assert.equal(f.db.get(f.id).status, 'enabled');
   assert.equal(f.db.sources(f.id)[0].trial, undefined);
-  await f.runtime.runSource(f.id, urls[1]);
-  await settle();
+  assert.equal(f.launches.length, 2);
   assert.equal(f.launches[1].kind, 'run');
+  assert.equal(f.launches[1].sourceUrl, urls[1]);
 });
 
 test('adding a source preserves completed trials and only the new source needs its first trial', async (t) => {
-  const f = fixture(t);
+  const f = fixture(t, {workers: 2});
+  f.db.saveSource(f.id, urls[1], {enabled: false});
   await f.runtime.runSource(f.id, urls[0]);
   await settle();
   await f.finish(f.launches[0]);
-  await f.runtime.tick();
+  await f.runtime.pause(f.id);
   const evidence = f.db.sources(f.id)[0].trial,
     newUrl = 'https://new.test/search';
   f.db.addSource(f.id, {url: newUrl});
@@ -175,8 +179,7 @@ test('adding a source preserves completed trials and only the new source needs i
   assert.equal(f.db.sources(f.id)[2].trial, undefined);
   await f.runtime.runSource(f.id, newUrl);
   await settle();
-  assert.equal(f.launches.at(-1).kind, 'trial');
-  assert.equal(f.launches.at(-1).sourceUrl, newUrl);
+  assert.equal(f.launches.find((run) => run.sourceUrl === newUrl).kind, 'trial');
 });
 
 test('saving a profile during scans retains successful trial evidence and restarts scans without repeating trials', async (t) => {
@@ -257,7 +260,8 @@ test('stopping and restarting a trial preserves its source scope', async (t) => 
   await f.runtime.tick();
   assert.equal(f.db.sources(f.id)[1].scanning, false);
   assert.notEqual(f.db.sources(f.id)[1].trial.status, 'passed');
-  assert.equal(f.db.get(f.id).status, 'paused');
+  // Stopping one source leaves tracking on for the others.
+  assert.equal(f.db.get(f.id).status, 'enabled');
   await f.runtime.runSource(f.id, urls[1]);
   await settle();
   assert.equal(f.launches.at(-1).kind, 'trial');
@@ -265,6 +269,7 @@ test('stopping and restarting a trial preserves its source scope', async (t) => 
 
 test('a trial requires fresh observation and its successful state survives reopening the store', async (t) => {
   const f = fixture(t);
+  f.db.saveSource(f.id, urls[1], {enabled: false});
   await f.runtime.runSource(f.id, urls[0]);
   await settle();
   const run = f.launches[0];

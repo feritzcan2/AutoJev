@@ -341,7 +341,6 @@ export const sourceMethods = {
         sourceState: keep(a.sourceState),
         updatedAt: this.now(),
       };
-      if (a.onceSources) next.onceSources = a.onceSources.filter((url) => urls.includes(url));
       if (a.status === 'enabled' && added.length) next.nextRunAt = this.now();
       if (acceptDraft) delete next.sourceDraft;
       else if (a.sourceDraft) {

@@ -5,7 +5,7 @@ import {TaskRuns} from '../app/automation/task-runs.mjs';
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // An interactive chat run whose input never makes the agent work.
-function fixture() {
+function fixture({interactive = true} = {}) {
   const runs = new Map();
   const runtime = new TaskRuns(
     {
@@ -18,7 +18,7 @@ function fixture() {
           workerId,
           status: 'running',
           state: 'Starting',
-          interactive: true,
+          interactive,
           awaitingMessage: false,
           messageId: 'm1',
         };
@@ -76,4 +76,13 @@ test('a provider prompt in the terminal keeps waiting instead of failing the mes
   await wait(40);
   assert.equal(f.runs.get('run').undelivered, undefined);
   await f.runtime.finish('w', 'interrupted', 'done', 'conversation');
+});
+
+test('a worker round ends when the engine reports its message undelivered', async () => {
+  const f = fixture({interactive: false});
+  await f.runtime.start('w', 'scan');
+  f.event({event: 'delivery_failed', state: 'Some(Stalled)'});
+  await wait(10);
+  assert.equal(f.runs.get('run').status, 'failed');
+  assert.match(f.runs.get('run').summary, /did not reach the agent/);
 });

@@ -32,9 +32,7 @@ export function acquireChromeConnection({signal = undefined, timeout = 30000} = 
     const timer = setTimeout(
       () =>
         fail(
-          Error(
-            'Another Chrome connection is waiting for permission. This profile will connect in turn.',
-          ),
+          Error('Another workspace is still connecting to Chrome. This profile connects after it.'),
         ),
       timeout,
     );

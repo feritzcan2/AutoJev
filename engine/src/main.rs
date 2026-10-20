@@ -6,10 +6,11 @@ mod context_status;
 mod compact;
 mod claude;
 mod startup_cursor;
+mod resubmit;
 use serde_json::{Value, json};
 use std::io::{self, Write};
 use std::path::Path;
-use termloop_agent_runtime::{ObservedSession, spawn_agent_terminal};
+use termloop_agent_runtime::{ObservedSession, spawn_agent_terminal, delivery::GeneratedInputDeliveryState};
 use termloop_launch::{AgentObservationLaunch, AgentObservationLaunchTransport, LaunchRequest, CodexProjectTrust, ConversationHandle, McpConnection, PromptTemplate};
 use termloop_terminal::{TerminalEvent, TerminalService, TerminalGrid, TerminalGridMemory};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -19,13 +20,27 @@ fn emit(value:Value){let mut out=io::stdout().lock();let _=writeln!(out,"{value}
 fn field<'a>(value:&'a Value,key:&str)->Result<&'a str,String>{value[key].as_str().filter(|s|!s.is_empty()).ok_or_else(||format!("Missing {key}"))}
 fn now()->u64{std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64}
 
-struct Engine {profile:bool, provider:String, compact:Option<compact::Delivery>, manual_draft:bool, compact_input_uncertain:bool, terminal:TerminalService, observed:Option<ObservedSession>, id:String, output:Option<tokio::task::JoinHandle<()>>, cursor:startup_cursor::StartupCursor}
+struct Engine {profile:bool, provider:String, compact:Option<compact::Delivery>, manual_draft:bool, compact_input_uncertain:bool, terminal:TerminalService, observed:Option<ObservedSession>, id:String, output:Option<tokio::task::JoinHandle<()>>, cursor:startup_cursor::StartupCursor, resubmit:Option<resubmit::Resubmit>}
 impl Engine {
     fn stop(&mut self)->Result<(),String>{
         if !self.id.is_empty(){self.terminal.terminate(&self.id).map_err(|e|e.to_string())?;}
         if let Some(mut runtime)=self.observed.take(){runtime.close().map_err(|e|e.to_string())?;}
         if let Some(task)=self.output.take(){task.abort();}
-        self.profile=false;self.id.clear();self.compact=None;self.manual_draft=false;self.compact_input_uncertain=false;Ok(())
+        self.profile=false;self.id.clear();self.compact=None;self.resubmit=None;self.manual_draft=false;self.compact_input_uncertain=false;Ok(())
+    }
+    // Presses Enter again for a generated message left in the composer, and
+    // reports it once those presses do not reach the provider.
+    fn resubmit_stuck_delivery(&mut self){
+        let Some(runtime)=self.observed.as_ref() else{return};
+        let delivery=runtime.delivery_state();
+        if !matches!(delivery,Some(GeneratedInputDeliveryState::Stalled|GeneratedInputDeliveryState::Blocked|GeneratedInputDeliveryState::Failed)){self.resubmit=None;return;}
+        let idle=self.compact.is_none()&&!self.manual_draft&&matches!(runtime.observation().map(|o|o.state),Some(termloop_agents::AgentState::Idle|termloop_agents::AgentState::Interrupted));
+        let now=std::time::Instant::now();
+        match self.resubmit.get_or_insert_with(||resubmit::Resubmit::new(now)).step(now,idle){
+            resubmit::Step::Press=>{let written=self.terminal.input_atomic_receipted_if_protocol_settled(&self.id,1,b"\r").is_ok();emit(json!({"event":"delivery","sessionId":self.id,"state":"SubmitRepeated","written":written}));}
+            resubmit::Step::Report=>emit(json!({"event":"delivery_failed","sessionId":self.id,"state":format!("{delivery:?}")})),
+            resubmit::Step::Wait=>{}
+        }
     }
     fn command(&mut self,v:&Value)->Result<Value,String>{
         match field(v,"op")? {
@@ -156,11 +171,11 @@ async fn main(){
     let directory=std::env::args().nth(1).expect("process registry directory required");
     if directory=="hook"{let _=termloop_agent_runtime::hook_forwarder::run_hook_client(hooks::Protocol).await;return;}
     if directory=="context-status"{if let Some(output)=std::env::args().nth(2){let _=context_status::run(Path::new(&output));}return;}
-    let mut engine=Engine{profile:false,provider:String::new(),compact:None,manual_draft:false,compact_input_uncertain:false,terminal:TerminalService::with_process_registry(directory.into()),observed:None,id:String::new(),output:None,cursor:startup_cursor::StartupCursor::new()};
+    let mut engine=Engine{profile:false,provider:String::new(),compact:None,manual_draft:false,compact_input_uncertain:false,terminal:TerminalService::with_process_registry(directory.into()),observed:None,id:String::new(),output:None,cursor:startup_cursor::StartupCursor::new(),resubmit:None};
     let mut lines=BufReader::new(tokio::io::stdin()).lines();let mut tick=tokio::time::interval(std::time::Duration::from_millis(100));let mut previous=String::new();let mut previous_identity=String::new();let mut previous_delivery=String::new();
     loop{tokio::select!{
         line=lines.next_line()=>{let Ok(Some(line))=line else{break};if line.len()>16*1024*1024{continue;}match serde_json::from_str::<Value>(&line){Ok(v)=>{let id=v["id"].clone();if line.len()>262144 && v["op"]!="validate-profile" {emit(json!({"id":id,"error":"Command too large"}));continue;}match tokio::task::block_in_place(||engine.command(&v)){Ok(result)=>emit(json!({"id":id,"result":result})),Err(error)=>emit(json!({"id":id,"error":error}))}},Err(e)=>emit(json!({"event":"error","error":e.to_string()}))}}
-        _=tick.tick()=>{if let Some(runtime)=engine.observed.as_mut(){runtime.poll(now());if let Some(result)=engine.compact.as_ref().and_then(|delivery|delivery.poll(&engine.terminal,&engine.id,&engine.provider,runtime.observation().map(|o|o.state))){engine.compact=None;match result{Ok(())=>emit(json!({"event":"compaction","sessionId":engine.id,"state":"submitted"})),Err(error)=>{engine.manual_draft=true;engine.compact_input_uncertain=true;emit(json!({"event":"compaction","sessionId":engine.id,"state":"failed","error":error}));}}}let delivery=format!("{:?}",runtime.delivery_state());let delivery_key=format!("{}:{delivery}",engine.id);if delivery_key!=previous_delivery{emit(json!({"event":"delivery","sessionId":engine.id,"state":delivery}));previous_delivery=delivery_key;}if let Some(identity)=runtime.native_identity(){let key=format!("{}:{identity}",engine.id);if key!=previous_identity{emit(json!({"event":"identity","sessionId":engine.id,"nativeId":identity}));previous_identity=key;}}let state=format!("{:?}",runtime.observation().map(|o|o.state));let observation_key=format!("{}:{state}",engine.id);if observation_key!=previous{emit(json!({"event":"state","sessionId":engine.id,"state":state}));previous=observation_key;}}}
+        _=tick.tick()=>{if let Some(runtime)=engine.observed.as_mut(){runtime.poll(now());if let Some(result)=engine.compact.as_ref().and_then(|delivery|delivery.poll(&engine.terminal,&engine.id,&engine.provider,runtime.observation().map(|o|o.state))){engine.compact=None;match result{Ok(())=>emit(json!({"event":"compaction","sessionId":engine.id,"state":"submitted"})),Err(error)=>{engine.manual_draft=true;engine.compact_input_uncertain=true;emit(json!({"event":"compaction","sessionId":engine.id,"state":"failed","error":error}));}}}let delivery=format!("{:?}",runtime.delivery_state());let delivery_key=format!("{}:{delivery}",engine.id);if delivery_key!=previous_delivery{emit(json!({"event":"delivery","sessionId":engine.id,"state":delivery}));previous_delivery=delivery_key;}if let Some(identity)=runtime.native_identity(){let key=format!("{}:{identity}",engine.id);if key!=previous_identity{emit(json!({"event":"identity","sessionId":engine.id,"nativeId":identity}));previous_identity=key;}}let state=format!("{:?}",runtime.observation().map(|o|o.state));let observation_key=format!("{}:{state}",engine.id);if observation_key!=previous{emit(json!({"event":"state","sessionId":engine.id,"state":state}));previous=observation_key;}engine.resubmit_stuck_delivery();}}
     }}
     let _=engine.stop();
 }

@@ -124,6 +124,8 @@ export class WebTasks extends TaskRuns {
               );
           }
           for (const a of db.list())
+            if (a.once || a.onceSources) db.put({...a, once: false, onceSources: null});
+          for (const a of db.list())
             if (Object.values(a.sourceState ?? {}).some((s) => s.stopping))
               db.put({
                 ...a,
@@ -507,7 +509,6 @@ export class WebTasks extends TaskRuns {
             a.sourceSettings?.[task.sourceUrl]?.enabled !== false
           ) {
             this.resetSources(a.id, [task.sourceUrl]);
-            this.sourceState(a.id, task.sourceUrl, {onceCompleted: false});
             this.changed(a.id);
           }
         }
@@ -526,12 +527,7 @@ export class WebTasks extends TaskRuns {
           continue;
         const pending = [];
         for (const source of this.db.schedulingSources(a.id, a)) {
-          if (
-            !source.enabled ||
-            source.stopping ||
-            (a.onceSources && !a.onceSources.includes(source.url))
-          )
-            continue;
+          if (!source.enabled || source.stopping) continue;
           if (!canBrowse.has(a.id) && !sourceCollector(a, source.url)) continue;
           // Skip due turns during an existing search instead of queuing a duplicate.
           // A record's run (an application) from this source is not a search.
@@ -556,19 +552,16 @@ export class WebTasks extends TaskRuns {
               siteBlocked: false,
               batchId: null,
               nextRunAt: this.now(),
-              onceCompleted: false,
             });
             Object.assign(source, {
               blocked: false,
               batchId: null,
               nextRunAt: this.now(),
-              onceCompleted: false,
             });
           }
           let batchId = source.batchId;
           if (!batchId) {
-            if (source.blocked || source.nextRunAt > this.now() || (a.once && source.onceCompleted))
-              continue;
+            if (source.blocked || source.nextRunAt > this.now()) continue;
             // Another workspace's round on this site goes first (site-turns.mjs).
             if (siteTurn(this.db, a.id, source.url, this.now())) continue;
             batchId = randomUUID();
@@ -597,7 +590,6 @@ export class WebTasks extends TaskRuns {
               nextRunAt: blocked
                 ? null
                 : this.now() + (trialPassed ? 0 : source.intervalMinutes * 60000),
-              onceCompleted: Boolean(a.once),
             });
           } else if (
             // Two rounds open on one site: the later one waits for the earlier.
@@ -608,37 +600,7 @@ export class WebTasks extends TaskRuns {
             pending.push(...waiting.filter((task) => !task.retryAt || task.retryAt <= this.now()));
         }
         const current = this.db.get(a.id),
-          sources = this.db.schedulingSources(a.id, current),
-          eligible = sources.filter(
-            (s) => s.enabled && (!a.onceSources || a.onceSources.includes(s.url)),
-          );
-        if (
-          a.once &&
-          !this.slots(a.id).some((s) => !isConversation(s.run)) &&
-          !pending.length &&
-          eligible.every(
-            (s) =>
-              !s.siteWait &&
-              (s.blocked || s.onceCompleted || s.termsRequired) &&
-              !(a.questions ?? []).some(
-                (q) =>
-                  !q.conversation &&
-                  q.answer == null &&
-                  !q.recordId &&
-                  (!q.sourceUrl || q.sourceUrl === s.url),
-              ),
-          )
-        ) {
-          this.db.put({
-            ...this.db.get(a.id),
-            once: false,
-            onceSources: null,
-            status: 'paused',
-            nextRunAt: null,
-          });
-          this.changed(a.id);
-          continue;
-        }
+          sources = this.db.schedulingSources(a.id, current);
         const next = sources
           .filter(
             (s) =>
@@ -765,8 +727,6 @@ export class WebTasks extends TaskRuns {
       .filter((s) => s.enabled)
       .map((s) => s.url);
     this.resetSources(id, urls);
-    for (const url of urls) this.sourceState(id, url, {onceCompleted: false});
-    this.db.put({...this.db.get(id), once: true, onceSources: urls});
     await this.tick();
     return this.slots(id)[0]?.run ?? null;
   }
@@ -825,13 +785,7 @@ export class WebTasks extends TaskRuns {
           ),
         );
         for (const source of this.db.sources(id)) this.sourceState(id, source.url, {batchId: null});
-        this.db.put({
-          ...this.db.get(id),
-          batchId: null,
-          once: false,
-          onceSources: null,
-          retryPlan: {},
-        });
+        this.db.put({...this.db.get(id), batchId: null, retryPlan: {}});
         this.changed(id);
         const failed = results.find((result) => result.status === 'rejected');
         if (failed) throw failed.reason;
@@ -871,7 +825,6 @@ export class WebTasks extends TaskRuns {
           CONVERSATION_WORKER,
         );
       this.db.enable(id);
-      if (a.once) this.db.put({...this.db.get(id), once: true, onceSources: a.onceSources});
       if (conversation)
         await this.start(
           id,

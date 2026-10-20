@@ -11,6 +11,8 @@ import {
 } from '../app/templates/profile-sections.mjs';
 import {renderJevProfile} from './jev-profile.js';
 import {profileChanged} from '../app/automation/profile-updates.mjs';
+import {DEFAULT_SCORE_THRESHOLD} from '../app/scoring/thresholds.mjs';
+import {autoContactsMode} from '../app/records/operation-definitions.mjs';
 import {automationProgress, runKindLabel} from '../app/automation/progress.mjs';
 import {prepareAutomationChat} from './automation-chat.js';
 import {workspaceChat} from './workspace-chat.js';
@@ -672,6 +674,35 @@ export function automationsPage(
       choice.append(input, copy);
       authorization.append(choice);
     }
+    // criteria.auto_contacts: two options, at most one on. Either works with
+    // both choices above and shares the minimum score.
+    for (const [value, title, description] of [
+      [
+        'find',
+        'Find contacts automatically',
+        'Searches LinkedIn for up to two people to write to about each new listing that reaches the minimum score. You still approve every message.',
+      ],
+      [
+        'find_and_send',
+        'Find contacts and send messages',
+        'The same search, and the agent sends each person an invitation with the direct note as soon as it finds them, without your review. At most 20 a day.',
+      ],
+    ]) {
+      const choice = el('label', null, 'choice'),
+        input = el('input'),
+        copy = el('span');
+      input.type = 'checkbox';
+      input.name = 'auto-contacts';
+      input.value = value;
+      input.addEventListener('change', () => {
+        if (input.checked)
+          for (const other of authorization.querySelectorAll('[name=auto-contacts]'))
+            if (other !== input) other.checked = false;
+      });
+      copy.append(el('b', title), el('small', description));
+      choice.append(input, copy);
+      authorization.append(choice);
+    }
     // fillForm renders the fields for automatic actions here.
     authorization.append(el('div', null, 'authorization-score'));
     authorization.addEventListener('change', syncApplyScore);
@@ -972,9 +1003,11 @@ export function automationsPage(
     chrome.dataset.state = connection.state ?? 'idle';
     chrome.querySelector('b').textContent = connection.ready
       ? 'Chrome connected'
-      : connection.state === 'connecting'
-        ? 'Connecting to Chrome…'
-        : 'Chrome connection';
+      : connection.windowWait
+        ? 'Waiting for the Chrome window'
+        : connection.state === 'connecting'
+          ? 'Connecting to Chrome…'
+          : 'Chrome connection';
     chrome.querySelector('small').textContent = connection.ready
       ? (a.chromeProfile?.name ?? 'Selected Chrome session')
       : (connection.message ??
@@ -984,11 +1017,12 @@ export function automationsPage(
     chrome.querySelector('.chrome-tip').hidden =
       connection.ready ||
       connection.state === 'connecting' ||
+      connection.windowWait ||
       !connection.message ||
       connection.message.includes('chrome://inspect');
     chrome.querySelector('.chrome-reconnect').hidden = Boolean(connection.ready);
     chrome.querySelector('.chrome-reconnect').disabled =
-      locked || connection.state === 'connecting';
+      locked || (connection.state === 'connecting' && !connection.windowWait);
     chrome.querySelector('.chrome-profile-change').disabled = locked;
     const jev = document.querySelector('.jev-status'),
       issue = data.jevIssue;
@@ -1167,13 +1201,22 @@ export function automationsPage(
           field.id,
           field.id === 'save_score_threshold'
             ? (data.automation.criteria.save_score_threshold ?? '')
-            : (f['criteria-' + field.id]?.value ?? ''),
+            : field.id === 'auto_contacts'
+              ? autoContactsValue()
+              : (f['criteria-' + field.id]?.value ?? ''),
         ]),
       ),
       instructions: f.instructions.value,
       facts: f.facts.value,
       mode: f.mode.value,
     };
+  }
+  // The checked option; with none checked a saved non-option value (such as
+  // 'false') stays, so an untouched form is not an unsaved change.
+  function autoContactsValue() {
+    const saved = data.automation.criteria.auto_contacts ?? '',
+      value = find('#automation-plan-form').querySelector('[name=auto-contacts]:checked')?.value;
+    return value ?? (autoContactsMode({auto_contacts: saved}) ? '' : saved);
   }
   function profileNeedsSave() {
     const a = data.automation;
@@ -1230,28 +1273,32 @@ export function automationsPage(
           openConversation();
         }),
       );
-    const score = f['criteria-score_threshold']?.closest('label'),
-      unstated = f['criteria-unstated_conditions'];
-    if (score) score.firstChild.textContent = 'Minimum score to apply';
-    if (unstated)
-      // An empty value is the default: wait until the condition is checked.
-      for (const option of [...unstated.options])
-        if (option.value === 'Do not apply until checked' && unstated.value !== option.value)
-          option.remove();
-        else if (option.value === '') option.textContent = 'Do not apply until checked (default)';
+    const contactsMode = {find: 'find', send: 'find_and_send'}[autoContactsMode(a.criteria)];
+    for (const input of form.querySelectorAll('[name=auto-contacts]'))
+      input.checked = input.value === contactsMode;
     syncApplyScore();
     formBaseline = readForm();
   }
-  // Find and apply only runs with an explicit minimum score.
-  function syncApplyScore() {
+  // Find and apply only runs with an explicit minimum score; automatic contact
+  // search uses the same score. Turning either on fills in the default.
+  function syncApplyScore(event) {
     const form = find('#automation-plan-form'),
       input = form?.elements['criteria-score_threshold'],
       slot = form?.querySelector('.authorization-score');
     if (!input || !slot) return;
-    const auto = form.elements.mode.value === 'auto';
+    const auto = form.elements.mode.value === 'auto',
+      contacts = Boolean(form.querySelector('[name=auto-contacts]:checked'));
     Object.assign(input, {required: auto, min: '1', max: '100', step: '1'});
-    input.placeholder = '1–100, required for Find and apply';
-    slot.hidden = !auto;
+    input.placeholder = `1–100, default ${DEFAULT_SCORE_THRESHOLD}`;
+    input.closest('label').firstChild.textContent =
+      auto && contacts
+        ? 'Minimum score to apply and find contacts'
+        : contacts
+          ? 'Minimum score to find contacts'
+          : 'Minimum score to apply';
+    slot.hidden = !auto && !contacts;
+    if (event && event.target !== input && !slot.hidden && !input.value)
+      input.value = String(DEFAULT_SCORE_THRESHOLD);
   }
   function renderControls() {
     if (!data || !find('#automation-controls')) return;
@@ -1271,7 +1318,7 @@ export function automationsPage(
       !a.sources.length || hasUnsaved(),
     );
     action(
-      'Run once',
+      'Scan all now',
       () => performAction('run'),
       'automation-run',
       hasUnsaved() || !automationReady(a),

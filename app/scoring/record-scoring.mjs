@@ -74,7 +74,7 @@ export const resultScoreFields = {
 export const recordScoreTool = {
   name: 'record_automation_score',
   description:
-    'Save the assigned record score: a 0–100 integer per current criteria.ranking; itemId defaults to the assigned record. Notes are optional; no quote or snapshot is needed. When scoringPolicy.hardRules is listed, answer every rule in rules (pass/fail/unknown) and the app sets eligibility; otherwise save eligibility and a short eligibilityReason, following scoringPolicy.unstatedConditions for conditions the record never mentions. Inaccessible record: status=unavailable, score=null. Keeps status, proposal and evidence. Finish the scoring task after saving.',
+    'Save the assigned record score: a 0–100 integer per current criteria.ranking; itemId defaults to the assigned record. Notes are optional; no quote or snapshot is needed. When scoringPolicy.hardRules is listed, answer every rule in rules (pass/fail/unknown) and the app sets eligibility; otherwise save eligibility and a short eligibilityReason; a condition the record never mentions stays unverified. Inaccessible record: status=unavailable, score=null. Keeps status, proposal and evidence. Finish the scoring task after saving.',
   inputSchema: {...assessmentSchema, properties: {itemId: text, ...assessmentSchema.properties}},
 };
 

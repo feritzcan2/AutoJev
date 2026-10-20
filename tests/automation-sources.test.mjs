@@ -185,6 +185,7 @@ test('a completed source trial closes its tabs and those left by earlier turns o
     {db, id, runtime, launches} = fixture(t, {
       onRunFinished: (owner, run, options) => calls.push(options),
     });
+  for (const url of urls.slice(1)) db.saveSource(id, url, {enabled: false});
   await runtime.relearnSource(id, urls[0]);
   await runtime.runSource(id, urls[0]);
   await settle();
@@ -337,20 +338,18 @@ test('record preparation does not appear as an active source scan', async (t) =>
 });
 
 for (const spareWorker of [false, true])
-  test(`retrying a blocked source while a paused workspace processes a record (spare worker: ${spareWorker})`, async (t) => {
+  test(`retrying a blocked source while a record runs (spare worker: ${spareWorker})`, async (t) => {
     const {store, db, id, runtime, launches, finish} = fixture(t);
     db.save(id, {mode: 'observe'});
-    await runtime.runSource(id, urls[1]);
-    await settle();
-    const seed = launches.at(-1),
+    for (const url of urls.slice(1)) db.saveSource(id, url, {enabled: false});
+    const seed = db.begin(id, 'run'),
       item = db.record(id, seed.id, {
         url: 'https://fast.test/home',
         title: 'Home',
         summary: 'Observed',
         assessment: {score: 70},
       });
-    await finish(seed);
-    await runtime.tick();
+    db.finish(id, seed.id, 'completed', 'Seeded');
     await runtime.runSource(id, urls[0]);
     await settle();
     const failed = launches.at(-1);
@@ -362,13 +361,13 @@ for (const spareWorker of [false, true])
     db.putRun({...db.run(failed.id), scan});
     await finish(failed, 'blocked');
     await runtime.tick();
-    assert.equal(db.get(id).status, 'paused');
+    // A blocked source leaves regular tracking on for the others.
+    assert.equal(db.get(id).status, 'enabled');
     assert.equal(db.sources(id)[0].blocked, true);
     await runtime.runRecord(id, item.id, 'prepare');
     await settle();
     const recordRun = launches.at(-1);
     assert.equal(recordRun.recordId, item.id);
-    assert.equal(db.get(id).status, 'paused');
     if (spareWorker) store.workspaces.workers.add(id);
     const otherStates = urls.slice(1).map((url) => db.get(id).sourceState[url]);
     assert.throws(() => db.enable(id), /Stop the running automation first/);
@@ -377,8 +376,6 @@ for (const spareWorker of [false, true])
     assert.equal(db.run(recordRun.id).status, 'running');
     assert.equal(runtime.slot(id, recordRun.id).finishing, false);
     assert.equal(db.get(id).status, 'enabled');
-    assert.equal(db.get(id).once, true);
-    assert.deepEqual(db.get(id).onceSources, [urls[0]]);
     assert.deepEqual(
       urls.slice(1).map((url) => db.get(id).sourceState[url]),
       otherStates,
@@ -401,7 +398,7 @@ for (const spareWorker of [false, true])
     await assert.rejects(runtime.runSource(id, urls[0]), /source is already running/);
     await finish(resumed);
     await runtime.tick();
-    assert.equal(db.get(id).status, 'paused');
+    assert.equal(db.get(id).status, 'enabled');
   });
 
 test('source retry still requires reviewed setup and an enabled source', async (t) => {
@@ -417,7 +414,7 @@ test('source retry still requires reviewed setup and an enabled source', async (
   assert.equal(launches.length, 0);
 });
 
-test('one-off scans finish every independent source without scheduling repeats', async (t) => {
+test('scan all now runs every source once and keeps tracking on at their intervals', async (t) => {
   const {db, id, runtime, launches, finish, advance} = fixture(t);
   await runtime.runOnce(id);
   await settle();
@@ -428,7 +425,7 @@ test('one-off scans finish every independent source without scheduling repeats',
     await finish(launches[n]);
   }
   await runtime.tick();
-  assert.equal(db.get(id).status, 'paused');
+  assert.equal(db.get(id).status, 'enabled');
   assert.equal(launches.length, 3);
   advance(100);
   await runtime.tick();
@@ -439,7 +436,7 @@ test('one-off scans finish every independent source without scheduling repeats',
   assert.equal(launches[3].sourceUrl, urls[1]);
   await finish(launches[3]);
   await runtime.tick();
-  assert.equal(db.get(id).status, 'paused');
+  assert.equal(db.get(id).status, 'enabled');
 });
 
 test('source scope reaches the agent and the action permission comes only from the profile', async (t) => {
@@ -529,6 +526,7 @@ test('source blocking is visible without claiming the whole schedule stopped or 
 
 test('starting a source over drops its saved results page and queue but keeps other sources', async (t) => {
   const {db, id, runtime, launches, finish} = fixture(t);
+  for (const url of urls.slice(1)) db.saveSource(id, url, {enabled: false});
   await runtime.runSource(id, urls[0]);
   await settle();
   const first = launches.at(-1);

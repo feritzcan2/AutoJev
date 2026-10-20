@@ -194,7 +194,7 @@ test('one agent processes every page without a timer or browser step cap, includ
   });
   await runtime.finish(id);
   await runtime.tick();
-  assert.equal(db.get(id).status, 'paused');
+  assert.equal(db.get(id).status, 'enabled');
   assert.equal(db.sources(id)[0].scan.complete, true);
   await runtime.runSource(id, source);
   await settle();
