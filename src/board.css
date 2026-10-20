@@ -93,8 +93,9 @@
 .pipeline-bar [data-key='waiting'] {
   background: var(--warning);
 }
-.pipeline-bar [data-key='found'] {
-  background: var(--border-strong);
+.pipeline-bar [data-key='found'],
+.pipeline-legend [data-key='found']::before {
+  background: color-mix(in srgb, var(--text) 42%, var(--bg-raised));
 }
 .pipeline-bar span + span {
   border-left: 2px solid var(--bg-raised);

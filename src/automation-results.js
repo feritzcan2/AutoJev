@@ -293,8 +293,13 @@ export function automationResultsTable(
   };
   search.type = 'search';
   search.id = 'automation-result-search';
-  search.placeholder = 'Search results…';
-  search.setAttribute('aria-label', 'Search results');
+  search.placeholder = 'Search applications';
+  search.setAttribute('aria-label', 'Search applications');
+  // The search field carries its icon on the left.
+  const searchBox = el('label', null, 'record-search');
+  searchBox.innerHTML =
+    '<svg class="record-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>';
+  searchBox.append(search);
   filter.id = 'automation-result-filter';
   filter.setAttribute('role', 'group');
   filter.setAttribute('aria-label', 'Filter records');
@@ -334,7 +339,43 @@ export function automationResultsTable(
   scoreMinimum.placeholder = 'All';
   scoreMinimum.setAttribute('aria-label', 'Score limit');
   scoreFilter.append(el('span', 'Score'), scoreComparison, scoreMinimum);
-  toolbar.append(search, scoreFilter, pageSizeSelect);
+  // Filters: a short dropdown under one button, holding the score rule and
+  // (added by the workspace page) the minimum save score.
+  const filterMenu = el('div', null, 'record-filter-menu'),
+    filterButton = el('button', null, 'record-filter-button');
+  filterButton.type = 'button';
+  filterButton.id = 'automation-result-filters';
+  filterButton.innerHTML =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16l-6.2 7.4V19l-3.6-1.8v-4.8Z"/></svg><span>Filter</span><i class="record-filter-dot" hidden></i>';
+  filterButton.setAttribute('aria-haspopup', 'dialog');
+  filterButton.setAttribute('aria-controls', 'automation-result-filter-menu');
+  filterMenu.id = 'automation-result-filter-menu';
+  filterMenu.popover = 'auto';
+  filterMenu.setAttribute('role', 'dialog');
+  filterMenu.setAttribute('aria-label', 'Filters');
+  filterButton.popoverTargetElement = filterMenu;
+  filterMenu.ontoggle = () => {
+    const open = filterMenu.matches(':popover-open');
+    filterButton.setAttribute('aria-expanded', String(open));
+    if (!open) return;
+    const r = filterButton.getBoundingClientRect();
+    filterMenu.style.top = r.bottom + 6 + 'px';
+    filterMenu.style.left =
+      Math.max(8, Math.min(r.left, innerWidth - filterMenu.offsetWidth - 8)) + 'px';
+  };
+  const scoreRule = el('div', null, 'record-filter-section');
+  scoreRule.append(el('h3', 'Scoring rule'), scoreFilter);
+  filterMenu.append(scoreRule);
+  const syncFilterDot = () => {
+    const active =
+      scoreMinimum.value.trim() !== '' ||
+      Boolean(filterMenu.querySelector('#automation-save-score-minimum')?.value.trim());
+    filterButton.querySelector('.record-filter-dot').hidden = !active;
+    filterButton.title = active ? 'Filters (some are on)' : 'Filters';
+  };
+  filterMenu.addEventListener('input', syncFilterDot);
+  filterMenu.addEventListener('change', syncFilterDot);
+  toolbar.append(searchBox, filterButton, pageSizeSelect, filterMenu);
   root.previousElementSibling.append(toolbar);
   // Details open in a side panel so the table keeps its layout.
   const drawer = el('aside', null, 'record-drawer'),
@@ -761,6 +802,10 @@ export function automationResultsTable(
         data.automation.table?.columns?.some((column) => column.key === 'score'),
     );
     scoreFilter.hidden = !hasScore;
+    scoreRule.hidden = !hasScore;
+    filterButton.hidden = !hasScore && !filterMenu.querySelector('.automation-save-score-settings');
+    pageSizeSelect.hidden = data.results.length <= 10;
+    syncFilterDot();
     const threshold =
       hasScore && Number.isFinite(scoreMinimum.valueAsNumber) ? scoreMinimum.valueAsNumber : null;
     const matchesScore = (result) => {
@@ -959,6 +1004,7 @@ export function automationResultsTable(
       ...shown,
       {key: 'updatedAt', label: 'Activity'},
       {key: 'status', label: 'Status'},
+      {key: 'actions', label: 'Actions'},
     ];
     const tableKey = JSON.stringify([data.automation.id, tableColumns]),
       previousTable = mounted && renderKeys.get(mounted.table) !== tableKey ? mounted : null;
@@ -1012,6 +1058,10 @@ export function automationResultsTable(
           selectPage.disabled ||= !visibleEligible.length;
           selectPage.dataset.recordsSelectPage = '';
           th.replaceChildren(selectPage);
+        } else if (key === 'actions') {
+          th.replaceChildren(el('span', '', 'sr-only'));
+          th.setAttribute('aria-label', 'Actions');
+          th.dataset.column = 'actions';
         } else {
           const active = sort === key;
           th.setAttribute(
@@ -1127,6 +1177,8 @@ export function automationResultsTable(
       const row = el('tr'),
         state = el('td'),
         updated = el('td'),
+        // Next steps, tab, contacts and the ⋯ menu have their own column.
+        actionsCell = el('td', null, 'record-actions-cell'),
         actionsPanel = keepMenu ? openMenu : el('div', null, 'record-row-actions'),
         actions = el('div', null, 'table-actions'),
         actionsToggle = keepMenu
@@ -1455,7 +1507,10 @@ export function automationResultsTable(
       const placeTab = () => {
         if (problem) return problemActions.prepend(goToTab);
         actions.insertBefore(goToTab, open);
-        state.insertBefore(quickTab, actionsToggle.parentNode === state ? actionsToggle : null);
+        actionsCell.insertBefore(
+          quickTab,
+          actionsToggle.parentNode === actionsCell ? actionsToggle : null,
+        );
       };
       const tab = {
         result,
@@ -1530,7 +1585,7 @@ export function automationResultsTable(
         // agent still answers every question truthfully. A plain retry would
         // stop on the same requirement, so this card offers only this button.
         const notEligible = problem?.category === 'not_eligible' && op.kind === 'execute';
-        if (!notEligible) (problem ? problemActions : state).append(retry);
+        if (!notEligible) (problem ? problemActions : actionsCell).append(retry);
         if (notEligible) {
           const anyway = button(
             requesting ? 'Queueing…' : 'Apply anyway',
@@ -1694,8 +1749,8 @@ export function automationResultsTable(
         why.setAttribute('aria-controls', drawer.id);
         problemActions.append(why);
       }
-      if (contactsRow) state.append(contactsRow);
-      if (next.childElementCount) state.append(next);
+      if (next.childElementCount) actionsCell.append(next);
+      if (contactsRow) actionsCell.append(contactsRow);
       // The record's latest cover letter: an approved one opens its PDF, one
       // being written or waiting for review opens the Files page.
       const letter = (data.automation.questions ?? []).findLast(
@@ -1715,15 +1770,25 @@ export function automationResultsTable(
         cover.title = approved
           ? 'Open the cover letter sent with this application'
           : 'Review the cover letter on the Files page';
-        state.append(cover);
+        actionsCell.append(cover);
       }
-      if (!keepMenu) state.append(actionsToggle);
-      row.append(updated, state);
+      if (!keepMenu) actionsCell.append(actionsToggle);
+      actionsCell.dataset.column = 'actions';
+      row.append(updated, state, actionsCell);
+      // Tapping anywhere on the application opens its details; controls inside keep their own action.
+      row.onclick = (event) => {
+        if (
+          event.target.closest('button, a, input, select, textarea, label, [popover], summary') ||
+          getSelection()?.toString()
+        )
+          return;
+        toggleDetail(result.id);
+      };
       place(row);
       if (keepMenu) {
         // Keep the connected native popover in the top layer while rebuilding the table.
-        state.moveBefore(actionsToggle, null);
-        state.moveBefore(actionsPanel, null);
+        actionsCell.moveBefore(actionsToggle, null);
+        actionsCell.moveBefore(actionsPanel, null);
         actionsPanel.querySelector('.table-actions').replaceWith(actions);
         if (focusedAction) {
           const control = [...actions.children].find(
@@ -1735,7 +1800,7 @@ export function automationResultsTable(
       } else {
         actionsPanel.append(actions);
         if (!problem) actionsPanel.append(tabChoices, tabFeedback);
-        state.append(actionsPanel);
+        actionsCell.append(actionsPanel);
       }
       rows.set(result.id, {key: rowKeys.get(result.id), row, tab});
     }

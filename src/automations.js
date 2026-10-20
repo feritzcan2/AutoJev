@@ -288,7 +288,13 @@ export function automationsPage(
   filesNav.append(letterBadge);
   // Pages with something waiting on the user rise to the top of the sidebar and
   // glow; once handled they return to their place (Answers and Attention needed
-  // below the Tracking table, Files below Background work).
+  // below Trackings, Files below Background work).
+  // Answers and Attention needed only show in the sidebar while something is waiting there
+  // (or while that page is open).
+  function syncOptionalNav() {
+    for (const node of [answersNav, attentionNav])
+      node.hidden = !node.hasAttribute('data-pending') && !node.classList.contains('selected');
+  }
   function pinPending(questions, issues, letters = 0) {
     const nav = boardNav.parentElement,
       items = [
@@ -298,6 +304,7 @@ export function automationsPage(
       ],
       pinned = items.filter(([, on]) => on).map(([node]) => node);
     for (const [node, on] of items) node.toggleAttribute('data-pending', on);
+    syncOptionalNav();
     letterBadge.hidden = !letters;
     letterBadge.textContent = letters ? String(letters) : '';
     filesNav.title = letters ? `${letters} cover letter${letters > 1 ? 's' : ''} to review` : '';
@@ -472,7 +479,7 @@ export function automationsPage(
     host.innerHTML = `<div id="automation-controls" class="actions"></div><p id="automation-runtime-note" class="automation-runtime-note" role="status"></p>
 <div class="automation-setup-grid"><section class="automation-conversation"><div class="automation-section-head"><h2>Set up with the assistant</h2><p>Describe what you need, answer the questions or write the change you want.</p></div><div id="automation-messages" class="automation-messages" role="log" aria-label="Setup conversation"></div><form id="automation-chat"><label for="automation-message">Your message</label><textarea id="automation-message" placeholder="For example: I am looking for a two-room flat in Berlin up to 1,500 euros…" maxlength="12000" required></textarea><div class="actions"><button id="automation-send" data-idle type="submit" class="primary">Send</button><button id="automation-add-document" data-idle type="button" class="quiet">Add document</button></div><small>A change conversation pauses regular runs. New details appear in the workspace profile.</small></form></section>
 <section class="automation-plan"><div class="automation-section-head"><h2>Setup card</h2><p>Review and edit what the assistant prepared. You choose the permission here.</p></div><form id="automation-plan-form"><label>Name<input name="title" required maxlength="150"></label><label>Goal<textarea name="goal" required maxlength="6000"></textarea></label><label>Workflow<textarea name="instructions" maxlength="12000"></textarea></label><details><summary>Personal details and documents</summary><label>Details this automation may use<textarea name="facts" maxlength="12000" placeholder="Only the details needed for this work. Do not share passwords here."></textarea></label><div id="automation-documents"></div><div id="automation-jev-profile" class="jev-profile"></div></details><label>Action permission<select name="mode"><option value="observe">Only find</option><option value="auto">Find and apply</option></select></label><div class="automation-plan-footer"><small id="automation-save-state" role="status"></small><button data-idle type="submit" class="primary">Save setup</button></div></form></section></div>
-<section class="automation-results-section"><div class="automation-heading"><div><h2>Results</h2></div><button id="automation-export" type="button" class="quiet">Export results</button></div><div id="automation-results"></div></section>
+<section class="automation-results-section"><div class="automation-heading"><div><h2>Results</h2></div><button id="automation-export" type="button" class="quiet icon-button" title="Export applications" aria-label="Export applications"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg></button></div><div id="automation-results"></div></section>
 <section class="automation-history-section"><div class="automation-section-head"><h2>Run history</h2><p>The outcome of each round and, when needed, the agent screen.</p></div><div id="automation-runs"></div></section><div class="automation-bottom-actions"><button id="automation-delete" type="button" class="quiet danger">Delete automation</button></div>`;
     const $ = (id) => find('#' + id),
       form = $('automation-plan-form');
@@ -495,7 +502,9 @@ export function automationsPage(
         return saved;
       },
     });
-    $('automation-results').before(saveScoreSettings.element);
+    // Minimum save score sits in the Filter dropdown; export goes to the far right of the toolbar.
+    find('#automation-result-filter-menu').append(saveScoreSettings.element);
+    find('.automation-results-toolbar')?.append($('automation-export'));
     const chatFeedback = el('p', null, 'automation-chat-feedback');
     chatFeedback.id = 'automation-chat-feedback';
     chatFeedback.setAttribute('role', 'status');
@@ -812,6 +821,14 @@ export function automationsPage(
       b.classList.toggle('selected', b.dataset.view === page);
     for (const section of host.querySelectorAll('[data-automation-pane]'))
       section.hidden = section.dataset.automationPane !== page;
+    syncOptionalNav();
+    syncHeading();
+  }
+  // Trackings shows "Applications" as its page title; other pages keep the workspace name.
+  function syncHeading() {
+    const title = data?.automation?.title;
+    if (!title) return;
+    document.querySelector('#heading').textContent = pane === 'board' ? 'Applications' : title;
   }
   function renderShell() {
     if (!selected || !data) return;
@@ -821,7 +838,7 @@ export function automationsPage(
       active = Boolean(data.activeRun) || a.status === 'enabled',
       ready = automationReady(a);
     setupSettings.update(selected, data);
-    document.querySelector('#heading').textContent = a.title;
+    syncHeading();
     const workspaces = document.querySelector('#candidates'),
       value = a.id;
     if (![...workspaces.options].some((o) => o.value === value))
@@ -897,10 +914,7 @@ export function automationsPage(
       }),
     );
     boardNav.title = workSummary.join(' · ');
-    boardNav.setAttribute(
-      'aria-label',
-      ['Tracking table', boardNav.title].filter(Boolean).join(' · '),
-    );
+    boardNav.setAttribute('aria-label', ['Trackings', boardNav.title].filter(Boolean).join(' · '));
     attentionBadge.hidden = !agentHelpCount;
     attentionBadge.textContent = agentHelpCount ? String(agentHelpCount) : '';
     attentionEmpty.hidden = agentHelpCount > 0;
@@ -965,7 +979,7 @@ export function automationsPage(
       );
     }
     document.querySelector('[data-view=profile] span').textContent = 'Workspace profile';
-    document.querySelector('[data-view=board] span').textContent = 'Tracking table';
+    document.querySelector('[data-view=board] span').textContent = 'Trackings';
     const chrome = document.querySelector('.chrome-status'),
       connection = data.browserStatus ?? {};
     chrome.hidden = false;
@@ -1127,7 +1141,7 @@ export function automationsPage(
     pinPending(0, 0);
     attentionNav.title = '';
     attentionNav.setAttribute('aria-label', 'Attention needed');
-    document.querySelector('[data-view=board]').setAttribute('aria-label', 'Tracking table');
+    document.querySelector('[data-view=board]').setAttribute('aria-label', 'Trackings');
     const sourceStatus = document.querySelector('#sources-nav-status');
     if (sourceStatus) sourceStatus.hidden = true;
     const sourcesNav = document.querySelector('[data-view=sources]');
@@ -1152,7 +1166,7 @@ export function automationsPage(
     onSnapshot(null);
     document.body.classList.remove('automation-workspace');
     document.querySelector('[data-view=profile] span').textContent = 'Workspace profile';
-    document.querySelector('[data-view=board] span').textContent = 'Tracking table';
+    document.querySelector('[data-view=board] span').textContent = 'Trackings';
   }
   function readForm() {
     const f = find('#automation-plan-form').elements,
@@ -1694,7 +1708,7 @@ export function automationsPage(
   async function show() {
     host.hidden = false;
     questionBadge.hidden = true;
-    document.querySelector('[data-view=board]').setAttribute('aria-label', 'Tracking table');
+    document.querySelector('[data-view=board]').setAttribute('aria-label', 'Trackings');
     resultsTable?.dispose();
     agentNavLabel(false);
     chatPanel?.dispose();

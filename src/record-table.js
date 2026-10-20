@@ -58,7 +58,7 @@ export function recordTable(
     wrap.tabIndex = overflow ? 0 : -1;
     wrap.setAttribute(
       'aria-label',
-      'Tracking table' + (overflow ? ' · scroll horizontally for more columns' : ''),
+      'Applications' + (overflow ? ' · scroll horizontally for more columns' : ''),
     );
     element.dataset.left = String(overflow && at > 2);
     element.dataset.right = String(overflow && at < max - 2);

@@ -2698,3 +2698,167 @@ button.contacts-pill:hover {
 .contacts-chat-empty p {
   margin: 0;
 }
+
+/* Trackings toolbar: search with icon, Filter dropdown, page size, export icon on the far right. */
+.automation-results-toolbar .record-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0;
+}
+.automation-results-toolbar .record-search-icon {
+  position: absolute;
+  left: 11px;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+.automation-results-toolbar .record-search input {
+  width: 280px;
+  padding-left: 34px;
+}
+.automation-results-toolbar .record-filter-button,
+.automation-results-toolbar .icon-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.automation-results-toolbar .icon-button {
+  width: 34px;
+  justify-content: center;
+  padding: 0;
+}
+.automation-results-toolbar .record-filter-button:hover,
+.automation-results-toolbar .icon-button:hover,
+.automation-results-toolbar .record-filter-button[aria-expanded='true'] {
+  background: var(--bg-hover);
+}
+.automation-results-toolbar .record-filter-button[hidden],
+.automation-results-toolbar select[hidden] {
+  display: none;
+}
+.automation-results-toolbar .record-filter-button svg,
+.automation-results-toolbar .icon-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.record-filter-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--accent-strong);
+}
+.record-filter-dot[hidden] {
+  display: none;
+}
+.record-filter-menu:popover-open {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: 320px;
+  max-width: calc(100vw - 16px);
+  display: grid;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-raised);
+  color: var(--text);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--text) 16%, transparent);
+}
+.record-filter-section {
+  display: grid;
+  gap: 8px;
+}
+.record-filter-section[hidden] {
+  display: none;
+}
+.record-filter-section h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.record-filter-menu .record-score-filter input {
+  width: 90px;
+}
+.record-filter-menu .record-score-filter select {
+  width: 62px;
+}
+.record-filter-menu .automation-save-score-settings {
+  margin: 0;
+  padding: 14px 0 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  gap: 8px 10px;
+}
+.record-filter-menu .automation-save-score-settings input {
+  width: 120px;
+}
+.record-filter-menu .automation-save-score-settings > small {
+  flex-basis: 100%;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+/* Rows open their details on tap; row actions live in their own column on the right. */
+.automation-results-table tbody tr {
+  cursor: pointer;
+}
+.automation-results-table [data-column='status'] {
+  padding-right: 12px;
+}
+.automation-results-table [data-column='actions'] {
+  width: 1%;
+  min-width: 120px;
+  text-align: right;
+  white-space: nowrap;
+}
+.automation-results-table td[data-column='actions'] > * {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 0 6px;
+  vertical-align: middle;
+}
+.automation-results-table td[data-column='actions'] > [popover] {
+  margin: 0;
+}
+.automation-results-table td[data-column='actions'] > [popover]:not(:popover-open) {
+  display: none;
+}
+.automation-results-table td[data-column='actions'] .record-next-action,
+.automation-results-table td[data-column='actions'] .record-contacts-action {
+  margin-top: 0;
+}
+.automation-results-table td[data-column='actions'] .record-row-menu {
+  position: static;
+}
+
+aside nav button[hidden] {
+  display: none !important;
+}

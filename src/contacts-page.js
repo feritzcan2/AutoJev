@@ -690,7 +690,7 @@ export function contactsPage(root, api, {refresh}) {
           'p',
           all.length
             ? 'Choose another filter on the left.'
-            : 'Choose Find contacts on a listing in the Tracking table. The agent looks for up to two people on LinkedIn and drafts two notes for each.',
+            : 'Choose Find contacts on a listing in Trackings. The agent looks for up to two people on LinkedIn and drafts two notes for each.',
         ),
       );
       pane.replaceChildren(empty);
