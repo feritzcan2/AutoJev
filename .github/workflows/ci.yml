@@ -56,8 +56,6 @@ jobs:
         include:
           - platform: macos
             runner: ${{ vars.JOBLOOP_MACOS_RUNNER || '["macos-15"]' }}
-          - platform: linux
-            runner: ${{ vars.JOBLOOP_LINUX_RUNNER || '["ubuntu-24.04"]' }}
           - platform: windows
             runner: ${{ vars.JOBLOOP_WINDOWS_RUNNER || '["windows-2025"]' }}
     runs-on: ${{ fromJSON(matrix.runner) }}

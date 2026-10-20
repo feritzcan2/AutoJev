@@ -21,7 +21,7 @@ on:
       platforms:
         description: Comma-separated platforms to build and publish
         required: false
-        default: macos,linux,windows
+        default: macos,windows
         type: string
 permissions:
   contents: read
@@ -30,7 +30,7 @@ concurrency:
   group: jobloop-release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 env:
-  JOBLOOP_RELEASE_PLATFORMS: ${{ inputs.platforms || 'macos,linux,windows' }}
+  JOBLOOP_RELEASE_PLATFORMS: ${{ inputs.platforms || 'macos,windows' }}
   JOBLOOP_SKIP_TESTS: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_tests && '1' || '0' }}
 jobs:
   resolve:

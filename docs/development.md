@@ -133,5 +133,5 @@ Real CLI/MCP test with a local mock model:
   **Restore from backup**.
 - Passwords and API keys saved by the app are removed from portable backups;
   secrets typed by hand into text are not stripped.
-- Linux DEB installations are updated from the releases page; in-app updates are
-  for AppImage.
+- Releases ship macOS and Windows packages only. Linux packages can still be built
+  locally or through a manual release run; in-app updates apply to AppImage.

@@ -15,7 +15,7 @@ const assetsByPlatform = {
   ],
   windows: [`jobloop-windows-x64-${version}.exe`, 'latest.yml'],
 };
-const platforms = (process.env.JOBLOOP_RELEASE_PLATFORMS || 'macos,linux,windows').split(',');
+const platforms = (process.env.JOBLOOP_RELEASE_PLATFORMS || 'macos,windows').split(',');
 const allowed = new Set([
   ...platforms.flatMap((platform) => assetsByPlatform[platform] ?? []),
   `jobloop-source-${version}.tar.gz`,

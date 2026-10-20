@@ -136,7 +136,6 @@ Download the package for your computer from
 | --- | --- |
 | macOS (Apple Silicon and Intel) | `.dmg` |
 | Windows (x64) | `.exe` installer |
-| Linux (x64) | `.AppImage` or `.deb` |
 
 ### 2. Connect an AI assistant
 

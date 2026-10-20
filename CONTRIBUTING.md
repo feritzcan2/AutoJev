@@ -60,7 +60,8 @@ runners or release secrets.
 ## Releases
 
 To release, bump `version` in `package.json` and push it to `main`. When CI passes
-for that commit, the release workflow tags it `v<version>`, builds signed macOS,
-Windows and Linux packages, and publishes the GitHub Release that the in-app updater
+for that commit, the release workflow tags it `v<version>`, builds signed macOS
+and Windows packages, and publishes the GitHub Release that the in-app updater
 reads. Pushes that leave the version unchanged release nothing. Pushing a `v*` tag
-yourself or running the workflow manually still works.
+yourself or running the workflow manually still works; a manual run with
+`platforms` set to `linux` still builds Linux packages.

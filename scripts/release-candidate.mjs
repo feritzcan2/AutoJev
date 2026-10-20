@@ -5,7 +5,7 @@ const env = process.env,
   repository = env.GITHUB_REPOSITORY;
 if (!/^v\d+\.\d+\.\d+$/.test(tag ?? '')) throw Error('Use a stable vMAJOR.MINOR.PATCH tag');
 if (!/^[\w.-]+\/[\w.-]+$/.test(repository ?? '')) throw Error('GITHUB_REPOSITORY is required');
-const platforms = (env.JOBLOOP_RELEASE_PLATFORMS || 'macos,linux,windows').split(',');
+const platforms = (env.JOBLOOP_RELEASE_PLATFORMS || 'macos,windows').split(',');
 const git = (args) => execFileSync('git', args, {encoding: 'utf8'}).trim();
 const sha = git(['rev-parse', 'HEAD']);
 if (env.JOBLOOP_CANDIDATE_SHA && sha !== env.JOBLOOP_CANDIDATE_SHA)
