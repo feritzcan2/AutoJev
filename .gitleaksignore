@@ -5,6 +5,7 @@
 eb9b3366dac495005183bf7b04655b95f49d45e9:tests/workable-collector.test.mjs:generic-api-key:14
 f4c30fed0694cce1dfce79c4ce0e877e1b5ace41:extension/manifest.json:generic-api-key:7
 4aea38e89cdeede4841ca397ad3fd31f90a6e115:page.html:generic-api-key:3559
+42b9e01a344b7ba13befcaaadb418c4862044374:page.html:generic-api-key:3559
 tests/adzuna-collector.test.mjs:generic-api-key:12
 tests/site-credentials.test.mjs:generic-api-key:39
 tests/site-credentials.test.mjs:generic-api-key:42
