@@ -35,6 +35,7 @@ import {
 import {sourceMethods} from './web-template/sources.mjs';
 import {conversationMethods} from './web-template/conversation.mjs';
 import {siteTurn} from '../sources/site-turns.mjs';
+import {searchLearning} from '../sources/recipe.mjs';
 // Template definitions select operations; the common queue owns dependencies,
 // worker leases and record/source exclusivity. No template-name dispatch here.
 export class WebTasks extends TaskRuns {
@@ -298,7 +299,8 @@ export class WebTasks extends TaskRuns {
     const a = this.db.get(id),
       template = this.db.template(a.templateId),
       tasks = this.queue.list(id, {batchId});
-    if (sourceCollector(a, source.url)) {
+    // A search value the collector cannot write is learned in a trial first.
+    if (sourceCollector(a, source.url) && !searchLearning(a, source.url)) {
       for (const task of tasks)
         if (task.operation === 'trial' && task.state === 'pending')
           this.queue.finish(
@@ -307,7 +309,12 @@ export class WebTasks extends TaskRuns {
             'cancelled',
             'This source will be scanned by its dedicated collector.',
           );
-      const scan = tasks.find((t) => t.operation === 'scan');
+      // A trial that learned a search value replaced this round's scan; once it
+      // passes, the round scans with the learned recipe right away.
+      const learned = tasks.findLastIndex(
+          (t) => t.operation === 'trial' && t.state === 'completed',
+        ),
+        scan = tasks.slice(learned + 1).find((t) => t.operation === 'scan');
       return scan
         ? [scan]
         : [

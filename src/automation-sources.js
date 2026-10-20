@@ -541,7 +541,9 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         return {
           tone: 'scanning',
           label: 'Trying the site',
-          detail: 'First round: the agent learns how to search it. Nothing is submitted.',
+          detail: source.searchLearning
+            ? `The agent learns how the site writes the ${source.searchLearning.field} “${source.searchLearning.value}”. Nothing is submitted.`
+            : 'First round: the agent learns how to search it. Nothing is submitted.',
         };
       const page = scanPageLabel(source.pageProgress);
       return {
@@ -588,6 +590,12 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         : {tone: 'warning', label: 'Blocked', detail: outcome.summary};
     if (source.trial?.status === 'failed')
       return {tone: 'danger', label: 'First try failed', detail: outcome.summary};
+    if (source.searchLearning)
+      return {
+        tone: 'waiting',
+        label: `Learning the ${source.searchLearning.field}`,
+        detail: `The next round learns how the site writes “${source.searchLearning.value}”, then the scan starts again.`,
+      };
     if (recipeStale(source))
       return {
         tone: 'warning',

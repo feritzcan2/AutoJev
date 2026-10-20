@@ -14,7 +14,7 @@ import {
   SiteWaitError,
   siteDomainOf,
 } from '../browser/site-access.mjs';
-import {collectorRun, collectorExtension} from '../sources/collectors.mjs';
+import {collectorRun, collectorExtension, sourceCollector} from '../sources/collectors.mjs';
 import {
   collectSourcePage,
   collectorSaved,
@@ -29,7 +29,11 @@ import {
   siteExtensionKind,
   siteListingAddress,
 } from '../site-extensions/index.mjs';
-import {siteSearchRecipe} from '../site-extensions/search.mjs';
+import {
+  siteSearchRecipe,
+  searchFilterValues,
+  withSearchFilters,
+} from '../site-extensions/search.mjs';
 import {setTimeout as pause} from 'node:timers/promises';
 import {readRecordListings} from '../records/listing-reader.mjs';
 import {noteSourceActivity, agentStepLabel} from '../sources/source-activity.mjs';
@@ -111,6 +115,11 @@ import {observedScanPage} from '../sources/scan-page.mjs';
 import {workerKey} from './worker-key.mjs';
 import {sourceScan, scanIssue, clearScanIssue, browserFailure} from '../sources/scan-issues.mjs';
 import {holdForTechnicalRetry} from './recovery.mjs';
+import {
+  requestSearchLearning,
+  clearSearchLearning,
+  learnedLocationApplied,
+} from '../sources/search-learning.mjs';
 import {runJevTask, jevDetailItems} from '../jev/tasks.mjs';
 import {jevTaskSummary, jevTaskReceipt} from '../jev/task-summary.mjs';
 import {JEV_LAUNCH_INSTRUCTIONS, AGENT_LAUNCH_INSTRUCTIONS} from '../jev/task-tools.mjs';
@@ -119,6 +128,8 @@ import {
   recipeNeedsTerms,
   recipeReplay,
   recipeValues,
+  replayUrl,
+  searchLearning,
   withSearchTerms,
   jevListingItem,
   replayMatches,
@@ -821,19 +832,50 @@ export function automationWorkflow({
   const leadOrder = {listing: 0, uncertain: 1, other: 2};
   // A collector recipe is checked through the site's API: its first search
   // must return listings.
-  const checkCollectorRecipe = async (replay) => {
+  // learning: the search value this recipe was learned for; its results must
+  // follow that value.
+  const checkCollectorRecipe = async (replay, learning = null, recipe = null) => {
     const collector = collectorExtension(db.get(id), run.sourceUrl).collector,
-      url = collector.searchUrl(replay.searches[0].url),
-      // Only the listing count matters here: a card site reads no listings.
-      page = await (collectorReadPage ?? collector.readPage)(url, {
-        signal,
-        wanted: () => [],
-        siteAccess: db.siteAccess,
-        wait: (ms) => pause(ms, undefined, {signal}),
-      });
-    return page.jobs.length
-      ? {ok: true, listings: page.jobs.length, pages: 1, url, term: replay.searches[0].term}
-      : {ok: false, reason: 'the first page has no listings', url};
+      read = async (address) =>
+        (
+          await (collectorReadPage ?? collector.readPage)(address, {
+            signal,
+            // Only the listing count matters here: a card site reads no listings.
+            wanted: () => [],
+            siteAccess: db.siteAccess,
+            wait: (ms) => pause(ms, undefined, {signal}),
+            ...(collector.cardsInBrowser ? {readCardsInBrowser} : {}),
+          })
+        ).jobs;
+    const url = collector.searchUrl(replay.searches[0].url);
+    let jobs;
+    try {
+      jobs = await read(url);
+    } catch (error) {
+      if (error?.code !== 'SEARCH_VALUE') throw error;
+      return {ok: false, reason: error.message, url};
+    }
+    if (!jobs.length) return {ok: false, reason: 'the first page has no listings', url};
+    if (learning?.field === 'location') {
+      // The same search and filters without the location, from the site's template.
+      const search = siteExtensionKind(run.sourceUrl, db.get(id).templateId)?.search,
+        values = {...recipeValues(db.get(id), run.sourceUrl), location: ''};
+      if (replay.searches[0].term) values.query = replay.searches[0].term;
+      const without =
+        search && recipe?.entry.template
+          ? replayUrl(
+              withSearchFilters(search.template, searchFilterValues(search, recipe.entry.template)),
+              values,
+            )
+          : null;
+      const applied = await learnedLocationApplied(
+        learning.value,
+        jobs,
+        without ? () => read(collector.searchUrl(without)) : null,
+      );
+      if (!applied.ok) return {ok: false, reason: applied.reason, url};
+    }
+    return {ok: true, listings: jobs.length, pages: 1, url, term: replay.searches[0].term};
   };
   const checkRecipe = async (replay, scope) => {
     const first = replay.searches[0];
@@ -1059,6 +1101,12 @@ export function automationWorkflow({
         });
       } catch (error) {
         signal.throwIfAborted();
+        // A value the extension cannot write is learned in a trial, not retried.
+        if (error?.code === 'SEARCH_VALUE') {
+          const learning = requestSearchLearning(db, run.id, error);
+          changed(id);
+          return learning;
+        }
         const current = db.activeRun(id, run.id);
         db.putRun({...current, collectorError: String(error.message).slice(0, 2000)});
         throw error;
@@ -1367,6 +1415,10 @@ export function automationWorkflow({
           siteSearch = siteExtensionKind(sourceUrl, a.templateId)?.search ?? null;
         let recipe = normalizeSourceRecipe(args),
           adjusted = [];
+        // Only the app records the value a recipe was learned for.
+        delete recipe.learnedFor;
+        const collectorSource = collecting || Boolean(sourceCollector(a, sourceUrl)),
+          learning = searchLearning(a, sourceUrl);
         // A site extension knows the results address: the agent chooses the
         // terms, path and filter values; the extension keeps the sort,
         // pagination and ordering. Discovery stays open for a changed site.
@@ -1376,10 +1428,11 @@ export function automationWorkflow({
           );
         if (siteSearch && recipe.entry.kind === 'url_template')
           ({recipe, changed: adjusted} = siteSearchRecipe(siteSearch, recipe));
-        if (collecting && recipe.entry.kind !== 'url_template')
+        if (collectorSource && recipe.entry.kind !== 'url_template')
           throw Error(
             'This source is read by its collector: save a url_template recipe from siteSearch.template.',
           );
+        if (learning) recipe.learnedFor = {[learning.field]: learning.value};
         // A recipe without terms searches with the workspace's search terms
         // when {query} takes keywords; the saved recipe keeps sharing them.
         const saving = recipe;
@@ -1401,7 +1454,7 @@ export function automationWorkflow({
         }
         // With agent decisions the app judges no listing itself: a recipe is
         // verified from the listings the agent selected at its address.
-        if (decideByAgent && !collecting) {
+        if (decideByAgent && !collectorSource) {
           const replay = recipeReplay(recipe, recipeValues(a, sourceUrl));
           if (replay.kind === 'search_form')
             throw Error(
@@ -1419,8 +1472,8 @@ export function automationWorkflow({
           );
         db.putRun({...db.activeRun(id, run.id), recipeChecks: checks + 1});
         const replay = recipeReplay(recipe, recipeValues(a, sourceUrl)),
-          check = collecting
-            ? await checkCollectorRecipe(replay)
+          check = collectorSource
+            ? await checkCollectorRecipe(replay, learning, recipe)
             : await checkRecipe(replay, active.taskId ?? run.id);
         if (!check.ok)
           throw Error(
@@ -1432,6 +1485,7 @@ export function automationWorkflow({
           listings: check.listings,
           pages: check.pages,
         });
+        if (learning) clearSearchLearning(db, id, sourceUrl);
         db.putRun({...db.activeRun(id, run.id), recipeSaved: true});
         // The collection restarts with the saved searches; known listings are skipped.
         if (collecting) prepareCollection(db, db.activeRun(id, run.id), db.get(id));

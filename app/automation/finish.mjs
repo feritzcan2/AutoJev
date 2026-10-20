@@ -11,6 +11,7 @@ import {validateLoginQuestion, LOGGED_IN_FIELD} from './login-question.mjs';
 import {OUTCOME_FIELD} from './question-forms.mjs';
 import {sourceStop} from './stop.mjs';
 import {holdForTechnicalRetry} from './recovery.mjs';
+import {searchLearning, searchLearningSummary} from '../sources/search-learning.mjs';
 import {recordBlocker} from '../records/blockers.mjs';
 
 // finish_automation_run: check that the reported status is backed by the saved
@@ -55,6 +56,16 @@ export function finishAutomationRun({
         {code: 'JEV_WORK_REMAINS'},
       );
   }
+  // The collector reported a search value it cannot write: the next round
+  // learns it in a trial, so the run ends without a technical retry.
+  if (collecting && active.searchLearning && status !== 'completed')
+    return report(id, run.id, 'interrupted', searchLearningSummary(active.searchLearning), false);
+  // A learning trial ends only with the recipe learned for the value.
+  const learning = active.kind === 'trial' ? searchLearning(automation, active.sourceUrl) : null;
+  if (learning && status === 'completed')
+    throw Error(
+      `This trial learns how the site writes the ${learning.field} "${learning.value}". Save the recipe with save_source_recipe first (see assignedSource.searchLearning), or report the trial blocked with what you observed.`,
+    );
   const stop =
     collecting && active.collectorError && ['failed', 'blocked'].includes(status)
       ? {kind: 'technical', evidence: active.collectorError, issueIds: []}

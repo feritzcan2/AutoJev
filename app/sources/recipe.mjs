@@ -87,6 +87,21 @@ export function normalizeSourceRecipe(input) {
   if (input.notes !== undefined && input.notes !== null && input.notes !== '') {
     recipe.notes = boundedText(input.notes, 'Recipe note', 1000);
   }
+  // The criteria values a learned recipe was made for (search-learning.mjs):
+  // a recipe that writes a value the site's own way holds only that value.
+  if (
+    input.learnedFor &&
+    typeof input.learnedFor === 'object' &&
+    recipe.entry.kind !== 'discovery'
+  ) {
+    const learned = Object.entries(input.learnedFor).filter(
+      ([key, value]) => /^[a-z_][a-z0-9_]*$/.test(key) && typeof value === 'string',
+    );
+    if (learned.length)
+      recipe.learnedFor = Object.fromEntries(
+        learned.map(([key, value]) => [key, boundedText(value, 'Learned value', 200)]),
+      );
+  }
   // Search terms replace {query} when the source query is a description rather
   // than a keyword. Each term is its own search on the same results pattern.
   if (input.terms !== undefined && input.terms !== null && recipe.entry.kind !== 'discovery') {
@@ -141,6 +156,21 @@ export function recipeValues(a, url) {
   for (const [key, value] of Object.entries(a.criteria ?? {}))
     if (typeof value === 'string' && !(key in values)) values[key] = value.trim();
   return values;
+}
+
+// The search value this source has to learn before it scans: the one its site
+// extension reported it cannot write (sourceState.searchLearning), while the
+// criteria still hold it, or a value that differs from the one the saved
+// recipe was learned for. null when nothing needs learning.
+export function searchLearning(a, url) {
+  const values = recipeValues(a, url),
+    pending = a.sourceState?.[url]?.searchLearning;
+  if (pending && (values[pending.field] ?? '') === pending.value) return pending;
+  const learned = a.sourceSettings?.[url]?.recipe?.learnedFor ?? {};
+  for (const [field, value] of Object.entries(learned))
+    if ((values[field] ?? '') !== value)
+      return {field, value: values[field] ?? '', learnedValue: value};
+  return null;
 }
 
 export function replayUrl(template, values) {

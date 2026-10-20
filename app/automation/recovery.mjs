@@ -3,6 +3,7 @@ import {operationFor} from '../templates/contract.mjs';
 import {sourceMode} from '../sources/automation-sources.mjs';
 import {SOURCE_PAGE_INSTRUCTIONS} from '../sources/scan.mjs';
 import {COLLECTOR_INSTRUCTIONS, COLLECTOR_RESUME} from '../sources/collector-worker.mjs';
+import {searchLearningSummary} from '../sources/search-learning.mjs';
 
 const TECHNICAL_RETRY_LIMIT = 3,
   IDLE_RETRY_LIMIT = 5;
@@ -89,6 +90,8 @@ export function continueSourceRun(db, id, runId) {
     !resumable(db, run) ||
     // Ended for the app's background read: resumed after it, not nudged now.
     run.collectorReading ||
+    // Ended so a trial learns a search value (search-learning.mjs).
+    run.searchLearning ||
     Object.keys(run.scanIssues ?? {}).length ||
     (db.get(id).questions ?? []).some((q) => q.answer == null && q.taskId === run.taskId)
   )
@@ -104,6 +107,10 @@ export function continueSourceRun(db, id, runId) {
 export function unreportedSourceRun(db, id, runId, reason, now) {
   const run = db.run(runId);
   if (!resumable(db, run)) return null;
+  // The extension cannot write a search value: the next round is a trial that
+  // learns it, so this run ends without a technical retry.
+  if (run.searchLearning)
+    return {status: 'interrupted', summary: searchLearningSummary(run.searchLearning)};
   // The agent ended its turn so the app could read a card site's next page;
   // that is the expected stop, not an idle agent. Resume at once.
   if (run.collectorReading) {

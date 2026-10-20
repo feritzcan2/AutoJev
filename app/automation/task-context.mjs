@@ -12,6 +12,7 @@ import {sourceMode} from '../sources/automation-sources.mjs';
 import {SOURCE_SCAN_INSTRUCTIONS} from '../sources/scan.mjs';
 import {directRecordInstructions} from '../records/operation-definitions.mjs';
 import {siteExtensionKind} from '../site-extensions/index.mjs';
+import {searchLearning, searchLearningContext} from '../sources/search-learning.mjs';
 import {createHash} from 'node:crypto';
 
 const pick = (value, keys) =>
@@ -297,8 +298,10 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
   const source = active.sourceUrl ? db.sources(id).find((s) => s.url === active.sourceUrl) : null;
   const recipeInfo = source ? db.sourceRecipe(id, source.url) : null;
   const siteSearch = source ? (siteExtensionKind(source.url, a.templateId)?.search ?? null) : null;
+  const learning = source && active.kind === 'trial' ? searchLearning(a, source.url) : null;
   const assignedSource = source
     ? {
+        ...(learning ? {searchLearning: searchLearningContext(learning)} : {}),
         ...(siteSearch
           ? {
               siteSearch,

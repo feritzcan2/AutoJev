@@ -8,6 +8,7 @@
 // (known listings, assessment, evidence, queue) stays generic.
 import {listingPage} from './listing.mjs';
 import {cardCollector} from '../sources/card-collector.mjs';
+import {SearchValueError} from './search.mjs';
 
 // Saved searches keep the address they were made with: the jobs-guest search
 // (until 2026-10-19), the classic /jobs/search/ or the 2026 /jobs/search-results/.
@@ -96,7 +97,9 @@ export function linkedInSignedInSearch(value) {
   const location = saved.get('location')?.trim(),
     geoId = saved.get('geoId') ?? (location ? geoIdOf(location) : null);
   if (location && !geoId)
-    throw Error(
+    throw new SearchValueError(
+      'location',
+      location,
       `LinkedIn takes a search location only as a geoId, and "${location}" has no known one. Search on linkedin.com with that location and add its geoId=… parameter to the source's search address.`,
     );
   if (geoId) open.searchParams.set('geoId', String(geoId));
