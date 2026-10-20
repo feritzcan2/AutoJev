@@ -614,10 +614,9 @@ test('a trial agent saves a recipe that the app verifies with Jev before accepti
     /no terms, so \{query\} would be the source scope "Find homes"/,
     'a {query} search without terms would search for the scope',
   );
-  // With workspace search terms a keyword recipe needs none of its own.
-  f.db.put({...f.db.get(f.id), searchTerms: ['Find homes']});
   const saved = await flow.call(f.id, trial.id, 'save_source_recipe', {
     entry: {kind: 'url_template', template},
+    terms: ['Find homes'],
     pagination: 'url_param',
   });
   assert.equal(saved.status, 'verified');
@@ -626,13 +625,6 @@ test('a trial agent saves a recipe that the app verifies with Jev before accepti
   assert.ok(opened.includes(expected));
   const after = f.db.sources(f.id)[0];
   assert.equal(after.recipe.entry.template, template);
-  assert.equal(f.db.get(f.id).sourceSettings[source].recipe.terms, undefined);
-  assert.deepEqual(after.recipe.terms, ['Find homes']);
-  assert.throws(
-    () => f.db.saveSearchTerms(f.id, ['Other homes']),
-    /Stop the running scan of .* first/,
-    'a running scan keeps its search terms',
-  );
   assert.equal(after.recipeState.status, 'verified');
   assert.equal(after.recipeState.successCount, 1);
   assert.equal(

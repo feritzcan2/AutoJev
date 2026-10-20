@@ -145,21 +145,20 @@ export const automationTools = [
   ),
   tool(
     'save_automation_plan',
-    'Interview only: update the plan from known user answers. Missing facts stay empty. In a chat, criteria you leave out keep their saved values; send an empty value to clear one. Saved sources stay unchanged unless listed: addSources proposes new source URLs, removeSources proposes removing saved sources and is only for sources the user asked to drop. searchTerms sets the workspace search terms: up to 5 exact job titles that every keyword search uses. sourceSearches sets the search of a saved or added source listed in get_automation_context section profile sourceSearch: its own terms only when its notes ask for another form (a category or slug), terms [] to use searchTerms again, and filter values from its filters ("" removes a filter). Source changes are suggestions the user applies on Sources. Grants no permission and activates nothing.',
+    'Interview only: update the plan from known user answers. Missing facts stay empty. In a chat, criteria you leave out keep their saved values; send an empty value to clear one. Saved sources stay unchanged unless listed: addSources proposes new source URLs, removeSources proposes removing saved sources and is only for sources the user asked to drop. sourceSearches sets the search of a saved or added source listed in get_automation_context section profile sourceSearch: up to 5 terms for {query} as its notes describe, and filter values from its filters ("" removes a filter). Source changes are suggestions the user applies on Sources. Grants no permission and activates nothing.',
     {
       title: str,
       goal: optional,
       criteria: fields,
       addSources: {type: 'array', maxItems: 20, items: str},
       removeSources: {type: 'array', maxItems: 20, items: str},
-      searchTerms: {type: 'array', minItems: 1, maxItems: RECIPE_TERM_LIMIT, items: str},
       sourceSearches: {
         type: 'array',
         maxItems: 20,
         items: object(
           {
             url: str,
-            terms: {type: 'array', maxItems: RECIPE_TERM_LIMIT, items: str},
+            terms: {type: 'array', minItems: 1, maxItems: RECIPE_TERM_LIMIT, items: str},
             filters: {type: 'array', maxItems: 10, items: object({param: str, value: optional})},
           },
           ['url'],

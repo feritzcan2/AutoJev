@@ -1,12 +1,6 @@
 // @ts-check
 import {boundedText, webUrl} from '../templates/catalog.mjs';
-import {
-  normalizeSourceRecipe,
-  recipeNeedsTerms,
-  sameTerms,
-  sourceRecipeOf,
-  takesSearchTerms,
-} from './recipe.mjs';
+import {normalizeSourceRecipe, recipeNeedsTerms} from './recipe.mjs';
 import {sourceCollector} from './collectors.mjs';
 import {sourceTrialReady} from './trial.mjs';
 import {siteExtensionKind} from '../site-extensions/index.mjs';
@@ -25,12 +19,11 @@ export function sourceMode(automation, url) {
 export const siteSourceTrialReady = (a, url) =>
   sourceTrialReady(a, url, {siteSearch: Boolean(siteExtensionKind(url, a.templateId)?.search)});
 export const TERMS_REQUIRED =
-  'Search terms required: the search address takes {query} and has no search terms. Add the workspace search terms on Sources, give this source its own terms, or ask the setup chat.';
+  'Search terms required: the search address takes {query} and the recipe has no search terms. Add them on the source’s recipe or ask the setup chat.';
 export function automationSources(a) {
   return a.sources.map((url) => {
     const saved = a.sourceSettings?.[url] ?? {},
-      state = a.sourceState?.[url] ?? {},
-      recipe = sourceRecipeOf(a, url);
+      state = a.sourceState?.[url] ?? {};
     return {
       ...saved,
       id: url,
@@ -40,41 +33,41 @@ export function automationSources(a) {
       enabled: saved.enabled !== false,
       intervalMinutes: saved.intervalMinutes ?? a.intervalMinutes,
       mode: sourceMode(a, url),
-      // The recipe it scans with; sharedTerms marks the workspace's terms in it.
-      ...(recipe ? {recipe} : {}),
-      sharedTerms: takesSearchTerms(saved.recipe),
       ...state,
       trialReady: siteSourceTrialReady(a, url),
       // A trial still runs and learns the terms; a scan waits for them.
       termsRequired:
-        recipeNeedsTerms(recipe) &&
+        recipeNeedsTerms(saved.recipe) &&
         Boolean(sourceCollector(a, url) || siteSourceTrialReady(a, url)),
     };
   });
 }
-// Workspaces saved before the shared search terms: the terms list two or more
-// keyword sources hold exactly becomes the workspace's and those sources drop
-// their copy, so every source keeps searching the same. Runs once per workspace.
-export function adoptSearchTerms(a) {
-  if (a.searchTerms) return null;
-  const own = (url) => {
-    const {terms, ...recipe} = a.sourceSettings?.[url]?.recipe ?? {};
-    return terms?.length && takesSearchTerms(recipe) ? {terms, recipe} : null;
-  };
-  const counts = new Map();
+// Workspaces saved with the short-lived workspace search terms (schema 43):
+// every source that searched with that list keeps it as its own terms, so
+// each source searches as before and manages its terms itself.
+export function ownSearchTerms(a) {
+  if (!('searchTerms' in a) && !a.sourceDraft?.searchTerms) return null;
+  const {searchTerms, ...next} = a;
+  next.sourceSettings = {...a.sourceSettings};
   for (const url of a.sources) {
-    const key = JSON.stringify(own(url)?.terms ?? null);
-    if (key !== 'null') counts.set(key, (counts.get(key) ?? 0) + 1);
+    const recipe = a.sourceSettings?.[url]?.recipe,
+      [path, query = ''] = recipe?.entry.template?.split(/\?(.*)/s) ?? [];
+    if (
+      searchTerms?.length &&
+      recipeNeedsTerms(recipe) &&
+      !path.includes('{query}') &&
+      query.includes('{query}')
+    )
+      next.sourceSettings[url] = {
+        ...next.sourceSettings[url],
+        recipe: {...recipe, terms: [...searchTerms]},
+      };
   }
-  const [best] = [...counts].sort((x, y) => y[1] - x[1]),
-    searchTerms = best?.[1] >= 2 ? JSON.parse(best[0]) : [],
-    sourceSettings = {...a.sourceSettings};
-  for (const url of a.sources) {
-    const source = own(url);
-    if (sameTerms(source?.terms, searchTerms))
-      sourceSettings[url] = {...sourceSettings[url], recipe: source.recipe};
+  if (next.sourceDraft?.searchTerms) {
+    const {searchTerms: dropped, ...draft} = next.sourceDraft;
+    next.sourceDraft = draft;
   }
-  return {...a, searchTerms, sourceSettings};
+  return next;
 }
 export function sourceInput(a, url, input) {
   url = webUrl(url);
@@ -92,13 +85,6 @@ export function sourceInput(a, url, input) {
     result.skill = boundedText(input.skill, 'Source skill', 60000, {empty: true});
   if (input.recipe !== undefined) {
     const recipe = normalizeSourceRecipe(input.recipe);
-    // The workspace's own terms keep the source on the shared list.
-    if (
-      recipe &&
-      sameTerms(recipe.terms, a.searchTerms) &&
-      takesSearchTerms({...recipe, terms: undefined})
-    )
-      delete recipe.terms;
     if (recipe) result.recipe = recipe;
     else delete result.recipe;
   }

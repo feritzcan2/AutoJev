@@ -68,6 +68,21 @@ test('all workspaces defer the blocked site while another site runs; sources res
   await settle();
   assert.ok(f.launches.some((r) => r.automationId === two && r.sourceUrl === source));
 });
+test('Scan now skips the gap after another workspace’s round, not a round still open', async (t) => {
+  const f = fixture(t),
+    one = f.create(),
+    two = f.create(),
+    three = f.create();
+  f.db.enable(two);
+  f.runtime.sourceState(two, source, {roundEndedAt: f.now() - 60000});
+  await f.runtime.runSource(one, source);
+  await settle();
+  assert.ok(f.launches.some((r) => r.automationId === one && r.sourceUrl === source));
+  await f.runtime.runSource(three, source);
+  await settle();
+  assert.ok(!f.launches.some((r) => r.automationId === three));
+  assert.equal(f.db.sources(three).find((s) => s.url === source).siteTurn.scanning, true);
+});
 test('a blocked source retains its checkpoint and resumes automatically after shared recovery', async (t) => {
   const f = fixture(t),
     id = f.create();

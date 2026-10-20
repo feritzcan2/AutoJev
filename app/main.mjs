@@ -297,7 +297,7 @@ async function boot() {
         id,
         'system',
         `The user added a document: ${document.relative} (${document.name}). Use it only within this automation.`,
-        {document: document.relative},
+        {document: document.relative, documentName: document.name},
       ),
     rename: (id, name) => automationDb.rename(id, name),
     remove: web.remove,
@@ -459,6 +459,12 @@ async function boot() {
     const u = new URL(url);
     if (!['https:', 'http:'].includes(u.protocol)) throw Error('Invalid link');
     await shell.openExternal(u.toString());
+  });
+  // Windows: after a native confirm or alert, text fields take no clicks until the window refocuses.
+  handle('refocus-window', () => {
+    if (process.platform !== 'win32' || !window || window.isDestroyed()) return;
+    window.blur();
+    window.focus();
   });
   scheduler.register('agents', async () => {
     for (const session of agents.sessions.values())

@@ -14,11 +14,29 @@ export {findChrome, findExecutable} from '../browser/chrome-installation.mjs';
 export {launchEnvironment as readinessEnvironment} from '../agents/launch-environment.mjs';
 const exec = promisify(execFile);
 const providers = {
-  opencode: {label: 'OpenCode', args: ['auth', 'list'], login: 'opencode auth login'},
-  codex: {label: 'Codex', args: ['login', 'status'], login: 'codex login'},
-  claude: {label: 'Claude Code', args: ['auth', 'status', '--json'], login: 'claude auth login'},
+  opencode: {
+    label: 'OpenCode',
+    args: ['auth', 'list'],
+    login: 'opencode auth login',
+    install: 'https://opencode.ai',
+  },
+  codex: {
+    label: 'Codex',
+    args: ['login', 'status'],
+    login: 'codex login',
+    install: 'https://github.com/openai/codex',
+  },
+  claude: {
+    label: 'Claude Code',
+    args: ['auth', 'status', '--json'],
+    login: 'claude auth login',
+    install: 'https://code.claude.com/docs/en/overview',
+  },
 };
-const item = (id, label, state, detail) => ({id, label, state, detail});
+// action: what the user can do to fix a check, a command to copy or a link to open.
+const item = (id, label, state, detail, action) =>
+  action && state !== 'ready' ? {id, label, state, detail, action} : {id, label, state, detail};
+const signIn = (descriptor) => ({command: descriptor.login, label: 'Copy sign-in command'});
 
 export async function inspectLogin(
   provider,
@@ -34,6 +52,7 @@ export async function inspectLogin(
       'Agent session',
       'warning',
       `Sign in with ${descriptor.login} in a terminal. The session of this installation cannot be verified automatically.`,
+      signIn(descriptor),
     );
   let output, stdout;
   try {
@@ -54,12 +73,14 @@ export async function inspectLogin(
         'Agent session',
         'error',
         `Could not verify the session. Sign in with ${descriptor.login} in a terminal and check again.`,
+        signIn(descriptor),
       );
     return item(
       'login',
       'Agent session',
       'warning',
       `The session check did not complete. Check your sign-in with ${descriptor.login} in a terminal.`,
+      signIn(descriptor),
     );
   }
   let authenticated = false;
@@ -72,6 +93,7 @@ export async function inspectLogin(
           'Agent session',
           'error',
           `Sign in with ${descriptor.login} in a terminal and check again.`,
+          signIn(descriptor),
         );
       authenticated = status.loggedIn === true;
     } catch {}
@@ -92,6 +114,7 @@ export async function inspectLogin(
         'Agent session',
         'warning',
         `Could not verify the session status. Check with ${descriptor.login} in a terminal.`,
+        signIn(descriptor),
       );
 }
 export async function chromePortAvailable(endpoint) {
@@ -154,6 +177,7 @@ export async function collectReadiness(input = {}, options = {}) {
       descriptor.label,
       executable ? 'ready' : 'error',
       executable ? 'Agent command found.' : missingAgentMessage(provider),
+      {link: descriptor.install, label: 'Install ' + descriptor.label},
     ),
   );
   if (executable)
@@ -165,6 +189,7 @@ export async function collectReadiness(input = {}, options = {}) {
       'Google Chrome',
       chrome ? 'ready' : 'error',
       chrome ? 'Chrome installation found.' : 'Install Google Chrome and open it at least once.',
+      {link: 'https://www.google.com/chrome/', label: 'Download Chrome'},
     ),
   );
   {
@@ -199,6 +224,8 @@ export async function collectReadiness(input = {}, options = {}) {
         listening
           ? 'Local debugging connection is open. Allow Chrome’s connection request when the agent starts.'
           : 'Turn on remote debugging in Chrome at chrome://inspect/#remote-debugging. Allow the connection request when the agent starts.',
+        // Chrome ignores chrome: addresses passed on its command line, so the user pastes it.
+        {command: 'chrome://inspect/#remote-debugging', label: 'Copy the Chrome address'},
       ),
     );
     let jev;

@@ -2,11 +2,9 @@ import {scanPageLabel} from '../app/sources/scan-page.mjs';
 import {currentWork} from '../app/automation/current-work.mjs';
 import {
   recipeSummary,
-  takesSearchTerms,
   SCAN_SEARCH_LISTINGS,
   SCAN_SEARCH_PAGES,
   RECIPE_PAGINATION_KINDS,
-  RECIPE_TERM_LIMIT,
 } from '../app/sources/recipe.mjs';
 import {
   searchFilterValues,
@@ -276,85 +274,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
   proposal.setAttribute('aria-label', 'Agent’s source suggestions');
   proposal.hidden = true;
   head.after(proposal);
-
-  // The workspace's search terms: every keyword search without its own terms
-  // uses them. Sources that need a category or slug keep their own.
-  const sharedSources = () => (data.sources ?? []).filter((source) => source.sharedTerms);
-  const termsBar = el('section', null, 'source-terms');
-  termsBar.setAttribute('aria-label', 'Workspace search terms');
-  proposal.after(termsBar);
-  let termsEditing = false;
-  function renderTerms() {
-    const terms = data.automation.searchTerms ?? [],
-      users = sharedSources();
-    termsBar.hidden = !terms.length && !users.length;
-    if (termsEditing || termsBar.hidden) return;
-    termsBar.replaceChildren();
-    const about = el('div', null, 'source-terms-about');
-    about.append(
-      el('b', 'Search terms'),
-      terms.length
-        ? el('span', terms.join(' · '), 'source-terms-list')
-        : el('span', 'None yet', 'source-terms-list source-terms-missing'),
-      el(
-        'small',
-        terms.length
-          ? `Used by ${plural(users.length, 'source')}. A source with its own terms keeps them.`
-          : `${plural(users.length, 'source')} wait${users.length === 1 ? 's' : ''} for search terms.`,
-      ),
-    );
-    const change = button(terms.length ? 'Edit' : 'Add terms', () => {
-      termsEditing = true;
-      termsForm(terms, users);
-    });
-    change.dataset.searchTermsEdit = '';
-    termsBar.dataset.missing = String(!terms.length && users.length > 0);
-    termsBar.append(about, change);
-  }
-  function termsForm(terms, users) {
-    const scope = owner,
-      form = el('form', null, 'source-terms-form'),
-      label = el('label', 'Search terms'),
-      input = el('input');
-    input.name = 'searchTerms';
-    input.maxLength = 500;
-    input.spellcheck = false;
-    input.placeholder = 'Senior Backend Engineer, Staff Software Engineer';
-    input.value = terms.join(', ');
-    label.append(
-      input,
-      el(
-        'small',
-        `Comma-separated, up to ${RECIPE_TERM_LIMIT} exact job titles. Each term is one search on every source that uses them; changing them starts those searches over.`,
-      ),
-    );
-    const busy = users.some((source) => busySource(source.url)),
-      cancel = button('Cancel', () => {
-        termsEditing = false;
-        renderTerms();
-      }),
-      save = el('button', 'Save', 'primary');
-    save.type = 'submit';
-    save.disabled = busy;
-    if (busy) save.title = 'Stop the running scans of the sources that use these terms first.';
-    form.onsubmit = action(async () => {
-      await api.automationSearchTerms(
-        scope,
-        input.value
-          .split(',')
-          .map((term) => term.trim())
-          .filter(Boolean),
-      );
-      termsEditing = false;
-      await refresh();
-      notice('Search terms saved. The sources that use them start their searches over.');
-    });
-    const actions = el('div', null, 'actions');
-    actions.append(cancel, save);
-    form.append(label, actions);
-    termsBar.replaceChildren(form);
-    input.focus();
-  }
   function renderProposal() {
     const draft = data.automation.sourceDraft;
     proposal.hidden = !draft;
@@ -370,11 +289,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       el('p', 'Review and apply the changes. The first round of a new source is a trial.'),
     );
     const changes = el('ul');
-    if (draft.searchTerms) {
-      const item = el('li');
-      item.append(el('b', 'Search terms: '), el('span', draft.searchTerms.join(', ')));
-      changes.append(item);
-    }
     for (const [label, urls] of [
       ['To add', added],
       ['To remove', removed],
@@ -392,13 +306,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         el(
           'small',
           [
-            ...(choice.terms
-              ? [
-                  choice.terms.length
-                    ? 'Own terms: ' + choice.terms.join(', ')
-                    : 'Uses the workspace search terms',
-                ]
-              : []),
+            ...(choice.terms ? ['Terms: ' + choice.terms.join(', ')] : []),
             ...choice.filters.map((f) => f.label),
           ].join(' · '),
         ),
@@ -416,11 +324,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
         },
         'primary',
       );
-    const busy = [
-      ...removed,
-      ...searches.map(([url]) => url),
-      ...(draft.searchTerms ? sharedSources().map((s) => s.url) : []),
-    ].some(busySource);
+    const busy = [...removed, ...searches.map(([url]) => url)].some(busySource);
     apply.disabled = busy;
     const discard = button('Discard suggestions', async () => {
       await api.automationSourceDraft(scope, draft.id, false);
@@ -562,7 +466,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
           : `Starts at ${new Date(source.siteTurn.until).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})}`,
         detail: source.siteTurn.scanning
           ? `Workspaces scan ${source.siteTurn.site} one at a time; this scan starts automatically 30 min after that one ends.`
-          : `30 min after “${source.siteTurn.workspace}” finished scanning ${source.siteTurn.site}.`,
+          : `30 min after “${source.siteTurn.workspace}” finished scanning ${source.siteTurn.site}. Scan now starts it right away.`,
       };
     if (source.blocker?.stop?.retryExhausted)
       return {
@@ -580,9 +484,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       return {
         tone: 'warning',
         label: 'Needs search terms',
-        detail: source.sharedTerms
-          ? 'Add the workspace search terms above, or ask the setup chat to choose them.'
-          : 'Add them with Edit, or ask the setup chat to choose them.',
+        detail: 'Add them with Edit, or ask the setup chat to choose them.',
       };
     if (source.blocked)
       return source.lastStatus === 'failed' || source.blocker?.stop?.kind === 'technical'
@@ -930,12 +832,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
             : null,
       ],
       ['Site filters', filters.join(' · ')],
-      [
-        'Search terms',
-        recipe?.terms
-          ? recipe.terms.join(', ') + (source.sharedTerms ? ' (workspace terms)' : '')
-          : null,
-      ],
+      ['Search terms', recipe?.terms?.join(', ')],
       [
         'Pagination',
         !recipe || recipe.entry.kind === 'discovery'
@@ -1129,14 +1026,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     f.instructions.value = source.instructions ?? '';
     siteSearchFields(form, source.extension?.search ?? null);
     recipeFields(form, source.recipe ?? null);
-    // A keyword search shows the workspace's terms as its default, not as its own.
-    if (source.recipe && takesSearchTerms({...source.recipe, terms: undefined})) {
-      const shared = data.automation.searchTerms ?? [];
-      if (source.sharedTerms) f.terms.value = '';
-      f.terms.placeholder = shared.length ? shared.join(', ') : 'No workspace search terms yet';
-      form.querySelector('[data-recipe-terms] small').textContent =
-        'Empty uses the workspace search terms. Own terms replace them for this site only.';
-    }
     f.method.onchange = () => syncRecipeFields(form);
     const cancel = button('Cancel', () => {
       editing = null;
@@ -1295,7 +1184,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       overview.append(next);
     }
     renderProposal();
-    renderTerms();
     add.setAttribute('aria-expanded', String(adding));
     if (adding) {
       if (!addHost.firstChild) {
@@ -1514,7 +1402,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     update(snapshot, id) {
       if (owner !== id) {
         editing = null;
-        termsEditing = false;
         memory = null;
         adding = false;
         addHost.replaceChildren();

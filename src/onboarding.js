@@ -6,7 +6,7 @@ import {
 import {automationProgress} from '../app/automation/progress.mjs';
 import {withAgentDefaults, withSetupAgentDefaults} from '../app/agents/settings.mjs';
 import {WorkerTerminalSurface} from './worker-terminal-surface.js';
-import {terminalAttention} from './agent-attention.js';
+import {terminalAttention, trustKeys} from './agent-attention.js';
 import './onboarding.css';
 import {rulesField, RULES_HINT} from './template-fields.js';
 
@@ -16,6 +16,10 @@ const providerOrder = ['claude', 'codex', 'opencode'];
 // The review form shows these criteria; the rest stay on the profile page.
 const reviewFields = ['preferences', 'country', 'location', 'application_facts'];
 const readinessIds = ['chrome', 'chrome-profile', 'chrome-debug', 'jev', 'failed'];
+// Connected while the CV is read, so the search can start right after the review.
+const chromeIds = ['chrome', 'chrome-profile', 'chrome-debug', 'failed'];
+// Missing agents and a closed Chrome connection are checked again on their own.
+const RECHECK_MS = 5000;
 const modes = [
   [
     'observe',
@@ -38,6 +42,25 @@ const button = (text, onclick, cls = 'quiet') => {
   node.onclick = onclick;
   return node;
 };
+// The fix a readiness check offers: a command to copy or a page to open.
+function fixAction(api, action) {
+  const box = el('div', null, 'onboarding-fix');
+  if (action.link) {
+    box.append(button(action.label, () => api.openLink(action.link).catch(() => {}), 'link'));
+    return box;
+  }
+  const copy = button(
+    action.label,
+    () =>
+      navigator.clipboard.writeText(action.command).then(
+        () => (copy.textContent = 'Copied'),
+        () => {},
+      ),
+    'link',
+  );
+  box.append(el('code', action.command), copy);
+  return box;
+}
 
 export function onboardingStep(data) {
   const run = interviewRun(data);
@@ -70,7 +93,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     card = el('section', null, 'onboarding-card'),
     error = el('p', null, 'onboarding-error');
   head.append(el('b', 'AutoJob', 'onboarding-brand'), steps);
-  for (const label of ['CV', 'Profile', 'Start']) steps.append(el('li', label));
+  for (const label of ['CV', 'Reading', 'Review']) steps.append(el('li', label));
   error.setAttribute('role', 'alert');
   error.hidden = true;
   root.append(head, card, error);
@@ -83,8 +106,15 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     unsubscribe = null,
     timer = null,
     providers = new Map(),
+    providersAt = 0,
+    checkingProviders = false,
     provider = null,
     readiness = null,
+    readinessAt = 0,
+    checkingReadiness = false,
+    readinessKey = '',
+    readingRevision = null,
+    terminalShown = true,
     reviewKey = '',
     reviewDirty = false,
     terminal = null;
@@ -156,15 +186,20 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
   }
 
   // Agent check: installed command and a signed-in session, per provider.
-  async function checkProviders() {
+  // A quiet check keeps the shown states until the new ones arrive.
+  async function checkProviders(quiet = false) {
+    if (checkingProviders) return;
+    checkingProviders = true;
     const catalog = getCatalog().filter((p) => p.supported && providerOrder.includes(p.id));
     catalog.sort((x, y) => providerOrder.indexOf(x.id) - providerOrder.indexOf(y.id));
-    providers = new Map(catalog.map((p) => [p.id, {label: p.label, state: 'checking'}]));
+    if (!quiet || !providers.size)
+      providers = new Map(catalog.map((p) => [p.id, {label: p.label, state: 'checking'}]));
     render();
     await Promise.all(
       catalog.map(async (p) => {
         let state = 'error',
-          detail = '';
+          detail = '',
+          action = null;
         try {
           const result = await api.readiness({provider: p.id}),
             failed = result.checks.find(
@@ -173,12 +208,15 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
             warning = result.checks.find((c) => c.id === 'login' && c.state === 'warning');
           state = failed ? 'error' : warning ? 'warning' : 'ready';
           detail = failed?.detail ?? warning?.detail ?? '';
+          action = failed?.action ?? warning?.action ?? null;
         } catch (failure) {
           detail = failure.message;
         }
-        providers.set(p.id, {label: p.label, state, detail});
+        providers.set(p.id, {label: p.label, state, detail, action});
       }),
     );
+    providersAt = Date.now();
+    checkingProviders = false;
     if (!provider || providers.get(provider)?.state === 'error')
       provider =
         [...providers].find(([, p]) => p.state === 'ready')?.[0] ??
@@ -192,13 +230,18 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     if (root.hidden) return;
     const next = id && data ? onboardingStep(data) : 'start';
     root.dataset.step = next;
-    const current = next === 'start' ? 0 : 1;
+    const current = ['start', 'reading', 'review'].indexOf(next);
     [...steps.children].forEach((item, index) => {
       item.dataset.state = index < current ? 'done' : index === current ? 'current' : 'pending';
     });
     if (next !== step) {
       closeTerminal();
       step = next;
+      readinessKey = '';
+      if (step === 'reading') {
+        readingRevision = data.automation.revision;
+        terminalShown = true;
+      }
       card.replaceChildren(
         ...(step === 'start' ? startStep() : step === 'reading' ? readingStep() : reviewStep()),
       );
@@ -225,36 +268,75 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     input.placeholder =
       'Where do you want to work, which roles, remote or on-site, salary, start date, anything your CV does not say.';
     notes.append(input);
-    const pick = button('Choose CV', () => attempt(pickCv), 'primary onboarding-cv');
+    const cv = el('div', null, 'onboarding-cv-row'),
+      pick = button('Choose CV', () => attempt(pickCv), 'onboarding-cv');
     pick.dataset.action = 'pick-cv';
+    cv.append(pick, el('span', null, 'onboarding-cv-file'));
     const hint = el(
       'small',
       'PDF, DOCX or TXT. The file stays on this computer; your notes go to the agent with it.',
       'onboarding-hint',
     );
+    const begin = button('Start', () => attempt(startReading), 'primary onboarding-start');
+    begin.dataset.action = 'start';
     const links = el('div', null, 'onboarding-links');
     links.append(button('I want to set it up in a chat', () => attempt(skip), 'link'));
-    return [...intro, agents, notes, pick, hint, links];
+    return [...intro, agents, notes, cv, hint, begin, links];
   }
   function readingStep() {
-    const status = el('div', null, 'onboarding-progress');
-    status.append(el('span', null, 'onboarding-spinner'), el('span', '0:00', 'onboarding-elapsed'));
-    const attention = el('p', null, 'onboarding-attention');
+    const status = el('div', null, 'onboarding-progress'),
+      milestones = el('ol', null, 'onboarding-milestones');
+    for (const label of ['Starting the setup agent', 'Reading your CV', 'Filling in your profile'])
+      milestones.append(el('li', label));
+    status.append(milestones, el('span', '0:00', 'onboarding-elapsed'));
+    // Claude's folder trust question has one safe answer, so it gets a button here.
+    const attention = el('div', null, 'onboarding-attention'),
+      trust = button(
+        'Trust this folder',
+        () =>
+          attempt(async () => {
+            for (const key of terminal?.trust ?? []) {
+              await api.input(id, key, CONVERSATION_WORKER, conversationSession()?.sessionId);
+              await new Promise((resolve) => setTimeout(resolve, 150));
+            }
+          }),
+        'primary',
+      );
+    trust.dataset.action = 'trust';
+    attention.append(el('p'), trust);
     attention.hidden = true;
-    const screen = el('div', null, 'worker-terminal onboarding-terminal');
+    const chrome = el('section', null, 'onboarding-readiness');
+    chrome.setAttribute('aria-label', 'Chrome');
+    // The terminal stays laid out while hidden so it keeps its size and prompts are read.
+    const wrap = el('div', null, 'onboarding-terminal-wrap'),
+      screen = el('div', null, 'worker-terminal onboarding-terminal');
     screen.setAttribute('aria-label', 'Setup agent terminal');
+    wrap.append(screen);
+    const toggle = button(
+      'Show the agent terminal',
+      () => {
+        terminalShown = !terminalShown;
+        update();
+      },
+      'link',
+    );
+    toggle.dataset.action = 'terminal';
     const links = el('div', null, 'onboarding-links');
-    links.append(button('Open the agent screen', () => chat(id), 'link'));
+    links.append(
+      toggle,
+      button('Open the agent screen', () => chat(id), 'link'),
+    );
     return [
       el('h1', 'Reading your CV'),
       el(
         'p',
-        'The agent is building your profile from your CV. This usually takes a minute or two; the screen moves on by itself.',
+        'The agent is building your profile from your CV. This usually takes a minute or two; the screen moves on by itself. Meanwhile, connect Chrome: the search runs in it.',
         'onboarding-lead',
       ),
       status,
       attention,
-      screen,
+      chrome,
+      wrap,
       links,
     ];
   }
@@ -321,9 +403,11 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     const rows = t.surface.terminal.rows,
       screen = t.surface.probe().text.split('\n').slice(-rows).join('\n'),
       found = terminalAttention(screen, conversationSession()?.state);
-    const prompt = ['trust', 'permission'].includes(found?.kind) ? found.kind : null;
-    if (prompt === t.prompt) return;
+    const prompt = ['trust', 'permission'].includes(found?.kind) ? found.kind : null,
+      trust = prompt === 'trust' ? trustKeys(screen) : null;
+    if (prompt === t.prompt && JSON.stringify(trust) === JSON.stringify(t.trust)) return;
     t.prompt = prompt;
+    t.trust = trust;
     update();
   }
   function closeTerminal() {
@@ -365,7 +449,8 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       const list = card.querySelector('.onboarding-agents .authorization');
       list.replaceChildren();
       for (const [value, p] of providers) {
-        const choice = el('label', null, 'choice'),
+        const row = el('div', null, 'onboarding-agent'),
+          choice = el('label', null, 'choice'),
           input = el('input'),
           copy = el('span');
         input.type = 'radio';
@@ -389,26 +474,81 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         );
         choice.dataset.state = p.state;
         choice.append(input, copy);
-        list.append(choice);
+        row.append(choice);
+        if (p.action && p.state !== 'ready') row.append(fixAction(api, p.action));
+        list.append(row);
       }
       if (!providers.size) list.append(el('p', 'Loading the agent list…', 'onboarding-hint'));
-      const blocked = !provider || ['checking', 'error'].includes(providers.get(provider)?.state);
-      card.querySelector('[data-action=pick-cv]').disabled = busy || blocked;
-      card.querySelector('[data-action=pick-cv]').textContent = busy ? 'Adding CV…' : 'Choose CV';
+      else if (![...providers.values()].some((p) => ['ready', 'checking'].includes(p.state)))
+        list.append(
+          el(
+            'p',
+            'Install or sign in to one of these agents. This screen checks again every few seconds.',
+            'onboarding-hint',
+          ),
+        );
+      const blocked = !provider || ['checking', 'error'].includes(providers.get(provider)?.state),
+        file = chosenCv(),
+        pick = card.querySelector('[data-action=pick-cv]');
+      pick.disabled = busy;
+      pick.textContent = file ? 'Choose another CV' : 'Choose CV';
+      card.querySelector('.onboarding-cv-file').textContent = file ?? '';
+      card.querySelector('[data-action=start]').disabled = busy || blocked || file == null;
     } else if (step === 'reading') {
       const run = interviewRun(data),
         prompt = terminal?.prompt,
-        attention = card.querySelector('.onboarding-attention');
-      attention.hidden = !(prompt || run?.state === 'AwaitingInput' || run?.usageLimit);
-      attention.textContent = run?.usageLimit
+        attention = card.querySelector('.onboarding-attention'),
+        waiting = Boolean(prompt || run?.state === 'AwaitingInput' || run?.usageLimit);
+      attention.hidden = !waiting;
+      // Without a readable menu the user answers the trust question in the terminal.
+      const trust = prompt === 'trust' && !run?.usageLimit && Boolean(terminal?.trust);
+      attention.querySelector('p').textContent = run?.usageLimit
         ? 'The agent reached its usage limit. Check the status in the terminal below.'
-        : prompt === 'trust'
-          ? 'Claude asks whether it may work in this profile’s folder. Choose “Yes, I trust this folder” in the terminal below and press Enter.'
-          : 'The agent is waiting for an approval to continue. Answer it in the terminal below.';
+        : trust
+          ? 'Claude Code asks whether it may work in this profile’s folder. The folder belongs to AutoJob.'
+          : prompt === 'trust'
+            ? 'Claude Code asks whether it may work in this profile’s folder. Choose “Yes, I trust this folder” in the terminal below and press Enter.'
+            : 'The agent is waiting for an approval to continue. Answer it in the terminal below.';
+      const trustButton = attention.querySelector('[data-action=trust]');
+      trustButton.hidden = !trust;
+      trustButton.disabled = busy;
+      // Other questions are answered in the terminal itself.
+      if (waiting && !trust) terminalShown = true;
+      card.querySelector('.onboarding-terminal-wrap').dataset.shown = String(terminalShown);
+      card.querySelector('[data-action=terminal]').textContent = terminalShown
+        ? 'Hide the agent terminal'
+        : 'Show the agent terminal';
+      // Milestones: the agent session is up, then the profile is saved.
+      const started = Boolean(conversationSession()),
+        filled = data.automation.revision !== readingRevision,
+        reached = filled ? 2 : started ? 1 : 0;
+      [...card.querySelectorAll('.onboarding-milestones li')].forEach((item, index) => {
+        item.dataset.state = index < reached ? 'done' : index === reached ? 'current' : 'pending';
+      });
+      if (!readiness) checkReadiness();
+      renderReadiness();
       tick();
     } else if (step === 'review') updateReview();
   }
   function tick() {
+    // Missing agents and Chrome setup are checked again until they are ready.
+    const now = Date.now();
+    if (
+      step === 'start' &&
+      providers.size &&
+      now - providersAt > RECHECK_MS &&
+      ![...providers.values()].some((p) => ['ready', 'checking'].includes(p.state))
+    )
+      void checkProviders(true);
+    if (
+      data &&
+      ['reading', 'review'].includes(step) &&
+      readiness?.checked &&
+      !checkingReadiness &&
+      now - readinessAt > RECHECK_MS &&
+      openChecks().some((c) => chromeIds.includes(c.id))
+    )
+      void checkReadiness();
     if (step !== 'reading' || !data) return;
     // Run times are epoch milliseconds.
     const run = interviewRun(data),
@@ -425,7 +565,10 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         .reverse()
         .find((m) => m.role === 'assistant' && m.conversation && m.runId),
       latest = data.runs.find((r) => r.kind === 'interview'),
-      failed = !interviewRun(data) && ['failed', 'timeout', 'interrupted'].includes(latest?.status);
+      undelivered = interviewRun(data)?.undelivered,
+      failed =
+        undelivered ||
+        (!interviewRun(data) && ['failed', 'timeout', 'interrupted'].includes(latest?.status));
     card.querySelector('.onboarding-reply').textContent =
       reply?.text ?? 'Check the details the agent filled in and complete anything missing.';
     const failure = card.querySelector('.onboarding-failure');
@@ -434,8 +577,10 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       failure.append(
         el(
           'p',
-          'Could not build the profile from the CV: ' +
-            (latest.summary || 'the agent could not finish.'),
+          undelivered
+            ? 'The CV task did not reach the setup agent.'
+            : 'Could not build the profile from the CV: ' +
+                (latest.summary || 'the agent could not finish.'),
         ),
         button('Try again', () => attempt(readAgain)),
       );
@@ -447,7 +592,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     }
     form.querySelector('[type=submit]').disabled = busy;
     form.querySelector('[data-action=read-again]').disabled = busy;
-    if (!readiness) checkReadiness(form);
+    if (!readiness) checkReadiness();
   }
   function fillReview(form) {
     const a = data.automation,
@@ -547,9 +692,10 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     submit.type = 'submit';
     foot.append(again, submit);
     form.append(profile, mode, sources, checks, foot);
+    readinessKey = '';
     syncScore();
     renderSources(form);
-    renderReadiness(form);
+    renderReadiness();
   }
   // Saved sources, the template boards for the country typed on the form, and
   // the remote work boards for the user to tick.
@@ -582,20 +728,35 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
           row(choice.url, choice.name, 'Optional · ' + choice.label, false);
         else if (choice.remote) row(choice.url, choice.name, 'Optional · ' + choice.label, false);
   }
-  function renderReadiness(form) {
-    const root = form.querySelector('.onboarding-readiness');
-    if (!root) return;
+  const openChecks = () =>
+    (readiness?.checks ?? []).filter((c) => readinessIds.includes(c.id) && c.state !== 'ready');
+  // Reading step: the Chrome setup, done while the agent reads. Review: whatever is still open.
+  function renderReadiness() {
+    const root = card.querySelector('.onboarding-readiness');
+    if (!root || !readiness) return;
+    const chromeOnly = step === 'reading',
+      open = openChecks().filter((c) => !chromeOnly || chromeIds.includes(c.id)),
+      key = JSON.stringify([step, readiness.checked, open]);
+    if (key === readinessKey) return;
+    readinessKey = key;
     root.replaceChildren();
-    const open = (readiness?.checks ?? []).filter(
-      (c) => readinessIds.includes(c.id) && c.state !== 'ready',
-    );
-    root.hidden = !open.length;
+    root.dataset.state = open.length ? 'open' : 'ready';
+    root.hidden = !chromeOnly && !open.length;
+    if (chromeOnly && !readiness.checked) {
+      root.append(el('p', 'Checking Chrome…', 'onboarding-hint'));
+      return;
+    }
+    if (chromeOnly && !open.length) {
+      root.append(el('b', '✓ Chrome is ready', 'onboarding-ready'));
+      return;
+    }
     if (!open.length) return;
-    root.append(el('h2', 'Before you start'));
+    root.append(el('h2', chromeOnly ? 'Connect Chrome' : 'Before you start'));
     for (const check of open) {
       const item = el('div', null, 'onboarding-check');
       item.dataset.state = check.state;
       item.append(el('b', check.label), el('span', check.detail));
+      if (check.action) item.append(fixAction(api, check.action));
       // The Jev key is entered later under Configuration → Jev; here the
       // worker agent can take over the listing decisions instead.
       if (check.id === 'jev') {
@@ -608,8 +769,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
                 const agentSettings = {...data.automation.agentSettings, decisions: 'agent'};
                 await api.automationSave(id, {agentSettings});
                 data.automation.agentSettings = agentSettings;
-                readiness = null;
-                checkReadiness(form);
+                await checkReadiness();
               }),
             'link',
           ),
@@ -618,22 +778,32 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       }
       root.append(item);
     }
-    root.append(button('Check again', () => checkReadiness(form), 'link'));
+    root.append(
+      el('small', 'This list checks again every few seconds.', 'onboarding-hint'),
+      button('Check again', () => checkReadiness(), 'link'),
+    );
   }
-  async function checkReadiness(form) {
+  async function checkReadiness() {
+    if (checkingReadiness) return;
     const owner = id;
-    readiness = {checks: []};
+    checkingReadiness = true;
+    readiness ??= {checks: []};
+    let next;
     try {
-      readiness = await api.readiness({
+      next = await api.readiness({
         provider: data.automation.agentSettings.provider,
         decisions: data.automation.agentSettings.decisions ?? 'agent',
       });
     } catch (failure) {
-      readiness = {
+      next = {
         checks: [{id: 'failed', label: 'Setup check', state: 'error', detail: failure.message}],
       };
     }
-    if (owner === id && form.isConnected) renderReadiness(form);
+    readinessAt = Date.now();
+    checkingReadiness = false;
+    if (owner !== id) return;
+    readiness = {...next, checked: true};
+    renderReadiness();
   }
 
   async function prepare() {
@@ -649,11 +819,20 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     }
     return id;
   }
+  // The latest document the user added; the setup agent reads it after Start.
+  const chosenCv = () => {
+    const m = data?.messages?.findLast((m) => m.role === 'system' && m.document);
+    return m ? (m.documentName ?? m.document.split('/').pop()) : null;
+  };
   async function pickCv() {
-    const notes = card.querySelector('[name=notes]')?.value ?? '',
-      owner = await prepare();
+    const owner = await prepare();
     if (!(await api.pickDocument(owner))) return;
     localStorage.setItem(flagKey(owner), 'cv');
+    await load();
+  }
+  async function startReading() {
+    const notes = card.querySelector('[name=notes]')?.value ?? '',
+      owner = await prepare();
     await api.automationOnboarding(owner, {notes});
     await load();
   }

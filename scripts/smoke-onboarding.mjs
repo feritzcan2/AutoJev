@@ -60,8 +60,19 @@ try {
             : ready('agent', input.provider),
           ready('login', 'Agent session'),
           ready('chrome', 'Google Chrome'),
-          ready('chrome-debug', 'Chrome connection'),
-          globalThis.jevMissing
+          globalThis.chromeOff
+            ? {
+                id: 'chrome-debug',
+                label: 'Chrome connection',
+                state: 'error',
+                detail: 'Turn on remote debugging in Chrome.',
+                action: {
+                  command: 'chrome://inspect/#remote-debugging',
+                  label: 'Copy the Chrome address',
+                },
+              }
+            : ready('chrome-debug', 'Chrome connection'),
+          globalThis.jevMissing && input.decisions === 'jev'
             ? {id: 'jev', label: 'Jev key', state: 'error', detail: 'Save the key.'}
             : ready('jev', 'Jev key'),
         ],
@@ -69,6 +80,7 @@ try {
       ipcMain.removeHandler('jev-settings-status');
       ipcMain.handle('jev-settings-status', () => ({configured: !globalThis.jevMissing}));
       globalThis.jevMissing = true;
+      globalThis.chromeOff = true;
       dialog.showOpenDialog = async () => ({canceled: false, filePaths: [file]});
     },
     {
@@ -139,6 +151,11 @@ try {
   };
   const pickCv = async () => {
     await screen.getByRole('button', {name: 'Choose CV'}).click();
+    // Choosing the CV stays on the first step until Start.
+    await screen.getByRole('button', {name: 'Choose another CV'}).waitFor();
+    assert.equal(await screen.getAttribute('data-step'), 'start');
+    assert.notEqual(await screen.locator('.onboarding-cv-file').textContent(), '');
+    await screen.getByRole('button', {name: 'Start', exact: true}).click();
     await page.waitForFunction(
       () => document.querySelector('#onboarding').dataset.step === 'reading',
     );
@@ -161,7 +178,7 @@ try {
   await screen.locator('.choice[data-state=ready]').first().waitFor();
   await screen.locator('[name=notes]').fill('Remote or Berlin only, at least 80k EUR');
   const id = await pickCv();
-  assert.ok(await page.getByText('Reading your CV').isVisible());
+  assert.ok(await page.getByRole('heading', {name: 'Reading your CV'}).isVisible());
   const cvTurn = await app.evaluate(() =>
     globalThis.starts.filter((s) => /Profile from the CV/.test(s.prompt)).at(-1),
   );
@@ -173,12 +190,13 @@ try {
   );
   // The setup agent's terminal is on the reading step: Claude's folder trust
   // question fires no agent state, so the screen itself raises the notice.
-  const surface = screen.locator('.onboarding-terminal .xterm');
-  await surface.waitFor();
+  const surface = screen.locator('.onboarding-terminal .xterm'),
+    terminalShown = () => screen.locator('.onboarding-terminal-wrap').getAttribute('data-shown');
+  await surface.waitFor({state: 'attached'});
   await app.evaluate(({BrowserWindow}, id) => {
     const prompt =
       '\x1b[2J\x1b[HAccessing workspace:\r\n\r\nQuick safety check: Is this a project you created or one you trust?\r\n\r\n' +
-      '❯ 1. Yes, I trust this folder\r\n  2. No, exit\r\n\r\nEnter to confirm · Esc to cancel\r\n';
+      '❯ No, exit\r\n  Yes, I trust this folder\r\n\r\nEnter to confirm · Esc to cancel\r\n';
     BrowserWindow.getAllWindows()[0].webContents.send('agent-event', {
       event: 'output',
       candidateId: id,
@@ -187,18 +205,32 @@ try {
       bytes: [...Buffer.from(prompt)],
     });
   }, id);
-  const trust = screen.getByText(/Choose “Yes, I trust this folder” in the terminal below/);
-  await trust.waitFor();
-  await surface.click();
-  await page.keyboard.press('Enter');
-  assert.ok(
+  // The trust question gets its own button; the terminal stays folded away.
+  await screen.getByText(/asks whether it may work in this profile’s folder/).waitFor();
+  assert.equal(await terminalShown(), 'true', 'The terminal is shown by default');
+  await screen.getByRole('button', {name: 'Trust this folder'}).click();
+  // "No, exit" is selected first: the button moves down to "Yes" before Enter.
+  assert.deepEqual(
     await app.evaluate(async () => {
       for (let i = 0; i < 50 && !globalThis.inputs.includes('\r'); i++)
         await new Promise((resolve) => setTimeout(resolve, 100));
-      return globalThis.inputs.includes('\r');
+      return globalThis.inputs;
     }),
-    'Keys typed in the terminal reach the setup agent',
+    ['\x1b[B', '\r'],
+    'The trust button answers yes to the setup agent',
   );
+  // Chrome is connected while the CV is read, and the screen notices it by itself.
+  await screen.getByRole('heading', {name: 'Connect Chrome'}).waitFor();
+  assert.ok(await screen.getByText('chrome://inspect/#remote-debugging').isVisible());
+  await page.screenshot({path: path.join(data, '2-reading-chrome.png')});
+  await app.evaluate(() => {
+    globalThis.chromeOff = false;
+  });
+  await screen.getByText('Chrome is ready').waitFor({timeout: 15000});
+  await screen.getByRole('button', {name: 'Hide the agent terminal'}).click();
+  assert.equal(await terminalShown(), 'false');
+  await screen.getByRole('button', {name: 'Show the agent terminal'}).click();
+  assert.equal(await terminalShown(), 'true');
   await page.waitForFunction(
     () => document.querySelector('.onboarding-elapsed')?.textContent !== '0:00',
   );
@@ -224,27 +256,24 @@ try {
     'Senior Backend Engineer, .NET',
   );
   assert.ok(
-    await form.locator('.onboarding-checks').getByText('StepStone').isVisible(),
+    await form.locator('.onboarding-checks').getByText('StepStone', {exact: true}).isVisible(),
     'Boards for the CV country are suggested',
   );
+  // Boards the profile country already added stay listed; the new country's boards join.
   await form.locator('[name=country]').fill('DK');
-  assert.equal(await form.locator('.onboarding-checks').getByText('StepStone').count(), 0);
-  assert.ok(await form.locator('.onboarding-checks').getByText('Jobindex').isVisible());
+  assert.ok(
+    await form.locator('.onboarding-checks').getByText('Jobindex', {exact: true}).isVisible(),
+  );
   await form.locator('[name=country]').fill('DE');
   await form
     .locator('[name=application_facts]')
     .fill('Salary expectation 80,000 EUR, EU work permit');
-  await form.getByText('Jev key').waitFor();
+  // The agent makes the listing decisions by default: no Jev key is asked for.
+  assert.equal(await form.getByText('Jev key').count(), 0);
   await page.screenshot({path: path.join(data, '3-review.png')});
   await screen.evaluate((node) => node.scrollTo(0, node.scrollHeight));
   await page.screenshot({path: path.join(data, '3-review-bottom.png')});
 
-  await form.getByRole('button', {name: 'Save and start the search'}).click();
-  await screen.locator('.onboarding-error').getByText('Save the TypeSafe API key').waitFor();
-  assert.equal(await screen.isVisible(), true, 'A missing Jev key blocks the start');
-  await app.evaluate(() => {
-    globalThis.jevMissing = false;
-  });
   await form.getByRole('button', {name: 'Save and start the search'}).click();
   await screen.waitFor({state: 'hidden'});
   await page.waitForFunction((id) => document.querySelector('#candidates').value === id, id);
@@ -284,7 +313,9 @@ try {
     '',
     'No values leak in',
   );
-  assert.ok(await form.locator('.onboarding-checks').getByText('Jobindex').isVisible());
+  assert.ok(
+    await form.locator('.onboarding-checks').getByText('Jobindex', {exact: true}).isVisible(),
+  );
   await form.getByRole('button', {name: 'Save and start the search'}).click();
   await screen.waitFor({state: 'hidden'});
   await page.waitForFunction((id) => document.querySelector('#candidates').value === id, second);

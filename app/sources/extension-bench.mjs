@@ -9,7 +9,7 @@ import {siteExtensionFor, siteExtensionKind, SITE_EXTENSIONS} from '../site-exte
 import {listingCard} from '../site-extensions/listing.mjs';
 import {pageEntries} from '../site-extensions/http.mjs';
 import {reloadSiteExtensions, siteExtensionsVersion} from '../site-extensions/reload.mjs';
-import {recipeReplay, recipeValues, sourceRecipeOf} from './recipe.mjs';
+import {recipeReplay, recipeValues} from './recipe.mjs';
 import {askJev} from '../jev/policy.mjs';
 import {
   jevCriteria,
@@ -559,7 +559,10 @@ export function extensionBench({
     // term, filled like the scan fills them. Without a URL recipe, the source.
     searches(id, sourceUrl) {
       const a = db.get(id),
-        replay = recipeReplay(sourceRecipeOf(a, sourceUrl), recipeValues(a, sourceUrl));
+        replay = recipeReplay(
+          a.sourceSettings?.[sourceUrl]?.recipe ?? null,
+          recipeValues(a, sourceUrl),
+        );
       return replay?.kind === 'url_template'
         ? replay.searches.map((search) => ({term: search.term, url: search.url}))
         : [];

@@ -1,4 +1,6 @@
 // @ts-check
+import {randomUUID} from 'node:crypto';
+import {siteTurn} from '../../sources/site-turns.mjs';
 import {sourceInput, TERMS_REQUIRED} from '../../sources/automation-sources.mjs';
 import {automationAttention, dismissAutomationAttention} from '../attention.mjs';
 // WebTasks methods: per-source state, retries, runs and settings.
@@ -142,6 +144,12 @@ export const sourceMethods = {
     if (fresh) this.db.forgetSourceScan(id, url);
     this.resetSources(id, [url]);
     this.sourceState(id, url, {onceCompleted: false});
+    // Scan now is the user's call: it skips the gap after another workspace's
+    // round on this site (site-turns.mjs), not a round still open there.
+    const state = this.db.get(id).sourceState?.[url] ?? {},
+      turn = siteTurn(this.db, id, url, this.now());
+    if (turn && !turn.scanning && !state.batchId && !state.siteBlocked && !state.accessRecovery)
+      this.sourceState(id, url, {batchId: randomUUID(), roundStartedAt: this.now()});
     await this.tick();
     return this.db.sources(id).find((s) => s.url === url);
   },
@@ -239,12 +247,6 @@ export const sourceMethods = {
     });
     this.changed(id);
     return this.db.sources(id).find((s) => s.url === url);
-  },
-  async saveSearchTerms(id, terms) {
-    this.db.saveSearchTerms(id, terms);
-    this.changed(id);
-    await this.tick();
-    return this.db.sources(id);
   },
   async saveSourcesInterval(id, intervalMinutes) {
     this.db.saveSourcesInterval(id, intervalMinutes);

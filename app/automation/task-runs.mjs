@@ -65,6 +65,7 @@ export class TaskRuns {
     );
     try {
       slot.worker = await slot.ready;
+      this.watchDelivery(slot);
       return run;
     } catch (error) {
       if (!slot.finishing) await this.finish(id, 'failed', error.message, workerId);
@@ -196,7 +197,11 @@ export class TaskRuns {
     if (event.event === 'state') {
       const state = String(event.state).replace(/^Some\((.*)\)$/, '$1');
       slot.run = {...this.policy.run(slot.run.id), state};
-      if (['Working', 'Compacting'].includes(state)) slot.seenWorking = true;
+      if (['Working', 'Compacting'].includes(state)) {
+        slot.seenWorking = true;
+        clearTimeout(slot.deliveryTimer);
+        delete slot.run.undelivered;
+      }
       // A native /compact ends the agent's turn. That stop is the app's own,
       // so the next idle may send the continuation again.
       if (event.compacted) {
@@ -217,8 +222,48 @@ export class TaskRuns {
       this.policy.save(slot.run);
       this.changed(id);
     }
+    if (
+      event.event === 'delivery' &&
+      /^Some\((Blocked|Failed|RequiresUserResubmit)\)$/.test(String(event.state))
+    )
+      this.undelivered(slot);
     if (['eof', 'engine_exit'].includes(event.event) && !slot.completionRequested)
       void this.unreported(slot, 'exit');
+  }
+  // A chat turn must show the agent working. Input that never reached the
+  // provider would otherwise leave the chat waiting for a reply forever.
+  watchDelivery(slot) {
+    clearTimeout(slot.deliveryTimer);
+    if (!slot.run.interactive) return;
+    slot.deliveryTimer = setTimeout(
+      () => this.undelivered(slot),
+      this.policy.deliveryGraceMs ?? 90000,
+    );
+  }
+  undelivered(slot) {
+    clearTimeout(slot.deliveryTimer);
+    if (
+      slot.finishing ||
+      this.closed ||
+      this.active.get(slot.key) !== slot ||
+      slot.seenWorking ||
+      slot.worker?.isBusy?.()
+    )
+      return;
+    const run = this.policy.run(slot.run.id);
+    if (!run.interactive || run.awaitingMessage || run.usageLimit) return;
+    // A provider prompt in the terminal holds the input; the user answers it there.
+    if (['Working', 'Compacting', 'AwaitingInput'].includes(run.state)) {
+      if (run.state === 'AwaitingInput') this.watchDelivery(slot);
+      return;
+    }
+    slot.run = {
+      ...run,
+      awaitingMessage: true,
+      undelivered: {at: this.now(), messageId: run.messageId ?? null},
+    };
+    this.policy.save(slot.run);
+    this.changed(slot.id);
   }
   interactive(id) {
     const slot = this.active.get(id);
@@ -270,6 +315,7 @@ export class TaskRuns {
     clearTimeout(slot.timer);
     clearTimeout(slot.idleTimer);
     clearTimeout(slot.completionTimer);
+    clearTimeout(slot.deliveryTimer);
     slot.controller.abort();
     slot.finishPromise = (async () => {
       try {

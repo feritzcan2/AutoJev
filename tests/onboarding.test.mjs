@@ -32,6 +32,7 @@ function fixture(t, templateId = 'job-search') {
       return this.active;
     },
     assertNotStopping() {},
+    watchDelivery() {},
     start(id, input, worker) {
       started.push(input);
       const run = db.begin(id, input, worker);

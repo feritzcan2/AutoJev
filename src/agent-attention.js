@@ -41,3 +41,15 @@ export function terminalAttention(screen, state, provider = 'claude') {
     };
   return null;
 }
+
+// Keys that move Claude's folder trust menu to "Yes, I trust this folder" and confirm it.
+// The default option differs between Claude versions, so it is read from the screen.
+export function trustKeys(screen) {
+  const options = String(screen ?? '')
+      .split('\n')
+      .filter((line) => /^\s*[❯›>]?\s*(?:\d+\.\s*)?(?:yes,? i trust|no,? exit)/i.test(line)),
+    yes = options.findIndex((line) => /yes,? i trust this folder/i.test(line)),
+    cursor = options.findIndex((line) => /^\s*[❯›>]/.test(line));
+  if (options.length !== 2 || yes < 0 || cursor < 0) return null;
+  return [...Array(Math.abs(yes - cursor)).fill(yes > cursor ? '\x1b[B' : '\x1b[A'), '\r'];
+}

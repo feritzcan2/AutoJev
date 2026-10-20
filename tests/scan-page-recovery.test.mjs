@@ -254,6 +254,35 @@ test('a later results page the site keeps refusing ends the search at the last p
   assert.equal(done.searches[0].status, 'completed', 'the search ends without its last 11 pages');
 });
 
+test('a refused results page ends the search without a reread, and a reread keeps it ended', async (t) => {
+  const refuse = async () => {
+    const f = fixture(t);
+    await f.call('browser_open', {url: source});
+    f.db.reportPage(f.id, f.run.id, {currentPage: 2, totalPages: 13, url: source, evidence: '2'});
+    f.queue({pendingUrls: [next], processedUrls: [source], reason: 'Read the next page'});
+    f.error('net::ERR_HTTP2_PROTOCOL_ERROR');
+    await assert.rejects(f.call('browser_open', {url: next}), /ERR_HTTP2/);
+    await assert.rejects(f.call('browser_open', {url: next}), /does not serve this results page/);
+    f.error(null);
+    return f;
+  };
+  const direct = await refuse();
+  const done = await direct.call('complete_scan_search', {completion: 'end'});
+  assert.equal(done.searches[0].status, 'completed', 'no reread of the last page served');
+
+  const reread = await refuse();
+  await reread.call('browser_open', {url: source});
+  reread.db.reportPage(reread.id, reread.run.id, {
+    currentPage: 2,
+    totalPages: 13,
+    url: source,
+    evidence: '2',
+  });
+  assert.equal(reread.db.run(reread.run.id).scanPlan.boundary?.unserved, next);
+  const after = reread.db.completeScanSearch(reread.id, reread.run.id, 'end', {url: source});
+  assert.equal(after.searches[0].status, 'completed', 'the page report kept the boundary');
+});
+
 test('a failing detail page is not taken for a refused results page', async (t) => {
   const f = fixture(t);
   await f.call('browser_open', {url: source});

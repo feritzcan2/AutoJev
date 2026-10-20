@@ -65,59 +65,6 @@
   margin-top: 18px;
 }
 
-/* Workspace search terms: one line above the sources, edited in place. */
-.source-terms {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin: 0 0 16px;
-  padding: 12px 16px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg-raised);
-}
-.source-terms[hidden] {
-  display: none;
-}
-.source-terms[data-missing='true'] {
-  border-color: var(--warning, var(--accent));
-}
-.source-terms-about {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 12px;
-  min-width: 0;
-  font-size: 13px;
-}
-.source-terms-list {
-  overflow-wrap: anywhere;
-}
-.source-terms-missing {
-  color: var(--text-secondary);
-}
-.source-terms-about small,
-.source-terms-form small {
-  flex-basis: 100%;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-.source-terms-form {
-  display: grid;
-  gap: 10px;
-  width: 100%;
-}
-.source-terms-form label {
-  display: grid;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 550;
-}
-.source-terms-form small {
-  font-weight: 400;
-}
-
 .source-tabs-control {
   position: relative;
 }

@@ -276,6 +276,7 @@ export const conversationMethods = {
       ...before,
       // A later message or answer is the new request, not the welcome-screen task.
       onboarding: undefined,
+      undelivered: undefined,
       ...input,
       awaitingMessage: false,
       lastMessageAt: this.now(),
@@ -289,6 +290,7 @@ export const conversationMethods = {
               text
           : text,
       );
+      this.watchDelivery(slot);
       return this.db.run(slot.run.id);
     } catch (error) {
       if (!slot.finishing) {

@@ -21,6 +21,15 @@ import './board.css';
 import './profile.css';
 const api = window.jobloop,
   $ = (id) => document.getElementById(id);
+// Native dialogs leave text fields unclickable on Windows until the window refocuses.
+for (const name of ['confirm', 'alert']) {
+  const native = window[name].bind(window);
+  window[name] = (...args) => {
+    const result = native(...args);
+    api.refocusWindow().catch(() => {});
+    return result;
+  };
+}
 let catalog = [],
   chromeProfiles = [],
   chromeProfilesError = '',

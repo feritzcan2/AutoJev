@@ -51,7 +51,13 @@ export const scanMethods = {
         });
       // Observation and resumable work are separate: even a successful recovery
       // visit to page one must not replace the saved page eight or pending details.
-      const scanPlan = run.scanPlan ? {...run.scanPlan, boundary: null} : null;
+      // Known-listing and page-cap boundaries rest on pages already read, so a
+      // reread of the last page served keeps them.
+      const kept =
+        run.scanPlan?.boundary?.known || run.scanPlan?.boundary?.pageCap
+          ? run.scanPlan.boundary
+          : null;
+      const scanPlan = run.scanPlan ? {...run.scanPlan, boundary: kept} : null;
       this.persistScan(id, {
         ...run,
         observedPage: pageProgress,

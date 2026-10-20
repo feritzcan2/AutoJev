@@ -130,7 +130,6 @@ import {
   recipeValues,
   replayUrl,
   searchLearning,
-  withSearchTerms,
   jevListingItem,
   replayMatches,
   SCAN_SEARCH_LISTINGS,
@@ -1387,10 +1386,14 @@ export function automationWorkflow({
         });
       case 'complete_scan_search': {
         // Detail reads after the last results page replace the live snapshot; the
-        // results page the agent cites stays the completion evidence.
+        // results page the agent cites stays the completion evidence. A refused
+        // page leaves no live snapshot; the last page served is the evidence.
+        const served = active.scanPlan?.boundary?.unserved
+          ? {url: active.scanPlan.boundary.url}
+          : null;
         const page = args.snapshotId
           ? {url: snapshots.address(args.snapshotId)}
-          : snapshots.current;
+          : (snapshots.current ?? served);
         if (!page) throw Error('Observe the latest results page first.');
         result = db.completeScanSearch(id, run.id, args.completion, page);
         break;
@@ -1433,17 +1436,13 @@ export function automationWorkflow({
             'This source is read by its collector: save a url_template recipe from siteSearch.template.',
           );
         if (learning) recipe.learnedFor = {[learning.field]: learning.value};
-        // A recipe without terms searches with the workspace's search terms
-        // when {query} takes keywords; the saved recipe keeps sharing them.
-        const saving = recipe;
-        recipe = withSearchTerms(recipe, a.searchTerms);
         // Without terms {query} holds the source scope and later scans wait for terms.
         if (recipeNeedsTerms(recipe))
           throw Error(
             `The template takes {query} but the recipe has no terms, so {query} would be the source scope "${recipeValues(a, sourceUrl).query}". Save concrete search terms with terms${siteSearch?.notes ? ' as siteSearch.notes describes {query}' : ''}. If that scope is itself the right search, save it as the only term.`,
           );
         if (recipe.entry.kind === 'discovery') {
-          db.learnSourceRecipe(id, sourceUrl, saving, {runId: run.id, verified: false});
+          db.learnSourceRecipe(id, sourceUrl, recipe, {runId: run.id, verified: false});
           db.putRun({...db.activeRun(id, run.id), recipeSaved: true});
           result = {
             saved: true,
@@ -1479,7 +1478,7 @@ export function automationWorkflow({
           throw Error(
             `Recipe could not be verified: ${check.reason} (${check.url}). ${2 - checks} check(s) left. ${recipe.terms ? '' : 'If the source query is not a keyword, give concrete search terms with terms. '}Fix the template or form labels; if there is no stable method, save entry.kind=discovery.`,
           );
-        db.learnSourceRecipe(id, sourceUrl, saving, {
+        db.learnSourceRecipe(id, sourceUrl, recipe, {
           runId: run.id,
           verified: true,
           listings: check.listings,

@@ -244,15 +244,17 @@ export function workspaceChat({
       'AwaitingInput';
     const label = sending
       ? 'Sending message…'
-      : awaiting
-        ? 'Your reply is needed in the terminal'
-        : working
-          ? 'Preparing a reply'
-          : questions.childElementCount
-            ? 'Waiting for your answer'
-            : run
-              ? 'Chat open'
-              : 'Ready';
+      : run?.undelivered
+        ? 'Message not delivered'
+        : awaiting
+          ? 'Your reply is needed in the terminal'
+          : working
+            ? 'Preparing a reply'
+            : questions.childElementCount
+              ? 'Waiting for your answer'
+              : run
+                ? 'Chat open'
+                : 'Ready';
     status.textContent = label;
     root.dataset.working = String(working || sending);
     close.hidden = !run;
@@ -297,13 +299,16 @@ export function workspaceChat({
       active && seconds >= 10
         ? `${seconds < 60 ? seconds + ' s' : Math.floor(seconds / 60) + ' min ' + (seconds % 60) + ' s'}`
         : '';
-    hint.textContent = working
-      ? 'You can write your next message while the reply is being prepared.'
-      : 'Enter to send · Shift + Enter for a new line';
+    hint.textContent = run?.undelivered
+      ? 'Your last message did not reach the setup agent. Send it again.'
+      : working
+        ? 'You can write your next message while the reply is being prepared.'
+        : 'Enter to send · Shift + Enter for a new line';
   }
   function renderMessages() {
     if (!snapshot) return;
-    const saved = conversationMessages(snapshot, native);
+    const saved = conversationMessages(snapshot, native),
+      undelivered = interviewRun(snapshot)?.undelivered?.messageId;
     pending = pending.filter(
       (p) =>
         !saved.some(
@@ -313,11 +318,12 @@ export function workspaceChat({
     const messages = [...saved, ...pending].map((m) => ({
         ...m,
         failed:
-          m.role === 'user' &&
-          failures.some(
-            (f) =>
-              f.text === m.text && timestamp(m.at) >= f.at - 1000 && timestamp(m.at) <= f.until,
-          ),
+          (undelivered != null && m.id === undelivered) ||
+          (m.role === 'user' &&
+            failures.some(
+              (f) =>
+                f.text === m.text && timestamp(m.at) >= f.at - 1000 && timestamp(m.at) <= f.until,
+            )),
       })),
       signature = JSON.stringify(messages);
     if (signature === lastSignature) return;

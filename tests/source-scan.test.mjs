@@ -15,6 +15,7 @@ import {
   validateScanCompletion,
   markKnownBoundary,
   markPageCap,
+  markUnservedPage,
   FULL_SCAN_INTERVAL_MS,
   SCAN_OVERLAP_MS,
 } from '../app/sources/scan.mjs';
@@ -551,6 +552,20 @@ test('a resumed scan takes the page cap of the current recipe', () => {
     'pageCap' in beginSourceScan(resumed, 'scope', 3000, {pageCap: null}).active,
     false,
     'a newest-first recipe drops the cap',
+  );
+});
+
+test('a refused results page still ends its search when the scan resumes in a new run', () => {
+  const plan = beginSourceScan(null, 'scope', 1000, {pageCap: 10}).active,
+    served = 'https://board.test/jobs?page=6',
+    progress = {url: served, currentPage: 6, totalPages: 27},
+    scan = {complete: true, pendingUrls: [], completion: 'end', evidenceUrl: served};
+  const refused = markUnservedPage(plan, served, 'https://board.test/jobs?page=7', 'run-1', 2000);
+  assert.equal(validateScanCompletion(refused, scan, progress, 'run-2'), 'end');
+  assert.throws(
+    () => validateScanCompletion(markPageCap(plan, served, 'run-1', 2000), scan, progress, 'run-2'),
+    /was not verified/,
+    'a plain page cap is still verified in its own run',
   );
 });
 

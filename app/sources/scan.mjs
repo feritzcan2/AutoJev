@@ -213,7 +213,15 @@ export function markPageCap(plan, url, runId, now) {
 // like a page cap: the app, not the agent, verified where reading stops.
 export function markUnservedPage(plan, url, unservedUrl, runId, now) {
   if (!plan) return plan;
-  return {...plan, boundary: {url, runId, pageCap: true, unserved: unservedUrl, at: now}};
+  const checkpoint = plan.checkpoint && {
+    ...plan.checkpoint,
+    pendingUrls: plan.checkpoint.pendingUrls.filter((u) => u !== unservedUrl),
+  };
+  return {
+    ...plan,
+    ...(checkpoint ? {checkpoint} : {}),
+    boundary: {url, runId, pageCap: true, unserved: unservedUrl, at: now},
+  };
 }
 
 export function validateScanCompletion(plan, scan, pageProgress, runId) {
@@ -238,7 +246,11 @@ export function validateScanCompletion(plan, scan, pageProgress, runId) {
       'The date cutoff was not verified. Start from the newest and process the whole page; without reliable ordering and dates, continue to the last page.',
     );
   if (completion === 'end' && plan?.boundary?.pageCap) {
-    if (plan.boundary.runId !== runId || plan.checkpoint?.pendingUrls.length)
+    // A page the site refused stays refused when the scan resumes in a new run.
+    if (
+      (plan.boundary.runId !== runId && !plan.boundary.unserved) ||
+      plan.checkpoint?.pendingUrls.length
+    )
       throw Error(
         'The page limit was not verified in this turn, or addresses are still pending in the queue.',
       );
