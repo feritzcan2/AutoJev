@@ -388,7 +388,10 @@ test('app memory expiry preserves conversation, error budget and pending queue w
   assert.equal(next.protocolReset, undefined);
   assert.equal(selectResume(history(next), f.a.id, settings), 'old-memory-thread');
   assert.notEqual(next.evidenceEpoch, first.evidenceEpoch);
-  assert.throws(() => f.db.jevTasks.get(f.a.id, next.taskId, helper.id), /expired/);
+  assert.throws(
+    () => f.db.jevTasks.get(f.a.id, next.taskId, helper.id),
+    /end when the app restarts/,
+  );
   assert.throws(() => f.db.jevTasks.fullEvidence(f.a.id, next.taskId, evidence.id), /expired/);
   assert.deepEqual(f.store.workspaces.tasks.get(f.a.id, next.taskId).toolFailures, {
     quotes: {count: 2},

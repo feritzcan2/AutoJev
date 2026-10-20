@@ -21,7 +21,9 @@ const category = (message) =>
         ? 'snapshot'
         : /is not an assigned record ID/.test(message)
           ? 'record_id'
-          : null;
+          : /is not a Jev task ID/.test(message)
+            ? 'task_id'
+            : null;
 const recoveryHint = (kind) =>
   kind === 'arguments'
     ? 'Fix all listed field errors in one call; resend the full arguments, keeping the other valid fields. You do not need to read the page again for this error.'
@@ -31,7 +33,9 @@ const recoveryHint = (kind) =>
         ? 'Continue with savedListing from the current context or the latest snapshot.id; if there is no saved text, use browser_read.'
         : kind === 'record_id'
           ? 'Copy itemId exactly from the list of assigned records not yet scored.'
-          : 'Do not repeat the same operation without fixing the cause of the error.';
+          : kind === 'task_id'
+            ? 'Copy a taskId from the Current Jev tasks list or a browser_run_task result; do not guess one.'
+            : 'Do not repeat the same operation without fixing the cause of the error.';
 function operationKey(run, name, args) {
   let target = run.recordId;
   // Each batch row counts its own failures; one row cannot stop the others.
@@ -61,8 +65,13 @@ export function recordToolGuard({db, run, report, changed}) {
     if (active.status !== 'running') return error.message;
     const message = String(error.message).trim().replace(/\s+/g, ' ').slice(0, 2000),
       key = hash(operation + '\n' + message);
+    // A wrong Jev task ID is a slip of one agent session that the error text
+    // corrects; it counts per run, so fresh sessions of a retried task do not
+    // add up to a stop.
     const kind = category(message),
-      failureKey = kind ? hash(name + '\n' + kind) : key;
+      failureKey = kind
+        ? hash(name + '\n' + kind + (kind === 'task_id' ? '\n' + run.id : ''))
+        : key;
     const task = queue.get(id, run.taskId),
       failures = {...task.toolFailures},
       count = (failures[failureKey]?.count ?? 0) + 1;

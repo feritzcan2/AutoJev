@@ -2,10 +2,12 @@
 // starts a second helper and finishing the request never cancels the first.
 //
 // Each poll costs the agent a full-context model turn, so a tool call waits in
-// place as long as the provider's MCP transport allows. Claude Code documents
-// a 5 minute idle limit for HTTP tool calls; Codex gets tool_timeout_sec=300 at
-// launch. Unknown providers keep a conservative window.
-export const JEV_WAIT_MS = {claude: 240000, codex: 240000, default: 30000};
+// place as long as the provider's MCP transport allows. Claude Code moves an
+// MCP tool call still running after 120 seconds to the background and hands
+// the agent its own task ID instead of the result, so its window stays below
+// that; Codex gets tool_timeout_sec=300 at launch. Unknown providers keep a
+// conservative window.
+export const JEV_WAIT_MS = {claude: 100000, codex: 240000, default: 30000};
 // The client's real limit is only known from behavior: when a provider drops
 // a tool call before the app answers, later waits stay under the time it
 // tolerated, for this app session. The dropped call itself loses nothing; the
@@ -106,11 +108,11 @@ export class JevExecution {
       });
     return this.wait();
   }
+  // A request still running, or finished with a result nobody received yet.
+  get pending() {
+    return Boolean(this.current && (!this.current.settled || !this.current.delivered));
+  }
   owns(taskId) {
-    return Boolean(
-      this.current &&
-        this.current.taskId === taskId &&
-        (!this.current.settled || !this.current.delivered),
-    );
+    return this.pending && this.current.taskId === taskId;
   }
 }

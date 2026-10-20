@@ -1231,12 +1231,36 @@ export function automationWorkflow({
         };
       }
       case 'read_browser_task': {
-        db.jevTasks.get(id, active.taskId ?? run.id, args.taskId);
+        const scope = active.taskId ?? run.id;
+        if (!db.jevTasks.has(id, scope, args.taskId)) {
+          const shown = JSON.stringify(String(args.taskId).slice(0, 80));
+          // An agent client can hand back its own ID for a tool call it moved
+          // to the background. This worker runs one Jev request at a time, so
+          // a pending request is the one the agent is waiting for.
+          if (jevExecution.pending) {
+            const value = await jevExecution.wait(),
+              result =
+                value.status === 'running' || value.parent?.stop || !value.taskId
+                  ? value
+                  : jevTaskSummary(db.jevTasks.get(id, scope, value.taskId), args);
+            return {
+              ...result,
+              note: `${shown} is not a Jev task ID; this is the Jev request running in this task${value.taskId ? ` (taskId ${value.taskId})` : ''}. Use that taskId from now on.`,
+            };
+          }
+          const known = db.jevTasks
+            .list(id, scope)
+            .slice(0, 5)
+            .map((t) => `${t.id} (${t.input.operation}, ${t.status})`);
+          throw Error(
+            `taskId ${shown} is not a Jev task ID of this task. Use a taskId returned by browser_run_task or listed in jevTasks; the assigned task ID and background task IDs of your client are not Jev task IDs. Jev task IDs are kept in RAM and end when the app restarts. Current Jev tasks: ${known.join(', ') || 'none'}. For pending work start browser_run_task again.`,
+          );
+        }
         if (jevExecution.owns(args.taskId)) {
           const value = await jevExecution.wait();
           if (value.status === 'running' || value.parent?.stop) return value;
         }
-        return jevTaskSummary(db.jevTasks.get(id, active.taskId ?? run.id, args.taskId), args);
+        return jevTaskSummary(db.jevTasks.get(id, scope, args.taskId), args);
       }
       case 'read_listing_brief': {
         if (jevExecution.busy) return jevExecution.receipt();

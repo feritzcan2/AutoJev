@@ -111,8 +111,8 @@ test('automatic continuation observes cancellation between slices', async () => 
 test('a tool call waits as long as the provider transport allows; unknown providers keep the short window', () => {
   assert.equal(
     jevWaitMsFor('claude'),
-    240000,
-    'under Claude Code’s 5 minute idle limit for HTTP tool calls',
+    100000,
+    'under the 120 seconds after which Claude Code moves a tool call to the background',
   );
   assert.equal(jevWaitMsFor('codex'), 240000, 'under the tool_timeout_sec=300 passed at launch');
   assert.equal(jevWaitMsFor('opencode'), 30000);

@@ -388,6 +388,28 @@ test('application restart resumes the same task with its existing failure count'
   assert.equal(f.db.run(next.run.id).status, 'blocked');
 });
 
+test('a wrong Jev task ID lists the real ones and counts per run, not across retried sessions', async (t) => {
+  const f = await fixture(t),
+    entry = await f.start(),
+    read = (e, taskId) => f.call(e, 'read_browser_task', {taskId});
+  const first = await read(entry, entry.run.taskId);
+  assert.equal(first.result.isError, true);
+  assert.match(errorText(first), /is not a Jev task ID of this task/);
+  assert.match(errorText(first), /Current Jev tasks: none/);
+  assert.match(errorText(first), /1\/3.*Copy a taskId/s);
+  assert.match(errorText(await read(entry, 'k6drgpagj')), /2\/3/);
+  const runtime = await f.restart();
+  await runtime.tick();
+  await new Promise((resolve) => setImmediate(resolve));
+  const next = [...f.entries.values()].at(-1);
+  assert.notEqual(next.run.id, entry.run.id);
+  assert.equal(next.run.taskId, entry.run.taskId);
+  assert.match(errorText(await read(next, 'k7o0z0s1u')), /1\/3/);
+  assert.match(errorText(await read(next, 'k7o0z0s1u')), /2\/3/);
+  assert.match(errorText(await read(next, 'k7o0z0s1u')), /3 times/);
+  assert.equal(f.db.run(next.run.id).status, 'blocked');
+});
+
 test('browser failures on different pages are distinct while same-listing URL aliases share a limit', async (t) => {
   const f = await fixture(t),
     entry = await f.start();

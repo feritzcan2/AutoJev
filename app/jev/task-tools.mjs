@@ -73,7 +73,11 @@ export const jevTaskTools = [
       'Wait for a running Jev task (the call blocks until Jev has a result or the wait window ends, often minutes; starts nothing) or read a saved one: confirmed listing links first, then uncertain leads; lastPage/pages hold exact pagination evidence and checkpoint status. Page with offset or pageOffset instead of rereading the board. Originals stay in read_listing_evidence.',
     inputSchema: object(
       {
-        taskId: str(80),
+        taskId: {
+          ...str(80),
+          description:
+            'The Jev taskId returned by browser_run_task or listed in jevTasks; not the assigned task ID or a background task ID of your client.',
+        },
         batchId: str(80),
         offset: {type: 'integer', minimum: 0},
         limit: {

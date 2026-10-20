@@ -89,13 +89,16 @@ export class JevTaskStore {
       answers: {},
     });
   }
-  get(owner, taskId, id) {
+  has(owner, taskId, id) {
     const task = this.tasks.get(id);
-    if (!task || task.automationId !== owner || task.taskId !== taskId)
+    return Boolean(task && task.automationId === owner && task.taskId === taskId);
+  }
+  get(owner, taskId, id) {
+    if (!this.has(owner, taskId, id))
       throw Error(
-        'The Jev task does not belong to this workspace and assigned work, or it expired when the app closed. Start a new Jev read task for the pending addresses.',
+        `Jev task ${JSON.stringify(String(id).slice(0, 80))} was not found for this workspace task. Jev task IDs are kept in RAM: they end when the app restarts or the task is released. Start a new Jev read task for the pending addresses.`,
       );
-    return copy(task);
+    return copy(this.tasks.get(id));
   }
   save(task) {
     const previous = this.tasks.get(task.id);

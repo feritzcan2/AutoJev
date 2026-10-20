@@ -399,7 +399,10 @@ test('scan -> details -> preliminary classification retains originals and uncert
     () => f.db.jevTasks.readEvidence(f.a.id, 'foreign', evidence.id),
     /belong to this task/,
   );
-  assert.throws(() => f.db.jevTasks.get('foreign', 'assigned', scan.taskId), /does not belong/);
+  assert.throws(
+    () => f.db.jevTasks.get('foreign', 'assigned', scan.taskId),
+    /was not found for this workspace task/,
+  );
 });
 
 test('large pages checkpoint link batches and resume without restarting or losing items', async (t) => {
@@ -2092,6 +2095,51 @@ test('workflow polls a long Jev request, prevents duplicate work and keeps the b
   assert.equal(f.db.jevTasks.list(f.a.id, run.taskId ?? run.id).length, 1);
 });
 
+test('a foreign ID while a Jev request runs waits for that request and names its real taskId', async (t) => {
+  const f = fixture(t),
+    run = f.db.begin(f.a.id, 'run');
+  let finish;
+  const flow = automationWorkflow({
+    db: f.db,
+    run,
+    signal: f.controller.signal,
+    report: () => {},
+    jevWaitMs: 2,
+    browser: {
+      call: async () => {
+        await new Promise((resolve) => {
+          finish = resolve;
+        });
+        const page = {url, title: 'Results', text: 'No listings', links: [], pagination: []};
+        return {jevPage: page, content: [{type: 'text', text: `Page URL: ${url}\nNo listings`}]};
+      },
+      evaluateJev: (_id, state, questions) => f.ports.evaluate(state, questions),
+    },
+  });
+  const call = (name, args = {}) => flow.call(f.a.id, run.id, name, args);
+  const receipt = await call('browser_run_task', {operation: 'scan_results', url});
+  assert.equal(receipt.status, 'running');
+  // The agent client moved the call to the background and gave its own ID.
+  const waiting = await call('read_browser_task', {taskId: 'k6drgpagj'});
+  assert.equal(waiting.status, 'running');
+  assert.equal(waiting.taskId, receipt.taskId);
+  assert.match(waiting.note, /"k6drgpagj" is not a Jev task ID/);
+  assert.ok(waiting.note.includes(receipt.taskId));
+  finish();
+  const done = await call('read_browser_task', {taskId: 'k6drgpagj'});
+  assert.equal(done.taskId, receipt.taskId);
+  assert.equal(done.status, 'needs_agent');
+  assert.match(done.note, /Use that taskId from now on/);
+  await assert.rejects(
+    call('read_browser_task', {taskId: 'k6drgpagj'}),
+    (error) =>
+      /is not a Jev task ID of this task/.test(error.message) &&
+      error.message.includes(`${receipt.taskId} (scan_results,`),
+    'once the result was delivered, a foreign ID lists the real Jev tasks',
+  );
+  assert.equal((await call('read_browser_task', {taskId: receipt.taskId})).taskId, receipt.taskId);
+});
+
 test('helper state and bodies never enter SQLite and expire in a new app instance', (t) => {
   const f = fixture(t),
     task = f.db.jevTasks.create(f.a.id, 'assigned', {operation: 'collect_details'}),
@@ -2111,7 +2159,7 @@ test('helper state and bodies never enter SQLite and expire in a new app instanc
   const next = new AutomationStore(f.core);
   assert.deepEqual(next.jevTasks.list(f.a.id, 'assigned'), []);
   assert.notEqual(next.jevTasks.epoch, f.db.jevTasks.epoch);
-  assert.throws(() => next.jevTasks.get(f.a.id, 'assigned', task.id), /expired/);
+  assert.throws(() => next.jevTasks.get(f.a.id, 'assigned', task.id), /end when the app restarts/);
   assert.throws(() => next.jevTasks.fullEvidence(f.a.id, 'assigned', evidence.id), /expired/);
   const other = f.db.jevTasks.create(f.a.id, 'other', {operation: 'collect_details'}),
     kept = f.db.jevTasks.evidence(other, {url, text: 'Keep other task'});
