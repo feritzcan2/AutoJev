@@ -75,3 +75,16 @@ export function siteSearchRecipe(search, recipe) {
   ];
   return {recipe: next, changed};
 }
+
+// A search value (a criteria field such as the location) the extension cannot
+// write into the site's results address. The app learns how the site writes
+// it in a trial round (sources/search-learning.mjs) instead of retrying.
+export class SearchValueError extends Error {
+  /** @param {string} field @param {string} value @param {string} message */
+  constructor(field, value, message) {
+    super(message);
+    this.code = 'SEARCH_VALUE';
+    this.field = field;
+    this.value = value;
+  }
+}

@@ -1,5 +1,5 @@
 // @ts-check
-import {recipeNeedsTerms, sourceRecipeOf} from './recipe.mjs';
+import {recipeNeedsTerms, searchLearning, sourceRecipeOf} from './recipe.mjs';
 
 // Legacy workspace metadata is retained for history; a skip never validates a source.
 export const automationTrialReady = (a) =>
@@ -8,11 +8,13 @@ export const automationReady = (a) => a.reviewedRevision === a.revision;
 // A site extension that knows the results address (siteSearch) leaves the
 // trial nothing to learn once the source has a search recipe with its terms:
 // the first scan verifies that recipe. A relearn request, a failed trial or a
-// broken recipe still sends the source to a trial. The renderer loads this
+// broken recipe still sends the source to a trial, and so does a search value
+// the source has to learn (searchLearning). The renderer loads this
 // module, so the caller looks up the site extension.
 export function sourceTrialReady(a, url, {siteSearch = false} = {}) {
   const state = a.sourceState?.[url],
     recipe = sourceRecipeOf(a, url);
+  if (searchLearning(a, url)) return false;
   if (state?.trial) return state.trial.status === 'passed';
   return Boolean(
     recipe?.entry.kind === 'url_template' &&
