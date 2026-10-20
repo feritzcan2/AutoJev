@@ -17,9 +17,15 @@
   <a href="#privacy">Privacy</a>
 </p>
 
-<!-- Screenshot or short GIF of the Applications table goes here:
-<p align="center"><img src="docs/images/applications.png" width="860" alt="AutoJev applications table"></p>
--->
+<p align="center">
+  <img src="docs/images/tracking-table.png" width="860" alt="AutoJev tracking table: jobs found on XING, Indeed, StepStone and FreeHire, each with a fit score and Apply and Find contacts buttons">
+</p>
+<p align="center"><i>Every job it finds, scored against your CV, with one-click Apply and Find contacts.</i></p>
+
+<p align="center">
+  <img src="docs/images/sources.png" width="860" alt="AutoJev sources page: LinkedIn, StepStone and XING scanning, Workable, Arbeitnow, company career pages and FreeHire on a schedule">
+</p>
+<p align="center"><i>Your job sites, scanned in the background on a schedule.</i></p>
 
 ---
 
