@@ -490,6 +490,15 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       return source.lastStatus === 'failed' || source.blocker?.stop?.kind === 'technical'
         ? {tone: 'danger', label: 'Scan could not finish', detail: outcome.summary}
         : {tone: 'warning', label: 'Blocked', detail: outcome.summary};
+    // A due round that waits for a free worker.
+    if (source.batchId && source.enabled && data.automation.status === 'enabled')
+      return {
+        tone: 'waiting',
+        label: 'Queued',
+        detail: source.trialReady
+          ? 'Starts automatically when a worker is free.'
+          : 'Starts automatically when a worker is free. The first round is a trial.',
+      };
     if (source.trial?.status === 'failed')
       return {tone: 'danger', label: 'First try failed', detail: outcome.summary};
     if (source.searchLearning)

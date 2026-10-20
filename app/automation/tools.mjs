@@ -8,13 +8,7 @@ import {browserSnapshotTools} from '../browser/snapshot.mjs';
 import {automationContextTools} from './context.mjs';
 import {jevTaskTools, agentDecisionTools} from '../jev/task-tools.mjs';
 import {RECIPE_PAGINATION_KINDS, RECIPE_TERM_LIMIT} from '../sources/recipe.mjs';
-import {
-  CONTACT_LIMIT,
-  CONTACT_OUTCOMES,
-  NOTE_CHARACTERS,
-  NOTE_STYLES,
-  contactTaskSends,
-} from './contacts.mjs';
+import {CONTACT_LIMIT, CONTACT_OUTCOMES, NOTE_CHARACTERS, NOTE_STYLES} from './contacts.mjs';
 
 const str = {type: 'string'},
   optional = {type: 'string', minLength: 0};
@@ -294,12 +288,12 @@ export const automationTools = [
   ),
   tool(
     'reserve_contact_action',
-    'Contact tasks that send only: call right before the first Connect or Message click for one contact. Allows that contact one Send click and returns the approved text.',
+    'Contact send tasks only: call right before the first Connect or Message click for one contact. Allows that contact one Send click and returns the approved text.',
     {contactId: str},
   ),
   tool(
     'record_contact_outcome',
-    'Contact tasks that send only: record what happened for one contact with the page words as evidence. invited_with_note, invited_without_note and messaged need the Send click after reserve_contact_action; already_invited when the profile already shows Pending; not_accepted_yet for a followUp contact whose invitation is still open; failed with the reason otherwise.',
+    'Contact send tasks only: record what happened for one contact with the page words as evidence. invited_with_note, invited_without_note and messaged need the Send click after reserve_contact_action; already_invited when the profile already shows Pending; not_accepted_yet for a followUp contact whose invitation is still open; failed with the reason otherwise.',
     {contactId: str, status: {type: 'string', enum: CONTACT_OUTCOMES}, evidence: str},
   ),
   tool(
@@ -424,12 +418,9 @@ const CONTACT_ONLY = new Set([
   'reserve_contact_action',
   'record_contact_outcome',
 ]);
-// A find task that sends (find_and_send) gets both sets.
 const contactTool = (run, name) =>
   run.recordOperation === 'contacts'
-    ? run.request?.phase === 'send'
-      ? CONTACT_SEND_TOOLS.has(name)
-      : CONTACT_FIND_TOOLS.has(name) || (contactTaskSends(run) && CONTACT_SEND_TOOLS.has(name))
+    ? (run.request?.phase === 'send' ? CONTACT_SEND_TOOLS : CONTACT_FIND_TOOLS).has(name)
     : !CONTACT_ONLY.has(name);
 // Collector runs fetch pages through the site extension, not the browser.
 export const collectorHidden = new Set([

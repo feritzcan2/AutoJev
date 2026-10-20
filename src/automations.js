@@ -674,35 +674,22 @@ export function automationsPage(
       choice.append(input, copy);
       authorization.append(choice);
     }
-    // criteria.auto_contacts: two options, at most one on. Either works with
-    // both choices above and shares the minimum score.
-    for (const [value, title, description] of [
-      [
-        'find',
-        'Find contacts automatically',
+    // criteria.auto_contacts: works with either choice and shares the minimum score.
+    const contacts = el('label', null, 'choice'),
+      contactsInput = el('input'),
+      contactsCopy = el('span');
+    contactsInput.type = 'checkbox';
+    contactsInput.name = 'auto-contacts';
+    contactsInput.value = 'find';
+    contactsCopy.append(
+      el('b', 'Find contacts automatically'),
+      el(
+        'small',
         'Searches LinkedIn for up to two people to write to about each new listing that reaches the minimum score. You still approve every message.',
-      ],
-      [
-        'find_and_send',
-        'Find contacts and send messages',
-        'The same search, and the agent sends each person an invitation with the direct note as soon as it finds them, without your review. At most 20 a day.',
-      ],
-    ]) {
-      const choice = el('label', null, 'choice'),
-        input = el('input'),
-        copy = el('span');
-      input.type = 'checkbox';
-      input.name = 'auto-contacts';
-      input.value = value;
-      input.addEventListener('change', () => {
-        if (input.checked)
-          for (const other of authorization.querySelectorAll('[name=auto-contacts]'))
-            if (other !== input) other.checked = false;
-      });
-      copy.append(el('b', title), el('small', description));
-      choice.append(input, copy);
-      authorization.append(choice);
-    }
+      ),
+    );
+    contacts.append(contactsInput, contactsCopy);
+    authorization.append(contacts);
     // fillForm renders the fields for automatic actions here.
     authorization.append(el('div', null, 'authorization-score'));
     authorization.addEventListener('change', syncApplyScore);
@@ -1211,8 +1198,8 @@ export function automationsPage(
       mode: f.mode.value,
     };
   }
-  // The checked option; with none checked a saved non-option value (such as
-  // 'false') stays, so an untouched form is not an unsaved change.
+  // 'find' when checked; unchecked keeps a saved non-option value (such as
+  // 'false'), so an untouched form is not an unsaved change.
   function autoContactsValue() {
     const saved = data.automation.criteria.auto_contacts ?? '',
       value = find('#automation-plan-form').querySelector('[name=auto-contacts]:checked')?.value;
@@ -1273,9 +1260,7 @@ export function automationsPage(
           openConversation();
         }),
       );
-    const contactsMode = {find: 'find', send: 'find_and_send'}[autoContactsMode(a.criteria)];
-    for (const input of form.querySelectorAll('[name=auto-contacts]'))
-      input.checked = input.value === contactsMode;
+    form.querySelector('[name=auto-contacts]').checked = Boolean(autoContactsMode(a.criteria));
     syncApplyScore();
     formBaseline = readForm();
   }

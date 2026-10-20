@@ -1,8 +1,6 @@
 // @ts-check
 // LinkedIn contacts for a record, started by the user from the record panel
 // or, with Find contacts automatically, for records that reach the minimum score.
-// With find_and_send the automatic search sends its own notes right after
-// saving them, through the same reservation and one-Send gate as a send task.
 // A find task looks for at most two people worth writing to about the listing
 // (the poster, a recruiter, the hiring manager) in the user's signed-in
 // browser and drafts a short invitation note for each. The user reviews and
@@ -38,8 +36,6 @@ const RESENDABLE = new Set(['proposed', 'invited', 'failed', 'uncertain']);
 // Short numbered steps; the agents reading this are not experts.
 export const CONTACT_FIND_PROMPT =
   'Read AGENTS.md. This is a contact search for one record: you find people on LinkedIn, you do not connect, message or apply. Steps: 1. Call read_contact_brief. 2. Open record.url with browser_open and read it with browser_read. Note the company, the team and any person the listing names (the poster or "hiring team" card, a recruiter, a contact person) with their LinkedIn profile link. 3. If you still have fewer than 2 good people, open a LinkedIn people search: https://www.linkedin.com/search/results/people/?keywords=<words> with the company name plus recruiter, talent acquisition, or the lead title of the team (for example engineering manager), and read the results. 4. Open the profile of each person you pick with browser_open and read it: keep only people who work at this company now and are close to this role (its poster, a recruiter for it, its hiring manager or team lead). Never pick former employees or unrelated people. 5. Read the CV with read_scoring_profile (source documents). 6. Write two invitation notes per person, one in each style of the brief noteRules. 7. Call save_record_contacts with at most 2 people; profileUrl is the address of the profile page you read. If nobody suitable exists, save an empty list with noneReason. 8. Call finish_automation_run with status completed. If LinkedIn asks you to sign in, finish blocked with blocker category needs_login. Never click Connect, Message, Follow or Send in this task; the app refuses those clicks.';
-export const CONTACT_FIND_SEND_PROMPT =
-  'Read AGENTS.md. This is a contact search for one record that also sends: you find people on LinkedIn and send each one an invitation; you do not apply. The user turned on sending without review. Steps: 1. Call read_contact_brief. 2. Open record.url with browser_open and read it with browser_read. Note the company, the team and any person the listing names (the poster or "hiring team" card, a recruiter, a contact person) with their LinkedIn profile link. 3. If you still have fewer than 2 good people, open a LinkedIn people search: https://www.linkedin.com/search/results/people/?keywords=<words> with the company name plus recruiter, talent acquisition, or the lead title of the team (for example engineering manager), and read the results. 4. Open the profile of each person you pick with browser_open and read it: keep only people who work at this company now and are close to this role (its poster, a recruiter for it, its hiring manager or team lead). Never pick former employees or unrelated people. 5. Read the CV with read_scoring_profile (source documents). 6. Write two invitation notes per person, one in each style of the brief noteRules. 7. Call save_record_contacts with at most 2 people; profileUrl is the address of the profile page you read. If nobody suitable exists, save an empty list with noneReason and finish completed. 8. For each saved contact (its contactId is in the save result), one at a time: a. Open profileUrl with browser_open and read it. b. If the profile shows Pending, call record_contact_outcome with already_invited and go to the next contact. c. Otherwise call reserve_contact_action with the contactId; it returns the text to send. d. 1st-degree connection with a Message button: click Message, type the text, click Send. Otherwise click Connect (it may sit under More), click Add a note, type the text, click Send. If Add a note shows a limit or Premium offer instead of a text box, close it and click Send without a note. e. Read the page and call record_contact_outcome with what happened and the page words as evidence (invited_with_note, invited_without_note or messaged). If Connect is missing or the send failed, record failed with the reason. Click Send once per contact. 9. Call finish_automation_run with status completed after every saved contact has an outcome. If LinkedIn asks you to sign in, finish blocked with blocker category needs_login.';
 export const CONTACT_SEND_PROMPT =
   'Read AGENTS.md. This task sends the LinkedIn invitations or messages the user approved for one record. Steps: 1. Call read_contact_brief; it lists the contacts to handle and their approved text. 2. For each contact, one at a time: a. Open profileUrl with browser_open and read it. b. If the profile shows Pending, call record_contact_outcome with already_invited (or not_accepted_yet for a followUp contact) and go to the next contact. c. If the contact is a followUp and the profile has no Message button for a connection, call record_contact_outcome with not_accepted_yet. d. Otherwise call reserve_contact_action with the contactId. e. Existing connection (followUp, or a 1st-degree profile with Message): click Message, type the approved text, click Send. Otherwise click Connect (it may sit under More), click Add a note, type the approved text, click Send. If Add a note shows a limit or Premium offer instead of a text box, close it and click Send without a note. f. Read the page and call record_contact_outcome with what happened and the page words as evidence (invited_with_note, invited_without_note or messaged). If Connect is missing or the send failed, record failed with the reason. Click Send once per contact. 3. Call finish_automation_run with status completed after every contact has an outcome. If LinkedIn asks you to sign in, finish blocked with blocker category needs_login.';
 
@@ -47,23 +43,7 @@ const LIVE = ['pending', 'running', 'reported', 'paused'];
 const entryOf = (a, recordId) => (a.recordContacts ?? []).find((e) => e.recordId === recordId);
 const contactOf = (entry, contactId) => entry?.contacts.find((c) => c.id === contactId);
 const sendPhase = (run) => run.request?.phase === 'send';
-// A find task with request.send sends the contacts it saved itself.
-const findAndSend = (run) => run.request?.phase !== 'send' && run.request?.send === true;
-export const contactTaskSends = (run) => sendPhase(run) || findAndSend(run);
-export const contactPrompt = (run) =>
-  sendPhase(run)
-    ? CONTACT_SEND_PROMPT
-    : findAndSend(run)
-      ? CONTACT_FIND_SEND_PROMPT
-      : CONTACT_FIND_PROMPT;
-// The contacts this task may reach: the approved ones of a send task, the
-// ones a find-and-send task saved itself.
-const taskContact = (run, c) =>
-  sendPhase(run) ? run.request.contactIds.includes(c.id) : c.runId === run.id;
-const SEND_RULES = [
-  'Call reserve_contact_action right before the first Connect or Message click of a contact. The app refuses Connect, Message and Send clicks without it, and a second Send click for the same contact.',
-  'Record an outcome for every contact before finishing, with the page words as evidence.',
-];
+export const contactPrompt = (run) => (sendPhase(run) ? CONTACT_SEND_PROMPT : CONTACT_FIND_PROMPT);
 
 function putEntry(db, id, recordId, patch) {
   const a = db.get(id),
@@ -172,13 +152,11 @@ function startSearch(db, id, item, request) {
 }
 
 // Find contacts automatically: a record saved after the setting was turned on
-// that reaches the minimum score gets one search (find_and_send: one that
-// also sends), never a second one (a
+// that reaches the minimum score gets one search, never a second one (a
 // removed entry stays removed). One search at a time per workspace; tasks
 // holds the workspace's task history.
 export function queueAutomaticContacts(db, id, a, tasks) {
-  const mode = autoContactsMode(a.criteria);
-  if (!mode) return null;
+  if (!autoContactsMode(a.criteria)) return null;
   const contactTasks = tasks.filter((t) => t.recordOperation === 'contacts');
   if (contactTasks.some((t) => LIVE.includes(t.state))) return null;
   const searched = new Set(contactTasks.map((t) => t.recordId)),
@@ -196,7 +174,7 @@ export function queueAutomaticContacts(db, id, a, tasks) {
         !automaticAssessmentError(r.assessment, threshold),
     );
   if (!item) return null;
-  startSearch(db, id, item, {manual: false, ...(mode === 'send' ? {send: true} : {})});
+  startSearch(db, id, item, {manual: false});
   return item.id;
 }
 
@@ -291,9 +269,9 @@ export function contactBrief(db, id, run) {
         })),
       rules: [
         'Handle only these contacts and send exactly their text; do not change it.',
-        SEND_RULES[0],
+        'Call reserve_contact_action right before the first Connect or Message click of a contact. The app refuses Connect, Message and Send clicks without it, and a second Send click for the same contact.',
         'followUp: the user was invited earlier; send the text as a message only if the invitation was accepted (a Message button for a connection), otherwise record not_accepted_yet.',
-        SEND_RULES[1],
+        'Record an outcome for every contact before finishing, with the page words as evidence.',
       ],
     };
   return {
@@ -308,14 +286,7 @@ export function contactBrief(db, id, run) {
       `Pick at most ${CONTACT_LIMIT} people who work at the company now and are close to this role, best first: the person who posted the listing, a recruiter or talent acquisition partner for this area, the hiring manager or team lead. Skip earlierContacts.`,
       'relation: poster, recruiter, hiring_manager or team. reason: one sentence on why this person, from what the listing and profile say.',
       'name and headline as the profile page shows them. Open every profile before saving it; the app refuses a profile this task did not read.',
-      ...(findAndSend(run)
-        ? [
-            'send: after save_record_contacts, send each saved contact its direct note (reserve_contact_action returns it). The user does not review it first.',
-            ...SEND_RULES,
-          ]
-        : []),
     ],
-    ...(findAndSend(run) ? {send: true} : {}),
     // Two notes in clearly different styles; the user picks one and may edit it.
     noteRules: [
       `notes: exactly two invitation notes per person, each at most ${NOTE_CHARACTERS} characters, one of each style below. Both greet the person by first name, name the role and the company, and say why the user is strong for this role: one or two strengths from the CV that match what the listing asks for most, with a concrete fact (years, technology, scale or result). Say that this is why the user is writing.`,
@@ -408,11 +379,7 @@ export function saveRecordContacts(db, id, run, {contacts = [], noneReason = ''}
         .slice(0, 400),
       notes,
       message: notes[0].text,
-      runId: run.id,
-      // A find-and-send task sends them itself, without the user's review.
-      ...(findAndSend(run)
-        ? {state: 'queued', approvedAt: db.now(), followUp: false}
-        : {state: 'proposed'}),
+      state: 'proposed',
       foundAt: db.now(),
     };
   });
@@ -426,12 +393,6 @@ export function saveRecordContacts(db, id, run, {contacts = [], noneReason = ''}
     noneReason: saved.length ? null : String(noneReason).trim().slice(0, 400),
     contacts: [...e.contacts.filter((c) => c.state !== 'proposed'), ...saved],
   }));
-  if (findAndSend(run) && saved.length)
-    return {
-      saved: saved.length,
-      contacts: saved.map((c) => ({contactId: c.id, name: c.name, profileUrl: c.profileUrl})),
-      next: 'Send to each contact now, one at a time: open the profile, call reserve_contact_action with its contactId, send its text, then record_contact_outcome. Finish after every contact has an outcome.',
-    };
   return {
     saved: saved.length,
     next: 'Call finish_automation_run with status completed. The user reviews the notes before anything is sent.',
@@ -440,15 +401,10 @@ export function saveRecordContacts(db, id, run, {contacts = [], noneReason = ''}
 
 // reserve_contact_action: one connect/message and one Send click for this contact.
 export function reserveContactAction(db, id, run, contactId) {
-  if (!contactTaskSends(run))
-    throw Error('This task only finds contacts; it cannot connect or send');
+  if (!sendPhase(run)) throw Error('This task only finds contacts; it cannot connect or send');
   const contact = contactOf(entryOf(db.get(id), run.recordId), contactId);
-  if (!contact || !taskContact(run, contact))
-    throw Error(
-      findAndSend(run)
-        ? 'Save the contact with save_record_contacts first; only contacts this task saved can be sent.'
-        : 'This contact is not part of this task',
-    );
+  if (!contact || !run.request.contactIds.includes(contactId))
+    throw Error('This contact is not part of this task');
   if (contact.state !== 'queued')
     throw Error(
       `${contact.name} already has an outcome (${contact.state}); go to the next contact.`,
@@ -497,7 +453,7 @@ export function contactClick(run, label, submit) {
   const contact = !submit && CONTACT_CONTROL.test(String(label ?? ''));
   if (!submit && !contact) return null;
   const name = JSON.stringify(String(label ?? '').slice(0, 80));
-  if (!contactTaskSends(run))
+  if (!sendPhase(run))
     throw Error(
       `${name} would reach out to a person. This task only finds contacts; do not click it.`,
     );
@@ -513,11 +469,12 @@ export function contactClick(run, label, submit) {
 
 // record_contact_outcome: what the send task observed for one contact.
 export function recordContactOutcome(db, id, run, {contactId, status, evidence}) {
-  if (!contactTaskSends(run)) throw Error('This task only finds contacts');
+  if (!sendPhase(run)) throw Error('This task only finds contacts');
   if (!CONTACT_OUTCOMES.includes(status)) throw Error('Unknown contact outcome');
   const entry = entryOf(db.get(id), run.recordId),
     contact = contactOf(entry, contactId);
-  if (!contact || !taskContact(run, contact)) throw Error('This contact is not part of this task');
+  if (!contact || !run.request.contactIds.includes(contactId))
+    throw Error('This contact is not part of this task');
   if (contact.state !== 'queued') throw Error(`${contact.name} already has an outcome`);
   const current = db.run(run.id),
     action = current.contactAction?.contactId === contactId ? current.contactAction : null;
@@ -575,15 +532,16 @@ export function finishContactTask(db, id, run, status, summary) {
   const entry = entryOf(db.get(id), run.recordId);
   if (!entry) return;
   const reason = String(summary ?? '').slice(0, 500);
-  if (!sendPhase(run) && entry.runId !== run.id) {
-    if (status === 'completed')
+  if (!sendPhase(run)) {
+    if (status === 'completed' && entry.runId !== run.id)
       throw Error('Save the contacts with save_record_contacts before finishing.');
-    putEntry(db, id, run.recordId, {state: 'failed', error: reason});
+    if (status !== 'completed' && entry.runId !== run.id)
+      putEntry(db, id, run.recordId, {state: 'failed', error: reason});
     return;
   }
-  if (!contactTaskSends(run)) return;
-  // Contacts left without an outcome go back to the user as proposals.
-  const open = entry.contacts.filter((c) => c.state === 'queued' && taskContact(run, c));
+  const open = entry.contacts.filter(
+    (c) => c.state === 'queued' && run.request.contactIds.includes(c.id),
+  );
   if (status === 'completed' && open.length)
     throw Error(
       `Record an outcome with record_contact_outcome for ${open.map((c) => c.name).join(', ')} before finishing.`,

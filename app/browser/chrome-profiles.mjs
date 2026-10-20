@@ -15,12 +15,31 @@ export function chromeUserDataDirectory({
       ? paths.join(env.LOCALAPPDATA || paths.join(home, 'AppData/Local'), 'Google/Chrome/User Data')
       : paths.join(env.XDG_CONFIG_HOME || paths.join(home, '.config'), 'google-chrome');
 }
+// macOS privacy protection answers EPERM for Chrome's data folder until the app
+// has Full Disk Access. Say so instead of a raw error or "connection is off".
+export function chromeDataError(error, {platform = process.platform} = {}) {
+  if (error?.code !== 'EPERM' || platform !== 'darwin') return error;
+  return Object.assign(
+    Error(
+      "macOS blocked AutoJob from reading Chrome's data folder. Open System Settings > Privacy & Security > Full Disk Access, turn on AutoJob, then quit and reopen AutoJob.",
+    ),
+    {code: 'CHROME_DATA_BLOCKED'},
+  );
+}
+export async function readChromeLocalState(directory = chromeUserDataDirectory()) {
+  try {
+    return JSON.parse(await readFile(path.join(directory, 'Local State'), 'utf8'));
+  } catch (error) {
+    throw chromeDataError(error);
+  }
+}
 export async function listChromeProfiles({directory = chromeUserDataDirectory()} = {}) {
   let state;
   try {
-    state = JSON.parse(await readFile(path.join(directory, 'Local State'), 'utf8'));
+    state = await readChromeLocalState(directory);
   } catch (error) {
     if (error.code === 'ENOENT') return [];
+    if (error.code === 'CHROME_DATA_BLOCKED') throw error;
     throw Error('Could not read the Chrome profiles.');
   }
   return Object.entries(state.profile?.info_cache ?? {})

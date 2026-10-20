@@ -96,7 +96,6 @@ import {
   recordContactOutcome,
   contactClick,
   contactSendClicked,
-  contactTaskSends,
   finishContactTask,
 } from './contacts.mjs';
 import {
@@ -1900,7 +1899,7 @@ export function automationWorkflow({
         } else if (args.operation === 'press') {
           if (!args.key?.trim()) throw Error('A key is required');
           // Enter in a message box sends it past the Send-click gate.
-          if (active.recordOperation === 'contacts' && contactTaskSends(active))
+          if (active.recordOperation === 'contacts' && active.request?.phase === 'send')
             throw Error('Keys are off in a contact send task; click the Send button instead.');
           operation = 'browser_target_press';
           parameters.ref = args.ref;

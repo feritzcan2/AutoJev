@@ -70,10 +70,10 @@ export const scoringFields = [
     forMode: 'contacts',
     label: 'Find contacts automatically',
     question:
-      'Every new record that reaches the minimum score gets one LinkedIn contact search. find: the user approves each note before it is sent. find_and_send: the search sends the invitations itself. Empty: off.',
+      'find: every new record that reaches the minimum score gets one LinkedIn contact search; the user approves each note before it is sent. Empty: off.',
     required: false,
     type: 'choice',
-    options: ['find', 'find_and_send'],
+    options: ['find'],
   },
   {
     id: 'save_score_threshold',
@@ -85,13 +85,10 @@ export const scoringFields = [
     type: 'number',
   },
 ];
-// 'find', 'send' or null. 'true' was the first saved form of find.
+// 'find' or null. 'true' and 'find_and_send' are earlier saved forms; the
+// automatic search never sends (LinkedIn restricts automated messages).
 export const autoContactsMode = (criteria) =>
-  criteria?.auto_contacts === 'find_and_send'
-    ? 'send'
-    : ['find', 'true'].includes(criteria?.auto_contacts)
-      ? 'find'
-      : null;
+  ['find', 'true', 'find_and_send'].includes(criteria?.auto_contacts) ? 'find' : null;
 export const withScoringFields = (fields) => [
   ...fields,
   ...scoringFields.filter((field) => !fields.some((f) => f.id === field.id)),

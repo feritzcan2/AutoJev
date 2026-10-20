@@ -14,7 +14,6 @@ import {SiteAccess, runSiteLane, CONTACTS_LANE} from '../app/browser/site-access
 import {
   CONTACT_FIND_PROMPT,
   CONTACT_SEND_PROMPT,
-  CONTACT_FIND_SEND_PROMPT,
   findRecordContacts,
   sendRecordContacts,
   editRecordContact,
@@ -379,6 +378,9 @@ test('find contacts automatically searches once per record that reaches the mini
   assert.equal(queue(), high.id);
   assert.equal(f.db.get(f.id).recordContacts[0].state, 'searching');
   assert.equal(tasks()[0].request.manual, false);
+  // The automatic search never sends; the user approves every note.
+  assert.equal(tasks()[0].request.phase, 'find');
+  assert.equal(tasks()[0].request.send, undefined);
   assert.equal(queue(), null, 'one search at a time');
   f.db.store.workspaces.tasks.finish(f.id, tasks()[0].id, 'completed', 'Done');
   // A removed entry is not searched again.
@@ -408,99 +410,21 @@ test('a contact search runs beside the same record’s application', async (t) =
   await assert.rejects(findRecordContacts(f.runtime, f.id, f.item.id), /contact task/);
 });
 
-test('find contacts and send messages: the search sends each contact it saved, once', async (t) => {
+test('an earlier saved find_and_send only searches', async (t) => {
   const f = await fixture(t),
-    seed = f.db.begin(f.id, 'run'),
-    item = f.db.record(f.id, seed.id, {
-      key: source + '/send',
-      url: source + '/send',
+    run = f.db.begin(f.id, 'run'),
+    item = f.db.record(f.id, run.id, {
+      key: source + '/legacy',
+      url: source + '/legacy',
       title: 'Backend Engineer',
       summary: 'Observed facts',
       assessment: {score: 90, eligibility: 'verified', eligibilityReason: 'Met', summary: 'Fits'},
     });
-  f.db.finish(f.id, seed.id, 'completed', 'Saved');
+  f.db.finish(f.id, run.id, 'completed', 'Saved');
   const a = f.db.get(f.id);
   f.db.put({...a, criteria: {...a.criteria, auto_contacts: 'find_and_send'}});
   const tasks = f.db.store.workspaces.tasks;
   assert.equal(queueAutomaticContacts(f.db, f.id, f.db.get(f.id), tasks.list(f.id)), item.id);
   const task = tasks.list(f.id).find((x) => x.recordOperation === 'contacts');
-  assert.equal(task.request.send, true);
-  // Runs here without enabling the workspace's scans.
-  tasks.put({...task, request: {...task.request, manual: true}});
-  await f.runtime.tick();
-  await settle();
-  const run = f.launches.at(-1),
-    entry = () => f.db.get(f.id).recordContacts.find((e) => e.recordId === item.id);
-  assert.equal(automationPrompt(run), CONTACT_FIND_SEND_PROMPT);
-  const tools = f.flow(run).tools.map((tool) => tool.name);
-  for (const name of ['save_record_contacts', 'reserve_contact_action', 'record_contact_outcome'])
-    assert.ok(tools.includes(name), name);
-  assert.equal((await f.call(run, 'read_contact_brief')).send, true);
-  // Nothing goes out before a saved contact is reserved.
-  assert.throws(() => contactClick(f.db.run(run.id), 'Connect', false), /reserve_contact_action/);
-  await assert.rejects(
-    f.call(run, 'reserve_contact_action', {contactId: 'someone'}),
-    /save_record_contacts first/,
-  );
-  f.db.browserEvidence.save(run, {id: 'p', url: profile, text: 'Jane Doe · Recruiter · Connect'});
-  const saved = await f.call(run, 'save_record_contacts', {
-    contacts: [
-      {
-        name: 'Jane Doe',
-        relation: 'recruiter',
-        profileUrl: profile,
-        reason: 'Recruiter',
-        notes: notes(note),
-      },
-    ],
-  });
-  const [jane] = saved.contacts;
-  assert.equal(entry().contacts[0].state, 'queued');
-  await assert.rejects(
-    f.call(run, 'finish_automation_run', {status: 'completed', summary: 'Done'}),
-    /Record an outcome/,
-  );
-  const reserved = await f.call(run, 'reserve_contact_action', {contactId: jane.contactId});
-  assert.equal(reserved.text, note);
-  assert.equal(contactClick(f.db.run(run.id), 'Send', true), 'send');
-  contactSendClicked(f.db, f.id, run);
-  assert.throws(() => contactClick(f.db.run(run.id), 'Send', true), /already clicked/);
-  await f.call(run, 'record_contact_outcome', {
-    contactId: jane.contactId,
-    status: 'invited_with_note',
-    evidence: 'Invitation sent to Jane Doe',
-  });
-  await f.finish(run, 'completed');
-  assert.equal(entry().contacts[0].state, 'invited');
-  assert.deepEqual(
-    entry().contacts[0].history.map((h) => [h.as, h.text]),
-    [['invited_with_note', note]],
-  );
-});
-
-test('a stopped find-and-send task hands unsent contacts back as proposals', async (t) => {
-  const f = await fixture(t);
-  await findRecordContacts(f.runtime, f.id, f.item.id);
-  await settle();
-  const run = f.launches.at(-1);
-  // The same task with sending on, as Find contacts and send messages queues it.
-  const current = f.db.run(run.id);
-  f.db.putRun({...current, request: {...current.request, send: true}});
-  const sending = f.db.run(run.id);
-  f.db.browserEvidence.save(sending, {id: 'p', url: profile, text: 'Jane Doe · Recruiter'});
-  await f.call(sending, 'save_record_contacts', {
-    contacts: [
-      {
-        name: 'Jane Doe',
-        relation: 'recruiter',
-        profileUrl: profile,
-        reason: 'R',
-        notes: notes(note),
-      },
-    ],
-  });
-  await f.finish(sending, 'blocked', {
-    blocker: {category: 'needs_login', reason: 'LinkedIn sign-in', userAction: 'Sign in'},
-  });
-  assert.equal(f.entry().contacts[0].state, 'proposed');
+  assert.deepEqual([task.request.phase, task.request.send], ['find', undefined]);
 });

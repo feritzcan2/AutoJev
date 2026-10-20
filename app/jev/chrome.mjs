@@ -3,7 +3,11 @@ import {spawn} from 'node:child_process';
 import path from 'node:path';
 import {createServer} from 'node:http';
 import {randomUUID} from 'node:crypto';
-import {chromeUserDataDirectory} from '../browser/chrome-profiles.mjs';
+import {
+  chromeDataError,
+  chromeUserDataDirectory,
+  readChromeLocalState,
+} from '../browser/chrome-profiles.mjs';
 import {findChrome} from '../browser/chrome-installation.mjs';
 // A cold Chrome process stays alive. Wait for its marker page, not process exit;
 // cancelling a connection must not terminate the user's newly opened Chrome.
@@ -154,7 +158,9 @@ export async function existingChromeEndpoint({directory = chromeUserDataDirector
     lines = (await readFile(path.join(directory, 'DevToolsActivePort'), 'utf8'))
       .trim()
       .split(/\r?\n/);
-  } catch {
+  } catch (error) {
+    const blocked = chromeDataError(error);
+    if (blocked !== error) throw blocked;
     throw Error(
       'The existing Chrome connection is off. In Chrome, turn on remote debugging at chrome://inspect/#remote-debugging and allow the connection request. Jev does not open a separate profile.',
     );
@@ -175,9 +181,7 @@ export async function resolveChromeProfile(selected) {
     if (!/^[\w -]{1,100}$/.test(selected.directory)) throw Error('Invalid Chrome profile.');
     return selected.directory;
   }
-  const state = JSON.parse(
-    await readFile(path.join(chromeUserDataDirectory(), 'Local State'), 'utf8'),
-  );
+  const state = await readChromeLocalState();
   return state.profile?.last_used ?? 'Default';
 }
 
@@ -192,7 +196,7 @@ export async function openChromeWindow(
   } = {},
 ) {
   signal?.throwIfAborted();
-  const state = JSON.parse(await readFile(path.join(directory, 'Local State'), 'utf8'));
+  const state = await readChromeLocalState(directory);
   const profile = selected?.directory ?? state.profile?.last_used ?? 'Default';
   if (!/^[\w -]{1,100}$/.test(profile) || !state.profile?.info_cache?.[profile])
     throw Error('The selected existing Chrome profile was not found.');

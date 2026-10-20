@@ -193,10 +193,13 @@ export async function collectReadiness(input = {}, options = {}) {
     ),
   );
   {
-    let profiles = [];
+    let profiles = [],
+      blocked = null;
     try {
       profiles = await (options.listChromeProfiles ?? listChromeProfiles)();
-    } catch {}
+    } catch (error) {
+      if (error.code === 'CHROME_DATA_BLOCKED') blocked = error.message;
+    }
     const hasProfile = profile
       ? profiles.some((p) => p.directory === profile)
       : profiles.length > 0;
@@ -207,7 +210,8 @@ export async function collectReadiness(input = {}, options = {}) {
         hasProfile ? 'ready' : 'error',
         hasProfile
           ? 'Existing Chrome profile found.'
-          : 'Create a profile in Chrome or choose an existing profile in Agent settings.',
+          : (blocked ??
+              'Create a profile in Chrome or choose an existing profile in Agent settings.'),
       ),
     );
     let listening = false;
@@ -215,7 +219,9 @@ export async function collectReadiness(input = {}, options = {}) {
       listening = await (options.chromePortAvailable ?? chromePortAvailable)(
         await (options.existingChromeEndpoint ?? existingChromeEndpoint)(),
       );
-    } catch {}
+    } catch (error) {
+      if (error.code === 'CHROME_DATA_BLOCKED') blocked = error.message;
+    }
     checks.push(
       item(
         'chrome-debug',
@@ -223,9 +229,12 @@ export async function collectReadiness(input = {}, options = {}) {
         listening ? 'ready' : 'error',
         listening
           ? 'Local debugging connection is open. Allow Chrome’s connection request when the agent starts.'
-          : 'Turn on remote debugging in Chrome at chrome://inspect/#remote-debugging. Allow the connection request when the agent starts.',
+          : (blocked ??
+              'Turn on remote debugging in Chrome at chrome://inspect/#remote-debugging. Allow the connection request when the agent starts.'),
         // Chrome ignores chrome: addresses passed on its command line, so the user pastes it.
-        {command: 'chrome://inspect/#remote-debugging', label: 'Copy the Chrome address'},
+        blocked
+          ? undefined
+          : {command: 'chrome://inspect/#remote-debugging', label: 'Copy the Chrome address'},
       ),
     );
     let jev;

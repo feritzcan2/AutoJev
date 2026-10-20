@@ -2364,10 +2364,43 @@
   color: var(--warning);
   font-size: 11px;
 }
-.contacts-thread[data-tone='active'] .contacts-thread-badge {
-  background: var(--accent-wash);
+.contacts-thread[data-tone='active'] {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.contacts-thread[data-tone='active'] .contacts-thread-preview {
   color: var(--accent-strong);
-  letter-spacing: 1px;
+}
+.contacts-thread[data-tone='active'] .contacts-thread-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-raised));
+  color: var(--accent-strong);
+  font-weight: 650;
+}
+/* A moving dot on everything the agent is doing right now. */
+.contacts-thread[data-tone='active'] .contacts-thread-badge::before,
+.contacts-pill[data-state='queued']::before,
+.contacts-working::before,
+.contacts-chat-filters button[data-tone='active']::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: source-pulse 1.6s ease-out infinite;
+}
+.contacts-thread[data-tone='active'] .contacts-avatar {
+  animation: source-pulse 1.6s ease-out infinite;
+}
+.contacts-chat-filters button[data-tone='active'] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent-strong);
 }
 .contacts-avatar {
   display: grid;
@@ -2409,6 +2442,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  margin: 0;
   padding: 12px 18px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-raised);
@@ -2465,7 +2499,37 @@ button.contacts-pill:hover {
   color: var(--success);
 }
 .contacts-pill[data-state='queued'] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-raised));
   color: var(--accent-strong);
+  font-weight: 650;
+}
+/* The banner under the header while the agent works on this thread. */
+.contacts-working {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 18px;
+  overflow: hidden;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-raised));
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
+.contacts-working::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 35%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: now-working 1.8s ease-in-out infinite;
 }
 .contacts-pill:is([data-state='uncertain'], [data-state='failed']) {
   color: var(--danger, #e5484d);
@@ -2553,6 +2617,12 @@ button.contacts-pill:hover {
   background: var(--accent-wash);
   color: var(--text);
   box-shadow: inset 0 0 0 1px var(--accent);
+  animation: contacts-pending 1.6s ease-in-out infinite alternate;
+}
+@keyframes contacts-pending {
+  to {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
 }
 .contacts-bubble.in {
   align-self: flex-start;
@@ -2577,6 +2647,21 @@ button.contacts-pill:hover {
 }
 .contacts-typing span:nth-child(3) {
   animation-delay: 0.3s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .contacts-thread[data-tone='active'] .contacts-thread-badge::before,
+  .contacts-thread[data-tone='active'] .contacts-avatar,
+  .contacts-pill[data-state='queued']::before,
+  .contacts-working::before,
+  .contacts-chat-filters button[data-tone='active']::before,
+  .contacts-bubble.out[data-tone='pending'] {
+    animation: none;
+  }
+  .contacts-working::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
 }
 @keyframes contacts-typing {
   0%,
@@ -2629,14 +2714,6 @@ button.contacts-pill:hover {
 }
 .contacts-edited {
   color: var(--warning);
-}
-.contacts-composer-locked {
-  margin: 0;
-  padding: 14px 18px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-raised);
-  color: var(--text-secondary);
-  font-size: 12px;
 }
 .contacts-suggestions {
   display: grid;

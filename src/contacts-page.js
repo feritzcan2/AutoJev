@@ -280,7 +280,7 @@ export function contactsPage(root, api, {refresh}) {
         preview: searchPreview(entry),
         at: entryAt(entry),
         tone: searching ? 'active' : entry.state === 'failed' ? 'blocked' : null,
-        badge: searching ? '•••' : null,
+        badge: searching ? 'Searching' : null,
       }),
     );
     for (const contact of entry.contacts)
@@ -298,7 +298,8 @@ export function contactsPage(root, api, {refresh}) {
                 : ['uncertain', 'failed'].includes(contact.state)
                   ? 'blocked'
                   : 'done',
-          badge: contact.state === 'proposed' ? 'Draft' : null,
+          badge:
+            contact.state === 'proposed' ? 'Draft' : contact.state === 'queued' ? 'Sending' : null,
         }),
       );
     return group;
@@ -335,6 +336,12 @@ export function contactsPage(root, api, {refresh}) {
     );
     link.title = result.url;
     return link;
+  };
+  // A banner under the header while the agent works on this thread.
+  const working = (text) => {
+    const node = el('p', text, 'contacts-working');
+    node.setAttribute('role', 'status');
+    return node;
   };
   const errorLine = (key) => {
     if (!errors.has(key)) return null;
@@ -432,7 +439,13 @@ export function contactsPage(root, api, {refresh}) {
       followUp = contact.state === 'invited',
       send = el(
         'button',
-        followUp ? 'Send message' : contact.state === 'proposed' ? 'Send invitation' : 'Try again',
+        busy.has(key)
+          ? 'Sending…'
+          : followUp
+            ? 'Send message'
+            : contact.state === 'proposed'
+              ? 'Send invitation'
+              : 'Try again',
         'primary',
       );
     send.type = 'submit';
@@ -521,19 +534,19 @@ export function contactsPage(root, api, {refresh}) {
         [relationLabels[contact.relation], contact.headline].filter(Boolean).join(' · '),
         actions,
       ),
-      log,
     ];
-    if (resendable.has(contact.state) && !locked) parts.push(composer(workspace, entry, contact));
-    else if (locked && contact.state !== 'queued')
+    if (contact.state === 'queued')
+      parts.push(working(`The agent is sending this to ${contact.name} on LinkedIn…`));
+    else if (locked)
       parts.push(
-        el(
-          'p',
+        working(
           entry.state === 'searching'
             ? 'The contact search for this listing is running; you can send when it ends.'
             : 'Another send for this listing is running; you can send when it ends.',
-          'contacts-composer-locked',
         ),
       );
+    parts.push(log);
+    if (resendable.has(contact.state) && !locked) parts.push(composer(workspace, entry, contact));
     const error = errorLine(key);
     if (error) parts.push(error);
     return parts;
@@ -566,7 +579,11 @@ export function contactsPage(root, api, {refresh}) {
       );
     const form = el('form', null, 'contacts-composer search'),
       notes = el('input'),
-      start = el('button', entry.contacts.length ? 'Find again' : 'Find contacts', 'primary');
+      start = el(
+        'button',
+        busy.has(key) ? 'Starting…' : entry.contacts.length ? 'Find again' : 'Find contacts',
+        'primary',
+      );
     notes.placeholder = 'Notes for the search (optional), e.g. "the data team lead"';
     notes.maxLength = 1000;
     notes.value = searchNotes.get(entry.recordId) ?? '';
@@ -592,9 +609,11 @@ export function contactsPage(root, api, {refresh}) {
         [result.cells?.company, host(result.url)].filter(Boolean).join(' · '),
         [listingLink(result)],
       ),
-      log,
-      form,
     ];
+    if (searching) parts.push(working('The agent is searching LinkedIn for people to contact…'));
+    else if (isWorking(entry))
+      parts.push(working('The agent is sending on LinkedIn; you can search again when it ends.'));
+    parts.push(log, form);
     const error = errorLine(key);
     if (error) parts.push(error);
     return parts;
@@ -610,6 +629,7 @@ export function contactsPage(root, api, {refresh}) {
           render();
         });
         chip.setAttribute('aria-pressed', String(filter === key));
+        if (key === 'working' && counts.working) chip.dataset.tone = 'active';
         return chip;
       }),
     );

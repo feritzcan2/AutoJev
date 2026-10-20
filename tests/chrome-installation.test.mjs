@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import {mkdtemp, writeFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {chromeUserDataDirectory, listChromeProfiles} from '../app/browser/chrome-profiles.mjs';
+import {
+  chromeDataError,
+  chromeUserDataDirectory,
+  listChromeProfiles,
+} from '../app/browser/chrome-profiles.mjs';
 import {findChrome} from '../app/browser/chrome-installation.mjs';
 import {existingChromeEndpoint, openChromeWindow} from '../app/jev/chrome.mjs';
 
@@ -82,6 +86,15 @@ test('Chrome debug endpoint stays on loopback and handles Windows line endings',
   } finally {
     await rm(directory, {recursive: true, force: true});
   }
+});
+test('macOS privacy block on Chrome data names Full Disk Access', () => {
+  const denied = Object.assign(Error('EPERM: operation not permitted'), {code: 'EPERM'});
+  const blocked = chromeDataError(denied, {platform: 'darwin'});
+  assert.equal(blocked.code, 'CHROME_DATA_BLOCKED');
+  assert.match(blocked.message, /Full Disk Access/);
+  assert.equal(chromeDataError(denied, {platform: 'win32'}), denied);
+  const missing = Object.assign(Error('missing'), {code: 'ENOENT'});
+  assert.equal(chromeDataError(missing, {platform: 'darwin'}), missing);
 });
 test('launch uses the discovered installation and selected profile as arguments, never shell text', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'jobloop-chrome-'));
