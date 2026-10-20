@@ -10,6 +10,7 @@ import {workspaceSwitcher} from './workspace-switcher.js';
 import {workerTerminals} from './worker-terminals.js';
 import {activityPanels} from './activity-panels.js';
 import {configPage} from './config.js';
+import {updateBadge} from './updates.js';
 import './style.css';
 import './question-form.css';
 import './termloop-theme.css';
@@ -127,6 +128,7 @@ async function deleteWorkspace(owner = selectedWorkspace()) {
 }
 $('delete-workspace').onclick = () => deleteWorkspace();
 const configUI = configPage(api, {notice, relativeTime});
+updateBadge(api, document.querySelector('[data-view=config]'));
 const automationUI = automationsPage(api, {
   notice,
   getCatalog: () => catalog,

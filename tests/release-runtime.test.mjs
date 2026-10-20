@@ -154,3 +154,39 @@ test(
     }
   },
 );
+test('installs without an in-app updater list newer published releases and mark one available', async () => {
+  const fetchImpl = async () => ({
+    ok: true,
+    json: async () => [
+      {tag_name: 'v0.2.0-beta', prerelease: true},
+      {tag_name: 'v0.1.10', name: 'v0.1.10', published_at: '2026-10-20T00:00:00Z', html_url: 'u10'},
+      {tag_name: 'v0.1.9', html_url: 'u9'},
+      {tag_name: 'v0.1.4', html_url: 'u4'},
+      {tag_name: 'v0.1.11', draft: true},
+    ],
+  });
+  const changes = [];
+  const manager = createUpdateManager({
+    app: {isPackaged: false, getVersion: () => '0.1.4'},
+    platform: 'darwin',
+    env: {},
+    fetchImpl,
+    onChange: (state) => changes.push(state.status),
+  });
+  assert.equal(manager.snapshot().status, 'unsupported');
+  const state = await manager.check();
+  assert.equal(state.status, 'available');
+  assert.equal(state.availableVersion, '0.1.10');
+  assert.deepEqual(
+    state.releases.map((release) => release.version),
+    ['0.1.10', '0.1.9'],
+  );
+  assert.ok(changes.includes('checking'));
+  const failing = createUpdateManager({
+    app: {isPackaged: false, getVersion: () => '0.1.4'},
+    env: {},
+    fetchImpl: async () => ({ok: false, status: 403}),
+  });
+  await assert.rejects(failing.check(), /HTTP 403/);
+  assert.equal(failing.snapshot().status, 'error');
+});

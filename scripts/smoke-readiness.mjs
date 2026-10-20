@@ -11,7 +11,7 @@ const data = await mkdtemp(path.join(tmpdir(), 'jobloop-readiness-ui-'));
 const app = await electron.launch({
   executablePath: process.env.JOBLOOP_ELECTRON_BINARY || require('electron'),
   args: [process.cwd()],
-  env: {...process.env, JOBLOOP_DATA_DIR: data},
+  env: {...process.env, JOBLOOP_DATA_DIR: data, JOBLOOP_UPDATE_CHECK: 'off'},
 });
 try {
   const page = await app.firstWindow(),
@@ -145,7 +145,7 @@ try {
   await page.waitForFunction(() =>
     document.querySelector('#config-updates [data-status]').textContent.includes('not supported'),
   );
-  assert.equal(await page.locator('#config-updates [data-check]').isVisible(), false);
+  assert.equal(await page.locator('#config-updates [data-check]').isVisible(), true);
   assert.equal(await page.locator('#config-updates [data-download]').isVisible(), false);
   assert.equal(await page.locator('#config-updates [data-install]').isVisible(), false);
   assert.equal(await page.locator('#config-updates [data-releases]').isVisible(), true);

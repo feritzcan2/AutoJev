@@ -1,6 +1,6 @@
 export function updatesPanel(api, root, {notice = () => {}} = {}) {
   root.classList.add('jev-settings');
-  root.innerHTML = `<h3>App updates</h3><p data-version></p><p data-status role="status"></p><div class="jev-settings-actions"><button type="button" data-check>Check for updates</button><button type="button" data-download hidden>Download</button><button type="button" data-install hidden>Back up and restart</button><button type="button" class="quiet" data-releases>Open the releases page</button></div><p>Stop running tasks before installing an update. Your data is backed up automatically, then AutoJev restarts. Checking and downloading only start from these buttons.</p>`;
+  root.innerHTML = `<h3>App updates</h3><p data-version></p><p data-status role="status"></p><div class="jev-settings-actions"><button type="button" data-check>Check for updates</button><button type="button" data-download hidden>Download</button><button type="button" data-install hidden>Back up and restart</button><button type="button" class="quiet" data-releases>Open the releases page</button></div><ul class="update-releases" data-list hidden></ul><p>AutoJev checks for new releases a little after it starts and every few hours. Downloading and installing only start from these buttons. Stop running tasks before installing an update. Your data is backed up automatically, then AutoJev restarts.</p>`;
   const $ = (selector) => root.querySelector(selector);
   let state = null,
     busy = false;
@@ -13,7 +13,7 @@ export function updatesPanel(api, root, {notice = () => {}} = {}) {
     downloaded: 'Download complete. Stop tasks to install it.',
     installing: 'Backup taken. Installing the update…',
     unsupported:
-      'In-app updates are not supported for this installation. Download the right package from the releases page.',
+      'In-app updates are not supported for this installation. New releases are listed here; download the right package from the releases page.',
     error: 'The update could not be completed.',
   };
   function render() {
@@ -25,8 +25,28 @@ export function updatesPanel(api, root, {notice = () => {}} = {}) {
       $('[data-status]').textContent += ` ${Math.round(state.progress ?? 0)}%`;
     for (const button of root.querySelectorAll('button'))
       button.disabled = busy || ['checking', 'downloading', 'installing'].includes(state.status);
-    $('[data-check]').hidden = !state.enabled;
-    $('[data-download]').hidden = state.status !== 'available';
+    if (state.status === 'available' && !state.enabled)
+      $('[data-status]').textContent =
+        `Version ${state.availableVersion} is available. In-app updates are not supported for this installation; download it from the releases page.`;
+    $('[data-download]').hidden = !state.enabled || state.status !== 'available';
+    const list = $('[data-list]'),
+      releases = state.releases ?? [];
+    list.hidden = !releases.length;
+    list.replaceChildren(
+      ...releases.map((release) => {
+        const item = document.createElement('li'),
+          link = document.createElement('button'),
+          date = release.publishedAt ? new Date(release.publishedAt) : null;
+        link.type = 'button';
+        link.className = 'link';
+        link.textContent = `Version ${release.version}`;
+        link.onclick = () => api.openLink(release.url).catch((error) => notice(error.message));
+        item.append(link);
+        if (date && !Number.isNaN(date.getTime()))
+          item.append(` · released ${date.toLocaleDateString()}`);
+        return item;
+      }),
+    );
     $('[data-install]').hidden = state.status !== 'downloaded';
   }
   async function action(fn) {
@@ -63,4 +83,23 @@ export function updatesPanel(api, root, {notice = () => {}} = {}) {
       }
     },
   };
+}
+
+// The Configuration sidebar item shows "1" while a newer version is available.
+export function updateBadge(api, nav) {
+  if (!api.updateStatus || !nav) return;
+  const badge = document.createElement('span');
+  badge.className = 'agent-nav-status';
+  badge.dataset.tone = 'waiting';
+  badge.setAttribute('aria-hidden', 'true');
+  badge.hidden = true;
+  nav.append(badge);
+  const render = (state) => {
+    const waiting = ['available', 'downloading', 'downloaded'].includes(state?.status);
+    badge.hidden = !waiting;
+    badge.textContent = waiting ? '1' : '';
+    nav.title = waiting ? `Version ${state.availableVersion} is available` : '';
+  };
+  api.onUpdateStatus?.(render);
+  api.updateStatus().then(render, () => {});
 }

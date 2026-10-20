@@ -124,8 +124,10 @@ export function collectLinkedInPosting() {
     }
     return '';
   };
+  // The company is the part before "LinkedIn"; a title may hold " | " itself.
   const tab = document.title.split(' | ').map(clean);
-  const fromTab = tab.length >= 3 && tab.at(-1) === 'LinkedIn' ? tab : [];
+  const fromTab =
+    tab.length >= 3 && tab.at(-1) === 'LinkedIn' ? [tab.slice(0, -2).join(' | '), tab.at(-2)] : [];
   return {
     url: location.href,
     title:
