@@ -9,6 +9,7 @@ export class JevCdpTransport {
     this.owned = new Set();
     this.attached = new Set();
     this.pending = new Map();
+    this.callTimeoutMs = 15000;
     // Out-of-process iframes that were already loaded when they got attached:
     // their session ids, then Playwright's Page.getFrameTree requests for them.
     this.loadedFrames = new Set();
@@ -68,7 +69,7 @@ export class JevCdpTransport {
         timer = setTimeout(() => {
           this.pending.delete(id);
           reject(Error(`Chrome ${method} timed out.`));
-        }, 15000);
+        }, this.callTimeoutMs);
       this.pending.set(id, {resolve, reject, timer});
       this.socket.send(JSON.stringify({id, method, params, ...(sessionId ? {sessionId} : {})}));
     });
@@ -89,8 +90,9 @@ export class JevCdpTransport {
   async attach(targetId) {
     if (this.attached.has(targetId)) return;
     this.attached.add(targetId);
+    let sessionId;
     try {
-      const {sessionId} = await this.call('Target.attachToTarget', {targetId, flatten: true});
+      ({sessionId} = await this.call('Target.attachToTarget', {targetId, flatten: true}));
       // Cross-origin application forms can run as out-of-process iframes.
       // Attach their targets from the owned page session, without attaching
       // unrelated tabs in the user's Chrome profile.
@@ -106,6 +108,9 @@ export class JevCdpTransport {
       );
     } catch (error) {
       this.attached.delete(targetId);
+      // Playwright already saw the attach; detaching tells it the page is gone
+      // instead of leaving it waiting for a page that does not answer.
+      if (sessionId) await this.call('Target.detachFromTarget', {sessionId}).catch(() => {});
       throw error;
     }
   }
@@ -170,11 +175,17 @@ export class JevCdpTransport {
     if (message.method === 'Page.getFrameTree' && this.loadedFrames.delete(message.sessionId))
       this.frameTrees.set(message.id, message.sessionId);
     // Browser-level auto-attach is replaced by explicit attachment to owned tabs.
+    // A restored tab that does not answer (a hung page) is left out instead of
+    // failing the whole connection; it stays open in Chrome, no longer owned.
     if (!message.sessionId && message.method === 'Target.setAutoAttach') {
       (async () => {
         this.ready = true;
         await this.call('Target.setDiscoverTargets', {discover: true});
-        for (const targetId of this.owned) await this.attach(targetId);
+        await Promise.all(
+          [...this.owned].map((targetId) =>
+            this.attach(targetId).catch(() => this.owned.delete(targetId)),
+          ),
+        );
         this.onmessage?.({id: message.id, result: {}});
       })().catch((error) =>
         this.onmessage?.({id: message.id, error: {code: -32000, message: error.message}}),

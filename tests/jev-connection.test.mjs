@@ -468,3 +468,40 @@ test(
     });
   },
 );
+
+test(
+  'a restored tab that does not answer is left out instead of failing the connection',
+  {timeout: 5000},
+  async (t) => {
+    const chrome = await chromeFixture(t),
+      request = chrome.nextRequest();
+    const transportPromise = JevCdpTransport.connect(chrome.endpoint);
+    const peer = await (await request).allow(),
+      transport = await transportPromise;
+    t.after(() => transport.close());
+    transport.callTimeoutMs = 50;
+    const commands = [];
+    peer.on('message', (data) => {
+      const command = JSON.parse(data);
+      commands.push(command);
+      // The hung page never answers on its own session.
+      if (command.sessionId === 'hung-session') return;
+      const sessionId = {'hung-page': 'hung-session', 'live-page': 'live-session'}[
+        command.params?.targetId
+      ];
+      peer.send(JSON.stringify({id: command.id, result: sessionId ? {sessionId} : {}}));
+    });
+    transport.owned.add('hung-page');
+    transport.owned.add('live-page');
+    const answered = new Promise((resolve) => (transport.onmessage = resolve));
+    transport.send({id: 1, method: 'Target.setAutoAttach', params: {autoAttach: true}});
+    assert.deepEqual(await answered, {id: 1, result: {}});
+    assert.deepEqual([...transport.owned], ['live-page']);
+    assert.deepEqual([...transport.attached], ['live-page']);
+    assert.ok(
+      commands.some(
+        (c) => c.method === 'Target.detachFromTarget' && c.params.sessionId === 'hung-session',
+      ),
+    );
+  },
+);
