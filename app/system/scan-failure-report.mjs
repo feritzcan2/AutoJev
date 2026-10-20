@@ -1,5 +1,7 @@
 // @ts-check
 import {randomUUID} from 'node:crypto';
+import {readFileSync} from 'node:fs';
+import {writeFile} from 'node:fs/promises';
 
 // Reports source scans that end failed, blocked or timed out to Sentry so they
 // can be triaged later. Only the site host, app status codes and scrubbed
@@ -117,11 +119,12 @@ export function createScanFailureReporter({
   release,
   environment,
   fetch = globalThis.fetch,
+  enabled = () => true,
 }) {
   const target = envelopeTarget(dsn),
     sent = new Set();
   return async (run) => {
-    if (sent.has(run.id)) return;
+    if (!enabled() || sent.has(run.id)) return;
     sent.add(run.id);
     const event = scanFailureEvent(run, {release, environment});
     const body = [
@@ -142,5 +145,23 @@ export function createScanFailureReporter({
     } catch {
       // Reporting is best effort; a scan never fails because Sentry is unreachable.
     }
+  };
+}
+
+// A device preference kept beside the data, outside the database and backups.
+// Reports are on until the user turns them off.
+export function scanReportSetting(file) {
+  let enabled = true;
+  try {
+    enabled = JSON.parse(readFileSync(file, 'utf8')).sendScanFailures !== false;
+  } catch {}
+  return {
+    enabled: () => enabled,
+    status: () => ({enabled}),
+    async set(value) {
+      await writeFile(file, JSON.stringify({sendScanFailures: value === true}));
+      enabled = value === true;
+      return {enabled};
+    },
   };
 }

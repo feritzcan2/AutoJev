@@ -629,11 +629,13 @@ api.onAutomationChange?.((event) => {
   if (event.automationId && event.automationId !== automationUI.selected) return;
   refreshOnChange().catch((error) => notice(error.message));
 });
-// A notification click opens the workspace whose question it showed.
+// A notification click opens the workspace it was about, on the page it names.
 api.onOpenWorkspace?.(
-  attempt(async ({workspaceId}) => {
-    if (automationUI.selected === workspaceId) return;
-    await automationUI.select(workspaceId, {onboarding: false});
-    await refresh();
+  attempt(async ({workspaceId, view}) => {
+    if (automationUI.selected !== workspaceId) {
+      await automationUI.select(workspaceId, {onboarding: false});
+      await refresh();
+    }
+    if (view && automationUI.selected === workspaceId) switchView(view);
   }),
 );

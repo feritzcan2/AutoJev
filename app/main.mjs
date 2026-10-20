@@ -5,16 +5,7 @@ import {AgentProfiles} from './agents/profiles.mjs';
 import {WEB_AGENTS, WEB_AGENT_ROLES} from './agents/automation-profiles.mjs';
 import {InstructionLog} from './system/instruction-log.mjs';
 import {webInstructionCatalog, instructionSnapshot} from './system/instruction-catalog.mjs';
-import {
-  app,
-  BrowserWindow,
-  Menu,
-  ipcMain,
-  dialog,
-  shell,
-  safeStorage,
-  Notification,
-} from 'electron';
+import {app, BrowserWindow, Menu, ipcMain, dialog, shell, safeStorage} from 'electron';
 import {mkdir, rm} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -25,7 +16,7 @@ import {AgentTrace} from './system/agent-trace.mjs';
 import {registerDevTools} from './system/dev-tools.mjs';
 import {registerAutomationServices} from './automation/services.mjs';
 import {AutomationStore} from './automation/store.mjs';
-import {createScanFailureReporter} from './system/scan-failure-report.mjs';
+import {createScanFailureReporter, scanReportSetting} from './system/scan-failure-report.mjs';
 import {registerSettingsServices} from './system/settings-services.mjs';
 import {openedInBackground, startBackgroundMode} from './system/background.mjs';
 import {JevSettings} from './jev/settings.mjs';
@@ -252,10 +243,14 @@ async function boot() {
     });
   }
   const automationDb = new AutomationStore(core);
+  const scanReports = scanReportSetting(path.join(data, 'scan-reports.json'));
   automationDb.scanFailed = createScanFailureReporter({
     release: app.getVersion(),
     environment: app.isPackaged ? 'production' : 'development',
+    enabled: scanReports.enabled,
   });
+  handle('scan-reports-status', () => scanReports.status());
+  handle('scan-reports-set', (value) => scanReports.set(value === true));
   const web = registerAutomationServices({
     root,
     data,
@@ -270,16 +265,6 @@ async function boot() {
     shell,
     window: () => window,
     trace,
-    notify: (title, body) => {
-      if (Notification.isSupported() && !window?.isFocused()) {
-        const notification = new Notification({title, body: body.slice(0, 300)});
-        notification.on('click', () => {
-          window?.show();
-          window?.focus();
-        });
-        notification.show();
-      }
-    },
   });
   // Unpackaged builds only: agent trace and trial scores.
   registerDevTools({handle, trace, db: automationDb, runtime: web.runtime});
@@ -542,9 +527,15 @@ async function boot() {
         changed(id);
         return result;
       }),
-    openWorkspace: (id) => emit('open-workspace', {workspaceId: id}),
+    openWorkspace: (id, view) => emit('open-workspace', {workspaceId: id, view}),
   });
   automationDb.questionAsked = (id, question) => background.questionAsked(id, question);
+  // Scans that end failed, blocked or timed out: a notification, plus the report when enabled.
+  const reportScanFailure = automationDb.scanFailed;
+  automationDb.scanFailed = (run) => {
+    background.scanFailed(run);
+    return reportScanFailure?.(run);
+  };
   handle('background-status', () => background.status());
   handle('background-open-at-login', (value) => background.setOpenAtLogin(value === true));
   await window.loadFile(path.join(root, 'dist/index.html'));

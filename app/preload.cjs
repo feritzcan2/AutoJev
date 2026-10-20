@@ -127,6 +127,8 @@ contextBridge.exposeInMainWorld('jobloop', {
   onUpdateStatus: (callback) => subscribe('update-status', callback),
   backgroundStatus: () => invoke('background-status'),
   setOpenAtLogin: (value) => invoke('background-open-at-login', value),
+  scanReportsStatus: () => invoke('scan-reports-status'),
+  setScanReports: (value) => invoke('scan-reports-set', value),
   onOpenWorkspace: (callback) => subscribe('open-workspace', callback),
   workspaceTransition: (id, itemId, action) => invoke('workspace-transition', id, itemId, action),
   addWorker: (id, input) => invoke('worker-add', id, input),

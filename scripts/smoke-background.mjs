@@ -44,6 +44,19 @@ try {
     ),
     [{visible: false}],
   );
+  if (process.platform === 'darwin')
+    assert.equal(await app.evaluate(({app}) => app.dock.isVisible()), false);
+  // The menu's Open AutoJob and notification clicks show the window the same way.
+  await app.evaluate(({BrowserWindow}) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    w.show();
+    w.focus();
+  });
+  await page.waitForTimeout(800);
+  if (process.platform === 'darwin')
+    assert.equal(await app.evaluate(({app}) => app.dock.isVisible()), true);
+  await app.evaluate(({BrowserWindow}) => BrowserWindow.getAllWindows()[0].close());
+  await page.waitForTimeout(500);
   await app.evaluate(({app}) => app.emit('activate'));
   await page.waitForTimeout(300);
   assert.equal(
@@ -57,6 +70,17 @@ try {
   );
   await page.waitForTimeout(300);
   assert.equal(await page.locator('#candidates').inputValue(), workspace.id);
+  // A scan problem notification opens the Sources page.
+  await app.evaluate(
+    ({BrowserWindow}, id) =>
+      BrowserWindow.getAllWindows()[0].webContents.send('open-workspace', {
+        workspaceId: id,
+        view: 'sources',
+      }),
+    workspace.id,
+  );
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('[data-automation-pane=sources]').isVisible(), true);
   assert.deepEqual(errors, []);
   await app.evaluate(({app}) => setTimeout(() => app.quit(), 10));
   const code = await Promise.race([

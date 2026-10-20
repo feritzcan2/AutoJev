@@ -45,7 +45,6 @@ export function registerAutomationServices({
   browsers,
   agents,
   mcp,
-  notify = () => {},
   launch = launchAutomationWorker,
   trace = null,
 }) {
@@ -134,11 +133,8 @@ export function registerAutomationServices({
                         : undefined,
           },
         ),
-        report: (id, runId, status, summary, goalReached) => {
-          const result = runtime.report(id, runId, status, summary, goalReached);
-          if (run.kind !== 'interview') notify(automation.title, db.run(runId).summary);
-          return result;
-        },
+        report: (id, runId, status, summary, goalReached) =>
+          runtime.report(id, runId, status, summary, goalReached),
         changed,
         onOutput: (bytes) => {
           outputs.set(

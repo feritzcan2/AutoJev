@@ -11,9 +11,11 @@ export function openedInBackground() {
   return process.argv.includes(BACKGROUND_ARG);
 }
 
+const SCAN_PROBLEMS = {failed: 'failed', blocked: 'was blocked', timeout: 'timed out'};
+
 // Keeps the app running after its window closes: a menu bar (tray) icon, no
-// App Nap while work runs, an optional login item and question notifications
-// that take the answer directly.
+// App Nap while work runs, an optional login item, question notifications
+// that take the answer directly and notifications for scans that hit a problem.
 export function startBackgroundMode({
   root,
   window,
@@ -33,16 +35,18 @@ export function startBackgroundMode({
     toldOnce = false,
     blocker = null,
     menuKey = '';
-  const notifications = new Map();
+  const notifications = new Map(),
+    // One notification per workspace; later scan problems update its count.
+    scanProblems = new Map();
   const show = () => {
     const current = window();
     if (!current || current.isDestroyed()) return;
     current.show();
     current.focus();
   };
-  const open = (id) => {
+  const open = (id, view) => {
     show();
-    openWorkspace(id);
+    openWorkspace(id, view);
   };
   // The updater closes the windows itself before installing.
   autoUpdater.on('before-quit-for-update', () => {
@@ -52,6 +56,8 @@ export function startBackgroundMode({
     if (quitting() || closingForUpdate) return;
     event.preventDefault();
     window().hide();
+    // Only the menu bar icon stays; the Dock icon returns with the window.
+    if (mac) app.dock?.hide();
     if (toldOnce || !Notification.isSupported()) return;
     toldOnce = true;
     new Notification({
@@ -61,6 +67,18 @@ export function startBackgroundMode({
     }).show();
   });
   app.on('activate', show);
+  window().on('focus', () => scanProblems.clear());
+  // Every way of opening the window (menu, notification, second launch) brings the Dock icon back.
+  window().on('show', () => {
+    if (mac && !app.dock?.isVisible())
+      app.dock?.show().then(() => {
+        // Without a Dock icon the app was not active; bring it to the front.
+        app.focus({steal: true});
+        if (!window()?.isDestroyed()) window().focus();
+      });
+  });
+  // Opened at login: the window starts hidden, so does the Dock icon.
+  if (mac && !window().isVisible()) app.dock?.hide();
 
   const tray = new Tray(
     nativeImage.createFromPath(
@@ -165,8 +183,34 @@ export function startBackgroundMode({
     notification.show();
   }
 
+  function scanFailed(run) {
+    if (!Notification.isSupported() || window()?.isFocused()) return;
+    const id = run.automationId,
+      previous = scanProblems.get(id),
+      count = (previous?.count ?? 0) + 1;
+    previous?.notification.close();
+    let site = 'A source';
+    try {
+      site = new URL(run.sourceUrl ?? run.sources?.[0]).host;
+    } catch {}
+    const notification = new Notification({
+      title: `${workspaceTitle(id)} · scan ${SCAN_PROBLEMS[run.status] ?? run.status}`,
+      body: (
+        (count > 1 ? `${count} scans had problems. Latest: ` : '') +
+        `${site}${run.summary ? ': ' + run.summary : ''}`
+      ).slice(0, 300),
+    });
+    scanProblems.set(id, {notification, count});
+    notification.on('click', () => {
+      scanProblems.delete(id);
+      open(id, 'sources');
+    });
+    notification.show();
+  }
+
   return {
     questionAsked,
+    scanFailed,
     status,
     setOpenAtLogin,
     dispose() {

@@ -8,6 +8,8 @@ description: Triage jobloop source scans that ended failed, blocked or timed out
 When a source scan run ends `failed`, `blocked` or `timeout`, the app sends one
 Sentry event (`app/system/scan-failure-report.mjs`, hooked in `AutomationStore.putRun`).
 Interrupted, partial and completed runs and record work (applications) are not sent.
+Reports are on by default; Configuration → Diagnostics → "Send failed scan reports" turns
+them off (stored in `<data>/scan-reports.json`). No events from this machine can mean it is off.
 
 - Organization `agentloop-22`, project `jobloop` (ID `4512290640101456`), API `https://de.sentry.io`
 - API token: macOS Keychain service `ai.termloop.sentry.api` (shared with TermLoop Mobile)

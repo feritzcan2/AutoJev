@@ -2,9 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
+import {mkdtemp, readFile, rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {
   createScanFailureReporter,
   scanFailureEvent,
+  scanReportSetting,
   scrubText,
 } from '../app/system/scan-failure-report.mjs';
 
@@ -140,4 +144,28 @@ test('the reporter posts one envelope per run and swallows network errors', asyn
   assert.equal(header.event_id, event.event_id);
   assert.equal(item.type, 'event');
   assert.equal(event.release, '0.1.11');
+});
+
+test('scan reports are on by default and stay off once turned off', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'jobloop-scan-reports-')),
+    file = join(directory, 'scan-reports.json');
+  t.after(() => rm(directory, {recursive: true, force: true}));
+  const setting = scanReportSetting(file);
+  assert.deepEqual(setting.status(), {enabled: true});
+  const calls = [];
+  const report = createScanFailureReporter({
+    dsn: 'https://publickey@o1.ingest.example.test/42',
+    release: '0.1.11',
+    environment: 'development',
+    enabled: setting.enabled,
+    fetch: async (url) => calls.push(url),
+  });
+  assert.deepEqual(await setting.set(false), {enabled: false});
+  await report({id: 'run-1', kind: 'run', status: 'failed', sourceUrl: source});
+  assert.equal(calls.length, 0);
+  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), {sendScanFailures: false});
+  assert.deepEqual(scanReportSetting(file).status(), {enabled: false});
+  await setting.set(true);
+  await report({id: 'run-1', kind: 'run', status: 'failed', sourceUrl: source});
+  assert.equal(calls.length, 1);
 });
