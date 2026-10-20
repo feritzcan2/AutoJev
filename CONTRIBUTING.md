@@ -1,6 +1,6 @@
 # Contributing
 
-See the [README](README.md) for setup.
+See [docs/development.md](docs/development.md) for setup.
 
 Describe the behaviour of your change and the related verification in the PR
 description. Use synthetic candidates, job listings and keys in tests; do not wire

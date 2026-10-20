@@ -1,202 +1,166 @@
-# AutoJev · Web automations
+<p align="center">
+  <img src="build/icon.png" width="96" alt="AutoJev icon">
+</p>
 
-AutoJev is a desktop app that manages personal web tasks through automations set
-up with templates and an assistant. The job-search interface keeps its workspace
-selector, the **Applications** table, and the Sources, Agent, Background work and
-Files pages. Job search, home search and appointment tracking share this layout.
-The agent learns what you need by asking questions and adapts the profile and the
-table columns to the automation. All templates share the same record store, task
-queue, 1–8 worker infrastructure, Agent terminal and browser management. A template
-defines the questions, columns, statuses and action steps.
+<h1 align="center">AutoJev</h1>
 
-The job-search template uses the existing JobLoop candidate profiles, CVs,
-applications and Telegram connections. Other automations have their own
-conversation, sources, browser settings, permissions and result history. Reusable
-templates can be saved and shared as a JSON file. The interface is in English.
+<p align="center">
+  <b>Your automatic job search and job application assistant.</b><br>
+  It finds jobs on dozens of job sites, applies for you, writes a cover letter for every application<br>
+  and reaches out to the recruiter or hiring manager on LinkedIn.
+</p>
 
-Use **Sources → Add source** to add a site address, or **Find with the agent** to
-research sources. Each source carries an editable working instruction, an optional
-skill text and a search recipe. The agent reads the source instruction and scans the
-source through the Chrome instance managed by Jev.
+<p align="center">
+  <a href="https://github.com/feritzcan2/AutoJev/releases/latest"><b>Download</b></a> ·
+  <a href="#what-it-does">What it does</a> ·
+  <a href="#getting-started">Getting started</a> ·
+  <a href="#privacy">Privacy</a>
+</p>
 
-Among the job-search sources, **Himalayas** uses the same site-extension registry
-as StepStone. StepStone reads the listings on the open page; the Himalayas extension
-uses a dedicated CLI to fetch, from the official API, the listings and full
-descriptions for the country and query in the search recipe. The source agent
-fetches one page with `collect_source_page`, then scores the listings that pass the
-shared Jev screening and saves them to the table. The next page is not fetched until
-the review batch is approved. No listing tabs are opened for the scan.
-Older unscored CLI records are evaluated under the same identity when they are seen
-again; rejected ones are stored with their reasons. The progress note in the source
-details shows the collected, rejected, pending and saved counts. Older
-`/jobs/countries/germany?q=...` recipes are converted to an API search with the same
-filters. If the API does not support a custom filter, a clear error is shown.
+<!-- Screenshot or short GIF of the Applications table goes here:
+<p align="center"><img src="docs/images/applications.png" width="860" alt="AutoJev applications table"></p>
+-->
 
-The collector can also be run from source on its own:
+---
 
-```sh
-pnpm collect --source himalayas --query backend --country DE
-pnpm collect --source himalayas --all
-```
+## Stop applying by hand
 
-The output is NDJSON pages followed by a final completion notice. `--max-pages 1000`
-is the default limit of one CLI call; when the limit is reached, the exit code is 2
-and `complete:false` is returned. The app uses the CLI with one-page calls per
-review batch. Requests have timeouts, transient errors are retried at most twice,
-and a stop request closes the child process. On a permanent error the source is
-reported as incomplete; a rerun continues from the saved page. Raw API content and
-full descriptions stay in RAM; a restarted app fetches them again. The source name
-and the original listing link are kept on the record. The
-[Himalayas API](https://himalayas.app/docs/remote-jobs-api) is cached; results are
-not guaranteed to be up to the minute.
+Job hunting means checking the same sites every day, reading hundreds of listings
+that do not fit, filling in the same forms again and again, and writing yet another
+cover letter. AutoJev is a desktop app that does all of that for you, using the AI
+assistant you already have.
 
-Listings that disappear from the results page on a reread are fetched by their IDs
-from inside the CLI through the official
-[single-job detail service](https://himalayas.app/docs/remote-jobs-mcp)
-(`--detail-url LISTING_URL`). This uses no model. Addresses that cannot be read stay
-in the queue while the other listings, pages and searches move on. A full scan is
-not reported as successful until the gaps are resolved; a failed single-job query is
-not retried within the same run. Collector error cards do not ask for a browser tab.
+## What it does
 
-**Getting started:** New workspace → choose a template → talk to the Agent → save
-the profile → run once or on a schedule. The first run of a source scanned by the
-agent is an automatic trial. The agent checks search, pagination, detail reading
-and access through the Chrome instance managed by Jev; later runs do a normal scan
-with the current criteria. For scheduling, the app and the computer must stay on.
-The app's former name is JobLoop; the distribution ID and data folder are kept for
-compatibility with existing JobLoop installations.
+### 🔎 Finds jobs for you
 
-## Installation
+Tell it once what you are looking for: role, city, salary, remote or on-site. AutoJev
+goes through LinkedIn, Indeed, StepStone, XING and many other job sites, page by
+page, and on a schedule if you want. It can also find new job sites for your field
+and country by itself.
 
-Use the package for your operating system from the
-[Releases](https://github.com/feritzcan2/AutoJev/releases) page:
+### 🎯 Picks the jobs that fit you
 
-| System | Package | Architecture |
-| --- | --- | --- |
-| macOS | DMG / ZIP | Universal: Apple Silicon and Intel |
-| Windows | NSIS installer EXE | x64 |
-| Linux | AppImage / DEB | x64 |
+Every listing is read and compared with your CV and profile. Each job gets a score
+and a short reason, so you know *why* it fits or not. Jobs that break your rules
+(wrong city, no visa sponsorship, wrong language) are left out.
 
-The current release is [v0.1.2](https://github.com/feritzcan2/AutoJev/releases/tag/v0.1.2).
-It contains shared workspaces, automation templates and the local changes collected
-during release preparation (`1320b7e`).
-The macOS package is signed with a Developer ID and notarized; the Windows EXE is
-not code-signed in this release. On request, tests were not run for this release;
-native build, signing and package integrity checks were applied.
+### 📝 Applies automatically
 
-If you got stuck at profile preparation in 0.1.0, close the app, install the new
-package and open it again. The saved profile and CV are kept; preparation is retried.
+AutoJev opens the application form, fills in every field from your profile, uploads
+your CV and submits it. If a site needs an account, it creates one for you. When a
+fact is missing, it asks you once and remembers the answer for the next
+applications.
 
-### Before you start
+### ✉️ Writes a cover letter for every job
 
-1. Install [Codex CLI](https://github.com/openai/codex),
-   [Claude Code](https://code.claude.com/docs/en/overview) or
-   [OpenCode](https://opencode.ai) (1.18.33–1.x) and sign in with your own account
-   in the terminal. Provider usage is subject to your account's pricing and data
-   terms.
-2. Install Google Chrome for general web automations. In the Agent settings you can
-   choose a separate browser or Jev. The separate browser opens its own profile for
-   each automation; use the **Open browser** button to sign in to your accounts.
-   When using Jev, open `chrome://inspect/#remote-debugging` in your existing Chrome
-   and allow the connection request. In the agent's own browser mode, enable the
-   tools inside the agent.
-3. **Agent settings → Listing decisions** defaults to **This agent**, which needs
-   no TypeSafe key. To let Jev decide instead, switch it to **Jev (TypeSafe key)**,
-   save the TypeSafe API key under **Configuration → Jev** and test the connection.
-   Sources are scanned through the selected browser. With **This agent** the
-   managed browser still reads pages, keeps the queue and follows observed page
-   numbers, but no model is called. Each results page pauses so the
-   worker agent chooses the listings to read, the agent picks the next page when the
-   page numbers do not show it, and every read listing waits in a review batch for
-   the agent's decision. The agent fills search forms itself, and a search recipe is
-   verified from the listings the agent selected at its address (`url_template`
-   only). This uses more of the agent's context than Jev.
-4. Open a job search with the **New workspace** button and check the workspace
-   profile. Add the candidate profile and CV; choose the application permission and
-   preferences.
+Each application gets its own cover letter, written for that company and that role
+from your CV. Read and approve each one, or let them go out automatically.
 
-The portal membership password is stored to **create new job-site accounts** on
-behalf of that candidate. Each candidate's record is separate. It does not assume
-it is the password of an existing account.
+### 🤝 Reaches out to the right people
 
-## CAPTCHA and verification pages
+For a job you care about, AutoJev looks for the people behind it on LinkedIn: the
+person who posted the job, the recruiter or the hiring manager. It writes a short,
+personal note for each of them. You pick the note you like, and it sends the
+connection request or message for you.
 
-The app does not solve CAPTCHAs. On a reading tab, a visible Cloudflare
-"Verify you are human" checkbox gets one local click; no paid service is used.
-Any other verification, and every verification on an application tab, is
-reported and handed to you in the current tab. Real rate limits start the shared
-site wait.
+### 📋 Keeps track of everything
 
-## Data and updates
+Every job and every application is in one table: found, applied, interview,
+rejected. You get updates on Telegram and can answer its questions from your phone.
 
-- With **Configuration → Data and backups → Open existing data folder** you can
-  choose an AutoJev data folder that contains `jobloop.sqlite`. The app restarts
-  and uses the records in that folder on later launches too. For exported backups,
-  use **Restore from backup**.
-- Profiles, CVs and application history are in the app's local data folder.
-  When the Agent, Jev and Telegram are used, the relevant data is sent to external
-  services.
-- With **Configuration → Data and backups** you can export candidates and documents
-  and restore from a backup. Passwords and API keys saved by the app are removed
-  from portable backups; secrets typed by hand into text are not stripped.
-  Backups contain personal data, so keep them in a safe place.
-- Checking for and downloading updates starts from the **Updates** section. Before
-  installing, you are asked to stop tasks and a backup is taken automatically.
-  Linux DEB installations are updated from the releases page; in-app updates are
-  for AppImage.
+## How it works
 
-## Running from source
+1. **Talk to the assistant.** It asks what you are looking for and reads your CV.
+2. **Choose how much it may do.** Only collect jobs, prepare applications for you
+   to check, or apply on its own.
+3. **Press run.** AutoJev works on the real job sites in Chrome, just like you
+   would, and fills your table with matching jobs and sent applications.
+4. **Step in only when needed.** A login, a CAPTCHA or a code sent to your email?
+   It stops, tells you, and continues once you are done.
 
-Requirements: Node.js 22.22.3+, pnpm 10.14.0, Rust 1.90.0, and your operating
-system's native build tools. Windows needs the MSVC tools, macOS needs the Xcode
-Command Line Tools.
+## Supported job sites
 
-```sh
-git clone https://github.com/feritzcan2/AutoJev.git
-cd AutoJev
-corepack enable
-pnpm bootstrap
-pnpm start
-```
+Built in: LinkedIn, Indeed, StepStone, XING, Himalayas, We Work Remotely, Dice,
+Reed, SimplyHired, The Muse, Built In, Workable, Arbeitnow, Berlin Startup Jobs,
+Hacker News "Who is hiring?", Jobindex, Jobnet, Jobdanmark, Akademikernes Jobbank,
+Job Bank Canada, Werk.nl, Nationale Vacaturebank, Kariyer.net, Naukri, Gupy,
+Wantedly and company career pages.
 
-The TermLoop Rust modules and terminal packages that are needed live in
-`vendor/termloop`, pinned to a commit with a SHA-256 manifest; a neighbouring
-TermLoop repository is not required. The Jev key can be saved from the app; the
-development alternative is the `.env.jev.example` file. Do not add real keys to Git.
+Any other job site works too: add its address and the assistant learns how to
+search it.
 
-```sh
-pnpm vendor:verify
-pnpm check
-pnpm test
-pnpm build
-pnpm engine:build
-pnpm test:ui
-pnpm test:automations
-pnpm test:automations:jev
-```
+## Getting started
 
-Contributing: [CONTRIBUTING](CONTRIBUTING.md).
+### 1. Install AutoJev
 
-## Support and license
+Download the package for your computer from
+[Releases](https://github.com/feritzcan2/AutoJev/releases/latest):
 
-Report bugs through [Issues](https://github.com/feritzcan2/AutoJev/issues).
-Do not share CVs, candidate data, bot tokens or raw terminal logs.
-For security vulnerabilities, use the private channel in [SECURITY](SECURITY.md).
+| System | File |
+| --- | --- |
+| macOS (Apple Silicon and Intel) | `.dmg` |
+| Windows (x64) | `.exe` installer |
+| Linux (x64) | `.AppImage` or `.deb` |
 
-AutoJev is offered under GPL-3.0-or-later and commercial license options; see
-[LICENSE](LICENSE). Third-party components are subject to their own licenses:
-[notices](THIRD_PARTY_NOTICES.md).
+### 2. Connect an AI assistant
 
-### OpenCode
+AutoJev uses the AI assistant you already have. Install one of these and sign in
+with your own account:
 
-OpenCode can be selected in the Agent settings. It uses the same OpenCode Go models
-as TermLoop and the `default`, `plan` and `bypassPermissions` permissions. Session
-resume, MCP tools and agent instructions are supported. Setup uses
-`opencode auth login`; status tracking requires OpenCode 1.18.33–1.x. OpenCode v2
-launch settings are recognised, but v2 cannot yet be used in AutoJev automations
-because it has no status tracking or session resume.
-OpenCode manages its own context compaction; AutoJev context thresholds and the
-local plain-text conversation transcript currently apply to Claude/Codex. The
-OpenCode conversation is shown in the agent terminal.
+- [Claude Code](https://code.claude.com/docs/en/overview)
+- [Codex CLI](https://github.com/openai/codex)
+- [OpenCode](https://opencode.ai)
 
-Real CLI/MCP test with a local mock model: `pnpm engine:build && node scripts/smoke-opencode.mjs`.
+AutoJev itself is free. The AI usage counts against your own subscription with that
+provider.
+
+### 3. Install Google Chrome
+
+AutoJev applies through the real job sites in Chrome. Press **Open browser** in the
+app and sign in to LinkedIn and the other sites you use once.
+
+### 4. Start your job search
+
+**New workspace → Job search → talk to the assistant → add your CV → run.**
+Run it once or on a schedule. Scheduled runs need the app and the computer to stay
+on.
+
+## Privacy
+
+- **Your data stays on your computer.** Your profile, CV and application history are
+  stored locally. There is no AutoJev account and no AutoJev server.
+- **You choose what leaves it.** The parts needed for a task are sent to the AI
+  provider you connected, to Telegram if you turn it on, and to Jev if you add a
+  TypeSafe key (optional).
+- **Backups are yours.** Export everything under **Configuration → Data and
+  backups**. Saved passwords and API keys are removed from backups.
+
+## Good to know
+
+- **You stay in charge.** It only takes the actions you allowed. It never invents
+  facts about you; when something is unclear, it asks.
+- **No double applications.** It checks whether you already applied before it
+  submits, and it clicks submit only once.
+- **Polite on LinkedIn.** Contact messages are sent only after you approve them,
+  with a daily limit.
+- **CAPTCHAs.** AutoJev does not solve CAPTCHAs or bypass site protections. When a
+  site asks for verification, it hands the tab over to you.
+- **Not only jobs.** The same assistant can also search for a home or watch for free
+  appointment slots.
+
+## Help and contributing
+
+- Found a bug or have an idea? Open an
+  [issue](https://github.com/feritzcan2/AutoJev/issues). Please do not post CVs,
+  personal data, tokens or raw logs.
+- Security problem? Use the private channel in [SECURITY](SECURITY.md).
+- Want to build from source or add a job site? See
+  [docs/development.md](docs/development.md),
+  [site extensions](docs/site-extensions.md) and
+  [CONTRIBUTING](CONTRIBUTING.md).
+
+## License
+
+AutoJev is open source under GPL-3.0-or-later, with a commercial license option.
+See [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md).
