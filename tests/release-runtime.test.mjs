@@ -190,3 +190,34 @@ test('installs without an in-app updater list newer published releases and mark 
   await assert.rejects(failing.check(), /HTTP 403/);
   assert.equal(failing.snapshot().status, 'error');
 });
+test('automatic checks download a found update; quitting backs up before installing silently', async () => {
+  const updater = new EventEmitter(),
+    calls = [];
+  updater.checkForUpdates = async () => updater.emit('update-available', {version: '0.2.0'});
+  updater.downloadUpdate = async () => {
+    calls.push('download');
+    updater.emit('update-downloaded', {version: '0.2.0'});
+  };
+  updater.quitAndInstall = (silent, runAfter) => calls.push(`install ${silent} ${runAfter}`);
+  const manager = createUpdateManager({
+    app: {isPackaged: true, getVersion: () => '0.1.0'},
+    platform: 'darwin',
+    updater,
+    autoCheck: true,
+    fetchImpl: async () => ({ok: true, json: async () => []}),
+    beforeInstall: async () => {
+      calls.push('backup');
+      return () => calls.push('release');
+    },
+  });
+  assert.equal(await manager.prepareQuitInstall(), null);
+  await manager.check();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(manager.snapshot().status, 'downloaded');
+  manager.dispose();
+  const install = await manager.prepareQuitInstall();
+  assert.deepEqual(calls, ['download', 'backup']);
+  await install();
+  assert.equal(updater.autoRunAppAfterInstall, false);
+  assert.deepEqual(calls, ['download', 'backup', 'release', 'install true false']);
+});

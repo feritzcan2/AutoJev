@@ -1,6 +1,6 @@
 export function updatesPanel(api, root, {notice = () => {}} = {}) {
   root.classList.add('jev-settings');
-  root.innerHTML = `<h3>App updates</h3><p data-version></p><p data-status role="status"></p><div class="jev-settings-actions"><button type="button" data-check>Check for updates</button><button type="button" data-download hidden>Download</button><button type="button" data-install hidden>Back up and restart</button><button type="button" class="quiet" data-releases>Open the releases page</button></div><ul class="update-releases" data-list hidden></ul><p>AutoJev checks for new releases a little after it starts and every few hours. Downloading and installing only start from these buttons. Stop running tasks before installing an update. Your data is backed up automatically, then AutoJev restarts.</p>`;
+  root.innerHTML = `<h3>App updates</h3><p data-version></p><p data-status role="status"></p><div class="jev-settings-actions"><button type="button" data-check>Check for updates</button><button type="button" data-download hidden>Download</button><button type="button" data-install hidden>Back up and restart</button><button type="button" class="quiet" data-releases>Open the releases page</button></div><ul class="update-releases" data-list hidden></ul><p data-help></p>`;
   const $ = (selector) => root.querySelector(selector);
   let state = null,
     busy = false;
@@ -10,7 +10,8 @@ export function updatesPanel(api, root, {notice = () => {}} = {}) {
     available: 'A new version is ready to download.',
     current: 'You are on the latest version.',
     downloading: 'Downloading the update…',
-    downloaded: 'Download complete. Stop tasks to install it.',
+    downloaded:
+      'The update is downloaded. It installs when you quit AutoJev, or stop tasks and restart now.',
     installing: 'Backup taken. Installing the update…',
     unsupported:
       'In-app updates are not supported for this installation. New releases are listed here; download the right package from the releases page.',
@@ -25,6 +26,9 @@ export function updatesPanel(api, root, {notice = () => {}} = {}) {
       $('[data-status]').textContent += ` ${Math.round(state.progress ?? 0)}%`;
     for (const button of root.querySelectorAll('button'))
       button.disabled = busy || ['checking', 'downloading', 'installing'].includes(state.status);
+    $('[data-help]').textContent = state.enabled
+      ? 'AutoJev checks for new releases a little after it starts and every few hours, and downloads a new version in the background. It installs when you quit AutoJev, after an automatic backup of your data. To install now, stop running tasks and choose Back up and restart.'
+      : 'AutoJev checks for new releases a little after it starts and every few hours and lists them here.';
     if (state.status === 'available' && !state.enabled)
       $('[data-status]').textContent =
         `Version ${state.availableVersion} is available. In-app updates are not supported for this installation; download it from the releases page.`;

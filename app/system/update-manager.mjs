@@ -115,6 +115,7 @@ export function createUpdateManager({
       install: async () => {
         throw Error('Automatic updates are not supported in this installation.');
       },
+      prepareQuitInstall: async () => null,
       dispose: () => {
         disposed = true;
         stopTimers();
@@ -168,19 +169,24 @@ export function createUpdateManager({
       return readReleases().then(() => ({...state}));
     const result = action(async () => {
       await Promise.all([client.checkForUpdates(), readReleases().catch(() => {})]);
+    }).then((next) => {
+      // A found update downloads in the background; it installs when the app quits.
+      if (autoCheck && state.status === 'available') download().catch(() => {});
+      return next;
     });
     return quiet ? result.catch(() => ({...state})) : result;
   };
+  const download = () =>
+    action(async () => {
+      if (state.status !== 'available') throw Error('No update available to download.');
+      publish({status: 'downloading', progress: 0, error: null});
+      await client.downloadUpdate();
+    });
   schedule(check);
   return {
     snapshot: () => ({...state}),
     check: () => check(),
-    download: () =>
-      action(async () => {
-        if (state.status !== 'available') throw Error('No update available to download.');
-        publish({status: 'downloading', progress: 0, error: null});
-        await client.downloadUpdate();
-      }),
+    download,
     install: () =>
       action(async () => {
         if (state.status !== 'downloaded') throw Error('Download the update first.');
@@ -196,6 +202,22 @@ export function createUpdateManager({
           throw error;
         }
       }),
+    // Called while the app quits: backs up the data, then returns the step that
+    // installs the downloaded update without reopening the app. Null when there is
+    // nothing to install or the backup failed.
+    prepareQuitInstall: async () => {
+      if (state.status !== 'downloaded' || typeof beforeInstall !== 'function') return null;
+      try {
+        const release = await beforeInstall();
+        return async () => {
+          await release?.();
+          client.autoRunAppAfterInstall = false;
+          client.quitAndInstall(true, false);
+        };
+      } catch {
+        return null;
+      }
+    },
     dispose: () => {
       disposed = true;
       stopTimers();
