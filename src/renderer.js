@@ -10,6 +10,7 @@ import {workspaceSwitcher} from './workspace-switcher.js';
 import {workerTerminals} from './worker-terminals.js';
 import {activityPanels} from './activity-panels.js';
 import {configPage} from './config.js';
+import {applyAppearance} from './appearance.js';
 import {updateBadge} from './updates.js';
 import './style.css';
 import './question-form.css';
@@ -73,11 +74,11 @@ function relativeTime(value) {
       ? `${minutes} min ago`
       : `${Math.round(minutes / 60)} h ago`;
 }
-const workspaceMenu = workspaceSwitcher($('candidates'));
-const actions = element('div', 'workspace-actions');
-actions.innerHTML =
-  '<button id="rename-workspace" class="quiet" type="button">Rename</button><button id="delete-workspace" class="quiet danger" type="button">Delete</button>';
-$('new').after(actions);
+// Rename and Delete live in each workspace's ⋯ menu inside the switcher.
+const workspaceMenu = workspaceSwitcher($('candidates'), {
+  rename: (item) => renameWorkspace(item),
+  remove: (item) => deleteWorkspace(item),
+});
 const renameDialog = document.createElement('dialog');
 renameDialog.id = 'rename-workspace-dialog';
 renameDialog.innerHTML =
@@ -88,14 +89,13 @@ const selectedWorkspace = () => ({
   id: automationUI.selected,
   title: automationUI.data?.automation.title,
 });
-$('rename-workspace').onclick = () => {
-  const owner = selectedWorkspace();
+function renameWorkspace(owner = selectedWorkspace()) {
   if (!owner.id) return;
   renameDialog.dataset.workspaceId = owner.id;
   renameDialog.querySelector('input').value = owner.title;
   renameDialog.showModal();
   renameDialog.querySelector('input').select();
-};
+}
 renameDialog.querySelector('form').onsubmit = attempt(async (event) => {
   event.preventDefault();
   await api.renameWorkspace(
@@ -116,13 +116,24 @@ async function deleteWorkspace(owner = selectedWorkspace()) {
     return;
   deletingWorkspace = owner.id;
   ++refreshVersion;
+  const wasSelected = owner.id === automationUI.selected,
+    // After deleting the open workspace, go to the next one in the switcher (or the previous
+    // one when it was last).
+    order = workspaceMenu.order(),
+    at = order.indexOf(owner.id),
+    next = order[at + 1] ?? order[at - 1] ?? null;
   try {
     await settingsQueue;
     await api.deleteWorkspace(owner.id);
-    automationUI.deselect();
+    if (wasSelected) automationUI.deselect();
     deletingWorkspace = null;
-    await refresh();
-    switchView('start');
+    if (wasSelected && next) {
+      await automationUI.select(next);
+      await refresh();
+    } else {
+      await refresh();
+      if (wasSelected) switchView('start');
+    }
     notice(`The “${owner.title}” workspace was deleted.`);
   } catch (error) {
     notice(error.message);
@@ -130,7 +141,7 @@ async function deleteWorkspace(owner = selectedWorkspace()) {
     deletingWorkspace = null;
   }
 }
-$('delete-workspace').onclick = () => deleteWorkspace();
+applyAppearance(api);
 const configUI = configPage(api, {notice, relativeTime});
 updateBadge(api, document.querySelector('[data-view=config]'));
 const automationUI = automationsPage(api, {
@@ -215,7 +226,18 @@ const chromeTitle = element('b'),
   ),
   chromeReconnect = element('button', 'quiet chrome-reconnect', 'Reconnect');
 chromeReconnect.type = 'button';
-chromeStatus.append(chromeTitle, chromeDetail, chromeTip, chromeReconnect);
+// The status is one line; its details open from the ⓘ button on hover or focus.
+const chromeInfo = element('span', 'chrome-info'),
+  chromeInfoButton = element('button', 'chrome-info-button', 'i'),
+  chromeInfoCard = element('div', 'chrome-info-card');
+chromeInfoButton.type = 'button';
+chromeInfoButton.setAttribute('aria-label', 'Browser connection details');
+chromeInfoCard.id = 'chrome-info-card';
+chromeInfoCard.setAttribute('role', 'tooltip');
+chromeInfoButton.setAttribute('aria-describedby', chromeInfoCard.id);
+chromeInfo.append(chromeInfoButton, chromeInfoCard);
+chromeInfoCard.append(chromeDetail, chromeTip);
+chromeStatus.append(chromeTitle, chromeInfo, chromeReconnect);
 document.querySelector('.sidebar-bottom').before(chromeStatus);
 const chromeProfileChange = element('button', 'quiet chrome-profile-change', 'Change profile');
 chromeProfileChange.type = 'button';
@@ -224,7 +246,7 @@ const chromeProfileNote = element(
   'chrome-profile-note',
   'Use your real Chrome profile, signed in to the sites you use, so you are not blocked.',
 );
-chromeStatus.append(chromeProfileChange, chromeProfileNote);
+chromeInfoCard.append(chromeProfileNote, chromeProfileChange);
 const jevStatus = element('div', 'jev-status');
 jevStatus.setAttribute('role', 'alert');
 jevStatus.hidden = true;
@@ -285,6 +307,9 @@ function switchView(name, options = {}) {
   document
     .querySelectorAll('aside nav button')
     .forEach((button) => button.classList.toggle('selected', button.dataset.view === name));
+  if (selected && !global && automationUI.data)
+    $('heading').textContent =
+      name === 'board' ? 'Applications' : automationUI.data.automation.title;
   workspaceMenu.sync();
 }
 // Jev can be chosen only after a TypeSafe key is saved under Configuration → Jev.

@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('jobloop', {
   setCoverLetterAutoApprove: (id, value) => invoke('cover-letter-auto-approve', id, value),
   automationSourceStop: (id, url) => invoke('automation-source-stop', id, url),
   workspaces: () => invoke('workspaces'),
+  setTheme: (value) => invoke('app-theme', value),
   workspaceStart: (id, options) => invoke('workspace-start', id, options),
   workspaceStop: (id) => invoke('workspace-stop', id),
   workspaceRestart: (id, options) => invoke('workspace-restart', id, options),

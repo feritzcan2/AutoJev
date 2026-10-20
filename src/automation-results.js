@@ -360,8 +360,12 @@ export function automationResultsTable(
     if (!open) return;
     const r = filterButton.getBoundingClientRect();
     filterMenu.style.top = r.bottom + 6 + 'px';
+    // Right-aligned under the button, kept inside the window.
     filterMenu.style.left =
-      Math.max(8, Math.min(r.left, innerWidth - filterMenu.offsetWidth - 8)) + 'px';
+      Math.max(
+        8,
+        Math.min(r.right - filterMenu.offsetWidth, innerWidth - filterMenu.offsetWidth - 8),
+      ) + 'px';
   };
   const scoreRule = el('div', null, 'record-filter-section');
   scoreRule.append(el('h3', 'Scoring rule'), scoreFilter);

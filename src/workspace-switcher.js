@@ -17,7 +17,7 @@ export function orderWorkspaces(workspaces, order) {
   );
 }
 
-export function workspaceSwitcher(select) {
+export function workspaceSwitcher(select, {rename, remove} = {}) {
   const mac = /Mac|iPhone|iPad/.test(navigator.platform),
     modifier = mac ? '⌘' : 'Ctrl+';
   let saved = [];
@@ -37,7 +37,42 @@ export function workspaceSwitcher(select) {
     avatar = document.createElement('span'),
     label = document.createElement('span'),
     chevron = document.createElement('span'),
-    menu = document.createElement('div');
+    menu = document.createElement('div'),
+    // A workspace's ⋯ opens this small menu with Rename and Delete.
+    more = document.createElement('div');
+  let moreFor = null;
+  more.className = 'workspace-more-menu';
+  more.setAttribute('role', 'menu');
+  more.hidden = true;
+  more.innerHTML =
+    '<button type="button" role="menuitem" data-action="rename">Rename</button><button type="button" role="menuitem" data-action="delete" class="danger">Delete</button>';
+  more.onclick = (event) => {
+    const action = event.target.closest('[data-action]')?.dataset.action,
+      item = moreFor;
+    if (!action || !item) return;
+    closeMore();
+    close();
+    if (action === 'rename') rename?.(item);
+    else remove?.(item);
+  };
+  function closeMore() {
+    more.hidden = true;
+    menu
+      .querySelector('.workspace-switcher-more[aria-expanded=true]')
+      ?.setAttribute('aria-expanded', 'false');
+    moreFor = null;
+  }
+  function openMore(item, anchor) {
+    if (moreFor?.id === item.id) return closeMore();
+    closeMore();
+    moreFor = item;
+    anchor.setAttribute('aria-expanded', 'true');
+    more.hidden = false;
+    const rect = anchor.getBoundingClientRect();
+    more.style.left = `${Math.min(rect.right + 6, window.innerWidth - more.offsetWidth - 8)}px`;
+    more.style.top = `${Math.min(rect.top, window.innerHeight - more.offsetHeight - 8)}px`;
+    more.querySelector('button').focus();
+  }
   trigger.type = 'button';
   trigger.className = 'workspace-switcher-trigger';
   trigger.setAttribute('aria-haspopup', 'menu');
@@ -56,7 +91,7 @@ export function workspaceSwitcher(select) {
   menu.hidden = true;
   trigger.setAttribute('aria-controls', menu.id);
   container.append(trigger);
-  document.body.append(menu);
+  document.body.append(menu, more);
   select.classList.add('workspace-native-select');
   select.tabIndex = -1;
   select.setAttribute('aria-hidden', 'true');
@@ -69,6 +104,7 @@ export function workspaceSwitcher(select) {
   let drag = null,
     suppressClick = false;
   function close(focus = false) {
+    closeMore();
     menu.hidden = true;
     trigger.setAttribute('aria-expanded', 'false');
     if (focus) trigger.focus();
@@ -134,7 +170,25 @@ export function workspaceSwitcher(select) {
       check.className = 'workspace-switcher-check';
       check.setAttribute('aria-hidden', 'true');
       check.textContent = item.id === select.value ? '✓' : '';
-      row.append(icon, copy, hint, check);
+      const dots = document.createElement('span');
+      dots.className = 'workspace-switcher-more';
+      dots.setAttribute('role', 'button');
+      dots.tabIndex = 0;
+      dots.setAttribute('aria-label', `More for ${item.title}`);
+      dots.setAttribute('aria-haspopup', 'menu');
+      dots.setAttribute('aria-expanded', 'false');
+      dots.textContent = '⋯';
+      const toggleMore = (event) => {
+        event.stopPropagation();
+        event.preventDefault();
+        if (!select.disabled) openMore(item, dots);
+      };
+      dots.onclick = toggleMore;
+      dots.onpointerdown = (event) => event.stopPropagation();
+      dots.onkeydown = (event) => {
+        if (event.key === 'Enter' || event.key === ' ') toggleMore(event);
+      };
+      row.append(icon, copy, hint, check, dots);
       row.onclick = () => {
         if (!suppressClick) choose(item.id, true);
       };
@@ -173,6 +227,15 @@ export function workspaceSwitcher(select) {
     drag = null;
   });
   trigger.onclick = () => (menu.hidden ? open() : close(true));
+  more.onkeydown = (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      const anchor = menu.querySelector('.workspace-switcher-more[aria-expanded=true]');
+      closeMore();
+      anchor?.focus();
+    }
+  };
   menu.onkeydown = (event) => {
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -199,7 +262,19 @@ export function workspaceSwitcher(select) {
     list[next]?.focus();
   };
   document.addEventListener('pointerdown', (event) => {
-    if (!menu.hidden && !menu.contains(event.target) && !trigger.contains(event.target)) close();
+    if (
+      !more.hidden &&
+      !more.contains(event.target) &&
+      !event.target.closest?.('.workspace-switcher-more')
+    )
+      closeMore();
+    if (
+      !menu.hidden &&
+      !menu.contains(event.target) &&
+      !more.contains(event.target) &&
+      !trigger.contains(event.target)
+    )
+      close();
   });
   document.addEventListener(
     'keydown',
@@ -215,5 +290,5 @@ export function workspaceSwitcher(select) {
   );
   select.addEventListener('change', render);
   render();
-  return {sync: render};
+  return {sync: render, order: () => ordered().map((item) => item.id)};
 }

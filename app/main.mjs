@@ -250,6 +250,12 @@ async function boot() {
       return maintenance.invoke(name, () => fn(...args));
     });
   }
+  // Appearance preference: follow the system, or force light or dark.
+  handle('app-theme', (value) => {
+    nativeTheme.themeSource = ['light', 'dark'].includes(value) ? value : 'system';
+    window?.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#0e0f12' : '#f4f4ef');
+    return nativeTheme.themeSource;
+  });
   const automationDb = new AutomationStore(core);
   const web = registerAutomationServices({
     root,

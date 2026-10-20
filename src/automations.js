@@ -280,7 +280,8 @@ export function automationsPage(
   document.querySelector('[data-view=files]').before(contactsNav);
   // Files shows a badge while a cover letter waits for the user's review.
   const filesNav = document.querySelector('[data-view=files]'),
-    filesHome = document.querySelector('[data-view=background]'),
+    // Files' place is just above Contacts.
+    filesHome = contactsNav,
     letterBadge = el('span', null, 'agent-nav-status');
   letterBadge.dataset.tone = 'waiting';
   letterBadge.setAttribute('aria-hidden', 'true');
@@ -288,7 +289,7 @@ export function automationsPage(
   filesNav.append(letterBadge);
   // Pages with something waiting on the user rise to the top of the sidebar and
   // glow; once handled they return to their place (Answers and Attention needed
-  // below Trackings, Files below Background work).
+  // below Trackings, Files above Contacts).
   // Answers and Attention needed only show in the sidebar while something is waiting there
   // (or while that page is open).
   function syncOptionalNav() {
@@ -315,7 +316,7 @@ export function automationsPage(
     for (const [node, on, home] of items) {
       if (on) continue;
       if (home) {
-        if (home.nextElementSibling !== node) home.after(node);
+        if (home.previousElementSibling !== node) home.before(node);
         continue;
       }
       if (anchor.nextElementSibling !== node) anchor.after(node);
@@ -828,7 +829,8 @@ export function automationsPage(
   function syncHeading() {
     const title = data?.automation?.title;
     if (!title) return;
-    document.querySelector('#heading').textContent = pane === 'board' ? 'Applications' : title;
+    const view = document.querySelector('aside nav button.selected')?.dataset.view ?? pane;
+    document.querySelector('#heading').textContent = view === 'board' ? 'Applications' : title;
   }
   function renderShell() {
     if (!selected || !data) return;
@@ -859,8 +861,6 @@ export function automationsPage(
     stop.textContent = data.activeRun ? 'Stop round' : 'Pause tracking';
     restart.hidden = true;
     for (const id of ['candidates', 'new']) document.querySelector('#' + id).disabled = locked;
-    document.querySelector('#rename-workspace').disabled = locked;
-    document.querySelector('#delete-workspace').disabled = locked;
     find('#automation-delete').disabled = locked;
     answers.update(data);
     contactsView.update(data);

@@ -2773,6 +2773,7 @@ button.contacts-pill:hover {
   display: none;
 }
 .record-filter-menu:popover-open {
+  box-sizing: border-box;
   position: fixed;
   inset: auto;
   margin: 0;
@@ -2833,17 +2834,35 @@ button.contacts-pill:hover {
   padding-right: 12px;
 }
 .automation-results-table [data-column='actions'] {
-  width: 1%;
-  min-width: 120px;
+  width: 200px;
+  min-width: 170px;
+  max-width: 220px;
+}
+.automation-results-table td[data-column='actions'] {
   text-align: right;
-  white-space: nowrap;
 }
 .automation-results-table td[data-column='actions'] > * {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 4px;
-  margin: 0 0 0 6px;
-  vertical-align: middle;
+  margin: 0 0 6px;
+}
+.automation-results-table td[data-column='actions'] > button {
+  display: inline-flex;
+  margin: 0 0 6px 4px;
+}
+.automation-results-table td[data-column='actions'] .record-contact-chip {
+  max-width: 190px;
+}
+/* The page title already says Applications. */
+.automations-page #automation-table-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
 }
 .automation-results-table td[data-column='actions'] > [popover] {
   margin: 0;

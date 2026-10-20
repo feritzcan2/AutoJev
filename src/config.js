@@ -4,11 +4,13 @@ import {readinessPanel} from './readiness.js';
 import {createDataManagement} from './data-management.js';
 import {updatesPanel} from './updates.js';
 import {telegramPanel} from './telegram.js';
+import {appearancePanel} from './appearance.js';
 export function configPage(api, {notice, relativeTime}) {
   const root = document.getElementById('config');
-  root.innerHTML = `<div class="config-head"><div><h2>Configuration</h2><p>Setup, backups, updates and notifications.</p></div></div>
-<div class="config-body"><nav class="config-nav" aria-label="Sections"><a href="#config-telegram">Notifications</a><a href="#config-readiness">Setup check</a><a href="#config-jev">Jev</a><a href="#config-data">Data and backups</a><a href="#config-updates">Updates</a></nav>
+  root.innerHTML = `<div class="config-head"><div><h2>Configuration</h2><p>Preferences, notifications, setup, backups and updates.</p></div></div>
+<div class="config-body"><nav class="config-nav" aria-label="Sections"><a href="#config-preferences">Preferences</a><a href="#config-telegram">Notifications</a><a href="#config-readiness">Setup check</a><a href="#config-jev">Jev</a><a href="#config-data">Data and backups</a><a href="#config-updates">Updates</a></nav>
 <div class="config-sections">
+<section id="config-preferences" class="config-section"><h3>Preferences</h3><p>How JobLoop looks on this computer.</p><div id="config-preferences-panel"></div></section>
 <section id="config-telegram" class="config-section"><h3>Notifications</h3><p>The selected workspace's Telegram connection and which notifications it receives.</p><div id="config-telegram-panel"></div></section>
 <section id="config-readiness" class="config-section"><h3>Setup check</h3><div id="config-readiness-panel"></div></section>
 <section id="config-jev" class="config-section"><h3>Jev</h3><div id="config-jev-panel"></div></section>
@@ -55,6 +57,7 @@ export function configPage(api, {notice, relativeTime}) {
   const telegram = api.telegramStatus
     ? telegramPanel(api, $('config-telegram-panel'), {notice})
     : null;
+  appearancePanel(api, $('config-preferences-panel'));
   const jev = jevSettingsPanel(api, $('config-jev-panel'), {notice});
   const readiness = readinessPanel(api, $('config-readiness-panel'), {
     getSettings: async () => {
