@@ -211,5 +211,6 @@ export async function registerSettingsServices({
       clearInterval(timer);
       updates.dispose();
     },
+    prepareQuitInstall: () => updates.prepareQuitInstall(),
   };
 }

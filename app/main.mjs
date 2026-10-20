@@ -534,8 +534,11 @@ async function boot() {
       await browser.close({closeTabs: true});
       await mcp.close();
       await devControl?.close();
+      // A downloaded update installs now, after a backup, while the database is still open.
+      const install = await settingsServices.prepareQuitInstall().catch(() => null);
       core.close();
-      app.quit();
+      if (install) await install().catch(() => app.quit());
+      else app.quit();
     })();
   });
 }
