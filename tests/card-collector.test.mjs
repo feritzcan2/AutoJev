@@ -158,6 +158,25 @@ test('a LinkedIn search opens as the signed-in results page with its filters', (
     () => linkedInSignedInSearch(saved('keywords=Go&location=Atlantis')),
     /only as a geoId.*Atlantis/,
   );
+  for (const location of ['Netherlands', 'the netherlands', 'Amsterdam, Netherlands'])
+    assert.equal(
+      new URL(
+        linkedInSignedInSearch(saved('keywords=Go&location=' + encodeURIComponent(location))),
+      ).searchParams.get('geoId'),
+      '102890719',
+      location,
+    );
+  assert.equal(
+    new URL(
+      linkedInSignedInSearch(saved('keywords=Go&location=Z%C3%BCrich%2C+Switzerland')),
+    ).searchParams.get('geoId'),
+    '106693272',
+  );
+  assert.throws(
+    () => linkedInSignedInSearch(saved('keywords=Go&location=New+Jersey')),
+    /no known one/,
+    'a place is not guessed from a word it shares with a country',
+  );
   assert.equal(
     new URL(linkedInSearchUrl(saved('keywords=Go&start=40'))).searchParams.get('start'),
     null,
