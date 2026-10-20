@@ -81,13 +81,42 @@ rejected. You get updates on Telegram and can answer its questions from your pho
 
 ## Supported job sites
 
-Built in: LinkedIn, Indeed, StepStone, XING, Himalayas, We Work Remotely, Dice,
-Reed, SimplyHired, The Muse, Built In, Workable, Arbeitnow, Berlin Startup Jobs,
-Hacker News "Who is hiring?", Jobindex, Jobnet, Jobdanmark, Akademikernes Jobbank,
-Job Bank Canada, Werk.nl, Nationale Vacaturebank, Kariyer.net, Naukri, Gupy,
-Wantedly and company career pages.
+| Site | Country | Good for | How AutoJev reads it |
+| --- | --- | --- | --- |
+| **LinkedIn** | 🌍 Worldwide | The largest professional network | 🌐 Your Chrome, signed in |
+| **Indeed** | 🌍 Worldwide | Largest job search engine, a site for each country | 🌐 Your Chrome |
+| **Company career pages** | 🌍 Worldwide | Jobs posted only on employers' own sites | ⚡ Direct |
+| **Workable** | 🌍 Worldwide | Jobs from thousands of companies that hire with Workable | 🔌 Public API |
+| **Himalayas** | 🌍 Remote | Remote jobs, filtered by where you may work from | 🔌 Public API |
+| **We Work Remotely** | 🌍 Remote | One of the largest remote job boards | 🌐 Your Chrome |
+| **FreeHire** | 🌍 Worldwide | Remote, hybrid and on-site jobs with country filters | 🔌 Public API |
+| **Hacker News "Who is hiring?"** | 🌍 Worldwide | Monthly startup and tech hiring thread | 🔌 Public API |
+| **StepStone** | 🇩🇪 Germany | One of Germany's largest job sites | 🌐 Your Chrome |
+| **XING** | 🇩🇪 🇦🇹 🇨🇭 DACH | Professional network of the German-speaking countries | ⚡ Direct |
+| **Arbeitnow** | 🇩🇪 🇬🇧 🇫🇷 🇨🇭 🇳🇱 Europe | Jobs with a visa sponsorship filter | 🔌 Public API |
+| **Berlin Startup Jobs** | 🇩🇪 Berlin | Berlin startups | ⚡ Direct |
+| **Reed** | 🇬🇧 United Kingdom | One of the UK's largest job sites | ⚡ Direct |
+| **Nationale Vacaturebank** | 🇳🇱 Netherlands | Large Dutch job site | 🌐 Your Chrome |
+| **Werk.nl** | 🇳🇱 Netherlands | Dutch public employment service (UWV) | ⚡ Direct |
+| **Jobindex** | 🇩🇰 Denmark | Denmark's largest job site | ⚡ Direct |
+| **Jobnet** | 🇩🇰 Denmark | Danish public employment service | 🔌 Public API |
+| **Jobdanmark** | 🇩🇰 Denmark | Danish job site | ⚡ Direct |
+| **Akademikernes Jobbank** | 🇩🇰 Denmark | Jobs for graduates and professionals | 🌐 Your Chrome |
+| **Kariyer.net** | 🇹🇷 Türkiye | Türkiye's largest job site | 🌐 Your Chrome |
+| **Dice** | 🇺🇸 United States | Tech jobs | ⚡ Direct |
+| **Built In** | 🇺🇸 United States | Tech and startup jobs | ⚡ Direct |
+| **SimplyHired** | 🇺🇸 United States | Job search engine | ⚡ Direct |
+| **The Muse** | 🇺🇸 United States | Jobs with company profiles | 🔌 Public API |
+| **Job Bank** | 🇨🇦 Canada | Government of Canada's job site | ⚡ Direct |
+| **Gupy** | 🇧🇷 Brazil | Brazil's job portal of companies hiring with Gupy | 🔌 Public API |
+| **Naukri** | 🇮🇳 India | India's largest job site | 🌐 Your Chrome |
+| **Wantedly** | 🇯🇵 Japan | Japanese startup and tech jobs | ⚡ Direct |
 
-Any other job site works too: add its address and the assistant learns how to
+🔌 **Public API:** the site's official data feed, fast and without opening pages.
+⚡ **Direct:** pages are read straight from the site, without a browser tab.
+🌐 **Your Chrome:** read in your own browser, just like you browse.
+
+**Any other job site works too.** Add its address and the assistant learns how to
 search it.
 
 ## Getting started
