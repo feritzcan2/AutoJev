@@ -2,6 +2,7 @@
 import {createHash} from 'node:crypto';
 import {recordOperationState} from '../records/operations.mjs';
 import {taskRecordIds} from '../records/task-scope.mjs';
+import {automationSources} from '../sources/automation-sources.mjs';
 // Compatibility projection for Telegram transports. All data and actions
 // come from the shared automation runtime; there is no candidate execution path.
 export class WorkspaceSupport {
@@ -82,10 +83,13 @@ export class WorkspaceSupport {
       summary: item.summary,
     };
   }
+  // Only the saved source settings: the Telegram queue reads them every few
+  // seconds, so this must not load run history or records.
   sources(id) {
-    return this.automation
-      .sources(id)
-      .map((s) => ({...s, applyMode: s.mode === 'observe' ? 'find_only' : s.mode}));
+    return automationSources(this.automation.get(id)).map((s) => ({
+      ...s,
+      applyMode: s.mode === 'observe' ? 'find_only' : s.mode,
+    }));
   }
   campaign(id) {
     const a = this.automation.get(id);

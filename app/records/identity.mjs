@@ -16,6 +16,11 @@ export function recordUrlKey(raw) {
   }
 }
 export const activeRecordSql = "json_extract(data,'$.mergedInto') IS NULL";
+// The run that found each counted record. The workspace_records_found index
+// repeats these expressions so counting reads the index, not every record body.
+export const foundRunSql =
+  "coalesce(json_extract(data,'$.discoveredRunId'),json_extract(data,'$.runId'))";
+export const foundRecordSql = `${activeRecordSql} AND NOT coalesce(json_extract(data,'$.trial'),0)`;
 const parse = (row) => (row ? JSON.parse(row.data) : null);
 const priority = (r) =>
   ({

@@ -92,7 +92,28 @@ try {
   );
   const screen = page.locator('#onboarding');
   await screen.waitFor();
-  assert.equal(await screen.getAttribute('data-step'), 'start');
+  const stepIs = (name) =>
+    page.waitForFunction(
+      (name) => document.querySelector('#onboarding').dataset.step === name,
+      name,
+    );
+  // The first step guides the extension install and notices it by itself.
+  assert.equal(await screen.getAttribute('data-step'), 'chrome');
+  await screen.getByRole('heading', {name: 'Connect Chrome'}).waitFor();
+  assert.ok(await screen.getByText('chrome://extensions').isVisible());
+  const chromeContinue = screen.getByRole('button', {name: 'Continue', exact: true});
+  assert.equal(await chromeContinue.isDisabled(), true, 'Continue waits for the extension');
+  await page.screenshot({path: path.join(data, '0-chrome.png')});
+  await app.evaluate(() => {
+    globalThis.chromeOff = false;
+  });
+  await screen.getByText('Chrome is ready').waitFor({timeout: 15000});
+  assert.equal(await screen.getByRole('button', {name: 'Set it up later'}).isVisible(), false);
+  await chromeContinue.click();
+  await stepIs('start');
+  await app.evaluate(() => {
+    globalThis.chromeOff = true;
+  });
   await screen.locator('.choice[data-state=ready]').first().waitFor();
   const providers = screen.locator('input[name=onboarding-provider]');
   assert.ok((await providers.count()) >= 2, 'Supported agents are offered');
@@ -176,7 +197,10 @@ try {
   assert.equal(await screen.getAttribute('data-step'), 'reading');
   answer(true);
   await screen.getByRole('button', {name: 'Start over'}).click();
-  await page.waitForFunction(() => document.querySelector('#onboarding').dataset.step === 'start');
+  // Without the extension the Chrome step can be left for later.
+  await stepIs('chrome');
+  await screen.getByRole('button', {name: 'Set it up later'}).click();
+  await stepIs('start');
   assert.equal((await page.evaluate(() => window.jobloop.workspaces())).length, 0);
 
   // Notes typed next to the CV reach the setup agent with the CV task and stay in the chat.
@@ -302,7 +326,8 @@ try {
   // A new profile from the sidebar gets the same CV flow while the first one keeps running.
   await page.locator('#new').click();
   await screen.waitFor();
-  assert.equal(await screen.getAttribute('data-step'), 'start');
+  // Chrome is ready by now, so the Chrome step is left out.
+  await stepIs('start');
   await screen.getByRole('button', {name: 'Cancel'}).waitFor();
   const second = await pickCv();
   assert.notEqual(second, id);

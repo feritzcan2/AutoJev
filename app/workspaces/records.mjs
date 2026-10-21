@@ -1,6 +1,11 @@
 // @ts-check
 import {randomUUID} from 'node:crypto';
-import {RecordIdentity, activeRecordSql} from '../records/identity.mjs';
+import {
+  RecordIdentity,
+  activeRecordSql,
+  foundRecordSql,
+  foundRunSql,
+} from '../records/identity.mjs';
 
 const parse = (row) => (row ? JSON.parse(row.data) : null);
 // One durable record table. Domain extensions keep their own fields in data;
@@ -12,6 +17,7 @@ export class WorkspaceRecords {
     this.db
       .exec(`CREATE TABLE IF NOT EXISTS workspace_records(id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,record_key TEXT NOT NULL,identity TEXT NOT NULL DEFAULT '',data TEXT NOT NULL,UNIQUE(workspace_id,record_key));
     CREATE INDEX IF NOT EXISTS workspace_records_owner ON workspace_records(workspace_id);
+    CREATE INDEX IF NOT EXISTS workspace_records_found ON workspace_records(workspace_id,${foundRunSql}) WHERE ${foundRecordSql};
     CREATE TABLE IF NOT EXISTS workspace_record_descriptions(record_id TEXT PRIMARY KEY REFERENCES workspace_records(id) ON DELETE CASCADE,url TEXT NOT NULL,text TEXT NOT NULL,read_at INTEGER NOT NULL);`);
     this.identities = new RecordIdentity(this);
   }

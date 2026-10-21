@@ -9,7 +9,7 @@ import {
 } from '../../records/operations.mjs';
 import {recordAssessment, assessmentCells} from '../../scoring/record-scoring.mjs';
 import {saveScoreThreshold, autoApplyThreshold} from '../../scoring/thresholds.mjs';
-import {activeRecordSql} from '../../records/identity.mjs';
+import {activeRecordSql, foundRecordSql, foundRunSql} from '../../records/identity.mjs';
 import {observedRecordAliases} from '../../records/aliases.mjs';
 import {collectorRun} from '../../sources/collectors.mjs';
 import {activeSearch, countScan} from '../../sources/scan-work.mjs';
@@ -47,8 +47,8 @@ export const recordMethods = {
     return new Map(
       this.db
         .prepare(
-          `SELECT coalesce(json_extract(data,'$.discoveredRunId'),json_extract(data,'$.runId')) AS runId,count(*) AS foundCount
-   FROM workspace_records WHERE workspace_id=? AND ${activeRecordSql} AND NOT coalesce(json_extract(data,'$.trial'),0) GROUP BY runId`,
+          `SELECT ${foundRunSql} AS runId,count(*) AS foundCount
+   FROM workspace_records WHERE workspace_id=? AND ${foundRecordSql} GROUP BY runId`,
         )
         .all(id)
         .map((row) => [row.runId, row.foundCount]),
