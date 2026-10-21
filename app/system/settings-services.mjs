@@ -3,6 +3,7 @@ import {mkdir} from 'node:fs/promises';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {collectReadiness} from './readiness.mjs';
+import {extensionInstalledInProfile, resolveChromeProfile} from '../jev/chrome.mjs';
 import {engineBinaryPath} from './runtime-paths.mjs';
 import {createUpdateManager} from './update-manager.mjs';
 import {
@@ -35,6 +36,17 @@ export async function registerSettingsServices({
       jevStatus: () => jevSettings.status(),
     }),
   );
+  handle('extension-installed', async (profile) => {
+    if (profile !== undefined && (typeof profile !== 'string' || !/^[\w -]{1,100}$/.test(profile)))
+      throw Error('Invalid Chrome profile.');
+    try {
+      return await extensionInstalledInProfile(
+        await resolveChromeProfile(profile ? {directory: profile} : undefined),
+      );
+    } catch {
+      return false;
+    }
+  });
   handle('jev-settings-status', () => jevSettings.status());
   handle('jev-settings-save', (input) => jevSettings.save(input));
   handle('jev-settings-remove', () => jevSettings.remove());

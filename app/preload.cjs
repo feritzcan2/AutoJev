@@ -107,6 +107,7 @@ contextBridge.exposeInMainWorld('jobloop', {
   onAutomationChange: (callback) => subscribe('automation-changed', callback),
   onAutomationOutput: (callback) => subscribe('automation-output', callback),
   readiness: (input) => invoke('readiness', input),
+  extensionInstalled: (profile) => invoke('extension-installed', profile),
   jevSettingsStatus: () => invoke('jev-settings-status'),
   saveJevSettings: (input) => invoke('jev-settings-save', input),
   removeJevSettings: () => invoke('jev-settings-remove'),
@@ -147,6 +148,7 @@ contextBridge.exposeInMainWorld('jobloop', {
   deleteWorkspace: (id) => invoke('delete-workspace', id),
 
   browserReconnect: (id) => invoke('browser-reconnect', id),
+  extensionSetup: (kind, profile) => invoke('extension-setup', kind, profile),
   documents: (id) => invoke('documents', id),
   pickDocument: (id, options) => invoke('pick-document', id, options),
   readDocument: (id, file) => invoke('read-document', id, file),
