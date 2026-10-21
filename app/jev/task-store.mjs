@@ -249,7 +249,10 @@ export class JevTaskStore {
       unreadFrames: page.reading?.unreadFrames ?? 0,
       // A site extension or the page's structured data gave this listing
       // itself; no site chrome to filter.
-      listing: listing && {fields: listing.fields},
+      listing: listing && {
+        fields: listing.fields,
+        ...(listing.people?.length ? {people: listing.people} : {}),
+      },
     };
     this.briefs.delete(id);
     this.bodies.set(id, {jevTaskId: task.id, value: copy(value)});

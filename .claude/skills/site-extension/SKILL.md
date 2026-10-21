@@ -56,6 +56,25 @@ evidence then holds that listing text. Otherwise the brief's Jev filter removes
 site chrome. So check `JobPosting` first: when it is there (StepStone, Xing,
 Ashby, Indeed in 2026-10), a `dom` extension needs no listing reader.
 
+Without a usable `JobPosting`, a `dom` extension can read listings itself:
+- `dom.listing {handles(url), open?(url), collect, read(raw)}` reads one
+  posting page open in the browser (LinkedIn): `collect` runs in the page,
+  `read(raw)` returns `{title, company, location, description, fields, closed}`
+  or `null`.
+- `dom.pane {handles(url), key(url), card, collect, read(raw)}` is for results
+  pages that show one listing at a time in a pane beside the cards (LinkedIn
+  `/jobs/search-results/`). `key(url)` maps a listing address to its key on the
+  page (a job ID); `card(key)` runs in the page and returns the card element;
+  `collect` runs in the page and returns raw with `raw.key`, the key of the
+  listing the pane shows now (take it from the pane itself, not from the
+  address bar); `read` is like `dom.listing.read`. A card-collector scan with
+  `cardsInBrowser` then clicks each new card on the open results page
+  (`app/jev/pane.mjs`: real click, bounded wait until the pane shows that key
+  and two reads agree) and opens a posting's own page only for the cards the
+  pane did not show. `pacing.pane` paces and bounds those clicks. Check in
+  your browser that the pane's key changes with the clicked card and that
+  its description is complete.
+
 3. **Describe the search address** (optional `search`, see
    `app/site-extensions/search.mjs`): `{template, ordering, pagination,
    filters, notes}`. `template` is the results address with `{query}` (and
@@ -73,7 +92,7 @@ Ashby, Indeed in 2026-10), a `dom` extension needs no listing reader.
    `ordering` yourself (dates across pages) before declaring it.
 
 An extension does NOT judge fit, eliminate, score, record, click, scroll,
-store state, retry or pace. Triage, scoring, queues and records stay generic.
+store state, retry or pace (for a pane it only names the card; Jev clicks). Triage, scoring, queues and records stay generic.
 `dom` code never throws: any doubt returns `null` and the generic reader
 handles the page. `http`/`collector` reads report real request failures as
 errors and go through the shared site access rules.

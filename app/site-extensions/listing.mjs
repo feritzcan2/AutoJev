@@ -78,9 +78,18 @@ const fact = (value) =>
 
 /**
  * @param {{url: string, title?: string, description?: string | null,
- *   fields?: Record<string, unknown>, notes?: string[], browser?: string}} listing
+ *   fields?: Record<string, unknown>, notes?: string[], people?: any[] | null,
+ *   browser?: string}} listing
  */
-export function listingPage({url, title, description, fields = {}, notes = [], browser}) {
+export function listingPage({
+  url,
+  title,
+  description,
+  fields = {},
+  notes = [],
+  people = [],
+  browser,
+}) {
   const facts = Object.fromEntries(
     Object.entries(fields)
       .map(([key, value]) => [key, fact(value)])
@@ -112,7 +121,8 @@ export function listingPage({url, title, description, fields = {}, notes = [], b
     },
     // Without its own description the text is not a complete listing; Jev
     // then treats it like any other page.
-    ...(body ? {listing: {fields: facts}} : {}),
+    // People the listing names (its hiring team), with the listing only.
+    ...(body ? {listing: {fields: facts, ...(people?.length ? {people} : {})}} : {}),
   };
 }
 

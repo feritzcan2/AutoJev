@@ -234,6 +234,9 @@ export function automationBrowser(
         return observed(await native(id, name, {...args, tabId}, session, options));
       if (name === 'browser_inspect_form')
         return (await native(id, name, {tabId}, session, options)).page;
+      // A listing from the pane of the results page open in this source's tab.
+      if (name === 'browser_read_pane')
+        return (await native(id, name, {tabId, url: args.url}, session, options)).page;
       // A viewport image of the current tab; no page action, no Jev call.
       if (name === 'browser_screenshot') {
         const {response, page} = await native(

@@ -40,9 +40,15 @@ const signedInPage = (url, ids) => ({
 });
 // A synthetic signed-in LinkedIn in the browser: a results page of `cards`
 // postings, and each posting's page with its listing text (posting(url)).
-function fakeLinkedIn({cards = 3, posting = null} = {}) {
-  const opened = [];
+// pane(url) answers a pane read on the results page (none by default).
+function fakeLinkedIn({cards = 3, posting = null, pane = null} = {}) {
+  const opened = [],
+    clicked = [];
   const call = async (_id, name, args) => {
+    if (name === 'browser_read_pane') {
+      clicked.push(args.url);
+      return pane?.(args.url) ?? {status: 'unsupported'};
+    }
     if (name === 'browser_navigate') opened.push(args.url);
     const url = args.url ?? opened.at(-1);
     if (url.includes('/jobs/search-results/'))
@@ -64,7 +70,7 @@ function fakeLinkedIn({cards = 3, posting = null} = {}) {
       },
     };
   };
-  return {call, opened};
+  return {call, opened, clicked};
 }
 
 test('a card collector reads only wanted listings once, drops removed ones and lists unreadable ones', async () => {
@@ -316,10 +322,18 @@ test('the LinkedIn posting reader needs a title and a real description', () => {
   });
   assert.equal(job.company, 'Acme');
   assert.equal(job.closed, true);
+  assert.equal(
+    readLinkedInPosting({title: 'Role', description: longText + '\n\n... more'}).description,
+    longText.trim(),
+    'the expand button is not part of the description',
+  );
 });
 
 test('the LinkedIn posting reader reads the signed-in layout without named classes', () => {
-  const about = {innerText: 'Build 𝐫𝐞𝐥𝐢𝐚𝐛𝐥𝐞 APIs.\n\n\n\n\nKafka.'};
+  const about = {
+    innerText: 'Build 𝐫𝐞𝐥𝐢𝐚𝐛𝐥𝐞 APIs.\n\n\n\n\nKafka.',
+    getAttribute: () => 'JobDetails_AboutTheJob_4478132255',
+  };
   const saved = {document: globalThis.document, location: globalThis.location};
   globalThis.location = {href: 'https://www.linkedin.com/jobs/view/4478132255/'};
   globalThis.document = {
@@ -331,11 +345,13 @@ test('the LinkedIn posting reader reads the signed-in layout without named class
   try {
     assert.deepEqual(collectLinkedInPosting(), {
       url: 'https://www.linkedin.com/jobs/view/4478132255/',
+      key: '4478132255',
       title: 'Staff Engineer - Berlin',
       company: 'Xcede',
       location: '',
       description: 'Build reliable APIs.\n\nKafka.',
       closed: false,
+      people: [],
     });
     globalThis.document.title = 'DevOps Engineer | 150k € all-in! | Acme Group | LinkedIn';
     assert.deepEqual(
@@ -434,6 +450,175 @@ test('LinkedIn results pages and postings open in the signed-in browser before t
   );
   assert.equal(f.db.sources(f.id).find((s) => s.url.includes('linkedin')).requests.budget.used, 4);
   assert.equal(collectorPageReady(f.db, f.runId), true);
+});
+
+test('LinkedIn listings are read from the results pane; a card the pane does not show opens on its own page', async (t) => {
+  const site = fakeLinkedIn({
+    pane: (url) =>
+      url.includes('4200000002')
+        ? {status: 'not_shown'}
+        : {
+            status: 'read',
+            listing: {
+              text: 'Pane role ' + longText,
+              fields: {company: 'Pane Co'},
+              title: 'Pane Role',
+            },
+          },
+  });
+  const f = fixture(t, {site});
+  await f.flow.prefetchCollector();
+  assert.deepEqual(site.clicked, [
+    'https://www.linkedin.com/jobs/view/4200000001/',
+    'https://www.linkedin.com/jobs/view/4200000002/',
+    'https://www.linkedin.com/jobs/view/4200000003/',
+  ]);
+  assert.deepEqual(
+    site.opened.slice(1),
+    ['https://www.linkedin.com/jobs/view/4200000002/'],
+    'only the listing the pane did not show opens, after the pane reads',
+  );
+  const task = f.db.jevTasks.list(f.id, f.db.run(f.runId).taskId).at(-1);
+  assert.deepEqual(
+    task.items.map((item) => item.title),
+    ['Pane Role', 'Staff Engineer', 'Pane Role'],
+  );
+  const count = (key) =>
+    f.db.db.prepare('SELECT count(*) AS n FROM site_requests WHERE site=?').get(key).n;
+  assert.equal(count('linkedin.com pane'), 3, 'card clicks keep their own budget');
+  assert.equal(count('linkedin.com browser'), 2, 'the results page and one posting');
+});
+
+test('the hiring team a listing shows becomes listed contacts of its new record', async (t) => {
+  const people = [
+    {
+      name: 'Evgenia Recruiter',
+      profileUrl: 'https://www.linkedin.com/in/evgenia-r/',
+      headline: 'Senior Recruiter',
+      hiringTeam: true,
+      insight: '2nd-degree connection',
+    },
+    {
+      name: 'Bertan Engineer',
+      profileUrl: 'https://www.linkedin.com/in/bertan-e/',
+      headline: 'Senior Software Engineer',
+      hiringTeam: false,
+      insight: 'School alum from Example University',
+    },
+  ];
+  const site = fakeLinkedIn({
+    cards: 1,
+    pane: () => ({
+      status: 'read',
+      listing: {text: 'Pane role ' + longText, fields: {}, title: 'Pane Role', people},
+    }),
+  });
+  const f = fixture(t, {site});
+  await f.flow.prefetchCollector();
+  await f.call('collect_source_page');
+  const url = 'https://www.linkedin.com/jobs/view/4200000001/',
+    save = (summary) =>
+      f.call('record_automation_result', {
+        url,
+        title: 'Pane Role',
+        summary,
+        score: 80,
+        eligibility: 'unverified',
+      });
+  await save('Fits');
+  const item = f.db.results(f.id).find((r) => r.url === url),
+    entry = f.db.get(f.id).recordContacts.find((e) => e.recordId === item.id);
+  assert.deepEqual(
+    entry.contacts.map((c) => [c.name, c.relation, c.state, c.profileUrl]),
+    [
+      ['Evgenia Recruiter', 'hiring_team', 'listed', 'https://www.linkedin.com/in/evgenia-r/'],
+      ['Bertan Engineer', 'suggested', 'listed', 'https://www.linkedin.com/in/bertan-e/'],
+    ],
+  );
+  assert.match(entry.contacts[1].reason, /School alum/);
+  assert.equal(entry.state, undefined, 'no contact search ran');
+  f.db.put({...f.db.get(f.id), recordContacts: []});
+  await save('Fits again');
+  assert.deepEqual(f.db.get(f.id).recordContacts, [], 'a record saved again keeps its removal');
+});
+
+test('the LinkedIn posting reader keeps the people the posting shows', () => {
+  const job = readLinkedInPosting({
+    title: 'Role',
+    description: longText,
+    people: [
+      {
+        name: 'Jane',
+        profileUrl: 'https://www.linkedin.com/in/jane/',
+        headline: 'Recruiter',
+        degree: '2nd',
+        insight: '',
+        hiringTeam: true,
+      },
+      {name: '', profileUrl: 'https://www.linkedin.com/in/x/'},
+    ],
+  });
+  assert.deepEqual(job.people, [
+    {
+      name: 'Jane',
+      profileUrl: 'https://www.linkedin.com/in/jane/',
+      headline: 'Recruiter',
+      hiringTeam: true,
+      insight: '2nd-degree connection',
+    },
+  ]);
+  const saved = {document: globalThis.document, location: globalThis.location};
+  const node = (innerText, parentElement, extra = {}) => ({innerText, parentElement, ...extra});
+  const section = node('People you can reach out to\nMeet the hiring team\nJane Doe', null),
+    team = node('Meet the hiring team\nJane Doe\n• 2nd\nRecruiter at Acme\nMessage', section),
+    other = node('Bob Roe\n• 3rd+\nEngineer at Acme\nSchool alum from Example U', section);
+  const links = [
+    node('Jane Doe\n• 2nd\nRecruiter at Acme', team, {
+      href: 'https://www.linkedin.com/in/jane-doe/?trk=x',
+    }),
+    node('', team, {href: 'https://www.linkedin.com/in/jane-doe/'}),
+    node('Bob Roe\n• 3rd+\nEngineer at Acme\nSchool alum from Example U', other, {
+      href: 'https://www.linkedin.com/in/bob-roe/',
+    }),
+  ];
+  section.querySelectorAll = () => links;
+  globalThis.location = {href: 'https://www.linkedin.com/jobs/search-results/?currentJobId=1'};
+  globalThis.document = {
+    title: 'Role | Acme | LinkedIn',
+    body: {innerText: ''},
+    querySelector: (selector) =>
+      selector.startsWith('[componentkey^="JobDetailsPeopleWhoCanHelpSlot_"]') ? section : null,
+  };
+  try {
+    assert.deepEqual(collectLinkedInPosting().people, [
+      {
+        name: 'Jane Doe',
+        profileUrl: 'https://www.linkedin.com/in/jane-doe/',
+        degree: '2nd',
+        headline: 'Recruiter at Acme',
+        insight: '',
+        hiringTeam: true,
+      },
+      {
+        name: 'Bob Roe',
+        profileUrl: 'https://www.linkedin.com/in/bob-roe/',
+        degree: '3rd+',
+        headline: 'Engineer at Acme',
+        insight: 'School alum from Example U',
+        hiringTeam: false,
+      },
+    ]);
+  } finally {
+    Object.assign(globalThis, saved);
+  }
+});
+
+test('a click that leaves the results page ends pane reads for that page', async (t) => {
+  const site = fakeLinkedIn({pane: () => ({status: 'left_results'})});
+  const f = fixture(t, {site});
+  await f.flow.prefetchCollector();
+  assert.equal(site.clicked.length, 1);
+  assert.equal(site.opened.length, 4, 'the other listings open on their own pages');
 });
 
 test('a posting that opens as a login prompt stays out of the batch', async (t) => {

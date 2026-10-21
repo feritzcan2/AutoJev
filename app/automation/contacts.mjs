@@ -6,10 +6,13 @@
 // browser and drafts a short invitation note for each. The user reviews and
 // approves the notes; a send task then connects with a note (or messages an
 // existing connection) once per approved contact. The app, not the prompt,
-// gates every connect, message and send click.
+// gates every connect, message and send click. People the listing itself shows
+// (its hiring team) are kept as listed contacts when a scan saves the record,
+// read with the listing at no extra request.
 import {automaticAssessmentError} from '../../src/scoring-state.js';
 import {autoApplyThreshold} from '../scoring/thresholds.mjs';
 import {autoContactsMode} from '../records/operation-definitions.mjs';
+import {memoryDetail} from '../records/evidence.mjs';
 
 export const CONTACT_LIMIT = 2,
   NOTE_CHARACTERS = 200;
@@ -19,6 +22,8 @@ export const NOTE_STYLES = ['direct', 'personal'];
 const SEND_BUDGET = {requests: 20, windowMs: 24 * 3600_000},
   SEND_BUDGET_KEY = 'linkedin.com contact';
 const RELATIONS = ['poster', 'recruiter', 'hiring_manager', 'team'];
+// At most this many people from one listing.
+const LISTED_LIMIT = 6;
 export const CONTACT_OUTCOMES = [
   'invited_with_note',
   'invited_without_note',
@@ -29,9 +34,10 @@ export const CONTACT_OUTCOMES = [
 ];
 // Outcomes that need the reserved send click of this run.
 const SENT = new Set(['invited_with_note', 'invited_without_note', 'messaged']);
-// Contacts the user may (re)send: a proposal, a follow-up after an invitation,
-// a failed or unclear attempt (LinkedIn then shows Pending).
-const RESENDABLE = new Set(['proposed', 'invited', 'failed', 'uncertain']);
+// Contacts the user may (re)send: a proposal, a person the listing shows (with
+// the user's own note), a follow-up after an invitation, a failed or unclear
+// attempt (LinkedIn then shows Pending).
+const RESENDABLE = new Set(['proposed', 'listed', 'invited', 'failed', 'uncertain']);
 
 // Short numbered steps; the agents reading this are not experts.
 export const CONTACT_FIND_PROMPT =
@@ -43,6 +49,9 @@ const LIVE = ['pending', 'running', 'reported', 'paused'];
 const entryOf = (a, recordId) => (a.recordContacts ?? []).find((e) => e.recordId === recordId);
 const contactOf = (entry, contactId) => entry?.contacts.find((c) => c.id === contactId);
 const sendPhase = (run) => run.request?.phase === 'send';
+// Whether a contact search ran or anyone was written to; listed people alone are neither.
+const searched = (entry) =>
+  Boolean(entry && (entry.state || entry.contacts.some((c) => c.state !== 'listed')));
 export const contactPrompt = (run) => (sendPhase(run) ? CONTACT_SEND_PROMPT : CONTACT_FIND_PROMPT);
 
 function putEntry(db, id, recordId, patch) {
@@ -159,7 +168,7 @@ export function queueAutomaticContacts(db, id, a, tasks) {
   if (!autoContactsMode(a.criteria)) return null;
   const contactTasks = tasks.filter((t) => t.recordOperation === 'contacts');
   if (contactTasks.some((t) => LIVE.includes(t.state))) return null;
-  const searched = new Set(contactTasks.map((t) => t.recordId)),
+  const searchedIds = new Set(contactTasks.map((t) => t.recordId)),
     threshold = autoApplyThreshold(a.criteria);
   const item = db
     .results(id)
@@ -167,8 +176,8 @@ export function queueAutomaticContacts(db, id, a, tasks) {
       (r) =>
         !r.trial &&
         !['dismissed', 'closed'].includes(r.status) &&
-        !searched.has(r.id) &&
-        !entryOf(a, r.id) &&
+        !searchedIds.has(r.id) &&
+        !searched(entryOf(a, r.id)) &&
         (r.createdAt ?? 0) >= (a.autoContactsAfter ?? 0) &&
         Number.isInteger(r.assessment?.score) &&
         !automaticAssessmentError(r.assessment, threshold),
@@ -176,6 +185,46 @@ export function queueAutomaticContacts(db, id, a, tasks) {
   if (!item) return null;
   startSearch(db, id, item, {manual: false});
   return item.id;
+}
+
+// The people a new record's listing shows (its hiring team, people LinkedIn
+// suggests reaching out to), from the listing a scan read: listed contacts the
+// user can write to or a contact search can pick. Nothing is sent.
+export function keepListingContacts(db, id, run, recordId, url) {
+  if (run.kind !== 'run' || run.recordOperation) return;
+  const people = memoryDetail(db, id, run, url)?.listing?.people;
+  if (!people?.length || db.result(id, recordId)?.trial) return;
+  const seen = new Set((entryOf(db.get(id), recordId)?.contacts ?? []).map((c) => c.profileUrl)),
+    listed = [];
+  for (const person of people) {
+    const profileUrl = linkedInProfile(person.profileUrl),
+      name = String(person.name ?? '').trim();
+    if (!profileUrl || !name || seen.has(profileUrl) || listed.length >= LISTED_LIMIT) continue;
+    seen.add(profileUrl);
+    listed.push({
+      id: `listed-${listed.length + 1}`,
+      name,
+      headline: String(person.headline ?? '')
+        .trim()
+        .slice(0, 200),
+      relation: person.hiringTeam ? 'hiring_team' : 'suggested',
+      profileUrl,
+      reason: [
+        person.hiringTeam
+          ? 'Shown as the hiring team on the listing.'
+          : 'LinkedIn suggests reaching out on the listing.',
+        person.insight,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .slice(0, 400),
+      notes: [],
+      message: '',
+      state: 'listed',
+      foundAt: db.now(),
+    });
+  }
+  if (listed.length) putEntry(db, id, recordId, (e) => ({contacts: [...e.contacts, ...listed]}));
 }
 
 // The user's edit of a proposed note, or of the follow-up message of an invited contact.
@@ -277,13 +326,16 @@ export function contactBrief(db, id, run) {
   return {
     record,
     ...(run.request?.notes ? {userNotes: run.request.notes} : {}),
-    earlierContacts: (entry?.contacts ?? []).map((c) => ({
-      name: c.name,
-      profileUrl: c.profileUrl,
-      state: c.state,
-    })),
+    earlierContacts: (entry?.contacts ?? [])
+      .filter((c) => c.state !== 'listed')
+      .map((c) => ({name: c.name, profileUrl: c.profileUrl, state: c.state})),
+    // People the listing shows; they may be picked like anyone found.
+    listingPeople: (entry?.contacts ?? [])
+      .filter((c) => c.state === 'listed')
+      .map((c) => ({name: c.name, profileUrl: c.profileUrl, headline: c.headline, why: c.reason})),
     rules: [
       `Pick at most ${CONTACT_LIMIT} people who work at the company now and are close to this role, best first: the person who posted the listing, a recruiter or talent acquisition partner for this area, the hiring manager or team lead. Skip earlierContacts.`,
+      'listingPeople are people the listing shows (its hiring team, or people LinkedIn suggests). Check them first; save one like anyone else when they fit.',
       'relation: poster, recruiter, hiring_manager or team. reason: one sentence on why this person, from what the listing and profile say.',
       'name and headline as the profile page shows them. Open every profile before saving it; the app refuses a profile this task did not read.',
     ],
@@ -341,7 +393,9 @@ function contactNotes(name, notes, item, n) {
 export function saveRecordContacts(db, id, run, {contacts = [], noneReason = ''} = {}) {
   if (sendPhase(run)) throw Error('This task sends approved contacts; it does not save new ones');
   const entry = entryOf(db.get(id), run.recordId),
-    known = new Set((entry?.contacts ?? []).map((c) => c.profileUrl)),
+    known = new Set(
+      (entry?.contacts ?? []).filter((c) => c.state !== 'listed').map((c) => c.profileUrl),
+    ),
     item = db.result(id, run.recordId);
   if (!Array.isArray(contacts) || contacts.length > CONTACT_LIMIT)
     throw Error(`Save at most ${CONTACT_LIMIT} contacts.`);
@@ -391,7 +445,15 @@ export function saveRecordContacts(db, id, run, {contacts = [], noneReason = ''}
     searchedAt: db.now(),
     error: null,
     noneReason: saved.length ? null : String(noneReason).trim().slice(0, 400),
-    contacts: [...e.contacts.filter((c) => c.state !== 'proposed'), ...saved],
+    // A listed person the search picked becomes its proposal.
+    contacts: [
+      ...e.contacts.filter(
+        (c) =>
+          c.state !== 'proposed' &&
+          !(c.state === 'listed' && saved.some((s) => s.profileUrl === c.profileUrl)),
+      ),
+      ...saved,
+    ],
   }));
   return {
     saved: saved.length,

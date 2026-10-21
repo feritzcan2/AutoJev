@@ -12,9 +12,12 @@ const relationLabels = {
   recruiter: 'Recruiter',
   hiring_manager: 'Hiring manager',
   team: 'Team',
+  hiring_team: 'Hiring team on the listing',
+  suggested: 'Suggested on the listing',
 };
 const stateLabels = {
   proposed: 'Draft',
+  listed: 'On the listing',
   queued: 'Sending…',
   invited: 'Invited',
   messaged: 'Messaged',
@@ -30,7 +33,7 @@ const styleLabels = {
   direct: ['Direct', 'Strengths first, short'],
   personal: ['Personal', 'Warm, ends with a question'],
 };
-const resendable = new Set(['proposed', 'invited', 'failed', 'uncertain']);
+const resendable = new Set(['proposed', 'listed', 'invited', 'failed', 'uncertain']);
 const FILTERS = [
   ['all', 'All'],
   ['review', 'To review'],
@@ -212,6 +215,7 @@ export function contactsPage(root, api, {refresh}) {
     if (entry.state === 'searching') return lines.at(-1)?.text ?? 'Searching LinkedIn…';
     if (entry.state === 'failed') return `Stopped: ${entry.error || 'no reason given'}`;
     if (!entry.contacts.length) return entry.noneReason || 'No contact found';
+    if (!entry.searchedAt) return `On the listing: ${entry.contacts.map((c) => c.name).join(', ')}`;
     return `Found ${entry.contacts.map((c) => c.name).join(', ')}`;
   }
   function personPreview(contact) {
@@ -220,7 +224,7 @@ export function contactsPage(root, api, {refresh}) {
     if (contact.state === 'failed') return contact.error || 'Not sent';
     if (contact.state === 'uncertain') return 'Not confirmed; check LinkedIn';
     if (last) return `You: ${last.text || sentLabels[last.as]}`;
-    return contact.message;
+    return contact.message || contact.headline;
   }
   function threadRow(key, {icon, name, preview, at, tone, badge}) {
     const row = el('button', null, 'contacts-thread'),
@@ -293,11 +297,13 @@ export function contactsPage(root, api, {refresh}) {
           tone:
             contact.state === 'proposed'
               ? 'waiting'
-              : contact.state === 'queued'
-                ? 'active'
-                : ['uncertain', 'failed'].includes(contact.state)
-                  ? 'blocked'
-                  : 'done',
+              : contact.state === 'listed'
+                ? null
+                : contact.state === 'queued'
+                  ? 'active'
+                  : ['uncertain', 'failed'].includes(contact.state)
+                    ? 'blocked'
+                    : 'done',
           badge:
             contact.state === 'proposed' ? 'Draft' : contact.state === 'queued' ? 'Sending' : null,
         }),
@@ -443,7 +449,7 @@ export function contactsPage(root, api, {refresh}) {
           ? 'Sending…'
           : followUp
             ? 'Send message'
-            : contact.state === 'proposed'
+            : ['proposed', 'listed'].includes(contact.state)
               ? 'Send invitation'
               : 'Try again',
         'primary',
@@ -567,6 +573,12 @@ export function contactsPage(root, api, {refresh}) {
       log.append(typing);
     } else if (entry.state === 'failed')
       log.append(system(`The search stopped: ${entry.error || 'no reason given'}`, 'blocked'));
+    else if (!entry.searchedAt && entry.contacts.length)
+      log.append(
+        system(
+          `The listing shows ${entry.contacts.length === 1 ? 'one person' : `${entry.contacts.length} people`}: ${entry.contacts.map((c) => c.name).join(', ')}. Open a name to write your own note, or find contacts to get drafted notes.`,
+        ),
+      );
     else if (entry.searchedAt)
       log.append(
         bubble(
@@ -581,7 +593,7 @@ export function contactsPage(root, api, {refresh}) {
       notes = el('input'),
       start = el(
         'button',
-        busy.has(key) ? 'Starting…' : entry.contacts.length ? 'Find again' : 'Find contacts',
+        busy.has(key) ? 'Starting…' : entry.searchedAt ? 'Find again' : 'Find contacts',
         'primary',
       );
     notes.placeholder = 'Notes for the search (optional), e.g. "the data team lead"';

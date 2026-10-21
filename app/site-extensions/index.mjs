@@ -15,6 +15,14 @@
 //   (default url), collect runs inside the page like dom.collect, read(raw) returns
 //   {title, company, location, description, fields, closed} or null. Its text
 //   becomes the page's listing evidence (like a schema.org JobPosting).
+//   Optionally dom.pane {handles(url), key(url), card, collect, read(raw)} reads
+//   a results page that shows one listing at a time in a pane beside its cards:
+//   handles(url) names such results pages, key(url) gives a listing address's
+//   key on the page (or null), card(key) runs inside the page and returns the
+//   card to click, collect runs inside the page and returns raw with the key of
+//   the listing the pane shows (raw.key), and read(raw) returns what
+//   dom.listing.read returns. A scan then clicks each new card on the open
+//   results page instead of opening every posting (../jev/pane.mjs).
 // - http: {handles(url), read(url, options)} replaces the browser tab for the
 //   addresses it handles and returns ordinary Jev page objects, or null for an
 //   address it finds it cannot read without a browser (a redirect to another
@@ -24,9 +32,11 @@
 //   A card collector (../sources/card-collector.mjs) reads result cards from
 //   the API and each listing separately; with listingIn: 'browser' the app
 //   opens each listing in the browser and reads it with dom.listing, and with
-//   cardsInBrowser it opens the results pages there too (dom.collect/results).
+//   cardsInBrowser it opens the results pages there too (dom.collect/results)
+//   and, with dom.pane, reads the listings from the open results page first.
 //   Such a site's `pacing` ({minIntervalMs, jitterMs, budget}) spaces and
-//   bounds those page views.
+//   bounds those page views; `pacing.pane` (the same shape) spaces and bounds
+//   the card clicks of pane reads, which default to the page pacing.
 // Optionally `listingKey(url)`: the one comparison key of a listing the site
 // serves under several addresses (country hosts, title slugs), or null to keep
 // the generic key. Records and remembered rejections compare listings by it.
@@ -174,13 +184,19 @@ export async function readSiteExtension(slot, document) {
 }
 // A posting a site's own reader read, in the shape of the page's listing
 // evidence: its text (title, facts, description) and named facts.
-function siteListing(url, job) {
+export function siteListing(url, job) {
   const page = listingPage({
     url,
     title: job.company ? `${job.title} @ ${job.company}` : job.title,
     description: job.description,
     fields: {company: job.company, location: job.location, ...job.fields},
     notes: job.closed ? ['No longer accepting applications.'] : [],
+    people: job.people,
   });
-  return {text: page.text, fields: page.listing?.fields ?? {}, title: job.title};
+  return {
+    text: page.text,
+    fields: page.listing?.fields ?? {},
+    title: job.title,
+    ...(page.listing?.people ? {people: page.listing.people} : {}),
+  };
 }

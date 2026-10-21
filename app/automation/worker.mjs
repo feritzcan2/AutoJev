@@ -1028,25 +1028,29 @@ export function automationWorkflow({
     noteSourceActivity(run.id, step);
     changed(id);
   };
-  // A card site that reads its listings in the browser: open the posting in
-  // this source's tab and take the listing text its posting reader found.
-  // Waits for the budget and pacing in place; this runs before the agent.
-  // One page of a card site in the user's (signed-in) browser: waits for the
-  // site's browser budget and pace in place, then opens the address in this
-  // source's tab. Runs before the agent.
-  const openInBrowser = async (url, address) => {
-    // One budget and pace for the whole site, whichever host serves the page.
+  // Waits in place for the site's browser budget and pace: one budget and
+  // pace for the whole site, whichever host serves the page. Card clicks of
+  // pane reads (pane: true) keep their own budget when the site states one.
+  const browserTurn = async (url, {pane = false} = {}) => {
     const site = siteDomainOf(url),
       waitFor = async (ms, waitFor) => {
         activity({waitUntil: Date.now() + ms, waitFor});
         await pause(ms, undefined, {signal});
       };
-    const pacing = siteExtensionFor(url)?.pacing ?? BROWSER_PACING;
-    for (let delay; (delay = db.siteAccess.reserve(site + ' browser', pacing.budget)) > 0; )
-      await waitFor(delay, `the limit of ${pacing.budget.requests} pages an hour`);
+    const pages = siteExtensionFor(url)?.pacing ?? BROWSER_PACING,
+      clicks = pane && pages.pane,
+      pacing = clicks || pages,
+      [key, unit] = clicks ? [' pane', 'card clicks'] : [' browser', 'pages'];
+    for (let delay; (delay = db.siteAccess.reserve(site + key, pacing.budget)) > 0; )
+      await waitFor(delay, `the limit of ${pacing.budget.requests} ${unit} an hour`);
     const gap = db.siteAccess.pace('https://' + site, pacing.minIntervalMs, pacing.jitterMs);
     if (gap) await waitFor(gap, null);
     activity({waitUntil: null, waitFor: null, browser: true});
+  };
+  // One page of a card site in the user's (signed-in) browser, opened in this
+  // source's tab after its turn. Runs before the agent.
+  const openInBrowser = async (url, address) => {
+    await browserTurn(url);
     let response = await browser.call(id, 'browser_navigate', {url: address}, run.id);
     for (let i = 0; i < 3 && response.jevPage?.reading?.readiness?.loading; i++) {
       await pause(2000, undefined, {signal});
@@ -1059,19 +1063,33 @@ export function automationWorkflow({
       throw Error(`The page opened as ${page.url}; this browser may need to sign in to the site.`);
     return page;
   };
+  // A listing as its site reader read it (the page's listing evidence).
+  const listingRead = (url, listing) => ({
+    url,
+    ...(listing.title ? {title: listing.title} : {}),
+    description: listing.text,
+    ...(listing.fields?.company ? {company: listing.fields.company} : {}),
+    ...(listing.fields?.location ? {location: listing.fields.location} : {}),
+    ...(listing.people?.length ? {people: listing.people} : {}),
+  });
   // A card site that reads its listings in the browser: take the listing text
   // its posting reader found.
   const readListingInBrowser = async (url) => {
     const page = await openInBrowser(url, siteListingAddress(url));
     if (!page?.listing?.text)
       throw Error('The opened posting gave no listing text (login prompt, loading or new layout).');
-    return {
-      url,
-      ...(page.listing.title ? {title: page.listing.title} : {}),
-      description: page.listing.text,
-      ...(page.listing.fields?.company ? {company: page.listing.fields.company} : {}),
-      ...(page.listing.fields?.location ? {location: page.listing.fields.location} : {}),
-    };
+    return listingRead(url, page.listing);
+  };
+  // A card site whose results page shows one listing beside its cards: click
+  // the listing's card on the results page open in this tab and take what the
+  // pane shows. {status, job}; job only when the status is read.
+  const readListingInPane = async (url) => {
+    await browserTurn(url, {pane: true});
+    const read = await browser.call(id, 'browser_read_pane', {url}, run.id);
+    if (read?.siteWait) throw new SiteWaitError(read.siteWait);
+    return read?.status === 'read' && read.listing?.text
+      ? {status: 'read', job: listingRead(url, read.listing)}
+      : {status: read?.status ?? 'not_shown', job: null};
   };
   // A card site's results page in the browser, read by its results reader.
   const readCardsInBrowser = async (url) => {
@@ -1095,6 +1113,7 @@ export function automationWorkflow({
           readPage: collectorReadPage,
           readDetail: collectorReadDetail,
           readListing: readListingInBrowser,
+          readListingInPane,
           readCardsInBrowser,
           progress: activity,
         });
@@ -2059,6 +2078,7 @@ export function automationWorkflow({
       await prefetchCollectorPage(db, run.id, {
         signal,
         readListing: readListingInBrowser,
+        readListingInPane,
         readCardsInBrowser,
         progress: activity,
       });

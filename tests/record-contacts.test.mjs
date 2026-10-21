@@ -428,3 +428,86 @@ test('an earlier saved find_and_send only searches', async (t) => {
   const task = tasks.list(f.id).find((x) => x.recordOperation === 'contacts');
   assert.deepEqual([task.request.phase, task.request.send], ['find', undefined]);
 });
+
+test('people the listing shows wait as listed contacts until the user writes or a search picks them', async (t) => {
+  const f = await fixture(t);
+  const listed = (name, profileUrl) => ({
+    id: 'listed-' + name,
+    name,
+    headline: 'Senior Recruiter',
+    relation: 'hiring_team',
+    profileUrl,
+    reason: 'Shown as the hiring team on the listing.',
+    notes: [],
+    message: '',
+    state: 'listed',
+    foundAt: 1,
+  });
+  const other = 'https://www.linkedin.com/in/john-roe/';
+  f.db.put({
+    ...f.db.get(f.id),
+    recordContacts: [
+      {recordId: f.item.id, contacts: [listed('Jane Doe', profile), listed('John Roe', other)]},
+    ],
+  });
+  // Listed people alone are no search: the automatic search still runs once.
+  const a = f.db.get(f.id);
+  f.db.put({...a, criteria: {...a.criteria, auto_contacts: 'find'}});
+  const run = f.db.begin(f.id, 'run');
+  f.db.record(f.id, run.id, {
+    key: f.item.key,
+    url: f.item.url,
+    title: f.item.title,
+    summary: 'Observed facts',
+    assessment: {score: 90, eligibility: 'verified', eligibilityReason: 'Met', summary: 'Fits'},
+  });
+  f.db.finish(f.id, run.id, 'completed', 'Saved');
+  assert.equal(
+    queueAutomaticContacts(f.db, f.id, f.db.get(f.id), f.db.store.workspaces.tasks.list(f.id)),
+    f.item.id,
+  );
+  const queued = f.db.store.workspaces.tasks
+    .list(f.id)
+    .find((x) => x.recordOperation === 'contacts');
+  f.db.store.workspaces.tasks.finish(f.id, queued.id, 'completed', 'Done');
+  await findRecordContacts(f.runtime, f.id, f.item.id);
+  await settle();
+  const search = f.launches.at(-1),
+    brief = await f.call(search, 'read_contact_brief');
+  assert.deepEqual(brief.earlierContacts, []);
+  assert.deepEqual(
+    brief.listingPeople.map((p) => p.name),
+    ['Jane Doe', 'John Roe'],
+  );
+  // The search may pick a listed person; the proposal replaces the listed entry.
+  f.db.browserEvidence.save(search, {id: 'p', url: profile, text: 'Jane Doe · Recruiter'});
+  await f.call(search, 'save_record_contacts', {
+    contacts: [
+      {
+        name: 'Jane Doe',
+        relation: 'recruiter',
+        profileUrl: profile,
+        reason: 'Hiring team',
+        notes: notes(note),
+      },
+    ],
+  });
+  await f.finish(search, 'completed');
+  assert.deepEqual(
+    f.entry().contacts.map((c) => [c.name, c.state]),
+    [
+      ['John Roe', 'listed'],
+      ['Jane Doe', 'proposed'],
+    ],
+  );
+  // The user writes their own note to a listed person.
+  const john = f.entry().contacts.find((c) => c.name === 'John Roe');
+  await assert.rejects(
+    sendRecordContacts(f.runtime, f.id, f.item.id, [john.id]),
+    /Write the invitation note/,
+  );
+  await sendRecordContacts(f.runtime, f.id, f.item.id, [john.id], {
+    [john.id]: 'Hi John, I would like to hear more about the backend team at Example.',
+  });
+  assert.equal(f.entry().contacts.find((c) => c.id === john.id).state, 'queued');
+});

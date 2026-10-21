@@ -5,7 +5,10 @@
 // (dom.collect/results) and each new posting opens on its own page
 // (dom.listing). LinkedIn's logged-out jobs-guest API is no longer read; it
 // refused after a few dozen requests an hour. Everything after the read
-// (known listings, assessment, evidence, queue) stays generic.
+// (known listings, assessment, evidence, queue) stays generic. The results
+// page shows one posting at a time beside its cards (dom.pane): a scan clicks
+// each new card there and opens a posting's own page only when the pane does
+// not show it.
 import {listingPage} from './listing.mjs';
 import {cardCollector} from '../sources/card-collector.mjs';
 import {SearchValueError} from './search.mjs';
@@ -26,10 +29,13 @@ export const LINKEDIN_PAGE_SIZE = 25;
 // (doubled twice at the user's request on 2026-10-19: 20-30 s and 60 an hour
 // from 2026-10-12, then 10-15 s and 120 an hour, drew no block). Results pages
 // and postings share this budget (the worker's browser budget for the site).
+// A card click on the results page loads no page, only the posting it shows:
+// 2.5-5 s apart, like a person reading the list, and at most 480 an hour.
 export const LINKEDIN_PACING = {
   minIntervalMs: 5000,
   jitterMs: 2500,
   budget: {requests: 240, windowMs: 60 * 60000},
+  pane: {minIntervalMs: 2500, jitterMs: 2500, budget: {requests: 480, windowMs: 60 * 60000}},
 };
 
 const linkedInHost = (host) => host === 'linkedin.com' || host.endsWith('.linkedin.com');
@@ -118,11 +124,15 @@ export function linkedInSignedInSearch(value) {
   return open.href;
 }
 
-// One posting page open in the browser (logged in or not). Runs inside the
-// page, so it is self-contained. The signed-in layout (observed 2026-10-19) has
-// generated class names and no h1: its description sits in the "about the job"
-// component, and the tab title reads "Title | Company | LinkedIn". The guest
+// One posting page open in the browser (logged in or not), or the posting the
+// results page's pane shows. Runs inside the page, so it is self-contained.
+// The signed-in layout (observed 2026-10-19) has generated class names and no
+// h1: its description sits in the "about the job" component, which carries the
+// job ID (key), and the tab title reads "Title | Company | LinkedIn". The guest
 // layout keeps its named classes. Styled Unicode letters become plain (NFKC).
+// The people the posting shows (its hiring team and others LinkedIn suggests
+// reaching out to) come along: each is a profile link holding the name, the
+// connection degree, the headline and LinkedIn's reason ("School alum from …").
 export function collectLinkedInPosting() {
   const clean = (value) =>
     String(value ?? '')
@@ -141,8 +151,49 @@ export function collectLinkedInPosting() {
   const tab = document.title.split(' | ').map(clean);
   const fromTab =
     tab.length >= 3 && tab.at(-1) === 'LinkedIn' ? [tab.slice(0, -2).join(' | '), tab.at(-2)] : [];
+  const section = document.querySelector('[componentkey^="JobDetailsPeopleWhoCanHelpSlot_"]'),
+    people = new Map(),
+    degree = /^(?:•\s*)?(?:1st|2nd|3rd\+?)$/i,
+    controls = /^(?:Message|Connect|Follow|Show all|View profile)$/i;
+  for (const link of section?.querySelectorAll('a[href*="/in/"]') ?? []) {
+    const profileUrl = String(/** @type {HTMLAnchorElement} */ (link).href).split(/[?#]/)[0],
+      lines = String(/** @type {HTMLElement} */ (link).innerText ?? '')
+        .split('\n')
+        .map(clean)
+        .filter(Boolean);
+    const name = (lines[0] ?? '').replace(/\s*•\s*(?:1st|2nd|3rd\+?)$/i, '').trim();
+    if (!name || (people.get(profileUrl)?.name.length ?? 0) > name.length) continue;
+    const rest = lines.slice(1).filter((line) => !degree.test(line) && !controls.test(line));
+    // A hiring team card starts with its heading; the section around it does not.
+    let hiringTeam = false;
+    for (
+      let node = link.parentElement;
+      node && node !== section.parentElement;
+      node = node.parentElement
+    )
+      if (/^Meet the hiring team/i.test(clean(/** @type {HTMLElement} */ (node).innerText))) {
+        hiringTeam = true;
+        break;
+      }
+    people.set(profileUrl, {
+      name,
+      profileUrl,
+      degree:
+        (lines.find((line) => degree.test(line) || / • (?:1st|2nd|3rd)/.test(line)) ?? '').match(
+          /1st|2nd|3rd\+?/,
+        )?.[0] ?? '',
+      headline: rest[0] ?? '',
+      insight: rest[1] ?? '',
+      hiringTeam,
+    });
+  }
   return {
     url: location.href,
+    key:
+      document
+        .querySelector('[componentkey^="JobDetails_AboutTheJob_"]')
+        ?.getAttribute('componentkey')
+        ?.match(/_(\d+)$/)?.[1] ?? null,
     title:
       text([
         '.job-details-jobs-unified-top-card__job-title h1',
@@ -176,13 +227,33 @@ export function collectLinkedInPosting() {
       '.description__text',
     ]),
     closed: /No longer accepting applications/i.test(document.body?.innerText ?? ''),
+    people: [...people.values()],
   };
 }
 // A posting is read only with its own description; a short block is a
-// placeholder or a login prompt, not the listing.
+// placeholder or a login prompt, not the listing. The description's expand
+// button ("… more") is not part of it.
 export function readLinkedInPosting(raw) {
-  const description = String(raw?.description ?? '').trim();
+  const description = String(raw?.description ?? '')
+    .trim()
+    .replace(/\n\s*\.{3}\s*(?:more|mehr)$/i, '')
+    .trim();
   if (!raw?.title || description.length < 200) return null;
+  const people = (Array.isArray(raw.people) ? raw.people : [])
+    .filter((person) => person?.name && person.profileUrl)
+    .slice(0, 6)
+    .map((person) => ({
+      name: String(person.name).slice(0, 120),
+      profileUrl: String(person.profileUrl),
+      headline: String(person.headline ?? '').slice(0, 200),
+      // Why the listing shows this person: its hiring team, or LinkedIn's
+      // suggestion with its reason and the connection degree.
+      hiringTeam: person.hiringTeam === true,
+      insight: [person.degree ? `${person.degree}-degree connection` : '', person.insight]
+        .filter(Boolean)
+        .join(' · ')
+        .slice(0, 200),
+    }));
   return {
     title: raw.title,
     company: raw.company || null,
@@ -190,6 +261,7 @@ export function readLinkedInPosting(raw) {
     description,
     fields: {},
     closed: Boolean(raw.closed),
+    ...(people.length ? {people} : {}),
   };
 }
 
@@ -243,6 +315,15 @@ export function collectLinkedInResults() {
     jobs: [...jobs.values()],
     noResults: /No matching jobs found|Keine passenden Jobs/i.test(text),
   };
+}
+// The card of a job ID on the results page, to show it in the pane. Runs
+// inside the page, so it is self-contained.
+export function linkedInCard(key) {
+  return (
+    document.querySelector(`[componentkey="job-card-component-ref-${key}"][role="button"]`) ??
+    document.querySelector(`[componentkey="job-card-component-ref-${key}"]`) ??
+    document.querySelector(`[data-occludable-job-id="${key}"], [data-job-id="${key}"]`)
+  );
 }
 const signedInResults = (raw) => {
   if (!raw?.jobs || (!raw.jobs.length && !raw.noResults)) return null;
@@ -323,6 +404,7 @@ const collector = cardCollector({
         ...job.criteria,
       },
       notes: job.closed ? ['No longer accepting applications.'] : [],
+      people: job.people,
     }),
     cells: {company: job.company, location: job.location},
   }),
@@ -367,6 +449,20 @@ export default {
     // The signed-in results page (the collector's result pages).
     collect: collectLinkedInResults,
     results: signedInResults,
+    // The posting a card shows beside the 2026 results page, read like its
+    // own page (the key is on its "about the job" component).
+    pane: {
+      handles: (url) =>
+        linkedInAddress(url)?.kind === 'search' &&
+        new URL(url).pathname.startsWith('/jobs/search-results'),
+      key: (url) => {
+        const posting = linkedInAddress(url);
+        return posting?.kind === 'detail' ? posting.id : null;
+      },
+      card: linkedInCard,
+      collect: collectLinkedInPosting,
+      read: readLinkedInPosting,
+    },
   },
   // The search address and the filters it accepts (observed 2026-10-19); the
   // collector opens it as the signed-in results page (linkedInSignedInSearch).

@@ -20,6 +20,7 @@ import {boundedText, webUrl} from '../../templates/catalog.mjs';
 import {sameSite} from '../../browser/site-access.mjs';
 import {recordUrlKey} from '../../records/identity.mjs';
 import {keepListingDescription} from '../../records/description.mjs';
+import {keepListingContacts} from '../contacts.mjs';
 
 // The same listing reached through a redirect to another host of the same
 // site (de.example.com -> www.example.com, trailing slash) is still that page.
@@ -342,6 +343,7 @@ export const recordMethods = {
       run: previous && !previous.trial ? undefined : this.countScanRecord(id, runId, 'saved'),
     });
     keepListingDescription(this, id, run, saved.id, observedUrl);
+    if (!previous) keepListingContacts(this, id, run, saved.id, observedUrl);
     return saved;
   },
   // A source scan counts its saved and below-threshold findings for the source row.

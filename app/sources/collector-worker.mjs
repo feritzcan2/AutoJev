@@ -300,6 +300,7 @@ export async function collectSourcePage(
     readPage = undefined,
     readDetail = undefined,
     readListing = undefined,
+    readListingInPane = undefined,
     readCardsInBrowser = undefined,
     progress = (_step) => {},
   } = {},
@@ -351,6 +352,11 @@ export async function collectSourcePage(
       // them there.
       ...(readListing && adapter.listingIn === 'browser' ? {readListing} : {}),
       ...(readCardsInBrowser && adapter.cardsInBrowser ? {readCardsInBrowser} : {}),
+      // Listings from the pane of the results page open in the browser, for a
+      // site that shows them there (dom.pane).
+      ...(readListingInPane && adapter.cardsInBrowser && extension.dom?.pane
+        ? {readListingInPane}
+        : {}),
     },
     wanted = (urls) => {
       const known = new Set(db.knownListingUrls(run.automationId, run.id, urls)),
@@ -531,6 +537,7 @@ export async function prefetchCollectorPage(
   {
     signal = undefined,
     readListing = undefined,
+    readListingInPane = undefined,
     readCardsInBrowser = undefined,
     progress = undefined,
   } = {},
@@ -541,6 +548,7 @@ export async function prefetchCollectorPage(
       result = await collectSourcePage(db, runId, {
         signal,
         readListing,
+        readListingInPane,
         readCardsInBrowser,
         progress,
       });

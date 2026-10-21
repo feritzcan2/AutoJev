@@ -10,6 +10,7 @@ import {accessBarrier, SiteWaitError, siteKey} from '../browser/site-access.mjs'
 import {observeFormFrame, actFormFrame, usableFormFrame} from './frame-actions.mjs';
 import {captureCookieFrameTargets, clickCookieFrameTarget} from './cookie-frame.mjs';
 import {documentObservation, waitForDocument} from './document.mjs';
+import {readPane} from './pane.mjs';
 import {uploadDetails, validateUploadPurpose, isUploadTrigger} from './upload.mjs';
 import {capturePasswordFields, savedLoginState} from './credentials.mjs';
 import {captureEmbeddedForms, embeddedFormTarget} from './frames.mjs';
@@ -1692,6 +1693,14 @@ export class JevBrowser {
               ],
             };
           }
+        }
+        if (name === 'browser_read_pane') {
+          if (!sourceScope || recordScope)
+            throw Error('A results pane is read only in a source scan tab.');
+          value = await readPane(slot, checkedUrl(args.url), {signal: this.readSignal});
+          // The click changes the address (the shown listing); it is our own change.
+          this.urlHashes.set(slot.id, urlHash(slot.page.url()));
+          await this.persistTabs();
         }
         if (name === 'browser_observe') {
           // Only an assigned read-only source tab may probe an expired gate.

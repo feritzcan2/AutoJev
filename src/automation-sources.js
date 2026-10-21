@@ -754,12 +754,18 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     ]);
 
     // Searches, then the addresses waiting and what Jev dropped.
-    const searchRows = searches.map((search) => [
-      search.label + (search.id === scan.work.activeSearchId ? ' (current)' : ''),
-      search.status === 'completed'
-        ? 'Completed'
-        : `${search.pendingUrls.length} waiting${search.pageProgress ? ` · page ${search.pageProgress.currentPage}` : ''}`,
-    ]);
+    const searchRows = searches.map((search) => {
+      const status =
+        search.status === 'completed'
+          ? 'Completed'
+          : `${search.pendingUrls.length} waiting${search.pageProgress ? ` · page ${search.pageProgress.currentPage}` : ''}`;
+      const label = search.label + (search.id === scan.work.activeSearchId ? ' (current)' : '');
+      if (!search.url) return [label, status];
+      // The searched address under the status, so the user can open it.
+      const value = document.createDocumentFragment();
+      value.append(el('div', status), link(search.url));
+      return [label, value];
+    });
     const excluded = searches.flatMap((s) => s.excluded ?? []).reverse(),
       cards = Object.assign({}, ...searches.map((s) => s.cards ?? {}));
     const queue = group(

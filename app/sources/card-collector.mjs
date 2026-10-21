@@ -14,7 +14,12 @@
 //
 // A site with cardsInBrowser ({open(url), read(page, url)}) has its result
 // pages opened in the user's browser too and read by its results reader; the
-// app passes that read as options.readCardsInBrowser.
+// app passes that read as options.readCardsInBrowser. When the results page
+// shows one listing at a time beside its cards (dom.pane), the app passes
+// options.readListingInPane(url) -> {status, job}: the wanted listings are
+// read from the open results page first, and only those its pane did not show
+// are opened on their own pages afterwards, so the results page stays open
+// while its cards are clicked.
 //
 // Listing texts already read stay in RAM for a while, so a page that a site
 // wait interrupted does not spend its requests again when it is read later.
@@ -50,16 +55,23 @@ export function cardCollector({
   cardsInBrowser = null,
   now = Date.now,
 }) {
-  /** @param {string} url @param {any} [options] */
-  const readDetail = async (url, options = {}) => {
-    const saved = details.get(url);
-    if (saved && now() - saved.at < CACHE_MS) return saved.job;
-    const read = options.readListing ?? (listingIn === 'browser' ? null : readListing);
-    if (!read) throw Error("This site's listings are read in the browser during a scan.");
-    const job = await read(url, options);
+  /** @param {string} url */
+  const saved = (url) => {
+    const read = details.get(url);
+    return read && now() - read.at < CACHE_MS ? read.job : null;
+  };
+  const keep = (url, job) => {
     if (details.size >= CACHE_MAX) details.delete(details.keys().next().value);
     details.set(url, {job, at: now()});
     return job;
+  };
+  /** @param {string} url @param {any} [options] */
+  const readDetail = async (url, options = {}) => {
+    const job = saved(url);
+    if (job) return job;
+    const read = options.readListing ?? (listingIn === 'browser' ? null : readListing);
+    if (!read) throw Error("This site's listings are read in the browser during a scan.");
+    return keep(url, await read(url, options));
   };
   return {
     templateId,
@@ -79,33 +91,53 @@ export function cardCollector({
         throw Error("This site's results pages are read in the browser during a scan.");
       const page = await (cardsInBrowser ? options.readCardsInBrowser : readCards)(url, options);
       const want = new Set(wanted(page.jobs.map((job) => job.url))),
-        total = page.jobs.filter((card) => want.has(card.url)).length,
-        jobs = [],
+        cards = page.jobs.filter((card) => want.has(card.url)),
+        read = new Map(),
+        gone = new Set(),
         unavailable = [];
-      let done = 0;
-      for (const card of page.jobs) {
-        if (!want.has(card.url)) {
-          jobs.push(card);
-          continue;
-        }
+      // The listing being read and how many are finished.
+      const step = (card) =>
         progress({
           step: 'listing',
-          done: done++,
-          total,
+          done: read.size + gone.size + unavailable.length,
+          total: cards.length,
           title: card.title ?? null,
           company: card.company ?? null,
         });
+      // The pane of the open results page first, while that page is open.
+      let pane = cardsInBrowser ? options.readListingInPane : null;
+      for (const card of cards) {
+        if (!pane || saved(card.url)) continue;
+        step(card);
         try {
-          jobs.push({...card, ...(await readDetail(card.url, options))});
+          const shown = await pane(card.url, options);
+          if (shown.status === 'read') read.set(card.url, keep(card.url, shown.job));
+          // A pane this page lacks or a click that left it ends pane reads.
+          else if (['unsupported', 'left_results'].includes(shown.status)) pane = null;
         } catch (error) {
           if (stopsPage(error, options.signal)) throw error;
-          if ([404, 410].includes(error?.status)) continue;
-          unavailable.push({
-            url: card.url,
-            message: String(error?.message ?? error).slice(0, 1000),
-          });
+          pane = null;
         }
       }
+      // Then every other wanted listing on its own page (or from RAM).
+      for (const card of cards) {
+        if (read.has(card.url)) continue;
+        if (!saved(card.url)) step(card);
+        try {
+          read.set(card.url, await readDetail(card.url, options));
+        } catch (error) {
+          if (stopsPage(error, options.signal)) throw error;
+          if ([404, 410].includes(error?.status)) gone.add(card.url);
+          else
+            unavailable.push({
+              url: card.url,
+              message: String(error?.message ?? error).slice(0, 1000),
+            });
+        }
+      }
+      const jobs = page.jobs
+        .filter((card) => !gone.has(card.url) && (!want.has(card.url) || read.has(card.url)))
+        .map((card) => (read.has(card.url) ? {...card, ...read.get(card.url)} : card));
       return {...page, jobs, unavailable};
     },
   };

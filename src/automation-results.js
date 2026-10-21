@@ -18,6 +18,7 @@ import {recordDevPanel} from './record-dev-panel.js';
 // (or its state) replace "Find contacts"; each opens the Contacts page.
 const contactStates = {
   proposed: 'to approve',
+  listed: 'on the listing',
   queued: 'sending',
   invited: 'invited',
   messaged: 'messaged',
