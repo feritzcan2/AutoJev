@@ -7,7 +7,6 @@ import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
 import {JevTabs} from '../app/jev/tabs.mjs';
 import {SiteAccess} from '../app/browser/site-access.mjs';
-import {clickCloudflareCheckbox} from '../app/captcha/cloudflare-checkbox.mjs';
 import {startJevFixture} from './jev-demo.mjs';
 import {launchExtensionChrome} from './jev-extension-fixture.mjs';
 const directory = await mkdtemp(path.join(os.tmpdir(), 'jev-existing-test-')),
@@ -23,6 +22,7 @@ const client = new JevBrowser(path.join(directory, 'candidate'), {
   openUrl: chrome.openUrl,
   extensionInstalled: chrome.extensionInstalled,
   siteAccess: new SiteAccess(db),
+  challengeGraceMs: 1000,
 });
 try {
   await context.route('https://portal.test/**', (r) =>
@@ -65,8 +65,8 @@ try {
   });
   assert.equal(continued.executed, true);
   assert.equal(await slot.page.locator('body').innerText(), 'Listings');
-  // The scoped existing-Chrome transport must expose the real checkbox even
-  // when the provider keeps it inside a closed shadow root and cross-origin frame.
+  // A full-page Cloudflare barrier is the user's to pass: the app opens no
+  // access by clicking its checkbox, even one it could reach.
   let nativeClicks = 0;
   await context.route('https://challenges.cloudflare.com/**', (r) => {
     const mode = new URL(r.request().url()).searchParams.get('mode'),
@@ -91,32 +91,17 @@ try {
       body: `<title>Just a moment...</title><h1>Additional Verification Required</h1><p>Cloudflare — Your Ray ID: synthetic</p><div id="host"></div><script>document.getElementById('host').attachShadow({mode:'closed'}).innerHTML='<iframe style="position:absolute;left:250px;top:140px;width:300px;height:65px" src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform/test/turnstile?mode=${mode}"></iframe>';addEventListener('message',e=>{if(e.origin==='https://challenges.cloudflare.com'&&e.data==='verified')location.href='/done';});</script>`,
     });
   });
-  const barrier = await call('browser_open_page', {url: 'https://barrier.test/access'});
-  assert.equal(barrier.status, 'verification_pending');
-  const barrierSlot = client.tab(barrier.tabId);
-  assert.equal(await clickCloudflareCheckbox(barrierSlot, () => {}), true);
-  await barrierSlot.page.waitForURL('https://barrier.test/done');
-  const recovered = await client.observe(barrierSlot);
-  assert.match(recovered.text, /Actual content/);
-  assert.equal(nativeClicks, 1);
-  assert.equal(await clickCloudflareCheckbox(barrierSlot, () => {}), false);
-  for (const mode of ['hidden', 'covered', 'disabled', 'unlabelled']) {
-    // Isolate site cooldown state to exercise detection for every negative case.
+  for (const mode of ['access', 'hidden', 'covered', 'disabled', 'unlabelled']) {
+    // Isolate site cooldown state to exercise detection for every case.
     db.exec('DELETE FROM browser_site_waits');
-    let negative = await call('browser_open_page', {url: 'https://barrier.test/' + mode});
-    if (negative.status === 'verification_pending') {
-      const pending = client.tab(negative.tabId);
-      assert.equal(pending.cloudflareCheckbox, null, mode);
-      pending.cloudflareDiscovery.until = Date.now() - 1;
-      negative = await call('browser_observe', {tabId: negative.tabId});
-    }
-    assert.equal(negative.status, 'site_wait', mode);
-    assert.equal(nativeClicks, 1);
+    const barrier = await call('browser_open_page', {url: 'https://barrier.test/' + mode});
+    assert.equal(barrier.status, 'site_wait', mode);
+    assert.equal(nativeClicks, 0);
   }
   assert.equal(personal.isClosed(), false);
   assert.equal(personal.url(), fixture.url);
   console.log(
-    'SCOPED_CDP_CROSS_ORIGIN_CHECKBOX_CLICK_AND_CONTINUE_PASS: reCAPTCHA, Cloudflare closed shadow root; personal tab preserved',
+    'SCOPED_CDP_CROSS_ORIGIN_CHECKBOX_CLICK_AND_CONTINUE_PASS: reCAPTCHA clicked, Cloudflare barrier left to the user; personal tab preserved',
   );
 } finally {
   await client.close();

@@ -54,7 +54,7 @@ export function workerScreenshot(api, pane) {
         pane.screenshotEmpty.hidden = true;
         pane.screenshotUrl.textContent = result.url;
         pane.screenshotUrl.title = result.title ? `${result.title}\n${result.url}` : result.url;
-        status(result.captcha?.message ?? 'Last update');
+        status('Last update');
       } else
         status(
           (last ? 'Last screenshot · ' : '') + (result.message ?? 'Waiting for a new screenshot…'),

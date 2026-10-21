@@ -72,7 +72,6 @@ export function workerPreviews({browsers, sessionFor}) {
         tabId: slot.id,
         url,
         title: slot.observed?.title ?? '',
-        ...(slot.captchaProgress ? {captcha: slot.captchaProgress} : {}),
         capturedAt: new Date().toISOString(),
         image: `data:image/jpeg;base64,${data}`,
       };
