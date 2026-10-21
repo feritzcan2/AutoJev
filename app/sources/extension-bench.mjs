@@ -5,7 +5,12 @@
 // collector, otherwise the generic browser reader — and reports what came
 // back. No agent, triage, scoring or records; Jev is asked only by its own
 // "Jev triage" action. Pages and collected listings stay in RAM.
-import {siteExtensionFor, siteExtensionKind, SITE_EXTENSIONS} from '../site-extensions/index.mjs';
+import {
+  collectSiteData,
+  siteExtensionFor,
+  siteExtensionKind,
+  SITE_EXTENSIONS,
+} from '../site-extensions/index.mjs';
 import {listingCard} from '../site-extensions/listing.mjs';
 import {pageEntries} from '../site-extensions/http.mjs';
 import {reloadSiteExtensions, siteExtensionsVersion} from '../site-extensions/reload.mjs';
@@ -192,7 +197,7 @@ export function extensionBench({
         if (!slot) return ['The bench tab is gone; read the address again.'];
         let raw;
         try {
-          raw = await slot.page.evaluate(extension.dom.collect);
+          raw = await collectSiteData(slot.page, extension.dom, extension.dom.collect);
         } catch (error) {
           return [`dom.collect threw in the page: ${error.message}`];
         }
@@ -225,7 +230,7 @@ export function extensionBench({
         if (!slot) return ['The bench tab is gone; read the address again.'];
         let raw;
         try {
-          raw = await slot.page.evaluate(extension.dom.listing.collect);
+          raw = await collectSiteData(slot.page, extension.dom, extension.dom.listing.collect);
         } catch (error) {
           return [`dom.listing.collect threw in the page: ${error.message}`];
         }

@@ -116,6 +116,6 @@ const search = (url) => ({
 export default {
   id: 'indeed',
   matches: isIndeedUrl,
-  dom: {collect: collectIndeedPage, results: indeedResults},
+  dom: {pageWorld: true, collect: collectIndeedPage, results: indeedResults},
   search,
 };

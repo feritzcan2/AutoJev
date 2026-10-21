@@ -160,7 +160,8 @@ const TRIAL_SCAN_PAGE_LIMIT = 2;
 // Pages a card collector opens in the user's (logged-in) browser: 12-20 s
 // apart, about a person reading postings, and at most 120 an hour per site,
 // counted apart from the site's API budget, since these views belong to the
-// user's account. A site extension's own pacing replaces these.
+// user's account. After every 15-30 views in a row a 4-10 minute break follows
+// (rest, see SiteAccess.rest). A site extension's own pacing replaces these.
 export const BROWSER_PACING = {
   minIntervalMs: 12000,
   jitterMs: 8000,
@@ -1042,6 +1043,8 @@ export function automationWorkflow({
       clicks = pane && pages.pane,
       pacing = clicks || pages,
       [key, unit] = clicks ? [' pane', 'card clicks'] : [' browser', 'pages'];
+    for (let delay; (delay = db.siteAccess.rest(site + key, pacing.rest)) > 0; )
+      await waitFor(delay, 'a short reading break');
     for (let delay; (delay = db.siteAccess.reserve(site + key, pacing.budget)) > 0; )
       await waitFor(delay, `the limit of ${pacing.budget.requests} ${unit} an hour`);
     const gap = db.siteAccess.pace('https://' + site, pacing.minIntervalMs, pacing.jitterMs);

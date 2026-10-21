@@ -1,5 +1,6 @@
 import {blockedRepeat, rememberProgress, progressKey, stalled} from './navigation.mjs';
 import {revealInView} from './rendering.mjs';
+import {humanClick, ROUTINE_NOTICE} from '../browser/human-input.mjs';
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 export const choiceKey = (node) => JSON.stringify(['choice', node]);
@@ -116,14 +117,25 @@ export async function selectChoice(slot, args, owner, reader) {
     );
     if (point.changed) return stale;
     if (!point.point) return notActionable('no_safe_click_point');
+    let moved = false;
+    await humanClick(
+      slot.page,
+      point.point.x,
+      point.point.y,
+      async () => {
+        const now = await slot.page.evaluate(
+          (node) => window.__jevFast?.clickPoint(window.__jevFast.nodes.get(node)),
+          saved.node,
+        );
+        moved = !now || Math.hypot(now.x - point.point.x, now.y - point.point.y) > 4;
+        if (moved) throw Object.assign(Error('The option moved.'), {code: 'TARGET_MOVED'});
+      },
+      {notice: ROUTINE_NOTICE},
+    ).catch((error) => {
+      if (!moved) clicked = true;
+      throw error;
+    });
     clicked = true;
-    for (const type of ['mousePressed', 'mouseReleased'])
-      await slot.cdp.send('Input.dispatchMouseEvent', {
-        type,
-        ...point.point,
-        button: 'left',
-        clickCount: 1,
-      });
     await new Promise((resolve) => setTimeout(resolve, 100));
     const selection = await verifyChoice(slot, saved.node, choice, true);
     slot.history.push({
@@ -146,6 +158,7 @@ export async function selectChoice(slot, args, owner, reader) {
         : 'The click was made, but the answer selection could not be verified. Do not repeat the same action; inspect the returned current evidence.',
     };
   } catch (error) {
+    if (error.code === 'TARGET_MOVED') return stale;
     if (!clicked) throw error;
     const after = await slot.page.evaluate(reader).catch(() => null);
     if (after) {

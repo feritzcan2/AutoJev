@@ -3,7 +3,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {findTurnstileCheckbox} from './turnstile-checkbox.mjs';
 import {captchaProvider} from './provider.mjs';
 import {acquireTabRendering} from '../jev/rendering.mjs';
-import {humanClick} from './human-click.mjs';
+import {humanClick} from '../browser/human-input.mjs';
 
 // The site-wait card is the only place a user sees why the native attempts
 // ended. Keep the reason code too; it names the exact discovery/click step.

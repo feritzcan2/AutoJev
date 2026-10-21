@@ -165,6 +165,15 @@ export function applySiteExtension(document, read, id) {
   };
 }
 
+// Runs a collector of `dom` on the page. Collectors run in Jev's isolated
+// world, where the DOM is shared but the page's own globals are not; a reader
+// that needs the page's own state (dom.pageWorld) runs in its main world.
+export function collectSiteData(page, dom, collect) {
+  return dom?.pageWorld && page.evaluateInPageWorld
+    ? page.evaluateInPageWorld(collect)
+    : page.evaluate(collect);
+}
+
 // Reads the extension data of the page in this slot. Errors and unknown pages
 // leave the generic document unchanged.
 export async function readSiteExtension(slot, document) {
@@ -172,12 +181,12 @@ export async function readSiteExtension(slot, document) {
   const dom = extension?.dom;
   if (!dom) return document;
   if (dom.listing?.handles(document.url)) {
-    const raw = await slot.page.evaluate(dom.listing.collect).catch(() => null);
+    const raw = await collectSiteData(slot.page, dom, dom.listing.collect).catch(() => null);
     const job = raw?.url === document.url ? dom.listing.read(raw) : null;
     return job?.description ? {...document, siteListing: siteListing(document.url, job)} : document;
   }
   if (!dom.collect) return document;
-  const raw = await slot.page.evaluate(dom.collect).catch(() => null);
+  const raw = await collectSiteData(slot.page, dom, dom.collect).catch(() => null);
   // A redirect between the two reads would mix two pages.
   const read = raw?.url === document.url ? dom.results(raw, {opened: slot.openedUrl}) : null;
   return read ? applySiteExtension(document, read, extension.id) : document;

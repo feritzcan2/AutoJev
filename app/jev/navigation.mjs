@@ -1,5 +1,6 @@
 import {observedId} from './ids.mjs';
 import {acquireTabRendering, revealInView} from './rendering.mjs';
+import {wheelScroll} from '../browser/human-input.mjs';
 import {randomUUID, createHash} from 'node:crypto';
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -270,7 +271,7 @@ export async function navigateObserved(slot, name, args, owner, reader) {
         ),
         releaseRendering = await acquireTabRendering(slot, {timeoutMs: 2000});
       try {
-        await handle.asElement().scrollIntoViewIfNeeded({timeout: 2000});
+        await revealInView(slot, handle.asElement());
         const actionable = await slot.page.evaluate(
           ({node, guard}) => {
             const c = window.__jevFast,
@@ -324,16 +325,14 @@ export async function navigateObserved(slot, name, args, owner, reader) {
       }
     } else {
       began = true;
-      await slot.page.evaluate(
-        ({node, direction}) => {
-          const e = window.__jevFast.nodes.get(node);
-          e.scrollBy({
-            top: (direction === 'down' ? 1 : -1) * Math.min(560, e.clientHeight * 0.8),
-            behavior: 'instant',
-          });
-        },
-        {node: saved.node, direction: args.direction},
+      const height = await slot.page.evaluate(
+        (node) => window.__jevFast.nodes.get(node).clientHeight,
+        saved.node,
       );
+      await wheelScrollNode(slot, {
+        node: saved.node,
+        delta: Math.round((args.direction === 'down' ? 1 : -1) * Math.min(560, height * 0.8)),
+      });
     }
     const after = await slot.page.evaluate(reader),
       progress = rememberProgress(slot, key, before, progressKey(after));
@@ -463,4 +462,76 @@ export function presentObservation(slot, value, {full = false, standalone = fals
   else if (Array.isArray(value.history)) delta.history = value.history.slice(-1);
   // Upload handles are still one-observation replacements.
   return delta;
+}
+
+// A scroll action turns the wheel over the scrolled element, as a person does.
+// Where no visible point of the element takes the wheel (it is covered, sits
+// in an iframe, or a nested list under the pointer would scroll instead), or
+// the wheel covered much less than the distance, the rest scrolls directly.
+export async function wheelScrollNode(slot, {node, delta}, signal) {
+  const read = (request) =>
+    slot.page.evaluate(
+      ({node, delta, plan}) => {
+        let e = window.__jevFast.nodes.get(node);
+        const pageScroll = [
+          document.scrollingElement,
+          document.documentElement,
+          document.body,
+        ].includes(e);
+        if (pageScroll) e = document.scrollingElement ?? document.documentElement;
+        if (!plan) return {top: e.scrollTop};
+        if (location.ancestorOrigins.length) return {top: e.scrollTop};
+        // The first ancestor that can still scroll in this direction takes the wheel.
+        const owner = (hit) => {
+          for (
+            let n = hit;
+            n && n !== document.body && n !== document.documentElement;
+            n = n.parentElement
+          ) {
+            const style = getComputedStyle(n);
+            if (
+              /(auto|scroll|overlay)/.test(style.overflowY) &&
+              n.scrollHeight > n.clientHeight &&
+              (delta > 0 ? n.scrollTop + n.clientHeight < n.scrollHeight - 1 : n.scrollTop > 0)
+            )
+              return n;
+          }
+          return document.scrollingElement ?? document.documentElement;
+        };
+        const r = pageScroll
+            ? {left: 0, top: 0, right: innerWidth, bottom: innerHeight}
+            : e.getBoundingClientRect(),
+          left = Math.max(r.left, 0),
+          right = Math.min(r.right, innerWidth),
+          up = Math.max(r.top, 0),
+          down = Math.min(r.bottom, innerHeight);
+        if (right - left >= 4 && down - up >= 4)
+          for (const [fx, fy] of [
+            [0.5, 0.5],
+            [0.3, 0.5],
+            [0.7, 0.5],
+            [0.5, 0.3],
+            [0.5, 0.7],
+          ]) {
+            const x = left + (right - left) * fx,
+              y = up + (down - up) * fy,
+              hit = document.elementFromPoint(x, y);
+            if (hit && owner(hit) === e) return {top: e.scrollTop, x, y};
+          }
+        return {top: e.scrollTop};
+      },
+      {node, delta, plan: request},
+    );
+  const before = await read(true);
+  if (before.x !== undefined && (await wheelScroll(slot.page, before, delta, {signal}))) {
+    // Wheel scrolling animates; let it come to rest before measuring.
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    const moved = (await read(false)).top - before.top;
+    if (Math.abs(delta - moved) <= Math.abs(delta) * 0.3) return;
+    delta -= moved;
+  }
+  await slot.page.evaluate(
+    ({node, delta}) => window.__jevFast.nodes.get(node).scrollBy({top: delta, behavior: 'instant'}),
+    {node, delta},
+  );
 }

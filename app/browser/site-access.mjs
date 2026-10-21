@@ -92,6 +92,7 @@ export class SiteAccess {
     Object.assign(this, {db, now, changed});
     this.incidents = new Map();
     this.paced = new Map();
+    this.rests = new Map();
     this.requests = new Map();
     this.failures = new Map();
     db.exec(
@@ -251,6 +252,26 @@ export class SiteAccess {
       next,
     ]);
     return next - now;
+  }
+  // A person reading postings stops now and then. After a run of `views`
+  // page views under `key` (a random count in that range) the next view waits
+  // a random `pause`; a natural gap that long between views counts as the
+  // break and starts a new run. Concurrent readers of the key share the same
+  // break. Returns the milliseconds to wait before the view, 0 for none; a
+  // caller that waited asks again. RAM only: an app restart starts fresh.
+  rest(key, {views = [15, 30], pause = [4 * minute, 10 * minute]} = {}) {
+    const now = this.now(),
+      pick = ([min, max]) => Math.round(min + Math.random() * (max - min));
+    let state = this.rests.get(key);
+    if (state?.until > now) return state.until - now;
+    if (!state || now - state.last >= pause[0]) state = {count: 0, limit: pick(views)};
+    if (state.count >= state.limit) {
+      const until = now + pick(pause);
+      this.rests.set(key, {count: 0, limit: pick(views), last: until, until});
+      return until - now;
+    }
+    this.rests.set(key, {...state, count: state.count + 1, last: now});
+    return 0;
   }
   // How fast this app reaches a site, across lanes and workspaces: requests
   // in the last ten minutes and hour, the site's minimum gap, and its budget

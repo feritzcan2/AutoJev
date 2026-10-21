@@ -182,6 +182,12 @@ Rules:
   read if it differs from the document URL (redirect between reads).
 - `collect` must never throw on a missing element — use optional chaining and
   return `null` fields.
+- `collect` runs in Jev's isolated world: it sees the DOM (including
+  `script#__NEXT_DATA__` and `application/ld+json` text) but not the page's
+  own globals. Only a reader that needs a global (`window.__PRELOADED_STATE__`,
+  `window.__NUXT__`, `window.mosaic`) sets `dom.pageWorld: true`, which runs
+  its collectors in the page's main world. Prefer reading a script tag's text
+  over a global when both exist.
 - `results` returns `null` when there are no cards or any card lacks a URL.
 - Use embedded state only when it matches the rendered cards (every card id
   present) and the page number in the address; otherwise fall back to cards

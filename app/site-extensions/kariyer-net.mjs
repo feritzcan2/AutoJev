@@ -176,6 +176,6 @@ const search = {
 export default {
   id: 'kariyer-net',
   matches: isKariyerNetUrl,
-  dom: {collect: collectKariyerNetPage, results: kariyerNetResults},
+  dom: {pageWorld: true, collect: collectKariyerNetPage, results: kariyerNetResults},
   search,
 };

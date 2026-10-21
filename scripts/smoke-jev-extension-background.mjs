@@ -118,7 +118,7 @@ try {
     });
     assert.equal(filled.status, 'ready', JSON.stringify(filled.results));
     assert.equal(await page.locator('[name=contact]').inputValue(), 'Synthetic answer');
-    assert.equal(await page.evaluate(() => window.sends), 0);
+    assert.equal(await page.evaluateInPageWorld(() => window.sends), 0);
     assert.ok(!filled.fillFields.some((f) => ['Hidden', 'Disabled'].includes(f.label)));
     assert.equal(await selected(tabId), false, `${route}: the Jev tab stays in the background`);
     assert.equal(await visibility(page), 'hidden', route);

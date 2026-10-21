@@ -25,10 +25,12 @@ export async function retryJevRead(page, read, {attempts = 3, delay = 150} = {})
 
 // Keep Jev's node cache in a private remote handle, not on the site's window.
 // Functions still run against the real DOM; no browser identity is overridden.
+// With Patchright (driver.mjs) the handle and every function live in an
+// isolated world, so the page's scripts cannot reach either.
 export function privateJevPage(page) {
   const frames = new WeakMap(),
     handles = new WeakMap();
-  const scope = `const privateKeys=new Set(['__jevFast','__jobloopFieldContext','__jobloopFieldError']),window=new Proxy(globalThis,{get(target,key){return privateKeys.has(key)?state[key]:Reflect.get(target,key,target);},set(target,key,value){if(privateKeys.has(key)){state[key]=value;return true;}return Reflect.set(target,key,value,target);}});`;
+  const scope = `const privateKeys=new Set(['__jevFast','__jobloopFieldContext','__jobloopFieldError','__jobloopDrawnToggle','__jobloopFileSurface','__jobloopPicker']),window=new Proxy(globalThis,{get(target,key){return privateKeys.has(key)?state[key]:Reflect.get(target,key,target);},set(target,key,value){if(privateKeys.has(key)){state[key]=value;return true;}return Reflect.set(target,key,value,target);}});`;
   const compiled = (fn, node = false) =>
     new Function(
       node ? 'element' : 'state',
@@ -109,6 +111,11 @@ export function privateJevPage(page) {
     get(target, key) {
       if (key === 'evaluate' || key === 'evaluateHandle')
         return (...args) => wrapFrame(target.mainFrame())[key](...args);
+      // A site extension that reads the page's own state (for example a
+      // framework's preloaded data on window) runs in the page's main world.
+      // Everything else stays in Jev's isolated world.
+      if (key === 'evaluateInPageWorld')
+        return (fn, arg) => target.mainFrame().evaluate(fn, arg, undefined, false);
       if (key === 'frames') return () => target.frames().map(wrapFrame);
       if (key === 'mainFrame') return () => wrapFrame(target.mainFrame());
       const value = Reflect.get(target, key, target);

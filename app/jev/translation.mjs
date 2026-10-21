@@ -39,19 +39,33 @@ export function markNoTranslate() {
   );
 }
 
-export async function installNoTranslate(page) {
-  let pending = installed.get(page);
+// The script runs in an isolated world of its own, so the page's scripts see
+// the marked document but never Jev's code or a script registered in their
+// own world.
+const WORLD = 'jev-notranslate';
+
+export async function installNoTranslate(slot) {
+  let pending = installed.get(slot);
   if (pending) return pending;
+  const source = `(${markNoTranslate})()`;
   pending = (async () => {
-    await page.addInitScript(markNoTranslate);
+    await slot.cdp.send('Page.addScriptToEvaluateOnNewDocument', {source, worldName: WORLD});
+    const current = (async () => {
+      const {frameTree} = await slot.cdp.send('Page.getFrameTree'),
+        {executionContextId} = await slot.cdp.send('Page.createIsolatedWorld', {
+          frameId: frameTree.frame.id,
+          worldName: WORLD,
+        });
+      await slot.cdp.send('Runtime.evaluate', {expression: source, contextId: executionContextId});
+    })();
     await Promise.race([
-      page.evaluate(markNoTranslate).catch(() => {}),
+      current.catch(() => {}),
       new Promise((resolve) => setTimeout(resolve, CURRENT_DOCUMENT_MS).unref?.()),
     ]);
   })().catch((error) => {
-    installed.delete(page);
+    installed.delete(slot);
     throw error;
   });
-  installed.set(page, pending);
+  installed.set(slot, pending);
   return pending;
 }

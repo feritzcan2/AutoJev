@@ -1,5 +1,6 @@
 // @ts-check
 import {observedId} from './ids.mjs';
+import {humanClickElement, humanFill} from '../browser/human-input.mjs';
 const excluded =
   /captcha|recaptcha|hcaptcha|challenge|oauth|accounts\.google|login\.microsoftonline/i;
 export async function usableFormFrame(frame, page) {
@@ -170,7 +171,8 @@ export async function actFormFrame(slot, args, owner) {
   slot.frameActionTargets.delete(args.targetId);
   try {
     if (meta.kind === 'fill') {
-      await t.handle.fill(args.text, {timeout: 2500});
+      await t.handle.scrollIntoViewIfNeeded({timeout: 2500});
+      await humanFill(slot.page, t.handle, args.text);
       if (meta.autocomplete === 'list' || meta.autocomplete === 'both') {
         const suggestion = t.frame.locator('[role="option"]').first();
         // Many ARIA comboboxes (including Greenhouse/React Select) reveal their
@@ -201,8 +203,18 @@ export async function actFormFrame(slot, args, owner) {
       return {status: verified ? 'ready' : 'uncertain', executed: true, verified};
     }
     if (meta.kind === 'select') await t.handle.selectOption({value: args.value}, {timeout: 2500});
-    else if (meta.kind === 'choice') await t.handle.setChecked(args.checked, {timeout: 2500});
-    else await t.handle.click({timeout: 2500});
+    else if (meta.kind === 'choice') {
+      // A person clicks the box only when it is not yet in the wanted state.
+      await t.handle.scrollIntoViewIfNeeded({timeout: 2500});
+      if (
+        (await t.handle.evaluate((e) => e.checked)) === args.checked ||
+        !(await humanClickElement(slot.page, t.handle))
+      )
+        await t.handle.setChecked(args.checked, {timeout: 2500});
+    } else {
+      await t.handle.scrollIntoViewIfNeeded({timeout: 2500});
+      if (!(await humanClickElement(slot.page, t.handle))) await t.handle.click({timeout: 2500});
+    }
     if (meta.kind === 'click')
       return {
         status: 'ready',

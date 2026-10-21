@@ -1,0 +1,288 @@
+<!doctype html>
+<!--
+  Bot-signal probe. A self-contained page to host on a site you own: open it
+  in the AutoJob Chrome, let the app fill the form and press Send, then read
+  the report at the bottom (or call window.botSignalsReport() from the page's
+  own console). It checks the traces bot-protection scripts commonly look for:
+  a CDP Runtime domain serialising console arguments, automation globals and
+  flags, DOM changes the automation makes, and how clicks, typing and
+  scrolling arrive. Nothing leaves the page.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Contact form</title>
+    <style>
+      body {
+        font: 16px/1.5 system-ui, sans-serif;
+        max-width: 640px;
+        margin: 24px auto;
+        padding: 0 16px;
+        background: #fff;
+        color: #111;
+      }
+      label {
+        display: block;
+        margin: 12px 0;
+      }
+      input,
+      textarea {
+        display: block;
+        width: 100%;
+        padding: 8px;
+        font: inherit;
+        box-sizing: border-box;
+      }
+      #spacer {
+        height: 1400px;
+        border-left: 4px dotted #ccc;
+        margin: 16px 0;
+        padding-left: 12px;
+        color: #666;
+      }
+      button {
+        padding: 10px 24px;
+        font: inherit;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-top: 16px;
+      }
+      td {
+        border-top: 1px solid #ddd;
+        padding: 6px 4px;
+        vertical-align: top;
+      }
+      .bad {
+        color: #b00020;
+        font-weight: 600;
+      }
+      .ok {
+        color: #0a7a2f;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Contact us</h1>
+    <p>Tell us how to reach you. We answer within two working days.</p>
+    <form id="form">
+      <label>Full name<input name="name" autocomplete="off" /></label>
+      <label>Email<input name="email" type="email" autocomplete="off" /></label>
+      <label>Message<textarea name="message" rows="4"></textarea></label>
+      <div id="spacer">Read our privacy notice before sending.</div>
+      <label><input type="checkbox" name="consent" style="display: inline; width: auto" /> I agree to
+        be contacted</label>
+      <button type="submit">Send</button>
+    </form>
+    <section id="result" hidden>
+      <h2>Bot-signal report</h2>
+      <table id="report"></table>
+    </section>
+    <script>
+      (() => {
+        const loaded = performance.now();
+        const signals = {
+          runtimeEnableTrap: false,
+          firstInputMs: null,
+          clicks: [],
+          keys: {},
+          inputs: {},
+          wheel: 0,
+          scrolls: 0,
+          translateChanges: [],
+          moves: 0,
+        };
+        // A CDP client with the Runtime domain enabled serialises console
+        // arguments, which reads the error's stack. A page alone never does.
+        const trap = new Error('probe');
+        Object.defineProperty(trap, 'stack', {
+          get() {
+            signals.runtimeEnableTrap = true;
+            return '';
+          },
+        });
+        const probeConsole = () => console.debug(trap);
+        probeConsole();
+        setInterval(probeConsole, 1000);
+        // DOM changes made by the automation rather than the page.
+        new MutationObserver((records) => {
+          for (const r of records) {
+            if (r.type === 'attributes' && r.attributeName === 'translate')
+              signals.translateChanges.push('translate attribute on ' + r.target.tagName);
+            for (const n of r.addedNodes || [])
+              if (n.tagName === 'META' && /notranslate/i.test(n.content || ''))
+                signals.translateChanges.push('meta ' + n.name + '=' + n.content);
+          }
+        }).observe(document.documentElement, {subtree: true, childList: true, attributes: true});
+        const first = () => {
+          if (signals.firstInputMs === null)
+            signals.firstInputMs = Math.round(performance.now() - loaded);
+        };
+        let movesSinceClick = 0,
+          down = null;
+        addEventListener(
+          'mousemove',
+          (e) => {
+            signals.moves++;
+            movesSinceClick++;
+          },
+          true,
+        );
+        addEventListener(
+          'mousedown',
+          (e) => {
+            first();
+            const r = e.target.getBoundingClientRect();
+            down = {
+              at: performance.now(),
+              target: e.target.name || e.target.tagName,
+              trusted: e.isTrusted,
+              movesBefore: movesSinceClick,
+              offset: Math.round(
+                Math.hypot(e.clientX - (r.x + r.width / 2), e.clientY - (r.y + r.height / 2)),
+              ),
+              screenEqualsClient: e.screenX === e.clientX && e.screenY === e.clientY,
+            };
+          },
+          true,
+        );
+        addEventListener(
+          'mouseup',
+          () => {
+            if (!down) return;
+            signals.clicks.push({...down, holdMs: Math.round(performance.now() - down.at)});
+            down = null;
+            movesSinceClick = 0;
+          },
+          true,
+        );
+        addEventListener(
+          'keydown',
+          (e) => {
+            first();
+            const name = e.target.name || e.target.tagName;
+            const k = (signals.keys[name] ||= {down: 0, last: null, gaps: []});
+            k.down++;
+            const now = performance.now();
+            if (k.last !== null) k.gaps.push(Math.round(now - k.last));
+            k.last = now;
+          },
+          true,
+        );
+        addEventListener(
+          'input',
+          (e) => {
+            first();
+            signals.inputs[e.target.name || e.target.tagName] = {
+              length: String(e.target.value ?? '').length,
+              type: e.inputType,
+            };
+          },
+          true,
+        );
+        addEventListener('wheel', () => signals.wheel++, {capture: true, passive: true});
+        addEventListener('scroll', () => signals.scrolls++, {capture: true, passive: true});
+
+        const globals = () =>
+          Object.getOwnPropertyNames(window).filter((n) =>
+            /^(__pw|__playwright|__jev|__jobloop|cdc_|\$cdc_|__webdriver|__selenium|callPhantom|_phantom)/i.test(
+              n,
+            ),
+          );
+        const spread = (values) => {
+          if (values.length < 3) return null;
+          const mean = values.reduce((a, b) => a + b, 0) / values.length;
+          return Math.round(
+            Math.sqrt(values.reduce((a, b) => a + (b - mean) ** 2, 0) / values.length),
+          );
+        };
+        window.botSignalsReport = () => {
+          const fields = {};
+          for (const name of ['name', 'email', 'message']) {
+            const k = signals.keys[name] || {down: 0, gaps: []},
+              length = document.querySelector(`[name=${name}]`).value.length;
+            fields[name] = {
+              length,
+              keydowns: k.down,
+              keyGapSpreadMs: spread(k.gaps),
+              lastInputType: signals.inputs[name]?.type ?? null,
+            };
+          }
+          return {
+            webdriver: navigator.webdriver,
+            runtimeEnableTrap: signals.runtimeEnableTrap,
+            automationGlobals: globals(),
+            translateChanges: signals.translateChanges,
+            firstInputMs: signals.firstInputMs,
+            mouseMoves: signals.moves,
+            clicks: signals.clicks,
+            fields,
+            wheelEvents: signals.wheel,
+            scrollEvents: signals.scrolls,
+          };
+        };
+        const verdicts = (r) => [
+          ['navigator.webdriver', r.webdriver, r.webdriver === false],
+          ['CDP Runtime trap fired', r.runtimeEnableTrap, !r.runtimeEnableTrap],
+          ['Automation globals', r.automationGlobals.join(', ') || 'none', !r.automationGlobals.length],
+          [
+            'DOM changes by the automation',
+            r.translateChanges.join('; ') || 'none',
+            !r.translateChanges.length,
+          ],
+          ['Time to first input', r.firstInputMs + ' ms', r.firstInputMs === null || r.firstInputMs > 500],
+          [
+            'Clicks without pointer movement',
+            r.clicks.filter((c) => c.movesBefore < 2).length + ' of ' + r.clicks.length,
+            r.clicks.every((c) => c.movesBefore >= 2),
+          ],
+          [
+            'Press-release under 30 ms',
+            r.clicks.filter((c) => c.holdMs < 30).length + ' of ' + r.clicks.length,
+            r.clicks.every((c) => c.holdMs >= 30),
+          ],
+          [
+            'Clicks dead in the centre (≤1 px)',
+            r.clicks.filter((c) => c.offset <= 1).length + ' of ' + r.clicks.length,
+            r.clicks.filter((c) => c.offset <= 1).length < Math.max(2, r.clicks.length),
+          ],
+          [
+            'Untrusted events',
+            r.clicks.filter((c) => !c.trusted).length,
+            r.clicks.every((c) => c.trusted),
+          ],
+          [
+            'screenX equals clientX (info)',
+            r.clicks.filter((c) => c.screenEqualsClient).length + ' of ' + r.clicks.length,
+            true,
+          ],
+          ...Object.entries(r.fields).map(([name, f]) => [
+            `"${name}": keys vs characters`,
+            `${f.keydowns} keys, ${f.length} chars, gap spread ${f.keyGapSpreadMs ?? '–'} ms, last ${f.lastInputType ?? '–'}`,
+            // Long or multi-line text may be pasted, as a person does.
+            f.length === 0 ||
+              f.keydowns >= f.length ||
+              f.lastInputType === 'insertFromPaste' ||
+              name === 'message',
+          ]),
+          ['Wheel events', r.wheelEvents, r.wheelEvents > 0 || r.scrollEvents === 0],
+        ];
+        document.getElementById('form').addEventListener('submit', (e) => {
+          e.preventDefault();
+          const table = document.getElementById('report');
+          table.textContent = '';
+          for (const [label, value, ok] of verdicts(window.botSignalsReport())) {
+            const row = table.insertRow();
+            row.insertCell().textContent = label;
+            const cell = row.insertCell();
+            cell.textContent = String(value);
+            cell.className = ok ? 'ok' : 'bad';
+          }
+          document.getElementById('result').hidden = false;
+        });
+      })();
+    </script>
+  </body>
+</html>

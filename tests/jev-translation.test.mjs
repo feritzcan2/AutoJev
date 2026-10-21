@@ -58,22 +58,35 @@ test('owned tabs mark the document notranslate as soon as a head exists', (t) =>
   assert.equal(early.metas.length, 1, 'the load handler does not add a second meta');
 });
 
-test('the notranslate script installs once per page and tolerates a page that rejects evaluation', async () => {
+test('the notranslate script installs once per tab in its own world and tolerates a page that rejects evaluation', async () => {
   const calls = [];
-  const page = {
-    addInitScript: async (fn) => calls.push(['init', fn]),
-    evaluate: async () => {
-      calls.push(['evaluate']);
-      throw Error('navigating');
+  const slot = {
+    cdp: {
+      send: async (method, params) => {
+        calls.push([method, params]);
+        if (method === 'Page.getFrameTree') return {frameTree: {frame: {id: 'main'}}};
+        if (method === 'Page.createIsolatedWorld') return {executionContextId: 7};
+        if (method === 'Runtime.evaluate') throw Error('navigating');
+        return {};
+      },
     },
   };
-  await installNoTranslate(page);
-  await installNoTranslate(page);
+  await installNoTranslate(slot);
+  await installNoTranslate(slot);
   assert.deepEqual(
-    calls.map(([kind]) => kind),
-    ['init', 'evaluate'],
+    calls.map(([method]) => method),
+    [
+      'Page.addScriptToEvaluateOnNewDocument',
+      'Page.getFrameTree',
+      'Page.createIsolatedWorld',
+      'Runtime.evaluate',
+    ],
   );
-  assert.equal(calls[0][1], markNoTranslate);
+  const [, init] = calls[0];
+  assert.ok(init.worldName, 'the init script never runs in the page world');
+  assert.equal(init.source, `(${markNoTranslate})()`);
+  assert.equal(calls[2][1].worldName, init.worldName);
+  assert.equal(calls[3][1].contextId, 7);
 });
 
 test('a reveal on a control the page keeps hidden names the concealment instead of suggesting reveal', async () => {
@@ -99,12 +112,21 @@ test('a reveal on a control the page keeps hidden names the concealment instead 
 test('a current document whose script context never answers does not hold the tab setup', async (t) => {
   t.mock.timers.enable({apis: ['setTimeout']});
   let initScripts = 0;
-  const page = {
-    addInitScript: async () => initScripts++,
-    evaluate: () => new Promise(() => {}),
+  const slot = {
+    cdp: {
+      send: (method) => {
+        if (method === 'Page.addScriptToEvaluateOnNewDocument') initScripts++;
+        else if (method === 'Page.getFrameTree')
+          return Promise.resolve({frameTree: {frame: {id: 'main'}}});
+        else if (method === 'Page.createIsolatedWorld')
+          return Promise.resolve({executionContextId: 1});
+        else if (method === 'Runtime.evaluate') return new Promise(() => {});
+        return Promise.resolve({});
+      },
+    },
   };
   let done = false;
-  const setup = installNoTranslate(page).then(() => (done = true));
+  const setup = installNoTranslate(slot).then(() => (done = true));
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(initScripts, 1);
   assert.equal(done, false);

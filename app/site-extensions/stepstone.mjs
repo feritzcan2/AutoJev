@@ -157,6 +157,6 @@ const search = {
 export default {
   id: 'stepstone',
   matches: isStepstoneUrl,
-  dom: {collect: collectStepstonePage, results: stepstoneResults},
+  dom: {pageWorld: true, collect: collectStepstonePage, results: stepstoneResults},
   search,
 };
