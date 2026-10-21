@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
 import {controlState} from './jev-control-state.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 const dir = await mkdtemp(path.join(os.tmpdir(), 'jev-blockers-'));
 const client = new JevBrowser(dir, {
   connection: 'separate',
@@ -21,7 +22,7 @@ try {
     slot = await client.track(context, page),
     tabId = slot.id;
   await page.setContent('<div id="host"></div>');
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     const root = document.querySelector('#host').attachShadow({mode: 'open'});
     root.innerHTML =
       '<label>City<input role="combobox" aria-controls="cities" aria-expanded="false"></label><div id="cities" role="listbox" hidden><div role="option">Berlin, State of Berlin, Germany</div></div><label><input id="consent" type="checkbox" style="opacity:0;position:absolute;width:1px;height:1px">Privacy Policy</label><fieldset><legend>Sponsorship?</legend><label><input type="radio" name="visa" style="display:none">No</label></fieldset>';
@@ -66,7 +67,7 @@ try {
   // SmartRecruiters buttons project light-DOM labels into shadow slots.
   // Their label is the actual hit target, not an unrelated overlay.
   await page.setContent('<div id="buttons"></div>');
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     window.buttonClicks = [];
     for (const [label, offscreen] of [
       ['Cancel', false],
@@ -93,23 +94,23 @@ try {
   let target = o.clickTargets.find((c) => c.label === 'Cancel');
   assert.ok(target);
   let clicked = await call('browser_click_target', {tabId, targetId: target.targetId});
-  assert.deepEqual(await page.evaluate(() => window.buttonClicks), ['Cancel']);
+  assert.deepEqual(await inPageWorld(page, () => window.buttonClicks), ['Cancel']);
   const next = clicked.controls.find((c) => c.label === 'Next');
   assert.ok(next);
   o = await call('browser_reveal', {tabId, controlId: next.controlId});
   target = o.clickTargets.find((c) => c.label === 'Next');
   assert.ok(target);
   await call('browser_click_target', {tabId, targetId: target.targetId});
-  assert.deepEqual(await page.evaluate(() => window.buttonClicks), ['Cancel', 'Next']);
+  assert.deepEqual(await inPageWorld(page, () => window.buttonClicks), ['Cancel', 'Next']);
   // A real overlay still blocks clicks; slot support must not bypass it.
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     const overlay = document.createElement('div');
     overlay.style = 'position:fixed;inset:0;z-index:999;background:white';
     document.body.append(overlay);
   });
   o = await call('browser_observe', {tabId, full: true});
   assert.ok(!o.clickTargets.some((c) => ['Cancel', 'Next', 'Fallback'].includes(c.label)));
-  assert.deepEqual(await page.evaluate(() => window.buttonClicks), ['Cancel', 'Next']);
+  assert.deepEqual(await inPageWorld(page, () => window.buttonClicks), ['Cancel', 'Next']);
   console.log('SLOTTED_BUTTON_LABEL_CLICK_REVEAL_OVERLAY_PASS');
   // McKinsey/Avature keeps a closed cookie dialog shell in the DOM.
   await page.setContent(
@@ -122,7 +123,7 @@ try {
   assert.ok(inspected.fields.some((f) => f.label === 'Username'));
   assert.ok(!inspected.fields.some((f) => f.label === 'Hidden preference'));
   // A zero-height shell with a visible positioned panel IS an active modal.
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     const panel = document.querySelector('#cookie-shell > div');
     panel.style = 'position:fixed;inset:30px;background:white;z-index:999';
   });
@@ -137,14 +138,14 @@ try {
   await page.setContent(
     '<button type="button" onclick="window.entered=true">Apply</button><div hidden><label>CV<input type="file"></label></div>',
   );
-  await page.evaluate(() => (window.entered = false));
+  await inPageWorld(page, () => (window.entered = false));
   o = await call('browser_observe', {tabId, full: true});
   assert.equal(o.uploads.length, 0);
   await call('browser_click_target', {
     tabId,
     targetId: o.clickTargets.find((t) => t.label === 'Apply').targetId,
   });
-  assert.equal(await page.evaluate(() => window.entered), true);
+  assert.equal(await inPageWorld(page, () => window.entered), true);
   // Hidden native upload remains supported behind an explicit visible label.
   await page.setContent(
     '<label for="cv">Upload CV</label><input id="cv" type="file" style="display:none"><section hidden><label for="inactive">Other CV</label><input id="inactive" type="file"></section>',

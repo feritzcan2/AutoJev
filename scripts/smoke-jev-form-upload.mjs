@@ -3,6 +3,7 @@ import {mkdtemp, writeFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 const directory = await mkdtemp(path.join(tmpdir(), 'jev-form-upload-'));
 const client = new JevBrowser(directory, {
   connection: 'separate',
@@ -23,7 +24,7 @@ try {
   await page.setContent(
     `<form onsubmit="event.preventDefault();window.sends++"><section><h3>Resume/CV</h3><div><div style="display:none"><input type="file" id="cv" accept=".pdf"></div><button type="button" onclick="document.querySelector('#cv').click()">Select files</button></div></section><button type="button" id="ordinary">Continue</button><div style="margin-top:1800px"><label>Start month<input role="spinbutton" name="month" value="08"></label><label>Start year<input role="spinbutton" name="year" value="2025"></label></div></form>`,
   );
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     window.sends = 0;
     window.fileClicks = 0;
     document.querySelector('#cv').addEventListener('click', () => window.fileClicks++);
@@ -36,7 +37,7 @@ try {
   const blocked = await call('browser_click_target', {tabId, targetId: target.targetId});
   assert.equal(blocked.status, 'upload_required');
   assert.equal(blocked.executed, false);
-  assert.equal(await page.evaluate(() => window.fileClicks), 0);
+  assert.equal(await inPageWorld(page, () => window.fileClicks), 0);
   const form = await call('browser_inspect_form', {tabId});
   assert.equal(form.uploads.length, 1);
   const year = form.fields.find((f) => f.label === 'Start year');
@@ -57,7 +58,7 @@ try {
   assert.deepEqual(await page.locator('#cv').evaluate((e) => [...e.files].map((f) => f.name)), [
     'CV.pdf',
   ]);
-  assert.equal(await page.evaluate(() => window.sends), 0);
+  assert.equal(await inPageWorld(page, () => window.sends), 0);
   // Hidden sections and unrelated buttons must not become upload targets.
   await page.setContent(
     '<section hidden><input type="file"><button>Select files</button></section><button>Continue</button>',
@@ -69,7 +70,7 @@ try {
   await page.setContent(
     `<button type="button" id="upload">Add file</button><p id="name"></p><button type="button">Continue</button>`,
   );
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     document.querySelector('#upload').onclick = () => {
       const input = document.createElement('input');
       input.type = 'file';

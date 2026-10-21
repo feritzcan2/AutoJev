@@ -154,13 +154,25 @@
   // Some custom dropdown triggers have a real click handler but no ARIA role.
   // Discover only small, named leaf controls; never invoke framework handlers
   // or promote a form/container merely because events bubble through it.
-  // In Jev's isolated world a framework's handler properties are not visible,
-  // so an inline onclick attribute or a pointer cursor that starts at this
-  // element (not inherited from a clickable ancestor) also counts.
+  // In Jev's isolated world a framework's handler properties are not visible.
+  // The page reader passes them in as __jevHandlerHints: indexes into the
+  // frame's div/span list read in the page's own world, used only while that
+  // list still has the same length. An inline onclick attribute or a pointer
+  // cursor that starts at this element (not inherited from a clickable
+  // ancestor) also counts.
+  let hinted;
+  const handlerHint=e=>{
+    if(!hinted){
+      hinted=new Set();
+      const hints=window.__jevHandlerHints,all=hints&&queryAll(document,'div,span');
+      if(all&&all.length===hints.count)for(const i of hints.indexes)if(all[i])hinted.add(all[i]);
+    }
+    return hinted.has(e);
+  };
   const ownPointer=e=>getComputedStyle(e).cursor==='pointer'&&(!e.parentElement||getComputedStyle(e.parentElement).cursor!=='pointer');
   const customClick=e=>{
     if(!e.matches('div,span'))return false;
-    const handler=typeof e.onclick==='function'||e.hasAttribute('onclick')||Object.keys(e).some(k=>k.startsWith('__reactProps$')&&typeof Object.getOwnPropertyDescriptor(e,k)?.value?.onClick==='function')||ownPointer(e);
+    const handler=typeof e.onclick==='function'||e.hasAttribute('onclick')||Object.keys(e).some(k=>k.startsWith('__reactProps$')&&typeof Object.getOwnPropertyDescriptor(e,k)?.value?.onClick==='function')||handlerHint(e)||ownPointer(e);
     if(!handler||!visible(e)||e.querySelector(selector))return false;
     const label=name(e).trim();return label.length>0&&label.length<=200;
   };

@@ -3,6 +3,7 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 const dir = await mkdtemp(path.join(os.tmpdir(), 'jev-verification-'));
 let modelCalls = 0;
 const client = new JevBrowser(dir, {
@@ -35,7 +36,7 @@ try {
   );
   result = await call('browser_click_target', {tabId, targetId: submit.targetId});
   assert.equal(result.executed, false);
-  assert.equal(await page.evaluate(() => Boolean(window.sent)), false);
+  assert.equal(await inPageWorld(page, () => Boolean(window.sent)), false);
   const first = await client.callTool(
     {name: 'browser_page_screenshot', arguments: {tabId}},
     'test',

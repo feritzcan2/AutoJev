@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {JevBrowser} from '../app/jev/browser.mjs';
 import {controlState} from './jev-control-state.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 const remember = controlState();
 
 const directory = await mkdtemp(path.join(os.tmpdir(), 'jev-recovery-'));
@@ -27,7 +28,7 @@ try {
   await page.setContent(
     '<button id="apply" type="button">Apply</button><form hidden><label>Name<input></label><button>Submit application</button></form>',
   );
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     window.clicks = 0;
     window.submits = 0;
     document.querySelector('#apply').onclick = () => {
@@ -43,7 +44,7 @@ try {
     apply = observed.clickTargets.find((t) => t.label === 'Apply');
   assert.ok(apply);
   // A consent overlay arrives after the first snapshot, as in the Zalando trace.
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     const host = document.createElement('div');
     host.id = 'consent';
     document.body.append(host);
@@ -53,7 +54,7 @@ try {
   });
   let result = await call('browser_click_target', {tabId, targetId: apply.targetId});
   assert.equal(result.status, 'stale');
-  assert.equal(await page.evaluate(() => window.clicks), 0);
+  assert.equal(await inPageWorld(page, () => window.clicks), 0);
   const blocked = await call('browser_next', {tabId, goal: 'Open the application form'});
   assert.equal(blocked.operation, 'BLOCKED');
   assert.match(blocked.textExcerpt, /cookie preferences/);
@@ -66,7 +67,7 @@ try {
   assert.ok(deny);
   await assert.rejects(
     () => call('browser_click_target', {tabId, targetId: deny.targetId}, 'different-session'),
-    /oturuma/,
+    /of this session is required/,
   );
   result = await call('browser_click_target', {tabId, targetId: deny.targetId});
   assert.equal(result.executed, true);
@@ -75,7 +76,7 @@ try {
   result = await call('browser_click_target', {tabId, targetId: apply.targetId});
   assert.equal(result.executed, true);
   assert.equal(await page.locator('form').isVisible(), true);
-  assert.equal(await page.evaluate(() => window.submits), 0);
+  assert.equal(await inPageWorld(page, () => window.submits), 0);
   assert.equal(modelCalls, 1);
   // An old one-shot ID cannot execute again, and uncertain clicks cannot loop.
   assert.equal(
@@ -83,13 +84,13 @@ try {
     false,
   );
   await page.setContent('<button type="button" onclick="window.clicks++">No effect</button>');
-  await page.evaluate(() => (window.clicks = 0));
+  await inPageWorld(page, () => (window.clicks = 0));
   observed = await call('browser_observe', {tabId});
   result = await call('browser_click_target', {tabId, targetId: observed.clickTargets[0].targetId});
   assert.equal(result.status, 'uncertain');
   result = await call('browser_click_target', {tabId, targetId: result.clickTargets[0].targetId});
   assert.equal(result.status, 'no_progress');
-  assert.equal(await page.evaluate(() => window.clicks), 1);
+  assert.equal(await inPageWorld(page, () => window.clicks), 1);
   // Observed buttons below the fold can be revealed without clicking them.
   await page.setContent(
     '<div style="height:1200px"></div><button id="below" type="button" onclick="this.textContent=\'Opened\'">Apply below</button>',
@@ -116,7 +117,7 @@ try {
   await page.setContent(
     '<label>Disclosure<input id="choice" role="combobox" aria-controls="choices" aria-expanded="false" autocomplete="off"></label><div id="choices" role="listbox" hidden></div>',
   );
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     const input = document.querySelector('#choice'),
       list = document.querySelector('#choices');
     window.selections = 0;
@@ -152,7 +153,7 @@ try {
   });
   assert.equal(result.status, 'needs_selection');
   assert.deepEqual(result.suggestions, []);
-  assert.equal(await page.evaluate(() => window.selections), 0);
+  assert.equal(await inPageWorld(page, () => window.selections), 0);
   result = await call('browser_list_suggestions', {
     tabId,
     controlId: result.controls.find((c) => c.label === 'Disclosure').controlId,
@@ -160,17 +161,18 @@ try {
   });
   assert.deepEqual(result.suggestions, ['No answer', 'Option A', 'Option B']);
   assert.equal(result.selected, false);
-  assert.equal(await page.evaluate(() => window.selections), 0);
+  assert.equal(await inPageWorld(page, () => window.selections), 0);
   result = await call('browser_autocomplete', {
     tabId,
     controlId: result.controls.find((c) => c.label === 'Disclosure').controlId,
     option: 'No answer',
   });
   assert.equal(result.selection.verified, true);
-  assert.equal(await page.evaluate(() => window.selections), 1);
+  assert.equal(await inPageWorld(page, () => window.selections), 1);
   assert.equal(modelCalls, 1);
   await page.setContent('<div id="host"></div>');
-  await page.evaluate(
+  await inPageWorld(
+    page,
     () =>
       (document.querySelector('#host').attachShadow({mode: 'open'}).innerHTML =
         '<button>Shadow action</button>'),

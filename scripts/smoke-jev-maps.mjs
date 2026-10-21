@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
 import {controlState} from './jev-control-state.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 const dir = await mkdtemp(path.join(os.tmpdir(), 'jev-map-deltas-'));
 const client = new JevBrowser(dir, {
   connection: 'separate',
@@ -29,7 +30,7 @@ try {
   await page.setContent(
     `<style>form{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}label,input{display:block}button{height:24px}</style><form onsubmit="event.preventDefault();window.submits++">${Array.from({length: 20}, (_, i) => `<label>Application field ${i}<input id="f${i}"></label><button type="button" id="b${i}" onclick="window.clicks++">Application action ${i}</button>`).join('')}<button>Submit application</button></form>`,
   );
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     window.submits = 0;
     window.clicks = 0;
   });
@@ -70,7 +71,7 @@ try {
   assert.ok(click.wire.removedClickTargets.includes(untouchedButton.targetId));
   const repeated = await call('browser_click_target', {tabId, targetId: untouchedButton.targetId});
   assert.equal(repeated.wire.executed, false);
-  assert.equal(await page.evaluate(() => window.clicks), 1);
+  assert.equal(await inPageWorld(page, () => window.clicks), 1);
   // Even a retained ID cannot act against a DOM change not yet observed.
   const oldButton = repeated.page.clickTargets.find((t) => t.label === 'Application action 2');
   await page.locator('#b2').evaluate((e) => e.replaceWith(e.cloneNode(true)));
@@ -89,7 +90,7 @@ try {
   await page.locator('#f4').evaluate((e) => (e.value = 'External edit'));
   const changedForm = await call('browser_click_target', {tabId, targetId: guarded.targetId});
   assert.equal(changedForm.wire.executed, false);
-  assert.equal(await page.evaluate(() => window.clicks), 1);
+  assert.equal(await inPageWorld(page, () => window.clicks), 1);
   const foreignField = changedForm.page.fillFields.find((f) => f.label === 'Application field 3');
   await assert.rejects(
     () =>
@@ -98,7 +99,7 @@ try {
         {tabId, fields: [{fieldId: foreignField.fieldId, text: 'Foreign'}]},
         'other',
       ),
-    /oturuma/,
+    /of this session is required/,
   );
   const full = await call('browser_observe', {tabId, full: true});
   assert.equal(full.wire.fillFields.length, 20);

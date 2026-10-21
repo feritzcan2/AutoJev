@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
 import {controlState} from './jev-control-state.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 const remember = controlState();
 const dir = await mkdtemp(path.join(os.tmpdir(), 'jev-hidden-select-'));
 const client = new JevBrowser(dir, {
@@ -66,7 +67,7 @@ try {
     option: 'Most recent',
   });
   assert.equal(picked.selection?.verified, true, JSON.stringify(picked).slice(0, 300));
-  assert.equal(await page.evaluate(() => window.sorted), 'recent');
+  assert.equal(await inPageWorld(page, () => window.sorted), 'recent');
   const after =
     picked.controls.find((c) => c.controlId === sort.controlId) ??
     (await call('browser_observe', {tabId})).controls.find(

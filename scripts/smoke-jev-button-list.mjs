@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
 import {controlState} from './jev-control-state.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 const dir = await mkdtemp(path.join(os.tmpdir(), 'jev-button-list-'));
 const client = new JevBrowser(dir, {
   connection: 'separate',
@@ -22,7 +23,7 @@ try {
     slot = await client.track(context, page),
     tabId = slot.id;
   await page.setContent('<div id="fields"></div>');
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     window.picks = [];
     for (const question of ['Land*', 'Nationalität']) {
       const host = document.createElement('fixture-picklist');
@@ -53,7 +54,7 @@ try {
     option: 'Deutschland',
   });
   assert.equal(r.status, 'unsupported');
-  assert.deepEqual(await page.evaluate(() => window.picks), []);
+  assert.deepEqual(await inPageWorld(page, () => window.picks), []);
   r = await call('browser_list_suggestions', {tabId, controlId: field.controlId});
   assert.equal(r.optionCount, 61);
   assert.ok(r.suggestions.includes('Deutschland'));
@@ -69,13 +70,13 @@ try {
     JSON.stringify({status: r.status, message: r.message, selection: r.selection}),
   );
   assert.equal(r.selection.actual, 'Deutschland');
-  assert.deepEqual(await page.evaluate(() => window.picks), ['Land*']);
+  assert.deepEqual(await inPageWorld(page, () => window.picks), ['Land*']);
   assert.equal(
     await page.locator('fixture-picklist').nth(1).locator('.value').textContent(),
     'Auswählen',
   );
   // Real overlay prevents opening a different dropdown; never dispatch through it.
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     const e = document.createElement('div');
     e.style = 'position:fixed;inset:0;z-index:999;background:white';
     document.body.append(e);
@@ -88,7 +89,7 @@ try {
     option: 'Deutschland',
   });
   assert.equal(r.executed, false);
-  assert.deepEqual(await page.evaluate(() => window.picks), ['Land*']);
+  assert.deepEqual(await inPageWorld(page, () => window.picks), ['Land*']);
   console.log('BUTTON_LIST_FULL_OPTIONS_EXACT_SELECTION_SCROLL_SCOPE_OVERLAY_PASS');
 } finally {
   await client.close();

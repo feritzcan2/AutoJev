@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
 import {controlState} from './jev-control-state.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 const remember = controlState();
 const dir = await mkdtemp(path.join(os.tmpdir(), 'jev-custom-menu-'));
 const client = new JevBrowser(dir, {
@@ -25,7 +26,7 @@ try {
   await page.setContent(
     `<style>#trigger{padding:16px;width:400px}label{display:block;padding:10px}#overlay{position:fixed;inset:0;background:white;z-index:999}</style><form><div id="container"><div><div id="trigger">Preferred Work Location*</div><svg></svg></div><div id="options" hidden><label><input type="checkbox" name="location" value="Amsterdam">Amsterdam</label><label><input type="checkbox" name="location" value="Berlin">Berlin</label></div></div><div id="plain">Unrelated text</div><div id="hidden" hidden>Hidden trigger</div><button type="submit">Apply</button></form>`,
   );
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     window.submits = 0;
     window.toggles = 0;
     document.querySelector('form').onsubmit = (e) => {
@@ -69,9 +70,9 @@ try {
   );
   assert.equal(await page.locator('input[value=Berlin]').isChecked(), true);
   assert.equal(await page.locator('input[value=Amsterdam]').isChecked(), false);
-  assert.equal(await page.evaluate(() => window.submits), 0);
+  assert.equal(await inPageWorld(page, () => window.submits), 0);
   // An overlay must suppress the trigger, even though its handler is known.
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     const overlay = document.createElement('div');
     overlay.id = 'overlay';
     document.body.append(overlay);

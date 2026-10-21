@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
 import {controlState} from './jev-control-state.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 const remember = controlState();
 const dir = await mkdtemp(path.join(os.tmpdir(), 'jev-autocomplete-'));
 const client = new JevBrowser(dir, {
@@ -38,7 +39,8 @@ try {
    <div class="dropdown-container" id="options" ${aria ? 'role="listbox"' : ''}><div class="dropdown-results"></div>
    <div style="display:none">No location found. Loading</div></div></div></label>
    <button>Submit</button></form><button id="unrelated">${label}</button>`);
-    await page.evaluate(
+    await inPageWorld(
+      page,
       ({aria, duplicate, reject, delay, label, keyOnly}) => {
         window.submits = 0;
         window.selections = 0;
@@ -47,11 +49,14 @@ try {
         const input = document.querySelector('#location'),
           list = document.querySelector('#options'),
           results = list.firstElementChild;
+        // A new key cancels the pending search, as a debounced widget does.
+        let pending;
         // Some widgets (Lever's location field) search on key events only.
         input.addEventListener(keyOnly ? 'keydown' : 'input', () => {
           list.style.display = 'none';
           results.replaceChildren();
-          setTimeout(() => {
+          clearTimeout(pending);
+          pending = setTimeout(() => {
             // An empty query lists nothing, as on the real widget.
             if (keyOnly && !input.value) return;
             for (const text of ['Berlin, DEU', label, ...(duplicate ? [label] : [])]) {
@@ -92,7 +97,7 @@ try {
   assert.equal(result.selection.verified, true);
   assert.equal(result.selection.actual, label);
   assert.equal(await page.locator('#selected-location').inputValue(), 'accepted');
-  assert.equal(await page.evaluate(() => window.submits + window.unrelated), 0);
+  assert.equal(await inPageWorld(page, () => window.submits + window.unrelated), 0);
   assert.equal(result.observationMode, 'compact');
   assert.equal(result.controlMaps, 'replace');
   console.log(
@@ -123,7 +128,7 @@ try {
   });
   assert.equal(result.status, 'needs_selection');
   assert.ok(result.suggestions.includes(label));
-  assert.equal(await page.evaluate(() => window.selections + window.unrelated), 0);
+  assert.equal(await inPageWorld(page, () => window.selections + window.unrelated), 0);
   // The compatibility action space now includes the actual plain/ARIA options.
   result = await call('browser_observe', {tabId, full: true, fullReason: 'context_loss'});
   assert.ok(result.elements.some((e) => e.label === label && e.role === 'option'));
@@ -176,7 +181,7 @@ try {
     option: label,
   });
   assert.equal(result.status, 'ambiguous');
-  assert.equal(await page.evaluate(() => window.selections), 0);
+  assert.equal(await inPageWorld(page, () => window.selections), 0);
   observed = await reset();
   await page.locator('#location').evaluate((e) => e.replaceWith(e.cloneNode(true)));
   result = await call('browser_autocomplete', {
@@ -187,7 +192,7 @@ try {
   });
   assert.equal(result.status, 'stale');
   observed = await reset();
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     const e = document.createElement('div');
     e.style = 'position:fixed;inset:0;z-index:99';
     document.body.append(e);
@@ -209,7 +214,7 @@ try {
   });
   assert.equal(result.status, 'uncertain');
   assert.equal(result.selection.verified, false);
-  assert.equal(await page.evaluate(() => window.selections), 1);
+  assert.equal(await inPageWorld(page, () => window.selections), 1);
   result = await call('browser_autocomplete', {
     tabId,
     controlId: result.controls.find((c) => c.label === 'Current location').controlId,
@@ -217,7 +222,7 @@ try {
     option: label,
   });
   assert.equal(result.status, 'no_progress');
-  assert.equal(await page.evaluate(() => window.selections), 1);
+  assert.equal(await inPageWorld(page, () => window.selections), 1);
   // Plain div options must also be surfaced as real click targets, excluding hidden errors.
   observed = await reset();
   await page.locator('#location').fill('Berlin');
@@ -239,7 +244,7 @@ try {
   result = await call('browser_act', {tabId, decisionId: decision.decisionId});
   assert.equal(result.status, 'ready');
   assert.equal(await page.locator('#selected-location').inputValue(), 'accepted');
-  assert.equal(await page.evaluate(() => window.submits + window.unrelated), 0);
+  assert.equal(await inPageWorld(page, () => window.submits + window.unrelated), 0);
   // A submit button masquerading as an ARIA option is not a selectable result.
   observed = await reset({aria: true});
   await page.locator('#location').fill('Berlin');
@@ -254,7 +259,7 @@ try {
     option: 'Berlin',
   });
   assert.notEqual(result.status, 'ready');
-  assert.equal(await page.evaluate(() => window.submits), 0);
+  assert.equal(await inPageWorld(page, () => window.submits), 0);
   // No association: a nearby unrelated button is never promoted to a suggestion.
   await page.setContent('<label>City<input id="city"></label><button>Berlin</button>');
   observed = await call('browser_observe', {tabId});
@@ -274,7 +279,8 @@ try {
     await page.setContent(
       '<label id="country-label">Country</label><div class="custom__control"><div class="custom__value-container"><div class="custom__input-container"><input aria-labelledby="country-label" role="combobox" aria-expanded="false" aria-autocomplete="list"></div></div></div><div id="portal" role="listbox" hidden></div><div role="listbox"><div role="option">Unrelated</div></div>',
     );
-    await page.evaluate(
+    await inPageWorld(
+      page,
       ({reject, wrongSelected}) => {
         const input = document.querySelector('input'),
           control = document.querySelector('.custom__control'),
@@ -330,7 +336,7 @@ try {
   assert.equal(result.selection.actual, '+49');
   assert.equal(result.selection.verified, true);
   assert.deepEqual(result.controls.find((c) => c.label === 'Country').selectedLabels, ['+49']);
-  assert.equal(await page.evaluate(() => window.selections), 1);
+  assert.equal(await inPageWorld(page, () => window.selections), 1);
   assert.equal(await page.locator('input').inputValue(), '');
   assert.equal(await page.locator('input').getAttribute('aria-expanded'), 'false');
   // A changed visible answer invalidates the old control even if input.value is empty.
@@ -360,7 +366,7 @@ try {
   });
   assert.equal(result.status, 'needs_selection');
   assert.deepEqual(result.suggestions, ['Germany +49']);
-  assert.equal(await page.evaluate(() => window.selections), 0);
+  assert.equal(await inPageWorld(page, () => window.selections), 0);
   console.log('JEV_REACT_SELECT_PORTAL_CAPTION_AND_SELECTED_STATE_PASS');
   // A searchable combobox opened without a query shows its whole list in a
   // short scrolling popup: the wanted option starts outside the visible part.
@@ -371,7 +377,7 @@ try {
     await page.setContent(
       `<label id="long-label">Working from</label><input aria-labelledby="long-label" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="long-list"><div id="long-list" role="listbox" hidden style="max-height:120px;overflow-y:auto">${names.map((n) => `<div role="option" style="padding:4px">${n}</div>`).join('')}</div>${cover ? '<div id="cover" style="position:fixed;top:60px;left:0;right:0;height:300px;z-index:9;background:white">Cookie notice</div>' : ''}`,
     );
-    await page.evaluate(() => {
+    await inPageWorld(page, () => {
       const input = document.querySelector('input'),
         list = document.querySelector('#long-list');
       window.selections = 0;
@@ -406,8 +412,8 @@ try {
     option: 'Germany',
   });
   assert.equal(result.status, 'stale');
-  assert.equal(await page.evaluate(() => window.selections), 0);
-  await page.evaluate(() => document.querySelector('#cover').remove());
+  assert.equal(await inPageWorld(page, () => window.selections), 0);
+  await inPageWorld(page, () => document.querySelector('#cover').remove());
   result = await call('browser_autocomplete', {
     tabId,
     controlId: control.controlId,
@@ -425,7 +431,7 @@ try {
   await page.setContent(
     '<form><label id="source-label">How did you hear about us?</label><div class="multi__control"><div class="multi__value-container"><div class="multi__input-container"><input aria-labelledby="source-label" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-required="true"></div></div></div><div id="multi-list" role="listbox" hidden></div></form>',
   );
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     const input = document.querySelector('input'),
       values = document.querySelector('.multi__value-container'),
       list = document.querySelector('#multi-list'),
@@ -476,7 +482,7 @@ try {
     JSON.stringify({status: result.status, message: result.message}),
   );
   assert.equal(result.selection.verified, true);
-  assert.equal(await page.evaluate(() => window.selections), 1);
+  assert.equal(await inPageWorld(page, () => window.selections), 1);
   assert.equal(await page.locator('input').getAttribute('aria-expanded'), 'false');
   form = await call('browser_inspect_form', {tabId});
   assert.deepEqual(form.missingRequired, []);
@@ -486,7 +492,7 @@ try {
   await page.setContent(
     '<form><label for="contact">Preferred Contact Method</label><div class="select"><div class="selector"><span class="search"><input type="search" id="contact" role="combobox" readonly aria-expanded="false" aria-haspopup="listbox" aria-controls="contact_list" aria-required="true" style="opacity:0;position:absolute;inset:0;width:100%"></span><span class="selection-placeholder"></span></div></div><div id="contact_list" role="listbox" hidden></div></form><style>.selector{position:relative;height:30px;width:300px;border:1px solid #888}</style>',
   );
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     const input = document.querySelector('#contact'),
       selector = document.querySelector('.selector'),
       list = document.querySelector('#contact_list');
@@ -530,7 +536,7 @@ try {
     JSON.stringify({status: result.status, message: result.message}),
   );
   assert.equal(result.selection.verified, true);
-  assert.equal(await page.evaluate(() => window.selections), 1);
+  assert.equal(await inPageWorld(page, () => window.selections), 1);
   assert.deepEqual(
     result.controls.find((c) => c.label === 'Preferred Contact Method').selectedLabels,
     ['Mobile Phone'],

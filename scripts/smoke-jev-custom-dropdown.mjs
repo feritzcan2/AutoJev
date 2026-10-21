@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
 import {controlState} from './jev-control-state.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 const remember = controlState();
 const dir = await mkdtemp(path.join(os.tmpdir(), 'jev-custom-dropdown-'));
 const client = new JevBrowser(dir, {
@@ -58,66 +59,74 @@ try {
     tabId = slot.id;
   const reset = async () => {
     await page.setContent(fixture);
-    await page.evaluate((countries) => {
-      window.submits = 0;
-      // Select-only comboboxes with an aria-controls listbox.
-      for (const id of ['permit', 'relocate']) {
-        const trigger = document.getElementById(id),
-          list = document.getElementById(id + '-list');
-        trigger.onclick = () => {
-          list.hidden = !list.hidden;
-          trigger.setAttribute('aria-expanded', String(!list.hidden));
-          const r = trigger.getBoundingClientRect();
-          Object.assign(list.style, {position: 'fixed', left: r.left + 'px', top: r.bottom + 'px'});
-        };
-        for (const option of list.children)
-          option.onclick = () => {
-            trigger.firstElementChild.textContent = option.textContent;
-            list.hidden = true;
-            trigger.setAttribute('aria-expanded', 'false');
+    await inPageWorld(
+      page,
+      (countries) => {
+        window.submits = 0;
+        // Select-only comboboxes with an aria-controls listbox.
+        for (const id of ['permit', 'relocate']) {
+          const trigger = document.getElementById(id),
+            list = document.getElementById(id + '-list');
+          trigger.onclick = () => {
+            list.hidden = !list.hidden;
+            trigger.setAttribute('aria-expanded', String(!list.hidden));
+            const r = trigger.getBoundingClientRect();
+            Object.assign(list.style, {
+              position: 'fixed',
+              left: r.left + 'px',
+              top: r.bottom + 'px',
+            });
           };
-      }
-      // Button trigger: portal popup labelled by the same label, no aria-controls,
-      // a backdrop over the page and a search box filtering a virtualized tree.
-      const country = document.getElementById('country');
-      const close = () => {
-        document.querySelectorAll('.backdrop,.panel').forEach((e) => e.remove());
-        country.setAttribute('aria-expanded', 'false');
-      };
-      country.onclick = () => {
-        const backdrop = document.createElement('div'),
-          panel = document.createElement('div');
-        backdrop.className = 'backdrop';
-        backdrop.onclick = close;
-        panel.className = 'panel';
-        panel.innerHTML =
-          '<input type="search" role="combobox" aria-controls="country-tree" placeholder="Search"><div role="tree" id="country-tree" aria-labelledby="country-label"></div>';
-        document.body.append(backdrop, panel);
-        const search = panel.querySelector('input'),
-          tree = panel.querySelector('[role=tree]');
-        const render = () => {
-          tree.replaceChildren(
-            ...countries
-              .filter((c) => c.toLowerCase().includes(search.value.toLowerCase()))
-              .slice(0, 3)
-              .map((c) => {
-                const item = document.createElement('div');
-                item.setAttribute('role', 'treeitem');
-                item.innerHTML = `<span><span>${c}</span></span>`;
-                item.onclick = () => {
-                  country.firstElementChild.textContent = c;
-                  close();
-                };
-                return item;
-              }),
-          );
+          for (const option of list.children)
+            option.onclick = () => {
+              trigger.firstElementChild.textContent = option.textContent;
+              list.hidden = true;
+              trigger.setAttribute('aria-expanded', 'false');
+            };
+        }
+        // Button trigger: portal popup labelled by the same label, no aria-controls,
+        // a backdrop over the page and a search box filtering a virtualized tree.
+        const country = document.getElementById('country');
+        const close = () => {
+          document.querySelectorAll('.backdrop,.panel').forEach((e) => e.remove());
+          country.setAttribute('aria-expanded', 'false');
         };
-        search.oninput = render;
-        render();
-        country.setAttribute('aria-expanded', 'true');
-        search.focus();
-      };
-    }, countries);
+        country.onclick = () => {
+          const backdrop = document.createElement('div'),
+            panel = document.createElement('div');
+          backdrop.className = 'backdrop';
+          backdrop.onclick = close;
+          panel.className = 'panel';
+          panel.innerHTML =
+            '<input type="search" role="combobox" aria-controls="country-tree" placeholder="Search"><div role="tree" id="country-tree" aria-labelledby="country-label"></div>';
+          document.body.append(backdrop, panel);
+          const search = panel.querySelector('input'),
+            tree = panel.querySelector('[role=tree]');
+          const render = () => {
+            tree.replaceChildren(
+              ...countries
+                .filter((c) => c.toLowerCase().includes(search.value.toLowerCase()))
+                .slice(0, 3)
+                .map((c) => {
+                  const item = document.createElement('div');
+                  item.setAttribute('role', 'treeitem');
+                  item.innerHTML = `<span><span>${c}</span></span>`;
+                  item.onclick = () => {
+                    country.firstElementChild.textContent = c;
+                    close();
+                  };
+                  return item;
+                }),
+            );
+          };
+          search.oninput = render;
+          render();
+          country.setAttribute('aria-expanded', 'true');
+          search.focus();
+        };
+      },
+      countries,
+    );
     return call('browser_observe', {tabId});
   };
   let observed = await reset();
@@ -143,7 +152,7 @@ try {
   assert.deepEqual(result.selection, {label: 'Yes', actual: 'Yes', verified: true});
   // The country trigger sits under the sticky header: reveal must clear it,
   // and text goes into the popup's search box to reach a virtualized option.
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     const r = document.getElementById('country').getBoundingClientRect();
     scrollBy(0, r.top - 40);
   });
@@ -182,7 +191,9 @@ try {
   assert.equal(result.selection.verified, true);
   // A click-opened popup exposes its options as click targets, even while a
   // backdrop covers the trigger; the trigger stays usable by controlId.
-  await page.evaluate(() => document.getElementById('country').scrollIntoView({block: 'center'}));
+  await inPageWorld(page, () =>
+    document.getElementById('country').scrollIntoView({block: 'center'}),
+  );
   observed = await call('browser_observe', {tabId});
   const trigger = observed.clickTargets.find((t) => t.label === 'Country');
   result = await call('browser_click_target', {tabId, targetId: trigger.targetId});
@@ -195,7 +206,7 @@ try {
   });
   assert.equal(result.status, 'ready', JSON.stringify(result));
   assert.equal(await page.locator('#country').innerText(), 'Belgium');
-  assert.equal(await page.evaluate(() => window.submits), 0);
+  assert.equal(await inPageWorld(page, () => window.submits), 0);
   // A search text for a list without a search box does not block the wanted option.
   observed = await reset();
   result = await call('browser_autocomplete', {
@@ -248,7 +259,7 @@ try {
   await page.fill('#salary', '70000');
   await page.fill('#first', 'Ada');
   await page.fill('#email', 'ada@');
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     document.getElementById('salary-error').hidden = false;
     document.getElementById('email').setAttribute('aria-invalid', 'true');
     document.getElementById('email-error').textContent = 'Enter a valid email address';
@@ -270,7 +281,7 @@ try {
     <div id="cur" role="combobox" tabindex="0" aria-labelledby="cur-label" aria-haspopup="listbox"
       aria-controls="cur-list" aria-expanded="false" style="border:1px solid;padding:8px">Select</div>
     <div role="listbox" id="cur-list" hidden><div id="cur-pad"></div></div>`);
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     const codes = Array.from({length: 160}, (_, n) => 'C' + String(n).padStart(3, '0'));
     codes[97] = 'EUR €';
     const trigger = document.getElementById('cur'),
