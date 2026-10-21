@@ -179,8 +179,8 @@ const IDLE_STEP = {
   waitFor: null,
   browser: false,
 };
-const BACKGROUND_READ =
-  'The app reads the next result page and its listings itself, at the pace this site allows; that can take many minutes. End this turn now: do not call finish_automation_run or any other tool. The app resumes you with the ready review batch.';
+const READING =
+  'The app is still reading the next result page and its listings at the pace this site allows. Call collect_source_page again now, without arguments: it waits for the batch. Do not end the turn or call finish_automation_run.';
 // Another results page of the active search: same address shape as the last
 // page it served (numbers may differ, as in ?page=7 or /page/7), not that page.
 const laterResultsPage = (run, url) => {
@@ -1005,11 +1005,25 @@ export function automationWorkflow({
   };
   // A page of already known listings leaves nothing to review. Read on in the
   // same call so an empty result never looks like a stalled collector.
-  // A card site's next page needs one request per listing at the site's pace.
-  // The app reads it between agent turns, so the agent ends its turn instead
-  // of waiting in a tool call. A site wait parks the source as usual. After a
-  // failed background read the call reads the page itself and reports the error.
-  const backgroundRead = () => {
+  // A card site's next page needs one request per listing at the site's pace,
+  // which can take minutes. The app reads it ahead (one read per run at a
+  // time) and the agent's call waits for it in windows the provider's tool
+  // call allows, so one agent conversation goes through every page. A site
+  // wait parks the source as usual. After a failed read the call reads the
+  // page itself and reports the error.
+  let reading = null;
+  const readAhead = () =>
+    (reading ??= prefetchCollectorPage(db, run.id, {
+      signal,
+      readListing: readListingInBrowser,
+      readListingInPane,
+      readCardsInBrowser,
+      selectCards: decideByAgent,
+      progress: activity,
+    }).finally(() => {
+      reading = null;
+    }));
+  const waitForRead = async (started = false) => {
     const current = db.activeRun(id, run.id);
     if (
       !collectorExtension(db.get(id), current.sourceUrl)?.collector.cards ||
@@ -1024,8 +1038,18 @@ export function automationWorkflow({
       return releaseBlockedSource({db, id, runId: run.id, report}, current.sourceUrl, {
         issue: {reason: 'access_barrier', url: next, siteWait: wait, sites: [wait.site]},
       });
-    db.putRun({...current, collectorReading: true});
-    return {status: 'background_read', progress: collectorProgress(current), next: BACKGROUND_READ};
+    if (started) return null;
+    let timer;
+    const done = await Promise.race([
+      readAhead().then(() => true),
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, jevExecution.waitWindow, false);
+      }),
+    ]).finally(() => clearTimeout(timer));
+    signal.throwIfAborted();
+    if (!done)
+      return {status: 'reading', progress: collectorProgress(db.run(run.id)), next: READING};
+    return waitForRead(true);
   };
   // What this scan does right now, for the Sources page (RAM only).
   const activity = (step) => {
@@ -1110,8 +1134,8 @@ export function automationWorkflow({
   };
   const collectNextPage = async () => {
     for (let page = 1; ; page++) {
-      const background = backgroundRead();
-      if (background) return background;
+      const waited = await waitForRead();
+      if (waited) return waited;
       let collected;
       try {
         collected = await collectSourcePage(db, run.id, {
@@ -2108,14 +2132,7 @@ export function automationWorkflow({
   return {
     // Reads the next review batch of a card collector before the agent starts.
     prefetchCollector: async () => {
-      await prefetchCollectorPage(db, run.id, {
-        signal,
-        readListing: readListingInBrowser,
-        readListingInPane,
-        readCardsInBrowser,
-        selectCards: decideByAgent,
-        progress: activity,
-      });
+      await readAhead();
       activity({...IDLE_STEP, step: 'agent', tool: null, label: null, url: null});
     },
     normalizeToolArgs: normalizeRecordToolArgs,

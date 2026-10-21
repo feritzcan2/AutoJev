@@ -113,7 +113,9 @@ export async function acquireTabRendering(
     await state.stopping;
   };
   try {
-    await bounded(() => state.ready, {signal, timeoutMs});
+    // Preparation runs up to four bounded steps (visibility, wake, front,
+    // focus emulation); one step's bound here would cut a frozen tab's wake.
+    await bounded(() => state.ready, {signal, timeoutMs: timeoutMs * 4});
     signal?.throwIfAborted();
     return release;
   } catch (error) {

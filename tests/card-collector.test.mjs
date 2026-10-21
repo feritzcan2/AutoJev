@@ -5,7 +5,6 @@ import {AutomationStore} from '../app/automation/store.mjs';
 import {automationWorkflow} from '../app/automation/worker.mjs';
 import {cardCollector, clearCardDetails} from '../app/sources/card-collector.mjs';
 import {prepareCollection, collectorPageReady} from '../app/sources/collector-worker.mjs';
-import {continueSourceRun, unreportedSourceRun} from '../app/automation/recovery.mjs';
 import {sourceActivity} from '../app/sources/source-activity.mjs';
 import {recordUrlKey} from '../app/records/identity.mjs';
 import linkedin, {
@@ -219,7 +218,10 @@ const evaluate = async (state, questions) => ({
   ),
   usage: {input_tokens: 5, output_tokens: 1},
 });
-function fixture(t, {browserCall = null, site = fakeLinkedIn(), decisions = 'jev'} = {}) {
+function fixture(
+  t,
+  {browserCall = null, site = fakeLinkedIn(), decisions = 'jev', jevWaitMs = 30000} = {},
+) {
   clearCardDetails();
   const core = new WorkspaceDatabase(':memory:'),
     db = new AutomationStore(core),
@@ -264,6 +266,7 @@ function fixture(t, {browserCall = null, site = fakeLinkedIn(), decisions = 'jev
         call: browserCall ?? site.call,
       },
       report: (...args) => db.finish(...args),
+      jevWaitMs,
     });
     return {
       db,
@@ -304,28 +307,39 @@ test('the app reads a card page and its postings before the agent; the agent cal
   assert.ok(task.items.every((i) => i.collected && i.detailComplete));
 });
 
-test('without a ready page the agent ends its turn and resumes at once after the app reads it', async (t) => {
+test('without a ready page the agent call waits for the app read in the same turn', async (t) => {
   const f = fixture(t);
   const result = await f.call('collect_source_page');
-  assert.equal(result.status, 'background_read');
-  assert.match(result.next, /End this turn now/);
-  assert.equal(f.site.opened.length, 0, 'the agent call does not read the site');
-  assert.equal(f.db.run(f.runId).collectorReading, true);
-  assert.equal(continueSourceRun(f.db, f.id, f.runId), null, 'no idle nudge');
-  const outcome = unreportedSourceRun(f.db, f.id, f.runId, 'idle', 1000);
-  assert.equal(outcome.status, 'interrupted');
-  assert.deepEqual(f.db.run(f.runId).recovery, {
-    reason: 'collector_read',
-    attempt: 0,
-    readyAt: 1000,
-  });
+  assert.ok(result.taskId, JSON.stringify(result).slice(0, 300));
+  assert.equal(f.site.opened.length, 4, 'one result page and three postings');
+});
+
+test('a read longer than the tool call window asks the agent to call again and is read once', async (t) => {
+  let release;
+  const gate = new Promise((resolve) => {
+      release = resolve;
+    }),
+    site = fakeLinkedIn(),
+    call = async (...args) => {
+      await gate;
+      return site.call(...args);
+    },
+    f = fixture(t, {site, browserCall: call, jevWaitMs: 10});
+  const waiting = await f.call('collect_source_page');
+  assert.equal(waiting.status, 'reading');
+  assert.match(waiting.next, /Call collect_source_page again now/);
+  const again = f.call('collect_source_page');
+  release();
+  const batch = await again;
+  assert.ok(batch.taskId, JSON.stringify(batch).slice(0, 300));
+  assert.equal(site.opened.length, 4, 'the waiting calls share one read');
 });
 
 test('a site wait parks the card source instead of sending the agent away', async (t) => {
   const f = fixture(t);
   f.db.siteAccess.block('https://www.linkedin.com/', 'rate_limit');
   const result = await f.call('collect_source_page');
-  assert.notEqual(result.status, 'background_read');
+  assert.notEqual(result.status, 'reading');
   assert.equal(f.db.run(f.runId).status, 'blocked');
   assert.equal(f.db.run(f.runId).siteWait.reason, 'rate_limit');
   assert.equal(f.site.opened.length, 0);
@@ -357,15 +371,12 @@ test('with agent decisions the agent chooses from the cards which postings are r
     review: [{item: 2, decision: 'reject', reason: 'A sales role, not engineering.'}],
   });
   assert.deepEqual(answer.cardsChosen, {read: 2, rejected: 1, skipped: 1});
-  assert.equal(answer.status, 'background_read', 'the chosen postings are read between turns');
-  const next = f.resume();
-  await next.flow.prefetchCollector();
+  assert.ok(answer.taskId, 'the chosen postings are read in the same call');
   assert.deepEqual(site.opened.slice(1), [
     'https://www.linkedin.com/jobs/view/4200000001/',
     'https://www.linkedin.com/jobs/view/4200000003/',
   ]);
-  const batch = await next.call('collect_source_page'),
-    task = f.db.jevTasks.get(f.id, f.db.run(next.runId).taskId, batch.taskId);
+  const task = f.db.jevTasks.get(f.id, f.db.run(f.runId).taskId, answer.taskId);
   assert.deepEqual(
     task.items.map((item) => item.url),
     [
@@ -373,7 +384,7 @@ test('with agent decisions the agent chooses from the cards which postings are r
       'https://www.linkedin.com/jobs/view/4200000003/',
     ],
   );
-  const run = f.db.run(next.runId);
+  const run = f.db.run(f.runId);
   assert.equal(run.scan.reviewStats.agentRejected, 1);
   assert.deepEqual(
     f.db.seenListingUrls(f.id, run.sourceUrl, [
@@ -383,6 +394,16 @@ test('with agent decisions the agent chooses from the cards which postings are r
     ['https://www.linkedin.com/jobs/view/4200000002/'],
     'a rejected card is not offered again; a card left out is, in a later round',
   );
+});
+
+test('a card selection waits for the next run of the same task', async (t) => {
+  const f = fixture(t, {decisions: 'agent'});
+  const offer = await f.call('collect_source_page');
+  assert.equal(offer.status, 'cards_ready');
+  const next = f.resume(),
+    again = await next.call('collect_source_page');
+  assert.equal(again.cardSelection.selectionId, offer.cardSelection.selectionId);
+  assert.equal(f.site.opened.length, 1, 'the results page is not read again');
 });
 
 test('cards that show no title are read without asking the agent', async (t) => {
