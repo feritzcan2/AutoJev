@@ -7,7 +7,7 @@ import {
   readChromeLocalState,
 } from '../browser/chrome-profiles.mjs';
 import {findChrome} from '../browser/chrome-installation.mjs';
-import {extensionDirectory} from '../system/runtime-paths.mjs';
+import {installedExtensionDirectory} from './extension-folder.mjs';
 import {EXTENSION_ID} from './extension.mjs';
 // A cold Chrome process stays alive. Never wait for process exit; cancelling a
 // connection must not terminate the user's newly opened Chrome.
@@ -22,12 +22,25 @@ const exec = (file, args, {signal, windowsHide}) =>
     });
   });
 
-export function extensionMissingMessage(directory = extensionDirectory()) {
+export function extensionMissingMessage(directory = installedExtensionDirectory()) {
   return (
     'The AutoJob Chrome extension is not installed and enabled in the selected profile. In Chrome, ' +
-    'open chrome://extensions, turn on Developer mode and choose “Load unpacked” with this folder: ' +
+    'open chrome://extensions, turn on Developer mode and drag this folder onto the page (or choose ' +
+    '“Load unpacked”): ' +
     directory
   );
+}
+// Steps the setup screens show next to the missing-extension message.
+export const EXTENSION_INSTALL_STEPS = [
+  {
+    icon: 'toggle',
+    text: 'Open chrome://extensions in Chrome and turn on Developer mode (top right).',
+  },
+  {icon: 'folder', text: 'Drag the AutoJob extension folder onto that page.'},
+  {icon: 'check', text: 'Done. AutoJob notices the extension and connects on its own.'},
+];
+export function extensionMissingError(directory) {
+  return Object.assign(Error(extensionMissingMessage(directory)), {code: 'EXTENSION_MISSING'});
 }
 
 // Chrome records installed extensions in the profile's preference files; an

@@ -9,6 +9,7 @@
     "collect": "node app/site-extensions/himalayas/cli.mjs",
     "build": "node scripts/build.mjs",
     "engine:build": "node scripts/build-engine.mjs",
+    "extension:pack": "node scripts/pack-extension.mjs",
     "start": "pnpm build && pnpm engine:build && electron .",
     "test": "node --test --test-force-exit --test-timeout=120000 tests/*.test.mjs",
     "check": "node scripts/check.mjs",

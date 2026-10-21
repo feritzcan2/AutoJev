@@ -3,6 +3,43 @@ import assert from 'node:assert/strict';
 import {BrowserConnections} from '../app/browser/connection.mjs';
 import {BrowserTools} from '../app/browser/tools.mjs';
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+test('a missing extension is looked for every two seconds for a while, then backs off', async () => {
+  let now = 0,
+    installed = false,
+    count = 0;
+  const missing = () =>
+    Object.assign(Error('The AutoJob Chrome extension is not installed'), {
+      code: 'EXTENSION_MISSING',
+    });
+  const c = new BrowserConnections({
+    now: () => now,
+    connect: async () => {
+      count++;
+      if (!installed) throw missing();
+    },
+  });
+  for (let i = 0; i < 5; i++) {
+    c.prepare('a');
+    await flush();
+    assert.equal(c.status('a').code, 'EXTENSION_MISSING');
+    assert.equal(c.status('a').retryAt, now + 2000);
+    now += 2000;
+  }
+  installed = true;
+  c.prepare('a');
+  await flush();
+  assert.equal(c.status('a').ready, true);
+  assert.equal(count, 6);
+  c.reset('a');
+  installed = false;
+  now = 0;
+  c.prepare('a');
+  await flush();
+  now = 15 * 60000;
+  c.prepare('a');
+  await flush();
+  assert.ok(c.status('a').retryAt > now + 2000, 'the watch is bounded');
+});
 test('one connection handshake, backoff, disconnect and retry without agent calls', async () => {
   let count = 0,
     now = 100,

@@ -6,6 +6,7 @@ export const browserWaitResult = () => ({
   message:
     'The app is waiting for the Chrome connection. Do not create a question, a blocked status or a task report. End the turn; the same task resumes automatically once the connection is ready.',
 });
+const EXTENSION_WATCH_MS = 15 * 60000;
 export class BrowserConnections {
   constructor({connect, changed = () => {}, now = () => Date.now()}) {
     Object.assign(this, {connect, changed, now});
@@ -62,14 +63,23 @@ export class BrowserConnections {
       .then(() => this.connect(id))
       .then(
         () => publish({state: 'ready', ready: true, attempts: 0, connectedAt: this.now()}),
-        (error) =>
+        (error) => {
+          // While the user installs the extension, its check is a local file
+          // read: look again every two seconds for a while, then back off.
+          const missing = error.code === 'EXTENSION_MISSING',
+            missingSince = missing ? (state.missingSince ?? this.now()) : undefined,
+            watching = missing && this.now() - missingSince < EXTENSION_WATCH_MS;
           publish({
             state: 'waiting',
             ready: false,
             attempts: attempt,
-            retryAt: this.now() + Math.min(30000, 2000 * 2 ** Math.min(attempt - 1, 4)),
+            retryAt:
+              this.now() +
+              (watching ? 2000 : Math.min(30000, 2000 * 2 ** Math.min(attempt - 1, 4))),
             message: String(error.message).split('\n')[0].slice(0, 600),
-          }),
+            ...(missing ? {code: error.code, missingSince} : {}),
+          });
+        },
       )
       .finally(() => this.pending.delete(id));
     this.pending.set(id, pending);

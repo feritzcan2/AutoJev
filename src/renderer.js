@@ -218,9 +218,15 @@ const chromeTitle = element('b'),
     'chrome-tip',
     'Tip: install the AutoJob extension in the selected Chrome profile (see Setup).',
   ),
-  chromeReconnect = element('button', 'quiet chrome-reconnect', 'Reconnect');
-chromeReconnect.type = 'button';
-chromeStatus.append(chromeTitle, chromeDetail, chromeTip, chromeReconnect);
+  chromeReconnect = element('button', 'quiet chrome-reconnect', 'Reconnect'),
+  chromeExtensionFolder = element(
+    'button',
+    'quiet chrome-extension-folder',
+    'Show the extension folder',
+  );
+chromeReconnect.type = chromeExtensionFolder.type = 'button';
+chromeExtensionFolder.onclick = attempt(() => api.extensionSetup('folder'));
+chromeStatus.append(chromeTitle, chromeDetail, chromeTip, chromeExtensionFolder, chromeReconnect);
 document.querySelector('.sidebar-bottom').before(chromeStatus);
 const chromeProfileChange = element('button', 'quiet chrome-profile-change', 'Change profile');
 chromeProfileChange.type = 'button';

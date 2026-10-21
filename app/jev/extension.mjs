@@ -8,6 +8,9 @@ import {randomBytes} from 'node:crypto';
 import {WebSocketServer} from 'ws';
 
 export const EXTENSION_ID = 'jmpiibcgkhgcbjgnncpicngllpppiiel';
+// The Chrome Web Store page of the extension, once it is published there
+// (docs/chrome-web-store.md). Until then setup uses the unpacked folder only.
+export const WEB_STORE_URL = null;
 export const EXTENSION_PROTOCOL = 1;
 const TARGET_ID = /^[A-Fa-f0-9]{32}$/;
 const CONTROL_TIMEOUT = 15000;

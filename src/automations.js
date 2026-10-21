@@ -993,10 +993,14 @@ export function automationsPage(
       : connection.state === 'connecting'
         ? 'Connecting to Chrome…'
         : 'Chrome connection';
+    const missing = !connection.ready && connection.code === 'EXTENSION_MISSING';
     chrome.querySelector('small').textContent = connection.ready
       ? (a.chromeProfile?.name ?? 'Selected Chrome session')
-      : (connection.message ??
-        'The AutoJob extension must be installed in the selected Chrome profile. While it is connected, Chrome shows an "AutoJob" bar at the top.');
+      : missing
+        ? `${connection.message} AutoJob connects on its own once the extension is installed.`
+        : (connection.message ??
+          'The AutoJob extension must be installed in the selected Chrome profile. While it is connected, Chrome shows an "AutoJob" bar at the top.');
+    chrome.querySelector('.chrome-extension-folder').hidden = !missing;
     // A failed handshake does not tell whether the extension is installed, so
     // point to it unless the message already does.
     chrome.querySelector('.chrome-tip').hidden =

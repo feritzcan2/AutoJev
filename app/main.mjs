@@ -24,6 +24,13 @@ import {registerSettingsServices} from './system/settings-services.mjs';
 import {openedInBackground, startBackgroundMode} from './system/background.mjs';
 import {JevSettings} from './jev/settings.mjs';
 import {
+  installedExtensionDirectory,
+  prepareExtensionFolder,
+  registerExternalExtension,
+} from './jev/extension-folder.mjs';
+import {EXTENSION_ID, WEB_STORE_URL} from './jev/extension.mjs';
+import {openChromeUrl} from './jev/chrome.mjs';
+import {
   applyPendingRestore,
   prepareDataUpgrade,
   completeDataUpgrade,
@@ -85,6 +92,15 @@ async function boot() {
   }
   const bootstrapDirectory = app.getPath('userData');
   await mkdir(bootstrapDirectory, {recursive: true, mode: 0o700});
+  // The bootstrap folder never moves with the data folder, so the path the
+  // user loaded into Chrome stays valid. A failed copy keeps the bundled one.
+  await prepareExtensionFolder({target: path.join(bootstrapDirectory, 'chrome-extension')}).catch(
+    (error) => console.error('Could not prepare the AutoJob extension folder', error),
+  );
+  if (WEB_STORE_URL)
+    await registerExternalExtension({extensionId: EXTENSION_ID}).catch((error) =>
+      console.error('Could not offer the AutoJob extension to Chrome', error),
+    );
   let data = await currentDataDirectory(bootstrapDirectory);
   try {
     data = await resolveDataDirectory({bootstrapDirectory});
@@ -408,6 +424,14 @@ async function boot() {
   handle('browser-reconnect', (id) => {
     core.workspaces.get(id);
     return browser.prepare(id, {force: true});
+  });
+  handle('extension-setup', async (kind, profile) => {
+    if (kind === 'folder') return shell.showItemInFolder(installedExtensionDirectory());
+    if (kind === 'store' && WEB_STORE_URL) {
+      if (profile && !/^[\w -]{1,100}$/.test(profile)) throw Error('Invalid Chrome profile.');
+      return openChromeUrl(WEB_STORE_URL, profile ? {directory: profile} : undefined);
+    }
+    throw Error('Unknown extension setup step');
   });
   handle('focus-workspace-tab', (id, tabId) => {
     core.workspaces.get(id);
