@@ -32,7 +32,7 @@ own operating system. Interface tests on Linux need Xvfb.
 | `scoring/` | Scoring policy, thresholds, score record |
 | `jev/` | Jev: page reading, decisions, form filling, task queue |
 | `browser/` | Chrome connection, tabs, evidence, site access wait |
-| `captcha/` | Verification page detection and the Cloudflare checkbox click |
+| `captcha/` | Verification page detection |
 | `agents/` | Claude/Codex/OpenCode sessions, context, tool server |
 | `channels/` | Notification channels (Telegram) |
 | `templates/` | Template contract and catalog; `job-search/` holds everything specific to job search |

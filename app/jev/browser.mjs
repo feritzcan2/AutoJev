@@ -1,8 +1,4 @@
 import {captureVerificationTargets, clickVerificationCheckbox} from './verification-checkbox.mjs';
-import {
-  prepareCloudflareCheckbox,
-  cloudflareCheckboxMessage,
-} from '../captcha/cloudflare-checkbox.mjs';
 import {installNoTranslate} from './translation.mjs';
 import {privateJevPage, retryJevRead} from './page.mjs';
 import {jevChromium} from './driver.mjs';
@@ -691,8 +687,8 @@ export class JevBrowser {
   }
   async observeOnce(slot) {
     // HTTP 429 can accompany a real interactive verification page. The loaded
-    // document decides below: a challenge gets its checkbox attempt, an
-    // ordinary rate limit starts the shared wait.
+    // document decides below: a challenge is handed to the user, an ordinary
+    // rate limit starts the shared wait.
     await waitForDocument(slot, {signal: this.readSignal ?? this.abort.signal});
     const previousFields = slot.fillFields;
     await clearFillFields(slot);
@@ -702,9 +698,9 @@ export class JevBrowser {
     let observed = await slot.page.evaluate(this.reader);
     if (!observed) throw Error('The page is loading; observe again.');
     if (this.siteAccess && /^https?:/.test(observed.url)) {
-      const recordTab = this.automationTabs.get(slot.id)?.startsWith('record:');
-      // Tabs without a checkbox attempt would start the wait at once.
-      if (recordTab) observed = await this.awaitSelfClearingChallenge(slot, observed);
+      // The app never clicks a verification checkbox on a full-page barrier;
+      // one that does not pass on its own is the user's to complete.
+      observed = await this.awaitSelfClearingChallenge(slot, observed);
       const verificationPage =
         accessBarrier({title: observed.title, text: observed.text}) === 'verification';
       // A verification document behind HTTP 429 is the same interactive barrier.
@@ -712,47 +708,6 @@ export class JevBrowser {
           ? 'verification'
           : accessBarrier({...slot.http, title: observed.title, text: observed.text}),
         probe = slot.accessProbe;
-      const mayVerify =
-        (!this.siteAccess.status(observed.url)?.waiting ||
-          (probe?.token && this.siteAccess.row(observed.url)?.token === probe.token)) &&
-        !recordTab;
-      // A visible Cloudflare checkbox gets a native attempt (plus one retry after
-      // a page refresh) before cooldown.
-      // Record/application tabs retain their submission checkpoints. The
-      // coordinator performs the click and waiting outside this observation.
-      if (reason === 'verification' && mayVerify && (await prepareCloudflareCheckbox(slot))) {
-        slot.observed = observed;
-        this.urlHashes.set(slot.id, urlHash(observed.url));
-        await this.persistTabs();
-        slot.verification = {
-          state: 'checking',
-          capability: 'pending',
-          handoff: false,
-          message: 'Checking the Cloudflare verification checkbox…',
-        };
-        return {
-          browser: 'Jev Chrome',
-          tabId: slot.id,
-          url: observed.url,
-          title: observed.title,
-          text: '',
-          status: 'verification_pending',
-          verification: slot.verification,
-          captcha: {
-            kind: 'cloudflare_checkbox',
-            state: 'checking',
-            message: slot.verification.message,
-          },
-        };
-      }
-      if (!reason && slot.http?.status >= 200 && slot.http.status < 400) {
-        delete slot.cloudflareAttempt;
-        delete slot.cloudflareDiscovery;
-        delete slot.cloudflareDiagnostic;
-        delete slot.cloudflareDocument;
-        await slot.cloudflareCheckbox?.dispose();
-        delete slot.cloudflareCheckbox;
-      }
       const wait =
         (reason && slot.accessChecked === slot.http && this.siteAccess.status(observed.url)) ||
         this.siteAccess.complete(probe?.url ?? observed.url, probe?.token, {...slot.http, reason});
@@ -774,22 +729,7 @@ export class JevBrowser {
       if (wait) {
         if (wait.reason === 'verification' && siteKey(observed.url) === wait.site)
           slot.accessBlocked = {site: wait.site, blockedAt: wait.blockedAt, http: slot.http};
-        const diagnostic = slot.cloudflareDiagnostic;
-        if (diagnostic) {
-          diagnostic.phase = 'handoff';
-          if (diagnostic.clicked && diagnostic.reason !== 'document_changed')
-            diagnostic.reason = 'barrier_after_click';
-          diagnostic.elapsedMs = Date.now() - (slot.cloudflareDiscovery?.startedAt ?? Date.now());
-        }
-        const captcha = diagnostic
-          ? {...diagnostic, message: cloudflareCheckboxMessage(diagnostic)}
-          : null;
-        const reported = captcha ? {...wait, message: wait.message + ' ' + captcha.message} : wait;
-        throw Object.assign(new SiteWaitError(reported), {
-          url: observed.url,
-          tabId: slot.id,
-          ...(captcha ? {captcha} : {}),
-        });
+        throw Object.assign(new SiteWaitError(wait), {url: observed.url, tabId: slot.id});
       }
     }
     const verification = updateVerification(slot, await verificationEvidence(slot.page, slot));
