@@ -151,10 +151,18 @@ export function searchLearning(a, url) {
   return null;
 }
 
+// A template that quotes its placeholder (q=%22{query}%22) gets the value
+// without its own quotes; "\"AI governance\"" inside them made ""AI governance"",
+// which a phrase search reads as separate words (FreeHire: 313 results, not 3).
+const quotedPlaceholder = /(%22|")$/i;
+const unquoted = (value) => value.replace(/^\s*["“”]+|["“”]+\s*$/g, '').trim();
 export function replayUrl(template, values) {
-  const filled = template.replace(placeholderPattern, (_, key) =>
-    encodeURIComponent(values[key] ?? ''),
-  );
+  const filled = template.replace(placeholderPattern, (_, key, offset) => {
+    const value = values[key] ?? '';
+    return encodeURIComponent(
+      quotedPlaceholder.test(template.slice(0, offset)) ? unquoted(value) : value,
+    );
+  });
   const url = new URL(filled);
   for (const [key, value] of [...url.searchParams]) if (value === '') url.searchParams.delete(key);
   // Query parameters use form encoding consistently (spaces become +).

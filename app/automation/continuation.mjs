@@ -16,8 +16,12 @@ export function answerContinuation(db, id, task, kind) {
     // A collector scan keeps all of its state in the app's checkpoint. Its old
     // conversation only held stale results (an earlier background_read or a
     // failure since fixed) that agents kept obeying, so it starts fresh.
+    // An agent that ended two turns in a row without a step is stuck on its own
+    // history (2026-10-19: it refused a tool for hours over an old failure
+    // count), so it also starts fresh from the checkpoint.
     const resumeConversation =
       !origin.collector &&
+      (task.recovery?.attempt ?? 0) < 2 &&
       unfinishedSourceStatuses.includes(origin.status) &&
       Boolean(origin.scanPlan?.id) &&
       origin.scanPlan.id === a.sourceState?.[task.sourceUrl]?.scanState?.active?.id;

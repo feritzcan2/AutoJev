@@ -747,6 +747,8 @@ export class JevBrowser {
     const token = this.siteAccess?.begin(url);
     slot.accessProbe = {url, token};
     slot.http = null;
+    // Sites can rewrite their address after load; extensions page from this one.
+    slot.openedUrl = url;
     try {
       return await slot.page.goto(url, {waitUntil: 'domcontentloaded', timeout: 20000});
     } catch (error) {

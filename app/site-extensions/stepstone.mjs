@@ -55,7 +55,19 @@ const pageNumber = (value) => {
   return page === null ? 1 : Number(page);
 };
 
-function pagination(raw) {
+// The address this page was opened at, when it is this same results page.
+// StepStone rewrites its address after load and drops the sort (seen live
+// 2026-10-20), so the address the scan opened is the one to page from.
+const openedPage = (opened, page) => {
+  if (!isStepstoneUrl(opened ?? '')) return null;
+  try {
+    return pageNumber(opened) === page ? new URL(opened) : null;
+  } catch {
+    return null;
+  }
+};
+
+function pagination(raw, opened) {
   const {page, pageCount, template} = raw.paging ?? {};
   if (
     !Number.isSafeInteger(page) ||
@@ -68,12 +80,19 @@ function pagination(raw) {
     {text: `${page} of ${pageCount}`, url: raw.url, current: true, disabled: false, kind: 'link'},
   ];
   if (page < pageCount) {
-    if (typeof template !== 'string' || !/%7bpage%7d|\{page\}/i.test(template)) return null;
-    // The page's own template can drop the sort and filters of the address
-    // (seen live: page 2 lost the date sort), so the next page keeps them.
-    const next = new URL(template.replace(/%7bpage%7d|\{page\}/i, String(page + 1)), raw.url);
-    for (const [key, value] of new URL(raw.url).searchParams)
-      if (key !== 'page' && !next.searchParams.has(key)) next.searchParams.append(key, value);
+    // The page's own template is another search for a free-text query (live:
+    // "Compliance%20Remote" page 1 of 149, its template's page 2 "2 of 1"),
+    // while the opened address with page=N continues the same list.
+    let next = openedPage(opened, page);
+    if (next) next.searchParams.set('page', String(page + 1));
+    else {
+      if (typeof template !== 'string' || !/%7bpage%7d|\{page\}/i.test(template)) return null;
+      // The template can drop the sort and filters of the address, so the
+      // next page keeps those the current address still shows.
+      next = new URL(template.replace(/%7bpage%7d|\{page\}/i, String(page + 1)), raw.url);
+      for (const [key, value] of new URL(raw.url).searchParams)
+        if (key !== 'page' && !next.searchParams.has(key)) next.searchParams.append(key, value);
+    }
     pages.push({
       text: String(page + 1),
       url: next.href,
@@ -88,7 +107,7 @@ function pagination(raw) {
 // Returns {listings,pagination} for a StepStone result page, or null when the
 // page shows no result cards (still loading, a detail page, or a changed
 // layout); the generic reader then handles the page unchanged.
-export function stepstoneResults(raw) {
+export function stepstoneResults(raw, {opened} = {}) {
   if (!raw?.cards?.length) return null;
   const items = new Map((raw.items ?? []).map((i) => [i.id, i]));
   // The preloaded list can be stale after in-page navigation. Use it only
@@ -118,7 +137,7 @@ export function stepstoneResults(raw) {
         : {}),
     });
   }
-  return {listings, pagination: fresh ? pagination(raw) : null};
+  return {listings, pagination: fresh ? pagination(raw, opened) : null};
 }
 
 // The results address StepStone accepts (observed 2026-10). {query} is a

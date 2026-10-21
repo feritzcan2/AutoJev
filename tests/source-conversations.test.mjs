@@ -544,6 +544,23 @@ test('a collector scan continues from its checkpoint in a fresh conversation', a
   await f.finish(next);
 });
 
+test('a scan agent that keeps stopping without a step resumes in a fresh conversation', async (t) => {
+  const f = await fixture(t),
+    first = await f.start();
+  await f.finish(first, 'interrupted');
+  const tasks = f.store.workspaces.tasks,
+    task = tasks.get(f.id, first.run.taskId);
+  tasks.put({...task, recovery: {reason: 'idle', attempt: 1, readyAt: 0}});
+  const once = await f.start(sources[0], 'main', first.run.taskId);
+  assert.equal(once.run.continuation.resumeConversation, true, 'one idle stop keeps the history');
+  await f.finish(once, 'interrupted');
+  tasks.put({...tasks.get(f.id, first.run.taskId), recovery: {reason: 'idle', attempt: 2, readyAt: 0}});
+  const next = await f.start(sources[0], 'main', first.run.taskId);
+  assert.equal(next.run.continuation.resumeConversation, false);
+  assert.equal(next.launch.resumeId, undefined);
+  await f.finish(next);
+});
+
 for (const provider of ['claude', 'codex', 'opencode'])
   for (const crash of [false, true])
     test(`${provider}: app restart resumes the unfinished task conversation on another worker (crash=${crash})`, async (t) => {

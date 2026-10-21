@@ -504,7 +504,7 @@ async function boot() {
   window.webContents.setWindowOpenHandler(() => ({action: 'deny'}));
   window.webContents.on('will-navigate', (event) => event.preventDefault());
   const openQuestions = core.db.prepare(
-    "SELECT json_extract(data,'$.questions') AS questions FROM automations",
+    "SELECT id, json_extract(data,'$.questions') AS questions FROM automations",
   );
   const background = startBackgroundMode({
     root,
@@ -512,12 +512,12 @@ async function boot() {
     quitting: () => quitting,
     activity: () => ({
       running: activeRunIds().length,
-      questions: new Set(
-        openQuestions
-          .all()
-          .flatMap((row) => JSON.parse(row.questions ?? '[]'))
-          .filter((q) => q.answer == null)
-          .map((q) => q.id),
+      questions: new Map(
+        openQuestions.all().flatMap((row) =>
+          JSON.parse(row.questions ?? '[]')
+            .filter((question) => question.answer == null)
+            .map((question) => [question.id, {workspaceId: row.id, question}]),
+        ),
       ),
     }),
     workspaceTitle: (id) => automationDb.get(id).title,

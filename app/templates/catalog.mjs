@@ -65,6 +65,13 @@ export function planInput(template, input, previous = {}) {
     )
       throw Error(f.label + ': a valid date is required');
     if (f.type === 'url') webUrl(value);
+    // A value recipes write into search addresses must be one plain value: a
+    // note such as "Berlin (residence); remote worldwide" made every search
+    // that took it return nothing (2026-10-20).
+    if (f.searchValue && (/[;()\n]/.test(value) || String(value).trim().length > 80))
+      throw Error(
+        `${f.label}: one value as job sites write it (for example "${f.example}"), at most 80 characters, without notes in brackets or after ";". Leave it empty to search without it, and put other notes in the profile text.`,
+      );
   }
   return {
     title: boundedText(input.title ?? previous.title ?? template.title, 'Name', 150),

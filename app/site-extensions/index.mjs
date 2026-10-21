@@ -4,7 +4,8 @@
 //
 // Contract: {id, matches(url)} plus one way of reading the site.
 // - dom: {collect, results} runs on the page already open in Chrome. collect
-//   runs inside the page and must be self-contained; results(raw) returns
+//   runs inside the page and must be self-contained; results(raw, {opened})
+//   (opened: the address the tab was navigated to, before any rewrite) returns
 //   {listings:[{url,text}],pagination} or null (the generic reader keeps the page).
 //   pagination holds the current page and, when there is one, the next page
 //   with its url; null when the extension cannot tell. A pagination without a
@@ -168,7 +169,7 @@ export async function readSiteExtension(slot, document) {
   if (!dom.collect) return document;
   const raw = await slot.page.evaluate(dom.collect).catch(() => null);
   // A redirect between the two reads would mix two pages.
-  const read = raw?.url === document.url ? dom.results(raw) : null;
+  const read = raw?.url === document.url ? dom.results(raw, {opened: slot.openedUrl}) : null;
   return read ? applySiteExtension(document, read, extension.id) : document;
 }
 // A posting a site's own reader read, in the shape of the page's listing

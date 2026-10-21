@@ -1,4 +1,14 @@
-import {app, autoUpdater, Menu, nativeImage, Notification, powerSaveBlocker, Tray} from 'electron';
+import {
+  app,
+  autoUpdater,
+  dialog,
+  Menu,
+  nativeImage,
+  Notification,
+  powerSaveBlocker,
+  shell,
+  Tray,
+} from 'electron';
 import path from 'node:path';
 import {quickAnswer} from '../automation/question-forms.mjs';
 
@@ -12,6 +22,13 @@ export function openedInBackground() {
 }
 
 const SCAN_PROBLEMS = {failed: 'failed', blocked: 'was blocked', timeout: 'timed out'};
+const TRAY_QUESTIONS = 8;
+const firstLine = (text, max) => {
+  const line = String(text ?? '')
+    .split('\n')[0]
+    .trim();
+  return line.length > max ? line.slice(0, max - 1) + '…' : line;
+};
 
 // Keeps the app running after its window closes: a menu bar (tray) icon, no
 // App Nap while work runs, an optional login item, question notifications
@@ -34,8 +51,12 @@ export function startBackgroundMode({
     closingForUpdate = false,
     toldOnce = false,
     blocker = null,
-    menuKey = '';
+    menuKey = '',
+    // macOS refuses notifications until the user allows them for the app.
+    notificationsBlocked = false;
   const notifications = new Map(),
+    // Questions already shown in a notification during this app session.
+    notified = new Set(),
     // One notification per workspace; later scan problems update its count.
     scanProblems = new Map();
   const show = () => {
@@ -96,8 +117,32 @@ export function startBackgroundMode({
   }
   const status = () => ({supported: loginSupported, openAtLogin, place});
 
+  // A waiting question in the tray menu: short choices answer it directly.
+  function questionMenu({workspaceId, question}) {
+    const quick = quickAnswer(question),
+      fields = question.fields ?? [];
+    return {
+      label: `${workspaceTitle(workspaceId)}: ${firstLine(question.text, 50)}`,
+      submenu: [
+        {label: firstLine(question.text, 80), enabled: false},
+        ...(fields.length === 1 ? [{label: firstLine(fields[0].label, 80), enabled: false}] : []),
+        {type: 'separator'},
+        ...(quick?.options ?? []).map((option) => ({
+          label: option,
+          click: () => send(workspaceId, question, quick.choose(option)),
+        })),
+        {label: 'Open in AutoJob', click: () => open(workspaceId)},
+      ],
+    };
+  }
+
   function update() {
     const {running, questions} = activity();
+    // Questions asked while the window was in front, or before a restart, get
+    // their notification once the window is in the background.
+    if (!window()?.isFocused())
+      for (const [questionId, {workspaceId, question}] of questions)
+        if (!notified.has(questionId)) questionAsked(workspaceId, question);
     // Without App Nap the scheduler, Jev waits and agent turns keep their pace.
     // The assertion also stops idle sleep, so it lasts only while work runs.
     if (running && blocker === null) blocker = powerSaveBlocker.start('prevent-app-suspension');
@@ -119,13 +164,32 @@ export function startBackgroundMode({
       ]
         .filter(Boolean)
         .join(' · ') || 'Nothing running';
-    const key = `${summary}|${openAtLogin}`;
+    const waiting = [...questions.values()].sort(
+        (a, b) => a.question.createdAt - b.question.createdAt,
+      ),
+      key = `${summary}|${openAtLogin}|${notificationsBlocked}|${[...questions.keys()].join()}`;
     if (key === menuKey) return;
     menuKey = key;
     tray.setToolTip(`AutoJob · ${summary}`);
     tray.setContextMenu(
       Menu.buildFromTemplate([
         {label: summary, enabled: false},
+        ...waiting.slice(0, TRAY_QUESTIONS).map(questionMenu),
+        ...(waiting.length > TRAY_QUESTIONS
+          ? [{label: `${waiting.length - TRAY_QUESTIONS} more in AutoJob…`, click: show}]
+          : []),
+        ...(notificationsBlocked && mac
+          ? [
+              {type: 'separator'},
+              {
+                label: 'Notifications are off · Allow in System Settings…',
+                click: () =>
+                  shell.openExternal(
+                    'x-apple.systempreferences:com.apple.Notifications-Settings.extension',
+                  ),
+              },
+            ]
+          : []),
         {type: 'separator'},
         {label: 'Open AutoJob', click: show},
         ...(loginSupported
@@ -151,19 +215,28 @@ export function startBackgroundMode({
     try {
       await answer(id, question.id, value);
     } catch (error) {
-      const failed = new Notification({
-        title: 'Answer not saved',
-        body: String(error.message ?? error).slice(0, 300),
-      });
-      failed.on('click', () => open(id));
-      failed.show();
+      dialog.showErrorBox('Answer not saved', String(error.message ?? error));
+      open(id);
     }
+    update();
+  }
+  function watch(notification) {
+    notification.on('failed', () => {
+      notificationsBlocked = true;
+      update();
+    });
+    notification.on('show', () => {
+      notificationsBlocked = false;
+    });
   }
   function questionAsked(id, question) {
     if (!Notification.isSupported() || window()?.isFocused()) return;
-    const quick = quickAnswer(question);
+    notified.add(question.id);
+    const quick = quickAnswer(question),
+      fields = question.fields ?? [];
     const notification = new Notification({
       title: workspaceTitle(id),
+      ...(fields.length === 1 ? {subtitle: fields[0].label} : {}),
       body: question.text.slice(0, 300),
       ...(quick?.reply ? {hasReply: true, replyPlaceholder: 'Your answer'} : {}),
       ...(quick?.options ? {actions: quick.options.map((text) => ({type: 'button', text}))} : {}),
@@ -180,6 +253,7 @@ export function startBackgroundMode({
     notification.on('action', (details, index) =>
       send(id, question, quick.choose(quick.options[details?.actionIndex ?? index])),
     );
+    watch(notification);
     notification.show();
   }
 
@@ -201,6 +275,7 @@ export function startBackgroundMode({
       ).slice(0, 300),
     });
     scanProblems.set(id, {notification, count});
+    watch(notification);
     notification.on('click', () => {
       scanProblems.delete(id);
       open(id, 'sources');

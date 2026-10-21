@@ -97,6 +97,35 @@ test('the next stepstone page keeps the sort and filters its template drops', ()
   );
 });
 
+test('the next stepstone page continues the address the scan opened, not the page template', () => {
+  const opened =
+    'https://www.stepstone.de/jobs/Compliance%20Remote?sort=2&action=sort_publish&fdl=en';
+  // Live 2026-10-20: the page rewrote its address without the sort and its
+  // template's page 2 was another search ("2 of 1").
+  const page1 = raw({
+    url: 'https://www.stepstone.de/jobs/compliance-remote?fdl=en',
+    paging: {
+      page: 1,
+      pageCount: 149,
+      template: '/jobs/compliance-remote?siteId=250&page={page}',
+    },
+  });
+  assert.equal(stepstoneResults(page1, {opened}).pagination[1].url, opened + '&page=2');
+  const page2 = raw({
+    url: 'https://www.stepstone.de/jobs/compliance-remote?fdl=en&page=2',
+    paging: {page: 2, pageCount: 150, template: '/jobs/compliance-remote?siteId=250&page={page}'},
+  });
+  assert.equal(
+    stepstoneResults(page2, {opened: opened + '&page=2'}).pagination[1].url,
+    opened + '&page=3',
+  );
+  // An address opened for another page (in-page navigation since) is not used.
+  assert.equal(
+    stepstoneResults(page2, {opened}).pagination[1].url,
+    'https://www.stepstone.de/jobs/compliance-remote?siteId=250&page=3&fdl=en',
+  );
+});
+
 test('a stale stepstone result list falls back to the rendered cards without paging', () => {
   for (const stale of [
     raw({items: [item(7), item(8)]}),

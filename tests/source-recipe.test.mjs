@@ -18,6 +18,7 @@ import {
 } from '../app/sources/recipe.mjs';
 import {sourceScanScope, sourceJudgementScope} from '../app/sources/scan.mjs';
 import {replayScanWork} from '../app/sources/scan-work.mjs';
+import {automationTemplate, planInput} from '../app/templates/catalog.mjs';
 
 const source = 'https://board.test/jobs';
 const template = 'https://board.test/jobs/search?q={query}&l={location}&sort=date';
@@ -117,6 +118,16 @@ test('recipes are validated as data: placeholders, form fields and pagination ki
     replayUrl(template, {query: 'ops'}),
     'https://board.test/jobs/search?q=ops&sort=date',
     'empty placeholders drop their parameter',
+  );
+  assert.equal(
+    replayUrl('https://board.test/api/search?q=%22{query}%22&f=title', {query: '"AI governance"'}),
+    'https://board.test/api/search?q=%22AI+governance%22&f=title',
+    'a quoted placeholder does not quote a quoted term twice',
+  );
+  assert.equal(
+    replayUrl(template, {query: '"AI governance"'}),
+    'https://board.test/jobs/search?q=%22AI+governance%22&sort=date',
+    'an unquoted placeholder keeps the term as written',
   );
   assert.equal(
     recipeReplay(normalizeSourceRecipe({entry: {kind: 'discovery'}}), {query: 'x'}),
@@ -1663,4 +1674,18 @@ test('a changed search method restarts the results pages but keeps queued listin
   state = f.db.get(f.id).sourceState[source];
   assert.equal(state.recipeState.status, 'verified');
   assert.deepEqual(state.scan.pendingUrls, details, 'agent learning follows the same rule');
+});
+
+test('a search location must be one value a search address can take', () => {
+  const template = automationTemplate('job-search'),
+    save = (location) => planInput(template, {criteria: {preferences: 'x', location}});
+  assert.equal(save('Berlin, Germany').criteria.location, 'Berlin, Germany');
+  assert.equal(save('').criteria.location, '');
+  // Seen 2026-10-20: every Indeed search with this location returned nothing.
+  for (const note of [
+    'Berlin, Germany (residence); searching remote roles worldwide',
+    'Berlin; remote',
+    'x'.repeat(81),
+  ])
+    assert.throws(() => save(note), /Search location: one value/);
 });

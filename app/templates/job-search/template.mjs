@@ -68,6 +68,9 @@ export const jobSearchTemplate = {
         'Which city or region should listings be searched in? (e.g. London, United Kingdom)',
       required: false,
       type: 'text',
+      // Filled into search addresses as {location}.
+      searchValue: true,
+      example: 'London, United Kingdom',
     },
     {
       id: 'experience',
