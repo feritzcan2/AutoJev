@@ -324,14 +324,37 @@ chrome.debugger.onDetach.addListener((source, reason) => {
   attachedBy.delete(source.tabId);
   send(client, {event: 'debugger.detach', tabId: source.tabId, reason});
 });
-chrome.tabs.onCreated.addListener((tab) => {
-  if (tab.id === undefined || tab.openerTabId === undefined) return;
-  for (const client of clients)
-    if (client.tabs.has(tab.openerTabId)) {
-      client.tabs.add(tab.id);
-      remember(tab.id);
-      send(client, {event: 'tabs.created', tab: publicTab(tab)});
-    }
+// The selected tab of each window and the one selected before it. A service
+// worker restart forgets this; a popup then simply keeps the selection.
+const selection = new Map();
+chrome.tabs.onActivated.addListener(({tabId, windowId}) => {
+  const current = selection.get(windowId)?.current;
+  if (current !== tabId) selection.set(windowId, {current: tabId, previous: current});
+});
+chrome.windows.onRemoved.addListener((windowId) => selection.delete(windowId));
+// Popups and new-tab links of a managed tab belong to the same task. Only the
+// navigation source counts: chrome.tabs reports the window's active tab as the
+// opener of any new tab, also one the user opens in the AutoJob window.
+chrome.webNavigation.onCreatedNavigationTarget.addListener(async ({sourceTabId, tabId}) => {
+  const owners = [...clients].filter((client) => client.tabs.has(sourceTabId));
+  if (!owners.length) return;
+  let tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    return;
+  }
+  // Chrome selects a popup. One opened from a tab working in the background
+  // stays in the background too; the user keeps the tab they were looking at.
+  const seen = selection.get(tab.windowId),
+    before = seen?.current === tabId ? seen.previous : seen?.current;
+  if (tab.active && Number.isInteger(before) && before !== sourceTabId)
+    await chrome.tabs.update(before, {active: true}).catch(() => {});
+  for (const client of owners) {
+    client.tabs.add(tabId);
+    await remember(tabId);
+    send(client, {event: 'tabs.created', tab: {...publicTab(tab), openerTabId: sourceTabId}});
+  }
 });
 chrome.tabs.onRemoved.addListener((tabId, info) => {
   attachedBy.delete(tabId);

@@ -538,7 +538,8 @@ export class JevExtensionTransport {
     this.detached(this.targets.get(targetId), targetId);
   }
   tabCreated(tab) {
-    // Popups of owned tabs belong to the same task.
+    // The extension reports a tab only when an owned tab opened it (a popup or
+    // a new-tab link); it belongs to the same task.
     const openerId = this.tabIds.get(tab.openerTabId);
     if (!openerId || !Number.isInteger(tab.id) || !this.ready) return;
     this.attachTab(tab.id, {openerId}).catch(() => {});
