@@ -98,6 +98,19 @@ test('a listing a site extension read itself is passed through whole without Jev
   assert.equal(f.calls(), 0);
 });
 
+test('brief pages are addressed by source character offsets', async (t) => {
+  const raw = required.repeat(200),
+    f = fixture(t, raw, {listing: {fields: {company: 'Acme'}}});
+  const first = await readJevBrief(f.options),
+    last = first.sections.at(-1);
+  assert.equal(first.nextOffset, last.endOffset);
+  // A section's endOffset, as an agent reads it from the page, is the next page.
+  const next = await readJevBrief({...f.options, offset: last.endOffset});
+  assert.equal(next.sections[0].offset, last.endOffset);
+  const end = await readJevBrief({...f.options, offset: raw.length});
+  assert.deepEqual([end.status, end.sections, end.nextOffset], ['ready', [], null]);
+});
+
 test('uncertain selections stay visible and partial reads cover all retained text', async (t) => {
   const raw = required.repeat(80),
     f = fixture(t, raw);

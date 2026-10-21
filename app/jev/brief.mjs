@@ -143,10 +143,12 @@ export async function buildJevBrief({
       title: evidence.title,
       next: 'No reliable listing sections selected. Read relevant original text with read_listing_evidence before scoring; missing facts remain unknown.',
     };
-  if (offset > brief.selected.length) throw Error('Invalid Jev brief range.');
+  // offset and nextOffset are source character offsets, like each section's
+  // own offset: a page starts at the first section that ends after it.
   const sections = [];
   let length = 0,
-    index = offset;
+    index = brief.selected.findIndex((s) => s.endOffset > offset);
+  if (index < 0) index = brief.selected.length;
   for (; index < brief.selected.length; index++) {
     const section = brief.selected[index];
     if (length + section.text.length > 6000 && sections.length) break;
@@ -160,7 +162,7 @@ export async function buildJevBrief({
     title: evidence.title,
     sections,
     offset,
-    nextOffset: index < brief.selected.length ? index : null,
+    nextOffset: index < brief.selected.length ? brief.selected[index].offset : null,
     coverage: {
       sourceCharacters: evidence.text.length,
       selectedCharacters: brief.selected.reduce((n, b) => n + b.text.length, 0),
