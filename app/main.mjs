@@ -247,7 +247,9 @@ async function boot() {
   }
   const automationDb = new AutomationStore(core);
   // Anonymous diagnostics: failed scan reports, sessions and daily usage counts.
-  const diagnostics = diagnosticsSetting(path.join(data, 'scan-reports.json')),
+  const diagnostics = diagnosticsSetting(path.join(data, 'scan-reports.json'), {
+      off: Boolean(process.env.CI) || process.env.JOBLOOP_DIAGNOSTICS === 'off',
+    }),
     release = app.getVersion(),
     environment = app.isPackaged ? 'production' : 'development';
   const usage = startUsageReporting({

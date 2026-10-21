@@ -53,7 +53,7 @@ async function launch() {
     executablePath: executable,
     args: platform === 'linux' ? ['--no-sandbox'] : [],
     cwd: working,
-    env: {...process.env, JOBLOOP_DATA_DIR: data},
+    env: {...process.env, JOBLOOP_DATA_DIR: data, JOBLOOP_DIAGNOSTICS: 'off'},
   });
   const page = await application.firstWindow({timeout: 30000}),
     errors = [];
@@ -215,6 +215,7 @@ try {
   );
 } finally {
   await closeApplication().catch((error) => console.error(error.message));
-  await rm(data, {recursive: true, force: true});
-  await rm(working, {recursive: true, force: true});
+  // Windows can hold Chromium files for a moment after the app exits.
+  await rm(data, {recursive: true, force: true, maxRetries: 10, retryDelay: 500});
+  await rm(working, {recursive: true, force: true, maxRetries: 10, retryDelay: 500});
 }

@@ -78,7 +78,11 @@ try {
     ],
   };
   assert.equal(workerTabs(snapshot, 'main', tabs).length, 2);
-  const env = {...process.env, JOBLOOP_DATA_DIR: path.join(directory, 'ui')};
+  const env = {
+    ...process.env,
+    JOBLOOP_DATA_DIR: path.join(directory, 'ui'),
+    JOBLOOP_DIAGNOSTICS: 'off',
+  };
   delete env.ELECTRON_RUN_AS_NODE;
   app = await electron.launch({executablePath: require('electron'), args: [process.cwd()], env});
   const page = await app.firstWindow();

@@ -19,7 +19,7 @@ store.close();
 const app = await electron.launch({
   executablePath: require('electron'),
   args: [root],
-  env: {...process.env, JOBLOOP_DATA_DIR: data},
+  env: {...process.env, JOBLOOP_DATA_DIR: data, JOBLOOP_DIAGNOSTICS: 'off'},
 });
 try {
   const page = await app.firstWindow(),

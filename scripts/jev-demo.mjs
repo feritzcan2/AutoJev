@@ -104,7 +104,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const require = createRequire(import.meta.url),
     child = spawn(require('electron'), [root], {
       cwd: root,
-      env: {...process.env, JOBLOOP_DATA_DIR: data},
+      env: {...process.env, JOBLOOP_DATA_DIR: data, JOBLOOP_DIAGNOSTICS: 'off'},
       stdio: 'inherit',
     });
   console.log(

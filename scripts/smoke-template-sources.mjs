@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url),
     'playwright',
   );
 const data = await mkdtemp(path.join(os.tmpdir(), 'template-sources-')),
-  env = {...process.env, JOBLOOP_DATA_DIR: data};
+  env = {...process.env, JOBLOOP_DATA_DIR: data, JOBLOOP_DIAGNOSTICS: 'off'};
 delete env.ELECTRON_RUN_AS_NODE;
 const core = new WorkspaceDatabase(path.join(data, 'jobloop.sqlite'));
 new AutomationStore(core);

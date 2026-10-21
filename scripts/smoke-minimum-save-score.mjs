@@ -32,7 +32,7 @@ core.close();
 const application = await electron.launch({
   executablePath: process.env.JOBLOOP_ELECTRON_BINARY || require('electron'),
   args: [root],
-  env: {...process.env, JOBLOOP_DATA_DIR: directory},
+  env: {...process.env, JOBLOOP_DATA_DIR: directory, JOBLOOP_DIAGNOSTICS: 'off'},
 });
 try {
   const page = await application.firstWindow({timeout: 20000}),

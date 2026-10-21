@@ -15,7 +15,7 @@ const require = createRequire(import.meta.url),
 const data = await mkdtemp(path.join(tmpdir(), 'onboarding-')),
   cv = path.join(data, 'cv-fixture.txt');
 await writeFile(cv, 'Deniz Yilmaz\nSenior Backend Engineer, Berlin\n.NET, AWS, 9 years\n');
-const env = {...process.env, JOBLOOP_DATA_DIR: data};
+const env = {...process.env, JOBLOOP_DATA_DIR: data, JOBLOOP_DIAGNOSTICS: 'off'};
 delete env.ELECTRON_RUN_AS_NODE;
 const app = await electron.launch({
   executablePath: require('electron'),

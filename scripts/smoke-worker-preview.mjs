@@ -77,7 +77,11 @@ try {
     outfile: path.join(directory, 'fixture.mjs'),
     loader: {'.woff2': 'file', '.ttf': 'file'},
   });
-  const env = {...process.env, JOBLOOP_DATA_DIR: path.join(directory, 'ui')};
+  const env = {
+    ...process.env,
+    JOBLOOP_DATA_DIR: path.join(directory, 'ui'),
+    JOBLOOP_DIAGNOSTICS: 'off',
+  };
   delete env.ELECTRON_RUN_AS_NODE;
   app = await electron.launch({executablePath: require('electron'), args: [root], env});
   const page = await app.firstWindow(),

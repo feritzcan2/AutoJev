@@ -43,7 +43,7 @@ const seed = db.begin(workspace.id, 'run'),
 db.finish(workspace.id, seed.id, 'completed', 'Saved');
 db.approve(workspace.id, item.id);
 core.close();
-const env = {...process.env, JOBLOOP_DATA_DIR: data};
+const env = {...process.env, JOBLOOP_DATA_DIR: data, JOBLOOP_DIAGNOSTICS: 'off'};
 delete env.ELECTRON_RUN_AS_NODE;
 const app = await electron.launch({
   executablePath: require('electron'),

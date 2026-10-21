@@ -28,7 +28,7 @@ async function launch() {
   app = await electron.launch({
     executablePath: process.env.JOBLOOP_ELECTRON_BINARY || require('electron'),
     args: [process.cwd()],
-    env: {...process.env, JOBLOOP_DATA_DIR: data},
+    env: {...process.env, JOBLOOP_DATA_DIR: data, JOBLOOP_DIAGNOSTICS: 'off'},
   });
   page = await app.firstWindow();
   page.on('pageerror', (error) => errors.push(error.message));

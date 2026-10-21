@@ -36,7 +36,7 @@ db.pause(a.id);
 const text = 'Giriş tamamlandıktan sonra bu kaydın hazırlığı devam edebilir. '.repeat(15);
 db.askQuestion(a.id, {recordId: item.id, text});
 core.close();
-const env = {...process.env, JOBLOOP_DATA_DIR: data};
+const env = {...process.env, JOBLOOP_DATA_DIR: data, JOBLOOP_DIAGNOSTICS: 'off'};
 delete env.ELECTRON_RUN_AS_NODE;
 const app = await electron.launch({
   executablePath: require('electron'),

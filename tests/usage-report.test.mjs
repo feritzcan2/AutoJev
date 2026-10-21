@@ -170,3 +170,19 @@ test('the transport posts one envelope and reports whether Sentry accepted it', 
     false,
   );
 });
+
+test('automated runs send nothing even with reports on', async (t) => {
+  const setting = diagnosticsSetting(await settingFile(t), {off: true}),
+    sent = [];
+  assert.deepEqual(setting.status(), {enabled: false});
+  const usage = startUsageReporting({
+    db: database(),
+    setting,
+    send: async (items) => sent.push(...items),
+    release: '0.1.13',
+    environment: 'production',
+  });
+  await usage.start();
+  await usage.stop();
+  assert.deepEqual(sent, []);
+});

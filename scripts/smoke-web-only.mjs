@@ -29,7 +29,7 @@ try {
   application = await electron.launch({
     executablePath: process.env.JOBLOOP_ELECTRON_BINARY || require('electron'),
     args: [process.cwd()],
-    env: {...process.env, JOBLOOP_DATA_DIR: data, LOOP_EXTENSIONS: ''},
+    env: {...process.env, JOBLOOP_DATA_DIR: data, JOBLOOP_DIAGNOSTICS: 'off', LOOP_EXTENSIONS: ''},
   });
   const page = await application.firstWindow(),
     errors = [];

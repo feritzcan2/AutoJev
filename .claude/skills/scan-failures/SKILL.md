@@ -26,6 +26,8 @@ Health session per app start (`did` = a random install id, errors = failed scans
 - `scripts/sentry-scans.sh usage 14d` — the daily count lines; count distinct `install_id`
   for active installs, and installs whose `scan_total` stays 0 for drop-off
 - Exclude the user's own machines: `environment: development` is the repo build.
+- Not real users: release `0.0.0-check` (a manual check) and the six 0.1.13 entries of
+  2026-10-21 07:33–07:42 UTC (CI smoke runs before CI turned diagnostics off).
 
 ## Security
 

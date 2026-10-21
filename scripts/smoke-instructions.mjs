@@ -76,7 +76,12 @@ core.close();
 const app = await electron.launch({
   executablePath: process.env.JOBLOOP_ELECTRON_BINARY || require('electron'),
   args: [process.cwd()],
-  env: {...process.env, JOBLOOP_DATA_DIR: data, LOOP_EXTENSIONS: process.env.LOOP_EXTENSIONS ?? ''},
+  env: {
+    ...process.env,
+    JOBLOOP_DATA_DIR: data,
+    JOBLOOP_DIAGNOSTICS: 'off',
+    LOOP_EXTENSIONS: process.env.LOOP_EXTENSIONS ?? '',
+  },
 });
 try {
   const page = await app.firstWindow(),

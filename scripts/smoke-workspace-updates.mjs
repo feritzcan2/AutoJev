@@ -14,7 +14,7 @@ const data = await mkdtemp(path.join(tmpdir(), 'loop-workspace-updates-')),
   store = new WorkspaceDatabase(path.join(data, 'jobloop.sqlite'));
 const workspace = new AutomationStore(store).create('custom', {title: 'Workspace update fixture'});
 store.close();
-const env = {...process.env, JOBLOOP_DATA_DIR: data};
+const env = {...process.env, JOBLOOP_DATA_DIR: data, JOBLOOP_DIAGNOSTICS: 'off'};
 delete env.ELECTRON_RUN_AS_NODE;
 const application = await electron.launch({
     executablePath: require('electron'),

@@ -66,7 +66,7 @@ for (const template of ['job-search', 'housing', 'appointment']) {
   db.store.workspaces.workers.setEnabled(a.id, 'main', false);
 }
 store.close();
-const env = {...process.env, JOBLOOP_DATA_DIR: data};
+const env = {...process.env, JOBLOOP_DATA_DIR: data, JOBLOOP_DIAGNOSTICS: 'off'};
 delete env.ELECTRON_RUN_AS_NODE;
 const application = await electron.launch({executablePath: require('electron'), args: [root], env});
 try {

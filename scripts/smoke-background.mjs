@@ -12,7 +12,12 @@ const data = await mkdtemp(path.join(tmpdir(), 'jobloop-background-ui-'));
 const app = await electron.launch({
   executablePath: process.env.JOBLOOP_ELECTRON_BINARY || require('electron'),
   args: [process.cwd()],
-  env: {...process.env, JOBLOOP_DATA_DIR: data, JOBLOOP_UPDATE_CHECK: 'off'},
+  env: {
+    ...process.env,
+    JOBLOOP_DATA_DIR: data,
+    JOBLOOP_DIAGNOSTICS: 'off',
+    JOBLOOP_UPDATE_CHECK: 'off',
+  },
 });
 const exited = new Promise((resolve) => app.process().on('exit', resolve));
 try {

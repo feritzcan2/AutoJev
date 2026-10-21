@@ -47,7 +47,7 @@ const fixtureUrl = `http://127.0.0.1:${server.address().port}/listing`;
 const application = await electron.launch({
   executablePath: process.env.JOBLOOP_ELECTRON_BINARY || require('electron'),
   args: [root],
-  env: {...process.env, JOBLOOP_DATA_DIR: data},
+  env: {...process.env, JOBLOOP_DATA_DIR: data, JOBLOOP_DIAGNOSTICS: 'off'},
 });
 try {
   application.process().stderr.on('data', (bytes) => process.stderr.write(bytes));

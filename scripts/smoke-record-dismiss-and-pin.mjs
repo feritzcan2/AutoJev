@@ -37,7 +37,7 @@ const q = db.askQuestion(a.id, {
 db.finish(a.id, run.id, 'completed', 'Waiting');
 db.put({...db.get(a.id), status: 'paused'});
 core.close();
-const env = {...process.env, JOBLOOP_DATA_DIR: data};
+const env = {...process.env, JOBLOOP_DATA_DIR: data, JOBLOOP_DIAGNOSTICS: 'off'};
 delete env.ELECTRON_RUN_AS_NODE;
 const app = await electron.launch({
   executablePath: require('electron'),

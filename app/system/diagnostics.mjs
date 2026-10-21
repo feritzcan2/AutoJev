@@ -39,8 +39,9 @@ export function sentryTransport({dsn = SENTRY_DSN, release, fetch = globalThis.f
 }
 
 // The diagnostics preference and the anonymous install id, kept beside the data,
-// outside the database and backups. Reports are on until the user turns them off.
-export function diagnosticsSetting(file) {
+// outside the database and backups. Reports are on until the user turns them off;
+// `off` keeps automated runs (CI, smoke tests) from sending anything.
+export function diagnosticsSetting(file, {off = false} = {}) {
   let state = {},
     writing = Promise.resolve();
   try {
@@ -52,7 +53,7 @@ export function diagnosticsSetting(file) {
     writing = writing.catch(() => {}).then(() => writeFile(file, text));
     return writing;
   };
-  const status = () => ({enabled: state.sendScanFailures !== false});
+  const status = () => ({enabled: !off && state.sendScanFailures !== false});
   return {
     enabled: () => status().enabled,
     status,

@@ -32,7 +32,7 @@ store.close();
 let app, page;
 const errors = [];
 async function launch() {
-  const env = {...process.env, JOBLOOP_DATA_DIR: bootstrap};
+  const env = {...process.env, JOBLOOP_DATA_DIR: bootstrap, JOBLOOP_DIAGNOSTICS: 'off'};
   delete env.ELECTRON_RUN_AS_NODE;
   app = await electron.launch({executablePath: require('electron'), args: [process.cwd()], env});
   page = await app.firstWindow();

@@ -49,7 +49,7 @@ for (const candidate of [p, other])
   for (const job of store.jobs(candidate.id)) store.saveRecord({...job, updatedAt: job.createdAt});
 const originalRecords = store.jobs(p.id);
 store.close();
-const env = {...process.env, JOBLOOP_DATA_DIR: data};
+const env = {...process.env, JOBLOOP_DATA_DIR: data, JOBLOOP_DIAGNOSTICS: 'off'};
 delete env.ELECTRON_RUN_AS_NODE;
 const app = await electron.launch({
   executablePath: require('electron'),
