@@ -141,7 +141,7 @@ export function normalizeSourceRecipe(input) {
   return recipe;
 }
 // The addresses a url_template recipe searches: the main one, then its setups.
-export const recipeTemplates = (recipe) =>
+const recipeTemplates = (recipe) =>
   recipe?.entry.kind === 'url_template'
     ? [{label: null, template: recipe.entry.template}, ...(recipe.entry.variants ?? [])]
     : [];

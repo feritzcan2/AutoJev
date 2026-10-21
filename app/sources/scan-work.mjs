@@ -2,6 +2,7 @@
 import {webUrl, boundedText} from '../templates/catalog.mjs';
 import {validateScanCompletion} from './scan.mjs';
 import {siteKey} from '../browser/site-access.mjs';
+import {searchLabel} from './recipe.mjs';
 
 export function scanWork(run) {
   if (run.scan?.work) return structuredClone(run.scan.work);
@@ -29,7 +30,7 @@ export function replayScanWork(scan, searches) {
   if (!searches || searches.length < 2) return scan;
   const fresh = (s, index) => ({
     id: `replay-${index + 1}`,
-    label: s.term ?? s.url,
+    label: searchLabel(s, s.url),
     url: s.url,
     status: 'pending',
     pendingUrls: [],
