@@ -138,6 +138,24 @@ test('verified technical recovery preserves the task and cutoff and waits before
   assert.equal(again.status, 'interrupted');
 });
 
+test('a technical error after scan progress starts the retry count over', async (t) => {
+  const f = fixture(t);
+  await f.runtime.runOnce(f.id);
+  await settle();
+  const run = f.launches[0];
+  f.checkpoint(run);
+  const tasks = f.store.workspaces.tasks,
+    task = tasks.get(f.id, run.taskId);
+  tasks.put({...task, technicalRecovery: {reason: 'technical_page', attempt: 2, progress: 0}});
+  const current = f.db.run(run.id),
+    work = structuredClone(current.scan.work);
+  work.searches[0].processedUrls.push('https://jobs.example/listing/read');
+  f.db.putRun({...current, scan: {...current.scan, work}});
+  const outcome = retryTechnicalSource(f.db, f.id, run.id, 'Rendering unfinished', Date.now());
+  assert.equal(outcome.status, 'interrupted', 'not exhausted');
+  assert.equal(tasks.get(f.id, run.taskId).technicalRecovery.attempt, 1);
+});
+
 test('Claude compaction cannot turn an intermediate idle into a failed source', async (t) => {
   const f = fixture(t);
   await f.runtime.runOnce(f.id);

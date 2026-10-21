@@ -521,7 +521,7 @@ test('a recipe is verified from the listings the agent selected; no automatic ch
   assert.equal(saved.listings, 1);
 });
 
-test('a continued collector conversation is told its earlier background read is over', () => {
+test('a continued collector conversation is told its earlier reading status is over', () => {
   const run = {
     kind: 'run',
     collector: 'cli',
@@ -530,6 +530,6 @@ test('a continued collector conversation is told its earlier background read is 
   };
   assert.doesNotMatch(automationPrompt(run), /earlier turn is over/);
   const resumed = automationPrompt({...run, continuation: {reason: 'task_retry', runId: 'r1'}});
-  assert.match(resumed, /background_read status from an earlier turn is over/);
+  assert.match(resumed, /reading status from an earlier turn is over/);
   assert.match(resumed, /Start this turn by calling collect_source_page/);
 });

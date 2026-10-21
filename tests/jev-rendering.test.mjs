@@ -121,6 +121,22 @@ test('unresponsive visibility, enable and cleanup commands have a bounded lifeti
   }
 });
 
+test('a frozen tab is woken even when each browser command takes time', async () => {
+  const commands = [];
+  const slot = {
+    page: {evaluate: () => new Promise(() => {})},
+    cdp: {
+      send: async (method, {enabled, state}) => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        commands.push(state ?? enabled);
+      },
+    },
+  };
+  const release = await acquireTabRendering(slot, {timeoutMs: 20});
+  await release();
+  assert.deepEqual(commands, ['active', true, false]);
+});
+
 test('cancellation interrupts a pending rendering command and still restores the tab', async () => {
   const abort = new AbortController(),
     commands = [];

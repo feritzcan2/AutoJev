@@ -4,6 +4,7 @@ import {sourceMode} from '../sources/automation-sources.mjs';
 import {SOURCE_PAGE_INSTRUCTIONS} from '../sources/scan.mjs';
 import {COLLECTOR_INSTRUCTIONS, COLLECTOR_RESUME} from '../sources/collector-worker.mjs';
 import {searchLearningSummary} from '../sources/search-learning.mjs';
+import {scanWork} from '../sources/scan-work.mjs';
 
 const TECHNICAL_RETRY_LIMIT = 3,
   IDLE_RETRY_LIMIT = 5;
@@ -88,8 +89,6 @@ export function continueSourceRun(db, id, runId) {
   const run = db.run(runId);
   if (
     !resumable(db, run) ||
-    // Ended for the app's background read: resumed after it, not nudged now.
-    run.collectorReading ||
     // Ended so a trial learns a search value (search-learning.mjs).
     run.searchLearning ||
     Object.keys(run.scanIssues ?? {}).length ||
@@ -111,16 +110,6 @@ export function unreportedSourceRun(db, id, runId, reason, now) {
   // learns it, so this run ends without a technical retry.
   if (run.searchLearning)
     return {status: 'interrupted', summary: searchLearningSummary(run.searchLearning)};
-  // The agent ended its turn so the app could read a card site's next page;
-  // that is the expected stop, not an idle agent. Resume at once.
-  if (run.collectorReading) {
-    db.putRun({...run, recovery: {reason: 'collector_read', attempt: 0, readyAt: now}});
-    return {
-      status: 'interrupted',
-      summary:
-        'The app is reading the next page and its listings; the agent resumes with the ready batch.',
-    };
-  }
   const issues = Object.values(run.scanIssues ?? {}).filter(
     (issue) => issue.verified || issue.kind === 'browser_error',
   );
@@ -167,11 +156,23 @@ export const technicalRetryDelay = (attempt) =>
     ? (attempt - TECHNICAL_RETRY_STEPS.length) * 3600000
     : TECHNICAL_RETRY_STEPS[Math.max(attempt - 1, 0)];
 
+// Listings and result pages the task's scan has finished so far.
+const scanProgress = (run) =>
+  scanWork(run).searches.reduce(
+    (n, s) => n + s.processedUrls.length + (s.collector?.visitedPages?.length ?? 0),
+    0,
+  );
 export function retryTechnicalSource(db, id, runId, summary, now) {
   const run = db.run(runId);
   if (!resumable(db, run)) return null;
+  // Only errors without progress in between count toward the limit: a long
+  // scan with an occasional failed page keeps going.
   const task = db.store.workspaces.tasks.get(id, run.taskId),
-    attempt = (task.technicalRecovery?.attempt ?? 0) + 1;
+    previous = task.technicalRecovery,
+    progress = scanProgress(run),
+    attempt =
+      (previous?.progress == null || previous.progress >= progress ? (previous?.attempt ?? 0) : 0) +
+      1;
   if (attempt >= TECHNICAL_RETRY_LIMIT) return exhaustTechnicalRetries(db, run, attempt, summary);
   const delay = technicalRetryDelay(attempt),
     urls = [
@@ -181,7 +182,7 @@ export function retryTechnicalSource(db, id, runId, summary, now) {
           .map((issue) => issue.url),
       ),
     ];
-  const recovery = {reason: 'technical_page', attempt, urls, readyAt: now + delay};
+  const recovery = {reason: 'technical_page', attempt, urls, progress, readyAt: now + delay};
   db.putRun({...run, recovery});
   db.store.workspaces.tasks.put({...task, technicalRecovery: recovery});
   return {
