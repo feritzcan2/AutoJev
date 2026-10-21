@@ -245,34 +245,48 @@ function fixture(t, {browserCall = null, site = fakeLinkedIn(), decisions = 'jev
   db.skipTrial(a.id);
   db.enable(a.id);
   const task = core.workspaces.tasks.enqueue(a.id, {
-      sourceUrl: source,
-      operation: 'scan',
-      sources: [source],
-      lockKey: 'source:' + source,
-    }),
-    run = db.begin(a.id, {kind: 'run', taskId: task.id});
-  prepareCollection(db, run, db.get(a.id));
+    sourceUrl: source,
+    operation: 'scan',
+    sources: [source],
+    lockKey: 'source:' + source,
+  });
   // The test does not wait out the real pacing.
   db.siteAccess.pace = () => 0;
-  const flow = automationWorkflow({
-    db,
-    run: db.run(run.id),
-    signal: new AbortController().signal,
-    browser: {
-      evaluateJev: (_id, state, questions) => evaluate(state, questions),
-      hasPage: () => false,
-      call: browserCall ?? site.call,
-    },
-    report: (...args) => db.finish(...args),
-  });
-  return {
-    db,
-    id: a.id,
-    runId: run.id,
-    site,
-    flow,
-    call: (name, args = {}) => flow.call(a.id, run.id, name, args),
+  const start = (run) => {
+    prepareCollection(db, run, db.get(a.id));
+    const flow = automationWorkflow({
+      db,
+      run: db.run(run.id),
+      signal: new AbortController().signal,
+      browser: {
+        evaluateJev: (_id, state, questions) => evaluate(state, questions),
+        hasPage: () => false,
+        call: browserCall ?? site.call,
+      },
+      report: (...args) => db.finish(...args),
+    });
+    return {
+      db,
+      id: a.id,
+      runId: run.id,
+      site,
+      flow,
+      call: (name, args = {}) => flow.call(a.id, run.id, name, args),
+      // The next run of the same task, as after the agent ended its turn.
+      resume: () => {
+        db.finish(a.id, run.id, 'interrupted', 'The app is reading the next page.');
+        core.workspaces.tasks.put({...core.workspaces.tasks.get(a.id, task.id), state: 'pending'});
+        return start(
+          db.begin(a.id, {
+            kind: 'run',
+            taskId: task.id,
+            continuation: {reason: 'task_retry', runId: run.id, questionIds: []},
+          }),
+        );
+      },
+    };
   };
+  return start(db.begin(a.id, {kind: 'run', taskId: task.id}));
 }
 
 test('the app reads a card page and its postings before the agent; the agent call reads nothing', async (t) => {
@@ -344,13 +358,14 @@ test('with agent decisions the agent chooses from the cards which postings are r
   });
   assert.deepEqual(answer.cardsChosen, {read: 2, rejected: 1, skipped: 1});
   assert.equal(answer.status, 'background_read', 'the chosen postings are read between turns');
-  await f.flow.prefetchCollector();
+  const next = f.resume();
+  await next.flow.prefetchCollector();
   assert.deepEqual(site.opened.slice(1), [
     'https://www.linkedin.com/jobs/view/4200000001/',
     'https://www.linkedin.com/jobs/view/4200000003/',
   ]);
-  const batch = await f.call('collect_source_page'),
-    task = f.db.jevTasks.get(f.id, f.db.run(f.runId).taskId, batch.taskId);
+  const batch = await next.call('collect_source_page'),
+    task = f.db.jevTasks.get(f.id, f.db.run(next.runId).taskId, batch.taskId);
   assert.deepEqual(
     task.items.map((item) => item.url),
     [
@@ -358,7 +373,7 @@ test('with agent decisions the agent chooses from the cards which postings are r
       'https://www.linkedin.com/jobs/view/4200000003/',
     ],
   );
-  const run = f.db.run(f.runId);
+  const run = f.db.run(next.runId);
   assert.equal(run.scan.reviewStats.agentRejected, 1);
   assert.deepEqual(
     f.db.seenListingUrls(f.id, run.sourceUrl, [
