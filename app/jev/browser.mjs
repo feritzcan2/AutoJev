@@ -262,7 +262,7 @@ export class JevBrowser {
       });
     return this.opening;
   }
-  // The selected profile must hold the AutoJev extension. The relay reuses a
+  // The selected profile must hold the AutoJob extension. The relay reuses a
   // connection the extension already made; otherwise it opens the extension's
   // connect page in that profile once and waits for the extension to call back.
   async connectExtension() {
@@ -303,6 +303,7 @@ export class JevBrowser {
         pending: null,
         uploads: new Map(),
       };
+      slot.bringToFront = () => this.bringToFront(slot);
       // A tab that rejects init scripts still works; its labels may then be translated.
       await installNoTranslate(slot.page).catch(() => {});
       if (this.connection === 'existing') await this.persistTabs();
@@ -401,7 +402,7 @@ export class JevBrowser {
       return home;
     }
     this.homeId = null;
-    // Prefer the remembered AutoJev window, then any window holding an owned
+    // Prefer the remembered AutoJob window, then any window holding an owned
     // tab; otherwise open a new window in the selected profile.
     let windowId =
       Number.isInteger(this.windowId) && (await this.transport.windowExists(this.windowId))
@@ -512,7 +513,7 @@ export class JevBrowser {
             for (const [url, id] of child.openedFrames ?? [])
               if (id === slot.id) child.openedFrames.delete(url);
           for (const key of Object.keys(slot))
-            if (!['page', 'cdp', 'id'].includes(key)) delete slot[key];
+            if (!['page', 'cdp', 'id', 'bringToFront'].includes(key)) delete slot[key];
           Object.assign(slot, {history: [], pending: null, uploads: new Map()});
           this.spareTabs.add(slot.id);
           return;
@@ -1996,8 +1997,15 @@ export class JevBrowser {
   }
   async focus(id) {
     await this.context();
-    await this.tab(id).page.bringToFront();
+    await this.bringToFront(this.tab(id));
     return {focused: true};
+  }
+  // Selects the tab and raises its window. Through the extension this uses the
+  // tabs and windows APIs; Page.bringToFront does neither reliably there.
+  async bringToFront(slot) {
+    if (this.connection === 'existing' && this.transport?.activate)
+      await this.transport.activate(slot.id);
+    else await slot.page.bringToFront();
   }
   async close({closeTabs = false} = {}) {
     this.closed = true;

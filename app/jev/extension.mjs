@@ -1,4 +1,4 @@
-// Chrome connection through the AutoJev extension (extension/background.js).
+// Chrome connection through the AutoJob extension (extension/background.js).
 // The app listens on a loopback WebSocket; the extension in the selected Chrome
 // profile connects to it and drives only the tabs the app opens through the
 // chrome.debugger API. Chrome never enters remote-debugging mode, so the user's
@@ -77,7 +77,7 @@ export class ExtensionRelay {
   get url() {
     return `ws://127.0.0.1:${this.port}${this.path}`;
   }
-  // The AutoJev window's own tab; owned tabs open beside it.
+  // The AutoJob window's own tab; owned tabs open beside it.
   get homeUrl() {
     return `http://127.0.0.1:${this.port}${this.path}/home`;
   }
@@ -138,7 +138,7 @@ export class ExtensionRelay {
         () =>
           finish(
             Error(
-              'The AutoJev Chrome extension did not connect. Check that it is installed and enabled in the selected profile.',
+              'The AutoJob Chrome extension did not connect. Check that it is installed and enabled in the selected profile.',
             ),
           ),
         timeout,
@@ -386,6 +386,14 @@ export class JevExtensionTransport {
     if (!entry) throw Error('Unknown Jev target');
     const {tab} = await this.control('tabs.get', {tabId: entry.tabId});
     return tab.windowId;
+  }
+  // Page.bringToFront through chrome.debugger neither reliably selects the tab
+  // nor raises its window; the tabs and windows APIs do both.
+  async activate(targetId) {
+    const entry = this.targets.get(targetId);
+    if (!entry) throw Error('Unknown Jev target');
+    const {tab} = await this.control('tabs.update', {tabId: entry.tabId, active: true});
+    await this.control('windows.update', {windowId: tab.windowId, focused: true});
   }
   async closeTarget(targetId) {
     const entry = this.targets.get(targetId);
@@ -636,6 +644,19 @@ export class JevExtensionTransport {
         return {success: await this.closeTarget(params.targetId)};
       case 'Target.createTarget':
         return {targetId: await this.createTab({url: params.url || 'about:blank'})};
+      case 'Browser.getWindowForTarget': {
+        // chrome.debugger has no browser target; the tab's window answers.
+        const located = this.locate(params.targetId ?? '');
+        if (!located) throw Error('No target with given id found');
+        const windowId = await this.windowOf(located.targetId),
+          {window} = await this.control('windows.get', {windowId}),
+          bounds = Object.fromEntries(
+            ['left', 'top', 'width', 'height']
+              .filter((key) => Number.isInteger(window[key]))
+              .map((key) => [key, window[key]]),
+          );
+        return {windowId, bounds: {...bounds, windowState: window.state ?? 'normal'}};
+      }
       case 'Browser.close':
         this.close();
         return {};

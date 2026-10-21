@@ -89,11 +89,18 @@ class FakeExtension {
           return reply(method === 'tabs.get' ? {tab: this.tabs.get(params.tabId)} : {});
         case 'tabs.resolve': {
           const found = [...this.tabs.values()].find((t) => t.target === params.targetId);
-          if (!found) throw Error('Unknown AutoJev target');
+          if (!found) throw Error('Unknown AutoJob target');
           return reply({tabId: found.id});
         }
         case 'tabs.create':
           return reply({tab: this.addTab(params)});
+        case 'tabs.update':
+          if (params.active) for (const t of this.tabs.values()) t.active = t.id === params.tabId;
+          return reply({tab: tab(params.tabId)});
+        case 'windows.update':
+          if (!this.windows.has(params.windowId)) throw Error('No window with id');
+          this.focusedWindow = params.focused ? params.windowId : null;
+          return reply({});
         case 'tabs.remove':
           tab(params.tabId);
           this.tabs.delete(params.tabId);
@@ -107,7 +114,9 @@ class FakeExtension {
         }
         case 'windows.get':
           if (!this.windows.has(params.windowId)) throw Error('No window with id');
-          return reply({window: {id: params.windowId, focused: true}});
+          return reply({
+            window: {id: params.windowId, focused: true, width: 1200, height: 800, state: 'normal'},
+          });
         case 'debugger.attach':
           tab(params.tabId);
           this.attached.add(params.tabId);
@@ -159,7 +168,7 @@ async function relayFixture(t) {
   return {relay, extension};
 }
 
-test('the relay only accepts the AutoJev extension on its own token path', async (t) => {
+test('the relay only accepts the AutoJob extension on its own token path', async (t) => {
   const {relay, extension} = await relayFixture(t);
   const url = connectPageUrl(relay.url);
   assert.match(url, new RegExp(`^chrome-extension://${EXTENSION_ID}/connect\\.html\\?relay=`));
@@ -432,7 +441,7 @@ test('a Jev call that never settles drops the connection and frees Jev', async (
   jev.toolCallLimitMs = 30;
   jev.toolCancelGraceMs = 10;
   jev.runTool = () => new Promise(() => {});
-  await assert.rejects(jev.callTool({name: 'browser_jev_tabs', arguments: {}}), {
+  await assert.rejects(jev.callTool({name: 'browser_tabs', arguments: {}}), {
     code: 'BROWSER_DISCONNECTED',
   });
   assert.equal(jev.busy, false);
@@ -441,7 +450,7 @@ test('a Jev call that never settles drops the connection and frees Jev', async (
   jev.toolCallLimitMs = 60000;
   const abort = new AbortController(),
     started = Date.now(),
-    pending = jev.callTool({name: 'browser_jev_tabs', arguments: {}}, 'local', {
+    pending = jev.callTool({name: 'browser_tabs', arguments: {}}, 'local', {
       signal: abort.signal,
     });
   abort.abort(Error('stopped'));
@@ -451,7 +460,7 @@ test('a Jev call that never settles drops the connection and frees Jev', async (
   assert.equal(closed, 2);
   // A call that answers in time keeps the connection.
   jev.runTool = async () => ({content: []});
-  assert.deepEqual(await jev.callTool({name: 'browser_jev_tabs', arguments: {}}), {content: []});
+  assert.deepEqual(await jev.callTool({name: 'browser_tabs', arguments: {}}), {content: []});
   assert.equal(closed, 2);
 });
 
@@ -543,6 +552,43 @@ test('new tabs and popups of owned tabs join the connection; closing a tab retir
     id: 3,
     result: {targetInfos: [transport.targets.get(home).info, childEntry.info]},
   });
+});
+
+test('focusing a Jev tab selects it and raises its window through the tabs and windows APIs', async (t) => {
+  const {extension, transport, call} = await transportFixture(t);
+  await call({id: 1, method: 'Target.setAutoAttach', params: {autoAttach: true}});
+  const {windowId, targetId: home} = await transport.createWindow('about:blank');
+  const child = await transport.createTab({windowId, openerTargetId: home});
+  const tabId = transport.targets.get(child).tabId;
+  await transport.activate(child);
+  assert.equal(extension.tabs.get(tabId).active, true);
+  assert.equal(extension.focusedWindow, windowId);
+  assert.deepEqual(
+    extension.commands.slice(-2).map((c) => [c.method, c.params]),
+    [
+      ['tabs.update', {tabId, active: true}],
+      ['windows.update', {windowId, focused: true}],
+    ],
+  );
+  await assert.rejects(transport.activate('F'.repeat(32)), /Unknown Jev target/);
+  // Browser.getWindowForTarget has no browser target to go to; the tab's window answers.
+  assert.deepEqual(
+    await call({id: 2, method: 'Browser.getWindowForTarget', params: {targetId: child}}),
+    {id: 2, result: {windowId, bounds: {width: 1200, height: 800, windowState: 'normal'}}},
+  );
+  const missing = await call({
+    id: 3,
+    method: 'Browser.getWindowForTarget',
+    params: {targetId: 'F'.repeat(32)},
+  });
+  assert.match(missing.error.message, /No target/);
+  // The browser's focus() uses the extension, not Page.bringToFront.
+  const jev = new JevBrowser('/unused', {connection: 'existing'});
+  jev.transport = transport;
+  let pageFront = 0;
+  await jev.bringToFront({id: home, page: {bringToFront: async () => pageFront++}});
+  assert.equal(pageFront, 0);
+  assert.equal(extension.tabs.get(transport.targets.get(home).tabId).active, true);
 });
 
 test('cancelling the Chrome infobar ends the connection and waits for an explicit reconnect', async (t) => {

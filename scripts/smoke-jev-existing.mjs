@@ -1,4 +1,4 @@
-// Existing Chrome contract over the AutoJev extension: shared login, separate
+// Existing Chrome contract over the AutoJob extension: shared login, separate
 // windows, scoped tabs, safe disconnect, restart recovery.
 import assert from 'node:assert/strict';
 import {mkdtemp, rm} from 'node:fs/promises';
@@ -33,12 +33,12 @@ const call = async (client, name, args = {}, state = {}) =>
 const windowOf = (client, id) => client.transport.windowOf(id);
 try {
   // Without the extension nothing opens in Chrome; the message tells how to install it.
-  await assert.rejects(() => call(a, 'browser_jev_tabs'), /chrome:\/\/extensions/);
+  await assert.rejects(() => call(a, 'browser_tabs'), /chrome:\/\/extensions/);
   assert.equal(chrome.opened, 0);
   installed = true;
-  assert.deepEqual((await call(a, 'browser_jev_tabs')).tabs, []);
+  assert.deepEqual((await call(a, 'browser_tabs')).tabs, []);
   assert.equal(chrome.opened, 1, 'one connect page per connection');
-  const first = await call(a, 'browser_jev_open', {url: fixture.url});
+  const first = await call(a, 'browser_open_page', {url: fixture.url});
   assert.equal(chrome.opened, 1);
   assert.equal(
     await a.tab(first.tabId).page.evaluate(() => document.cookie),
@@ -46,7 +46,7 @@ try {
     'Jev tabs share the profile login',
   );
   const screenshot = await a.callTool({
-    name: 'browser_jev_screenshot',
+    name: 'browser_page_screenshot',
     arguments: {tabId: first.tabId},
   });
   assert.equal(screenshot.content[1].mimeType, 'image/png');
@@ -55,23 +55,23 @@ try {
     '89504e470d0a1a0a',
   );
   await personal.bringToFront();
-  const second = await call(a, 'browser_jev_open', {url: fixture.url});
-  const third = await call(b, 'browser_jev_open', {url: fixture.url});
+  const second = await call(a, 'browser_open_page', {url: fixture.url});
+  const third = await call(b, 'browser_open_page', {url: fixture.url});
   assert.equal(chrome.opened, 2);
   assert.equal(await windowOf(a, first.tabId), await windowOf(a, second.tabId));
   assert.notEqual(await windowOf(a, first.tabId), await windowOf(b, third.tabId));
   assert.deepEqual(
-    (await call(a, 'browser_jev_tabs')).tabs.map((t) => t.tabId).sort(),
+    (await call(a, 'browser_tabs')).tabs.map((t) => t.tabId).sort(),
     [first.tabId, second.tabId].sort(),
   );
   assert.deepEqual(
-    (await call(b, 'browser_jev_tabs')).tabs.map((t) => t.tabId),
+    (await call(b, 'browser_tabs')).tabs.map((t) => t.tabId),
     [third.tabId],
   );
-  await assert.rejects(() => call(b, 'browser_jev_observe', {tabId: first.tabId}), /bulunamadı/);
+  await assert.rejects(() => call(b, 'browser_observe', {tabId: first.tabId}), /not found/);
   await assert.rejects(
-    () => b.callTool({name: 'browser_jev_screenshot', arguments: {tabId: first.tabId}}),
-    /bulunamadı/,
+    () => b.callTool({name: 'browser_page_screenshot', arguments: {tabId: first.tabId}}),
+    /not found/,
   );
   // Pages opened by a Jev tab join the same task; personal tabs never do.
   const known = new Set(a.tabs.keys());
@@ -88,11 +88,11 @@ try {
   const popupId = [...a.tabs.keys()].find((id) => !known.has(id));
   assert.ok(popupId, 'a page opened by a Jev tab joins the Jev tabs');
   assert.equal(a.tabs.get(popupId).openerId, first.tabId);
-  assert.equal((await call(a, 'browser_jev_tabs')).tabs.length, 3);
+  assert.equal((await call(a, 'browser_tabs')).tabs.length, 3);
   await a.tab(popupId).page.close();
   for (let i = 0; i < 200 && a.transport.owned.has(popupId); i++)
     await new Promise((r) => setTimeout(r, 50));
-  assert.equal((await call(a, 'browser_jev_tabs')).tabs.length, 2);
+  assert.equal((await call(a, 'browser_tabs')).tabs.length, 2);
   // A real filled draft survives both socket loss and an application restart.
   await a.tab(first.tabId).page.locator('#query').fill('unsent draft');
   a.choose = (page) => ({
@@ -100,19 +100,19 @@ try {
     action: page.actions.find((a) => a.kind === 'fill'),
     confidence: 1,
   });
-  const decision = await call(a, 'browser_jev_next', {tabId: first.tabId, goal: 'Change query'});
+  const decision = await call(a, 'browser_next', {tabId: first.tabId, goal: 'Change query'});
   const disconnected = new Promise((resolve) => a.browser.once('disconnected', resolve));
   a.transport.close();
   await disconnected;
-  assert.equal((await call(a, 'browser_jev_observe', {tabId: first.tabId})).tabId, first.tabId);
+  assert.equal((await call(a, 'browser_observe', {tabId: first.tabId})).tabId, first.tabId);
   await assert.rejects(
     () =>
-      call(a, 'browser_jev_act', {
+      call(a, 'browser_act', {
         tabId: first.tabId,
         decisionId: decision.decisionId,
         text: 'must not execute',
       }),
-    /geçerli bir Jev kararı yok/,
+    /no valid Jev decision/,
   );
   assert.equal(await a.tab(first.tabId).page.locator('#query').inputValue(), 'unsent draft');
   assert.equal(chrome.opened, 3);
@@ -124,15 +124,12 @@ try {
     'unsent draft',
   );
   assert.equal(chrome.opened, 4);
-  await assert.rejects(
-    () => call(restarted, 'browser_jev_observe', {tabId: third.tabId}),
-    /bulunamadı/,
-  );
+  await assert.rejects(() => call(restarted, 'browser_observe', {tabId: third.tabId}), /not found/);
   // A tab closed in Chrome cannot be confused with another open copy of the same URL.
   await restarted.tab(second.tabId).page.close();
   await assert.rejects(
-    () => call(restarted, 'browser_jev_observe', {tabId: second.tabId}),
-    /bulunamadı|closed/,
+    () => call(restarted, 'browser_observe', {tabId: second.tabId}),
+    /not found|closed/,
   );
   const {BrowserTools} = await import('../app/browser/tools.mjs');
   coldTools = new BrowserTools(directory, () =>
@@ -158,9 +155,7 @@ try {
     options({checkpoints: [{browser: 'Jev Chrome', tabId: first.tabId}]}),
   );
   const before = chrome.opened;
-  assert.ok(
-    (await call(otherProcess, 'browser_jev_tabs')).tabs.some((t) => t.tabId === first.tabId),
-  );
+  assert.ok((await call(otherProcess, 'browser_tabs')).tabs.some((t) => t.tabId === first.tabId));
   assert.notEqual(otherProcess.homeId, first.tabId);
   assert.equal(chrome.opened, before + 1);
   await otherProcess.close();
@@ -176,9 +171,7 @@ try {
     oldDirectory,
     options({checkpoints: [{browser: 'Jev Chrome', tabId: first.tabId}]}),
   );
-  assert.ok(
-    (await call(otherProcess, 'browser_jev_tabs')).tabs.some((t) => t.tabId === first.tabId),
-  );
+  assert.ok((await call(otherProcess, 'browser_tabs')).tabs.some((t) => t.tabId === first.tabId));
   assert.equal(
     await otherProcess.tab(first.tabId).page.locator('#query').inputValue(),
     'unsent draft',

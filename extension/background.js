@@ -1,4 +1,4 @@
-// AutoJev bridge. The desktop app reaches Chrome through this extension's
+// AutoJob bridge. The desktop app reaches Chrome through this extension's
 // debugger API instead of Chrome's remote-debugging port: Chrome then debugs
 // only the tabs the app opened, and the rest of the profile stays untouched.
 //
@@ -12,7 +12,7 @@ const DEBUGGER_VERSION = '1.3';
 const clients = new Set();
 const attachedBy = new Map(); // tabId -> client
 let connectTabId = null;
-// Tabs AutoJev opened in this Chrome run. Only these can be restored by id,
+// Tabs AutoJob opened in this Chrome run. Only these can be restored by id,
 // so a saved id can never land on a personal tab.
 const known = new Set();
 const knownLoaded = chrome.storage.session
@@ -26,7 +26,7 @@ async function remember(tabId, keep = true) {
   keep ? known.add(tabId) : known.delete(tabId);
   await chrome.storage.session.set({knownTabs: [...known]}).catch(() => {});
 }
-// CDP target ids of AutoJev tabs, so a saved or checkpointed target is found
+// CDP target ids of AutoJob tabs, so a saved or checkpointed target is found
 // again after the app restarts within the same Chrome run.
 const targetTabs = new Map();
 const targetsLoaded = chrome.storage.session
@@ -107,7 +107,7 @@ const publicTab = (tab) => ({
 
 function ownedTab(client, tabId) {
   if (!Number.isInteger(tabId) || !client.tabs.has(tabId))
-    throw Error('Tab is not managed by this AutoJev connection');
+    throw Error('Tab is not managed by this AutoJob connection');
   return tabId;
 }
 function attachedTab(client, tabId) {
@@ -132,14 +132,14 @@ const methods = {
   'tabs.resolve': async (client, {targetId}) => {
     await targetsLoaded;
     const tabId = targetTabs.get(targetId);
-    if (tabId === undefined) throw Error('Unknown AutoJev target');
+    if (tabId === undefined) throw Error('Unknown AutoJob target');
     await chrome.tabs.get(tabId);
     return {tabId};
   },
   'tabs.claim': async (client, {tabId}) => {
     if (!Number.isInteger(tabId)) throw Error('Invalid tab id');
     await knownLoaded;
-    if (!known.has(tabId)) throw Error('Tab was not opened by AutoJev');
+    if (!known.has(tabId)) throw Error('Tab was not opened by AutoJob');
     await chrome.tabs.get(tabId);
     client.tabs.add(tabId);
     return {};
@@ -177,7 +177,17 @@ const methods = {
   'windows.get': async (client, {windowId}) => {
     if (!Number.isInteger(windowId)) throw Error('Invalid window id');
     const window = await chrome.windows.get(windowId);
-    return {window: {id: window.id, focused: window.focused}};
+    return {
+      window: {
+        id: window.id,
+        focused: window.focused,
+        left: window.left,
+        top: window.top,
+        width: window.width,
+        height: window.height,
+        state: window.state,
+      },
+    };
   },
   'windows.update': async (client, {windowId, focused}) => {
     if (!Number.isInteger(windowId)) throw Error('Invalid window id');
@@ -244,7 +254,7 @@ async function cleanup(client) {
 }
 
 function connect(relayUrl, {fromTabId = null} = {}) {
-  if (!isRelayUrl(relayUrl)) return Promise.reject(Error('Invalid AutoJev relay address'));
+  if (!isRelayUrl(relayUrl)) return Promise.reject(Error('Invalid AutoJob relay address'));
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(relayUrl);
     const client = {socket, relayUrl, tabs: new Set()};
@@ -274,7 +284,7 @@ function connect(relayUrl, {fromTabId = null} = {}) {
     };
     socket.onclose = () => {
       cleanup(client);
-      if (!opened) reject(Error('AutoJev did not accept the connection'));
+      if (!opened) reject(Error('AutoJob did not accept the connection'));
     };
     socket.onerror = () => {};
   });
