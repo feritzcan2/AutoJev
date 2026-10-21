@@ -11,8 +11,9 @@ import './onboarding.css';
 import {rulesField, RULES_HINT} from './template-fields.js';
 import {DEFAULT_SCORE_THRESHOLD} from '../app/scoring/thresholds.mjs';
 
-// Welcome screen of a new job search: the user picks the agent and the CV, the
-// setup agent fills the profile from the CV, the user reviews it and starts.
+// Welcome screen of a new job search: the user installs the Chrome extension,
+// picks the agent and the CV, the setup agent fills the profile from the CV,
+// the user reviews it and starts.
 const providerOrder = ['claude', 'codex', 'opencode'];
 const RECOMMENDED_PROVIDER = 'claude';
 // The review form shows these criteria; the rest stay on the profile page.
@@ -133,7 +134,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     card = el('section', null, 'onboarding-card'),
     error = el('p', null, 'onboarding-error');
   head.append(el('b', 'AutoJob', 'onboarding-brand'), steps);
-  for (const label of ['CV', 'Reading', 'Review']) steps.append(el('li', label));
+  for (const label of ['Chrome', 'CV', 'Reading', 'Review']) steps.append(el('li', label));
   error.setAttribute('role', 'alert');
   error.hidden = true;
   root.append(head, card, error);
@@ -157,6 +158,10 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     terminalShown = true,
     reviewKey = '',
     reviewDirty = false,
+    // The Chrome step comes first until the user continues past it; it is
+    // left out when Chrome is ready at the first check.
+    chromePassed = false,
+    chromeShownOpen = false,
     terminal = null;
 
   const showError = (message = '') => {
@@ -185,6 +190,8 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     reviewKey = '';
     reviewDirty = false;
     readiness = null;
+    chromePassed = false;
+    chromeShownOpen = false;
     showError();
     root.hidden = false;
     document.body.classList.add('onboarding-open');
@@ -268,9 +275,10 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
 
   function render() {
     if (root.hidden) return;
-    const next = id && data ? onboardingStep(data) : 'start';
+    let next = id && data ? onboardingStep(data) : 'start';
+    if (next === 'start' && !chromePassed) next = 'chrome';
     root.dataset.step = next;
-    const current = ['start', 'reading', 'review'].indexOf(next);
+    const current = ['chrome', 'start', 'reading', 'review'].indexOf(next);
     [...steps.children].forEach((item, index) => {
       item.dataset.state = index < current ? 'done' : index === current ? 'current' : 'pending';
     });
@@ -283,13 +291,56 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
         terminalShown = true;
       }
       card.replaceChildren(
-        ...(step === 'start' ? startStep() : step === 'reading' ? readingStep() : reviewStep()),
+        ...(step === 'chrome'
+          ? chromeStep()
+          : step === 'start'
+            ? startStep()
+            : step === 'reading'
+              ? readingStep()
+              : reviewStep()),
       );
       if (step === 'reading') openTerminal(card.querySelector('.onboarding-terminal'));
     }
     update();
   }
 
+  // First step: the AutoJob extension in the user's Chrome profile, checked
+  // again every few seconds until it is installed.
+  function chromeStep() {
+    const chrome = el('section', null, 'onboarding-readiness');
+    chrome.setAttribute('aria-label', 'Chrome');
+    const next = button(
+      'Continue',
+      () => {
+        chromePassed = true;
+        render();
+      },
+      'primary onboarding-start',
+    );
+    next.dataset.action = 'chrome-continue';
+    const links = el('div', null, 'onboarding-links'),
+      later = button(
+        'Set it up later',
+        () => {
+          chromePassed = true;
+          render();
+        },
+        'link',
+      );
+    later.dataset.action = 'chrome-later';
+    links.append(later);
+    return [
+      el('h1', 'First, add AutoJob to Chrome'),
+      el(
+        'p',
+        'AutoJob searches and applies in your own Chrome through its extension. Install it once in the Chrome profile you use for job sites; this screen notices it by itself.',
+        'onboarding-lead',
+      ),
+      chrome,
+      next,
+      links,
+    ];
+  }
   function startStep() {
     const intro = [
       el('h1', 'Let’s start your job search from your CV'),
@@ -479,13 +530,20 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
   function update() {
     // Every step can be left; on a first run with no other profile, leaving means starting over.
     const links = card.querySelector('.onboarding-links'),
-      leave = cancellable ? 'Cancel' : step === 'start' ? null : 'Start over';
+      leave = cancellable ? 'Cancel' : ['chrome', 'start'].includes(step) ? null : 'Start over';
     if (links && leave && !links.querySelector('[data-cancel]')) {
       const node = button(leave, () => attempt(leaveOnboarding), 'link');
       node.dataset.cancel = '';
       links.append(node);
     }
-    if (step === 'start') {
+    if (step === 'chrome') {
+      if (!readiness) checkReadiness();
+      renderReadiness();
+      const ready =
+        Boolean(readiness?.checked) && !openChecks().some((c) => chromeIds.includes(c.id));
+      card.querySelector('[data-action=chrome-continue]').disabled = !ready;
+      card.querySelector('[data-action=chrome-later]').hidden = ready;
+    } else if (step === 'start') {
       const list = card.querySelector('.onboarding-agents .authorization');
       list.replaceChildren();
       for (const [value, p] of providers) {
@@ -583,9 +641,9 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       ![...providers.values()].some((p) => ['ready', 'checking'].includes(p.state))
     )
       void checkProviders(true);
+    const chromeSteps = step === 'chrome' || (data && ['reading', 'review'].includes(step));
     if (
-      data &&
-      ['reading', 'review'].includes(step) &&
+      chromeSteps &&
       readiness?.checked &&
       !checkingReadiness &&
       now - readinessAt > RECHECK_MS &&
@@ -595,8 +653,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     // A missing extension is a local file check: look for it sooner, so the
     // step turns ready right after the user installs it.
     else if (
-      data &&
-      ['reading', 'review'].includes(step) &&
+      chromeSteps &&
       !checkingReadiness &&
       !checkingExtension &&
       now - extensionAt > EXTENSION_RECHECK_MS &&
@@ -788,7 +845,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
   function renderReadiness() {
     const root = card.querySelector('.onboarding-readiness');
     if (!root || !readiness) return;
-    const chromeOnly = step === 'reading',
+    const chromeOnly = ['chrome', 'reading'].includes(step),
       open = openChecks().filter((c) => !chromeOnly || chromeIds.includes(c.id)),
       key = JSON.stringify([step, readiness.checked, open]);
     if (key === readinessKey) return;
@@ -805,6 +862,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       return;
     }
     if (!open.length) return;
+    if (step === 'chrome') chromeShownOpen = true;
     root.append(el('h2', chromeOnly ? 'Connect Chrome' : 'Before you start'));
     for (const check of open) {
       const item = el('div', null, 'onboarding-check');
@@ -842,7 +900,9 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     extensionAt = 0;
   async function checkExtension() {
     checkingExtension = true;
-    const installed = await api.extensionInstalled?.().catch(() => false);
+    const installed = await api
+      .extensionInstalled?.(data?.automation.chromeProfile?.directory)
+      .catch(() => false);
     extensionAt = Date.now();
     checkingExtension = false;
     if (installed) await checkReadiness();
@@ -854,9 +914,12 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     readiness ??= {checks: []};
     let next;
     try {
+      // Before a workspace exists, the Chrome checks use the last used profile.
+      const settings = data?.automation.agentSettings;
       next = await api.readiness({
-        provider: data.automation.agentSettings.provider,
-        decisions: data.automation.agentSettings.decisions ?? 'agent',
+        provider: settings?.provider ?? provider ?? RECOMMENDED_PROVIDER,
+        decisions: settings?.decisions ?? 'agent',
+        chromeProfile: data?.automation.chromeProfile ?? undefined,
       });
     } catch (failure) {
       next = {
@@ -867,7 +930,12 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
     checkingReadiness = false;
     if (owner !== id) return;
     readiness = {...next, checked: true};
-    renderReadiness();
+    if (step === 'chrome') {
+      // Already installed: nothing to show, go straight to the CV.
+      if (!chromeShownOpen && !openChecks().some((c) => chromeIds.includes(c.id)))
+        chromePassed = true;
+      render();
+    } else renderReadiness();
   }
 
   async function prepare() {
@@ -918,7 +986,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
   // discards the unfinished profile together with its setup agent.
   async function leaveOnboarding() {
     const owner = id,
-      started = step !== 'start',
+      started = !['chrome', 'start'].includes(step),
       empty = Boolean(
         data && automationProgress(data).fresh && !data.documents?.some((d) => !d.generated),
       );
