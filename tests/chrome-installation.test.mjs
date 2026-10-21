@@ -64,7 +64,7 @@ test('Chrome installation discovery includes per-user macOS and Linux stable pac
     '/usr/bin/google-chrome-stable',
   );
 });
-test('the AutoJev extension counts as installed only with an enabled settings record in the selected profile', async () => {
+test('the AutoJob extension counts as installed only with an enabled settings record in the selected profile', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'jobloop-chrome-'));
   const extensionId = 'jmpiibcgkhgcbjgnncpicngllpppiiel';
   try {
@@ -136,10 +136,7 @@ test('launch uses the discovered installation and selected profile as arguments,
     const url = 'chrome-extension://jmpiibcgkhgcbjgnncpicngllpppiiel/connect.html?relay=x';
     await openChromeUrl(url, {directory: 'Profile 1'}, options);
     assert.equal(called, 1);
-    await assert.rejects(
-      () => openChromeUrl(url, {directory: '../outside'}, options),
-      /not found/,
-    );
+    await assert.rejects(() => openChromeUrl(url, {directory: '../outside'}, options), /not found/);
     assert.equal(called, 1);
     await assert.rejects(
       () =>

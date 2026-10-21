@@ -187,7 +187,7 @@ test('finished tabs in an existing Chrome stay as blank spares that the next tas
     ids = ['stuck', 'first', 'second', 'third'];
   browser.opening = Promise.resolve({});
   browser.browser = {isConnected: () => true};
-  browser.transport = {owned: new Set(ids), attached: new Set()};
+  browser.transport = {owned: new Set(ids), forget: (id) => browser.transport.owned.delete(id)};
   browser.persistTabs = async () => {};
   for (const id of ids) {
     let url = `https://example.test/${id}`,

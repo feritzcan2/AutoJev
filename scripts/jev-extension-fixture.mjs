@@ -1,4 +1,4 @@
-// Test Chrome with the AutoJev extension loaded from the repository. Branded
+// Test Chrome with the AutoJob extension loaded from the repository. Branded
 // Chrome ignores --load-extension since 137, so smoke tests run Playwright's
 // Chrome for Testing; the app connects to it exactly as to the user's Chrome.
 import {createRequire} from 'node:module';

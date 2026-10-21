@@ -352,7 +352,7 @@ export class BrowserTools {
       slot = client?.tabs.get(tabId);
     if (this.clients.get(id) !== connection || !slot || slot.page.isClosed())
       throw Object.assign(Error('The tab was closed.'), {code: 'TAB_MISSING'});
-    await slot.page.bringToFront();
+    await client.bringToFront(slot);
     return {focused: true};
   }
   async closeWorkspaceTabs(id, selection) {

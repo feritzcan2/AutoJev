@@ -80,7 +80,10 @@ export async function acquireTabRendering(
       // the user's work. Only callers that need the real foreground (a captcha
       // click) ask for it.
       if (foreground) {
-        await bounded(() => slot.page.bringToFront(), {signal, timeoutMs}).catch(() => {});
+        await bounded(() => slot.bringToFront?.() ?? slot.page.bringToFront(), {
+          signal,
+          timeoutMs,
+        }).catch(() => {});
         signal?.throwIfAborted();
       }
       state.enabled = true;

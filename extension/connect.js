@@ -1,4 +1,4 @@
-// Opened by the AutoJev app with the relay address; the service worker
+// Opened by the AutoJob app with the relay address; the service worker
 // connects and closes this tab once the app accepts.
 const relayUrl = new URLSearchParams(location.search).get('relay');
 const show = (id, text) => {
@@ -14,7 +14,7 @@ chrome.runtime.sendMessage({type: 'connect', relayUrl}, (response) => {
   if (chrome.runtime.lastError || !response?.ok) {
     show(
       'error',
-      'AutoJev’e bağlanılamadı. Uygulamanın açık olduğundan emin ol ve Yeniden bağlan’a bas. ' +
+      'Could not connect to AutoJob. Make sure the app is open and press Reconnect. ' +
         (response?.error ?? chrome.runtime.lastError?.message ?? ''),
     );
     closeLater();

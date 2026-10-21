@@ -50,6 +50,14 @@ the Chrome instance managed by Jev. The first run of a source scanned by the age
 is an automatic trial: the agent checks search, pagination, detail reading and
 access; later runs do a normal scan with the current criteria.
 
+Jev works in the user's existing Chrome profile and connects to it only through
+the AutoJob extension in `extension/` (`chrome.debugger`). Load it at
+`chrome://extensions` with Developer mode on and **Load unpacked**; the Setup
+screen shows the folder. Chrome does not enter remote-debugging mode, so
+`navigator.webdriver` stays false in every tab. While Jev is attached, Chrome shows
+an "AutoJob started debugging this browser" bar, and Jev manages only the tabs it
+opened itself.
+
 Site-specific knowledge lives in site extensions; see
 [site-extensions.md](site-extensions.md).
 

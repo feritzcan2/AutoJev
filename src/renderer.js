@@ -216,7 +216,7 @@ const chromeTitle = element('b'),
   chromeTip = element(
     'small',
     'chrome-tip',
-    'Tip: in Chrome, turn on remote debugging at chrome://inspect/#remote-debugging.',
+    'Tip: install the AutoJob extension in the selected Chrome profile (see Setup).',
   ),
   chromeReconnect = element('button', 'quiet chrome-reconnect', 'Reconnect');
 chromeReconnect.type = 'button';

@@ -64,7 +64,7 @@ export async function resolveChromeProfile(selected) {
 }
 
 // Opens a URL in the selected regular Chrome profile, starting Chrome when it
-// is closed. The AutoJev extension closes its own connect page afterwards.
+// is closed. The AutoJob extension closes its own connect page afterwards.
 export async function openChromeUrl(
   url,
   selected,

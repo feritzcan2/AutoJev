@@ -19,7 +19,7 @@ const dependencies = {
   listChromeProfiles: async () => [{directory: 'Default', name: 'Personal'}],
   resolveChromeProfile: async (selected) => selected?.directory ?? 'Default',
   extensionInstalled: async () => true,
-  extensionMissingMessage: () => 'Install the AutoJev extension from /app/extension',
+  extensionMissingMessage: () => 'Install the AutoJob extension from /app/extension',
   jevStatus: async () => ({configured: true}),
 };
 test('OpenCode readiness accepts credentials without exposing account output', async () => {
@@ -61,7 +61,7 @@ test('first-run checks diagnose missing CLI while optional browser runtime check
   );
   assert.equal(result.checks.find((check) => check.id === 'chrome').state, 'ready');
 });
-test('Jev readiness verifies the selected profile, its AutoJev extension and the key without browsing or API calls', async () => {
+test('Jev readiness verifies the selected profile, its AutoJob extension and the key without browsing or API calls', async () => {
   const checked = [];
   assert.equal(
     (
