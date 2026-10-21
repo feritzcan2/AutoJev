@@ -87,3 +87,20 @@ export async function openChromeUrl(
   signal?.throwIfAborted();
   await execImpl(executable, args, {windowsHide: true, signal});
 }
+
+// macOS lets an app in the background raise its window only when the app in
+// front hands over activation. The extension focuses the Jev window inside
+// Chrome; asking Launch Services from this (front) app then makes Chrome the
+// active app, showing that window. Other systems need no extra step.
+export async function activateChrome({
+  platform = process.platform,
+  findChromeImpl = findChrome,
+  execImpl = exec,
+} = {}) {
+  if (platform !== 'darwin') return false;
+  const executable = await findChromeImpl(),
+    bundle = executable?.match(/^(.*?\.app)\/Contents\/MacOS\//)?.[1];
+  if (!bundle) return false;
+  await execImpl('/usr/bin/open', ['-a', bundle], {windowsHide: true});
+  return true;
+}

@@ -24,6 +24,7 @@ import {randomUUID, createHash} from 'node:crypto';
 import path from 'node:path';
 import {actionSpace, chooseJev, jevConfig} from './policy.mjs';
 import {
+  activateChrome as activateChromeApp,
   openChromeUrl,
   extensionInstalledInProfile,
   extensionMissingMessage,
@@ -90,6 +91,7 @@ export class JevBrowser {
       connection = 'existing',
       profile,
       openUrl = openChromeUrl,
+      activateChrome = activateChromeApp,
       extensionInstalled = extensionInstalledInProfile,
       relay = null,
       challengeGraceMs = CHALLENGE_GRACE_MS,
@@ -113,6 +115,7 @@ export class JevBrowser {
     this.connection = connection;
     this.profile = profile;
     this.openUrl = openUrl;
+    this.activateChrome = activateChrome;
     this.extensionInstalled = extensionInstalled;
     this.relay = relay;
     this.challengeGraceMs = challengeGraceMs;
@@ -1459,7 +1462,7 @@ export class JevBrowser {
           value = {
             browser: 'Jev Chrome',
             tabId: slot.id,
-            url: page.url(),
+            url: slot.page.url(),
             status: 'loading',
             message: 'Navigation did not complete; observe the same tab.',
           };
@@ -2003,9 +2006,10 @@ export class JevBrowser {
   // Selects the tab and raises its window. Through the extension this uses the
   // tabs and windows APIs; Page.bringToFront does neither reliably there.
   async bringToFront(slot) {
-    if (this.connection === 'existing' && this.transport?.activate)
+    if (this.connection === 'existing' && this.transport?.activate) {
       await this.transport.activate(slot.id);
-    else await slot.page.bringToFront();
+      await this.activateChrome().catch(() => {});
+    } else await slot.page.bringToFront();
   }
   async close({closeTabs = false} = {}) {
     this.closed = true;
