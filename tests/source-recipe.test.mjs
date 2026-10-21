@@ -1211,17 +1211,19 @@ async function scanAfterTrial(t, board) {
   return {f, scan, flow, opened, expected, capped};
 }
 
-test('a single search reads at most its 10-page limit and ends there', async (t) => {
-  const {f, scan, flow, opened, expected, capped} = await scanAfterTrial(t, {pages: 11});
+test('a single search reads at most its page limit and ends there', async (t) => {
+  const {f, scan, flow, opened, expected, capped} = await scanAfterTrial(t, {
+    pages: SCAN_SEARCH_PAGES + 1,
+  });
   assert.equal(f.db.run(scan.id).scanPlan.pageCap, SCAN_SEARCH_PAGES);
   assert.equal(capped.status, 'completed');
   assert.equal(capped.pageCapReached, true);
-  assert.equal(capped.pageCount, 10);
+  assert.equal(capped.pageCount, SCAN_SEARCH_PAGES);
   assert.match(capped.next, /Search limit reached/);
   assert.equal(
     opened.filter((u) => u.startsWith(expected)).length,
-    10,
-    'the eleventh page was never opened',
+    SCAN_SEARCH_PAGES,
+    'the page after the limit was never opened',
   );
   await reviewQueue(flow, f, scan, expected + '&start=10');
   assert.equal(
@@ -1349,7 +1351,7 @@ test('each recipe term is its own search: completing one opens the next with a f
       await flow.call(f.id, scan.id, 'browser_run_task', {operation: 'scan_results', url}),
     );
     assert.equal(capped.pageCapReached, true);
-    assert.equal(capped.pageCount, 10, 'each search has its own 10-page limit');
+    assert.equal(capped.pageCount, SCAN_SEARCH_PAGES, 'each search has its own page limit');
     const queue = await flow.call(f.id, scan.id, 'get_scan_queue', {view: 'entries'});
     f.db.saveScanProgress(
       f.id,

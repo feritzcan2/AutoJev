@@ -23,11 +23,11 @@ export const RECIPE_FIELD_KEYS = ['query', 'location'];
 // newest_first lets repeat scans stop once consecutive pages hold only known listings.
 export const RECIPE_ORDERING_KINDS = ['unknown', 'newest_first'];
 export const RECIPE_STALE_FAILURES = 2;
-// User rule (2026-10-11), for every source scan and every kind of source: each
+// User rule (2026-10-11, 5 pages since 2026-10-21), for every source scan and every kind of source: each
 // search (one per recipe term) reads at most SCAN_SEARCH_PAGES result pages and
 // ends with the page that brings its new listings to SCAN_SEARCH_LISTINGS. New
 // listings are those the workspace had not recorded or rejected before.
-export const SCAN_SEARCH_PAGES = 10;
+export const SCAN_SEARCH_PAGES = 5;
 export const SCAN_SEARCH_LISTINGS = 100;
 export const RECIPE_TERM_LIMIT = 5;
 // Further search setups beside the main address, for a profile that accepts

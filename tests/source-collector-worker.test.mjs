@@ -714,13 +714,14 @@ const knownPages = (total) => (value) => {
 };
 
 test('pages without new listings are read on within one bounded call', async (t) => {
-  const f = fixture(t, {terms: ['backend', 'platform', 'staff'], readPage: knownPages(25)});
+  const terms = ['backend', 'platform', 'staff', 'lead', 'cloud'],
+    f = fixture(t, {terms, readPage: knownPages(25)});
   const first = await f.call('collect_source_page');
   assert.equal(f.reads(), 20);
   assert.equal(f.db.run(f.run.id).scan.complete, false);
   assert.match(first.next, /no new listings.*collect_source_page again/);
   assert.equal((await f.call('collect_source_page')).complete, true);
-  assert.equal(f.reads(), 3 * SCAN_SEARCH_PAGES, 'each of the three searches reads its 10 pages');
+  assert.equal(f.reads(), terms.length * SCAN_SEARCH_PAGES, 'each search reads its page cap');
 });
 
 test('a single collector search closed by its page budget finishes completed', async (t) => {
