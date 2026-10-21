@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://feritzcan2.github.io/AutoJob/sitemap.xml
