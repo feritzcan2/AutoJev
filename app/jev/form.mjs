@@ -1,5 +1,6 @@
 import {observedId, actionIdentity} from './ids.mjs';
 import {installFormSemantics} from './form-semantics.mjs';
+import {humanFill, wheelReveal} from '../browser/human-input.mjs';
 
 // Read-only preflight, including rendered fields below the fold. Never invokes
 // checkValidity/reportValidity (which dispatch events), changes focus or submits.
@@ -614,6 +615,9 @@ export async function fillKnownFields(slot, fields, owner, reader) {
   }));
   let status = 'ready';
   let semanticExpected = await slot.page.evaluate(semanticFormState);
+  // Short answers are typed key by key; once this call has typed for a minute
+  // the rest arrives at once, so a long form stays within the call's bound.
+  const typingUntil = Date.now() + 60000;
   try {
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i],
@@ -646,7 +650,8 @@ export async function fillKnownFields(slot, fields, owner, reader) {
           continue;
         }
         began = true;
-        await entry.input.fill(entry.text, {timeout: 2000});
+        await wheelReveal(slot.page, entry.input).catch(() => false);
+        await humanFill(slot.page, entry.input, entry.text, {deadline: typingUntil});
         await entry.input.evaluate((e) => e.blur());
         await new Promise((resolve) => setTimeout(resolve, 50));
         if (!(await entry.input.evaluate((e) => e.isConnected).catch(() => false)))

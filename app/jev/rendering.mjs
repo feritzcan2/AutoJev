@@ -1,3 +1,5 @@
+import {wheelReveal} from '../browser/human-input.mjs';
+
 // Ordinary Chrome pauses animation frames in background tabs. Playwright's
 // visibility/stability checks need those frames even for a ready document.
 // Resume only the owned tab for the current operation, without activating a
@@ -122,9 +124,14 @@ export async function acquireTabRendering(
 
 // Playwright's scrollIntoViewIfNeeded waits for stable animation frames, which a
 // background tab never delivers. Run the step with the tab's own rendering on.
+// The wheel brings the element into view first, as a person scrolls; where it
+// cannot (an iframe, a covered container), the direct scroll does.
 export async function revealInView(slot, handle, {signal, timeoutMs = 2000} = {}) {
   const release = await acquireTabRendering(slot, {signal, timeoutMs});
   try {
+    await wheelReveal(slot.page, handle, {signal}).catch((error) => {
+      if (signal?.aborted) throw error;
+    });
     await handle.scrollIntoViewIfNeeded({timeout: timeoutMs});
     // An element already inside the viewport can still sit under a sticky
     // header or bar; scrollIntoViewIfNeeded then does nothing. Center it once.

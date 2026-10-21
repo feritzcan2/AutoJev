@@ -5,7 +5,9 @@ import {
 } from '../captcha/cloudflare-checkbox.mjs';
 import {installNoTranslate} from './translation.mjs';
 import {privateJevPage, retryJevRead} from './page.mjs';
+import {jevChromium} from './driver.mjs';
 import {acquireTabRendering} from './rendering.mjs';
+import {humanClick, humanType, ROUTINE_NOTICE} from '../browser/human-input.mjs';
 import {accessBarrier, SiteWaitError, siteKey} from '../browser/site-access.mjs';
 import {observeFormFrame, actFormFrame, usableFormFrame} from './frame-actions.mjs';
 import {captureCookieFrameTargets, clickCookieFrameTarget} from './cookie-frame.mjs';
@@ -19,7 +21,6 @@ import {installFormSemantics} from './form-semantics.mjs';
 import {verificationEvidence, updateVerification, verificationHandoff} from './verification.mjs';
 import {readFile, mkdir} from 'node:fs/promises';
 import {setTimeout as pause} from 'node:timers/promises';
-import {createRequire} from 'node:module';
 import {randomUUID, createHash} from 'node:crypto';
 import path from 'node:path';
 import {actionSpace, chooseJev, jevConfig} from './policy.mjs';
@@ -53,9 +54,9 @@ import {
   blockedRepeat,
   rememberProgress,
   stalled,
+  wheelScrollNode,
 } from './navigation.mjs';
 import {validateJevArgs} from './tools.mjs';
-const require = createRequire(import.meta.url);
 const urlHash = (url) => createHash('sha256').update(url).digest('hex');
 // Playwright protocol calls such as evaluate have no timeout of their own. A
 // tool call that outlives these bounds holds Jev and the workspace's browser
@@ -205,9 +206,10 @@ export class JevBrowser {
             );
             this.spareTabs = new Set(restored.filter((id) => saved?.spareTabs?.includes(id)));
             this.instanceId = instanceId;
-            browser = await createRequire(require.resolve('@playwright/mcp/package.json'))(
-              'playwright',
-            ).chromium.connectOverCDP(transport, {timeout: 30000, noDefaults: true});
+            browser = await jevChromium().connectOverCDP(transport, {
+              timeout: 30000,
+              noDefaults: true,
+            });
             this.abort.signal.throwIfAborted();
             this.browser = browser;
             this.tracking = new WeakMap();
@@ -246,11 +248,7 @@ export class JevBrowser {
         }
         await mkdir(this.directory, {recursive: true, mode: 0o700});
         const launch =
-          this.launch ??
-          ((dir, options) =>
-            createRequire(require.resolve('@playwright/mcp/package.json'))(
-              'playwright',
-            ).chromium.launchPersistentContext(dir, options));
+          this.launch ?? ((dir, options) => jevChromium().launchPersistentContext(dir, options));
         const context = await launch(this.directory, {
           channel: 'chrome',
           headless: this.headless,
@@ -308,7 +306,7 @@ export class JevBrowser {
       };
       slot.bringToFront = () => this.bringToFront(slot);
       // A tab that rejects init scripts still works; its labels may then be translated.
-      await installNoTranslate(slot.page).catch(() => {});
+      await installNoTranslate(slot).catch(() => {});
       if (this.connection === 'existing') await this.persistTabs();
       page.on('response', (response) => {
         if (response.request().isNavigationRequest() && response.frame() === page.mainFrame())
@@ -1001,11 +999,7 @@ export class JevBrowser {
       if (action.kind === 'wait') await new Promise((resolve) => setTimeout(resolve, 100));
       else if (action.kind === 'scroll') {
         began = true;
-        await slot.page.evaluate(
-          ({node, delta}) =>
-            window.__jevFast.nodes.get(node).scrollBy({top: delta, behavior: 'instant'}),
-          action,
-        );
+        await wheelScrollNode(slot, action, this.readSignal ?? this.abort.signal);
       } else {
         // Resolve only a node observed by Jev; model output never becomes code or selectors.
         const target = await slot.page.evaluate((a) => {
@@ -1043,28 +1037,34 @@ export class JevBrowser {
             e.dispatchEvent(new Event('change', {bubbles: true}));
           }, action);
         else {
-          for (const type of ['mousePressed', 'mouseReleased'])
-            await slot.cdp.send('Input.dispatchMouseEvent', {
-              type,
-              ...target,
-              button: 'left',
-              clickCount: 1,
-            });
+          // The pointer travels to the target first; right before the press
+          // the target must still sit under the same point.
+          began = false;
+          await humanClick(
+            slot.page,
+            target.x,
+            target.y,
+            async () => {
+              const now = await slot.page.evaluate(
+                (node) => window.__jevFast?.clickPoint(window.__jevFast.nodes.get(node)),
+                action.node,
+              );
+              if (!now || Math.hypot(now.x - target.x, now.y - target.y) > 4)
+                throw Object.assign(Error('The target moved.'), {code: 'TARGET_MOVED'});
+            },
+            {notice: ROUTINE_NOTICE, signal: this.readSignal ?? this.abort.signal},
+          ).catch((error) => {
+            // The press itself was sent unless the check stopped it.
+            if (error.code !== 'TARGET_MOVED') began = true;
+            throw error;
+          });
+          began = true;
           if (action.kind === 'fill') {
-            await slot.cdp.send('Input.dispatchKeyEvent', {
-              type: 'keyDown',
-              key: 'a',
-              code: 'KeyA',
-              modifiers: process.platform === 'darwin' ? 4 : 2,
-              commands: ['selectAll'],
-            });
-            await slot.cdp.send('Input.dispatchKeyEvent', {
-              type: 'keyUp',
-              key: 'a',
-              code: 'KeyA',
-              modifiers: process.platform === 'darwin' ? 4 : 2,
-            });
-            await slot.cdp.send('Input.insertText', {text});
+            await new Promise((resolve) => setTimeout(resolve, 80 + Math.random() * 140));
+            await slot.page.keyboard.press('ControlOrMeta+a');
+            if (text)
+              await humanType(slot.page, text, {signal: this.readSignal ?? this.abort.signal});
+            else await slot.page.keyboard.press('Backspace');
           }
         }
       }
@@ -1140,6 +1140,13 @@ export class JevBrowser {
         ...(controlState ? {controlState} : {}),
       };
     } catch (error) {
+      if (error.code === 'TARGET_MOVED')
+        return {
+          ...(await this.observe(slot)),
+          status: 'stale',
+          executed: false,
+          message: 'The target changed or became covered. Get a new decision.',
+        };
       if (error.code === 'SITE_WAIT') {
         error.executed = began ? 'unknown' : false;
         throw error;

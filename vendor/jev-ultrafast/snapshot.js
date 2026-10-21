@@ -154,9 +154,13 @@
   // Some custom dropdown triggers have a real click handler but no ARIA role.
   // Discover only small, named leaf controls; never invoke framework handlers
   // or promote a form/container merely because events bubble through it.
+  // In Jev's isolated world a framework's handler properties are not visible,
+  // so an inline onclick attribute or a pointer cursor that starts at this
+  // element (not inherited from a clickable ancestor) also counts.
+  const ownPointer=e=>getComputedStyle(e).cursor==='pointer'&&(!e.parentElement||getComputedStyle(e.parentElement).cursor!=='pointer');
   const customClick=e=>{
     if(!e.matches('div,span'))return false;
-    const handler=typeof e.onclick==='function'||Object.keys(e).some(k=>k.startsWith('__reactProps$')&&typeof Object.getOwnPropertyDescriptor(e,k)?.value?.onClick==='function');
+    const handler=typeof e.onclick==='function'||e.hasAttribute('onclick')||Object.keys(e).some(k=>k.startsWith('__reactProps$')&&typeof Object.getOwnPropertyDescriptor(e,k)?.value?.onClick==='function')||ownPointer(e);
     if(!handler||!visible(e)||e.querySelector(selector))return false;
     const label=name(e).trim();return label.length>0&&label.length<=200;
   };

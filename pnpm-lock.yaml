@@ -41,6 +41,9 @@ importers:
       node-html-parser:
         specifier: 6.1.13
         version: 6.1.13
+      patchright-core:
+        specifier: 1.64.1
+        version: 1.64.1
       pdfjs-dist:
         specifier: 6.3.289
         version: 6.3.289
@@ -1276,6 +1279,11 @@ packages:
   parseurl@1.3.3:
     resolution: {integrity: sha512-CiyeOxFT/JZyN5m0z9PfXw4SCBJ6Sygz1Dpl0wqjlhDEGGBP1GnsUVEL0p63hoG1fcj3fHynXi9NYO4nWOL+qQ==}
     engines: {node: '>= 0.8'}
+
+  patchright-core@1.64.1:
+    resolution: {integrity: sha512-nUWuqaaUVd60qepdDPv+i5g257F8jywbzn7aKV8fPRur4dmkFLxYV/xus8f69gKAB7+S/zfdYe0zA3mJkO6+0w==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   path-is-absolute@1.0.1:
     resolution: {integrity: sha512-AVbw3UJ2e9bq64vSaS9Am0fje1Pa8pbGqTTsmXfaIiMpnr5DlDhfJOuLj9Sf95ZPVDAUerDfEk88MPmPe7UCQg==}
@@ -3009,6 +3017,8 @@ snapshots:
       yocto-queue: 0.1.0
 
   parseurl@1.3.3: {}
+
+  patchright-core@1.64.1: {}
 
   path-is-absolute@1.0.1: {}
 

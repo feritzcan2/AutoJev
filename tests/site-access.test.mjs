@@ -720,3 +720,46 @@ test('a verification the same tab got past ends the shared wait; rate limits and
   assert.equal(gate.status('https://limited.example/').waiting, true);
   db.close();
 });
+
+test('a run of page views is followed by a shared break; a natural pause counts as one', () => {
+  const db = new DatabaseSync(':memory:');
+  let now = 100000;
+  const gate = new SiteAccess(db, {now: () => now});
+  const options = {views: [3, 3], pause: [4 * minute, 4 * minute]};
+  for (let i = 0; i < 3; i++) {
+    assert.equal(gate.rest('site browser', options), 0);
+    now += 15000;
+  }
+  const wait = gate.rest('site browser', options);
+  assert.equal(wait, 4 * minute);
+  // A second reader of the same site waits for the same break.
+  now += minute;
+  assert.equal(gate.rest('site browser', options), 3 * minute);
+  // Another site is not affected.
+  assert.equal(gate.rest('other browser', options), 0);
+  now += 3 * minute;
+  assert.equal(gate.rest('site browser', options), 0);
+  // Two more views, then a natural pause as long as a break starts a new run.
+  now += 15000;
+  assert.equal(gate.rest('site browser', options), 0);
+  now += 4 * minute;
+  for (let i = 0; i < 3; i++) {
+    assert.equal(gate.rest('site browser', options), 0);
+    now += 15000;
+  }
+  assert.ok(gate.rest('site browser', options) > 0);
+});
+
+test('the default break follows 15-30 views and lasts 4-10 minutes', () => {
+  const db = new DatabaseSync(':memory:');
+  let now = 100000;
+  const gate = new SiteAccess(db, {now: () => now});
+  let views = 0,
+    wait = 0;
+  while (!(wait = gate.rest('site browser'))) {
+    views++;
+    now += 12000;
+  }
+  assert.ok(views >= 15 && views <= 30, String(views));
+  assert.ok(wait >= 4 * minute && wait <= 10 * minute, String(wait));
+});

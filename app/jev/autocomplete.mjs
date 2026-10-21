@@ -1,5 +1,6 @@
 import {blockedRepeat, rememberProgress, progressKey, stalled} from './navigation.mjs';
 import {revealInView} from './rendering.mjs';
+import {humanClick, replaceFocusedText, ROUTINE_NOTICE} from '../browser/human-input.mjs';
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const normalize = (value) => value.replace(/\s+/g, ' ').trim();
 // The control id itself no longer matches the page.
@@ -32,12 +33,19 @@ async function scrollOptions(page, node, {top = false} = {}) {
   );
 }
 
-// Write a query, then press End: some widgets search on key events, which
-// fill() alone never sends. End keeps the value and leaves the caret last.
+// Write a query key by key, as a person types into a search field; widgets
+// search on those key events. The field is focused, not clicked: a click on an
+// open combobox would close its list again.
 async function typeQuery(page, element, text) {
-  await element.fill(text, {timeout: 2000});
-  await page.keyboard.press('End');
+  const focused = await element.evaluate((e) => {
+    const active = e.getRootNode().activeElement;
+    return !!active && (active === e || e.contains(active));
+  });
+  if (!focused) await element.focus();
+  await replaceFocusedText(page, text);
 }
+const click = (page, point) =>
+  humanClick(page, point.x, point.y, undefined, {notice: ROUTINE_NOTICE});
 
 // Query + bounded wait + exact selection. No model, selectors from the caller,
 // hidden-field writes, keyboard submission, or fuzzy candidate answers.
@@ -125,7 +133,7 @@ export async function selectAutocomplete(slot, args, owner, reader) {
           message: 'The control is covered; nothing was clicked. Close what covers it, then retry.',
         };
       opened = true;
-      await slot.page.mouse.click(current.point.x, current.point.y);
+      await click(slot.page, current.point);
     }
     if (args.text !== undefined && initial.editable === false) {
       // A dropdown button: type into the search box its open popup shows.
@@ -196,7 +204,7 @@ export async function selectAutocomplete(slot, args, owner, reader) {
       normalize(String(current.value ?? ''))
     ) {
       wrote = cleared = true;
-      await input.fill('', {timeout: 2000});
+      await typeQuery(slot.page, input, '');
       const until = Date.now() + 1500;
       do {
         current = await read();
@@ -284,8 +292,30 @@ export async function selectAutocomplete(slot, args, owner, reader) {
         'stale',
         'The option is covered or the target changed; it was not clicked.',
       );
+    let moved = false;
+    try {
+      await humanClick(
+        slot.page,
+        point.x,
+        point.y,
+        async () => {
+          const now = await input.evaluate((e, {node, label}) => {
+            const c = window.__jevFast,
+              option = c.autocomplete(e)?.options.find((o) => o.node === node && o.label === label);
+            return option ? c.clickPoint(c.nodes.get(node)) : null;
+          }, match);
+          moved = !now || Math.hypot(now.x - point.x, now.y - point.y) > 4;
+          if (moved) throw Error('The option moved.');
+        },
+        {notice: ROUTINE_NOTICE},
+      );
+    } catch (error) {
+      if (moved)
+        return await stop('stale', 'The option moved or became covered; it was not clicked.');
+      clicked = true;
+      throw error;
+    }
     clicked = true;
-    await slot.page.mouse.click(point.x, point.y);
     await new Promise((resolve) => setTimeout(resolve, 100));
     const verifyUntil = Date.now() + 1000;
     let actual,
@@ -319,7 +349,7 @@ export async function selectAutocomplete(slot, args, owner, reader) {
         same(state.identity, initial.identity) &&
         state.point
       ) {
-        await slot.page.mouse.click(state.point.x, state.point.y);
+        await click(slot.page, state.point);
         const until = Date.now() + 1000;
         let selected = false;
         do {

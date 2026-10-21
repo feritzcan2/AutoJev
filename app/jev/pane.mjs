@@ -4,7 +4,8 @@
 // read the pane once it shows that listing. One click per listing instead of a
 // page load per listing; the results page stays open for the next card.
 import {setTimeout as pause} from 'node:timers/promises';
-import {siteExtensionFor, siteListing} from '../site-extensions/index.mjs';
+import {collectSiteData, siteExtensionFor, siteListing} from '../site-extensions/index.mjs';
+import {humanClickElement, wheelReveal} from '../browser/human-input.mjs';
 
 // How long a clicked card may take to show its listing, and how often the pane
 // is read meanwhile.
@@ -18,11 +19,12 @@ const POLL_MS = 250;
 // click opened another page) or not_shown (the pane did not show it in time).
 export async function readPane(slot, url, {signal = undefined, showMs = PANE_SHOW_MS} = {}) {
   const page = slot.page,
-    pane = siteExtensionFor(page.url())?.dom?.pane,
+    dom = siteExtensionFor(page.url())?.dom,
+    pane = dom?.pane,
     key = pane?.handles(page.url()) ? pane.key(url) : null;
   if (!key) return {status: 'unsupported', url: page.url()};
   const shown = async () => {
-    const raw = await page.evaluate(pane.collect).catch(() => null);
+    const raw = await collectSiteData(page, dom, pane.collect).catch(() => null);
     const job = raw?.key === key ? pane.read(raw) : null;
     return job?.description ? job : null;
   };
@@ -35,8 +37,9 @@ export async function readPane(slot, url, {signal = undefined, showMs = PANE_SHO
       return {status: 'no_card', url: page.url()};
     }
     try {
+      await wheelReveal(page, card).catch(() => false);
       await card.scrollIntoViewIfNeeded({timeout: 5000});
-      await card.click({timeout: 5000});
+      if (!(await humanClickElement(page, card))) await card.click({timeout: 5000});
     } catch (error) {
       if (pane.handles(page.url()))
         return {status: 'not_clicked', url: page.url(), message: String(error?.message ?? error)};

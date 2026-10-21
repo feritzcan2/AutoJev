@@ -1,6 +1,6 @@
 import {observedId} from './ids.mjs';
 import {captchaProvider} from '../captcha/detection.mjs';
-import {humanClick} from '../captcha/human-click.mjs';
+import {humanClick} from '../browser/human-input.mjs';
 const anchor =
   /https:\/\/(?:www\.)?(?:google\.com|recaptcha\.net)\/recaptcha\/(?:api2|enterprise)\/anchor(?:\?|$)|https:\/\/[^/]*hcaptcha\.com\/.*(?:checkbox|frame=checkbox)/i;
 export async function scanVerificationCheckboxes(page) {

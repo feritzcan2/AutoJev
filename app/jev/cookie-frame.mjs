@@ -1,5 +1,6 @@
 // @ts-check
 import {observedId} from './ids.mjs';
+import {humanClickElement} from '../browser/human-input.mjs';
 const consentLabel =
   /^(accept(?: all(?: cookies)?)?|decline|reject(?: all(?: cookies)?)?|customi[sz]e|allow all|only necessary|save preferences|alle akzeptieren|alle ablehnen|nur notwendige|einstellungen|kabul et|tümünü kabul et|reddet)$/i;
 async function consentFrame(frame, page) {
@@ -104,8 +105,11 @@ export async function clickCookieFrameTarget(slot, targetId, owner) {
         executed: false,
         message: 'The cookie dialog changed; use the returned current targets.',
       };
-    // Playwright enforces visibility, stability and hit testing through the frame.
-    await saved.input.click({timeout: 2000});
+    // A pointer click where the control is reachable; otherwise Playwright
+    // enforces visibility, stability and hit testing through the frame.
+    await saved.input.scrollIntoViewIfNeeded({timeout: 2000});
+    if (!(await humanClickElement(slot.page, saved.input)))
+      await saved.input.click({timeout: 2000});
     return {
       status: 'ready',
       executed: true,
