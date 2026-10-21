@@ -48,7 +48,7 @@ test('a Web Store extension is offered to Chrome through its per-user entry', as
         extensionId: 'abc',
         platform: 'darwin',
         home: base,
-        write: async (file, text) => written.push([path.relative(base, file), JSON.parse(text)]),
+        write: async (file, text) => written.push([path.relative(base, file).split(path.sep).join('/'), JSON.parse(text)]),
       }),
       true,
     );

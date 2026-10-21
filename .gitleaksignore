@@ -11,3 +11,4 @@ tests/site-credentials.test.mjs:generic-api-key:39
 tests/site-credentials.test.mjs:generic-api-key:42
 tests/workable-collector.test.mjs:generic-api-key:14
 cfdc6be8ea0f76f575c020a9de265c2f32307ad4:src/appearance.js:generic-api-key:3
+6c6bbc4bbc1ac789d08e3a3b0fa05312b1736d81:extension/manifest.json:generic-api-key:7
