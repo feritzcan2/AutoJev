@@ -453,6 +453,7 @@ export function automationsPage(
     if (!data) {
       data = await api.workspaceSnapshot(id);
       if (selected !== id) return;
+      renderChromeCard(busy || isDeleting());
       renderDetail();
     }
     if (onboarding && openOnboarding(id, data)) return;
@@ -1761,6 +1762,8 @@ export function automationsPage(
       const snapshot = await api.workspaceSnapshot(id);
       if (stale()) return;
       data = snapshot;
+      // The Chrome card lives in the sidebar and stays visible on every page.
+      renderChromeCard(busy || isDeleting());
       renderDetail();
     } catch (error) {
       if (!stale()) throw error;
