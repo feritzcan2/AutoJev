@@ -30,6 +30,11 @@ export const RECIPE_STALE_FAILURES = 2;
 export const SCAN_SEARCH_PAGES = 10;
 export const SCAN_SEARCH_LISTINGS = 100;
 export const RECIPE_TERM_LIMIT = 5;
+// Further search setups beside the main address, for a profile that accepts
+// different setups one address cannot carry (remote in a country, hybrid in a
+// city). Every term runs in every setup, up to RECIPE_SEARCH_LIMIT searches.
+export const RECIPE_VARIANT_LIMIT = 2;
+export const RECIPE_SEARCH_LIMIT = 10;
 const placeholderPattern = /\{([a-z_][a-z0-9_]*)\}/g;
 
 const webAddress = (value, label) => {
@@ -57,6 +62,19 @@ export function normalizeSourceRecipe(input) {
     // A template without {query} is a fixed results address.
     webAddress(template.replace(placeholderPattern, 'x'), 'URL template');
     recipe.entry.template = template;
+    if (entry.variants !== undefined && entry.variants !== null) {
+      if (!Array.isArray(entry.variants) || entry.variants.length > RECIPE_VARIANT_LIMIT)
+        throw Error(`Search setups: at most ${RECIPE_VARIANT_LIMIT} beside the main address`);
+      if (entry.variants.length)
+        recipe.entry.variants = entry.variants.map((variant) => {
+          const label = boundedText(variant?.label, 'Search setup label', 80),
+            address = boundedText(variant?.template, 'Search setup address', 2000);
+          webAddress(address.replace(placeholderPattern, 'x'), 'Search setup address');
+          if (hasQueryPlaceholder(address) !== hasQueryPlaceholder(template))
+            throw Error('Every search setup takes {query} exactly when the main address does');
+          return {label, template: address};
+        });
+    }
   } else if (entry.kind === 'search_form') {
     recipe.entry.url = webAddress(entry.url, 'Search form address');
     if (!Array.isArray(entry.fields) || !entry.fields.length || entry.fields.length > 6)
@@ -115,8 +133,18 @@ export function normalizeSourceRecipe(input) {
     if (recipe.entry.kind === 'url_template' && !hasQueryPlaceholder(recipe.entry.template))
       throw Error('For search terms, the URL template must contain the {query} placeholder');
   }
+  const setups = 1 + (recipe.entry.variants?.length ?? 0);
+  if (setups * (recipe.terms?.length || 1) > RECIPE_SEARCH_LIMIT)
+    throw Error(
+      `${setups} search setups × ${recipe.terms.length} terms are more than ${RECIPE_SEARCH_LIMIT} searches; use fewer terms or setups`,
+    );
   return recipe;
 }
+// The addresses a url_template recipe searches: the main one, then its setups.
+export const recipeTemplates = (recipe) =>
+  recipe?.entry.kind === 'url_template'
+    ? [{label: null, template: recipe.entry.template}, ...(recipe.entry.variants ?? [])]
+    : [];
 const hasQueryPlaceholder = (template) =>
   [...template.matchAll(placeholderPattern)].some((m) => m[1] === 'query');
 // A search address with {query} but no terms would search for the source
@@ -175,24 +203,40 @@ export function replayUrl(template, values) {
 }
 
 // One replay holds one search per term (or a single search with the source
-// query). Scans run every search; checks verify the first one.
+// query) in each search setup. Scans run every search; checks verify the first
+// one of each setup.
 export function recipeReplay(recipe, values) {
   if (!recipe || recipe.entry.kind === 'discovery') return null;
   const terms = recipe.terms?.length ? recipe.terms : [null];
-  const searches = terms.map((term) => {
-    const filled = term === null ? values : {...values, query: term};
-    if (recipe.entry.kind === 'url_template')
-      return {term, url: replayUrl(recipe.entry.template, filled)};
+  const filled = (term) => (term === null ? values : {...values, query: term});
+  if (recipe.entry.kind === 'url_template')
     return {
-      term,
-      url: recipe.entry.url,
-      answers: recipe.entry.fields
-        .map((f) => ({key: f.key, label: f.label, value: filled[f.key] ?? ''}))
-        .filter((a) => a.value),
+      kind: recipe.entry.kind,
+      pagination: recipe.pagination,
+      searches: recipeTemplates(recipe).flatMap(({label, template}) =>
+        terms.map((term) => ({
+          term,
+          ...(label ? {setup: label} : {}),
+          url: replayUrl(template, filled(term)),
+        })),
+      ),
     };
-  });
+  const searches = terms.map((term) => ({
+    term,
+    url: recipe.entry.url,
+    answers: recipe.entry.fields
+      .map((f) => ({key: f.key, label: f.label, value: filled(term)[f.key] ?? ''}))
+      .filter((a) => a.value),
+  }));
   return {kind: recipe.entry.kind, pagination: recipe.pagination, searches};
 }
+// The label a search shows: its term, and its setup beside the main address.
+export const searchLabel = (search, fallback) =>
+  [search.term ?? fallback, search.setup].filter(Boolean).join(' · ');
+// The first search of each setup, which a recipe check reads.
+export const setupFirstSearches = (replay) => [
+  ...new Map(replay.searches.map((search) => [search.setup ?? '', search])).values(),
+];
 export const replayUrls = (replay) =>
   replay ? [...new Set(replay.searches.map((s) => s.url))] : [];
 // A scan belongs to a replayed search when it opened that address or the same
