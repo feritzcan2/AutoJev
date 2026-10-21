@@ -166,23 +166,20 @@ export async function registerSettingsServices({
     app,
     autoCheck: process.env.JOBLOOP_UPDATE_CHECK !== 'off',
     onChange: (state) => emit('update-status', state),
-    beforeInstall: () =>
-      maintenance.run(
-        async () => {
-          const directory = path.join(data, 'backups');
-          await mkdir(directory, {recursive: true, mode: 0o700});
-          await createBackup({
-            ...params,
-            destination: path.join(
-              directory,
-              `before-update-${Date.now()}-${randomUUID().slice(0, 8)}`,
-            ),
-            kind: 'upgrade',
-          });
-          return () => maintenance.release();
-        },
-        {hold: true},
-      ),
+    // Runs while the app quits, after every agent, scan and browser task stopped,
+    // so it backs up directly instead of waiting for idle work.
+    beforeInstall: async () => {
+      const directory = path.join(data, 'backups');
+      await mkdir(directory, {recursive: true, mode: 0o700});
+      await createBackup({
+        ...params,
+        destination: path.join(
+          directory,
+          `before-update-${Date.now()}-${randomUUID().slice(0, 8)}`,
+        ),
+        kind: 'upgrade',
+      });
+    },
   });
   handle('update-status', () => updates.snapshot());
   handle('update-check', () => updates.check());
@@ -212,5 +209,6 @@ export async function registerSettingsServices({
       updates.dispose();
     },
     prepareQuitInstall: () => updates.prepareQuitInstall(),
+    restartRequested: () => updates.restartRequested(),
   };
 }

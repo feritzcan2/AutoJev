@@ -596,7 +596,11 @@ async function boot() {
       const install = await settingsServices.prepareQuitInstall().catch(() => null);
       core.close();
       if (install) await install().catch(() => app.quit());
-      else app.quit();
+      else {
+        // Install now was chosen but could not run: reopen instead of staying closed.
+        if (settingsServices.restartRequested()) app.relaunch();
+        app.quit();
+      }
     })();
   });
 }

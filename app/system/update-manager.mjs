@@ -58,7 +58,7 @@ export function createUpdateManager({
   };
   let busy = false,
     disposed = false,
-    releaseInstall,
+    restartAfterInstall = false,
     timers = [];
   const publish = (patch) => {
     if (disposed) return;
@@ -115,6 +115,7 @@ export function createUpdateManager({
       install: async () => {
         throw Error('Automatic updates are not supported in this installation.');
       },
+      restartRequested: () => false,
       prepareQuitInstall: async () => null,
       dispose: () => {
         disposed = true;
@@ -140,14 +141,8 @@ export function createUpdateManager({
       }),
     'update-downloaded': (info) =>
       publish({status: 'downloaded', availableVersion: info.version, progress: 100, error: null}),
-    error: (error) => {
-      const release = releaseInstall;
-      releaseInstall = null;
-      Promise.resolve()
-        .then(() => release?.())
-        .catch(() => {});
-      publish({status: 'error', error: String(error.message ?? error).slice(0, 1000)});
-    },
+    error: (error) =>
+      publish({status: 'error', error: String(error.message ?? error).slice(0, 1000)}),
   };
   for (const [event, listener] of Object.entries(listeners)) client.on(event, listener);
   async function action(fn) {
@@ -187,32 +182,31 @@ export function createUpdateManager({
     snapshot: () => ({...state}),
     check: () => check(),
     download,
-    install: () =>
-      action(async () => {
-        if (state.status !== 'downloaded') throw Error('Download the update first.');
-        if (typeof beforeInstall !== 'function') throw Error('The pre-update backup is not ready.');
-        try {
-          releaseInstall = await beforeInstall();
-          publish({status: 'installing', error: null});
-          client.quitAndInstall(false, true);
-        } catch (error) {
-          const release = releaseInstall;
-          releaseInstall = null;
-          await release?.();
-          throw error;
-        }
-      }),
-    // Called while the app quits: backs up the data, then returns the step that
-    // installs the downloaded update without reopening the app. Null when there is
-    // nothing to install or the backup failed.
+    // Installing now quits the app: quitting stops all running work, then
+    // prepareQuitInstall backs up the data and installs, reopening the app.
+    install: async () => {
+      if (state.status !== 'downloaded') throw Error('Download the update first.');
+      restartAfterInstall = true;
+      publish({status: 'installing', error: null});
+      setImmediate(() => app.quit());
+      return {...state};
+    },
+    // True when the user asked to install now, so the app reopens afterwards
+    // even if the install could not run.
+    restartRequested: () => restartAfterInstall,
+    // Called while the app quits, after running work stopped: backs up the data,
+    // then returns the step that installs the downloaded update (reopening the app
+    // only when the user asked to install now). Null when there is nothing to
+    // install or the backup failed; the download stays for the next start.
     prepareQuitInstall: async () => {
-      if (state.status !== 'downloaded' || typeof beforeInstall !== 'function') return null;
+      if (!['downloaded', 'installing'].includes(state.status)) return null;
+      if (typeof beforeInstall !== 'function') return null;
       try {
         const release = await beforeInstall();
         return async () => {
           await release?.();
-          client.autoRunAppAfterInstall = false;
-          client.quitAndInstall(true, false);
+          client.autoRunAppAfterInstall = restartAfterInstall;
+          client.quitAndInstall(true, restartAfterInstall);
         };
       } catch {
         return null;

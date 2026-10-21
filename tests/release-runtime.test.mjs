@@ -30,13 +30,13 @@ test('packaged engine resolves outside asar and development uses an existing deb
     '/app/resources/app.asar.unpacked',
   );
 });
-test('update installation creates a backup before it quits; failure never installs', async () => {
+test('install now quits the app; the quit backs up, then installs and reopens; a failed backup never installs', async () => {
   const updater = new EventEmitter(),
     calls = [];
-  updater.quitAndInstall = () => calls.push('install');
+  updater.quitAndInstall = (silent, runAfter) => calls.push(`install ${silent} ${runAfter}`);
   let backupFailure = true;
   const manager = createUpdateManager({
-    app: {isPackaged: true, getVersion: () => '0.1.0'},
+    app: {isPackaged: true, getVersion: () => '0.1.0', quit: () => calls.push('quit')},
     platform: 'darwin',
     updater,
     beforeInstall: async () => {
@@ -46,13 +46,20 @@ test('update installation creates a backup before it quits; failure never instal
   });
   assert.equal(updater.autoInstallOnAppQuit, false);
   assert.equal(updater.autoDownload, false);
-  updater.emit('update-downloaded', {version: '0.2.0'});
-  await assert.rejects(manager.install(), /backup failed/);
-  assert.deepEqual(calls, ['backup']);
-  backupFailure = false;
+  await assert.rejects(manager.install(), /Download the update first/);
   updater.emit('update-downloaded', {version: '0.2.0'});
   await manager.install();
-  assert.deepEqual(calls, ['backup', 'backup', 'install']);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, ['quit']);
+  assert.equal(manager.restartRequested(), true);
+  // The quit stops running work, then asks for the install step.
+  assert.equal(await manager.prepareQuitInstall(), null);
+  assert.deepEqual(calls, ['quit', 'backup']);
+  backupFailure = false;
+  const install = await manager.prepareQuitInstall();
+  await install();
+  assert.equal(updater.autoRunAppAfterInstall, true);
+  assert.deepEqual(calls, ['quit', 'backup', 'backup', 'install true true']);
   manager.dispose();
   assert.equal(updater.listenerCount('error'), 0);
 });
@@ -68,31 +75,6 @@ test('development and Linux deb packages do not initialize an updater', async ()
     });
     assert.equal(manager.snapshot().enabled, false);
     await assert.rejects(manager.install(), /not supported/);
-  }
-});
-test('installer errors release maintenance whether thrown or emitted asynchronously', async () => {
-  for (const asynchronous of [false, true]) {
-    const updater = new EventEmitter();
-    let released = 0;
-    updater.quitAndInstall = () => {
-      if (asynchronous) setImmediate(() => updater.emit('error', Error('installer failed')));
-      else throw Error('installer failed');
-    };
-    const manager = createUpdateManager({
-      app: {isPackaged: true, getVersion: () => '0.1.0'},
-      platform: 'darwin',
-      updater,
-      beforeInstall: async () => () => {
-        released++;
-      },
-    });
-    updater.emit('update-downloaded', {version: '0.2.0'});
-    if (asynchronous) {
-      await manager.install();
-      await new Promise((resolve) => setImmediate(resolve));
-    } else await assert.rejects(manager.install(), /installer failed/);
-    assert.equal(released, 1);
-    manager.dispose();
   }
 });
 test('universal packaging refuses mixed source snapshots before creating an ESM-incompatible bootstrap', async () => {

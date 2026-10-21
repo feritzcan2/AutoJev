@@ -137,7 +137,7 @@ async function deleteWorkspace(owner = selectedWorkspace()) {
 }
 $('delete-workspace').onclick = () => deleteWorkspace();
 const configUI = configPage(api, {notice, relativeTime});
-updateBadge(api, document.querySelector('[data-view=config]'));
+updateBadge(api, document.querySelector('[data-view=config]'), {notice});
 const automationUI = automationsPage(api, {
   notice,
   getCatalog: () => catalog,

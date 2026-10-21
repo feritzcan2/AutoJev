@@ -587,3 +587,11 @@ aside nav button[data-pending] + button:not([data-pending]) {
     animation: none;
   }
 }
+aside nav button.update-install-nav {
+  color: var(--success);
+}
+aside nav button.update-install-nav:disabled {
+  opacity: 1;
+  color: var(--text-muted);
+  cursor: default;
+}
