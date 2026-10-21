@@ -17,9 +17,9 @@ const providerOrder = ['claude', 'codex', 'opencode'];
 const RECOMMENDED_PROVIDER = 'claude';
 // The review form shows these criteria; the rest stay on the profile page.
 const reviewFields = ['preferences', 'country', 'location', 'application_facts'];
-const readinessIds = ['chrome', 'chrome-profile', 'chrome-debug', 'jev', 'failed'];
+const readinessIds = ['chrome', 'chrome-profile', 'chrome-extension', 'jev', 'failed'];
 // Connected while the CV is read, so the search can start right after the review.
-const chromeIds = ['chrome', 'chrome-profile', 'chrome-debug', 'failed'];
+const chromeIds = ['chrome', 'chrome-profile', 'chrome-extension', 'failed'];
 // Missing agents and a closed Chrome connection are checked again on their own.
 const RECHECK_MS = 5000;
 const modes = [
