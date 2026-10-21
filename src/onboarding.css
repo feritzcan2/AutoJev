@@ -444,3 +444,44 @@ body.onboarding-open {
     flex: 1 1 100%;
   }
 }
+.onboarding-fixes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+.install-steps {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: install-step;
+}
+.install-steps li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  counter-increment: install-step;
+}
+.install-steps li::before {
+  content: counter(install-step);
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+.install-step-icon svg {
+  display: block;
+  width: 40px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

@@ -27,7 +27,7 @@ import {
   activateChrome as activateChromeApp,
   openChromeUrl,
   extensionInstalledInProfile,
-  extensionMissingMessage,
+  extensionMissingError,
   resolveChromeProfile,
 } from './chrome.mjs';
 import {ExtensionRelay} from './extension.mjs';
@@ -270,8 +270,7 @@ export class JevBrowser {
   // connect page in that profile once and waits for the extension to call back.
   async connectExtension() {
     this.abort.signal.throwIfAborted();
-    if (!(await this.extensionInstalled(this.profileDirectory)))
-      throw Error(extensionMissingMessage());
+    if (!(await this.extensionInstalled(this.profileDirectory))) throw extensionMissingError();
     this.relay ??= await ExtensionRelay.listen({homePage});
     return this.relay.connect({
       open: (url) =>
