@@ -128,11 +128,15 @@ export const recipeNeedsTerms = (recipe) =>
 
 // {query} is the saved source query; other placeholders read the workspace
 // criteria field with the same id. Empty values drop their query parameter.
+// A criteria value saved with notes ("Germany (based in Berlin); remote
+// within Germany") searches for the place before them: the whole note made
+// every search return nothing or no site could write it (2026-10-21).
+const beforeNotes = (value) => value.split(/[;(\n]/)[0].trim();
 export function recipeValues(a, url) {
   const source = a.sourceSettings?.[url] ?? {};
   const values = {query: (source.query ?? a.goal ?? '').trim()};
   for (const [key, value] of Object.entries(a.criteria ?? {}))
-    if (typeof value === 'string' && !(key in values)) values[key] = value.trim();
+    if (typeof value === 'string' && !(key in values)) values[key] = beforeNotes(value);
   return values;
 }
 

@@ -267,3 +267,33 @@ test('opening the store gives the workspace search terms back to the sources tha
   assert.deepEqual(reopened.sourceSettings[url('LinkedIn')].recipe.terms, roles);
   assert.deepEqual(reopened.sourceSettings[url('Company career pages')].recipe.terms, ['Own']);
 });
+test('a location saved with notes searches for the place before them', () => {
+  const linkedIn = {
+    entry: {
+      kind: 'url_template',
+      template: 'https://www.linkedin.com/jobs/search/?keywords={query}&location={location}',
+    },
+    terms: ['Staff Software Engineer'],
+    pagination: 'url_param',
+  };
+  const replay = (location) =>
+    recipeReplay(linkedIn, recipeValues({criteria: {location}, goal: 'Find a job'}, 'x'))
+      .searches[0].url;
+  assert.equal(
+    replay('Germany (based in Berlin); remote within Germany or on-site'),
+    'https://www.linkedin.com/jobs/search/?keywords=Staff+Software+Engineer&location=Germany',
+  );
+  assert.equal(
+    replay('Berlin, Germany; remote roles worldwide'),
+    'https://www.linkedin.com/jobs/search/?keywords=Staff+Software+Engineer&location=Berlin%2C+Germany',
+  );
+  assert.equal(
+    replay('London, United Kingdom'),
+    'https://www.linkedin.com/jobs/search/?keywords=Staff+Software+Engineer&location=London%2C+United+Kingdom',
+  );
+  assert.equal(
+    recipeValues({criteria: {location: 'Berlin'}, goal: 'Backend (remote); Go'}, 'x').query,
+    'Backend (remote); Go',
+    'the source query keeps its whole text',
+  );
+});
