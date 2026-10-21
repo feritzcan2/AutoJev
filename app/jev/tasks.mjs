@@ -147,7 +147,7 @@ const notReady = (page) =>
       ))) ||
   page.reading?.readiness?.loading ||
   page.navigationError ||
-  ['loading', 'browser_wait', 'verification_handoff', 'verification_pending'].includes(page.status);
+  ['loading', 'browser_wait', 'verification_handoff'].includes(page.status);
 const blockedAccess = (page) =>
   page.siteWait ||
   page.status === 'site_wait' ||

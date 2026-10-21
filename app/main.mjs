@@ -192,7 +192,6 @@ async function boot() {
   const browser = new BrowserTools(data, (id, worker) =>
     workspaces.template(id).browserOptions(id, worker),
   );
-  browser.onCaptchaProgress = changed;
   browser.directoryFor = (id) => workspaces.template(id).browserDirectory(id);
   browser.onStatus = (id, state) => {
     workspaces.template(id).onBrowserStatus?.(id, state);
