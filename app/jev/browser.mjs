@@ -236,6 +236,8 @@ export class JevBrowser {
               this.browser = null;
               this.tabs.clear();
             }
+            // The setup screens and the install watch need to know this one.
+            if (error.code === 'EXTENSION_MISSING') throw error;
             throw Object.assign(
               Error(`Could not connect to Chrome: ${error.message.split('\n')[0]}`),
               {code: 'BROWSER_DISCONNECTED'},
