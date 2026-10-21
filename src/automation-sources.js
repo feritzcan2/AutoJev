@@ -212,7 +212,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     !source.scanning &&
     Boolean(
       source.blocked ||
-        source.termsRequired ||
         source.siteWait?.exhausted ||
         source.trial?.status === 'failed' ||
         recipeStale(source),
@@ -480,12 +479,6 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       return {tone: 'waiting', label: 'Waiting for site access', detail: source.siteWait.message};
     if (source.recovery && data.automation.status === 'enabled')
       return {tone: 'waiting', label: 'Continues automatically', detail: null};
-    if (source.termsRequired)
-      return {
-        tone: 'warning',
-        label: 'Needs search terms',
-        detail: 'Add them with Edit, or ask the setup chat to choose them.',
-      };
     if (source.blocked)
       return source.lastStatus === 'failed' || source.blocker?.stop?.kind === 'technical'
         ? {tone: 'danger', label: 'Scan could not finish', detail: outcome.summary}
@@ -613,10 +606,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     const nextAt =
       source.enabled && !source.siteTurn
         ? (source.siteWait?.retryAt ??
-          (!source.scanning &&
-          !source.blocked &&
-          !source.termsRequired &&
-          data.automation.status === 'enabled'
+          (!source.scanning && !source.blocked && data.automation.status === 'enabled'
             ? source.nextRunAt
             : null))
         : null;

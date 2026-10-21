@@ -295,3 +295,29 @@ test('card locations decide first; otherwise the results must differ from the se
   ]);
   assert.equal(ignored.ok, false);
 });
+
+test('a trial of a search without terms ends only with the terms chosen', async (t) => {
+  const f = fixture(t, {
+    location: '',
+    readPage: async (value) => page(value, [card(1, 'Remote')]),
+  });
+  const a = f.db.get(f.id),
+    {terms, ...recipe} = a.sourceSettings[source].recipe;
+  f.db.put({
+    ...a,
+    sourceSettings: {...a.sourceSettings, [source]: {...a.sourceSettings[source], recipe}},
+  });
+  assert.equal(siteSourceTrialReady(f.db.get(f.id), source), false, 'the round is a trial');
+  const trial = f.begin('trial');
+  await assert.rejects(
+    trial.call('finish_automation_run', {status: 'completed', summary: 'Done'}),
+    /no search terms yet/,
+  );
+  const saved = await trial.call('save_source_recipe', {
+    entry: {kind: 'url_template', template: recipe.entry.template},
+    terms: ['backend'],
+    pagination: 'url_param',
+  });
+  assert.equal(saved.status, 'verified');
+  assert.deepEqual(f.db.get(f.id).sourceSettings[source].recipe.terms, ['backend']);
+});

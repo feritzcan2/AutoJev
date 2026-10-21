@@ -35,7 +35,7 @@ import {
 import {sourceMethods} from './web-template/sources.mjs';
 import {conversationMethods} from './web-template/conversation.mjs';
 import {siteTurn} from '../sources/site-turns.mjs';
-import {searchLearning} from '../sources/recipe.mjs';
+import {recipeNeedsTerms, searchLearning} from '../sources/recipe.mjs';
 // Template definitions select operations; the common queue owns dependencies,
 // worker leases and record/source exclusivity. No template-name dispatch here.
 export class WebTasks extends TaskRuns {
@@ -301,8 +301,13 @@ export class WebTasks extends TaskRuns {
     const a = this.db.get(id),
       template = this.db.template(a.templateId),
       tasks = this.queue.list(id, {batchId});
-    // A search value the collector cannot write is learned in a trial first.
-    if (sourceCollector(a, source.url) && !searchLearning(a, source.url)) {
+    // A search value the collector cannot write, or search terms the source
+    // has not chosen, are learned in a trial first.
+    if (
+      sourceCollector(a, source.url) &&
+      !searchLearning(a, source.url) &&
+      !recipeNeedsTerms(a.sourceSettings?.[source.url]?.recipe)
+    ) {
       for (const task of tasks)
         if (task.operation === 'trial' && task.state === 'pending')
           this.queue.finish(
@@ -545,7 +550,7 @@ export class WebTasks extends TaskRuns {
             )
           )
             continue;
-          if (source.siteWait?.waiting || source.termsRequired) continue;
+          if (source.siteWait?.waiting) continue;
           if (source.siteBlocked && !source.blocker?.recordId) {
             this.sourceState(a.id, source.url, {
               blocked: false,
@@ -602,10 +607,7 @@ export class WebTasks extends TaskRuns {
         const current = this.db.get(a.id),
           sources = this.db.schedulingSources(a.id, current);
         const next = sources
-          .filter(
-            (s) =>
-              s.enabled && !s.termsRequired && !s.siteWait?.exhausted && (!s.blocked || s.siteWait),
-          )
+          .filter((s) => s.enabled && !s.siteWait?.exhausted && (!s.blocked || s.siteWait))
           .map((s) => s.siteWait?.retryAt ?? s.nextRunAt ?? this.now());
         const nextRunAt = next.length ? Math.min(...next) : null;
         if (current.nextRunAt !== nextRunAt) this.db.put({...current, nextRunAt});
