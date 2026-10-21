@@ -296,12 +296,20 @@ test('owned tabs attach when Playwright enables auto-attach, with their out-of-p
   });
   await flush();
   await flush();
-  assert.deepEqual(
+  const frameEvents = () =>
     forwarded
       .filter((m) => m.method?.startsWith('Page.frame') || m.method === 'Target.attachedToTarget')
-      .map((m) => m.sessionId),
-    [undefined, `jev-tab-${saved.id}`, 'frame-1'],
-  );
+      .map((m) => m.sessionId);
+  // Frames wait until Playwright asks for them on the page, as over CDP:
+  // before that it has not read the frame tree and would drop them.
+  assert.deepEqual(frameEvents(), [undefined]);
+  await call({
+    id: 31,
+    sessionId: `jev-tab-${saved.id}`,
+    method: 'Target.setAutoAttach',
+    params: {autoAttach: true, waitForDebuggerOnStart: true, flatten: true},
+  });
+  assert.deepEqual(frameEvents(), [undefined, `jev-tab-${saved.id}`, 'frame-1']);
   await call({id: 4, sessionId: 'frame-1', method: 'Runtime.runIfWaitingForDebugger'});
   assert.deepEqual(extension.commands.at(-1).params, {
     tabId: saved.id,
@@ -405,10 +413,11 @@ test('a request that reaches the relay after it closed is refused without throwi
   assert.equal(status, 404);
 });
 
-test('events a tab raises while it attaches reach Playwright after its own attachment', async (t) => {
+test('frames a tab reports while it attaches reach Playwright after it asks for them on the page', async (t) => {
   const {extension, forwarded, call} = await transportFixture(t);
   // Chrome reports already existing frames as soon as auto-attach is enabled.
-  extension.onAutoAttach = (socket, tabId) =>
+  extension.onAutoAttach = (socket, tabId) => {
+    extension.onAutoAttach = null;
     extension.emit(socket, {
       event: 'debugger.event',
       tabId,
@@ -419,10 +428,18 @@ test('events a tab raises while it attaches reach Playwright after its own attac
         targetInfo: {targetId: 'E'.repeat(32), type: 'iframe'},
       },
     });
+  };
   await call({id: 1, method: 'Target.setAutoAttach', params: {autoAttach: true}});
   await call({id: 2, method: 'Target.createTarget', params: {url: 'https://jobs.example/apply'}});
   await flush();
+  const page = forwarded.find((m) => m.method === 'Target.attachedToTarget').params.sessionId;
+  assert.equal(forwarded.filter((m) => m.method === 'Target.attachedToTarget').length, 1);
+  await call({id: 3, sessionId: page, method: 'Target.setAutoAttach', params: {autoAttach: true}});
   const attached = forwarded.filter((m) => m.method === 'Target.attachedToTarget');
+  assert.ok(
+    forwarded.indexOf(attached[1]) > forwarded.findIndex((m) => m.id === 3),
+    'the frame follows the answer to Playwright',
+  );
   assert.deepEqual(
     attached.map((m) => [m.sessionId, m.params.sessionId]),
     [

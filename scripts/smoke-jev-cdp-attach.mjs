@@ -1,13 +1,14 @@
-// Jev's CDP transport on a tab that was already open: page workers run, and an
-// out-of-process frame that loaded before the attach reports its URL.
+// Jev's extension transport on a tab that was already open, as after an app
+// restart: page workers run, and an out-of-process frame that loaded before
+// the attach reports its URL.
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
-import {mkdtemp, readFile, rm} from 'node:fs/promises';
+import {mkdtemp, rm} from 'node:fs/promises';
 import http from 'node:http';
 import {createRequire} from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
-import {JevCdpTransport} from '../app/jev/cdp.mjs';
+import {ExtensionRelay} from '../app/jev/extension.mjs';
+import {launchExtensionChrome} from './jev-extension-fixture.mjs';
 const require = createRequire(import.meta.url),
   {chromium} = createRequire(require.resolve('@playwright/mcp/package.json'))('playwright');
 const server = http.createServer((req, res) => {
@@ -20,25 +21,22 @@ const server = http.createServer((req, res) => {
 });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const directory = await mkdtemp(path.join(os.tmpdir(), 'jev-attach-test-'));
-const chrome = spawn(
-  chromium.executablePath(),
-  ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${directory}`, 'about:blank'],
-  {stdio: 'ignore'},
-);
+const chrome = await launchExtensionChrome(directory),
+  relay = await ExtensionRelay.listen();
 let browser;
 try {
-  let lines;
-  for (let i = 0; i < 100 && !lines; i++) {
-    lines = await readFile(path.join(directory, 'DevToolsActivePort'), 'utf8').catch(() => null);
-    if (!lines) await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  const [port, route] = lines.trim().split('\n'),
-    base = `http://127.0.0.1:${port}`,
-    pageUrl = `http://127.0.0.1:${server.address().port}/`;
-  const target = await (await fetch(`${base}/json/new?${pageUrl}`, {method: 'PUT'})).json();
+  const pageUrl = `http://127.0.0.1:${server.address().port}/`;
+  // The previous app run opened the tab, then let it go.
+  const first = await relay.connect({open: chrome.openUrl});
+  const targetId = await first.createTab(),
+    tabId = first.targets.get(targetId).tabId;
+  await first.control('debugger.detach', {tabId});
+  await first.control('tabs.update', {tabId, url: pageUrl});
   await new Promise((resolve) => setTimeout(resolve, 1500));
-  const transport = await JevCdpTransport.connect(`ws://127.0.0.1:${port}${route}`);
-  transport.owned.add(target.id);
+  first.close();
+  const transport = await relay.connect({open: chrome.openUrl});
+  assert.equal(await transport.resolve(targetId), tabId);
+  await transport.adopt(targetId, tabId);
   browser = await chromium.connectOverCDP(transport, {timeout: 30000, noDefaults: true});
   const page = browser
     .contexts()[0]
@@ -63,7 +61,8 @@ try {
   console.log('PASS smoke-jev-cdp-attach');
 } finally {
   await browser?.close().catch(() => {});
-  chrome.kill();
+  relay.close();
+  await chrome.context.close().catch(() => {});
   server.close();
   await rm(directory, {recursive: true, force: true}).catch(() => {});
 }

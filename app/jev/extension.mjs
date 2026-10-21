@@ -248,6 +248,8 @@ export class JevExtensionTransport {
       info: null,
       children: new Set(),
       childTargets: new Map(),
+      // Events of out-of-process frames, held until Playwright asks for them.
+      childHeld: [],
     };
   }
   // The extension remembers the Chrome tab behind each target it debugged in
@@ -330,6 +332,7 @@ export class JevExtensionTransport {
     // Playwright drops events of a session it has not seen attach, so the
     // tab's own events wait until its attachment is reported, as over CDP.
     entry.held = [];
+    entry.childHeld = [];
     this.owned.add(targetId);
     this.targets.set(targetId, entry);
     this.tabIds.set(tabId, targetId);
@@ -499,8 +502,22 @@ export class JevExtensionTransport {
       for (const [id, virtual] of [...this.virtual])
         if (virtual.entry === entry && virtual.real === params.sessionId) this.dropVirtual(id);
     }
-    if (entry.held) entry.held.push({sessionId, method, params});
+    // The transport turns on auto-attach before Playwright knows the page, so
+    // Chrome reports its frames early. Playwright ignores a frame it has not
+    // seen in the page's frame tree, which leaves a frame paused for the
+    // debugger and one that already loaded without its URL. Over CDP Chrome
+    // reports them only once Playwright asks for auto-attach itself, so they
+    // wait for that here too.
+    const child =
+      sessionId || ['Target.attachedToTarget', 'Target.detachedFromTarget'].includes(method);
+    if (child && entry.childHeld) entry.childHeld.push({sessionId, method, params});
+    else if (entry.held) entry.held.push({sessionId, method, params});
     else this.forward(entry, {sessionId, method, params});
+  }
+  releaseChildren(entry) {
+    const held = entry.childHeld;
+    entry.childHeld = null;
+    for (const event of held ?? []) this.forward(entry, event);
   }
   forward(entry, {sessionId, method, params}) {
     this.emit({sessionId: sessionId ?? entry.sessionId, method, params});
@@ -537,9 +554,13 @@ export class JevExtensionTransport {
     const session = message.sessionId ? {sessionId: message.sessionId} : {};
     const loadedFrame =
       message.method === 'Page.getFrameTree' && this.loadedFrames.delete(message.sessionId);
+    const pageAutoAttach =
+      message.method === 'Target.setAutoAttach' &&
+      [...this.targets.values()].find((entry) => entry.sessionId === message.sessionId);
     this.handle(message).then(
       (result) => {
         this.onmessage?.({id: message.id, ...session, result});
+        if (pageAutoAttach) this.releaseChildren(pageAutoAttach);
         // Playwright learns an out-of-process frame's URL only from its next
         // navigation, so a frame that loaded before the attach keeps an empty
         // URL. Report the URL from its frame tree as a same-document
@@ -552,12 +573,14 @@ export class JevExtensionTransport {
             params: {frameId: frame.id, url: frame.url, navigationType: 'other'},
           });
       },
-      (error) =>
+      (error) => {
         this.onmessage?.({
           id: message.id,
           ...session,
           error: {code: error.code ?? -32000, message: String(error.message || error)},
-        }),
+        });
+        if (pageAutoAttach) this.releaseChildren(pageAutoAttach);
+      },
     );
   }
   async handle({method, params = {}, sessionId}) {
