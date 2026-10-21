@@ -95,10 +95,11 @@ for (const [name, geoId] of Object.entries({
   worldwide: 92000000,
 }))
   GEO_IDS.set(name, geoId);
-// A location names its country ("Germany") or ends with it ("Berlin, Germany").
-// Other places ("Amsterdam", "New Jersey") are not guessed from their words.
-const geoIdOf = (location) =>
-  GEO_IDS.get(fold(location)) ?? GEO_IDS.get(fold(location.split(',').at(-1))) ?? null;
+// A location that names a country ("Germany", "the Netherlands") is its geoId.
+// A place within one ("Berlin, Germany", "New Jersey") has its own geoId,
+// which the source learns in the browser (search-learning.mjs); searching its
+// whole country instead widened a city search without saying so.
+const geoIdOf = (location) => GEO_IDS.get(fold(location)) ?? null;
 const WORK_MODES = {1: 'on-site', 2: 'remote', 3: 'hybrid'};
 // The signed-in results page for a saved search address, at the same offset.
 export function linkedInSignedInSearch(value) {
@@ -116,7 +117,7 @@ export function linkedInSignedInSearch(value) {
     throw new SearchValueError(
       'location',
       location,
-      `LinkedIn takes a search location only as a geoId, and "${location}" has no known one. Search on linkedin.com with that location and add its geoId=… parameter to the source's search address.`,
+      `LinkedIn takes a search location only as a geoId, and the app knows the geoId of countries only, not of "${location}". Choose the location in LinkedIn's own location field: the results address then carries its geoId=… parameter.`,
     );
   if (geoId) open.searchParams.set('geoId', String(geoId));
   for (const key of ['f_TPR', 'start'])
@@ -478,6 +479,6 @@ export default {
       },
     ],
     notes:
-      'Read in the signed-in browser, in relevance order. location is a country name (Germany, Netherlands, Worldwide) or a place ending with it (Berlin, Germany); geoId=<LinkedIn geoId> replaces it. 25 cards per page, pages via &start=25,50,…',
+      'Read in the signed-in browser, in relevance order. location is a country name (Germany, Netherlands, Worldwide); a city or region (Berlin, Germany) goes in as its geoId=<LinkedIn geoId> in place of location. 25 cards per page, pages via &start=25,50,…',
   },
 };
