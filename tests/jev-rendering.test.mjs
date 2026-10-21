@@ -106,17 +106,17 @@ test('unresponsive visibility, enable and cleanup commands have a bounded lifeti
     };
     // A page whose scripts do not answer is woken and rendered as a hidden tab.
     if (stuck !== 'enable') {
-      const release = await acquireTabRendering(slot, {timeoutMs: 10});
+      const release = await acquireTabRendering(slot, {timeoutMs: 10, busyMs: 10});
       await release();
     } else
-      await assert.rejects(acquireTabRendering(slot, {timeoutMs: 10}), {
+      await assert.rejects(acquireTabRendering(slot, {timeoutMs: 10, busyMs: 10}), {
         code: 'TAB_RENDER_TIMEOUT',
       });
     assert.deepEqual(commands, stuck === 'visibility' ? ['active', true, false] : [true, false]);
     // Timed-out sessions cannot block later operations on the same tab.
     slot.page.evaluate = async () => false;
     await (
-      await acquireTabRendering(slot, {timeoutMs: 10})
+      await acquireTabRendering(slot, {timeoutMs: 10, busyMs: 10})
     )();
   }
 });
@@ -133,6 +133,22 @@ test('a frozen tab is woken even when each browser command takes time', async ()
     },
   };
   const release = await acquireTabRendering(slot, {timeoutMs: 20});
+  await release();
+  assert.deepEqual(commands, ['active', true, false]);
+});
+
+test('a busy background tab answering after the short bound still gets rendering', async () => {
+  const commands = [];
+  const slot = {
+    page: {evaluate: () => new Promise(() => {})},
+    cdp: {
+      send: async (method, {enabled, state}) => {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        commands.push(state ?? enabled);
+      },
+    },
+  };
+  const release = await acquireTabRendering(slot, {timeoutMs: 10});
   await release();
   assert.deepEqual(commands, ['active', true, false]);
 });
