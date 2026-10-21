@@ -13,6 +13,7 @@ import {
 } from '../app/automation/recovery.mjs';
 import {siteSourceTrialReady} from '../app/sources/automation-sources.mjs';
 import {SearchValueError} from '../app/site-extensions/search.mjs';
+import {normalizeSourceRecipe, recipeReplay, searchLabel} from '../app/sources/recipe.mjs';
 import {linkedInSignedInSearch} from '../app/site-extensions/linkedin.mjs';
 import {
   searchLearning,
@@ -320,4 +321,100 @@ test('a trial of a search without terms ends only with the terms chosen', async 
   });
   assert.equal(saved.status, 'verified');
   assert.deepEqual(f.db.get(f.id).sourceSettings[source].recipe.terms, ['backend']);
+});
+
+test('a recipe with further search setups checks the first search of each and scans every term in every setup', async (t) => {
+  const reads = [];
+  const f = fixture(t, {
+    location: '',
+    readPage: async (value) => {
+      reads.push(new URL(value).searchParams.get('country'));
+      return page(value, [card(reads.length, 'Remote')]);
+    },
+  });
+  const trial = f.begin('trial');
+  const entry = {
+    kind: 'url_template',
+    template: 'https://himalayas.app/jobs/api/search?q={query}&country=DE',
+    variants: [
+      {
+        label: 'Netherlands',
+        template: 'https://himalayas.app/jobs/api/search?q={query}&country=NL',
+      },
+    ],
+  };
+  const saved = await trial.call('save_source_recipe', {
+    entry,
+    terms: ['backend', 'platform'],
+    pagination: 'url_param',
+  });
+  assert.equal(saved.status, 'verified');
+  assert.deepEqual(reads, ['DE', 'NL'], 'one check read per setup');
+  const recipe = f.db.get(f.id).sourceSettings[source].recipe;
+  assert.deepEqual(
+    recipe.entry.variants,
+    [
+      {
+        label: 'Netherlands',
+        template: 'https://himalayas.app/jobs/api/search?q={query}&country=NL&sort=recent',
+      },
+    ],
+    'the site extension keeps its sort in every setup',
+  );
+  assert.deepEqual(
+    recipeReplay(recipe, {query: 'x'}).searches.map((s) => searchLabel(s)),
+    ['backend', 'platform', 'backend · Netherlands', 'platform · Netherlands'],
+  );
+
+  const failing = fixture(t, {
+    location: '',
+    readPage: async (value) =>
+      page(value, new URL(value).searchParams.get('country') === 'NL' ? [] : [card(1, 'Remote')]),
+  }).begin('trial');
+  await assert.rejects(
+    failing.call('save_source_recipe', {entry, terms: ['backend'], pagination: 'url_param'}),
+    /search setup "Netherlands": the first page has no listings/,
+  );
+});
+
+test('search setups take {query} like the main address and stay within the search limit', () => {
+  const template = 'https://example.test/jobs?q={query}&where=a';
+  const variant = (label, address = 'https://example.test/jobs?q={query}&where=b') => ({
+    label,
+    template: address,
+  });
+  assert.throws(
+    () =>
+      normalizeSourceRecipe({
+        entry: {
+          kind: 'url_template',
+          template,
+          variants: [variant('b', 'https://example.test/jobs?where=b')],
+        },
+      }),
+    /exactly when the main address does/,
+  );
+  assert.throws(
+    () =>
+      normalizeSourceRecipe({
+        entry: {
+          kind: 'url_template',
+          template,
+          variants: [variant('b'), variant('c'), variant('d')],
+        },
+      }),
+    /at most 2/,
+  );
+  assert.throws(
+    () =>
+      normalizeSourceRecipe({
+        entry: {kind: 'url_template', template, variants: [variant('b'), variant('c')]},
+        terms: ['a', 'b', 'c', 'd'],
+      }),
+    /more than 10 searches/,
+  );
+  assert.equal(
+    normalizeSourceRecipe({entry: {kind: 'url_template', template, variants: []}}).entry.variants,
+    undefined,
+  );
 });

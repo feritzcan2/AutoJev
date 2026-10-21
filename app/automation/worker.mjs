@@ -128,6 +128,7 @@ import {
   normalizeSourceRecipe,
   recipeNeedsTerms,
   recipeReplay,
+  setupFirstSearches,
   recipeValues,
   replayUrl,
   searchLearning,
@@ -1482,8 +1483,16 @@ export function automationWorkflow({
           throw Error(
             'This site’s results address is defined in its site extension. Save the recipe as url_template with siteSearch.template; choose only the terms and siteSearch.filters values.',
           );
-        if (siteSearch && recipe.entry.kind === 'url_template')
+        if (siteSearch && recipe.entry.kind === 'url_template') {
           ({recipe, changed: adjusted} = siteSearchRecipe(siteSearch, recipe));
+          // Each further setup follows the same site structure as the main address.
+          if (recipe.entry.variants)
+            recipe.entry.variants = recipe.entry.variants.map((variant) => ({
+              ...variant,
+              template: siteSearchRecipe(siteSearch, {...recipe, entry: variant}).recipe.entry
+                .template,
+            }));
+        }
         if (collectorSource && recipe.entry.kind !== 'url_template')
           throw Error(
             'This source is read by its collector: save a url_template recipe from siteSearch.template.',
@@ -1512,9 +1521,12 @@ export function automationWorkflow({
             throw Error(
               'With agent decisions the app cannot replay a search form. Save a url_template from the results address the form produced, or entry.kind=discovery with a short note.',
             );
-          if (!provenListings(replay, active.taskId ?? run.id))
+          const unproven = setupFirstSearches(replay).find(
+            (search) => !provenListings({...replay, searches: [search]}, active.taskId ?? run.id),
+          );
+          if (unproven)
             throw Error(
-              `Recipe not checked yet: run browser_run_task scan_results at ${replay.searches[0].url} and select its listings, then save the recipe again. The app verifies the recipe from your selection; no check was used.`,
+              `Recipe not checked yet: run browser_run_task scan_results at ${unproven.url} and select its listings, then save the recipe again. The app verifies the recipe from your selection, one search per setup; no check was used.`,
             );
         }
         const checks = active.recipeChecks ?? 0;
@@ -1523,10 +1535,21 @@ export function automationWorkflow({
             '3 recipe checks were done this round. If it cannot be verified, save a short note with entry.kind=discovery and finish the round normally.',
           );
         db.putRun({...db.activeRun(id, run.id), recipeChecks: checks + 1});
-        const replay = recipeReplay(recipe, recipeValues(a, sourceUrl)),
-          check = collectorSource
-            ? await checkCollectorRecipe(replay, learning, recipe)
-            : await checkRecipe(replay, active.taskId ?? run.id);
+        // The first search of every setup has to find listings.
+        const replay = recipeReplay(recipe, recipeValues(a, sourceUrl));
+        let check;
+        for (const search of setupFirstSearches(replay)) {
+          const one = {...replay, searches: [search]},
+            result = collectorSource
+              ? await checkCollectorRecipe(one, learning, recipe)
+              : await checkRecipe(one, active.taskId ?? run.id);
+          if (!result.ok) {
+            if (search.setup) result.reason = `search setup "${search.setup}": ${result.reason}`;
+            check = result;
+            break;
+          }
+          check = check ? {...check, listings: check.listings + result.listings} : result;
+        }
         if (!check.ok)
           throw Error(
             `Recipe could not be verified: ${check.reason} (${check.url}). ${2 - checks} check(s) left. ${recipe.terms ? '' : 'If the source query is not a keyword, give concrete search terms with terms. '}Fix the template or form labels; if there is no stable method, save entry.kind=discovery.`,

@@ -1,6 +1,6 @@
 // @ts-check
 import {siteExtensionFor} from '../site-extensions/index.mjs';
-import {recipeReplay, recipeValues} from './recipe.mjs';
+import {recipeReplay, recipeValues, searchLabel} from './recipe.mjs';
 
 // Only the explicitly requested job source uses a native collector. Other
 // templates, record operations, and websites retain their existing behavior.
@@ -36,7 +36,7 @@ export function collectorSearches(a, url) {
   const unique = new Map(
     searches.map((s) => {
       const url = adapter.searchUrl(s.url);
-      return [url, {url, label: s.term ?? new URL(url).searchParams.get('q') ?? 'Source'}];
+      return [url, {url, label: searchLabel(s, new URL(url).searchParams.get('q') ?? 'Source')}];
     }),
   );
   return [...unique.values()].map((s, index) => ({id: `collector-${index + 1}`, ...s}));

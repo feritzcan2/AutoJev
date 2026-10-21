@@ -7,7 +7,11 @@ import {workspaceTableTools, workspaceCellsSchema} from '../workspaces/table-too
 import {browserSnapshotTools} from '../browser/snapshot.mjs';
 import {automationContextTools} from './context.mjs';
 import {jevTaskTools, agentDecisionTools} from '../jev/task-tools.mjs';
-import {RECIPE_PAGINATION_KINDS, RECIPE_TERM_LIMIT} from '../sources/recipe.mjs';
+import {
+  RECIPE_PAGINATION_KINDS,
+  RECIPE_TERM_LIMIT,
+  RECIPE_VARIANT_LIMIT,
+} from '../sources/recipe.mjs';
 import {CONTACT_LIMIT, CONTACT_OUTCOMES, NOTE_CHARACTERS, NOTE_STYLES} from './contacts.mjs';
 
 const str = {type: 'string'},
@@ -122,7 +126,7 @@ export const automationTools = [
   ),
   tool(
     'save_source_recipe',
-    'Source trial or scan: save how this source reaches its results page. url_template: results URL with {query} (optionally {location} or another criteria field id), or a fixed results URL without placeholders; use the newest-first sort of the board when it offers one. search_form: the search page url plus the labels of the query/location fields. terms: up to 5 concrete search keywords when the source query is a description rather than a keyword; {query} (or the query field) is filled with each term and every scan runs each search. discovery: no stable method, add a note. The app caps every scan at 15 result pages shared by its searches (at least 2 per search). The app replays the recipe (first term) and accepts it only when it finds a listing; a failed check returns the reason. At most 3 checks per turn.',
+    'Source trial or scan: save how this source reaches its results page. url_template: results URL with {query} (optionally {location} or another criteria field id), or a fixed results URL without placeholders; use the newest-first sort of the board when it offers one. search_form: the search page url plus the labels of the query/location fields. terms: up to 5 concrete search keywords when the source query is a description rather than a keyword; {query} (or the query field) is filled with each term and every scan runs each search. url_template entry.variants: up to 2 further search setups {label, template} beside entry.template, only when the profile accepts setups one address cannot carry (for example remote anywhere in a country and hybrid in one city); every term runs in every setup, at most 10 searches. discovery: no stable method, add a note. The app caps every scan at 15 result pages shared by its searches (at least 2 per search). The app replays the recipe (first term of each setup) and accepts it only when each finds a listing; a failed check returns the reason. At most 3 checks per turn.',
     {
       entry: object(
         {
@@ -133,6 +137,11 @@ export const automationTools = [
             type: 'array',
             maxItems: 6,
             items: object({key: {type: 'string', enum: ['query', 'location']}, label: str}),
+          },
+          variants: {
+            type: 'array',
+            maxItems: RECIPE_VARIANT_LIMIT,
+            items: object({label: str, template: str}, ['label', 'template']),
           },
         },
         ['kind'],

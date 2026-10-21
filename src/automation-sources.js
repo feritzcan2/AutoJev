@@ -837,6 +837,7 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
             : null,
       ],
       ['Site filters', filters.join(' · ')],
+      ['Other setups', recipe?.entry.variants?.length ? setupList(recipe.entry.variants) : null],
       ['Search terms', recipe?.terms?.join(', ')],
       [
         'Pagination',
@@ -864,6 +865,17 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       ),
     );
     return section;
+  }
+
+  // The search setups a recipe runs beside its main address.
+  function setupList(variants) {
+    const list = el('div');
+    for (const variant of variants) {
+      const row = el('div');
+      row.append(el('b', variant.label + ': '), el('code', variant.template));
+      list.append(row);
+    }
+    return list;
   }
 
   // Editor: the name and search terms; the recipe, which the trial round
@@ -924,8 +936,16 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       ...(terms.length ? {terms} : {}),
       ...(f.notes.value.trim() ? {notes: f.notes.value.trim()} : {}),
     };
+    // The editor changes the main address; further search setups stay.
     if (method === 'url_template')
-      return {...base, entry: {kind: 'url_template', template: f.template.value.trim()}};
+      return {
+        ...base,
+        entry: {
+          kind: 'url_template',
+          template: f.template.value.trim(),
+          ...(existing?.entry.variants ? {variants: existing.entry.variants} : {}),
+        },
+      };
     return {
       ...base,
       entry: {
