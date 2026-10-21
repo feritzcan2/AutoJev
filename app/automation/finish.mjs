@@ -12,6 +12,7 @@ import {OUTCOME_FIELD} from './question-forms.mjs';
 import {sourceStop} from './stop.mjs';
 import {holdForTechnicalRetry} from './recovery.mjs';
 import {searchLearning, searchLearningSummary} from '../sources/search-learning.mjs';
+import {recipeNeedsTerms} from '../sources/recipe.mjs';
 import {recordBlocker} from '../records/blockers.mjs';
 
 // finish_automation_run: check that the reported status is backed by the saved
@@ -65,6 +66,15 @@ export function finishAutomationRun({
   if (learning && status === 'completed')
     throw Error(
       `This trial learns how the site writes the ${learning.field} "${learning.value}". Save the recipe with save_source_recipe first (see assignedSource.searchLearning), or report the trial blocked with what you observed.`,
+    );
+  // A trial of a search without terms ends only with the terms chosen.
+  if (
+    active.kind === 'trial' &&
+    status === 'completed' &&
+    recipeNeedsTerms(automation.sourceSettings?.[active.sourceUrl]?.recipe)
+  )
+    throw Error(
+      'This source has no search terms yet. Choose up to 5 from the profile’s target roles, in the form siteSearch.notes describes when present, and save them with save_source_recipe terms before you complete the trial.',
     );
   const stop =
     collecting && active.collectorError && ['failed', 'blocked'].includes(status)

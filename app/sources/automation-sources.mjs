@@ -1,7 +1,6 @@
 // @ts-check
 import {boundedText, webUrl} from '../templates/catalog.mjs';
 import {normalizeSourceRecipe, recipeNeedsTerms} from './recipe.mjs';
-import {sourceCollector} from './collectors.mjs';
 import {sourceTrialReady} from './trial.mjs';
 import {siteExtensionKind} from '../site-extensions/index.mjs';
 
@@ -18,8 +17,6 @@ export function sourceMode(automation, url) {
 }
 export const siteSourceTrialReady = (a, url) =>
   sourceTrialReady(a, url, {siteSearch: Boolean(siteExtensionKind(url, a.templateId)?.search)});
-export const TERMS_REQUIRED =
-  'Search terms required: the search address takes {query} and the recipe has no search terms. Add them on the source’s recipe or ask the setup chat.';
 export function automationSources(a) {
   return a.sources.map((url) => {
     const saved = a.sourceSettings?.[url] ?? {},
@@ -35,10 +32,6 @@ export function automationSources(a) {
       mode: sourceMode(a, url),
       ...state,
       trialReady: siteSourceTrialReady(a, url),
-      // A trial still runs and learns the terms; a scan waits for them.
-      termsRequired:
-        recipeNeedsTerms(saved.recipe) &&
-        Boolean(sourceCollector(a, url) || siteSourceTrialReady(a, url)),
     };
   });
 }

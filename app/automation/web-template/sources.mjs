@@ -1,7 +1,7 @@
 // @ts-check
 import {randomUUID} from 'node:crypto';
 import {siteTurn} from '../../sources/site-turns.mjs';
-import {sourceInput, TERMS_REQUIRED} from '../../sources/automation-sources.mjs';
+import {sourceInput} from '../../sources/automation-sources.mjs';
 import {automationAttention, dismissAutomationAttention} from '../attention.mjs';
 // WebTasks methods: per-source state, retries, runs and settings.
 export const sourceMethods = {
@@ -100,7 +100,6 @@ export const sourceMethods = {
     let source = this.db.sources(id).find((s) => s.url === url);
     if (!source) throw Error('The source does not belong to this workspace');
     if (!source.enabled) throw Error('Turn on the source first');
-    if (source.termsRequired) throw Error(TERMS_REQUIRED);
     // A record's run (an application) from this source is not a scan.
     if (this.slots(id).some((s) => s.run.sourceUrl === url && !s.run.recordId))
       throw Error('This source is already running');

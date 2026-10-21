@@ -14,6 +14,7 @@ import {
 } from '../app/sources/collector-worker.mjs';
 import {parseHimalayasPage} from '../app/site-extensions/himalayas/api.mjs';
 import {SCAN_SEARCH_PAGES} from '../app/sources/recipe.mjs';
+import {sourceTrialReady} from '../app/sources/trial.mjs';
 import {
   readCollectorCliPage,
   readCollectorCliDetail,
@@ -803,7 +804,7 @@ test('scheduled Himalayas starts an agent without a browser trial, and stopping 
   assert.equal(runtime.slots(a.id).length, 0);
 });
 
-test('a collector whose {query} search has no terms waits for terms instead of scanning', async (t) => {
+test('a collector whose {query} search has no terms chooses them in a trial before it scans', async (t) => {
   const core = new WorkspaceDatabase(':memory:'),
     db = new AutomationStore(core),
     a = db.create('job-search', {
@@ -813,31 +814,33 @@ test('a collector whose {query} search has no terms waits for terms instead of s
     });
   db.review(a.id);
   db.enable(a.id);
-  let agents = 0;
   const runtime = new WebTasks(db, {
     browserReady: () => false,
-    launch: async () => {
-      agents++;
-      return {close: async () => {}};
-    },
+    launch: async () => ({close: async () => {}}),
   });
   t.after(async () => {
     await runtime.close();
     core.close();
   });
-  assert.equal(db.sources(a.id)[0].termsRequired, true);
+  assert.equal(db.sources(a.id)[0].trialReady, false);
   await runtime.tick();
   await new Promise(setImmediate);
-  assert.equal(agents, 0, 'no scan searches for the source scope');
-  assert.equal(db.get(a.id).nextRunAt, null, 'a held source schedules no turn');
-  await assert.rejects(runtime.runSource(a.id, source), /Search terms required/);
-  db.saveSource(a.id, source, {
-    recipe: {...db.get(a.id).sourceSettings[source].recipe, terms: ['backend']},
-  });
-  assert.equal(db.sources(a.id)[0].termsRequired, false);
-  await runtime.tick();
-  await new Promise(setImmediate);
-  assert.equal(agents, 1);
+  assert.deepEqual(
+    runtime.queue.list(a.id).map((task) => task.operation),
+    ['trial'],
+    'no scan searches for the source scope; the trial agent chooses the terms',
+  );
+  const saved = db.get(a.id),
+    recipe = saved.sourceSettings[source].recipe;
+  assert.equal(
+    sourceTrialReady(
+      {...saved, sourceSettings: {[source]: {recipe: {...recipe, terms: ['backend']}}}},
+      source,
+      {siteSearch: true},
+    ),
+    true,
+    'with its terms the source scans',
+  );
 });
 
 test('CLI page transport uses a real child process and exits after one page', async () => {
