@@ -5,7 +5,6 @@ import {mkdir} from 'node:fs/promises';
 import {JevBrowser} from '../jev/browser.mjs';
 import {jevTools} from '../jev/tools.mjs';
 import {pressBrowserTarget} from './target.mjs';
-import {resolveBrowserCaptcha} from '../captcha/automation.mjs';
 
 // One browser step holds the workspace queue, so every worker of the workspace
 // waits behind it. A step past this bound is cancelled; one that ignores the
@@ -118,10 +117,9 @@ export class BrowserTools {
     return jevTools;
   }
   async call(candidateId, name, args, sessionId, options) {
-    const result = await this.enqueue(candidateId, (signal) =>
+    return this.enqueue(candidateId, (signal) =>
       this.performCall(candidateId, name, args, sessionId, options, signal),
     );
-    return resolveBrowserCaptcha(this, candidateId, result, sessionId, options);
   }
   async enqueue(candidateId, run, {checkActive = true} = {}) {
     const previous = this.operations.get(candidateId) ?? Promise.resolve();

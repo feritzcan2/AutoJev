@@ -95,8 +95,6 @@ test('browser observation detects a challenge before creating listing evidence a
   const db = new DatabaseSync(':memory:'),
     gate = new SiteAccess(db),
     browser = new JevBrowser('/unused', {siteAccess: gate, challengeGraceMs: 0});
-  // A record tab gets no checkbox attempt.
-  browser.automationTabs.set('owned', 'record:1');
   let reads = 0;
   const slot = {
     id: 'owned',
@@ -164,10 +162,10 @@ test('a challenge that outlasts the grace period still starts the shared wait', 
     db.close();
   }
 });
-test('a 429 challenge page is judged from its loaded document and gets the native checkbox attempt, not a rate-limit wait', async () => {
+test('a 429 challenge page is judged from its loaded document and handed to the user, not a rate-limit wait', async () => {
   const db = new DatabaseSync(':memory:'),
     gate = new SiteAccess(db),
-    browser = new JevBrowser('/unused', {siteAccess: gate});
+    browser = new JevBrowser('/unused', {siteAccess: gate, challengeGraceMs: 0});
   const calls = [];
   let readiness = 0;
   const page = {
@@ -188,12 +186,12 @@ test('a 429 challenge page is judged from its loaded document and gets the nativ
   };
   const slot = {id: 'owned', http: {url, status: 429}, page};
   try {
-    const result = await browser.observeOnce(slot);
-    assert.equal(result.status, 'verification_pending');
-    assert.equal(result.captcha.kind, 'cloudflare_checkbox');
+    await assert.rejects(
+      browser.observeOnce(slot),
+      (error) => error.code === 'SITE_WAIT' && error.wait.reason === 'verification',
+    );
     assert.deepEqual(calls, ['readiness', 'readiness', 'reader']);
-    assert.equal(gate.status(url), null, 'no site wait while the checkbox attempt is pending');
-    assert.equal(gate.begin(url + '/another'), null);
+    assert.equal(gate.status(url).reason, 'verification');
   } finally {
     db.close();
   }
