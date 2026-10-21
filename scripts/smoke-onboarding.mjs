@@ -62,16 +62,16 @@ try {
           ready('chrome', 'Google Chrome'),
           globalThis.chromeOff
             ? {
-                id: 'chrome-debug',
-                label: 'Chrome connection',
+                id: 'chrome-extension',
+                label: 'AutoJob extension',
                 state: 'error',
-                detail: 'Turn on remote debugging in Chrome.',
+                detail: 'Install the AutoJob extension in the selected Chrome profile.',
                 action: {
-                  command: 'chrome://inspect/#remote-debugging',
+                  command: 'chrome://extensions',
                   label: 'Copy the Chrome address',
                 },
               }
-            : ready('chrome-debug', 'Chrome connection'),
+            : ready('chrome-extension', 'AutoJob extension'),
           globalThis.jevMissing && input.decisions === 'jev'
             ? {id: 'jev', label: 'Jev key', state: 'error', detail: 'Save the key.'}
             : ready('jev', 'Jev key'),
@@ -226,7 +226,7 @@ try {
   );
   // Chrome is connected while the CV is read, and the screen notices it by itself.
   await screen.getByRole('heading', {name: 'Connect Chrome'}).waitFor();
-  assert.ok(await screen.getByText('chrome://inspect/#remote-debugging').isVisible());
+  assert.ok(await screen.getByText('chrome://extensions').isVisible());
   await page.screenshot({path: path.join(data, '2-reading-chrome.png')});
   await app.evaluate(() => {
     globalThis.chromeOff = false;
