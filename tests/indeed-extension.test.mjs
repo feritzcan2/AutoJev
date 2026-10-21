@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {isIndeedUrl, indeedResults, collectIndeedPage} from '../app/site-extensions/indeed.mjs';
+import {
+  isIndeedUrl,
+  indeedResults,
+  collectIndeedPage,
+  indeedJobKey,
+  indeedSearchUrl,
+  indeedBrowserCards,
+  readIndeedPane,
+} from '../app/site-extensions/indeed.mjs';
 import {siteExtensionKind, applySiteExtension} from '../app/site-extensions/index.mjs';
 import {siteSearchRecipe} from '../app/site-extensions/search.mjs';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
@@ -43,11 +51,21 @@ test('indeed cards become stable viewjob listings and the hidden card is not one
       url: 'https://de.indeed.com/viewjob?jk=e1ea8cdff329f252',
       text: 'Senior Solution Architect',
       siteCard: 'Senior Solution Architect · Xecuro GmbH · Berlin · 2026-10-01',
+      id: 'e1ea8cdff329f252',
+      title: 'Senior Solution Architect',
+      company: 'Xecuro GmbH',
+      location: 'Berlin',
+      posted: '2026-10-01',
     },
     {
       url: 'https://de.indeed.com/viewjob?jk=e848845f2c3ca5ac',
       text: 'Payments Architect',
       siteCard: 'Payments Architect · Accenture',
+      id: 'e848845f2c3ca5ac',
+      title: 'Payments Architect',
+      company: 'Accenture',
+      location: '',
+      posted: '',
     },
   ]);
   assert.deepEqual(
@@ -167,7 +185,7 @@ test('every indeed country site gets its own search address, in relevance order'
   ])
     assert.equal(isIndeedUrl(url), false, url);
   const uk = siteExtensionKind('https://uk.indeed.com/', 'job-search');
-  assert.equal(uk.kind, 'browser');
+  assert.equal(uk.kind, 'api', 'job-search scans read Indeed with the card collector');
   assert.equal(uk.search.template, 'https://uk.indeed.com/jobs?q={query}&l={location}');
   assert.equal(uk.search.ordering, undefined, 'relevance mixes dates');
   // A recipe saved with the date sort loses it, and keeps its filters.
@@ -221,4 +239,81 @@ test('a saved Indeed recipe with the date sort replays without it and keeps its 
     template,
     'the saved recipe itself is unchanged',
   );
+});
+
+test('a job-search scan pages through the results address and reads cards from the browser page', () => {
+  assert.equal(
+    indeedSearchUrl(
+      'https://de.indeed.com/jobs?q=x&l=Berlin&fromage=7&start=20&vjk=e1ea8cdff329f252',
+    ),
+    'https://de.indeed.com/jobs?q=x&l=Berlin&fromage=7',
+  );
+  assert.equal(indeedSearchUrl('https://uk.indeed.com/'), 'https://uk.indeed.com/jobs');
+  assert.throws(() => indeedSearchUrl('https://example.com/jobs'));
+  const page = applySiteExtension(
+    {url: results, links: [{url: ad, text: 'Senior Solution Architect'}]},
+    indeedResults(raw()),
+    'indeed',
+  );
+  assert.deepEqual(indeedBrowserCards(page, results), {
+    url: results,
+    jobs: [
+      {
+        url: 'https://de.indeed.com/viewjob?jk=e1ea8cdff329f252',
+        title: 'Senior Solution Architect',
+        company: 'Xecuro GmbH',
+        location: 'Berlin',
+        publishedAt: '2026-10-01',
+      },
+      {
+        url: 'https://de.indeed.com/viewjob?jk=e848845f2c3ca5ac',
+        title: 'Payments Architect',
+        company: 'Accenture',
+        location: '',
+        publishedAt: '',
+      },
+    ],
+    page: 1,
+    totalPages: null,
+    nextUrl:
+      'https://de.indeed.com/jobs?q=software+architect&l=Berlin&radius=35&start=10&fromage=7',
+    complete: false,
+  });
+  const last = applySiteExtension(
+    {url: results, links: []},
+    indeedResults(raw({next: null})),
+    'indeed',
+  );
+  assert.equal(indeedBrowserCards(last, results).complete, true);
+  // A page the extension did not read (sign-in, loading) gives no cards.
+  assert.equal(indeedBrowserCards({url: results, links: []}, results), null);
+});
+
+test('the pane gives a listing only for a posting key and with its own description', () => {
+  assert.equal(
+    indeedJobKey('https://de.indeed.com/viewjob?jk=e1ea8cdff329f252'),
+    'e1ea8cdff329f252',
+  );
+  assert.equal(indeedJobKey('https://de.indeed.com/jobs?q=x&vjk=e1ea8cdff329f252'), null);
+  assert.equal(indeedJobKey('https://example.com/viewjob?jk=e1ea8cdff329f252'), null);
+  const description = 'About us. '.repeat(30);
+  assert.deepEqual(
+    readIndeedPane({
+      key: 'e1ea8cdff329f252',
+      title: 'Backend Engineer',
+      company: 'Co',
+      summary: ['€80,000 – €100,000 per year', 'Full-time', 'Berlin'],
+      description,
+    }),
+    {
+      title: 'Backend Engineer',
+      company: 'Co',
+      location: null,
+      description: description.trim(),
+      fields: {summary: '€80,000 – €100,000 per year · Full-time · Berlin'},
+      closed: false,
+    },
+  );
+  assert.equal(readIndeedPane({title: 'Backend Engineer', description: 'Loading'}), null);
+  assert.equal(readIndeedPane({title: '', description}), null);
 });

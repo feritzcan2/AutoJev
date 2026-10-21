@@ -297,3 +297,13 @@ test('a location saved with notes searches for the place before them', () => {
     'the source query keeps its whole text',
   );
 });
+test('We Work Remotely searches a free-text term instead of a category slug', () => {
+  const wwr = automationTemplate('job-search').defaultSources.find(
+    (s) => s.name === 'We Work Remotely',
+  );
+  const recipe = {...wwr.recipe, terms: ['Compliance Specialist']};
+  assert.equal(
+    recipeReplay(recipe, recipeValues({goal: 'Find a job'}, wwr.url)).searches[0].url,
+    'https://weworkremotely.com/remote-jobs/search?term=Compliance+Specialist&sort=Past+Week',
+  );
+});

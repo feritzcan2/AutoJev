@@ -79,6 +79,13 @@ const signature = (page) =>
   createHash('sha256')
     .update(JSON.stringify([page.url, page.text, page.links]))
     .digest('hex');
+// A results page's identity for an unfinished scan: its address and the links
+// in their order. Live pages rewrite card text (a selected card, relative
+// dates) while the agent picks links; that does not change what was offered.
+const resultsBasis = (page) =>
+  createHash('sha256')
+    .update(JSON.stringify([page.url, (page.links ?? []).map((l) => l.url)]))
+    .digest('hex');
 const detailSignature = (page) =>
   createHash('sha256')
     .update(JSON.stringify([page.url, page.text]))
@@ -1260,14 +1267,19 @@ export async function runJevTask({
       }
       // Source discovery: keep unclassified/uncertain links, preserve the exact
       // document, and select pagination only from links that really exist.
-      const sig = signature(page);
+      let sig = signature(page);
       if (task.visited.includes(sig)) {
         issue('no_progress', {url: page.url});
         break;
       }
+      const basis = resultsBasis(page);
       if (task.pageWork && task.pageWork.sig !== sig) {
-        issue('results_changed_during_scan', {url: page.url});
-        break;
+        if (task.pageWork.basis !== basis) {
+          issue('results_changed_during_scan', {url: page.url});
+          break;
+        }
+        // Same address and links: keep the scan's page identity.
+        sig = task.pageWork.sig;
       }
       const evidence = task.pageWork
         ? store.fullEvidence(owner, taskId, task.pageWork.evidenceId)
@@ -1297,7 +1309,7 @@ export async function runJevTask({
         issue('no_listing_links', {evidenceId: evidence.id});
         break;
       }
-      task.pageWork ??= {sig, evidenceId: evidence.id, offset: 0};
+      task.pageWork ??= {sig, basis, evidenceId: evidence.id, offset: 0};
       // Listings this workspace already holds are retired without a read.
       if (!task.pageWork.knownUrls) {
         const knownUrls =

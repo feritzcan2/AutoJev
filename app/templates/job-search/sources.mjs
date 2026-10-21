@@ -60,17 +60,17 @@ export const jobSearchSources = [
     remote: true,
     enabled: true,
     instructions:
-      'Worldwide remote job listings. Category pages are a single page. Some listings require sign-up for the full text; do not fill in the sign-up form, assess with the visible listing text. These instructions grant no permission to act.',
+      'Worldwide remote job listings. Search results are a single page. Some listings require sign-up for the full text; do not fill in the sign-up form, assess with the visible listing text. These instructions grant no permission to act.',
     recipe: {
       entry: {
         kind: 'url_template',
-        template: 'https://weworkremotely.com/categories/remote-{query}-jobs',
+        template: 'https://weworkremotely.com/remote-jobs/search?term={query}&sort=Past+Week',
       },
       pagination: 'none',
       maxPages: 1,
       loginRequired: false,
       notes:
-        '{query} is a category slug, not free text: /categories/remote-<slug>-jobs (back-end-programming was read; the home page lists the other categories). Each category is one page without pagination. Listings are /remote-jobs/<company>-<title> links; company, sign-up and plan links are not listings.',
+        '{query} is free text. Results are one page without pagination, grouped by category; sort=Past+Week keeps a search small enough to show every result instead of "View all" category links. Listings are /remote-jobs/<company>-<title> links; company, sign-up and plan links are not listings.',
     },
   },
   {
