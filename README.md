@@ -5,13 +5,14 @@
 <h1 align="center">AutoJob</h1>
 
 <p align="center">
-  <b>Your automatic job search and job application assistant.</b><br>
+  <b>AI job search assistant that finds jobs and applies for you.</b><br>
   It finds jobs on dozens of job sites, applies for you, writes a cover letter for every application<br>
   and reaches out to the recruiter or hiring manager on LinkedIn.
 </p>
 
 <p align="center">
   <a href="https://github.com/feritzcan2/AutoJob/releases/latest"><b>Download</b></a> ·
+  <a href="https://feritzcan2.github.io/AutoJob/">Website</a> ·
   <a href="#what-it-does">What it does</a> ·
   <a href="#getting-started">Getting started</a> ·
   <a href="#privacy">Privacy</a>
@@ -33,8 +34,10 @@
 
 Job hunting means checking the same sites every day, reading hundreds of listings
 that do not fit, filling in the same forms again and again, and writing yet another
-cover letter. AutoJob is a desktop app that does all of that for you, using the AI
-assistant you already have.
+cover letter. AutoJob is an open-source AI job search app for your desktop that does
+all of that for you: automatic job search across dozens of job boards, AI job
+matching against your CV, automatic job applications and an AI cover letter for
+every job, using the AI assistant you already have.
 
 ## What it does
 
