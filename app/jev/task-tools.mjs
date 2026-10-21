@@ -99,7 +99,7 @@ export const jevTaskTools = [
   {
     name: 'read_listing_brief',
     description:
-      'Read listing assessment briefs FIRST instead of full page text: Jev selects the source sections for duties, mandatory qualifications, location/work mode and pay. evidenceIds reads up to 5 listings in one call. Poll if running; read nextOffset pages until null. Use read_listing_evidence only for a missing or conflicting fact.',
+      'Read listing assessment briefs FIRST instead of full page text: Jev selects the source sections for duties, mandatory qualifications, location/work mode and pay. evidenceIds reads up to 5 listings in one call. Poll if running; read nextOffset pages until null (offset is a source character offset). Use read_listing_evidence only for a missing or conflicting fact.',
     inputSchema: object({
       evidenceId: str(80),
       evidenceIds: {
