@@ -213,7 +213,7 @@ const evaluate = async (state, questions) => ({
   ),
   usage: {input_tokens: 5, output_tokens: 1},
 });
-function fixture(t, {browserCall = null, site = fakeLinkedIn()} = {}) {
+function fixture(t, {browserCall = null, site = fakeLinkedIn(), decisions = 'jev'} = {}) {
   clearCardDetails();
   const core = new WorkspaceDatabase(':memory:'),
     db = new AutomationStore(core),
@@ -223,6 +223,7 @@ function fixture(t, {browserCall = null, site = fakeLinkedIn()} = {}) {
     goal: 'backend',
     criteria: {preferences: 'Germany'},
     sources: [source],
+    agentSettings: {provider: 'codex', decisions},
   });
   db.saveSource(a.id, source, {
     recipe: {
@@ -308,6 +309,74 @@ test('a site wait parks the card source instead of sending the agent away', asyn
   assert.equal(f.db.run(f.runId).status, 'blocked');
   assert.equal(f.db.run(f.runId).siteWait.reason, 'rate_limit');
   assert.equal(f.site.opened.length, 0);
+});
+
+test('with agent decisions the agent chooses from the cards which postings are read', async (t) => {
+  const site = fakeLinkedIn({cards: 4}),
+    f = fixture(t, {site, decisions: 'agent'});
+  await f.flow.prefetchCollector();
+  assert.equal(site.opened.length, 1, 'only the results page opens before the choice');
+  assert.equal(collectorPageReady(f.db, f.runId), true, 'the cards wait for the agent');
+  const offer = await f.call('collect_source_page');
+  assert.equal(offer.status, 'cards_ready');
+  assert.deepEqual(offer.cardSelection.cards[0], {
+    item: 1,
+    title: 'Engineer 4200000001',
+    company: 'Acme',
+    location: 'Berlin',
+  });
+  assert.equal(offer.cardSelection.cards.length, 4);
+  assert.equal(site.opened.length, 1, 'offering the cards reads nothing');
+  await assert.rejects(
+    f.call('collect_source_page', {selectionId: 'wrong', selected: [1]}),
+    new RegExp(offer.cardSelection.selectionId),
+  );
+  const answer = await f.call('collect_source_page', {
+    selectionId: offer.cardSelection.selectionId,
+    selected: [1, 3],
+    review: [{item: 2, decision: 'reject', reason: 'A sales role, not engineering.'}],
+  });
+  assert.deepEqual(answer.cardsChosen, {read: 2, rejected: 1, skipped: 1});
+  assert.equal(answer.status, 'background_read', 'the chosen postings are read between turns');
+  await f.flow.prefetchCollector();
+  assert.deepEqual(site.opened.slice(1), [
+    'https://www.linkedin.com/jobs/view/4200000001/',
+    'https://www.linkedin.com/jobs/view/4200000003/',
+  ]);
+  const batch = await f.call('collect_source_page'),
+    task = f.db.jevTasks.get(f.id, f.db.run(f.runId).taskId, batch.taskId);
+  assert.deepEqual(
+    task.items.map((item) => item.url),
+    [
+      'https://www.linkedin.com/jobs/view/4200000001/',
+      'https://www.linkedin.com/jobs/view/4200000003/',
+    ],
+  );
+  const run = f.db.run(f.runId);
+  assert.equal(run.scan.reviewStats.agentRejected, 1);
+  assert.deepEqual(
+    f.db.seenListingUrls(f.id, run.sourceUrl, [
+      'https://www.linkedin.com/jobs/view/4200000002/',
+      'https://www.linkedin.com/jobs/view/4200000004/',
+    ]),
+    ['https://www.linkedin.com/jobs/view/4200000002/'],
+    'a rejected card is not offered again; a card left out is, in a later round',
+  );
+});
+
+test('cards that show no title are read without asking the agent', async (t) => {
+  const site = fakeLinkedIn({cards: 2}),
+    call = async (id, name, args) => {
+      const result = await site.call(id, name, args);
+      if (result?.jevPage?.links)
+        for (const link of result.jevPage.links) if (link.listing) link.title = '';
+      return result;
+    },
+    f = fixture(t, {site, browserCall: call, decisions: 'agent'});
+  await f.flow.prefetchCollector();
+  assert.equal(site.opened.length, 3, 'the results page and both postings');
+  const batch = await f.call('collect_source_page');
+  assert.ok(batch.taskId, JSON.stringify(batch).slice(0, 300));
 });
 
 test('the LinkedIn posting reader needs a title and a real description', () => {

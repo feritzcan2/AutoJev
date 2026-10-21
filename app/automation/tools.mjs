@@ -38,7 +38,30 @@ export const scoreWrites = new Set([
 export const automationTools = [
   tool(
     'collect_source_page',
-    'Site extension: fetch the assigned next page through its CLI as a review batch. Review the returned batch, score and save suitable listings, then acknowledge the batch before calling again. Takes no URLs; search scope and pagination belong to the app. After restart it re-fetches pending evidence. complete=true means every page and review finished.',
+    'Site extension: fetch the assigned next page through its CLI as a review batch. Review the returned batch, score and save suitable listings, then acknowledge the batch before calling again. Takes no URLs; search scope and pagination belong to the app. After restart it re-fetches pending evidence. complete=true means every page and review finished. With agent decisions a card site may first return cardSelection: answer it with selectionId, selected and review.',
+    {
+      selectionId: {
+        ...str,
+        description: 'cardSelection.selectionId of the cards you are choosing from.',
+      },
+      selected: {
+        type: 'array',
+        maxItems: 100,
+        items: {type: 'integer', minimum: 1},
+        description: 'Item numbers of the cards whose full listing text is read.',
+      },
+      review: {
+        type: 'array',
+        maxItems: 100,
+        items: object({
+          item: {type: 'integer', minimum: 1},
+          decision: {type: 'string', enum: ['reject']},
+          reason: str,
+        }),
+        description: 'Cards rejected from their card alone, each with its reason.',
+      },
+    },
+    [],
   ),
   tool(
     'read_scoring_profile',

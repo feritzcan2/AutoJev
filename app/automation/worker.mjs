@@ -16,6 +16,7 @@ import {
 } from '../browser/site-access.mjs';
 import {collectorRun, collectorExtension, sourceCollector} from '../sources/collectors.mjs';
 import {
+  answerCardSelection,
   collectSourcePage,
   collectorSaved,
   collectorProgress,
@@ -1119,6 +1120,7 @@ export function automationWorkflow({
           readListing: readListingInBrowser,
           readListingInPane,
           readCardsInBrowser,
+          selectCards: decideByAgent,
           progress: activity,
         });
       } catch (error) {
@@ -1224,7 +1226,11 @@ export function automationWorkflow({
     switch (name) {
       case 'collect_source_page': {
         if (!collecting) throw Error('No CLI extension is assigned to this source.');
+        // The agent's choice from a page's cards comes before the next read.
+        const chosen =
+          args?.selectionId !== undefined ? answerCardSelection(db, run.id, args) : null;
         result = await collectNextPage();
+        if (chosen) result = {cardsChosen: chosen, ...result};
         break;
       }
       case 'read_scoring_profile': {
@@ -2084,6 +2090,7 @@ export function automationWorkflow({
         readListing: readListingInBrowser,
         readListingInPane,
         readCardsInBrowser,
+        selectCards: decideByAgent,
         progress: activity,
       });
       activity({...IDLE_STEP, step: 'agent', tool: null, label: null, url: null});
