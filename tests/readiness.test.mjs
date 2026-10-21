@@ -93,9 +93,14 @@ test('Jev readiness verifies the selected profile, its AutoJob extension and the
     result.checks.filter((check) => check.state === 'error').map((check) => check.id),
     ['chrome-profile', 'chrome-extension', 'jev'],
   );
-  assert.match(
-    result.checks.find((check) => check.id === 'chrome-extension').detail,
-    /\/app\/extension/,
+  const extension = result.checks.find((check) => check.id === 'chrome-extension');
+  assert.match(extension.detail, /\/app\/extension/);
+  // The missing extension comes with its setup steps, the Chrome address to
+  // paste and the folder to drag onto that page.
+  assert.equal(extension.steps.length, 3);
+  assert.deepEqual(
+    extension.action.map((action) => action.command ?? action.extension),
+    ['chrome://extensions', 'folder'],
   );
 });
 test('input validation rejects arbitrary executable names and profile paths', async () => {

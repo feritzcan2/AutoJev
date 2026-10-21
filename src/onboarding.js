@@ -21,7 +21,8 @@ const readinessIds = ['chrome', 'chrome-profile', 'chrome-extension', 'jev', 'fa
 // Connected while the CV is read, so the search can start right after the review.
 const chromeIds = ['chrome', 'chrome-profile', 'chrome-extension', 'failed'];
 // Missing agents and a closed Chrome connection are checked again on their own.
-const RECHECK_MS = 5000;
+const RECHECK_MS = 5000,
+  EXTENSION_RECHECK_MS = 2000;
 const modes = [
   [
     'observe',
@@ -44,9 +45,25 @@ const button = (text, onclick, cls = 'quiet') => {
   node.onclick = onclick;
   return node;
 };
-// The fix a readiness check offers: a command to copy or a page to open.
+// The fixes a readiness check offers: a command to copy, a page to open or an
+// extension setup step the app performs.
 function fixAction(api, action) {
+  if (Array.isArray(action)) {
+    const box = el('div', null, 'onboarding-fixes');
+    box.append(...action.map((one) => fixAction(api, one)));
+    return box;
+  }
   const box = el('div', null, 'onboarding-fix');
+  if (action.extension) {
+    box.append(
+      button(
+        action.label,
+        () => api.extensionSetup?.(action.extension, action.profile).catch(() => {}),
+        'link',
+      ),
+    );
+    return box;
+  }
   if (action.link) {
     box.append(button(action.label, () => api.openLink(action.link).catch(() => {}), 'link'));
     return box;
@@ -62,6 +79,27 @@ function fixAction(api, action) {
   );
   box.append(el('code', action.command), copy);
   return box;
+}
+
+// Small drawings of what each extension setup step looks like in Chrome.
+const STEP_ICONS = {
+  toggle:
+    '<svg viewBox="0 0 40 24" aria-hidden="true"><rect x="2" y="4" width="36" height="16" rx="8"/><circle cx="29" cy="12" r="5"/></svg>',
+  folder:
+    '<svg viewBox="0 0 40 24" aria-hidden="true"><path d="M3 6h9l3 3h12v11H3z"/><path d="M29 14h8m-3-3 3 3-3 3"/></svg>',
+  check:
+    '<svg viewBox="0 0 40 24" aria-hidden="true"><circle cx="20" cy="12" r="9"/><path d="m15 12 4 4 7-8"/></svg>',
+};
+export function installSteps(steps) {
+  const list = el('ol', null, 'install-steps');
+  for (const step of steps) {
+    const row = el('li'),
+      icon = el('span', null, 'install-step-icon');
+    icon.innerHTML = STEP_ICONS[step.icon] ?? '';
+    row.append(icon, el('span', step.text));
+    list.append(row);
+  }
+  return list;
 }
 
 export function onboardingStep(data) {
@@ -554,6 +592,17 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       openChecks().some((c) => chromeIds.includes(c.id))
     )
       void checkReadiness();
+    // A missing extension is a local file check: look for it sooner, so the
+    // step turns ready right after the user installs it.
+    else if (
+      data &&
+      ['reading', 'review'].includes(step) &&
+      !checkingReadiness &&
+      !checkingExtension &&
+      now - extensionAt > EXTENSION_RECHECK_MS &&
+      openChecks().some((c) => c.id === 'chrome-extension')
+    )
+      void checkExtension();
     if (step !== 'reading' || !data) return;
     // Run times are epoch milliseconds.
     const run = interviewRun(data),
@@ -761,6 +810,7 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       const item = el('div', null, 'onboarding-check');
       item.dataset.state = check.state;
       item.append(el('b', check.label), el('span', check.detail));
+      if (check.steps) item.append(installSteps(check.steps));
       if (check.action) item.append(fixAction(api, check.action));
       // The Jev key is entered later under Configuration → Jev; here the
       // worker agent can take over the listing decisions instead.
@@ -787,6 +837,15 @@ export function onboardingScreen(api, {getCatalog, created, finish, chat, cancel
       el('small', 'This list checks again every few seconds.', 'onboarding-hint'),
       button('Check again', () => checkReadiness(), 'link'),
     );
+  }
+  let checkingExtension = false,
+    extensionAt = 0;
+  async function checkExtension() {
+    checkingExtension = true;
+    const installed = await api.extensionInstalled?.().catch(() => false);
+    extensionAt = Date.now();
+    checkingExtension = false;
+    if (installed) await checkReadiness();
   }
   async function checkReadiness() {
     if (checkingReadiness) return;

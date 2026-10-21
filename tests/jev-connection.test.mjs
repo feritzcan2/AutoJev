@@ -667,6 +667,9 @@ test('a workspace without the extension never opens Chrome, and cancelling a pen
   await browsers.connections.pending.get('candidate');
   assert.equal(opened.length, 0);
   assert.match(browsers.status('candidate').message, /chrome:\/\/extensions/);
+  // The setup help and the two-second install watch key on this code.
+  assert.equal(browsers.status('candidate').code, 'EXTENSION_MISSING');
+  assert.equal(browsers.status('candidate').retryAt - Date.now() <= 2000, true);
   installed = true;
   browsers.prepare('candidate', {force: true});
   for (let i = 0; i < 50 && !opened.length; i++) await flush();

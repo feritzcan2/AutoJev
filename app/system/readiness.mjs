@@ -5,10 +5,12 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {listChromeProfiles} from '../browser/chrome-profiles.mjs';
 import {
+  EXTENSION_INSTALL_STEPS,
   extensionInstalledInProfile,
   extensionMissingMessage,
   resolveChromeProfile,
 } from '../jev/chrome.mjs';
+import {WEB_STORE_URL} from '../jev/extension.mjs';
 import {findChrome, findExecutable} from '../browser/chrome-installation.mjs';
 import {launchEnvironment as readinessEnvironment} from '../agents/launch-environment.mjs';
 import {missingAgentMessage} from '../agents/installation.mjs';
@@ -39,6 +41,13 @@ const providers = {
 // action: what the user can do to fix a check, a command to copy or a link to open.
 const item = (id, label, state, detail, action) =>
   action && state !== 'ready' ? {id, label, state, detail, action} : {id, label, state, detail};
+// Chrome ignores chrome: addresses passed on its command line, so the user
+// pastes it; the folder is dragged from Finder or Explorer onto that page.
+const extensionActions = (profile) => [
+  ...(WEB_STORE_URL ? [{extension: 'store', profile, label: 'Add to Chrome'}] : []),
+  {command: 'chrome://extensions', label: 'Copy the Chrome address'},
+  {extension: 'folder', label: 'Show the extension folder'},
+];
 const signIn = (descriptor) => ({command: descriptor.login, label: 'Copy sign-in command'});
 
 export async function inspectLogin(
@@ -215,12 +224,10 @@ export async function collectReadiness(input = {}, options = {}) {
         installed
           ? 'The AutoJob extension is installed in the selected Chrome profile. While it is connected, Chrome shows an "AutoJob" bar at the top.'
           : (blocked ?? (options.extensionMissingMessage ?? extensionMissingMessage)()),
-        // Chrome ignores chrome: addresses passed on its command line, so the user pastes it.
-        blocked || installed
-          ? undefined
-          : {command: 'chrome://extensions', label: 'Copy the Chrome address'},
+        blocked || installed ? undefined : extensionActions(profile),
       ),
     );
+    if (!installed && !blocked) checks.at(-1).steps = EXTENSION_INSTALL_STEPS;
     let jev;
     if (decisions === 'jev')
       try {

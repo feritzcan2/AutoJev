@@ -453,6 +453,7 @@ export function automationsPage(
     if (!data) {
       data = await api.workspaceSnapshot(id);
       if (selected !== id) return;
+      renderChromeCard(busy || isDeleting());
       renderDetail();
     }
     if (onboarding && openOnboarding(id, data)) return;
@@ -831,6 +832,75 @@ export function automationsPage(
     for (const section of host.querySelectorAll('[data-automation-pane]'))
       section.hidden = section.dataset.automationPane !== page;
   }
+  const extensionMissingText =
+    'The AutoJob extension is not installed in the selected Chrome profile. Open chrome://extensions, turn on Developer mode and drag the extension folder onto the page.';
+  const profileKey = (a) => a.chromeProfile?.directory ?? '';
+  let extensionCheck = {profile: null, installed: null, busy: false};
+  // Bounded to the visible, idle card: one local file check every two seconds.
+  // Once the user installs the missing extension, the card connects once.
+  async function watchExtension() {
+    const connection = data?.browserStatus ?? {};
+    if (
+      !selected ||
+      !data ||
+      extensionCheck.busy ||
+      document.hidden ||
+      connection.ready ||
+      (connection.state ?? 'idle') !== 'idle'
+    )
+      return;
+    const owner = selected,
+      profile = profileKey(data.automation);
+    extensionCheck.busy = true;
+    const installed = await api.extensionInstalled?.(profile || undefined).catch(() => null);
+    extensionCheck.busy = false;
+    if (owner !== selected || installed == null) return;
+    const before = extensionCheck.profile === profile ? extensionCheck.installed : null;
+    extensionCheck = {profile, installed, busy: false};
+    if (installed === before) return;
+    renderChromeCard(busy || isDeleting());
+    if (before === false && installed) api.browserReconnect(owner).catch(() => {});
+  }
+  setInterval(() => void watchExtension(), 2000);
+  function renderChromeCard(locked) {
+    if (!selected || !data) return;
+    const a = data.automation;
+    const chrome = document.querySelector('.chrome-status'),
+      connection = data.browserStatus ?? {};
+    chrome.hidden = false;
+    chrome.dataset.state = connection.state ?? 'idle';
+    chrome.querySelector('b').textContent = connection.ready
+      ? 'Chrome connected'
+      : connection.state === 'connecting'
+        ? 'Connecting to Chrome…'
+        : 'Chrome connection';
+    // With no task waiting for Chrome, the card asks whether the extension is
+    // installed itself, so the setup help shows before anything needs Chrome.
+    const idle = !connection.ready && (connection.state ?? 'idle') === 'idle',
+      known = idle && extensionCheck.profile === profileKey(a) ? extensionCheck.installed : null,
+      missing = (!connection.ready && connection.code === 'EXTENSION_MISSING') || known === false;
+    chrome.querySelector('small').textContent = connection.ready
+      ? (a.chromeProfile?.name ?? 'Selected Chrome session')
+      : missing
+        ? `${connection.message ?? extensionMissingText} AutoJob connects on its own once the extension is installed.`
+        : known
+          ? 'The AutoJob extension is installed. Chrome connects when a task needs it, or press Connect.'
+          : (connection.message ??
+            'The AutoJob extension must be installed in the selected Chrome profile. While it is connected, Chrome shows an "AutoJob" bar at the top.');
+    chrome.querySelector('.chrome-extension-folder').hidden = !missing;
+    // A failed handshake does not tell whether the extension is installed, so
+    // point to it unless the message already does.
+    chrome.querySelector('.chrome-tip').hidden =
+      connection.ready ||
+      connection.state === 'connecting' ||
+      !connection.message ||
+      connection.message.includes('extension');
+    chrome.querySelector('.chrome-reconnect').hidden = Boolean(connection.ready);
+    chrome.querySelector('.chrome-reconnect').textContent = idle ? 'Connect' : 'Reconnect';
+    chrome.querySelector('.chrome-reconnect').disabled =
+      locked || connection.state === 'connecting';
+    chrome.querySelector('.chrome-profile-change').disabled = locked;
+  }
   function renderShell() {
     if (!selected || !data) return;
     const locked = busy || isDeleting(),
@@ -984,30 +1054,7 @@ export function automationsPage(
     }
     document.querySelector('[data-view=profile] span').textContent = 'Workspace profile';
     document.querySelector('[data-view=board] span').textContent = 'Tracking table';
-    const chrome = document.querySelector('.chrome-status'),
-      connection = data.browserStatus ?? {};
-    chrome.hidden = false;
-    chrome.dataset.state = connection.state ?? 'idle';
-    chrome.querySelector('b').textContent = connection.ready
-      ? 'Chrome connected'
-      : connection.state === 'connecting'
-        ? 'Connecting to Chrome…'
-        : 'Chrome connection';
-    chrome.querySelector('small').textContent = connection.ready
-      ? (a.chromeProfile?.name ?? 'Selected Chrome session')
-      : (connection.message ??
-        'The AutoJob extension must be installed in the selected Chrome profile. While it is connected, Chrome shows an "AutoJob" bar at the top.');
-    // A failed handshake does not tell whether the extension is installed, so
-    // point to it unless the message already does.
-    chrome.querySelector('.chrome-tip').hidden =
-      connection.ready ||
-      connection.state === 'connecting' ||
-      !connection.message ||
-      connection.message.includes('extension');
-    chrome.querySelector('.chrome-reconnect').hidden = Boolean(connection.ready);
-    chrome.querySelector('.chrome-reconnect').disabled =
-      locked || connection.state === 'connecting';
-    chrome.querySelector('.chrome-profile-change').disabled = locked;
+    renderChromeCard(locked);
     const jev = document.querySelector('.jev-status'),
       issue = data.jevIssue;
     jev.hidden = !issue;
@@ -1715,6 +1762,8 @@ export function automationsPage(
       const snapshot = await api.workspaceSnapshot(id);
       if (stale()) return;
       data = snapshot;
+      // The Chrome card lives in the sidebar and stays visible on every page.
+      renderChromeCard(busy || isDeleting());
       renderDetail();
     } catch (error) {
       if (!stale()) throw error;
