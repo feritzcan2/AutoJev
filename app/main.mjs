@@ -12,6 +12,7 @@ import os from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {Maintenance} from './system/maintenance.mjs';
 import {startDevControl} from './system/dev-control.mjs';
+import {configureTabLog} from './browser/tab-log.mjs';
 import {registerExtensionBench} from './sources/extension-bench.mjs';
 import {AgentTrace} from './system/agent-trace.mjs';
 import {registerDevTools} from './system/dev-tools.mjs';
@@ -118,6 +119,7 @@ async function boot() {
   const extensions = await loadExtensions(),
     registry = new TemplateRegistry(extensions.map((extension) => extension.definition));
   const core = new WorkspaceDatabase(path.join(data, 'jobloop.sqlite'), {registry});
+  configureTabLog(path.join(data, 'logs', 'tabs.jsonl'));
   const encryptSecret = (value) => {
     if (
       !safeStorage.isEncryptionAvailable() ||
@@ -509,6 +511,12 @@ async function boot() {
       if (browser.status(workspace.id).state === 'waiting') browser.prepare(workspace.id);
   });
   scheduler.register('web-templates', () => web.runtime.tick());
+  // A skipped or applied record's tabs close even when Chrome was away then.
+  scheduler.register(
+    'record-tabs',
+    () => Promise.all(workspaces.list().map((w) => web.closeEndedRecordTabs(w.id).catch(() => {}))),
+    {interval: 300000},
+  );
   scheduler.register('usage-report', () => usage.tick(), {interval: 3600000});
   scheduler.start();
   const activeRunIds = () => services.flatMap((service) => service.activeRunIds?.() ?? []);

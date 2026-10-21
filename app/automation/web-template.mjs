@@ -17,7 +17,8 @@ import {recoverRecordOperations} from '../records/recovery.mjs';
 import {contactsInterrupted} from './contacts.mjs';
 import {workerKey} from './worker-key.mjs';
 import {randomUUID} from 'node:crypto';
-import {sourceCollector, collectorRun} from '../sources/collectors.mjs';
+import {logTab} from '../browser/tab-log.mjs';
+import {sourceCollector, collectorRun, apiCollector} from '../sources/collectors.mjs';
 import {prepareCollection} from '../sources/collector-worker.mjs';
 import {automationAttention} from './attention.mjs';
 import {
@@ -251,6 +252,16 @@ export class WebTasks extends TaskRuns {
                   .filter((other) => !waiting.has(other))
               : [run.id];
           const pendingContexts = unanswered.map((q) => q.browserContext).filter(Boolean);
+          logTab('run_end', {
+            workspace: id,
+            run: run.id,
+            kind: run.recordOperation ?? run.kind,
+            status: run.status,
+            record: record?.status,
+            closeTabs,
+            pendingQuestion: pending || undefined,
+            runs: runIds.length,
+          });
           await options?.onRunFinished?.(id, run, {
             retainForAccess:
               db.get(id).sourceState?.[run.sourceUrl]?.accessRecovery?.runId === run.id,
@@ -429,7 +440,7 @@ export class WebTasks extends TaskRuns {
         this.sourceAccess.tick(saved.id);
         if (contactsInterrupted(this.db, saved.id)) this.changed(saved.id);
         const native = saved.sources.some(
-          (url) => saved.sourceSettings?.[url]?.enabled !== false && sourceCollector(saved, url),
+          (url) => saved.sourceSettings?.[url]?.enabled !== false && apiCollector(saved, url),
         );
         // Loading every record is the costly check, so it runs last.
         const automaticRecords = () =>
@@ -443,7 +454,7 @@ export class WebTasks extends TaskRuns {
         const needsBrowser =
           !native ||
           saved.sources.some(
-            (url) => saved.sourceSettings?.[url]?.enabled !== false && !sourceCollector(saved, url),
+            (url) => saved.sourceSettings?.[url]?.enabled !== false && !apiCollector(saved, url),
           ) ||
           this.queue
             .list(saved.id, {states: ['pending'], summary: true})
@@ -533,7 +544,7 @@ export class WebTasks extends TaskRuns {
         const pending = [];
         for (const source of this.db.schedulingSources(a.id, a)) {
           if (!source.enabled || source.stopping) continue;
-          if (!canBrowse.has(a.id) && !sourceCollector(a, source.url)) continue;
+          if (!canBrowse.has(a.id) && !apiCollector(a, source.url)) continue;
           // Skip due turns during an existing search instead of queuing a duplicate.
           // A record's run (an application) from this source is not a search.
           if (this.slots(a.id).some((s) => s.run.sourceUrl === source.url && !s.run.recordId))
@@ -625,8 +636,9 @@ export class WebTasks extends TaskRuns {
             continue;
           const index = pending.findIndex(
             (task) =>
-              sourceCollector(a, task.sourceUrl) ||
-              (canBrowse.has(a.id) && this.sourceChecks.ready(a.id, task)),
+              apiCollector(a, task.sourceUrl) ||
+              (canBrowse.has(a.id) &&
+                (sourceCollector(a, task.sourceUrl) || this.sourceChecks.ready(a.id, task))),
           );
           if (index < 0) continue;
           const [task] = pending.splice(index, 1);
@@ -696,6 +708,7 @@ export class WebTasks extends TaskRuns {
         keepForms: false,
         closeAll: true,
         runIds: runs.map((run) => run.id),
+        recordIds: [itemId],
       });
     } catch {}
   }

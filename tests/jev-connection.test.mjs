@@ -14,6 +14,7 @@ import {
 import {BrowserConnections} from '../app/browser/connection.mjs';
 import {BrowserTools} from '../app/browser/tools.mjs';
 import {JevBrowser} from '../app/jev/browser.mjs';
+import {acquireChromeConnection} from '../app/jev/connection-queue.mjs';
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 const relayUrlOf = (connectUrl) => new URL(connectUrl).searchParams.get('relay');
@@ -713,6 +714,31 @@ test('cancelling the Chrome infobar ends the connection and waits for an explici
   connections.prepare('candidate', {force: true});
   await flush();
   assert.equal(attempts, 2);
+});
+
+test('an extension that drops the socket while connecting fails the connection and frees the queue', async (t) => {
+  for (const delay of [0, 1, 2, 5, 20]) {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'jev-dropped-'));
+    const {relay, extension} = await relayFixture(t);
+    t.after(() => rm(directory, {recursive: true, force: true}));
+    const options = {
+      connection: 'existing',
+      relay,
+      profile: {directory: 'Default'},
+      extensionInstalled: async () => true,
+      openUrl: async (url) => {
+        const socket = await extension.connect(url);
+        setTimeout(() => socket.terminate(), delay);
+      },
+    };
+    await assert.rejects(
+      new JevBrowser(directory, options).context(),
+      /Could not connect to Chrome/,
+    );
+  }
+  // The next profile gets its turn at once instead of waiting behind a dead one.
+  const release = await acquireChromeConnection({timeout: 100});
+  release();
 });
 
 test('a workspace without the extension never opens Chrome, and cancelling a pending connection stops waiting', async (t) => {

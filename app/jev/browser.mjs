@@ -53,6 +53,7 @@ import {
   wheelScrollNode,
 } from './navigation.mjs';
 import {validateJevArgs} from './tools.mjs';
+import {logTab, shortUrl} from '../browser/tab-log.mjs';
 const urlHash = (url) => createHash('sha256').update(url).digest('hex');
 // Playwright protocol calls such as evaluate have no timeout of their own. A
 // tool call that outlives these bounds holds Jev and the workspace's browser
@@ -84,6 +85,7 @@ export class JevBrowser {
       launch,
       headless = false,
       workspace,
+      workspaceId = null,
       siteAccess,
       connection = 'existing',
       profile,
@@ -106,6 +108,7 @@ export class JevBrowser {
     this.launch = launch;
     this.headless = headless;
     this.workspace = workspace;
+    this.workspaceId = workspaceId;
     this.onDisconnect = onDisconnect;
     this.onTabsClosed = onTabsClosed;
     this.checkpoints = checkpoints;
@@ -214,6 +217,7 @@ export class JevBrowser {
             if (!context) throw Error('The Chrome browser context was not found.');
             browser.on('disconnected', () => {
               if (this.browser !== browser) return;
+              logTab('disconnected', {workspace: this.workspaceId, tabs: this.tabs.size});
               this.browser = null;
               this.transport = null;
               this.opening = null;
@@ -276,6 +280,7 @@ export class JevBrowser {
   }
   async findOwnedPage(id) {
     for (let i = 0; i < 100; i++) {
+      if (!this.browser) throw Error('The Chrome connection closed.');
       for (const context of this.browser.contexts())
         for (const page of context.pages()) {
           // Another tab that cannot be tracked right now must not hide this one.
@@ -322,10 +327,13 @@ export class JevBrowser {
         this.automationWorkspaces.set(slot.id, this.automationWorkspaces.get(slot.openerId));
       if (this.automationSources.has(slot.openerId))
         this.automationSources.set(slot.id, this.automationSources.get(slot.openerId));
+      this.noteTab('open', slot, {opener: slot.openerId || undefined});
       page.on('close', () => {
         if (this.tabs.get(slot.id) === slot) {
           this.tabs.delete(slot.id);
           if (this.connection === 'existing' && !this.transport?.connected) return;
+          // A close without a reason was the user, the site or Chrome.
+          this.noteTab('closed', slot, {reason: slot.closeReason ?? 'outside'});
           this.forgetTab(slot.id);
           this.persistTabs().catch(() => {});
         }
@@ -352,7 +360,18 @@ export class JevBrowser {
     this.automationRuns.set(slot.id, owner);
     if (state.automationTabKey) this.automationTabs.set(slot.id, state.automationTabKey);
     this.automationWorkspaces.set(slot.id, state.automationWorkspaceId);
+    this.noteTab('claim', slot, {source: state.automationSourceUrl});
     await this.persistTabs();
+  }
+  noteTab(event, slot, fields = {}) {
+    logTab(event, {
+      workspace: this.workspaceId,
+      tab: slot.id,
+      run: this.automationRuns.get(slot.id),
+      key: this.automationTabs.get(slot.id),
+      url: shortUrl(slot.page.url?.() ?? ''),
+      ...fields,
+    });
   }
   async persistTabs() {
     if (this.connection === 'existing' && this.transport && this.instanceId)
@@ -437,28 +456,41 @@ export class JevBrowser {
   // runIds are the finished runs whose tabs belong to the completed work.
   // closeAll is the user ending that work (skip, marked applied): every tab of
   // those runs closes, also one that moved to another site or awaits a check.
+  // recordIds also match tabs by their record label, whichever run opened them.
   async closeFinishedAutomationRunTabs(
     runIds,
     workspaceId,
-    {keepForms = false, pendingTabIds = [], resetSource = null, closeAll = false} = {},
+    {
+      keepForms = false,
+      pendingTabIds = [],
+      resetSource = null,
+      closeAll = false,
+      recordIds = [],
+    } = {},
   ) {
     if (
       this.closed ||
       this.busy ||
       !this.opening ||
       (this.connection === 'existing' && !this.browser?.isConnected())
-    )
+    ) {
+      logTab('finish_deferred', {workspace: workspaceId, runs: runIds, records: recordIds});
       return {deferred: true};
+    }
     return this.exclusive('closeFinishedAutomationRunTabs', this.abort.signal, async () => {
       const closed = [],
         retained = [],
+        reasons = {},
         pending = new Set(pendingTabIds);
       for (const slot of [...this.tabs.values()]) {
         if (
           slot.id === this.homeId ||
           slot.page.isClosed() ||
           this.automationWorkspaces.get(slot.id) !== workspaceId ||
-          !runIds.includes(this.automationRuns.get(slot.id))
+          !(
+            runIds.includes(this.automationRuns.get(slot.id)) ||
+            recordIds.some((id) => this.automationTabs.get(slot.id) === `record:${id}`)
+          )
         )
           continue;
         if (
@@ -467,24 +499,35 @@ export class JevBrowser {
             this.automationTabs.get(slot.id)?.startsWith('record:'))
         )
           continue;
-        if (
-          !resetSource &&
-          !closeAll &&
-          (pending.has(slot.id) ||
-            slot.verification ||
-            this.leftObservedPage(slot) ||
-            (keepForms && !(await disposableResearchTab(slot))))
-        ) {
+        const keep =
+          resetSource || closeAll
+            ? null
+            : pending.has(slot.id)
+              ? 'pending_question'
+              : slot.verification
+                ? 'verification'
+                : this.leftObservedPage(slot)
+                  ? 'left_page'
+                  : keepForms && !(await disposableResearchTab(slot))
+                    ? 'form'
+                    : null;
+        if (keep) {
           retained.push(slot.id);
+          reasons[slot.id] = keep;
           continue;
         }
         try {
-          await this.retireTab(slot);
+          await this.retireTab(
+            slot,
+            resetSource ? 'source_reset' : closeAll ? 'record_closed' : 'run_finished',
+          );
           closed.push(slot.id);
         } catch {
           retained.push(slot.id);
+          reasons[slot.id] = 'close_failed';
         }
       }
+      logTab('finish', {workspace: workspaceId, runs: runIds, closed, retained: reasons});
       if (closed.length) await this.onTabsClosed(closed);
       await this.persistTabs();
       return {closed, retained};
@@ -494,11 +537,12 @@ export class JevBrowser {
   // window.open from an owned page reaches the exact Jev window. A finished
   // task tab therefore stays open as a blank spare; the next task navigates it,
   // which leaves a minimized window minimized. Other tabs are closed.
-  async retireTab(slot) {
+  async retireTab(slot, reason) {
     if (this.connection === 'existing' && this.spareTabs.size < MAX_SPARE_TABS)
       try {
         await slot.page.goto('about:blank', {timeout: 5000});
         if (slot.page.url() === 'about:blank') {
+          this.noteTab('spare', slot, {reason});
           for (const map of [
             this.automationTabs,
             this.automationRuns,
@@ -519,6 +563,7 @@ export class JevBrowser {
       } catch {
         // A page that refuses to leave (beforeunload, hung load) is closed.
       }
+    slot.closeReason = reason;
     await slot.page.close({runBeforeUnload: false});
     this.forgetTab(slot.id);
   }
@@ -1277,6 +1322,7 @@ export class JevBrowser {
           throw Error('Only the scan tab of the source you took over can be closed.');
         if (this.urlHashes.get(slot.id) !== urlHash(slot.page.url()))
           throw Error('The tab changed. Observe the current page before closing it.');
+        slot.closeReason = 'agent';
         await slot.page.close();
         this.forgetTab(slot.id);
         await this.persistTabs();
@@ -1322,6 +1368,7 @@ export class JevBrowser {
               )
                 continue;
               try {
+                failed.closeReason = 'error_tab';
                 await failed.page.close({runBeforeUnload: false});
               } catch {
                 throw Error(
@@ -1979,6 +2026,7 @@ export class JevBrowser {
           failed.push(id);
         }
       }
+      logTab('quit', {workspace: this.workspaceId, closed: closed.length, failed});
       if (closed.length)
         try {
           await this.persistTabs();

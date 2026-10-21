@@ -9,6 +9,13 @@ export const collectorExtension = (a, url) => {
   return extension?.collector?.templateId === a.templateId ? extension : null;
 };
 export const sourceCollector = (a, url) => collectorExtension(a, url)?.id ?? null;
+// A collector that reads its results pages or listings in the user's browser
+// (LinkedIn, Indeed) needs the Chrome connection like a browser source; only
+// an API collector scans without it.
+export const apiCollector = (a, url) => {
+  const collector = collectorExtension(a, url)?.collector;
+  return Boolean(collector && !collector.cardsInBrowser && collector.listingIn !== 'browser');
+};
 export const needsCollectorReview = (record) =>
   Boolean(
     record?.collectedBy && !record.assessment && record.status === 'found' && !record.proposal,

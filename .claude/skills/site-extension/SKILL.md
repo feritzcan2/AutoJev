@@ -63,7 +63,7 @@ Without a usable `JobPosting`, a `dom` extension can read listings itself:
   or `null`.
 - `dom.pane {handles(url), key(url), card, collect, read(raw)}` is for results
   pages that show one listing at a time in a pane beside the cards (LinkedIn
-  `/jobs/search-results/`). `key(url)` maps a listing address to its key on the
+  `/jobs/search-results/`, Indeed `/jobs`). `key(url)` maps a listing address to its key on the
   page (a job ID); `card(key)` runs in the page and returns the card element;
   `collect` runs in the page and returns raw with `raw.key`, the key of the
   listing the pane shows now (take it from the pane itself, not from the

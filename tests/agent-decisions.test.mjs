@@ -134,6 +134,35 @@ test('a results page pauses for the agent to choose its listings, then for the n
   assert.equal(f.asked.length, 0);
 });
 
+test('card text rewritten during the link choice keeps the scan; changed links stop it', async (t) => {
+  const f = fixture(t);
+  const first = await f.run({operation: 'scan_results', url});
+  assert.equal(first.issue.reason, 'links_ready');
+  // A live board marks another card as selected while the agent chooses.
+  const rewritten = page();
+  rewritten.text = 'Results page, updated 1 minute ago';
+  rewritten.links = rewritten.links.map((l, i) => ({...l, text: (i ? '' : 'Selected, ') + l.text}));
+  f.setPage(rewritten);
+  const chosen = await f.run({
+    taskId: first.taskId,
+    reviewedBatchId: first.linkSelection.id,
+    selected: [1, 4],
+  });
+  assert.equal(chosen.issue.reason, 'pagination_choice');
+  assert.deepEqual(f.checkpoints[0].urls, [url + '/1', url + '/4']);
+
+  const g = fixture(t);
+  const other = await g.run({operation: 'scan_results', url});
+  g.setPage(page({links: [...page().links].reverse()}));
+  const refused = await g.run({
+    taskId: other.taskId,
+    reviewedBatchId: other.linkSelection.id,
+    selected: [1],
+  });
+  assert.equal(refused.issue.reason, 'results_changed_during_scan');
+  assert.equal(g.checkpoints.length, 0);
+});
+
 test('the agent pagination choice opens the offered page and is refused when the entry changed', async (t) => {
   const f = fixture(t),
     more = {text: 'More homes', url: url + '?page=2'};

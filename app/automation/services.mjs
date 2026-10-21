@@ -1,4 +1,6 @@
-import {batchScoring} from '../records/task-scope.mjs';
+import {batchScoring, taskHasRecord} from '../records/task-scope.mjs';
+import {judgeTab, closableRecordIds} from '../browser/tab-audit.mjs';
+import {tabLogFile} from '../browser/tab-log.mjs';
 import {deleteRecords} from '../records/deletion.mjs';
 import {listingDescription, readListingDescription} from '../records/description.mjs';
 import {workspaceDirectory} from '../workspaces/paths.mjs';
@@ -168,6 +170,79 @@ export function registerAutomationServices({
     );
   };
   handle('automation-templates', () => db.catalog());
+  const attempt = (fn) => {
+    try {
+      return fn();
+    } catch {
+      return null;
+    }
+  };
+  // What the tab close rules read about a workspace's runs, records and questions.
+  const tabLookup = (id) => {
+    const unanswered = (attempt(() => db.get(id))?.questions ?? []).filter((q) => q.answer == null),
+      open =
+        attempt(() =>
+          db.store.workspaces.tasks.list(id, {
+            states: ['pending', 'running', 'reported', 'paused'],
+          }),
+        ) ?? [];
+    return {
+      run: (runId) => attempt(() => db.run(runId)),
+      record: (recordId) => attempt(() => db.result(id, recordId)),
+      waiting: (runId, tabId) =>
+        unanswered.some(
+          (q) =>
+            (q.runId ?? q.browserContext?.runId) === runId || q.browserContext?.tabId === tabId,
+        ),
+      openTask: (run) =>
+        open.some(
+          (task) => task.id === run.taskId || (run.recordId && taskHasRecord(task, run.recordId)),
+        ),
+      newerFinishedSourceRun: (run) =>
+        attempt(() =>
+          db.db
+            .prepare(
+              "SELECT id, json_extract(data,'$.status') AS status FROM automation_runs WHERE automation_id=? AND json_extract(data,'$.sourceUrl')=? AND json_extract(data,'$.recordId') IS NULL AND json_extract(data,'$.status')='completed' AND (json_extract(data,'$.kind')='trial' OR json_extract(data,'$.scan.complete')) AND rowid > (SELECT rowid FROM automation_runs WHERE id=?) LIMIT 1",
+            )
+            .get(id, run.sourceUrl, run.id),
+        ),
+    };
+  };
+  // Tabs of records whose work ended for good (skipped, marked applied,
+  // deleted) also close when the close at that moment could not run: Chrome
+  // was not connected, or the app restarted with those tabs restored. Tabs of
+  // a stopped application nothing picked up again close after a few hours.
+  const closeEndedRecordTabs = async (id) => {
+    const [workspace] = await browsers.tabAudit(id);
+    const recordIds = workspace?.connected ? closableRecordIds(workspace.tabs, tabLookup(id)) : [];
+    if (recordIds.length)
+      await browsers.finishAutomationRun(
+        id,
+        {id: null, workerId: 'main'},
+        {closeTabs: true, keepForms: false, closeAll: true, runIds: [], recordIds},
+      );
+  };
+  browsers.onConnected = closeEndedRecordTabs;
+  // Diagnostics: every open Jev tab with the verdict of the close rules.
+  handle('browser-tab-audit', async () => {
+    const workspaces = await browsers.tabAudit();
+    for (const workspace of workspaces) {
+      const lookup = tabLookup(workspace.workspaceId);
+      for (const tab of workspace.tabs) {
+        const run = tab.runId ? lookup.run(tab.runId) : null;
+        Object.assign(tab, judgeTab(tab, lookup), {
+          ...(run
+            ? {
+                runKind: run.recordOperation ?? run.kind,
+                runStatus: run.status,
+                runFinishedAt: run.finishedAt ? new Date(run.finishedAt).toISOString() : undefined,
+              }
+            : {}),
+        });
+      }
+    }
+    return {log: tabLogFile(), workspaces};
+  });
   const snapshot = async (id) => {
     const activeRuns = runtime.slots(id).map((s) => runSnapshot(s.run));
     return webWorkspaceView(
@@ -309,6 +384,7 @@ export function registerAutomationServices({
   handle('automation-records-delete', (id, itemIds) => {
     const result = deleteRecords(db, id, itemIds);
     changed(id);
+    void closeEndedRecordTabs(id).catch(() => {});
     return result;
   });
   handle('automation-record-run', (id, itemId, kind, input) =>
@@ -354,7 +430,7 @@ export function registerAutomationServices({
   const remove = async (id) => {
     const files = workspace(id);
     await runtime.pause(id);
-    await browsers.resetCandidate(id);
+    await browsers.resetCandidate(id, {closeTabs: true});
     const runs = db.db.prepare('SELECT id FROM automation_runs WHERE automation_id=?').all(id);
     db.remove(id);
     for (const run of runs) {
@@ -422,6 +498,7 @@ export function registerAutomationServices({
     remove,
     workspace,
     conversationTranscript,
+    closeEndedRecordTabs,
     async close() {
       await runtime.close();
     },

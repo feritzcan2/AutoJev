@@ -219,6 +219,19 @@ export class JevExtensionTransport {
     this.keepalive = setInterval(() => this.rpc('ping').catch(() => {}), 20000);
     this.keepalive.unref?.();
   }
+  // The extension can drop the socket before Playwright listens for the
+  // close; Playwright then still learns it, or it waits on the dead
+  // connection forever (closing the browser included).
+  get onclose() {
+    return this.closeListener;
+  }
+  set onclose(listener) {
+    this.closeListener = listener;
+    if (listener && !this.connected)
+      queueMicrotask(() => {
+        if (this.closeListener === listener) listener();
+      });
+  }
   rpc(method, params = {}, {timeout = 0} = {}) {
     if (!this.connected) return Promise.reject(Error(CONNECTION_CLOSED));
     return new Promise((resolve, reject) => {

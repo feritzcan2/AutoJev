@@ -26,6 +26,8 @@ export class BrowserTools {
       connect: async (id) => {
         const {client} = await this.connect(id);
         await client.context();
+        // Not awaited: the hook queues browser work behind this connection.
+        void this.onConnected?.(id)?.catch?.(() => {});
       },
       changed: (id, state) => this.onStatus?.(id, state),
     });
@@ -58,14 +60,16 @@ export class BrowserTools {
     const state = this.status(id);
     return !state.ready && state.state !== 'idle';
   }
-  async resetCandidate(id) {
+  // closeTabs closes the workspace's Chrome tabs and window too (a deleted
+  // workspace); otherwise they stay for the next connection to restore.
+  async resetCandidate(id, {closeTabs = false} = {}) {
     this.connections.reset(id);
     const previous = this.clients.get(id);
     this.clients.delete(id);
     this.connectionKeys.delete(id);
     if (previous) {
       const connected = await previous.pending.catch(() => null);
-      if (connected) await connected.client.close();
+      if (connected) await connected.client.close({closeTabs});
     }
   }
   async connect(candidateId) {
@@ -103,6 +107,7 @@ export class BrowserTools {
         ...options,
         siteAccess: this.siteAccess,
         workspace,
+        workspaceId: candidateId,
         onDisconnect: (reason) => this.connections.disconnected(candidateId, reason),
         onTabsClosed: (ids) => {
           if (!this.closed) return this.onTabsClosed?.(candidateId, ids);
@@ -337,6 +342,40 @@ export class BrowserTools {
           : {}),
       }));
   }
+  // Every tab of each workspace's Jev browser, home and spares included, with
+  // the labels the close rules read. Diagnostics only; nothing is changed.
+  async tabAudit(only = null) {
+    const workspaces = [];
+    for (const [workspaceId, connection] of this.clients) {
+      if (only && workspaceId !== only) continue;
+      const client = await connection.pending.then(
+        (value) => value.client,
+        () => null,
+      );
+      if (!client || (client.connection === 'existing' && !client.browser?.isConnected())) {
+        workspaces.push({workspaceId, connected: false, tabs: []});
+        continue;
+      }
+      const tabs = [...client.tabs.values()]
+        .filter((slot) => !slot.page.isClosed())
+        .map((slot) => ({
+          tabId: slot.id,
+          url: slot.page.url(),
+          role:
+            slot.id === client.homeId ? 'home' : client.spareTabs.has(slot.id) ? 'spare' : 'task',
+          runId: client.automationRuns.get(slot.id),
+          key: client.automationTabs.get(slot.id),
+          recordId: client.automationTabs.get(slot.id)?.startsWith('record:')
+            ? client.automationTabs.get(slot.id).slice(7)
+            : undefined,
+          sourceUrl: client.automationSources.get(slot.id),
+          labelledWorkspace: client.automationWorkspaces.get(slot.id),
+          verification: Boolean(slot.verification),
+        }));
+      workspaces.push({workspaceId, connected: true, windowId: client.windowId, tabs});
+    }
+    return workspaces;
+  }
   async focusWorkspaceTab(id, tabId) {
     if (
       typeof tabId !== 'string' ||
@@ -389,6 +428,7 @@ export class BrowserTools {
             continue;
           }
           try {
+            slot.closeReason = 'user';
             await slot.page.close({runBeforeUnload: false});
             client.forgetTab(tab.tabId);
             closed.push(tab.tabId);
@@ -422,6 +462,7 @@ export class BrowserTools {
       keepForms = true,
       pendingTabIds = [],
       closeAll = false,
+      recordIds = [],
     } = {},
   ) {
     if (!closeTabs) return {closed: []};
@@ -436,6 +477,7 @@ export class BrowserTools {
           keepForms,
           pendingTabIds,
           closeAll,
+          recordIds,
           ...(sourceAccessReset ? {resetSource: run.sourceUrl} : {}),
         });
       },

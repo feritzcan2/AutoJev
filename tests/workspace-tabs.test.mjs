@@ -209,6 +209,15 @@ test('source menus count legacy tabs by unique host and new cross-site tabs by s
   );
 });
 
+test('record tabs on a source host stay out of that source tab menu', () => {
+  const sources = [{id: 'jobs', url: 'https://jobs.example/search'}],
+    scan = {tabId: 'scan', url: 'https://jobs.example/search?q=1', sourceUrl: sources[0].url},
+    record = {tabId: 'apply', url: 'https://jobs.example/view/1', recordId: 'r1'};
+  const {grouped, other} = groupWorkspaceTabs([scan, record], sources);
+  assert.deepEqual(grouped.get('jobs'), [scan]);
+  assert.deepEqual(other, [record]);
+});
+
 test('a shared host without a source assignment stays in the other tabs menu', () => {
   const sources = [
       {id: 'a', url: 'https://example.com/search/a'},

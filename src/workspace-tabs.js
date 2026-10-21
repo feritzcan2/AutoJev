@@ -66,7 +66,9 @@ export function groupWorkspaceTabs(tabs, sources, sourceForTab = () => null) {
     let id = tab.sourceUrl
       ? sources.find((source) => source.url === tab.sourceUrl)?.id
       : sourceForTab(tab);
-    if (!tab.sourceUrl && !grouped.has(id)) {
+    // A record's tab (an application, a listing it opened) belongs to that
+    // record, not to the scan of a source on the same site.
+    if (!tab.sourceUrl && !tab.recordId && !grouped.has(id)) {
       const matches = sources.filter(
         (source) => host(source.url) && host(source.url) === host(tab.url),
       );
