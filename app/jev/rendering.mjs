@@ -43,7 +43,7 @@ async function bounded(operation, {signal, timeoutMs}) {
 // not running, which Chrome does to a tab in a covered or background window:
 // wake it through the browser and treat it as hidden, so focus emulation
 // turns its rendering on. The operation that follows keeps its own bound.
-async function visibility(slot, {signal, timeoutMs}) {
+async function visibility(slot, {signal, timeoutMs, busyMs}) {
   try {
     return await bounded(() => slot.page.evaluate(() => document.visibilityState === 'hidden'), {
       signal,
@@ -53,7 +53,7 @@ async function visibility(slot, {signal, timeoutMs}) {
     if (error.code !== 'TAB_RENDER_TIMEOUT') throw error;
     await bounded(() => slot.cdp.send('Page.setWebLifecycleState', {state: 'active'}), {
       signal,
-      timeoutMs,
+      timeoutMs: busyMs,
     }).catch(() => {});
     signal?.throwIfAborted();
     return true;
@@ -61,20 +61,20 @@ async function visibility(slot, {signal, timeoutMs}) {
 }
 export async function acquireTabRendering(
   slot,
-  {signal, hidden, foreground = false, timeoutMs = 2000} = {},
+  {signal, hidden, foreground = false, timeoutMs = 2000, busyMs = 30000} = {},
 ) {
   signal?.throwIfAborted();
   if (!slot.cdp) return () => {};
   let state = active.get(slot);
   if (state?.stopping) {
     await bounded(() => state.stopping, {signal, timeoutMs});
-    return acquireTabRendering(slot, {signal, hidden, foreground, timeoutMs});
+    return acquireTabRendering(slot, {signal, hidden, foreground, timeoutMs, busyMs});
   }
   if (!state) {
     state = {users: 0, enabled: false};
     active.set(slot, state);
     state.ready = (async () => {
-      if ((hidden ?? (await visibility(slot, {signal, timeoutMs}))) !== true) return;
+      if ((hidden ?? (await visibility(slot, {signal, timeoutMs, busyMs}))) !== true) return;
       signal?.throwIfAborted();
       // Focus emulation alone makes a background tab (even in a minimized
       // window) visible and painting, so reads and form writes (fill, click,
@@ -89,9 +89,11 @@ export async function acquireTabRendering(
         signal?.throwIfAborted();
       }
       state.enabled = true;
+      // A background tab that is busy loading answers browser commands late;
+      // wake and focus emulation wait for it (cancellable) instead of failing.
       await bounded(() => slot.cdp.send('Emulation.setFocusEmulationEnabled', {enabled: true}), {
         signal,
-        timeoutMs,
+        timeoutMs: busyMs,
       });
     })();
   }
@@ -106,16 +108,16 @@ export async function acquireTabRendering(
       // Cleanup has its own bound: cancellation still restores the same tab.
       if (state.enabled)
         await bounded(() => slot.cdp.send('Emulation.setFocusEmulationEnabled', {enabled: false}), {
-          timeoutMs,
+          timeoutMs: busyMs,
         }).catch(() => {});
       if (active.get(slot) === state) active.delete(slot);
     })();
     await state.stopping;
   };
   try {
-    // Preparation runs up to four bounded steps (visibility, wake, front,
+    // Preparation runs up to four bounded steps (visibility, front, wake and
     // focus emulation); one step's bound here would cut a frozen tab's wake.
-    await bounded(() => state.ready, {signal, timeoutMs: timeoutMs * 4});
+    await bounded(() => state.ready, {signal, timeoutMs: 2 * (timeoutMs + busyMs)});
     signal?.throwIfAborted();
     return release;
   } catch (error) {
