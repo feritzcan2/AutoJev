@@ -3,6 +3,7 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 
 const directory = await mkdtemp(path.join(tmpdir(), 'jev-search-field-'));
 const client = new JevBrowser(directory, {
@@ -28,7 +29,7 @@ try {
     await page.setContent(
       `<form role="search" onsubmit="event.preventDefault();window.searches++;document.querySelector('#result').textContent=this.elements[0].value">${field}<div id="suggestions" role="listbox"><div role="option">Unrelated suggestion</div></div><button>Search now</button></form><div id="result"></div>`,
     );
-    await page.evaluate(() => {
+    await inPageWorld(page, () => {
       window.searches = 0;
       window.selections = 0;
       document.querySelector('[role=option]').onclick = () => window.selections++;
@@ -44,7 +45,7 @@ try {
     assert.equal(filled.status, 'ready');
     assert.equal(await page.locator('textarea,input').inputValue(), text);
     assert.equal(
-      await page.evaluate(() => window.searches + window.selections),
+      await inPageWorld(page, () => window.searches + window.selections),
       0,
       'Typing must not select a suggestion or submit',
     );
@@ -60,7 +61,7 @@ try {
       targetId: observed.clickTargets.find((t) => t.label === 'Search now').targetId,
     });
     assert.equal(await page.locator('#result').textContent(), text);
-    assert.equal(await page.evaluate(() => window.searches), 1);
+    assert.equal(await inPageWorld(page, () => window.searches), 1);
   }
   // Application choices must still use the exact-option tool, and disabled,
   // readonly and covered search inputs must remain unwritable.

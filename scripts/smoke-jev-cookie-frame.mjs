@@ -3,6 +3,7 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 const dir = await mkdtemp(path.join(os.tmpdir(), 'jev-cookie-frame-'));
 const client = new JevBrowser(dir, {
   connection: 'separate',
@@ -27,7 +28,7 @@ try {
         "<p>We use cookies. Choose your privacy preferences.</p><button onclick=\"parent.postMessage('declined','*')\">Decline</button><button>Accept</button>";
     });
     await page.frames()[1].waitForLoadState();
-    await page.evaluate(() => {
+    await inPageWorld(page, () => {
       window.consentClicks = 0;
       window.onmessage = (e) => {
         if (e.data === 'declined') {
@@ -47,12 +48,12 @@ try {
   assert.ok(o.clickTargets.some((t) => t.targetId === target.targetId));
   await assert.rejects(
     () => call('browser_click_target', {tabId, targetId: target.targetId}, 'foreign'),
-    /oturuma/,
+    /of this session is required/,
   );
   o = await call('browser_click_target', {tabId, targetId: target.targetId});
   assert.equal(o.executed, true);
   await page.waitForFunction(() => window.consentClicks === 1);
-  assert.equal(await page.evaluate(() => window.consentClicks), 1);
+  assert.equal(await inPageWorld(page, () => window.consentClicks), 1);
   assert.equal(await page.locator('iframe').count(), 0);
   assert.equal(context.pages().length, initialPages);
   o = await call('browser_observe', {tabId});
@@ -73,14 +74,14 @@ try {
   assert.ok(!o.clickTargets.some((t) => t.frameUrl === 'about:srcdoc'));
   o = await setup();
   target = o.clickTargets.find((t) => t.label === 'Decline');
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     const cover = document.createElement('div');
     cover.style = 'position:fixed;inset:0;background:white;z-index:9999';
     document.body.append(cover);
   });
   o = await call('browser_click_target', {tabId, targetId: target.targetId});
   assert.equal(o.status, 'uncertain');
-  assert.equal(await page.evaluate(() => window.consentClicks), 0);
+  assert.equal(await inPageWorld(page, () => window.consentClicks), 0);
   console.log('SRCDOC_COOKIE_IN_PLACE_OWNER_STALE_SANDBOX_OVERLAY_PASS');
 } finally {
   await client.close();

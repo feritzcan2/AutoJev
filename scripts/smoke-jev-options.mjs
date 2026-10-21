@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
 import {controlState} from './jev-control-state.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 const remember = controlState();
 const dir = await mkdtemp(path.join(os.tmpdir(), 'jev-options-'));
 const client = new JevBrowser(dir, {
@@ -36,7 +37,7 @@ try {
     await page.setContent(
       `<style>body{height:2000px}label{display:block}</style><form onsubmit="event.preventDefault();window.submits++"><label>Unrelated field<input value="Keep me"></label><div style="height:900px"></div><label>University<select id="school" required>${options.join('')}</select></label><button>Submit</button></form>`,
     );
-    await page.evaluate(() => {
+    await inPageWorld(page, () => {
       window.submits = 0;
       window.changes = 0;
       document.querySelector('#school').onchange = () => window.changes++;
@@ -63,7 +64,7 @@ try {
   assert.equal(bilkent.index, 94);
   assert.equal(bilkent.disabled, false);
   assert.deepEqual(
-    await page.evaluate(() => [
+    await inPageWorld(page, () => [
       scrollY,
       window.changes,
       window.submits,
@@ -79,7 +80,7 @@ try {
   });
   assert.equal(result.selection.verified, true);
   assert.equal(result.selection.actual, label);
-  assert.equal(await page.evaluate(() => window.submits), 0);
+  assert.equal(await inPageWorld(page, () => window.submits), 0);
   console.log(
     'JEV_237_OPTIONS_FULL_LIST_AND_SELECT_PASS',
     JSON.stringify({operationCalls: 2, modelCalls: 0, elapsedMs: Date.now() - started}),
@@ -146,7 +147,7 @@ try {
   // Wrong session and replaced controls cannot reveal stale options or mutate inputs.
   await assert.rejects(
     () => call('browser_list_options', {tabId, controlId, query: 'Bilkent'}, 'other'),
-    /oturuma/,
+    /of this session is required/,
   );
   await page.locator('#school').evaluate((e) => e.replaceWith(e.cloneNode(true)));
   result = await call('browser_list_options', {tabId, controlId, query: 'Bilkent'});
@@ -163,7 +164,7 @@ try {
   const textControl = result.controls.find((c) => c.label === 'Unrelated field');
   result = await call('browser_list_options', {tabId, controlId: textControl.controlId});
   assert.equal(result.status, 'unsupported');
-  assert.equal(await page.evaluate(() => window.submits), 0);
+  assert.equal(await inPageWorld(page, () => window.submits), 0);
   console.log('JEV_OPTION_UNICODE_PAGINATION_DISABLED_AMBIGUOUS_SCOPE_AND_STALE_PASS');
 } finally {
   await client.close();

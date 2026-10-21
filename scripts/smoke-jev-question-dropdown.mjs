@@ -7,6 +7,7 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 const dir = await mkdtemp(path.join(os.tmpdir(), 'jev-question-dropdown-'));
 const client = new JevBrowser(dir, {
   connection: 'separate',
@@ -37,7 +38,7 @@ try {
     tabId = slot.id;
   await page.setContent(fixture);
   // A portal listbox opens for the clicked button and sets its answer.
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     for (const button of document.querySelectorAll('[aria-haspopup]'))
       button.onclick = () => {
         document.querySelector('[role=listbox]')?.remove();

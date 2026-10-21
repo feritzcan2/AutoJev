@@ -1,0 +1,13 @@
+diff --git a/lib/coreBundle.js b/lib/coreBundle.js
+index 19474c86dc2d359e5e79ec1d4eaa94bfe35e3803..1d25b5ca3c6475a5e2bb7cb25d0d83510108abe7 100644
+--- a/lib/coreBundle.js
++++ b/lib/coreBundle.js
+@@ -41192,7 +41192,7 @@ var init_crPage = __esm({
+         } else {
+           const skipDefaultOverrides = browserOptions.noDefaults && this._crPage._browserContext === this._crPage._browserContext._browser._defaultContext;
+           if (this._crPage._browserContext.needsPlaywrightBinding()) promises2.push(this.exposePlaywrightBinding());
+-          if (this._isMainFrame() && !this._crPage._browserContext._options.focusControl)
++          if (this._isMainFrame() && !this._crPage._browserContext._options.focusControl && !skipDefaultOverrides)
+             promises2.push(this._client.send("Emulation.setFocusEmulationEnabled", { enabled: true }));
+           const options = this._crPage._browserContext._options;
+           if (options.bypassCSP) promises2.push(this._client.send("Page.setBypassCSP", { enabled: true }));

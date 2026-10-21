@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
 import {controlState} from './jev-control-state.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 const remember = controlState();
 const dir = await mkdtemp(path.join(os.tmpdir(), 'jev-choice-'));
 let modelCalls = 0;
@@ -35,7 +36,8 @@ try {
     await page.setContent(
       `<style>button{padding:12px}label{display:block}#spacer{height:900px}</style>${group('work', 'Work authorization?')}<div id="spacer"></div>${group('city', 'Live here?')}${group('remote', 'Remote experience?')}<form onsubmit="event.preventDefault();window.submits++"><button>Submit</button></form>`,
     );
-    await page.evaluate(
+    await inPageWorld(
+      page,
       ({reject, delay}) => {
         window.clicks = 0;
         window.submits = 0;
@@ -76,7 +78,7 @@ try {
   assert.equal(await page.locator('#work [data-option=no]').getAttribute('aria-pressed'), 'false');
   assert.equal(answer(result, 'Live here?', 'No').choice.selected, true);
   assert.equal(modelCalls, 0);
-  assert.equal(await page.evaluate(() => window.submits), 0);
+  assert.equal(await inPageWorld(page, () => window.submits), 0);
   console.log(
     'JEV_CHOICE_ONE_CALL_PASS',
     JSON.stringify({elapsedMs: Date.now() - start, modelCalls, operationCalls: 1}),
@@ -87,18 +89,18 @@ try {
   });
   assert.equal(result.executed, false);
   assert.equal(result.selection.verified, true);
-  assert.equal(await page.evaluate(() => window.clicks), 1);
+  assert.equal(await inPageWorld(page, () => window.clicks), 1);
   // Owner, semantic label and DOM identity must remain the observed ones.
   observed = await reset();
   control = answer(observed, 'Work authorization?', 'No');
   await assert.rejects(
     () => call('browser_select_choice', {tabId, controlId: control.controlId}, 'other'),
-    /oturuma/,
+    /of this session is required/,
   );
   await page.locator('#work label').evaluate((e) => (e.textContent = 'Different consent?'));
   result = await call('browser_select_choice', {tabId, controlId: control.controlId});
   assert.equal(result.status, 'stale');
-  assert.equal(await page.evaluate(() => window.clicks), 0);
+  assert.equal(await inPageWorld(page, () => window.clicks), 0);
   observed = await reset();
   control = answer(observed, 'Work authorization?', 'No');
   await page.locator('#work [data-option=no]').evaluate((e) => e.replaceWith(e.cloneNode(true)));
@@ -107,7 +109,7 @@ try {
   // No hit-test bypass, even with a valid semantic ID.
   observed = await reset();
   control = answer(observed, 'Work authorization?', 'No');
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     const e = document.createElement('div');
     e.style = 'position:fixed;inset:0;z-index:999';
     document.body.append(e);
@@ -117,7 +119,7 @@ try {
   assert.equal(result.reason, 'no_safe_click_point');
   assert.equal(result.observationMode, 'full');
   assert.ok(result.controls.length);
-  assert.equal(await page.evaluate(() => window.clicks), 0);
+  assert.equal(await inPageWorld(page, () => window.clicks), 0);
   // Focus changes are not proof; failed choices cannot be retried via either tool.
   observed = await reset({reject: true});
   control = answer(observed, 'Work authorization?', 'No');
@@ -131,7 +133,7 @@ try {
   assert.equal(result.status, 'no_progress');
   let decision = await call('browser_next', {tabId, goal: 'Select the No answer'});
   assert.equal(decision.operation, 'BLOCKED');
-  assert.equal(await page.evaluate(() => window.clicks), 1);
+  assert.equal(await inPageWorld(page, () => window.clicks), 1);
   // The compatibility next/act flow returns the same question and verified state.
   observed = await reset({delay: 250});
   decision = await call('browser_next', {tabId, goal: 'Select No for work authorization'});
@@ -151,7 +153,7 @@ try {
     controlId: answer(result, 'Work authorization?', 'No').controlId,
   });
   assert.equal(result.status, 'no_progress');
-  assert.equal(await page.evaluate(() => window.clicks), 1);
+  assert.equal(await inPageWorld(page, () => window.clicks), 1);
   // Selected state changing externally invalidates a pending Jev decision.
   observed = await reset();
   decision = await call('browser_next', {tabId, goal: 'Select No'});
@@ -160,7 +162,7 @@ try {
     .evaluate((e) => e.setAttribute('aria-pressed', 'true'));
   result = await call('browser_act', {tabId, decisionId: decision.decisionId});
   assert.equal(result.status, 'stale');
-  assert.equal(await page.evaluate(() => window.clicks), 0);
+  assert.equal(await inPageWorld(page, () => window.clicks), 0);
   // Other sites: fieldset native radios and labelled ARIA radiogroups.
   await page.setContent(
     '<fieldset><legend>Schedule?</legend><label><input type="radio" name="schedule">Full time</label><label><input type="radio" name="schedule">Part time</label></fieldset><div role="radiogroup" aria-label="Travel?"><button type="button" role="radio" aria-checked="false" onclick="this.setAttribute(\'aria-checked\',\'true\')">No</button></div>',
@@ -180,18 +182,18 @@ try {
   await page.setContent(
     '<form onsubmit="event.preventDefault();window.submits++"><label>Unrelated<input></label><button aria-pressed="false">Yes</button><fieldset><legend>Consent?</legend><button aria-pressed="false">Accept</button><button type="button" aria-pressed="mixed">Mixed</button><input type="submit" role="radio" aria-checked="false" value="Disguised submit"><a href="#navigate"><span role="radio" aria-checked="false">Disguised link</span></a></fieldset></form>',
   );
-  await page.evaluate(() => (window.submits = 0));
+  await inPageWorld(page, () => (window.submits = 0));
   observed = await call('browser_observe', {tabId});
   for (const control of observed.controls.filter((c) => c.choice)) {
     result = await call('browser_select_choice', {tabId, controlId: control.controlId});
     assert.equal(result.status, 'unsupported');
   }
-  assert.equal(await page.evaluate(() => window.submits), 0);
+  assert.equal(await inPageWorld(page, () => window.submits), 0);
   // Riverty-style native radios: same undefined value, visual span over the
   // input, inside a shadow root. Include hidden/offscreen inputs and ensure
   // exact question + option identity, not the unusable value, drives selection.
   await page.setContent('<div id="host"></div>');
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     const root = document.querySelector('#host').attachShadow({mode: 'open'});
     root.innerHTML = `<style>label{display:block;position:relative;width:500px;height:20px;margin:20px}input{position:absolute;width:18px;height:18px;margin:0}.state{position:relative;display:inline-block;width:18px;height:18px;background:#ccc}.text{margin-left:8px}.spacer{height:1100px}</style>
       <div class="spacer"></div><fieldset><legend>Sponsorship?</legend>
@@ -214,7 +216,7 @@ try {
     observed = result;
   }
   assert.equal(await page.locator('input[name=visa]').first().isChecked(), false);
-  assert.equal(await page.evaluate(() => window.clicks), 2);
+  assert.equal(await inPageWorld(page, () => window.clicks), 2);
   console.log('JEV_SHADOW_DECORATED_OFFSCREEN_RADIOS_PASS');
   console.log('JEV_CHOICE_CONTEXT_VERIFICATION_STALE_AND_RETRY_GUARDS_PASS');
 } finally {

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
 import {controlState} from './jev-control-state.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 const remember = controlState();
 const directory = await mkdtemp(path.join(os.tmpdir(), 'jev-performance-'));
 let modelCalls = 0;
@@ -45,7 +46,7 @@ try {
     <div class="space"></div><button type="button" id="inertButton" onclick="window.clicks++">No effect</button><button>Submit application</button></form></div>`;
   const reset = async () => {
     await page.setContent(fixture);
-    await page.evaluate(() => {
+    await inPageWorld(page, () => {
       window.submits = 0;
       window.clicks = 0;
     });
@@ -69,7 +70,7 @@ try {
     controlId: observed.controls.find((c) => c.label === 'Email').controlId,
   });
   assert.equal(observed.visible, true);
-  assert.equal(await page.evaluate(() => scrollY), 0);
+  assert.equal(await inPageWorld(page, () => scrollY), 0);
   const email = observed.fillFields.find((f) => f.label === 'Email');
   assert.ok(email);
   observed = await call('browser_fill_fields', {
@@ -86,8 +87,8 @@ try {
   assert.equal(observed.selection.actual, 'DE');
   assert.equal(await page.locator('#email').inputValue(), 'test@example.com');
   assert.equal(modelCalls, 0);
-  assert.equal(await page.evaluate(() => window.submits), 0);
-  assert.equal(await page.evaluate(() => scrollY), 0);
+  assert.equal(await inPageWorld(page, () => window.submits), 0);
+  assert.equal(await inPageWorld(page, () => scrollY), 0);
   assert.equal(observed.observationMode, 'delta');
   assert.equal(observed.text, undefined);
   assert.ok(!JSON.stringify(observed).includes('Country 229'));
@@ -109,7 +110,7 @@ try {
   let result = await call('browser_act', {tabId, decisionId: decision.decisionId});
   assert.equal(result.progress, true);
   assert.ok((await page.locator('#pane').evaluate((e) => e.scrollTop)) > 0);
-  assert.equal(await page.evaluate(() => scrollY), 0);
+  assert.equal(await inPageWorld(page, () => scrollY), 0);
   // No-progress guard survives fresh observations and reworded goals.
   await page.locator('#pane').evaluate((e) => (e.scrollTop = e.scrollHeight));
   observed = await call('browser_observe', {tabId});
@@ -136,13 +137,13 @@ try {
   decision = await call('browser_next', {tabId, goal: 'No effect'});
   assert.equal(decision.status, 'no_progress');
   assert.equal(decision.decisionId, undefined);
-  assert.equal(await page.evaluate(() => window.clicks), 1);
+  assert.equal(await inPageWorld(page, () => window.clicks), 1);
   // IDs are session scoped, and semantic target/option changes reject stale work.
   observed = await reset();
   let country = observed.controls.find((c) => c.label === 'Country').controlId;
   await assert.rejects(
     () => call('browser_choose_option', {tabId, controlId: country, option: 'Germany'}, 'other'),
-    /oturuma/,
+    /of this session is required/,
   );
   result = await call('browser_choose_option', {
     tabId,
@@ -177,7 +178,7 @@ try {
   // An overlay cannot be bypassed by the direct selection tool.
   observed = await reset();
   country = observed.controls.find((c) => c.label === 'Country').controlId;
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     const cover = document.createElement('div');
     cover.style = 'position:fixed;inset:0;z-index:999';
     document.body.append(cover);
@@ -191,7 +192,7 @@ try {
   await page.locator('[role=dialog]').evaluate((e) => e.remove());
   result = await call('browser_scroll', {tabId, controlId: modalScroll, direction: 'down'});
   assert.equal(result.status, 'stale');
-  assert.equal(await page.evaluate(() => scrollY), 0);
+  assert.equal(await inPageWorld(page, () => scrollY), 0);
   // The same tools also work on an ordinary page, without dialog-specific code.
   observed = await call('browser_observe', {tabId});
   assert.equal(observed.scrollTargets[0].label, 'Page');
@@ -201,8 +202,8 @@ try {
     direction: 'down',
   });
   assert.equal(result.progress, true);
-  assert.ok((await page.evaluate(() => scrollY)) > 0);
-  await page.evaluate(() => scrollTo(0, 0));
+  assert.ok((await inPageWorld(page, () => scrollY)) > 0);
+  await inPageWorld(page, () => scrollTo(0, 0));
   // A site's change handler can reject selection: don't report false success.
   observed = await reset();
   country = observed.controls.find((c) => c.label === 'Country').controlId;

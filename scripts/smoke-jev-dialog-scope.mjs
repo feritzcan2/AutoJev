@@ -3,6 +3,7 @@ import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 const directory = await mkdtemp(path.join(tmpdir(), 'jev-dialog-scope-'));
 const client = new JevBrowser(directory, {
   connection: 'separate',
@@ -48,7 +49,7 @@ try {
   );
   assert.ok(form.submitControls.some((c) => c.label === 'Submit application'));
   // A real modal layer still scopes the page.
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     const d = document.createElement('dialog');
     d.innerHTML = '<label>Code<input name="code"></label><button>Verify</button>';
     document.body.append(d);
@@ -152,7 +153,7 @@ try {
       (t) => t.role === 'checkbox',
     ).targetId,
   });
-  assert.equal(await page.evaluate(() => document.querySelector('#go').disabled), false);
+  assert.equal(await inPageWorld(page, () => document.querySelector('#go').disabled), false);
   console.log('JEV_TRANSPARENT_CHECKBOX_AND_ARIA_HIDDEN_DROPDOWN_PASS');
 
   // The element that names a checkbox (aria-labelledby, not a <label>) is
@@ -178,7 +179,7 @@ try {
   });
   assert.equal(ticked.status, 'ready', JSON.stringify(ticked.message));
   assert.equal(ticked.selection?.verified, true);
-  assert.equal(await page.evaluate(() => document.querySelector('#send').disabled), false);
+  assert.equal(await inPageWorld(page, () => document.querySelector('#send').disabled), false);
   console.log('JEV_CHECKBOX_DRAWN_BY_ITS_NAME_ELEMENT_PASS');
 } finally {
   await client.close();

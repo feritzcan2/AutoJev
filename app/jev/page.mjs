@@ -30,7 +30,7 @@ export async function retryJevRead(page, read, {attempts = 3, delay = 150} = {})
 export function privateJevPage(page) {
   const frames = new WeakMap(),
     handles = new WeakMap();
-  const scope = `const privateKeys=new Set(['__jevFast','__jobloopFieldContext','__jobloopFieldError','__jobloopDrawnToggle','__jobloopFileSurface','__jobloopPicker']),window=new Proxy(globalThis,{get(target,key){return privateKeys.has(key)?state[key]:Reflect.get(target,key,target);},set(target,key,value){if(privateKeys.has(key)){state[key]=value;return true;}return Reflect.set(target,key,value,target);}});`;
+  const scope = `const privateKeys=new Set(['__jevFast','__jobloopFieldContext','__jobloopFieldError','__jobloopDrawnToggle','__jobloopFileSurface','__jobloopPicker','__jevHandlerHints']),window=new Proxy(globalThis,{get(target,key){return privateKeys.has(key)?state[key]:Reflect.get(target,key,target);},set(target,key,value){if(privateKeys.has(key)){state[key]=value;return true;}return Reflect.set(target,key,value,target);}});`;
   const compiled = (fn, node = false) =>
     new Function(
       node ? 'element' : 'state',
@@ -82,6 +82,43 @@ export function privateJevPage(page) {
     handles.set(handle, proxy);
     return proxy;
   }
+  // A framework's click handler props (React's __reactProps$…, el.onclick set
+  // by script) live in the page's own world, invisible to Jev's isolated one.
+  // Before a page read, list which div/span elements carry one, as indexes in
+  // document order, so the read can count them as controls. The page world only
+  // reads; nothing is written to the page. Outside Patchright (tests driving
+  // plain Playwright) reads already run in the page world and this is skipped.
+  const handlerHints = (frame) =>
+    frame
+      .evaluate(
+        () => {
+          const queryAll = (root) => {
+            const found = [...root.querySelectorAll('div,span')];
+            for (const host of root.querySelectorAll('*'))
+              if (host.shadowRoot) found.push(...queryAll(host.shadowRoot));
+            return found;
+          };
+          const all = queryAll(document),
+            indexes = [];
+          for (let i = 0; i < all.length; i++) {
+            const e = all[i];
+            if (
+              typeof e.onclick === 'function' ||
+              Object.keys(e).some(
+                (k) =>
+                  k.startsWith('__reactProps$') &&
+                  typeof Object.getOwnPropertyDescriptor(e, k)?.value?.onClick === 'function',
+              )
+            )
+              indexes.push(i);
+          }
+          return {count: all.length, indexes};
+        },
+        undefined,
+        undefined,
+        false,
+      )
+      .catch(() => null);
   const wrappedFrames = new WeakMap();
   function wrapFrame(frame) {
     if (wrappedFrames.has(frame)) return wrappedFrames.get(frame);
@@ -91,8 +128,14 @@ export function privateJevPage(page) {
           return async (fn, arg) => {
             const entry = frameState(frame);
             try {
-              const remote = await state(frame),
-                result = await remote[key](compiled(fn), arg);
+              const remote = await state(frame);
+              if (typeof fn === 'string' && fn.includes('__jevHandlerHints')) {
+                const hints = await handlerHints(frame);
+                await remote.evaluate((s, value) => {
+                  s.__jevHandlerHints = value;
+                }, hints);
+              }
+              const result = await remote[key](compiled(fn), arg);
               return key === 'evaluateHandle' ? wrapHandle(result, frame) : result;
             } catch (error) {
               if (transientRead(error)) invalidate(frame, entry);

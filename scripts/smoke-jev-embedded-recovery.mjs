@@ -213,7 +213,7 @@ try {
   await page
     .frames()[1]
     .locator('[role=checkbox]')
-    .evaluate((e) => (e.onclick = null));
+    .evaluate((e) => (e.onclick = null), undefined, undefined, false);
   o = await call('browser_observe', {tabId, full: true});
   o = await call('browser_click_target', {
     tabId,

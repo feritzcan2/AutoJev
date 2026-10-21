@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {JevBrowser} from '../app/jev/browser.mjs';
 import {controlState} from './jev-control-state.mjs';
+import {inPageWorld} from './jev-page-world.mjs';
 const directory = await mkdtemp(path.join(os.tmpdir(), 'jev-context-'));
 const client = new JevBrowser(directory, {
   connection: 'separate',
@@ -28,7 +29,7 @@ try {
   await page.setContent(
     `<style>label{display:block;height:80px}</style><form onsubmit="event.preventDefault();window.submits++">${Array.from({length: 70}, (_, i) => `<label>Required field ${i}<select id="f${i}" required><option value="">Choose</option><option value="yes">Yes</option><option value="no">No</option></select></label>`).join('')}<button>Submit application</button></form>`,
   );
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     window.submits = 0;
   });
   const first = await call('browser_observe', {tabId});
@@ -63,7 +64,7 @@ try {
   assert.equal(reread.wire.text, undefined);
   assert.equal(reread.wire.baseObservationId, third.wire.observationId);
   assert.ok(reread.bytes < first.bytes * 0.15);
-  await page.evaluate(() => {
+  await inPageWorld(page, () => {
     document.querySelector('#f1').value = 'yes';
     document.body.insertAdjacentHTML(
       'afterbegin',
@@ -102,9 +103,9 @@ try {
         },
         'other',
       ),
-    /oturuma/,
+    /of this session is required/,
   );
-  assert.equal(await page.evaluate(() => window.submits), 0);
+  assert.equal(await inPageWorld(page, () => window.submits), 0);
   const full = await call('browser_observe', {tabId, full: true});
   assert.equal(full.wire.observationMode, 'full');
   assert.equal(full.wire.controls.length, 71);
