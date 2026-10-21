@@ -554,7 +554,10 @@ test('a scan agent that keeps stopping without a step resumes in a fresh convers
   const once = await f.start(sources[0], 'main', first.run.taskId);
   assert.equal(once.run.continuation.resumeConversation, true, 'one idle stop keeps the history');
   await f.finish(once, 'interrupted');
-  tasks.put({...tasks.get(f.id, first.run.taskId), recovery: {reason: 'idle', attempt: 2, readyAt: 0}});
+  tasks.put({
+    ...tasks.get(f.id, first.run.taskId),
+    recovery: {reason: 'idle', attempt: 2, readyAt: 0},
+  });
   const next = await f.start(sources[0], 'main', first.run.taskId);
   assert.equal(next.run.continuation.resumeConversation, false);
   assert.equal(next.launch.resumeId, undefined);

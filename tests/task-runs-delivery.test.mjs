@@ -81,8 +81,16 @@ test('a provider prompt in the terminal keeps waiting instead of failing the mes
 test('a worker round ends when the engine reports its message undelivered', async () => {
   const f = fixture({interactive: false});
   await f.runtime.start('w', 'scan');
-  f.event({event: 'delivery_failed', state: 'Some(Stalled)'});
+  f.event({
+    event: 'delivery_failed',
+    state: 'Some(Stalled)',
+    screen: 'output\n\n> task message\n  ? for shortcuts  \n',
+  });
   await wait(10);
   assert.equal(f.runs.get('run').status, 'failed');
   assert.match(f.runs.get('run').summary, /did not reach the agent/);
+  assert.deepEqual(f.runs.get('run').deliveryFailure, {
+    state: 'Some(Stalled)',
+    screen: 'output\n> task message\n  ? for shortcuts',
+  });
 });

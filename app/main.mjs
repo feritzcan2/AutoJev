@@ -8,6 +8,7 @@ import {webInstructionCatalog, instructionSnapshot} from './system/instruction-c
 import {app, BrowserWindow, Menu, ipcMain, dialog, shell, safeStorage} from 'electron';
 import {mkdir, rm} from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {Maintenance} from './system/maintenance.mjs';
 import {startDevControl} from './system/dev-control.mjs';
@@ -16,7 +17,9 @@ import {AgentTrace} from './system/agent-trace.mjs';
 import {registerDevTools} from './system/dev-tools.mjs';
 import {registerAutomationServices} from './automation/services.mjs';
 import {AutomationStore} from './automation/store.mjs';
-import {createScanFailureReporter, scanReportSetting} from './system/scan-failure-report.mjs';
+import {createScanFailureReporter} from './system/scan-failure-report.mjs';
+import {diagnosticsSetting, sentryTransport} from './system/diagnostics.mjs';
+import {startUsageReporting} from './system/usage-report.mjs';
 import {registerSettingsServices} from './system/settings-services.mjs';
 import {openedInBackground, startBackgroundMode} from './system/background.mjs';
 import {JevSettings} from './jev/settings.mjs';
@@ -243,14 +246,29 @@ async function boot() {
     });
   }
   const automationDb = new AutomationStore(core);
-  const scanReports = scanReportSetting(path.join(data, 'scan-reports.json'));
-  automationDb.scanFailed = createScanFailureReporter({
-    release: app.getVersion(),
-    environment: app.isPackaged ? 'production' : 'development',
-    enabled: scanReports.enabled,
+  // Anonymous diagnostics: failed scan reports, sessions and daily usage counts.
+  const diagnostics = diagnosticsSetting(path.join(data, 'scan-reports.json')),
+    release = app.getVersion(),
+    environment = app.isPackaged ? 'production' : 'development';
+  const usage = startUsageReporting({
+    db: core.db,
+    setting: diagnostics,
+    send: sentryTransport({release}),
+    release,
+    environment,
+    system: {os: process.platform, arch: process.arch, os_version: os.release()},
   });
-  handle('scan-reports-status', () => scanReports.status());
-  handle('scan-reports-set', (value) => scanReports.set(value === true));
+  const reportScan = createScanFailureReporter({
+    release,
+    environment,
+    enabled: diagnostics.enabled,
+  });
+  automationDb.scanFailed = (run) => {
+    usage.failure();
+    return reportScan(run);
+  };
+  handle('scan-reports-status', () => diagnostics.status());
+  handle('scan-reports-set', (value) => diagnostics.set(value === true));
   const web = registerAutomationServices({
     root,
     data,
@@ -466,6 +484,7 @@ async function boot() {
       if (browser.status(workspace.id).state === 'waiting') browser.prepare(workspace.id);
   });
   scheduler.register('web-templates', () => web.runtime.tick());
+  scheduler.register('usage-report', () => usage.tick(), {interval: 3600000});
   scheduler.start();
   const activeRunIds = () => services.flatMap((service) => service.activeRunIds?.() ?? []);
   const settingsServices = await registerSettingsServices({
@@ -540,6 +559,7 @@ async function boot() {
   handle('background-open-at-login', (value) => background.setOpenAtLogin(value === true));
   await window.loadFile(path.join(root, 'dist/index.html'));
   await completeDataUpgrade({dataDirectory: data, appVersion: app.getVersion()});
+  void usage.start();
   // Unpackaged builds only: lets a local development script drive the app.
   const devControl = app.isPackaged
     ? null
@@ -564,6 +584,7 @@ async function boot() {
     settingsServices.dispose();
     scheduler.close();
     (async () => {
+      await Promise.race([usage.stop(), new Promise((resolve) => setTimeout(resolve, 2000))]);
       for (const service of services) await service.close?.();
       await agents.close();
       await browser.close({closeTabs: true});

@@ -8,12 +8,24 @@ description: Triage jobloop source scans that ended failed, blocked or timed out
 When a source scan run ends `failed`, `blocked` or `timeout`, the app sends one
 Sentry event (`app/system/scan-failure-report.mjs`, hooked in `AutomationStore.putRun`).
 Interrupted, partial and completed runs and record work (applications) are not sent.
-Reports are on by default; Configuration → Diagnostics → "Send failed scan reports" turns
+Reports are on by default; Configuration → Diagnostics → "Send anonymous usage and error reports" turns
 them off (stored in `<data>/scan-reports.json`). No events from this machine can mean it is off.
 
 - Organization `agentloop-22`, project `jobloop` (ID `4512290640101456`), API `https://de.sentry.io`
 - API token: macOS Keychain service `ai.termloop.sentry.api` (shared with TermLoop Mobile)
 - Helper: `scripts/sentry-scans.sh` (in this skill folder)
+
+## Usage analytics
+
+The same switch also sends anonymous usage (`app/system/usage-report.mjs`): one Release
+Health session per app start (`did` = a random install id, errors = failed scans) and one
+`usage.daily` log line per day with counts (`scan_*`, `trial_*`, `execute_*` = applications,
+`records_found`, `workspaces`, `sources`, `providers`, `os`, `install_id`).
+
+- `scripts/sentry-scans.sh users 14d` — sessions and unique installs per release per day
+- `scripts/sentry-scans.sh usage 14d` — the daily count lines; count distinct `install_id`
+  for active installs, and installs whose `scan_total` stays 0 for drop-off
+- Exclude the user's own machines: `environment: development` is the repo build.
 
 ## Security
 
@@ -33,7 +45,11 @@ profile, CV, page text, full URLs, search terms or raw IDs to the event.
   `code`, `collector`, `model`, `provider`, `retry_exhausted`, `recovered_after_crash`,
   `environment` (development = the user's repo build), `release` (app version)
 - Extra: scrubbed `summary`, `stopEvidence`, `toolFailure`, `durationMs`, `browserSteps`,
-  `pageProgress`, `scanStats`, `continuation`
+  `pageProgress`, `scanStats`, `continuation`, and `deliveryFailure` when the task
+  message never reached the agent: the engine delivery state and the last three scrubbed
+  lines of the agent terminal (a first-run prompt, a login request, a full composer)
+- Failures the app ended without a stop reason (`stop_kind: none`) group across sites;
+  their `code` is the summary's first sentence
 
 ## Workflow
 

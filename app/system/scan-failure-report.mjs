@@ -1,14 +1,10 @@
 // @ts-check
 import {randomUUID} from 'node:crypto';
-import {readFileSync} from 'node:fs';
-import {writeFile} from 'node:fs/promises';
+import {sentryTransport} from './diagnostics.mjs';
 
 // Reports source scans that end failed, blocked or timed out to Sentry so they
 // can be triaged later. Only the site host, app status codes and scrubbed
 // summaries leave the machine: no profile, CV, page content or full URLs.
-export const SENTRY_DSN =
-  'https://98689f2b21cbf36de286601b8d692d03@o4511248981164032.ingest.de.sentry.io/4512290640101456';
-
 const REPORTED_STATUSES = new Set(['failed', 'blocked', 'timeout']);
 
 const scanSource = (run) => run.sourceUrl ?? (run.sources?.length === 1 ? run.sources[0] : null);
@@ -52,7 +48,19 @@ export function scrubText(value, max = 400) {
 function failureCode(run) {
   if (run.toolFailure?.tool) return `tool:${run.toolFailure.tool}`;
   const text = `${run.stop?.evidence ?? ''} ${run.summary ?? ''}`;
-  return text.match(/\b[a-z]+(?:_[a-z]+)+\b/)?.[0] ?? 'none';
+  return (
+    text.match(/\b[a-z]+(?:_[a-z]+)+\b/)?.[0] ??
+    // Otherwise the summary's first sentence, without numbers and hosts.
+    (scrubText(run.summary)
+      .replace(/\S+\/…/g, '')
+      .split(/[.;:]/)[0]
+      .replace(/\d+/g, '#')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase()
+      .slice(0, 80) ||
+      'none')
+  );
 }
 
 export function scanFailureEvent(run, {release, environment}) {
@@ -68,8 +76,18 @@ export function scanFailureEvent(run, {release, environment}) {
     logger: 'jobloop.scan',
     release,
     environment,
-    message: {formatted: `scan ${run.status} (${stopKind}) ${site}: ${code}`},
-    fingerprint: ['jobloop-scan', site, run.status, stopKind, code],
+    // A run the app ended without a stop reason fails the same way on every
+    // site, so those failures group across sites.
+    message: {
+      formatted:
+        stopKind === 'none'
+          ? `scan ${run.status}: ${code}`
+          : `scan ${run.status} (${stopKind}) ${site}: ${code}`,
+    },
+    fingerprint:
+      stopKind === 'none'
+        ? ['jobloop-scan', run.status, stopKind, code]
+        : ['jobloop-scan', site, run.status, stopKind, code],
     tags: {
       site,
       status: run.status,
@@ -101,67 +119,38 @@ export function scanFailureEvent(run, {release, environment}) {
         Object.entries(stats).filter(([, value]) => typeof value === 'number'),
       ),
       continuation: run.continuation?.reason ?? null,
+      // The last agent terminal lines when the task message was not delivered.
+      deliveryFailure: run.deliveryFailure
+        ? {
+            state: run.deliveryFailure.state,
+            screen: String(run.deliveryFailure.screen ?? '')
+              .split('\n')
+              .map((line) => scrubText(line.replace(/[─━│┃╭╮╰╯┌┐└┘├┤]+/g, ' '), 120))
+              .filter(Boolean)
+              .slice(-3)
+              .join(' | ')
+              .slice(0, 200),
+          }
+        : null,
     },
-  };
-}
-
-function envelopeTarget(dsn) {
-  const url = new URL(dsn);
-  return {
-    url: `${url.protocol}//${url.host}/api/${url.pathname.slice(1)}/envelope/`,
-    key: url.username,
   };
 }
 
 /** Returns a reporter that sends each scan run at most once and never throws. */
 export function createScanFailureReporter({
-  dsn = SENTRY_DSN,
+  dsn,
   release,
   environment,
   fetch = globalThis.fetch,
   enabled = () => true,
 }) {
-  const target = envelopeTarget(dsn),
+  const send = sentryTransport({dsn, release, fetch}),
     sent = new Set();
   return async (run) => {
     if (!enabled() || sent.has(run.id)) return;
     sent.add(run.id);
     const event = scanFailureEvent(run, {release, environment});
-    const body = [
-      JSON.stringify({event_id: event.event_id, sent_at: new Date().toISOString()}),
-      JSON.stringify({type: 'event'}),
-      JSON.stringify(event),
-    ].join('\n');
-    try {
-      await fetch(target.url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-sentry-envelope',
-          'X-Sentry-Auth': `Sentry sentry_version=7, sentry_key=${target.key}, sentry_client=jobloop/${release}`,
-        },
-        body,
-        signal: AbortSignal.timeout(10000),
-      });
-    } catch {
-      // Reporting is best effort; a scan never fails because Sentry is unreachable.
-    }
-  };
-}
-
-// A device preference kept beside the data, outside the database and backups.
-// Reports are on until the user turns them off.
-export function scanReportSetting(file) {
-  let enabled = true;
-  try {
-    enabled = JSON.parse(readFileSync(file, 'utf8')).sendScanFailures !== false;
-  } catch {}
-  return {
-    enabled: () => enabled,
-    status: () => ({enabled}),
-    async set(value) {
-      await writeFile(file, JSON.stringify({sendScanFailures: value === true}));
-      enabled = value === true;
-      return {enabled};
-    },
+    // Reporting is best effort; a scan never fails because Sentry is unreachable.
+    await send([{type: 'event', payload: event}], {event_id: event.event_id});
   };
 }

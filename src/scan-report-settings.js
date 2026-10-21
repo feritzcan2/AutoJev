@@ -1,5 +1,5 @@
 export function scanReportPanel(api, root, {notice = () => {}} = {}) {
-  root.innerHTML = `<label class="background-option"><span><b>Send failed scan reports</b></span><input class="switch" type="checkbox" data-scan-reports aria-label="Send failed scan reports"></label>`;
+  root.innerHTML = `<label class="background-option"><span><b>Send anonymous usage and error reports</b></span><input class="switch" type="checkbox" data-scan-reports aria-label="Send anonymous usage and error reports"></label>`;
   const toggle = root.querySelector('[data-scan-reports]');
   const render = (state) => {
     toggle.checked = state.enabled;

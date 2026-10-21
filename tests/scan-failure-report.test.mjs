@@ -8,9 +8,9 @@ import {join} from 'node:path';
 import {
   createScanFailureReporter,
   scanFailureEvent,
-  scanReportSetting,
   scrubText,
 } from '../app/system/scan-failure-report.mjs';
+import {diagnosticsSetting} from '../app/system/diagnostics.mjs';
 
 const source = 'https://catalog.test/search?query=example';
 function fixture(t, task = {}) {
@@ -150,7 +150,7 @@ test('scan reports are on by default and stay off once turned off', async (t) =>
   const directory = await mkdtemp(join(tmpdir(), 'jobloop-scan-reports-')),
     file = join(directory, 'scan-reports.json');
   t.after(() => rm(directory, {recursive: true, force: true}));
-  const setting = scanReportSetting(file);
+  const setting = diagnosticsSetting(file);
   assert.deepEqual(setting.status(), {enabled: true});
   const calls = [];
   const report = createScanFailureReporter({
@@ -164,8 +164,70 @@ test('scan reports are on by default and stay off once turned off', async (t) =>
   await report({id: 'run-1', kind: 'run', status: 'failed', sourceUrl: source});
   assert.equal(calls.length, 0);
   assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), {sendScanFailures: false});
-  assert.deepEqual(scanReportSetting(file).status(), {enabled: false});
+  assert.deepEqual(diagnosticsSetting(file).status(), {enabled: false});
   await setting.set(true);
   await report({id: 'run-1', kind: 'run', status: 'failed', sourceUrl: source});
   assert.equal(calls.length, 1);
+});
+
+test('failures the app ended without a stop reason group across sites by their summary', () => {
+  const event = (sourceUrl) =>
+    scanFailureEvent(
+      {
+        id: 'run-1',
+        kind: 'run',
+        status: 'failed',
+        sourceUrl,
+        summary:
+          'The task message did not reach the agent; it stayed in the agent terminal without being submitted.',
+      },
+      {release: '0.1.12', environment: 'production'},
+    );
+  const first = event('https://first.test/jobs'),
+    second = event('https://second.test/search');
+  assert.deepEqual(first.fingerprint, second.fingerprint);
+  assert.equal(first.tags.code, 'the task message did not reach the agent');
+  assert.equal(first.message.formatted, 'scan failed: the task message did not reach the agent');
+  assert.equal(first.tags.site, 'first.test');
+  const sentence = scanFailureEvent(
+    {
+      id: 'run-2',
+      kind: 'run',
+      status: 'blocked',
+      sourceUrl: 'https://first.test/jobs',
+      summary: 'Page 3 of https://first.test/jobs?page=3 did not load.',
+    },
+    {release: '0.1.12', environment: 'production'},
+  );
+  assert.equal(sentence.tags.code, 'page # of did not load');
+});
+
+test('an undelivered task message reports the scrubbed end of the agent screen', () => {
+  const event = scanFailureEvent(
+    {
+      id: 'run-1',
+      kind: 'run',
+      status: 'failed',
+      sourceUrl: source,
+      summary: 'The task message did not reach the agent.',
+      deliveryFailure: {
+        state: 'Some(Stalled)',
+        screen: [
+          'Earlier output with person@example.com',
+          '╭──────────────────────────╮',
+          '│ Do you trust the files in this folder? │',
+          '│ 1. Yes, proceed          │',
+          '╰──────────────────────────╯',
+          ' Enter to confirm · Esc to exit',
+        ].join('\n'),
+      },
+    },
+    {release: '0.1.12', environment: 'production'},
+  );
+  assert.equal(event.extra.deliveryFailure.state, 'Some(Stalled)');
+  assert.equal(
+    event.extra.deliveryFailure.screen,
+    'Do you trust the files in this folder? | 1. Yes, proceed | Enter to confirm · Esc to exit',
+  );
+  assert.equal(JSON.stringify(event).includes('person@example.com'), false);
 });

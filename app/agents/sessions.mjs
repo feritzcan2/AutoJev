@@ -171,6 +171,12 @@ export class AgentSessions {
             await this.checkProviderFailure(s).catch(() => {});
             if (this.engines.get(key) !== instance || this.sessions.get(key) !== s) return;
           }
+          // The rendered screen shows what kept the message from the provider,
+          // such as a first-run prompt, so it travels with the failure.
+          if (event.event === 'delivery_failed' && this.screens.has(key)) {
+            event = {...event, screen: await this.screens.get(key).text()};
+            if (this.engines.get(key) !== instance || this.sessions.get(key) !== s) return;
+          }
           if (event.event === 'compaction' && s) this.compaction.delivery(s, event);
           if (s && ['delivery', 'delivery_failed', 'compaction'].includes(event.event))
             this.audit(s, {

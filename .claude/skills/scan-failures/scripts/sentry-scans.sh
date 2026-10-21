@@ -52,7 +52,7 @@ issue_lines() {
 }
 
 usage() {
-  echo "Usage: sentry-scans.sh health | issues [period 24h|14d] [query] | list [period] [query] | latest <issue-id> | events <issue-id> | resolve <issue-id> | ignore <issue-id>" >&2
+  echo "Usage: sentry-scans.sh health | issues [period 24h|14d] [query] | list [period] [query] | latest <issue-id> | events <issue-id> | resolve <issue-id> | ignore <issue-id> | usage [period] | users [period]" >&2
 }
 
 command_name="${1:-}"
@@ -86,6 +86,33 @@ case "${command_name}" in
     issue_id="${2:-}"
     if [[ -z "${issue_id}" ]]; then usage; exit 2; fi
     api_put "/organizations/${ORGANIZATION}/issues/${issue_id}/" '{"status":"resolved"}'
+    ;;
+  usage)
+    period="${2:-14d}"
+    fields=(timestamp install_id "tags[sentry.release,string]" "tags[os,string]" "tags[providers,string]"
+      "tags[window_hours,number]" "tags[scan_total,number]" "tags[scan_completed,number]"
+      "tags[scan_blocked,number]" "tags[scan_failed,number]" "tags[execute_completed,number]"
+      "tags[execute_total,number]" "tags[records_found,number]" "tags[workspaces,number]"
+      "tags[sources,number]")
+    args=()
+    for field in "${fields[@]}"; do args+=(--data-urlencode "field=${field}"); done
+    api_get "/organizations/${ORGANIZATION}/events/" \
+      --data-urlencode "dataset=logs" \
+      --data-urlencode "project=${PROJECT_ID}" \
+      --data-urlencode "statsPeriod=${period}" \
+      --data-urlencode "query=message:usage.daily" \
+      --data-urlencode "sort=-timestamp" \
+      "${args[@]}"
+    ;;
+  users)
+    period="${2:-14d}"
+    api_get "/organizations/${ORGANIZATION}/sessions/" \
+      --data-urlencode "project=${PROJECT_ID}" \
+      --data-urlencode "statsPeriod=${period}" \
+      --data-urlencode "interval=1d" \
+      --data-urlencode "field=sum(session)" \
+      --data-urlencode "field=count_unique(user)" \
+      --data-urlencode "groupBy=release"
     ;;
   ignore)
     issue_id="${2:-}"

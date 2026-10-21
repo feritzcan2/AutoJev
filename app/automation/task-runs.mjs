@@ -231,13 +231,27 @@ export class TaskRuns {
     // message. A worker round cannot continue without it, so end the round.
     if (event.event === 'delivery_failed') {
       if (slot.run.interactive) this.undelivered(slot);
-      else if (!slot.completionRequested)
+      else if (!slot.completionRequested) {
+        slot.run = {
+          ...this.policy.run(slot.run.id),
+          deliveryFailure: {
+            state: String(event.state),
+            screen: String(event.screen ?? '')
+              .split('\n')
+              .map((line) => line.trimEnd())
+              .filter(Boolean)
+              .slice(-8)
+              .join('\n'),
+          },
+        };
+        this.policy.save(slot.run);
         void this.finish(
           id,
           'failed',
           'The task message did not reach the agent; it stayed in the agent terminal without being submitted.',
           slot.workerId,
         ).catch(() => {});
+      }
     }
     if (['eof', 'engine_exit'].includes(event.event) && !slot.completionRequested)
       void this.unreported(slot, 'exit');
