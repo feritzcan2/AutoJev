@@ -517,6 +517,77 @@ test('an out-of-process frame that loaded before the attach gets its URL', async
   );
 });
 
+async function tabWithFrame(t) {
+  const fixture = await transportFixture(t);
+  const {extension, transport, call} = fixture;
+  await call({id: 1, method: 'Target.setAutoAttach', params: {autoAttach: true}});
+  const {result} = await call({
+    id: 2,
+    method: 'Target.createTarget',
+    params: {url: 'https://jobs.example/apply'},
+  });
+  const entry = transport.targets.get(result.targetId);
+  extension.emit(extension.sockets.at(-1), {
+    event: 'debugger.event',
+    tabId: entry.tabId,
+    method: 'Target.attachedToTarget',
+    params: {
+      sessionId: 'frame',
+      waitingForDebugger: true,
+      targetInfo: {targetId: 'F1', type: 'iframe'},
+    },
+  });
+  for (let i = 0; i < 50 && !entry.children.has('frame'); i++) await flush();
+  return {...fixture, targetId: result.targetId, entry};
+}
+
+test('closing a tab tells Playwright its out-of-process frames ended before the tab', async (t) => {
+  const {extension, forwarded, targetId, entry} = await tabWithFrame(t);
+  extension.emit(extension.sockets.at(-1), {event: 'tabs.removed', tabId: entry.tabId});
+  for (let i = 0; i < 50 && !forwarded.some((m) => m.params?.targetId === targetId); i++)
+    await flush();
+  assert.deepEqual(
+    forwarded.filter((m) => m.method === 'Target.detachedFromTarget'),
+    [
+      {
+        sessionId: entry.sessionId,
+        method: 'Target.detachedFromTarget',
+        params: {sessionId: 'frame', targetId: 'F1'},
+      },
+      {method: 'Target.detachedFromTarget', params: {sessionId: entry.sessionId, targetId}},
+    ],
+  );
+});
+
+test('a command for a frame session the transport lost ends that session and answers on a later turn', async (t) => {
+  const {forwarded, transport, entry} = await tabWithFrame(t);
+  entry.children.clear();
+  let answered = false;
+  const reply = new Promise((resolve) => {
+    const onmessage = transport.onmessage;
+    transport.onmessage = (message) => {
+      onmessage(message);
+      if (message.id === 3) ((answered = true), resolve(message));
+    };
+  });
+  transport.send({id: 3, sessionId: 'frame', method: 'Page.createIsolatedWorld', params: {}});
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  assert.equal(answered, false);
+  assert.equal((await reply).error.message, 'Session not found: frame');
+  transport.send({id: 4, sessionId: 'frame', method: 'Page.createIsolatedWorld', params: {}});
+  for (let i = 0; i < 50 && !forwarded.some((m) => m.id === 4); i++) await flush();
+  assert.deepEqual(
+    forwarded.filter((m) => m.method === 'Target.detachedFromTarget'),
+    [
+      {
+        sessionId: entry.sessionId,
+        method: 'Target.detachedFromTarget',
+        params: {sessionId: 'frame', targetId: 'F1'},
+      },
+    ],
+  );
+});
+
 test('new tabs and popups of owned tabs join the connection; closing a tab retires it', async (t) => {
   const {extension, transport, forwarded, call} = await transportFixture(t);
   const destroyed = [];

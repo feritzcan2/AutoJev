@@ -155,16 +155,16 @@ test('a LinkedIn search opens as the signed-in results page with its filters', (
     'https://www.linkedin.com/jobs/search-results/?keywords=Go&geoId=106967730',
     'a saved geoId wins',
   );
-  assert.equal(
-    linkedInSignedInSearch(saved('keywords=Go&location=Berlin%2C+Germany')),
-    'https://www.linkedin.com/jobs/search-results/?keywords=Go&geoId=101282230',
-    'a city searches its country',
+  assert.throws(
+    () => linkedInSignedInSearch(saved('keywords=Go&location=Berlin%2C+Germany')),
+    (error) => error.code === 'SEARCH_VALUE' && error.value === 'Berlin, Germany',
+    'a city is learned as its own geoId, not widened to its country',
   );
   assert.throws(
     () => linkedInSignedInSearch(saved('keywords=Go&location=Atlantis')),
     /only as a geoId.*Atlantis/,
   );
-  for (const location of ['Netherlands', 'the netherlands', 'Amsterdam, Netherlands'])
+  for (const location of ['Netherlands', 'the netherlands'])
     assert.equal(
       new URL(
         linkedInSignedInSearch(saved('keywords=Go&location=' + encodeURIComponent(location))),
@@ -173,14 +173,20 @@ test('a LinkedIn search opens as the signed-in results page with its filters', (
       location,
     );
   assert.equal(
-    new URL(
-      linkedInSignedInSearch(saved('keywords=Go&location=Z%C3%BCrich%2C+Switzerland')),
-    ).searchParams.get('geoId'),
+    new URL(linkedInSignedInSearch(saved('keywords=Go&location=switzerland'))).searchParams.get(
+      'geoId',
+    ),
     '106693272',
   );
+  for (const location of ['Amsterdam, Netherlands', 'Zürich, Switzerland'])
+    assert.throws(
+      () => linkedInSignedInSearch(saved('keywords=Go&location=' + encodeURIComponent(location))),
+      (error) => error.code === 'SEARCH_VALUE',
+      location,
+    );
   assert.throws(
     () => linkedInSignedInSearch(saved('keywords=Go&location=New+Jersey')),
-    /no known one/,
+    /countries only, not of "New Jersey"/,
     'a place is not guessed from a word it shares with a country',
   );
   assert.equal(

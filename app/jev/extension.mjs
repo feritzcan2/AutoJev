@@ -187,6 +187,8 @@ export class JevExtensionTransport {
     this.virtual = new Map();
     // Out-of-process iframes that were already loaded when they got attached.
     this.loadedFrames = new Set();
+    // Out-of-process frame sessions Playwright knows: session → parent session and target.
+    this.childSessions = new Map();
     this.sessions = 0;
     this.pending = new Map();
     this.sequence = 0;
@@ -420,7 +422,10 @@ export class JevExtensionTransport {
     if (wasAttached) this.detached(entry, targetId);
   }
   detached(entry, targetId) {
-    for (const id of entry.children) this.loadedFrames.delete(id);
+    for (const id of entry.children) {
+      this.loadedFrames.delete(id);
+      this.retireChild(id);
+    }
     for (const [id, session] of [...this.virtual])
       if (session.entry === entry) this.dropVirtual(id);
     this.emit({
@@ -437,6 +442,18 @@ export class JevExtensionTransport {
       ...(session.parent ? {sessionId: session.parent} : {}),
       method: 'Target.detachedFromTarget',
       params: {sessionId: id, ...(targetId ? {targetId} : {})},
+    });
+  }
+  // Tells Playwright a frame session ended; otherwise it keeps retrying the
+  // frame's execution context on that session.
+  retireChild(sessionId) {
+    const child = this.childSessions.get(sessionId);
+    if (!child) return;
+    this.childSessions.delete(sessionId);
+    this.emit({
+      sessionId: child.parent,
+      method: 'Target.detachedFromTarget',
+      params: {sessionId, ...(child.targetId ? {targetId: child.targetId} : {})},
     });
   }
   sessionEntry(sessionId) {
@@ -493,12 +510,17 @@ export class JevExtensionTransport {
     if (!entry) return;
     if (method === 'Target.attachedToTarget' && params?.sessionId) {
       entry.children.add(params.sessionId);
+      this.childSessions.set(params.sessionId, {
+        parent: sessionId ?? entry.sessionId,
+        targetId: params.targetInfo?.targetId,
+      });
       if (params.targetInfo?.type === 'iframe' && !params.waitingForDebugger)
         this.loadedFrames.add(params.sessionId);
       if (params.targetInfo?.targetId)
         entry.childTargets.set(params.targetInfo.targetId, params.sessionId);
     } else if (method === 'Target.detachedFromTarget' && params?.sessionId) {
       entry.children.delete(params.sessionId);
+      this.childSessions.delete(params.sessionId);
       this.loadedFrames.delete(params.sessionId);
       for (const [target, session] of entry.childTargets)
         if (session === params.sessionId) entry.childTargets.delete(target);
@@ -591,7 +613,13 @@ export class JevExtensionTransport {
     if (sessionId && !this.browserSessions.has(sessionId)) {
       const virtual = this.virtual.get(sessionId),
         entry = virtual?.entry ?? this.sessionEntry(sessionId);
-      if (!entry) throw Error(`Session not found: ${sessionId}`);
+      if (!entry) {
+        this.retireChild(sessionId);
+        // Playwright retries a frame's context at once on a plain error; the
+        // answer waits a turn so the retries cannot starve the event loop.
+        await new Promise((resolve) => setImmediate(resolve));
+        throw Error(`Session not found: ${sessionId}`);
+      }
       const real = virtual ? virtual.real : sessionId === entry.sessionId ? undefined : sessionId;
       if (method === 'Target.getTargetInfo' && !params.targetId && !real)
         return {targetInfo: entry.info};

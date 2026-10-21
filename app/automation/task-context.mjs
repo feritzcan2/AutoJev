@@ -299,7 +299,7 @@ export function automationTaskContext(db, id, active, {section = undefined} = {}
           ? {
               siteSearch,
               siteSearchGuidance:
-                'The site extension knows this results address. Build url_template recipes from siteSearch.template; add only filters from siteSearch.filters as param=value. Your choices are the terms, the filter values and, where siteSearch.notes allow it, the path. The app keeps the sort parameters, pagination and ordering of siteSearch whatever the recipe says. Do not look for other parameters or sort controls on the site, and do not judge the ordering yourself.',
+                'The site extension knows this results address. Build url_template recipes from siteSearch.template; add only filters from siteSearch.filters as param=value. Set a filter only when the profile decides it: the work mode when the profile accepts only some work setups (all accepted modes, such as remote and hybrid), the posting age when the profile asks for recent listings. Leave other filters unset. Your choices are the terms, the filter values and, where siteSearch.notes allow it, the path. The app keeps the sort parameters, pagination and ordering of siteSearch whatever the recipe says. Do not look for other parameters or sort controls on the site, and do not judge the ordering yourself.',
             }
           : {}),
         ...pick(source, [
