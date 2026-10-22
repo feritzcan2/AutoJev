@@ -14,8 +14,10 @@ export const searchLearningSummary = ({field, value}) =>
   `The site extension cannot write the ${field} "${value}" into this site's search address. The next round learns how the site writes it in the browser, then the scan starts again.`;
 
 // The collector reported the value: the source learns it in its next round,
-// and this run ends without a technical retry.
-export function requestSearchLearning(db, runId, {field, value, message}) {
+// and this run ends without a technical retry. suggestions are address values
+// the site's own lookup gave for it ({param, value}, best first); the trial
+// tries them before the site's search field.
+export function requestSearchLearning(db, runId, {field, value, message}, suggestions = []) {
   const run = db.run(runId),
     a = db.get(run.automationId),
     state = a.sourceState?.[run.sourceUrl] ?? {},
@@ -23,6 +25,7 @@ export function requestSearchLearning(db, runId, {field, value, message}) {
       field,
       value,
       message: String(message ?? '').slice(0, 1000),
+      ...(suggestions.length ? {suggestions: suggestions.slice(0, 3)} : {}),
       runId,
       at: db.now(),
     };
@@ -49,15 +52,20 @@ export function clearSearchLearning(db, id, url) {
 
 // What the trial agent reads in assignedSource.
 export function searchLearningContext(learning) {
-  const {field, value, learnedValue} = learning;
+  const {field, value, learnedValue, suggestions = []} = learning;
+  const listed = suggestions.map((s) => `${s.param}=${s.value}`).join(', ');
   return {
     field,
     value,
     ...(learnedValue !== undefined ? {learnedValue} : {}),
+    ...(suggestions.length ? {suggestions} : {}),
     guidance:
       (learnedValue !== undefined
         ? `The saved recipe was learned for the ${field} "${learnedValue}"; it is now "${value}". `
         : `The site extension cannot write the ${field} "${value}" into this site's search address. `) +
+      (suggestions.length
+        ? `The site's own lookup suggests these address values for "${value}", best match first: ${listed}. Try the first one: save the recipe with save_source_recipe as url_template from siteSearch.template (when present), with that parameter in place of {${field}} and the search terms kept. The app checks that the results follow the ${field}. If the check refuses it, try the next one. Only when none passes, learn it in the browser as follows. `
+        : '') +
       `This trial learns how the site writes it. Do not start with recipeReplay. Open the site's search page with browser_open, enter "${value}" in the site's own ${field} field, choose the suggestion that names it and run the search. Compare the results address with the one before: the parameter or path part the site added is how it writes the ${field}. Save the recipe with save_source_recipe as url_template from siteSearch.template (when present), with that parameter in place of {${field}} and the search terms kept. The app checks that the results follow the ${field}. If the site has no such field, or the address does not change when you choose it, report the trial blocked with what you observed.`,
   };
 }

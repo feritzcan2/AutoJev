@@ -20,5 +20,10 @@ runs:
       if: runner.os == 'Linux'
       shell: bash
       run: |
-        sudo apt-get update
-        sudo apt-get install -y --no-install-recommends libgtk-3-0t64 libnss3 libasound2t64 libxss1 libgbm1 libsecret-1-dev libfuse2t64 rpm xvfb
+        packages=(libgtk-3-0t64 libnss3 libasound2t64 libxss1 libgbm1 libsecret-1-dev libfuse2t64 rpm xvfb)
+        # Self-hosted Linux runners have these preinstalled and no sudo.
+        if dpkg-query -W -f='${db:Status-Status}\n' "${packages[@]}" 2>/dev/null | grep -qvx installed \
+          || [ "$(dpkg-query -W "${packages[@]}" 2>/dev/null | wc -l)" -ne "${#packages[@]}" ]; then
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends "${packages[@]}"
+        fi

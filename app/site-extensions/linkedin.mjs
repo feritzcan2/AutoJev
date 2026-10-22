@@ -100,6 +100,33 @@ for (const [name, geoId] of Object.entries({
 // which the source learns in the browser (search-learning.mjs); searching its
 // whole country instead widened a city search without saying so.
 const geoIdOf = (location) => GEO_IDS.get(fold(location)) ?? null;
+// A place's geoIds from the lookup behind LinkedIn's location field, best
+// match first (one request per learned value). The hits carry no names, so
+// the learning trial checks that the results follow the place. Clicking the
+// location field in the AI search kept failing (JOBLOOP-H/J/N/12/13).
+/** @param {string} field @param {string} value @param {{signal?: AbortSignal, fetch?: typeof globalThis.fetch}} [options] */
+export async function linkedInGeoSuggestions(
+  field,
+  value,
+  {signal, fetch = globalThis.fetch} = {},
+) {
+  if (field !== 'location' || !String(value ?? '').trim()) return [];
+  const url = new URL('https://www.linkedin.com/jobs-guest/api/typeaheadHits');
+  url.searchParams.set('typeaheadType', 'GEO');
+  url.searchParams.set('geoTypes', 'POPULATED_PLACE,ADMIN_DIVISION_2,MARKET_AREA,COUNTRY_REGION');
+  url.searchParams.set('query', String(value).trim());
+  const timeout = AbortSignal.timeout(10000);
+  const response = await fetch(url, {
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+  });
+  if (!response.ok) return [];
+  const hits = await response.json();
+  return (Array.isArray(hits) ? hits : [])
+    .map((hit) => String(hit?.id ?? ''))
+    .filter((id) => /^\d+$/.test(id))
+    .slice(0, 3)
+    .map((id) => ({param: 'geoId', value: id}));
+}
 const WORK_MODES = {1: 'on-site', 2: 'remote', 3: 'hybrid'};
 // The signed-in results page for a saved search address, at the same offset.
 export function linkedInSignedInSearch(value) {
@@ -417,6 +444,7 @@ export default {
   id: 'linkedin',
   // The browser pacing of the collector's page views, shown on the Sources page.
   pacing: LINKEDIN_PACING,
+  suggestSearchValue: linkedInGeoSuggestions,
   matches: (value) => {
     try {
       const u = new URL(value);

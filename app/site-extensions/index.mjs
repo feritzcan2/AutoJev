@@ -40,6 +40,10 @@
 // Optionally `listingKey(url)`: the one comparison key of a listing the site
 // serves under several addresses (country hosts, title slugs), or null to keep
 // the generic key. Records and remembered rejections compare listings by it.
+// Optionally `suggestSearchValue(field, value, {signal})`: for a value the
+// extension cannot write (SearchValueError), the address values the site's own
+// lookup gives for it ([{param, value}], best first). The learning trial tries
+// them first; the app still checks that the results follow the value.
 // Optionally `search` (./search.mjs), or search(url) for a site with one host
 // per country: the results address, its order and the filters the site
 // accepts, so recipes are built from known parameters.

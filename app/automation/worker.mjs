@@ -1168,7 +1168,12 @@ export function automationWorkflow({
         signal.throwIfAborted();
         // A value the extension cannot write is learned in a trial, not retried.
         if (error?.code === 'SEARCH_VALUE') {
-          const learning = requestSearchLearning(db, run.id, error);
+          const suggest = siteExtensionFor(run.sourceUrl)?.suggestSearchValue;
+          const suggestions = suggest
+            ? await suggest(error.field, error.value, {signal}).catch(() => [])
+            : [];
+          signal.throwIfAborted();
+          const learning = requestSearchLearning(db, run.id, error, suggestions);
           changed(id);
           return learning;
         }

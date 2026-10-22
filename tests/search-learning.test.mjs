@@ -14,9 +14,10 @@ import {
 import {siteSourceTrialReady} from '../app/sources/automation-sources.mjs';
 import {SearchValueError} from '../app/site-extensions/search.mjs';
 import {normalizeSourceRecipe, recipeReplay, searchLabel} from '../app/sources/recipe.mjs';
-import {linkedInSignedInSearch} from '../app/site-extensions/linkedin.mjs';
+import {linkedInSignedInSearch, linkedInGeoSuggestions} from '../app/site-extensions/linkedin.mjs';
 import {
   searchLearning,
+  searchLearningContext,
   cardsShowLocation,
   learnedLocationApplied,
 } from '../app/sources/search-learning.mjs';
@@ -92,6 +93,46 @@ test('the LinkedIn extension reports a location it cannot write as a search valu
   assert.ok(error instanceof SearchValueError);
   assert.equal(error.code, 'SEARCH_VALUE');
   assert.deepEqual([error.field, error.value], ['location', 'Atlantis']);
+});
+
+test('the LinkedIn extension suggests geoIds from the site lookup, and nothing for other fields or failures', async () => {
+  const asked = [];
+  const fetch = async (url) => {
+    asked.push(new URL(url).searchParams.get('query'));
+    return {
+      ok: true,
+      json: async () => [{id: '111'}, {id: 'x'}, {id: '222'}, {id: '333'}, {id: '444'}],
+    };
+  };
+  assert.deepEqual(await linkedInGeoSuggestions('location', 'Atlantis, Oceania', {fetch}), [
+    {param: 'geoId', value: '111'},
+    {param: 'geoId', value: '222'},
+    {param: 'geoId', value: '333'},
+  ]);
+  assert.deepEqual(asked, ['Atlantis, Oceania']);
+  assert.deepEqual(await linkedInGeoSuggestions('query', 'Go', {fetch}), []);
+  assert.deepEqual(await linkedInGeoSuggestions('location', ' ', {fetch}), []);
+  assert.deepEqual(asked.length, 1, 'only a location is looked up');
+  const refused = async () => ({ok: false, json: async () => null});
+  assert.deepEqual(await linkedInGeoSuggestions('location', 'Atlantis', {fetch: refused}), []);
+});
+
+test('learning guidance lists the suggested address values before the search field', () => {
+  const context = searchLearningContext({
+    field: 'location',
+    value: 'Atlantis',
+    suggestions: [
+      {param: 'geoId', value: '111'},
+      {param: 'geoId', value: '222'},
+    ],
+  });
+  assert.deepEqual(context.suggestions.length, 2);
+  assert.match(context.guidance, /best match first: geoId=111, geoId=222\. Try the first one/);
+  assert.match(context.guidance, /enter "Atlantis" in the site's own location field/);
+  assert.doesNotMatch(
+    searchLearningContext({field: 'location', value: 'Atlantis'}).guidance,
+    /lookup suggests/,
+  );
 });
 
 test('a search value the collector cannot write ends the scan without a technical retry and plans a trial', async (t) => {
