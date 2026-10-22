@@ -64,7 +64,7 @@ function fixture(t, {cleanup = async () => ({closed: ['source-tab']})} = {}) {
     );
     const helper = db.jevTasks.create(a.id, run.taskId, {operation: 'collect_details'}),
       evidence = db.jevTasks.evidence(helper, {url: pending, text: 'RAM ONLY BODY'}),
-      wait = db.siteAccess.block(source, 'verification');
+      wait = db.siteAccess.block(source, 'ip_block');
     helper.items = [
       {url: pending, error: 'access_barrier', blockedSite: wait.site, retryAt: wait.retryAt},
       {url: other + '/collected', evidenceId: evidence.id, collected: true, reviewed: true},
@@ -124,7 +124,7 @@ test('the primary source gate releases the worker despite empty searches and rea
       },
       call: async (_id, _name, args) => {
         calls++;
-        const wait = f.db.siteAccess.block(args.url, 'verification'),
+        const wait = f.db.siteAccess.block(args.url, 'ip_block'),
           page = {url: args.url, status: 'site_wait', siteWait: wait, text: wait.message};
         return {
           jevPage: page,
@@ -313,7 +313,7 @@ test('a source question answer follows its incident and a stale reply cannot cle
   });
   await f.runtime.answer(f.id, 'access-question', 'Çözdüm');
   assert.equal(f.launches.at(-1).continuation.reason, 'site_access_response');
-  const wait = f.db.siteAccess.block(source, 'verification');
+  const wait = f.db.siteAccess.block(source, 'ip_block');
   f.db.siteAccess.save({...f.db.siteAccess.row(source), blockedAt: wait.blockedAt + 1});
   assert.throws(() => f.db.siteAccess.acknowledge([wait]), /new access wait/);
   assert.ok(f.db.siteAccess.status(source));

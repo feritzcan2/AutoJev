@@ -92,7 +92,7 @@ export const sourceMethods = {
   // The current state of the shared waits a source's access recovery recorded.
   currentSourceWaits(source) {
     return (source.accessRecovery?.waits ?? []).map((w) =>
-      this.db.siteAccess.forLane(w.lane).status('https://' + w.site),
+      this.db.siteAccess.forWait(w).status('https://' + w.site),
     );
   },
   async runSource(id, url, {fresh = false, force = false} = {}) {

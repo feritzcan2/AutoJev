@@ -86,7 +86,11 @@ export const runSiteLane = (run) =>
     : run?.recordOperation === 'contacts'
       ? CONTACTS_LANE
       : undefined;
-const waitKey = (site, lane) => (lane ? `${site} ${lane}` : site);
+// A verification challenge is answered per browser profile (its cookies), so
+// it waits only for the Chrome profile that met it; rate limits, IP blocks and
+// outages concern the whole computer and stay shared.
+const waitKey = (site, lane, profile) =>
+  [site, lane, profile && `profile:${profile}`].filter(Boolean).join(' ');
 export class SiteAccess {
   constructor(db, {now = Date.now, changed = () => {}} = {}) {
     Object.assign(this, {db, now, changed});
@@ -100,38 +104,71 @@ export class SiteAccess {
     );
     db.exec('CREATE TABLE IF NOT EXISTS site_requests(site TEXT NOT NULL,at INTEGER NOT NULL)');
   }
-  // The same store seen from one lane; pacing, incidents and listeners are shared.
-  forLane(lane) {
+  // The same store seen from one lane and Chrome profile ({directory, name});
+  // pacing, incidents and listeners are shared.
+  view(lane, profile) {
     const base = this.base ?? this;
-    if (!lane) return base;
-    base.lanes ??= new Map();
-    if (!base.lanes.has(lane))
-      base.lanes.set(lane, Object.create(base, {lane: {value: lane}, base: {value: base}}));
-    return base.lanes.get(lane);
+    if (!lane && !profile?.directory) return base;
+    const key = JSON.stringify([lane ?? null, profile?.directory ?? null]);
+    base.views ??= new Map();
+    if (!base.views.has(key))
+      base.views.set(
+        key,
+        Object.create(base, {
+          lane: {value: lane || undefined},
+          profile: {value: profile?.directory ? profile : undefined},
+          base: {value: base},
+        }),
+      );
+    return base.views.get(key);
   }
-  stored(site, lane) {
+  forLane(lane) {
+    return this.view(lane, this.profile);
+  }
+  forProfile(profile) {
+    return this.view(this.lane, profile);
+  }
+  // The view a wait was recorded in.
+  forWait(wait) {
+    return this.view(
+      wait?.lane,
+      wait?.profile ? {directory: wait.profile, name: wait.profileName} : null,
+    );
+  }
+  stored(site, lane, profile) {
     return JSON.parse(
-      this.db.prepare('SELECT data FROM browser_site_waits WHERE site=?').get(waitKey(site, lane))
-        ?.data ?? 'null',
+      this.db
+        .prepare('SELECT data FROM browser_site_waits WHERE site=?')
+        .get(waitKey(site, lane, profile))?.data ?? 'null',
     );
   }
   row(url) {
     return this.stored(siteKey(url), this.lane);
+  }
+  profileRow(url) {
+    return this.profile ? this.stored(siteKey(url), this.lane, this.profile.directory) : null;
   }
   save(value) {
     this.db
       .prepare(
         'INSERT INTO browser_site_waits(site,data) VALUES(?,?) ON CONFLICT(site) DO UPDATE SET data=excluded.data',
       )
-      .run(waitKey(value.site, value.lane), JSON.stringify(value));
+      .run(waitKey(value.site, value.lane, value.profile), JSON.stringify(value));
     this.changed();
     return value;
   }
+  // The site's shared wait, else this profile's own verification wait.
   status(url) {
-    const row = this.row(url);
+    const shared = this.statusOf(this.row(url)),
+      own = this.statusOf(this.profileRow(url));
+    return shared?.waiting || !own ? shared : own;
+  }
+  statusOf(row) {
     if (!row || row.recovered) return null;
     const {token, leaseUntil = 0, ...state} = row,
-      exhausted = row.attempts >= 3,
+      // A verification (captcha) asks the user at once: retrying alone does not solve it.
+      captcha = row.reason === 'verification',
+      exhausted = row.attempts >= 3 || captcha,
       retryAt = exhausted ? null : Math.max(row.retryAt, leaseUntil),
       probing = !exhausted && leaseUntil > this.now();
     return {
@@ -140,7 +177,7 @@ export class SiteAccess {
       exhausted,
       probing,
       waiting: exhausted || retryAt > this.now(),
-      message: `${row.site}: shared wait for ${row.lane === APPLY_LANE ? 'applications' : row.lane === CONTACTS_LANE ? 'contact tasks' : 'scans'} because of ${row.reason === 'budget' ? 'its request budget being used up' : row.reason === 'ip_block' ? 'an IP block' : row.reason === 'verification' ? 'an access verification' : row.reason === 'unreachable' ? 'the site being unreachable' : 'a rate limit'}. ${exhausted ? 'Third access failure; automatic retries stopped. Intervention is needed to continue.' : probing ? 'A single access check is in progress.' : `Resumes automatically: ${new Date(retryAt).toLocaleString('en-GB')}.`} Other sites${row.lane ? ' and scans of this site' : ' and applications on this site'} can keep working.`,
+      message: `${row.site}${row.profile ? ` in the Chrome profile ${row.profileName ?? row.profile}` : ''}: ${row.profile ? '' : 'shared '}wait for ${row.lane === APPLY_LANE ? 'applications' : row.lane === CONTACTS_LANE ? 'contact tasks' : 'scans'} because of ${row.reason === 'budget' ? 'its request budget being used up' : row.reason === 'ip_block' ? 'an IP block' : row.reason === 'verification' ? 'an access verification' : row.reason === 'unreachable' ? 'the site being unreachable' : 'a rate limit'}. ${captcha ? 'Solve the verification (captcha) in Chrome, then press Retry.' : exhausted ? 'Third access failure; automatic retries stopped. Intervention is needed to continue.' : probing ? 'A single access check is in progress.' : `Resumes automatically: ${new Date(retryAt).toLocaleString('en-GB')}.`} Other sites${row.lane ? ' and scans of this site' : ' and applications on this site'}${row.profile ? ' and other Chrome profiles' : ''} can keep working.`,
     };
   }
   begin(url) {
@@ -148,7 +185,11 @@ export class SiteAccess {
     if (!wait) return null;
     if (wait.waiting) throw new SiteWaitError(wait);
     const token = randomUUID();
-    this.save({...this.row(url), token, leaseUntil: this.now() + minute});
+    this.save({
+      ...this.stored(wait.site, wait.lane, wait.profile),
+      token,
+      leaseUntil: this.now() + minute,
+    });
     return token;
   }
   // Once the wait is over, the first action on a page of that site is its one
@@ -164,7 +205,7 @@ export class SiteAccess {
   acknowledge(waits) {
     const later = (row, wait) => row.blockedAt !== wait.blockedAt;
     for (const wait of waits) {
-      const row = this.stored(wait.site, wait.lane);
+      const row = this.stored(wait.site, wait.lane, wait.profile);
       if (
         row &&
         !(row.recovered && later(row, wait)) &&
@@ -173,11 +214,11 @@ export class SiteAccess {
         throw Error('This site has a new access wait. See Attention needed.');
     }
     for (const wait of waits) {
-      const row = this.stored(wait.site, wait.lane);
+      const row = this.stored(wait.site, wait.lane, wait.profile);
       if (row && !(row.recovered && later(row, wait)))
         this.db
           .prepare('DELETE FROM browser_site_waits WHERE site=?')
-          .run(waitKey(wait.site, wait.lane));
+          .run(waitKey(wait.site, wait.lane, wait.profile));
     }
     this.changed();
   }
@@ -185,18 +226,19 @@ export class SiteAccess {
   // that keeps failing a fresh retry budget. Retire it only when that task ends.
   finish(waits) {
     for (const wait of waits) {
-      const row = this.stored(wait.site, wait.lane);
+      const row = this.stored(wait.site, wait.lane, wait.profile);
       if (row?.recovered && row.blockedAt === wait.blockedAt)
         this.db
           .prepare('DELETE FROM browser_site_waits WHERE site=?')
-          .run(waitKey(wait.site, wait.lane));
+          .run(waitKey(wait.site, wait.lane, wait.profile));
     }
     this.changed();
   }
   // retryDelays is a site's own wait before each automatic retry (its
   // extension's stated cooldown); without it the fixed policy applies.
   block(url, reason, retryAfter, token, retryDelays = undefined) {
-    const previous = this.row(url);
+    const own = reason === 'verification' && this.profile,
+      previous = own ? this.profileRow(url) : this.row(url);
     // Re-reading an existing barrier must not keep extending the wait.
     if (
       previous &&
@@ -205,15 +247,21 @@ export class SiteAccess {
         previous.retryAt > this.now() ||
         (previous.leaseUntil > this.now() && previous.token !== token))
     )
-      return this.status(url);
+      return this.statusOf(previous);
     const now = this.now(),
       settled = previous?.recovered && now - previous.blockedAt > ATTEMPT_RESET,
       attempts = (settled ? 0 : (previous?.attempts ?? 0)) + 1;
     // The workspace policy uses fixed delays, independent of Retry-After.
-    const delay = retryDelays ? (retryDelays[attempts - 1] ?? null) : siteRetryDelay(attempts);
-    this.save({
+    const delay =
+      reason === 'verification'
+        ? null
+        : retryDelays
+          ? (retryDelays[attempts - 1] ?? null)
+          : siteRetryDelay(attempts);
+    const saved = this.save({
       site: siteKey(url),
       ...(this.lane ? {lane: this.lane} : {}),
+      ...(own ? {profile: this.profile.directory, profileName: this.profile.name} : {}),
       reason,
       attempts,
       blockedAt: now,
@@ -225,7 +273,7 @@ export class SiteAccess {
       at: now,
       count: (this.incidents.get(siteKey(url))?.count ?? 0) + 1,
     });
-    return this.status(url);
+    return this.statusOf(saved);
   }
   // Milliseconds the caller should wait before navigating to this site. Each
   // call reserves the next slot, so concurrent workers queue instead of bursting.
@@ -365,7 +413,9 @@ export class SiteAccess {
   // document of that site without a barrier) proves access again. Rate limits
   // and IP blocks keep their wait: one page view says nothing about pacing.
   recoverVerification(url, blockedAt) {
-    const previous = this.row(url);
+    const previous = [this.profileRow(url), this.row(url)].find(
+      (row) => row?.blockedAt === blockedAt,
+    );
     if (
       !previous ||
       previous.recovered ||
@@ -380,7 +430,9 @@ export class SiteAccess {
     if (!reason && status >= 200 && status < 400)
       this.failures.delete(waitKey(siteKey(url), this.lane));
     if (reason) return this.block(url, reason, retryAfter, token, retryDelays);
-    const previous = this.row(url);
+    const previous = [this.row(url), this.profileRow(url)].find(
+      (row) => token && row?.token === token,
+    );
     if (!previous || !token || previous.token !== token) return null;
     if (status >= 200 && status < 400) {
       this.save({...previous, recovered: true, token: null, leaseUntil: 0, retryAt: null});

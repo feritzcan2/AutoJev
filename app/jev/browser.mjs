@@ -575,9 +575,15 @@ export class JevBrowser {
     }
     return null;
   }
-  // Site waits of the lane of the current call (scan or application).
+  // Site waits of the lane of the current call (scan or application), and
+  // the verifications this Chrome profile met.
   get siteAccess() {
-    return this.sharedSiteAccess?.forLane(this.siteLane);
+    return this.siteAccessFor(this.siteLane);
+  }
+  siteAccessFor(lane) {
+    return this.sharedSiteAccess
+      ?.forLane(lane)
+      .forProfile(this.connection === 'existing' ? this.profile : null);
   }
   set siteAccess(value) {
     this.sharedSiteAccess = value;

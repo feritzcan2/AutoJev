@@ -5,7 +5,7 @@ import {AutomationStore} from '../app/automation/store.mjs';
 import {automationWorkflow} from '../app/automation/worker.mjs';
 import {cardCollector, clearCardDetails} from '../app/sources/card-collector.mjs';
 import {prepareCollection, collectorPageReady} from '../app/sources/collector-worker.mjs';
-import {sourceActivity} from '../app/sources/source-activity.mjs';
+import {noteSourceActivity, sourceActivity} from '../app/sources/source-activity.mjs';
 import {recordUrlKey} from '../app/records/identity.mjs';
 import linkedin, {
   linkedInSearchUrl,
@@ -328,7 +328,19 @@ test('a read longer than the tool call window asks the agent to call again and i
   const waiting = await f.call('collect_source_page');
   assert.equal(waiting.status, 'reading');
   assert.match(waiting.next, /Call collect_source_page again now/);
+  // During the break the agent learns its end, and a failed finish is no
+  // strike: the read is still going.
+  noteSourceActivity(f.runId, {waitUntil: Date.now() + 60000, waitFor: 'a short reading break'});
+  const pause = await f.call('collect_source_page');
+  assert.match(pause.next, /a short reading break \(about 1 min more\).*not a stall/);
+  const early = await f.call('finish_automation_run', {status: 'failed', summary: 'Stalled.'});
+  assert.equal(early.status, 'reading');
+  assert.equal(f.db.run(f.runId).status, 'running');
+  // The agent's waiting call keeps the app's step on the Sources page.
+  noteSourceActivity(f.runId, {waitUntil: Date.now() + 60000, waitFor: 'a short reading break'});
   const again = f.call('collect_source_page');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(sourceActivity(f.runId).waitFor, 'a short reading break');
   release();
   const batch = await again;
   assert.ok(batch.taskId, JSON.stringify(batch).slice(0, 300));

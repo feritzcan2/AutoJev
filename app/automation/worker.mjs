@@ -37,7 +37,7 @@ import {
 } from '../site-extensions/search.mjs';
 import {setTimeout as pause} from 'node:timers/promises';
 import {readRecordListings} from '../records/listing-reader.mjs';
-import {noteSourceActivity, agentStepLabel} from '../sources/source-activity.mjs';
+import {noteSourceActivity, sourceActivity, agentStepLabel} from '../sources/source-activity.mjs';
 import {jevDetailKey} from '../jev/detail-urls.mjs';
 import {
   recordResultInput,
@@ -584,7 +584,8 @@ export function automationWorkflow({
               : [];
             const available = queued.filter(
               (url) =>
-                !db.jevTasks.detailWait(id, scope, url) && !db.siteAccess.status(url)?.waiting,
+                !db.jevTasks.detailWait(id, scope, url) &&
+                !db.siteAccess.forProfile(db.get(id).chromeProfile).status(url)?.waiting,
             );
             const pendingUrls = (available.length ? available : queued).slice(0, 100);
             const observedUrls = [
@@ -1023,6 +1024,22 @@ export function automationWorkflow({
     }).finally(() => {
       reading = null;
     }));
+  // A wait for the site's pace (a reading break lasts up to 10 minutes) is
+  // named with its end, so the agent does not take it for a stalled read.
+  const readingOutput = () => {
+    const step = sourceActivity(run.id),
+      minutes = step?.waitUntil > Date.now() && Math.ceil((step.waitUntil - Date.now()) / 60000);
+    return {
+      status: 'reading',
+      progress: collectorProgress(db.run(run.id)),
+      ...(minutes
+        ? {waiting: `${step.waitFor ?? 'the site’s pace'}, about ${minutes} min more`}
+        : {}),
+      next: minutes
+        ? `${READING} The app is waiting for ${step.waitFor ?? 'the site’s pace'} (about ${minutes} min more); the same progress during this wait is expected, not a stall.`
+        : READING,
+    };
+  };
   const waitForRead = async (started = false) => {
     const current = db.activeRun(id, run.id);
     if (
@@ -1033,7 +1050,7 @@ export function automationWorkflow({
       return null;
     const search = activeSearch(scanWork(current)),
       next = search?.collector?.page?.url ?? search?.collector?.nextUrl ?? current.sourceUrl,
-      wait = db.siteAccess.status(next);
+      wait = db.siteAccess.forProfile(db.get(id).chromeProfile).status(next);
     if (wait?.waiting)
       return releaseBlockedSource({db, id, runId: run.id, report}, current.sourceUrl, {
         issue: {reason: 'access_barrier', url: next, siteWait: wait, sites: [wait.site]},
@@ -1047,8 +1064,7 @@ export function automationWorkflow({
       }),
     ]).finally(() => clearTimeout(timer));
     signal.throwIfAborted();
-    if (!done)
-      return {status: 'reading', progress: collectorProgress(db.run(run.id)), next: READING};
+    if (!done) return readingOutput();
     return waitForRead(true);
   };
   // What this scan does right now, for the Sources page (RAM only).
@@ -1193,13 +1209,16 @@ export function automationWorkflow({
       throw Error('Invalid automation session');
     // Each agent browser step starts unblocked; other tools keep the last step's state.
     if (name.startsWith('browser_')) stepWaited = false;
-    activity({
-      ...IDLE_STEP,
-      step: 'agent',
-      tool: name,
-      label: agentStepLabel(name, args),
-      url: args?.url ?? null,
-    });
+    // While the app reads ahead, the agent's call only waits for it; the
+    // Sources page keeps the app's step and its wait (a reading break).
+    if (!(name === 'collect_source_page' && reading))
+      activity({
+        ...IDLE_STEP,
+        step: 'agent',
+        tool: name,
+        label: agentStepLabel(name, args),
+        url: args?.url ?? null,
+      });
     let active = db.activeRun(id, run.id);
     const a = db.get(id),
       sourceTask =
@@ -2108,6 +2127,14 @@ export function automationWorkflow({
         break;
       }
       case 'finish_automation_run':
+        // A read still in progress is not a failure the agent can report: it
+        // ends on its own or with an app-verified error.
+        if (
+          reading &&
+          ['failed', 'blocked'].includes(args.status) &&
+          !['access', 'user_input'].includes(args.stop?.kind)
+        )
+          return readingOutput();
         if (active.recordOperation === 'cover_letter')
           finishCoverLetter(db, id, active, args.status, args.summary);
         if (active.recordOperation === 'contacts')

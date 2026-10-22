@@ -65,7 +65,8 @@ export const sourceMethods = {
     }));
   },
   sourceWait(id, source, a = this.get(id)) {
-    const direct = this.siteAccess.status(source.url);
+    const access = this.siteAccess.forProfile(a.chromeProfile),
+      direct = access.status(source.url);
     const state = a.sourceState?.[source.url];
     if (!state?.siteBlocked && !state?.lastRunId) return direct;
     // A source can lead to another host (for example www -> de.linkedin.com).
@@ -81,7 +82,7 @@ export const sourceMethods = {
             "SELECT json_extract(data,'$.siteWait.site') AS site FROM automation_runs WHERE id=? AND automation_id=? AND json_extract(data,'$.sourceUrl')=?",
           )
           .get(state.lastRunId, id, source.url);
-    let observed = row?.site ? this.siteAccess.status('https://' + row.site) : null;
+    let observed = row?.site ? access.status('https://' + row.site) : null;
     if (!state.siteBlocked && !observed?.waiting) observed = null;
     return (
       [direct, observed]

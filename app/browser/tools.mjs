@@ -203,7 +203,9 @@ export class BrowserTools {
       const url = client.tab(args.tabId).page.url();
       try {
         const token = /^https?:/.test(url)
-          ? this.siteAccess?.forLane(this.siteLane).assertAction(url)
+          ? (
+              client.siteAccessFor?.(this.siteLane) ?? this.siteAccess?.forLane(this.siteLane)
+            )?.assertAction(url)
           : null;
         if (token) client.tab(args.tabId).accessProbe = {url, token};
       } catch (error) {

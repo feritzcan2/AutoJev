@@ -1690,4 +1690,12 @@ test('a search location must be one value a search address can take', () => {
     'x'.repeat(81),
   ])
     assert.throws(() => save(note), /Search location: one value/);
+  // A value saved before the rule does not block other settings (a Chrome
+  // profile change); changing it to another such value still fails.
+  const old = {criteria: {preferences: 'x', location: 'Berlin; remote'}};
+  assert.equal(planInput(template, {}, old).criteria.location, 'Berlin; remote');
+  assert.throws(
+    () => planInput(template, {criteria: {...old.criteria, location: 'Berlin; onsite'}}, old),
+    /Search location: one value/,
+  );
 });

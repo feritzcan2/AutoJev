@@ -682,7 +682,7 @@ export class WebTasks extends TaskRuns {
       .get(id, itemId);
     const wait = row?.wait && JSON.parse(row.wait),
       current =
-        wait?.exhausted && this.db.siteAccess.forLane(wait.lane).status('https://' + wait.site);
+        wait?.exhausted && this.db.siteAccess.forWait(wait).status('https://' + wait.site);
     if (current?.exhausted && current.blockedAt === wait.blockedAt)
       this.db.siteAccess.acknowledge([wait]);
   }

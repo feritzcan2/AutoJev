@@ -28,9 +28,11 @@ test('a user response retires only its incident; observing a real challenge bloc
     assert.ok(next.waiting);
     assert.throws(() => gate.acknowledge([first]), /new access wait/);
     assert.equal(gate.status(url).blockedAt, next.blockedAt);
-    now = next.retryAt;
-    gate.begin(url);
-    assert.throws(() => gate.acknowledge([next]), /new access wait/);
+    // A challenge waits for the user, not for an automatic retry.
+    assert.equal(next.exhausted, true);
+    assert.equal(next.retryAt, null);
+    gate.acknowledge([next]);
+    assert.equal(gate.status(url), null);
   } finally {
     db.close();
   }
@@ -330,7 +332,7 @@ test('a healthy probe preserves the scan retry budget until completion and stale
     now = first.retryAt;
     gate.complete(url, gate.begin(url), {status: 200});
     assert.equal(gate.status(url), null);
-    const second = gate.block(url + '?page=2', 'verification');
+    const second = gate.block(url + '?page=2', 'ip_block');
     assert.equal(second.attempts, 2);
     assert.equal(second.retryAt, now + 10 * minute);
     gate.finish([first]);
@@ -760,4 +762,35 @@ test('the default break follows 15-30 views and lasts 4-10 minutes', () => {
   }
   assert.ok(views >= 15 && views <= 30, String(views));
   assert.ok(wait >= 4 * minute && wait <= 10 * minute, String(wait));
+});
+
+test('a verification waits only for the Chrome profile that met it; a rate limit stays shared', () => {
+  const db = new DatabaseSync(':memory:');
+  let now = 100000;
+  const gate = new SiteAccess(db, {now: () => now}),
+    ferit = gate.forProfile({directory: 'Profile 3', name: 'Ferit'}),
+    irem = gate.forProfile({directory: 'Profile 1', name: 'irem'});
+  // A captcha asks the user at once, without automatic retries.
+  ferit.complete(url, null, {status: 403, reason: 'verification'});
+  const stopped = ferit.status(url);
+  assert.equal(stopped.exhausted, true);
+  assert.equal(stopped.retryAt, null);
+  assert.equal(stopped.attempts, 1);
+  assert.equal(stopped.profile, 'Profile 3');
+  assert.match(
+    stopped.message,
+    /in the Chrome profile Ferit:.*Solve the verification \(captcha\) in Chrome, then press Retry\..*other Chrome profiles can keep working/,
+  );
+  assert.equal(irem.status(url), null, 'another profile keeps scanning');
+  assert.equal(gate.status(url), null);
+  assert.equal(gate.forWait(stopped).status(url).blockedAt, stopped.blockedAt);
+  assert.equal(irem.forLane('apply').status(url), null);
+  // The profile's Retry retires its own wait.
+  ferit.acknowledge([stopped]);
+  assert.equal(ferit.status(url), null);
+  // A rate limit concerns the whole computer.
+  const limited = ferit.complete(url, null, {status: 429, reason: 'rate_limit'});
+  assert.equal(limited.profile, undefined);
+  assert.ok(irem.status(url).waiting);
+  db.close();
 });

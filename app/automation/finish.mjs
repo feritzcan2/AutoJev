@@ -167,7 +167,7 @@ export function finishAutomationRun({
   if (
     status === 'completed' &&
     active.siteWait &&
-    db.siteAccess.forLane(active.siteWait.lane).status('https://' + active.siteWait.site)
+    db.siteAccess.forWait(active.siteWait).status('https://' + active.siteWait.site)
   )
     throw Error('A shared wait for this site is in progress; report this round as blocked.');
   if (active.kind === 'trial' && !active.browserSteps)

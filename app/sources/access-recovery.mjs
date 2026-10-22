@@ -166,7 +166,7 @@ export class SourceAccessRecovery {
       // Another worker can encounter a later incident or hold the single probe.
       // Keep this task waiting without clearing that worker's gate.
       const current = recovery.waits
-        .map((w) => this.db.siteAccess.forLane(w.lane).status('https://' + w.site))
+        .map((w) => this.db.siteAccess.forWait(w).status('https://' + w.site))
         .filter(Boolean);
       if (current.some((w) => w.waiting)) {
         r.sourceState(id, url, {
@@ -175,7 +175,14 @@ export class SourceAccessRecovery {
             retryAt: current.some((w) => w.exhausted)
               ? null
               : Math.max(...current.map((w) => w.retryAt)),
-            waits: current.map(({site, blockedAt, retryAt}) => ({site, blockedAt, retryAt})),
+            waits: current.map(({site, lane, profile, profileName, blockedAt, retryAt}) => ({
+              site,
+              lane,
+              profile,
+              profileName,
+              blockedAt,
+              retryAt,
+            })),
           },
         });
         r.changed(id);

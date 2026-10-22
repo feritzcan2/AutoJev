@@ -1057,6 +1057,14 @@ test('a collector card with a confident conflict is rejected without reading its
   await handle(f, receipt);
   assert.equal(f.db.run(f.run.id).scan.reviewStats.jevRejected, 1);
   assert.deepEqual(f.db.knownListingUrls(f.id, f.run.id, [conflict.guid]), [conflict.guid]);
+  assert.deepEqual(
+    f.db
+      .run(f.run.id)
+      .scan.work.searches.flatMap((s) => s.excluded ?? [])
+      .map((e) => [e.url, e.stage]),
+    [[conflict.guid, 'card']],
+    'the Sources page shows it as excluded on the card',
+  );
 });
 
 test('a collector search ends with the page that brings its new listings to 100', async (t) => {

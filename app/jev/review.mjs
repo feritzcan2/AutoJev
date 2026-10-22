@@ -212,7 +212,8 @@ export function reviewJevBatch(db, owner, runId, taskId, batchId, decisions = []
                       title: i.title,
                       reason: i.assessment.exclusion?.reason ?? i.assessment.reason,
                       confidence: i.assessment.exclusion?.confidence ?? i.assessment.confidence,
-                      stage: 'detail',
+                      // Jev's card screen closes a listing before its full text is judged.
+                      stage: i.assessment.exclusion?.basis === 'card' ? 'card' : 'detail',
                     },
                   ]
                 : [];

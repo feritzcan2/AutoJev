@@ -189,7 +189,7 @@ test('Jev stops a source at its first shared barrier, preserves pending work and
       },
       async call(_id, name, args) {
         calls++;
-        const wait = f.db.siteAccess.block(args.url, 'verification');
+        const wait = f.db.siteAccess.block(args.url, 'ip_block');
         const page = {url: args.url, status: 'site_wait', siteWait: wait, text: wait.message};
         return {
           jevPage: page,
@@ -279,7 +279,7 @@ test('an external barrier preserves reachable work beyond the first queue page a
       }),
       async call(_id, name, args) {
         calls.push(args.url);
-        const wait = args.url === good ? null : f.db.siteAccess.block(args.url, 'verification');
+        const wait = args.url === good ? null : f.db.siteAccess.block(args.url, 'ip_block');
         const page = wait
           ? {url: args.url, status: 'site_wait', text: wait.message, siteWait: wait}
           : {url: good, title: 'A role', text: 'Complete detail'};
