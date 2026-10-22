@@ -769,7 +769,8 @@ test('a workspace without the extension never opens Chrome, and cancelling a pen
   assert.equal(browsers.status('candidate').retryAt - Date.now() <= 2000, true);
   installed = true;
   browsers.prepare('candidate', {force: true});
-  for (let i = 0; i < 50 && !opened.length; i++) await flush();
+  // Opening the relay socket is real I/O, which can take longer than a few ticks on Windows.
+  for (let i = 0; i < 200 && !opened.length; i++) await new Promise((r) => setTimeout(r, 10));
   assert.equal(opened.length, 1);
   assert.equal(browsers.status('candidate').state, 'connecting');
   const pending = browsers.connections.pending.get('candidate');
