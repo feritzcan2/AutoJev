@@ -145,6 +145,7 @@ export function automationAttention(snapshot, {includeDismissed = false} = {}) {
             accessRetryAt: source.siteWait?.exhausted ? null : access.retryAt,
             accessExhausted: Boolean(source.siteWait?.exhausted || access.retryAt === null),
             cleanupError: access.cleanupError,
+            captcha: wait?.reason === 'verification',
           }
         : {}),
       retryAt: automation.retryPlan?.[source.url]?.at ?? null,

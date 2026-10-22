@@ -307,7 +307,7 @@ export class SiteAccess {
   // break and starts a new run. Concurrent readers of the key share the same
   // break. Returns the milliseconds to wait before the view, 0 for none; a
   // caller that waited asks again. RAM only: an app restart starts fresh.
-  rest(key, {views = [15, 30], pause = [4 * minute, 10 * minute]} = {}) {
+  rest(key, {views = [15, 30], pause = [1 * minute, 5 * minute]} = {}) {
     const now = this.now(),
       pick = ([min, max]) => Math.round(min + Math.random() * (max - min));
     let state = this.rests.get(key);

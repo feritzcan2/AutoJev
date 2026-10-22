@@ -750,7 +750,7 @@ test('a run of page views is followed by a shared break; a natural pause counts 
   assert.ok(gate.rest('site browser', options) > 0);
 });
 
-test('the default break follows 15-30 views and lasts 4-10 minutes', () => {
+test('the default break follows 15-30 views and lasts 1-5 minutes', () => {
   const db = new DatabaseSync(':memory:');
   let now = 100000;
   const gate = new SiteAccess(db, {now: () => now});
@@ -761,7 +761,7 @@ test('the default break follows 15-30 views and lasts 4-10 minutes', () => {
     now += 12000;
   }
   assert.ok(views >= 15 && views <= 30, String(views));
-  assert.ok(wait >= 4 * minute && wait <= 10 * minute, String(wait));
+  assert.ok(wait >= 1 * minute && wait <= 5 * minute, String(wait));
 });
 
 test('a verification waits only for the Chrome profile that met it; a rate limit stays shared', () => {

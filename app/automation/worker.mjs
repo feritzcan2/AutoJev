@@ -1040,7 +1040,7 @@ export function automationWorkflow({
     }).finally(() => {
       reading = null;
     }));
-  // A wait for the site's pace (a reading break lasts up to 10 minutes) is
+  // A wait for the site's pace (a reading break lasts up to 5 minutes) is
   // named with its end, so the agent does not take it for a stalled read.
   const readingOutput = () => {
     const step = sourceActivity(run.id),

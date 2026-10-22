@@ -48,12 +48,14 @@ if (env.JOBLOOP_SKIP_TESTS === '1') {
       `Tests were explicitly skipped for candidate ${sha}. Native packaging, signing and artifact verification remain required.\n`,
     );
 } else {
-  const runs = await api(
-    `actions/workflows/ci.yml/runs?head_sha=${sha}&status=success&per_page=50`,
-  );
+  // The head_sha and status=success query filters can miss runs, so match them here instead.
+  const runs = await api(`actions/workflows/ci.yml/runs?status=completed&per_page=100`);
   const required = ['preflight', ...platforms.map((platform) => `verify (${platform})`)];
   for (const run of runs.workflow_runs.filter(
-    (run) => ['push', 'workflow_dispatch'].includes(run.event) && run.head_sha === sha,
+    (run) =>
+      ['push', 'workflow_dispatch'].includes(run.event) &&
+      run.head_sha === sha &&
+      run.conclusion === 'success',
   )) {
     const {jobs} = await api(`actions/runs/${run.id}/jobs?filter=latest&per_page=100`);
     if (

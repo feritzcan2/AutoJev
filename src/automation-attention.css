@@ -74,6 +74,32 @@ body:not(.automation-workspace) .automation-attention-banner {
   align-items: center;
   margin-bottom: 12px;
 }
+.automation-help-card[data-captcha] .automation-help-heading > div {
+  flex: 1;
+  min-width: 0;
+}
+.attention-captcha {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  color: var(--warning);
+  font-size: 11px;
+  font-weight: 650;
+}
+.attention-captcha svg {
+  width: 44px;
+  height: 44px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .automation-help-label {
   color: var(--warning);
   font-size: 12px;

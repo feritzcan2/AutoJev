@@ -171,6 +171,15 @@ export function automationAttentionPanel(
       el('h3', issue.name),
     );
     heading.append(el('span', waiting ? '⏱' : '!', 'attention-icon'), copy);
+    // A captcha is solved by the user in Chrome: a large icon makes it recognisable at a glance.
+    if (issue.captcha) {
+      card.dataset.captcha = '';
+      const badge = el('span', null, 'attention-captcha');
+      badge.title = 'Captcha: solve it in Chrome';
+      badge.innerHTML =
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 4.5 5.5v6c0 4.6 3.2 8.6 7.5 10 4.3-1.4 7.5-5.4 7.5-10v-6Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg><span>Captcha</span>';
+      heading.append(badge);
+    }
     const summary = el(
       'p',
       issue.message.length > 300 ? issue.message.slice(0, 297) + '…' : issue.message,
