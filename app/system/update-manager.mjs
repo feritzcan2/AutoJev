@@ -1,8 +1,7 @@
 import {createRequire} from 'node:module';
 const require = createRequire(import.meta.url);
 export const RELEASES_URL = 'https://api.github.com/repos/feritzcan2/AutoJob/releases?per_page=20';
-const CHECK_DELAY = 15_000,
-  CHECK_INTERVAL = 6 * 60 * 60_000;
+const CHECK_INTERVAL = 6 * 60 * 60_000;
 const versionParts = (value) =>
   String(value)
     .replace(/^v/, '')
@@ -70,11 +69,11 @@ export function createUpdateManager({
     publish({releases, checkedAt: Date.now()});
     return releases;
   };
-  // Checks run shortly after start and then every few hours; they never download.
+  // Checks run as soon as the app opens and then every few hours.
   const schedule = (check) => {
     if (!autoCheck) return;
     const run = () => check({quiet: true}).catch(() => {});
-    timers = [setTimeout(run, CHECK_DELAY), setInterval(run, CHECK_INTERVAL)];
+    timers = [setTimeout(run, 0), setInterval(run, CHECK_INTERVAL)];
     for (const timer of timers) timer.unref?.();
   };
   const stopTimers = () => {
