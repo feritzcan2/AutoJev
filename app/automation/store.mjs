@@ -40,6 +40,7 @@ import {scanMethods} from './store/scan.mjs';
 import {recordMethods} from './store/records.mjs';
 import {runMethods} from './store/runs.mjs';
 import {reportableScanFailure} from '../system/scan-failure-report.mjs';
+import {reportableApplicationFailure} from '../system/application-failure-report.mjs';
 const integer = (value, label, min, max) => {
   if (!Number.isInteger(value) || value < min || value > max)
     throw Error(`${label}: a whole number between ${min} and ${max} is required`);
@@ -576,23 +577,32 @@ export class AutomationStore {
     return r;
   }
   putRun(run) {
-    const previous = this.scanFailed
-      ? this.db
-          .prepare("SELECT json_extract(data,'$.status') AS status FROM automation_runs WHERE id=?")
-          .get(run.id)?.status
-      : undefined;
+    const previous =
+      this.scanFailed || this.applicationFailed
+        ? this.db
+            .prepare(
+              "SELECT json_extract(data,'$.status') AS status FROM automation_runs WHERE id=?",
+            )
+            .get(run.id)?.status
+        : undefined;
     this.db
       .prepare(
         'INSERT INTO automation_runs VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data',
       )
       .run(run.id, run.automationId, JSON.stringify(run));
-    if (this.scanFailed && reportableScanFailure(run, previous))
+    const notify =
+      this.scanFailed && reportableScanFailure(run, previous)
+        ? 'scanFailed'
+        : this.applicationFailed && reportableApplicationFailure(run, previous)
+          ? 'applicationFailed'
+          : null;
+    if (notify)
       // Report after the surrounding transaction, and only if it kept the status.
       queueMicrotask(() => {
         const saved = json(
           this.db.prepare('SELECT data FROM automation_runs WHERE id=?').get(run.id),
         );
-        if (saved?.status === run.status) this.scanFailed?.(saved);
+        if (saved?.status === run.status) this[notify]?.(saved);
       });
     return run;
   }

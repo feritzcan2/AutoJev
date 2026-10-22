@@ -2,8 +2,9 @@
 import {randomUUID} from 'node:crypto';
 
 // Anonymous usage for Sentry: one Release Health session per app start and one
-// daily log line of counts. Only numbers, statuses and the agent provider names
-// leave the machine: no titles, URLs, search terms, profile or record content.
+// daily log line of counts. Only numbers, statuses, blocker categories and the
+// agent provider names leave the machine: no titles, URLs, search terms,
+// profile or record content.
 const DAY = 86400000;
 const iso = (ms) => new Date(ms).toISOString();
 
@@ -15,14 +16,17 @@ export function usageCounts(db, from, to) {
   for (const row of db
     .prepare(
       `SELECT json_extract(data,'$.kind') AS kind,json_extract(data,'$.recordOperation') AS operation,
-       json_extract(data,'$.status') AS status,json_extract(data,'$.conversation.provider') AS provider,count(*) AS n
+       json_extract(data,'$.status') AS status,json_extract(data,'$.conversation.provider') AS provider,
+       json_extract(data,'$.blocker.category') AS category,count(*) AS n
        FROM automation_runs WHERE json_extract(data,'$.finishedAt')>=? AND json_extract(data,'$.finishedAt')<?
-       GROUP BY 1,2,3,4`,
+       GROUP BY 1,2,3,4,5`,
     )
     .all(from, to)) {
     const group = row.operation ?? (row.kind === 'run' ? 'scan' : row.kind);
     add(`${group}_${row.status}`, row.n);
     add(`${group}_total`, row.n);
+    // Why record tasks stopped, by blocker category (needs_answer, technical, ...).
+    if (row.category) add(`${group}_blocker_${row.category}`, row.n);
     if (row.provider) providers.add(row.provider);
   }
   const one = (sql, ...args) => db.prepare(sql).get(...args)?.n ?? 0;

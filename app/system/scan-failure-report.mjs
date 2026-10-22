@@ -22,7 +22,7 @@ export function reportableScanFailure(run, previousStatus) {
   );
 }
 
-const host = (value) => {
+export const host = (value) => {
   try {
     return new URL(value).host;
   } catch {
@@ -31,16 +31,21 @@ const host = (value) => {
 };
 
 export function scrubText(value, max = 400) {
-  return String(value ?? '')
-    .replace(/\bhttps?:\/\/([^/\s?#'")]+)[^\s'")]*/gi, '$1/…')
-    .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[email]')
-    .replace(/\bBearer\s+\S+/gi, 'Bearer [redacted]')
-    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '[id]')
-    .replace(/\b[0-9A-F]{16,}\b/gi, '[id]')
-    .replace(/\+?\d[\d\s/-]{6,}\d/g, '[number]')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, max);
+  return (
+    String(value ?? '')
+      .replace(/\bhttps?:\/\/([^/\s?#'")]+)[^\s'")]*/gi, '$1/…')
+      // Quoted text is usually what the user typed or a page showed: search
+      // terms, a location, a field value.
+      .replace(/"[^"\n]{1,200}"|[“„][^“”\n]{1,200}[”“]|«[^»\n]{1,200}»/g, '"…"')
+      .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[email]')
+      .replace(/\bBearer\s+\S+/gi, 'Bearer [redacted]')
+      .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '[id]')
+      .replace(/\b[0-9A-F]{16,}\b/gi, '[id]')
+      .replace(/\+?\d[\d\s/-]{6,}\d/g, '[number]')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, max)
+  );
 }
 
 // The app's own error codes (site_wait, checkbox_not_ready, ...) group issues
@@ -63,7 +68,7 @@ function failureCode(run) {
   );
 }
 
-export function scanFailureEvent(run, {release, environment}) {
+export function scanFailureEvent(run, {release, environment, installId = null}) {
   const site = host(scanSource(run)),
     stopKind = run.stop?.kind ?? 'none',
     code = failureCode(run),
@@ -99,6 +104,7 @@ export function scanFailureEvent(run, {release, environment}) {
       provider: run.conversation?.provider ?? 'unknown',
       retry_exhausted: String(Boolean(run.stop?.retryExhausted)),
       recovered_after_crash: String(Boolean(run.recoveredAfterCrash)),
+      ...(installId ? {install_id: installId} : {}),
     },
     extra: {
       summary: scrubText(run.summary),
@@ -136,21 +142,27 @@ export function scanFailureEvent(run, {release, environment}) {
   };
 }
 
-/** Returns a reporter that sends each scan run at most once and never throws. */
-export function createScanFailureReporter({
+/** Returns a reporter that sends each run at most once and never throws. */
+export function createFailureReporter({
   dsn,
   release,
   environment,
   fetch = globalThis.fetch,
   enabled = () => true,
+  installId = async () => null,
+  buildEvent,
 }) {
   const send = sentryTransport({dsn, release, fetch}),
     sent = new Set();
   return async (run) => {
     if (!enabled() || sent.has(run.id)) return;
     sent.add(run.id);
-    const event = scanFailureEvent(run, {release, environment});
-    // Reporting is best effort; a scan never fails because Sentry is unreachable.
+    const install = await installId().catch(() => null),
+      event = buildEvent(run, {release, environment, installId: install});
+    // Reporting is best effort; a run never fails because Sentry is unreachable.
     await send([{type: 'event', payload: event}], {event_id: event.event_id});
   };
 }
+
+export const createScanFailureReporter = (options) =>
+  createFailureReporter({...options, buildEvent: scanFailureEvent});

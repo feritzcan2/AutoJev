@@ -262,6 +262,7 @@ test('CLI pages enter Jev triage, the agent scores retained items, and review ga
     /scoring/,
   );
   await assert.rejects(save(f, helper(f, first).items[1]), /mismatch/);
+  await assert.rejects(save(f, good, null), /was read/);
   await save(f, good);
   const stored = f.db.results(f.id)[0];
   assert.equal(stored.assessment.score, 42);

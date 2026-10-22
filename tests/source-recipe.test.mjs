@@ -125,6 +125,13 @@ test('recipes are validated as data: placeholders, form fields and pagination ki
     'a quoted placeholder does not quote a quoted term twice',
   );
   assert.equal(
+    replayUrl('https://board.test/api/search?q=%22{query}%22&f=title', {
+      query: '"software engineer" .NET',
+    }),
+    'https://board.test/api/search?q=%22software+engineer+.NET%22&f=title',
+    'a quote inside the term does not leave the phrase unclosed',
+  );
+  assert.equal(
     replayUrl(template, {query: '"AI governance"'}),
     'https://board.test/jobs/search?q=%22AI+governance%22&sort=date',
     'an unquoted placeholder keeps the term as written',
@@ -528,6 +535,64 @@ test('a recipe check proves redirect-style result links by reading a few details
     'neutral',
     'uncertain leads without details prove nothing either way',
   );
+});
+
+test('a recipe address that opens the site home page fails its check', async (t) => {
+  const expected = 'https://board.test/jobs/search?q=Find+homes&l=Berlin&sort=date';
+  // The site sends the address to landing, whose page still lists jobs.
+  const attempt = async (landing) => {
+    const f = fixture(t);
+    f.db.enable(f.id);
+    await f.runtime.tick();
+    await settle();
+    const trial = f.launches[0],
+      {browser} = jevBrowser(expected);
+    const redirecting = {
+      ...browser,
+      async call(id, name, args, ...rest) {
+        const result = await browser.call(id, name, args, ...rest);
+        return result.jevPage?.url === expected
+          ? {
+              ...result,
+              jevPage: {...result.jevPage, url: landing},
+              pageContext: {...result.pageContext, url: landing},
+            }
+          : result;
+      },
+    };
+    const flow = automationWorkflow({
+      db: f.db,
+      run: trial,
+      signal: new AbortController().signal,
+      browser: redirecting,
+      report: (...args) => f.runtime.report(...args),
+    });
+    const save = flow.call(f.id, trial.id, 'save_source_recipe', {
+      entry: {kind: 'url_template', template},
+      terms: ['Find homes'],
+      pagination: 'url_param',
+    });
+    return {f, trial, save};
+  };
+  const home = await attempt('https://board.test/');
+  await assert.rejects(
+    home.save,
+    /could not be verified: it opened the site's home page https:\/\/board\.test\//,
+  );
+  assert.equal(home.f.db.sources(home.f.id)[0].recipe, undefined, 'a failed check saves nothing');
+  const scan = home.f.db.jevTasks
+    .list(home.f.id, home.trial.taskId ?? home.trial.id)
+    .find((task) => task.input.operation === 'scan_results');
+  assert.deepEqual(scan.issue, {
+    reason: 'page_changed',
+    expected,
+    url: 'https://board.test/',
+    homePage: true,
+  });
+  assert.equal(scan.items.length, 0, 'the home page jobs are not read as results');
+  // A site that runs its search at the root keeps the query there.
+  const root = await attempt('https://board.test/?q=Find+homes&l=Berlin');
+  assert.equal((await root.save).status, 'verified');
 });
 
 test('a trial scan reads at most two result pages while a scan run keeps paging', async (t) => {

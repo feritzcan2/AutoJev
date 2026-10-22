@@ -170,6 +170,11 @@ on.
 - **You choose what leaves it.** The parts needed for a task are sent to the AI
   provider you connected, to Telegram if you turn it on, and to Jev if you add a
   TypeSafe key (optional).
+- **Anonymous reports.** To find and fix problems, AutoJob sends anonymous usage
+  counts and failed scan and application reports (site, error code, a short error
+  description) to Sentry. No profile, CV or form answers. Sentry sees the
+  approximate location of your connection. Turn it off under **Configuration →
+  Diagnostics**.
 - **Backups are yours.** Export everything under **Configuration → Data and
   backups**. Saved passwords and API keys are removed from backups.
 

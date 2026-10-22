@@ -19,6 +19,7 @@ import {registerDevTools} from './system/dev-tools.mjs';
 import {registerAutomationServices} from './automation/services.mjs';
 import {AutomationStore} from './automation/store.mjs';
 import {createScanFailureReporter} from './system/scan-failure-report.mjs';
+import {createApplicationFailureReporter} from './system/application-failure-report.mjs';
 import {diagnosticsSetting, sentryTransport} from './system/diagnostics.mjs';
 import {startUsageReporting} from './system/usage-report.mjs';
 import {registerSettingsServices} from './system/settings-services.mjs';
@@ -281,11 +282,18 @@ async function boot() {
     release,
     environment,
     enabled: diagnostics.enabled,
+    installId: diagnostics.installId,
   });
   automationDb.scanFailed = (run) => {
     usage.failure();
     return reportScan(run);
   };
+  automationDb.applicationFailed = createApplicationFailureReporter({
+    release,
+    environment,
+    enabled: diagnostics.enabled,
+    installId: diagnostics.installId,
+  });
   handle('scan-reports-status', () => diagnostics.status());
   handle('scan-reports-set', (value) => diagnostics.set(value === true));
   const web = registerAutomationServices({

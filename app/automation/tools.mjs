@@ -177,7 +177,7 @@ export const automationTools = [
   ),
   tool(
     'save_automation_plan',
-    'Interview only: update the plan from known user answers. Missing facts stay empty. In a chat, criteria you leave out keep their saved values; send an empty value to clear one. Saved sources stay unchanged unless listed: addSources proposes new source URLs, removeSources proposes removing saved sources and is only for sources the user asked to drop. sourceSearches sets the search of a saved or added source listed in get_automation_context section profile sourceSearch: up to 5 terms for {query} as its notes describe, and filter values from its filters ("" removes a filter). Source changes are suggestions the user applies on Sources. Grants no permission and activates nothing.',
+    'Interview only: update the plan from known user answers. Missing facts stay empty. In a chat, criteria you leave out keep their saved values; send an empty value to clear one. Saved sources stay unchanged unless listed: addSources proposes new source URLs, removeSources proposes removing saved sources and is only for sources the user asked to drop. sourceSearches sets the search of a saved or added source listed in get_automation_context section profile sourceSearch: up to 5 terms for {query} as its notes describe, filter values from its filters ("" removes a filter), and up to 2 setups (further searches with their own location and filters; [] removes them). Source changes are suggestions the user applies on Sources. Grants no permission and activates nothing.',
     {
       title: str,
       goal: optional,
@@ -192,6 +192,22 @@ export const automationTools = [
             url: str,
             terms: {type: 'array', minItems: 1, maxItems: RECIPE_TERM_LIMIT, items: str},
             filters: {type: 'array', maxItems: 10, items: object({param: str, value: optional})},
+            setups: {
+              type: 'array',
+              maxItems: RECIPE_VARIANT_LIMIT,
+              items: object(
+                {
+                  label: str,
+                  location: optional,
+                  filters: {
+                    type: 'array',
+                    maxItems: 10,
+                    items: object({param: str, value: optional}),
+                  },
+                },
+                ['label'],
+              ),
+            },
           },
           ['url'],
         ),

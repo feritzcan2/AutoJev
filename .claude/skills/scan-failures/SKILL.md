@@ -25,6 +25,10 @@ Health session per app start (`did` = a random install id, errors = failed scans
 - `scripts/sentry-scans.sh users 14d` — sessions and unique installs per release per day
 - `scripts/sentry-scans.sh usage 14d` — the daily count lines; count distinct `install_id`
   for active installs, and installs whose `scan_total` stays 0 for drop-off
+- `execute_blocker_<category>` counts why applications stopped (`needs_answer`,
+  `needs_login`, `technical`, ...); other record tasks get `<operation>_blocker_<category>`.
+- Every scan and application event carries the same `install_id` tag, so an event's
+  country (`geo.country_code`, from the connection) maps to the install's usage lines.
 - Exclude the user's own machines: `environment: development` is the repo build.
 - Not real users: release `0.0.0-check` (a manual check) and the six 0.1.13 entries of
   2026-10-21 07:33–07:42 UTC (CI smoke runs before CI turned diagnostics off).
@@ -52,6 +56,25 @@ profile, CV, page text, full URLs, search terms or raw IDs to the event.
   lines of the agent terminal (a first-run prompt, a login request, a full composer)
 - Failures the app ended without a stop reason (`stop_kind: none`) group across sites;
   their `code` is the summary's first sentence
+
+## Application reports
+
+Applications (execute tasks) that end failed, blocked or timed out send an event with
+logger `jobloop.application` (`app/system/application-failure-report.mjs`), but only
+when the app might fix the cause: blocker category `technical`, `site_problem`, or no
+blocker (the app ended the run). Stops that need the user (`needs_answer`,
+`needs_login`, `needs_code`, `needs_payment`, `verification`) or exclude them
+(`not_eligible`, `listing_closed`) appear only in the daily counts.
+
+- Title: `application <status> (<category>) <form_site>: <code>`
+- Tags: `site` (listing source host), `form_site` (`listing_site`, a known applicant
+  system domain such as `myworkdayjobs.com`, or `employer_site`), `category`, `step`
+  (`not_opened`, `before_submit`, `submitted_<outcome>`), `code` (`tool:<name>` or an
+  app code), `model`, `provider`, `install_id`
+- Extra: the blocker `reason` (scrubbed), the app's own summary only when there was no
+  blocker, `toolFailure`, `durationMs`, `browserSteps`, `agentTokens`
+- List them: `scripts/sentry-scans.sh list 14d "is:unresolved logger:jobloop.application"`.
+  To reproduce, open a public listing on the same applicant system in your own browser.
 
 ## Workflow
 

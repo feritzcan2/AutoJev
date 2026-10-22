@@ -34,7 +34,7 @@ export const assessmentSchema = {
       type: 'array',
       maxItems: 20,
       description:
-        'Required when scoringPolicy.hardRules is listed: one answer per rule. pass = the record establishes it, fail = the record explicitly contradicts it, unknown = the record does not say. The app sets eligibility from these answers.',
+        'Required when scoringPolicy.hardRules is listed: one answer per rule. pass = the record establishes it, or the rule covers one case only ("Outside Berlin, …") and the record is not in it, fail = the record explicitly contradicts it, unknown = the record does not say. The app sets eligibility from these answers.',
       items: {
         type: 'object',
         additionalProperties: false,

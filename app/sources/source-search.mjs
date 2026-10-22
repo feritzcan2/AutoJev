@@ -22,6 +22,7 @@ export function sourceSearchOptions(search, recipe) {
   return {
     ...(search.notes ? {notes: search.notes} : {}),
     ...(base.terms ? {terms: base.terms} : {}),
+    ...(base.entry.variants ? {setups: base.entry.variants} : {}),
     filters: choiceFilters(search).map(({param, label, values}) => ({
       param,
       label,
@@ -33,7 +34,26 @@ export function sourceSearchOptions(search, recipe) {
 
 // Validates a choice and returns it with a summary for the Sources screen.
 export function sourceSearchChoice(search, recipe, input) {
-  const filters = (input.filters ?? []).map(({param, value = ''}) => {
+  const choice = {
+    ...(input.terms ? {terms: input.terms} : {}),
+    filters: filterChoices(search, input.filters),
+    ...(input.setups ? {setups: input.setups.map((setup) => setupChoice(search, setup))} : {}),
+  };
+  sourceSearchRecipe(search, recipe, choice);
+  return choice;
+}
+
+// A further search setup beside the main address: the same terms in another
+// place and with its own filter values (remote anywhere in a country beside
+// hybrid in one city). Filters it leaves out keep the main search's values.
+const setupChoice = (search, {label, location = '', filters}) => ({
+  label,
+  ...(location ? {location} : {}),
+  filters: filterChoices(search, filters),
+});
+
+function filterChoices(search, input = []) {
+  return input.map(({param, value = ''}) => {
     const filter = choiceFilters(search).find((f) => f.param === param);
     if (!filter)
       throw Error(
@@ -49,19 +69,40 @@ export function sourceSearchChoice(search, recipe, input) {
       );
     return {param, value, label: `${filter.label}: ${value ? filter.values[value] : 'any'}`};
   });
-  const choice = {...(input.terms ? {terms: input.terms} : {}), filters};
-  sourceSearchRecipe(search, recipe, choice);
-  return choice;
 }
 
-export function sourceSearchRecipe(search, recipe, {terms = undefined, filters}) {
+const filterValues = (filters) => Object.fromEntries(filters.map((f) => [f.param, f.value]));
+
+// A choice without setups keeps the recipe's setups; an empty list removes them.
+export function sourceSearchRecipe(
+  search,
+  recipe,
+  {terms = undefined, filters, setups = undefined},
+) {
   const base = baseRecipe(search, recipe),
-    template = withSearchFilters(
-      base.entry.template,
-      Object.fromEntries(filters.map((f) => [f.param, f.value])),
-    );
-  return normalizeSourceRecipe(
-    siteSearchRecipe(search, {...base, entry: {...base.entry, template}, ...(terms ? {terms} : {})})
-      .recipe,
-  );
+    template = withSearchFilters(base.entry.template, filterValues(filters)),
+    variants = setups
+      ? setups.map(({label, location, filters: own}) => {
+          if (location && !template.includes('{location}'))
+            throw Error(
+              `Setup ${label}: this search address has no {location}; leave out the setup's location`,
+            );
+          return {
+            label,
+            template: withSearchFilters(
+              location ? template.replaceAll('{location}', encodeURIComponent(location)) : template,
+              filterValues(own),
+            ),
+          };
+        })
+      : base.entry.variants,
+    entry = {kind: base.entry.kind, template, ...(variants?.length ? {variants} : {})},
+    next = siteSearchRecipe(search, {...base, entry, ...(terms ? {terms} : {})}).recipe;
+  // Each setup follows the same site structure as the main address.
+  if (next.entry.variants)
+    next.entry.variants = next.entry.variants.map((variant) => ({
+      ...variant,
+      template: siteSearchRecipe(search, {...next, entry: variant}).recipe.entry.template,
+    }));
+  return normalizeSourceRecipe(next);
 }

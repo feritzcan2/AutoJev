@@ -165,6 +165,12 @@ export default {
   id: 'builtin',
   matches: isBuiltInUrl,
   http: {handles: (url) => Boolean(builtInRequest(url)), read: readBuiltIn},
+  // One listing under every title slug it had (an edited title changes the
+  // slug, and searches can still list the old one): its job ID.
+  listingKey: (url) => {
+    const id = isBuiltInUrl(url) && new URL(url).pathname.match(LISTING_PATH)?.[1];
+    return id ? `${ORIGIN}/job/${id}` : null;
+  },
   // The search address (observed 2026-10-11 over HTTP and in the site's
   // script). No sort control: results are mostly but not strictly newest
   // first ("One Month Ago" cards among recent ones), so no ordering is claimed.

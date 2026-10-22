@@ -25,6 +25,13 @@ function database() {
   run({kind: 'run', status: 'completed', finishedAt: 5 * DAY, conversation: {provider: 'claude'}});
   run({kind: 'run', status: 'blocked', finishedAt: 5 * DAY, summary: 'Private summary'});
   run({kind: 'run', recordOperation: 'execute', status: 'completed', finishedAt: 5 * DAY});
+  run({
+    kind: 'run',
+    recordOperation: 'execute',
+    status: 'blocked',
+    finishedAt: 5 * DAY,
+    blocker: {category: 'needs_answer', reason: 'Private reason'},
+  });
   run({kind: 'trial', status: 'failed', finishedAt: 5 * DAY, conversation: {provider: 'codex'}});
   run({kind: 'run', status: 'completed', finishedAt: 2 * DAY});
   run({kind: 'run', status: 'running', finishedAt: null});
@@ -51,7 +58,9 @@ test('usage counts cover only the window and hold no text from the data', () => 
     scan_blocked: 1,
     scan_total: 2,
     execute_completed: 1,
-    execute_total: 1,
+    execute_blocked: 1,
+    execute_blocker_needs_answer: 1,
+    execute_total: 2,
     trial_failed: 1,
     trial_total: 1,
     records_found: 1,

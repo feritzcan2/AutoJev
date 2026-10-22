@@ -918,6 +918,7 @@ export class JevBrowser {
     if (
       slot.verification &&
       slot.verification.state !== 'answer_applied' &&
+      !(slot.verification.formFirst && !slot.verification.checkbox) &&
       action?.kind === 'click' &&
       /submit|send application|apply now|başvur|gönder/i.test(action.label ?? '')
     )

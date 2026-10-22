@@ -968,7 +968,9 @@ export function automationWorkflow({
     }
     return {
       ok: false,
-      reason: scan.issue?.reason ?? 'no_listings',
+      reason: scan.issue?.homePage
+        ? `it opened the site's home page ${scan.issue.url}`
+        : (scan.issue?.reason ?? 'no_listings'),
       url,
       term: first.term,
       listings: 0,
@@ -977,7 +979,21 @@ export function automationWorkflow({
   // A saved finding retires its listing from the pending queue; Jev review
   // batches retire rejected items. The agent keeps no queue bookkeeping.
   const saveFinding = (input) => {
-    const saved = db.record(id, run.id, recordResultInput(input)),
+    input = recordResultInput(input);
+    // score=null stands for details that could not be read; a listing Jev read
+    // in this task is scored or rejected in its review batch.
+    if (
+      input.assessment?.score === null &&
+      db.jevTasks
+        .list(id, db.activeRun(id, run.id).taskId ?? run.id)
+        .some((t) =>
+          t.items.some((i) => i.url === input.url && i.detailComplete === true && !i.unreadFrames),
+        )
+    )
+      throw Error(
+        'arguments.score: This listing was read in this task; score=null is only for details that could not be read. Score it 0–100, or reject it in its review batch instead of saving it.',
+      );
+    const saved = db.record(id, run.id, input),
       current = db.activeRun(id, run.id);
     if (collecting) {
       if (!saved.skipped && saved.assessment?.runId !== run.id)

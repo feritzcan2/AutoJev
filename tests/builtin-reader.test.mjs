@@ -10,6 +10,7 @@ import builtIn, {
 } from '../app/site-extensions/builtin.mjs';
 import {siteSearchRecipe, withSearchFilters} from '../app/site-extensions/search.mjs';
 import {SiteWaitError} from '../app/browser/site-access.mjs';
+import {recordUrlKey} from '../app/records/identity.mjs';
 
 const search = 'https://builtin.com/jobs?search=backend+engineer&country=USA&allLocations=true';
 const listing = (id) => `https://builtin.com/job/backend-engineer-${id}/${id}`;
@@ -75,6 +76,13 @@ test('Built In addresses: searches with filter paths, listings by id, nothing el
   ])
     assert.equal(builtInRequest(other), null, other);
   assert.equal(builtIn.http.handles(search), true);
+  // A retitled listing keeps its ID; both slugs are one record.
+  assert.equal(
+    recordUrlKey('https://builtin.com/job/staff-software-engineer-mobile/11739970'),
+    recordUrlKey('https://www.builtin.com/job/senior-staff-software-engineer-mobile/11739970/'),
+  );
+  assert.notEqual(recordUrlKey(listing(11739970)), recordUrlKey(listing(11739971)));
+  assert.equal(builtIn.listingKey(search), null);
 });
 
 test('a results page lists its cards as listings with the stated facts and the site pagination', () => {

@@ -649,6 +649,10 @@ export function collectorFindingInput(db, run, input) {
   if (item.assessment.decision === 'mismatch')
     throw Error('The listing is a confirmed mismatch; dismiss it in the review batch.');
   if (!input.assessment) throw Error('Do not save the listing without scoring it.');
+  if (input.assessment.score === null)
+    throw Error(
+      'arguments.score: This listing was read; score=null is only for details that could not be read. Score it 0–100, or reject it in its review batch instead of saving it.',
+    );
   return {
     ...input,
     cells: [

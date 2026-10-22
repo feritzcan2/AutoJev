@@ -123,6 +123,63 @@ test('scrubText bounds the text', () => {
   assert.equal(scrubText(null), '');
 });
 
+test('scrubText drops quoted text but keeps apostrophes', () => {
+  assert.equal(
+    scrubText('Pick "Springfield, Example" under “Select a location” in the site’s tab.'),
+    'Pick "…" under "…" in the site’s tab.',
+  );
+  assert.equal(scrubText("The site's search ignores it."), "The site's search ignores it.");
+});
+
+test('a failure with a quoted location groups with the same failure elsewhere', () => {
+  const event = (place) =>
+    scanFailureEvent(
+      {
+        id: 'run-1',
+        kind: 'trial',
+        status: 'blocked',
+        sourceUrl: source,
+        summary: `Pick "${place}" under "Select a location" and send the search again.`,
+      },
+      {release: '0.1.20', environment: 'production'},
+    );
+  const first = event('Springfield, Example'),
+    second = event('Shelbyville, Example');
+  assert.deepEqual(first.fingerprint, second.fingerprint);
+  assert.equal(JSON.stringify(first).includes('Springfield'), false);
+});
+
+test('the reporter tags the event with the anonymous install id', async () => {
+  const bodies = [];
+  const report = createScanFailureReporter({
+    dsn: 'https://publickey@o1.ingest.example.test/42',
+    release: '0.1.20',
+    environment: 'production',
+    installId: async () => 'install-1',
+    fetch: async (url, init) => {
+      bodies.push(init.body);
+      return {ok: true};
+    },
+  });
+  await report({id: 'run-1', kind: 'run', status: 'failed', sourceUrl: source, summary: 'x'});
+  const event = JSON.parse(bodies[0].split('\n')[2]);
+  assert.equal(event.tags.install_id, 'install-1');
+  const failing = createScanFailureReporter({
+    dsn: 'https://publickey@o1.ingest.example.test/42',
+    release: '0.1.20',
+    environment: 'production',
+    installId: async () => {
+      throw Error('disk full');
+    },
+    fetch: async (url, init) => {
+      bodies.push(init.body);
+      return {ok: true};
+    },
+  });
+  await failing({id: 'run-2', kind: 'run', status: 'failed', sourceUrl: source, summary: 'x'});
+  assert.equal(JSON.parse(bodies[1].split('\n')[2]).tags.install_id, undefined);
+});
+
 test('the reporter posts one envelope per run and swallows network errors', async () => {
   const calls = [];
   const report = createScanFailureReporter({

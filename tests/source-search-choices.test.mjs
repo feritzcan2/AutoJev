@@ -162,3 +162,79 @@ test('the initial setup adds the boards of a newly saved country and names those
     'saving again adds nothing twice',
   );
 });
+
+test('a source search takes setups that search another place with their own filters', async (t) => {
+  const {db, id, chat, plan} = await fixture(t, {onboarding: true});
+  const workable = 'https://jobs.workable.com/';
+  await plan({
+    addSources: [workable],
+    sourceSearches: [
+      {
+        url: workable,
+        terms: ['Staff Backend Engineer', 'Senior Backend Engineer'],
+        filters: [
+          {param: 'workplace', value: 'hybrid'},
+          {param: 'employment_type', value: 'full_time'},
+        ],
+        setups: [
+          {
+            label: 'Remote in the US',
+            location: 'United States',
+            filters: [{param: 'workplace', value: 'remote'}],
+          },
+        ],
+      },
+    ],
+  });
+  const recipe = db.get(id).sourceSettings[workable].recipe;
+  assert.match(recipe.entry.template, /location=\{location\}/);
+  assert.match(recipe.entry.template, /workplace=hybrid/);
+  assert.equal(recipe.entry.variants.length, 1);
+  assert.equal(recipe.entry.variants[0].label, 'Remote in the US');
+  assert.match(recipe.entry.variants[0].template, /query=\{query\}/);
+  assert.match(recipe.entry.variants[0].template, /location=United\+States/);
+  assert.match(recipe.entry.variants[0].template, /workplace=remote/);
+  assert.match(
+    recipe.entry.variants[0].template,
+    /employment_type=full_time/,
+    'main filters stay in a setup',
+  );
+  assert.equal(
+    db.sourceRecipe(id, workable).replay.searches.length,
+    4,
+    'every term in every setup',
+  );
+  assert.deepEqual(
+    automationTaskContext(db, id, chat, {section: 'profile'})
+      .sourceSearch.find((o) => o.url === workable)
+      .setups.map((s) => s.label),
+    ['Remote in the US'],
+  );
+
+  // New terms keep the setups; an empty list removes them.
+  await plan({sourceSearches: [{url: workable, terms: ['Principal Engineer']}]});
+  assert.equal(db.get(id).sourceSettings[workable].recipe.entry.variants.length, 1);
+  await plan({sourceSearches: [{url: workable, setups: []}]});
+  assert.equal(db.get(id).sourceSettings[workable].recipe.entry.variants, undefined);
+
+  await assert.rejects(
+    plan({
+      sourceSearches: [
+        {url: workable, setups: [{label: 'x', filters: [{param: 'workplace', value: 'moon'}]}]},
+      ],
+    }),
+    /accepts remote, hybrid, on_site/,
+  );
+  await assert.rejects(
+    plan({
+      sourceSearches: [
+        {
+          url: workable,
+          terms: ['a', 'b', 'c', 'd'],
+          setups: [{label: 'x'}, {label: 'y'}],
+        },
+      ],
+    }),
+    /more than 10 searches/,
+  );
+});

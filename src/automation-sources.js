@@ -307,6 +307,11 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
           [
             ...(choice.terms ? ['Terms: ' + choice.terms.join(', ')] : []),
             ...choice.filters.map((f) => f.label),
+            ...(choice.setups ?? []).map((setup) =>
+              ['Also: ' + setup.label, setup.location, ...setup.filters.map((f) => f.label)]
+                .filter(Boolean)
+                .join(', '),
+            ),
           ].join(' · '),
         ),
       );

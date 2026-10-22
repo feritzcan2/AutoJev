@@ -212,5 +212,7 @@ export function finishAutomationRun({
       task = queue.get(id, run.taskId);
     if (task && (blocker || task.blocker)) queue.put({...task, blocker});
   }
+  // Kept on the run as well, for the application failure report.
+  if (blocker) db.putRun({...db.run(run.id), blocker});
   return report(id, run.id, status, args.summary, args.goalReached === true);
 }

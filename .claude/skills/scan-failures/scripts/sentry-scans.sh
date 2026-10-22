@@ -92,8 +92,11 @@ case "${command_name}" in
     fields=(timestamp install_id "tags[sentry.release,string]" "tags[os,string]" "tags[providers,string]"
       "tags[window_hours,number]" "tags[scan_total,number]" "tags[scan_completed,number]"
       "tags[scan_blocked,number]" "tags[scan_failed,number]" "tags[execute_completed,number]"
-      "tags[execute_total,number]" "tags[records_found,number]" "tags[workspaces,number]"
-      "tags[sources,number]")
+      "tags[execute_total,number]" "tags[execute_blocked,number]"
+      "tags[execute_blocker_needs_answer,number]" "tags[execute_blocker_needs_login,number]"
+      "tags[execute_blocker_technical,number]" "tags[execute_blocker_site_problem,number]"
+      "tags[execute_blocker_not_eligible,number]" "tags[execute_blocker_verification,number]"
+      "tags[records_found,number]" "tags[workspaces,number]" "tags[sources,number]")
     args=()
     for field in "${fields[@]}"; do args+=(--data-urlencode "field=${field}"); done
     api_get "/organizations/${ORGANIZATION}/events/" \

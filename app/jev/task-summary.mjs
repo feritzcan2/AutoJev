@@ -93,6 +93,8 @@ function taskNext(task) {
       ].includes(reason)
     )
       return 'Inspect lastPage pagination/continuation first: observed URLs and guarded targetId/controlId are included. These IDs belong to that observation; after a page change obtain fresh controls before interacting. Read only a specific missing evidence fragment, never the whole board to recover pagination. This is not complete source coverage. Use an actual results/company-board URL or resolve the missing pagination control, then resume discovery. Collect relevant observed listing URLs with collect_details + urls; keep uncertain leads.';
+    if (reason === 'page_changed' && task.issue.homePage)
+      return "issue.expected opened the site's home page (issue.url), not its results: the site does not serve that address (an outdated or guessed path) or wants a sign-in. The home page's jobs are not results of this search. Do not open issue.expected again. Find the results address through the site's own search or category links; a recipe with this address does not pass its check.";
     if (reason === 'page_changed')
       return 'The page moved to issue.url instead of issue.expected. On another host this is usually a sign-in, consent or verification page, not more results. Listings found before it stay queued; collect them. Resolve that page (a sign-in needs the user), then run a NEW scan_results at issue.expected; do not resume this task.';
     if (reason === 'search_not_verified')

@@ -142,6 +142,23 @@ const sitePage = (page) => {
     return false;
   }
 };
+// A results address that opened its site's bare home page names a path the
+// site does not serve (an outdated or guessed address): the home page's jobs
+// are not its results. A search the site runs at its root keeps its query.
+const openedHomePage = (requested, page) => {
+  try {
+    const from = new URL(requested),
+      to = new URL(page.url);
+    return (
+      sameSite(from.href, to.href) &&
+      from.pathname.replace(/\/+$/, '') !== '' &&
+      to.pathname.replace(/\/+$/, '') === '' &&
+      !to.search
+    );
+  } catch {
+    return false;
+  }
+};
 const verificationWall = (page) =>
   Boolean(page.verification) &&
   !(page.fillFields?.length || page.passwordFields?.length || sitePage(page));
@@ -1022,8 +1039,13 @@ export async function runJevTask({
         page = await take('open', {url: task.navigation.url});
       else if (operation === 'scan_results' && task.currentUrl && ports.hasPage?.() === false)
         page = await take('open', {url: task.navigation?.url ?? task.currentUrl});
-      else if (!task.currentUrl && task.input.url) page = await take('open', {url: task.input.url});
-      else {
+      else if (!task.currentUrl && task.input.url) {
+        page = await take('open', {url: task.input.url});
+        if (operation === 'scan_results' && openedHomePage(task.input.url, page)) {
+          issue('page_changed', {expected: task.input.url, url: page.url, homePage: true});
+          break;
+        }
+      } else {
         const expected = task.navigation?.url ?? task.currentUrl;
         page = await observe();
         if (expected && page.url !== expected) {

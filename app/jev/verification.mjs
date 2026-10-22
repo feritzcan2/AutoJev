@@ -34,13 +34,15 @@ export async function verificationEvidence(page, slot) {
           slot.captchaDocument.url !== detection.pageUrl))
     )
       delete slot.captchaDocument;
+    // A widget that vanished from a form usually passed in the background. The
+    // rest of the form is still filled; the site's response to submit decides.
     if (detection.state === 'none' && slot.captchaDocument)
-      return {
+      return formFirst(page, slot, {
         state: 'checking',
         capability: 'pending',
         evidence:
           'The earlier CAPTCHA is no longer visible; the verification result is not proven yet. Check the current tab.',
-      };
+      });
     if (
       detection.state === 'active' &&
       detection.target.provider === 'turnstile' &&
@@ -158,8 +160,9 @@ export function updateVerification(slot, evidence, now = Date.now()) {
     // No attempt budget or deadline while the rest of the form is being filled.
     state.handoff = false;
     state.nextAction = 'fill_form_first';
-    state.message =
-      'This verification checkbox belongs to the form. Fill and check every other field first; do not ask the user about the verification yet. Click the checkbox once only as the last step before submit.';
+    state.message = state.checkbox
+      ? 'This verification checkbox belongs to the form. Fill and check every other field first; do not ask the user about the verification yet. Click the checkbox once only as the last step before submit.'
+      : 'The form verification widget is no longer visible. Keep filling the form; do not ask the user about the verification. Submit once when the form is complete and read the site response.';
     slot.verification = state;
     return state;
   }

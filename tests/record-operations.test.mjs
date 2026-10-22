@@ -2378,6 +2378,50 @@ test('a blocked application needs a short blocker, which the record card shows i
   });
 });
 
+test('an application blocked by a technical problem is reported with its blocker; one that needs the user is not', async (t) => {
+  const f = fixture(t);
+  const reported = [];
+  f.db.applicationFailed = (run) => reported.push(run);
+  f.db.scanFailed = () => assert.fail('an application is not a scan failure');
+  const item = await f.prepare();
+  const finish = async (blocker) => {
+    await f.runtime.runRecord(f.id, item.id, 'execute', {direct: true});
+    await settle();
+    const run = f.launches.at(-1);
+    const flow = automationWorkflow({
+      db: f.db,
+      run,
+      signal: new AbortController().signal,
+      browser: {currentUrl: async () => item.url, call: async () => ({content: []})},
+      report: (...args) => f.runtime.report(...args),
+    });
+    await flow.call(f.id, run.id, 'finish_automation_run', {
+      status: 'blocked',
+      summary: 'Not submitted.',
+      blocker,
+    });
+    await f.runtime.finish(f.id, 'blocked', 'Not submitted.', run.workerId);
+    await settle();
+    return run;
+  };
+  const answer = await finish({
+    category: 'needs_answer',
+    reason: 'The form asks for the start date.',
+    userAction: 'Answer the question',
+  });
+  assert.equal(f.db.run(answer.id).blocker.category, 'needs_answer');
+  assert.deepEqual(reported, []);
+  const technical = await finish({
+    category: 'technical',
+    reason: 'The Next button did not respond to clicks.',
+    userAction: 'Retry later',
+  });
+  assert.equal(reported.length, 1);
+  assert.equal(reported[0].id, technical.id);
+  assert.equal(reported[0].status, 'blocked');
+  assert.equal(reported[0].blocker.reason, 'The Next button did not respond to clicks.');
+});
+
 test('a click on the submit button the form inspection found is the submission, also labelled Apply', async (t) => {
   const f = fixture(t);
   const item = await f.prepare();

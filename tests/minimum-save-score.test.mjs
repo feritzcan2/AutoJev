@@ -141,6 +141,27 @@ test('review accepts score exclusions without saving fake records or skipping in
   assert.throws(() => reviewJevBatch(f.db, f.id, f.run.id, task.id, 'batch'), /missing listing/);
 });
 
+test('a listing read in the task is scored, not saved unscored; an unread one may be', async (t) => {
+  const f = fixture(t),
+    read = 'https://catalog.test/detail?record=16',
+    unread = 'https://catalog.test/detail?record=17';
+  const task = f.db.jevTasks.create(f.id, f.run.taskId, {operation: 'collect_details'}),
+    evidence = f.db.jevTasks.evidence(task, {url: read, text: 'Complete short detail.'});
+  task.items = [
+    {url: read, collected: true, detailComplete: true, evidenceId: evidence.id},
+    {url: unread, detailComplete: false, error: 'page_not_ready'},
+  ];
+  f.db.jevTasks.save(task);
+  const result = await f.call('record_automation_results', {
+    records: [finding(read, null), finding(unread, null)],
+  });
+  assert.equal(result.saved, 1);
+  assert.equal(result.failed[0].index, 0);
+  assert.match(result.failed[0].error, /was read in this task.*reject it in its review batch/);
+  assert.equal(f.db.results(f.id)[0].url, unread);
+  assert.equal(f.db.results(f.id)[0].assessment.status, 'unavailable');
+});
+
 test('empty or zero thresholds keep low scores and invalid assessments cannot become exclusions', async (t) => {
   for (const threshold of ['', '0']) {
     const f = fixture(t, 'custom', threshold),

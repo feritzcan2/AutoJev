@@ -222,6 +222,20 @@ test('a verification checkbox inside a form never hands off while the form is be
   const {formFirst, ...plain} = evidence;
   assert.equal(updateVerification(slot, plain, 600001).handoff, true);
 });
+test('a form verification widget that vanished keeps the form fillable and never hands off', () => {
+  const slot = {},
+    evidence = {
+      state: 'checking',
+      capability: 'pending',
+      formFirst: true,
+      evidence: 'The earlier CAPTCHA is no longer visible.',
+    };
+  const first = updateVerification(slot, evidence, 0);
+  assert.equal(first.handoff, false);
+  assert.equal(first.nextAction, 'fill_form_first');
+  assert.match(first.message, /no longer visible/);
+  assert.equal(updateVerification(slot, evidence, 600000).handoff, false);
+});
 test('the verification budget belongs to one page; a widget seen on an earlier page never hands a later page off', () => {
   let url = 'https://example.test/signup';
   const slot = {page: {url: () => url}},
