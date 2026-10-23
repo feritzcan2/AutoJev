@@ -16,6 +16,7 @@ const USER_SIDE = new Set([
   'needs_payment',
   'verification',
   'listing_closed',
+  'email_only',
   'not_eligible',
 ]);
 

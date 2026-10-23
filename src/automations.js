@@ -300,6 +300,9 @@ export function automationsPage(
       ],
       pinned = items.filter(([, on]) => on).map(([node]) => node);
     for (const [node, on] of items) node.toggleAttribute('data-pending', on);
+    // Answers and Attention needed leave the menu while their lists are empty.
+    answersNav.hidden = !questions;
+    attentionNav.hidden = !issues;
     letterBadge.hidden = !letters;
     letterBadge.textContent = letters ? String(letters) : '';
     filesNav.title = letters ? `${letters} cover letter${letters > 1 ? 's' : ''} to review` : '';

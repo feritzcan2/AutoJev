@@ -84,12 +84,16 @@ const requestUrl = (url) => {
 };
 
 const text = (value) => (typeof value === 'string' ? value.trim() : '');
+// Some employers leave the description empty and write everything in the
+// requirements (observed 2026-10-22). A listing with no text at all is null:
+// the API sent all of it, there is nothing to read, and the rest of the page
+// stays readable.
 function jobRecord(job) {
   const id = text(job?.url).match(
     /^https:\/\/jobs\.workable\.com\/view\/([A-Za-z0-9]{8,40})(?:\/|$)/,
   )?.[1];
-  if (!id || !text(job.title) || !text(job.description))
-    throw Error('Workable listing address, title or description missing; the page is incomplete.');
+  if (!id || !text(job.title))
+    throw Error('Workable listing address or title missing; the page is incomplete.');
   const description = [
     htmlText(job.description),
     text(job.requirementsSection) && `Requirements\n${htmlText(job.requirementsSection)}`,
@@ -97,7 +101,7 @@ function jobRecord(job) {
   ]
     .filter(Boolean)
     .join('\n\n');
-  if (!description) throw Error('Workable listing description could not be read.');
+  if (!description) return null;
   const place = job.location ?? {};
   return {
     url: `${ORIGIN}/view/${id}`,
@@ -121,7 +125,7 @@ export function parseWorkablePage(value, data) {
   const token = data.nextPageToken ?? null;
   if (token !== null && typeof token !== 'string')
     throw Error('Workable next page token is invalid.');
-  const jobs = data.jobs.map(jobRecord),
+  const jobs = data.jobs.map(jobRecord).filter(Boolean),
     more = Boolean(token) && page * PAGE_SIZE < data.totalSize;
   if (!jobs.length && more)
     throw Error('Workable results are incomplete; an empty page still has more pages.');

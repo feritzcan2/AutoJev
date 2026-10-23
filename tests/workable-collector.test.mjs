@@ -119,8 +119,8 @@ test('malformed or partial pages are errors, not empty results', () => {
   assert.throws(() => parseWorkablePage(search, {jobs: []}), /malformed/);
   assert.throws(() => parseWorkablePage(search, response([])), /incomplete/);
   assert.throws(
-    () => parseWorkablePage(search, response([job('a1234567', {description: ''})])),
-    /description/,
+    () => parseWorkablePage(search, response([job('a1234567', {title: ' '})])),
+    /title/,
   );
   assert.throws(
     () => parseWorkablePage(search, response([job('a1234567', {url: 'https://evil.test/view/x'})])),
@@ -134,6 +134,22 @@ test('malformed or partial pages are errors, not empty results', () => {
     parseWorkablePage(search, response([], {totalSize: 0, nextPageToken: null})).jobs,
     [],
   );
+});
+
+test('a listing whose text is only in the requirements is read, and one without any text is skipped', () => {
+  const page = parseWorkablePage(
+    search,
+    response([
+      job('a1234567', {description: ''}),
+      job('b1234567', {description: '', requirementsSection: '', benefitsSection: ''}),
+      job('c1234567'),
+    ]),
+  );
+  assert.deepEqual(
+    page.jobs.map((j) => j.url.split('/').pop()),
+    ['a1234567', 'c1234567'],
+  );
+  assert.match(page.jobs[0].description, /^Requirements\n• Go/);
 });
 
 test('reads send the cursor without the page count, with the caller signal, and report failures', async () => {

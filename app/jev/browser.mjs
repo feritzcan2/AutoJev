@@ -600,7 +600,7 @@ export class JevBrowser {
     if (!slot || slot.page.isClosed())
       throw Object.assign(
         Error(
-          'Jev tab not found: the saved tab was closed or no longer exists in the selected Chrome session. Check the recovered tabs with browser_tabs. Verify the saved result before reopening the record; do not resubmit an action whose submission is uncertain.',
+          'Jev tab not found: the saved tab was closed or no longer exists in the selected Chrome session, and this tab id will not work again. Use a tab id from browser_tabs, or open the address again with browser_open. In an application, verify the saved result before reopening the record; do not resubmit an action whose submission is uncertain.',
         ),
         {code: 'TAB_MISSING'},
       );

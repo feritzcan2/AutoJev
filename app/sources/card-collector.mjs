@@ -128,9 +128,13 @@ export function cardCollector({
           });
       }
     }
+    // A fact the listing page did not show (a location its layout hides)
+    // keeps the card's value.
+    const shown = (job) =>
+      Object.fromEntries(Object.entries(job).filter(([, value]) => value != null && value !== ''));
     const jobs = page.jobs
       .filter((card) => !gone.has(card.url) && (!want.has(card.url) || read.has(card.url)))
-      .map((card) => (read.has(card.url) ? {...card, ...read.get(card.url)} : card));
+      .map((card) => (read.has(card.url) ? {...card, ...shown(read.get(card.url))} : card));
     return {...page, jobs, unavailable};
   };
   /** @param {string} url @param {any} [options] */

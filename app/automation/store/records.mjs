@@ -12,7 +12,7 @@ import {saveScoreThreshold, autoApplyThreshold} from '../../scoring/thresholds.m
 import {activeRecordSql, foundRecordSql, foundRunSql} from '../../records/identity.mjs';
 import {observedRecordAliases} from '../../records/aliases.mjs';
 import {collectorRun} from '../../sources/collectors.mjs';
-import {activeSearch, countScan} from '../../sources/scan-work.mjs';
+import {activeSearch, countScan, noteSaved} from '../../sources/scan-work.mjs';
 import {collectorFindingInput} from '../../sources/collector-worker.mjs';
 import {findOperation, operationFor} from '../../templates/contract.mjs';
 import {randomUUID, createHash} from 'node:crypto';
@@ -340,19 +340,29 @@ export const recordMethods = {
       item.cells = assessmentCells(this.get(id).table, item.cells, assessment);
     }
     const saved = this.putResult(item, {
-      run: previous && !previous.trial ? undefined : this.countScanRecord(id, runId, 'saved'),
+      run:
+        previous && !previous.trial
+          ? undefined
+          : this.countScanRecord(id, runId, 'saved', {
+              url,
+              title,
+              score: assessment?.status === 'scored' ? assessment.score : undefined,
+            }),
     });
     keepListingDescription(this, id, run, saved.id, observedUrl);
     if (!previous) keepListingContacts(this, id, run, saved.id, observedUrl);
     return saved;
   },
-  // A source scan counts its saved and below-threshold findings for the source row.
-  countScanRecord(id, runId, key) {
+  // A source scan counts its saved and below-threshold findings for the source row
+  // and lists the saved ones under their search.
+  countScanRecord(id, runId, key, saved) {
     const run = this.activeRun(id, runId);
     if (run.kind !== 'run' || !run.sourceUrl || run.recordId || !run.scan?.work?.counted)
       return undefined;
-    const work = structuredClone(run.scan.work);
-    countScan(activeSearch(work) ?? work.searches[0], key);
+    const work = structuredClone(run.scan.work),
+      search = activeSearch(work) ?? work.searches[0];
+    countScan(search, key);
+    if (saved) noteSaved(search, saved);
     return {...run, scan: {...run.scan, work}};
   },
   assertRecordIdle(id, itemId) {

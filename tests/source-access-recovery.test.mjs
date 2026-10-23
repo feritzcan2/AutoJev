@@ -512,3 +512,22 @@ test('successful scan completion retires its recovered access budget, including 
   finishSourceAccess(f.db, {...run, status: 'completed'});
   assert.equal(f.db.siteAccess.row(source), null);
 });
+
+test('a reply retires a captcha wait kept for one Chrome profile', async (t) => {
+  const f = fixture(t),
+    run = await f.start(),
+    profile = {directory: 'Profile 3', name: 'Ferit'},
+    wait = f.db.siteAccess.forProfile(profile).block(source, 'verification');
+  assert.equal(wait.profile, 'Profile 3');
+  f.db.putRun({
+    ...f.db.run(run.id),
+    siteWait: wait,
+    stop: {kind: 'access', evidence: wait.message},
+  });
+  f.runtime.report(f.id, run.id, 'blocked', wait.message);
+  await f.runtime.finish(f.id, 'blocked', wait.message);
+  assert.equal(f.issue().captcha, true);
+  assert.equal(f.db.get(f.id).sourceState[source].accessRecovery.waits[0].profile, 'Profile 3');
+  await f.runtime.sourceAccess.resume(f.id, source, run.id);
+  assert.equal(f.db.siteAccess.forWait(wait).status(source), null);
+});

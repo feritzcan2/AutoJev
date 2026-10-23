@@ -222,6 +222,14 @@ test('a counted source scan reports its saved findings with the last source outc
   save(run, 'one');
   save(run, 'one');
   save(run, 'two');
+  assert.deepEqual(
+    db.run(run.id).scan.work.searches[0].saved.map((e) => [e.title, e.score]),
+    [
+      ['Listing one', 70],
+      ['Listing two', 70],
+    ],
+    'the search lists each saved listing once',
+  );
   db.finish(id, run.id, 'completed', 'Scan finished normally.');
   assert.deepEqual(db.sources(id)[0].lastRun.scanStats, {
     searches: 1,

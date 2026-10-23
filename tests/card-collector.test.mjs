@@ -81,7 +81,7 @@ test('a card collector reads only wanted listings once, drops removed ones and l
     searchUrl: (u) => u,
     readCards: async (u) => ({
       url: u,
-      jobs: ['a', 'b', 'c', 'd'].map((k) => ({url: url(k), title: k})),
+      jobs: ['a', 'b', 'c', 'd'].map((k) => ({url: url(k), title: k, location: 'Austin (Hybrid)'})),
       page: 1,
       totalPages: null,
       nextUrl: null,
@@ -91,7 +91,7 @@ test('a card collector reads only wanted listings once, drops removed ones and l
       reads.push(u);
       if (u === url('c')) throw Object.assign(Error('Removed'), {status: 410});
       if (u === url('d')) throw Error('Broken markup');
-      return {url: u, title: 'Role', description: 'Text of ' + u};
+      return {url: u, title: 'Role', location: null, description: 'Text of ' + u};
     },
     detail: (job) => job,
   });
@@ -110,6 +110,11 @@ test('a card collector reads only wanted listings once, drops removed ones and l
       [url('b'), true],
     ],
     'a known card is not read; a removed listing is dropped',
+  );
+  assert.deepEqual(
+    [page.jobs[1].title, page.jobs[1].location],
+    ['Role', 'Austin (Hybrid)'],
+    'the listing page wins; a fact it did not show keeps the card value',
   );
   assert.deepEqual(
     page.unavailable.map((x) => x.url),

@@ -23,6 +23,7 @@ const blockerLabels = {
   needs_payment: 'Payment needed',
   verification: 'Verification needed',
   listing_closed: 'Listing closed',
+  email_only: 'Apply by email',
   site_problem: 'Site problem',
   technical: 'Technical error',
 };

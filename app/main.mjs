@@ -446,6 +446,14 @@ async function boot() {
     core.workspaces.get(id);
     return browser.focusWorkspaceTab(id, tabId);
   });
+  // A verification the user solves by hand, when no related tab is still open:
+  // the page opens in the workspace's own Chrome profile.
+  handle('open-workspace-url', (id, url) => {
+    core.workspaces.get(id);
+    const u = new URL(url);
+    if (!['https:', 'http:'].includes(u.protocol)) throw Error('Invalid link');
+    return openChromeUrl(u.toString(), browser.options(id).profile);
+  });
   handle('close-workspace-tabs', (id, tabs) => {
     core.workspaces.get(id);
     return browser.closeWorkspaceTabs(id, tabs);

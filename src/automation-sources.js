@@ -748,36 +748,24 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       ],
     ]);
 
-    // Searches, then the addresses waiting and what Jev dropped.
-    const searchRows = searches.map((search) => {
-      const status =
-        search.status === 'completed'
-          ? 'Completed'
-          : `${search.pendingUrls.length} waiting${search.pageProgress ? ` · page ${search.pageProgress.currentPage}` : ''}`;
-      const label = search.label + (search.id === scan.work.activeSearchId ? ' (current)' : '');
-      if (!search.url) return [label, status];
-      // The searched address under the status, so the user can open it.
-      const value = document.createDocumentFragment();
-      value.append(el('div', status), link(search.url));
-      return [label, value];
-    });
-    const excluded = searches.flatMap((s) => s.excluded ?? []).reverse(),
-      cards = Object.assign({}, ...searches.map((s) => s.cards ?? {}));
-    const queue = group(
-      scan?.complete ? 'Searches of the last round' : 'Searches',
-      searchRows.length > 1 ? searchRows : [],
-      Boolean(pending.length || excluded.length),
-    );
-    if (pending.length || excluded.length) {
+    // Searches, each with the addresses it still has waiting, the listings it
+    // saved and what was dropped; a single search keeps them under the heading.
+    const cards = Object.assign({}, ...searches.map((s) => s.cards ?? {}));
+    const addressList = (waiting, saved, excluded) => {
+      if (!waiting.length && !saved.length && !excluded.length) return null;
       const details = el('details', null, 'source-progress-pending');
-      details.open = pending.length === 1;
+      details.open = waiting.length === 1;
       details.append(
         el(
           'summary',
-          `${plural(pending.length, 'address', 'addresses')} waiting${excluded.length ? ` · ${excluded.length} excluded` : ''}`,
+          `${plural(waiting.length, 'address', 'addresses')} waiting${saved.length ? ` · ${saved.length} saved` : ''}${excluded.length ? ` · ${excluded.length} excluded` : ''}`,
         ),
       );
-      const rows = [...pending.map((url) => ({url})), ...excluded],
+      const rows = [
+          ...waiting.map((url) => ({url})),
+          ...saved.map((row) => ({...row, saved: true})),
+          ...excluded,
+        ],
         urls = el('ol');
       let shown = 0;
       const more = button('Show the next 100 addresses', () => append());
@@ -796,6 +784,9 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
                 `Excluded ${row.stage === 'detail' ? 'on detail' : 'on card'}: ${exclusionLabels[row.reason] ?? row.reason}${row.confidence != null ? ` · Jev ${pct(row.confidence)}` : ''}`,
               ),
             );
+          } else if (row.saved) {
+            item.className = 'source-progress-saved';
+            item.append(el('small', row.score != null ? `Saved · score ${row.score}` : 'Saved'));
           } else if (card?.keep != null)
             item.append(
               el(
@@ -811,8 +802,47 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
       };
       append();
       details.append(urls, more);
-      queue.append(details);
-    }
+      return details;
+    };
+    const perSearch = searches.length > 1;
+    const searchRows = perSearch
+      ? searches.map((search) => {
+          // New listings this search collected and how many it saved, from its own tallies.
+          const sum = (counts) => Object.values(counts ?? {}).reduce((a, b) => a + b, 0),
+            collected = sum(search.newListings) + sum(search.collector?.newListings),
+            savedCount = search.counts?.saved ?? 0;
+          const status =
+            (search.status === 'completed'
+              ? 'Completed'
+              : `${search.pendingUrls.length} waiting${search.pageProgress ? ` · page ${search.pageProgress.currentPage}` : ''}`) +
+            (collected || savedCount ? ` · ${collected} collected · ${savedCount} saved` : '');
+          const label = search.label + (search.id === scan.work.activeSearchId ? ' (current)' : '');
+          // The searched address under the status, so the user can open it.
+          const value = document.createDocumentFragment();
+          value.append(el('div', status));
+          if (search.url) value.append(link(search.url));
+          const addresses = addressList(
+            scan?.complete === false ? search.pendingUrls : [],
+            [...(search.saved ?? [])].reverse(),
+            [...(search.excluded ?? [])].reverse(),
+          );
+          if (addresses) value.append(addresses);
+          return [label, value];
+        })
+      : [];
+    const shared = perSearch
+      ? null
+      : addressList(
+          pending,
+          searches.flatMap((s) => s.saved ?? []).reverse(),
+          searches.flatMap((s) => s.excluded ?? []).reverse(),
+        );
+    const queue = group(
+      scan?.complete ? 'Searches of the last round' : 'Searches',
+      searchRows,
+      Boolean(shared),
+    );
+    if (shared) queue.append(shared);
 
     const recipe = source.recipe,
       summary = recipeSummary(recipe ?? null, source.recipeState ?? null),

@@ -19,9 +19,18 @@ export function rememberSourceAccess(db, run) {
       .list(a.id, run.taskId)
       .flatMap((t) => Object.values(t.blockedSites ?? {}).map((w) => w.siteWait)),
   ].filter(Boolean);
-  const waits = [...new Map(observed.map((w) => [w.site, w])).values()].map(
-    ({site, blockedAt, retryAt}) => ({site, blockedAt, retryAt}),
-  );
+  // Lane and Chrome profile are part of a wait's key: a captcha waits only for
+  // the profile that met it, and "Resolved, continue" must retire that row.
+  const waits = [
+    ...new Map(observed.map((w) => [[w.site, w.lane, w.profile].join(' '), w])).values(),
+  ].map(({site, lane, profile, profileName, blockedAt, retryAt}) => ({
+    site,
+    lane,
+    profile,
+    profileName,
+    blockedAt,
+    retryAt,
+  }));
   const accessRecovery = {
     runId: run.id,
     revision: run.revision,

@@ -230,6 +230,19 @@ export function noteExcluded(search, entries) {
 export function countScan(search, key) {
   search.counts = {...search.counts, [key]: (search.counts?.[key] ?? 0) + 1};
 }
+// Listings a search saved as records, so the source memory shows what passed
+// beside what was dropped. Bounded per search like the excluded list.
+export function noteSaved(search, entry) {
+  const url = webUrl(entry.url);
+  search.saved = [
+    ...(search.saved ?? []).filter((e) => e.url !== url),
+    {
+      url,
+      title: String(entry.title ?? '').slice(0, 200),
+      ...(typeof entry.score === 'number' ? {score: entry.score} : {}),
+    },
+  ].slice(-300);
+}
 // Totals for a finished scan, or null for work saved before the scan counted.
 export function scanStats(scan) {
   const work = scan?.work;

@@ -160,11 +160,13 @@ export function automationAttentionPanel(
         technical
           ? 'Scan could not finish'
           : issue.kind === 'site_access'
-            ? issue.accessExhausted
-              ? 'Automatic retries stopped'
-              : clock(issue.accessRetryAt)
-                ? `Waiting · continues automatically at ${clock(issue.accessRetryAt)}`
-                : 'Access check in progress'
+            ? issue.captcha
+              ? 'Captcha · waiting for you'
+              : issue.accessExhausted
+                ? 'Automatic retries stopped'
+                : clock(issue.accessRetryAt)
+                  ? `Waiting · continues automatically at ${clock(issue.accessRetryAt)}`
+                  : 'Access check in progress'
             : 'Needs attention',
         'automation-help-label',
       ),
@@ -197,9 +199,11 @@ export function automationAttentionPanel(
     if (issue.kind === 'site_access')
       instructions.textContent =
         issue.cleanupError ??
-        (issue.accessExhausted
-          ? 'Automatic retries stopped at the third access error. The resume point is kept. After clearing the block, restart with “Resolved, continue”. Other sources keep running.'
-          : `The first error waits 5 minutes, the second 10. This scan will continue automatically where it stopped on ${new Date(issue.accessRetryAt).toLocaleString('en-GB', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}. It stops at the third error. Other sources keep running. If you close the card, ${issue.browserRequired === false ? '' : 'the tabs close now and '}the next attempt starts from scratch.`);
+        (issue.captcha
+          ? 'Solve the captcha in Chrome, then press “Resolved, continue”. The scan continues where it stopped. Other sources keep running.'
+          : issue.accessExhausted
+            ? 'Automatic retries stopped at the third access error. The resume point is kept. After clearing the block, restart with “Resolved, continue”. Other sources keep running.'
+            : `The first error waits 5 minutes, the second 10. This scan will continue automatically where it stopped on ${new Date(issue.accessRetryAt).toLocaleString('en-GB', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}. It stops at the third error. Other sources keep running. If you close the card, ${issue.browserRequired === false ? '' : 'the tabs close now and '}the next attempt starts from scratch.`);
     const actions = el('div', null, 'automation-help-actions'),
       open = el('button', 'Show tab ↗', 'primary'),
       reply = el('button', 'Reply', 'quiet'),
@@ -208,7 +212,8 @@ export function automationAttentionPanel(
         : null;
     open.type = reply.type = 'button';
     actions.append(open, reply);
-    if (issue.browserRequired === false) {
+    // A captcha is solved in Chrome even when the scan itself reads without a tab.
+    if (issue.browserRequired === false && !issue.captcha) {
       open.hidden = true;
       if (issue.kind !== 'site_access')
         instructions.textContent =
@@ -366,6 +371,10 @@ export function automationAttentionPanel(
           await api.workspaceTabs(workspace),
           snapshot?.sources ?? [],
         );
+        if (!tabs.length && issue.captcha && issue.url) {
+          await api.openWorkspaceUrl(workspace, issue.url);
+          return;
+        }
         if (!tabs.length)
           throw Error(
             'The related open tab was not found. The tab may have been closed or the browser connection lost. Check the Chrome connection.',

@@ -40,7 +40,13 @@ test('only applications that the app might fix are reported', () => {
     reportableApplicationFailure(application({blocker: undefined, status: 'timeout'}), 'running'),
     true,
   );
-  for (const category of ['needs_answer', 'needs_login', 'verification', 'not_eligible'])
+  for (const category of [
+    'needs_answer',
+    'needs_login',
+    'verification',
+    'not_eligible',
+    'email_only',
+  ])
     assert.equal(
       reportableApplicationFailure(application({blocker: {category}}), 'running'),
       false,

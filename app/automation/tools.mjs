@@ -171,7 +171,7 @@ export const automationTools = [
   ),
   tool(
     'complete_scan_search',
-    'Source scan: mark the search complete once its queue is empty and the last results page (or the verified date cutoff) was observed. Then finish_automation_run.',
+    'Source scan: mark the search complete once its queue is empty and the last results page, the verified date cutoff or the search limit (pageCapReached) was observed. Use completion=end for the last page and for the search limit: the app stops a search there on purpose, so it is complete, not partial. Then finish_automation_run.',
     {snapshotId: str, completion: {type: 'string', enum: ['end', 'cutoff', 'user_stop']}},
     ['completion'],
   ),

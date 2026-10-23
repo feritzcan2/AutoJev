@@ -548,6 +548,9 @@ header .actions .primary {
 }
 
 /* Answers and Attention needed while something waits on the user: pinned on top, amber glow. */
+aside nav button[hidden] {
+  display: none;
+}
 aside nav button[data-pending] {
   position: relative;
   color: var(--text);
