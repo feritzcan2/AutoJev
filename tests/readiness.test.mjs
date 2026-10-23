@@ -153,26 +153,39 @@ test('login checks use fixed bounded status commands and redact all CLI output',
     'warning',
   );
 });
-test('Windows command shims are found but never passed to a shell by login checks', async () => {
+test('Windows command shims are checked through PowerShell with the path as a literal', async () => {
   const checked = [];
   const executable = await findExecutable('codex', {
     platform: 'win32',
-    env: {Path: 'C:\\npm;relative'},
+    env: {Path: "C:\\it's npm;relative"},
     accessImpl: async (file) => {
       checked.push(file);
-      if (file !== 'C:\\npm\\codex.cmd') throw Error();
+      if (file !== "C:\\it's npm\\codex.cmd") throw Error();
     },
     statImpl: async () => ({isFile: () => true}),
   });
-  assert.equal(executable, 'C:\\npm\\codex.cmd');
-  assert.ok(checked.includes('C:\\npm\\codex.exe'));
+  assert.equal(executable, "C:\\it's npm\\codex.cmd");
+  assert.ok(checked.includes("C:\\it's npm\\codex.exe"));
+  let call;
   const result = await inspectLogin('codex', executable, {
     platform: 'win32',
+    env: {SystemRoot: 'C:\\Windows'},
+    execImpl: async (program, args) => {
+      call = {program, args};
+      return {stdout: 'Logged in using ChatGPT', stderr: ''};
+    },
+  });
+  assert.equal(call.program, 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+  assert.equal(call.args.at(-1), "& 'C:\\it''s npm\\codex.cmd' login status; exit $LASTEXITCODE");
+  assert.equal(result.state, 'ready');
+  const unchecked = await inspectLogin('codex', executable, {
+    platform: 'win32',
+    env: {},
     execImpl: async () => {
       throw Error('must not spawn');
     },
   });
-  assert.equal(result.state, 'warning');
+  assert.equal(unchecked.state, 'warning');
 });
 test(
   'Unix executable discovery matches TermLoop repaired PATH and ignores relative/cwd entries',

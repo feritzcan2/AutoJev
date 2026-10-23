@@ -183,8 +183,23 @@ export function createUpdateManager({
     download,
     // Installing now quits the app: quitting stops all running work, then
     // prepareQuitInstall backs up the data and installs, reopening the app.
+    // A release published after the download replaces it first, so the newest
+    // version installs; when the check fails the downloaded version installs.
     install: async () => {
       if (state.status !== 'downloaded') throw Error('Download the update first.');
+      const downloaded = state.availableVersion;
+      await action(async () => {
+        publish({status: 'checking', error: null});
+        const newest = await Promise.resolve()
+          .then(() => client.checkForUpdates())
+          .then((result) => result?.updateInfo?.version ?? null)
+          .catch(() => null);
+        if (newest && compareVersions(newest, downloaded) > 0) {
+          publish({status: 'downloading', availableVersion: newest, progress: 0, error: null});
+          await client.downloadUpdate();
+        } else
+          publish({status: 'downloaded', availableVersion: downloaded, progress: 100, error: null});
+      });
       restartAfterInstall = true;
       publish({status: 'installing', error: null});
       setImmediate(() => app.quit());

@@ -63,6 +63,47 @@ test('install now quits the app; the quit backs up, then installs and reopens; a
   manager.dispose();
   assert.equal(updater.listenerCount('error'), 0);
 });
+test('install now first downloads a release published after the downloaded one', async () => {
+  const updater = new EventEmitter(),
+    calls = [];
+  let latest = '0.3.0';
+  updater.checkForUpdates = async () => {
+    calls.push('check');
+    updater.emit('update-available', {version: latest});
+    return {updateInfo: {version: latest}};
+  };
+  updater.downloadUpdate = async () => {
+    calls.push('download');
+    updater.emit('update-downloaded', {version: latest});
+  };
+  const manager = createUpdateManager({
+    app: {isPackaged: true, getVersion: () => '0.1.0', quit: () => calls.push('quit')},
+    platform: 'darwin',
+    updater,
+  });
+  updater.emit('update-downloaded', {version: '0.2.0'});
+  await manager.install();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, ['check', 'download', 'quit']);
+  assert.equal(manager.snapshot().availableVersion, '0.3.0');
+  assert.equal(manager.snapshot().status, 'installing');
+  // Nothing newer, or a failed check: the downloaded version installs as is.
+  for (const check of [
+    async () => ({updateInfo: {version: '0.3.0'}}),
+    async () => {
+      throw Error('offline');
+    },
+  ]) {
+    calls.length = 0;
+    updater.checkForUpdates = check;
+    updater.emit('update-downloaded', {version: '0.3.0'});
+    await manager.install();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls, ['quit']);
+    assert.equal(manager.snapshot().availableVersion, '0.3.0');
+  }
+  manager.dispose();
+});
 test('development and Linux deb packages do not initialize an updater', async () => {
   for (const [isPackaged, platform] of [
     [false, 'darwin'],

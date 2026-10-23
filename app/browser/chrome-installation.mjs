@@ -31,6 +31,8 @@ export async function findChrome({
   statImpl = stat,
 } = {}) {
   const paths = platform === 'win32' ? path.win32 : path.posix;
+  // Windows names are case-insensitive (ProgramFiles), but a copied env object is not.
+  const envValue = (name) => Object.entries(env).find(([key]) => key.toUpperCase() === name)?.[1];
   const candidates =
     platform === 'darwin'
       ? [
@@ -38,7 +40,8 @@ export async function findChrome({
           paths.join(home, 'Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
         ]
       : platform === 'win32'
-        ? [env.PROGRAMFILES, env['PROGRAMFILES(X86)'], env.LOCALAPPDATA]
+        ? ['PROGRAMFILES', 'PROGRAMFILES(X86)', 'LOCALAPPDATA']
+            .map(envValue)
             .filter(Boolean)
             .map((dir) => paths.join(dir, 'Google', 'Chrome', 'Application', 'chrome.exe'))
         : [];

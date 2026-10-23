@@ -1,6 +1,7 @@
 import {access, stat} from 'node:fs/promises';
 import {constants} from 'node:fs';
 import {homedir} from 'node:os';
+import path from 'node:path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {listChromeProfiles} from '../browser/chrome-profiles.mjs';
@@ -56,22 +57,39 @@ export async function inspectLogin(
   {execImpl = exec, env = process.env, platform = process.platform, home = homedir()} = {},
 ) {
   const descriptor = providers[provider];
-  // Windows package-manager shims need a shell; readiness never evaluates shell
-  // code. Native CLI installs are checked, shim users get an explicit manual step.
-  if (platform === 'win32' && /\.(cmd|bat)$/i.test(executable))
-    return item(
-      'login',
-      'Agent session',
-      'warning',
-      `Sign in with ${descriptor.login} in a terminal. The session of this installation cannot be verified automatically.`,
-      signIn(descriptor),
-    );
+  // Windows package-manager shims (.cmd) cannot run without a shell. Like the
+  // engine, call them through PowerShell's call operator with the path as a
+  // single-quoted literal; the status arguments are fixed words.
+  let program = executable,
+    args = descriptor.args,
+    timeout = 5000;
+  if (platform === 'win32' && /\.(cmd|bat)$/i.test(executable)) {
+    const root = Object.entries(env).find(([key]) => key.toUpperCase() === 'SYSTEMROOT')?.[1];
+    if (!root)
+      return item(
+        'login',
+        'Agent session',
+        'warning',
+        `Sign in with ${descriptor.login} in a terminal. The session of this installation cannot be verified automatically.`,
+        signIn(descriptor),
+      );
+    program = path.win32.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    args = [
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `& '${executable.replaceAll("'", "''")}' ${descriptor.args.join(' ')}; exit $LASTEXITCODE`,
+    ];
+    // PowerShell plus the shim's Node start can take longer than a native CLI.
+    timeout = 15000;
+  }
   let output, stdout;
   try {
-    const result = await execImpl(executable, descriptor.args, {
+    const result = await execImpl(program, args, {
       env,
       cwd: home,
-      timeout: 5000,
+      timeout,
       maxBuffer: 32768,
       windowsHide: true,
     });

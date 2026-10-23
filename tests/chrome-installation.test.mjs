@@ -63,6 +63,20 @@ test('Chrome installation discovery includes per-user macOS and Linux stable pac
     }),
     '/usr/bin/google-chrome-stable',
   );
+  const windowsFile = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+  assert.equal(
+    await findChrome({
+      platform: 'win32',
+      home: 'C:\\Users\\example',
+      // Windows spells it ProgramFiles; a copied env object keeps that casing.
+      env: {ProgramFiles: 'C:\\Program Files', LOCALAPPDATA: 'C:\\Users\\example\\AppData\\Local'},
+      accessImpl: async (candidate) => {
+        if (candidate !== windowsFile) throw Error();
+      },
+      statImpl: async () => ({isFile: () => true}),
+    }),
+    windowsFile,
+  );
 });
 test('the AutoJob extension counts as installed only with an enabled settings record in the selected profile', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'jobloop-chrome-'));
