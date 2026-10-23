@@ -94,3 +94,39 @@ test('a worker round ends when the engine reports its message undelivered', asyn
     screen: 'output\n> task message\n  ? for shortcuts',
   });
 });
+
+test('a missing agent command stops the workspace once; other launch errors only fail the task', async () => {
+  const runs = new Map(),
+    stopped = [];
+  let launchError;
+  const runtime = new TaskRuns(
+    {
+      recover() {},
+      config: () => ({}),
+      begin: (id, input, workerId) => {
+        const run = {id: 'run-' + runs.size, workerId, status: 'running'};
+        runs.set(run.id, run);
+        return run;
+      },
+      run: (id) => runs.get(id),
+      save: (run) => runs.set(run.id, run),
+      finish: (id, runId, status, summary) =>
+        runs.set(runId, {...runs.get(runId), status, summary}),
+    },
+    {
+      launch: async () => {
+        throw launchError;
+      },
+    },
+  );
+  runtime.agentMissing = (id, error) => stopped.push([id, error.message]);
+  launchError = Object.assign(Error('AutoJob could not find the Claude Code command.'), {
+    code: 'agent_missing',
+  });
+  await assert.rejects(runtime.start('w'), {code: 'agent_missing'});
+  assert.deepEqual(stopped, [['w', 'AutoJob could not find the Claude Code command.']]);
+  assert.equal(runs.get('run-0').status, 'failed');
+  launchError = Error('Unrelated launch failure');
+  await assert.rejects(runtime.start('w'), {message: 'Unrelated launch failure'});
+  assert.equal(stopped.length, 1);
+});

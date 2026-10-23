@@ -808,6 +808,13 @@ export class WebTasks extends TaskRuns {
     this.pausing.set(id, stopping);
     return stopping;
   }
+  // The agent command is missing: every task of the workspace would fail the
+  // same way, so stop it once and say why instead of failing each source.
+  agentMissing(id, error) {
+    if (this.db.get(id).status === 'blocked') return;
+    this.db.message(id, 'system', error.message);
+    void this.pause(id, 'blocked').catch(() => {});
+  }
   async restart(id) {
     if (this.restarting.has(id)) throw Error('The workspace is restarting.');
     const a = this.db.get(id),

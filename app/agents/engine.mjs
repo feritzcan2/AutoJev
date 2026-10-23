@@ -3,7 +3,7 @@ import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {randomUUID} from 'node:crypto';
 import {launchEnvironment} from './launch-environment.mjs';
-import {engineErrorMessage} from './installation.mjs';
+import {engineError} from './installation.mjs';
 export class Engine {
   constructor(binary, directory, onEvent) {
     this.pending = new Map();
@@ -24,7 +24,7 @@ export class Engine {
         if (!p) return;
         clearTimeout(p.timer);
         this.pending.delete(value.id);
-        value.error ? p.reject(Error(engineErrorMessage(value.error))) : p.resolve(value.result);
+        value.error ? p.reject(engineError(value.error)) : p.resolve(value.result);
       } else onEvent(value);
     });
     this.child.stderr.on('data', (data) =>

@@ -93,7 +93,12 @@ test('only the current workspace’s latest completed fatal message is reported,
   assert.equal(await f.read(), null);
   f.set({name: 'APIError', data: {isRetryable: false, statusCode: 401, message: 'SECRET'}}, 3000);
   assert.match((await f.read()).summary, /HTTP 401/);
+  assert.equal((await f.read()).kind, 'provider_sign_in');
+  assert.match((await f.read()).summary, /opencode auth login/);
   assert.ok(!(await f.read()).summary.includes('SECRET'));
+  f.set({name: 'APIError', data: {isRetryable: false, statusCode: 500}}, 3000);
+  assert.equal((await f.read()).kind, 'provider_error');
+  assert.match((await f.read()).summary, /HTTP 500/);
 });
 
 for (const trigger of ['monitor', 'exit'])

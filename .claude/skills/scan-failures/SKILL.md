@@ -22,6 +22,11 @@ Health session per app start (`did` = a random install id, errors = failed scans
 `usage.daily` log line per day with counts (`scan_*`, `trial_*`, `execute_*` = applications,
 `records_found`, `workspaces`, `sources`, `providers`, `os`, `install_id`).
 
+- `scripts/sentry-scans.sh report 14d [active-days=2]` — the usage summary for the report:
+  per day installs, installs that scanned, scans done/blocked/failed/interrupted and
+  applications; per install first/last day, release, OS and state (continuing, new,
+  stopped, never scanned). Production only; it drops development, check and CI lines.
+  `interrupted` is not a failure: a next-page handoff, a session resume, the app closed.
 - `scripts/sentry-scans.sh users 14d` — sessions and unique installs per release per day
 - `scripts/sentry-scans.sh usage 14d` — the daily count lines; count distinct `install_id`
   for active installs, and installs whose `scan_total` stays 0 for drop-off
@@ -111,5 +116,29 @@ blocker (the app ended the run). Stops that need the user (`needs_answer`,
      is not a regression: compare its time with the fix time.
    - Not fixable: `scripts/sentry-scans.sh ignore <issue-id>`. It comes back if it escalates.
    - Not sure: leave it unresolved and ask the user.
-7. Report to the user: one line per issue with its short ID, class, and what you did
-   (fixed in which files, ignored with which reason, or the open question).
+7. Report to the user in Turkish, in this order. Name a period: since the last triage
+   (`last-triage` below) or the period the user asked for.
+
+   ```
+   ## Tarama raporu — <from> → <to>
+   ### Kullanım
+   <one line: installs, how many scanned, continuing / new / stopped, never scanned>
+   <the per-day table from `report`: gün, kurulum, tarayan, tarama, biten, engellenen,
+    hatalı, yarıda (hata değil), başvuru, gönderilen>
+   <stopped installs and installs that never scanned, one line each with release and OS>
+   ### Senin kararın gerekiyor
+   <product questions only; omit the section when there are none>
+   ### Düzeltildi
+   - <short ID> · <what the user saw> → <change, files>
+   Testler: pnpm check ✓/✗ · pnpm test <pass>/<total>
+   ### Ignore edildi
+   - <short IDs> · <reason>
+   - Bot kontrolü / captcha: <n> event (only the count; never a problem)
+   ### Açık kalan
+   - <short ID> · <why it stays open>
+   ### Durum
+   Commit: <hash or none> · Yeni sürüm gerekli: <yes/no, why>
+   ```
+
+   Then save the end of the period: write it to `last-triage` in this skill folder
+   (an ISO UTC timestamp, one line), so the next report starts there.

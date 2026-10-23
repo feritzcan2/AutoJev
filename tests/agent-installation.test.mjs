@@ -42,10 +42,14 @@ createInterface({input:process.stdin}).on('line',line=>{
         assert.match(detail, /AutoJob does not include this tool/);
         await assert.rejects(
           engine.request('launch', {provider}),
-          (error) => error.message === detail,
+          (error) => error.message === detail && error.code === 'agent_missing',
         );
       }
-      await assert.rejects(engine.request('unknown'), {message: 'Unrelated engine failure'});
+      await assert.rejects(engine.request('unknown'), (error) => {
+        assert.equal(error.message, 'Unrelated engine failure');
+        assert.equal(error.code, undefined);
+        return true;
+      });
       assert.deepEqual(await engine.request('catalog'), {});
     } finally {
       await engine?.close();

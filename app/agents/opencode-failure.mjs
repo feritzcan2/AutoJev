@@ -40,14 +40,18 @@ export async function readOpenCodeFailure({
     const code = Number(error.data?.statusCode),
       unsupported = /content part type ["']file["'] is not supported/i.test(
         error.data?.message ?? '',
-      );
+      ),
+      // 401 and 403 mean the provider refused the key or sign-in; a retry fails the same way.
+      signIn = code === 401 || code === 403;
     return {
       messageId: row.id,
       at: message.time.completed,
-      kind: unsupported ? 'unsupported_file' : 'provider_error',
+      kind: unsupported ? 'unsupported_file' : signIn ? 'provider_sign_in' : 'provider_error',
       summary: unsupported
         ? 'The model did not accept the PDF attachment. Documents must be read as text with the read_scoring_profile tool. The task was stopped; a retry opens a new session.'
-        : `The model provider could not complete the request${Number.isInteger(code) && code >= 400 && code <= 599 ? ` (HTTP ${code})` : ''}. The task was stopped; check the error in the agent terminal.`,
+        : signIn
+          ? `The model provider refused the sign-in (HTTP ${code}). Run opencode auth login in a terminal and sign in to the provider of the chosen model, or choose another model, then start again.`
+          : `The model provider could not complete the request${Number.isInteger(code) && code >= 400 && code <= 599 ? ` (HTTP ${code})` : ''}. The task was stopped; check the error in the agent terminal.`,
     };
   } catch {
     return null;

@@ -17,3 +17,10 @@ export function engineErrorMessage(message) {
   );
   return missing ? missingAgentMessage(missing[1]) : message;
 }
+
+// An engine error as an Error; a missing agent command carries code
+// agent_missing, so the caller stops the workspace instead of failing each task.
+export function engineError(message) {
+  const text = engineErrorMessage(message);
+  return Object.assign(Error(text), text === message ? {} : {code: 'agent_missing'});
+}

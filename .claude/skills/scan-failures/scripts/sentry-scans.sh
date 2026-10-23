@@ -52,7 +52,7 @@ issue_lines() {
 }
 
 usage() {
-  echo "Usage: sentry-scans.sh health | issues [period 24h|14d] [query] | list [period] [query] | latest <issue-id> | events <issue-id> | resolve <issue-id> | ignore <issue-id> | usage [period] | users [period]" >&2
+  echo "Usage: sentry-scans.sh health | issues [period 24h|14d] [query] | list [period] [query] | latest <issue-id> | events <issue-id> | resolve <issue-id> | ignore <issue-id> | usage [period] | report [period] [active-days] | users [period]" >&2
 }
 
 command_name="${1:-}"
@@ -89,10 +89,12 @@ case "${command_name}" in
     ;;
   usage)
     period="${2:-14d}"
-    fields=(timestamp install_id "tags[sentry.release,string]" "tags[os,string]" "tags[providers,string]"
+    fields=(timestamp install_id environment "tags[sentry.release,string]" "tags[os,string]" "tags[providers,string]"
       "tags[window_hours,number]" "tags[scan_total,number]" "tags[scan_completed,number]"
-      "tags[scan_blocked,number]" "tags[scan_failed,number]" "tags[execute_completed,number]"
-      "tags[execute_total,number]" "tags[execute_blocked,number]"
+      "tags[scan_partial,number]" "tags[scan_blocked,number]" "tags[scan_failed,number]"
+      "tags[scan_timeout,number]" "tags[scan_interrupted,number]" "tags[trial_total,number]"
+      "tags[trial_completed,number]" "tags[execute_completed,number]"
+      "tags[execute_total,number]" "tags[execute_blocked,number]" "tags[execute_failed,number]"
       "tags[execute_blocker_needs_answer,number]" "tags[execute_blocker_needs_login,number]"
       "tags[execute_blocker_technical,number]" "tags[execute_blocker_site_problem,number]"
       "tags[execute_blocker_not_eligible,number]" "tags[execute_blocker_verification,number]"
@@ -105,7 +107,11 @@ case "${command_name}" in
       --data-urlencode "statsPeriod=${period}" \
       --data-urlencode "query=message:usage.daily" \
       --data-urlencode "sort=-timestamp" \
+      --data-urlencode "per_page=1000" \
       "${args[@]}"
+    ;;
+  report)
+    "$0" usage "${2:-14d}" | node "$(dirname "$0")/usage-report.mjs" "${3:-2}"
     ;;
   users)
     period="${2:-14d}"

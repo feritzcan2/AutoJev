@@ -69,6 +69,8 @@ export class TaskRuns {
       return run;
     } catch (error) {
       if (!slot.finishing) await this.finish(id, 'failed', error.message, workerId);
+      // Every other task would fail the same way: stop the workspace once.
+      if (error.code === 'agent_missing') this.agentMissing?.(id, error);
       throw error;
     }
   }

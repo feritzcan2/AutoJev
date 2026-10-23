@@ -236,3 +236,30 @@ test('a changed plan or disabled source cancels stale retries and uncertain acti
   await r.tick();
   assert.equal(f.db.get(f.id).retryPlan[source], undefined);
 });
+test('a missing agent command stops the workspace with one message instead of failing every source', async (t) => {
+  const f = fixture(t);
+  f.db.put({
+    ...f.db.get(f.id),
+    nextRunAt: f.now(),
+    sourceState: {[source]: {nextRunAt: f.now()}, [other]: {nextRunAt: f.now()}},
+  });
+  const missing = 'AutoJob could not find the Claude Code command.',
+    r = new WebTasks(f.db, {
+      now: f.now,
+      launch: async (run) => {
+        f.launches.push(run);
+        throw Object.assign(Error(missing), {code: 'agent_missing'});
+      },
+    });
+  t.after(() => r.close());
+  await r.tick();
+  await settle();
+  await r.tick();
+  await settle();
+  assert.equal(f.db.get(f.id).status, 'blocked');
+  assert.equal(f.db.messages(f.id).filter((m) => m.text === missing).length, 1);
+  const launched = f.launches.length;
+  await r.tick();
+  await settle();
+  assert.equal(f.launches.length, launched);
+});
