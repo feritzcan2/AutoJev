@@ -63,7 +63,7 @@
     "@xterm/headless": "6.0.0",
     "@xterm/xterm": "6.0.0",
     "electron-updater": "6.8.9",
-    "node-html-parser": "6.1.13",
+    "node-html-parser": "9.0.5",
     "patchright-core": "1.64.1",
     "pdfjs-dist": "6.3.289",
     "ws": "8.22.0",
