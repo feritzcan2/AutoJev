@@ -15,6 +15,18 @@ import {opencodeCompaction} from './opencode-context.mjs';
 import {readOpenCodeFailure} from './opencode-failure.mjs';
 import {readRunTokenUsage} from './run-token-usage.mjs';
 
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms).unref?.());
+const pendingDelivery = (text) => ({text: String(text), since: Date.now()});
+const normalized = (text) => String(text).replace(/\s+/g, ' ').trim();
+// Providers wrap a pasted message (for example in pasted_content tags), so the
+// submitted prompt must contain both ends of the message rather than equal it.
+export function carriesMessage(submitted, message) {
+  const body = normalized(submitted),
+    text = normalized(message),
+    edge = Math.min(120, text.length);
+  return body.includes(text.slice(0, edge)) && body.includes(text.slice(-edge));
+}
+
 export const publicSession = (active) =>
   active
     ? {
@@ -47,6 +59,8 @@ export class AgentSessions {
     changed = () => {},
     createEngine = (...args) => new Engine(...args),
     readProviderFailure = readOpenCodeFailure,
+    // Long enough to outlast the transcript reader's 3 s lookup pause.
+    deliveryCheck = {reads: 12, intervalMs: 300},
   }) {
     Object.assign(this, {
       root,
@@ -57,6 +71,7 @@ export class AgentSessions {
       changed,
       createEngine,
       readProviderFailure,
+      deliveryCheck,
     });
     this.engines = new Map();
     this.sessions = new Map();
@@ -177,6 +192,11 @@ export class AgentSessions {
             event = {...event, screen: await this.screens.get(key).text()};
             if (this.engines.get(key) !== instance || this.sessions.get(key) !== s) return;
           }
+          if (event.event === 'delivery' && s?.delivery) {
+            const state = String(event.state).replace(/^Some\((.*)\)$/, '$1');
+            if (state !== 'None') s.delivery.attempted = true;
+            s.delivery.active = ['WritingPaste', 'AwaitingProviderAck'].includes(state);
+          }
           if (event.event === 'compaction' && s) this.compaction.delivery(s, event);
           if (s && ['delivery', 'delivery_failed', 'compaction'].includes(event.event))
             this.audit(s, {
@@ -196,6 +216,7 @@ export class AgentSessions {
             s.state = String(event.state).replace(/^Some\((.*)\)$/, '$1');
             compacting = this.compaction.signal(s, s.state);
             this.changed(id);
+            if (['Working', 'Idle'].includes(s.state)) void this.verifyDelivery(s).catch(() => {});
           }
           if (!compacting) s?.onEvent?.(event, s);
           if (['engine_exit', 'eof'].includes(event.event)) {
@@ -351,6 +372,7 @@ export class AgentSessions {
       persistent,
       launchPrompt: typeof prompt === 'string' ? prompt : '',
     };
+    if (s.launchPrompt.trim()) s.delivery = pendingDelivery(s.launchPrompt);
     this.sessions.set(key, s);
     this.clearOutput(key);
     try {
@@ -590,6 +612,8 @@ export class AgentSessions {
       status: 'requested',
       parts: [instructionPart('message', 'Message', 'user', text)],
     });
+    // Set before the request: the provider may start the turn before it returns.
+    const delivery = (s.delivery = pendingDelivery(text));
     try {
       const result = await this.engineFor(s).request('message', {text});
       this.audit(s, {
@@ -600,6 +624,7 @@ export class AgentSessions {
       });
       return result;
     } catch (error) {
+      if (s.delivery === delivery) s.delivery = null;
       this.audit(s, {
         kind: 'message_failed',
         title: 'Message could not be delivered',
@@ -608,6 +633,71 @@ export class AgentSessions {
         parts: [],
       });
       throw error;
+    }
+  }
+  // A started turn proves only that some prompt was submitted. Terminal input
+  // arriving with the paste can clear it and leave other text in the composer
+  // for the next Enter, so the provider's transcript must show the message.
+  async verifyDelivery(s) {
+    const key = workerKey(s.candidateId, s.workerId),
+      pending = s.delivery,
+      current = () => this.sessions.get(key) === s && s.delivery === pending;
+    if (!pending || pending.checking) return;
+    pending.checking = true;
+    try {
+      for (let read = 0; read < this.deliveryCheck.reads; read++) {
+        if (read) await wait(this.deliveryCheck.intervalMs);
+        const reader = this.transcripts.get(key);
+        if (!current() || !reader) continue;
+        const submitted = (await reader.read()).filter(
+          (m) => m.role !== 'agent' && Date.parse(m.at) >= pending.since,
+        );
+        if (!current()) return;
+        if (submitted.some((m) => carriesMessage(m.text, pending.text))) {
+          s.delivery = null;
+          return;
+        }
+        // Only a delivery the engine already finished can have been replaced;
+        // one still queued or being written is checked on a later state change.
+        if (submitted.length && pending.attempted && !pending.active)
+          return await this.redeliver(s, pending, submitted.at(-1).text);
+      }
+    } finally {
+      pending.checking = false;
+    }
+  }
+  async redeliver(s, pending, submitted) {
+    const key = workerKey(s.candidateId, s.workerId);
+    let retry = null;
+    this.audit(s, {
+      kind: 'delivery_mismatch',
+      title: 'The provider received other text',
+      status: 'observed',
+      detail: submitted.slice(0, 200),
+      parts: [],
+    });
+    const fail = async () => {
+      if (s.delivery === retry || s.delivery === pending) s.delivery = null;
+      const screen = await this.screens.get(key)?.text();
+      if (this.sessions.get(key) !== s) return;
+      s.onEvent?.(
+        {
+          event: 'delivery_failed',
+          sessionId: s.sessionId,
+          state: 'Some(OtherTextSubmitted)',
+          replaced: true,
+          ...(screen === undefined ? {} : {screen}),
+        },
+        s,
+      );
+    };
+    // One more attempt; a second replacement is reported instead of retried.
+    if (pending.retried) return fail();
+    retry = s.delivery = {...pendingDelivery(pending.text), retried: true};
+    try {
+      await this.engineFor(s).request('message', {text: pending.text});
+    } catch {
+      await fail();
     }
   }
   readContext(id, s) {

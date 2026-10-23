@@ -130,3 +130,23 @@ test('a missing agent command stops the workspace once; other launch errors only
   await assert.rejects(runtime.start('w'), {message: 'Unrelated launch failure'});
   assert.equal(stopped.length, 1);
 });
+
+test('a chat message replaced by other text is marked undelivered although a turn started', async () => {
+  const f = fixture();
+  await f.runtime.start('w', 'interview', 'conversation');
+  f.event({event: 'state', state: 'Some(Working)'});
+  f.event({event: 'delivery_failed', state: 'Some(OtherTextSubmitted)', replaced: true});
+  assert.equal(f.runs.get('run').awaitingMessage, true);
+  assert.equal(f.runs.get('run').undelivered.messageId, 'm1');
+  await f.runtime.finish('w', 'interrupted', 'done', 'conversation');
+});
+
+test('a worker round ends with its own reason when other text replaced its message', async () => {
+  const f = fixture({interactive: false});
+  await f.runtime.start('w', 'scan');
+  f.event({event: 'state', state: 'Some(Working)'});
+  f.event({event: 'delivery_failed', state: 'Some(OtherTextSubmitted)', replaced: true});
+  await wait(10);
+  assert.equal(f.runs.get('run').status, 'failed');
+  assert.match(f.runs.get('run').summary, /received other text/);
+});

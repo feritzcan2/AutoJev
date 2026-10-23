@@ -232,7 +232,8 @@ export class TaskRuns {
     // The engine pressed Enter again and the provider still did not take the
     // message. A worker round cannot continue without it, so end the round.
     if (event.event === 'delivery_failed') {
-      if (slot.run.interactive) this.undelivered(slot);
+      // Other text the provider took in place of the message also started a turn.
+      if (slot.run.interactive) this.undelivered(slot, {replaced: Boolean(event.replaced)});
       else if (!slot.completionRequested) {
         slot.run = {
           ...this.policy.run(slot.run.id),
@@ -250,7 +251,9 @@ export class TaskRuns {
         void this.finish(
           id,
           'failed',
-          'The task message did not reach the agent; it stayed in the agent terminal without being submitted.',
+          event.replaced
+            ? 'The task message did not reach the agent; the agent received other text in its place.'
+            : 'The task message did not reach the agent; it stayed in the agent terminal without being submitted.',
           slot.workerId,
         ).catch(() => {});
       }
@@ -268,20 +271,19 @@ export class TaskRuns {
       this.policy.deliveryGraceMs ?? 90000,
     );
   }
-  undelivered(slot) {
+  undelivered(slot, {replaced = false} = {}) {
     clearTimeout(slot.deliveryTimer);
     if (
       slot.finishing ||
       this.closed ||
       this.active.get(slot.key) !== slot ||
-      slot.seenWorking ||
-      slot.worker?.isBusy?.()
+      (!replaced && (slot.seenWorking || slot.worker?.isBusy?.()))
     )
       return;
     const run = this.policy.run(slot.run.id);
-    if (!run.interactive || run.awaitingMessage || run.usageLimit) return;
+    if (!run.interactive || (run.awaitingMessage && !replaced) || run.usageLimit) return;
     // A provider prompt in the terminal holds the input; the user answers it there.
-    if (['Working', 'Compacting', 'AwaitingInput'].includes(run.state)) {
+    if (!replaced && ['Working', 'Compacting', 'AwaitingInput'].includes(run.state)) {
       if (run.state === 'AwaitingInput') this.watchDelivery(slot);
       return;
     }
