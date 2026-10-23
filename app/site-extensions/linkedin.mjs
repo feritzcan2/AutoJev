@@ -104,6 +104,8 @@ const geoIdOf = (location) => GEO_IDS.get(fold(location)) ?? null;
 // match first (one request per learned value). The hits carry no names, so
 // the learning trial checks that the results follow the place. Clicking the
 // location field in the AI search kept failing (JOBLOOP-H/J/N/12/13).
+// ADMIN_DIVISION_1 covers states and constituent countries (England,
+// California, Bavaria); without it the lookup offered only places inside them.
 /** @param {string} field @param {string} value @param {{signal?: AbortSignal, fetch?: typeof globalThis.fetch}} [options] */
 export async function linkedInGeoSuggestions(
   field,
@@ -113,7 +115,10 @@ export async function linkedInGeoSuggestions(
   if (field !== 'location' || !String(value ?? '').trim()) return [];
   const url = new URL('https://www.linkedin.com/jobs-guest/api/typeaheadHits');
   url.searchParams.set('typeaheadType', 'GEO');
-  url.searchParams.set('geoTypes', 'POPULATED_PLACE,ADMIN_DIVISION_2,MARKET_AREA,COUNTRY_REGION');
+  url.searchParams.set(
+    'geoTypes',
+    'POPULATED_PLACE,ADMIN_DIVISION_1,ADMIN_DIVISION_2,MARKET_AREA,COUNTRY_REGION',
+  );
   url.searchParams.set('query', String(value).trim());
   const timeout = AbortSignal.timeout(10000);
   const response = await fetch(url, {

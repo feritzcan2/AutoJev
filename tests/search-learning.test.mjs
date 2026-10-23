@@ -99,6 +99,11 @@ test('the LinkedIn extension suggests geoIds from the site lookup, and nothing f
   const asked = [];
   const fetch = async (url) => {
     asked.push(new URL(url).searchParams.get('query'));
+    assert.match(
+      new URL(url).searchParams.get('geoTypes'),
+      /\bADMIN_DIVISION_1\b/,
+      'a state or constituent country (England) is offered itself',
+    );
     return {
       ok: true,
       json: async () => [{id: '111'}, {id: 'x'}, {id: '222'}, {id: '333'}, {id: '444'}],
