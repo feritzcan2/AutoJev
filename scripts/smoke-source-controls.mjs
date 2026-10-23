@@ -95,7 +95,11 @@ try {
       panel.update(snapshot, owner);
     }, pathToFileURL(fixtureModule).href);
   // The panel puts the scanning source first, so a row is found by its source, not its place.
-  const urls = ['https://one.test/search?q=engineer', 'https://two.test/catalog', 'https://three.test/'];
+  const urls = [
+    'https://one.test/search?q=engineer',
+    'https://two.test/catalog',
+    'https://three.test/',
+  ];
   const row = (index) => page.locator(`.source-row[data-source-id="${urls[index]}"]`);
   const refresh = () => page.evaluate(() => window.fixture.update());
   const finish = async (index, {id = 'owner', error} = {}) => {
