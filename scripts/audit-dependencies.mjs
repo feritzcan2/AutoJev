@@ -6,10 +6,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   // Windows package-manager shims require cmd.exe. Both arguments are constants.
-  execFileSync(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', ['audit', '--prod', '--audit-level', 'high'], {
-    cwd: root,
-    stdio: 'inherit',
-    shell: process.platform === 'win32',
-    timeout: 120000,
-  });
+  execFileSync(
+    process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+    ['audit', '--prod', '--audit-level', 'high'],
+    {
+      cwd: root,
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
+      timeout: 120000,
+    },
+  );
 }

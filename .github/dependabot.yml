@@ -13,3 +13,8 @@ updates:
         update-types:
           - minor
           - patch
+    # Major upgrades (Electron, zod, ...) need a deliberate migration, not a weekly PR.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major

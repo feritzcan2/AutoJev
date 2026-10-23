@@ -607,6 +607,9 @@ export class WebTasks extends TaskRuns {
                 ? null
                 : this.now() + (trialPassed ? 0 : source.intervalMinutes * 60000),
             });
+            // The run's own change event came before this close; without one the
+            // row keeps showing the round as queued.
+            this.changed(a.id);
           } else if (
             // Two rounds open on one site: the later one waits for the earlier.
             !siteTurn(this.db, a.id, source.url, this.now(), {
