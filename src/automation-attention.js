@@ -1,6 +1,7 @@
 import {questionForm} from './question-form.js';
 import {automationAttention} from '../app/automation/attention.mjs';
 import {groupWorkspaceTabs} from './workspace-tabs.js';
+import {recordWaitsOnUser} from './record-operation-status.js';
 
 const el = (tag, text, cls) => {
   const node = document.createElement(tag);
@@ -25,9 +26,40 @@ export function attentionTabs(issue, tabs, sources) {
   );
 }
 
+// Every record the table's "Needs you" filter shows appears on Answers (an open
+// question) or here (a blocker the user must clear or an outcome to verify).
+export function recordAttention(snapshot, issues) {
+  const covered = new Set(
+    issues.filter((i) => i.kind === 'repeated_tool_error').map((i) => i.recordId),
+  );
+  return (snapshot?.results ?? []).flatMap((record) => {
+    const problem = !covered.has(record.id) && recordWaitsOnUser(record);
+    return problem
+      ? [
+          {
+            id: 'record-problem:' + record.id,
+            kind: 'record_problem',
+            recordId: record.id,
+            name: record.title ?? 'Record',
+            label: problem.label,
+            message: problem.reason,
+            next: problem.next,
+          },
+        ]
+      : [];
+  });
+}
+
 export function automationAttentionPanel(
   api,
-  {navigate, refresh, getConversation = () => null, showRecordQuestions = () => {}, container},
+  {
+    navigate,
+    refresh,
+    getConversation = () => null,
+    showRecordQuestions = () => {},
+    showRecord = () => navigate('board'),
+    container,
+  },
 ) {
   const banner = el('div', null, 'automation-attention-banner');
   banner.hidden = true;
@@ -142,6 +174,7 @@ export function automationAttentionPanel(
     if (['setup', 'conversation'].includes(issue.kind)) return createSetup(issue);
     if (issue.kind === 'usage_limit') return createLimit(issue);
     if (issue.kind === 'repeated_tool_error') return createToolFailure(issue);
+    if (issue.kind === 'record_problem') return createRecordProblem(issue);
     const workspace = owner,
       card = el('article', null, 'automation-help-card');
     card.dataset.issueId = issue.id;
@@ -469,6 +502,33 @@ export function automationAttentionPanel(
     list.append(card);
     return {card, open};
   }
+  // A record whose operation stopped or whose outcome is unclear: its actions live in the table.
+  function createRecordProblem(issue) {
+    const card = el('article', null, 'automation-help-card'),
+      heading = el('div', null, 'automation-help-heading'),
+      copy = el('div'),
+      open = el('button', 'Show record', 'primary'),
+      actions = el('div', null, 'automation-help-actions');
+    card.dataset.issueId = issue.id;
+    card.dataset.kind = issue.kind;
+    open.type = 'button';
+    open.onclick = () => showRecord(issue.recordId);
+    copy.append(el('span', issue.label, 'automation-help-label'), el('h3', issue.name));
+    heading.append(el('span', '!', 'attention-icon'), copy);
+    actions.append(open);
+    card.append(
+      heading,
+      el('p', issue.message, 'automation-help-summary'),
+      el(
+        'p',
+        issue.next ?? 'Open the record to retry, verify the outcome or skip it.',
+        'automation-help-instructions',
+      ),
+      actions,
+    );
+    list.append(card);
+    return {card, open};
+  }
   function createSetup(issue) {
     const conversation = issue.kind === 'conversation',
       workspace = owner,
@@ -628,7 +688,10 @@ export function automationAttentionPanel(
       }
       snapshot = value;
       const all = id ? automationAttention(value) : [],
-        issues = all.filter((issue) => !issue.retryAt),
+        issues = [
+          ...all.filter((issue) => !issue.retryAt),
+          ...(id ? recordAttention(value, all) : []),
+        ],
         plans = all.filter((issue) => issue.retryAt),
         chat = getConversation();
       const panelIssues = issues.filter((i) => i.kind !== 'question' || !i.recordId);

@@ -7,7 +7,7 @@ import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
 import {automationWorkflow} from '../app/automation/worker.mjs';
 import {automationAttention, dismissAutomationAttention} from '../app/automation/attention.mjs';
-import {attentionTabs} from '../src/automation-attention.js';
+import {attentionTabs, recordAttention} from '../src/automation-attention.js';
 
 const source = {
   url: 'https://homes.example/list',
@@ -395,4 +395,94 @@ test('a repeated scan tool error is technical even when the run was reported blo
     'site_access',
     'real access recovery retains its distinct controls',
   );
+});
+
+test('records waiting on the user reach a sidebar page; other stopped records do not', () => {
+  const blocker = {
+    category: 'needs_login',
+    reason: 'The form needs an account.',
+    userAction: 'Log in',
+  };
+  const record = (id, extra) => ({id, title: id, status: 'prepared', updatedAt: 1, ...extra});
+  const results = [
+    record('stopped', {
+      recordAction: {lastTask: {kind: 'execute', state: 'blocked', at: 2, blocker}},
+    }),
+    record('unclear', {
+      status: 'uncertain',
+      recordAction: {
+        lastTask: {kind: 'execute', state: 'completed', at: 2, summary: 'No confirmation.'},
+      },
+    }),
+    record('ineligible', {
+      recordAction: {
+        lastTask: {
+          kind: 'execute',
+          state: 'blocked',
+          at: 2,
+          blocker: {...blocker, category: 'not_eligible'},
+        },
+      },
+    }),
+    record('failed', {
+      recordAction: {lastTask: {kind: 'execute', state: 'failed', at: 2, summary: 'Form error'}},
+    }),
+    record('asked', {
+      recordAction: {
+        question: {text: 'Salary?'},
+        lastTask: {kind: 'execute', state: 'blocked', at: 2},
+      },
+    }),
+    record('repeated', {
+      recordAction: {
+        lastTask: {
+          kind: 'execute',
+          state: 'failed',
+          at: 2,
+          summary: 'Tool failed',
+          toolFailure: {runId: 'r'},
+        },
+      },
+    }),
+    record('skipped', {
+      status: 'dismissed',
+      recordAction: {lastTask: {kind: 'execute', state: 'blocked', at: 2}},
+    }),
+    record('trial', {
+      trial: true,
+      recordAction: {lastTask: {kind: 'execute', state: 'blocked', at: 2}},
+    }),
+  ];
+  const issues = automationAttention({
+    automation: {},
+    sources: [],
+    runs: [],
+    activeRuns: [],
+    results,
+  });
+  assert.deepEqual(
+    issues.map((i) => i.recordId),
+    ['repeated'],
+    'a repeated tool error already has its own card',
+  );
+  assert.deepEqual(recordAttention({results}, issues), [
+    {
+      id: 'record-problem:stopped',
+      kind: 'record_problem',
+      recordId: 'stopped',
+      name: 'stopped',
+      label: 'Login needed',
+      message: 'The form needs an account.',
+      next: 'Log in',
+    },
+    {
+      id: 'record-problem:unclear',
+      kind: 'record_problem',
+      recordId: 'unclear',
+      name: 'unclear',
+      label: 'Outcome needs verification',
+      message: 'No confirmation.',
+      next: undefined,
+    },
+  ]);
 });

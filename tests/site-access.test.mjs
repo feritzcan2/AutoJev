@@ -779,7 +779,7 @@ test('a verification waits only for the Chrome profile that met it; a rate limit
   assert.equal(stopped.profile, 'Profile 3');
   assert.match(
     stopped.message,
-    /in the Chrome profile Ferit:.*Solve the verification \(captcha\) in Chrome, then press “Resolved, continue”\..*other Chrome profiles can keep working/,
+    /in the Chrome profile Ferit:.*Do what the site asks in Chrome \(a captcha or a sign-in\), then press “Resolved, continue”\..*other Chrome profiles can keep working/,
   );
   assert.equal(irem.status(url), null, 'another profile keeps scanning');
   assert.equal(gate.status(url), null);

@@ -231,6 +231,7 @@ function fixture(
     decisions = 'jev',
     jevWaitMs = 30000,
     readStallMs = 5 * 60000,
+    landingCheckMs = 1,
   } = {},
 ) {
   clearCardDetails();
@@ -279,6 +280,7 @@ function fixture(
       report: (...args) => db.finish(...args),
       jevWaitMs,
       readStallMs,
+      landingCheckMs,
     });
     return {
       db,
@@ -815,18 +817,45 @@ test('a posting that redirects to a sign-in page says the browser may need to si
   assert.match(task.unavailable[0].message, /may need to sign in/);
 });
 
-test('a results page that lands on the sign-in page is a reported error, not an empty search', async (t) => {
+test('a results page that stays on another page of its site waits for the user in Chrome', async (t) => {
+  let looks = 0;
   const f = fixture(t, {
-    browserCall: async () => ({
-      jevPage: {
-        url: 'https://www.linkedin.com/authwall',
-        reading: {readiness: {loading: false}},
-      },
-    }),
+    browserCall: async () => {
+      looks++;
+      return {
+        jevPage: {url: 'https://www.linkedin.com/authwall', reading: {readiness: {loading: false}}},
+      };
+    },
+  });
+  await f.flow.prefetchCollector().catch(() => {});
+  assert.equal(looks, 4, 'the navigation and three later looks');
+  const wait = f.db.siteAccess.status('https://www.linkedin.com/jobs/');
+  assert.equal(wait.reason, 'verification');
+  assert.equal(wait.waiting, true);
+  assert.match(wait.message, /a captcha or a sign-in/);
+  assert.equal(collectorPageReady(f.db, f.runId), false);
+});
+
+test('a results page that passes through an interim page and comes back is read', async (t) => {
+  const site = fakeLinkedIn();
+  let detour = 2;
+  const f = fixture(t, {
+    site,
+    browserCall: async (...args) => {
+      const response = await site.call(...args);
+      if (response.jevPage?.url.includes('/jobs/search-results/') && detour-- > 0)
+        return {
+          jevPage: {
+            url: 'https://www.linkedin.com/checkpoint',
+            reading: {readiness: {loading: false}},
+          },
+        };
+      return response;
+    },
   });
   await f.flow.prefetchCollector();
-  assert.match(f.db.run(f.runId).collectorError, /may need to sign in/);
-  assert.equal(collectorPageReady(f.db, f.runId), false);
+  assert.equal(collectorPageReady(f.db, f.runId), true);
+  assert.equal(f.db.siteAccess.status('https://www.linkedin.com/jobs/'), null);
 });
 
 test('the signed-in results reader takes job IDs from list items and links and ends a short search', () => {

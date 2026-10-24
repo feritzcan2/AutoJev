@@ -211,6 +211,7 @@ export function automationWorkflow({
   changed = () => {},
   jevWaitMs = 30000,
   readStallMs = 5 * 60000,
+  landingCheckMs = 5000,
   submitSettleMs = 2000,
   collectorReadPage,
   collectorReadDetail,
@@ -1141,18 +1142,36 @@ export function automationWorkflow({
   };
   // One page of a card site in the user's (signed-in) browser, opened in this
   // source's tab after its turn. Runs before the agent.
-  const openInBrowser = async (url, address) => {
+  const openInBrowser = async (url, address, {results = false} = {}) => {
     await browserTurn(url);
     let response = await browser.call(id, 'browser_navigate', {url: address}, run.id);
     for (let i = 0; i < 3 && response.jevPage?.reading?.readiness?.loading; i++) {
       await pause(2000, undefined, {signal});
       response = await browser.call(id, 'browser_snapshot', {}, run.id);
     }
+    // A page that lands elsewhere (a sign-in or home page) is not the one asked for.
+    const elsewhere = (page) =>
+      page?.url && new URL(page.url).pathname !== new URL(address).pathname;
+    // A site may pass a results page through its own interim page (a check
+    // or a sign-in redirect) and come back by itself: look again a few times.
+    for (let i = 0; results && i < 3 && elsewhere(response.jevPage); i++) {
+      if (response.jevPage.siteWait) break;
+      await pause(landingCheckMs, undefined, {signal});
+      response = await browser.call(id, 'browser_snapshot', {}, run.id);
+    }
     const page = response.jevPage;
     if (page?.siteWait) throw new SiteWaitError(page.siteWait);
-    // A page that lands elsewhere (a sign-in or home page) is not the one asked for.
-    if (page?.url && new URL(page.url).pathname !== new URL(address).pathname)
+    if (elsewhere(page)) {
+      // A results page that stays on another page of its site needs the user
+      // in this Chrome profile (a sign-in or a check), as a captcha does.
+      if (results && sameSite(page.url, address)) {
+        const wait = db.siteAccess
+          .forProfile(db.get(id).chromeProfile)
+          .block(address, 'verification');
+        if (wait?.waiting) throw new SiteWaitError(wait);
+      }
       throw Error(`The page opened as ${page.url}; this browser may need to sign in to the site.`);
+    }
     return page;
   };
   // A listing as its site reader read it (the page's listing evidence).
@@ -1187,7 +1206,7 @@ export function automationWorkflow({
   const readCardsInBrowser = async (url) => {
     const cards = collectorExtension(db.get(id), run.sourceUrl)?.collector?.cardsInBrowser;
     if (!cards) throw Error('This site has no browser reader for its results pages.');
-    const read = cards.read(await openInBrowser(url, cards.open(url)), url);
+    const read = cards.read(await openInBrowser(url, cards.open(url), {results: true}), url);
     if (!read)
       throw Error(
         'The results page opened in the browser gave no job cards (sign-in, loading or new layout).',

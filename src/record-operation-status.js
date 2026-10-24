@@ -200,3 +200,22 @@ export function recordProblem(record) {
     };
   return null;
 }
+
+// Blockers only the user can clear; the others (not eligible, closed listing,
+// site or tool errors) are shown on the record but ask nothing of the user.
+const userBlockers = new Set([
+  'needs_answer',
+  'needs_login',
+  'needs_code',
+  'needs_payment',
+  'verification',
+  'email_only',
+]);
+// A record problem that waits on the user: one of those blockers, or an outcome to verify.
+export function recordWaitsOnUser(record) {
+  const problem = recordProblem(record);
+  if (!problem) return null;
+  return (problem.category ? userBlockers.has(problem.category) : record.status === 'uncertain')
+    ? problem
+    : null;
+}

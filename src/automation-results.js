@@ -7,6 +7,7 @@ import {
   recordIsWorking,
   recordNeedsAnswer,
   recordProblem,
+  recordWaitsOnUser,
 } from './record-operation-status.js';
 import {recordTabs} from './workspace-tabs.js';
 import {scoreBreakdown, ruleSummary} from './score-breakdown.js';
@@ -742,7 +743,7 @@ export function automationResultsTable(
     const matchesFilter = (r, value) =>
       value === 'all' ||
       (value === 'attention'
-        ? recordNeedsAnswer(r) || Boolean(recordProblem(r))
+        ? recordNeedsAnswer(r) || Boolean(recordWaitsOnUser(r))
         : value === 'active'
           ? recordOperationStatus(r)?.active
           : value === 'trial'
@@ -1897,6 +1898,23 @@ export function automationResultsTable(
       disposeTable();
       mounted = null;
       rows.clear();
+    },
+    // Opens a record from another page: the "Needs you" list, its page and its details.
+    showRecord(id) {
+      if (!data?.results.some((r) => r.id === id)) return;
+      search.value = scoreMinimum.value = '';
+      filterValue = filterChips.has('attention') ? 'attention' : 'all';
+      detailId = cursorId = id;
+      page = 1;
+      render();
+      const index = shownOrder.indexOf(id);
+      if (index >= pageSize) {
+        page = Math.floor(index / pageSize) + 1;
+        render();
+      }
+      content
+        .querySelector(`[data-result-id="${CSS.escape(id)}"]`)
+        ?.scrollIntoView({block: 'center', behavior: 'smooth'});
     },
     update(snapshot, isBusy) {
       if (data?.automation.id !== snapshot.automation.id) {

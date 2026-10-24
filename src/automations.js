@@ -205,6 +205,10 @@ export function automationsPage(
     refresh,
     getConversation: () => chatPanel,
     showRecordQuestions: () => showAnswers(),
+    showRecord: (id) => {
+      navigate('board');
+      resultsTable?.showRecord(id);
+    },
   });
   const contactsSection = el('section');
   contactsSection.dataset.automationPane = 'contacts';
