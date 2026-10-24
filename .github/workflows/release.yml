@@ -133,7 +133,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-build
       - name: Audit application production dependencies
-        run: pnpm audit --prod
+        run: node scripts/audit-dependencies.mjs
       - name: Package signed and notarized macOS universal app
         if: runner.os == 'macOS'
         shell: bash
