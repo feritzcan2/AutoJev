@@ -225,7 +225,13 @@ const evaluate = async (state, questions) => ({
 });
 function fixture(
   t,
-  {browserCall = null, site = fakeLinkedIn(), decisions = 'jev', jevWaitMs = 30000} = {},
+  {
+    browserCall = null,
+    site = fakeLinkedIn(),
+    decisions = 'jev',
+    jevWaitMs = 30000,
+    readStallMs = 5 * 60000,
+  } = {},
 ) {
   clearCardDetails();
   const core = new WorkspaceDatabase(':memory:'),
@@ -272,6 +278,7 @@ function fixture(
       },
       report: (...args) => db.finish(...args),
       jevWaitMs,
+      readStallMs,
     });
     return {
       db,
@@ -350,6 +357,39 @@ test('a read longer than the tool call window asks the agent to call again and i
   const batch = await again;
   assert.ok(batch.taskId, JSON.stringify(batch).slice(0, 300));
   assert.equal(site.opened.length, 4, 'the waiting calls share one read');
+});
+
+test('a read that shows no progress past the stall bound becomes a verified technical stop', async (t) => {
+  const site = fakeLinkedIn(),
+    never = new Promise(() => {}),
+    f = fixture(t, {site, browserCall: () => never, jevWaitMs: 10, readStallMs: 40});
+  const first = await f.call('collect_source_page');
+  assert.equal(first.status, 'reading');
+  // A named wait for the site's pace is not a stall, however long it lasts.
+  noteSourceActivity(f.runId, {waitUntil: Date.now() + 60000, waitFor: 'a short reading break'});
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal((await f.call('collect_source_page')).status, 'reading');
+  noteSourceActivity(f.runId, {waitUntil: null, waitFor: null});
+  let result;
+  for (let i = 0; i < 20 && result?.status !== 'stalled'; i++)
+    result = await f.call('collect_source_page');
+  assert.equal(result.status, 'stalled');
+  assert.match(result.next, /stop\.kind technical/);
+  const issue = Object.values(f.db.run(f.runId).scanIssues);
+  assert.equal(issue.length, 1);
+  assert.equal(issue[0].kind, 'collector_read_stalled');
+  assert.equal(issue[0].verified, true);
+  assert.equal((await f.call('collect_source_page')).status, 'stalled', 'it stays stalled');
+  await f.call('finish_automation_run', {
+    status: 'failed',
+    summary: 'The next page read stalled.',
+    stop: {kind: 'technical', evidence: 'No progress.'},
+  });
+  // A technical stop holds the source for the usual retry from its position.
+  const run = f.db.run(f.runId);
+  assert.equal(run.status, 'interrupted');
+  assert.equal(run.stop.kind, 'technical');
+  assert.deepEqual(run.stop.issueIds, [issue[0].id]);
 });
 
 test('a site wait parks the card source instead of sending the agent away', async (t) => {

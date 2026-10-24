@@ -8,6 +8,9 @@ description: Triage jobloop source scans that ended failed, blocked or timed out
 When a source scan run ends `failed`, `blocked` or `timeout`, the app sends one
 Sentry event (`app/system/scan-failure-report.mjs`, hooked in `AutomationStore.putRun`).
 Interrupted, partial and completed runs and record work (applications) are not sent.
+Setup trials (tag `kind: trial`) are sent the same way; a trial over several sources
+has `site: multiple_sources`. Scan events carry `install_id` from 0.1.24 on; for older
+releases match an install by release, OS and time.
 Reports are on by default; Configuration → Diagnostics → "Send anonymous usage and error reports" turns
 them off (stored in `<data>/scan-reports.json`). No events from this machine can mean it is off.
 
@@ -124,7 +127,8 @@ blocker (the app ended the run). Stops that need the user (`needs_answer`,
    ### Kullanım
    <one line: installs, how many scanned, continuing / new / stopped, never scanned>
    <the per-day table from `report`: gün, kurulum, tarayan, tarama, biten, engellenen,
-    hatalı, yarıda (hata değil), başvuru, gönderilen>
+    hatalı, yarıda (hata değil), deneme, deneme hatası, başvuru, gönderilen>
+   <installs whose trials fail and that never scanned: name the trial issues they hit>
    <stopped installs and installs that never scanned, one line each with release and OS>
    ### Senin kararın gerekiyor
    <product questions only; omit the section when there are none>

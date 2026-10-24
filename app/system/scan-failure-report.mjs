@@ -8,13 +8,15 @@ import {sentryTransport} from './diagnostics.mjs';
 const REPORTED_STATUSES = new Set(['failed', 'blocked', 'timeout']);
 
 const scanSource = (run) => run.sourceUrl ?? (run.sources?.length === 1 ? run.sources[0] : null);
+// A trial that checks several sources at once has no single site.
+const scanSite = (run) => (scanSource(run) ? host(scanSource(run)) : 'multiple_sources');
 
 /** A source scan (not record work) that just ended in a reported status. */
 export function reportableScanFailure(run, previousStatus) {
   return Boolean(
     run &&
       ['run', 'trial'].includes(run.kind) &&
-      scanSource(run) &&
+      (scanSource(run) || run.sources?.length > 1) &&
       !run.recordId &&
       !run.recordOperation &&
       REPORTED_STATUSES.has(run.status) &&
@@ -69,7 +71,7 @@ function failureCode(run) {
 }
 
 export function scanFailureEvent(run, {release, environment, installId = null}) {
-  const site = host(scanSource(run)),
+  const site = scanSite(run),
     stopKind = run.stop?.kind ?? 'none',
     code = failureCode(run),
     stats = run.scanStats ?? {};

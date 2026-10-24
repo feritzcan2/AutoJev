@@ -899,10 +899,16 @@ export class JevBrowser {
       );
     }
     if (action && ['click', 'select'].includes(action.kind)) {
-      const current = await slot.page.evaluate((node) => {
-        const c = window.__jevFast;
-        return c ? [c.pageKey(), c.guard(c.nodes.get(node))] : null;
-      }, action.node);
+      const current = await slot.page.evaluate(
+        ({node, expected}) => {
+          const c = window.__jevFast;
+          if (!c) return null;
+          // The page may have re-rendered the control as an identical element.
+          if (!c.nodes.get(node)?.isConnected) c.rebind?.(node, expected);
+          return [c.pageKey(), c.guard(c.nodes.get(node))];
+        },
+        {node: action.node, expected: page.guards[action.node]},
+      );
       return JSON.stringify(current) === JSON.stringify([page.page_key, page.guards[action.node]]);
     }
     return (

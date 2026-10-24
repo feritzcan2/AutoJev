@@ -7,6 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {
   createScanFailureReporter,
+  reportableScanFailure,
   scanFailureEvent,
   scrubText,
 } from '../app/system/scan-failure-report.mjs';
@@ -61,6 +62,27 @@ test('interrupted scans are not reported', async (t) => {
   done.db.finish(done.id, done.run.id, 'interrupted', 'The app closed.');
   await settle();
   assert.deepEqual(done.reported, []);
+});
+
+test('a trial over several sources is reported without a single site', () => {
+  const trial = {
+    id: 'trial-1',
+    kind: 'trial',
+    status: 'failed',
+    sources: [source, 'https://other.test/jobs'],
+    summary: 'The engine response timed out.',
+    finishedAt: 1792700000000,
+  };
+  assert.equal(reportableScanFailure(trial, 'running'), true);
+  assert.equal(reportableScanFailure({...trial, sources: []}, 'running'), false);
+  assert.equal(reportableScanFailure({...trial, recordId: 'r1'}, 'running'), false);
+  const event = scanFailureEvent(
+    {...trial, status: 'blocked', stop: {kind: 'technical', evidence: 'site_wait'}},
+    {release: '1.0.0', environment: 'production'},
+  );
+  assert.equal(event.tags.site, 'multiple_sources');
+  assert.equal(event.tags.kind, 'trial');
+  assert.equal(event.message.formatted, 'scan blocked (technical) multiple_sources: site_wait');
 });
 
 test('a failure rolled back by its transaction is not reported', async (t) => {

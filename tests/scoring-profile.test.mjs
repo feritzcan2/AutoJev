@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import {mkdtemp, mkdir, writeFile, rm, symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {loadScoringDocuments, scoringSources} from '../app/scoring/profile.mjs';
+import {
+  loadScoringDocuments,
+  loadUserCoverLetters,
+  scoringSources,
+} from '../app/scoring/profile.mjs';
 import {WorkspaceDatabase} from '../app/workspaces/database.mjs';
 import {AutomationStore} from '../app/automation/store.mjs';
 import {removeAfterTests} from './helpers/temp-directory.mjs';
@@ -141,4 +145,37 @@ test('files the agents wrote are never read as profile documents', async (t) => 
   const documents = await loadScoringDocuments(db, 'one');
   assert.deepEqual(documents.paths, ['CV.txt']);
   assert.doesNotMatch(documents.text, /Dear Example team/);
+});
+test('cover letters the user added are found by file name or letter shape', async (t) => {
+  const {root, db, added} = await fixture(t),
+    dir = path.join(root, 'candidates/one/documents');
+  assert.deepEqual(await loadUserCoverLetters(db, 'one'), []);
+  await writeFile(
+    path.join(root, 'candidates/one/CV.txt'),
+    'Ada Lovelace\nExperience: Backend Engineer\nSkills: SQL',
+  );
+  await writeFile(path.join(dir, 'Anschreiben_Muster.txt'), 'Ich bewerbe mich hiermit.');
+  await writeFile(
+    path.join(dir, 'letter.md'),
+    'Sehr geehrte Damen und Herren,\n\nmit Interesse habe ich gelesen.\n\nMit freundlichen Grüßen\nAda',
+  );
+  await writeFile(path.join(dir, 'notes.md'), 'German C1, open to relocation.');
+  await mkdir(path.join(root, 'candidates/one/generated/cover-letters'), {recursive: true});
+  await writeFile(
+    path.join(root, 'candidates/one/generated/cover-letters/Cover-Letter-x.txt'),
+    'Dear team,\n\nAgent letter.\n\nKind regards,\nAda',
+  );
+  added.push(
+    'documents/Anschreiben_Muster.txt',
+    'documents/letter.md',
+    'documents/notes.md',
+    'generated/cover-letters/Cover-Letter-x.txt',
+  );
+  const letters = await loadUserCoverLetters(db, 'one');
+  assert.deepEqual(
+    letters.map((l) => l.path),
+    ['documents/Anschreiben_Muster.txt', 'documents/letter.md'],
+    'a CV, notes and letters the agents wrote are not user letters',
+  );
+  assert.match(letters[1].text, /Mit freundlichen Grüßen/);
 });

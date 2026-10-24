@@ -37,10 +37,13 @@ const scans = (list) => ({
   failed: sum(list, 'scan_failed') + sum(list, 'scan_timeout'),
   interrupted: sum(list, 'scan_interrupted'),
 });
+// Setup trials that did not end completed or interrupted.
+const trialFailures = (list) =>
+  sum(list, 'trial_failed') + sum(list, 'trial_blocked') + sum(list, 'trial_timeout');
 
 console.log('Per day (production installs)');
 console.log(
-  'day         installs  scanning  scans  done  blocked  failed  interrupted  applications  applied',
+  'day         installs  scanning  scans  done  blocked  failed  interrupted  trials  trial-fail  applications  applied',
 );
 const days = [...new Set(rows.map(day))];
 for (const d of days) {
@@ -56,6 +59,8 @@ for (const d of days) {
       String(s.blocked).padStart(8),
       String(s.failed).padStart(7),
       String(s.interrupted).padStart(12),
+      String(sum(list, 'trial_total')).padStart(7),
+      String(trialFailures(list)).padStart(11),
       String(sum(list, 'execute_total')).padStart(13),
       String(sum(list, 'execute_completed')).padStart(8),
     ].join(' '),
@@ -79,7 +84,7 @@ let scanned = 0,
   stopped = 0;
 console.log(`\nPer install (active = reported since ${cutoff})`);
 console.log(
-  'install   first       last        days  release  os      scans  done  blocked  failed  applied  state',
+  'install   first       last        days  release  os      scans  done  blocked  failed  trials  trial-fail  applied  state',
 );
 for (const [id, {rows: list, days: seen}] of installs) {
   const s = scans(list),
@@ -103,7 +108,9 @@ for (const [id, {rows: list, days: seen}] of installs) {
       String(s.completed).padStart(5),
       String(s.blocked).padStart(8),
       String(s.failed).padStart(7),
-      String(sum(list, 'execute_completed')).padStart(8),
+      String(sum(list, 'trial_total')).padStart(6),
+      String(trialFailures(list)).padStart(10),
+      String(sum(list, 'execute_completed')).padStart(7),
       state + (s.total ? '' : ', never scanned'),
     ].join('  '),
   );
@@ -113,5 +120,6 @@ console.log(
   `\nTotal: ${installs.size} installs, ${scanned} scanned at least once; ${continuing} continuing, ${fresh} new, ${stopped} stopped.` +
     ` Scans ${all.total}: ${all.completed} done, ${all.blocked} blocked, ${all.failed} failed, ${all.interrupted} interrupted` +
     ' (not failures: a next-page handoff, a session resume, the app closed or the user stopped it).' +
+    ` Trials ${sum(rows, 'trial_total')}: ${trialFailures(rows)} failed or blocked (each one is a Sentry event with kind:trial).` +
     ` Applications ${sum(rows, 'execute_total')}: ${sum(rows, 'execute_completed')} applied.`,
 );

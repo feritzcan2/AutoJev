@@ -10,6 +10,7 @@ import {automationWorkflow} from '../app/automation/worker.mjs';
 import {automationPrompt} from '../app/automation/prompts.mjs';
 import {
   approveCoverLetter,
+  coverLetterBrief,
   reviseCoverLetter,
   setCoverLetterAutoApprove,
   waitForCoverLetter,
@@ -181,6 +182,20 @@ test('only an application task can ask for a cover letter and only the writer ca
     f.db.get(f.id).questions.find((q) => q.id === questionId).coverLetter.taskId,
     writer.taskId,
   );
+});
+
+test("the brief asks for the style of the user's own cover letters", async (t) => {
+  const f = await fixture(t);
+  await f.requestLetter();
+  const writer = f.launches.at(-1),
+    plain = await f.flow(writer).call(f.id, writer.id, 'read_cover_letter_brief', {});
+  assert.equal(plain.userLetters, undefined, 'no user letter, no style rule');
+  const userLetters = [{path: 'documents/Anschreiben.pdf', text: letter('Former Employer')}],
+    brief = coverLetterBrief(f.db, f.id, writer, {userLetters});
+  assert.deepEqual(brief.userLetters, userLetters);
+  assert.match(brief.userLettersRule, /tone, formality, structure/);
+  assert.match(brief.userLettersRule, /never copy employer-specific sentences/);
+  assert.match(automationPrompt(writer), /userLetters/);
 });
 
 test('the writer saves a PDF for review and cannot finish without it', async (t) => {

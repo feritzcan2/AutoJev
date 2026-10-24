@@ -418,6 +418,18 @@
       e.getAttribute('aria-expanded'),e.getAttribute('aria-checked'),e.getAttribute('aria-selected'),
       e.getAttribute('href'),scope?.innerText?.slice(0,6000)||'',identity(target),name(target),e.getAttribute('aria-pressed'),cache.choice(e)];
   };
+  // A framework may replace a control with an identical new element after the
+  // snapshot. Rebind the action's id to the one element whose guard matches the
+  // snapshot's apart from element identity (0 and 14); any other difference or
+  // more than one match leaves the action stale.
+  cache.rebind=(node,expected)=>{
+    const old=cache.nodes.get(node);
+    if(!old||old.isConnected||!Array.isArray(expected))return false;
+    const ids=new Set([0,14]),same=g=>g&&g.length===expected.length&&g.every((v,i)=>ids.has(i)||JSON.stringify(v)===JSON.stringify(expected[i]));
+    const found=queryAll(document,old.tagName).filter(e=>e.isConnected&&!cache.ids.has(e)&&same(cache.guard(e)));
+    if(found.length!==1)return false;
+    cache.ids.set(found[0],node);cache.nodes.set(node,found[0]);return true;
+  };
   const actions=[];
   for (const e of candidates) {
     if (!safe(e) || e.matches(':disabled') || closest(e,'[aria-disabled="true"]')) continue;

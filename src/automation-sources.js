@@ -807,15 +807,21 @@ export function automationSourcesPanel(host, api, {refresh, notice, ask}) {
     const perSearch = searches.length > 1;
     const searchRows = perSearch
       ? searches.map((search) => {
-          // New listings this search collected and how many it saved, from its own tallies.
+          // New listings this search collected and how many it saved, from its own
+          // tallies, then the listings its pages held that the workspace already knew.
           const sum = (counts) => Object.values(counts ?? {}).reduce((a, b) => a + b, 0),
             collected = sum(search.newListings) + sum(search.collector?.newListings),
-            savedCount = search.counts?.saved ?? 0;
+            savedCount = search.counts?.saved ?? 0,
+            known = Object.values(search.knownListings ?? {}),
+            alreadySaved = known.reduce((a, k) => a + k.saved, 0),
+            alreadyExcluded = known.reduce((a, k) => a + k.excluded, 0);
           const status =
             (search.status === 'completed'
               ? 'Completed'
               : `${search.pendingUrls.length} waiting${search.pageProgress ? ` · page ${search.pageProgress.currentPage}` : ''}`) +
-            (collected || savedCount ? ` · ${collected} collected · ${savedCount} saved` : '');
+            (collected || savedCount ? ` · ${collected} collected · ${savedCount} saved` : '') +
+            (alreadySaved ? ` · ${alreadySaved} already saved` : '') +
+            (alreadyExcluded ? ` · ${alreadyExcluded} excluded earlier` : '');
           const label = search.label + (search.id === scan.work.activeSearchId ? ' (current)' : '');
           // The searched address under the status, so the user can open it.
           const value = document.createDocumentFragment();

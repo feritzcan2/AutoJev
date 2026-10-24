@@ -68,18 +68,14 @@ async function documentText(file) {
   cache.set(key, text);
   return text;
 }
-// Profile documents are every document the user added to this workspace.
-// Files the app or agents wrote (generated/) are not user facts.
-export async function loadScoringDocuments(db, id) {
+// The text of every document the user added to this workspace. Files the app
+// or agents wrote (generated/) are not user facts. Null without documents.
+async function readUserDocuments(db, id) {
   const saved = db.userDocuments(id).filter((file) => file && !agentDocument(file));
-  if (!saved.length)
-    return source('', {
-      unavailable: 'No saved documents; leave unverified information as unknown.',
-    });
+  if (!saved.length) return null;
   const root = await realpath(workspaceDirectory(db.store.directory, db.store.workspaces.get(id))),
     files = [...new Set(saved.map((file) => path.resolve(root, file)))];
-  const parts = [],
-    paths = [],
+  const documents = [],
     skipped = [];
   let length = 0;
   for (const file of files) {
@@ -91,19 +87,53 @@ export async function loadScoringDocuments(db, id) {
         safe = await documentPath(root, path.relative(root, requested)),
         text = (await documentText(safe)).trim();
       if (length + text.length > MAX_TEXT) throw Error('total document text limit exceeded');
-      parts.push(`## ${label}\n${text}`);
-      paths.push(label);
+      documents.push({path: label, text});
       length += text.length;
     } catch (error) {
       skipped.push(`${label} (${error.code === 'ENOENT' ? 'file not found' : error.message})`);
     }
   }
-  return source(parts.join('\n\n'), {
-    paths,
+  return {documents, skipped};
+}
+// Profile documents are every document the user added to this workspace.
+export async function loadScoringDocuments(db, id) {
+  const read = await readUserDocuments(db, id);
+  if (!read)
+    return source('', {
+      unavailable: 'No saved documents; leave unverified information as unknown.',
+    });
+  const {documents, skipped} = read;
+  return source(documents.map((d) => `## ${d.path}\n${d.text}`).join('\n\n'), {
+    paths: documents.map((d) => d.path),
     ...(skipped.length
       ? {
           unavailable: `Unreadable documents: ${skipped.join('; ')}. Information from these documents stays unknown.`,
         }
       : {}),
   });
+}
+
+// Vocabulary that recognises a cover letter the user wrote: in its file name,
+// or a letter's greeting at the top and a closing line.
+const LETTER_NAME =
+    /cover(?:ing)?\s*letter|motivation(?:al)?\s*letter|letter\s+of\s+motivation|anschreiben|motivationsschreiben|bewerbungsschreiben|lettre\s+de\s+motivation|carta\s+de\s+presentaci[oó]n|lettera\s+di\s+presentazione|sollicitatiebrief|motivatiebrief|list\s+motywacyjny|[oö]n\s*yaz[iı]|personligt\s+brev|f[oø]lgebrev/i,
+  LETTER_GREETING =
+    /^\s*(?:dear|hello|sehr geehrte|liebe|hallo|guten tag|say[ıi]n|merhaba|madame|monsieur|bonjour|estimad[oa]s?|gentile|geachte|beste|szanown|hej|k[æa]re)\b/im,
+  LETTER_CLOSING =
+    /^\s*(?:(?:yours\s+)?sincerely|(?:kind|best|warm)\s+regards|regards|yours\s+(?:faithfully|truly)|mit\s+freundlichen\s+gr[üu](?:ß|ss)en|(?:viele|beste)\s+gr[üu](?:ß|ss)e|sayg[ıi]lar[ıi]mla|cordialement|atentamente|cordiali\s+saluti|met\s+vriendelijke\s+groet|z\s+powa[żz]aniem|med\s+v[äa]nliga\s+h[äa]lsningar|med\s+venlig\s+hilsen)\b/im,
+  LETTER_CHARACTERS = 8000;
+export const userCoverLetter = ({path: file, text}) =>
+  LETTER_NAME.test(path.basename(file).replace(/[\s._-]+/g, ' ')) ||
+  (text.length <= LETTER_CHARACTERS &&
+    LETTER_GREETING.test(text.slice(0, 600)) &&
+    LETTER_CLOSING.test(text));
+
+// Cover letters among the user's own documents, the model for the letters the
+// app writes. Agent-written letters are never included.
+export async function loadUserCoverLetters(db, id, {limit = 3} = {}) {
+  const read = await readUserDocuments(db, id);
+  return (read?.documents ?? [])
+    .filter((d) => d.text && userCoverLetter(d))
+    .slice(-limit)
+    .map((d) => ({path: d.path, text: d.text.slice(0, LETTER_CHARACTERS)}));
 }

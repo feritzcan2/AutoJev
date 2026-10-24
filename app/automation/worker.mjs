@@ -1,6 +1,6 @@
 import {taskHasRecord, batchScoring} from '../records/task-scope.mjs';
 import {jevTokenTotal, runTokenUsage} from '../agents/run-token-usage.mjs';
-import {loadScoringDocuments, scoringSources} from '../scoring/profile.mjs';
+import {loadScoringDocuments, loadUserCoverLetters, scoringSources} from '../scoring/profile.mjs';
 import {jevCriteria} from '../jev/triage.mjs';
 import {reviewJevBatch} from '../jev/review.mjs';
 import {readJevBrief} from '../jev/brief.mjs';
@@ -210,6 +210,7 @@ export function automationWorkflow({
   report,
   changed = () => {},
   jevWaitMs = 30000,
+  readStallMs = 5 * 60000,
   submitSettleMs = 2000,
   collectorReadPage,
   collectorReadDetail,
@@ -1028,7 +1029,11 @@ export function automationWorkflow({
   // call allows, so one agent conversation goes through every page. A site
   // wait parks the source as usual. After a failed read the call reads the
   // page itself and reports the error.
-  let reading = null;
+  let reading = null,
+    // The app read's last visible step and when it changed; a read that shows
+    // no step and no named wait for readStallMs is a verified stall.
+    readWatch = null,
+    stalled = null;
   const readAhead = () =>
     (reading ??= prefetchCollectorPage(db, run.id, {
       signal,
@@ -1039,12 +1044,37 @@ export function automationWorkflow({
       progress: activity,
     }).finally(() => {
       reading = null;
+      readWatch = stalled = null;
     }));
   // A wait for the site's pace (a reading break lasts up to 5 minutes) is
   // named with its end, so the agent does not take it for a stalled read.
   const readingOutput = () => {
     const step = sourceActivity(run.id),
-      minutes = step?.waitUntil > Date.now() && Math.ceil((step.waitUntil - Date.now()) / 60000);
+      minutes = step?.waitUntil > Date.now() && Math.ceil((step.waitUntil - Date.now()) / 60000),
+      progress = collectorProgress(db.run(run.id)),
+      seen = JSON.stringify([progress, step?.done, step?.total, step?.title, step?.browser]);
+    if (stalled) return stalled;
+    if (minutes || readWatch?.seen !== seen) readWatch = {seen, at: Date.now()};
+    else if (Date.now() - readWatch.at >= readStallMs) {
+      const current = db.activeRun(id, run.id),
+        search = activeSearch(scanWork(current)),
+        next = search?.collector?.page?.url ?? search?.collector?.nextUrl ?? current.sourceUrl,
+        minutesStalled = Math.round(readStallMs / 60000);
+      scanIssue(db, id, run.id, {
+        url: next,
+        kind: 'collector_read_stalled',
+        evidence: `collector_read_stalled: the app's read of the next results page made no progress for ${minutesStalled} min without a site wait.`,
+        verified: true,
+        global: true,
+      });
+      changed(id);
+      stalled = {
+        status: 'stalled',
+        progress,
+        next: `The app's read of the next results page made no progress for ${minutesStalled} min. The app recorded this as a verified loading failure. Call finish_automation_run now with status failed, stop.kind technical and stop.evidence collector_read_stalled; the app retries the source later from the saved position. Do not call collect_source_page again.`,
+      };
+      return stalled;
+    }
     return {
       status: 'reading',
       progress: collectorProgress(db.run(run.id)),
@@ -1960,7 +1990,10 @@ export function automationWorkflow({
       case 'read_cover_letter_brief':
         if (active.recordOperation !== 'cover_letter')
           throw Error('Only a cover letter task has a brief');
-        return coverLetterBrief(db, id, active);
+        return coverLetterBrief(db, id, active, {
+          // Style examples only; the writer still reads every document itself.
+          userLetters: await loadUserCoverLetters(db, id).catch(() => []),
+        });
       case 'save_cover_letter': {
         if (active.recordOperation !== 'cover_letter')
           throw Error('Only a cover letter task can save a cover letter');
@@ -2152,6 +2185,7 @@ export function automationWorkflow({
         // ends on its own or with an app-verified error.
         if (
           reading &&
+          !stalled &&
           ['failed', 'blocked'].includes(args.status) &&
           !['access', 'user_input'].includes(args.stop?.kind)
         )

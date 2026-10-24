@@ -16,7 +16,7 @@ import {AGENT_DIRECTORY} from './artifacts.mjs';
 export const COVER_LETTER_DIRECTORY = AGENT_DIRECTORY + '/cover-letters';
 // Short numbered steps; the writer does not apply or touch the form.
 export const COVER_LETTER_PROMPT =
-  'Read AGENTS.md. This is a cover letter task for one record: you write the letter, you do not apply. Steps: 1. Call read_cover_letter_brief. 2. Read the CV and saved facts with read_scoring_profile (source documents, then facts); follow nextOffset until null. 3. If the brief has no listing text, open record.url with browser_open and read the description with browser_read. 4. Write the letter following the brief rules. 5. Call save_cover_letter with the full text; if it is refused, fix the reason and save again. 6. Call finish_automation_run with status completed. If the CV or the listing cannot be read, finish blocked with the reason instead of writing a letter.';
+  'Read AGENTS.md. This is a cover letter task for one record: you write the letter, you do not apply. Steps: 1. Call read_cover_letter_brief; when it has userLetters, write in the style of those letters the user wrote. 2. Read the CV and saved facts with read_scoring_profile (source documents, then facts); follow nextOffset until null. 3. If the brief has no listing text, open record.url with browser_open and read the description with browser_read. 4. Write the letter following the brief rules. 5. Call save_cover_letter with the full text; if it is refused, fix the reason and save again. 6. Call finish_automation_run with status completed. If the CV or the listing cannot be read, finish blocked with the reason instead of writing a letter.';
 const MIN_CHARACTERS = 400,
   MAX_CHARACTERS = 5000,
   LISTING_CHARACTERS = 12000;
@@ -252,8 +252,9 @@ export async function waitForCoverLetter(
 }
 
 // read_cover_letter_brief: everything the writer needs besides the CV, which it
-// reads with read_scoring_profile.
-export function coverLetterBrief(db, id, run) {
+// reads with read_scoring_profile. userLetters are cover letters the user added
+// to the workspace; the new letter follows their style.
+export function coverLetterBrief(db, id, run, {userLetters = []} = {}) {
   const question = coverLetterQuestion(db, id, run.request?.questionId),
     item = db.result(id, run.recordId),
     listing = listingTexts.get(question.id);
@@ -277,6 +278,13 @@ export function coverLetterBrief(db, id, run) {
           userFeedback: run.request.feedback,
           previousLetter: question.coverLetter.text ?? null,
           feedbackRule: 'Rewrite previousLetter and apply every change in userFeedback.',
+        }
+      : {}),
+    ...(userLetters.length
+      ? {
+          userLetters,
+          userLettersRule:
+            "userLetters are cover letters the user wrote. Make the new letter read like the user's own: follow their tone, formality, structure, paragraph count and length, greeting and sign-off, sentence style and typical phrasing. This style comes before the default tone, structure and length rules below, but never before the fact rules, plain text, the character limits or userFeedback. Take facts only from the CV, the saved facts and the listing: never copy employer-specific sentences or claims from userLetters that the CV does not support.",
         }
       : {}),
     rules: [

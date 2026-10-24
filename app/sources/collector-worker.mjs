@@ -5,7 +5,14 @@ import {
   collectorExtension,
   needsCollectorReview,
 } from './collectors.mjs';
-import {scanWork, activeSearch, pendingScanUrls, noteCards, noteExcluded} from './scan-work.mjs';
+import {
+  scanWork,
+  activeSearch,
+  pendingScanUrls,
+  noteCards,
+  noteExcluded,
+  noteKnownListings,
+} from './scan-work.mjs';
 import {SCAN_SEARCH_LISTINGS, SCAN_SEARCH_PAGES, recipeValues} from './recipe.mjs';
 import {automationTextCells} from '../templates/catalog.mjs';
 import {listingCard} from '../site-extensions/listing.mjs';
@@ -240,6 +247,16 @@ export function saveCollectionPage(db, runId, page) {
         ...checkpoint.newListings,
         [page.url]: Math.max(checkpoint.newListings?.[page.url] ?? 0, picked.length),
       };
+      // Listings this search already handled are its own, not earlier knowledge.
+      noteKnownListings(search, {
+        url: page.url,
+        ...db.knownListingCounts(
+          a.id,
+          jobs
+            .filter((j) => known.has(j.url) && !processed.has(j.url) && !picked.includes(j))
+            .map((j) => j.url),
+        ),
+      });
       search.pageProgress = {
         url: page.url,
         currentPage: page.page ?? 1,

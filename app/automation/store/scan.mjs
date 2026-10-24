@@ -270,6 +270,18 @@ export const scanMethods = {
       }
     });
   },
+  // Known listings split into those the workspace keeps as records and those
+  // it excluded earlier (a dismissed record or a remembered rejection).
+  knownListingCounts(id, urls) {
+    let saved = 0;
+    for (const url of urls) {
+      try {
+        const record = this.store.workspaces.records.find(id, url);
+        if (record && !record.trial && record.status !== 'dismissed') saved++;
+      } catch {}
+    }
+    return {saved, excluded: urls.length - saved};
+  },
   seenListingUrls(id, sourceUrl, urls) {
     const scopeKey = sourceJudgementScope(this.get(id), sourceUrl);
     const seen = this.db.prepare(

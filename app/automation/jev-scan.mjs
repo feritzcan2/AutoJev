@@ -66,6 +66,7 @@ export function saveJevCheckpoint(scan, {sourceUrl, now}, page, urls, options = 
       pendingUrls: [],
       processedUrls: [page.url],
       newListings: {url: page.url, count: cards.length + rejected.length},
+      knownListings: {url: page.url, ...db.knownListingCounts(id, knownUrls)},
       reason: 'Links from the results page are saved; the listings are waiting for assessment.',
     },
     snapshot,

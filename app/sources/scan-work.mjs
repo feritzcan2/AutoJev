@@ -179,7 +179,20 @@ export function updateScanQueue(run, input) {
         input.newListings.count,
       ),
     };
+  if (input.knownListings) noteKnownListings(search, input.knownListings);
   return work;
+}
+// Listings a results page held that the workspace already knew, by page; a
+// page read again after a restart keeps its larger count.
+export function noteKnownListings(search, {url, saved, excluded}) {
+  const last = search.knownListings?.[url];
+  search.knownListings = {
+    ...search.knownListings,
+    [url]: {
+      saved: Math.max(last?.saved ?? 0, saved),
+      excluded: Math.max(last?.excluded ?? 0, excluded),
+    },
+  };
 }
 export const searchNewListings = (search) =>
   Object.values(search?.newListings ?? {}).reduce((sum, count) => sum + count, 0);

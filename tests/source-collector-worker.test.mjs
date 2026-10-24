@@ -368,6 +368,28 @@ test('legacy unscored CLI records are reviewed in place and confirmed exclusions
   );
 });
 
+test('listings a page held that the workspace already knew are counted by search', async (t) => {
+  const f = fixture(t);
+  f.db.putResult({
+    id: 'kept',
+    automationId: f.id,
+    key: jobs[0].guid,
+    url: jobs[0].guid,
+    title: jobs[0].title,
+    summary: 'Saved earlier',
+    status: 'completed',
+    sourceUrl: source,
+    trial: false,
+    cells: {},
+    createdAt: 1,
+  });
+  f.db.rememberSeenListings(f.id, source, [jobs[1].guid], 'Rejected in an earlier scan');
+  await f.call('collect_source_page');
+  const [search] = f.db.run(f.run.id).scan.work.searches;
+  assert.deepEqual(Object.values(search.knownListings), [{saved: 1, excluded: 1}]);
+  assert.deepEqual(Object.values(search.collector.newListings), [1]);
+});
+
 test('minimum save score excludes CLI findings, allows batch review, and survives restart without raw evidence', async (t) => {
   const f = fixture(t, {saveScoreThreshold: '60'}),
     first = await f.call('collect_source_page');
