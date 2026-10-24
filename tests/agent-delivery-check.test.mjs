@@ -9,6 +9,10 @@ import {claudeProjectDirectory} from '../app/agents/transcript.mjs';
 const NATIVE = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 const PROMPT = 'Current user request (JSON):\n{"task":"Read the synthetic CV."}\n\nRead AGENTS.md.';
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Slow runners read the transcript later than a fixed pause allows.
+async function until(check, ms = 2000) {
+  for (const end = Date.now() + ms; !check() && Date.now() < end; ) await wait(10);
+}
 
 async function fixture(t) {
   const data = await mkdtemp(path.join(tmpdir(), 'delivery-check-')),
@@ -106,7 +110,7 @@ test('other text submitted in place of the message sends it once more, then repo
   await f.submitted('$');
   f.event({event: 'delivery', state: 'Some(Confirmed)'});
   f.event({event: 'state', state: 'Some(Working)'});
-  await wait(80);
+  await until(() => f.messages().length);
   assert.deepEqual(f.messages(), [PROMPT]);
   assert.equal(
     f.events.some((e) => e.event === 'delivery_failed'),
@@ -119,7 +123,7 @@ test('other text submitted in place of the message sends it once more, then repo
   await f.submitted('y');
   f.event({event: 'delivery', state: 'None'});
   f.event({event: 'state', state: 'Some(Working)'});
-  await wait(80);
+  await until(() => f.events.some((e) => e.event === 'delivery_failed'));
   assert.deepEqual(f.messages(), [PROMPT]);
   const failed = f.events.filter((e) => e.event === 'delivery_failed');
   assert.equal(failed.length, 1);
